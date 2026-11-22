@@ -34,9 +34,50 @@ public sealed partial class WorkDbContext
         + " AND [SourceId] <> " + EmptyGuid + " AND LEN([CorrelationId]) > 0"
         + " AND (([Kind] = 1 AND [Class] = 1 AND [RecordType] IS NOT NULL AND [RecordId] IS NOT NULL AND [ActorUserId] IS NOT NULL)"
         + " OR ([Kind] = 2 AND [Class] = 2 AND [ActorUserId] IS NOT NULL)"
-        + " OR ([Kind] = 3 AND [Class] = 1 AND [ActorUserId] IS NULL))"
+        + " OR ([Kind] = 3 AND [Class] = 1 AND [ActorUserId] IS NULL)"
+        // D9 (WP2): the event-derived kinds moved from work.Notifications are "özet" (AI-D29); WP2's approval kinds are "şimdi".
+        + " OR ([Kind] IN (4, 5) AND [Class] = 2 AND [ActorUserId] IS NULL AND [RecordType] IS NULL AND [RecordId] IS NULL)"
+        + " OR ([Kind] IN (6, 7, 8, 9) AND [Class] = 1 AND [ActorUserId] IS NULL AND [RecordType] IS NULL AND [RecordId] IS NULL))"
         + " AND (([RecordType] IS NULL AND [RecordId] IS NULL) OR ([RecordType] IN (" + RecordTypeList + ") AND [RecordId] IS NOT NULL"
         + " AND [RecordId] <> " + EmptyGuid + "))";
+
+    /// <summary>
+    /// D9 (WP2): kinds 4 and 5 carry the whole evidence the retired work.Notifications rows carried (same rules: one sales line
+    /// target, or — kind 5 only — one purchase line target); every other kind carries none of it. Every column is tested with
+    /// IS NOT NULL so an unknown never passes the check.
+    /// </summary>
+    internal const string InboxNotificationEventCheck =
+        "([Kind] IN (4, 5) AND [SourceId] = [Id] AND [SourceName] IS NOT NULL AND LEN([SourceName]) > 0"
+        + " AND [EventId] IS NOT NULL AND [EventId] <> " + EmptyGuid
+        + " AND [SourceEntityId] IS NOT NULL AND [SourceEntityId] <> " + EmptyGuid
+        + " AND [SourceVersion] IS NOT NULL AND LEN([SourceVersion]) > 0 AND [ReasonCode] IS NOT NULL AND LEN([ReasonCode]) > 0"
+        + " AND [ReasonText] IS NOT NULL AND LEN([ReasonText]) > 0 AND [OccurredAtUtc] IS NOT NULL"
+        + " AND (([SalesOrderId] IS NOT NULL AND [SalesOrderLineId] IS NOT NULL AND [ObservedSalesOrderVersion] IS NOT NULL"
+        + " AND [SalesOrderId] <> " + EmptyGuid + " AND [SalesOrderLineId] <> " + EmptyGuid + " AND [ObservedSalesOrderVersion] >= 1"
+        + " AND [PurchaseOrderId] IS NULL AND [PurchaseOrderLineId] IS NULL AND [ObservedPurchaseOrderVersion] IS NULL)"
+        + " OR ([Kind] = 5 AND [PurchaseOrderId] IS NOT NULL AND [PurchaseOrderLineId] IS NOT NULL AND [ObservedPurchaseOrderVersion] IS NOT NULL"
+        + " AND [PurchaseOrderId] <> " + EmptyGuid + " AND [PurchaseOrderLineId] <> " + EmptyGuid + " AND [ObservedPurchaseOrderVersion] >= 1"
+        + " AND [SalesOrderId] IS NULL AND [SalesOrderLineId] IS NULL AND [ObservedSalesOrderVersion] IS NULL)))"
+        + " OR ([Kind] NOT IN (4, 5) AND [SourceName] IS NULL AND [EventId] IS NULL AND [SourceEntityId] IS NULL AND [SourceVersion] IS NULL"
+        + " AND [ReasonCode] IS NULL AND [ReasonText] IS NULL AND [OccurredAtUtc] IS NULL AND [SalesOrderId] IS NULL"
+        + " AND [SalesOrderLineId] IS NULL AND [ObservedSalesOrderVersion] IS NULL AND [PurchaseOrderId] IS NULL"
+        + " AND [PurchaseOrderLineId] IS NULL AND [ObservedPurchaseOrderVersion] IS NULL)";
+
+    internal const string EventGrainIndexName = "UX_WorkInboxNotifications_EventGrain";
+
+    /// <summary>WP2: one follow-up step of one approval cycle (see <see cref="WorkApprovalFollowUpRow"/>).</summary>
+    internal const string ApprovalFollowUpCheck =
+        "[CompanyId] <> " + EmptyGuid + " AND [Id] <> " + EmptyGuid + " AND [ItemId] <> " + EmptyGuid
+        + " AND LEN([Kind]) > 0 AND [Step] IN (1, 2, 3, 4) AND LEN([DocumentLabel]) > 0 AND LEN([Link]) > 0"
+        + " AND LEN([ApproverPermission]) > 0 AND LEN([RuleVersion]) > 0 AND LEN([CorrelationId]) > 0"
+        + " AND [RecipientCount] >= 0 AND [RecordedAtUtc] >= [CycleStartedAtUtc]"
+        + " AND ([EscalationPermission] IS NULL OR LEN([EscalationPermission]) > 0)"
+        + " AND ([PolicyVersion] IS NULL OR LEN([PolicyVersion]) > 0)"
+        // A reminder and an escalation exist only for a computed due time and always reach at least one person; an orphaned
+        // cycle has no eligible approver by definition and its row is written whoever (if anyone) it reached.
+        + " AND ([Step] NOT IN (2, 3) OR ([DueAtUtc] IS NOT NULL AND [PolicyVersion] IS NOT NULL AND [RecipientCount] >= 1))"
+        + " AND ([Step] <> 3 OR [EscalationPermission] IS NOT NULL)";
+
     internal const string InboxDigestCheck =
         "[CompanyId] <> " + EmptyGuid + " AND [Id] <> " + EmptyGuid + " AND [RecipientUserId] <> " + EmptyGuid
         + " AND [ReleasedAtUtc] >= [SlotUtc] AND LEN([ScheduleVersion]) > 0";
@@ -57,6 +98,7 @@ public sealed partial class WorkDbContext
     internal DbSet<WorkInboxDigestRow> InboxDigests => Set<WorkInboxDigestRow>();
     internal DbSet<WorkInboxDigestItemRow> InboxDigestItems => Set<WorkInboxDigestItemRow>();
     internal DbSet<WorkCollaborationAttemptRow> CollaborationAttempts => Set<WorkCollaborationAttemptRow>();
+    internal DbSet<WorkApprovalFollowUpRow> ApprovalFollowUps => Set<WorkApprovalFollowUpRow>();
 
     private void ConfigureCollaboration(ModelBuilder model)
     {
@@ -109,10 +151,24 @@ public sealed partial class WorkDbContext
         task.HasQueryFilter(row => row.CompanyId == companyContext.CompanyId);
 
         var inbox = model.Entity<WorkInboxNotificationRow>();
-        inbox.ToTable("InboxNotifications", Schema, table => table.HasCheckConstraint("CK_WorkInboxNotifications_Identity", InboxNotificationCheck));
+        inbox.ToTable("InboxNotifications", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_WorkInboxNotifications_Identity", InboxNotificationCheck);
+            table.HasCheckConstraint("CK_WorkInboxNotifications_Event", InboxNotificationEventCheck);
+        });
         inbox.HasKey(row => new { row.CompanyId, row.Id });
         inbox.Property(row => row.CorrelationId).HasMaxLength(128).IsRequired();
         inbox.Property(row => row.CausationId).HasMaxLength(128);
+        inbox.Property(row => row.SourceName).HasMaxLength(128).IsUnicode(false).UseCollation("Latin1_General_100_BIN2");
+        inbox.Property(row => row.SourceVersion).HasMaxLength(128).IsUnicode(false);
+        inbox.Property(row => row.ReasonCode).HasMaxLength(64).IsUnicode(false);
+        inbox.Property(row => row.ReasonText).HasMaxLength(4000);
+        // D9: the event grain of the retired work.Notifications unique index, kept for the moved kinds.
+        inbox.HasIndex(row => new { row.CompanyId, row.SourceName, row.EventId, row.RecipientUserId, row.SalesOrderId,
+                row.SalesOrderLineId, row.PurchaseOrderId, row.PurchaseOrderLineId })
+            .IsUnique().HasFilter("[EventId] IS NOT NULL").HasDatabaseName(EventGrainIndexName);
+        inbox.HasOne<WorkNotificationInboxRow>().WithMany()
+            .HasForeignKey(row => new { row.CompanyId, row.SourceName, row.EventId }).OnDelete(DeleteBehavior.Restrict);
         inbox.HasIndex(row => new { row.CompanyId, row.RecipientUserId, row.Kind, row.SourceId }).IsUnique()
             .HasDatabaseName("UX_WorkInboxNotifications_RecipientEvent");
         inbox.HasIndex(row => new { row.CompanyId, row.RecipientUserId, row.RecordedAtUtc, row.Id });
@@ -141,6 +197,24 @@ public sealed partial class WorkDbContext
         item.HasOne<WorkInboxNotificationRow>().WithMany().HasForeignKey(row => new { row.CompanyId, row.NotificationId }).OnDelete(DeleteBehavior.Restrict);
         item.HasOne<WorkInboxDigestRow>().WithMany().HasForeignKey(row => new { row.CompanyId, row.DigestId }).OnDelete(DeleteBehavior.Restrict);
         item.HasQueryFilter(row => row.CompanyId == companyContext.CompanyId);
+
+        var followUp = model.Entity<WorkApprovalFollowUpRow>();
+        followUp.ToTable("ApprovalFollowUps", Schema, table => table.HasCheckConstraint("CK_WorkApprovalFollowUps_Identity", ApprovalFollowUpCheck));
+        followUp.HasKey(row => new { row.CompanyId, row.Id });
+        followUp.Property(row => row.Kind).HasMaxLength(160).IsUnicode(false).UseCollation("Latin1_General_100_BIN2").IsRequired();
+        followUp.Property(row => row.DocumentLabel).HasMaxLength(200).IsRequired();
+        followUp.Property(row => row.Link).HasMaxLength(512).IsUnicode(false).IsRequired();
+        followUp.Property(row => row.ApproverPermission).HasMaxLength(128).IsUnicode(false).UseCollation("Latin1_General_100_BIN2").IsRequired();
+        followUp.Property(row => row.EscalationPermission).HasMaxLength(128).IsUnicode(false).UseCollation("Latin1_General_100_BIN2");
+        followUp.Property(row => row.RuleVersion).HasMaxLength(256).IsUnicode(false).IsRequired();
+        followUp.Property(row => row.PolicyVersion).HasMaxLength(128).IsUnicode(false);
+        followUp.Property(row => row.CorrelationId).HasMaxLength(128).IsRequired();
+        // One row per cycle and step: a racing second cycle run cannot remind or escalate twice.
+        followUp.HasIndex(row => new { row.CompanyId, row.Kind, row.ItemId, row.CycleStartedAtUtc, row.Step }).IsUnique()
+            .HasDatabaseName("UX_WorkApprovalFollowUps_CycleStep");
+        followUp.HasIndex(row => new { row.CompanyId, row.Step, row.RecordedAtUtc, row.Id });
+        followUp.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(row => row.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        followUp.HasQueryFilter(row => row.CompanyId == companyContext.CompanyId);
 
         var attempt = model.Entity<WorkCollaborationAttemptRow>();
         attempt.ToTable("CollaborationAttempts", Schema, table => table.HasCheckConstraint("CK_WorkCollaborationAttempts_Identity", CollaborationAttemptCheck));
@@ -179,5 +253,5 @@ public sealed partial class WorkDbContext
 
     private static bool IsAppendOnlyCollaborationRow(object entity) => entity is WorkRecordNoteRow or WorkRecordNoteMentionRow
         or WorkRecordNotePassivationRow or WorkRecordNoteReadRow or WorkInboxNotificationRow or WorkInboxNotificationReadRow or WorkInboxDigestRow
-        or WorkInboxDigestItemRow or WorkCollaborationAttemptRow;
+        or WorkInboxDigestItemRow or WorkCollaborationAttemptRow or WorkApprovalFollowUpRow;
 }

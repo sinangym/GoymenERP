@@ -14,17 +14,24 @@ namespace GoymenERP.Modules.Work.Infrastructure.Shell;
 /// Not declared, on purpose: the personal notification inbox (<c>/bildirimlerim</c>) is recipient-only and needs no
 /// permission, and the record notes panel lives on each owner's detail screen behind that owner's own read — the registry
 /// refuses a permissionless "available" capability, so neither is gated here; the server decides each read and command.
+/// <item><c>work.approvals.follow-up</c> — WP2 (YOL-D17, YOL-D28): "Yükseltilen ve sahipsiz onaylar" (<c>/onay-takibi</c>) for a
+/// holder of <c>work.approvals.escalate</c>; the page lists Work's own follow-up rows and decides nothing.</item>
 /// <para>1.0 (WP9): first version.</para>
+/// <para>1.1 (WP2): adds <c>work.approvals.follow-up</c>.</para>
 /// </summary>
 public sealed class WorkShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "WORK";
-    public const string OwnerContractVersion = "1.0";
+    public const string OwnerContractVersion = "1.1";
     public const string MyTasksCapabilityId = "work.tasks.mine";
     public const string MyTasksRouteId = "work.tasks-mine";
     public const string MyTasksRoutePath = "/gorevlerim";
     public const string MyTasksScreenId = "W-TASKS-01";
     public const string AssignTaskCapabilityId = "work.tasks.assign";
+    public const string ApprovalFollowUpCapabilityId = "work.approvals.follow-up";
+    public const string ApprovalFollowUpRouteId = "work.approvals-follow-up";
+    public const string ApprovalFollowUpRoutePath = "/onay-takibi";
+    public const string ApprovalFollowUpScreenId = "W-APPROVAL-FOLLOW-UP-01";
 
     public string Owner => OwnerId;
 
@@ -51,6 +58,16 @@ public sealed class WorkShellCapabilityProvider : IShellCapabilityProvider
                 ParentCapabilityId = MyTasksCapabilityId,
                 RequiredPermissions = [WorkPermissionManifestV1.TasksComplete, WorkPermissionManifestV1.TasksAssign],
             },
+            new ShellCapabilityDeclaration(
+                ApprovalFollowUpCapabilityId,
+                ApprovalFollowUpRouteId,
+                ApprovalFollowUpRoutePath,
+                ApprovalFollowUpScreenId,
+                ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [WorkPermissionManifestV1.ApprovalsEscalate],
+                ImplementationAvailable: true),
         ];
     }
 }

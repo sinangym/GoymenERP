@@ -24,6 +24,11 @@ public static class WorkCollaborationModuleExtensions
         // YOL-D26: registered so the path exists; it refuses unless Work:NoteDisposal:Enabled is true AND the record owner
         // confirms the disposal. Nothing calls it today (no record disposal job exists).
         services.AddScoped<IWorkNoteDisposalV1, WorkNoteDisposalV1>();
+        // WP2: the follow-up views (read only) and the follow-up cycle. The host composes the owner ports the cycle needs
+        // (IWorkApprovalTimingReaderV1, IWorkPermissionHolderDirectoryV1); the cycle runs only from the scheduler and only
+        // when Work:CollaborationScheduler:ApprovalFollowUpEnabled is true (off by default; a human gate).
+        services.AddScoped<IWorkApprovalFollowUpReadV1, ApprovalFollowUp.WorkApprovalFollowUpReadV1>();
+        services.AddScoped<IWorkApprovalFollowUpMaintenanceV1, ApprovalFollowUp.WorkApprovalFollowUpMaintenanceV1>();
         return services.AddWorkCollaborationScheduler(configuration);
     }
 }

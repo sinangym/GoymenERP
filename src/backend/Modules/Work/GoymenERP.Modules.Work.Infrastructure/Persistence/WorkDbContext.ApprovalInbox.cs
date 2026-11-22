@@ -6,12 +6,14 @@ public sealed partial class WorkDbContext
 {
     internal const string ApprovalInboxEventIdentityCheck =
         "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' "
-        + "AND [ItemId] <> '00000000-0000-0000-0000-000000000000' AND LEN([Kind]) > 0 AND [EventType] IN (1, 2, 3, 4)";
+        + "AND [ItemId] <> '00000000-0000-0000-0000-000000000000' AND LEN([Kind]) > 0 AND [EventType] IN (1, 2, 3, 4, 5)";
     internal const string ApprovalInboxEventShapeCheck =
-        "([EventType] IN (1, 4) AND [ClientEventId] IS NULL) OR ([EventType] IN (2, 3) AND [ClientEventId] IS NOT NULL "
+        "([EventType] IN (1, 4, 5) AND [ClientEventId] IS NULL) OR ([EventType] IN (2, 3) AND [ClientEventId] IS NOT NULL "
         + "AND [ClientEventId] <> '00000000-0000-0000-0000-000000000000')";
     internal const string ApprovalInboxEventTimeCheck =
-        "([EventType] <> 1 OR [OccurredAtUtc] = [CycleStartedAtUtc]) AND [RecordedAtUtc] >= [CycleStartedAtUtc]";
+        "([EventType] <> 1 OR [OccurredAtUtc] = [CycleStartedAtUtc]) AND [RecordedAtUtc] >= [CycleStartedAtUtc]"
+        // D10 (WP2): the owner's decision time is never before the cycle began.
+        + " AND ([EventType] <> 5 OR [OccurredAtUtc] >= [CycleStartedAtUtc])";
 
     internal DbSet<WorkApprovalInboxEventRow> ApprovalInboxEvents => Set<WorkApprovalInboxEventRow>();
 
@@ -26,9 +28,9 @@ public sealed partial class WorkDbContext
         });
         entity.HasKey(row => new { row.CompanyId, row.Id });
         entity.Property(row => row.Kind).HasMaxLength(160).IsUnicode(false).UseCollation("Latin1_General_100_BIN2");
-        // One arrival and one observed resolution per pending cycle; a racing reader's duplicate is refused here.
+        // One arrival, one observed resolution and one owner decision (D10) per pending cycle; a racing reader's duplicate is refused here.
         entity.HasIndex(row => new { row.CompanyId, row.Kind, row.ItemId, row.CycleStartedAtUtc, row.EventType })
-            .IsUnique().HasFilter("[EventType] IN (1, 4)").HasDatabaseName("UX_WorkApprovalInboxEvents_Cycle");
+            .IsUnique().HasFilter("[EventType] IN (1, 4, 5)").HasDatabaseName("UX_WorkApprovalInboxEvents_Cycle");
         entity.HasIndex(row => new { row.CompanyId, row.ClientEventId })
             .IsUnique().HasFilter("[ClientEventId] IS NOT NULL").HasDatabaseName("UX_WorkApprovalInboxEvents_ClientEvent");
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(row => row.CompanyId).OnDelete(DeleteBehavior.Restrict);

@@ -48,7 +48,7 @@ public sealed class WorkApprovalRuleServiceTests
         Assert.Equal(Company, table.CompanyId);
         Assert.Equal([PaymentKind, PlanKind], table.Rules.Select(rule => rule.Kind).ToArray());
         var plan = table.Rules[1];
-        Assert.Equal(("manufacturing", "manufacturing.plans.approve", "Hours", (string?)null, "0", true, "YOL-D18",
+        Assert.Equal(("manufacturing", "manufacturing.plans.approve", "Hours", "work.approvals.escalate", "0", true, "YOL-D18",
                 WorkApprovalRuleStatesV1.Current, "work.approval-rule:manufacturing.plan.v1:0"),
             (plan.OwnerModule, plan.ApproverPermission, plan.DurationClass, plan.EscalationPermission, plan.Version, plan.IsDefault,
                 plan.DefaultBasis, plan.State, plan.VersionText));

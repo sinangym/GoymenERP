@@ -15,6 +15,13 @@ public static class WorkApprovalRuleDefaultsV1
     public const string Basis = "YOL-D18";
     public const long Version = 0;
 
+    /// <summary>
+    /// WP2 (YOL-D28): version 0 escalates to the holders of the "onay yükseltme" permission. A recorded version may name
+    /// another registered permission or none ("not defined": nothing escalates, only the one reminder goes to the approvers).
+    /// While no one holds the named permission, only the reminder goes out (YOL-D28).
+    /// </summary>
+    public const string EscalationPermission = GoymenERP.Modules.Work.Domain.WorkPermissionManifestV1.ApprovalsEscalate;
+
     public static IReadOnlySet<string> HourScaleKinds { get; } = new HashSet<string>(
     [
         "logistics.dispatch-note.v1",
@@ -108,7 +115,8 @@ public sealed record WorkApprovalRuleVersionViewV1(
 /// approver permission, the duration class and escalation permission in force, the version in force
 /// (<see cref="Version"/>; "0" with <see cref="IsDefault"/> = the decided default, <see cref="DefaultBasis"/> names the
 /// decision), its state against the owner's current declaration, who recorded it, when and why, and the newest versions.
-/// A null <see cref="EscalationPermission"/> is "not defined": nothing escalates (WP2 reads it).
+/// A null <see cref="EscalationPermission"/> is "not defined": nothing escalates (WP2 reads it). Version 0 names
+/// <see cref="WorkApprovalRuleDefaultsV1.EscalationPermission"/> (YOL-D28).
 /// </summary>
 public sealed record WorkApprovalRuleViewV1(
     string Kind,

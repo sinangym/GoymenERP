@@ -106,7 +106,7 @@ public sealed class WorkApprovalRuleServiceV1(
             ? WorkApprovalRuleDefaultsV1.DurationClassOf(source.Kind)
             : WorkApprovalDurationClassCodesV1.FromCode(latest.DurationClass)
                 ?? throw new WorkApprovalRuleException(503, "service_unavailable");
-        var currentEscalation = latest?.EscalationPermission;
+        var currentEscalation = latest is null ? WorkApprovalRuleDefaultsV1.EscalationPermission : latest.EscalationPermission;
         var currentApprover = latest?.ApproverPermission ?? source.ApproverPermission;
         if (currentClass == durationClass
             && string.Equals(currentEscalation, escalation, StringComparison.Ordinal)
@@ -173,7 +173,8 @@ public sealed class WorkApprovalRuleServiceV1(
         if (latest is null)
         {
             return new WorkApprovalRuleViewV1(source.Kind, source.Module, source.ApproverPermission,
-                WorkApprovalRuleDefaultsV1.DurationClassOf(source.Kind).ToString(), null, Text(WorkApprovalRuleDefaultsV1.Version),
+                WorkApprovalRuleDefaultsV1.DurationClassOf(source.Kind).ToString(), WorkApprovalRuleDefaultsV1.EscalationPermission,
+                Text(WorkApprovalRuleDefaultsV1.Version),
                 WorkApprovalRuleVersionTextV1.Of(source.Kind, WorkApprovalRuleDefaultsV1.Version), true, WorkApprovalRuleDefaultsV1.Basis,
                 WorkApprovalRuleStatesV1.Current, null, null, null, versions);
         }
@@ -426,7 +427,8 @@ public sealed class WorkApprovalRuleReaderV1(WorkDbContext database) : IWorkAppr
                 .FirstOrDefault();
             if (latest is null)
             {
-                resolved[source.Kind] = new(source.Kind, WorkApprovalRuleDefaultsV1.DurationClassOf(source.Kind), null,
+                resolved[source.Kind] = new(source.Kind, WorkApprovalRuleDefaultsV1.DurationClassOf(source.Kind),
+                    WorkApprovalRuleDefaultsV1.EscalationPermission,
                     WorkApprovalRuleDefaultsV1.Version, true, true);
                 continue;
             }
