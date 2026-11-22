@@ -43,6 +43,7 @@ GROUP_PROJECTS = {
         "tests/GoymenERP.Organization.UnitTests/GoymenERP.Organization.UnitTests.csproj",
         "tests/GoymenERP.Product.UnitTests/GoymenERP.Product.UnitTests.csproj",
         "tests/GoymenERP.Purchasing.UnitTests/GoymenERP.Purchasing.UnitTests.csproj",
+        "tests/GoymenERP.Reporting.UnitTests/GoymenERP.Reporting.UnitTests.csproj",
         "tests/GoymenERP.Sales.UnitTests/GoymenERP.Sales.UnitTests.csproj",
         "tests/GoymenERP.SecurityEvents.UnitTests/GoymenERP.SecurityEvents.UnitTests.csproj",
         "tests/GoymenERP.Settings.UnitTests/GoymenERP.Settings.UnitTests.csproj",
@@ -50,8 +51,8 @@ GROUP_PROJECTS = {
         "tests/GoymenERP.Work.UnitTests/GoymenERP.Work.UnitTests.csproj",
     ),
 }
-SOLUTION_PROJECT_COUNT = 75
-TEST_PROJECT_COUNT = 22
+SOLUTION_PROJECT_COUNT = 78
+TEST_PROJECT_COUNT = 23
 PROOF_SCHEMA = 5
 # The api project is the CI critical path; its classes are split over this many
 # parallel jobs. The partition is recomputed from the union of the shard proofs.
@@ -153,8 +154,8 @@ def catalog() -> dict[str, tuple[str, ...]]:
     if (len(projects) != TEST_PROJECT_COUNT or len(set(projects)) != TEST_PROJECT_COUNT
             or sorted(GROUP_PROJECTS) != ["api", "architecture", "modules"]
             or [len(GROUP_PROJECTS[group]) for group in ("architecture", "api", "modules")]
-            != [1, 1, 20]):
-        raise RuntimeError("Backend groups must partition exactly twenty-two TestSDK projects.")
+            != [1, 1, 21]):
+        raise RuntimeError("Backend groups must partition exactly twenty-three TestSDK projects.")
     return GROUP_PROJECTS
 
 
@@ -168,7 +169,7 @@ def source_inventory(root: Path) -> tuple[str, str]:
     except (OSError, ET.ParseError, KeyError) as exception:
         raise RuntimeError("Backend solution inventory is unreadable.") from exception
     if len(paths) != SOLUTION_PROJECT_COUNT or len(set(paths)) != SOLUTION_PROJECT_COUNT:
-        raise RuntimeError("Backend solution must retain exactly seventy-five unique projects.")
+        raise RuntimeError("Backend solution must retain exactly seventy-eight unique projects.")
     test_projects = []
     for value in paths:
         if value.startswith("/") or ".." in Path(value).parts or not value.endswith(".csproj"):

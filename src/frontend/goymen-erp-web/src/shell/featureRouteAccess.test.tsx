@@ -37,6 +37,7 @@ import { purchasingRoutes } from '../purchasing/purchasingRoutes'
 import { PRODUCT_LIST_TEXT } from '../product/productText'
 import { productPage } from '../product/testHarness'
 import { workRoutes } from '../work/workRoutes'
+import { reportingRoutes } from '../reporting/reportingRoutes'
 import { APPROVALS_TEXT } from '../work/workText'
 
 const COMPANY = 'aaaaaaaa-0000-0000-0000-000000000001'
@@ -204,6 +205,7 @@ describe('shell router source shape (not a reachability check)', () => {
       ['Organization', organizationRoutes],
       ['Purchasing', purchasingRoutes],
       ['Work', workRoutes],
+      ['Reporting', reportingRoutes],
     ] as const) {
       expect(routes.length, `${lane} declares no routes`).toBeGreaterThan(0)
       for (const route of routes) {

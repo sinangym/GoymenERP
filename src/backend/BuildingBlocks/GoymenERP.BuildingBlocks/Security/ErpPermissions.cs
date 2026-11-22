@@ -1733,6 +1733,23 @@ public static class ErpPermissions
     /// registered company-wide only, not critical, and no seeded role holds it: applying the grant is a human gate.
     /// </summary>
     public const string AiDecisionsRead = "ai.decisions.read";
+    /// <summary>
+    /// WP14 (DALGA_PLANI_v2 1.15, DEC-DOC-009): download a report-centre page as CSV/XLSX. The report's own owner read permissions
+    /// are required as well; every export writes an append-only export record and an audit event. Company-wide only. Not Critical
+    /// (a Critical marking is a human decision). Registered, not granted: no seeded role holds it; a grant is a human gate.
+    /// </summary>
+    public const string ReportingExport = "reporting.export";
+    /// <summary>
+    /// WP14 (YOL-D13, ROL-D13): build the company's auditor package (read-only export of the sections the actor can read; the
+    /// auditor gets no system access). Company-wide only. Not Critical. Registered, not granted (a grant is a human gate).
+    /// </summary>
+    public const string ReportingAuditorPackageExport = "reporting.auditor-package.export";
+    /// <summary>
+    /// WP14 (ROL-D15, YOL-D6): read the intercompany transaction dump. ROL-D15 recommends the general manager, the system
+    /// administrator and the accounting manager; registered, not granted: applying that grant is a human gate. Company-wide only.
+    /// Not Critical.
+    /// </summary>
+    public const string ReportingIntercompanyRead = "reporting.intercompany.read";
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(
         [
@@ -2030,6 +2047,9 @@ public static class ErpPermissions
             WorkTasksAssign,
             WorkTasksComplete,
             WorkAssistantMemoryOversee,
+            ReportingExport,
+            ReportingAuditorPackageExport,
+            ReportingIntercompanyRead,
         ],
         StringComparer.Ordinal);
 
@@ -2336,6 +2356,9 @@ public static class ErpPermissions
             WorkTasksAssign,
             WorkTasksComplete,
             WorkAssistantMemoryOversee,
+            ReportingExport,
+            ReportingAuditorPackageExport,
+            ReportingIntercompanyRead,
         ],
         StringComparer.Ordinal);
 

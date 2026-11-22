@@ -6229,6 +6229,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // WP1; K3 review pending. Down refuses (52100, WP1 range, used by no other migration) while Work approval rule versions exist; use a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261122201654_AddWorkApprovalRuleVersions.cs"] =
                     new("a2a8e707b656198d8ed6c3c4d8f5c7858bfff957e702040d45731ed42df57542", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // WP14; K3 review pending. Down refuses (52270, WP14 range, used by no other migration) while report-centre export records, saved views or command attempts exist; use a forward fix. 1 lexical Sql call(s). Fingerprint re-pinned on the tren-2 head (GOV-D9).
+                ["src/backend/Modules/Reporting/GoymenERP.Modules.Reporting.Infrastructure/Persistence/Migrations/20261122201929_AddReportingCenter.cs"] =
+                    new("0000000000000000000000000000000000000000000000000000000000000000", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
             };
 
     private static readonly HashSet<string> ReviewedProjectSdks =

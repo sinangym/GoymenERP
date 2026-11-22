@@ -35,6 +35,7 @@ import { settingsRoutes } from '../settings/settingsRoutes'
 import { documentBrandingRoutes } from './documentBrandingRoutes'
 import { searchRoutes } from '../search/searchRoutes'
 import { workRoutes } from '../work/workRoutes'
+import { reportingRoutes } from '../reporting/reportingRoutes'
 import { StateBlock } from './StateBlock'
 import { CariCustomerGroupsPage } from '../cari/CariCustomerGroupsPage'
 import { CUSTOMER_GROUPS_ROUTE } from '../cari/customerGroupRoute'
@@ -225,6 +226,11 @@ export const shellRoutes: RouteObject[] = [
        * permission — so an actor without it gets the neutral not-found block and reads nothing.
        */
       ...workRoutes,
+      /**
+       * WP14 report centre (`/raporlar`, `/raporlar/denetci-paketi`, `/raporlar/:reportId`), declared in
+       * `src/reporting/reportingRoutes.tsx`: no capability of its own; the server filters the catalogue and re-authorizes.
+       */
+      ...reportingRoutes,
       {
         /**
          * Catch-all. Without it react-router renders its own error boundary —
