@@ -56,8 +56,16 @@ public sealed partial class PurchasingService : IPurchasingSupplierRevisionServi
                 if (revision.SupplierPartyId == Guid.Empty || revision.CompanyAccountId == Guid.Empty || string.IsNullOrWhiteSpace(revision.Reason)
                     || revision.Reason.Trim().Length > PurchaseOrder.SupplierRevisionReasonMaximumLength)
                     throw new PurchasingServiceException(422, "validation_failed");
+                // F-017 §3.4 / STOK F017-b: a future allocation lives only on an APPROVED purchase general line, and the revision
+                // returns the order to draft. No decision chooses to release them here, so an active allocation refuses the
+                // revision (409 purchasing_line_has_allocations, not stored; the link drop releases it first) — fail-closed, and
+                // without the Inventory participant the revision is not decided at all (503). NEEDS-SINAN: release-with-confirm.
+                if (allocationLinks is null) throw new PurchasingServiceException(503, "service_unavailable");
+                var revisionReason = revision.Reason;
                 result = await revisions.ReviseSupplierAsync(orderId, expected, revision.SupplierPartyId, revision.CompanyAccountId,
-                    revision.Reason, envelope, hash, Fence, token);
+                    revision.Reason, envelope, hash, Fence, token,
+                    (order, transaction, cancellationToken) => GuardFutureAllocationsAsync(transaction, order.Id, GeneralLineIds(order),
+                        seen: null, PurchaseFutureAllocationLinkReasonsV1.SourceCancelled, revisionReason, envelope, cancellationToken));
             }
             else
             {
@@ -74,6 +82,7 @@ public sealed partial class PurchasingService : IPurchasingSupplierRevisionServi
             return result is null ? throw new PurchasingServiceException(404, "not_found")
                 : OrderResponse(result.Order, result.Outcome == PurchasingWriteOutcome.Replayed, result.OriginalCorrelationId, await FreshDisclosureAsync());
         }
+        catch (PurchaseFutureAllocationLinkException exception) { throw LinkRefusal(exception); }
         catch (PurchasingVersionConflictException) { return await Refusal(PurchasingProblemCodesV1.VersionConflict); }
         catch (PurchasingRuleException exception) when (exception.Code is PurchaseOrder.SupplierRevisionBlocked or PurchaseOrder.SupplierRevisionNoChange
             or PurchaseOrder.SupplierRevisionNotDraft or PurchaseOrder.SupplierRevisionPriceRequired)

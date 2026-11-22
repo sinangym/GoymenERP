@@ -25,7 +25,9 @@ public static partial class PurchasingEndpoints
             [FromServices] IPurchasingSupplierRevisionServiceV1 service, ICorrelationContext correlation, CancellationToken token) =>
             MutateAsync(context, correlation, PurchaseSupplierRevisionJsonV1.ReadRevision,
                 (body, metadata) => service.ReviseOrderSupplierAsync(id, body, metadata, token), token))
-            .WithName("RevisePurchaseOrderSupplierV1").Accepts<RevisePurchaseOrderSupplierRequest>("application/json"));
+            .WithName("RevisePurchaseOrderSupplierV1").Accepts<RevisePurchaseOrderSupplierRequest>("application/json"),
+            // F-017 §3.4: an active future allocation on a general line refuses the revision (it would leave a draft line allocated).
+            PurchasingProblemCodesV1.LineHasAllocations);
         MapRevisionMutation(group.MapPost("/{id:guid}/lines/{lineId:guid}/supplier-revision-price", (Guid id, Guid lineId, HttpContext context,
             [FromServices] IPurchasingSupplierRevisionServiceV1 service, ICorrelationContext correlation, CancellationToken token) =>
             MutateAsync(context, correlation, PurchaseSupplierRevisionJsonV1.ReadPrice,
@@ -33,12 +35,12 @@ public static partial class PurchasingEndpoints
             .WithName("SetPurchaseOrderSupplierRevisionPriceV1").Accepts<SetPurchaseSupplierRevisionPriceRequest>("application/json"));
     }
 
-    private static void MapRevisionMutation(RouteHandlerBuilder endpoint) => endpoint
+    private static void MapRevisionMutation(RouteHandlerBuilder endpoint, params string[] extraConflicts) => endpoint
         .WithIdempotencyContract(PurchasingApiV1.MutationStatus, 409).Produces<PurchaseOrderResponse>()
         .ProducesErpBadRequest("validation_failed", PurchasingProblemCodesV1.CommandMetadataInvalid).AllowsEmptyErpBadRequestBody()
         .ProducesErpUnsupportedMediaType().ProducesErpCodeLessNotFound()
-        .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.SameKeyPayloadMismatch,
+        .ProducesErpConflict([PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.SameKeyPayloadMismatch,
             PurchasingProblemCodesV1.ConcurrentChange, PurchaseOrder.SupplierRevisionBlocked, PurchaseOrder.SupplierRevisionNoChange,
-            PurchaseOrder.SupplierRevisionNotDraft, PurchaseOrder.SupplierRevisionPriceRequired)
+            PurchaseOrder.SupplierRevisionNotDraft, PurchaseOrder.SupplierRevisionPriceRequired, .. extraConflicts])
         .ProducesErpUnprocessableEntity("validation_failed").ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
 }
