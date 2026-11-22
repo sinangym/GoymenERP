@@ -1,6 +1,7 @@
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Security.Events;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Identity.Application.Contracts;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Bootstrap;
@@ -308,6 +309,60 @@ public sealed class FounderBootstrapServiceTests
         Assert.Empty(result.CompanyIds);
     }
 
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData(" ", "SENTETIK-machine")]
+    [InlineData("SENTETIK-os", "")]
+    public async Task A_missing_operator_declaration_is_refused_before_the_account_input_is_read(string? osUser, string? machine)
+    {
+        using var harness = new Harness();
+        harness.Console.Declaration = osUser is null ? null : new(osUser, machine!);
+
+        var result = await harness.RunAsync();
+
+        Assert.Equal(FounderBootstrapStatus.OperatorDeclarationMissing, result.Status);
+        Assert.Equal(1, harness.Console.Reads);
+        Assert.Equal(0, harness.Hasher.Hashes);
+        harness.AssertNothingWritten();
+    }
+
+    [Fact]
+    public async Task A_completed_bootstrap_hands_one_audit_row_per_company_with_its_admin_assignment_and_the_operator()
+    {
+        using var harness = new Harness(companyCount: 2);
+
+        var result = await harness.RunAsync();
+
+        Assert.Equal(FounderBootstrapStatus.Completed, result.Status);
+        var userId = Assert.IsType<Guid>(result.FounderUserId);
+        harness.Context.ChangeTracker.Clear();
+        var assignments = await harness.Context.RoleAssignments.ToListAsync();
+        Assert.Equal(harness.CompanyIds.Order(), harness.Recorded.Rows.Select(row => row.CompanyId).Order());
+        Assert.All(harness.Recorded.Rows, row =>
+        {
+            Assert.Equal(userId, row.FounderUserId);
+            Assert.Equal(assignments.Single(assignment => assignment.CompanyId == row.CompanyId).Id, row.AdminAssignmentId);
+            Assert.Equal(new FounderRecoveryOperatorDeclarationV1("SENTETIK-os", "SENTETIK-machine"), row.Operator);
+            Assert.Equal(harness.CompanyIds.Order(), row.CompanyIds.Order());
+            Assert.Equal(Now, row.OccurredAtUtc);
+            Assert.Equal(new FixedCorrelationContext().CorrelationId, row.CorrelationId);
+        });
+        Assert.Single(harness.Recorded.Rows.Select(row => row.IdempotencyKey).Distinct());
+    }
+
+    [Fact]
+    public async Task A_refused_audit_row_reports_the_refusal_before_any_security_event()
+    {
+        using var harness = new Harness(audit: new RecordingBootstrapAudit { Refuse = true });
+
+        var result = await harness.RunAsync();
+
+        // The rollback itself is proven against SQL Server; InMemory keeps the saved rows.
+        Assert.Equal(FounderBootstrapStatus.AuditRefused, result.Status);
+        Assert.Null(result.FounderUserId);
+        Assert.Empty(harness.SecurityEvents.Written);
+    }
+
     private sealed class Harness : IDisposable
     {
         public const string UserName = "kurucukullanici";
@@ -321,8 +376,10 @@ public sealed class FounderBootstrapServiceTests
             string? adminRoleCode = AdminRoleCode,
             string? adminPermission = null,
             int companyCount = 1,
-            ISecurityEventWriterV1? securityEventWriter = null)
+            ISecurityEventWriterV1? securityEventWriter = null,
+            IFounderBootstrapAuditParticipant? audit = null)
         {
+            Audit = audit ?? Recorded;
             this.adminRoleCode = adminRoleCode;
             this.securityEventWriter = securityEventWriter ?? SecurityEvents;
             var options = new DbContextOptionsBuilder<IdentityDbContext>()
@@ -367,6 +424,10 @@ public sealed class FounderBootstrapServiceTests
 
         public RecordingSecurityEventWriter SecurityEvents { get; } = new();
 
+        public RecordingBootstrapAudit Recorded { get; } = new();
+
+        private IFounderBootstrapAuditParticipant Audit { get; }
+
         public Task<FounderBootstrapResult> RunAsync()
         {
             var service = new FounderBootstrapService(
@@ -376,7 +437,8 @@ public sealed class FounderBootstrapServiceTests
                 new FixedCorrelationContext(),
                 new ManualTimeProvider(Now),
                 Options.Create(LocalAccountLoginServiceTests.ValidOptions()),
-                Options.Create(new IdentityBootstrapOptions { AdminRoleCode = adminRoleCode }));
+                Options.Create(new IdentityBootstrapOptions { AdminRoleCode = adminRoleCode }),
+                Audit);
             return service.RunAsync(Console, CancellationToken.None);
         }
 
@@ -390,9 +452,24 @@ public sealed class FounderBootstrapServiceTests
             Assert.Empty(Context.BootstrapStates.ToList());
             Assert.Empty(Context.OutboxMessages.ToList());
             Assert.Empty(SecurityEvents.Written);
+            Assert.Empty(Recorded.Rows);
         }
 
         public void Dispose() => Context.Dispose();
+    }
+
+    internal sealed class RecordingBootstrapAudit : IFounderBootstrapAuditParticipant
+    {
+        public List<FounderBootstrapCompanyAuditV1> Rows { get; } = [];
+
+        public bool Refuse { get; init; }
+
+        public Task AppendAsync(IReadOnlyList<FounderBootstrapCompanyAuditV1> records, CancellationToken cancellationToken)
+        {
+            if (Refuse) throw new InvalidOperationException("SENTETIK audit refusal.");
+            Rows.AddRange(records);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class FailClosedSecurityEventWriter : ISecurityEventWriterV1
@@ -426,6 +503,14 @@ internal sealed class FakeFounderBootstrapConsole : IFounderBootstrapConsole
     public string? ReadNewPassword() => Read(Password);
 
     public string? ReadNewPasswordConfirmation() => Read(Confirmation);
+
+    public FounderRecoveryOperatorDeclaration? Declaration { get; set; } = new("SENTETIK-os", "SENTETIK-machine");
+
+    public FounderRecoveryOperatorDeclaration? ReadOperatorDeclaration()
+    {
+        Reads++;
+        return Declaration;
+    }
 
     private string? Read(string? value)
     {

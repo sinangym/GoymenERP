@@ -10,7 +10,23 @@ public sealed class UserAccount
     }
 
     public UserAccount(Guid id, string displayName, string? email)
+        : this(id, displayName, email, createdByUserId: null)
     {
+    }
+
+    /// <summary>
+    /// KIM-D57: <paramref name="createdByUserId"/> is the administrator who created the account from the user screen. It
+    /// is the only company-less fact that lets that administrator see the account before any assignment; seeds and the
+    /// founder bootstrap leave it empty.
+    /// </summary>
+    public UserAccount(Guid id, string displayName, string? email, Guid? createdByUserId)
+    {
+        if (createdByUserId == Guid.Empty)
+        {
+            throw new ArgumentException("Oluşturan kullanıcı kimliği boş olamaz.", nameof(createdByUserId));
+        }
+
+        CreatedByUserId = createdByUserId;
         if (id == Guid.Empty)
         {
             throw new ArgumentException("Kullanıcı kimliği boş olamaz.", nameof(id));
@@ -38,6 +54,9 @@ public sealed class UserAccount
     public DateTimeOffset UpdatedAtUtc { get; private set; }
 
     public long Version { get; private set; }
+
+    /// <summary>KIM-D57: the creating administrator, or <see langword="null"/> (seed, bootstrap, rows before KIM-D57).</summary>
+    public Guid? CreatedByUserId { get; private set; }
 
     public void Deactivate(DateTimeOffset changedAtUtc)
     {

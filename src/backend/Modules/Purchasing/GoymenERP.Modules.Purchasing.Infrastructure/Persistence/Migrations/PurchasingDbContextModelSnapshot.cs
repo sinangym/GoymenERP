@@ -2178,7 +2178,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_PurchaseSupplierReturns_Identity", "[ReturnId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ReturnLineId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [GoodsAcceptanceId] <> '00000000-0000-0000-0000-000000000000' AND [MovementId] <> '00000000-0000-0000-0000-000000000000'");
 
-                            t.HasCheckConstraint("CK_PurchaseSupplierReturns_Lineage", "([SourceLabelId] IS NULL AND [LineageMode] IS NULL) OR ([SourceLabelId] IS NOT NULL AND [SourceLabelId] <> '00000000-0000-0000-0000-000000000000' AND [LineageMode] IN (1, 2))");
+                            t.HasCheckConstraint("CK_PurchaseSupplierReturns_Lineage", "([SourceLabelId] IS NULL AND [LineageMode] IS NULL) OR ([SourceLabelId] IS NOT NULL AND [SourceLabelId] <> '00000000-0000-0000-0000-000000000000' AND [LineageMode] IS NOT NULL AND [LineageMode] IN (1, 2))");
 
                             t.HasCheckConstraint("CK_PurchaseSupplierReturns_LineageParts", "([LineagePartsJson] IS NULL OR ([SourceLabelId] IS NOT NULL AND ISJSON([LineagePartsJson]) = 1)) AND ([PieceCount] IS NULL OR ([SourceLabelId] IS NOT NULL AND [PieceCount] >= 1))");
 
@@ -2186,7 +2186,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_PurchaseSupplierReturns_Text", "LEN([Reason]) > 0 AND LEN([RequestedBy]) > 0 AND LEN([CorrelationId]) > 0");
 
-                            t.HasCheckConstraint("CK_PurchaseSupplierReturns_Values", "[QuantityKg] > 0 AND [UnitCostTryPerKg] > 0 AND [SourceBlock] IN (N'Free', N'Blocked') AND [ReplacementExpected] = 0");
+                            t.HasCheckConstraint("CK_PurchaseSupplierReturns_Values", "[QuantityKg] > 0 AND [UnitCostTryPerKg] > 0 AND [SourceBlock] IN (N'Free', N'Blocked') AND ([ReplacementExpected] = 0 OR ([ExpectedPurchaseOrderVersion] IS NOT NULL AND [UndoQuantity] IS NOT NULL))");
 
                             t.HasCheckConstraint("CK_PurchaseSupplierReturns_Version", "[Version] >= 1");
                         });

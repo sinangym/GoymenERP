@@ -179,8 +179,9 @@ public sealed class InventoryFutureSupplyHostSource(IPurchaseFutureSupplyReadPor
 /// X1 (KLN-D28 (9), SATIS_RISK_SEVK_KAPISI_VE_FASON_FATURA_PLANI_v1 §X1): the host's answer to
 /// <see cref="ISalesOrderFutureAllocationReleaseParticipantV1"/>. Inside the Sales cancellation's own transaction (the same
 /// connection) it takes every sales line lock of the order (ascending), lists each line's ACTIVE future supply allocations
-/// through Inventory's release session, takes every distinct purchase line lock (ascending; F-017 §3.2 order), then releases
-/// each allocation whole with the version it just read, reason <see cref="InventoryFutureAllocationReleaseReasonsV1.SalesLineCancelled"/>
+/// through Inventory's release session, takes every distinct purchase line lock (ascending; F-017 §3.2 order), lists them AGAIN
+/// under every lock (a purchase-side release may have ended one in between), then releases each allocation whole with the version
+/// it read under the locks, reason <see cref="InventoryFutureAllocationReleaseReasonsV1.SalesLineCancelled"/>
 /// and origin <see cref="InventoryFutureAllocationOriginsV1.Sales"/>, under the Sales command's own envelope (actor, permission,
 /// correlation, causation, Idempotency-Key — Inventory's audit and outbox carry them). Inventory writes only its own tables;
 /// Sales writes only its own. Nothing is committed here: the Sales store commits or rolls back both.
@@ -244,43 +245,21 @@ public sealed class SalesFutureAllocationReleaseHostParticipant(
 
         await using (session)
         {
-            var active = new List<InventoryFutureAllocationViewV1>();
-            try
-            {
-                foreach (var lineId in lineIds)
-                {
-                    foreach (var view in await session.ListActiveByDemandLineAsync(lineId, cancellationToken))
-                    {
-                        if (view is null || view.SalesOrderLineId != lineId || view.SalesOrderId != request.OrderId
-                            || view.PurchaseOrderLineId == Guid.Empty || view.AllocationId == Guid.Empty)
-                        {
-                            // Another order's or a malformed answer: never released on its word.
-                            throw Unavailable();
-                        }
-
-                        active.Add(view);
-                    }
-                }
-            }
-            catch (SalesFutureAllocationReleaseException)
-            {
-                throw;
-            }
-            catch (Exception exception) when (!IsCallerCancellation(exception, cancellationToken))
-            {
-                throw NonTerminal(exception);
-            }
-
-            if (active.Count == 0)
+            // A first read only finds the purchase lines to lock: the sales line locks keep any new allocation of these lines out,
+            // but a purchase-side release (it takes the purchase line lock only) may still change or end one of them until the
+            // purchase line locks are held. The views released below are therefore read AGAIN under every lock (K3-A P3).
+            var candidates = await ListActiveAsync(session, lineIds, request.OrderId, cancellationToken);
+            if (candidates.Count == 0)
             {
                 return;
             }
 
             // Then every distinct purchase line (ascending), before the first release.
+            var lockedPurchaseLines = candidates.Select(view => view.PurchaseOrderLineId).Distinct().Order().ToArray();
             try
             {
                 var purchaseLocks = purchaseLineLocks.Bind(connection, dbTransaction);
-                foreach (var purchaseLineId in active.Select(view => view.PurchaseOrderLineId).Distinct().Order())
+                foreach (var purchaseLineId in lockedPurchaseLines)
                 {
                     await purchaseLocks.AcquireAsync(purchaseLineId, cancellationToken);
                 }
@@ -292,6 +271,22 @@ public sealed class SalesFutureAllocationReleaseHostParticipant(
             catch (Exception exception) when (!IsCallerCancellation(exception, cancellationToken))
             {
                 throw Unavailable(exception);
+            }
+
+            // The answer under every lock is the one released: what a concurrent purchase-side release already ended is not
+            // released again (no stale version reaches the owner, so no terminal 409 is recorded for a race). A view on a purchase
+            // line that is not locked cannot appear while the sales line locks are held; if it does, the read is not trusted and
+            // the retry asks again (not recorded).
+            var active = await ListActiveAsync(session, lineIds, request.OrderId, cancellationToken);
+            if (active.Any(view => Array.BinarySearch(lockedPurchaseLines, view.PurchaseOrderLineId) < 0))
+            {
+                throw new SalesFutureAllocationReleaseException(ConflictStatus, InventoryFutureAllocationCodesV1.ConcurrentChange,
+                    terminal: false);
+            }
+
+            if (active.Count == 0)
+            {
+                return;
             }
 
             var envelope = request.Envelope;
@@ -331,6 +326,40 @@ public sealed class SalesFutureAllocationReleaseHostParticipant(
                 throw firstTerminal;
             }
         }
+    }
+
+    /// <summary>Every ACTIVE allocation of the order's lines, checked against the order and the line before it is trusted.</summary>
+    private static async Task<List<InventoryFutureAllocationViewV1>> ListActiveAsync(IInventoryFutureAllocationReleaseSessionV1 session,
+        IReadOnlyList<Guid> lineIds, Guid orderId, CancellationToken cancellationToken)
+    {
+        var active = new List<InventoryFutureAllocationViewV1>();
+        try
+        {
+            foreach (var lineId in lineIds)
+            {
+                foreach (var view in await session.ListActiveByDemandLineAsync(lineId, cancellationToken))
+                {
+                    if (view is null || view.SalesOrderLineId != lineId || view.SalesOrderId != orderId
+                        || view.PurchaseOrderLineId == Guid.Empty || view.AllocationId == Guid.Empty)
+                    {
+                        // Another order's or a malformed answer: never released on its word.
+                        throw Unavailable();
+                    }
+
+                    active.Add(view);
+                }
+            }
+        }
+        catch (SalesFutureAllocationReleaseException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (!IsCallerCancellation(exception, cancellationToken))
+        {
+            throw NonTerminal(exception);
+        }
+
+        return active;
     }
 
     /// <summary>The owner's refusals that are the Sales key's recorded answer (X1); every other refusal is retried.</summary>

@@ -423,6 +423,29 @@ public sealed class InventoryPurchaseReceiptCostHostTests
         Assert.Single(world.Product.Requests);
     }
 
+    [Fact]
+    public async Task SAT_D443_a_weighed_metre_receipt_is_refused_and_never_costed_from_its_weighed_kilograms()
+    {
+        // SAT-D443: metre (a fractional commercial unit) is not opened in this train; with the weighed switch on, a metre-priced
+        // receipt is neither divided by its weighed kilograms nor silently sent down the theoretical-kg path: it has no cost.
+        var world = new World(price: 250m, kgPerPriceUnit: 12.345m).Weighed("100", "1250.4")
+            .PricedIn(SettingsUnitIdentitiesV1.Metre, ProductPhysicalUnitKindV1.Metre);
+
+        AssertUnavailable(await world.Host(weighedKilogramCost: true).ReadAsync(Selection), "purchase_receipt_weighed_unit_not_piece");
+        AssertUnavailable(await world.ProductionHost().ReadAsync(Selection), "purchase_receipt_weighed_unit_not_piece");
+        Assert.Empty(world.Product.Requests);
+    }
+
+    [Fact]
+    public async Task SAT_D443_a_weighed_receipt_in_any_unit_other_than_the_piece_or_the_kilogram_is_refused()
+    {
+        var world = new World(price: 250m, kgPerPriceUnit: 12.345m).Weighed("100", "1250.4")
+            .PricedIn(PriceUnitId, ProductPhysicalUnitKindV1.Piece);
+
+        AssertUnavailable(await world.Host(weighedKilogramCost: true).ReadAsync(Selection), "purchase_receipt_weighed_unit_not_piece");
+        Assert.Empty(world.Product.Requests);
+    }
+
     private static void AssertUnavailable(InventoryPurchaseReceiptCostV1 result, string reason)
     {
         Assert.Equal((CompanyId, AcceptanceId, OrderId, LineId),
@@ -436,11 +459,12 @@ public sealed class InventoryPurchaseReceiptCostHostTests
     }
 
     private static PurchaseReceiptCostProofV1 PurchaseProof(decimal price, Guid currency, bool invoiceRecorded = false,
-        Guid? companyId = null)
+        Guid? companyId = null, Guid? priceUnitId = null)
     {
         var scopedCompany = companyId ?? CompanyId;
         var code = currency == Lira ? "TRY" : currency == Eur ? "EUR" : "USD";
-        var recorded = PurchaseOrderLineCostPriceV1.Of(LineId, ProductId, PriceUnitId, PriceUnitId,
+        var unit = priceUnitId ?? PriceUnitId;
+        var recorded = PurchaseOrderLineCostPriceV1.Of(LineId, ProductId, unit, unit,
             priceUnitIsKilogram: false, Money.Of(price, currency, 4), code, null, null, null, null);
         var invoice = invoiceRecorded
             ? PurchaseInvoiceCostRateAnswerV1.Rated(scopedCompany, AcceptanceId, OrderId, LineId, currency, code,
@@ -453,15 +477,32 @@ public sealed class InventoryPurchaseReceiptCostHostTests
 
     private sealed class World
     {
+        private readonly decimal price;
+        private readonly decimal kgPerPriceUnit;
+        private readonly Guid currency;
+        private readonly bool invoiceRecorded;
+
         public World(decimal price = 6m, decimal kgPerPriceUnit = 2m, decimal usdSellingRate = 4m,
             Guid? currency = null, bool invoiceRecorded = false)
         {
-            Owner.Answer = PurchaseProof(price, currency ?? Lira, invoiceRecorded);
-            Product.Answer = new(ProductPurchaseUnitConversionOutcomeV1.Available, kgPerPriceUnit, kgPerPriceUnit, 0m,
-                new(CompanyId, ProductId, "8", PriceUnitId, UnitConversionClassV1.FormulaBound,
-                    [new(PriceUnitId, ProductPhysicalUnitKindV1.Metre, kgPerPriceUnit, "SENTETIK-unit-v1", ProfileId, 1)],
-                    "SENTETIK-formula-v1", 1, null, null, ProfileId, 1, null));
+            this.price = price;
+            this.kgPerPriceUnit = kgPerPriceUnit;
+            this.currency = currency ?? Lira;
+            this.invoiceRecorded = invoiceRecorded;
+            PricedIn(PriceUnitId, ProductPhysicalUnitKindV1.Metre);
             Rates.SellingRate = usdSellingRate;
+        }
+
+        /// <summary>The line's price unit, the same in the Purchasing price and in the Product card's conversion.</summary>
+        public World PricedIn(Guid unitId, ProductPhysicalUnitKindV1 kind)
+        {
+            var proof = PurchaseProof(price, currency, invoiceRecorded, priceUnitId: unitId);
+            Owner.Answer = Owner.Answer is null ? proof : Owner.Answer with { Price = proof.Price };
+            Product.Answer = new(ProductPurchaseUnitConversionOutcomeV1.Available, kgPerPriceUnit, kgPerPriceUnit, 0m,
+                new(CompanyId, ProductId, "8", unitId, UnitConversionClassV1.FormulaBound,
+                    [new(unitId, kind, kgPerPriceUnit, "SENTETIK-unit-v1", ProfileId, 1)],
+                    "SENTETIK-formula-v1", 1, null, null, ProfileId, 1, null));
+            return this;
         }
 
         public MutableCompany Company { get; } = new();
@@ -479,9 +520,11 @@ public sealed class InventoryPurchaseReceiptCostHostTests
         /// <summary>The production composition: no parameter, so the adapter reads ALS-D119's switch.</summary>
         public PurchasingOwnerInventoryReceiptCostSource ProductionHost() => new(Owner, Product, Rates, Company, User);
 
-        /// <summary>Golden R1 shape: a piece line's receipt with its accepted pieces and weighed kilograms.</summary>
+        /// <summary>Golden R1 shape: a PIECE line's receipt (SAT-D443: only the piece unit is costed from weighed kilograms)
+        /// with its accepted pieces and weighed kilograms.</summary>
         public World Weighed(string acceptedPieces, string? measuredKg)
         {
+            PricedIn(SettingsUnitIdentitiesV1.Piece, ProductPhysicalUnitKindV1.Piece);
             Owner.Answer = Owner.Answer! with { AcceptedQuantity = acceptedPieces, MeasuredQuantityKg = measuredKg };
             return this;
         }

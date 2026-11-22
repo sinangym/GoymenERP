@@ -13,6 +13,7 @@ public sealed class AccountingPermissionRegistrationTests
     [InlineData(AccountingPermissionManifestV1.PeriodsRead, ErpPermissions.AccountingPeriodsRead)]
     [InlineData(AccountingPermissionManifestV1.PeriodsPropose, ErpPermissions.AccountingPeriodsPropose)]
     [InlineData(AccountingPermissionManifestV1.PeriodsApprove, ErpPermissions.AccountingPeriodsApprove)]
+    [InlineData(AccountingPermissionManifestV1.PeriodsReopen, ErpPermissions.AccountingPeriodsReopen)]
     [InlineData(AccountingPermissionManifestV1.PeriodsClose, ErpPermissions.AccountingPeriodsClose)]
     [InlineData(AccountingPermissionManifestV1.JournalsRead, ErpPermissions.AccountingJournalsRead)]
     [InlineData(AccountingPermissionManifestV1.PostingQueuesRead, ErpPermissions.AccountingPostingQueuesRead)]

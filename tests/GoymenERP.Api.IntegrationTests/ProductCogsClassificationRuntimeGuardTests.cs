@@ -6,6 +6,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
+using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
@@ -19,6 +20,23 @@ public sealed class ProductCogsClassificationRuntimeGuardTests
 {
     private static readonly Guid Company=Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly Guid Actor=Guid.Parse("22222222-2222-4222-8222-222222222222");
+    [Fact]
+    public void A_refused_attempt_is_audited_with_the_role_the_global_authority_requires_never_a_role_name_typed_in_the_host()
+    {
+        // K3-A P3 (AGENTS.md: no role names): the refusal audit reads Identity's required system role — the one the SQL authority
+        // provider grants op 7 on — so the audited value stays exactly what it was while its source is the owner's single constant.
+        Assert.Equal(new[]{ProductMasterAssignment.RequiredRoleCode},ProductCogsClassificationRuntime.RefusalAuditRoleCodes);
+        Assert.Throws<NotSupportedException>(()=>((IList<string>)ProductCogsClassificationRuntime.RefusalAuditRoleCodes).Add("SENTETIK"));
+        var source=File.ReadAllText(Path.Combine(RepositoryRoot(),"src","backend","GoymenERP.Api","ProductRuntime",
+            "ProductCogsClassificationRuntime.cs"));
+        Assert.DoesNotContain("\""+ProductMasterAssignment.RequiredRoleCode+"\"",source,StringComparison.Ordinal);
+    }
+    private static string RepositoryRoot()
+    {
+        for(var directory=new DirectoryInfo(AppContext.BaseDirectory);directory is not null;directory=directory.Parent)
+            if(File.Exists(Path.Combine(directory.FullName,"AGENTS.md"))) return directory.FullName;
+        throw new InvalidOperationException("SENTETIK repository root not found.");
+    }
     [Theory]
     [InlineData("denied")] [InlineData("read")] [InlineData("draft")]
     [InlineData("actor")] [InlineData("company")]

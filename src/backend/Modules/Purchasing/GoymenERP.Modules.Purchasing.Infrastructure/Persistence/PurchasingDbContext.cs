@@ -822,9 +822,18 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
         "([LineagePartsJson] IS NULL OR ([SourceLabelId] IS NOT NULL AND ISJSON([LineagePartsJson]) = 1)) "
         + "AND ([PieceCount] IS NULL OR ([SourceLabelId] IS NOT NULL AND [PieceCount] >= 1))";
 
+    /// <summary>
+    /// ALS-D91: a supplier return the user marks "yerine yenisi gelecek" (replacement expected) reopens the quantity on the
+    /// order, so it exists only on the receipt-adjusting path (an expected order version and an undo quantity — the service and
+    /// the store refuse it otherwise). The earlier "[ReplacementExpected] = 0" blocked that decided path at SQL (K3-B P1).
+    /// </summary>
+    internal const string SupplierReturnValuesCheck =
+        "[QuantityKg] > 0 AND [UnitCostTryPerKg] > 0 AND [SourceBlock] IN (N'Free', N'Blocked') "
+        + "AND ([ReplacementExpected] = 0 OR ([ExpectedPurchaseOrderVersion] IS NOT NULL AND [UndoQuantity] IS NOT NULL))";
+
     internal const string SupplierReturnLineageCheck =
         "([SourceLabelId] IS NULL AND [LineageMode] IS NULL) "
-        + "OR ([SourceLabelId] IS NOT NULL AND [SourceLabelId] <> " + EmptyGuid + " AND [LineageMode] IN (1, 2))";
+        + "OR ([SourceLabelId] IS NOT NULL AND [SourceLabelId] <> " + EmptyGuid + " AND [LineageMode] IS NOT NULL AND [LineageMode] IN (1, 2))";
 
     private void ConfigureSupplierReturns(ModelBuilder modelBuilder)
     {
@@ -836,8 +845,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
                 + $"AND [LineId] <> {EmptyGuid} AND [GoodsAcceptanceId] <> {EmptyGuid} AND [MovementId] <> {EmptyGuid}");
             table.HasCheckConstraint("CK_PurchaseSupplierReturns_Status", "[Status] IN (1, 2, 3) AND [CostBasis] IN (1, 2)");
             table.HasCheckConstraint("CK_PurchaseSupplierReturns_Version", "[Version] >= 1");
-            table.HasCheckConstraint("CK_PurchaseSupplierReturns_Values",
-                "[QuantityKg] > 0 AND [UnitCostTryPerKg] > 0 AND [SourceBlock] IN (N'Free', N'Blocked') AND [ReplacementExpected] = 0");
+            table.HasCheckConstraint("CK_PurchaseSupplierReturns_Values", SupplierReturnValuesCheck);
             table.HasCheckConstraint("CK_PurchaseSupplierReturns_Text",
                 "LEN([Reason]) > 0 AND LEN([RequestedBy]) > 0 AND LEN([CorrelationId]) > 0");
             table.HasCheckConstraint("CK_PurchaseSupplierReturns_Decision", SupplierReturnDecisionCheck);

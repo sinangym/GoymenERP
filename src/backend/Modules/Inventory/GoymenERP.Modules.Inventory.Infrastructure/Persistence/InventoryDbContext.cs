@@ -131,7 +131,7 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
     /// </summary>
     internal const string TransferReceiptPieceCountCheck =
         "([DispatchedPieceCount] IS NULL AND [ReceivedPieceCount] IS NULL AND [ShortagePieceCount] IS NULL "
-        + "AND [OveragePieceCount] IS NULL) OR ([DispatchedPieceCount] > 0 AND [ReceivedPieceCount] > 0 "
+        + "AND [OveragePieceCount] IS NULL) OR ([DispatchedPieceCount] IS NOT NULL AND [ReceivedPieceCount] IS NOT NULL AND [ShortagePieceCount] IS NOT NULL AND [OveragePieceCount] IS NOT NULL AND [DispatchedPieceCount] > 0 AND [ReceivedPieceCount] > 0 "
         + "AND [ShortagePieceCount] >= 0 AND [OveragePieceCount] >= 0 "
         + "AND ([ShortagePieceCount] = 0 OR [OveragePieceCount] = 0) "
         + "AND [ReceivedPieceCount] + [ShortagePieceCount] - [OveragePieceCount] = [DispatchedPieceCount] "
@@ -146,7 +146,7 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
     /// scrap leaves at least one.
     /// </summary>
     internal const string StockScrapPieceCountCheck =
-        "([BookPieceCount] IS NULL AND [ScrapPieceCount] IS NULL) OR ([BookPieceCount] > 0 AND [ScrapPieceCount] >= 0 "
+        "([BookPieceCount] IS NULL AND [ScrapPieceCount] IS NULL) OR ([BookPieceCount] IS NOT NULL AND [ScrapPieceCount] IS NOT NULL AND [BookPieceCount] > 0 AND [ScrapPieceCount] >= 0 "
         + "AND (([ScrapPieceCount] = [BookPieceCount] AND [ScrapKg] = [BookKg]) "
         + "OR ([ScrapPieceCount] < [BookPieceCount] AND [ScrapKg] < [BookKg])))";
 

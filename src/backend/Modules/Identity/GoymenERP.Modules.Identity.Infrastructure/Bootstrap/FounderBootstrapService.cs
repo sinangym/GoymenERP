@@ -1,6 +1,7 @@
 using System.Data;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Observability;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Security.Events;
 using GoymenERP.Modules.Identity.Application.Contracts;
@@ -25,8 +26,9 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Bootstrap;
 /// per company, the <c>IdentityBootstrapState</c> marker and the <c>identity.founder.bootstrapped.v1</c> outbox
 /// message. A second run fails on the marker's singleton key even when two runs race. The fail-closed
 /// <c>identity.permission.changed</c> security events are written before the commit; a refused event rolls the
-/// transaction back. Every refusal writes nothing. The Audit row needs a platform Audit contract change (System
-/// actor + operator declaration, spec) and is not written here (reported).
+/// transaction back. Every refusal writes nothing. One typed company Audit row per bootstrapped company (actor
+/// <c>System</c> + operator declaration, spec ID-2) is written through the Audit owner in the same transaction before
+/// the commit; a refused Audit row rolls the founder back (K3-B finding 3).
 /// </summary>
 internal sealed class FounderBootstrapService(
     IdentityDbContext dbContext,
@@ -35,7 +37,8 @@ internal sealed class FounderBootstrapService(
     ICorrelationContext correlationContext,
     TimeProvider timeProvider,
     IOptions<LocalAccountOptions> localAccountOptions,
-    IOptions<IdentityBootstrapOptions> bootstrapOptions)
+    IOptions<IdentityBootstrapOptions> bootstrapOptions,
+    IFounderBootstrapAuditParticipant bootstrapAudit)
     : IFounderBootstrapService
 {
     /// <summary>The system actor token of the command (no user exists before it; never an OS user or machine name).</summary>
@@ -73,6 +76,13 @@ internal sealed class FounderBootstrapService(
             return FounderBootstrapResult.Of(refusal);
         }
 
+        var declaration = console.ReadOperatorDeclaration();
+        if (declaration is null || string.IsNullOrWhiteSpace(declaration.OperatingSystemUser) || declaration.OperatingSystemUser.Trim().Length > 256
+            || string.IsNullOrWhiteSpace(declaration.MachineName) || declaration.MachineName.Trim().Length > 256)
+        {
+            return FounderBootstrapResult.Of(FounderBootstrapStatus.OperatorDeclarationMissing);
+        }
+
         var userName = console.ReadUserName()?.Trim();
         var normalizedUserName = LocalUserName.TryNormalize(userName);
         if (normalizedUserName is null)
@@ -107,7 +117,7 @@ internal sealed class FounderBootstrapService(
         }
 
         var passwordHash = passwordHasher.Hash(password);
-        return await WriteAsync(userName!, displayName, passwordHash, adminRoleCode, cancellationToken);
+        return await WriteAsync(userName!, displayName, passwordHash, adminRoleCode, declaration, cancellationToken);
     }
 
     private async Task<Precondition> CheckPreconditionsAsync(
@@ -166,6 +176,7 @@ internal sealed class FounderBootstrapService(
         string displayName,
         string passwordHash,
         string adminRoleCode,
+        FounderRecoveryOperatorDeclaration declaration,
         CancellationToken cancellationToken)
     {
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
@@ -224,6 +235,7 @@ internal sealed class FounderBootstrapService(
             userId,
             LocalAccountIdentity.Issuer,
             LocalAccountIdentity.SubjectOf(userId)));
+        var adminAssignmentIds = new Dictionary<Guid, Guid>();
         foreach (var companyId in companyIds)
         {
             // KIM-D5 FounderDirect: the founder's first Admin needs no second approval; indefinite (KIM-D18).
@@ -237,6 +249,7 @@ internal sealed class FounderBootstrapService(
                 approvedByUserId: null);
             assignment.AddScope(AccessScopeType.Company, companyId);
             dbContext.RoleAssignments.Add(assignment);
+            adminAssignmentIds.Add(companyId, assignment.Id);
         }
 
         dbContext.BootstrapStates.Add(new IdentityBootstrapState(userId, nowUtc));
@@ -262,6 +275,20 @@ internal sealed class FounderBootstrapService(
         {
             dbContext.ChangeTracker.Clear();
             return await RollbackAsync(transaction, FounderBootstrapStatus.AlreadyBootstrapped, cancellationToken);
+        }
+
+        try
+        {
+            // One run, one key: the rows of every company share it, and nothing replays (a second run hits the marker).
+            var idempotencyKey = Guid.NewGuid().ToString("N");
+            await bootstrapAudit.AppendAsync(companyIds.Select(companyId => new FounderBootstrapCompanyAuditV1(companyId, userId,
+                adminAssignmentIds[companyId], new FounderRecoveryOperatorDeclarationV1(declaration.OperatingSystemUser.Trim(), declaration.MachineName.Trim()),
+                companyIds, nowUtc, correlationContext.CorrelationId, correlationContext.CausationId, idempotencyKey)).ToArray(), cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            dbContext.ChangeTracker.Clear();
+            return await RollbackAsync(transaction, FounderBootstrapStatus.AuditRefused, cancellationToken);
         }
 
         foreach (var companyId in companyIds)

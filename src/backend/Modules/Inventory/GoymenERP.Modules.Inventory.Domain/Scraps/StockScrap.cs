@@ -96,6 +96,11 @@ public sealed class StockScrap
     /// <summary><c>book − scrap</c>: what stays on the piece; zero when the whole piece is scrapped.</summary>
     public Kilograms Remaining => Kilograms.Of(Book.Value - Scrap.Value);
 
+    /// <summary>KLN-D119: the pieces left at the position after the scrap; null when the position does not count pieces.</summary>
+    public PieceCount? RemainingPieces => BookPieces is { } book && ScrapPieces is { } scrap
+        ? PieceCount.Of(book.Value - scrap.Value)
+        : null;
+
     /// <summary>The one movement that posts this scrap: a single Out line on the scrapped position, exactly the scrap.</summary>
     public StockMovement WriteOff(Guid movementId, DateTimeOffset occurredAtUtc) =>
         new(movementId, CompanyId, StockMovementKind.Scrap, occurredAtUtc,

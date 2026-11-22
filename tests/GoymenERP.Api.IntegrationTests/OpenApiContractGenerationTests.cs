@@ -10906,6 +10906,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["InventoryTransferLineViewV1"] = ObjectSchema(["lineId", "labelId", "expectedLabelVersion", "plannedKg", "actualShippedKg", "differenceKg", "status"],
                 ("actualShippedKg", "type:null|string"),
                 ("differenceKg", "type:null|string"),
+                ("dispatchedPieceCount", "type:integer|null|string;format:int32"),
                 ("expectedLabelVersion", "type:string"),
                 ("labelId", "type:string;format:uuid"),
                 ("lineId", "type:string;format:uuid"),
