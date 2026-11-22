@@ -19,6 +19,7 @@ using GoymenERP.Api.Security;
 using GoymenERP.Api.Shell;
 using GoymenERP.Api.Startup;
 using GoymenERP.Api.WorkRuntime;
+using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.OpenApi;
@@ -206,6 +207,17 @@ builder.Services.AddScoped<NativeApprovalQueueReadQueryV1>();
 // W1-A (AI-D31/AI-D32, YOL-D18): the Work inbox reads the owners' IWorkInboxSourceV1 ports (registered by each module)
 // and records only Work's own measurement events; it decides nothing.
 builder.Services.AddWorkApprovalInboxMeasurementsV1();
+// WP1 (D5): the four native D-05 kinds are inbox sources too — one box; the duration class comes from Work's versioned rule
+// table (D3, YOL-D18 defaults) and business days are counted in the P7 / SAT-D10 business time zone (D6).
+builder.Services.AddWorkApprovalRulesV1();
+builder.Services.AddScoped<IWorkInboxSourceV1>(provider => new NativeApprovalWorkInboxSourceV1(
+    ActivatorUtilities.CreateInstance<FinanceInvoiceImportPendingApprovalAdapterV1>(provider)));
+builder.Services.AddScoped<IWorkInboxSourceV1>(provider => new NativeApprovalWorkInboxSourceV1(
+    ActivatorUtilities.CreateInstance<InventoryStockCountPendingApprovalAdapterV1>(provider)));
+builder.Services.AddScoped<IWorkInboxSourceV1>(provider => new NativeApprovalWorkInboxSourceV1(
+    ActivatorUtilities.CreateInstance<InventoryStockScrapPendingApprovalAdapterV1>(provider)));
+builder.Services.AddScoped<IWorkInboxSourceV1>(provider => new NativeApprovalWorkInboxSourceV1(
+    ActivatorUtilities.CreateInstance<SalesOrderDraftPendingApprovalAdapterV1>(provider)));
 builder.Services.AddScoped<WorkInboxReadQueryV1>();
 builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();
 // B-17: the version bump with the account's roles (dual role) and supplier IBAN view; V1 stays for its consumers.
@@ -624,6 +636,7 @@ app.MapFinanceOpenItemReadEndpoints();
 app.MapWorkApprovalEndpoints();
 app.MapWorkQueueEndpoints();
 app.MapWorkInboxEndpoints();
+app.MapWorkApprovalRuleEndpoints();
 app.MapWorkNotificationEndpoints();
 app.MapWorkCollaborationEndpoints();
 app.MapSalesEndpoints();

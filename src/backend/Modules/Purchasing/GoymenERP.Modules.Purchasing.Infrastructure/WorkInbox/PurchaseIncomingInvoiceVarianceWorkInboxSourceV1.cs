@@ -56,7 +56,6 @@ internal sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1(
 
     public string ApproverPermission => PurchaseIncomingInvoicePermissionNamesV1.ApproveVariance;
 
-    public WorkApprovalDurationClassV1 DurationClass => WorkApprovalDurationClassV1.BusinessDays;
 
     public async Task<WorkInboxSourceResultV1> ListPendingAsync(
         WorkInboxSourceContextV1 context,

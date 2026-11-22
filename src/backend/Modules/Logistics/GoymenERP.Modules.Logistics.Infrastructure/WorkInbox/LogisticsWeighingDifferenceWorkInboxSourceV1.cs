@@ -64,7 +64,6 @@ internal sealed class LogisticsWeighingDifferenceWorkInboxSourceV1 : IWorkInboxS
 
     public string ApproverPermission => LogisticsPermissionManifestV1.WeighingDifferencesApprove;
 
-    public WorkApprovalDurationClassV1 DurationClass => WorkApprovalDurationClassV1.Hours;
 
     public async Task<WorkInboxSourceResultV1> ListPendingAsync(
         WorkInboxSourceContextV1 context,

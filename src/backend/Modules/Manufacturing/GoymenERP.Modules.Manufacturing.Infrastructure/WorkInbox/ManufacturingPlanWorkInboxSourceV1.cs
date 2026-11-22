@@ -62,7 +62,6 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkInboxSourceV1
 
     public string ApproverPermission => ManufacturingPermissionManifestV1.PlansApprove;
 
-    public WorkApprovalDurationClassV1 DurationClass => WorkApprovalDurationClassV1.Hours;
 
     public async Task<WorkInboxSourceResultV1> ListPendingAsync(
         WorkInboxSourceContextV1 context,

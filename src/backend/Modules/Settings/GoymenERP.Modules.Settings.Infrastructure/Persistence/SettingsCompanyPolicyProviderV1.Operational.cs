@@ -38,8 +38,10 @@ public sealed partial class SettingsCompanyPolicyProviderV1 : ISettingsManufactu
         var days = await LatestAsync(companyId, CompanyPolicyKeysV1.WorkApprovalDurationBusinessDays, cancellationToken);
         RequireAccess(companyId, cancellationToken);
         if (actor != _currentUser.UserId) throw new SettingsPrerequisiteException(CompanyPolicyProblemCodesV1.AccessDenied);
-        // YOL-D18: no record is "not defined" (null), never a default; the reader shows the duration as undefined.
-        return new(companyId, DurationValue(hours), hours?.Version ?? 0, DurationValue(days), days?.Version ?? 0);
+        // YOL-D18 (WP1 D3): no record is the decided default as version 0 (4 hours / 2 business days), not a store-failure
+        // fallback; a recorded version replaces it.
+        return new(companyId, DurationValue(hours) ?? SettingsWorkApprovalDurationLimitsV1.DecidedDefaultHours, hours?.Version ?? 0,
+            DurationValue(days) ?? SettingsWorkApprovalDurationLimitsV1.DecidedDefaultBusinessDays, days?.Version ?? 0);
     }
     public async Task<SettingsWorkHolidayCalendarsV1> GetWorkHolidayCalendarsAsync(Guid companyId, int fromYear, int toYear,
         CancellationToken cancellationToken = default)

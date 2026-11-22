@@ -29,8 +29,11 @@ public interface ISettingsNotificationRetentionPolicyProviderV1
     Task<SettingsNotificationRetentionPolicyV1> GetNotificationRetentionAsync(Guid companyId, CancellationToken cancellationToken = default);
 }
 /// <summary>
-/// YOL-D18 (W1-A): the lengths of the two approval duration classes. A null length is "not recorded": the reader shows
-/// "süre tanımlı değil" and never assumes a default (fail closed). Each length carries its own version text.
+/// YOL-D18 (W1-A, WP1 D3): the lengths of the two approval duration classes. Until the company records a version, the decided
+/// YOL-D18 values apply as version 0 (<see cref="SettingsWorkApprovalDurationLimitsV1.DecidedDefaultHours"/>,
+/// <see cref="SettingsWorkApprovalDurationLimitsV1.DecidedDefaultBusinessDays"/>); a recorded version replaces them. A null
+/// length is reserved for a reader that cannot name a length: it shows "süre tanımlı değil" and assumes nothing. Each length
+/// carries its own version text.
 /// </summary>
 public sealed record SettingsWorkApprovalDurationPolicyV1(Guid CompanyId, int? Hours, long HoursVersion, int? BusinessDays,
     long BusinessDaysVersion)
@@ -49,6 +52,10 @@ public static class SettingsWorkApprovalDurationLimitsV1
     public const int MaximumHours = 168;
     /// <summary>Input range only; the decided values live in recorded versions.</summary>
     public const int MaximumBusinessDays = 30;
+    /// <summary>YOL-D18 (D3): the decided hour-scale length (4 hours), in force as version 0 until a version is recorded.</summary>
+    public const int DecidedDefaultHours = 4;
+    /// <summary>YOL-D18 / 125 (D3): the decided business-day length (2 business days), in force as version 0 until recorded.</summary>
+    public const int DecidedDefaultBusinessDays = 2;
 }
 /// <summary>YOL-D22: a listed day is an official holiday or an eve (arife); both are deducted from business days.</summary>
 public enum WorkHolidayKindV1

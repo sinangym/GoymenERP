@@ -6217,6 +6217,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // W1-A; K3 review pending. Down refuses (52084, Work range, used by no other migration) while work.approval-duration-* policy versions or holiday calendar versions exist; use a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261122181548_AddWorkApprovalDurationPolicies.cs"] =
                     new("c2be1e8e212f794bb5a0c4ebdd3f98dcc805a559caa98c1a2fdc842ea0b53d18", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // WP1; K3 review pending. Down refuses (52100, WP1 range, used by no other migration) while Work approval rule versions exist; use a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261122201654_AddWorkApprovalRuleVersions.cs"] =
+                    new("a2a8e707b656198d8ed6c3c4d8f5c7858bfff957e702040d45731ed42df57542", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
             };
 
     private static readonly HashSet<string> ReviewedProjectSdks =

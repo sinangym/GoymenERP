@@ -37,6 +37,7 @@ public sealed partial class WorkDbContext(
         ConfigureNotifications(modelBuilder);
         ConfigureApprovalInbox(modelBuilder);
         ConfigureCollaboration(modelBuilder);
+        ConfigureApprovalRules(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -232,7 +233,7 @@ public sealed partial class WorkDbContext(
             }
 
             if (entry.Entity is WorkObservationInboxRow or WorkOutboxRow or WorkNotificationRow or WorkNotificationInboxRow or WorkNotificationPassivationRow
-                    or WorkApprovalInboxEventRow
+                    or WorkApprovalInboxEventRow or WorkApprovalRuleVersionRow
                 && entry.State != EntityState.Added)
             {
                 throw new InvalidOperationException("Work inbox and outbox records are append-only.");

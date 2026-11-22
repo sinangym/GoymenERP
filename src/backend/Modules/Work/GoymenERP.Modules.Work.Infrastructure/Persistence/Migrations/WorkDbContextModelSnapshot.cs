@@ -254,6 +254,72 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkApprovalRuleVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ApproverPermission")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("DurationClass")
+                        .HasColumnType("int");
+
+                    b.Property<string>("EscalationPermission")
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(160)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("RecordedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "Kind", "Version")
+                        .IsUnique()
+                        .HasDatabaseName("UX_WorkApprovalRuleVersions_KindVersion");
+
+                    b.ToTable("ApprovalRuleVersions", "work", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkApprovalRuleVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [RecordedByUserId] <> '00000000-0000-0000-0000-000000000000' AND LEN([Kind]) > 0 AND [Version] >= 1 AND [DurationClass] IN (1, 2) AND LEN([ApproverPermission]) > 0 AND ([EscalationPermission] IS NULL OR LEN([EscalationPermission]) > 0) AND LEN([Reason]) > 0 AND LEN([CorrelationId]) > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkCollaborationAttemptRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1087,6 +1153,15 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkApprovalInboxEventRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Work.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkApprovalRuleVersionRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Work.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()
