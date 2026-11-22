@@ -30,6 +30,8 @@ import {
   type AiToolResult,
 } from './aiContract'
 import { AI_DATA_CLASS_LABEL, AI_TEXT } from './aiText'
+import { DocumentDraftPanel } from './DocumentDraftPanel'
+import { DRAFT_TEXT } from './documentDraftText'
 import styles from './AiPanel.module.css'
 
 export const AI_PANEL_ID = 'ai-panel'
@@ -146,8 +148,33 @@ function AiPanelBody({ namespace, companyId }: { readonly namespace: string; rea
     return <StateBlock state={classifyOutcome(outcome)} subject={AI_TEXT.stateSubject} onRetry={() => void read.refetch()} />
   }
   const notice = noticeFor(outcome.data)
-  if (notice !== null) return <PanelNotice kind={notice} />
-  return <AskForm companyId={companyId} tools={outcome.data.tools} />
+  // A closed, unready or forbidden panel shows only its notice. A usable panel without read tools still offers the
+  // document draft section (WP-B3); the server checks that section's own permissions on every request.
+  if (notice !== null && notice !== 'no-tools') return <PanelNotice kind={notice} />
+  return <PanelSections companyId={companyId} tools={outcome.data.tools} />
+}
+
+function PanelSections({ companyId, tools }: { readonly companyId: string; readonly tools: readonly AiToolCapability[] }) {
+  const [section, setSection] = useState<'ask' | 'draft'>('ask')
+  return (
+    <>
+      <div role="group" aria-label={DRAFT_TEXT.tabsLabel} className={styles.form}>
+        <button type="button" aria-pressed={section === 'ask'} onClick={() => setSection('ask')}>
+          {DRAFT_TEXT.tabAsk}
+        </button>
+        <button type="button" aria-pressed={section === 'draft'} onClick={() => setSection('draft')}>
+          {DRAFT_TEXT.tabDraft}
+        </button>
+      </div>
+      {section === 'draft' ? (
+        <DocumentDraftPanel companyId={companyId} />
+      ) : tools.length === 0 ? (
+        <PanelNotice kind="no-tools" />
+      ) : (
+        <AskForm companyId={companyId} tools={tools} />
+      )}
+    </>
+  )
 }
 
 type AskView =

@@ -8,6 +8,7 @@ import { shellRoutes } from '../shell/router'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../shell/api'
 import { AI_PANEL_CAPABILITY } from './aiCapabilities'
 import { AI_TEXT } from './aiText'
+import { DRAFT_TEXT } from './documentDraftText'
 
 const A_ID = 'aaaaaaaa-0000-0000-0000-000000000001'
 const B_ID = 'bbbbbbbb-0000-0000-0000-000000000002'
@@ -134,7 +135,6 @@ describe('Plan AI-5 — sağ AI paneli', () => {
   it.each([
     ['yapılandırma hazır değil', { availability: 'unavailable', panelAvailable: false, tools: [] }, AI_TEXT.runtimeUnavailableTitle],
     ['panel yetkisi yok', { availability: 'ready', panelAvailable: false, tools: [] }, AI_TEXT.panelForbiddenTitle],
-    ['okunabilir araç yok', { availability: 'ready', panelAvailable: true, tools: [] }, AI_TEXT.noToolsTitle],
   ])('%s: yalnız dürüst durum çizilir, giriş alanı ve gönder düğmesi yoktur', async (_name, body, title) => {
     const fetchMock = installFetch([], { capabilities: () => json(body) })
     renderShell()
@@ -142,6 +142,17 @@ describe('Plan AI-5 — sağ AI paneli', () => {
     expect(await within(panel).findByText(title)).toBeTruthy()
     expect(within(panel).queryByRole('textbox')).toBeNull()
     expect(within(panel).getAllByRole('button')).toHaveLength(1)
+    expect(askCalls(fetchMock)).toHaveLength(0)
+  })
+
+  it('okunabilir araç yok: soru bölümünde yalnız dürüst durum çizilir; belgeden taslak bölümü ayrıca seçilebilir', async () => {
+    const fetchMock = installFetch([], { capabilities: () => json({ availability: 'ready', panelAvailable: true, tools: [] }) })
+    renderShell()
+    const panel = await openPanel()
+    expect(await within(panel).findByText(AI_TEXT.noToolsTitle)).toBeTruthy()
+    expect(within(panel).queryByRole('textbox')).toBeNull()
+    expect(within(panel).queryByRole('button', { name: AI_TEXT.submit })).toBeNull()
+    expect(within(panel).getByRole('button', { name: DRAFT_TEXT.tabDraft })).toBeTruthy()
     expect(askCalls(fetchMock)).toHaveLength(0)
   })
 
