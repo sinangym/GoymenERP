@@ -1,9 +1,11 @@
+using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application;
+using GoymenERP.Modules.Sales.Application.Ai;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Infrastructure.WorkInbox;
@@ -81,6 +83,11 @@ public static class SalesModuleExtensions
         services.AddScoped<ISalesOrderPrintReadServiceV1>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesOrderDraftPendingApprovalReadServiceV1,
             SalesOrderDraftPendingApprovalReadServiceV1>();
+        // WP-A3a: Sales owner READ tools over the owner's own measured reads (registration only; Ai:AllowedTools stays
+        // empty, so the catalog admits none).
+        services.AddScoped<IAiOwnerToolV1, SalesPendingApprovalsAiTool>();
+        services.AddScoped<IAiOwnerToolV1, SalesQuoteStatusAiTool>();
+        services.AddScoped<IAiOwnerToolV1, SalesOrderStatusAiTool>();
         // W1-A (AI-D31, AI-D32): the read-only Work inbox sources over Sales's own pending exception approvals.
         services.AddScoped<ISalesWorkInboxStoreV1, SalesWorkInboxStoreV1>();
         services.AddScoped<IWorkInboxSourceV1, SalesPriceFloorExceptionWorkInboxSourceV1>();
