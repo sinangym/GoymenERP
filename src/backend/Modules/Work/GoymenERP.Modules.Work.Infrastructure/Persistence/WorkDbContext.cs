@@ -243,17 +243,17 @@ public sealed partial class WorkDbContext(
 
             if (entry.Entity is WorkTaskRow task && entry.State == EntityState.Modified)
             {
-                var original = entry.OriginalValues;
-                if (original.GetValue<Guid>(nameof(task.Id)) != task.Id
-                    || original.GetValue<Guid>(nameof(task.AssignerUserId)) != task.AssignerUserId
-                    || original.GetValue<Guid>(nameof(task.AssigneeUserId)) != task.AssigneeUserId
-                    || original.GetValue<int?>(nameof(task.RecordType)) != task.RecordType
-                    || original.GetValue<Guid?>(nameof(task.RecordId)) != task.RecordId
-                    || original.GetValue<string>(nameof(task.Title)) != task.Title
-                    || original.GetValue<string?>(nameof(task.Details)) != task.Details
-                    || original.GetValue<DateTimeOffset>(nameof(task.DueAtUtc)) != task.DueAtUtc
-                    || original.GetValue<int>(nameof(task.Status)) != 1
-                    || task.Version != checked(original.GetValue<long>(nameof(task.Version)) + 1))
+                if (!Equals(entry.Property(nameof(task.Id)).OriginalValue, task.Id)
+                    || !Equals(entry.Property(nameof(task.AssignerUserId)).OriginalValue, task.AssignerUserId)
+                    || !Equals(entry.Property(nameof(task.AssigneeUserId)).OriginalValue, task.AssigneeUserId)
+                    || !Equals(entry.Property(nameof(task.RecordType)).OriginalValue, task.RecordType)
+                    || !Equals(entry.Property(nameof(task.RecordId)).OriginalValue, task.RecordId)
+                    || !Equals(entry.Property(nameof(task.Title)).OriginalValue, task.Title)
+                    || !Equals(entry.Property(nameof(task.Details)).OriginalValue, task.Details)
+                    || !Equals(entry.Property(nameof(task.DueAtUtc)).OriginalValue, task.DueAtUtc)
+                    || entry.Property(nameof(task.Status)).OriginalValue is not 1
+                    || entry.Property(nameof(task.Version)).OriginalValue is not long version
+                    || task.Version != checked(version + 1))
                 {
                     throw new InvalidOperationException("A work task only closes once, by one version step, and keeps its identity.");
                 }

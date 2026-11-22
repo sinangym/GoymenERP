@@ -1,4 +1,3 @@
-using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.Modules.Work.Domain;
 using GoymenERP.Modules.Work.Infrastructure.Collaboration;
 using Microsoft.Extensions.Configuration;
@@ -22,14 +21,6 @@ public static class WorkCollaborationModuleExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<IWorkCollaborationServiceV1, WorkCollaborationServiceV1>();
         services.AddScoped<IWorkCollaborationMaintenanceV1, WorkCollaborationMaintenanceV1>();
-        var section = configuration.GetSection(WorkCollaborationSchedulerOptions.SectionName);
-        services.Configure<WorkCollaborationSchedulerOptions>(section);
-        var options = new WorkCollaborationSchedulerOptions();
-        section.Bind(options);
-        if (!options.Enabled) return services;
-        _ = options.ResolvePollInterval();
-        services.TryAddSingleton<WorkCollaborationScheduler>();
-        if (!OpenApiDocumentGenerationMode.IsActive) services.AddHostedService<WorkCollaborationSchedulerHostedService>();
-        return services;
+        return services.AddWorkCollaborationScheduler(configuration);
     }
 }

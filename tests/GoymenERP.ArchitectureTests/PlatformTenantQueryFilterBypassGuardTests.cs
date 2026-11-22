@@ -158,7 +158,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // Tren-1 W6: owner bridges and scoped DI only; source fingerprint re-derived.
         // Re-fingerprinted for tren-1 W7: in-process owner registrations; activation flags unchanged; K3 review pending.
         // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): gated source-label supplier return; value from guard_fingerprint.py (759798d7… -> 74df118d…).
-        "74df118df4fddd45c9f2a40d02dbe45afccd44885d06e8df0ed8a4772283a7f9";
+        // Re-fingerprinted for W1-C (AI-D20/AI-D23/AI-D29): AddWorkCollaborationHostV1 (scheduler off unless Work:CollaborationScheduler:Enabled, no hosted service in generation mode) and the collaboration endpoint map; value from guard_fingerprint.py (74df118d… -> fa83b2bb…).
+        "fa83b2bbdad135b9fc7c3820033598001cc20fd086195e21223a9de9e5b72616";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -702,7 +703,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-fingerprinted for B-24 (Work outbox dispatcher): +3 dispatch facts (8eeffadb... -> 6e3a97bd...).
             ["tools/relational_inventory/work.txt"] =
                 // Re-fingerprinted for tren-1 wave 1: +1 facts, ordinal-sorted (6e3a97bd… -> f745f376…).
-                "d0ca8b4d5283af3e1ee36da8b4f1259d0bf99368dbb4e9bd0b27de1841f39196",
+                // Re-fingerprinted for W1-C: +3 collaboration facts, ordinal-sorted (d0ca8b4d… -> 1569c1d7…).
+                "1569c1d7dee6f8764a0f2ffb8f57de2bc82819327e3e3781951e3e7a63bba81a",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string BackendTestGroupVerifierPath = "tools/verify_backend_test_groups.py";
@@ -1086,7 +1088,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-fingerprinted for B-24: dispatcher cursor/delivery tables are company-filtered, company-keyed and write-guarded.
             [ReviewedWorkDbContextPath] =
                 // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
-                "221a99fd21364e8a08599feaa77fced3b4e3dca88cdbf6d80c7fae963c155db2",
+                // Re-fingerprinted for W1-C: nine company-filtered, company-keyed collaboration tables (notes, mentions, passivations,
+                // tasks, inbox notifications, reads, digests, digest items, attempts); append-only rows and the one-step task close
+                // are write-guarded; no GetValue added (221a99fd… -> 65549215…).
+                "655492152804c6207b08d0418f133dcc24636f7a9536d04c1136ade94d3f6d79",
             ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
              // Re-measured for DEC-CAR-003: the terminal command-name check admits the Product deactivate/reactivate
              // commands beside activate; no query filter, key or table change.
@@ -1565,7 +1570,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (7b8efa68… -> ce4693e5…).
                         // Re-fingerprinted for tren-1 W7: in-process owner registrations; activation flags unchanged; K3 review pending.
-                        "49ecbeefa12e557ba7d4ca8f1146a222d84fd666a16e470c4f3d55463a28afbf",
+                        // Re-fingerprinted for W1-C: the same directory also registered as the read-only
+                        // IUserPermissionHolderReadPortV1; counts unchanged (49ecbeef… -> 5c263928…).
+                        "5c263928cbc071190ab7c996afdc45e1c37cda8e14f4439f69f8a1617bd09b50",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -3106,7 +3113,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "WorkModuleExtensions.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
-                        "2653c62d85ff8899156f8f76e1f4f105e1abbb238e00f2832ee1f83f3ea681f4",
+                        // Re-fingerprinted for W1-C: AddWorkCollaborationScheduler, default-off and registered only outside OpenAPI
+                        // document generation, beside the dispatcher; database counts unchanged (2653c62d… -> fb1f09e2…).
+                        "fb1f09e2a635a7d99e9b8943abdddf0c9272f404b4229a594a095209640f9979",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["MigrateAsync"] = 1,
@@ -6185,6 +6194,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Notification delivery, deduplication or passivation history exists; use a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261116234150_AddPersonalNotifications.cs"] =
                     new("410215fe07c1fc94023109418d24e027019103b05932f6839482f0eccac27682", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // W1-C; K3 review pending. Down refuses (52090, used by no other migration) while any note, mention, passivation, task,
+                // collaboration notification, read, digest or command attempt exists (YOL-D19 forward fix). 1 lexical Sql call.
+                ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261122162808_AddWorkCollaboration.cs"] =
+                    new("27a1cc9c4252d6d3964cf265b652499b2cef16d90f5a20c66fb1d5f54d6a92af", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
             };
 
     private static readonly HashSet<string> ReviewedProjectSdks =
