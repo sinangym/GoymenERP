@@ -11,7 +11,8 @@ public interface IAiDecisionIndexSource
 /// <summary>
 /// Reads the decision index once from <c>Ai:Knowledge:DecisionIndexPath</c> (relative paths resolve against the content
 /// root). No default path is configured: until an operator points it at the published
-/// <c>contracts/ai/decision-index-v1.json</c>, the tool stays unavailable (fail-closed). The file is never written here.
+/// <c>contracts/ai/decision-index-v1.json</c>, the tool stays unavailable (fail-closed; packaging the file is a
+/// deployment gate). The file is never written here.
 /// </summary>
 public sealed class ConfiguredAiDecisionIndexSource : IAiDecisionIndexSource
 {

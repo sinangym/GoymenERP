@@ -12,6 +12,8 @@ clock, no network, no environment value and no model is used. Nothing is guessed
   status and are listed as relations;
 * the same identity is never emitted twice: identical repeats are listed under ``also_seen_in`` and different texts
   under the separate ``conflicts`` list;
+* status mapping ASSUMPTION-AI-INDEX-STATUS-1 (reversible technical reading): ACIK_KARARLAR KAPANDI -> kilitli,
+  KISMEN/AÇIK -> acik, registry ERTELENDI -> ertelendi (its own status), formula goldens -> belirsiz;
 * the data class candidate (AI-D34 d) is content based: a person name taken from the registry's own ``Sahip`` column,
   an e-mail, a phone, an 11-digit national id or an IBAN marks the record ``kisisel_veri_adayi``.
 
@@ -47,6 +49,7 @@ OPEN_DECISIONS = "ACIK_KARARLAR.md"
 GOLDEN_SUFFIX = "_GOLDEN_V1.md"
 SINAN_PREFIX = "SINAN_KARARLARI_"
 
+STATUS_ASSUMPTION = "ASSUMPTION-AI-INDEX-STATUS-1"
 STATUSES = ("kilitli", "gecici", "acik", "ertelendi", "gecersiz", "belirsiz")
 KINDS = ("sicil_karari", "sinan_karari", "varsayim", "acik_karar", "formul_golden")
 RELATION_TYPES = ("yerine_gecer", "gecersiz_kilar", "gunceller", "duzeltir", "daraltir", "genisletir")
@@ -423,8 +426,11 @@ def _parse_tables(builder: _Builder, path: str, lines: list[str], file_kind: str
             status = REGISTRY_STATUS.get(status_cell or "")
             if status is None:
                 raise DecisionIndexError(f"{path}:{number} bilinmeyen sicil durumu")
+            basis = f"KARAR_SICILI Durum={status_cell}"
+            if status == "ertelendi":
+                basis += f" ({STATUS_ASSUMPTION})"
             record = _record(identity, "sicil_karari", _title(None, text), text, status,
-                             f"KARAR_SICILI Durum={status_cell}", None, "belirsiz", path, number, subject, None)
+                             basis, None, "belirsiz", path, number, subject, None)
             csv_row = (registry_csv or {}).get(identity)
             if csv_row is None:
                 builder.conflicts.append({"id": identity, "kind": "sicil_csv_satiri_yok",
@@ -445,7 +451,8 @@ def _parse_tables(builder: _Builder, path: str, lines: list[str], file_kind: str
             decided = cells[2] if len(cells) > 2 else ""
             open_part = cells[3] if len(cells) > 3 else ""
             text = f"Kapanan bölüm: {decided} | Açık kalan: {open_part}"
-            record = _record(identity, "acik_karar", identity, text, status, f"ACIK_KARARLAR Durum={status_cell}",
+            record = _record(identity, "acik_karar", identity, text, status,
+                             f"ACIK_KARARLAR Durum={status_cell} ({STATUS_ASSUMPTION})",
                              None, "belirsiz", path, number, None, None)
         elif identity.startswith("OPEN-"):
             lowered = (status_cell or text).lower()
@@ -476,7 +483,7 @@ def _parse_golden(builder: _Builder, path: str, lines: list[str]) -> None:
     text = title + " | Bölümler: " + "; ".join(sections)
     identity = "GOLDEN-" + re.sub(r"[^A-Z0-9]+", "-", Path(path).name[: -len(".md")].upper()).strip("-")
     record = _record(identity, "formul_golden", title, text, "belirsiz",
-                     "golden dosyası; durum satırı yok", None, "belirsiz", path, title_line, "Formül golden", None)
+                     f"golden dosyası; durum satırı yok ({STATUS_ASSUMPTION})", None, "belirsiz", path, title_line, "Formül golden", None)
     record["references"] = _references(title)
     builder.add(record)
 

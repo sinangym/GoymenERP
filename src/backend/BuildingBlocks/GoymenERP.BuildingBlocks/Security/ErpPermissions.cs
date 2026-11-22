@@ -1692,8 +1692,8 @@ public static class ErpPermissions
     public const string AiPanelUse = "ai.panel.use";
     /// <summary>
     /// Y-A1 (AI-D12, AI-D32, DALGA_PLANI_v2 A.4 (1)): may use the READ tool <c>decisions.lookup.v1</c> over the decision
-    /// index in addition to <see cref="AiPanelUse"/>. The name is a reviewed assumption (NEEDS-SINAN: name and holders).
-    /// Registered company-wide only, not critical; no seeded role holds it: applying a grant is a human gate.
+    /// index in addition to <see cref="AiPanelUse"/>. AI-D36 recommends it for every user role (consistent with ROL-D16);
+    /// registered company-wide only, not critical, and no seeded role holds it: applying the grant is a human gate.
     /// </summary>
     public const string AiDecisionsRead = "ai.decisions.read";
 

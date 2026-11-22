@@ -3853,7 +3853,7 @@
    "title": "OPEN-001",
    "text": "Kapanan bölüm: `GDC` ve `GSP` tam unvan, VKN ve CompanyCode ile gerçek şirkettir. Gerçek, `NULL` olmayan VKN aktif/pasif bütün şirketlerde grup çapında benzersizdir; SQL Server bunu `WHERE Vkn IS NOT NULL` filtered unique index ile uygular. | Açık kalan: `OPEN-001-GIN`: gerçek tam unvan + gerçek VKN. GIN bu değerler gelene kadar placeholder ve resmî belgeye kapalıdır. Placeholder VKN temsili ve sonraki değişiklik yaşam döngüsü `OPEN-030` kapsamındadır.",
    "status": "acik",
-   "status_basis": "ACIK_KARARLAR Durum=KISMEN",
+   "status_basis": "ACIK_KARARLAR Durum=KISMEN (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -3881,7 +3881,7 @@
    "title": "OPEN-002",
    "text": "Kapanan bölüm: Osmaniye Hol-0…7 ve Gaziantep başlangıçta GDC işletimindeki iç lokasyonlardır; Baştuğ, Selimoğlu, Alya, Şadiler, Tosçelik ve Doğruluk harici tedarikçi depolarıdır. | Açık kalan: Yok — işletme kararı kapalıdır.",
    "status": "kilitli",
-   "status_basis": "ACIK_KARARLAR Durum=KAPANDI",
+   "status_basis": "ACIK_KARARLAR Durum=KAPANDI (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -3906,7 +3906,7 @@
    "title": "OPEN-003",
    "text": "Kapanan bölüm: Fiziksel kabulde kantar ağırlığı kullanıcı tarafından manuel girilir, irsaliye kg ile eşleştirilir; fark ayrı tolerans politikasına tabidir. | Açık kalan: Yok — iş akışı kararı kapalıdır; tolerans değerleri `OPEN-004` kapsamındadır.",
    "status": "kilitli",
-   "status_basis": "ACIK_KARARLAR Durum=KAPANDI",
+   "status_basis": "ACIK_KARARLAR Durum=KAPANDI (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -3933,7 +3933,7 @@
    "title": "OPEN-004",
    "text": "Kapanan bölüm: Ürün/işlem bazlı Ayarlar politikası kabul edildi; başlangıç teknik varsayımı uyarı `%1`, onay `%2`, blok `%3`tür. | Açık kalan: Sayıların saha golden testi ve nihai işletme onayı.",
    "status": "acik",
-   "status_basis": "ACIK_KARARLAR Durum=KISMEN",
+   "status_basis": "ACIK_KARARLAR Durum=KISMEN (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -3958,7 +3958,7 @@
    "title": "OPEN-005",
    "text": "Kapanan bölüm: Kütle dengesi hat bazlıdır; başlangıç teknik varsayımı `±%2`; yetkili kullanıcı plan bazında override edebilir. | Açık kalan: Varsayılanın saha doğrulaması ve nihai işletme onayı.",
    "status": "acik",
-   "status_basis": "ACIK_KARARLAR Durum=KISMEN",
+   "status_basis": "ACIK_KARARLAR Durum=KISMEN (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -3983,7 +3983,7 @@
    "title": "OPEN-006",
    "text": "Kapanan bölüm: Asgari parti için başlangıçta kısıtlama yoktur (`0/sınırsız`); yetkili plan bazlı override mümkündür. | Açık kalan: Yok — işletme kararı kapalıdır.",
    "status": "kilitli",
-   "status_basis": "ACIK_KARARLAR Durum=KAPANDI",
+   "status_basis": "ACIK_KARARLAR Durum=KAPANDI (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -4008,7 +4008,7 @@
    "title": "OPEN-007",
    "text": "Kapanan bölüm: Formüller merkezî, sürümlü ve Ayarlar'dan yönetilir; üretime bağlı override plan bazında yapılır ve snapshot alınır. | Açık kalan: Kesin yoğunluk/hız/kerf/kaplama/yuvarlama/tolerans değerleri, veri sahibi ve golden validasyon.",
    "status": "acik",
-   "status_basis": "ACIK_KARARLAR Durum=KISMEN",
+   "status_basis": "ACIK_KARARLAR Durum=KISMEN (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -4033,7 +4033,7 @@
    "title": "OPEN-008",
    "text": "Kapanan bölüm: Stok değerleme ve ayrıntılı üretim maliyeti bilinçli olarak ertelendi; fiilî lot maliyet ham verisi şimdiden korunacaktır. | Açık kalan: Değerleme ve üretim maliyet yöntemi, maliyet/muhasebe UAT öncesi seçilecek.",
    "status": "acik",
-   "status_basis": "ACIK_KARARLAR Durum=KISMEN",
+   "status_basis": "ACIK_KARARLAR Durum=KISMEN (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -4058,7 +4058,7 @@
    "title": "OPEN-009",
    "text": "Kapanan bölüm: Mevcut finans kayıtları manuel girilir; ilk fazda banka entegrasyonu yoktur; eşikler dinamik ve başlangıçta hard-gate yoktur. | Açık kalan: Finans yazma UAT öncesi gerçek tutar/rol/para/onay matrisi.",
    "status": "acik",
-   "status_basis": "ACIK_KARARLAR Durum=KISMEN",
+   "status_basis": "ACIK_KARARLAR Durum=KISMEN (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -4083,7 +4083,7 @@
    "title": "OPEN-010",
    "text": "Kapanan bölüm: DBS/teminat oranları başlangıçta `0` veya manuel onaylıdır; tür/banka/vade bazında Ayarlar'dan yönetilir. | Açık kalan: Gerçek haircut oranları ve risk motoru aktivasyon politikası.",
    "status": "acik",
-   "status_basis": "ACIK_KARARLAR Durum=KISMEN",
+   "status_basis": "ACIK_KARARLAR Durum=KISMEN (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -4108,7 +4108,7 @@
    "title": "OPEN-011",
    "text": "Kapanan bölüm: Minimum nakit tamponu ve 13 haftalık plan kaynak önceliği bilinçli olarak ertelendi. | Açık kalan: 13 haftalık plan UAT öncesi tampon ve kaynak öncelik politikası.",
    "status": "acik",
-   "status_basis": "ACIK_KARARLAR Durum=KISMEN",
+   "status_basis": "ACIK_KARARLAR Durum=KISMEN (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -4133,7 +4133,7 @@
    "title": "OPEN-012",
    "text": "Kapanan bölüm: Başlangıç kuru önceki iş günü TCMB satış; Ayarlar'dan değişebilir; manuel istisna yetki/gerekçe/audit ister. | Açık kalan: Kesin alma saati, tatil/hafta sonu takvimi ve manuel istisna sınırı.",
    "status": "acik",
-   "status_basis": "ACIK_KARARLAR Durum=KISMEN",
+   "status_basis": "ACIK_KARARLAR Durum=KISMEN (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -4165,7 +4165,7 @@
    "title": "OPEN-013",
    "text": "Kapanan bölüm: Dev/staging yerel bootstrap hesaplarıyla geliştirme onaylıdır; OIDC soyutlaması korunur. | Açık kalan: Production OIDC/SSO sağlayıcısı, MFA ve dış erişim politikası.",
    "status": "acik",
-   "status_basis": "ACIK_KARARLAR Durum=KISMEN",
+   "status_basis": "ACIK_KARARLAR Durum=KISMEN (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -4190,7 +4190,7 @@
    "title": "OPEN-014",
    "text": "Kapanan bölüm: On-prem/hibrid, VPN ve tesis dışı şifreli yedek yönü korunur; AI yerel-first ve kullanıcı tarafındaki veri üzerinde sürekli erişilebilir hedeflenir. | Açık kalan: Gerçek CPU/RAM/disk/RAID/GPU/OS/ağ/UPS/yedek envanteri ve yerel AI/OCR kapasite PoC'si.",
    "status": "acik",
-   "status_basis": "ACIK_KARARLAR Durum=KISMEN",
+   "status_basis": "ACIK_KARARLAR Durum=KISMEN (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -4215,7 +4215,7 @@
    "title": "OPEN-015",
    "text": "Kapanan bölüm: Beklenen yıllık ciro yaklaşık `5 milyar TL`, ortalama ürün fiyatı yaklaşık `30.000 TL/ton`; aritmetik planlama çıpası yaklaşık `166.667 ton/yıl`dır. Yalnız sentetik testte `10–25 ton/sipariş`, yaklaşık `6.700–16.700 sipariş/yıl` teknik varsayımı kullanılabilir. | Açık kalan: Gerçek ortalama sipariş tonajı, müşteri/cari sayısı, eşzamanlı kullanıcı, yoğun saat, belge/OCR hacmi ve production p95/SLO.",
    "status": "acik",
-   "status_basis": "ACIK_KARARLAR Durum=KISMEN",
+   "status_basis": "ACIK_KARARLAR Durum=KISMEN (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -4240,7 +4240,7 @@
    "title": "OPEN-016",
    "text": "Kapanan bölüm: İlk sürümde muhasebe/e-belge/banka entegrasyonları yoktur. İleri sıra yalnız resmî e-fatura/e-arşiv → Mikro muhasebe mutabakatı/kullanıcı onaylı fiş taslağı → banka hareketleridir. Erişim dar adapter üzerinden dosya, salt-okunur DB, manuel Excel/CSV veya yerel AI/OCR taslağı olabilir; serbest doğrudan DB yazımı yoktur. Bu karar e-posta ve belge paylaşımını kapsamaz; `DEC-DOC-006/007` yürürlükte kalır. | Açık kalan: Sağlayıcı, test ortamı, credential, üç entegrasyonun kesin erişim yöntemi ve ters/başarısız işlem sözleşmesi.",
    "status": "acik",
-   "status_basis": "ACIK_KARARLAR Durum=KISMEN",
+   "status_basis": "ACIK_KARARLAR Durum=KISMEN (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -4267,7 +4267,7 @@
    "title": "OPEN-017",
    "text": "Kapanan bölüm: `RPO=15 dakika` ve `RTO=4 saat` yalnız GECICI_VARSAYIMdır. Kullanıcı kesin değeri bilmediğini ve hedefin şirket/veri yoğunluğuna bağlı olduğunu belirtmiştir. Ana yön on-prem/hibrid, tesis dışı şifreli yedek ve checksum'lı gerçek restore tatbikatıdır. | Açık kalan: Gerçek yük/restore ölçümüyle hedeflerin doğrulanması ve kilitlenmesi; kesin felaket topolojisi, yedek sıklığı ve operasyon sahipleri.",
    "status": "acik",
-   "status_basis": "ACIK_KARARLAR Durum=KISMEN",
+   "status_basis": "ACIK_KARARLAR Durum=KISMEN (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -4292,7 +4292,7 @@
    "title": "OPEN-018",
    "text": "Kapanan bölüm: Operasyonel veri yıllık dönemler hâlinde yönetilir; yeni dönemde yalnız hâlâ açık işlem/kalemler kullanılabilir olur. Yetkili kullanıcı seçili yıllar üzerinde rapor/AI analizi yapabilir. Fiziksel silmeyi yalnız en yüksek yetkili kullanıcı gerçekleştirebilir. | Açık kalan: Açık kayıtların dönemler arası teknik temsili (`carry-forward`, snapshot veya başka yöntem), kapanmış kayıtların dönem davranışı, çok-yıllı okuma mimarisi, belge/audit/idempotency türü bazlı yasal süreler, legal-hold, onay/audit akışı ve ülke/şirket istisnaları.",
    "status": "acik",
-   "status_basis": "ACIK_KARARLAR Durum=KISMEN",
+   "status_basis": "ACIK_KARARLAR Durum=KISMEN (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -4317,7 +4317,7 @@
    "title": "OPEN-019",
    "text": "Kapanan bölüm: Her şirket ayrı logo/antet ve şirket bazlı versiyonlu şablon kullanır. Teknik fallback açık lisanslı gömülü `Noto Sans`tır; şablon yalnız yetkili kullanıcı onayıyla yayımlanır. | Açık kalan: GDC/GSP/GIN gerçek logo/antet dosyaları, marka fontu varsa lisans kanıtı, exact onay permission/rolü ve kurumsal PDF UAT.",
    "status": "acik",
-   "status_basis": "ACIK_KARARLAR Durum=KISMEN",
+   "status_basis": "ACIK_KARARLAR Durum=KISMEN (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -4342,7 +4342,7 @@
    "title": "OPEN-020",
    "text": "Kapanan bölüm: AI ve yerel OCR kolay kullanımın temel ve sürekli erişilebilir parçasıdır; veri kullanıcı tarafında/on-prem kalır. AI yetki veya iş doğrusu değildir ve kesintide deterministik ERP akışlarını bloke etmez. | Açık kalan: Yerel model/OCR seçimi ve GPU kapasite PoC'si; bulut sağlayıcısı, sözleşme, KVKK aktarım zemini, izinli veri sınıfı ve ayrı aktivasyon onayı.",
    "status": "acik",
-   "status_basis": "ACIK_KARARLAR Durum=KISMEN",
+   "status_basis": "ACIK_KARARLAR Durum=KISMEN (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -4367,7 +4367,7 @@
    "title": "OPEN-021",
    "text": "Kapanan bölüm: Fiziksel silmeyi yalnız en yüksek yetkili kullanıcının gerçekleştirebilmesi sınırı idempotency/retention verisi için de korunur. | Açık kalan: Idempotency replay saklama süresi, partition/archival ve dönemler arası temsil tasarımı; bu kayıtların çok-yıllı okuma kapsamı; legal-hold, ikinci onay, audit ve otomatik purge davranışı; belge/audit/idempotency türü bazlı süre matrisi.",
    "status": "acik",
-   "status_basis": "ACIK_KARARLAR Durum=KISMEN",
+   "status_basis": "ACIK_KARARLAR Durum=KISMEN (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -4392,7 +4392,7 @@
    "title": "OPEN-030",
    "text": "Kapanan bölüm: VKN ilk kayıttan sonra değiştirilebilir olmalıdır; saklanan her `NULL` olmayan VKN `DEC-ORG-005` grup çapı benzersizlik kuralına tabidir. | Açık kalan: Placeholder'ın `NULL` mı yoksa geçici bir değer mi taşıyacağı; VKN değiştirme yetkisi/onayı/audit izi; başka şirkete ait VKN ile çakışan yazmanın kullanıcıya gösterilecek hata ve düzeltme akışı.",
    "status": "acik",
-   "status_basis": "ACIK_KARARLAR Durum=KISMEN",
+   "status_basis": "ACIK_KARARLAR Durum=KISMEN (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -38468,7 +38468,7 @@
    "title": "Adet/kg Formül Golden v1 (SAT-D436, ALS-D119, SAT-D438, SAT-D433)",
    "text": "Adet/kg Formül Golden v1 (SAT-D436, ALS-D119, SAT-D438, SAT-D433) | Bölümler: Kaynak, bağımsızlık ve kabul sınırı; 1. SAT-D436 — kg fiyatı göstergesi (satış ve alış; sipariş ve fatura); 2. ALS-D119 — alıştan gelen stok maliyeti; 3. SAT-D438 — adetli satırda marj; 4. SAT-D433 — bölünmüş/birleştirilmiş etiketli tedarikçi iadesi; Türetilenlerin özeti; Önceki NEEDS-SINAN noktalarının ve review bulgusunun durumu (SINAN-CEVAP 53, 54 ve 55); NEEDS-SINAN (karara bağlanmamış; satırlar hesaplanamaz bırakıldı); Sınırlar",
    "status": "belirsiz",
-   "status_basis": "golden dosyası; durum satırı yok",
+   "status_basis": "golden dosyası; durum satırı yok (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {
@@ -38498,7 +38498,7 @@
    "title": "SAT-S12 Satış Marjı Formül Golden v1",
    "text": "SAT-S12 Satış Marjı Formül Golden v1 | Bölümler: Kaynak ve kabul sınırı; İletilen golden metni; Uygulama okumasının sınırları",
    "status": "belirsiz",
-   "status_basis": "golden dosyası; durum satırı yok",
+   "status_basis": "golden dosyası; durum satırı yok (ASSUMPTION-AI-INDEX-STATUS-1)",
    "effective_date": null,
    "effective_date_basis": "belirsiz",
    "source": {

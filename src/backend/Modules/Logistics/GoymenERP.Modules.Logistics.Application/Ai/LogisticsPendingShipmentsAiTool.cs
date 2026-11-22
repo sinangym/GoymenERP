@@ -14,9 +14,9 @@ namespace GoymenERP.Modules.Logistics.Application.Ai;
 /// no other module. Counts are exact integers over every page read; when the scan cap is reached the counts are
 /// withheld (null) and <c>complete</c> is false — never an estimate.
 /// <para>
-/// ASSUMPTION-AI-PENDING-SHIPMENT-1 (reversible, fail-closed): "pending" = an instruction whose owner status is
-/// <c>Draft</c> (waiting to be issued) or <c>Issued</c> (issued, not cancelled). Dispatch-note states are not counted in
-/// this version (NEEDS-SINAN: which instruction/dispatch-note states count as "bekleyen sevkiyat").
+/// AI-D35 (SINAN_KARARLARI_2026-11-22_EK_SORULAR.md; closes ASSUMPTION-AI-PENDING-SHIPMENT-1): "bekleyen sevkiyat" = a
+/// loading instruction that is draft or issued and not turned into a definite shipment; dispatch-note states are not
+/// counted. Read here as the owner statuses <c>Draft</c> and <c>Issued</c> (cancelled excluded).
 /// </para>
 /// </summary>
 public sealed class LogisticsPendingShipmentsAiTool(ILogisticsInstructionService instructions, TimeProvider timeProvider)
@@ -32,7 +32,7 @@ public sealed class LogisticsPendingShipmentsAiTool(ILogisticsInstructionService
     public const int MaximumLimit = 50;
     public const int PageSize = 100;
     public const int ScanLimit = 1000;
-    public const string Definition = "ASSUMPTION-AI-PENDING-SHIPMENT-1";
+    public const string Definition = "AI-D35";
     public const string TargetKind = "logistics.loading-instructions.pending";
     private const string InvalidArguments = "arguments";
 

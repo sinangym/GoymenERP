@@ -31,7 +31,7 @@
     "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 20}
    },
    "source": "ILogisticsInstructionService.GetInstructionListAsync (Logistics sahibi okuma servisi)",
-   "pendingDefinition": "ASSUMPTION-AI-PENDING-SHIPMENT-1: bekleyen = durumu Draft (yayımlanmayı bekliyor) veya Issued (yayımlandı, iptal edilmedi) olan yükleme talimatı. İrsaliye durumu bu sürümde sayılmaz (NEEDS-SINAN).",
+   "pendingDefinition": "AI-D35 (ASSUMPTION-AI-PENDING-SHIPMENT-1'i kapatır): bekleyen = taslak (Draft) veya yayımlanmış (Issued) olup kesin sevke dönmemiş yükleme talimatı; iptal edilenler ve irsaliye durumu sayılmaz.",
    "scanLimit": 1000
   }
  ]
