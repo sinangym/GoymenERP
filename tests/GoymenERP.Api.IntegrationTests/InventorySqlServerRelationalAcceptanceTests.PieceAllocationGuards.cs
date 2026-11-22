@@ -156,6 +156,33 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(4m, await LabelBlockKgAsync(run, receipt.LabelId, BlockState.Free));
     }
 
+    [SqlServerFact]
+    public async Task The_deployed_transfer_receipt_piece_check_refuses_half_a_piece_fact_and_keeps_a_whole_one()
+    {
+        await using var run = await Run.StartAsync();
+        const string columns = "[DispatchedPieceCount] int NULL, [ReceivedPieceCount] int NULL, [ShortagePieceCount] int NULL, "
+            + "[OveragePieceCount] int NULL, [ShortageKg] decimal(18,3) NOT NULL, [OverageKg] decimal(18,3) NOT NULL";
+
+        // Under three-valued logic a NULL shortage made `[ShortagePieceCount] >= 0` UNKNOWN and the CHECK passed; now refused.
+        var half = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(DeployedCheckProbe("CK_TransferReceipts_PieceCount",
+            columns, "2, 2, NULL, 0, 0, 0")));
+        Assert.Equal(547, half.Number);
+        await run.ExecuteAsync(DeployedCheckProbe("CK_TransferReceipts_PieceCount", columns, "2, 2, 0, 0, 0, 0"));
+        await run.ExecuteAsync(DeployedCheckProbe("CK_TransferReceipts_PieceCount", columns, "NULL, NULL, NULL, NULL, 0, 0"));
+    }
+
+    /// <summary>
+    /// Applies the constraint's definition exactly as the migrations deployed it (sys.check_constraints) to a scratch table and
+    /// inserts one row: a refusal surfaces as SqlException 547, a missing constraint as 50000.
+    /// </summary>
+    private static string DeployedCheckProbe(string constraint, string columns, string values) => $"""
+        DECLARE @definition nvarchar(max) = (SELECT definition FROM sys.check_constraints WHERE name = N'{constraint}');
+        IF @definition IS NULL THROW 50000, N'{constraint} is not deployed.', 1;
+        DECLARE @sql nvarchar(max) = N'CREATE TABLE #probe ({columns}, CHECK ' + @definition
+            + N'); INSERT INTO #probe VALUES ({values});';
+        EXEC sp_executesql @sql;
+        """;
+
     /// <summary>An active sales allocation holding <paramref name="pieces"/> of a piece-tracking label's free position.</summary>
     private static async Task AllocatePieceLabelAsync(Run run, Guid labelId, decimal kilograms, int pieces)
     {

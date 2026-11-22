@@ -64,7 +64,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                 name: "CK_InvoiceLines_KilogramInformation",
                 schema: "sales",
                 table: "InvoiceLines",
-                sql: "([TheoreticalKg] IS NULL AND [ActualKg] IS NULL) OR ([TheoreticalKg] > 0 AND [ActualKg] > 0)");
+                sql: "([TheoreticalKg] IS NULL AND [ActualKg] IS NULL) OR ([TheoreticalKg] IS NOT NULL AND [ActualKg] IS NOT NULL AND [TheoreticalKg] > 0 AND [ActualKg] > 0)");
 
             migrationBuilder.CreateIndex(
                 name: "IX_DraftLineKilogramsPerUnit_CompanyId_DraftId_LineNo_LineId",
