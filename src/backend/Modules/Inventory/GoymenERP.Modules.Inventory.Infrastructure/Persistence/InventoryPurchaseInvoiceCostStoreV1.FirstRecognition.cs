@@ -17,7 +17,7 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1
     private async Task<FirstCostReceiptPlan> PrepareFirstCostAsync(
         InventoryPurchaseInvoiceCostProjectionV1 source, InventoryPurchaseInvoiceCostReceiptV1 share,
         Guid movementId, Guid rootLabelId, Guid receiptLocationId, string receiptQuantityKg, MovementCostStampRow stamp,
-        ReceiptCostBasis basis, CancellationToken token)
+        ReceiptCostBasis basis, CancellationToken token, ExactCostRatio? remainingPieceShareKg = null)
     {
         if (firstCostPrerequisites is null) throw Unavailable("purchase_invoice_cost_first_recognition_pending");
         var pending = await db.PendingMovementCosts.AsNoTracking().SingleOrDefaultAsync(x => x.MovementId == movementId
@@ -81,7 +81,8 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1
             prerequisites.LocationCodes[x.Key.LocationId], share.InvoiceLineNo,
             x.Aggregate(ExactCostRatio.Of(0m), (sum, position) => sum.Add(position.Quantity)).Multiply(stockFraction)))
             .Where(x => x.RootQuantityKg.Sign > 0).ToArray();
-        var invoicedKg = PurchaseInvoiceKilogramShare.Of(rootKg, share.MatchedQuantity, purchaseQuantity);
+        // ALS-D122/D123/D124 (switch on, piece share without an explicit return source): the current remaining share; otherwise as before.
+        var invoicedKg = remainingPieceShareKg ?? PurchaseInvoiceKilogramShare.Of(rootKg, share.MatchedQuantity, purchaseQuantity);
         var physicalSource = new InventoryPurchaseFirstCostPhysicalSourceV1(PurchaseFirstCostAllocationCalculator.Version,
             source.CompanyId, share.AcceptanceId, share.InvoiceLineId, share.InvoiceLineNo, movementId, rootLabelId,
             share.ProductId, share.MatchedQuantity, share.AcceptedQuantity,

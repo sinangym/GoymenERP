@@ -78,9 +78,10 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
                         || basis.OriginalKg.CompareTo(ExactCostRatio.Of(weighedKg)) != 0)
                         throw Invalid("purchase_invoice_cost_receipt_source_conflict");
                     // A return or reversal that did not leave in the receipt's own kg-per-piece proportion makes "remaining kg ×
-                    // matched ÷ remaining pieces" differ from ALS-D121. Which one applies is not decided; the source stays pending.
-                    if (!PurchaseInvoiceKilogramShare.KeepsOriginalProportion(basis.OriginalKg, share.AcceptedQuantity,
-                            basis.EligibleKg, basis.EligibleQuantity))
+                    // matched ÷ remaining pieces" (ALS-D122) differ from ALS-D121. ALS-D122 applies only behind its switch (golden
+                    // pending); until then the source stays pending.
+                    if (!PurchaseInvoiceKilogramShare.PieceShareIsDecided(basis.OriginalKg, share.AcceptedQuantity,
+                            basis.EligibleKg, basis.EligibleQuantity, PurchaseInvoiceKilogramShare.PurchaseInvoiceRemainingShareGoldenAccepted))
                         throw Unavailable("purchase_invoice_cost_piece_reversal_basis_unavailable");
                 }
                 if (basis.Cohort is { } cohort ? ExactCostRatio.Of(share.MatchedQuantity).CompareTo(cohort.PendingQuantity) > 0
@@ -98,7 +99,8 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
                         .OrderBy(x => x.ReversalId).SequenceEqual(basis.Reversals.OrderBy(x => x.ReversalId))))
                         throw Unavailable("purchase_invoice_cost_first_reversal_basis_changed");
                     firstPlans.Add(await PrepareFirstCostAsync(source, share, receipt.MovementId,
-                        receipt.LabelId, receipt.LocationId, receipt.QuantityKg, stamp, basis, cancellationToken));
+                        receipt.LabelId, receipt.LocationId, receipt.QuantityKg, stamp, basis, cancellationToken,
+                        basis.Cohort is null ? RemainingPieceShare(basis, share, priorShares) : null));
                     continue;
                 }
                 var originalUnit = InventoryExactCostRatioV1.Resolve(stamp.UnitCostPerKg, stamp.UnitCostRatioJson is null ? null
@@ -110,7 +112,8 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
                     .CompareTo(basis.OriginalKg.Divide(share.AcceptedQuantity)) != 0)
                     throw Unavailable("purchase_invoice_cost_known_reversal_basis_unavailable");
                 // Physical kg comes from the immutable original Inventory receipt, not current Product conversion.
-                var invoicedKg = PurchaseInvoiceKilogramShare.Of(basis.EligibleKg, share.MatchedQuantity, basis.EligibleQuantity);
+                var invoicedKg = RemainingPieceShare(basis, share, priorShares)
+                    ?? PurchaseInvoiceKilogramShare.Of(basis.EligibleKg, share.MatchedQuantity, basis.EligibleQuantity);
                 var previousValue = originalUnit.Multiply(invoicedKg);
                 var invoiceValue = share.TlNetShare.Value();
                 var result = new InventoryPurchaseInvoiceCostReceiptResultV1(share.InvoiceLineId, share.InvoiceLineNo, share.AcceptanceId,
@@ -199,6 +202,43 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
             auditWriter.DiscardPending();
             throw;
         }
+    }
+
+    /// <summary>
+    /// ALS-D122/D123/D124, only while <see cref="PurchaseInvoiceKilogramShare.PurchaseInvoiceRemainingShareGoldenAccepted"/> is on
+    /// and only for a piece-line share (null otherwise: the caller keeps today's formula). The remaining figures are current: the
+    /// receipt's kg and pieces after its returns (<paramref name="basis"/>) less the kg and pieces of the earlier invoices recorded
+    /// for the same acceptance. An earlier effect whose kilograms cannot be read keeps the source pending; nothing is estimated.
+    /// </summary>
+    private static ExactCostRatio? RemainingPieceShare(ReceiptCostBasis basis, InventoryPurchaseInvoiceCostReceiptV1 share,
+        IReadOnlyList<PurchaseInvoiceReceiptCostEffectRow> priorShares)
+    {
+        if (!PurchaseInvoiceKilogramShare.PurchaseInvoiceRemainingShareGoldenAccepted || share.MeasuredQuantityKg is null) return null;
+        var remainingKg = priorShares.Aggregate(basis.EligibleKg, (left, prior) => left.Subtract(PriorInvoicedKg(prior)));
+        var remainingPieces = priorShares.Aggregate(basis.EligibleQuantity, (left, prior) => left.Subtract(ExactCostRatio.Of(prior.MatchedQuantity)));
+        if (remainingKg.Sign <= 0 || remainingPieces.Sign <= 0 || ExactCostRatio.Of(share.MatchedQuantity).CompareTo(remainingPieces) > 0)
+            throw Unavailable("purchase_invoice_cost_piece_remaining_share_unavailable");
+        return PurchaseInvoiceKilogramShare.RemainingShare(remainingKg, remainingPieces, share.MatchedQuantity);
+    }
+
+    /// <summary>The kilograms an earlier invoice took from the same acceptance, from its immutable effect (either recognition shape).</summary>
+    private static ExactCostRatio PriorInvoicedKg(PurchaseInvoiceReceiptCostEffectRow effect)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(effect.ResultJson);
+            var root = document.RootElement;
+            if ((root.TryGetProperty("invoicedKg", out var kilograms)
+                    || root.TryGetProperty("receipt", out var receipt) && receipt.TryGetProperty("invoicedPhysicalKg", out kilograms))
+                && ExactCostRatio.TryParse(kilograms.GetProperty("numerator").GetString(), kilograms.GetProperty("denominator").GetString(),
+                    out var value) && value is { Sign: > 0 })
+                return value;
+        }
+        catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            // An unreadable earlier effect: fall through to the pending answer below.
+        }
+        throw Unavailable("purchase_invoice_cost_piece_remaining_share_unavailable");
     }
 
     private void RequireCompany(Guid expected)
