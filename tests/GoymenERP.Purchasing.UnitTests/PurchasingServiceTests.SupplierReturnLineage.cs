@@ -40,6 +40,18 @@ public sealed partial class PurchasingServiceTests
     }
 
     [Fact]
+    public async Task A_source_label_return_that_also_adjusts_the_receipt_is_a_request_fault_400_and_reads_nothing()
+    {
+        var (world, order, returns) = await ReturnWorldAsync();
+        var lineage = new LineageFake();
+
+        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service(returns: returns, returnLineage: lineage)
+            .CreateSupplierReturnAsync(order, ReturnRequest() with { SourceLabelId = LineageLabel }, Metadata("lineage-adjusts")));
+
+        Assert.Equal((400, "validation_failed", 0, 0), (refusal.Status, refusal.Code, lineage.Calls, returns.NewWrites));
+    }
+
+    [Fact]
     public async Task The_purchasing_gate_is_open_in_this_train()
     {
         Assert.True(PurchaseSupplierReturnLineageGoldenV1.SupplierReturnLineageGoldenAccepted);

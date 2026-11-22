@@ -119,8 +119,8 @@ public static class PurchaseSupplierReturnCodesV1
 
     /// <summary>
     /// AK-8 503: a return from a foreign source label cannot be planned — the golden gate is closed (the earlier boundary), the
-    /// lineage port is not wired, the lineage, a receipt's supplier or a receipt's invoiced/pending history is unreadable, or the
-    /// return also adjusts the receipt or names a receipt-label cost allocation. Nothing is recorded or moved.
+    /// lineage port is not wired, or the lineage, a receipt's supplier or a receipt's invoiced/pending history is unreadable.
+    /// Nothing is recorded or moved.
     /// </summary>
     public const string LineageUnavailable = "purchasing_supplier_return_lineage_unavailable";
 

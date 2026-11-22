@@ -35,15 +35,17 @@ public sealed partial class PurchasingService
     private sealed record ReturnLineageDecision(PurchaseSupplierReturnLineageModeV1 Mode, PurchaseSupplierReturnStatus Status,
         PurchaseSupplierReturnCostBasis CostBasis, decimal UnitCostTryPerKg, IReadOnlyList<PurchaseSupplierReturnLineagePartV1> Parts);
 
-    /// <summary>The early gate and shape checks, before replay lookup or any read.</summary>
+    /// <summary>
+    /// The early gate and shape checks, before replay lookup or any read. Gate closed: the earlier 503. A source-label return
+    /// never adjusts the receipt and never carries the receipt-label cost allocation: that combination is a request fault (400).
+    /// </summary>
     private void RequireReturnLineageAdmissible(CreatePurchaseSupplierReturnV1 request)
     {
         if (request.SourceLabelId is null) return;
-        if (!(returnPolicy ?? PurchaseSupplierReturnPolicyV1.Default).LineageGoldenAccepted
-            || request.ExpectedPurchaseOrderVersion is not null || request.CostAllocation is not null)
-        {
+        if (!(returnPolicy ?? PurchaseSupplierReturnPolicyV1.Default).LineageGoldenAccepted)
             throw PurchaseSupplierReturnLineagePlannerV1.Unavailable();
-        }
+        if (request.ExpectedPurchaseOrderVersion is not null || request.CostAllocation is not null)
+            throw new PurchasingServiceException(400, "validation_failed");
     }
 
     public async Task<PurchaseSupplierReturnLineagePreviewV1> GetSupplierReturnLineagePreviewAsync(Guid orderId, Guid goodsAcceptanceId,
