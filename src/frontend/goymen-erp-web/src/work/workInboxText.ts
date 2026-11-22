@@ -7,6 +7,12 @@
 
 import { CAPABILITY_NAV_LABEL } from '../shell/navigation'
 import { DURATION_CLASS_HOURS, type WorkInboxDurationClass } from './workInboxContract'
+import {
+  FINANCE_ACCOUNTING_KIND_TEXT,
+  FINANCE_ACCOUNTING_PERMISSION_TEXT,
+  FINANCE_ACCOUNTING_ROLE_TEXT,
+  FINANCE_ACCOUNTING_RULE_TEXT,
+} from './inboxKinds/financeAccountingText'
 
 /** Kind → Turkish name (one per connected owner source). */
 export const WORK_INBOX_KIND_TEXT: Readonly<Record<string, string>> = {
@@ -27,6 +33,7 @@ export const WORK_INBOX_KIND_TEXT: Readonly<Record<string, string>> = {
   'inventory.stock-count.v1': 'Stok sayım farkı onayı',
   'inventory.stock-scrap.v1': 'Stok hurda çıkışı onayı',
   'sales.order-draft.v1': 'Satış siparişi taslağı onayı',
+  ...FINANCE_ACCOUNTING_KIND_TEXT,
 }
 
 export const WORK_INBOX_MODULE_TEXT: Readonly<Record<string, string>> = {
@@ -36,6 +43,7 @@ export const WORK_INBOX_MODULE_TEXT: Readonly<Record<string, string>> = {
   purchasing: 'Satın alma',
   finance: 'Finans',
   inventory: 'Stok',
+  accounting: 'Muhasebe',
 }
 
 /** Owner rule code → the sentence the explanation card shows. Codes of other modules are added as their sources land. */
@@ -83,6 +91,7 @@ export const WORK_INBOX_RULE_TEXT: Readonly<Record<string, string>> = {
   'finance.official-invoice-import-approval': 'Resmî fatura içe alma partisi onay bekliyor',
   'inventory.stock-count-difference': 'Sayılan kg defter kaydından farklı (sayılan / fark)',
   'inventory.stock-scrap-request': 'Hurda çıkışı talebi (hurda kg)',
+  ...FINANCE_ACCOUNTING_RULE_TEXT,
 }
 
 /** Reference role → label in "Dayandığı kayıtlar". */
@@ -105,6 +114,7 @@ export const WORK_INBOX_ROLE_TEXT: Readonly<Record<string, string>> = {
   'manufacturing-order': 'Üretim emri',
   'inventory-label': 'Etiket',
   location: 'Lokasyon',
+  ...FINANCE_ACCOUNTING_ROLE_TEXT,
 }
 
 /** The owners' approve permission names ("kimde bekliyor"). */
@@ -125,6 +135,7 @@ export const WORK_INBOX_PERMISSION_TEXT: Readonly<Record<string, string>> = {
   'inventory.stock-count.approve': 'Stok sayım onayı',
   'inventory.stock-scrap.approve': 'Stok hurda onayı',
   'sales.orders.approve': 'Satış siparişi onayı',
+  ...FINANCE_ACCOUNTING_PERMISSION_TEXT,
 }
 
 export const inboxKindText = (kind: string): string => WORK_INBOX_KIND_TEXT[kind] ?? kind

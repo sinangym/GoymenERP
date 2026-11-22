@@ -72,8 +72,8 @@ internal sealed class AccountingManufacturingCostDifferenceWorkInboxSourceV1(
                 new WorkApprovalReferenceV1("manufacturing-order",
                     AccountingWorkInboxFence.ShortReference(row.ManufacturingOrderId), row.ManufacturingOrderId, null),
                 new WorkApprovalReferenceV1("period", AccountingWorkInboxFence.ShortReference(period), period, null),
-                new WorkApprovalReferenceV1("debit-account", AccountingWorkInboxFence.ShortReference(debit), debit, null),
-                new WorkApprovalReferenceV1("credit-account", AccountingWorkInboxFence.ShortReference(credit), credit, null),
+                new WorkApprovalReferenceV1("debit-ledger-account", AccountingWorkInboxFence.ShortReference(debit), debit, null),
+                new WorkApprovalReferenceV1("credit-ledger-account", AccountingWorkInboxFence.ShortReference(credit), credit, null),
             ]);
     }
 }

@@ -43,7 +43,7 @@ public sealed class AccountingManufacturingCostDifferenceWorkInboxSourceV1Tests
         Assert.Equal(Kit.Start.ToUniversalTime(), first.WaitingSinceUtc);
         Assert.Equal([new WorkApprovalRuleResultV1(AccountingManufacturingCostDifferenceWorkInboxSourceV1.ApprovalRequiredRule,
             null, "-125.5", null, "TRY")], first.Rules);
-        Assert.Equal(["manufacturing-order", "period", "debit-account", "credit-account"],
+        Assert.Equal(["manufacturing-order", "period", "debit-ledger-account", "credit-ledger-account"],
             first.References.Select(reference => reference.Role));
         Assert.Equal(older.ManufacturingOrderId, first.References[0].RecordId);
         Assert.False(kit.Db.ChangeTracker.HasChanges());
