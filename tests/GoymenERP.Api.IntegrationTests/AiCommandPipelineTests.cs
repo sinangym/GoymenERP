@@ -51,6 +51,10 @@ public sealed class AiCommandPipelineTests
         Assert.Equal(AiCommandStatusV1.Approved, approval.Status);
         Assert.Empty(harness.Tool.Executions);
 
+        var second = await harness.SecondApproveAsync(view, approval.ApprovalId!.Value);
+        Assert.Equal(AiCommandStatusV1.SecondApproved, second.Status);
+        Assert.Empty(harness.Tool.Executions);
+
         var executed = await harness.Service().ExecuteAsync(view.PreviewId, view.PreviewHash, approval.ApprovalId!.Value);
 
         Assert.Equal(AiCommandStatusV1.Executed, executed.Status);
@@ -63,8 +67,11 @@ public sealed class AiCommandPipelineTests
         Assert.Equal(approval.ApprovalId, request.CommandContext.Audit.ApprovalId);
         Assert.Equal(
             [AiCommandEventKindV1.Proposed, AiCommandEventKindV1.Previewed, AiCommandEventKindV1.Approved,
-                AiCommandEventKindV1.SecondApproved, AiCommandEventKindV1.Executed],
+                AiCommandEventKindV1.SecondApproved, AiCommandEventKindV1.ExecutionStarted, AiCommandEventKindV1.Executed],
             harness.Ledger.Events.Select(item => item.Kind));
+        var secondEvent = Assert.Single(harness.Ledger.Events, item => item.Kind == AiCommandEventKindV1.SecondApproved);
+        Assert.Equal(OtherActor.ToString("D"), secondEvent.ActorId);
+        Assert.Equal([OtherActor.ToString("D")], harness.StepUp.VerifiedActors);
         Assert.All(harness.Ledger.Events, item => Assert.Equal(Company, item.CompanyId));
         Assert.Equal(
             [SecurityEventPhasesV1.Started, SecurityEventPhasesV1.Completed],
@@ -111,6 +118,7 @@ public sealed class AiCommandPipelineTests
         var view = (await harness.Service().ProposeAsync(Proposal())).Preview!;
         var approval = await harness.Service().ApproveAsync(view.PreviewId, view.PreviewHash);
 
+        await harness.SecondApproveAsync(view, approval.ApprovalId!.Value);
         harness.Tool.TargetVersion = "rv-9";
         var stale = await harness.Service().ExecuteAsync(view.PreviewId, view.PreviewHash, approval.ApprovalId!.Value);
         harness.Tool.TargetVersion = "rv-1";
@@ -144,6 +152,7 @@ public sealed class AiCommandPipelineTests
         var view = (await harness.Service().ProposeAsync(Proposal())).Preview!;
         var approval = await harness.Service().ApproveAsync(view.PreviewId, view.PreviewHash);
 
+        await harness.SecondApproveAsync(view, approval.ApprovalId!.Value);
         harness.Authority.Revoke(ToolPermission);
         var result = await harness.Service().ExecuteAsync(view.PreviewId, view.PreviewHash, approval.ApprovalId!.Value);
 
@@ -176,6 +185,7 @@ public sealed class AiCommandPipelineTests
         var view = (await harness.Service().ProposeAsync(Proposal())).Preview!;
         var approval = await harness.Service().ApproveAsync(view.PreviewId, view.PreviewHash);
 
+        await harness.SecondApproveAsync(view, approval.ApprovalId!.Value);
         harness.Authority.RoleCode = "ROLE-SENTETIK-2";
         var result = await harness.Service().ExecuteAsync(view.PreviewId, view.PreviewHash, approval.ApprovalId!.Value);
 
@@ -191,6 +201,7 @@ public sealed class AiCommandPipelineTests
         var view = (await harness.Service().ProposeAsync(Proposal())).Preview!;
         var approval = await harness.Service().ApproveAsync(view.PreviewId, view.PreviewHash);
 
+        await harness.SecondApproveAsync(view, approval.ApprovalId!.Value);
         var first = await harness.Service().ExecuteAsync(view.PreviewId, view.PreviewHash, approval.ApprovalId!.Value);
         var second = await harness.Service().ExecuteAsync(view.PreviewId, view.PreviewHash, approval.ApprovalId.Value);
 
@@ -222,6 +233,7 @@ public sealed class AiCommandPipelineTests
         var harness = new Harness();
         var view = (await harness.Service().ProposeAsync(Proposal())).Preview!;
         var approval = await harness.Service().ApproveAsync(view.PreviewId, view.PreviewHash);
+        await harness.SecondApproveAsync(view, approval.ApprovalId!.Value);
         harness.Tool.ThrowAfterApplying = true;
 
         var unknown = await harness.Service().ExecuteAsync(view.PreviewId, view.PreviewHash, approval.ApprovalId!.Value);
@@ -336,19 +348,106 @@ public sealed class AiCommandPipelineTests
     }
 
     [Fact]
-    public async Task Without_a_verified_step_up_the_second_approval_is_refused()
+    public async Task A_wrong_password_refuses_the_second_approval_and_records_a_security_event()
     {
         var harness = new Harness();
-        harness.StepUp = new UnconfiguredAiStepUpVerifier();
+        var view = (await harness.Service().ProposeAsync(Proposal())).Preview!;
+        var approval = await harness.Service().ApproveAsync(view.PreviewId, view.PreviewHash);
+
+        var wrong = await harness.SecondApproveAsync(view, approval.ApprovalId!.Value, "SENTETIK-yanlis");
+        var empty = await harness.SecondApproveAsync(view, approval.ApprovalId.Value, null);
+        var execution = await harness.Service().ExecuteAsync(view.PreviewId, view.PreviewHash, approval.ApprovalId.Value);
+
+        Assert.Equal(AiCommandReasonCodesV1.StepUpRequired, wrong.ReasonCode);
+        Assert.Equal(AiCommandReasonCodesV1.StepUpRequired, empty.ReasonCode);
+        Assert.Equal(AiCommandReasonCodesV1.SecondApprovalRequired, execution.ReasonCode);
+        Assert.Empty(harness.Tool.Executions);
+        Assert.DoesNotContain(harness.Ledger.Events, item => item.Kind == AiCommandEventKindV1.SecondApproved);
+        Assert.Equal(2, harness.Writer.Events.Count(item => item.ReasonCode == SecurityEventReasonCodesV1.CredentialsInvalid
+            && item.ActorId == OtherActor.ToString("D")));
+        harness.AssertEveryEventIsValid();
+    }
+
+    [Fact]
+    public async Task The_preparer_and_first_approver_cannot_give_the_second_approval()
+    {
+        var harness = new Harness();
+        var view = (await harness.Service().ProposeAsync(Proposal())).Preview!;
+        var approval = await harness.Service().ApproveAsync(view.PreviewId, view.PreviewHash);
+
+        var same = await harness.Service().SecondApproveAsync(view.PreviewId, view.PreviewHash, approval.ApprovalId!.Value, "SENTETIK-dogru");
+
+        Assert.Equal(AiCommandStatusV1.Refused, same.Status);
+        Assert.Equal(AiCommandReasonCodesV1.SamePerson, same.ReasonCode);
+        Assert.Empty(harness.StepUp.VerifiedActors);
+        Assert.DoesNotContain(harness.Ledger.Events, item => item.Kind == AiCommandEventKindV1.SecondApproved);
+    }
+
+    [Fact]
+    public async Task Execution_without_the_second_approval_is_refused()
+    {
+        var harness = new Harness();
         var view = (await harness.Service().ProposeAsync(Proposal())).Preview!;
         var approval = await harness.Service().ApproveAsync(view.PreviewId, view.PreviewHash);
 
         var result = await harness.Service().ExecuteAsync(view.PreviewId, view.PreviewHash, approval.ApprovalId!.Value);
 
         Assert.Equal(AiCommandStatusV1.Refused, result.Status);
-        Assert.Equal(AiCommandReasonCodesV1.StepUpRequired, result.ReasonCode);
+        Assert.Equal(AiCommandReasonCodesV1.SecondApprovalRequired, result.ReasonCode);
         Assert.Empty(harness.Tool.Executions);
-        Assert.DoesNotContain(harness.Ledger.Events, item => item.Kind == AiCommandEventKindV1.SecondApproved);
+    }
+
+    [Fact]
+    public async Task A_second_approver_without_the_tool_permission_is_refused_before_the_password()
+    {
+        var harness = new Harness();
+        var view = (await harness.Service().ProposeAsync(Proposal())).Preview!;
+        var approval = await harness.Service().ApproveAsync(view.PreviewId, view.PreviewHash);
+
+        harness.Authority.RevokeFor(OtherActor, ToolPermission);
+        var review = await harness.AsSecondApprover(() => harness.Service().ReviewAsync(view.PreviewId));
+        var result = await harness.SecondApproveAsync(view, approval.ApprovalId!.Value);
+
+        Assert.Equal(AiCommandReasonCodesV1.PermissionMissing, review.ReasonCode);
+        Assert.Equal(AiCommandReasonCodesV1.PermissionMissing, result.ReasonCode);
+        Assert.Empty(harness.StepUp.VerifiedActors);
+    }
+
+    [Fact]
+    public async Task An_authorized_second_approver_reviews_the_same_preview_and_a_resent_second_approval_is_idempotent()
+    {
+        var harness = new Harness();
+        var view = (await harness.Service().ProposeAsync(Proposal())).Preview!;
+        var approval = await harness.Service().ApproveAsync(view.PreviewId, view.PreviewHash);
+
+        var review = await harness.AsSecondApprover(() => harness.Service().ReviewAsync(view.PreviewId));
+        var first = await harness.SecondApproveAsync(view, approval.ApprovalId!.Value);
+        var again = await harness.SecondApproveAsync(view, approval.ApprovalId.Value);
+
+        Assert.Equal(view, review.Preview);
+        Assert.Equal(AiCommandStatusV1.SecondApproved, first.Status);
+        Assert.Equal(AiCommandStatusV1.SecondApproved, again.Status);
+        Assert.True(again.IsReplay);
+        Assert.Single(harness.Ledger.Events, item => item.Kind == AiCommandEventKindV1.SecondApproved);
+    }
+
+    [Fact]
+    public async Task A_second_approver_from_another_company_cannot_see_or_approve_the_preview()
+    {
+        var harness = new Harness();
+        var view = (await harness.Service().ProposeAsync(Proposal())).Preview!;
+        var approval = await harness.Service().ApproveAsync(view.PreviewId, view.PreviewHash);
+
+        var other = new CompanyContext();
+        other.Set(OtherCompany);
+        harness.CompanyScope = other;
+        harness.Authority.GrantedCompany = OtherCompany;
+        var review = await harness.AsSecondApprover(() => harness.Service().ReviewAsync(view.PreviewId));
+        var result = await harness.SecondApproveAsync(view, approval.ApprovalId!.Value);
+
+        Assert.Equal(AiCommandStatusV1.NotFound, review.Status);
+        Assert.Equal(AiCommandStatusV1.NotFound, result.Status);
+        Assert.Empty(harness.StepUp.VerifiedActors);
     }
 
     [Fact]
@@ -529,7 +628,7 @@ public sealed class AiCommandPipelineTests
             {
                 entry.DescriptionSha256 = AiToolDescriptionPinV1.Compute(descriptor);
             }
-            Authority = new FakeAuthority(ErpPermissions.AiPanelUse, permission);
+            Authority = new FakeAuthority(() => User.UserId, ErpPermissions.AiPanelUse, permission);
             CompanyScope.Set(Company);
             Correlation.Set("corr-ai-komut-sentetik", null, SourceChannels.Web, null, null);
         }
@@ -539,7 +638,7 @@ public sealed class AiCommandPipelineTests
         public TestCommandTool Tool { get; }
         public InMemoryLedger Ledger { get; } = new();
         public IAiCommandLedgerV1? LedgerOverride { get; set; }
-        public IAiStepUpVerifierV1 StepUp { get; set; } = new VerifiedStepUp();
+        public PasswordStepUp StepUp { get; } = new();
         public RecordingWriter Writer { get; } = new();
         public FakeAuthority Authority { get; }
         public ICurrentUser User { get; set; } = new TestUser(Actor, Company, OtherCompany);
@@ -561,6 +660,24 @@ public sealed class AiCommandPipelineTests
             Correlation,
             Writer,
             Time);
+
+        /// <summary>Runs one call as the second approver (another user of the same company), then restores the preparer.</summary>
+        public async Task<AiCommandPipelineResultV1> AsSecondApprover(Func<Task<AiCommandPipelineResultV1>> call)
+        {
+            var preparer = User;
+            User = new TestUser(OtherActor, Company, OtherCompany);
+            try
+            {
+                return await call();
+            }
+            finally
+            {
+                User = preparer;
+            }
+        }
+
+        public Task<AiCommandPipelineResultV1> SecondApproveAsync(AiCommandPreviewViewV1 view, Guid approvalId, string? password = "SENTETIK-dogru") =>
+            AsSecondApprover(() => Service().SecondApproveAsync(view.PreviewId, view.PreviewHash, approvalId, password));
 
         public void AssertEveryEventIsValid()
         {
@@ -703,15 +820,29 @@ public sealed class AiCommandPipelineTests
         }
     }
 
-    private sealed class VerifiedStepUp : IAiStepUpVerifierV1
+    /// <summary>Stands in for the LocalAccount password check: one synthetic password per test user.</summary>
+    private sealed class PasswordStepUp : IAiStepUpVerifierV1
     {
-        public Task<bool> IsVerifiedAsync(AiStepUpChallengeV1 challenge, CancellationToken cancellationToken = default) =>
-            Task.FromResult(challenge.CompanyId == Company && challenge.PreviewHash.Length == 64);
+        public List<string> VerifiedActors { get; } = [];
+
+        public Task<bool> IsVerifiedAsync(AiStepUpChallengeV1 challenge, string? password, CancellationToken cancellationToken = default)
+        {
+            var verified = password == "SENTETIK-dogru" && challenge.PreviewHash.Length == 64;
+            if (verified)
+            {
+                VerifiedActors.Add(challenge.ActorId);
+            }
+
+            return Task.FromResult(verified);
+        }
     }
 
-    private sealed class FakeAuthority(params string[] granted) : IErpAuthorityRevalidationService
+    private sealed class FakeAuthority(Func<string?> currentUser, params string[] granted) : IErpAuthorityRevalidationService
     {
         private readonly HashSet<string> grants = new(granted, StringComparer.Ordinal);
+        private readonly HashSet<(string User, string Permission)> revokedFor = [];
+
+        public void RevokeFor(Guid user, string permission) => revokedFor.Add((user.ToString("D"), permission));
 
         public string RoleCode { get; set; } = "ROLE-SENTETIK";
 
@@ -721,6 +852,7 @@ public sealed class AiCommandPipelineTests
 
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default) =>
             Task.FromResult(companyId == GrantedCompany && grants.Contains(permission)
+                && !revokedFor.Contains((currentUser() ?? string.Empty, permission))
                 ? new PermissionScope(true, true, new HashSet<string>(StringComparer.Ordinal) { RoleCode }, new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())
                 : PermissionScope.Denied);
     }
