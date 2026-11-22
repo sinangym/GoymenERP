@@ -89,7 +89,8 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
         {
             CompanyId = company, InvoiceId = invoice.Id, SupplierPartyId = invoice.SupplierPartyId, Ettn = invoice.Source.Ettn,
             OfficialNumber = invoice.Source.OfficialNumber, DocumentId = invoice.Source.DocumentId, DocumentVersion = invoice.Source.DocumentVersion,
-            DocumentSha256 = invoice.Source.Sha256,
+            DocumentSha256 = invoice.Source.Sha256, InvoiceDate = invoice.Source.InvoiceDate, CurrencyId = invoice.CurrencyId,
+            PayableAmount = invoice.Amounts.Payable,
         });
         AddInvoiceRevision(snapshot, json, now);
         AddInvoiceAttempt(company, PurchaseIncomingInvoiceCommandsV1.Record, envelope, requestHash, json, null, now);

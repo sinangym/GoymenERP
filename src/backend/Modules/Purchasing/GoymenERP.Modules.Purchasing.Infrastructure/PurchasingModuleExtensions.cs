@@ -60,6 +60,9 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchasingStore>(serviceProvider => serviceProvider.GetRequiredService<PurchasingStore>());
         services.AddScoped<IPurchasingIncomingInvoiceStoreV1>(serviceProvider => serviceProvider.GetRequiredService<PurchasingStore>());
         services.AddScoped<IPurchaseIncomingInvoiceWorkflowV1, PurchaseIncomingInvoiceWorkflow>();
+        // WP15 (1.16): read-only duplicate check; warns, never blocks (NEEDS-SINAN WP15-1).
+        services.AddScoped<IPurchasingInvoiceDuplicateCandidateSourceV1>(serviceProvider => serviceProvider.GetRequiredService<PurchasingStore>());
+        services.AddScoped<IPurchaseInvoiceDuplicateCheckV1, PurchaseInvoiceDuplicateCheck>();
         services.AddScoped<IPurchaseIncomingInvoiceMatchSourceV1, PurchaseIncomingInvoiceMatchSource>();
         services.AddScoped<IPurchaseIncomingInvoiceWorkspaceV1, PurchaseIncomingInvoiceWorkspace>();
         services.AddScoped<IPurchaseIncomingInvoiceDiagnosticsV1, PurchaseIncomingInvoiceDiagnostics>();
