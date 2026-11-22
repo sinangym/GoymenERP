@@ -51,6 +51,8 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | E-37 | Hiçbir şirkete atanmamış yeni hesapları kullanıcı yönetimi listesinde kim görür? (K3FIX-F5, KIM-D16) | **Yalnız oluşturan + Sistem Yöneticisi (Önerilen)** | Seçilmeyenler: "Kullanıcı yönetme yetkisi olan herkes"; "Yalnız Sistem Yöneticisi". |
 | E-38 | ERP'de satış faturası için ayrı PDF üretilsin mi? (WP13) | **Hayır, yalnız resmî PDF (Önerilen)** | Seçilmeyen: "Evet, 'Bilgi Formu' başlığıyla". |
 | E-39 | İmzalı sipariş sözleşmesi yüklenince müşteri kabulü otomatik gerçekleşsin mi, kaydı kim yapar? (WP13) | **Kabulü tetiklesin** | Seçilmeyenler: "Ayrı kalsın, kendi izni (Önerilen)"; "Ayrı kalsın, kabul izniyle". |
+| E-40 | Gelen alış faturası mükerrer görünürse ne olsun? (WP15) | **Uyar + gerekçeyle devam (Önerilen)** | Seçilmeyenler: "Yalnız uyar"; "Engelle". Aynı ETTN ve aynı tedarikçi + tam no için mevcut DB tekillikleri değişmez. |
+| E-41 | Yasal son gün hafta sonu/resmî tatile denk gelirse? (WP15) | **Sonraki iş gününe kaydır (Önerilen)** | Seçilmeyen: "Kaydırma yok". SAT-D125 (vade günü) ayrıdır ve değişmez. |
 
 ## Kararlar
 
@@ -95,6 +97,8 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | KIM-D57 | Atanmamış hesapların görünürlüğü (KIM-D16 ayrıntısı) | Hiçbir şirkete atanmamış hesabı kullanıcı yönetimi listesinde yalnız **onu oluşturan yönetici** ve platform düzeyi **Sistem Yöneticisi** görür. Atama yapılınca KIM-D16 şirket çiti geçerlidir. |
 | SAT-D470 | Satış faturası PDF'i (FNS-D36/D38) | ERP ayrı satış faturası PDF'i **üretmez**; resmî e-Fatura/e-Arşiv PDF'i (Finans resmî kaydı) gösterilir. |
 | SAT-D471 | İmzalı sipariş sözleşmesi (WP13) | İmzalı sözleşme belgesinin kaydı siparişin **müşteri kabulünü** gerçekleştirir (kabul kaydı aynı işlemde, bir kez); kayıt **`sales.orders.customer-acceptance.record`** iznini ister, ayrı imzalı onay izni açılmaz. İmzalı belge pasife alınırsa kabul kendiliğinden geri alınmaz; mevcut kabul iptal/düzeltme yolu kullanılır. |
+| ALS-D125 | Mükerrer görünen gelen alış faturası (WP15) | Benzer fatura bulunursa (aynı tedarikçi + normalize fatura no, ya da aynı tedarikçi + tarih + para birimi + tam tutar) kayıt **engellenmez**; kullanıcı uyarıyı görür ve devam için **gerekçe** yazar; gerekçe denetime kaydedilir. Tutar eşleşmesinde tolerans yoktur. |
+| YOL-D32 | Yasal son günün kayması (WP15) | Yasal son gün hafta sonu veya resmî tatile denk gelirse yaklaşan süreler ekranında **ilk iş gününe kaydırılmış** tarih gösterilir; asıl tarih not olarak görünür. Takvim değerleri mali müşavir teyidiyle girilir. SAT-D125 (vade günü kaydırılmaz) değişmez. |
 
 ## Taslağa doğrudan yansıyanlar (yeni karar değil)
 
