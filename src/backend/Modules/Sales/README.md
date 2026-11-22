@@ -1099,3 +1099,16 @@ keep no rate and stay undecided). A rate frozen for another currency is never re
 An unreadable rate never blocks the approval (SAT-D429). The TL conversion follows the independent SAT-D426 golden (SAT-D431: rows D01-D23 in
 `docs/decisions/SAT_S12_SATIS_MARJI_FORMUL_GOLDEN_V1.md`, PR #1203, merge `d8331e35`), which replaces G20's sale-currency part;
 `ForeignSaleMarginGoldenAccepted` is `true` and `SalesLineMarginCalculatorTests` pins rows D01-D12.
+
+**AK-4 / AK-5 / AK-6 piece (adet) lines (SAT-D434..D439, KLN-D119; `docs/delivery/ADET_KG_PAKETI_v1.md`).** At the internal
+approval a piece line reads its theoretical kg per unit from the Product owner (`IProductTheoreticalKilogramsPerUnitReadPortV1`)
+and pins it on the document (`DraftLineKilogramsPerUnit`, append-only, one row per line and revision; a revision re-reads only a
+line whose product or unit changed). A piece line without a figure refuses the approval with 409 `sales_kg_per_unit_unavailable`
+(not recorded); kilogram lines never read it. A piece line is invoiced as pieces x piece price; the theoretical kg (pieces x pinned
+kg/unit, 3 decimals) and the scale kg carried by the weighing difference are stored on the invoice line as information
+(`TheoreticalKg`, `ActualKg`) and never change an amount; the invoice line guard trigger covers them. EF-generated
+`20261122101114_AddSalesPieceLineKilograms`: Down first refuses with **THROW 52051** while a pinned figure or invoice kg information
+exists (forward fix), then restores the previous trigger body. The kg price read (`GET /api/v1/sales/drafts/{id}/kilogram-prices`,
+invoice `kilogramPrices`) and the piece-line margin (kg cost x pinned kg/unit) stay closed behind `KilogramPriceGoldenAccepted` and
+`PieceMarginGoldenAccepted` (both `false`) until the independent golden `ADET_KG_FORMUL_GOLDEN_V1` is in main; their calculators
+are pinned to golden rows K01-K19 and M01-M12 by unit tests. Real-SQL acceptance is not run locally.
