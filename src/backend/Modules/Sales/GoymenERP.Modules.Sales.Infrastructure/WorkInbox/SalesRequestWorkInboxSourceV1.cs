@@ -43,17 +43,17 @@ internal sealed class SalesRequestWorkInboxSourceV1(
             }
 
             var documentNo = SalesWorkInboxItemsV1.RequireLabel(request.DocumentNo);
+            var link = SalesWorkInboxItemsV1.RequestLink(request.Id);
             items.Add(new WorkInboxItemV1(
                 SalesWorkInboxSourceBaseV1.ModuleName,
                 KindName,
                 request.Id,
                 documentNo,
                 request.CreatedAtUtc.ToUniversalTime(),
-                SalesWorkInboxItemsV1.RequestsLink,
+                link,
                 PreparedBy: null,
                 [new WorkApprovalRuleResultV1(ApprovalRule, null, null, null, null)],
-                [new WorkApprovalReferenceV1(SalesWorkInboxItemsV1.RequestRole, documentNo, request.Id,
-                    SalesWorkInboxItemsV1.RequestsLink)]));
+                [new WorkApprovalReferenceV1(SalesWorkInboxItemsV1.RequestRole, documentNo, request.Id, link)]));
         }
 
         return SalesWorkInboxItemsV1.Page(items, take);

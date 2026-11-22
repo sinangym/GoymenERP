@@ -66,7 +66,7 @@ public sealed class SalesRemainingApprovalWorkInboxSourcesV1Tests
         var result = await source.ListPendingAsync(Context(), 10, default);
 
         var item = Assert.Single(result.Items!);
-        Assert.Equal(("TLP-SNT-0001", "/satis/talepler", T0.ToUniversalTime()), (item.DocumentLabel, item.Link, item.WaitingSinceUtc));
+        Assert.Equal(("TLP-SNT-0001", $"/satis/talepler/{item.ItemId:D}", T0.ToUniversalTime()), (item.DocumentLabel, item.Link, item.WaitingSinceUtc));
         Assert.Null(item.PreparedBy);
         Assert.False(item.Excludes(Maker));
         Assert.Equal(new WorkApprovalRuleResultV1(SalesRequestWorkInboxSourceV1.ApprovalRule, null, null, null, null),

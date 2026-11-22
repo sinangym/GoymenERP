@@ -24,8 +24,8 @@ internal static class SalesWorkInboxItemsV1
     /// <summary>The Sales order 360 screen (<c>/satis/siparisler/:draftId</c>): the price-floor, discount and risk exception panels.</summary>
     public static string OrderLink(Guid draftId) => $"/satis/siparisler/{draftId:D}";
 
-    /// <summary>WP4: S-01 Talep havuzu (<c>/satis/talepler</c>): the request approval and rejection controls.</summary>
-    public const string RequestsLink = "/satis/talepler";
+    /// <summary>WP4: S-01 one request (<c>/satis/talepler/:requestId</c>): the request approval and rejection controls.</summary>
+    public static string RequestLink(Guid requestId) => $"/satis/talepler/{requestId:D}";
 
     /// <summary>WP4: S-09 Satış faturaları (<c>/satis/faturalar</c>): the invoice approval and rejection controls of the list.</summary>
     public const string InvoicesLink = "/satis/faturalar";
