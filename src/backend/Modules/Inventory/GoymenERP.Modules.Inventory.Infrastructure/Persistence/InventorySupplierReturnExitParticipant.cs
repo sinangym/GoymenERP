@@ -140,10 +140,17 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
 
         await AcquirePhysicalValidationAsync(store.LockPhysicalValidationAsync, cancellationToken);
         var receipt = await OriginalReceiptTraceAsync(request.GoodsAcceptanceId, cancellationToken);
+        // AK-8: with the golden gate closed a foreign source label keeps the earlier 503; a missing mode is 400.
+        var lineageExit = InventorySupplierReturnLineageGateV1.Admit(request.SourceLabelId, request.LineageMode, receipt.LabelRow.Id);
         var returned = await ReturnedQuantityAsync(receipt, cancellationToken);
         if (returned + input.Quantity.Value > receipt.QuantityKg)
         {
             throw Refused(409, InventorySupplierReturnExitCodesV1.ExitExceedsReceipt);
+        }
+
+        if (lineageExit)
+        {
+            receipt = await LineageExitTraceAsync(receipt, request, input, cancellationToken);
         }
 
         // Original receipt fixes the product. The company guard is already held before locating physical stock.
@@ -295,6 +302,7 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
                 returnedKg = returned,
                 sourceBlock = request.SourceBlock,
                 positionKg = source.QuantityKg,
+                receiptLabelId = receipt.ReceiptLabelId,
             }, Json),
             JsonSerializer.Serialize(new
             {
@@ -308,6 +316,8 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
                 originalReceiptMovementId = receipt.MovementId,
                 inventoryMovementId = movement.Id,
                 outboxMessageId,
+                sourceLabelId = request.SourceLabelId,
+                lineageMode = request.LineageMode,
             }, Json),
             "Tedarikçi iadesinin stoktan çıkışı",
             ApprovalContextJson: null,
@@ -402,7 +412,7 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
         }
 
         return new ReceiptTrace(movement.Id, line.QuantityKg, (StockPartyKind)line.OwnerKind, line.OwnerId,
-            line.ProductId, label, labelRow);
+            line.ProductId, label, labelRow, labelRow.Id);
     }
 
     /// <summary>
@@ -562,10 +572,12 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
         }
     }
 
+    // AK-8: behind the open golden gate an earlier return of this receipt may have left a descendant (or, for a quantity return,
+    // another) label of the same product; the receipt's kilogram ceiling (SAT-D306 (a)) still counts it.
     private static bool Matches(MovementLineRow row, ReceiptTrace receipt) =>
         row.Direction == (int)StockDirection.Out
         && row.OwnerKind == (int)receipt.OwnerKind && row.OwnerId == receipt.OwnerId
-        && row.LabelId == receipt.LabelRow.Id && row.ProductId == receipt.ProductId
+        && (row.LabelId == receipt.LabelRow.Id || SupplierReturnLineageGoldenV1.IsAccepted()) && row.ProductId == receipt.ProductId
         && (row.Block == (int)BlockState.Free || row.Block == (int)BlockState.Blocked)
         && row.QuantityKg > 0m;
 
@@ -657,7 +669,8 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
         Guid OwnerId,
         Guid ProductId,
         MaterialLabel Label,
-        LabelRow LabelRow);
+        LabelRow LabelRow,
+        Guid ReceiptLabelId);
 
     private sealed record SourcePosition(StockPosition Position, decimal QuantityKg);
 }
