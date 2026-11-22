@@ -11,6 +11,7 @@
 
 import type { FactFailure, FactUnknown } from './commandApi'
 import type { FactKind, OrderStatus, OutputClass, RemnantClassification, StockShortfallView } from './contract'
+import { OUTPUT_PIECE_RULE_TEXT } from './outputPieceText'
 
 export const OUTPUT_CLASS_LABEL: Record<OutputClass, string> = {
   GoodProduct: 'İyi ürün',
@@ -396,6 +397,8 @@ const RULE_TEXT: Record<string, string> = {
   manufacturing_output_reversal_exceeds_declared:
     'Düzeltme, bu çıktı beyanının kalan net kütlesini aşıyor; bir beyanın ters kayıtlarının toplamı beyan edilen ' +
     'kütleyi geçemez.',
+  // AK-7 (URT-D112): the piece side of an output declaration and its correction.
+  ...OUTPUT_PIECE_RULE_TEXT,
   // F-009 D3/D6 (API-25): the physical reason Inventory gave, under its label fence, for not taking the mass back.
   manufacturing_output_correction_exceeds_produced:
     'Düzeltme, bu çıktı etiketine üretimden giren kütleyi aşıyor; etiketteki üretim kaydından fazlası geri alınamaz.',
