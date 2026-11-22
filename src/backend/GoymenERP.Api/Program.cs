@@ -619,6 +619,7 @@ app.MapProductPaintMembershipEndpoints();
 app.MapProductCogsClassificationEndpoints();
 app.MapFinanceEndpoints();
 app.MapFinancePartyBalanceTransfersV1();
+app.MapFinanceBankStatementImportsV1();
 app.MapFinanceCashExchangeBookValuesV1();
 app.MapFinanceOpenItemReadEndpoints();
 app.MapWorkApprovalEndpoints();
