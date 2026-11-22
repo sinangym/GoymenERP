@@ -152,6 +152,7 @@ public sealed class AiYa1ReadToolsTests
             new CounterpartyPartyLookupAiTool(null!, new FixedTime(Now)).Descriptor,
             new CounterpartyPartySummaryAiTool(null!, new FixedTime(Now)).Descriptor,
             new CounterpartyRoleCountsAiTool(null!, new FixedTime(Now)).Descriptor,
+            new CounterpartyPartyContactsAiTool(null!, new FixedTime(Now)).Descriptor,
         }.Concat(AiWpa3bReadToolsTests.Descriptors()).ToArray();
         Assert.Equal(descriptors.Length, descriptors.Select(descriptor => descriptor.ToolId).Distinct(StringComparer.Ordinal).Count());
         var entries = catalog.RootElement.GetProperty("tools").EnumerateArray().ToArray();
@@ -297,17 +298,33 @@ public sealed class AiYa1ReadToolsTests
     }
 
     [Fact]
-    public async Task A_confidential_cari_lookup_is_refused_while_the_data_class_limit_is_internal_and_the_owner_is_not_read()
+    public async Task The_confidential_cari_contacts_tool_is_refused_while_the_data_class_limit_is_internal_and_the_owner_is_not_read()
+    {
+        // AI-D42: authorised person name, phone and e-mail are Confidential; the runtime limit Internal refuses before the owner.
+        var owner = new ContactOwner();
+        var harness = new Harness(new CounterpartyPartyContactsAiTool(owner, new FixedTime(Now)));
+
+        var result = await harness.Service().AskAsync(Ask(CounterpartyPartyContactsAiTool.ToolId,
+            "{\"partyId\":\"70000000-0000-4000-8000-0000000000a1\"}"));
+
+        Assert.Equal(AiAskStatusV1.Refused, result.Status);
+        Assert.Contains(harness.Writer.Events, e => e.EventType == SecurityEventTypesV1.AiRequestRefused
+                                                    && e.ReasonCode == SecurityEventReasonCodesV1.AiDataClassNotAllowed);
+        Assert.Equal(0, owner.Calls);
+    }
+
+    [Fact]
+    public async Task An_internal_cari_lookup_runs_under_the_internal_limit_through_the_cari_owner()
     {
         var owner = new CounterpartyOwner();
         var harness = new Harness(new CounterpartyPartyLookupAiTool(owner, new FixedTime(Now)));
 
         var result = await harness.Service().AskAsync(Ask(CounterpartyPartyLookupAiTool.ToolId, "{\"query\":\"SENTETIK\"}"));
 
-        Assert.Equal(AiAskStatusV1.Refused, result.Status);
-        Assert.Contains(harness.Writer.Events, e => e.EventType == SecurityEventTypesV1.AiRequestRefused
-                                                    && e.ReasonCode == SecurityEventReasonCodesV1.AiDataClassNotAllowed);
-        Assert.Equal(0, owner.Calls);
+        // AI-D42: the party title is Internal, so the tool runs; the SENTETIK owner answers unavailable and nothing is released.
+        Assert.Equal(1, owner.Calls);
+        Assert.DoesNotContain(harness.Writer.Events, e => e.ReasonCode == SecurityEventReasonCodesV1.AiDataClassNotAllowed);
+        Assert.NotEqual(AiAskStatusV1.Answered, result.Status);
     }
 
     [Fact]
@@ -325,6 +342,7 @@ public sealed class AiYa1ReadToolsTests
             new CounterpartyPartyLookupAiTool(new CounterpartyOwner(), new FixedTime(Now)),
             new CounterpartyPartySummaryAiTool(new CounterpartyOwner(), new FixedTime(Now)),
             new CounterpartyRoleCountsAiTool(new CounterpartyOwner(), new FixedTime(Now)),
+            new CounterpartyPartyContactsAiTool(new ContactOwner(), new FixedTime(Now)),
         ];
         var empty = new AiRuntimeOptions
         {
@@ -371,7 +389,25 @@ public sealed class AiYa1ReadToolsTests
             CancellationToken cancellationToken) => throw new NotSupportedException("The tool reads the list only.");
     }
 
-    /// <summary>A Cari owner read that only counts calls: the data-class refusal must stop before it.</summary>
+    /// <summary>A Cari contact read that only counts calls: the data-class refusal must stop before it.</summary>
+    private sealed class ContactOwner : GoymenERP.Modules.Counterparty.Application.Contracts.ICounterpartyContactInformationService
+    {
+        public int Calls { get; private set; }
+
+        public Task<GoymenERP.Modules.Counterparty.Application.Contracts.CounterpartyContactInformationView?> GetContactInformationAsync(
+            Guid partyId, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult<GoymenERP.Modules.Counterparty.Application.Contracts.CounterpartyContactInformationView?>(null);
+        }
+
+        public Task<GoymenERP.Modules.Counterparty.Application.Contracts.CounterpartyCommandExecution> UpdateContactInformationAsync(
+            Guid partyId, GoymenERP.Modules.Counterparty.Application.Contracts.UpdateCounterpartyContactInformation command,
+            GoymenERP.Modules.Counterparty.Application.Contracts.CounterpartyCommandMetadata metadata, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("The tool never writes.");
+    }
+
+    /// <summary>A Cari owner read that only counts calls.</summary>
     private sealed class CounterpartyOwner : GoymenERP.Modules.Counterparty.Application.Contracts.ICounterpartyReadService
     {
         public int Calls { get; private set; }

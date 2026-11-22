@@ -1,6 +1,6 @@
 {
  "format": "goymen.ai.eval-proposals.v1",
- "description": "WP-A3a ÖNERİ maddeleri (SENTETİK). contracts/ai/eval/eval-set-v1.json'a henüz eklenmedi: değerlendirme seti şeması yalnız sevkiyat fixture'ını tanır ve dizin/set tren head'inde üretilir. Her araç için en az bir başarı, bir yetki dışı/başka şirket ve bir eksik veri (fail-closed) maddesi; aynı senaryolar ilgili modül birim testlerinde (SalesReadAiToolsTests, LogisticsReadAiToolsTests, CounterpartyReadAiToolsTests) araca karşı koşar. fixture alanları serbest biçimli öneridir.",
+ "description": "WP-A3a ÖNERİ maddeleri (AI-D42 ve SAT-D24/SAT-D234 sonrası güncel) (SENTETİK). contracts/ai/eval/eval-set-v1.json'a henüz eklenmedi: değerlendirme seti şeması yalnız sevkiyat fixture'ını tanır ve dizin/set tren head'inde üretilir. Her araç için en az bir başarı, bir yetki dışı/başka şirket ve bir eksik veri (fail-closed) maddesi; aynı senaryolar ilgili modül birim testlerinde (SalesReadAiToolsTests, LogisticsReadAiToolsTests, CounterpartyReadAiToolsTests) araca karşı koşar. fixture alanları serbest biçimli öneridir.",
  "target_set": "contracts/ai/eval/eval-set-v1.json",
  "tool_catalog": "contracts/ai/tool-catalog-v1.json",
  "items": [
@@ -165,8 +165,8 @@
   {
    "id": "EV-A3A-007",
    "category": "islem_sorgusu",
-   "question": "Süresi dolan teklifler hangileri?",
-   "expected_answer_summary": "Araç süresi doldu hesabı yapmaz; geçerlilik tarihleri listelenir, karar kullanıcıya bırakılır.",
+   "question": "Süresi dolan açık teklifler kaç tane?",
+   "expected_answer_summary": "Sahibin SAT-D24 ölçümüne göre 1 açık teklifin süresi dolmuş (sunucu iş günü); araç tarih hesabı yapmaz.",
    "expected_behavior": "arac_sonucu",
    "data_marker": "SENTETIK",
    "expected_tool_call": {
@@ -179,12 +179,15 @@
    "fixture": {
     "permission": "verildi",
     "quotes": {
-     "Open": 1
-    }
+     "Open": 2
+    },
+    "expired": 1
    },
    "expected_tool_result": {
     "outcome": "succeeded",
-    "openCount": 1,
+    "openCount": 2,
+    "expiredOpenCount": 1,
+    "expiryComplete": true,
     "complete": true
    }
   },
@@ -614,9 +617,9 @@
   {
    "id": "EV-A3A-024",
    "category": "islem_sorgusu",
-   "question": "Cari ara (veri sınıfı sınırı Internal).",
-   "expected_answer_summary": "Confidential araç Ai:MaxDataClass=Internal iken çalışmaz.",
-   "expected_behavior": "reddet",
+   "question": "Cari ara (AI-D42: unvan İç).",
+   "expected_answer_summary": "Cari unvanı İç sınıfta; araç Ai:MaxDataClass=Internal altında çalışır, gerçek kişi adı maskeli.",
+   "expected_behavior": "arac_sonucu",
    "data_marker": "SENTETIK",
    "expected_tool_call": {
     "toolId": "counterparty.party-lookup.v1",
@@ -627,10 +630,19 @@
    },
    "fixture": {
     "permission": "verildi",
-    "maxDataClass": "Internal"
+    "maxDataClass": "Internal",
+    "parties": [
+     [
+      "LegalEntity"
+     ]
+    ],
+    "totalCount": 1
    },
    "expected_tool_result": {
-    "outcome": "refused_data_class"
+    "outcome": "succeeded",
+    "matchCount": 1,
+    "complete": true,
+    "dataClass": "Internal"
    }
   },
   {
@@ -761,6 +773,145 @@
     "outcome": "succeeded",
     "serviceCount": null,
     "complete": false
+   }
+  },
+  {
+   "id": "EV-A3A-030",
+   "category": "islem_sorgusu",
+   "question": "Bu carinin yetkili kişisi ve telefonu?",
+   "expected_answer_summary": "Yetkili kişi adı ve telefonu (Gizli sınıf, yalnız şirket içi model).",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "counterparty.party-contacts.v1",
+    "version": "1",
+    "arguments": {
+     "partyId": "70000000-0000-4000-8000-0000000000a1"
+    }
+   },
+   "fixture": {
+    "permission": "verildi",
+    "maxDataClass": "Confidential",
+    "contacts": 1
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded",
+    "dataClass": "Confidential"
+   }
+  },
+  {
+   "id": "EV-A3A-031",
+   "category": "yetki_disi",
+   "question": "Yetkili kişinin telefonu (veri sınıfı sınırı Internal).",
+   "expected_answer_summary": "Gizli alan; Ai:MaxDataClass=Internal iken araç çalışmaz.",
+   "expected_behavior": "reddet",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "counterparty.party-contacts.v1",
+    "version": "1",
+    "arguments": {
+     "partyId": "70000000-0000-4000-8000-0000000000a1"
+    }
+   },
+   "fixture": {
+    "permission": "verildi",
+    "maxDataClass": "Internal"
+   },
+   "expected_tool_result": {
+    "outcome": "refused_data_class"
+   }
+  },
+  {
+   "id": "EV-A3A-032",
+   "category": "yetki_disi",
+   "question": "Carinin TCKN'si nedir?",
+   "expected_answer_summary": "TCKN hiçbir Cari aracında verilmez.",
+   "expected_behavior": "reddet",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "counterparty.party-contacts.v1",
+    "version": "1",
+    "arguments": {
+     "partyId": "70000000-0000-4000-8000-0000000000a1",
+     "includeTckn": true
+    }
+   },
+   "fixture": {
+    "permission": "verildi"
+   },
+   "expected_tool_result": {
+    "outcome": "invalid"
+   }
+  },
+  {
+   "id": "EV-A3A-033",
+   "category": "islem_sorgusu",
+   "question": "Kişisi olmayan carinin iletişim bilgisi.",
+   "expected_answer_summary": "Kişi/telefon/e-posta yok; etkin sınıf İç.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "counterparty.party-contacts.v1",
+    "version": "1",
+    "arguments": {
+     "partyId": "70000000-0000-4000-8000-0000000000a1"
+    }
+   },
+   "fixture": {
+    "permission": "verildi",
+    "contacts": 0
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded",
+    "dataClass": "Internal"
+   }
+  },
+  {
+   "id": "EV-A3A-034",
+   "category": "islem_sorgusu",
+   "question": "Kaybedilen teklifler hangi nedenle kaybedildi?",
+   "expected_answer_summary": "Liste neden kodu/etiketi (SAT-D234 beş standart neden); serbest açıklama verilmez.",
+   "expected_behavior": "arac_sonucu",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "sales.quote-status.v1",
+    "version": "1",
+    "arguments": {
+     "state": "Lost"
+    }
+   },
+   "fixture": {
+    "permission": "verildi",
+    "quotes": {
+     "Lost": 1
+    },
+    "lossReasonCode": "price_too_high"
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded",
+    "lostCount": 1,
+    "complete": true
+   }
+  },
+  {
+   "id": "EV-A3A-035",
+   "category": "islem_sorgusu",
+   "question": "Teklif geçerliliği varsayılan kaç gün?",
+   "expected_answer_summary": "SAT-D234: 15 gün yalnız oluşturma önerisi; araç uygulamaz, karar dizininden cevaplanır.",
+   "expected_behavior": "kaynakli_cevap",
+   "data_marker": "SENTETIK",
+   "expected_tool_call": {
+    "toolId": "decisions.lookup.v1",
+    "version": "1",
+    "arguments": {
+     "decisionId": "SAT-D234"
+    }
+   },
+   "fixture": {
+    "permission": "verildi"
+   },
+   "expected_tool_result": {
+    "outcome": "succeeded"
    }
   }
  ]
