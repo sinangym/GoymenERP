@@ -24,6 +24,7 @@ public sealed class AiPanelPermissionRegistrationTests
     {
         ErpPermissions.AiPanelUse,
         ErpPermissions.AiDecisionsRead,
+        ErpPermissions.AiDocumentDraftsPrepare,
     };
 
     [Fact]
@@ -36,6 +37,12 @@ public sealed class AiPanelPermissionRegistrationTests
     public void The_decision_lookup_name_is_spelled_as_registered()
     {
         Assert.Equal("ai.decisions.read", ErpPermissions.AiDecisionsRead);
+    }
+
+    [Fact]
+    public void The_document_draft_name_is_spelled_as_registered()
+    {
+        Assert.Equal("ai.document-drafts.prepare", ErpPermissions.AiDocumentDraftsPrepare);
     }
 
     [Theory]

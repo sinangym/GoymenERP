@@ -92,7 +92,7 @@ public sealed class AiAskService(
         {
             var available = catalog.Descriptors
                 .Where(descriptor => descriptor.DataClass <= limits.MaxDataClass)
-                .Select(descriptor => new AiModelToolV1(descriptor.ToolId, descriptor.Version, descriptor.DataClass, descriptor.FieldAllowlist))
+                .Select(descriptor => new AiModelToolV1(descriptor.ToolId, descriptor.Version, descriptor.DataClass, descriptor.FieldAllowlist, descriptor.Description))
                 .ToArray();
             plan = await provider.PlanAsync(new AiModelRequestV1(question, available, hint), cancellationToken);
         }

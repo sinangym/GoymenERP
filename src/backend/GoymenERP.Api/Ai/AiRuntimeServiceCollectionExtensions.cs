@@ -1,3 +1,4 @@
+using GoymenERP.Api.Ai.DocumentDrafts;
 using GoymenERP.Api.Ai.External;
 using GoymenERP.Api.Ai.Knowledge;
 using GoymenERP.BuildingBlocks.Ai;
@@ -39,6 +40,17 @@ public static class AiRuntimeServiceCollectionExtensions
         services.AddScoped<AiToolCatalog>();
         services.AddScoped<AiCapabilityService>();
         services.AddScoped<AiAskService>();
+
+        // WP-B3 document drafts: off (Ai:DocumentDrafts:Enabled=false and Ai:Enabled=false). OCR and the local model are
+        // closed ports (no engine, OPEN-014); counterparty matching waits for an owner tax-identity port; the product
+        // matcher uses the Product owner's candidate ports; the source goes to the object-storage abstraction.
+        services.AddOptions<AiDocumentDraftOptions>().Bind(configuration.GetSection(AiDocumentDraftOptions.SectionName));
+        services.TryAddSingleton<IAiDocumentOcrV1, UnavailableAiDocumentOcr>();
+        services.TryAddSingleton<IAiDocumentLocalModelV1, ClosedAiDocumentLocalModel>();
+        services.TryAddSingleton<IAiDocumentCounterpartyMatcherV1, UnconfiguredAiDocumentCounterpartyMatcher>();
+        services.TryAddScoped<IAiDocumentProductMatcherV1, ProductCandidatesAiDocumentProductMatcher>();
+        services.TryAddScoped<IAiDocumentSourceStoreV1, ObjectStoreAiDocumentSourceStore>();
+        services.AddScoped<AiDocumentDraftService>();
         return services;
     }
 

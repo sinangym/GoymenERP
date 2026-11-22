@@ -275,8 +275,17 @@ public sealed class AiYa1ReadToolsTests
             MaxDataClass = AiDataClassV1.Internal,
             AllowedTools =
             [
-                new AiAllowedToolOptions { ToolId = DecisionLookupAiTool.ToolId, Version = DecisionLookupAiTool.ToolVersion },
-                new AiAllowedToolOptions { ToolId = LogisticsPendingShipmentsAiTool.ToolId, Version = LogisticsPendingShipmentsAiTool.ToolVersion },
+                new AiAllowedToolOptions
+                {
+                    ToolId = DecisionLookupAiTool.ToolId, Version = DecisionLookupAiTool.ToolVersion,
+                    DescriptionSha256 = AiToolDescriptionPinV1.Compute(DecisionTool().Descriptor),
+                },
+                new AiAllowedToolOptions
+                {
+                    ToolId = LogisticsPendingShipmentsAiTool.ToolId, Version = LogisticsPendingShipmentsAiTool.ToolVersion,
+                    DescriptionSha256 = AiToolDescriptionPinV1.Compute(
+                        new LogisticsPendingShipmentsAiTool(new ListOnlyInstructionService(), new FixedTime(Now)).Descriptor),
+                },
             ],
         };
 

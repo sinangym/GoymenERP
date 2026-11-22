@@ -1717,6 +1717,13 @@ public static class ErpPermissions
     /// registered company-wide only, not critical, and no seeded role holds it: applying the grant is a human gate.
     /// </summary>
     public const string AiDecisionsRead = "ai.decisions.read";
+    /// <summary>
+    /// WP-B3 (AI-D22 "belgeden taslak", AI-D34 c, DALGA_PLANI_v2 B.3): may turn an e-mail, PDF, pasted text or structured
+    /// file into a sales order, supplier confirmation or incoming invoice DRAFT, in addition to <see cref="AiPanelUse"/> and
+    /// the owner module's own permission for that kind. A draft creates no record. Company-wide only, not critical.
+    /// Registered, not granted: no seeded role holds it; a grant is a human gate.
+    /// </summary>
+    public const string AiDocumentDraftsPrepare = "ai.document-drafts.prepare";
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(
         [
@@ -2006,6 +2013,7 @@ public static class ErpPermissions
             IdentityAssignmentsRead,
             AiPanelUse,
             AiDecisionsRead,
+            AiDocumentDraftsPrepare,
             IdentityUsersManage,
             PlatformSecurityEventsRead,
             WorkNotesWrite,
@@ -2309,6 +2317,7 @@ public static class ErpPermissions
             IdentityAssignmentsRead,
             AiPanelUse,
             AiDecisionsRead,
+            AiDocumentDraftsPrepare,
             IdentityUsersManage,
             PlatformSecurityEventsRead,
             WorkNotesWrite,
