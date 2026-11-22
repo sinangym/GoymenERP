@@ -6217,6 +6217,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // W1-A; K3 review pending. Down refuses (52084, Work range, used by no other migration) while work.approval-duration-* policy versions or holiday calendar versions exist; use a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261122181548_AddWorkApprovalDurationPolicies.cs"] =
                     new("c2be1e8e212f794bb5a0c4ebdd3f98dcc805a559caa98c1a2fdc842ea0b53d18", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // WP14; K3 review pending. Down refuses (52270, WP14 range, used by no other migration) while report-centre export records, saved views or command attempts exist; use a forward fix. 1 lexical Sql call(s). Fingerprint re-pinned on the tren-2 head (GOV-D9).
+                ["src/backend/Modules/Reporting/GoymenERP.Modules.Reporting.Infrastructure/Persistence/Migrations/20261122201929_AddReportingCenter.cs"] =
+                    new("0000000000000000000000000000000000000000000000000000000000000000", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
             };
 
     private static readonly HashSet<string> ReviewedProjectSdks =
