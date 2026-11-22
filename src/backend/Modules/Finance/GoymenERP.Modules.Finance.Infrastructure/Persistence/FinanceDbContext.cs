@@ -2495,8 +2495,31 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
                         "Resmî satış faturası kaydı yalnız bekleyen durumdan bir kez onay, ret veya geri çekme ile değişir.");
                 }
 
+                if (entry.Entity is FinanceBankStatementImportRow statementImport
+                    && (entry.State != EntityState.Modified
+                        || entry.Property(nameof(FinanceBankStatementImportRow.State)).OriginalValue is not FinanceBankStatementImportStates.Reserved
+                        || statementImport.State != FinanceBankStatementImportStates.Parsed
+                        || entry.Property(nameof(FinanceBankStatementImportRow.Version)).OriginalValue is not long previousVersion
+                        || statementImport.Version != previousVersion + 1))
+                {
+                    // WP12: an import changes once, Reserved -> Parsed with one version step; a parsed import never changes.
+                    throw new InvalidOperationException("Banka ekstresi içe alma kaydı yalnız bir kez, dosya okunduğunda değişir.");
+                }
+
                 string[] allowed = entry.Entity switch
                 {
+                    // WP12: only the parse result; the account, format and bank key never change. Lines are append-only.
+                    FinanceBankStatementImportRow =>
+                    [
+                        nameof(FinanceBankStatementImportRow.State), nameof(FinanceBankStatementImportRow.DocumentId),
+                        nameof(FinanceBankStatementImportRow.DocumentVersion), nameof(FinanceBankStatementImportRow.DocumentSha256),
+                        nameof(FinanceBankStatementImportRow.CsvMappingProfileId),
+                        nameof(FinanceBankStatementImportRow.CsvMappingProfileVersion),
+                        nameof(FinanceBankStatementImportRow.LineCount), nameof(FinanceBankStatementImportRow.DuplicateLineCount),
+                        nameof(FinanceBankStatementImportRow.FirstTransactionOn),
+                        nameof(FinanceBankStatementImportRow.LastTransactionOn),
+                        nameof(FinanceBankStatementImportRow.ParsedBy), nameof(FinanceBankStatementImportRow.ParsedAtUtc),
+                    ],
                     FinanceCreditLimitRow => [nameof(FinanceCreditLimitRow.Status), nameof(FinanceCreditLimitRow.DecidedBy),
                         nameof(FinanceCreditLimitRow.DecidedAtUtc), nameof(FinanceCreditLimitRow.RejectionReason)],
                     FinanceCreditMovementRow => [nameof(FinanceCreditMovementRow.Status), nameof(FinanceCreditMovementRow.DecidedBy),
