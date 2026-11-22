@@ -83,6 +83,50 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             (await dispositions.GetAsync(CompanyA, declaration.LabelId)).Disposition!.LabelVersion);
     }
 
+    [SqlServerFact]
+    public async Task A_counted_output_opens_its_label_with_pieces_and_its_correction_takes_pieces_back_from_the_label_on_real_sql()
+    {
+        // AK-7b (URT-D112, KLN-D119): the host hands the Manufacturing fact's pieces to Inventory in the same transaction.
+        await using var run = await StartManufacturingInventoryRunAsync();
+        var seed = await PrepareIssuedOrderAsync(run, "SYN-MFG-PIECE-OUTPUT", 100m);
+        var authority = new CorrectionHostAuthority();
+        await using var inventory = InventoryHostContext(run, CompanyA);
+        var company = new CompanyContext(); company.Set(CompanyA);
+        var dispositions = new InventoryLabelDispositionReadPort(inventory, company);
+        await using var scope = ReturnOutputHostScope.Create(run, authority, new ManufacturingOutputAdmission(),
+            labelDispositions: dispositions);
+        var pieces = new OutputPieces(new PieceCount(48), new OutputTheoreticalKilogramsPerPiece(1.6m,
+            "SENTETIK;product:1;formula:v1;unit-profile:-/1"));
+        var declaration = OutputCommand(seed, seed.OrderVersion, seed.ParentLabelVersion, 80m) with
+            { OutputLine = PlanOutputLineReference.ClassLine, Pieces = pieces };
+
+        var output = await scope.Host.DeclareOutputAsync(declaration, ManufacturingHostMetadata(run, "piece-output"));
+
+        Assert.Equal(48, await run.ScalarAsync<int>(
+            "SELECT OutputPieceCount FROM manufacturing.Facts WHERE Id = @id", ("@id", declaration.OutputId)));
+        Assert.Equal(48, await run.ScalarAsync<int>(
+            "SELECT PieceCount FROM inventory.Balances WHERE LabelId = @id AND QuantityKg = 80", ("@id", declaration.LabelId)));
+        Assert.Equal(48, await run.ScalarAsync<int>(
+            "SELECT PieceCount FROM inventory.MovementLines WHERE MovementId = @id", ("@id", declaration.MovementId)));
+
+        // The correction names the pieces it takes back (the store refuses a counted output's correction without them:
+        // ManufacturingSqlServerRelationalAcceptanceTests.OutputPieces); the same count leaves the Inventory label.
+        var counted = new ManufacturingInventoryOutputCorrectionPortCommandV1(seed.OrderId, output.OrderVersion,
+            declaration.OutputId, Guid.NewGuid(), declaration.LabelId, output.LabelVersion, Guid.NewGuid(),
+            new Kilograms(10m), "SENTETIK adetli cikti duzeltmesi", seed.OccurredAtUtc.AddMinutes(5), new PieceCount(6));
+        var metadata = ManufacturingHostMetadata(run, "piece-correction") with
+            { PermissionCode = ErpPermissions.ManufacturingFactsCorrect };
+        var applied = await scope.Host.CorrectOutputAsync(counted, metadata);
+
+        Assert.False(applied.IsReplay);
+        Assert.Equal(6, await run.ScalarAsync<int>(
+            "SELECT PieceCount FROM manufacturing.OutputReversals WHERE Id = @id", ("@id", counted.ReversalId)));
+        Assert.Equal(6, await run.ScalarAsync<int>(
+            "SELECT PieceCount FROM inventory.MovementLines WHERE MovementId = @id", ("@id", counted.MovementId)));
+        Assert.Equal(42, await run.ScalarAsync<int>(
+            "SELECT PieceCount FROM inventory.Balances WHERE LabelId = @id AND QuantityKg = 70", ("@id", declaration.LabelId)));
+    }
+
     private sealed class CorrectionHostAuthority : IErpAuthorityRevalidationService
     {
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,

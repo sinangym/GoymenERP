@@ -134648,6 +134648,7 @@
             "x-erp-problem-codes": [
               "idempotency_conflict",
               "inventory_allocation_exceeds_demand_open_quantity",
+              "inventory_allocation_insufficient_free_pieces",
               "inventory_allocation_insufficient_free_stock",
               "inventory_concurrent_change",
               "inventory_label_version_conflict",
@@ -134822,6 +134823,9 @@
             "x-erp-problem-codes": [
               "inventory_allocation_invalid_reference",
               "inventory_allocation_owner_not_company",
+              "inventory_allocation_piece_count_invalid",
+              "inventory_allocation_piece_count_not_tracked",
+              "inventory_allocation_piece_count_required",
               "inventory_allocation_substitute_not_similar",
               "inventory_allocation_unit_conversion_unavailable"
             ]
@@ -135645,6 +135649,7 @@
             "x-erp-problem-codes": [
               "idempotency_conflict",
               "inventory_allocation_exceeds_demand_open_quantity",
+              "inventory_allocation_insufficient_free_pieces",
               "inventory_allocation_insufficient_free_stock",
               "inventory_allocation_state_conflict",
               "inventory_allocation_version_conflict",
@@ -135801,6 +135806,9 @@
               "inventory_allocation_change_unchanged",
               "inventory_allocation_invalid_reference",
               "inventory_allocation_owner_not_company",
+              "inventory_allocation_piece_count_invalid",
+              "inventory_allocation_piece_count_not_tracked",
+              "inventory_allocation_piece_count_required",
               "inventory_allocation_unit_conversion_unavailable"
             ]
           },
@@ -252224,6 +252232,15 @@
               "string"
             ],
             "format": "uuid"
+          },
+          "pieceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         },
         "additionalProperties": false
@@ -255944,6 +255961,15 @@
               "null",
               "boolean"
             ]
+          },
+          "pieceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         },
         "additionalProperties": false
@@ -265736,6 +265762,15 @@
               "null",
               "string"
             ]
+          },
+          "unreservedPieces": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -266475,6 +266510,33 @@
             "items": {
               "$ref": "#/components/schemas/InventoryPositionV1"
             }
+          },
+          "physicalPieces": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "freePieces": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "blockedPieces": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -268144,6 +268206,24 @@
           "isSubstitute": {
             "type": "boolean",
             "default": false
+          },
+          "allocatedPieces": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "remainingPieces": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -268187,6 +268267,15 @@
           },
           "quantityKg": {
             "type": "string"
+          },
+          "pieceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -275061,6 +275150,10 @@
           },
           "stockUnitCode": {
             "type": "string"
+          },
+          "pieceCounting": {
+            "type": "string",
+            "default": "Unavailable"
           }
         }
       },

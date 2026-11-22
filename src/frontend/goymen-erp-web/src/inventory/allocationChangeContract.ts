@@ -16,6 +16,7 @@
  * The server decides free stock, ownership, versions and the approved Sales line; this module only builds requests
  * the writer can accept and refuses to show an answer that does not describe the request.
  */
+import { ALLOCATION_PIECE_REFUSAL_TEXT } from './allocationPieceText'
 import { isGuid, isReason, KG_MAX_DECIMALS, kilogramsToGrams, REASON_MAX_LENGTH } from './labelTransformationContract'
 
 export { REASON_MAX_LENGTH, isReason }
@@ -40,6 +41,12 @@ export interface LabelAllocation {
   readonly reservedUntilUtc: string | null
   readonly createdAtUtc: string
   readonly updatedAtUtc: string
+  /** KLN-D39: present on the wire as a flag of a similar-product ("muadil") reservation; never required here. */
+  readonly isSubstitute?: boolean
+  /** KLN-D119: the pieces the allocation reserved; absent when it holds none (a kg-only label). */
+  readonly allocatedPieces?: number
+  /** KLN-D119: the pieces still reserved; present exactly when `allocatedPieces` is. */
+  readonly remainingPieces?: number
 }
 
 export interface AllocationChangeEntry {
@@ -79,6 +86,8 @@ export interface AllocationChangeRequest {
   readonly quantityKg: string
   readonly reason: string
   readonly newAllocationId: string | null
+  /** KLN-D119: the pieces the allocation holds afterwards; sent only for a piece-tracking target, the server decides. */
+  readonly pieceCount?: number
 }
 
 /** The release body: the allocation version the user saw and a mandatory reason (≤ 1000 characters). */
@@ -137,10 +146,39 @@ const ALLOCATION_FIELDS = [
   'demandProductVersion', 'allocatedKg', 'remainingKg', 'reason', 'reservedUntilUtc', 'createdAtUtc', 'updatedAtUtc',
 ] as const
 
+/** Members `InventoryPhysicalAllocationViewV1` does not require: absent is valid, present must have its exact type. */
+export const ALLOCATION_OPTIONAL_FIELDS = ['isSubstitute', 'allocatedPieces', 'remainingPieces'] as const
+
+const INT32_MAX = 2147483647
+
+/** An optional piece member: absent is "no pieces"; present must be a whole number (never null, text or a fraction). */
+function isOptionalPieces(value: unknown): value is number | undefined {
+  return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= INT32_MAX)
+}
+
+/**
+ * A piece count as typed in the change form: a whole number of at least one (no sign, no leading zero, within int32);
+ * anything else is `null` and nothing is sent.
+ */
+export function parseAllocationPieceCount(value: string): number | null {
+  if (!/^[1-9][0-9]{0,9}$/.test(value)) return null
+  const parsed = Number(value)
+  return parsed <= INT32_MAX ? parsed : null
+}
+
+function exactWithOptional(value: JsonObject, names: readonly string[], optional: readonly string[]): boolean {
+  return exact(Object.fromEntries(Object.entries(value).filter(([name]) => !optional.includes(name))), names)
+}
+
 /** One allocation, only when internally consistent (an active one holds kg, a closed one holds none). */
 export function decodeLabelAllocation(value: unknown): LabelAllocation | null {
   const source = record(value)
-  if (source === null || !exact(source, ALLOCATION_FIELDS)) return null
+  if (source === null || !exactWithOptional(source, ALLOCATION_FIELDS, ALLOCATION_OPTIONAL_FIELDS)) return null
+  if (!(source.isSubstitute === undefined || typeof source.isSubstitute === 'boolean') ||
+    !isOptionalPieces(source.allocatedPieces) || !isOptionalPieces(source.remainingPieces)) return null
+  // KLN-D119: both piece figures or neither; the reserved pieces never exceed the allocated ones.
+  if ((source.allocatedPieces === undefined) !== (source.remainingPieces === undefined) ||
+    (source.allocatedPieces !== undefined && source.remainingPieces! > source.allocatedPieces)) return null
   if (!isGuid(source.allocationId) || !isGuid(source.companyId) || !isVersion(source.version) ||
     !STATUSES.includes(source.status as AllocationStatus) || !isGuid(source.labelId) || !isGuid(source.productId) ||
     source.demandKind !== 'sales.order-line' || !isGuid(source.demandId) || !isGuid(source.demandLineId) ||
@@ -230,7 +268,9 @@ export function describesChange(
     current.demandLineId.toLowerCase() === request.salesOrderLineId.toLowerCase()
   const common = current.companyId.toLowerCase() === companyId.toLowerCase() && sameDemand &&
     current.labelId.toLowerCase() === request.targetLabelId.toLowerCase() &&
-    kilogramsToGrams(current.remainingKg) === kilogramsToGrams(request.quantityKg)
+    kilogramsToGrams(current.remainingKg) === kilogramsToGrams(request.quantityKg) &&
+    // KLN-D119: a change that named the pieces held afterwards is answered with exactly those pieces.
+    (request.pieceCount === undefined || current.remainingPieces === request.pieceCount)
   if (!common) return false
   if (view.kind === 'Resize') {
     return request.newAllocationId === null && current.allocationId.toLowerCase() === allocationId.toLowerCase()
@@ -259,6 +299,7 @@ const REFUSAL_TEXT: Readonly<Record<string, string>> = {
     'Hedef stok şirketin kendi malı ve kendi elinde değil (müşteri malı veya fasonda); satış siparişine tahsis edilemez.',
   inventory_allocation_change_unchanged: 'Değişiklik yok: aynı etiket ve aynı miktar.',
   inventory_concurrent_change: 'Aynı etiket eşzamanlı değişti. Etiketi yeniden açıp tekrar deneyin.',
+  ...ALLOCATION_PIECE_REFUSAL_TEXT,
   forbidden: 'Bu şirkette tahsis değiştirme yetkiniz yok.',
   unauthenticated: 'Oturum doğrulanamadı.',
 }

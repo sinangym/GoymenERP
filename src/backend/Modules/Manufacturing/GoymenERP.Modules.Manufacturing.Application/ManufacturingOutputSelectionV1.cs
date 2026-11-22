@@ -40,7 +40,7 @@ public sealed record ManufacturingOutputProductCandidateV1(
     string Code,
     string Name,
     string StockUnitCode,
-    string PieceCounting = ManufacturingOutputPieceCountingV1.Unavailable);
+    string PieceCounting);
 
 public sealed record ManufacturingOutputLocationCandidatesV1(
     IReadOnlyList<ManufacturingOutputLocationCandidateV1> Items,

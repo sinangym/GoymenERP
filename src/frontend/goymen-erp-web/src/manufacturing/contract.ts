@@ -56,7 +56,18 @@ export interface ManufacturingOutputProductCandidate {
   readonly code: string
   readonly name: string
   readonly stockUnitCode: string
+  /** URT-D112 (AK-7b): what the output declaration will ask of this product's piece count. */
+  readonly pieceCounting: OutputPieceCounting
 }
+
+/**
+ * URT-D112 (AK-7b): the closed set of `ManufacturingOutputProductCandidateV1.pieceCounting`.
+ * `Counted` — declared with a piece count + weighed kg; `NotCounted` — kg only, a piece count is refused;
+ * `SourceMissing` — the card names the piece unit but has no theoretical kg/piece source, the declaration is refused;
+ * `Unavailable` — could not be read, the server decides.
+ */
+export const OUTPUT_PIECE_COUNTINGS = ['Counted', 'NotCounted', 'SourceMissing', 'Unavailable'] as const
+export type OutputPieceCounting = (typeof OUTPUT_PIECE_COUNTINGS)[number]
 
 export interface ManufacturingOutputProductCandidates {
   readonly items: readonly ManufacturingOutputProductCandidate[]
@@ -494,7 +505,10 @@ export function decodeManufacturingOutputProductCandidates(
   const items: ManufacturingOutputProductCandidate[] = []
   const ids = new Set<string>()
   for (const raw of value.items) {
-    if (!isObject(raw) || !hasExactKeys(raw, ['productId', 'productVersion', 'code', 'name', 'stockUnitCode'])) {
+    if (!isObject(raw)
+      || !hasExactKeys(raw, ['productId', 'productVersion', 'code', 'name', 'stockUnitCode', 'pieceCounting'])
+      // A value outside the closed set (another string, null, a missing member) fails the whole list closed.
+      || !(OUTPUT_PIECE_COUNTINGS as readonly unknown[]).includes(raw.pieceCounting)) {
       return null
     }
     const productId = nonNilGuid(raw.productId)
@@ -508,6 +522,7 @@ export function decodeManufacturingOutputProductCandidates(
       code: raw.code,
       name: raw.name,
       stockUnitCode: raw.stockUnitCode,
+      pieceCounting: raw.pieceCounting as OutputPieceCounting,
     })
   }
   return { items, searchWindowFull: value.searchWindowFull }

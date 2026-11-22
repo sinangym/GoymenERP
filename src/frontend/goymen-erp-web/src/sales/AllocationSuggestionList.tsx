@@ -12,6 +12,13 @@ import styles from './SalesPages.module.css'
 export interface AllocationSuggestionChoice extends AllocationLabelChoice {
   readonly isSubstitute?: true
   readonly productText?: string
+  /**
+   * KLN-D119: set by a suggestion pick — the server said whether this label tracks pieces. Without it (a pick from the
+   * label search, which carries no piece figure) the form cannot know and leaves the decision to the server.
+   */
+  readonly piecesKnown?: true
+  /** KLN-D119: the suggestion's unreserved pieces; with `piecesKnown`, absent means a kg-only label. */
+  readonly unreservedPieces?: number
 }
 
 export interface AllocationSuggestionListProps {
@@ -154,7 +161,14 @@ export function AllocationSuggestionList({
                     {product}
                     {item.isSubstitute ? <>{' '}<span className={styles.badge}>{T.substituteBadge}</span></> : null}
                   </td>
-                  <td>{item.unreservedKg}</td>
+                  <td>
+                    {item.unreservedKg}
+                    {item.unreservedPieces === undefined ? null : (
+                      <>{' · '}<span data-testid={`sales-allocation-suggestion-pieces-${item.labelId}`}>
+                        {T.pieces(item.unreservedPieces)}
+                      </span></>
+                    )}
+                  </td>
                   <td>{item.maximumDeviationPercent === null ? '—' : T.suggestionDeviationValue(item.maximumDeviationPercent)}</td>
                   <td>
                     <button type="button" className={styles.secondaryButton} disabled={disabled || chosen}
@@ -165,6 +179,8 @@ export function AllocationSuggestionList({
                         labelCode: item.labelCode,
                         availableKg: item.unreservedKg,
                         productText: product,
+                        piecesKnown: true as const,
+                        ...(item.unreservedPieces === undefined ? {} : { unreservedPieces: item.unreservedPieces }),
                         ...(item.isSubstitute ? { isSubstitute: true as const } : {}),
                       })}>
                       {chosen ? T.labelChosen : T.suggestionChoose}

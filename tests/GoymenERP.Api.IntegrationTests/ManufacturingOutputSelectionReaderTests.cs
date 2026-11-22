@@ -35,7 +35,8 @@ public sealed class ManufacturingOutputSelectionReaderTests
             Assert.Single(products.Queries));
         Assert.Equal((Company, new OrganizationLocationCandidateQueryV1("hol", 19)),
             Assert.Single(locations.Queries));
-        Assert.Equal(new ManufacturingOutputProductCandidateV1(Product, "12", "PRD-12", "Galvaniz bant", "kg"),
+        Assert.Equal(new ManufacturingOutputProductCandidateV1(Product, "12", "PRD-12", "Galvaniz bant", "kg",
+                ManufacturingOutputPieceCountingV1.Unavailable),
             Assert.Single(productAnswer.Items));
         Assert.Equal(new ManufacturingOutputLocationCandidateV1(
             Location, "HOL-1", "Üretim holü", Site, "OSM", "Osmangazi"),

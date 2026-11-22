@@ -289,6 +289,8 @@ export const REALIZATION_TEXT = {
   line: 'Satır',
   labelReference: 'Etiket ref.',
   allocationReference: 'Tahsis ref.',
+  /** KLN-D119: the pieces a piece-line allocation still holds, beside its remaining kg; the count is the server's. */
+  remainingPieces: (count: number) => ` · ${count} adet`,
   shipmentReference: 'Sevk ref.',
   choose: 'Seçin',
   invalid: 'Listeden geçerli bir kaynak seçin ve pozitif miktar girin.',

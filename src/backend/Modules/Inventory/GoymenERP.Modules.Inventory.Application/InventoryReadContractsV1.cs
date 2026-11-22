@@ -40,13 +40,18 @@ public sealed record InventoryLabelPrintV1(int Sequence, DateTimeOffset PrintedA
 /// T07(a): the stock of one label, position by position. Kilograms are lossless invariant text
 /// without trailing zeros (Ö2); totals are sums of the positions shown, for the label's owner(s) as
 /// stored. A label with no stock has no positions and every total "0".
+/// <c>PhysicalPieces</c>/<c>FreePieces</c>/<c>BlockedPieces</c> (KLN-D119) are the piece totals of a piece-tracking label and
+/// are omitted for a label without pieces; each position carries its own <c>PieceCount</c> the same way.
 /// </summary>
 public sealed record InventoryLabelBalancesV1(
     Guid LabelId,
     string PhysicalKg,
     string FreeKg,
     string BlockedKg,
-    IReadOnlyList<InventoryPositionV1> Positions);
+    IReadOnlyList<InventoryPositionV1> Positions,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? PhysicalPieces = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? FreePieces = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? BlockedPieces = null);
 
 public sealed record InventoryPositionV1(
     string OwnerKind,
@@ -56,7 +61,8 @@ public sealed record InventoryPositionV1(
     Guid LocationId,
     Guid ProductId,
     string Block,
-    string QuantityKg);
+    string QuantityKg,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? PieceCount = null);
 
 /// <summary>Maps the domain's label and stored balances to the V1 read shapes. No rule is decided here.</summary>
 public static class InventoryReadModelsV1
@@ -96,6 +102,10 @@ public static class InventoryReadModelsV1
 
         var shown = balances.Where(balance => balance.Quantity.Value != 0m).ToArray();
         decimal Sum(Func<StockBalance, bool> which) => shown.Where(which).Sum(balance => balance.Quantity.Value);
+        // KLN-D119: a label tracks pieces in every stocked bucket or in none (StockLedger); totals exist only when it does.
+        var counted = shown.Length > 0 && shown.All(balance => balance.Pieces is not null);
+        int? Pieces(Func<StockBalance, bool> which) =>
+            counted ? shown.Where(which).Sum(balance => balance.Pieces!.Value.Value) : null;
         return new InventoryLabelBalancesV1(
             labelId,
             Kilograms.Of(Sum(_ => true)).ToString(),
@@ -114,6 +124,10 @@ public static class InventoryReadModelsV1
                     balance.Position.LocationId,
                     balance.Position.ProductId,
                     balance.Position.Block.ToString(),
-                    balance.Quantity.ToString()))]);
+                    balance.Quantity.ToString(),
+                    balance.Pieces?.Value))],
+            Pieces(_ => true),
+            Pieces(balance => balance.Position.Block == BlockState.Free),
+            Pieces(balance => balance.Position.Block == BlockState.Blocked));
     }
 }
