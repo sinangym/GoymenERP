@@ -1717,6 +1717,13 @@ public static class ErpPermissions
     /// registered company-wide only, not critical, and no seeded role holds it: applying the grant is a human gate.
     /// </summary>
     public const string AiDecisionsRead = "ai.decisions.read";
+    /// <summary>
+    /// WP-A4 (AI-D32 "onaylı karar dizini", DALGA_PLANI_v2 A.4): approve (or withdraw the approval of) one published AI
+    /// knowledge package version (the decision index or the release behaviour knowledge) for the company; until an
+    /// approval of the exact packaged bytes exists, the reading tools answer unavailable. Company-wide only. Not marked
+    /// Critical (marking it is a human gate). Registered, not granted: no seeded role holds it; a grant is a human gate.
+    /// </summary>
+    public const string AiKnowledgeApprove = "ai.knowledge.approve";
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(
         [
@@ -2006,6 +2013,7 @@ public static class ErpPermissions
             IdentityAssignmentsRead,
             AiPanelUse,
             AiDecisionsRead,
+            AiKnowledgeApprove,
             IdentityUsersManage,
             PlatformSecurityEventsRead,
             WorkNotesWrite,
@@ -2309,6 +2317,7 @@ public static class ErpPermissions
             IdentityAssignmentsRead,
             AiPanelUse,
             AiDecisionsRead,
+            AiKnowledgeApprove,
             IdentityUsersManage,
             PlatformSecurityEventsRead,
             WorkNotesWrite,

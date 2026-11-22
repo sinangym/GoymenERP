@@ -1,0 +1,100 @@
+{
+ "format": "goymen.ai.release-knowledge.v1",
+ "schema": "contracts/ai/release-knowledge-v1.schema.json",
+ "generator": "tools/generate_ai_release_knowledge.py",
+ "source_root": "docs/release-knowledge",
+ "source_set_sha256": "8fa6f432cd511b8f97bf43dbfb16a7e85b7f93ab7178a0d28dd27c14cfc42517",
+ "sources": [
+  {
+   "path": "docs/release-knowledge/RK-AI-KAYNAK-ONAY-EKRANI.md",
+   "sha256": "cdba698619e22a314ee62042f06092178f1bcbc23f7cde6333d0ce31ac98bb18"
+  },
+  {
+   "path": "docs/release-knowledge/RK-WORK-IS-KUTUSU.md",
+   "sha256": "4c4596146da08538ebaf1e6db6aea4ddaac8c62742e7ba7b5dc17f10494875c5"
+  },
+  {
+   "path": "docs/release-knowledge/RK-WORK-KAYIT-NOTLARI.md",
+   "sha256": "349fd9f294d68aec08403caecec5d5b2b4f3fc001b808942ba6d64cba0858e80"
+  }
+ ],
+ "evidence_basis": "her kanıt dosyası bu ağaçta var ve verilen ifadeyi içeriyor (yayımlanan derlemeyle aynı ağaç)",
+ "mask_policy": "ai-d36-person-name-mask-at-generation@1",
+ "cloud_eligibility_basis": "AI-D34 d: içerik ve veri sınıfı (kişisel veri sinyali maskelenir, para tutarı yerel kalır); belge adı kullanılmaz",
+ "statistics": {
+  "note_count": 2,
+  "excluded_count": 1,
+  "masked_note_count": 0,
+  "cloud_eligibility_counts": {
+   "bulut_uygun_aday": 2,
+   "maskeli_bulut_uygun_aday": 0,
+   "yerel_kalir": 0
+  }
+ },
+ "notes": [
+  {
+   "id": "RK-WORK-IS-KUTUSU",
+   "title": "İş kutusu: kararımı bekleyen onaylar",
+   "text": "İş kutusu, seçili şirkette sizin kararınızı bekleyen onayları tek listede gösterir. Her satırda onayın hangi izinle beklediği, ne kadar süredir beklediği ve kaydın sahibi modülün \"neden onaya düştü\" açıklaması bulunur.\n\nİş kutusu karar vermez: onay veya ret, kaydın kendi ekranında, o modülün onay izniyle yapılır. Kutuda bir satırın görünmesi için ilgili modülün onay iznine sahip olmanız gerekir; ek bir İş kutusu izni yoktur.",
+   "required_permissions": [],
+   "evidence": [
+    {
+     "path": "src/backend/GoymenERP.Api/Endpoints/WorkInboxEndpoints.cs",
+     "token": "/api/v1/work/inbox"
+    },
+    {
+     "path": "src/frontend/goymen-erp-web/src/work/WorkInboxSection.tsx",
+     "token": "WorkInbox"
+    }
+   ],
+   "source": {
+    "path": "docs/release-knowledge/RK-WORK-IS-KUTUSU.md",
+    "line": 9
+   },
+   "data_class_candidate": "kisisel_veri_isareti_yok",
+   "personal_data_signals": [],
+   "commercial_signals": [],
+   "masked": false,
+   "cloud_eligibility": "bulut_uygun_aday",
+   "cloud_data_class": "internal"
+  },
+  {
+   "id": "RK-WORK-KAYIT-NOTLARI",
+   "title": "Kayıt notları ve anma",
+   "text": "Okuyabildiğiniz bir kayda not yazabilirsiniz. Not sonradan düzenlenmez ve silinmez: düzeltme için yeni bir \"düzeltme notu\" yazılır; yazan kişi kendi notunu gerekçeyle pasifleştirebilir. Pasif notlar istenirse listede gösterilir.\n\nNotta yalnız o kaydı okuyabilen kişiler anılabilir; kaydı okuyamayan biri anılırsa not kaydedilmez.",
+   "required_permissions": [
+    "work.notes.write"
+   ],
+   "evidence": [
+    {
+     "path": "src/backend/GoymenERP.Api/Endpoints/WorkCollaborationEndpoints.cs",
+     "token": "/records/{recordType}/{recordId:guid}/notes"
+    },
+    {
+     "path": "src/frontend/goymen-erp-web/src/work/collaborationText.ts",
+     "token": "Notunuzu yazın; düzeltme için yeni not yazılır."
+    }
+   ],
+   "source": {
+    "path": "docs/release-knowledge/RK-WORK-KAYIT-NOTLARI.md",
+    "line": 9
+   },
+   "data_class_candidate": "kisisel_veri_isareti_yok",
+   "personal_data_signals": [],
+   "commercial_signals": [],
+   "masked": false,
+   "cloud_eligibility": "bulut_uygun_aday",
+   "cloud_data_class": "internal"
+  }
+ ],
+ "excluded": [
+  {
+   "id": "RK-AI-KAYNAK-ONAY-EKRANI",
+   "reason": "uygulanmadi",
+   "source": {
+    "path": "docs/release-knowledge/RK-AI-KAYNAK-ONAY-EKRANI.md",
+    "line": 1
+   }
+  }
+ ]
+}
