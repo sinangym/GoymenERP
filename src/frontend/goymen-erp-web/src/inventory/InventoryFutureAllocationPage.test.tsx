@@ -8,11 +8,11 @@ import { FUTURE_ALLOCATION_TEXT as T } from './futureAllocationText'
 
 const id = '11111111-1111-4111-8111-111111111111'
 const api = vi.hoisted(() => ({ list: vi.fn(), options: vi.fn(), send: vi.fn() }))
-const scenario = vi.hoisted(() => ({ write: true, report: vi.fn() }))
+const scenario = vi.hoisted(() => ({ write: true, report: vi.fn(), namespace: 'SENTETIK-context' }))
 vi.mock('./futureAllocationApi', () => ({ fetchFutureAllocations: api.list, fetchFutureSupplyOptions: api.options, sendFutureAllocation: api.send }))
-vi.mock('../shell/shellContext', () => ({ useShellState: () => ({ routeEntryGeneration: 1, activeContext: {
+vi.mock('../shell/shellContext', () => ({ useShellState: () => ({ routeEntryGeneration: 1, sessionEpoch: 1, activeContext: {
   userId: 'SENTETIK-actor', companyId: '11111111-1111-4111-8111-111111111111', scopeMode: 'single' } }) }))
-vi.mock('../shell/shellState', () => ({ contextKey: () => ['SENTETIK-context'], contextKeyString: () => 'SENTETIK-context',
+vi.mock('../shell/shellState', () => ({ contextKey: () => [scenario.namespace], contextKeyString: () => scenario.namespace,
   hasCapability: (_: unknown, cap: string) => cap === 'inventory.future-allocation.write' && scenario.write }))
 vi.mock('../shell/useAuthBoundary', () => ({ useAuthBoundary: () => ({ capture: () => 'SENTETIK-snapshot', report: scenario.report }) }))
 
@@ -23,7 +23,7 @@ function mount() {
   </MemoryRouter></QueryClientProvider>)
 }
 beforeEach(() => {
-  sessionStorage.clear(); vi.clearAllMocks(); scenario.write = true
+  sessionStorage.clear(); vi.clearAllMocks(); scenario.write = true; scenario.namespace = 'SENTETIK-context'
   api.list.mockResolvedValue({ type: 'ok-single', data: { companyId: id, salesOrderId: id, salesOrderLineId: id, items: [], windowFull: false, unitCodes: {}, evaluatedOn: '2026-11-17', schedules: {} } })
   api.options.mockResolvedValue({ type: 'ok-single', data: { companyId: id, salesOrderId: id, salesOrderLineId: id, productId: id,
     productVersion: '1', demandUnitId: id, demandUnitCode: 'kg', openDemandQuantity: '100', items: [{ purchaseOrderId: id, purchaseOrderLineId: id,
@@ -57,6 +57,24 @@ describe('future allocation workflow', () => {
       purchaseOrderId: id, purchaseOrderLineId: id, unitId: id, quantityText: '5' })
     expect(sessionStorage.length).toBe(0)
   })
+  it('keeps an unknown create across an authority refresh (new capability generation) and retries the same attempt', async () => {
+    api.send.mockResolvedValueOnce({ type: 'unknown', reason: 'network-error' }).mockResolvedValueOnce({ type: 'failed', status: 422, code: null })
+    const first = mount()
+    await screen.findByRole('option', { name: /Sentetik tedarikçi/ })
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: id } })
+    fireEvent.change(screen.getByRole('textbox', { name: /Ayrılacak miktar/ }), { target: { value: '5' } })
+    fireEvent.change(screen.getByRole('textbox', { name: T.reason }), { target: { value: 'Sentetik gerekçe' } })
+    fireEvent.click(screen.getByRole('button', { name: T.create }))
+    await screen.findByRole('button', { name: T.retry })
+    first.unmount()
+    scenario.namespace = 'SENTETIK-context-after-capability-refresh'
+    mount()
+    fireEvent.click(await screen.findByRole('button', { name: T.retry }))
+    await screen.findByText(T.refused)
+    expect(api.send).toHaveBeenCalledTimes(2)
+    expect(api.send.mock.calls[1]).toEqual(api.send.mock.calls[0])
+  })
+
   it('does not fetch source choices or display write controls without the separate write capability', async () => {
     scenario.write = false
     mount()
