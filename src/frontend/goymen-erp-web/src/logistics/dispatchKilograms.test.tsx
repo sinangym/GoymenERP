@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { initialShellState, type ShellState } from '../shell/shellState'
-import { DispatchKilogramsPanel } from './DispatchKilogramsPanel'
+import { DispatchKilogramsPanel, resetForbiddenDispatchKilogramReadsForTests } from './DispatchKilogramsPanel'
 import { decodeDispatchKilograms, type DispatchKilograms, type RecordKilograms } from './dispatchKilogramsContract'
 import { sendDispatchKilograms } from './dispatchKilogramsApi'
 import { DISPATCH_KG_TEXT as T } from './dispatchKilogramsText'
@@ -31,7 +31,7 @@ function mount(state = shell()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0 } } })
   return render(<QueryClientProvider client={client}><DispatchKilogramsPanel shell={state} note={note} companyId={state.activeContext!.companyId!} /></QueryClientProvider>)
 }
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); resetForbiddenDispatchKilogramReadsForTests(); boundary.report.mockClear() })
 
 describe('Dispatch kilogram source contract and screen', () => {
   it('preserves decimal text and rejects a foreign company, missing proof field, duplicate source and floating point kg', () => {
@@ -49,6 +49,28 @@ describe('Dispatch kilogram source contract and screen', () => {
     if (status === 401 || status === 403) expect(boundary.report).toHaveBeenCalledWith(status, { synthetic: true })
     if (status !== 404) expect(screen.queryByRole('button', { name: T.save })).toBeNull()
   })
+  it('does not loop on a 403: a remount under the same authority does not read again; a new authority reads once', async () => {
+    const fetch = vi.fn(async () => json({}, 403))
+    vi.stubGlobal('fetch', fetch)
+    const view = mount()
+    expect(await screen.findByText(T.forbidden)).not.toBeNull()
+    expect(boundary.report).toHaveBeenCalledTimes(1)
+    const rerender = (state: ShellState) => view.rerender(<QueryClientProvider client={new QueryClient()}>
+      <DispatchKilogramsPanel shell={state} note={note} companyId={company} /></QueryClientProvider>)
+    // The shell's authority refresh moves the request fence and remounts the panel; the authority itself is unchanged.
+    for (const step of [1, 2, 3]) {
+      rerender({ ...shell(), requestFenceGeneration: shell().requestFenceGeneration + step })
+      expect(await screen.findByText(T.forbidden)).not.toBeNull()
+    }
+    // While the authority is being re-read (no generation) nothing is read either.
+    rerender({ ...shell(), requestFenceGeneration: 9, activeContext: { ...shell().activeContext!, capabilityGeneration: null } })
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(boundary.report).toHaveBeenCalledTimes(1)
+    // A changed authority (new generation) reads once more.
+    rerender({ ...shell(), requestFenceGeneration: 10, activeContext: { ...shell().activeContext!, capabilityGeneration: 'synthetic-2' } })
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+  })
+
   it('refuses malformed success instead of rendering a partial record', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => json({ ...value(), products: undefined })))
     mount(); expect(await screen.findByText(T.malformed)).not.toBeNull()
