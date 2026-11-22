@@ -58,7 +58,9 @@ public sealed class SettingsSalesContractDiscountLimitContractTests
         Assert.Contains("'sales.contract-discount-limit'", row.GetCheckConstraints().Single(check => check.Name == "CK_SettingsCompanyPolicyVersions_Key").Sql, StringComparison.Ordinal);
         var shape = row.GetCheckConstraints().Single(check => check.Name == "CK_SettingsCompanyPolicyVersions_Value").Sql;
         Assert.Contains("[PercentValue] IS NOT NULL AND [PercentValue] >= 0 AND [PercentValue] <= 100", shape, StringComparison.Ordinal);
-        Assert.Equal(3, shape.Split("[PercentValue] IS NULL", StringSplitOptions.None).Length - 1);
+        // Every non-percent key family pins the percent column to NULL: boolean, whole days, the W1-A approval durations, the
+        // WP2 digest times (YOL-D25) and the tax defaults. (The base expected 3 and already failed at 4 after W1-A.)
+        Assert.Equal(5, shape.Split("[PercentValue] IS NULL", StringSplitOptions.None).Length - 1);
         Assert.Equal(ErpPermissions.SettingsSalesContractDiscountLimitManage, SettingsSalesContractDiscountLimitPermissionsV1.Manage);
         Assert.True(ErpPermissions.IsKnown(SettingsSalesContractDiscountLimitPermissionsV1.Manage));
         Assert.True(ErpPermissions.RequiresCompanyWideScope(SettingsSalesContractDiscountLimitPermissionsV1.Manage));

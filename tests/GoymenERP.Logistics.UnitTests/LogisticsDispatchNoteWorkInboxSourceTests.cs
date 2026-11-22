@@ -165,6 +165,54 @@ public sealed class LogisticsDispatchNoteWorkInboxSourceTests
         Assert.Contains("TOP(", sql, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task The_follow_up_read_lists_the_same_drafts_for_the_resolved_company_without_asking_a_person()
+    {
+        var fixture = new F();
+        fixture.Instruction(F.Id(1));
+        fixture.Instruction(F.Id(2), F.CompanyB);
+        Note(fixture, F.Id(1), F.Id(11), status: 1, minutes: 5);
+        Note(fixture, F.Id(2), F.Id(21), status: 1, minutes: 1, companyId: F.CompanyB);
+        fixture.Authority.Answer = (_, _) => GoymenERP.BuildingBlocks.Security.PermissionScope.Denied;
+        var source = new LogisticsDispatchNoteWorkInboxSourceV1(fixture.Rows, fixture.Fence);
+
+        var result = await source.ListPendingForFollowUpAsync(F.CompanyA, 10, CancellationToken.None);
+        var foreign = await source.ListPendingForFollowUpAsync(F.CompanyB, 10, CancellationToken.None);
+
+        F.AssertContractShape(result, "logistics", "logistics.dispatch-note.v1");
+        Assert.Equal((F.Id(11), F.Maker), (Assert.Single(result.Items!).ItemId, result.Items![0].PreparedBy));
+        Assert.Empty(fixture.Authority.Calls);
+        Assert.Equal((NativeApprovalQueueOutcomeV1.Denied, (IReadOnlyList<WorkInboxItemV1>?)null), (foreign.Outcome, foreign.Items));
+    }
+
+    [Fact]
+    public async Task The_decision_time_is_the_notes_own_approval_or_cancellation_time()
+    {
+        var fixture = new F();
+        fixture.Instruction(F.Id(1));
+        Note(fixture, F.Id(1), F.Id(11), status: 1, minutes: 5);
+        Note(fixture, F.Id(1), F.Id(12), status: 2, minutes: 5);
+        Note(fixture, F.Id(1), F.Id(13), status: 3, minutes: 5);
+        fixture.Rows.DispatchNoteRows.Single(row => row.DispatchNoteId == F.Id(12)).ApprovedAtUtc = F.T0.AddMinutes(50);
+        fixture.Rows.DispatchNoteRows.Single(row => row.DispatchNoteId == F.Id(13)).CancelledAtUtc = F.T0.AddMinutes(70);
+        var source = new LogisticsDispatchNoteWorkInboxSourceV1(fixture.Rows, fixture.Fence);
+        var since = F.T0.AddMinutes(5).ToUniversalTime();
+
+        var pending = await source.ReadDecisionAsync(F.CompanyA, F.Id(11), since, CancellationToken.None);
+        var approved = await source.ReadDecisionAsync(F.CompanyA, F.Id(12), since, CancellationToken.None);
+        var cancelled = await source.ReadDecisionAsync(F.CompanyA, F.Id(13), since, CancellationToken.None);
+        var otherCycle = await source.ReadDecisionAsync(F.CompanyA, F.Id(12), since.AddMinutes(1), CancellationToken.None);
+        var foreign = await source.ReadDecisionAsync(F.CompanyB, F.Id(12), since, CancellationToken.None);
+
+        Assert.Equal(WorkInboxDecisionOutcomeV1.StillPending, pending.Outcome);
+        Assert.Equal((WorkInboxDecisionOutcomeV1.Decided, F.T0.AddMinutes(50).ToUniversalTime(), WorkInboxDecisionsV1.Approved),
+            (approved.Outcome, approved.DecidedAtUtc!.Value, approved.Decision));
+        Assert.Equal((WorkInboxDecisionOutcomeV1.Decided, WorkInboxDecisionsV1.Cancelled), (cancelled.Outcome, cancelled.Decision));
+        Assert.True(WorkInboxDecisionsV1.IsValid(approved, since));
+        Assert.Equal(WorkInboxDecisionOutcomeV1.NoDecisionRecorded, otherCycle.Outcome);
+        Assert.Equal(WorkInboxDecisionOutcomeV1.Unavailable, foreign.Outcome);
+    }
+
     private static void Note(F fixture, Guid instructionId, Guid noteId, int status, int minutes, Guid? companyId = null) =>
         fixture.Rows.DispatchNoteRows.Add(new DispatchNoteRow
         {
