@@ -328,6 +328,41 @@
   outline-offset: 2px;
 }
 
+/* W1-B: the command palette's toolbar entry point. */
+.paletteButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  background: #fff;
+  color: #1a2233;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.paletteButton:focus-visible {
+  outline: 2px solid var(--shell-action);
+  outline-offset: 2px;
+}
+.paletteShortcut {
+  padding: 1px 6px;
+  border: 1px solid var(--shell-border);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.75rem;
+  color: #48505d;
+}
+/* A phone has no Ctrl key to press: the button keeps its words, the shortcut badge goes. */
+@media (max-width: 767px) {
+  .paletteShortcut {
+    display: none;
+  }
+}
+
 .main:focus {
   outline: 2px solid var(--shell-action);
   outline-offset: 2px;
