@@ -25,6 +25,7 @@ public sealed class AiPanelPermissionRegistrationTests
         ErpPermissions.AiPanelUse,
         ErpPermissions.AiDecisionsRead,
         ErpPermissions.AiDocumentDraftsPrepare,
+        ErpPermissions.AiDocumentDraftsSupplierConfirmation,
     };
 
     [Fact]
@@ -43,6 +44,7 @@ public sealed class AiPanelPermissionRegistrationTests
     public void The_document_draft_name_is_spelled_as_registered()
     {
         Assert.Equal("ai.document-drafts.prepare", ErpPermissions.AiDocumentDraftsPrepare);
+        Assert.Equal("ai.document-drafts.supplier-confirmation", ErpPermissions.AiDocumentDraftsSupplierConfirmation);
     }
 
     [Theory]

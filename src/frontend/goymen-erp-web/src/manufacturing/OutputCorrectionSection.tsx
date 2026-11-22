@@ -22,6 +22,7 @@ import { correctOutput, type FactFailure, type FactUnknown } from './commandApi'
 import { newCommandId } from './commandId'
 import { isKilogramText, parsePieceCount, type OutputCorrectionSnapshot, type ProductionOrderView } from './contract'
 import { OUTPUT_PIECE_TEXT } from './outputPieceText'
+import { recallPendingCorrection, releasePendingCorrection, reservePendingCorrection } from './pendingCorrectionStore'
 import { fetchOrderLineage } from './lineageApi'
 import type { OrderLineageOutput, OrderLineageView } from './lineageContract'
 import {
@@ -71,6 +72,7 @@ export function OutputCorrectionSection({
   routeEntryGeneration,
   companyId,
   canReadInventoryLabel,
+  pendingKey,
   onRefresh,
 }: {
   readonly order: ProductionOrderView
@@ -78,6 +80,8 @@ export function OutputCorrectionSection({
   readonly routeEntryGeneration: number
   readonly companyId: string
   readonly canReadInventoryLabel: boolean
+  /** The order screen's pending slot (`pendingFactKey`): an unknown correction outlives a remount under it. */
+  readonly pendingKey: string | null
   readonly onRefresh: () => Promise<void>
 }) {
   const open = order.status === 'Open'
@@ -92,6 +96,7 @@ export function OutputCorrectionSection({
           routeEntryGeneration={routeEntryGeneration}
           companyId={companyId}
           canReadInventoryLabel={canReadInventoryLabel}
+          pendingKey={pendingKey}
           onRefresh={onRefresh}
         />
       ) : (
@@ -109,6 +114,7 @@ function CorrectionBody({
   routeEntryGeneration,
   companyId,
   canReadInventoryLabel,
+  pendingKey,
   onRefresh,
 }: {
   readonly order: ProductionOrderView
@@ -116,12 +122,17 @@ function CorrectionBody({
   readonly routeEntryGeneration: number
   readonly companyId: string
   readonly canReadInventoryLabel: boolean
+  readonly pendingKey: string | null
   readonly onRefresh: () => Promise<void>
 }) {
   const boundary = useAuthBoundary()
   const [form, setForm] = useState<CorrectionForm>(EMPTY_FORM)
   const [errors, setErrors] = useState<readonly string[]>([])
-  const [attempt, setAttempt] = useState<CorrectionAttempt>({ phase: 'idle' })
+  // An unknown (or unmounted in-flight) correction comes back frozen: only its same snapshot may be re-sent.
+  const [attempt, setAttempt] = useState<CorrectionAttempt>(() => {
+    const pending = recallPendingCorrection(pendingKey)
+    return pending === null ? { phase: 'idle' } : { phase: 'unknown', snapshot: pending.snapshot, unknown: pending.unknown }
+  })
 
   const lineageQuery = useQuery({
     queryKey: [namespace, routeEntryGeneration, 'manufacturing-order-correction-outputs', order.orderId, order.version],
@@ -209,7 +220,10 @@ function CorrectionBody({
 
   const send = async (snapshot: OutputCorrectionSnapshot) => {
     setAttempt({ phase: 'sending', snapshot })
+    reservePendingCorrection(pendingKey, { snapshot, unknown: { kind: 'aborted' } })
     const outcome = await correctOutput(companyId, order.orderId, snapshot)
+    if (outcome.type === 'unknown') reservePendingCorrection(pendingKey, { snapshot, unknown: outcome.unknown })
+    else releasePendingCorrection(pendingKey, snapshot.idempotencyKey)
     if (outcome.type === 'applied') {
       setAttempt({ phase: 'applied', replayed: outcome.replayed })
       setForm(EMPTY_FORM)
@@ -251,6 +265,7 @@ function CorrectionBody({
             <label htmlFor="mfg-correction-output">{OUTPUT_CORRECTION_TEXT.output}</label>
             <select
               id="mfg-correction-output"
+              aria-required="true"
               value={form.outputId}
               disabled={frozen}
               onChange={(event) => update({ outputId: event.target.value })}
@@ -284,6 +299,7 @@ function CorrectionBody({
             <label htmlFor="mfg-correction-kg">{OUTPUT_CORRECTION_TEXT.kg}</label>
             <input
               id="mfg-correction-kg"
+              aria-required="true"
               inputMode="decimal"
               autoComplete="off"
               value={form.kg}
@@ -298,6 +314,7 @@ function CorrectionBody({
               <label htmlFor="mfg-correction-piece-count">{OUTPUT_PIECE_TEXT.correctionPieceCount}</label>
               <input
                 id="mfg-correction-piece-count"
+                aria-required="true"
                 inputMode="numeric"
                 autoComplete="off"
                 value={form.pieceCount}
@@ -314,6 +331,7 @@ function CorrectionBody({
             <label htmlFor="mfg-correction-reason">{OUTPUT_CORRECTION_TEXT.reason}</label>
             <textarea
               id="mfg-correction-reason"
+              aria-required="true"
               value={form.reason}
               maxLength={256}
               rows={3}
@@ -325,6 +343,7 @@ function CorrectionBody({
             <label htmlFor="mfg-correction-occurred-at">{OUTPUT_CORRECTION_TEXT.occurredAt}</label>
             <input
               id="mfg-correction-occurred-at"
+              aria-required="true"
               type="datetime-local"
               value={form.occurredAt}
               disabled={frozen}

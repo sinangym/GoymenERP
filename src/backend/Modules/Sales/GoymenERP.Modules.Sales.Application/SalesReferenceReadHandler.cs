@@ -137,7 +137,12 @@ public sealed class SalesReferenceReadHandler(
                     return Failure<SalesProductReferenceV1>(503, "reference_provider_invalid");
                 if (!profile.IsActive || !Effective(query.EffectiveOn, profile.EffectiveFrom, profile.EffectiveThrough))
                     return Failure<SalesProductReferenceV1>(422, "unsupported_unit");
-                if (ReferenceEquals(unit, snapshot.OrderUnit)) orderProfile = profile;
+                if (ReferenceEquals(unit, snapshot.OrderUnit))
+                {
+                    // SAT-D443: a metre (or any other non-kilogram, non-piece) order unit is not offered for a sales line.
+                    if (!SalesOrderUnitPolicy.IsApproved(profile)) return Failure<SalesProductReferenceV1>(422, "unsupported_unit");
+                    orderProfile = profile;
+                }
             }
             if (orderProfile is null) return Failure<SalesProductReferenceV1>(503, "reference_provider_invalid");
             return Success(new SalesProductReferenceV1(scope.Company, query.EffectiveOn,

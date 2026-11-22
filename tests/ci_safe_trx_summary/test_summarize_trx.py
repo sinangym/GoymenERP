@@ -23,8 +23,10 @@ VERIFIER_SPEC = importlib.util.spec_from_file_location(
 assert VERIFIER_SPEC is not None and VERIFIER_SPEC.loader is not None
 VERIFIER = importlib.util.module_from_spec(VERIFIER_SPEC)
 VERIFIER_SPEC.loader.exec_module(VERIFIER)
+# Re-fingerprinted for WP16: backend-build gained two offline preflight steps (AI knowledge base tests,
+# deterministic credential scan and action pin audit) and docs/decisions left the skipped-prose path filter.
 REVIEWED_CONTINUOUS_INTEGRATION_WORKFLOW_FINGERPRINT = (
-    "7190110523c47a2669c374d00cd53937eed3f78c95fcfbc3b9c297d7915801bd"
+    "479eeb902a1fb49dcc13dc6cd8f4577fd2268b7c54bdaa197be36fcd0974c298"
 )
 REVIEWED_RECOVERY_SURFACE_INVENTORY_JOB_FINGERPRINT = (
     "d04b7794ab2a9a180539258568d3d810ec2437ee468657e27574a50db4c04459"

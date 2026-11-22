@@ -17,13 +17,14 @@ namespace GoymenERP.Logistics.UnitTests;
 public sealed class LogisticsPlanExcessWorkInboxSourceTests
 {
     [Fact]
-    public void The_source_declares_its_kind_the_approve_permission_and_the_hour_class_and_the_module_registers_it()
+    public void The_source_declares_its_kind_the_approve_permission_and_the_module_registers_it()
     {
         var fixture = new F();
         var source = new LogisticsPlanExcessWorkInboxSourceV1(fixture.Rows, fixture.Fence);
 
-        Assert.Equal(("logistics", "logistics.plan-excess.v1", "logistics.shipments.plan-excess.approve", WorkApprovalDurationClassV1.Hours),
-            (source.Module, source.Kind, source.ApproverPermission, source.DurationClass));
+        // WP1: the duration class is the Work rule table's (YOL-D18 default: hour scale), never the source's declaration.
+        Assert.Equal(("logistics", "logistics.plan-excess.v1", "logistics.shipments.plan-excess.approve", false),
+            (source.Module, source.Kind, source.ApproverPermission, ((IWorkInboxSourceV1)source).AcceptsScopedApprovers));
         Assert.Equal(LogisticsPermissionManifestV1.ShipmentPlanExcessApprove, source.ApproverPermission);
         var services = new ServiceCollection().AddLogisticsModule(new LogisticsWorkInboxTestSettings());
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IWorkInboxSourceV1)

@@ -29,6 +29,7 @@ public static class DocumentsRuntimeExtensions
         services.AddScoped<IDocumentOwnerLinkPortV1, FinanceManualReceiptDocumentOwnerLinkPort>();
         services.AddScoped<IDocumentOwnerLinkPortV1, FinanceManualBankPaymentDocumentOwnerLinkPort>();
         services.AddScoped<IDocumentOwnerLinkPortV1, FinanceCustomerInstrumentDocumentOwnerLinkPort>();
+        services.AddScoped<IDocumentOwnerLinkPortV1, FinanceBankStatementImportDocumentOwnerLinkPort>();
         services.AddScoped<IDocumentOwnerLinkPortV1, ManufacturingPlanDocumentOwnerLinkPort>();
         services.AddScoped<IDocumentOwnerLinkPortV1, ManufacturingOrderDocumentOwnerLinkPort>();
         return services.AddDocumentsModule(

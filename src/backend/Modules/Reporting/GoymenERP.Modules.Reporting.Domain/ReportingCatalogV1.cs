@@ -1,0 +1,134 @@
+using GoymenERP.BuildingBlocks.Security;
+
+namespace GoymenERP.Modules.Reporting.Domain;
+
+/// <summary>The kind of one parameter, as the server parses it. Nothing has a default: a missing required value is refused.</summary>
+public enum ReportingParameterKindV1
+{
+    Date = 1,
+    Guid = 2,
+    Choice = 3,
+    WholeNumber = 4,
+    Decimal = 5,
+    AscendingWholeNumbers = 6,
+}
+
+/// <summary>The kind of one column's cells (all cells are invariant text on the wire; numbers are lossless).</summary>
+public enum ReportingColumnKindV1
+{
+    Text = 1,
+    Number = 2,
+    Date = 3,
+    Instant = 4,
+    Identifier = 5,
+    Flag = 6,
+}
+
+public sealed record ReportingParameterDefinitionV1(
+    string Id,
+    ReportingParameterKindV1 Kind,
+    bool Required,
+    IReadOnlyList<string> Choices,
+    decimal? Minimum,
+    decimal? Maximum);
+
+public sealed record ReportingColumnDefinitionV1(string Id, ReportingColumnKindV1 Kind);
+
+/// <summary>
+/// One report of the centre: its stable id, the module that owns its numbers, the owner read permissions an actor must hold
+/// company-wide to see it at all, its parameters and its columns. The centre lists only reports whose every required permission
+/// the actor holds now (ROL-D13/ROL-D15: no report is visible "just in case").
+/// </summary>
+public sealed record ReportingReportDefinitionV1(
+    string Id,
+    string OwnerModule,
+    IReadOnlyList<string> RequiredPermissions,
+    IReadOnlyList<ReportingParameterDefinitionV1> Parameters,
+    IReadOnlyList<ReportingColumnDefinitionV1> Columns);
+
+/// <summary>
+/// WP14: the closed report catalogue. Report ids, parameter ids and column ids are wire names (the screen holds the Turkish
+/// labels). No threshold, tolerance or bucket is decided here: wherever the decisions do not define a measure, it is a required
+/// parameter (OTIF tolerances, aging buckets and the age basis) — NEEDS-SINAN in the WP14 report.
+/// </summary>
+public static class ReportingCatalogV1
+{
+    public const string StockAging = "stock-aging";
+    public const string Otif = "otif";
+    public const string Recall = "recall";
+    public const string Intercompany = "intercompany";
+
+    public const string AgeBasisLabelCreated = "label-created";
+    public const string AgeBasisFirstIncoming = "first-incoming";
+    public const string DirectionForward = "forward";
+    public const string DirectionBackward = "backward";
+
+    /// <summary>Technical bounds (not business thresholds).</summary>
+    public const int MaximumPageSize = 500;
+    public const int DefaultPageSize = 50;
+    public const int MaximumExportPageSize = 5000;
+    public const int MaximumBucketBoundaries = 10;
+    public const int MaximumBucketDays = 36500;
+    public const int MaximumPeriodDays = 366;
+
+    private static ReportingParameterDefinitionV1 Date(string id) => new(id, ReportingParameterKindV1.Date, true, [], null, null);
+
+    private static ReportingColumnDefinitionV1 Col(string id, ReportingColumnKindV1 kind) => new(id, kind);
+
+    public static IReadOnlyList<ReportingReportDefinitionV1> Reports { get; } =
+    [
+        new(StockAging, "inventory", [ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead],
+        [
+            Date("asOf"),
+            new("ageBasis", ReportingParameterKindV1.Choice, true, [AgeBasisLabelCreated, AgeBasisFirstIncoming], null, null),
+            new("bucketDays", ReportingParameterKindV1.AscendingWholeNumbers, true, [], 1, MaximumBucketDays),
+            new("productId", ReportingParameterKindV1.Guid, false, [], null, null),
+            new("locationId", ReportingParameterKindV1.Guid, false, [], null, null),
+        ],
+        [
+            Col("labelCode", ReportingColumnKindV1.Text), Col("labelId", ReportingColumnKindV1.Identifier),
+            Col("productId", ReportingColumnKindV1.Identifier), Col("locationId", ReportingColumnKindV1.Identifier),
+            Col("heatNumber", ReportingColumnKindV1.Text), Col("coilNumber", ReportingColumnKindV1.Text),
+            Col("physicalKg", ReportingColumnKindV1.Number), Col("entryDate", ReportingColumnKindV1.Date),
+            Col("ageDays", ReportingColumnKindV1.Number), Col("bucket", ReportingColumnKindV1.Text),
+        ]),
+        new(Otif, "sales", [ErpPermissions.SalesReportsRead],
+        [
+            Date("from"), Date("to"),
+            new("onTimeToleranceDays", ReportingParameterKindV1.WholeNumber, true, [], 0, 365),
+            new("inFullTolerancePercent", ReportingParameterKindV1.Decimal, true, [], 0, 100),
+        ],
+        [
+            Col("orderNumber", ReportingColumnKindV1.Text), Col("orderId", ReportingColumnKindV1.Identifier),
+            Col("lineNumber", ReportingColumnKindV1.Number), Col("customerId", ReportingColumnKindV1.Identifier),
+            Col("unitCode", ReportingColumnKindV1.Text), Col("requestedDate", ReportingColumnKindV1.Date),
+            Col("orderedQuantity", ReportingColumnKindV1.Number), Col("shippedQuantity", ReportingColumnKindV1.Number),
+            Col("inFullDate", ReportingColumnKindV1.Date), Col("onTime", ReportingColumnKindV1.Flag),
+            Col("inFull", ReportingColumnKindV1.Flag), Col("otif", ReportingColumnKindV1.Flag),
+        ]),
+        new(Recall, "inventory", [ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead],
+        [
+            new("labelId", ReportingParameterKindV1.Guid, true, [], null, null),
+            new("direction", ReportingParameterKindV1.Choice, true, [DirectionForward, DirectionBackward], null, null),
+        ],
+        [
+            Col("labelCode", ReportingColumnKindV1.Text), Col("labelId", ReportingColumnKindV1.Identifier),
+            Col("step", ReportingColumnKindV1.Text), Col("occurredAt", ReportingColumnKindV1.Instant),
+            Col("quantityKg", ReportingColumnKindV1.Number), Col("partyRole", ReportingColumnKindV1.Text),
+            Col("partyCode", ReportingColumnKindV1.Text), Col("partyName", ReportingColumnKindV1.Text),
+            Col("sourceKind", ReportingColumnKindV1.Text), Col("sourceId", ReportingColumnKindV1.Identifier),
+        ]),
+        new(Intercompany, "accounting", [ReportingPermissionManifestV1.IntercompanyRead],
+        [
+            Date("from"), Date("to"),
+        ],
+        [
+            Col("documentDate", ReportingColumnKindV1.Date), Col("documentKind", ReportingColumnKindV1.Text),
+            Col("documentNumber", ReportingColumnKindV1.Text), Col("counterpartyCompanyId", ReportingColumnKindV1.Identifier),
+            Col("currencyCode", ReportingColumnKindV1.Text), Col("netAmount", ReportingColumnKindV1.Number),
+        ]),
+    ];
+
+    public static ReportingReportDefinitionV1? Find(string? reportId) =>
+        reportId is null ? null : Reports.FirstOrDefault(report => string.Equals(report.Id, reportId, StringComparison.Ordinal));
+}

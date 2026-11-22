@@ -116,6 +116,9 @@ public sealed partial class SettingsCompanyPolicySqlServerRelationalAcceptanceTe
             return run;
         }
 
+        /// <summary>WP-A1: the per-run database, for ports built outside the host (the AI gateway store).</summary>
+        public string DatabaseConnectionString => factory.DatabaseConnectionString;
+
         public HttpClient Client(string subject, Guid company)
         {
             var client = factory.CreateClientFor(subject, company);

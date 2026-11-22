@@ -1,3 +1,5 @@
+using GoymenERP.BuildingBlocks.Ai;
+using GoymenERP.Modules.Purchasing.Application.Ai;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
@@ -90,6 +92,10 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchaseSupplyReferencePortV1, PurchaseSupplyReferencePort>();
         // AT-025: the purchase section of the operations work list reads the approved lines awaiting receipt through this port only.
         services.AddScoped<IPurchaseOpenLineReadPortV1, PurchaseOpenLineReadPort>();
+        // WP-A3b: Purchasing READ tools over the owner's own authorized reads (registration only; Ai:AllowedTools admits a tool).
+        services.AddScoped<IAiOwnerToolV1, PurchasingOrderStatusAiTool>();
+        services.AddScoped<IAiOwnerToolV1, PurchasingPendingReceiptsAiTool>();
+        services.AddScoped<IAiOwnerToolV1, PurchasingInvoiceVariancesAiTool>();
         // A4 / MOD-03: the open purchase lines serving a Sales order (the host adapts it to Sales's linked-supply read contract).
         services.AddScoped<IPurchaseSalesLinkedSupplyReadPortV1, PurchaseSalesLinkedSupplyReadPort>();
         services.AddScoped<IPurchaseNotificationRecipientsV1, PurchaseNotificationRecipients>();

@@ -23,14 +23,26 @@ public sealed partial class SalesDraftService
     /// <summary>
     /// SAT-D452 / SAT-D457 (SAT-D436 TK6): the ONE named rule for which invoices of an order enter its realization ("faturalanan
     /// tutar", actual kg, actual kg price). Only a finalised invoice counts (SAT-D452): a draft, a pending or an approved invoice
-    /// is not yet an invoiced amount, and a rejected, cancelled or officially cancelled one never is. A finalised invoice whose
-    /// last Finance hand-off answer is a refusal does not count either (SAT-D457); it counts again once a re-drive is admitted
-    /// (or answered otherwise). A finalised invoice Finance has not answered yet counts: the decision excludes the refusal only.
+    /// is not yet an invoiced amount, and a rejected, cancelled or officially cancelled one never is. A finalised invoice Finance
+    /// refused does not count (SAT-D457, golden EK1 E21); it enters again only once Finance admits a re-drive (E21a). A re-drive
+    /// answered otherwise (unavailable, key conflict, retry, denied) is no admission: the refusal still stands and the invoice stays
+    /// out. The hand-off ledger keeps the last answer only, so once more than one answer is recorded without an admission an
+    /// earlier refusal cannot be ruled out and the invoice stays out (fail-closed; it enters when Finance admits it). A finalised
+    /// invoice Finance has not answered yet, or answered once without a refusal, counts: the decision excludes the refusal only.
     /// </summary>
-    internal static bool EntersKilogramPriceRealization(SalesInvoice invoice) =>
-        invoice.State == SalesInvoiceState.Finalized
-        && !(invoice.Finalization is { FinanceStatus: not SalesInvoiceFinanceStatus.Admitted } ledger
-            && SalesInvoiceService.IsRefusedFinanceOutcome(ledger.LastOutcome));
+    internal static bool EntersKilogramPriceRealization(SalesInvoice invoice)
+    {
+        ArgumentNullException.ThrowIfNull(invoice);
+        if (invoice.State != SalesInvoiceState.Finalized) return false;
+        return invoice.Finalization switch
+        {
+            null => true,
+            { FinanceStatus: SalesInvoiceFinanceStatus.Admitted } => true,
+            { AttemptCount: 0 } => true,
+            { AttemptCount: 1 } waiting => !SalesInvoiceService.IsRefusedFinanceOutcome(waiting.LastOutcome),
+            _ => false,
+        };
+    }
 
     public Task<SalesOrderKilogramPricesResponse> GetDraftKilogramPricesAsync(Guid draftId, CancellationToken cancellationToken = default) =>
         GetDraftKilogramPricesAsync(draftId, KilogramPriceGoldenAccepted, cancellationToken);
@@ -87,13 +99,14 @@ public sealed partial class SalesDraftService
         foreach (var line in draft.Lines.OrderBy(item => item.LineNo))
         {
             var total = totals.Lines.Single(item => item.LineId == line.Id);
-            // TK1: the KDV-excluded line net after the line discount. A maturity surcharge is not a goods amount: such a line
-            // keeps its line figure, but the document figure fails closed (N2: vade farkı open).
-            var amount = total.NetAmount?.Amount;
+            // TK1: the KDV-excluded line net after the line discount. A maturity surcharge is not a goods amount (SAT-D465 keeps it
+            // out of the kg price) and the invoice amounts carry no pre-surcharge net, so until the SAT-D465 slice and its golden
+            // (EK2) land, a surcharged line fails closed on every figure: line and document, theoretical and actual (K18 / N2).
             var surcharged = total.NetAmountBeforeSurcharge is { } before && total.NetAmount is { } net && before.Amount != net.Amount;
+            var amount = surcharged ? null : total.NetAmount?.Amount;
             var perUnit = line.OrderUnit.IsKilogram ? (decimal?)1m : draft.KilogramsPerUnitOf(line.Id)?.KilogramsPerUnit;
             var theoreticalKg = TheoreticalKg(line.Quantity.Value, perUnit);
-            theoreticalDocument.Add(new(surcharged ? null : amount, theoreticalKg));
+            theoreticalDocument.Add(new(amount, theoreticalKg));
 
             var invoiced = activeLines.Where(item => item.Share.SalesOrderLineId == line.Id).ToList();
             var invoicedQuantity = invoiced.Sum(item => item.Share.Quantity);
@@ -102,7 +115,8 @@ public sealed partial class SalesDraftService
             decimal? actualKg = invoiced.Count == 0 || invoiced.Any(item => !line.OrderUnit.IsKilogram && item.Share.ActualKilograms is null)
                 ? null
                 : invoiced.Sum(item => line.OrderUnit.IsKilogram ? item.Share.Quantity : item.Share.ActualKilograms!.Value);
-            if (invoiced.Count > 0) actualDocument.Add(new(invoicedAmount, actualKg));
+            var priceAmount = surcharged ? null : invoicedAmount;
+            if (invoiced.Count > 0) actualDocument.Add(new(priceAmount, actualKg));
             var invoicedTheoreticalKg = invoiced.Count == 0 ? null : TheoreticalKg(invoicedQuantity, perUnit);
             decimal? difference = actualKg is { } a && invoicedTheoreticalKg is { } t ? a - t : null;
             // TK8: signed deviation = (actual − theoretical) / theoretical × 100, shown once rounded to 0,01 (URN-D7 display).
@@ -114,7 +128,7 @@ public sealed partial class SalesDraftService
                 View(SalesKilogramPriceCalculator.Line(amount, theoreticalKg, SalesKilogramPriceState.TheoreticalKgUnavailable)),
                 KgText(invoicedQuantity)!, invoicedAmount is { } value ? value.ToString("0.00", CultureInfo.InvariantCulture) : null,
                 KgText(actualKg),
-                View(SalesKilogramPriceCalculator.Line(invoicedAmount, actualKg, SalesKilogramPriceState.WeighedKgUnavailable)),
+                View(SalesKilogramPriceCalculator.Line(priceAmount, actualKg, SalesKilogramPriceState.WeighedKgUnavailable)),
                 difference is { } signed ? KgText(signed) : null, deviation));
         }
 

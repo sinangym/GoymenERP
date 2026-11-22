@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using GoymenERP.Api.Ai.External;
+using GoymenERP.Api.Ai.Gateway;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.BuildingBlocks.Multitenancy;
@@ -21,6 +22,9 @@ namespace GoymenERP.Api.Ai;
 /// the server-built <see cref="AiServerContextV1"/>. Every call and every refusal is a security event (Group E):
 /// <c>ai.tool.called</c> Started is fail-closed, Completed and the refusals are fail-open with alarm. Every event carries
 /// the published AI policy reference, or <c>default-deny</c> when none is published (ASSUMPTION-AI-POLICYREF-1).
+/// WP-A1: after the fence, the released tool results go to the AI gateway (<see cref="IAiGatewayV1"/>, feature Panel, task
+/// Answer), which composes a natural language answer whose every number comes from a cited source, or says it cannot answer.
+/// A gateway refusal (feature switch, budget, data class route) is recorded as an <c>ai.request.refused</c> event.
 /// </summary>
 public sealed class AiAskService(
     IOptions<AiRuntimeOptions> options,
@@ -33,7 +37,8 @@ public sealed class AiAskService(
     IActorSessionBindingResolver sessionBindingResolver,
     ICorrelationContext correlationContext,
     ISecurityEventWriterV1 securityEvents,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IAiGatewayV1 gateway)
 {
     private const string CompanyArgumentName = "companyId";
 
@@ -143,7 +148,66 @@ public sealed class AiAskService(
             return AiAskResultV1.Of(AiAskStatusV1.Refused);
         }
 
-        return AiAskResultV1.Answered(new AiAskResponseV1(AiAskOutcomesV1.Answered, results));
+        return await ComposeAnswerAsync(question, results, companyId, actorId, cancellationToken);
+    }
+
+    /// <summary>
+    /// WP-A1: turns the released results into text through the gateway. The question is classified Internal (ERP panel
+    /// context); each source carries its owner's data class, so the gateway routes by the highest of them (AI-D34 d).
+    /// </summary>
+    private async Task<AiAskResultV1> ComposeAnswerAsync(
+        string question,
+        IReadOnlyList<AiToolResultV1> results,
+        Guid companyId,
+        string actorId,
+        CancellationToken cancellationToken)
+    {
+        var grounding = new List<AiGroundingItemV1>(results.Count);
+        foreach (var result in results)
+        {
+            if (result.Outcome != AiToolResultOutcomesV1.Succeeded || result.Source is not { } source || result.ContentJson is null
+                || !Enum.TryParse<AiDataClassV1>(source.DataClass, ignoreCase: false, out var dataClass))
+            {
+                continue;
+            }
+
+            grounding.Add(new AiGroundingItemV1(result.ToolId, result.ToolVersion, result.ContentJson,
+                new AiSourceV1(result.ToolId, result.ToolVersion, source.TargetKind, source.TargetId, source.Title,
+                    source.SourceVersion, source.AsOfUtc, dataClass)));
+        }
+
+        var composed = await gateway.ComposeAsync(
+            new AiGatewayRequestV1(AiFeatureV1.Panel, AiTaskKindV1.Answer, question, AiQuestionDataClassV1.Classify(question), grounding,
+                new AiGatewayCallerV1(companyId, actorId, correlationContext.CorrelationId, correlationContext.CausationId)),
+            cancellationToken);
+
+        switch (composed.Status)
+        {
+            case AiGatewayStatusV1.Answered when composed.Answer is { } answer:
+                return AiAskResultV1.Answered(new AiAskResponseV1(AiAskOutcomesV1.Answered, results,
+                    new AiAnswerV1(answer.Text,
+                        answer.Citations.Select(citation => new AiAnswerCitationV1(citation.ToolId, citation.ToolVersion,
+                            citation.TargetKind, citation.TargetId, citation.Title, citation.SourceVersion, citation.AsOfUtc)).ToArray(),
+                        answer.ModelDeployment, answer.PolicyVersion)));
+            case AiGatewayStatusV1.CannotAnswer:
+                return AiAskResultV1.Answered(new AiAskResponseV1(AiAskOutcomesV1.CannotAnswer, results, null));
+            case AiGatewayStatusV1.FeatureDisabled:
+                await RefuseAsync(SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.PolicyRefused,
+                    companyId, actorId, null, null, cancellationToken);
+                return AiAskResultV1.Of(AiAskStatusV1.FeatureDisabled);
+            case AiGatewayStatusV1.BudgetExhausted:
+                await RefuseAsync(SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.PolicyRefused,
+                    companyId, actorId, null, null, cancellationToken);
+                return AiAskResultV1.Of(AiAskStatusV1.BudgetExhausted);
+            case AiGatewayStatusV1.DataClassRefused:
+                await RefuseAsync(SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.AiDataClassNotAllowed,
+                    companyId, actorId, null, null, cancellationToken);
+                return AiAskResultV1.Of(AiAskStatusV1.Refused);
+            default:
+                await RefuseAsync(SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.AiProviderFailed,
+                    companyId, actorId, null, null, cancellationToken);
+                return AiAskResultV1.Of(AiAskStatusV1.Unavailable);
+        }
     }
 
     private async Task<ToolRun> RunToolAsync(

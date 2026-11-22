@@ -733,6 +733,15 @@ public static class ErpPermissions
     /// </summary>
     public const string FinancePartyBalanceTransfersRecord = "finance.party-balance-transfers.record";
 
+    /// <summary>
+    /// WP12 (FNS-D13/D52): reserve a bank statement import for a Finance bank account and parse its uploaded file into
+    /// control lines (a line never creates a movement). Registered, not granted. Company-wide only; not Critical.
+    /// </summary>
+    public const string FinanceBankStatementsImport = "finance.bank-statements.import";
+
+    /// <summary>WP12: read statement imports, lines and the exact match suggestions. Registered, not granted. Company-wide only.</summary>
+    public const string FinanceBankStatementsRead = "finance.bank-statements.read";
+
     /// <summary>FI04 independent read and amount disclosure; registration grants no user or role access.</summary>
     public const string FinanceOpenItemsRead = "finance.open-items.read";
     public const string FinanceOpenItemsAmountRead = "finance.open-items.amount.read";
@@ -1546,6 +1555,12 @@ public static class ErpPermissions
     /// granted; company-wide only; not Critical.
     /// </summary>
     public const string SettingsWorkApprovalDurationManage = "settings.work-approval-duration.manage";
+    /// <summary>
+    /// WP-A1 (AI-D24, AI-D30; DALGA_PLANI_v2 A.1): reads and records the versioned AI gateway policy (task kind × data class
+    /// model table, monthly usage ceiling, per-feature switches). Registered, not granted; company-wide only; not Critical.
+    /// The budget value and the grant are human gates.
+    /// </summary>
+    public const string SettingsAiGatewayManage = "settings.ai-gateway.manage";
     public const string SettingsDocumentNumberSeriesManage = "settings.document-number-series.manage";
 
     /// <summary>
@@ -1712,6 +1727,13 @@ public static class ErpPermissions
     /// </summary>
     public const string WorkTasksComplete = "work.tasks.complete";
     /// <summary>
+    /// WP-C6 (AI-D30; DALGA_PLANI_v2 C.6): view another person's personal assistant memory in the company and close one of
+    /// their entries or their whole memory. Every view is written as an audit event and as a Work view row the person can list.
+    /// It never lets the holder edit or read the text of an entry its owner deleted. Separate from every other permission as
+    /// AI-D30 requires. Company-wide only. Not Critical. Registered, not granted: no seeded role holds it; a grant is a human gate.
+    /// </summary>
+    public const string WorkAssistantMemoryOversee = "work.assistant-memory.oversee";
+    /// <summary>
     /// Y-A1 (AI-D12, AI-D32, DALGA_PLANI_v2 A.4 (1)): may use the READ tool <c>decisions.lookup.v1</c> over the decision
     /// index in addition to <see cref="AiPanelUse"/>. AI-D36 recommends it for every user role (consistent with ROL-D16);
     /// registered company-wide only, not critical, and no seeded role holds it: applying the grant is a human gate.
@@ -1724,6 +1746,30 @@ public static class ErpPermissions
     /// Registered, not granted: no seeded role holds it; a grant is a human gate.
     /// </summary>
     public const string AiDocumentDraftsPrepare = "ai.document-drafts.prepare";
+    /// <summary>
+    /// WP-B3, AI-D41 ("belgeden taslak teyidi"): may turn a supplier's confirmation document into a supplier confirmation
+    /// DRAFT, in addition to <see cref="AiPanelUse"/> and <see cref="AiDocumentDraftsPrepare"/>. Replaces
+    /// ASSUMPTION-AI-DRAFT-CONFIRMATION-1. A draft creates no record. Company-wide only, not critical. Registered, not
+    /// granted: no seeded role holds it; a grant is a human gate.
+    /// </summary>
+    public const string AiDocumentDraftsSupplierConfirmation = "ai.document-drafts.supplier-confirmation";
+    /// <summary>
+    /// WP14 (DALGA_PLANI_v2 1.15, DEC-DOC-009): download a report-centre page as CSV/XLSX. The report's own owner read permissions
+    /// are required as well; every export writes an append-only export record and an audit event. Company-wide only. Not Critical
+    /// (a Critical marking is a human decision). Registered, not granted: no seeded role holds it; a grant is a human gate.
+    /// </summary>
+    public const string ReportingExport = "reporting.export";
+    /// <summary>
+    /// WP14 (YOL-D13, ROL-D13): build the company's auditor package (read-only export of the sections the actor can read; the
+    /// auditor gets no system access). Company-wide only. Not Critical. Registered, not granted (a grant is a human gate).
+    /// </summary>
+    public const string ReportingAuditorPackageExport = "reporting.auditor-package.export";
+    /// <summary>
+    /// WP14 (ROL-D15, YOL-D6): read the intercompany transaction dump. ROL-D15 recommends the general manager, the system
+    /// administrator and the accounting manager; registered, not granted: applying that grant is a human gate. Company-wide only.
+    /// Not Critical.
+    /// </summary>
+    public const string ReportingIntercompanyRead = "reporting.intercompany.read";
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(
         [
@@ -1951,6 +1997,8 @@ public static class ErpPermissions
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
         FinancePartyBalanceTransfersRecord,
+        FinanceBankStatementsImport,
+        FinanceBankStatementsRead,
         FinanceOpenItemsRead,
         FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,
@@ -1986,6 +2034,7 @@ public static class ErpPermissions
             SettingsManufacturingScrapCostManage,
             SettingsNotificationRetentionManage,
             SettingsWorkApprovalDurationManage,
+            SettingsAiGatewayManage,
             SettingsDocumentNumberSeriesManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,
@@ -2014,11 +2063,16 @@ public static class ErpPermissions
             AiPanelUse,
             AiDecisionsRead,
             AiDocumentDraftsPrepare,
+            AiDocumentDraftsSupplierConfirmation,
             IdentityUsersManage,
             PlatformSecurityEventsRead,
             WorkNotesWrite,
             WorkTasksAssign,
             WorkTasksComplete,
+            WorkAssistantMemoryOversee,
+            ReportingExport,
+            ReportingAuditorPackageExport,
+            ReportingIntercompanyRead,
         ],
         StringComparer.Ordinal);
 
@@ -2259,6 +2313,8 @@ public static class ErpPermissions
         FinancePartyLedgerRead,
         FinancePartyLedgerAmountRead,
         FinancePartyBalanceTransfersRecord,
+        FinanceBankStatementsImport,
+        FinanceBankStatementsRead,
         FinanceOpenItemsRead,
         FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,
@@ -2294,6 +2350,7 @@ public static class ErpPermissions
             SettingsManufacturingScrapCostManage,
             SettingsNotificationRetentionManage,
             SettingsWorkApprovalDurationManage,
+            SettingsAiGatewayManage,
             SettingsDocumentNumberSeriesManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,
@@ -2318,11 +2375,16 @@ public static class ErpPermissions
             AiPanelUse,
             AiDecisionsRead,
             AiDocumentDraftsPrepare,
+            AiDocumentDraftsSupplierConfirmation,
             IdentityUsersManage,
             PlatformSecurityEventsRead,
             WorkNotesWrite,
             WorkTasksAssign,
             WorkTasksComplete,
+            WorkAssistantMemoryOversee,
+            ReportingExport,
+            ReportingAuditorPackageExport,
+            ReportingIntercompanyRead,
         ],
         StringComparer.Ordinal);
 

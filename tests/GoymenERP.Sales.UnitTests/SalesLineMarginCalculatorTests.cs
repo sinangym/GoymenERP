@@ -169,6 +169,9 @@ public sealed class SalesLineMarginCalculatorTests
     [InlineData("D10", "-50.00", "34.5678", "1", "1", "-1729.39", null)]
     [InlineData("D11", "12345678.91", "34.56789012", "250000", "1234.5678", "118122122.02", "27.68")]
     [InlineData("D12", "3.00", "34.56789012", "1", "100", "3.70", "3.57")]
+    // D15: the rate frozen at the revision approval (the first approval found none); D16: the first frozen rate, never the later one (T4).
+    [InlineData("D15", "1000.00", "34.6000", "100", "300.1234", "4587.66", "13.26")]
+    [InlineData("D16", "1000.00", "34.5678", "100", "300.1234", "4555.46", "13.18")]
     public void A_foreign_sale_is_converted_exactly_at_the_rate_frozen_at_approval_SAT_D426(string row, string net, string rate,
         string quantity, string unitCost, string amount, string? percent)
     {

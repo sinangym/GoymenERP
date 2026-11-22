@@ -32,6 +32,18 @@ internal sealed class WorkRecordNotePassivationRow : IWorkTenantRow
     public string Reason { get; set; } = "";
 }
 
+/// <summary>
+/// WP9 read receipt: one row per (note, reader), written the first time the reader marks the note read; never changed. The
+/// author does not get one (writing is not reading). Kept and disposed of with the note (YOL-D26).
+/// </summary>
+internal sealed class WorkRecordNoteReadRow : IWorkTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid NoteId { get; set; }
+    public Guid ReaderUserId { get; set; }
+    public DateTimeOffset ReadAtUtc { get; set; }
+}
+
 internal sealed class WorkTaskRow : IWorkTenantRow
 {
     public Guid CompanyId { get; set; }

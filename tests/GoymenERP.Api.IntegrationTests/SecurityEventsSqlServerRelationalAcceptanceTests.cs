@@ -22,7 +22,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>AI-2a security event channel on real SQL Server (ADR-SEC-001, #66 6806619303 item 11).</summary>
-public sealed class SecurityEventsSqlServerRelationalAcceptanceTests
+public sealed partial class SecurityEventsSqlServerRelationalAcceptanceTests
 {
     private static readonly DateTimeOffset OccurredAt = new(2026, 11, 11, 9, 15, 30, 123, TimeSpan.Zero);
 

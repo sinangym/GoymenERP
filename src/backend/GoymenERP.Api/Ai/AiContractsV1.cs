@@ -11,6 +11,12 @@ public sealed record AiAskRequestV1(string? Question, string? ToolId, string? To
 public static class AiAskOutcomesV1
 {
     public const string Answered = "answered";
+
+    /// <summary>
+    /// WP-A1: no source supports an answer (no tool result, or the composed text was not backed by the sources). The released
+    /// tool results are still listed; no text is given. The panel shows its own "cannot answer" message.
+    /// </summary>
+    public const string CannotAnswer = "cannot_answer";
 }
 
 public static class AiToolResultOutcomesV1
@@ -27,10 +33,24 @@ public static class AiAvailabilityValuesV1
 }
 
 /// <summary>
-/// The answer of a READ-only ask: what each owner tool released and where it came from. The runtime adds no totals
-/// or derived values (data class §5a); text composition by a model is a later slice.
+/// The answer of a READ-only ask: what each owner tool released and where it came from, and (WP-A1) the natural language
+/// answer the gateway composed from those results. Every number in <see cref="Answer"/> appears in a cited source; the
+/// runtime adds no totals or derived values (data class §5a). <see cref="Answer"/> is null when the outcome is
+/// <see cref="AiAskOutcomesV1.CannotAnswer"/>.
 /// </summary>
-public sealed record AiAskResponseV1(string Outcome, IReadOnlyList<AiToolResultV1> ToolResults);
+public sealed record AiAskResponseV1(string Outcome, IReadOnlyList<AiToolResultV1> ToolResults, AiAnswerV1? Answer);
+
+/// <summary>WP-A1: the composed text, its cited sources and the model/policy identity that produced it.</summary>
+public sealed record AiAnswerV1(string Text, IReadOnlyList<AiAnswerCitationV1> Citations, string ModelDeployment, string PolicyVersion);
+
+public sealed record AiAnswerCitationV1(
+    string ToolId,
+    string ToolVersion,
+    string TargetKind,
+    Guid TargetId,
+    string Title,
+    string SourceVersion,
+    DateTimeOffset AsOfUtc);
 
 public sealed record AiToolResultV1(
     string ToolId,
@@ -60,6 +80,12 @@ public enum AiAskStatusV1
     Invalid = 4,
     Refused = 5,
     ToolUnavailable = 6,
+
+    /// <summary>WP-A1: the panel feature switch is off in the company's AI gateway policy (or none is recorded).</summary>
+    FeatureDisabled = 7,
+
+    /// <summary>WP-A1: the month's usage ceiling is reached or no budget is recorded.</summary>
+    BudgetExhausted = 8,
 }
 
 public sealed record AiAskResultV1(AiAskStatusV1 Status, AiAskResponseV1? Response, IReadOnlyList<string> InvalidFields)

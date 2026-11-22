@@ -76,6 +76,10 @@ public static class LogisticsModuleExtensions
         // Ai:AllowedTools admits the tool).
         services.AddScoped<ILogisticsPendingShipmentReadV1>(serviceProvider => serviceProvider.GetRequiredService<LogisticsInstructionService>());
         services.AddScoped<IAiOwnerToolV1, LogisticsPendingShipmentsAiTool>();
+        // WP-A3a: two more owner READ tools over the instruction service's own measured reads (registration only;
+        // Ai:AllowedTools stays empty, so the catalog admits neither).
+        services.AddScoped<IAiOwnerToolV1, LogisticsOrderDispatchNotesAiTool>();
+        services.AddScoped<IAiOwnerToolV1, LogisticsInstructionShipmentStatusAiTool>();
         services.TryAddSingleton(new LogisticsOperationsWorkBindings());
         services.AddScoped<ILogisticsOperationsWorkService, LogisticsOperationsWorkService>();
         services.AddScoped<LogisticsCustomerReturnStore>();

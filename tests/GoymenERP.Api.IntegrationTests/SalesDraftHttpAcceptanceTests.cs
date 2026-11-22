@@ -51,6 +51,21 @@ public sealed partial class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory fa
     }
 
     [Fact]
+    public async Task WP11_a_withheld_margin_explanation_answers_403_with_no_trace_on_the_wire()
+    {
+        using var host = CreateHost(new StubDraftService());
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync(
+            $"{SalesEndpoints.DraftsPath.TrimStart('/')}/{Guid.NewGuid():D}/lines/{Guid.NewGuid():D}/margin-explanation");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("steps", body, StringComparison.OrdinalIgnoreCase);
+        Assert.True(response.Headers.CacheControl is { Private: true, NoStore: true });
+    }
+
+    [Fact]
     public async Task A_created_draft_answers_201_with_its_absolute_detail_location_and_no_replay_header()
     {
         var draftId = Guid.NewGuid();
@@ -460,6 +475,11 @@ public sealed partial class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory fa
 
         public Task<SalesOrderKilogramPricesResponse> GetDraftKilogramPricesAsync(Guid draftId, CancellationToken cancellationToken = default) =>
             Task.FromException<SalesOrderKilogramPricesResponse>(new SalesDraftServiceException(404, "not_found"));
+
+        /// <summary>WP11: the margin explanation's HTTP surface; the stub answers 403 (a withheld margin has no trace).</summary>
+        public Task<SalesDraftLineMarginExplanationV1> ExplainDraftLineMarginAsync(Guid draftId, Guid lineId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException<SalesDraftLineMarginExplanationV1>(new SalesDraftServiceException(403, "forbidden"));
 
         public Task<SalesOrderDraftPriceReferencesResponse> GetLinePriceReferencesAsync(Guid draftId, Guid lineId,
             CancellationToken cancellationToken = default) =>

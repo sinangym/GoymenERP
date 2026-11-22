@@ -27,10 +27,7 @@ public sealed class AiToolCatalog
             .ToArray();
         var allowlist = entries.Select(entry => (entry.ToolId!, entry.Version!)).ToHashSet();
         // Two entries for one id+version with different pins are ambiguous: neither pin counts as approved.
-        var pins = entries
-            .GroupBy(entry => (entry.ToolId!, entry.Version!))
-            .Where(group => group.Select(entry => entry.DescriptionSha256).Distinct(StringComparer.Ordinal).Count() == 1)
-            .ToDictionary(group => group.Key, group => group.First().DescriptionSha256);
+        var pins = AiToolPinAllowlistV1.ApprovedPins(entries);
 
         var registered = ownerTools.Where(tool => tool is not null).ToArray();
         var duplicateIds = registered
@@ -47,9 +44,7 @@ public sealed class AiToolCatalog
             .Where(tool => allowlist.Contains((tool.Descriptor.ToolId, tool.Descriptor.Version)))
             .ToArray();
 
-        bool PinHolds(IAiOwnerReadToolV1 tool) =>
-            pins.TryGetValue((tool.Descriptor.ToolId, tool.Descriptor.Version), out var pin)
-            && AiToolDescriptionPinV1.Matches(tool.Descriptor, pin);
+        bool PinHolds(IAiOwnerReadToolV1 tool) => AiToolPinAllowlistV1.Holds(pins, tool.Descriptor);
 
         tools = candidates.Where(PinHolds).ToDictionary(tool => (tool.Descriptor.ToolId, tool.Descriptor.Version));
         PinMismatchedTools =
@@ -83,3 +78,20 @@ public sealed class AiToolCatalog
 
 /// <summary>An allowlisted tool excluded because its model card no longer matches the approved pin.</summary>
 public sealed record AiToolPinMismatchV1(string ToolId, string Version);
+
+/// <summary>
+/// WP-A6 pin check shared by the READ catalog and the command catalog: the approved pin of an allowlisted id+version, or
+/// none when two entries for the same id+version disagree (ambiguous approvals approve nothing).
+/// </summary>
+public static class AiToolPinAllowlistV1
+{
+    public static IReadOnlyDictionary<(string ToolId, string Version), string?> ApprovedPins(IEnumerable<AiAllowedToolOptions> entries) =>
+        entries
+            .Where(entry => !string.IsNullOrWhiteSpace(entry?.ToolId) && !string.IsNullOrWhiteSpace(entry?.Version))
+            .GroupBy(entry => (entry.ToolId!, entry.Version!))
+            .Where(group => group.Select(entry => entry.DescriptionSha256).Distinct(StringComparer.Ordinal).Count() == 1)
+            .ToDictionary(group => group.Key, group => group.First().DescriptionSha256);
+
+    public static bool Holds(IReadOnlyDictionary<(string ToolId, string Version), string?> pins, AiToolDescriptorV1 descriptor) =>
+        pins.TryGetValue((descriptor.ToolId, descriptor.Version), out var pin) && AiToolDescriptionPinV1.Matches(descriptor, pin);
+}

@@ -66,6 +66,7 @@ export const PRICE_CONTROL_TEXT = {
     unavailable: 'Kullanılamıyor',
     noPercent: 'Oran yok: net satış sıfır veya negatif',
     percentValue: (value: string) => `%${value}`,
+    explain: 'Açıklama',
     reason: {
       CostSourceMissing: 'Kayıtlı maliyet kaynağı yok',
       CostUnreadable: 'Maliyet okunamadı',

@@ -1,4 +1,4 @@
-using System.Numerics;
+using GoymenERP.BuildingBlocks.Quantities;
 
 namespace GoymenERP.Modules.Sales.Domain.Drafts;
 
@@ -50,7 +50,7 @@ public sealed record SalesKilogramPriceLine(decimal? Amount, decimal? Kilograms)
 public static class SalesKilogramPriceCalculator
 {
     /// <summary>SAT-D436: shown to 0,01 of the document currency.</summary>
-    public const int PriceScale = 2;
+    public const int PriceScale = KilogramPriceArithmetic.PriceScale;
 
     public static SalesKilogramPrice Line(decimal? amount, decimal? kilograms, SalesKilogramPriceState missingKilograms)
     {
@@ -69,34 +69,21 @@ public static class SalesKilogramPriceCalculator
         return Divide(lines.Sum(line => line.Amount!.Value), lines.Sum(line => line.Kilograms!.Value));
     }
 
-    /// <summary>Exact amount ÷ kg rounded once, half away from zero, to <see cref="PriceScale"/>.</summary>
+    /// <summary>
+    /// Exact amount ÷ kg rounded once, half away from zero, to <see cref="PriceScale"/> — the shared deterministic division
+    /// (<see cref="KilogramPriceArithmetic"/>, the same one Purchasing uses); only the states are Sales'.
+    /// </summary>
     private static SalesKilogramPrice Divide(decimal amount, decimal kilograms)
     {
         if (kilograms == 0m) return SalesKilogramPrice.Unavailable(SalesKilogramPriceState.ZeroKg);
         if (kilograms < 0m) return SalesKilogramPrice.Unavailable(SalesKilogramPriceState.OutOfRange);
-        var (numerator, numeratorScale) = Exact(amount);
-        var (denominator, denominatorScale) = Exact(kilograms);
-        // (n / 10^a) / (d / 10^b) at 10^-p = n × 10^(b + p) / (d × 10^a)
-        var top = numerator * BigInteger.Pow(10, denominatorScale + PriceScale);
-        var bottom = denominator * BigInteger.Pow(10, numeratorScale);
-        var quotient = BigInteger.DivRem(BigInteger.Abs(top), bottom, out var remainder);
-        if (remainder * 2 >= bottom) quotient += 1;
-        if (top.Sign < 0) quotient = -quotient;
         try
         {
-            return new SalesKilogramPrice(SalesKilogramPriceState.Shown, (decimal)quotient / 100m);
+            return new SalesKilogramPrice(SalesKilogramPriceState.Shown, KilogramPriceArithmetic.RoundedQuotient(amount, kilograms));
         }
         catch (OverflowException)
         {
             return SalesKilogramPrice.Unavailable(SalesKilogramPriceState.OutOfRange);
         }
-    }
-
-    private static (BigInteger Mantissa, int Scale) Exact(decimal value)
-    {
-        var bits = decimal.GetBits(value);
-        var scale = (bits[3] >> 16) & 0xFF;
-        var mantissa = new BigInteger((uint)bits[0]) | (new BigInteger((uint)bits[1]) << 32) | (new BigInteger((uint)bits[2]) << 64);
-        return (value < 0m ? -mantissa : mantissa, scale);
     }
 }

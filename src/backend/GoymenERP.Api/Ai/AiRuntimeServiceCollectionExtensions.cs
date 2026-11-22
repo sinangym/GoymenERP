@@ -1,6 +1,9 @@
 using GoymenERP.Api.Ai.DocumentDrafts;
+using GoymenERP.Api.Ai.Commands;
 using GoymenERP.Api.Ai.External;
+using GoymenERP.Api.Ai.Gateway;
 using GoymenERP.Api.Ai.Knowledge;
+using GoymenERP.Api.Ai.SecurityWatch;
 using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Security.SecretStore;
@@ -39,6 +42,12 @@ public static class AiRuntimeServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IAiOwnerToolV1, DecisionLookupAiTool>());
         services.AddScoped<AiToolCatalog>();
         services.AddScoped<AiCapabilityService>();
+        // WP-A1 gateway: the Settings-owned policy port and usage ledger come from the Settings module. Only the in-process
+        // Fake composers are registered (one per placement); the runtime never admits the Fake kind in Production, and no
+        // external or local composer exists until the provider and hardware decisions (OPEN-020, OPEN-014).
+        services.AddSingleton<IAiAnswerComposerV1>(_ => new FakeAiAnswerComposer(AiModelPlacementV1.Cloud));
+        services.AddSingleton<IAiAnswerComposerV1>(_ => new FakeAiAnswerComposer(AiModelPlacementV1.OnPremises));
+        services.AddScoped<IAiGatewayV1, AiGateway>();
         services.AddScoped<AiAskService>();
 
         // WP-B3 document drafts: off (Ai:DocumentDrafts:Enabled=false and Ai:Enabled=false). OCR and the local model are
@@ -51,6 +60,26 @@ public static class AiRuntimeServiceCollectionExtensions
         services.TryAddScoped<IAiDocumentProductMatcherV1, ProductCandidatesAiDocumentProductMatcher>();
         services.TryAddScoped<IAiDocumentSourceStoreV1, ObjectStoreAiDocumentSourceStore>();
         services.AddScoped<AiDocumentDraftService>();
+        // WP-C1: the approved write pipeline. Closed: Ai:Commands:Enabled is false, no command tool is allowlisted, the
+        // ledger is unconfigured (no durable store yet) and step-up never verifies (decision 156; method undecided).
+        services.AddOptions<AiCommandOptions>().Bind(configuration.GetSection(AiCommandOptions.SectionName));
+        services.TryAddScoped<IAiCommandLedgerV1, UnconfiguredAiCommandLedger>();
+        services.TryAddScoped<IAiStepUpVerifierV1, UnconfiguredAiStepUpVerifier>();
+        services.AddScoped<AiCommandToolCatalog>();
+        services.AddScoped<AiCommandPipeline>();
+        return services;
+    }
+
+    /// <summary>
+    /// WP-C10: the read-only <c>security.tech-watch.summary.v1</c> tool and its dependency scan report source. It needs
+    /// the SecurityEvents module (its owner digest), so the host calls this after <c>AddSecurityEventsModule</c>.
+    /// Registration only: no default report path, no allowlist entry, Confidential data class.
+    /// </summary>
+    public static IServiceCollection AddAiSecurityWatchTools(this IServiceCollection services)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IDependencyScanReportSourceV1, ConfiguredDependencyScanReportSource>();
+        services.AddScoped<IAiOwnerToolV1, SecurityTechWatchAiTool>();
         return services;
     }
 

@@ -31,12 +31,13 @@ public sealed class ManufacturingPlanWorkInboxSourceTests
     public ManufacturingPlanWorkInboxSourceTests() => company.Set(CompanyA);
 
     [Fact]
-    public void The_source_declares_its_kind_the_approve_permission_and_the_hour_class_and_the_module_registers_it()
+    public void The_source_declares_its_kind_and_the_approve_permission_and_the_module_registers_it()
     {
         var source = Source();
 
-        Assert.Equal(("manufacturing", "manufacturing.plan.v1", "manufacturing.plans.approve", WorkApprovalDurationClassV1.Hours),
-            (source.Module, source.Kind, source.ApproverPermission, source.DurationClass));
+        // WP1: the duration class is the Work rule table's (YOL-D18 default: hour scale), never the source's declaration.
+        Assert.Equal(("manufacturing", "manufacturing.plan.v1", "manufacturing.plans.approve", false),
+            (source.Module, source.Kind, source.ApproverPermission, ((IWorkInboxSourceV1)source).AcceptsScopedApprovers));
         Assert.Equal(ManufacturingPermissionManifestV1.PlansApprove, source.ApproverPermission);
         Assert.Equal(ErpPermissions.ManufacturingPlansApprove, source.ApproverPermission);
         var services = new ServiceCollection().AddManufacturingModule(new ManufacturingWorkInboxTestSettings());
@@ -152,7 +153,7 @@ public sealed class ManufacturingPlanWorkInboxSourceTests
     }
 
     [Fact]
-    public async Task The_preparers_own_plan_is_returned_for_the_preparer_and_a_plan_without_a_recorded_preparer_is_left_out()
+    public async Task The_preparers_own_plan_is_returned_for_the_preparer_and_a_plan_without_a_recorded_preparer_names_no_maker()
     {
         user.UserId = Maker;
         Plan(Id(1), status: 1, minutes: 5);
@@ -161,8 +162,12 @@ public sealed class ManufacturingPlanWorkInboxSourceTests
         var result = await Source().ListPendingAsync(new WorkInboxSourceContextV1(CompanyA, Maker, "SENTETIK", null), 10,
             CancellationToken.None);
 
-        var item = Assert.Single(result.Items!);
-        Assert.Equal((Id(1), Maker), (item.ItemId, item.PreparedBy));
+        // WP1 D4: the domain refuses no one as the preparer of a plan stored before preparers were kept, so the inbox lists it
+        // with no maker (the domain's own definition) instead of hiding it; the preparer's own plan still names the preparer.
+        Assert.Equal([(Id(1), (string?)Maker), (Id(2), null)],
+            result.Items!.Select(item => (item.ItemId, item.PreparedBy)).ToArray());
+        Assert.True(result.Items![0].Excludes(Maker.ToUpperInvariant()));
+        Assert.False(result.Items[1].Excludes(Maker));
     }
 
     [Fact]

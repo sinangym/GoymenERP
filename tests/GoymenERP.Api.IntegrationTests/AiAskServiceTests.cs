@@ -162,6 +162,127 @@ public sealed class AiAskServiceTests
     }
 
     [Fact]
+    public async Task An_allowed_read_is_answered_in_natural_language_from_the_tool_source_with_its_citation()
+    {
+        var harness = new Harness();
+
+        var result = await harness.Service().AskAsync(Ask());
+
+        Assert.Equal(AiAskStatusV1.Answered, result.Status);
+        Assert.Equal(AiAskOutcomesV1.Answered, result.Response!.Outcome);
+        var answer = Assert.IsType<AiAnswerV1>(result.Response.Answer);
+        Assert.Contains("SENTETIK kalem", answer.Text, StringComparison.Ordinal);
+        var citation = Assert.Single(answer.Citations);
+        Assert.Equal(ToolId, citation.ToolId);
+        Assert.Equal(Target, citation.TargetId);
+        Assert.Equal("rv-1", citation.SourceVersion);
+        Assert.Equal("ai.gateway-policy:7", answer.PolicyVersion);
+        Assert.Equal(InMemoryAiGatewayStore.LocalDeployment, answer.ModelDeployment);
+        var reservation = Assert.Single(harness.GatewayStore.Reservations);
+        Assert.Equal(Company, reservation.CompanyId);
+        Assert.Equal(Actor.ToString("D"), reservation.ActorId);
+        Assert.Equal("corr-ai-sentetik", reservation.CorrelationId);
+    }
+
+    [Fact]
+    public async Task A_not_found_read_has_no_source_so_the_ask_cannot_answer_and_no_budget_is_used()
+    {
+        var harness = new Harness();
+        harness.Tool.NextResult = new AiReadResultV1(AiToolOutcomeV1.NotFound, null, null);
+
+        var result = await harness.Service().AskAsync(Ask());
+
+        Assert.Equal(AiAskStatusV1.Answered, result.Status);
+        Assert.Equal(AiAskOutcomesV1.CannotAnswer, result.Response!.Outcome);
+        Assert.Null(result.Response.Answer);
+        Assert.Equal(AiToolResultOutcomesV1.NotFound, Assert.Single(result.Response.ToolResults).Outcome);
+        Assert.Empty(harness.GatewayStore.Reservations);
+    }
+
+    [Fact]
+    public async Task Without_any_tool_call_the_ask_cannot_answer_and_no_model_composes_text()
+    {
+        var harness = new Harness();
+
+        var result = await harness.Service().AskAsync(new AiAskRequestV1("SENTETIK serbest soru?", null, null, null));
+
+        Assert.Equal(AiAskStatusV1.Answered, result.Status);
+        Assert.Equal(AiAskOutcomesV1.CannotAnswer, result.Response!.Outcome);
+        Assert.Empty(result.Response.ToolResults);
+        Assert.Null(result.Response.Answer);
+        Assert.Empty(harness.GatewayStore.Reservations);
+    }
+
+    [Fact]
+    public async Task A_switched_off_panel_feature_answers_feature_disabled_and_records_the_refusal()
+    {
+        var harness = new Harness();
+        harness.GatewayStore.Policy = harness.GatewayStore.Policy with
+        {
+            EnabledFeatures = new HashSet<AiFeatureV1> { AiFeatureV1.Query },
+        };
+
+        var result = await harness.Service().AskAsync(Ask());
+
+        Assert.Equal(AiAskStatusV1.FeatureDisabled, result.Status);
+        Assert.Null(result.Response);
+        Assert.Empty(harness.GatewayStore.Reservations);
+        var refusal = harness.Writer.Events[^1];
+        Assert.Equal(SecurityEventTypesV1.AiRequestRefused, refusal.EventType);
+        Assert.Equal(SecurityEventReasonCodesV1.PolicyRefused, refusal.ReasonCode);
+        harness.AssertEveryEventIsValid();
+    }
+
+    [Fact]
+    public async Task A_reached_monthly_ceiling_answers_budget_exhausted_and_releases_no_text()
+    {
+        var harness = new Harness();
+        harness.GatewayStore.Policy = harness.GatewayStore.Policy with { MonthlyUsageCeiling = 100, MaxUnitsPerRequest = 500 };
+
+        var result = await harness.Service().AskAsync(Ask());
+
+        Assert.Equal(AiAskStatusV1.BudgetExhausted, result.Status);
+        Assert.Null(result.Response);
+        Assert.Equal(SecurityEventReasonCodesV1.PolicyRefused, harness.Writer.Events[^1].ReasonCode);
+        harness.AssertEveryEventIsValid();
+    }
+
+    [Fact]
+    public async Task A_source_without_a_route_for_its_data_class_is_refused_as_ai_data_class_not_allowed()
+    {
+        var harness = new Harness();
+        harness.GatewayStore.Policy = harness.GatewayStore.Policy with
+        {
+            Routes = [new(AiTaskKindV1.Answer, AiDataClassV1.Public, AiModelPlacementV1.Cloud, InMemoryAiGatewayStore.CloudDeployment)],
+        };
+
+        var result = await harness.Service().AskAsync(Ask());
+
+        Assert.Equal(AiAskStatusV1.Refused, result.Status);
+        Assert.Null(result.Response);
+        var refusal = harness.Writer.Events[^1];
+        Assert.Equal(SecurityEventTypesV1.AiRequestRefused, refusal.EventType);
+        Assert.Equal(SecurityEventReasonCodesV1.AiDataClassNotAllowed, refusal.ReasonCode);
+        Assert.Empty(harness.GatewayStore.Reservations);
+        harness.AssertEveryEventIsValid();
+    }
+
+    [Fact]
+    public async Task A_tool_outside_the_actor_authority_is_refused_and_never_reaches_the_gateway()
+    {
+        var harness = new Harness();
+        harness.Authority.Revoke(ToolPermission);
+
+        var result = await harness.Service().AskAsync(Ask());
+
+        Assert.Equal(AiAskStatusV1.Refused, result.Status);
+        Assert.Empty(harness.Tool.Contexts);
+        Assert.Equal(0, harness.GatewayStore.PolicyReads);
+        Assert.Empty(harness.GatewayStore.Reservations);
+        Assert.Equal(SecurityEventTypesV1.AiAuthorizationDenied, Assert.Single(harness.Writer.Events).EventType);
+    }
+
+    [Fact]
     public async Task A_company_argument_is_refused_before_the_tool_runs()
     {
         var harness = new Harness(allowlist: ["itemId", "companyId"]);
@@ -629,7 +750,8 @@ public sealed class AiAskServiceTests
         companyScope.Set(Company);
         var service = new AiAskService(options, new TestHostEnvironment("Development"), harness.Provider,
             new AiToolCatalog([harness.Tool], options), new TestUser(Actor, Company), companyScope, harness.Authority,
-            new FixedSessionResolver(), correlation, harness.Writer, TimeProvider.System);
+            new FixedSessionResolver(), correlation, harness.Writer, TimeProvider.System,
+            AiGatewayTestDoubles.Gateway(Harness.ReadyOptions(), harness.GatewayStore));
 
         var result = await service.AskAsync(Ask());
 
@@ -704,6 +826,7 @@ public sealed class AiAskServiceTests
         public CountingProvider Provider { get; } = new();
         public FakeReadTool Tool { get; }
         public RecordingWriter Writer { get; } = new();
+        public InMemoryAiGatewayStore GatewayStore { get; } = new(Company);
         public FakeAuthority Authority { get; } = new(ErpPermissions.AiPanelUse, ToolPermission);
         public ICompanyContext CompanyScope { get; set; } = new CompanyContext();
         public CorrelationContext Correlation { get; } = new();
@@ -732,7 +855,8 @@ public sealed class AiAskServiceTests
             new FixedSessionResolver(),
             Correlation,
             Writer,
-            TimeProvider.System);
+            TimeProvider.System,
+            AiGatewayTestDoubles.Gateway(options, GatewayStore));
 
         public AiCapabilityService CapabilityService() => new(
             Options.Create(options),

@@ -70,6 +70,10 @@ public sealed class AiDocumentDraftServiceTests
         Assert.Null(theirs.MatchedProductId);
         Assert.Equal(["KUTU-40"], harness.Products.Asked);
 
+        // AI-D40: an unlinked source becomes passive 90 days after it was stored.
+        Assert.Equal(AiDraftRetentionV1.Decision, draft.Source.RetentionDecision);
+        Assert.Equal(Now, draft.Source.StoredAtUtc);
+        Assert.Equal(Now.AddDays(90), draft.Source.PassivateAfterUtc);
         var stored = Assert.Single(harness.Store.Stored);
         Assert.Equal(Company, stored.CompanyId);
         Assert.Equal(draft.Source.Sha256, stored.Sha256);
@@ -372,7 +376,7 @@ public sealed class AiDocumentDraftServiceTests
     [Theory]
     [InlineData(AiDocumentDraftKindsV1.SalesOrder, ErpPermissions.SalesDraftsCreate)]
     [InlineData(AiDocumentDraftKindsV1.IncomingInvoice, ErpPermissions.PurchasingInvoicesImport)]
-    [InlineData(AiDocumentDraftKindsV1.SupplierConfirmation, ErpPermissions.PurchasingOrdersRead)]
+    [InlineData(AiDocumentDraftKindsV1.SupplierConfirmation, ErpPermissions.AiDocumentDraftsSupplierConfirmation)]
     [InlineData(AiDocumentDraftKindsV1.SalesOrder, ErpPermissions.AiDocumentDraftsPrepare)]
     [InlineData(AiDocumentDraftKindsV1.SalesOrder, ErpPermissions.AiPanelUse)]
     public async Task Without_the_panel_the_draft_or_the_owner_permission_nothing_is_read_or_stored(string kind, string missing)
@@ -402,6 +406,18 @@ public sealed class AiDocumentDraftServiceTests
 
         Assert.Equal(AiDocumentDraftStatusV1.Refused, result.Status);
         Assert.Null(result.Draft);
+    }
+
+    [Fact]
+    public async Task An_enabled_feature_without_the_ai_d40_retention_period_is_unavailable()
+    {
+        var harness = new Harness();
+        harness.Options.UnlinkedSourcePassivateAfter = null;
+
+        var result = await harness.Service().DraftAsync(Text(AiDocumentDraftKindsV1.SalesOrder, "SENTETIK Sipariş No: SO-1", AiDocumentTextSourcesV1.Pasted));
+
+        Assert.Equal(AiDocumentDraftStatusV1.Unavailable, result.Status);
+        Assert.Empty(harness.Store.Stored);
     }
 
     [Fact]
@@ -518,6 +534,7 @@ public sealed class AiDocumentDraftServiceTests
         var drafts = ai.GetProperty("DocumentDrafts");
         Assert.False(drafts.GetProperty("Enabled").GetBoolean());
         Assert.False(drafts.GetProperty("LocalModelEnabled").GetBoolean());
+        Assert.Equal("90.00:00:00", drafts.GetProperty("UnlinkedSourcePassivateAfter").GetString());
         Assert.Equal(0, ai.GetProperty("AllowedTools").GetArrayLength());
     }
 
@@ -662,10 +679,11 @@ public sealed class AiDocumentDraftServiceTests
             MaxLines = 100,
             MaxCellCharacters = 400,
             MaxTextLength = 20_000,
+            UnlinkedSourcePassivateAfter = TimeSpan.FromDays(90),
         };
 
         public FakeAuthority Authority { get; } = new(ErpPermissions.AiPanelUse, ErpPermissions.AiDocumentDraftsPrepare,
-            ErpPermissions.SalesDraftsCreate, ErpPermissions.PurchasingInvoicesImport, ErpPermissions.PurchasingOrdersRead);
+            ErpPermissions.SalesDraftsCreate, ErpPermissions.PurchasingInvoicesImport, ErpPermissions.AiDocumentDraftsSupplierConfirmation);
 
         public RecordingWriter Writer { get; } = new();
         public FakeStore Store { get; } = new();

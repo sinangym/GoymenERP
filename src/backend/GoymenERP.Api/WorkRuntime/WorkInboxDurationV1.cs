@@ -47,21 +47,22 @@ internal sealed record WorkInboxHolidaysV1(IReadOnlyDictionary<int, IReadOnlySet
 
 /// <summary>
 /// Computes an item's due time from the owner's "waiting since" time and the Settings class length. The hour class adds
-/// whole hours. The business-day class counts Monday–Friday in Turkey local time (UTC+3, no daylight saving since 2016)
-/// and, by YOL-D22, also skips the company's recorded official holidays and eves of each year; a year without a recorded
-/// list deducts weekends only and the item says so ("tatil takvimi tanımsız"). A wait that starts on a non-business day
-/// counts from the next business day 00:00; the due time keeps the local clock time. This is a display rule only (no
-/// automatic approval, rejection or escalation is driven by it in W1-A).
+/// whole hours. The business-day class counts Monday–Friday in the business time zone (D6, WP1: the existing P7 / SAT-D10
+/// Europe/Istanbul source, <see cref="GoymenERP.Modules.Work.Infrastructure.ApprovalRules.IWorkBusinessTimeZoneSourceV1"/>,
+/// never a fixed offset) and, by YOL-D22, also skips the company's recorded official holidays and eves of each year; a year
+/// without a recorded list deducts weekends only and the item says so ("tatil takvimi tanımsız"). A wait that starts on a
+/// non-business day counts from the next business day 00:00; the due time keeps the local clock time. Without the zone's
+/// rules a business-day duration is unavailable (nothing is guessed). This is a display rule only (no automatic approval,
+/// rejection or escalation is driven by it).
 /// </summary>
 internal static class WorkInboxDurationCalculatorV1
 {
-    private static readonly TimeSpan TurkeyOffset = TimeSpan.FromHours(3);
-
     public static WorkInboxDurationV1 Compute(
         WorkApprovalDurationClassV1 durationClass,
         SettingsWorkApprovalDurationPolicyV1? policy,
         DateTimeOffset waitingSinceUtc,
         DateTimeOffset nowUtc,
+        TimeZoneInfo? zone,
         WorkInboxHolidaysV1? holidays = null)
     {
         var className = durationClass.ToString();
@@ -87,8 +88,13 @@ internal static class WorkInboxDurationCalculatorV1
             return new(className, WorkInboxDurationStatesV1.Defined, limit, hoursDue, nowUtc > hoursDue, version, null);
         }
 
+        if (zone is null)
+        {
+            return new(className, WorkInboxDurationStatesV1.Unavailable, null, null, null, null, null);
+        }
+
         var defined = holidays?.DefinedYears ?? new Dictionary<int, IReadOnlySet<DateOnly>>();
-        var due = AddBusinessDays(waitingSinceUtc, limit.Value, defined, out var firstYear, out var lastYear);
+        var due = AddBusinessDays(waitingSinceUtc, limit.Value, zone, defined, out var firstYear, out var lastYear);
         var calendar = holidays is null
             ? WorkInboxHolidayCalendarStatesV1.Unavailable
             : Enumerable.Range(firstYear, lastYear - firstYear + 1).All(defined.ContainsKey)
@@ -98,49 +104,60 @@ internal static class WorkInboxDurationCalculatorV1
     }
 
     /// <summary>The local calendar years a business-day count starting at <paramref name="startUtc"/> may touch.</summary>
-    internal static (int FirstYear, int LastYear) CandidateYears(DateTimeOffset startUtc, int days)
+    internal static (int FirstYear, int LastYear) CandidateYears(DateTimeOffset startUtc, int days, TimeZoneInfo zone)
     {
-        var year = startUtc.ToOffset(TurkeyOffset).Year;
+        var year = TimeZoneInfo.ConvertTime(startUtc, zone).Year;
         // Weekends plus at most the bounded holiday list never stretch a ≤ 30 business-day count beyond the next year.
         return (year, year + 1);
     }
 
-    internal static DateTimeOffset AddBusinessDays(DateTimeOffset startUtc, int days) =>
-        AddBusinessDays(startUtc, days, new Dictionary<int, IReadOnlySet<DateOnly>>(), out _, out _);
+    internal static DateTimeOffset AddBusinessDays(DateTimeOffset startUtc, int days, TimeZoneInfo zone) =>
+        AddBusinessDays(startUtc, days, zone, new Dictionary<int, IReadOnlySet<DateOnly>>(), out _, out _);
 
     internal static DateTimeOffset AddBusinessDays(
         DateTimeOffset startUtc,
         int days,
+        TimeZoneInfo zone,
         IReadOnlyDictionary<int, IReadOnlySet<DateOnly>> holidays,
         out int firstYear,
         out int lastYear)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(days);
-        var local = startUtc.ToOffset(TurkeyOffset);
-        firstYear = local.Year;
-        if (!IsBusinessDay(local, holidays))
+        ArgumentNullException.ThrowIfNull(zone);
+        var local = TimeZoneInfo.ConvertTime(startUtc, zone);
+        var date = DateOnly.FromDateTime(local.DateTime);
+        var clock = TimeOnly.FromDateTime(local.DateTime);
+        firstYear = date.Year;
+        if (!IsBusinessDay(date, holidays))
         {
             do
             {
-                local = new DateTimeOffset(local.Date.AddDays(1), TurkeyOffset);
+                date = date.AddDays(1);
             }
-            while (!IsBusinessDay(local, holidays));
+            while (!IsBusinessDay(date, holidays));
+            clock = TimeOnly.MinValue;
         }
 
         var remaining = days;
         while (remaining > 0)
         {
-            local = local.AddDays(1);
-            if (IsBusinessDay(local, holidays))
+            date = date.AddDays(1);
+            if (IsBusinessDay(date, holidays))
             {
                 remaining--;
             }
         }
-        lastYear = local.Year;
-        return local.ToUniversalTime();
+        lastYear = date.Year;
+        var dueLocal = date.ToDateTime(clock, DateTimeKind.Unspecified);
+        // A local time skipped by a clock change moves forward to the first valid minute (the zone's own rule).
+        while (zone.IsInvalidTime(dueLocal))
+        {
+            dueLocal = dueLocal.AddMinutes(1);
+        }
+        return new DateTimeOffset(dueLocal, zone.GetUtcOffset(dueLocal)).ToUniversalTime();
     }
 
-    private static bool IsBusinessDay(DateTimeOffset local, IReadOnlyDictionary<int, IReadOnlySet<DateOnly>> holidays) =>
-        local.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)
-        && !(holidays.TryGetValue(local.Year, out var days) && days.Contains(DateOnly.FromDateTime(local.DateTime)));
+    private static bool IsBusinessDay(DateOnly date, IReadOnlyDictionary<int, IReadOnlySet<DateOnly>> holidays) =>
+        date.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)
+        && !(holidays.TryGetValue(date.Year, out var days) && days.Contains(date));
 }

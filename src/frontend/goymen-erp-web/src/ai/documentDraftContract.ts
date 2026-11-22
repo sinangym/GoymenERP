@@ -88,7 +88,15 @@ export interface DraftLine {
 export interface DocumentDraft {
   readonly draftKind: DraftKind
   readonly readingTier: DraftReadingTier
-  readonly source: { readonly sha256: string; readonly mediaType: string; readonly byteLength: number }
+  readonly source: {
+    readonly sha256: string
+    readonly mediaType: string
+    readonly byteLength: number
+    /** AI-D40: kept as long as a record opened from the draft; otherwise passive after `passivateAfterUtc`. */
+    readonly retentionDecision: string
+    readonly storedAtUtc: string
+    readonly passivateAfterUtc: string
+  }
   readonly quarantineFindings: readonly string[]
   readonly documentNumber: DraftField
   readonly documentDate: DraftField
@@ -110,7 +118,8 @@ const LINE_KEYS = [
   'lineNumber', 'productCode', 'description', 'quantity', 'unit', 'unitPrice', 'lineAmount', 'section',
   'wallThickness', 'length', 'matchedProductId', 'matchedProductVersion',
 ] as const
-const SOURCE_KEYS = ['sha256', 'mediaType', 'byteLength'] as const
+const SOURCE_KEYS = ['sha256', 'mediaType', 'byteLength', 'retentionDecision', 'storedAtUtc', 'passivateAfterUtc'] as const
+const UTC_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|\+00:00)$/
 const OPEN_IN_KEYS = ['ownerModule', 'screenCode'] as const
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const SHA256 = /^[0-9a-f]{64}$/
@@ -181,6 +190,10 @@ export function decodeDocumentDraft(value: unknown): DocumentDraft | null {
   const source = exact(body.source, SOURCE_KEYS)
   if (source === null || typeof source.sha256 !== 'string' || !SHA256.test(source.sha256) || !isText(source.mediaType)) return null
   if (typeof source.byteLength !== 'number' || !Number.isInteger(source.byteLength) || source.byteLength < 1) return null
+  if (!isText(source.retentionDecision)) return null
+  if (typeof source.storedAtUtc !== 'string' || !UTC_INSTANT.test(source.storedAtUtc)) return null
+  if (typeof source.passivateAfterUtc !== 'string' || !UTC_INSTANT.test(source.passivateAfterUtc)) return null
+  if (Date.parse(source.passivateAfterUtc) <= Date.parse(source.storedAtUtc)) return null
   if (!Array.isArray(body.quarantineFindings)) return null
   const findings = body.quarantineFindings as unknown[]
   if (!findings.every((finding) => typeof finding === 'string' && CODE.test(finding))) return null
@@ -207,7 +220,14 @@ export function decodeDocumentDraft(value: unknown): DocumentDraft | null {
   return {
     draftKind: body.draftKind,
     readingTier: body.readingTier,
-    source: { sha256: source.sha256, mediaType: source.mediaType, byteLength: source.byteLength },
+    source: {
+      sha256: source.sha256,
+      mediaType: source.mediaType,
+      byteLength: source.byteLength,
+      retentionDecision: source.retentionDecision,
+      storedAtUtc: source.storedAtUtc,
+      passivateAfterUtc: source.passivateAfterUtc,
+    },
     quarantineFindings: findings as string[],
     documentNumber,
     documentDate,

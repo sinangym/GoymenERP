@@ -3,10 +3,11 @@ using System.Text.RegularExpressions;
 namespace GoymenERP.BuildingBlocks.Work;
 
 /// <summary>
-/// The duration class of one approval kind (YOL-D17, YOL-D18). <see cref="Hours"/> is the hour-scale class (dispatch
-/// note, over-plan shipment, weighing difference, manufacturing plan); <see cref="BusinessDays"/> is every other kind.
-/// The class is the owner's declaration; the length of each class is a versioned Settings policy that Work reads. A
-/// kind never carries its own number of hours or days.
+/// The duration class of one approval kind (YOL-D17, YOL-D18). <see cref="Hours"/> is the hour-scale class;
+/// <see cref="BusinessDays"/> is the business-day class. Which class a kind is in is NOT declared by its source: it is a
+/// row of Work's versioned approval rule table (WP1), whose decided default puts the dispatch note, over-plan shipment,
+/// weighing difference and manufacturing plan in <see cref="Hours"/> and every other kind in <see cref="BusinessDays"/>.
+/// The length of each class is a versioned Settings policy. A kind never carries its own number of hours or days.
 /// </summary>
 public enum WorkApprovalDurationClassV1
 {
@@ -22,7 +23,33 @@ public sealed record WorkInboxSourceContextV1(
     Guid CompanyId,
     string UserId,
     string CorrelationId,
-    string? CausationId);
+    string? CausationId,
+    WorkInboxGrantScopeV1? GrantScope = null);
+
+/// <summary>
+/// D11 (WP1): the scope of the caller's approve grant when it is NOT company-wide — the sites, locations and work centers
+/// the grant names. Null on <see cref="WorkInboxSourceContextV1.GrantScope"/> means a company-wide grant. Work passes a
+/// scope only to a source that declares <see cref="IWorkInboxSourceV1.AcceptsScopedApprovers"/>; such a source answers only
+/// the records inside the scope (and Work drops any item whose <see cref="WorkInboxItemV1.Scope"/> is outside it).
+/// </summary>
+public sealed record WorkInboxGrantScopeV1(
+    IReadOnlySet<Guid> SiteIds,
+    IReadOnlySet<Guid> LocationIds,
+    IReadOnlySet<Guid> WorkCenterIds)
+{
+    /// <summary>True when the grant names at least one of the item's scope keys (an item without a scope is never inside).</summary>
+    public bool Covers(WorkInboxItemScopeV1? scope) =>
+        scope is not null
+        && (scope.SiteId is { } site && SiteIds.Contains(site)
+            || scope.LocationId is { } location && LocationIds.Contains(location)
+            || scope.WorkCenterId is { } workCenter && WorkCenterIds.Contains(workCenter));
+}
+
+/// <summary>
+/// D11 (WP1): where an item's record lives, as its owner records it (any of site, location, work center). A scoped approver
+/// sees the item only when the grant covers one of them.
+/// </summary>
+public sealed record WorkInboxItemScopeV1(Guid? SiteId, Guid? LocationId, Guid? WorkCenterId);
 
 /// <summary>
 /// One deterministic rule result that put the record into approval (AI-D32): which owner rule fired
@@ -51,9 +78,14 @@ public sealed record WorkApprovalReferenceV1(
 
 /// <summary>
 /// One pending approval as its owner lists it for the Work inbox. <see cref="PreparedBy"/> is the user id of the
-/// record's maker: Work hides the item from that user (maker ≠ checker), so a source returns every pending record of the
-/// company, its own makers' included. <see cref="WaitingSinceUtc"/> is when the record began waiting for this decision
-/// (UTC, offset zero); a record that waits again after a resubmission carries the new time.
+/// record's maker as the owner's own maker ≠ checker rule names it, or null when the owner's rule names no maker for the
+/// record (then the owner refuses no one as its maker). <see cref="ExcludedDeciders"/> is the rest of the owner's
+/// "may not decide" set for this record (D4, WP1: e.g. ROL-D10 — the approver of the invoice's purchase order; the
+/// recorder of an invoice besides its matcher). Work hides the item from every user in either (YOL-D23: no one else is
+/// excluded), so a source returns every pending record of the company, its own makers' included.
+/// <see cref="WaitingSinceUtc"/> is when the record began waiting for this decision (UTC, offset zero); a record that
+/// waits again after a resubmission carries the new time. <see cref="Scope"/> is where the record lives (D11); a source
+/// that accepts scoped approvers must set it.
 /// </summary>
 public sealed record WorkInboxItemV1(
     string Module,
@@ -62,9 +94,17 @@ public sealed record WorkInboxItemV1(
     string DocumentLabel,
     DateTimeOffset WaitingSinceUtc,
     string Link,
-    string PreparedBy,
+    string? PreparedBy,
     IReadOnlyList<WorkApprovalRuleResultV1> Rules,
-    IReadOnlyList<WorkApprovalReferenceV1> References);
+    IReadOnlyList<WorkApprovalReferenceV1> References,
+    IReadOnlyList<string>? ExcludedDeciders = null,
+    WorkInboxItemScopeV1? Scope = null)
+{
+    /// <summary>True when the owner's rule refuses <paramref name="userId"/> as a decider of this record.</summary>
+    public bool Excludes(string userId) =>
+        WorkInboxRulesV1.SameUser(PreparedBy, userId)
+        || ExcludedDeciders is { } excluded && excluded.Any(candidate => WorkInboxRulesV1.SameUser(candidate, userId));
+}
 
 /// <summary>
 /// A source's answer. <see cref="Items"/> and <see cref="CompanyId"/> are set only for
@@ -90,10 +130,11 @@ public sealed record WorkInboxSourceResultV1(
 /// <summary>
 /// Read-only port a module implements over one kind of its own pending approvals so the Work inbox can show them with
 /// the reason they wait (W1-A). Work owns no copy and never reads the owner's tables: each read asks the owner afresh.
-/// The owner checks its own <see cref="ApproverPermission"/> (company-wide) and answers
-/// <see cref="NativeApprovalQueueOutcomeV1.Denied"/> without items when the caller lacks it; Work checks the same
-/// permission before asking. The decision is never given from the inbox: <see cref="WorkInboxItemV1.Link"/> opens the
-/// owner's own screen, where the owner's command, authority, separation of duties and version rules apply.
+/// The owner checks its own <see cref="ApproverPermission"/> and answers <see cref="NativeApprovalQueueOutcomeV1.Denied"/>
+/// without items when the caller lacks it; Work checks the same permission before asking. The decision is never given
+/// from the inbox: <see cref="WorkInboxItemV1.Link"/> opens the owner's own screen, where the owner's command, authority,
+/// separation of duties and version rules apply. The kind's duration class and escalation permission are not the
+/// source's: they are rows of Work's versioned approval rule table (WP1), which also pins <see cref="ApproverPermission"/>.
 /// </summary>
 public interface IWorkInboxSourceV1
 {
@@ -104,7 +145,12 @@ public interface IWorkInboxSourceV1
     /// <summary>The owner's permission name that may decide this kind (shown as "kimde bekliyor").</summary>
     string ApproverPermission { get; }
 
-    WorkApprovalDurationClassV1 DurationClass { get; }
+    /// <summary>
+    /// D11 (WP1): true when the owner's own decision command accepts a site/location/work-center scoped grant of
+    /// <see cref="ApproverPermission"/>. Only then does Work ask the source for a scoped caller (with
+    /// <see cref="WorkInboxSourceContextV1.GrantScope"/> set); otherwise a scoped caller is not asked (company-wide only).
+    /// </summary>
+    bool AcceptsScopedApprovers => false;
 
     Task<WorkInboxSourceResultV1> ListPendingAsync(
         WorkInboxSourceContextV1 context,
@@ -119,6 +165,7 @@ public static class WorkInboxRulesV1
     public const int MaxRuleCodeLength = 120;
     public const int MaxRulesPerItem = 8;
     public const int MaxReferencesPerItem = 12;
+    public const int MaxExcludedDecidersPerItem = 16;
     public const int MaxRoleLength = 64;
     public const int MaxReferenceLabelLength = 200;
     public const int MaxUnitLength = 16;
@@ -139,6 +186,23 @@ public static class WorkInboxRulesV1
 
     private static readonly Regex PermissionPattern = new(
         "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\\.[a-z0-9]+(?:-[a-z0-9]+)*)+\\z", RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// The owner's identity comparison for "the same user": equal ordinal text, or two Guid texts naming the same Guid
+    /// (an owner that keeps the actor as a Guid compares that way, e.g. Manufacturing's preparer). Null or blank is nobody.
+    /// </summary>
+    public static bool SameUser(string? left, string? right)
+    {
+        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+        {
+            return false;
+        }
+
+        var a = left.Trim();
+        var b = right.Trim();
+        return string.Equals(a, b, StringComparison.Ordinal)
+            || Guid.TryParse(a, out var first) && Guid.TryParse(b, out var second) && first == second;
+    }
 
     public static bool IsValidPermission(string? permission) =>
         permission is { Length: > 0 and <= MaxPermissionLength } && PermissionPattern.IsMatch(permission);

@@ -110,6 +110,11 @@ public static class SettingsModuleExtensions
         services.AddScoped<ISettingsCompanyPolicyAdministrationV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyAdministration>());
         services.AddScoped<ISettingsSalesContractDiscountLimitAdministrationV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyAdministration>());
         services.AddScoped<ISettingsOperationalPolicyAdministrationV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyAdministration>());
+        // WP-A1: the versioned AI gateway policy (K3 record path) and the gateway's read port + usage ledger.
+        services.AddScoped<ISettingsAiGatewayAdministrationV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyAdministration>());
+        services.AddScoped<SettingsAiGatewayStoreV1>();
+        services.AddScoped<ISettingsAiGatewayPolicyProviderV1>(provider => provider.GetRequiredService<SettingsAiGatewayStoreV1>());
+        services.AddScoped<ISettingsAiBudgetLedgerV1>(provider => provider.GetRequiredService<SettingsAiGatewayStoreV1>());
         services.AddScoped<SettingsCompanyPolicyProviderV1>();
         services.AddScoped<ISettingsManufacturingScrapCostPolicyProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
         services.AddScoped<ISettingsNotificationRetentionPolicyProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());

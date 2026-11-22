@@ -17,6 +17,7 @@ import {
 } from './manualBankPaymentContract'
 import { PaymentReversalPanel } from './PaymentReversalPanel'
 import { PaymentAllocationPanel } from './PaymentAllocationPanel'
+import { RecordNotesSection } from '../work/RecordNotesSection'
 
 export interface ManualBankPaymentEntryContext {
   readonly partyId: string
@@ -408,6 +409,7 @@ function ManualBankPaymentDetailContent({
     <section>
       <h1>Giden banka ödemesi</h1>
       <PaymentFacts payment={payment} />
+      <RecordNotesSection recordType="finance-manual-bank-payment" recordId={payment.id} />
       {editing && payment.status === 'Draft' && canEdit ? <form onSubmit={saveEdit}>
         <label>Tutar<input aria-label="Tutar" disabled={busy || unknownEdit} value={amount}
           onChange={(event) => setAmount(event.target.value)} /></label>

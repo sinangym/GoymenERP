@@ -36,6 +36,7 @@ import { fetchInstructionDetail, issueInstruction, recordLoad } from './api'
 import {
   INSTRUCTION_STATUS,
   MEASUREMENT,
+  isPieceLine,
   parseQuantityInput,
   type InstructionDetail,
   type InstructionLine,
@@ -94,6 +95,7 @@ import {
   type FrozenCustomerReturnAttempt,
 } from './customerReturnApi'
 import type { ApproveCustomerReturnV1, RejectCustomerReturnV1, RequestCustomerReturnV1 } from './customerReturnContract'
+import { RecordNotesSection } from '../work/RecordNotesSection'
 
 export function InstructionDetailPage() {
   const shell = useShellState()
@@ -138,6 +140,7 @@ export function InstructionDetailPage() {
   const reread = () => void queryClient.invalidateQueries({ queryKey })
   const detail = outcome.data
   return (
+    <>
     <InstructionView
       detail={detail}
       backLink={backLink}
@@ -177,6 +180,10 @@ export function InstructionDetailPage() {
         )
       }
     />
+    {/* WP9: collaboration, outside the instruction record (whose controls are its commands only). The instruction's notes
+        also carry its dispatch notes' — Logistics reads a dispatch note only through its instruction. */}
+    <RecordNotesSection recordType="loading-instruction" recordId={detail.instruction.id} />
+    </>
   )
 }
 
@@ -501,8 +508,8 @@ export function InstructionView({
                   <td className={styles.identifier}>{line.productId}</td>
                   <td className={styles.identifier}>{line.unitId}</td>
                   <td className={styles.numeric} data-testid={`logistics-line-${line.lineNo}-instructed`}>{line.instructed}</td>
-                  <td className={styles.numeric} data-testid={`logistics-line-${line.lineNo}-loaded`}>{line.loaded}</td>
-                  <td className={styles.numeric}>{line.shipped}</td>
+                  <td className={styles.numeric} data-testid={`logistics-line-${line.lineNo}-loaded`}>{line.loaded}{line.loadedKg === undefined ? null : T.physicalKg(line.loadedKg)}</td>
+                  <td className={styles.numeric} data-testid={`logistics-line-${line.lineNo}-shipped`}>{line.shipped}{line.shippedKg === undefined ? null : T.physicalKg(line.shippedKg)}</td>
                   <td className={styles.numeric}>{line.delivered}</td>
                   <td className={styles.numeric} data-testid={`logistics-line-${line.lineNo}-remaining`}>{line.remainingToLoad}</td>
                   <td className={styles.numeric} data-testid={`logistics-line-${line.lineNo}-loaded-not-shipped`}>{line.loadedNotShipped}</td>
@@ -539,7 +546,7 @@ export function InstructionView({
                   <tr key={share.shareId} data-testid={`logistics-share-${share.shareId}`}>
                     <td>{SHARE_KIND_TEXT[share.kind]}</td>
                     <td>{lineNo(share.lineId)}</td>
-                    <td className={styles.numeric}>{share.quantity}</td>
+                    <td className={styles.numeric}>{share.quantity}{share.quantityKg === undefined ? null : T.physicalKg(share.quantityKg)}</td>
                     <td>{share.measurement === null ? T.unknown : MEASUREMENT_TEXT[share.measurement]}</td>
                     <td>{formatInstant(share.recordedAtUtc)}</td>
                     {/* F-020: the stored user id (no name lookup); an older share without one says so instead of guessing. */}
@@ -688,6 +695,8 @@ interface LoadFormSnapshot {
   readonly lineId: string
   readonly quantityText: string
   readonly measurement: Measurement
+  /** AK-4: a piece line's physical kg as typed (absent on a kg line). */
+  readonly quantityKgText?: string
 }
 
 function LoadForm({
@@ -708,6 +717,8 @@ function LoadForm({
   const [lineId, setLineId] = useState<string>(() => initial?.values.lineId ?? openLines[0]?.lineId ?? '')
   const [quantityText, setQuantityText] = useState(() => initial?.values.quantityText ?? '')
   const [measurement, setMeasurement] = useState<Measurement>(() => initial?.values.measurement ?? MEASUREMENT.measured)
+  const [quantityKgText, setQuantityKgText] = useState(() => initial?.values.quantityKgText ?? '')
+  const [kgError, setKgError] = useState<string | null>(null)
   const [planExcessUses, setPlanExcessUses] = useState<readonly PlanExcessUse[]>(() => initial?.attempt.phase !== 'idle' ? initial?.attempt.snapshot.payload.planExcessUses ?? [] : [])
   const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState<AttemptState<LoadPayload, InstructionMutation>>(() => initial?.attempt ?? { phase: 'idle' })
@@ -727,13 +738,15 @@ function LoadForm({
   }
 
   const chosen: InstructionLine | undefined = lines.find((line) => line.lineId === lineId)
+  const piece = chosen !== undefined && isPieceLine(chosen)
 
   async function send(snapshot: AttemptSnapshot<LoadPayload>, forLine: string, slot: string | null) {
     const previous = attemptRef.current
     const inFlight = beginSend<LoadPayload, InstructionMutation>(snapshot)
     attemptRef.current = inFlight
     setAttempt(inFlight)
-    const values: LoadFormSnapshot = { lineId: forLine, quantityText: snapshot.payload.quantity, measurement: snapshot.payload.measurement }
+    const values: LoadFormSnapshot = { lineId: forLine, quantityText: snapshot.payload.quantity, measurement: snapshot.payload.measurement,
+      ...(snapshot.payload.quantityKg === undefined ? {} : { quantityKgText: snapshot.payload.quantityKg }) }
     if (slot !== null) rememberInstructionAttempt(slot, inFlight, values)
     const outcome = await recordLoad(forLine, snapshot.payload, {
       idempotencyKey: snapshot.key,
@@ -753,11 +766,12 @@ function LoadForm({
     const parsed = parseQuantityInput(quantityText)
     const exceptionSelection = planExcessUsePayload(planExcessUses)
     if (exceptionSelection === null) { setError(PLAN_EXCESS_TEXT.invalidUse); return }
-    if (!parsed.ok) {
-      setError(quantityError(parsed.error))
-      return
-    }
-    setError(null)
+    // AK-4 (KLN-D119): a piece line's load sends its physical kg; a kg line's never does (the backend refuses it there).
+    const parsedKg = piece ? parseQuantityInput(quantityKgText) : null
+    setError(parsed.ok ? null : quantityError(parsed.error))
+    setKgError(parsedKg === null || parsedKg.ok ? null : quantityError(parsedKg.error))
+    if (!parsed.ok || (parsedKg !== null && !parsedKg.ok)) return
+    const quantityKg = parsedKg?.ok ? parsedKg.value : undefined
     const binding = attemptBinding(shell, loadScope(instruction.id, chosen.lineId))
     if (binding === null) return
     // A COMPLETED load never blocks the next one (l04 run 35481530144 at dc41a2d2: the section is keyed by record so its
@@ -770,10 +784,12 @@ function LoadForm({
     // One load id per snapshot: a retry of the same snapshot resends the same id; a new snapshot mints a new one.
     const payload: LoadPayload = {
       expectedVersion: instruction.version,
-      loadId: live !== null && live.payload.quantity === parsed.value && live.payload.measurement === measurement ? live.payload.loadId : generateClientId(),
+      loadId: live !== null && live.payload.quantity === parsed.value && live.payload.measurement === measurement
+        && live.payload.quantityKg === quantityKg ? live.payload.loadId : generateClientId(),
       quantity: parsed.value,
       measurement,
       ...exceptionSelection,
+      ...(quantityKg === undefined ? {} : { quantityKg }),
     }
     const decision = decideSubmit(
       current,
@@ -796,7 +812,7 @@ function LoadForm({
     attemptRef.current = next
     setAttempt(next)
     if (next.phase !== 'idle' && pendingSlotRef.current !== null) {
-      rememberInstructionAttempt(pendingSlotRef.current, next, { lineId, quantityText, measurement })
+      rememberInstructionAttempt(pendingSlotRef.current, next, { lineId, quantityText, measurement, ...(piece ? { quantityKgText } : {}) })
     }
   }
 
@@ -825,7 +841,7 @@ function LoadForm({
               </p>
             ) : null}
 
-            <label htmlFor="logistics-load-quantity">{T.load.quantity}</label>
+            <label htmlFor="logistics-load-quantity">{piece ? T.load.quantityPieces : T.load.quantity}</label>
             <input
               id="logistics-load-quantity"
               type="text"
@@ -841,6 +857,29 @@ function LoadForm({
                 {error}
               </p>
             )}
+
+            {piece ? (
+              <>
+                <label htmlFor="logistics-load-quantity-kg">{T.load.quantityKg}</label>
+                <input
+                  id="logistics-load-quantity-kg"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  required
+                  aria-required="true"
+                  value={quantityKgText}
+                  aria-invalid={kgError !== null ? true : undefined}
+                  aria-describedby={kgError !== null ? 'logistics-load-quantity-kg-error' : undefined}
+                  onChange={(event) => setQuantityKgText(event.target.value)}
+                />
+                {kgError === null ? null : (
+                  <p id="logistics-load-quantity-kg-error" className={styles.fieldError}>
+                    {kgError}
+                  </p>
+                )}
+              </>
+            ) : null}
 
             <label htmlFor="logistics-load-measurement">{T.load.measurement}</label>
             <select id="logistics-load-measurement" value={measurement} onChange={(event) => setMeasurement(event.target.value as Measurement)}>

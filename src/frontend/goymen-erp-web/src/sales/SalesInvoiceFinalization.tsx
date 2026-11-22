@@ -1,5 +1,5 @@
 import { SalesOfficialInvoiceCancellationPanel } from './SalesOfficialInvoiceCancellationPage'
-import { InvoiceKilogramPricesView } from './SalesKilogramPrices'
+import { InvoiceKilogramPrices } from './SalesKilogramPrices'
 /**
  * API-09 / API-36 (PR #986): the S-04 "Faturalar" tab — the order's invoices (`GET …/drafts/{id}/invoices`, under the draft
  * read) — and, per invoice, the finalization panel (`GET /sales/invoices/{id}`, under the invoice read and the price read).
@@ -61,6 +61,7 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { Button } from '../ui/Button'
 import { StatusIndicator, type StatusTone } from '../ui/StatusIndicator'
 import styles from './SalesPages.module.css'
+import { RecordNotesSection } from '../work/RecordNotesSection'
 
 const STAGE_TONE: Record<FinanceStage, StatusTone> = {
   pending: 'info',
@@ -250,6 +251,7 @@ export function SalesInvoiceFinalizationPanel({
     <section className={styles.section} aria-labelledby={headingId} data-testid="sales-invoice-finalization">
       <h3 id={headingId}>{T.heading(detail.documentNo)}</h3>
       <p className={styles.muted}>{T.description}</p>
+      <RecordNotesSection recordType="sales-invoice" recordId={invoiceId} />
       <dl className={styles.facts} aria-label={T.facts}>
         <div><dt>{T.state}</dt><dd data-testid="sales-invoice-state">{INVOICE_STATE_TEXT[detail.state]}</dd></div>
         <div><dt>{T.version}</dt><dd>{detail.version}</dd></div>
@@ -261,7 +263,8 @@ export function SalesInvoiceFinalizationPanel({
         )}
       </dl>
       {detail.kilogramPrices === undefined ? null : (
-        <InvoiceKilogramPricesView prices={detail.kilogramPrices} lines={detail.lines} />
+        <InvoiceKilogramPrices prices={detail.kilogramPrices} lines={detail.lines} currencyId={detail.currencyId} companyId={companyId}
+          businessDate={detail.businessDate} />
       )}
       <InvoiceDecisionFacts decision={detail.decision} />
       <InvoiceDraftAttemptNotice controller={draftController} />

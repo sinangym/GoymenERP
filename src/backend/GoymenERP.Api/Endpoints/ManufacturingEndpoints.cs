@@ -975,6 +975,25 @@ public static class ManufacturingEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // WP11 (DALGA_PLANI_v2 1.12): the mass balance explained — the same order read, grant and calculator; steps and facts.
+        group.MapGet("/orders/{orderId:guid}/mass-balance/explanation", async (
+                Guid orderId,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.ExplainMassBalanceAsync(orderId, cancellationToken), location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingOrdersRead)
+            .WithName("GetManufacturingOrderMassBalanceExplanationV1")
+            .Produces<MassBalanceExplanationViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         // URT-S22 (API-28, URT-D63, KLN-D44): the order's lineage — every output label with all its input labels and
         // their kg shares from the one share calculator (backward), every input label with the outputs it went into
         // (forward), and one step into other orders. The order read's context, permission and answers; no new
@@ -1087,6 +1106,27 @@ public static class ManufacturingEndpoints
             .RequireAuthorization(ErpPermissions.ManufacturingReportsRead)
             .WithName("GetManufacturingOrderProductionCostV1")
             .Produces<ProductionCostViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // WP11 (DALGA_PLANI_v2 1.12): the production cost explained — the same port answer as production-cost, with the
+        // calculator's own steps and the issue and scrap inputs. The reports grant (the cost-viewing grant); no new permission.
+        group.MapGet("/orders/{orderId:guid}/production-cost/explanation", async (
+                Guid orderId,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.ExplainProductionCostAsync(orderId, cancellationToken),
+                    location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingReportsRead)
+            .WithName("GetManufacturingOrderProductionCostExplanationV1")
+            .Produces<ProductionCostExplanationViewV1>(StatusCodes.Status200OK)
             .ProducesErpBadRequest()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()

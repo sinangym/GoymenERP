@@ -26,6 +26,12 @@ public sealed class AiDocumentDraftOptions
     public int? MaxCellCharacters { get; set; }
 
     public int? MaxTextLength { get; set; }
+
+    /// <summary>
+    /// AI-D40: how long an unlinked draft source stays active before it becomes passive (decided: 90 days). Required while
+    /// enabled; the shipped value is the decided one.
+    /// </summary>
+    public TimeSpan? UnlinkedSourcePassivateAfter { get; set; }
 }
 
 public sealed record AiDocumentDraftLimits(
@@ -34,7 +40,8 @@ public sealed record AiDocumentDraftLimits(
     int MaxLines,
     int MaxCellCharacters,
     int MaxTextLength,
-    bool LocalModelEnabled);
+    bool LocalModelEnabled,
+    TimeSpan UnlinkedSourcePassivateAfter);
 
 public static class AiDocumentDraftOptionsReader
 {
@@ -59,12 +66,14 @@ public static class AiDocumentDraftOptionsReader
             || value.MaxExpandedBytes is not > 0
             || value.MaxLines is not > 0
             || value.MaxCellCharacters is not > 0
-            || value.MaxTextLength is not > 0)
+            || value.MaxTextLength is not > 0
+            || value.UnlinkedSourcePassivateAfter is not { } passivateAfter
+            || passivateAfter <= TimeSpan.Zero)
         {
             return null;
         }
 
         return new AiDocumentDraftLimits(value.MaxDocumentBytes.Value, value.MaxExpandedBytes.Value, value.MaxLines.Value,
-            value.MaxCellCharacters.Value, value.MaxTextLength.Value, value.LocalModelEnabled);
+            value.MaxCellCharacters.Value, value.MaxTextLength.Value, value.LocalModelEnabled, passivateAfter);
     }
 }

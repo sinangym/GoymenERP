@@ -19,6 +19,7 @@ import { PURCHASING_CAPABILITY as C } from './capabilities'
 import { isPurchasingGuid, type PurchaseKgPrice } from './contract'
 import { InvoiceImportPanel } from './InvoiceImportPanel'
 import styles from './IncomingInvoicePages.module.css'
+import { RecordNotesSection } from '../work/RecordNotesSection'
 
 const listPath = '/satinalma/faturalar'
 export const incomingInvoicePath = (id: string) => `${listPath}/${encodeURIComponent(id)}`
@@ -98,6 +99,7 @@ function InvoiceDetail({ binding, id }: { readonly binding: Binding; readonly id
     <Link to={listPath}>{T.back}</Link><h1 id="incoming-invoice-heading">{T.detail}</h1>
     <ReadState data={read.data} loading={read.isFetching} refresh={() => void read.refetch()} />
     {invoice === null ? null : <InvoiceWorkspace key={invoice.version} binding={binding} invoice={invoice} />}
+    {invoice === null ? null : <RecordNotesSection recordType="purchase-incoming-invoice" recordId={invoice.id} />}
   </section>
 }
 function InvoiceWorkspace({ binding, invoice }: { readonly binding: Binding; readonly invoice: IncomingInvoice }) {

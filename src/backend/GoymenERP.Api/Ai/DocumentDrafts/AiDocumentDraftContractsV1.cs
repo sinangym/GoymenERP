@@ -140,8 +140,24 @@ public sealed record AiDraftLineV1(
     Guid? MatchedProductId,
     string? MatchedProductVersion);
 
-/// <summary>The stored source document: content hash only; the bytes stay in the object store.</summary>
-public sealed record AiDraftSourceV1(string Sha256, string MediaType, int ByteLength);
+/// <summary>
+/// The stored source document: content hash only; the bytes stay in the object store. AI-D40 retention metadata travels
+/// with it: when the owner screen opens a record from the draft, the source is kept as long as that record (YOL-D26);
+/// otherwise it becomes passive at <see cref="PassivateAfterUtc"/>. Physical destruction is closed.
+/// </summary>
+public sealed record AiDraftSourceV1(
+    string Sha256,
+    string MediaType,
+    int ByteLength,
+    string RetentionDecision,
+    DateTimeOffset StoredAtUtc,
+    DateTimeOffset PassivateAfterUtc);
+
+public static class AiDraftRetentionV1
+{
+    /// <summary>The decision that sets the source retention (AI-D40).</summary>
+    public const string Decision = "AI-D40";
+}
 
 /// <summary>
 /// Where the user continues: the owner module and its creation screen code (the UI maps the code to its route).

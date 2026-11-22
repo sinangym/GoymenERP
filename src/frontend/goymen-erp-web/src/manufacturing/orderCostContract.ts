@@ -229,7 +229,7 @@ function decodeLine(value: unknown): OrderCostLine | null {
   }
 }
 
-function decodeCurrencyLine(value: unknown): OrderCostCurrencyLine | null {
+export function decodeCurrencyLine(value: unknown): OrderCostCurrencyLine | null {
   if (!isObject(value)) return null
   const exact = Object.hasOwn(value, 'foreignUnitCostRatio') || Object.hasOwn(value, 'foreignAmountRatio')
   const exactRate = Object.hasOwn(value, 'exchangeRateRatio')

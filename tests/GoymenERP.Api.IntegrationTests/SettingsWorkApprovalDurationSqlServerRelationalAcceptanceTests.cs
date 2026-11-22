@@ -11,7 +11,7 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed partial class SettingsCompanyPolicySqlServerRelationalAcceptanceTests
 {
     [SqlServerFact]
-    public async Task Work_approval_durations_start_undefined_record_versions_per_class_and_the_migrations_Down_refuses_while_they_exist()
+    public async Task Work_approval_durations_start_at_the_decided_defaults_record_versions_per_class_and_the_migrations_Down_refuses_while_they_exist()
     {
         await using var run = await HostRun.StartAsync();
         var subject = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SettingsOperationalPolicyPermissionsV1.WorkApprovalDurationManage);
@@ -22,21 +22,22 @@ public sealed partial class SettingsCompanyPolicySqlServerRelationalAcceptanceTe
         await run.ExecuteAsync(guard);
 
         var initial = await editor.GetFromJsonAsync<WorkApprovalDurationPolicyViewV1>(root);
-        Assert.Equal((CompanyA, (int?)null, "0", (int?)null, "0"),
+        // YOL-D18 (WP1 D3): without a recorded version the decided 4 hours / 2 business days are in force as version 0.
+        Assert.Equal((CompanyA, (int?)4, "0", (int?)2, "0"),
             (initial!.CompanyId, initial.Hours.Value, initial.Hours.Version, initial.BusinessDays.Value, initial.BusinessDays.Version));
         using (var denied = await foreign.GetAsync(root)) Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
 
         using (var invalid = await editor.SendAsync(Json(root + "/hours/versions", "hours-zero",
                    new RecordWorkApprovalDurationRequestV1("0", 0, "SENTETIK süre"))))
             await ProblemAsync(invalid, HttpStatusCode.BadRequest, CompanyPolicyProblemCodesV1.RequestInvalid);
-        var hours = new RecordWorkApprovalDurationRequestV1("0", 4, "SENTETIK saat sınıfı");
+        var hours = new RecordWorkApprovalDurationRequestV1("0", 6, "SENTETIK saat sınıfı");
         await run.CommandAsync(editor, root + "/hours/versions", "hours-first", hours);
         await run.CommandAsync(editor, root + "/hours/versions", "hours-first", hours, replay: true);
         await run.CommandAsync(editor, root + "/business-days/versions", "days-first",
-            new RecordWorkApprovalDurationRequestV1("0", 2, "SENTETIK iş günü sınıfı"));
+            new RecordWorkApprovalDurationRequestV1("0", 3, "SENTETIK iş günü sınıfı"));
 
         var current = await editor.GetFromJsonAsync<WorkApprovalDurationPolicyViewV1>(root);
-        Assert.Equal((4, "1", 2, "1"), (current!.Hours.Value, current.Hours.Version, current.BusinessDays.Value, current.BusinessDays.Version));
+        Assert.Equal((6, "1", 3, "1"), (current!.Hours.Value, current.Hours.Version, current.BusinessDays.Value, current.BusinessDays.Version));
         Assert.Equal(2, await run.CountAsync(
             "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityType] IN (N'Settings.WorkApprovalDurationHours',N'Settings.WorkApprovalDurationBusinessDays')"));
         var downRefused = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));

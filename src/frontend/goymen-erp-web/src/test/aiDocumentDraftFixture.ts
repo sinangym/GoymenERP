@@ -11,7 +11,14 @@ export function draftBody(overrides: Record<string, unknown> = {}) {
   return {
     draftKind: 'incoming-invoice',
     readingTier: 'structured-file',
-    source: { sha256: 'a'.repeat(64), mediaType: 'application/xml', byteLength: 120 },
+    source: {
+      sha256: 'a'.repeat(64),
+      mediaType: 'application/xml',
+      byteLength: 120,
+      retentionDecision: 'AI-D40',
+      storedAtUtc: '2026-11-22T09:00:00Z',
+      passivateAfterUtc: '2027-02-20T09:00:00Z',
+    },
     quarantineFindings: [],
     documentNumber: draftField('documentNumber', 'SENTETIK-1'),
     documentDate: draftField('documentDate', '2026-11-20'),

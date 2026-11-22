@@ -285,7 +285,13 @@ public sealed partial class PurchasingService
             if (decimal.Truncate(pieces) != pieces || pieces > int.MaxValue)
                 throw new PurchasingServiceException(400, PurchaseGoodsReceiptCodesV1.PieceCountInvalid, [new(field, PurchaseGoodsReceiptCodesV1.PieceCountInvalid)]);
             var measured = decimal.Parse(measuredQuantityKg, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
-            return new((int)pieces, snapshot, PurchasePieceKilograms.TheoreticalKilograms(pieces, snapshot), measured);
+            var theoretical = PurchasePieceKilograms.TheoreticalKilograms(pieces, snapshot);
+            // Golden K15: a theoretical kg that rounds to zero (a tiny kg/unit over few pieces) admits no comparison; refuse with
+            // the missing-theoretical-kg problem instead of letting the variance check throw (K3-B P3-1).
+            if (theoretical <= 0m)
+                throw new PurchasingServiceException(409, PurchaseGoodsReceiptCodesV1.TheoreticalKilogramsMissing,
+                    [new(field, PurchaseGoodsReceiptCodesV1.TheoreticalKilogramsMissing)]);
+            return new((int)pieces, snapshot, theoretical, measured);
         }
 
         /// <summary>The kg per piece recorded at approval on the line's general line; a piece line without it takes no receipt (409).</summary>

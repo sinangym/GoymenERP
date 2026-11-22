@@ -94,6 +94,14 @@ public sealed record ManufacturingProductionCostResultV2(
 {
     public const int CurrentContractVersion = 2;
 
+    /// <summary>
+    /// WP11 (DALGA_PLANI_v2 1.12): the calculator's own intermediate values behind an available answer, from the same run
+    /// (<see cref="ProductionReceiptCostResult.Trace"/>); null otherwise. In memory only: never serialized into the stored
+    /// cost-generation evidence, so the port's recorded contract is unchanged.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public ProductionReceiptCostTraceV1? Trace { get; init; }
+
     public static ManufacturingProductionCostResultV2 Empty(
         Guid companyId, Guid orderId, ManufacturingScrapCostDistributionStatusV1 status, string reasonCode) =>
         new(CurrentContractVersion, companyId, orderId, status, null, null, null, null, null, null, null, null,
@@ -202,7 +210,10 @@ public sealed class ManufacturingProductionCostPort(IManufacturingScrapCostDistr
                     ManufacturingScrapCostDistributionStatusV1.Available, cost.CostBasis,
                     result.RecordedCostPerKg, result.RecordedRawMaterialCostPerKg, result.InputTotalTl,
                     result.RecordedWeighedScrapExpenseTl, result.DistributedTotalTl, result.RemainderTl,
-                    result.RemainderLabelId, lines, currencyLines, [], notes, null);
+                    result.RemainderLabelId, lines, currencyLines, [], notes, null)
+                {
+                    Trace = cost.Trace,
+                };
             case ProductionReceiptCostStatus.Pending:
                 return ManufacturingProductionCostResultV2.Empty(companyId, orderId,
                     ManufacturingScrapCostDistributionStatusV1.Pending,

@@ -19,6 +19,8 @@ using GoymenERP.Api.Security;
 using GoymenERP.Api.Shell;
 using GoymenERP.Api.Startup;
 using GoymenERP.Api.WorkRuntime;
+using GoymenERP.BuildingBlocks.Work;
+using GoymenERP.Api.ReportingRuntime;
 using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.OpenApi;
@@ -67,6 +69,8 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Settings.Infrastructure;
 using GoymenERP.Modules.Settings.Infrastructure.Shell;
 using GoymenERP.Modules.Work.Infrastructure;
+using GoymenERP.Modules.Work.Infrastructure.Shell;
+using GoymenERP.Modules.Reporting.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -206,7 +210,23 @@ builder.Services.AddScoped<NativeApprovalQueueReadQueryV1>();
 // W1-A (AI-D31/AI-D32, YOL-D18): the Work inbox reads the owners' IWorkInboxSourceV1 ports (registered by each module)
 // and records only Work's own measurement events; it decides nothing.
 builder.Services.AddWorkApprovalInboxMeasurementsV1();
+// WP1 (D5): the four native D-05 kinds are inbox sources too — one box; the duration class comes from Work's versioned rule
+// table (D3, YOL-D18 defaults) and business days are counted in the P7 / SAT-D10 business time zone (D6).
+builder.Services.AddWorkApprovalRulesV1();
+builder.Services.AddScoped<IWorkInboxSourceV1>(provider => new NativeApprovalWorkInboxSourceV1(
+    ActivatorUtilities.CreateInstance<FinanceInvoiceImportPendingApprovalAdapterV1>(provider)));
+builder.Services.AddScoped<IWorkInboxSourceV1>(provider => new NativeApprovalWorkInboxSourceV1(
+    ActivatorUtilities.CreateInstance<InventoryStockCountPendingApprovalAdapterV1>(provider)));
+builder.Services.AddScoped<IWorkInboxSourceV1>(provider => new NativeApprovalWorkInboxSourceV1(
+    ActivatorUtilities.CreateInstance<InventoryStockScrapPendingApprovalAdapterV1>(provider)));
+builder.Services.AddScoped<IWorkInboxSourceV1>(provider => new NativeApprovalWorkInboxSourceV1(
+    ActivatorUtilities.CreateInstance<SalesOrderDraftPendingApprovalAdapterV1>(provider)));
 builder.Services.AddScoped<WorkInboxReadQueryV1>();
+// WP-A3c: Work READ tools for the AI catalog over the same inbox query (maker ≠ checker, owner permissions) and the
+// W1-C "my tasks" read. Registration only makes them candidates of the default-deny catalog; Ai:AllowedTools stays empty.
+builder.Services.AddScoped<GoymenERP.BuildingBlocks.Ai.IAiOwnerToolV1, GoymenERP.Api.WorkRuntime.Ai.WorkInboxAwaitingMeAiTool>();
+builder.Services.AddScoped<GoymenERP.BuildingBlocks.Ai.IAiOwnerToolV1, GoymenERP.Api.WorkRuntime.Ai.WorkOverdueApprovalsAiTool>();
+builder.Services.AddScoped<GoymenERP.BuildingBlocks.Ai.IAiOwnerToolV1, GoymenERP.Api.WorkRuntime.Ai.WorkMyTasksAiTool>();
 builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();
 // B-17: the version bump with the account's roles (dual role) and supplier IBAN view; V1 stays for its consumers.
 builder.Services.AddScoped<IFinancePartyAccountPortV2, CounterpartyFinancePartyAccountPortV2>();
@@ -253,6 +273,7 @@ builder.Services.AddSecurityEventsModule(builder.Configuration);
 builder.Services.AddErpSecretStore(builder.Configuration);
 // AI-3: READ-only AI runtime, off unless configured (Ai:Enabled); no owner tool is registered here.
 builder.Services.AddAiRuntime(builder.Configuration);
+builder.Services.AddAiSecurityWatchTools();
 builder.Services.AddSettingsModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -511,6 +532,16 @@ builder.Services.AddWorkModule(
 builder.Services.AddWorkOutboxDispatcher(builder.Configuration);
 // W1-C: notes, mentions, tasks and the collaboration inbox; the scheduler stays off unless Work:CollaborationScheduler:Enabled.
 builder.Services.AddWorkCollaborationHostV1(builder.Configuration);
+// WP-C6 (AI-D30): personal assistant memory; writing stays closed until Work:AssistantMemory is opened by a human decision.
+builder.Services.AddWorkAssistantMemoryV1(builder.Configuration);
+// WP14 (DALGA_PLANI_v2 1.15, YOL-D13, ROL-D13/D15): the report centre. Its numbers come from owner read ports through host
+// adapters; Reporting stores only saved views, export records and command attempts. No permission is granted.
+builder.Services.AddReportingModule(
+    builder.Configuration,
+    (services, options) => options.AddInterceptors(
+        services.GetRequiredService<AuditSaveChangesInterceptor>()));
+builder.Services.AddInventoryStockAgingReadPort();
+builder.Services.AddReportingRuntimeV1();
 // STK-S27 (LOJ-D19): Logistics's definite-shipment outbox is the dispatcher source "logistics" (registered, not enabled).
 builder.Services.AddLogisticsDefiniteShipmentOutbox();
 // SAT-S10 (LOJ-D19, SAT-D285): the Sales usage mirror is the inbox consumer of that source (registered after it, not enabled).
@@ -551,6 +582,8 @@ builder.Services.AddSingleton<IShellCapabilityProvider, ProductPriceListShellCap
 builder.Services.AddSingleton<IShellCapabilityProvider, ProductPaintMembershipShellCapabilityProvider>();
 // SAT-D61…D70: Settings' discount limit screen (settings.sales-discount-limits.manage, granted to no role).
 builder.Services.AddSingleton<IShellCapabilityProvider, SettingsShellCapabilityProvider>();
+// WP9: Work's own "Bana atanan" route and assign control (work.tasks.complete / work.tasks.assign, granted to no role).
+builder.Services.AddSingleton<IShellCapabilityProvider, WorkShellCapabilityProvider>();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
     builder.Services,
     builder.Environment,
@@ -619,13 +652,17 @@ app.MapProductPaintMembershipEndpoints();
 app.MapProductCogsClassificationEndpoints();
 app.MapFinanceEndpoints();
 app.MapFinancePartyBalanceTransfersV1();
+app.MapFinanceBankStatementImportsV1();
 app.MapFinanceCashExchangeBookValuesV1();
 app.MapFinanceOpenItemReadEndpoints();
 app.MapWorkApprovalEndpoints();
 app.MapWorkQueueEndpoints();
 app.MapWorkInboxEndpoints();
+app.MapWorkApprovalRuleEndpoints();
 app.MapWorkNotificationEndpoints();
 app.MapWorkCollaborationEndpoints();
+app.MapWorkAssistantMemoryEndpoints();
+app.MapReportingEndpoints();
 app.MapSalesEndpoints();
 app.MapSalesProductCandidateEndpoints();
 app.MapInventoryEndpoints();
@@ -707,6 +744,8 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializeAccountingModuleAsync();
     // After Organization: Work's tables are tenant-scoped by CompanyId.
     await app.Services.InitializeWorkModuleAsync();
+    // After Organization: the report centre's tables are tenant-scoped by CompanyId.
+    await app.Services.InitializeReportingModuleAsync();
     // After Organization: the document vault's foreign keys reference its tables.
     await app.Services.InitializeDocumentsModuleAsync();
 }

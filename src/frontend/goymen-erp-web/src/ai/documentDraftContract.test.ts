@@ -19,6 +19,8 @@ describe('belgeden taslak sözleşmesi', () => {
     ['nedeni olan doğrulanmış alan', { currency: field('currency', 'TRY', 'verified', 'missing') }],
     ['yanlış alan kodu', { currency: field('documentDate', 'TRY') }],
     ['bozuk kaynak özeti', { source: { sha256: 'xyz', mediaType: 'application/xml', byteLength: 1 } }],
+    ['saklama meta verisi olmayan kaynak', { source: { sha256: 'a'.repeat(64), mediaType: 'application/xml', byteLength: 1 } }],
+    ['pasifleme tarihi saklama tarihinden önce', { source: { sha256: 'a'.repeat(64), mediaType: 'application/xml', byteLength: 1, retentionDecision: 'AI-D40', storedAtUtc: '2026-11-22T09:00:00Z', passivateAfterUtc: '2026-11-21T09:00:00Z' } }],
     ['sırasız satır numarası', { lines: [{ ...draftBody().lines[0], lineNumber: 2 }] }],
   ])('%s kabul edilmez (fail-closed)', (_name, overrides) => {
     expect(decodeDocumentDraft(draftBody(overrides))).toBeNull()

@@ -25,6 +25,7 @@
  *    requirement with a frozen reason, while unexplained mass remains a missing fact.
  */
 
+import { MassBalanceExplanationToggle } from './CalculationExplanationPanels'
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams } from 'react-router'
@@ -139,6 +140,7 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StateBlock } from '../shell/StateBlock'
 import styles from './OrderDetailPage.module.css'
 import { Button } from '../ui/Button'
+import { RecordNotesSection } from '../work/RecordNotesSection'
 
 /** Registered with the shell so a company switch with an unsent fact warns first. */
 const DIRTY_SCOPE = 'manufacturing.order.fact'
@@ -244,6 +246,7 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
   return (
     <Frame>
       <OrderSummary order={order} />
+      <RecordNotesSection recordType="manufacturing-order" recordId={order.orderId} />
       <RollTable rolls={order.rolls} />
       <OutputPieceTable outputs={order.outputPieces} />
       <MassBalancePanel
@@ -307,6 +310,7 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
           routeEntryGeneration={shell.routeEntryGeneration}
           companyId={activeCompanyId ?? ''}
           canReadInventoryLabel={canReadInventoryLabel}
+          pendingKey={storeKey}
           onRefresh={refresh}
         />
       ) : null}
@@ -403,7 +407,12 @@ function MassBalancePanel({
                     </th>
                     <td>{roll.difference.actualInputKg}</td>
                     <td>{roll.difference.accountedKg}</td>
-                    <td data-testid="mass-difference">{roll.difference.differenceKg}</td>
+                    <td>
+                      <span data-testid="mass-difference">{roll.difference.differenceKg}</span>{' '}
+                      {/* WP11: the server's own BAL-003 steps behind this difference, read only when asked for. */}
+                      <MassBalanceExplanationToggle parentRollId={roll.parentRollId}
+                        context={{ namespace, routeEntryGeneration, companyId, orderId, orderVersion }} />
+                    </td>
                     <td>
                       <span
                         className={roll.difference.isFullyAccounted ? styles.badgeBalanced : styles.badgeDifference}

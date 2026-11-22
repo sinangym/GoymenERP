@@ -26,7 +26,6 @@ internal abstract class SalesWorkInboxSourceBaseV1(
 
     public abstract string ApproverPermission { get; }
 
-    public WorkApprovalDurationClassV1 DurationClass => WorkApprovalDurationClassV1.BusinessDays;
 
     /// <summary>Whether the source's rules carry price figures that the owner discloses only under its price-read permission.</summary>
     protected virtual bool CarriesPriceFigures => false;

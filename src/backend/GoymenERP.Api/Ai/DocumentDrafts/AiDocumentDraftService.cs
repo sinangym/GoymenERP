@@ -88,6 +88,7 @@ public sealed class AiDocumentDraftService(
         }
 
         var sha256 = Convert.ToHexStringLower(SHA256.HashData(input.Bytes));
+        var storedAt = timeProvider.GetUtcNow().ToUniversalTime();
         if (!await sourceStore.TryStoreAsync(companyId, input.Bytes, sha256, cancellationToken))
         {
             logger.LogWarning("AI document draft source could not be stored. Kind {DraftKind}.", kind);
@@ -156,7 +157,8 @@ public sealed class AiDocumentDraftService(
             draft = AiDocumentDraftValidator.Build(
                 kind,
                 reading.Tier,
-                new AiDraftSourceV1(sha256, input.MediaType, input.Bytes.Length),
+                new AiDraftSourceV1(sha256, input.MediaType, input.Bytes.Length, AiDraftRetentionV1.Decision, storedAt,
+                    storedAt + limits.UnlinkedSourcePassivateAfter),
                 reading.Findings,
                 reading.Document,
                 matches,
@@ -167,8 +169,12 @@ public sealed class AiDocumentDraftService(
             return new AiDocumentDraftResultV1(AiDocumentDraftStatusV1.Unreadable, null, ["parse_timeout"]);
         }
         if (extraFindings.Count != 0) draft = draft with { QuarantineFindings = [.. draft.QuarantineFindings, .. extraFindings] };
-        logger.LogInformation("AI document draft prepared. Kind {DraftKind}, tier {Tier}, lines {Lines}, findings {Findings}.",
-            kind, draft.ReadingTier, draft.Lines.Count, draft.QuarantineFindings.Count);
+        // AI-D40 retention metadata of the stored source (hash and dates only, never content). No passivation job reads
+        // it yet: that owner-side mechanism is a separate technical task.
+        logger.LogInformation("AI document draft prepared. Kind {DraftKind}, tier {Tier}, lines {Lines}, findings {Findings}, "
+            + "source {SourceSha256} retention {RetentionDecision} passivate after {PassivateAfterUtc:O}.",
+            kind, draft.ReadingTier, draft.Lines.Count, draft.QuarantineFindings.Count, sha256, draft.Source.RetentionDecision,
+            draft.Source.PassivateAfterUtc);
         return AiDocumentDraftResultV1.Drafted(draft);
     }
 
@@ -181,9 +187,8 @@ public sealed class AiDocumentDraftService(
         {
             AiDocumentDraftKindsV1.SalesOrder => ErpPermissions.SalesDraftsCreate,
             AiDocumentDraftKindsV1.IncomingInvoice => ErpPermissions.PurchasingInvoicesImport,
-            // ASSUMPTION-AI-DRAFT-CONFIRMATION-1: a supplier confirmation is recorded against a purchase order; the
-            // draft needs reading that order. No confirmation permission exists yet (NEEDS-SINAN in the report).
-            _ => ErpPermissions.PurchasingOrdersRead,
+            // AI-D41: its own "belgeden taslak teyidi" permission (replaces ASSUMPTION-AI-DRAFT-CONFIRMATION-1).
+            _ => ErpPermissions.AiDocumentDraftsSupplierConfirmation,
         },
     ];
 

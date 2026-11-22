@@ -20,6 +20,12 @@ public static class AiEndpoints
     public const string AiDocumentDraftInvalidCode = "ai_document_draft_invalid";
     public const string AiDocumentUnreadableCode = "ai_document_unreadable";
 
+    /// <summary>WP-A1: the panel feature switch is off in the company's AI gateway policy.</summary>
+    public const string AiFeatureDisabledCode = "ai_feature_disabled";
+
+    /// <summary>WP-A1: the month's AI usage ceiling is reached, or no budget is recorded.</summary>
+    public const string AiBudgetExhaustedCode = "ai_budget_exhausted";
+
     public static IEndpointRouteBuilder MapAiEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/api/v1/ai/capabilities", async (
@@ -65,6 +71,16 @@ public static class AiEndpoints
                             ["code"] = AiRequestInvalidCode,
                             ["invalidFields"] = result.InvalidFields,
                         }),
+                    AiAskStatusV1.FeatureDisabled => Results.Problem(
+                        title: "AI asistan bu şirkette kapalı.",
+                        detail: "Bu özellik şirketin yapay zekâ ayarlarında kapalı. ERP işlemleri etkilenmez.",
+                        statusCode: StatusCodes.Status503ServiceUnavailable,
+                        extensions: new Dictionary<string, object?> { ["code"] = AiFeatureDisabledCode }),
+                    AiAskStatusV1.BudgetExhausted => Results.Problem(
+                        title: "Aylık yapay zekâ kullanım sınırı doldu.",
+                        detail: "Bu ayın kullanım sınırına ulaşıldı veya sınır tanımlı değil. ERP işlemleri etkilenmez.",
+                        statusCode: StatusCodes.Status503ServiceUnavailable,
+                        extensions: new Dictionary<string, object?> { ["code"] = AiBudgetExhaustedCode }),
                     AiAskStatusV1.ToolUnavailable => Results.Problem(
                         title: "Kaynak şu anda okunamıyor.",
                         detail: "Kaynak modül isteği tamamlayamadı. Daha sonra yeniden deneyin.",
@@ -92,7 +108,7 @@ public static class AiEndpoints
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
             .ProducesErpAuthenticatedProblems()
-            .ProducesErpServiceUnavailable(AiDisabledCode, AiToolUnavailableCode);
+            .ProducesErpServiceUnavailable(AiDisabledCode, AiToolUnavailableCode, AiFeatureDisabledCode, AiBudgetExhaustedCode);
 
         // WP-B3: a document becomes a DRAFT only. No record is created; the response names the owner screen.
         endpoints.MapPost("/api/v1/ai/document-drafts", async (

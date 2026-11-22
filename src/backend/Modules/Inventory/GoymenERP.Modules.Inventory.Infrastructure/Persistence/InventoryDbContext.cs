@@ -1739,7 +1739,8 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
                     [
                         nameof(LabelRow.Classification), nameof(LabelRow.Version), nameof(LabelRow.UpdatedAtUtc),
                     ],
-                    BalanceRow => [nameof(BalanceRow.QuantityKg)],
+                    // AK-2b: a piece-tracking position moves its piece count with its kg (null stays null on a kg-only position).
+                    BalanceRow => [nameof(BalanceRow.QuantityKg), nameof(BalanceRow.PieceCount)],
                     AverageCostLedgerRow =>
                     [
                         // SAT-D262: the position's state moves; its identity (company, location, product) never does.
@@ -1773,6 +1774,8 @@ public sealed partial class InventoryDbContext(DbContextOptions<InventoryDbConte
                         nameof(AllocationRow.ReleasedAtUtc), nameof(AllocationRow.ReleaseReason),
                         // B-01: a plan-input release records the kg it returned to free stock.
                         nameof(AllocationRow.ReleasedKg),
+                        // AK-4b: a piece-holding allocation re-states its pieces with its kg (resize, move, consume, release).
+                        nameof(AllocationRow.AllocatedPieces), nameof(AllocationRow.RemainingPieces),
                     ],
                     // F-017 STOK §3.3: a release moves the remainder and records its reason; identity and demand never move.
                     FutureSupplyAllocationRow =>

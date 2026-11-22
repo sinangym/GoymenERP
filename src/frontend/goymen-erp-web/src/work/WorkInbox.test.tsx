@@ -18,7 +18,6 @@ import { FINANCE_CAPABILITY } from '../finance/capabilities'
 import { LOGISTICS_CAPABILITY } from '../logistics/capabilities'
 import { COMPANY } from './approvalInboxFixtures'
 import { WORK_INBOX_TEXT as T, INBOX_FILTER_PARAM } from './workInboxText'
-import { WORK_QUEUE_TEXT } from './workText'
 
 const USER = '11111111-1111-1111-1111-111111111111'
 const DIRECTORY = [{ id: COMPANY, code: 'GDC', legalName: 'Göymen A', isPlaceholder: false }]
@@ -35,6 +34,8 @@ const DISPATCH_ID = 'd1000000-0000-4000-8000-000000000003'
 const PLAN_ID = 'd1000000-0000-4000-8000-000000000004'
 const PARTY_ID = 'e1000000-0000-4000-8000-000000000001'
 
+/** WP1: the YOL-D18 default rule version of a kind. */
+const RV = (kind: string) => `work.approval-rule:${kind}:0`
 const none = (durationClass: string, state: string) =>
   ({ class: durationClass, state, limit: null, dueAtUtc: null, isOverdue: null, policyVersion: null, holidayCalendar: null })
 const definedDays = (isOverdue: boolean, holidayCalendar = 'Defined') => ({
@@ -45,6 +46,7 @@ const definedDays = (isOverdue: boolean, holidayCalendar = 'Defined') => ({
 const limitItem = {
   module: 'finance', kind: LIMIT_KIND, itemId: LIMIT_ID, documentLabel: 'LIM-0001', link: `/finans/kredi-limitleri?oneri=${LIMIT_ID}`,
   waitingSinceUtc: '2026-11-01T07:00:00+00:00', awaitingPermission: 'finance.credit-limits.approve', duration: definedDays(true),
+  ruleVersion: RV(LIMIT_KIND),
   explanation: {
     rules: [
       { ruleCode: 'finance.credit-limit-change', threshold: '1000000.5', actual: '1250000', deviation: '249999.5', unit: 'TRY' },
@@ -60,20 +62,23 @@ const limitItem = {
 const paymentItem = {
   module: 'finance', kind: PAYMENT_KIND, itemId: PAYMENT_ID, documentLabel: PAYMENT_ID, link: `/finans/elle-banka-odemeleri/${PAYMENT_ID}`,
   waitingSinceUtc: '2026-11-02T07:00:00+00:00', awaitingPermission: 'finance.manual-bank-payment.approve', duration: definedDays(false, 'Undefined'),
+  ruleVersion: RV(PAYMENT_KIND),
   explanation: { rules: [{ ruleCode: 'finance.manual-bank-payment-approval-required', threshold: null, actual: null, deviation: null, unit: null }], references: [] },
 }
 const dispatchItem = {
   module: 'logistics', kind: DISPATCH_KIND, itemId: DISPATCH_ID, documentLabel: 'IRS-TASLAK-1', link: `/lojistik/talimatlar/${DISPATCH_ID}`,
   waitingSinceUtc: '2026-11-03T07:00:00+00:00', awaitingPermission: 'logistics.dispatch-notes.approve', duration: none('Hours', 'Undefined'),
+  ruleVersion: RV(DISPATCH_KIND),
   explanation: { rules: [{ ruleCode: 'logistics.dispatch-note-draft', threshold: null, actual: null, deviation: null, unit: null }], references: [] },
 }
 const planItem = {
   module: 'logistics', kind: PLAN_KIND, itemId: PLAN_ID, documentLabel: 'PLN-7', link: `/lojistik/plan-ustu-sevk-onay?id=${PLAN_ID}`,
   waitingSinceUtc: '2026-11-04T07:00:00+00:00', awaitingPermission: 'logistics.shipments.plan-excess.approve', duration: none('Hours', 'Unavailable'),
+  ruleVersion: RV(PLAN_KIND),
   explanation: { rules: [{ ruleCode: 'logistics.plan-excess-quantity', threshold: '10', actual: '12.5', deviation: '2.5', unit: 'kg' }], references: [] },
 }
 const src = (module: string, kind: string, awaitingPermission: string, durationClass: string, state = 'Ready', hasMore = false) =>
-  ({ module, kind, awaitingPermission, durationClass, state, hasMore })
+  ({ module, kind, awaitingPermission, durationClass, ruleVersion: RV(kind), state, hasMore })
 const SOURCES = [
   src('finance', LIMIT_KIND, 'finance.credit-limits.approve', 'BusinessDays'),
   src('finance', PAYMENT_KIND, 'finance.manual-bank-payment.approve', 'BusinessDays'),
@@ -388,34 +393,53 @@ describe('/onaylarim/kuyruk — Benden karar bekleyen', () => {
     expect(screen.queryByTestId('work-inbox-list')).toBeNull()
   })
 
-  it('a 503 inbox is retryable and does not hide the B-25 queue', async () => {
+  it('a 503 inbox is retryable and no second list is read in its place (WP1 D5: one box)', async () => {
     let failing = true
     const api = installFetch({ granted: [INBOX_CAP, LEGACY_CAP], inbox: () => failing ? json({ status: 503 }, 503) : json(inbox()) })
     await renderAt('/onaylarim/kuyruk')
     await waitFor(() => expect(inboxState('service-unavailable')).not.toBeNull())
-    const legacy = screen.getByTestId('work-queue-legacy')
-    expect(await within(legacy).findByTestId('work-queue-table')).toBeTruthy()
-    expect(within(legacy).getByRole('heading', { level: 2, name: T.legacyHeading })).toBeTruthy()
+    expect(screen.queryByTestId('work-queue-legacy')).toBeNull()
+    expect(api.queueReads()).toEqual([])
     failing = false
     await userEvent.setup().click(within(inboxSection()).getByRole('button', { name: 'Tekrar dene' }))
     expect(await screen.findByTestId('work-inbox-list')).toBeTruthy()
     expect(api.inboxReads()).toHaveLength(2)
   })
 
-  it('a 503 queue does not hide the inbox items', async () => {
-    installFetch({ granted: [INBOX_CAP, LEGACY_CAP], queue: () => json({ status: 503 }, 503) })
+  it('WP1 D5: a native kind is a card of the same list, with its rule version, and the B-25 queue is never read', async () => {
+    const nativeItem = {
+      module: 'finance', kind: LEGACY_KIND, itemId: LEGACY_ID, documentLabel: `…${LEGACY_ID.slice(-12)}`,
+      link: `/onaylarim/${LEGACY_KIND}/${LEGACY_ID}`, waitingSinceUtc: '2026-10-31T07:00:00+00:00',
+      awaitingPermission: 'finance.official-invoice-import.approve', duration: definedDays(false), ruleVersion: RV(LEGACY_KIND),
+      explanation: { rules: [{ ruleCode: 'finance.official-invoice-import-approval', threshold: null, actual: null, deviation: null, unit: null }], references: [] },
+    }
+    const api = installFetch({
+      granted: [INBOX_CAP, LEGACY_CAP],
+      inbox: () => json(inbox({
+        items: [nativeItem, limitItem],
+        sources: [src('finance', LIMIT_KIND, 'finance.credit-limits.approve', 'BusinessDays'),
+          src('finance', LEGACY_KIND, 'finance.official-invoice-import.approve', 'BusinessDays')],
+      })),
+    })
     await renderAt('/onaylarim/kuyruk')
-    expect(await screen.findByTestId('work-inbox-list')).toBeTruthy()
-    await waitFor(() => expect(screen.getByTestId('work-queue-legacy').querySelector('[data-state="service-unavailable"]')).not.toBeNull())
-    expect(screen.getByText(WORK_QUEUE_TEXT.scope)).toBeTruthy()
+    await screen.findByTestId('work-inbox-list')
+    expect(cards().map((card) => card.getAttribute('data-kind'))).toEqual([LEGACY_KIND, LIMIT_KIND])
+    const native = cardOf(LEGACY_KIND)
+    expect(within(native).getByRole('heading', { level: 3, name: 'Resmî fatura içe alma onayı' })).toBeTruthy()
+    expect(within(native).getByTestId('work-inbox-awaiting').textContent).toBe(T.awaitingText('Resmî fatura içe alma onayı'))
+    expect(within(native).getByRole('link', { name: T.openOwnerLabel('Resmî fatura içe alma onayı', `…${LEGACY_ID.slice(-12)}`) })
+      .getAttribute('href')).toBe(`/onaylarim/${LEGACY_KIND}/${LEGACY_ID}`)
+    expect(screen.queryByTestId('work-queue-legacy')).toBeNull()
+    expect(api.queueReads()).toEqual([])
   })
 
-  it('a holder of only a B-25 source capability sees the queue and is told the inbox has no kind for them (nothing read)', async () => {
+  it('WP1 D5: a holder of only a native "Onaylarım" capability reads the one inbox (no second list)', async () => {
     const api = installFetch({ granted: [LEGACY_CAP] })
     await renderAt('/onaylarim/kuyruk')
-    expect(await screen.findByTestId('work-inbox-no-authority')).toBeTruthy()
-    expect(await screen.findByTestId('work-queue-table')).toBeTruthy()
-    expect(api.inboxReads()).toEqual([])
+    expect(await screen.findByTestId('work-inbox-list')).toBeTruthy()
+    expect(screen.queryByTestId('work-inbox-no-authority')).toBeNull()
+    expect(api.inboxReads()).toHaveLength(1)
+    expect(api.queueReads()).toEqual([])
   })
 
   it('opens for another inbox kind\'s existing approve capability', async () => {

@@ -11,6 +11,7 @@ using GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 using GoymenERP.Modules.Product.Infrastructure.Shell;
 using GoymenERP.Modules.Sales.Infrastructure.Shell;
 using GoymenERP.Modules.Settings.Infrastructure.Shell;
+using GoymenERP.Modules.Work.Infrastructure.Shell;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.Shell;
@@ -88,6 +89,7 @@ internal static class C01E2eShellCapabilityActivation
         typeof(ProductPriceListShellCapabilityProvider),
         typeof(SettingsShellCapabilityProvider),
         typeof(ProductPaintMembershipShellCapabilityProvider),
+        typeof(WorkShellCapabilityProvider),
     ];
 
     // The accepted normal-host authority for each set of optional module providers present (in the
@@ -197,6 +199,17 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(ProductPriceListShellCapabilityProvider), typeof(SettingsShellCapabilityProvider),
                 typeof(ProductPaintMembershipShellCapabilityProvider),
             }, ShellCapabilityRegistryAuthorities.FullNormalHostWithSettingsAndPaintMemberships),
+        // WP9: Work 1.0 (the "Bana atanan" route and its assign control) joins the actual host.
+        (new[]
+            {
+                typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
+                typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
+                typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
+                typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
+                typeof(InventoryShellCapabilityProvider), typeof(IdentityShellCapabilityProvider),
+                typeof(ProductPriceListShellCapabilityProvider), typeof(SettingsShellCapabilityProvider),
+                typeof(ProductPaintMembershipShellCapabilityProvider), typeof(WorkShellCapabilityProvider),
+            }, ShellCapabilityRegistryAuthorities.FullNormalHostWithSettingsPaintMembershipsAndWork),
     ];
 
     private static string NormalAuthority(IServiceCollection services)

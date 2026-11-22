@@ -1,5 +1,7 @@
+using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
+using GoymenERP.Modules.Counterparty.Infrastructure.Ai;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using Microsoft.EntityFrameworkCore;
@@ -42,6 +44,11 @@ public static class CounterpartyModuleExtensions
             configureDbContext?.Invoke(serviceProvider, options);
         });
         services.AddScoped<ICounterpartyReadService, CounterpartyReadService>();
+        // WP-A3a: Cari owner READ tools over the authorized list/detail read (registration only; Ai:AllowedTools stays
+        // empty, so the catalog admits none).
+        services.AddScoped<IAiOwnerToolV1, CounterpartyPartyLookupAiTool>();
+        services.AddScoped<IAiOwnerToolV1, CounterpartyPartySummaryAiTool>();
+        services.AddScoped<IAiOwnerToolV1, CounterpartyRoleCountsAiTool>();
         services.AddScoped<
             ICounterpartyPartyDisplayBatchReadServiceV1,
             CounterpartyPartyDisplayBatchReadServiceV1>();

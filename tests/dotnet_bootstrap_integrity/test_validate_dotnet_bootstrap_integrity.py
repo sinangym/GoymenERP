@@ -1075,7 +1075,8 @@ class WorkflowOrderingTests(unittest.TestCase):
         # #789/#794 replaced cloud transfer with local, run/attempt/head-bound
         # evidence. Keep exact job pins as well as the semantic/mutation guards.
         expected_job_fingerprints = {
-            "backend-build": "f94065385869782118b7a0085581028daf7bd3289a0b1842d3b76db563173029",
+            # WP16: two offline preflight steps (AI knowledge base, credential scan + action pin audit).
+            "backend-build": "7e4a4dccc8583a31bb51c8b62e6d7490c0b949177c506d350e3743af257f0153",
             "backend-test-group": "b5196a6f67af5a964b507a114101c304c9667e73e41a1070e2f4c45f066a5ce8",
             "backend": (
                 "ad89220a34565da85b7ba1bac64739b1cc0842001ddeb418a5e07ee22ce4b1e1"

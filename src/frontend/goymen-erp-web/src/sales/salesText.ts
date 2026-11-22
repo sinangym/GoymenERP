@@ -1982,7 +1982,10 @@ export const KILOGRAM_PRICE_TEXT = {
   documentTheoretical: 'Belge teorik kg fiyatı',
   documentActual: 'Belge gerçek kg fiyatı',
   none: '—',
-  perKg: (value: string) => `${value} /kg`,
+  /** SAT-D436/SAT-D439: the document currency per kg (the response's currency; no rate). */
+  perKg: (value: string, currency: string) => `${value} ${currency}/kg`,
+  /** An invoice kg price line the invoice does not have: the block is not shown (fail-closed, never a made-up line number). */
+  unmatchedLine: 'Kg fiyatı satırları faturanın satırlarıyla eşleşmiyor; gösterge gösterilmiyor.',
   percent: (value: string) => `%${value}`,
   state: {
     Shown: '',

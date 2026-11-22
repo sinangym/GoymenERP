@@ -12,23 +12,34 @@ import { ApprovalInboxDetailPage, ApprovalInboxPage } from './ApprovalInboxPages
 import { WorkQueuePage } from './WorkQueuePage'
 import { NotificationsPage } from './NotificationsPage'
 import { MyTasksPage } from './MyTasksPage'
+import { AssistantMemoryPage } from './AssistantMemoryPage'
+import { ASSISTANT_MEMORY_ROUTE } from './assistantMemoryContract'
 import { MY_TASKS_ROUTE } from './collaborationContract'
 import { NOTIFICATIONS_ROUTE } from './notificationContract'
 import { WORK_APPROVALS_CAPABILITIES, WORK_ROUTE } from './workText'
 import { WORK_INBOX_CAPABILITIES } from './workInboxKinds'
+import { WORK_MY_TASKS_CAPABILITIES } from './capabilities'
 
 /**
- * W1-A: the Work inbox (`/onaylarim/kuyruk`) also opens for an actor holding any inbox kind's EXISTING approve
- * capability (`WORK_INBOX_CAPABILITIES`); no capability is new and the server re-authorizes every source.
+ * W1-A / WP1: the one Work inbox (`/onaylarim/kuyruk`) opens for an actor holding any inbox kind's EXISTING approve
+ * capability (`WORK_INBOX_CAPABILITIES`, the native "Onaylarım" kinds included); no capability is new and the server
+ * re-authorizes every source.
  */
 const WORK_INBOX_ROUTE_CAPABILITIES: readonly string[] = [...new Set([...WORK_APPROVALS_CAPABILITIES, ...WORK_INBOX_CAPABILITIES])]
 
 export const workRoutes: RouteObject[] = [
   // Personal recipient-only inbox; backend refreshes active membership and accepts no recipient override.
   { path: NOTIFICATIONS_ROUTE.slice(1), element: <NotificationsPage /> },
-  // W1-C "Bana atanan": own tasks only, like the personal inbox; the server accepts no assignee override.
-  { path: MY_TASKS_ROUTE.slice(1), element: <MyTasksPage /> },
-  // B-25 / W1-A: the Work inbox and the one-list Work queue, behind the same owners' approve capabilities (declared before the detail route).
+  // W1-C "Bana atanan": own tasks only; the server accepts no assignee override. WP9: behind Work's own `work.tasks.mine`
+  // capability (work.tasks.complete), so an actor without it sees the neutral not-found block and nothing is read.
+  {
+    path: MY_TASKS_ROUTE.slice(1),
+    element: <CapabilityRoute capability={WORK_MY_TASKS_CAPABILITIES}><MyTasksPage /></CapabilityRoute>,
+  },
+  // WP-C6 "Asistan hafızam": own memory only (see, edit, delete); the server accepts no owner override and keeps writing
+  // closed while the pilot, retention, entry limit or information notice is undecided.
+  { path: ASSISTANT_MEMORY_ROUTE.slice(1), element: <AssistantMemoryPage /> },
+  // W1-A / WP1 (D5): the one Work inbox, behind the owners' approve capabilities (declared before the detail route).
   {
     path: WORK_ROUTE.queue.slice(1),
     element: <CapabilityRoute capability={WORK_INBOX_ROUTE_CAPABILITIES}><WorkQueuePage /></CapabilityRoute>,
