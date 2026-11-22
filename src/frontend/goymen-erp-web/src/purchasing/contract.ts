@@ -61,6 +61,45 @@ export interface PurchaseOrderLine {
    * before A3 API-30.
    */
   readonly deliverySchedule?: readonly PurchaseOrderDeliverySlice[]
+  /**
+   * AK-5 (SAT-D436, SAT-D439): the line's kg price indicator in the order's currency; absent while the indicator is off, the
+   * prices are withheld or the line is a technical slice. Information only — never a cost and never recomputed here.
+   */
+  readonly kgPrice?: PurchaseKgPrice
+}
+
+/** AK-5: why a kg price is not shown (golden K13–K18); the server's code, the text is the screen's. */
+export const PURCHASE_KG_PRICE_UNAVAILABLE_CODES = [
+  'TheoreticalKgUnavailable', 'WeighedKgUnavailable', 'ZeroKg', 'AmountUnavailable', 'NotAllLinesHaveKg', 'RealizationNotAvailable',
+] as const
+export type PurchaseKgPriceUnavailableCode = typeof PURCHASE_KG_PRICE_UNAVAILABLE_CODES[number]
+
+/**
+ * AK-5 (SAT-D436): a theoretical (amount ÷ theoretical kg) and a real (invoiced amount ÷ weighed kg) kg price, each either a
+ * 2-decimal text of the document currency or null with its reason code — exactly one of the two.
+ */
+export interface PurchaseKgPrice {
+  readonly theoreticalKgPrice: string | null
+  readonly theoreticalUnavailable: PurchaseKgPriceUnavailableCode | null
+  readonly realKgPrice: string | null
+  readonly realUnavailable: PurchaseKgPriceUnavailableCode | null
+}
+
+const KG_PRICE = /^-?(?:0|[1-9][0-9]*)\.[0-9]{2}$/
+
+function kgPricePair(value: unknown, code: unknown): boolean {
+  return value === null
+    ? typeof code === 'string' && (PURCHASE_KG_PRICE_UNAVAILABLE_CODES as readonly string[]).includes(code)
+    : typeof value === 'string' && KG_PRICE.test(value) && code === null
+}
+
+/** AK-5: exactly the four fields, each price paired with no code or a known code with no price; anything else fails closed. */
+export function decodePurchaseKgPrice(value: unknown): PurchaseKgPrice | null {
+  const source = record(value)
+  return source !== null && exact(source, ['theoreticalKgPrice', 'theoreticalUnavailable', 'realKgPrice', 'realUnavailable']) &&
+    kgPricePair(source.theoreticalKgPrice, source.theoreticalUnavailable) && kgPricePair(source.realKgPrice, source.realUnavailable)
+    ? source as unknown as PurchaseKgPrice
+    : null
 }
 
 /** A3 API-30: one delivery slice of a line's current schedule, its quantity as exact text in the line's unit. */
@@ -144,6 +183,8 @@ export interface PurchaseOrderDetail {
   readonly currency?: PurchaseOrderCurrency | null
   /** A2a-1 (ALS-D18): a general line has no price yet; null when the prices are withheld. */
   readonly pricePending?: boolean | null
+  /** AK-5 (SAT-D436): the document-level kg price indicator; absent while it is off or the prices are withheld. */
+  readonly kgPrice?: PurchaseKgPrice
 }
 
 export interface PurchaseOrderList {
@@ -552,8 +593,12 @@ function decodeLine(value: unknown): PurchaseOrderLine | null {
   if (source === null) return null
   const scheduled = Object.prototype.hasOwnProperty.call(source, 'deliverySchedule')
   if (scheduled && !deliverySchedule(source.deliverySchedule)) return null
-  const extra = scheduled ? ['deliverySchedule'] : []
+  // AK-5: a priced line may carry its kg price indicator; it is never on an unpriced body.
+  const kgPriced = Object.prototype.hasOwnProperty.call(source, 'kgPrice')
+  if (kgPriced && decodePurchaseKgPrice(source.kgPrice) === null) return null
+  const extra = [...(scheduled ? ['deliverySchedule'] : []), ...(kgPriced ? ['kgPrice'] : [])]
   const priced = exact(source, [...LINE_FIELDS, 'cancelled', 'price', ...extra])
+  if (kgPriced && !priced) return null
   const current = priced || exact(source, [...LINE_FIELDS, 'cancelled', ...extra])
   if (current && (!text(source.cancelled) || !DECIMAL.test(source.cancelled as string))) return null
   if (priced && source.price !== null && decodeLinePrice(source.price) === null) return null
@@ -695,14 +740,19 @@ function decodeDetailWith<Summary extends PurchaseOrderSummary>(
   readonly priceDisclosure?: PurchaseOrderPriceDisclosure
   readonly currency?: PurchaseOrderCurrency | null
   readonly pricePending?: boolean | null
+  readonly kgPrice?: PurchaseKgPrice
 } | null {
   const source = record(value)
   if (source === null || !Array.isArray(source.lines)) return null
+  // AK-5: the document-level kg price indicator only rides on a priced body whose prices are visible.
+  const kgPriced = Object.prototype.hasOwnProperty.call(source, 'kgPrice')
+  const kgPrice = kgPriced ? decodePurchaseKgPrice(source.kgPrice) : undefined
+  if (kgPrice === null) return null
   const legacy = exact(source, ['order', 'lines'])
   const withHistory = exact(source, ['order', 'lines', 'acceptances']) && Array.isArray(source.acceptances)
   // A2a-1: the priced body adds the disclosure, the currency and "fiyat bekliyor"; every line then carries its price.
-  const priced = exact(source, ['order', 'lines', 'acceptances', 'cancellation', 'priceDisclosure', 'currency', 'pricePending'])
-    && Array.isArray(source.acceptances)
+  const priced = exact(source, ['order', 'lines', 'acceptances', 'cancellation', 'priceDisclosure', 'currency', 'pricePending',
+    ...(kgPriced ? ['kgPrice'] : [])]) && Array.isArray(source.acceptances)
   // A1-3: the current body always carries the cancellation (null unless Cancelled) and every line its cancelled share.
   const current = priced || (exact(source, ['order', 'lines', 'acceptances', 'cancellation']) && Array.isArray(source.acceptances))
   if (!legacy && !withHistory && !current) return null
@@ -728,7 +778,11 @@ function decodeDetailWith<Summary extends PurchaseOrderSummary>(
   if (priced) {
     const pricing = decodePricing(source, acceptedLines)
     if (pricing === null) return null
-    return { order, lines: acceptedLines, acceptances: acceptances as PurchaseOrderAcceptanceHistory[], cancellation, ...pricing }
+    if (pricing.priceDisclosure !== 'Visible' && (kgPrice !== undefined || acceptedLines.some((line) => line.kgPrice !== undefined))) return null
+    return {
+      order, lines: acceptedLines, acceptances: acceptances as PurchaseOrderAcceptanceHistory[], cancellation, ...pricing,
+      ...(kgPrice === undefined ? {} : { kgPrice }),
+    }
   }
   if (acceptedLines.some((line) => line.price !== undefined)) return null
   return current

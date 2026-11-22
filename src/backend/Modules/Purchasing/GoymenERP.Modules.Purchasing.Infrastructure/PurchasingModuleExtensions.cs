@@ -145,7 +145,9 @@ public static class PurchasingModuleExtensions
         serviceProvider.GetService<PurchaseSupplierReturnPolicyV1>(),
         serviceProvider.GetService<IPurchaseReceiptReversalTransactionV1>(),
         serviceProvider.GetService<IPurchaseReceiptReversalBatchTransactionV1>(),
-        serviceProvider.GetService<IPurchaseSupplierReturnCostSourceReadPortV1>());
+        serviceProvider.GetService<IPurchaseSupplierReturnCostSourceReadPortV1>(),
+        // AK-3 (SAT-D437): the host's Product theoretical kg/piece adapter; unwired, an order with a piece line is not approved (503).
+        serviceProvider.GetService<IPurchaseTheoreticalKilogramsPerUnitPortV1>());
 
     /// <summary>Applies Purchasing's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializePurchasingModuleAsync(this IServiceProvider services, CancellationToken cancellationToken = default)

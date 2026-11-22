@@ -33,6 +33,26 @@ public sealed class PurchaseAcceptanceParticipantContractTests
     }
 
     [Fact]
+    public void Validator_reads_a_piece_lines_weighed_kilograms_and_keeps_a_kilogram_lines_absent()
+    {
+        Assert.Null(PurchaseAcceptanceParticipantContractV1.Validate(ValidRequest()).MeasuredQuantityKg);
+        Assert.Equal(1250.4m, PurchaseAcceptanceParticipantContractV1.Validate(ValidRequest() with { MeasuredQuantityKg = "1250.4" }).MeasuredQuantityKg);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("1.0001")]
+    [InlineData("1.50")]
+    [InlineData(" 1")]
+    public void Validator_refuses_weighed_kilograms_that_are_not_canonical_positive_three_decimal_values(string measured)
+    {
+        var refusal = Assert.Throws<PurchaseAcceptanceParticipantException>(() =>
+            PurchaseAcceptanceParticipantContractV1.Validate(ValidRequest() with { MeasuredQuantityKg = measured }));
+        Assert.Equal((PurchaseAcceptanceParticipantCodes.InvalidQuantity, 400), (refusal.Code, refusal.StatusCode));
+    }
+
+    [Fact]
     public void Validator_accepts_canonical_positive_share_and_exact_versions()
     {
         var validated = PurchaseAcceptanceParticipantContractV1.Validate(ValidRequest());

@@ -171792,6 +171792,7 @@
               }
             },
             "x-erp-problem-codes": [
+              "purchasing_theoretical_kilograms_missing",
               "validation_failed"
             ]
           },
@@ -175929,6 +175930,7 @@
               "purchasing_acceptance_product_version_conflict",
               "purchasing_acceptance_quantity_exceeds_remaining",
               "purchasing_line_busy",
+              "purchasing_receipt_theoretical_kilograms_missing",
               "sales_order_line_busy"
             ]
           },
@@ -176020,6 +176022,8 @@
               "inventory_goods_receipt_invalid_request",
               "inventory_goods_receipt_quantity_invalid",
               "inventory_goods_receipt_version_invalid",
+              "purchasing_acceptance_measured_kg_mismatch",
+              "purchasing_receipt_piece_count_invalid",
               "validation_failed"
             ],
             "x-erp-empty-body-possible": true
@@ -179311,6 +179315,7 @@
               }
             },
             "x-erp-problem-codes": [
+              "purchasing_supplier_return_piece_count_required",
               "purchasing_supplier_return_replacement_unsupported",
               "validation_failed"
             ]
@@ -179942,6 +179947,7 @@
               }
             },
             "x-erp-problem-codes": [
+              "purchasing_supplier_return_piece_count_required",
               "validation_failed"
             ]
           },
@@ -288932,6 +288938,49 @@
           }
         }
       },
+      "PurchaseGoodsReceiptPieceKilogramsV1": {
+        "required": [
+          "pieceCount",
+          "kilogramsPerUnit",
+          "theoreticalQuantityKg",
+          "measuredQuantityKg",
+          "differenceKg",
+          "varianceOutcome",
+          "tolerancePercent"
+        ],
+        "type": "object",
+        "properties": {
+          "pieceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "kilogramsPerUnit": {
+            "type": "string"
+          },
+          "theoreticalQuantityKg": {
+            "type": "string"
+          },
+          "measuredQuantityKg": {
+            "type": "string"
+          },
+          "differenceKg": {
+            "type": "string"
+          },
+          "varianceOutcome": {
+            "type": "string"
+          },
+          "tolerancePercent": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "PurchaseGoodsReceiptQuantityComparisonV1": {
         "required": [
           "companyId",
@@ -289025,6 +289074,16 @@
             "items": {
               "$ref": "#/components/schemas/PurchaseReceiptFutureSupplyReleaseV1"
             }
+          },
+          "pieceKilograms": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PurchaseGoodsReceiptPieceKilogramsV1"
+              }
+            ]
           }
         }
       },
@@ -290935,6 +290994,41 @@
           }
         }
       },
+      "PurchaseKgPriceView": {
+        "required": [
+          "theoreticalKgPrice",
+          "theoreticalUnavailable",
+          "realKgPrice",
+          "realUnavailable"
+        ],
+        "type": "object",
+        "properties": {
+          "theoreticalKgPrice": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "theoreticalUnavailable": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "realKgPrice": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "realUnavailable": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "PurchaseOrderAcceptanceHistoryView": {
         "required": [
           "acceptanceId",
@@ -291203,6 +291297,16 @@
             "type": [
               "null",
               "boolean"
+            ]
+          },
+          "kgPrice": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PurchaseKgPriceView"
+              }
             ]
           }
         }
@@ -291777,6 +291881,16 @@
             "items": {
               "$ref": "#/components/schemas/PurchaseOrderDeliverySliceView"
             }
+          },
+          "kgPrice": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PurchaseKgPriceView"
+              }
+            ]
           }
         }
       },
@@ -291829,6 +291943,16 @@
             "type": [
               "null",
               "boolean"
+            ]
+          },
+          "kgPrice": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PurchaseKgPriceView"
+              }
             ]
           }
         }

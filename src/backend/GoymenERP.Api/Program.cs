@@ -433,6 +433,8 @@ builder.Services.AddLogisticsModule(
 // 503 product_eligibility_unavailable, fail-closed.
 builder.Services.AddScoped<IPurchasingPartyAccountPortV1, CounterpartyPurchasingPartyAccountPortV1>();
 builder.Services.AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEligibilityPort>();
+// AK-3 (SAT-D437): a piece line's theoretical kg/piece is read from the Product owner at order approval and recorded on the line.
+builder.Services.AddScoped<IPurchaseTheoreticalKilogramsPerUnitPortV1, GoymenERP.Api.PurchasingRuntime.ProductOwnerPurchaseTheoreticalKilogramsPerUnitPort>();
 // A4 / MOD-03 (SAT-D219/D220): Purchasing's Sales-facing adapters live in the host (Purchasing does not reference Sales): the
 // linked-supply read (SupplyKind Purchasing) with its recorder declaration, and the Sales-sourced request line reader.
 builder.Services.AddScoped<ISalesOrderLinkedSupplyReadPortV1, PurchasingSalesOrderLinkedSupplyReadPort>();

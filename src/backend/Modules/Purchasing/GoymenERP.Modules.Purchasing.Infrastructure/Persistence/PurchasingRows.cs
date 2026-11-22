@@ -146,6 +146,13 @@ internal sealed class PurchaseOrderLineRow : IPurchasingTenantRow
     public decimal? DiscountAmount { get; set; }
     public decimal? DeferralPercent { get; set; }
     public decimal? DeferralAmount { get; set; }
+
+    /// <summary>
+    /// AK-3 (SAT-D437): the theoretical kg per piece recorded at the first approval, with the Product owner's evidence fingerprint;
+    /// both or neither, only on a piece (UnitIsKilogram = 0) general line. Written once, never backfilled.
+    /// </summary>
+    public decimal? TheoreticalKilogramsPerUnit { get; set; }
+    public string? TheoreticalKilogramsSourceVersion { get; set; }
 }
 
 /// <summary>ADR-011 attempt record (the Sales shape): the key hash, the content hash, the actor, the outcome and the result (a request, an order or a refusal).</summary>

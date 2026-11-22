@@ -35,7 +35,8 @@ public sealed record PurchaseAcceptanceStageRequestV1(
     string ExpectedProductVersion,
     Guid UnitId,
     string AcceptedQuantity,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    string? MeasuredQuantityKg = null);
 
 /// <summary>
 /// The staged acceptance share. F-017 F17-1 (ALIS_F017 v1 §3.4/§5): <see cref="PurchaseOrderGeneralLineId"/> is the purchase GENERAL
@@ -55,13 +56,21 @@ public sealed record PurchaseAcceptanceStageResultV1(
     string OriginalCorrelationId,
     Guid? PurchaseOrderGeneralLineId = null);
 
+/// <summary>
+/// AK-3 (ALS-D119/ALS-D121): <see cref="MeasuredQuantityKg"/> is the weighed kilograms of a piece-line acceptance (required there,
+/// refused on a kilogram line); null for every kilogram line, so their request hash is unchanged.
+/// </summary>
 public sealed record ValidatedPurchaseAcceptanceV1(
     long ExpectedPurchaseOrderVersion,
-    decimal AcceptedQuantity);
+    decimal AcceptedQuantity,
+    decimal? MeasuredQuantityKg = null);
 
 public static class PurchaseAcceptanceParticipantContractV1
 {
     public const int ProductVersionMaximumLength = 64;
+
+    /// <summary>AK-3: weighed kilograms keep three decimals (Ö2, BS-13).</summary>
+    public const int MeasuredKilogramScale = 3;
 
     public static ValidatedPurchaseAcceptanceV1 Validate(PurchaseAcceptanceStageRequestV1 request)
     {
@@ -113,7 +122,23 @@ public static class PurchaseAcceptanceParticipantContractV1
                 "Kabul zamanı UTC olmalıdır.");
         }
 
-        return new ValidatedPurchaseAcceptanceV1(expectedVersion, accepted);
+        decimal? measured = null;
+        if (request.MeasuredQuantityKg is { } measuredText)
+        {
+            if (!decimal.TryParse(measuredText, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var kilograms)
+                || kilograms <= 0m || decimal.Round(kilograms, MeasuredKilogramScale) != kilograms
+                || !string.Equals(FormatQuantity(kilograms), measuredText, StringComparison.Ordinal))
+            {
+                throw new PurchaseAcceptanceParticipantException(
+                    PurchaseAcceptanceParticipantCodes.InvalidQuantity,
+                    400,
+                    "Tartılan kg kanonik, pozitif ve en fazla üç ondalıklı olmalıdır.");
+            }
+
+            measured = kilograms;
+        }
+
+        return new ValidatedPurchaseAcceptanceV1(expectedVersion, accepted, measured);
     }
 
     public static string FormatQuantity(decimal value) =>
@@ -134,6 +159,9 @@ public static class PurchaseAcceptanceParticipantCodes
     public const string IdempotencyConflict = "purchasing_acceptance_idempotency_conflict";
     public const string ConcurrentChange = "purchasing_acceptance_concurrent_change";
     public const string Unavailable = "purchasing_acceptance_unavailable";
+
+    /// <summary>AK-3 (ALS-D119): a piece-line acceptance needs its weighed kilograms; a kilogram line takes none (400).</summary>
+    public const string MeasuredKilogramsMismatch = "purchasing_acceptance_measured_kg_mismatch";
 
     /// <summary>
     /// F-017 §3.4: the purchase general line's serialization lock was not granted in time; nothing was staged (409). The same

@@ -52,10 +52,11 @@ public static class PurchaseUnitCodes
 /// consumer can still tell "denied" from "unavailable" from "no profile".</item>
 /// <item>The profile must belong to the SERVER-resolved company the caller passes, name the
 /// requested unit, be internally valid, and be active on the effective date.</item>
-/// <item>Only kilogram profiles are approved today (Settings README, Ö1). A profile of another
-/// dimension is refused as unsupported rather than mapped to a guessed count unit.</item>
-/// <item>Precision comes from the profile's scale, capped by Ö2's kilogram rule (at most 3): a
-/// quantity with more decimals is refused, never rounded or cut.</item>
+/// <item>Kilogram profiles and, from AK-3 (SAT-D434/SAT-D435, KLN-D119), the Settings standard piece
+/// identity in the count dimension are approved. Metre (SAT-D443) and every other dimension are refused
+/// as unsupported rather than mapped to a guessed unit.</item>
+/// <item>Precision comes from the profile's scale, capped by Ö2's kilogram rule (at most 3) or the
+/// piece rule (0): a quantity with more decimals is refused, never rounded or cut.</item>
 /// </list>
 /// The result is reference metadata for one line; it authorizes nothing and is not a purchase policy.
 /// </summary>
@@ -106,14 +107,16 @@ public sealed class PurchaseUnitVerifier(ISettingsPrerequisiteProvider settings)
             return PurchaseUnitVerification.Refused(PurchaseUnitCodes.UnitUnsupported);
         }
 
-        if (!profile.IsKilogram)
+        var unit = PieceUnitOf(profile);
+        if (!profile.IsKilogram && unit is null)
         {
-            // No count dimension is approved in Settings yet; refusing keeps a kg product from
-            // being ordered in pieces and never invents a unit the owner has not published.
+            // AK-3 (SAT-D434/SAT-D435, KLN-D119): besides kilograms only the Settings standard piece identity with the count
+            // dimension is approved; metre and every other dimension stay refused (SAT-D443), never mapped to a guessed unit.
             return PurchaseUnitVerification.Refused(PurchaseUnitCodes.UnitUnsupported);
         }
 
-        var appliedScale = Math.Min(profile.Scale, Quantity.KilogramScale);
+        var quantityUnit = unit ?? QuantityUnit.Kilogram;
+        var appliedScale = Math.Min(profile.Scale, Quantity.AllowedScale(quantityUnit));
         if (Quantity.SignificantDecimals(quantity) > appliedScale)
         {
             return PurchaseUnitVerification.Refused(PurchaseUnitCodes.QuantityScaleExceeded);
@@ -121,6 +124,16 @@ public sealed class PurchaseUnitVerifier(ISettingsPrerequisiteProvider settings)
 
         return PurchaseUnitVerification.Verified(new VerifiedPurchaseUnit(unitId, profile.UnitCode,
             profile.Profile.ProfileId, profile.Profile.Version.ToString(CultureInfo.InvariantCulture), profile.Scale,
-            appliedScale, Quantity.Positive(quantity, QuantityUnit.Kilogram)));
+            appliedScale, Quantity.Positive(quantity, quantityUnit)));
     }
+
+    /// <summary>The piece unit for the Settings standard piece identity in the count dimension; null for anything else.</summary>
+    private static QuantityUnit? PieceUnitOf(UnitProfileV1 profile) =>
+        !profile.IsKilogram && profile.UnitId == SettingsUnitIdentitiesV1.Piece
+        && string.Equals(profile.DimensionCode, PieceDimensionCode, StringComparison.Ordinal)
+            ? QuantityUnit.Piece
+            : null;
+
+    /// <summary>The Settings dimension code of the standard piece identity (ApprovedUnitProfileCatalog, AK-1).</summary>
+    public const string PieceDimensionCode = "count";
 }

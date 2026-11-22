@@ -80,6 +80,12 @@ public static class PurchaseSupplierReturnCommandsV1
 
 public static class PurchaseSupplierReturnCodesV1
 {
+    /// <summary>
+    /// AK-3 (KLN-D119) 422: a supplier return of a piece purchase line names its returned pieces as a whole undo quantity (with the
+    /// expected order version); a kg-only legacy return or a fraction of a piece is refused, never converted from kilograms.
+    /// </summary>
+    public const string PieceCountRequired = "purchasing_supplier_return_piece_count_required";
+
     /// <summary>The return flow is not wired (no store, no transaction host); 503, nothing recorded.</summary>
     public const string Unavailable = "purchasing_supplier_return_unavailable";
 

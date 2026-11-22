@@ -520,6 +520,12 @@ public sealed partial class PurchasingServiceTests
         /// <summary>F-017 F17-4: the Inventory link participant the service is composed with (null: not composed).</summary>
         public IPurchaseFutureAllocationLinkParticipantV1? AllocationLinks { get; set; }
 
+        /// <summary>AK-3 (SAT-D437): the Product theoretical kg/piece port the service is composed with (null: not composed).</summary>
+        public IPurchaseTheoreticalKilogramsPerUnitPortV1? TheoreticalKilograms { get; set; }
+
+        /// <summary>KLN-D45: the Ayarlar receipt policy the service is composed with (null: not composed, every tolerance NotSet).</summary>
+        public IPurchaseGoodsReceiptPolicyReadPortV1? ReceiptPolicy { get; set; }
+
         public PurchasingServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, RevisePermission: RevisePermission);
 
         public PurchasingService Service(IPurchaseGoodsReceiptTransactionV1? receipts = null, IPurchaseGoodsReceiptReadsV1? reads = null,
@@ -531,7 +537,8 @@ public sealed partial class PurchasingServiceTests
             return new PurchasingService(Company, User, Authority, new FixedCorrelation(), Accounts, ProductsPublished ? Products : null,
                 new PurchaseUnitVerifier(Settings), Store, Bindings, TimeProvider.System, receipts, reads, MoneyOwner ?? Money, CandidateOwner ?? Money, LineTaxes, SalesSources,
                 allocationLinks: AllocationLinks, receiptReversals: reversals, returnStore: returns, returnInvoiceCosts: returnCosts,
-                receiptReversalBatches: reversalBatches, returnCostSources: returnSources);
+                receiptReversalBatches: reversalBatches, returnCostSources: returnSources, theoreticalKilograms: TheoreticalKilograms,
+                receiptPolicy: ReceiptPolicy);
         }
 
         /// <summary>Runs one call as the synthetic approver (not the request's preparer or submitter) and switches back.</summary>
@@ -681,6 +688,9 @@ public sealed partial class PurchasingServiceTests
                 "unit-not-found" => Task.FromException<UnitProfileV1>(new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.UnitProfileNotFound)),
                 "unit-access-denied" => Task.FromException<UnitProfileV1>(new SettingsPrerequisiteException("settings_access_denied")),
                 "unit-unavailable" => Task.FromException<UnitProfileV1>(new SettingsPrerequisiteException("settings_provider_unavailable")),
+                // AK-3: the Settings standard piece identity answers the approved piece profile (count, scale 0).
+                _ when unitId == SettingsUnitIdentitiesV1.Piece => Task.FromResult(new UnitProfileV1(OwnerCompany, unitId, "adet", "count",
+                    false, new ProfileVersionV1(KgProfile, 1), 0, true, new DateOnly(2026, 9, 1), null)),
                 _ => Task.FromResult(new UnitProfileV1(Fault == "unit-other-company" ? Guid.NewGuid() : OwnerCompany, unitId,
                     Fault == "unit-piece" ? "adet" : "kg", Fault == "unit-piece" ? "count" : "weight", Fault != "unit-piece",
                     new ProfileVersionV1(KgProfile, 4), 3, true, new DateOnly(2026, 9, 1), null)),

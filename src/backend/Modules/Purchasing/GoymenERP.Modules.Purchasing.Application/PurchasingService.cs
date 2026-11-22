@@ -61,7 +61,8 @@ public sealed partial class PurchasingService(
     PurchaseSupplierReturnPolicyV1? returnPolicy = null,
     IPurchaseReceiptReversalTransactionV1? receiptReversals = null,
     IPurchaseReceiptReversalBatchTransactionV1? receiptReversalBatches = null,
-    IPurchaseSupplierReturnCostSourceReadPortV1? returnCostSources = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
+    IPurchaseSupplierReturnCostSourceReadPortV1? returnCostSources = null,
+    IPurchaseTheoreticalKilogramsPerUnitPortV1? theoreticalKilograms = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
     IPurchaseGoodsReceiptServiceV1, IPurchaseGoodsReceiptQuantityComparisonServiceV1, IPurchaseGoodsReceiptBatchServiceV1,
     IPurchaseSupplierReturnServiceV1, IPurchaseReceiptReversalServiceV1, IPurchaseReceiptReversalBatchServiceV1
 {
@@ -389,13 +390,14 @@ public sealed partial class PurchasingService(
             throw new PurchasingServiceException(404, "not_found");
         }
 
+        var kilograms = await ReadTheoreticalKilogramsAsync(scope, orderId, expectedVersion, cancellationToken);
         await RequireStillAsync(scope, bindings.ApprovePermission, cancellationToken);
         var actor = scope.ActorId.Trim();
         PurchasingOrderStoreResult? result;
         try
         {
             result = await store.MutateOrderAsync(envelope, requestHash, PurchasingCommands.OrderApproveV1, orderId,
-                (order, now) => order.Approve(expectedVersion, actor, now, SettingsCurrencyIdentitiesV1.TurkishLira),
+                (order, now) => order.Approve(expectedVersion, actor, now, SettingsCurrencyIdentitiesV1.TurkishLira, kilograms),
                 new PurchasingMutationAudit("purchasing.purchase-order.approved.v1", "Approve", "Satınalma siparişi onaylandı"), cancellationToken);
         }
         catch (PurchasingVersionConflictException)
@@ -423,6 +425,12 @@ public sealed partial class PurchasingService(
                 : PurchasingProblemCodesV1.OrderMakerUnknown;
             return await TerminalAsync(scope, bindings.ApprovePermission, envelope, requestHash, PurchasingCommands.OrderApproveV1,
                 new PurchasingTerminalRefusal(409, code, [new("actor", exception.Code)]), replayed => ReplayedOrder(replayed, disclosure), cancellationToken);
+        }
+        catch (PurchasingRuleException exception) when (exception.Code == PurchasingRuleCodes.TheoreticalKilogramsMissing)
+        {
+            // AK-3 (SAT-D437, fail-closed): not terminal — the card can get a kilogram source and the same key retried.
+            throw new PurchasingServiceException(422, PurchasingProblemCodesV1.TheoreticalKilogramsMissing,
+                [new("lines", PurchasingRuleCodes.TheoreticalKilogramsMissing)]);
         }
         catch (PurchasingRuleException exception)
         {
@@ -1080,6 +1088,7 @@ public sealed partial class PurchasingService(
                     ? new PurchaseOrderLineClosureView(closure.ClosedBy, closure.ClosedAtUtc, closure.Reason)
                     : null,
                 Price = visible ? PriceView(line, stored.Order.Money) : null,
+                KgPrice = visible && PurchaseKgPriceGoldenAccepted ? LineKgPriceView(line, stored.Order.Money) : null,
                 DeliverySchedule = [.. line.DeliverySchedule.Select(slice =>
                     new PurchaseOrderDeliverySliceView(slice.SliceId, slice.SliceNo, Text(slice.Quantity), slice.DeliveryDate))],
             })])
@@ -1087,6 +1096,7 @@ public sealed partial class PurchasingService(
             PriceDisclosure = visible ? PurchasingPriceDisclosureV1.Visible : PurchasingPriceDisclosureV1.Withheld,
             Currency = CurrencyView(stored.Order.Money),
             PricePending = visible ? HasUnpricedGeneralLine(stored.Order) : null,
+            KgPrice = visible && PurchaseKgPriceGoldenAccepted ? DocumentKgPriceView(stored.Order) : null,
             Acceptances = [.. stored.Order.Acceptances.Select(acceptance => new PurchaseOrderAcceptanceHistoryView(
                 acceptance.AcceptanceId, acceptance.LineId, Text(acceptance.Quantity), acceptance.RecordedAtUtc))],
             Cancellation = stored.Order.Cancellation is { } cancellation

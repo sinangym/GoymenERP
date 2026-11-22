@@ -363,6 +363,7 @@ public sealed partial class PurchasingServiceTests
     {
         public List<string> Events { get; } = [];
         public PurchaseReceiptStockRequestV1? Stock { get; private set; }
+        public PurchaseAcceptanceStageRequestV1? Purchase { get; private set; }
         public PurchaseGoodsReceiptTargetV1? Target { get; private set; }
         public Guid AcceptanceId { get; private set; }
         public PurchaseReceiptStockRequestV1? Original { get; set; }
@@ -412,6 +413,7 @@ public sealed partial class PurchasingServiceTests
             CancellationToken cancellationToken)
         {
             Events.Add("purchase");
+            Purchase = request;
             return Task.FromResult(new PurchaseAcceptanceStageResultV1(Company, request.AcceptanceId, request.PurchaseOrderId,
                 request.PurchaseOrderLineId, "4", request.AcceptedQuantity, "8", Original is not null, "synthetic-correlation"));
         }

@@ -29,6 +29,10 @@ public interface IInventorySupplierReturnExitParticipantV1 : IAsyncDisposable
 /// <see cref="InventorySupplierReturnExitCodesV1.InvalidQuantity"/>); a partial exit leaves at least one piece, a whole
 /// exit takes every piece. Purchasing before AK-3/AK-8 omits it and kg-only labels return exactly as before.
 /// </summary>
+/// <remarks>
+/// AK-3 (KLN-D119): <c>PieceCount</c> is the returned piece count of a piece-tracking label (a piece purchase line's undo quantity,
+/// derived by the caller); null for a kg-only label, exactly as before. It is derived data and does not enter the payload hash.
+/// </remarks>
 public sealed record InventorySupplierReturnExitRequestV1(
     Guid CompanyId,
     Guid SupplierReturnId,

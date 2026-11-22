@@ -621,7 +621,7 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
     }
 
     private static string RequestHash(InventorySupplierReturnExitRequestV1 request) =>
-        Hash(JsonSerializer.Serialize(request with { PurchaseSource = null,
+        Hash(JsonSerializer.Serialize(request with { PurchaseSource = null, PieceCount = null,
             UndoQuantity = request.CostAllocation is null ? null : request.UndoQuantity }, Json));
 
     private static string Hash(string value) =>

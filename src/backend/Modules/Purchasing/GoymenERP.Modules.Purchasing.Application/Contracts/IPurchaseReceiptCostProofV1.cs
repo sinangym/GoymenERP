@@ -8,7 +8,12 @@ public interface IPurchaseReceiptCostProofV1 : IAsyncDisposable
         CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// AK-3 (ALS-D119): <c>MeasuredQuantityKg</c> is the weighed kilograms recorded with a piece-line acceptance (canonical text), null
+/// on a kilogram line and on acceptances recorded before AK-3 (never backfilled).
+/// </summary>
 public sealed record PurchaseReceiptCostProofV1(Guid CompanyId, Guid PurchaseOrderId, Guid PurchaseOrderLineId,
     Guid AcceptanceId, Guid ProductId, string ProductVersion, string AcceptedQuantity,
     string AcceptanceOrderVersion, DateTimeOffset ReceivedAtUtc, PurchaseOrderLineCostAnswerV1 Price,
-    PurchaseInvoiceCostRateAnswerV1 InvoiceRate, PurchaseOrderExchangeRateAnswerV1? ApprovedOrderRate = null);
+    PurchaseInvoiceCostRateAnswerV1 InvoiceRate, PurchaseOrderExchangeRateAnswerV1? ApprovedOrderRate = null,
+    string? MeasuredQuantityKg = null);

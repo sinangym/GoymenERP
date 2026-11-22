@@ -155,6 +155,44 @@ public sealed class PurchaseUnitVerifierTests
         Assert.Empty(settings.UnitCalls);
     }
 
+    private static UnitProfileV1 PieceProfile() => new(Company, SettingsUnitIdentitiesV1.Piece, "adet", PurchaseUnitVerifier.PieceDimensionCode,
+        false, new ProfileVersionV1(ProfileId, 1), 0, true, new DateOnly(2026, 9, 1), null);
+
+    [Fact]
+    public async Task The_approved_piece_profile_verifies_a_whole_piece_quantity_with_scale_zero()
+    {
+        var result = await new PurchaseUnitVerifier(new StubSettings { Profile = PieceProfile() })
+            .VerifyAsync(Company, SettingsUnitIdentitiesV1.Piece, 100m, Day);
+
+        Assert.True(result.IsVerified);
+        Assert.Equal(("adet", 0, 0), (result.Unit!.UnitCode, result.Unit.ProfileScale, result.Unit.Scale));
+        Assert.Equal(Quantity.Of(100m, QuantityUnit.Piece), result.Unit.Quantity);
+    }
+
+    [Fact]
+    public async Task A_fraction_of_a_piece_is_refused_even_when_the_profile_names_a_wider_scale()
+    {
+        var verifier = new PurchaseUnitVerifier(new StubSettings { Profile = PieceProfile() with { Scale = 3 } });
+
+        var result = await verifier.VerifyAsync(Company, SettingsUnitIdentitiesV1.Piece, 2.5m, Day);
+
+        Assert.Equal(PurchaseUnitCodes.QuantityScaleExceeded, result.Code);
+    }
+
+    [Theory]
+    [InlineData("metre")]
+    [InlineData("piece-identity-other-dimension")]
+    public async Task Metre_and_a_piece_identity_outside_the_count_dimension_stay_unsupported(string fault)
+    {
+        var profile = fault == "metre"
+            ? PieceProfile() with { UnitId = SettingsUnitIdentitiesV1.Metre, UnitCode = "m", DimensionCode = "length", Scale = 3 }
+            : PieceProfile() with { DimensionCode = "length" };
+
+        var result = await new PurchaseUnitVerifier(new StubSettings { Profile = profile }).VerifyAsync(Company, profile.UnitId, 1m, Day);
+
+        Assert.Equal(PurchaseUnitCodes.UnitUnsupported, result.Code);
+    }
+
     [Fact]
     public async Task Cancellation_is_not_a_refusal()
     {

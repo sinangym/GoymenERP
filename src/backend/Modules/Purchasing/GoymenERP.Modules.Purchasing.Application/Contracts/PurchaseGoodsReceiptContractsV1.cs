@@ -28,7 +28,23 @@ public sealed record PurchaseGoodsReceiptResponseV1(PurchaseGoodsReceiptViewV1 R
     /// stored conversion list (the KLN-D110 sweep is not repeated or re-listed on replay). Empty when nothing was released.
     /// </summary>
     public IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1> FutureSupplyReleases { get; init; } = [];
+
+    /// <summary>
+    /// AK-3 (BS-16/BS-17, golden TA4): on a piece-unit line, how the weighed kilograms compare with the theoretical kilograms
+    /// (accepted pieces × the line's recorded kg per piece). Information and warning only — the receipt stands and its cost is
+    /// computed from the weighed kilograms; null on a kilogram line.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public PurchaseGoodsReceiptPieceKilogramsV1? PieceKilograms { get; init; }
 }
+
+/// <summary>
+/// AK-3: one piece receipt's kilograms. <see cref="TheoreticalQuantityKg"/> = <see cref="PieceCount"/> × <see cref="KilogramsPerUnit"/>
+/// (three decimals, URN-D9); <see cref="DifferenceKg"/> = weighed − theoretical (signed); <see cref="VarianceOutcome"/> is
+/// <c>GoodsReceiptKgVarianceOutcome</c>'s name against the Ayarlar tolerance (<see cref="TolerancePercent"/>, null = not set).
+/// </summary>
+public sealed record PurchaseGoodsReceiptPieceKilogramsV1(int PieceCount, string KilogramsPerUnit, string TheoreticalQuantityKg,
+    string MeasuredQuantityKg, string DifferenceKg, string VarianceOutcome, string? TolerancePercent);
 
 /// <summary>
 /// KLN-D94: one future supply allocation released at goods receipt because its label link failed. <see cref="ReleasedQuantity"/>
@@ -93,6 +109,12 @@ public static class PurchaseGoodsReceiptApiV1
 
 public static class PurchaseGoodsReceiptCodesV1
 {
+    /// <summary>AK-3 (SAT-D437, fail-closed): a piece line has no recorded theoretical kg per piece, so it takes no receipt (409).</summary>
+    public const string TheoreticalKilogramsMissing = "purchasing_receipt_theoretical_kilograms_missing";
+
+    /// <summary>AK-3 (KLN-D119): a piece line's accepted quantity is not a whole piece count Inventory can hold (400).</summary>
+    public const string PieceCountInvalid = "purchasing_receipt_piece_count_invalid";
+
     public const string Unavailable = "purchasing_goods_receipt_unavailable";
     public const string DocumentSourceUnavailable = "purchasing_receipt_document_source_unavailable";
     public const string SourceInvalid = "purchasing_goods_receipt_source_invalid";
@@ -178,6 +200,12 @@ public sealed record PurchaseReceiptStockRequestV1(Guid CompanyId, Guid Acceptan
     // ReadOriginalAsync must copy Inventory's stored value, never apply today's default to history.
     // This DTO is not the public request: callers cannot submit block/document/ownership facts.
     public string InitialBlock { get; init; } = PurchaseGoodsReceiptApiV1.InitialBlock;
+
+    /// <summary>
+    /// AK-3 (KLN-D119): the received piece count of a piece-unit line (its whole accepted quantity), handed to Inventory's
+    /// <c>PieceCount</c>; null on a kilogram line, exactly as before.
+    /// </summary>
+    public int? PieceCount { get; init; }
 }
 
 public sealed record PurchaseReceiptStockResultV1(Guid CompanyId, Guid AcceptanceId, Guid PurchaseOrderId, Guid PurchaseOrderLineId,

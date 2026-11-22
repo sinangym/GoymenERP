@@ -63,6 +63,27 @@ public sealed class PurchaseOrderLine
 
     internal void ReplaceSupplierRevisionPrice(PurchaseOrderLinePrice? price) => Price = price;
 
+    /// <summary>
+    /// AK-3 (SAT-D437): the theoretical kg per piece recorded at the order's first approval; only a piece general line carries one,
+    /// null before approval, on a kilogram line and on a technical slice (it reads its general line's).
+    /// </summary>
+    public PurchaseOrderLineTheoreticalKilograms? TheoreticalKilograms { get; private set; }
+
+    /// <summary>True for a piece-unit general line, the only kind that needs a theoretical kg snapshot before approval.</summary>
+    public bool NeedsTheoreticalKilograms => Kind == PurchaseOrderLineKind.General && Quantity.Unit == QuantityUnit.Piece;
+
+    internal void RecordTheoreticalKilograms(PurchaseOrderLineTheoreticalKilograms snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (!NeedsTheoreticalKilograms || TheoreticalKilograms is not null)
+        {
+            throw new PurchasingRuleException(PurchasingRuleCodes.TheoreticalKilogramsNotApplicable,
+                "Teorik kg/adet yalnız henüz kaydı olmayan adetli genel satıra yazılır.");
+        }
+
+        TheoreticalKilograms = snapshot;
+    }
+
     /// <summary>General lines only: the part already carved into technical lines.</summary>
     public Quantity TechnicalQuantity { get; private set; }
 

@@ -46,6 +46,8 @@ public sealed record InventoryGoodsReceiptReversalLinkV1(Guid ConversionId, Guid
 /// and refused on a kg-only label (400 <see cref="InventoryGoodsReceiptReversalCodesV1.InvalidRequest"/>); a partial undo
 /// leaves at least one piece, a whole undo takes every piece. Purchasing before AK-3 omits it.
 /// </summary>
+/// <remarks>AK-3 (KLN-D119): <c>PieceCount</c> — a supplier return of a piece purchase line hands its returned pieces to the exit;
+/// derived by the host from the line's unit and undo quantity, outside the payload hash; null otherwise.</remarks>
 public sealed record InventoryGoodsReceiptReversalRequestV1(Guid CompanyId, Guid ReversalId, Guid ReversalLineId,
     Guid AcceptanceId, Guid InventoryMovementId, InventoryGoodsReceiptReversalKindV1 Kind,
     BlockState SourceBlock, string QuantityKg, string? OriginalUnitCostTryPerKg, string Reason,
