@@ -10,13 +10,13 @@ Bu belge **yeni Sinan kararı eklemez**. SAT-D265 (5) ve SAT-D431 yöntemiyle, a
 - `SINAN_KARARLARI_2026-11-21_TREN_KAPANIS.md` (bu belge yazılırken `claude/nifty-franklin-nk76d5` dalında, main'de
   değil): SAT-D433, SAT-D434, SAT-D435, SAT-D436, SAT-D437, SAT-D438, ALS-D119, KLN-D119, URT-D112 ve 14–26. cevaplar;
   bu belgenin ilk sürümündeki NEEDS-SINAN N1–N9 için sorulan 27–35. cevaplar ve SAT-D439, SAT-D440, SAT-D441, SAT-D442,
-  SAT-D443, ALS-D120, ALS-D121 ile "Sınırlar"daki belge düzeyi kg fiyatı cümlesi.
+  SAT-D443, SAT-D444, SAT-D445, ALS-D120, ALS-D121 (27–38. cevaplar) ile "Sınırlar"daki belge düzeyi kg fiyatı cümlesi.
 - Issue #1189 aktarımları: SINAN-CEVAP 51
   ([7069053648](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-7069053648)), SINAN-CEVAP 52
   ([7069251238](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-7069251238)), K3-B2 kaynak payı cevabı
   ([7036983182](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-7036983182): "Kaynak payı açıkça
   seçilsin"), SINAN-CEVAP 53 ([7070761130](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-7070761130):
-  N1–N9 cevapları), SINAN-CEVAP 54 ([7070882941](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-7070882941): SAT-D444 ve SAT-D442 eşitlik sırası). Bağlantılar **ajan aktarımıdır**, insanın doğrudan GitHub yorumu değildir.
+  N1–N9 cevapları), SINAN-CEVAP 54 ([7070882941](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-7070882941): SAT-D444 ve SAT-D442 eşitlik sırası), SINAN-CEVAP 55 ([7076922588](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-7076922588): SAT-D445, 38. soru). Bağlantılar **ajan aktarımıdır**, insanın doğrudan GitHub yorumu değildir.
 - main'deki kilitli kurallar: `SAT_S12_SATIS_MARJI_FORMUL_GOLDEN_V1.md` (G01–G24, D01–D23, T1–T4); SAT-D11, SAT-D259,
   SAT-D261, SAT-D262, SAT-D264, SAT-D265 (EK51/EK52); SAT-D295–SAT-D299 (EK59); SAT-D301, SAT-D306
   (`…_2026-11-11_STOK_MALIYET_VE_TRANSFER.md`); SAT-D371, SAT-D392, SAT-D393, SAT-D396, SAT-D408, SAT-D410; BS-1, BS-9,
@@ -36,11 +36,17 @@ işaretli her adım karar metninde açıkça yazmayan ve mevcut kilitli kurallar
 gerçekten karara bağlanmamış noktalar `NEEDS-SINAN` diye listelenir ve o satırlar **hesaplanamaz** bırakılır. Para,
 stok veya maliyet politikası seçilmez.
 
+**Merge sırası:** Bu belgenin dayandığı karar dosyası (`SINAN_KARARLARI_2026-11-21_TREN_KAPANIS.md`) ve
+`docs/delivery/ADET_KG_PAKETI_v1.md` henüz main'de değildir. Golden, karar dosyasıyla birlikte PR #1201 (tren-1) üzerinden
+main'e girer; atıfları main'de karşılıksız kalmasın diye karar dosyasından önce ayrıca main'e merge edilmez.
+
 **Sürüm notu (aynı PR):** İkinci head'de, ilk head'deki N1 ve N3–N9 Sinan'ın cevaplarına (SINAN-CEVAP 53) göre
 hesaplandı veya kapsam dışı işaretlendi; N2 "Bunu bilmiyorum" cevabıyla açık kaldı. Üçüncü head'de SINAN-CEVAP 54
 (36–37. sorular) işlendi: miktar iadesinin maliyeti ve fiyatı için SAT-D444 (ikinci head'deki TI6 türetmesinin yerine
 geçer) ve SAT-D442'nin eşitlik sırası (N10 kapandı). Yeni kararların metni yalnız karar dosyasından ve #1189
-aktarımından okundu; uygulama kodu okunmadı.
+aktarımından okundu; uygulama kodu okunmadı. Dördüncü head'de DOCS-REVIEW-2 (P1-1, P2-1, P2-2, P3-1…P3-5) ve
+DOCS-REVIEW-1 P3 notları işlendi; P1-1 Sinan'ın SAT-D445 kararıyla (38. soru) kapandı: TI7 türetmesi kaldırıldı, I12
+miktar iadesi olarak yeniden hesaplandı.
 
 **Ortak gösterim:** Para ve kg fiyatı 0,01; maliyet/kg (iç hassasiyet) 0,0001; yüzde 0,01; hepsi yarımda sıfırdan
 uzağa (SAT-D261, SAT-D265 (2)–(4), SAT-D436). Neden adları (ör. `TheoreticalKgUnavailable`) açıklayıcıdır; sözleşme
@@ -61,15 +67,16 @@ adı uygulamanındır, golden yalnız "gösterilemez/hesaplanamaz" sonucunu ve s
 6. Gösterim 0,01 TL/kg, yarımda sıfırdan uzağa (SAT-D436, 24. cevap). Bu bir maliyet hesabı değildir; tutarı
    değiştirmez (SAT-D434, SAT-D435).
 7. **Dövizli belge:** kg fiyatı belge para biriminde gösterilir (USD belgede USD/kg); kur kullanılmaz (SAT-D439).
-8. **Belge düzeyi yalnız bütün satırlar kg'li mal satırıyken gösterilir; satır düzeyi her zaman gösterilir** (karar
-   dosyası "Sınırlar", 28. soru açık).
+8. **Belge düzeyi yalnız bütün satırlar kg'li mal satırıyken gösterilir; satır düzeyi her zaman gösterilir.** Bu, Sinan'ın
+   seçtiği bir kural değil, karar dosyasının "Sınırlar" bölümüne yazılmış **fail-closed ara kuraldır**: 28. soru "Bunu
+   bilmiyorum" cevabıyla açıktır (N2); ara kural değer hesaplamaz, yalnız belge düzeyini gizler.
 9. **Metre gibi ondalıklı ticari birimler bu trende açılmaz** (SAT-D443); bu bölüm adet ve kg birimli satırları kapsar.
 
 ### Türetilen adımlar
 
 - **TK1 — Pay (tutar):** belgedeki **KDV hariç** satır net tutarı (satır iskontosundan sonra, SAT-D11 ile kuruşa bir kez
-  yuvarlanmış). Gerekçe: satır adet × adet fiyatıdır (SAT-D434); fiyat listeleri ve satır fiyatları KDV hariçtir
-  (URN-D26); para göstergelerinin mevcut tabanı KDV hariç net tutardır (SAT-D259 (2)). KDV dahil tutardan hesap
+  yuvarlanmış). Gerekçe: satır adet × adet fiyatıdır (SAT-D434); satır net tutarı KDV hariç tanımlanır (SAT-D11) ve
+  para göstergelerinin mevcut tabanı KDV hariç net tutardır (SAT-D259 (2)). KDV dahil tutardan hesap
   K11'de "OLMAZ" diye gösterilir.
 - **TK2 — Teorik kg'nin hassasiyeti:** `k`, belgeye kaydedildiği değerle **aynen** kullanılır (URN-D8 "görünen =
   hesaplanan", KLN-D88; varsayılan 3 ondalık, `CoefficientDecimals` Ayarlar'dadır). Satırın teorik kg'si, belge satırı
@@ -81,14 +88,12 @@ adı uygulamanındır, golden yalnız "gösterilemez/hesaplanamaz" sonucunu ve s
   kg fiyatının paydasına girmez (K09). Kg fiyatı tek bölmeden sonra bir kez yuvarlanır.
 - **TK4 — Belge düzeyi:** Σ tutar ÷ Σ kg kesin hesaplanır; satır kg fiyatlarının (yuvarlanmış veya kesin) ortalaması
   değildir (K03, K06). Kg birimli satırın teorik kg'si miktarının kendisidir (K08).
-- **TK5 — Eksik kg'de belge düzeyi (artık karar metnidir):** İlk sürümde türetilen "eksik kg'de belge düzeyi gösterilmez"
-  adımı, karar dosyasının "Sınırlar" cümlesiyle karşılanır: belge düzeyi kg fiyatı yalnız **bütün satırlar kg'li mal
+- **TK5 — Eksik kg'de belge düzeyi ("Sınırlar"daki fail-closed ara kural):** İlk sürümde türetilen "eksik kg'de belge düzeyi
+  gösterilmez" adımı, karar dosyasının "Sınırlar" bölümüne yazılan fail-closed ara kuralla karşılanır (Sinan cevabı değildir;
+  28. soru açık): belge düzeyi kg fiyatı yalnız **bütün satırlar kg'li mal
   satırı** olduğunda gösterilir. Türetilen kalan kısım: kg'li mal satırında ilgili kg (teorik veya gerçek) yoksa o satır
   bu tür için kg'li sayılmaz ve o belge düzeyi gösterilmez (K17). Belge altı iskonto, vade farkı, kg'siz hizmet ve iade
   satırlarının nasıl gireceği açıktır (NEEDS-SINAN N2).
-- **TK9 — Dövizli gösterim hassasiyeti:** SAT-D439 kuru kaldırır; 24. cevabın "0,01, yarımda sıfırdan uzağa" kuralı
-  belge para biriminin 0,01'ine uygulanır. 2 ondalıklı olmayan para birimleri (JPY, KWD) marj golden'ı D bölümündeki gibi
-  kapsanmaz.
 - **TK6 — Gerçek kg ve gerçekleşme:** Gerçek kg fiyatının paydası, faturalanan satıra yazılan gerçek kg'dir (SAT-D434:
   gerçek kg faturada bilgi olarak yazılır; alışta kabulde tartılan kg). Sipariş gerçekleşmesi = Σ faturalanan tutar ÷ Σ
   faturalanan satırların gerçek kg'si; sevk edilmiş ama faturalanmamış miktar dahil edilmez ("faturalanan tutar").
@@ -98,6 +103,9 @@ adı uygulamanındır, golden yalnız "gösterilemez/hesaplanamaz" sonucunu ve s
 - **TK8 — "Teorik farkı":** golden iki değeri kesin verir: kg farkı = gerçek kg − teorik kg ve işaretli sapma =
   (gerçek − teorik) / teorik × 100 (URN-D7 gösterimi, BS-17 tabanı). Bu bilgi göstergesinin ekran biçimi uygulama
   ayrıntısıdır; TL/kg farkı gösterilecekse iki kesin kg fiyatının farkından bir kez yuvarlanır.
+- **TK9 — Dövizli gösterim hassasiyeti:** SAT-D439 kuru kaldırır; 24. cevabın "0,01, yarımda sıfırdan uzağa" kuralı
+  belge para biriminin 0,01'ine uygulanır. 2 ondalıklı olmayan para birimleri (JPY, KWD) marj golden'ı D bölümündeki gibi
+  kapsanmaz.
 
 ### Golden satırları
 
@@ -118,7 +126,7 @@ Ortak girdiler: satış satırı 100 adet × 250,00 TL = 25 000,00 TL (KDV hari�
 | K11 | KDV hariç taban (TK1) | K01, KDV %20 → KDV dahil 30 000,00 | 25000/1234.5 = 20.25111381… (30000/1234.5 = 24.30133657…) | **20,25 TL/kg** (24,30 **OLMAZ**) |
 | K12 | Satır iskontosu | 100 adet × 250,00, %10 satır iskontosu → 22 500,00 | 22500/1234.5 = 18.22600243… | **18,23 TL/kg** |
 | K16 | Dövizli belge (SAT-D439) | 10 adet × 100,00 USD = 1 000,00 USD; `k` 12,345 → 123,450 kg; siparişte USD/TRY 34,5678 dondurulmuş | 1000/123.45 = 8.10044552… (kur kullanılmaz) | **8,10 USD/kg** (kurla çevrilmiş 1000×34.5678/123.45 → 280,01 TL/kg **OLMAZ**) |
-| K19 | Dövizli faturada gerçek kg fiyatı (SAT-D439) | Fatura 4 adet × 100,00 USD = 400,00 USD; teorik kg 49,380; kantar 50,016 kg; fatura kuru ne olursa olsun | Teorik 400/49.38 = 8.10044552…; gerçek 400/50.016 = 7.99744082… | Teorik **8,10**, gerçek **8,00 USD/kg** |
+| K19 | Dövizli faturada gerçek kg fiyatı (SAT-D439) | Fatura 4 adet × 100,00 USD = 400,00 USD; teorik kg 49,380; kantar 50,016 kg; fatura kuru ne olursa olsun | Teorik 400/49.38 = 8.10044552…; gerçek 400/50.016 = 7.99744081… | Teorik **8,10**, gerçek **8,00 USD/kg** |
 
 Gösterilemez (sıfır veya tahmini değer yazılmaz; sıfıra bölme yapılmaz):
 
@@ -153,7 +161,10 @@ Gösterilemez (sıfır veya tahmini değer yazılmaz; sıfıra bölme yapılmaz)
 - **TA1 — Tutar mevcut zincirden gelir, yalnız payda değişir:** ALS-D119 metni "SAT-D298'in teorik kg kısmının yerine
   geçer" der; tutar kaynağı değişmez. Ödenen tutar = kabul edilen ticari miktar × alış sipariş satırı birim fiyatı
   (SAT-D295 (1)); dövizli satırda TL karşılığı tedarikçi faturasındaki resmî kurla, fatura gelene kadar `Unavailable`
-  (BS-1). Navlun/gümrük girmez (SAT-D302).
+  (BS-1). Navlun/gümrük girmez (SAT-D302). **Varsayım notu:** ALS-D120 "faturadaki kesin tutar" der; bu bölümün
+  satırlarında (A06, A09, A14) fatura birim fiyatı sipariş birim fiyatına eşittir, bu yüzden satırlar tutarın sipariş
+  satırından mı faturadan mı okunduğuna duyarlı değildir. İkisi farklıysa fark SAT-D392 kapsamındadır; golden o durumu
+  bu bölümde hesaplamaz.
 - **TA2 — Döviz çevriminde ara yuvarlama yok** (marj golden'ı T1 emsali); satırdaki sayılar 2 ondalıkta tam çıkacak
   biçimde seçildi, iki okuma aynı sonucu verir.
 - **TA3 — Tartılan kg yoksa veya sıfırsa** maliyet hesaplanmaz ve ortalamaya girmez (SAT-D298 (3)'ün "katsayı yoksa
@@ -213,7 +224,10 @@ Hesaplanamaz:
   SAT-D261 (2) "yeni bir yuvarlama kuralı açılmaz"; SAT-D265 yalnız gösterimde (3) ve ortalamanın iç hassasiyetinde
   (2) yuvarlama tanımlar; BS-13 "ara adımlarda yuvarlama yoktur"; marj golden'ı "Marj (kesin)" ve T1 aynı yolu izler.
   G16'nın "≤ 4 ondalık" sınırı porttan gelen `c`'ye uygulanır; `c × k` 4 ondalığı aşabilir ve bu CostInvalid değildir.
-  M02, ara 4 ondalık yuvarlamanın yanlış sonucunu "OLMAZ" diye gösterir.
+  M02, ara 4 ondalık yuvarlamanın yanlış sonucunu "OLMAZ" diye gösterir. main'deki marj golden'ı (SAT_S12) "kg dışı
+  birimde Stok tarafı çift 4-ondalık yuvarlama"yı açık bırakmıştı; TM1 bu maddeyi Satış yolunda BS-13 ile kapatır:
+  Stok portu maliyet/adet döndürüyorsa port da `c × k`'yi yuvarlamaz (yuvarlama yalnız ortalamanın iç hassasiyetinde,
+  SAT-D265 (2), ve gösterimde yapılır).
 - **TM2 — Gerçek kg marja girmez:** SAT-D438 "belgeye kaydedilen teorik kg/adet" der; kantar sapması tutarı değiştirmez
   (SAT-D435) ve maliyet de değişmez (M07).
 - **TM3 — Kg birimli satır:** dönüşüm yoktur; G01–G15 aynen (M04).
@@ -245,7 +259,7 @@ Hesaplanamaz (tutar ve yüzde yok; sıfır/tahmini değer yazılmaz):
 | M12 | `c` = 5,00001 (> 4 ondalık) | `CostInvalid` (G16) |
 | M13 | `c` = 0 | Maliyet okunamıyor (G18 sonraki kullanıcı cevabı) |
 | M14 | Maliyet portu NoSource/Unreadable/ProducedItem/MixedSourceItem | İlgili neden (G21 ve onun geçiş notu) |
-| M15 | Metre satırında miktar × `k` 3 ondalığı aşıyor: 12,5 m × 1,235 = 15,4375 kg; NetSatış 1 750,00; `c` 20,1234 | **Kapsam dışı (SAT-D443)**: metre bu trende açılmaz. Metre açılırken ayrı karar gerekir; iki okuma 1 439,3450125 → 1 439,35 (birim başına) ve 1 439,3349508 → 1 439,33 (URN-D9 belge kg'si) olarak kayıtlıdır |
+| M15 | Metre satırında miktar × `k` 3 ondalığı aşıyor: 12,5 m × 1,235 = 15,4375 kg; NetSatış 1 750,00; `c` 20,1234 | **Kapsam dışı (SAT-D443)**: metre bu trende açılmaz. Metre açılırken ayrı karar gerekir; iki okumanın marj tutarı 1 439,3450125 → 1 439,35 (birim başına) ve 1 439,3349508 → 1 439,33 (URN-D9 belge kg'si) olarak kayıtlıdır |
 
 ---
 
@@ -269,6 +283,9 @@ Hesaplanamaz (tutar ve yüzde yok; sıfır/tahmini değer yazılmaz):
    kabulünden (açık miktarı kadar) düşülür. Stok çıkışı o depo/ürünün **ortalama kg maliyetiyle** yapılır; iadenin
    tedarikçiye **fatura birim fiyatı, iadenin düşüldüğü seçilen alış siparişinin birim fiyatıdır**; aradaki fark mevcut
    iade farkı kuralıyla (SAT-D392/D393, farklı kişi onayı) kaydedilir (SAT-D444).
+   **Kapsam (SAT-D445):** soyu yalnız iade edilen tedarikçinin kabullerinden oluşmayan **her** etiketten iade miktar
+   iadesidir; karışık soyda (X payı + başka kaynaklı pay) X payı ayrılmaz, iadenin tamamı bu kuralla yapılır. Soyu yalnız
+   o tedarikçinin kabullerinden oluşan bölünmüş/birleştirilmiş etiket 1–6. adımlara (SAT-D433) göre dağıtılır.
 8. Fark kontrolü: iade maliyeti ilgili siparişteki ilgili faturanın birim maliyetiyle karşılaştırılır (SAT-D392); fark
    varsa iade reddedilir (SAT-D371); fark okunamazsa SAT-D393/D396/D408 istisna yolu, onaylı istisna Stok 409'unu aşmaz
    (SAT-D410).
@@ -292,16 +309,14 @@ Hesaplanamaz (tutar ve yüzde yok; sıfır/tahmini değer yazılmaz):
 - **TI6 — (ikinci head'deki türetme kaldırıldı):** "Etiketin kendi maliyeti" artık karar metnidir: o depo/ürünün
   ortalama kg maliyeti (SAT-D444). Ortalama, iade anındaki depo/ürün hareketli ortalamasıdır (SAT-D256, SAT-D257);
   golden onu girdi olarak alır.
-- **TI7 — Karışık soy (X payı + X dışı pay):** X'e iade edilen kg'nin X kabullerinden gelen soy payı SAT-D433 ile o X
-  kabullerine orantılı dağıtılır ve SAT-D306 (1) gereği o kabulün maliyet/kg'siyle çıkar; X dışı pay SAT-D441/SAT-D444
-  ile hazırlayanın seçtiği X kabulünden düşülür, depo/ürün ortalamasıyla çıkar ve seçilen siparişin birim fiyatıyla
-  faturalanır. Gerekçe: iki kararın kapsamları birbirini dışlar (SAT-D433 "etiketin içindeki her alış kabulü";
-  SAT-D441 "soyunda o tedarikçinin kabulü olmayan" kısım); 32. cevap "kesin bir sınır koymayalım" der. Bir reviewer
-  bu bileşimi politika seçimi sayarsa I12 hesaplanamaz sayılmalıdır.
+- **TI7 — (üçüncü head'deki türetme kaldırıldı):** Karışık soylu etiket artık karar metnidir (SAT-D445, 38. cevap):
+  iadenin tamamı miktar iadesidir; X payından küçük iade de bölünmez (I12, I16).
 - **TI8 — Fark (miktar iadesi):** fark = iade kg × (depo/ürün ortalaması/kg − seçilen alış siparişinin birim fiyatı/kg),
   kesin; işaret yönü ve kaydı mevcut kuraldır (SAT-D371/D392/D393/D396/D408/D410). SAT-D371'in "Finans spec'i gelene
-  kadar fark içeren iade reddedilir" şartı bu belgeyle değişmez. Satırlarda seçilen sipariş kg birimlidir; adet
-  birimli seçilen siparişte iade belgesinin adet miktarı bu golden'da satır olarak verilmez.
+  kadar fark içeren iade reddedilir" şartı bu belgeyle değişmez. Satırlarda seçilen sipariş kg birimlidir ve seçilen
+  kabulün maliyet/kg'si sipariş birim fiyatına eşittir (SAT-D441 "seçilen kabulün maliyeti" ile SAT-D444 "siparişin birim
+  fiyatı" aynı değeri verir); adet birimli seçilen siparişte iade belgesinin adet miktarı bu golden'da satır olarak
+  verilmez.
 
 ### Golden satırları
 
@@ -322,9 +337,10 @@ L4 300,000 kg + L5 700,000 kg; L5 bölme → L6 350,000 kg + …; L6 + L7 (R3'te
 | I08 | Fatura fiyatı siparişten farklı (SAT-D392/D371) | I01; R1'in faturası 12 300,00 TL / 600,000 kg | Fatura maliyet/kg 12300/600 = 20,5 ≠ 19,9936; R1 payı 180 kg için fark 180×(20.5−19.9936) = 91,152 | Fark var → **reddedilir** (SAT-D371, Finans spec'i gelene kadar) |
 | I09 | Dağıtım artığı (SAT-D440) | Etiket = R1 100 kg + R2 200 kg birleştirmesi (paylar 1/3, 2/3); 100,000 kg iade | Kesin 33,333… / 66,666…; aşağı indirilmiş 33,333 + 66,666 = 99,999; artık 0,001 kg en büyük paya (R2) | R1 **33,333**, R2 **66,667 kg**; maliyet 33.333×19.9936 + 66.667×21.44 = 2 095,7871488 → **2 095,79 TL** |
 | I10 | Adet dağıtımı (SAT-D442) | L8 adetli; 10 adet / 100,000 kg iade; paylar R1 21/50, R2 7/25, R3 3/10 | Adet kesin 4,2 / 2,8 / 3; aşağı 4 / 2 / 3 = 9; kalan 1 adet en büyük paya (R1); kg I03 gibi orantılı | Adet R1 **5**, R2 **2**, R3 **3**; kg R1 **42,000**, R2 **28,000**, R3 **30,000** |
-| I11 | Miktar iadesi, soyunda X yok (SAT-D441, SAT-D444, TI8) | L9 120,000 kg, soyu %100 tedarikçi Y'nin R4 kabulü; depo/ürün ortalaması 21,2500 TL/kg; X'e 80,000 kg iade; hazırlayan X'in R5 kabulünü seçer (R5'in alış siparişi kg birimli, birim fiyat 20,50 TL/kg, açık 300,000 kg) | Stok çıkışı 80×21.25 = 1 700; tedarikçiye fatura 80×20.50 = 1 640; fark 60 | R5'ten **80,000 kg** düşülür; stok çıkışı **1 700,00 TL** (ortalamayla); iade faturası **1 640,00 TL**; fark **60,00 TL** mevcut iade farkı kuralına gider (soy ağacındaki R4 maliyeti kullanılmaz) |
-| I12 | Karışık soy, X payı + üretim payı (SAT-D433 + SAT-D441/D444, TI7) | L10 200,000 kg: %50 R1 (X; sipariş birim fiyatı R1 maliyetine eşit, 19,9936 TL/kg), %50 üretim çıktısı P; depo/ürün ortalaması 21,2500; X'e 100,000 kg iade; hazırlayan X dışı pay için R5'i seçer | R1 50 kg: çıkış 50×19.9936 = 999,68, fatura 999,68, fark 0; R5 50 kg: çıkış 50×21.25 = 1 062,5, fatura 50×20.50 = 1 025, fark 37,5; toplam çıkış 2 062,18, fatura 2 024,68 | R1 **50,000**, R5 **50,000 kg**; stok çıkışı **2 062,18 TL**; iade faturası **2 024,68 TL**; fark **37,50 TL** mevcut iade farkı kuralına gider |
+| I11 | Miktar iadesi, soyunda X yok (SAT-D441, SAT-D444, TI8) | L9 120,000 kg, soyu %100 tedarikçi Y'nin R4 kabulü; depo/ürün ortalaması 21,2500 TL/kg; X'e 80,000 kg iade; hazırlayan X'in R5 kabulünü seçer (R5'in alış siparişi kg birimli, birim fiyat 20,50 TL/kg, açık 300,000 kg) | Stok çıkışı 80×21.25 = 1 700; tedarikçiye fatura 80×20.50 = 1 640; fark 60 | R5'ten **80,000 kg** düşülür; stok çıkışı **1 700,00 TL** (ortalamayla); iade faturası **1 640,00 TL**; fark **60,00 TL** (soy ağacındaki R4 maliyeti kullanılmaz). R5 kabul maliyeti/kg = sipariş birim fiyatı = 20,50. Fark ≠ 0 olduğundan **sonuç:** Finans spec'i gelene kadar iade **reddedilir** (SAT-D371, I08 gibi); fark okunamadığı durumda yol SAT-D393/D396/D408 farklı kişi onaylı istisnadır; onaylı istisna Stok `cost_difference_unposted` (409) reddini aşmaz (SAT-D410). |
+| I12 | Karışık soy, X payı + üretim payı (SAT-D445 → SAT-D441/D444) | L10 200,000 kg: %50 R1 (X), %50 üretim çıktısı P; depo/ürün ortalaması 21,2500 TL/kg; X'e 100,000 kg iade; hazırlayan X'in R5 kabulünü seçer (sipariş birim fiyatı 20,50 TL/kg, açık 300,000 kg) | X payı ayrılmaz; stok çıkışı 100×21.25 = 2 125; fatura 100×20.50 = 2 050; fark 75 | R5'ten **100,000 kg**; stok çıkışı **2 125,00 TL**; iade faturası **2 050,00 TL**; fark **75,00 TL** (TI7'nin 2 062,18 / SAT-D433'e göre R1'den 1 999,36 okumaları **OLMAZ**). Fark ≠ 0 olduğundan **sonuç:** Finans spec'i gelene kadar iade **reddedilir** (SAT-D371, I08 gibi); fark okunamadığı durumda yol SAT-D393/D396/D408 farklı kişi onaylı istisnadır; onaylı istisna Stok `cost_difference_unposted` (409) reddini aşmaz (SAT-D410). |
 | I15 | Adet artığında eşit en büyük paylar (SAT-D442, 37. cevap) | Etiket = R1 50 kg + R2 50 kg (kabul sırası R1, R2; paylar 1/2, 1/2); adetli; 5 adet / 50,000 kg iade | Adet kesin 2,5 / 2,5; aşağı 2 / 2 = 4; kalan 1 adet, eşit en büyük paylardan kabul sırasına göre ilki (R1); kg 25 / 25 | Adet R1 **3**, R2 **2**; kg R1 **25,000**, R2 **25,000** |
+| I16 | Karışık soy, X payından küçük iade (SAT-D445) | L10'dan X'e 50,000 kg iade; hazırlayan R5'i seçer | Bölünmez (25 kg soy payı + 25 kg ayrımı yok); çıkış 50×21.25 = 1 062,5; fatura 50×20.50 = 1 025; fark 37,5 | R5'ten **50,000 kg**; stok çıkışı **1 062,50 TL**; iade faturası **1 025,00 TL**; fark **37,50 TL**. Fark ≠ 0 olduğundan **sonuç:** Finans spec'i gelene kadar iade **reddedilir** (SAT-D371, I08 gibi); fark okunamadığı durumda yol SAT-D393/D396/D408 farklı kişi onaylı istisnadır; onaylı istisna Stok `cost_difference_unposted` (409) reddini aşmaz (SAT-D410). |
 
 Hesaplanamaz:
 
@@ -337,12 +353,12 @@ Hesaplanamaz:
 
 ## Türetilenlerin özeti
 
-TK1–TK9 (kg fiyatı), TA1–TA5 (alış maliyeti), TM1–TM4 (adetli marj), TI1–TI5, TI7, TI8 (iade soy ağacı payı ve miktar iadesi; TI6 SAT-D444 ile karar metnine dönüştü)
+TK1–TK9 (kg fiyatı), TA1–TA5 (alış maliyeti), TM1–TM4 (adetli marj), TI1–TI5, TI8 (iade soy ağacı payı ve miktar iadesi; TI6 SAT-D444, TI7 SAT-D445 ile karar metnine dönüştü)
 yukarıda gerekçesiyle yazılıdır. Hiçbiri yeni para/stok/maliyet politikası seçmez; her biri adı geçen kilitli kuralın veya
 kararın metninden çıkar. Bir reviewer bir türetmeyi politika seçimi sayarsa ilgili satır hesaplanamaz kabul edilip
 `NEEDS-SINAN`'a taşınmalıdır; golden bu belgeyle o satırı kilitlemiş sayılmaz.
 
-## Önceki NEEDS-SINAN noktalarının durumu (SINAN-CEVAP 53 ve 54)
+## Önceki NEEDS-SINAN noktalarının ve review bulgusunun durumu (SINAN-CEVAP 53, 54 ve 55)
 
 | No | Konu | Durum | Etkilenen satır |
 |---|---|---|---|
@@ -357,6 +373,7 @@ kararın metninden çıkar. Bir reviewer bir türetmeyi politika seçimi sayarsa
 | N9 | Adetli etiketten iadede adet dağıtımı | **Cevaplandı — SAT-D442:** aşağı yuvarla, kalan adet en büyük paya | I10 |
 | N10 | Adet artığında eşit en büyük paylar | **Cevaplandı — SAT-D442 (37. cevap):** kabul sırasına göre ilkine | I15 |
 | (TI6) | Miktar iadesinde "etiketin kendi maliyeti" ve iade fiyatı | **Cevaplandı — SAT-D444:** stok çıkışı depo/ürün ortalamasıyla, fatura seçilen siparişin birim fiyatıyla | I11, I12 |
+| (TI7, DOCS-REVIEW-2 P1-1) | Karışık soylu etiketten iade | **Cevaplandı — SAT-D445:** tamamı miktar iadesi | I12, I16 |
 
 ## NEEDS-SINAN (karara bağlanmamış; satırlar hesaplanamaz bırakıldı)
 
