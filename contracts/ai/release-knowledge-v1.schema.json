@@ -1,0 +1,275 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "goymen.ai.release-knowledge.v1",
+  "title": "Göymen ERP yapay zekâ yayın davranış bilgisi v1",
+  "description": "tools/generate_ai_release_knowledge.py çıktısı; yalnız docs/release-knowledge notlarından deterministik üretilir (WP-A4, DALGA_PLANI_v2 A.4 (3)). Yalnız yayında ve kanıtı bu ağaçta bulunan notlar metniyle girer; kişi adları üretimde maskelenir (plan D2, AI-D36), bulut uygunluğu içerik ve veri sınıfından türetilir (AI-D34 d).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "schema",
+    "generator",
+    "source_root",
+    "source_set_sha256",
+    "sources",
+    "evidence_basis",
+    "mask_policy",
+    "cloud_eligibility_basis",
+    "statistics",
+    "notes",
+    "excluded"
+  ],
+  "properties": {
+    "format": {
+      "const": "goymen.ai.release-knowledge.v1"
+    },
+    "schema": {
+      "const": "contracts/ai/release-knowledge-v1.schema.json"
+    },
+    "generator": {
+      "const": "tools/generate_ai_release_knowledge.py"
+    },
+    "source_root": {
+      "const": "docs/release-knowledge"
+    },
+    "source_set_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^docs/release-knowledge/RK-"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "evidence_basis": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mask_policy": {
+      "const": "ai-d36-person-name-mask-at-generation@1"
+    },
+    "cloud_eligibility_basis": {
+      "type": "string",
+      "minLength": 1
+    },
+    "statistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "note_count",
+        "excluded_count",
+        "masked_note_count",
+        "cloud_eligibility_counts"
+      ],
+      "properties": {
+        "note_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "excluded_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "masked_note_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cloud_eligibility_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title",
+          "text",
+          "required_permissions",
+          "evidence",
+          "source",
+          "data_class_candidate",
+          "personal_data_signals",
+          "commercial_signals",
+          "masked",
+          "cloud_eligibility",
+          "cloud_data_class"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^RK-[A-Z0-9]+(-[A-Z0-9]+)*$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "required_permissions": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9.-]*$"
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "token"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "token": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "line"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^docs/release-knowledge/RK-"
+              },
+              "line": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          },
+          "data_class_candidate": {
+            "enum": [
+              "kisisel_veri_adayi",
+              "kisisel_veri_isareti_yok"
+            ]
+          },
+          "personal_data_signals": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "kisi_adi",
+                "e_posta",
+                "telefon",
+                "kimlik_numarasi",
+                "iban"
+              ]
+            }
+          },
+          "commercial_signals": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "para_tutari"
+              ]
+            }
+          },
+          "masked": {
+            "type": "boolean"
+          },
+          "cloud_eligibility": {
+            "enum": [
+              "bulut_uygun_aday",
+              "maskeli_bulut_uygun_aday",
+              "yerel_kalir"
+            ]
+          },
+          "cloud_data_class": {
+            "enum": [
+              "internal",
+              "confidential"
+            ]
+          }
+        }
+      }
+    },
+    "excluded": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "reason",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^RK-[A-Z0-9]+(-[A-Z0-9]+)*$"
+          },
+          "reason": {
+            "enum": [
+              "uygulanmadi",
+              "kanit_bulunamadi"
+            ]
+          },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "line"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^docs/release-knowledge/RK-"
+              },
+              "line": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

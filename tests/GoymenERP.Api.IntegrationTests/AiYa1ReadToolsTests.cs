@@ -15,6 +15,7 @@ using GoymenERP.Modules.SecurityEvents.Infrastructure.Ai;
 using GoymenERP.Modules.SecurityEvents.Infrastructure.Reading;
 using GoymenERP.Modules.Sales.Application.Ai;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.AiKnowledge.Domain;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
@@ -54,7 +55,8 @@ public sealed class AiYa1ReadToolsTests
         Assert.StartsWith("docs/decisions/SINAN_KARARLARI_2026-11-22", record.GetProperty("source").GetProperty("path").GetString());
         Assert.True(record.GetProperty("source").GetProperty("line").GetInt32() > 0);
         Assert.Equal(RepositoryIndex.Value.SourceSetSha256, content.RootElement.GetProperty("indexVersion").GetString());
-        Assert.Equal(RepositoryIndex.Value.SourceSetSha256, result.Source!.SourceVersion);
+        Assert.Equal(RepositoryIndex.Value.PackageSha256, content.RootElement.GetProperty("packageVersion").GetString());
+        Assert.Equal(RepositoryIndex.Value.PackageSha256, result.Source!.SourceVersion);
         Assert.Equal(DecisionLookupAiTool.ToolId, result.Source.ToolId);
         Assert.Equal(AiDataClassV1.Internal, result.Source.DataClass);
     }
@@ -105,30 +107,34 @@ public sealed class AiYa1ReadToolsTests
     {
         Assert.Equal(AiToolOutcomeV1.NotFound,
             (await DecisionTool().ReadAsync(new AiToolInputV1("{\"decisionId\":\"ZZZ-D999999\"}"), Context())).Outcome);
-        var withoutIndex = new DecisionLookupAiTool(new FixedAiDecisionIndexSource(null), new FixedTime(Now));
+        var withoutIndex = new DecisionLookupAiTool(new FixedAiDecisionIndexSource(null), new ApprovedPackages(), new FixedTime(Now));
         Assert.Equal(AiToolOutcomeV1.Unavailable,
             (await withoutIndex.ReadAsync(new AiToolInputV1("{\"decisionId\":\"AI-D24\"}"), Context())).Outcome);
         Assert.Null(AiDecisionIndex.TryLoad(Path.Combine(FindRepositoryRoot(), "contracts/ai/missing-index.json")));
     }
 
     [Fact]
-    public void Personal_data_candidates_are_masked_and_no_registry_owner_name_remains_in_them()
+    public void Personal_data_candidates_are_masked_at_generation_and_no_registry_owner_name_remains_anywhere()
     {
         var index = RepositoryIndex.Value;
         var candidates = index.Records.Where(record => record.DataClassCandidate == AiDecisionIndex.PersonalDataCandidate).ToArray();
+        // The owner names are read from the registry's own Sahip column, exactly as the generator reads them (plan D2).
+        var terms = RegistryOwnerTerms();
 
-        Assert.NotEmpty(index.PersonalNameTerms);
+        Assert.NotEmpty(terms);
         Assert.NotEmpty(candidates);
-        Assert.All(candidates, record =>
+        Assert.All(candidates, record => Assert.True(record.Masked));
+        Assert.All(index.Records, record =>
         {
-            Assert.True(record.Masked);
-            foreach (var term in index.PersonalNameTerms)
+            foreach (var term in terms)
             {
                 Assert.DoesNotMatch($"(?<![\\p{{L}}\\p{{N}}]){System.Text.RegularExpressions.Regex.Escape(term)}(?![\\p{{L}}])",
-                    record.Title + "\n" + record.Text);
+                    record.Title + "\n" + record.Text + "\n" + record.ScopeArea + "\n" + record.ScopeAffected);
             }
         });
         Assert.Contains(candidates, record => record.Text.Contains(AiDecisionIndex.PersonMask, StringComparison.Ordinal));
+        var packaged = File.ReadAllText(Path.Combine(FindRepositoryRoot(), IndexPath));
+        Assert.DoesNotContain("personal_name_terms\"", packaged, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -153,6 +159,8 @@ public sealed class AiYa1ReadToolsTests
             new CounterpartyPartySummaryAiTool(null!, new FixedTime(Now)).Descriptor,
             new CounterpartyRoleCountsAiTool(null!, new FixedTime(Now)).Descriptor,
             new CounterpartyPartyContactsAiTool(null!, new FixedTime(Now)).Descriptor,
+            new ReleaseKnowledgeLookupAiTool(new FixedAiReleaseKnowledgeSource(null), new ApprovedPackages(), new FakeAuthority(),
+                new FixedTime(Now)).Descriptor,
         }.Concat(AiWpa3bReadToolsTests.Descriptors()).ToArray();
         Assert.Equal(descriptors.Length, descriptors.Select(descriptor => descriptor.ToolId).Distinct(StringComparer.Ordinal).Count());
         var entries = catalog.RootElement.GetProperty("tools").EnumerateArray().ToArray();
@@ -252,7 +260,7 @@ public sealed class AiYa1ReadToolsTests
     }
 
     [Fact]
-    public void The_runtime_registers_the_decision_tool_but_admits_nothing_without_an_allowlist_and_has_no_index_path()
+    public void The_runtime_registers_the_decision_tool_over_the_packaged_index_but_admits_nothing_without_an_allowlist()
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -261,13 +269,16 @@ public sealed class AiYa1ReadToolsTests
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(configuration);
         services.AddSingleton<IHostEnvironment>(new TestHostEnvironment("Development"));
+        services.AddScoped<IErpAuthorityRevalidationService>(_ => new FakeAuthority());
         services.AddAiRuntime(configuration);
         using var provider = services.BuildServiceProvider();
-
-        var tools = provider.GetServices<IAiOwnerToolV1>().ToArray();
-        Assert.Contains(tools, tool => tool.Descriptor.ToolId == DecisionLookupAiTool.ToolId);
-        Assert.Null(provider.GetRequiredService<IAiDecisionIndexSource>().Current);
         using var scope = provider.CreateScope();
+
+        var tools = scope.ServiceProvider.GetServices<IAiOwnerToolV1>().ToArray();
+        Assert.Contains(tools, tool => tool.Descriptor.ToolId == DecisionLookupAiTool.ToolId);
+        // WP-A4: the source is the packaged file next to the API assembly, not a configured path.
+        Assert.IsType<PackagedAiDecisionIndexSource>(provider.GetRequiredService<IAiDecisionIndexSource>());
+        Assert.Equal(RepositoryIndex.Value.PackageSha256, provider.GetRequiredService<IAiDecisionIndexSource>().Current?.PackageSha256);
         Assert.Empty(scope.ServiceProvider.GetRequiredService<AiToolCatalog>().Descriptors);
     }
 
@@ -436,7 +447,70 @@ public sealed class AiYa1ReadToolsTests
     }
 
     private static DecisionLookupAiTool DecisionTool() =>
-        new(new FixedAiDecisionIndexSource(RepositoryIndex.Value), new FixedTime(Now));
+        new(new FixedAiDecisionIndexSource(RepositoryIndex.Value), new ApprovedPackages(), new FixedTime(Now));
+
+    private static IReadOnlyList<string> RegistryOwnerTerms()
+    {
+        var rows = ParseCsv(File.ReadAllText(Path.Combine(FindRepositoryRoot(), "docs/decisions/KARAR_SICILI.csv")).TrimStart('\uFEFF'));
+        var owner = Array.IndexOf(rows[0], "Sahip");
+        Assert.True(owner >= 0);
+        var terms = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var cells in rows.Skip(1))
+        {
+            if (cells.Length <= owner) continue;
+            var parts = cells[owner].Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length >= 2 && parts.All(part => char.IsUpper(part[0])))
+            {
+                terms.Add(string.Join(' ', parts));
+                foreach (var part in parts) terms.Add(part);
+            }
+        }
+
+        return [.. terms];
+    }
+
+    /// <summary>RFC 4180 rows (quoted fields may hold commas, quotes and new lines), as Python's csv module reads them.</summary>
+    private static List<string[]> ParseCsv(string text)
+    {
+        var rows = new List<string[]>();
+        var row = new List<string>();
+        var field = new System.Text.StringBuilder();
+        var quoted = false;
+        for (var position = 0; position < text.Length; position++)
+        {
+            var character = text[position];
+            if (quoted)
+            {
+                if (character == '"' && position + 1 < text.Length && text[position + 1] == '"') { field.Append('"'); position++; }
+                else if (character == '"') quoted = false;
+                else field.Append(character);
+                continue;
+            }
+
+            switch (character)
+            {
+                case '"': quoted = true; break;
+                case ',': row.Add(field.ToString()); field.Clear(); break;
+                case '\r': break;
+                case '\n': row.Add(field.ToString()); field.Clear(); rows.Add([.. row]); row.Clear(); break;
+                default: field.Append(character); break;
+            }
+        }
+
+        if (field.Length > 0 || row.Count > 0) { row.Add(field.ToString()); rows.Add([.. row]); }
+        return rows;
+    }
+
+    /// <summary>The repository index is approved for the SENTETIK company (WP-A4); approval itself is tested elsewhere.</summary>
+    private sealed class ApprovedPackages : IAiKnowledgeApprovalReaderV1
+    {
+        public Task<AiKnowledgeApprovalStateV1> GetStateAsync(Guid companyId, AiKnowledgeSourceKindV1 kind, string packageSha256,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(companyId == Company && kind == AiKnowledgeSourceKindV1.DecisionIndex
+                            && packageSha256 == RepositoryIndex.Value.PackageSha256
+                ? AiKnowledgeApprovalStateV1.Approved
+                : AiKnowledgeApprovalStateV1.NotApproved);
+    }
 
     private static AiServerContextV1 Context() => new(Company, Actor.ToString("D"), "v1.session-sentetik",
         $"company:{Company:D}", "roles:sentetik", "corr-ai-ya1-sentetik", null, null, null);

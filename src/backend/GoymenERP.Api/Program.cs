@@ -31,6 +31,7 @@ using GoymenERP.Modules.Accounting.Infrastructure;
 using GoymenERP.Modules.Accounting.Infrastructure.Shell;
 using GoymenERP.Modules.Accounting.Application.Contracts;
 using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.AiKnowledge.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure;
@@ -271,6 +272,12 @@ builder.Services.AddAuditModule(builder.Configuration);
 builder.Services.AddSecurityEventsModule(builder.Configuration);
 // E8 and the AI provider key: secret store reader only; no secret value is configured here.
 builder.Services.AddErpSecretStore(builder.Configuration);
+// WP-A4: approvals of the packaged AI knowledge versions (ai.knowledge.approve, granted to no role); before the runtime so
+// the tools read the real approvals instead of the fail-closed default.
+builder.Services.AddAiKnowledgeModule(
+    builder.Configuration,
+    (services, options) => options.AddInterceptors(
+        services.GetRequiredService<AuditSaveChangesInterceptor>()));
 // AI-3: READ-only AI runtime, off unless configured (Ai:Enabled); no owner tool is registered here.
 builder.Services.AddAiRuntime(builder.Configuration);
 builder.Services.AddAiSecurityWatchTools();
@@ -643,6 +650,7 @@ app.MapIdentityEndpoints();
 app.MapAuditEndpoints();
 app.MapSecurityEventsEndpoints();
 app.MapAiEndpoints();
+app.MapAiKnowledgeEndpoints();
 app.MapCounterpartyEndpoints();
 app.MapProductEndpoints();
 app.MapProductPriceListEndpoints();
@@ -750,6 +758,8 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializeWorkModuleAsync();
     // After Organization: the report centre's tables are tenant-scoped by CompanyId.
     await app.Services.InitializeReportingModuleAsync();
+    // After Organization: the AI knowledge approvals are tenant-scoped by CompanyId.
+    await app.Services.InitializeAiKnowledgeModuleAsync();
     // After Organization: the document vault's foreign keys reference its tables.
     await app.Services.InitializeDocumentsModuleAsync();
 }

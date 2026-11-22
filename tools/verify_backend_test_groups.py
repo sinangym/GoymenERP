@@ -51,7 +51,9 @@ GROUP_PROJECTS = {
         "tests/GoymenERP.Work.UnitTests/GoymenERP.Work.UnitTests.csproj",
     ),
 }
-SOLUTION_PROJECT_COUNT = 78
+# WP14: +2 Reporting projects and +1 test project (GoymenERP.Modules.Reporting.UnitTests).
+# WP-A4: +2 (GoymenERP.Modules.AiKnowledge.Domain/.Infrastructure); no test project added.
+SOLUTION_PROJECT_COUNT = 80
 TEST_PROJECT_COUNT = 23
 PROOF_SCHEMA = 5
 # The api project is the CI critical path; its classes are split over this many
@@ -169,7 +171,7 @@ def source_inventory(root: Path) -> tuple[str, str]:
     except (OSError, ET.ParseError, KeyError) as exception:
         raise RuntimeError("Backend solution inventory is unreadable.") from exception
     if len(paths) != SOLUTION_PROJECT_COUNT or len(set(paths)) != SOLUTION_PROJECT_COUNT:
-        raise RuntimeError("Backend solution must retain exactly seventy-eight unique projects.")
+        raise RuntimeError(f"Backend solution must retain exactly {SOLUTION_PROJECT_COUNT} unique projects.")
     test_projects = []
     for value in paths:
         if value.startswith("/") or ".." in Path(value).parts or not value.endswith(".csproj"):

@@ -6270,6 +6270,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // refuses (52300, used by no other migration) while a marked return exists; use a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261122205751_AllowPurchaseSupplierReturnReplacement.cs"] =
                     new("33893073ded647ba118b6647fd822673720e158ef55cf1fc497f145a2f72efc3", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // WP-A4; K3 review pending. Down refuses (52290, WP-A4 range, used by no other migration) while AI knowledge package
+                // approvals or attempts exist; use a forward fix. 1 lexical Sql call(s). FINGERPRINT NOT PINNED: produced on the tren-2
+                // head (WORK_AI_ORTAK_KURALLAR: pin'li dosyalar tek seferde üretilir); until then this entry fails closed.
+                ["src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/Persistence/Migrations/20261122202208_InitialAiKnowledgeApprovals.cs"] =
+                    new("0000000000000000000000000000000000000000000000000000000000000000", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
             };
 
     private static readonly HashSet<string> ReviewedProjectSdks =

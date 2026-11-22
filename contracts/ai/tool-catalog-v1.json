@@ -268,7 +268,8 @@
     }
    },
    "source": "contracts/ai/decision-index-v1.json",
-   "personalData": "kisisel_veri_adayi kayıtlarda personal_name_terms ile e-posta/telefon/kimlik/IBAN kalıpları [KİŞİ]/[GİZLİ] ile maskelenir (AI-D34 d)."
+   "personalData": "Kişi adları dizin üretiminde [KİŞİ] ile maskelenir (plan D2, AI-D36); e-posta/telefon/kimlik/IBAN kalıpları üretimde ve okumada [GİZLİ] ile maskelenir. İçeriği yerel_kalir etiketli kayıtlar (AI-D34 d) bu Internal araçtan verilmez, yalnız sayılır.",
+   "approval": "Paketlenen dizin yalnız şirkette ai.knowledge.approve iznine sahip bir kişinin tam bu paket baytlarını (SHA-256) onaylamasından sonra kaynak olur (AI-D32); onaysız dizinde araç kapalıdır (kullanılamıyor)."
   },
   {
    "toolId": "finance.due-customer-instruments.v1",
@@ -844,6 +845,45 @@
    "redaction": "Fiyatsız (port yapısı gereği).",
    "scanLimit": 1000,
    "openPurchaseOrderDefinition": "KLN-D42: açık alış siparişi = onaylı alış siparişinin mal kabul bekleyen (kalan > 0) satırı; taslak sipariş ve tamamen kabul edilmiş satır açık değildir. Eksik uyarısının tedarik tarafıyla aynı sahip portu."
+  },
+  {
+   "toolId": "release-knowledge.lookup.v1",
+   "version": "1",
+   "ownerModule": "Ai",
+   "risk": "Read",
+   "dataClass": "Internal",
+   "requiredPermissions": [
+    "ai.panel.use"
+   ],
+   "fieldAllowlist": [
+    "keyword",
+    "limit",
+    "noteId"
+   ],
+   "arguments": {
+    "noteId": {
+     "type": "string",
+     "pattern": "^RK-[A-Z0-9]+(-[A-Z0-9]+)*$",
+     "note": "Tam not kimliği; keyword ile birlikte verilemez."
+    },
+    "keyword": {
+     "type": "string",
+     "minLength": 2,
+     "maxLength": 80,
+     "note": "Başlık, metin ve kimlikte büyük/küçük harf duyarsız alt dize."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 10,
+     "default": 5
+    }
+   },
+   "source": "contracts/ai/release-knowledge-v1.json",
+   "releaseBinding": "Paket API yayın çıktısına girer; yalnız durumu yayinda olan ve kanıtı aynı ağaçta bulunan notlar metniyle yer alır, uygulanmamış özellik anlatılmaz (DALGA_PLANI_v2 A.4 (3)).",
+   "noteAccess": "Not, kullanıcı notun saydığı izinlerin hepsine sunucu şirketinde sahipse verilir; göremediği not sayılmaz.",
+   "approval": "Paket yalnız ai.knowledge.approve ile onaylandıktan sonra kaynak olur (AI-D32).",
+   "personalData": "Kişi adları üretimde maskelenir (plan D2, AI-D36); yerel_kalir etiketli içerik verilmez, yalnız sayılır (AI-D34 d)."
   },
   {
    "toolId": "sales.order-status.v1",
