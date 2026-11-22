@@ -64,7 +64,11 @@ public static class InventoryPurchaseInvoiceCostSourceReaderV1
                 if (receipt is null || receipt.AcceptanceId == Guid.Empty || !acceptanceIds.Add(receipt.AcceptanceId)
                     || receipt.OrderId == Guid.Empty || receipt.OrderLineId == Guid.Empty || receipt.OrderVersion < 1
                     || receipt.MatchedQuantity <= 0m || receipt.AcceptedQuantity <= 0m
-                    || receipt.MatchedQuantity > receipt.AcceptedQuantity)
+                    || receipt.MatchedQuantity > receipt.AcceptedQuantity
+                    // AK-3b (ALS-D121): a piece-line share is whole pieces of a weighed acceptance.
+                    || receipt.MeasuredQuantityKg is { } weighed && (weighed <= 0m
+                        || decimal.Truncate(receipt.MatchedQuantity) != receipt.MatchedQuantity
+                        || decimal.Truncate(receipt.AcceptedQuantity) != receipt.AcceptedQuantity))
                     throw Invalid("purchase_invoice_cost_receipt_source_invalid");
                 if (receipt.ReceiptAdjustments is { } adjustments && (adjustments.Count > 10000
                     || adjustments.Any(x => x is null || x.AdjustmentId == Guid.Empty || x.UndoQuantity <= 0m
@@ -77,7 +81,7 @@ public static class InventoryPurchaseInvoiceCostSourceReaderV1
                 results.Add(new(line.LineId, line.LineNo, goods.ProductId, goods.UnitId, receipt.AcceptanceId,
                     receipt.OrderId, receipt.OrderLineId, receipt.OrderVersion, receipt.MatchedQuantity, receipt.AcceptedQuantity,
                     InventoryExactCostRatioV1.From(lineTl.Multiply(receipt.MatchedQuantity).Divide(goods.InvoiceQuantity)),
-                    receipt.ReceiptAdjustments));
+                    receipt.ReceiptAdjustments, receipt.MeasuredQuantityKg));
             }
             if (quantity.CompareTo(ExactCostRatio.Of(goods.InvoiceQuantity)) != 0)
                 throw Invalid("purchase_invoice_cost_source_quantity_mismatch");

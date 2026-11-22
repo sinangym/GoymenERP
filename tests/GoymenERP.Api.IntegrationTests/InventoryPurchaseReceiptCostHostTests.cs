@@ -5,6 +5,7 @@ using GoymenERP.BuildingBlocks.Monetary;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Costing;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Domain.UnitConversion;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
@@ -304,6 +305,124 @@ public sealed class InventoryPurchaseReceiptCostHostTests
             token => Assert.Equal(cancellation.Token, token));
     }
 
+    // ---- AK-3 (ALS-D119 / ALS-D120): golden ADET_KG_FORMUL_GOLDEN_V1 §2, row ids in the names ------------------------------
+
+    private static decimal Rounded(InventoryExactCostRatioV1? ratio) => ratio!.Value().Round(AverageCostPrecision.InternalScale);
+
+    [Fact]
+    public async Task A01_the_production_composition_costs_a_piece_receipt_from_its_weighed_kilograms()
+    {
+        // R1: 100 pieces x 250,00 TL = 25 000,00 TL over 1 250,400 kg weighed -> 19,9936 (the card's theoretical kg is not asked).
+        var world = new World(price: 250m, kgPerPriceUnit: 12.345m).Weighed("100", "1250.4");
+
+        var result = await world.ProductionHost().ReadAsync(Selection);
+
+        Assert.True(PurchaseReceiptWeighedCost.PurchaseCostGoldenAccepted);
+        Assert.Equal(0, ExactCostRatio.Of(25000m).Divide(1250.4m).CompareTo(result.TlUnitCostRatio!.Value()));
+        Assert.Equal(19.9936m, Rounded(result.TlUnitCostRatio));
+        Assert.Equal(19.9936m, Rounded(result.OriginalUnitCostRatio));
+        Assert.Null(result.TlUnavailableReason);
+        Assert.Empty(world.Product.Requests);
+    }
+
+    [Theory]
+    [InlineData("1234.5", "20.2511")] // A03: weighed = theoretical, the only case equal to the old rule
+    [InlineData("1250.4", "19.9936")] // A04: +1,288 % outside the 1 % tolerance, the cost still uses the weighed kg (TA4)
+    [InlineData("1246.845", "20.0506")] // A05: exactly at the 1 % bound
+    public async Task A03_A04_A05_the_weighed_kilograms_decide_the_cost_whatever_the_tolerance_outcome(string weighed, string expected)
+    {
+        var world = new World(price: 250m, kgPerPriceUnit: 12.345m).Weighed("100", weighed);
+
+        var result = await world.Host(weighedKilogramCost: true).ReadAsync(Selection);
+
+        Assert.Equal(decimal.Parse(expected, CultureInfo.InvariantCulture), Rounded(result.TlUnitCostRatio));
+        Assert.Empty(world.Product.Requests);
+    }
+
+    [Fact]
+    public async Task A02_a_half_at_the_fourth_decimal_is_kept_exact_and_rounds_once_away_from_zero()
+    {
+        // 246,89 TL over 200,000 kg = 1.23445 exactly; the adapter keeps the ratio, the average rounds it once to 1,2345.
+        var world = new World(price: 246.89m).Weighed("1", "200");
+
+        var result = await world.Host(weighedKilogramCost: true).ReadAsync(Selection);
+
+        Assert.Equal(1.23445m, result.TlUnitCostPerKg);
+        Assert.Equal(1.2345m, Rounded(result.TlUnitCostRatio));
+    }
+
+    [Fact]
+    public async Task A07_a_foreign_piece_receipt_converts_the_exact_weighed_ratio_at_the_invoice_rate()
+    {
+        // 100 x 7,50 USD over 1 250,400 kg; invoice rate 34,5678 -> 25 925,85 TL / 1 250,400 kg = 20,7340 TL/kg.
+        var world = new World(price: 7.5m, currency: Usd, invoiceRecorded: true).Weighed("100", "1250.4");
+        world.Owner.Answer = world.Owner.Answer! with
+        {
+            InvoiceRate = PurchaseInvoiceCostRateAnswerV1.Rated(CompanyId, AcceptanceId, OrderId, LineId, Usd, "USD",
+                ExchangeRate.Of(Usd, Lira, 34.5678m)),
+        };
+
+        var result = await world.Host(weighedKilogramCost: true).ReadAsync(Selection);
+
+        Assert.Equal(20.7340m, Rounded(result.TlUnitCostRatio));
+        Assert.Equal(InventoryIssueCostCurrencyStatusV1.Converted, result.Currency.Status);
+        Assert.Empty(world.Product.Requests);
+    }
+
+    [Fact]
+    public async Task A08_a_foreign_piece_receipt_without_its_invoice_has_no_TL_cost_and_no_provisional_rate()
+    {
+        var world = new World(price: 7.5m, currency: Usd).Weighed("100", "1250.4");
+
+        var result = await world.Host(weighedKilogramCost: true).ReadAsync(Selection);
+
+        Assert.Null(result.TlUnitCostPerKg);
+        Assert.Null(result.TlUnitCostRatio);
+        Assert.Equal(InventoryAverageCostFxRateUnavailableCodesV1.InvoiceNotRecorded, result.TlUnavailableReason);
+        Assert.Equal(InventoryIssueCostCurrencyStatusV1.RateMissing, result.Currency.Status);
+        Assert.Empty(world.Rates.Requests);
+    }
+
+    [Theory]
+    [InlineData(null)] // A11: the receipt was not weighed
+    public async Task A11_a_piece_receipt_without_weighed_kilograms_has_no_cost_and_never_falls_back_to_the_theoretical_kg(string? weighed)
+    {
+        var world = new World(price: 250m, kgPerPriceUnit: 12.345m).Weighed("100", weighed);
+
+        var result = await world.Host(weighedKilogramCost: true).ReadAsync(Selection);
+
+        AssertUnavailable(result, "purchase_receipt_weighed_kg_unavailable");
+        Assert.Empty(world.Product.Requests);
+    }
+
+    [Fact]
+    public async Task A11_a_fractional_piece_count_has_no_weighed_cost()
+    {
+        var world = new World(price: 250m).Weighed("2.5", "1250.4");
+
+        AssertUnavailable(await world.Host(weighedKilogramCost: true).ReadAsync(Selection), "purchase_receipt_weighed_kg_unavailable");
+    }
+
+    [Fact]
+    public async Task A12_a_zero_amount_receipt_is_unreadable_and_never_enters_the_average()
+    {
+        var world = new World(price: 0m).Weighed("100", "1250.4");
+
+        AssertUnavailable(await world.Host(weighedKilogramCost: true).ReadAsync(Selection), "purchase_receipt_cost_zero_unreadable");
+    }
+
+    [Fact]
+    public async Task The_closed_switch_keeps_the_theoretical_kilogram_denominator_even_when_the_receipt_was_weighed()
+    {
+        // SAT-D298 (closed state, pinned by parameter): 250,00 TL per piece over the card's 12,345 kg -> 20,2511, weighed kg ignored.
+        var world = new World(price: 250m, kgPerPriceUnit: 12.345m).Weighed("100", "1250.4");
+
+        var result = await world.Host(weighedKilogramCost: false).ReadAsync(Selection);
+
+        Assert.Equal(20.2511m, Rounded(result.TlUnitCostRatio));
+        Assert.Single(world.Product.Requests);
+    }
+
     private static void AssertUnavailable(InventoryPurchaseReceiptCostV1 result, string reason)
     {
         Assert.Equal((CompanyId, AcceptanceId, OrderId, LineId),
@@ -350,7 +469,22 @@ public sealed class InventoryPurchaseReceiptCostHostTests
         public ReceiptOwner Owner { get; } = new();
         public ProductOwner Product { get; } = new();
         public RateOwner Rates { get; } = new();
-        public PurchasingOwnerInventoryReceiptCostSource Host() => new(Owner, Product, Rates, Company, User);
+        /// <summary>
+        /// The facts above use a non-kilogram price unit without weighed kilograms: they pin SAT-D298's theoretical-kg path, which
+        /// is the CLOSED state of ALS-D119's switch. The weighed-kg facts below pass <c>true</c> explicitly.
+        /// </summary>
+        public PurchasingOwnerInventoryReceiptCostSource Host(bool weighedKilogramCost = false) =>
+            new(Owner, Product, Rates, Company, User, weighedKilogramCost);
+
+        /// <summary>The production composition: no parameter, so the adapter reads ALS-D119's switch.</summary>
+        public PurchasingOwnerInventoryReceiptCostSource ProductionHost() => new(Owner, Product, Rates, Company, User);
+
+        /// <summary>Golden R1 shape: a piece line's receipt with its accepted pieces and weighed kilograms.</summary>
+        public World Weighed(string acceptedPieces, string? measuredKg)
+        {
+            Owner.Answer = Owner.Answer! with { AcceptedQuantity = acceptedPieces, MeasuredQuantityKg = measuredKg };
+            return this;
+        }
         public void BeforeReturn(string phase, Action action)
         {
             switch (phase)

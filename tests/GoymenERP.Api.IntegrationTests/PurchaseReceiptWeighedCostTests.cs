@@ -5,17 +5,31 @@ namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// AK-3 (ALS-D119, ALS-D120): the weighed-kg receipt cost against the independent golden rows of
-/// <c>docs/decisions/ADET_KG_FORMUL_GOLDEN_V1.md</c> §2 (A01–A14; row ids in each test). The switch stays off until the golden is in
-/// main (SAT-D265 (5)); the calculator itself is exact and is checked with the existing 4-decimal average precision. SENTETIK.
+/// <c>docs/decisions/ADET_KG_FORMUL_GOLDEN_V1.md</c> §2 (A01–A14; row ids in each test). The golden travels with this train, so the
+/// switch is on; the closed state (SAT-D298) stays pinned by parameter in <see cref="InventoryPurchaseReceiptCostHostTests"/>. The
+/// calculator itself is exact and is checked with the existing 4-decimal average precision. A08/A13's pending TL cost is the
+/// host adapter's (BS-1). SENTETIK.
 /// </summary>
 public sealed class PurchaseReceiptWeighedCostTests
 {
     private static decimal Display(ExactCostRatio ratio) => ratio.Round(AverageCostPrecision.InternalScale);
 
     [Fact]
-    public void The_switch_stays_off_until_the_golden_is_in_main()
+    public void The_weighed_kilogram_cost_rule_is_on_with_its_golden()
     {
-        Assert.False(PurchaseReceiptWeighedCost.PurchaseCostGoldenAccepted);
+        Assert.True(PurchaseReceiptWeighedCost.PurchaseCostGoldenAccepted);
+    }
+
+    [Fact]
+    public void A09_a_partial_invoice_of_a_TL_receipt_prices_its_kilogram_share_at_the_receipts_own_cost()
+    {
+        // 40 of 100 pieces invoiced at the order price: 1 250,400 x 40 / 100 = 500,160 kg; 10 000,00 / 500,160 = 19,9936 — the
+        // partial invoice does not change the receipt's cost.
+        var share = GoymenERP.Modules.Purchasing.Domain.Orders.PurchasePieceKilograms.InvoicedKilogramShare(1250.4m, 40m, 100m);
+        Assert.Equal(500.160m, share);
+        var partial = PurchaseReceiptWeighedCost.PerWeighedKilogram(250m, 40m, share)!;
+        Assert.Equal(0, partial.CompareTo(PurchaseReceiptWeighedCost.PerWeighedKilogram(250m, 100m, 1250.4m)!));
+        Assert.Equal(19.9936m, Display(partial));
     }
 
     [Fact]

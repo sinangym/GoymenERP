@@ -12,6 +12,8 @@ namespace GoymenERP.Modules.Purchasing.Application;
 /// total kg is compared with the line's remaining kg under the Ayarlar tolerance. Inside the tolerance the user acknowledges the
 /// warning and every label posts at once; outside it (or with no tolerance set) the batch waits for an approver who is not the
 /// preparer. Each label posts through the existing single-label receipt participants, unchanged, in ONE host transaction.
+/// AK-3b (KLN-D119): a piece order line takes a whole piece count + weighed kg on every label under the single receipt's rules and
+/// problem codes; its theoretical/weighed comparison is a warning only (BS-16/BS-17), so a piece batch always posts.
 /// </summary>
 public sealed partial class PurchasingService
 {
@@ -59,42 +61,68 @@ public sealed partial class PurchasingService
                 cancellationToken);
         }
 
-        if (line.RemainingQuantity.Unit != QuantityUnit.Kilogram)
+        var pieceLine = line.RemainingQuantity.Unit == QuantityUnit.Piece;
+        if (!pieceLine && line.RemainingQuantity.Unit != QuantityUnit.Kilogram)
         {
             throw new PurchasingServiceException(409, PurchaseGoodsReceiptBatchCodesV1.UnitUnsupported, [new("lineId", PurchaseGoodsReceiptBatchCodesV1.UnitUnsupported)]);
+        }
+
+        // AK-3b (KLN-D119): a piece line takes pieces + weighed kg on every label, under the single receipt's rules and codes
+        // (whole pieces 400, a line without its recorded kg per piece 409); a kilogram line takes no piece count.
+        PieceReceiptFacts[]? pieceLabels = null;
+        if (pieceLine)
+        {
+            _ = PieceReceiptFacts.KilogramsPerUnitOf(stored.Order, line);
+            pieceLabels = request.Labels.Select((label, index) => label.AcceptedQuantity is { } accepted
+                ? PieceReceiptFacts.Of(stored.Order, line, accepted, label.MeasuredQuantityKg, $"labels[{index}].acceptedQuantity")
+                : throw new PurchasingServiceException(400, PurchaseGoodsReceiptCodesV1.PieceCountInvalid,
+                    [new($"labels[{index}].acceptedQuantity", PurchaseGoodsReceiptCodesV1.PieceCountInvalid)])).ToArray();
+        }
+        else if (request.Labels.Select((label, index) => (label, index)).Where(item => item.label.AcceptedQuantity is not null).ToArray() is { Length: > 0 } stray)
+        {
+            throw new PurchasingServiceException(400, PurchaseAcceptanceParticipantCodes.MeasuredKilogramsMismatch,
+                [.. stray.Select(item => new PurchasingFieldError($"labels[{item.index}].acceptedQuantity", PurchaseAcceptanceParticipantCodes.MeasuredKilogramsMismatch))]);
         }
 
         var policy = await ReadReceiptPolicyAsync(scope, permission, cancellationToken);
         RequireDistinctIdentities(request.Labels);
         var quantities = request.Labels.Select(label => ParseKg(label.MeasuredQuantityKg)).ToArray();
         var received = quantities.Sum();
-        var expected = line.RemainingQuantity.Value;
-        if (expected <= 0m || received > expected)
+        // Kilogram line: expected = the line's remaining kg (KLN-D43). Piece line: the pieces are checked against the remaining
+        // pieces and the weighed kg against the theoretical kg of those pieces (BS-16/BS-17).
+        var acceptedPieces = pieceLabels?.Sum(label => (long)label.PieceCount);
+        var remaining = line.RemainingQuantity.Value;
+        if (remaining <= 0m || (acceptedPieces ?? received) > remaining)
         {
             // The existing acceptance rule holds: a receipt never exceeds the line's remaining quantity.
             throw new PurchasingServiceException(409, PurchaseGoodsReceiptBatchCodesV1.ExceedsRemaining, [new("labels", PurchaseGoodsReceiptBatchCodesV1.ExceedsRemaining)]);
         }
 
+        decimal? kilogramsPerUnit = pieceLabels?[0].KilogramsPerUnit;
+        var expected = kilogramsPerUnit is { } perUnit ? PurchasePieceKilograms.TheoreticalKilograms(acceptedPieces!.Value, perUnit) : remaining;
         var labels = await ResolveLabelCodesAsync(scope, permission, batches, request.Labels, quantities, policy, cancellationToken);
+        if (pieceLabels is not null) labels = [.. labels.Select((label, index) => label with { PieceCount = pieceLabels[index].PieceCount })];
         if (await GuardedAsync(scope, permission, () => batches.BatchIdExistsAsync(request.BatchId, cancellationToken), cancellationToken))
         {
             throw new PurchasingServiceException(409, PurchaseGoodsReceiptBatchCodesV1.BatchIdTaken, [new("batchId", PurchaseGoodsReceiptBatchCodesV1.BatchIdTaken)]);
         }
 
         var outcome = GoodsReceiptKgVariance.Evaluate(expected, received, policy.KgTolerancePercent);
-        if (outcome == GoodsReceiptKgVarianceOutcome.WithinTolerance && !request.VarianceAcknowledged)
+        if (!pieceLine && outcome == GoodsReceiptKgVarianceOutcome.WithinTolerance && !request.VarianceAcknowledged)
         {
             // KLN-D45: inside the tolerance is a warning the user answers; nothing is recorded until then.
             throw new PurchasingServiceException(409, PurchaseGoodsReceiptBatchCodesV1.VarianceAcknowledgementRequired,
                 [new("varianceAcknowledged", PurchaseGoodsReceiptBatchCodesV1.VarianceAcknowledgementRequired)]);
         }
 
-        var status = GoodsReceiptKgVariance.PostsWithoutApproval(outcome)
+        // AK-3b (BS-16/BS-17, golden TA4): on a piece line the comparison is the single receipt's warning — it never blocks and
+        // never waits for an approver; KLN-D45's approval applies to a kilogram line only.
+        var status = pieceLine || GoodsReceiptKgVariance.PostsWithoutApproval(outcome)
             ? PurchaseGoodsReceiptBatchStatus.Posted
             : PurchaseGoodsReceiptBatchStatus.PendingApproval;
         var draft = new PurchaseGoodsReceiptBatchDraft(request.BatchId, orderId, lineId, source.ProductId, source.ProductVersion, source.UnitId,
             request.LocationId, request.OccurredAtUtc, status, expected, received, outcome, policy.KgTolerancePercent,
-            request.VarianceAcknowledged, labels);
+            request.VarianceAcknowledged, labels, kilogramsPerUnit);
 
         // KLN-D94/KLN-D110: the future supply allocations Inventory released while posting the labels (only a posting has any).
         IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1> releases = [];
@@ -374,6 +402,9 @@ public sealed partial class PurchasingService
             var label = batch.Labels[index];
             var field = $"labels[{index}]";
             var kg = PurchaseAcceptanceParticipantContractV1.FormatQuantity(label.MeasuredQuantityKg);
+            // AK-3b: a piece label is accepted in pieces and carries its weighed kg; a kilogram label's quantity is its kg.
+            var accepted = label.PieceCount is { } pieces ? pieces.ToString(CultureInfo.InvariantCulture) : kg;
+            if (batch.IsPieceBatch != (label.PieceCount is not null)) throw ReceiptSourceInvalid();
             var labelEnvelope = envelope with { IdempotencyKey = LabelIdempotencyKey(batch.BatchId, label.LineNo) };
             var receipt = await participants.EnlistLabelAsync(index, cancellationToken);
             try
@@ -388,10 +419,11 @@ public sealed partial class PurchasingService
 
                 var purchase = await GuardedAsync(scope, permission, () => receipt.StagePurchaseAsync(
                     new(scope.CompanyId, label.AcceptanceId, batch.PurchaseOrderId, batch.PurchaseOrderLineId, orderVersion,
-                        source.ProductId, batch.ProductVersion, source.UnitId, kg, batch.OccurredAtUtc), labelEnvelope, cancellationToken), cancellationToken);
+                        source.ProductId, batch.ProductVersion, source.UnitId, accepted, batch.OccurredAtUtc,
+                        label.PieceCount is null ? null : kg), labelEnvelope, cancellationToken), cancellationToken);
                 if (purchase is null || purchase.CompanyId != scope.CompanyId || purchase.AcceptanceId != label.AcceptanceId
                     || purchase.PurchaseOrderId != batch.PurchaseOrderId || purchase.PurchaseOrderLineId != batch.PurchaseOrderLineId
-                    || purchase.AcceptedQuantity != kg || !ReceiptVersion(purchase.PurchaseOrderVersion) || purchase.IsReplay
+                    || purchase.AcceptedQuantity != accepted || !ReceiptVersion(purchase.PurchaseOrderVersion) || purchase.IsReplay
                     || string.IsNullOrWhiteSpace(purchase.OriginalCorrelationId))
                 {
                     throw ReceiptSourceInvalid();
@@ -404,7 +436,7 @@ public sealed partial class PurchasingService
                     batch.PurchaseOrderLineId, purchase.PurchaseOrderVersion, source.ProductId, batch.ProductVersion, source.UnitId,
                     label.LotId, label.LabelId, label.LabelCode, label.HeatNumber, label.CoilNumber,
                     PurchaseGoodsReceiptDocumentPolicyV1.RequiredForNewReceipt, facts.OwnerKind, facts.OwnerId, facts.CustodianKind,
-                    facts.CustodianId, facts.LocationId, label.MovementId, kg, batch.OccurredAtUtc);
+                    facts.CustodianId, facts.LocationId, label.MovementId, kg, batch.OccurredAtUtc) { PieceCount = label.PieceCount };
                 var inventory = await GuardedAsync(scope, permission,
                     () => receipt.StageInventoryAsync(stockRequest, labelEnvelope, cancellationToken), cancellationToken);
                 if (inventory is null || inventory.CompanyId != scope.CompanyId || inventory.AcceptanceId != label.AcceptanceId
@@ -665,7 +697,15 @@ public sealed partial class PurchasingService
             stored.PreparedBy, stored.PreparedAtUtc, stored.DecidedBy, stored.DecidedAtUtc, stored.DecisionReason,
             batch.Labels.OrderBy(label => label.LineNo).Select(label => new PurchaseGoodsReceiptBatchLabelViewV1(label.LineNo, label.AcceptanceId,
                 label.LotId, label.LabelId, label.MovementId, label.LabelCode, label.CodeSource.ToString(), label.SupplierLabelNumber,
-                Kg(label.MeasuredQuantityKg), label.HeatNumber, label.CoilNumber)).ToArray());
+                Kg(label.MeasuredQuantityKg), label.HeatNumber, label.CoilNumber) { PieceCount = label.PieceCount }).ToArray())
+        {
+            // AK-3b: the comparison recorded at submission, in the single receipt's shape; never recomputed with today's tolerance.
+            PieceKilograms = batch.KilogramsPerUnit is { } perUnit
+                ? new PurchaseGoodsReceiptPieceKilogramsV1(batch.Labels.Sum(label => label.PieceCount ?? 0), Kg(perUnit),
+                    Kg(batch.ExpectedQuantityKg), Kg(batch.ReceivedQuantityKg), Kg(batch.ReceivedQuantityKg - batch.ExpectedQuantityKg),
+                    batch.VarianceOutcome.ToString(), batch.TolerancePercent is { } percent ? Kg(percent) : null)
+                : null,
+        };
     }
 
     private static string Kg(decimal value) => PurchaseAcceptanceParticipantContractV1.FormatQuantity(value);

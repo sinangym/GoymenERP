@@ -10,10 +10,16 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 // Ayarlar tolerance: inside = a warning the user acknowledges, then posted; outside or not set = an approver decides.
 // The existing single-label receipt (PurchaseGoodsReceiptContractsV1) and its participants are reused per label, unchanged.
 
-/// <summary>One label row of a bulk receipt. Ids are client-made (idempotent posting); kg is the measured fact, never a conversion.</summary>
+/// <summary>
+/// One label row of a bulk receipt. Ids are client-made (idempotent posting); kg is the measured fact, never a conversion.
+/// AK-3b (KLN-D119): on a piece-unit order line every row also carries <see cref="AcceptedQuantity"/>, its whole piece count; a
+/// kilogram line sends none (the member is then absent from the request hash, so earlier kilogram requests hash as before).
+/// </summary>
 public sealed record PurchaseGoodsReceiptBatchLabelInputV1(
     Guid AcceptanceId, Guid LotId, Guid LabelId, Guid MovementId,
-    string? SupplierLabelNumber, string? LabelCode, string MeasuredQuantityKg, string? HeatNumber, string? CoilNumber);
+    string? SupplierLabelNumber, string? LabelCode, string MeasuredQuantityKg, string? HeatNumber, string? CoilNumber,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    string? AcceptedQuantity = null);
 
 /// <summary>
 /// KLN-D43: the bulk receipt request. <see cref="VarianceAcknowledged"/> is the user's answer to the inside-tolerance warning;
@@ -28,13 +34,30 @@ public sealed record DecidePurchaseGoodsReceiptBatchV1(string ExpectedVersion, s
 
 public sealed record PurchaseGoodsReceiptBatchLabelViewV1(
     int LineNo, Guid AcceptanceId, Guid LotId, Guid LabelId, Guid MovementId, string LabelCode, string LabelCodeSource,
-    string? SupplierLabelNumber, string MeasuredQuantityKg, string? HeatNumber, string? CoilNumber);
+    string? SupplierLabelNumber, string MeasuredQuantityKg, string? HeatNumber, string? CoilNumber)
+{
+    /// <summary>AK-3b (KLN-D119): the label's whole piece count on a piece-unit line; absent on a kilogram line.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public int? PieceCount { get; init; }
+}
 
+/// <summary>
+/// The bulk receipt as stored. On a kilogram line <c>ExpectedQuantityKg</c> is the line's remaining kg at submission (KLN-D43).
+/// AK-3b: on a piece-unit line it is the THEORETICAL kg of the received pieces (Σ pieces × the kg per piece recorded at approval),
+/// <c>ReceivedQuantityKg</c> the Σ weighed kg, and the comparison is the single receipt's warning (BS-16/BS-17): the batch posts
+/// whatever the outcome and never waits for an approver; <see cref="PieceKilograms"/> then carries the same comparison in the
+/// single receipt's shape.
+/// </summary>
 public sealed record PurchaseGoodsReceiptBatchViewV1(
     Guid CompanyId, Guid BatchId, Guid PurchaseOrderId, Guid PurchaseOrderLineId, string Status, string Version,
     string ExpectedQuantityKg, string ReceivedQuantityKg, string DifferenceKg, string VarianceOutcome, string? TolerancePercent,
     bool VarianceAcknowledged, Guid LocationId, DateTimeOffset OccurredAtUtc, string PreparedBy, DateTimeOffset PreparedAtUtc,
-    string? DecidedBy, DateTimeOffset? DecidedAtUtc, string? DecisionReason, IReadOnlyList<PurchaseGoodsReceiptBatchLabelViewV1> Labels);
+    string? DecidedBy, DateTimeOffset? DecidedAtUtc, string? DecisionReason, IReadOnlyList<PurchaseGoodsReceiptBatchLabelViewV1> Labels)
+{
+    /// <summary>AK-3b: the piece batch's theoretical/weighed comparison as recorded at submission; absent on a kilogram line.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public PurchaseGoodsReceiptPieceKilogramsV1? PieceKilograms { get; init; }
+}
 
 public sealed record PurchaseGoodsReceiptBatchResponseV1(PurchaseGoodsReceiptBatchViewV1 Batch, bool IsReplay, string OriginalCorrelationId)
 {
@@ -114,7 +137,9 @@ public static class PurchaseGoodsReceiptBatchCodesV1
     /// <summary>The Ayarlar receipt policy answered an unusable value (tolerance outside 0..100 or a malformed format); 503, fail-closed.</summary>
     public const string PolicyInvalid = "purchasing_goods_receipt_batch_policy_invalid";
 
-    /// <summary>KLN-D43: the bulk kg comparison is defined for kg order lines only.</summary>
+    /// <summary>
+    /// KLN-D43: the bulk receipt is defined for kilogram and (AK-3b) piece order lines only; any other unit is refused (409).
+    /// </summary>
     public const string UnitUnsupported = "purchasing_goods_receipt_batch_unit_unsupported";
 
     /// <summary>The existing acceptance rule holds: the total never exceeds the line's remaining quantity.</summary>
@@ -186,14 +211,23 @@ public interface IPurchaseGoodsReceiptBatchParticipantsV1
 /// <summary>One stored label of a bulk receipt.</summary>
 public sealed record PurchaseGoodsReceiptBatchLabelRecord(
     int LineNo, Guid AcceptanceId, Guid LotId, Guid LabelId, Guid MovementId, string LabelCode, GoodsReceiptLabelCodeSource CodeSource,
-    long? GeneratedNumber, string? SupplierLabelNumber, decimal MeasuredQuantityKg, string? HeatNumber, string? CoilNumber);
+    long? GeneratedNumber, string? SupplierLabelNumber, decimal MeasuredQuantityKg, string? HeatNumber, string? CoilNumber,
+    int? PieceCount = null);
 
-/// <summary>A new bulk receipt as the service decided it (status, variance and tolerance snapshot included).</summary>
+/// <summary>
+/// A new bulk receipt as the service decided it (status, variance and tolerance snapshot included). AK-3b: a piece batch carries
+/// <see cref="KilogramsPerUnit"/> (the kg per piece recorded on the order line at approval) and a piece count on every label; a
+/// kilogram batch carries neither.
+/// </summary>
 public sealed record PurchaseGoodsReceiptBatchDraft(
     Guid BatchId, Guid PurchaseOrderId, Guid PurchaseOrderLineId, Guid ProductId, string ProductVersion, Guid UnitId, Guid LocationId,
     DateTimeOffset OccurredAtUtc, PurchaseGoodsReceiptBatchStatus Status, decimal ExpectedQuantityKg, decimal ReceivedQuantityKg,
     GoodsReceiptKgVarianceOutcome VarianceOutcome, decimal? TolerancePercent, bool VarianceAcknowledged,
-    IReadOnlyList<PurchaseGoodsReceiptBatchLabelRecord> Labels);
+    IReadOnlyList<PurchaseGoodsReceiptBatchLabelRecord> Labels, decimal? KilogramsPerUnit = null)
+{
+    /// <summary>AK-3b: true for a bulk receipt of a piece-unit order line.</summary>
+    public bool IsPieceBatch => KilogramsPerUnit is not null;
+}
 
 public sealed record StoredPurchaseGoodsReceiptBatch(
     Guid CompanyId, PurchaseGoodsReceiptBatchDraft Batch, long Version, string PreparedBy, DateTimeOffset PreparedAtUtc,
@@ -289,7 +323,8 @@ public static class PurchaseGoodsReceiptBatchJsonV1
         {
             if (label is null || label.AcceptanceId == Guid.Empty || label.LotId == Guid.Empty || label.LabelId == Guid.Empty
                 || label.MovementId == Guid.Empty || !OptionalToken(label.SupplierLabelNumber) || !OptionalToken(label.LabelCode)
-                || !OptionalToken(label.HeatNumber) || !OptionalToken(label.CoilNumber) || !Positive(label.MeasuredQuantityKg))
+                || !OptionalToken(label.HeatNumber) || !OptionalToken(label.CoilNumber) || !Positive(label.MeasuredQuantityKg)
+                || label.AcceptedQuantity is not null && !Positive(label.AcceptedQuantity))
             {
                 throw new JsonException("Invalid label row; identities, a positive exact kg and bounded texts are required.");
             }

@@ -97,6 +97,87 @@ public sealed class InventoryPurchaseInvoiceCostSourceTests
             Envelope(source) with { SourceName = "another-source" }, company));
     }
 
+    // ---- AK-3b (ALS-D121): golden ADET_KG_FORMUL_GOLDEN_V1 §2 step 4, rows A09 and A13 ---------------------------------------
+
+    private static InventoryPurchaseInvoiceCostSourceV1 PieceSource(decimal invoicedPieces, decimal acceptedPieces, decimal? measuredKg,
+        decimal net, decimal? functionalNet = null)
+    {
+        var source = Source();
+        var line = source.Lines![0];
+        var receipt = line.GoodsCostSource!.Receipts[0] with
+        {
+            MatchedQuantity = invoicedPieces, AcceptedQuantity = acceptedPieces, MeasuredQuantityKg = measuredKg,
+        };
+        return source with
+        {
+            CurrencyId = functionalNet is null ? source.CurrencyId : Guid.NewGuid(), Net = net, FunctionalNet = functionalNet,
+            Lines = [line with
+            {
+                Net = net, FunctionalNet = functionalNet,
+                GoodsCostSource = line.GoodsCostSource with { InvoiceQuantity = invoicedPieces, Receipts = [receipt] },
+            }],
+        };
+    }
+
+    [Fact]
+    public void A09_a_partial_TL_invoice_of_a_piece_receipt_takes_its_kilogram_share_and_leaves_the_receipt_cost_unchanged()
+    {
+        // R1: 100 pieces weighed 1 250,400 kg; 40 pieces invoiced for 10 000,00 TL -> 500,160 kg; 10 000 / 500,160 = 19,9936.
+        var share = Assert.Single(Read(PieceSource(40m, 100m, 1250.4m, 10000m)).Receipts);
+        Assert.Equal((40m, 100m, (decimal?)1250.4m), (share.MatchedQuantity, share.AcceptedQuantity, share.MeasuredQuantityKg));
+
+        var invoicedKg = PurchaseInvoiceKilogramShare.Of(ExactCostRatio.Of(share.MeasuredQuantityKg!.Value), share.MatchedQuantity,
+            ExactCostRatio.Of(share.AcceptedQuantity));
+
+        Assert.Equal(0, invoicedKg.CompareTo(ExactCostRatio.Of(500.16m)));
+        Assert.Equal(19.9936m, share.TlNetShare.Value().Divide(invoicedKg).Round(AverageCostPrecision.InternalScale));
+        // The receipt was stamped at 25 000 / 1 250,4 per kg: the invoice value of the share equals what was recognised (no difference).
+        var recognised = ExactCostRatio.Of(25000m).Divide(1250.4m).Multiply(invoicedKg);
+        Assert.Equal(0, share.TlNetShare.Value().Subtract(recognised).Sign);
+    }
+
+    [Fact]
+    public void A13_a_partial_foreign_invoice_of_a_piece_receipt_recognises_its_kilogram_share_at_the_invoice_TL_value()
+    {
+        // 40 of 100 pieces at 7,50 USD, official rate 34,5678: 10 370,34 TL over 1 250,4 x 40 / 100 = 500,160 kg -> 20,7340 TL/kg.
+        var share = Assert.Single(Read(PieceSource(40m, 100m, 1250.4m, 300m, 10370.34m)).Receipts);
+
+        var invoicedKg = PurchaseInvoiceKilogramShare.Of(ExactCostRatio.Of(1250.4m), share.MatchedQuantity, ExactCostRatio.Of(share.AcceptedQuantity));
+
+        Assert.Equal(500.160m, invoicedKg.Round(3));
+        Assert.Equal(0, share.TlNetShare.Value().CompareTo(ExactCostRatio.Of(10370.34m)));
+        Assert.Equal(20.7340m, share.TlNetShare.Value().Divide(invoicedKg).Round(AverageCostPrecision.InternalScale));
+        // The 60 uninvoiced pieces keep 750,240 kg pending (BS-1); nothing is costed for them here.
+        Assert.Equal(750.240m, ExactCostRatio.Of(1250.4m).Subtract(invoicedKg).Round(3));
+    }
+
+    [Fact]
+    public void A_piece_share_is_whole_pieces_of_a_weighed_acceptance_and_a_kilogram_share_names_no_weighed_kilograms()
+    {
+        Assert.Null(Assert.Single(Read(Source()).Receipts).MeasuredQuantityKg);
+        Refuses(PieceSource(40m, 100m, 0m, 10000m));
+        Refuses(PieceSource(40m, 100m, -1m, 10000m));
+        Refuses(PieceSource(2.5m, 100m, 1250.4m, 10000m));
+        Refuses(PieceSource(40m, 99.5m, 1250.4m, 10000m));
+    }
+
+    [Fact]
+    public void The_kilogram_share_keeps_the_receipts_own_proportion_only_while_returns_left_proportionally()
+    {
+        var originalKg = ExactCostRatio.Of(1250.4m);
+        // Nothing returned, or 20 of 100 pieces returned with exactly 20 % of the kg: "remaining kg x invoiced / remaining pieces"
+        // is ALS-D121's "weighed kg x invoiced pieces / accepted pieces".
+        Assert.True(PurchaseInvoiceKilogramShare.KeepsOriginalProportion(originalKg, 100m, originalKg, ExactCostRatio.Of(100m)));
+        Assert.True(PurchaseInvoiceKilogramShare.KeepsOriginalProportion(originalKg, 100m, ExactCostRatio.Of(1000.32m), ExactCostRatio.Of(80m)));
+        Assert.Equal(0, PurchaseInvoiceKilogramShare.Of(ExactCostRatio.Of(1000.32m), 40m, ExactCostRatio.Of(80m))
+            .CompareTo(PurchaseInvoiceKilogramShare.Of(originalKg, 40m, ExactCostRatio.Of(100m))));
+        // Golden A10's return (20 pieces weighing 249,870 kg, not 250,080): the two readings differ, so no rule is chosen.
+        Assert.False(PurchaseInvoiceKilogramShare.KeepsOriginalProportion(originalKg, 100m, ExactCostRatio.Of(1000.53m), ExactCostRatio.Of(80m)));
+        Assert.False(PurchaseInvoiceKilogramShare.KeepsOriginalProportion(originalKg, 0m, originalKg, ExactCostRatio.Of(100m)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PurchaseInvoiceKilogramShare.Of(ExactCostRatio.Of(0m), 1m, ExactCostRatio.Of(1m)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PurchaseInvoiceKilogramShare.Of(originalKg, -1m, ExactCostRatio.Of(1m)));
+    }
+
     private static InventoryPurchaseInvoiceCostSourceV1 Source() => new(Company, Guid.NewGuid(), 4,
         Guid.NewGuid(), SettingsCurrencyIdentitiesV1.TurkishLira, 100.01m, null, new(2026, 11, 17), "synthetic-finalizer",
         [new(Guid.NewGuid(), 1, "Product", "resale", 100.01m, null,

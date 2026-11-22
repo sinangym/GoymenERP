@@ -143,7 +143,11 @@ public sealed class PurchaseFutureSupplyReadPortTests
 
         var general = Guid.NewGuid();
         Assert.Equal(general, (older with { PurchaseOrderGeneralLineId = general }).PurchaseOrderGeneralLineId);
-        Assert.Equal("PurchaseOrderGeneralLineId", typeof(PurchaseAcceptanceStageResultV1).GetProperties().Last().Name);
+        // The general line stays the trailing constructor member; AK-3b's recorded piece comparison is an init-only addition that an
+        // older stored result reads as null.
+        Assert.Equal("PurchaseOrderGeneralLineId",
+            typeof(PurchaseAcceptanceStageResultV1).GetConstructors().Single(constructor => constructor.GetParameters().Length > 1).GetParameters().Last().Name);
+        Assert.Null(older.PieceKilograms);
     }
 
     private static (PurchasingDbContext Context, PurchaseFutureSupplyReadPort Port) Port(bool resolved)

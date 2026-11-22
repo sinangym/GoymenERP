@@ -82,6 +82,8 @@ public sealed partial class PurchaseIncomingInvoiceMatchSource(PurchasingDbConte
                     throw Unavailable();
                 control = rate;
             }
+            var kilograms = await ReadKilogramFactsAsync(item.PurchaseOrderId, accepted.PurchaseOrderLineId, accepted.AcceptanceId, cancellationToken);
+            RequireScope(invoice.CompanyId);
             decimal expected;
             try { expected = CommercialLinePriceCalculator.ExactLineAmount(quantity, value.UnitPrice.Amount,
                 value.DiscountPercent, value.DiscountAmount, value.DeferralPercent, value.DeferralAmount); }
@@ -90,10 +92,34 @@ public sealed partial class PurchaseIncomingInvoiceMatchSource(PurchasingDbConte
                 order.Version, order.SupplierPartyId, order.CompanyAccountId, invoice.CurrencyId, line.UnitId,
                 quantity, expected, control, day, AcceptedQuantity: acceptedQuantity,
                 ReceiptAdjustments: Array.AsReadOnly(adjustments.Select(row =>
-                    new PurchaseInvoiceReceiptAdjustment(row.AdjustmentId, row.UndoQuantity, row.IsSupplierReturn)).ToArray())));
+                    new PurchaseInvoiceReceiptAdjustment(row.AdjustmentId, row.UndoQuantity, row.IsSupplierReturn)).ToArray()),
+                Kilograms: kilograms));
         }
         RequireScope(invoice.CompanyId);
         return new PurchaseIncomingInvoiceMatchSourceV1(matches, new PurchaseInvoiceVariancePolicy(policy.PolicyId, policy.Version, policy.AmountTolerance, policy.RateTolerance));
+    }
+
+    /// <summary>
+    /// AK-3b (ALS-D121, SAT-D437): the kilogram facts of one goods receipt share from Purchasing's own rows, under the match's order
+    /// lock. A kilogram line needs none. A piece line answers the kilograms weighed for the whole acceptance and the kg per piece
+    /// recorded at approval on its general line (a technical slice reads its parent); a missing figure stays missing — it is
+    /// never replaced by the other one or by a card value. The domain match then requires whole pieces on a piece line.
+    /// </summary>
+    private async Task<PurchaseInvoiceMatchKilograms> ReadKilogramFactsAsync(Guid orderId, Guid orderLineId, Guid acceptanceId,
+        CancellationToken cancellationToken)
+    {
+        var line = await context.OrderLines.AsNoTracking().Where(row => row.OrderId == orderId && row.LineId == orderLineId)
+            .Select(row => new { row.UnitIsKilogram, row.ParentLineId, row.TheoreticalKilogramsPerUnit }).SingleOrDefaultAsync(cancellationToken)
+            ?? throw Mismatch();
+        if (line.UnitIsKilogram) return new PurchaseInvoiceMatchKilograms(true);
+        var perUnit = line.ParentLineId is { } parent
+            ? await context.OrderLines.AsNoTracking().Where(row => row.OrderId == orderId && row.LineId == parent)
+                .Select(row => row.TheoreticalKilogramsPerUnit).SingleOrDefaultAsync(cancellationToken)
+            : line.TheoreticalKilogramsPerUnit;
+        var measured = await context.Acceptances.AsNoTracking()
+            .Where(row => row.OrderId == orderId && row.LineId == orderLineId && row.AcceptanceId == acceptanceId)
+            .Select(row => row.MeasuredQuantityKg).SingleOrDefaultAsync(cancellationToken);
+        return new PurchaseInvoiceMatchKilograms(false, measured, perUnit);
     }
 
     private void RequireScope(Guid companyId)

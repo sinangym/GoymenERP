@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using GoymenERP.Modules.Purchasing.Domain.Invoices;
+using GoymenERP.Modules.Purchasing.Domain.Orders;
 
 namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 
@@ -9,14 +10,31 @@ public sealed record PurchaseInvoiceAmountsViewV1(string Net, string Vat, string
 public sealed record PurchaseInvoiceLineViewV1(Guid Id, int LineNo, Guid ProductId, Guid UnitId, string Quantity,
     string ItemType, string LinePurpose, string VatPercent, PurchaseInvoiceAmountsViewV1 Amounts, PurchaseInvoiceAmountsViewV1? FunctionalAmounts,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ServiceTypeId = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ExpenseTypeId = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ExpenseTypeId = null)
+{
+    /// <summary>
+    /// AK-3b (SAT-D436, SAT-D439): the line's kg price indicator in the invoice's currency, derived from the invoice ↔ receipt
+    /// match: theoretical = official net ÷ (invoiced quantity × the order line's recorded kg per unit), real = official net ÷ the
+    /// kg weighed at receipt that fall to the invoiced quantity (ALS-D121). Absent while the indicator is off.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PurchaseKgPriceView? KgPrice { get; init; }
+}
 public sealed record PurchaseInvoiceVarianceViewV1(Guid InvoiceLineId, string Kind, string Expected, string Actual);
 public sealed record PurchaseIncomingInvoiceViewV1(Guid Id, Guid CompanyId, string Version, string Status,
     Guid SupplierPartyId, Guid CompanyAccountId, Guid CurrencyId, Guid FunctionalCurrencyId, int MoneyScale, int FunctionalScale,
     string? OfficialRate, string OfficialNumber, Guid Ettn, DateOnly InvoiceDate, Guid DocumentId, string DocumentVersion,
     PurchaseInvoiceAmountsViewV1 Amounts, PurchaseInvoiceAmountsViewV1? FunctionalAmounts,
     IReadOnlyList<PurchaseInvoiceLineViewV1> Lines, IReadOnlyList<PurchaseInvoiceVarianceViewV1> Variances,
-    PurchaseInvoiceVarianceDecision? VarianceDecision, string? FinalizedVersion);
+    PurchaseInvoiceVarianceDecision? VarianceDecision, string? FinalizedVersion)
+{
+    /// <summary>
+    /// AK-3b (SAT-D436): the document-level kg price indicator (Σ net ÷ Σ kg), shown only while every line is a goods line with its
+    /// kg; a service or expense line hides it (N2 open, K17/K18). Absent while the indicator is off.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PurchaseKgPriceView? KgPrice { get; init; }
+}
 public sealed record PurchaseIncomingInvoiceCommandResponseV1(PurchaseIncomingInvoiceViewV1 Invoice,
     bool IsReplay, string OriginalCorrelationId, string? FinanceOutcome);
 
@@ -26,6 +44,8 @@ public static class PurchaseIncomingInvoiceWireV1
     public static PurchaseIncomingInvoiceViewV1 View(PurchaseIncomingInvoiceSnapshot snapshot)
     {
         var invoice = snapshot.Restore();
+        var kilograms = PurchaseOrderKgPriceViews.PurchaseKgPriceGoldenAccepted ? PurchaseInvoiceKgPrice.Lines(invoice) : null;
+        var document = kilograms is null ? ((PurchaseKgPriceResult Theoretical, PurchaseKgPriceResult Real)?)null : PurchaseInvoiceKgPrice.Document(kilograms);
         return new(invoice.Id, invoice.CompanyId, Text(invoice.Version), invoice.Status.ToString(), invoice.SupplierPartyId,
             invoice.CompanyAccountId, invoice.CurrencyId, invoice.FunctionalCurrencyId, invoice.MoneyScale, invoice.FunctionalScale,
             invoice.OfficialRate is { } rate ? Text(rate) : null, invoice.Source.OfficialNumber, invoice.Source.Ettn,
@@ -33,10 +53,21 @@ public static class PurchaseIncomingInvoiceWireV1
             invoice.FunctionalAmounts is { } functional ? Amounts(functional, invoice.FunctionalScale) : null,
             invoice.Lines.Select(line => new PurchaseInvoiceLineViewV1(line.Id, line.LineNo, line.ProductId, line.UnitId, Text(line.Quantity),
                 line.ItemType, line.LinePurpose, Text(line.VatPercent), Amounts(line.Amounts, invoice.MoneyScale),
-                line.FunctionalAmounts is { } amounts ? Amounts(amounts, invoice.FunctionalScale) : null, line.ServiceTypeId, line.ExpenseTypeId)).ToArray(),
+                line.FunctionalAmounts is { } amounts ? Amounts(amounts, invoice.FunctionalScale) : null, line.ServiceTypeId, line.ExpenseTypeId)
+            {
+                KgPrice = kilograms?.Single(item => item.InvoiceLineId == line.Id) is { IsGoodsLine: true } facts
+                    ? KgPrice(PurchaseInvoiceKgPrice.Theoretical(facts), PurchaseInvoiceKgPrice.Real(facts)) : null,
+            }).ToArray(),
             invoice.Variances.Select(item => new PurchaseInvoiceVarianceViewV1(item.InvoiceLineId, item.Kind, Text(item.Expected), Text(item.Actual))).ToArray(),
-            invoice.VarianceDecision, invoice.FinalizedVersion is { } version ? Text(version) : null);
+            invoice.VarianceDecision, invoice.FinalizedVersion is { } version ? Text(version) : null)
+        {
+            KgPrice = document is { } level ? KgPrice(level.Theoretical, level.Real) : null,
+        };
     }
+
+    private static PurchaseKgPriceView KgPrice(PurchaseKgPriceResult theoretical, PurchaseKgPriceResult real) => new(
+        PurchaseOrderKgPriceViews.KgPriceText(theoretical.Value), theoretical.UnavailableCode,
+        PurchaseOrderKgPriceViews.KgPriceText(real.Value), real.UnavailableCode);
     public static PurchaseIncomingInvoiceCommandResponseV1 Response(PurchaseIncomingInvoiceOperationResultV1 result) =>
         new(View(result.Invoice), result.IsReplay, result.OriginalCorrelationId, result.FinanceOutcome);
     public static PurchaseIncomingInvoiceVersionRequestV1 ReadVersion(string json)

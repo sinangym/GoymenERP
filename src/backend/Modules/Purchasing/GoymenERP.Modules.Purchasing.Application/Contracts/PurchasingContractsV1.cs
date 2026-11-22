@@ -325,7 +325,27 @@ public sealed record PurchaseOrderLineView(
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PurchaseKgPriceView? KgPrice { get; init; }
+
+    /// <summary>
+    /// AK-3b (SAT-D436 TK6): the general line's realization from its finalised supplier invoices; written only on the order READ
+    /// while the prices are visible (never on a command response, a technical slice or a withheld price).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PurchaseOrderRealizationView? Realization { get; init; }
 }
+
+/// <summary>
+/// AK-3b (SAT-D436 TK6, TK8): what has been invoiced on an order line (or the whole order) and the kilograms weighed for it.
+/// <see cref="InvoicedQuantity"/> is in the line's unit (absent on the document, whose lines may differ in unit);
+/// <see cref="InvoicedAmount"/> is KDV-exclusive in the order's currency; <see cref="WeighedKg"/> the kg weighed at receipt that
+/// fall to the invoiced quantity (ALS-D121); <see cref="TheoreticalKg"/> the invoiced quantity × the recorded kg per unit;
+/// <see cref="DifferenceKg"/> = weighed − theoretical and <see cref="DeviationPercent"/> = difference ÷ theoretical × 100, both
+/// signed. <see cref="RealKgPrice"/> = invoiced amount ÷ weighed kg (0,01) or null with <see cref="RealUnavailable"/>
+/// (<c>PurchaseKgPriceUnavailableCodes</c>). Every figure is exact text rounded once; an unknown figure is null, never zero.
+/// Information only — not a cost.
+/// </summary>
+public sealed record PurchaseOrderRealizationView(string? InvoicedQuantity, string? InvoicedAmount, string? WeighedKg, string? TheoreticalKg,
+    string? DifferenceKg, string? DeviationPercent, string? RealKgPrice, string? RealUnavailable);
 
 /// <summary>
 /// AK-5 (SAT-D436): a kg price indicator — theoretical (amount ÷ theoretical kg) and real (invoiced amount ÷ weighed kg), each a
@@ -522,6 +542,10 @@ public sealed record PurchaseOrderDetailView(PurchaseOrderSummaryView Order, IRe
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PurchaseKgPriceView? KgPrice { get; init; }
+
+    /// <summary>AK-3b (SAT-D436 TK6): the order's realization (see <see cref="PurchaseOrderLineView.Realization"/>); order READ only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PurchaseOrderRealizationView? Realization { get; init; }
 }
 
 public sealed record PurchaseOrderReadDetailViewV1(
@@ -547,6 +571,10 @@ public sealed record PurchaseOrderReadDetailViewV1(
     /// <summary>AK-5 (SAT-D436): the document-level kg price indicator as the owner answered it (see <see cref="PurchaseOrderDetailView.KgPrice"/>).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PurchaseKgPriceView? KgPrice { get; init; }
+
+    /// <summary>AK-3b (SAT-D436 TK6): the order's realization as the owner answered it (see <see cref="PurchaseOrderDetailView.Realization"/>).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PurchaseOrderRealizationView? Realization { get; init; }
 }
 
 public sealed record PurchaseOrderResponse(PurchaseOrderDetailView Detail, bool IsReplay, string OriginalCorrelationId);

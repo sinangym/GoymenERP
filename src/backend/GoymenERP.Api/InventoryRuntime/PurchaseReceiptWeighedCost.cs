@@ -13,10 +13,11 @@ namespace GoymenERP.Api.InventoryRuntime;
 public static class PurchaseReceiptWeighedCost
 {
     /// <summary>
-    /// ALS-D119's switch. The golden (<c>docs/decisions/ADET_KG_FORMUL_GOLDEN_V1.md</c>, ALS-D119 rows A01–A14) is not in main yet
-    /// (SAT-D265 (5), SAT-D431): until it is, the receipt cost keeps SAT-D298's theoretical-kg denominator and this stays false.
+    /// ALS-D119's switch. The independent golden (<c>docs/decisions/ADET_KG_FORMUL_GOLDEN_V1.md</c> §2, rows A01–A14) travels with this
+    /// train (SAT-D265 (5), SAT-D431), so a piece-line receipt is costed from its weighed kilograms. SAT-D298's theoretical-kg
+    /// denominator is no longer used for a piece line: a receipt without weighed kilograms has no cost (TA3), never a fallback.
     /// </summary>
-    public static bool PurchaseCostGoldenAccepted => false;
+    public static bool PurchaseCostGoldenAccepted => true;
 
     /// <summary>The exact cost per weighed kilogram, or null when it cannot be computed (TA3, SAT-D297).</summary>
     public static ExactCostRatio? PerWeighedKilogram(decimal unitCost, decimal acceptedPieces, decimal? weighedKilograms)

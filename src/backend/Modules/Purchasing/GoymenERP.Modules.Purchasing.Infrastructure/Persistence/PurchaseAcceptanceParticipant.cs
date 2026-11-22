@@ -250,6 +250,17 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
                 "Adetli satırın kabulü tartılan kg ister; kg satırı ayrıca tartılan kg almaz.");
         }
 
+        // AK-3b: the recorded comparison must describe THIS acceptance (same pieces and weighed kg); a kilogram line carries none.
+        if (request.PieceKilograms is { } comparison && (validated.MeasuredQuantityKg is not { } weighedKg
+                || comparison.PieceCount != validated.AcceptedQuantity
+                || !string.Equals(comparison.MeasuredQuantityKg, PurchaseAcceptanceParticipantContractV1.FormatQuantity(weighedKg), StringComparison.Ordinal)
+                || string.IsNullOrWhiteSpace(comparison.KilogramsPerUnit) || string.IsNullOrWhiteSpace(comparison.TheoreticalQuantityKg)
+                || string.IsNullOrWhiteSpace(comparison.DifferenceKg) || string.IsNullOrWhiteSpace(comparison.VarianceOutcome)))
+        {
+            throw Refused(PurchaseAcceptanceParticipantCodes.InvalidRequest, 400,
+                "Adetli kabulün teorik/tartılan karşılaştırması kabul payıyla uyuşmuyor.");
+        }
+
         order.RecordAcceptance(order.Version, request.AcceptanceId, request.PurchaseOrderLineId, quantity, request.OccurredAtUtc);
         var changedLine = order.Lines.Single(candidate => candidate.Id == request.PurchaseOrderLineId);
         orderRow.Version = order.Version;
@@ -266,7 +277,10 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
             PurchaseAcceptanceParticipantContractV1.FormatQuantity(changedLine.RemainingQuantity.Value),
             false,
             envelope.CorrelationId.Trim(),
-            generalLineId);
+            generalLineId)
+        {
+            PieceKilograms = request.PieceKilograms,
+        };
         _dbContext.Acceptances.Add(new PurchaseAcceptanceRow
         {
             AcceptanceId = request.AcceptanceId,

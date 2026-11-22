@@ -6,8 +6,9 @@ namespace GoymenERP.Purchasing.UnitTests;
 
 /// <summary>
 /// AK-5 (SAT-D436, SAT-D439): the kg price indicator against the independent golden rows of
-/// <c>docs/decisions/ADET_KG_FORMUL_GOLDEN_V1.md</c> §1 (row ids in each case) and the purchase order read's view of it. The read
-/// switch stays off until the golden is in main. SENTETIK.
+/// <c>docs/decisions/ADET_KG_FORMUL_GOLDEN_V1.md</c> §1 (row ids in each case) and the purchase order read's view of it. The golden
+/// travels with this train, so the read switch is on. The realization rows are in <see cref="PurchaseKgPriceRealizationTests"/>.
+/// SENTETIK.
 /// </summary>
 public sealed class PurchaseKgPriceTests
 {
@@ -18,9 +19,9 @@ public sealed class PurchaseKgPriceTests
     private static decimal? LinePrice(decimal amount, decimal kg) => PurchaseKgPrice.Line(amount, kg, NoTheoretical).Value;
 
     [Fact]
-    public void The_read_switch_stays_off_until_the_golden_is_in_main()
+    public void The_kg_price_indicator_is_on_with_its_golden()
     {
-        Assert.False(PurchaseOrderKgPriceViews.PurchaseKgPriceGoldenAccepted);
+        Assert.True(PurchaseOrderKgPriceViews.PurchaseKgPriceGoldenAccepted);
     }
 
     [Theory]
@@ -86,14 +87,15 @@ public sealed class PurchaseKgPriceTests
         order.AddLine(2, Guid.NewGuid(), Guid.NewGuid(), kgUnit, Quantity.Of(500m, QuantityUnit.Kilogram), null,
             new PurchaseOrderLinePrice(21m, kgUnit), T0);
 
-        Assert.Equal((null, NoTheoretical), (PurchaseOrderKgPriceViews.Line(piece, money)!.TheoreticalKgPrice,
-            PurchaseOrderKgPriceViews.Line(piece, money)!.TheoreticalUnavailable));
+        // K13 / TK7: before approval there is no recorded k, so no theoretical kg price.
+        Assert.Equal((null, NoTheoretical), (PurchaseOrderKgPriceViews.Line(order, piece)!.TheoreticalKgPrice,
+            PurchaseOrderKgPriceViews.Line(order, piece)!.TheoreticalUnavailable));
         Assert.Equal(PurchaseKgPriceUnavailableCodes.NotAllLinesHaveKg, PurchaseOrderKgPriceViews.Document(order).TheoreticalUnavailable);
 
         order.Approve(3, "SENTETIK-onaylayan", T0, Lira,
             new Dictionary<Guid, PurchaseOrderLineTheoreticalKilograms> { [piece.Id] = new(12.345m, "product.kg-per-unit.v1/sentetik") });
 
-        Assert.Equal("20.25", PurchaseOrderKgPriceViews.Line(piece, money)!.TheoreticalKgPrice);
+        Assert.Equal("20.25", PurchaseOrderKgPriceViews.Line(order, piece)!.TheoreticalKgPrice);
         var document = PurchaseOrderKgPriceViews.Document(order);
         Assert.Equal(("20.47", (string?)null, (string?)null, PurchaseKgPriceUnavailableCodes.RealizationNotAvailable),
             (document.TheoreticalKgPrice, document.TheoreticalUnavailable, document.RealKgPrice, document.RealUnavailable));

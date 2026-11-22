@@ -35,7 +35,20 @@ public sealed record PurchaseInvoiceReceiptMatch(Guid CompanyId, Guid InvoiceLin
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ServiceTypeId = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GoymenERP.Modules.Purchasing.Domain.Services.PurchaseServiceTax? SubcontractTax = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? AcceptedQuantity = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseInvoiceReceiptAdjustment>? ReceiptAdjustments = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<PurchaseInvoiceReceiptAdjustment>? ReceiptAdjustments = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseInvoiceMatchKilograms? Kilograms = null);
+
+/// <summary>
+/// AK-3b (ALS-D121, SAT-D436/SAT-D437): the kilogram facts of one goods receipt share, read from Purchasing's own rows under the
+/// match's order lock and frozen with the match. <see cref="UnitIsKilogram"/> says whether the order line is a kilogram line (its
+/// quantity is already kg). On a piece line <see cref="AcceptanceMeasuredKg"/> is the kilograms weighed for the WHOLE acceptance
+/// and <see cref="TheoreticalKilogramsPerUnit"/> the kg per piece recorded on the order line at approval; either may be absent
+/// (an acceptance or order older than AK-3), which shows no kg figure — never an estimate. Null on a service share and on a match
+/// recorded before AK-3b.
+/// </summary>
+public sealed record PurchaseInvoiceMatchKilograms(bool UnitIsKilogram,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? AcceptanceMeasuredKg = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? TheoreticalKilogramsPerUnit = null);
 
 /// <summary>Immutable Purchasing undo facts observed under the match's order lock. Null on old matches is not an empty proof.</summary>
 public sealed record PurchaseInvoiceReceiptAdjustment(Guid AdjustmentId, decimal UndoQuantity, bool IsSupplierReturn);
@@ -62,6 +75,9 @@ public sealed class PurchaseIncomingInvoice
     public const string StateConflict = "purchasing_invoice_state_conflict";
     public const string PolicyUnavailable = "purchasing_invoice_policy_unavailable";
     public const string MakerChecker = "purchasing_invoice_maker_checker";
+
+    /// <summary>AK-3b (ALS-D121): a piece-line receipt share is matched in whole pieces; a fractional piece count is refused.</summary>
+    public const string PieceQuantityInvalid = "purchasing_invoice_piece_quantity_invalid";
 
     private PurchaseIncomingInvoice(Guid id, Guid companyId, Guid supplierPartyId, Guid companyAccountId, Guid currencyId,
         Guid functionalCurrencyId, int moneyScale, int functionalScale, decimal? officialRate, PurchaseInvoiceSource source,
@@ -206,6 +222,19 @@ public sealed class PurchaseIncomingInvoice
             var line = Lines.SingleOrDefault(line => line.Id == item.InvoiceLineId);
             if (line is null || line.LinePurpose == "expense" || line.UnitId != item.UnitId || line.ServiceTypeId != item.ServiceTypeId)
                 throw new PurchasingRuleException(SourceMismatch, "Fatura ve kabul birimleri veya kalem kaynakları uyuşmuyor.");
+            if (item.Kilograms is { } kilograms)
+            {
+                // AK-3b: kg facts belong to a goods share; a kilogram line carries none of the piece figures.
+                if (item.ServiceTypeId is not null
+                    || kilograms.UnitIsKilogram && (kilograms.AcceptanceMeasuredKg is not null || kilograms.TheoreticalKilogramsPerUnit is not null)
+                    || kilograms.AcceptanceMeasuredKg is <= 0m || kilograms.TheoreticalKilogramsPerUnit is <= 0m
+                    || kilograms.AcceptanceMeasuredKg is { } weighed && decimal.Round(weighed, MaximumStoredScale) != weighed)
+                    throw new PurchasingRuleException(SourceMismatch, "Kabul payının kg kaynağı fatura satırıyla uyuşmuyor.");
+                // ALS-D121: a piece line is invoiced in whole pieces; the kg share is derived from them, never typed.
+                if (!kilograms.UnitIsKilogram && (decimal.Truncate(item.Quantity) != item.Quantity
+                    || item.AcceptedQuantity is not { } pieces || decimal.Truncate(pieces) != pieces))
+                    throw new PurchasingRuleException(PieceQuantityInvalid, "Adetli satırın faturası tam adetle eşleştirilir.");
+            }
             if (item.SubcontractTax is { } tax && (item.ServiceTypeId is null || line.LinePurpose != "service" || tax.SettingsVersion < 1
                 || line.VatPercent != (tax.VatApplies ? tax.VatPercent : 0m)))
                 throw new PurchasingRuleException(SourceMismatch, "Fason hizmetin onaylı vergi kaynağı resmî fatura satırıyla uyuşmuyor.");

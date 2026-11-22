@@ -16,8 +16,14 @@ namespace GoymenERP.Api.InventoryRuntime;
 /// Purchasing connection, guesses a price coefficient, or substitutes order/day FX for the official invoice cost rate.</summary>
 public sealed class PurchasingOwnerInventoryReceiptCostSource(IPurchaseReceiptCostProofV1 purchasing,
     IProductPurchaseUnitConversionV1 product, ISettingsExchangeRateResolverV1 exchangeRates,
-    ICompanyContext company, ICurrentUser user) : IInventoryPurchaseReceiptCostSourceV1
+    ICompanyContext company, ICurrentUser user, bool? weighedKilogramCost = null) : IInventoryPurchaseReceiptCostSourceV1
 {
+    /// <summary>
+    /// ALS-D119: whether a piece-line receipt is costed from its weighed kilograms. Production composition passes nothing and reads
+    /// <see cref="PurchaseReceiptWeighedCost.PurchaseCostGoldenAccepted"/>; a test pins either state explicitly.
+    /// </summary>
+    private readonly bool weighedKilogramCost = weighedKilogramCost ?? PurchaseReceiptWeighedCost.PurchaseCostGoldenAccepted;
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private const string Source = "inventory.purchase-receipt-cost.v1";
 
@@ -53,7 +59,7 @@ public sealed class PurchasingOwnerInventoryReceiptCostSource(IPurchaseReceiptCo
             if (price.MovingAverageUnitCost <= 0m) return Unavailable("purchase_receipt_cost_zero_unreadable");
             var day = ProductPriceBusinessDayV2.DateOf(proof.ReceivedAtUtc);
             ExactCostRatio originalRatio;
-            if (PurchaseReceiptWeighedCost.PurchaseCostGoldenAccepted && !price.PriceUnitIsKilogram)
+            if (weighedKilogramCost && !price.PriceUnitIsKilogram)
             {
                 // AK-3 (ALS-D119/ALS-D120): paid amount ÷ weighed kg, exact; no theoretical-kg fallback (TA3).
                 var weighedRatio = PurchaseReceiptWeighedCost.PerWeighedKilogram(price.MovingAverageUnitCost,

@@ -6,10 +6,13 @@ namespace GoymenERP.Modules.Inventory.Application;
 public sealed record InventoryPurchaseInvoiceOfficialDocumentV1(Guid DocumentId, long DocumentVersion, string Sha256, Guid Ettn);
 
 /// <summary>Both quantities are frozen by the actual Purchasing owner in the same order unit. The Inventory owner
-/// verifies the referenced receipt and its physical kg; no current Product conversion or inferred label is used.</summary>
+/// verifies the referenced receipt and its physical kg; no current Product conversion or inferred label is used.
+/// AK-3b (ALS-D121): <c>MeasuredQuantityKg</c> is set for a piece-line share only — the kilograms Purchasing recorded as weighed
+/// for the whole acceptance. Inventory requires its own immutable receipt to be that piece receipt with exactly those kilograms
+/// before it applies kg = weighed × matched pieces ÷ accepted pieces.</summary>
 public sealed record InventoryPurchaseInvoiceReceiptCostShareV1(Guid AcceptanceId, Guid OrderId, Guid OrderLineId,
     long OrderVersion, decimal MatchedQuantity, decimal AcceptedQuantity,
-    IReadOnlyList<InventoryPurchaseInvoiceReceiptAdjustmentV1>? ReceiptAdjustments = null);
+    IReadOnlyList<InventoryPurchaseInvoiceReceiptAdjustmentV1>? ReceiptAdjustments = null, decimal? MeasuredQuantityKg = null);
 
 public sealed record InventoryPurchaseInvoiceReceiptAdjustmentV1(Guid AdjustmentId, decimal UndoQuantity, bool IsSupplierReturn);
 
@@ -38,7 +41,7 @@ public static class InventoryPurchaseInvoiceCostInboxV1
 public sealed record InventoryPurchaseInvoiceCostReceiptV1(Guid InvoiceLineId, int InvoiceLineNo,
     Guid ProductId, Guid UnitId, Guid AcceptanceId, Guid OrderId, Guid OrderLineId, long OrderVersion,
     decimal MatchedQuantity, decimal AcceptedQuantity, InventoryExactCostRatioV1 TlNetShare,
-    IReadOnlyList<InventoryPurchaseInvoiceReceiptAdjustmentV1>? ReceiptAdjustments = null);
+    IReadOnlyList<InventoryPurchaseInvoiceReceiptAdjustmentV1>? ReceiptAdjustments = null, decimal? MeasuredQuantityKg = null);
 
 public sealed record InventoryPurchaseInvoiceCostProjectionV1(Guid CompanyId, Guid InvoiceId, long InvoiceVersion,
     Guid AdmissionId, DateOnly InvoiceDate, string FinalizedBy, InventoryPurchaseInvoiceOfficialDocumentV1 OfficialDocument,

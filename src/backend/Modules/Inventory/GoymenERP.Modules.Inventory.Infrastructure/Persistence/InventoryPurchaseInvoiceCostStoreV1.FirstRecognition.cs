@@ -81,7 +81,7 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1
             prerequisites.LocationCodes[x.Key.LocationId], share.InvoiceLineNo,
             x.Aggregate(ExactCostRatio.Of(0m), (sum, position) => sum.Add(position.Quantity)).Multiply(stockFraction)))
             .Where(x => x.RootQuantityKg.Sign > 0).ToArray();
-        var invoicedKg = rootKg.Multiply(share.MatchedQuantity).Divide(purchaseQuantity);
+        var invoicedKg = PurchaseInvoiceKilogramShare.Of(rootKg, share.MatchedQuantity, purchaseQuantity);
         var physicalSource = new InventoryPurchaseFirstCostPhysicalSourceV1(PurchaseFirstCostAllocationCalculator.Version,
             source.CompanyId, share.AcceptanceId, share.InvoiceLineId, share.InvoiceLineNo, movementId, rootLabelId,
             share.ProductId, share.MatchedQuantity, share.AcceptedQuantity,

@@ -171,6 +171,13 @@ public sealed record StoredPurchaseOrder(PurchaseOrder Order, Guid CompanyAccoun
     IReadOnlyDictionary<Guid, string> ProductVersionsByLineId)
 {
     public string? DocumentNumber { get; init; }
+
+    /// <summary>
+    /// AK-3b (SAT-D436 TK6): the receipt shares of the order's finalised supplier invoices, read for the order READ only
+    /// (<see cref="IPurchasingStore.ReadOrderInvoiceSharesAsync"/>). Null = not read (every command response): the realization is
+    /// then not shown at all, never as "nothing invoiced".
+    /// </summary>
+    public IReadOnlyList<GoymenERP.Modules.Purchasing.Domain.Orders.PurchaseOrderInvoiceShare>? InvoiceShares { get; init; }
 }
 
 public sealed record PurchasingRequestStoreResult(StoredPurchaseRequest Request, PurchasingWriteOutcome Outcome, string OriginalCorrelationId);
@@ -282,6 +289,16 @@ public interface IPurchasingStore
         Func<PurchaseOrder, IDbTransaction, CancellationToken, Task<T>> read, CancellationToken cancellationToken = default);
 
     Task<StoredPurchaseOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// AK-3b (SAT-D436 TK6): the goods receipt shares of the company's supplier invoices that count toward the realization of
+    /// <paramref name="orderId"/> (<c>PurchaseInvoiceRealizationRule</c>), read untracked from Purchasing's own invoice revisions and
+    /// receipt bindings. Nothing is written. Null means the store does not answer it (the realization is then not shown); a stored
+    /// invoice that cannot be read throws <see cref="PurchasingStoreException"/>, never a partial answer.
+    /// </summary>
+    Task<IReadOnlyList<GoymenERP.Modules.Purchasing.Domain.Orders.PurchaseOrderInvoiceShare>?> ReadOrderInvoiceSharesAsync(Guid orderId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<GoymenERP.Modules.Purchasing.Domain.Orders.PurchaseOrderInvoiceShare>?>(null);
 
     /// <summary>
     /// ALS-D94 / ALS-D81 (F-027): the company's recorded delivery-schedule revisions of one order line, oldest first — read only, as

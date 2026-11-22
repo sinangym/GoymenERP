@@ -20,8 +20,14 @@ public static class PurchaseKgPriceUnavailableCodes
     /// <summary>K17 / K18 (N2 open): the document level is shown only while every line is a goods line with its kg.</summary>
     public const string NotAllLinesHaveKg = "NotAllLinesHaveKg";
 
-    /// <summary>The real kg price of an order (invoiced amount ÷ weighed kg of invoiced lines) is not wired to invoices yet.</summary>
+    /// <summary>
+    /// The real kg price was not read for this answer: a command response carries the order without its invoice realization
+    /// (the order read does). Never a zero or an estimate.
+    /// </summary>
     public const string RealizationNotAvailable = "RealizationNotAvailable";
+
+    /// <summary>K01 / TK6: nothing is invoiced yet, so there is no real kg price.</summary>
+    public const string NotInvoiced = "NotInvoiced";
 }
 
 /// <summary>One kg price: the value at 0.01 (half away from zero) or why it is not shown.</summary>
@@ -51,6 +57,18 @@ public static class PurchaseKgPrice
         if (kilograms is null) return PurchaseKgPriceResult.Unavailable(missingKilogramsCode);
         if (kilograms.Value <= 0m) return PurchaseKgPriceResult.Unavailable(PurchaseKgPriceUnavailableCodes.ZeroKg);
         return new(RoundedQuotient(amount.Value, kilograms.Value), null);
+    }
+
+    /// <summary>
+    /// The same rule over exact rationals (TK3/TK4/TK6): a partial invoice's kilogram share (ALS-D121) and an apportioned amount can
+    /// be non-terminating, so they are summed exactly and the quotient is rounded once.
+    /// </summary>
+    public static PurchaseKgPriceResult Exact(PurchaseExactRatio? amount, PurchaseExactRatio? kilograms, string missingKilogramsCode)
+    {
+        if (amount is null) return PurchaseKgPriceResult.Unavailable(PurchaseKgPriceUnavailableCodes.AmountUnavailable);
+        if (kilograms is null) return PurchaseKgPriceResult.Unavailable(missingKilogramsCode);
+        if (kilograms.Value.Sign <= 0) return PurchaseKgPriceResult.Unavailable(PurchaseKgPriceUnavailableCodes.ZeroKg);
+        return new(amount.Value.DivideBy(kilograms.Value).Round(Scale), null);
     }
 
     public static PurchaseKgPriceResult Document(IReadOnlyList<PurchaseKgPriceLine> lines)
@@ -86,5 +104,70 @@ public static class PurchaseKgPrice
         var mantissa = new BigInteger((uint)bits[0]) | (new BigInteger((uint)bits[1]) << 32) | (new BigInteger((uint)bits[2]) << 64);
         var scale = (bits[3] >> 16) & 0xFF;
         return (bits[3] < 0 ? -mantissa : mantissa, scale);
+    }
+}
+
+/// <summary>
+/// An exact non-negative-denominator rational for the kg price indicator's sums (TK3: no intermediate rounding). It is an
+/// information value only; no cost or amount is ever written from it.
+/// </summary>
+public readonly struct PurchaseExactRatio
+{
+    private readonly BigInteger numerator;
+    private readonly BigInteger denominator;
+
+    private PurchaseExactRatio(BigInteger numerator, BigInteger denominator)
+    {
+        this.numerator = numerator;
+        this.denominator = denominator;
+    }
+
+    private BigInteger Denominator => denominator.IsZero ? BigInteger.One : denominator;
+
+    public static PurchaseExactRatio Zero => new(BigInteger.Zero, BigInteger.One);
+
+    public int Sign => numerator.Sign;
+
+    public static PurchaseExactRatio Of(decimal value)
+    {
+        var bits = decimal.GetBits(value);
+        var mantissa = new BigInteger((uint)bits[0]) | (new BigInteger((uint)bits[1]) << 32) | (new BigInteger((uint)bits[2]) << 64);
+        return new(bits[3] < 0 ? -mantissa : mantissa, BigInteger.Pow(10, (bits[3] >> 16) & 0xFF));
+    }
+
+    public PurchaseExactRatio Add(PurchaseExactRatio other) =>
+        new(numerator * other.Denominator + other.numerator * Denominator, Denominator * other.Denominator);
+
+    public PurchaseExactRatio Subtract(PurchaseExactRatio other) =>
+        new(numerator * other.Denominator - other.numerator * Denominator, Denominator * other.Denominator);
+
+    public PurchaseExactRatio Multiply(decimal value)
+    {
+        var factor = Of(value);
+        return new(numerator * factor.numerator, Denominator * factor.Denominator);
+    }
+
+    /// <exception cref="ArgumentOutOfRangeException">The divisor is not positive.</exception>
+    public PurchaseExactRatio Divide(decimal value) => value > 0m
+        ? DivideBy(Of(value))
+        : throw new ArgumentOutOfRangeException(nameof(value), "Bölen pozitif olmalıdır.");
+
+    /// <exception cref="ArgumentOutOfRangeException">The divisor is not positive.</exception>
+    public PurchaseExactRatio DivideBy(PurchaseExactRatio divisor) => divisor.Sign > 0
+        ? new(numerator * divisor.Denominator, Denominator * divisor.numerator)
+        : throw new ArgumentOutOfRangeException(nameof(divisor), "Bölen pozitif olmalıdır.");
+
+    public int CompareTo(PurchaseExactRatio other) => (numerator * other.Denominator).CompareTo(other.numerator * Denominator);
+
+    /// <summary>Rounded once to <paramref name="scale"/> decimals, half away from zero.</summary>
+    public decimal Round(int scale)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(scale);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(scale, 28);
+        var scaled = BigInteger.Abs(numerator) * BigInteger.Pow(10, scale);
+        var quotient = BigInteger.DivRem(scaled, Denominator, out var remainder);
+        if (remainder * 2 >= Denominator) quotient++;
+        var result = (decimal)quotient / (decimal)BigInteger.Pow(10, scale);
+        return numerator.Sign < 0 ? -result : result;
     }
 }
