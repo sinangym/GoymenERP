@@ -1712,6 +1712,13 @@ public static class ErpPermissions
     /// </summary>
     public const string WorkTasksComplete = "work.tasks.complete";
     /// <summary>
+    /// WP-C6 (AI-D30; DALGA_PLANI_v2 C.6): view another person's personal assistant memory in the company and close one of
+    /// their entries or their whole memory. Every view is written as an audit event and as a Work view row the person can list.
+    /// It never lets the holder edit or read the text of an entry its owner deleted. Separate from every other permission as
+    /// AI-D30 requires. Company-wide only. Not Critical. Registered, not granted: no seeded role holds it; a grant is a human gate.
+    /// </summary>
+    public const string WorkAssistantMemoryOversee = "work.assistant-memory.oversee";
+    /// <summary>
     /// Y-A1 (AI-D12, AI-D32, DALGA_PLANI_v2 A.4 (1)): may use the READ tool <c>decisions.lookup.v1</c> over the decision
     /// index in addition to <see cref="AiPanelUse"/>. AI-D36 recommends it for every user role (consistent with ROL-D16);
     /// registered company-wide only, not critical, and no seeded role holds it: applying the grant is a human gate.
@@ -2011,6 +2018,7 @@ public static class ErpPermissions
             WorkNotesWrite,
             WorkTasksAssign,
             WorkTasksComplete,
+            WorkAssistantMemoryOversee,
         ],
         StringComparer.Ordinal);
 
@@ -2314,6 +2322,7 @@ public static class ErpPermissions
             WorkNotesWrite,
             WorkTasksAssign,
             WorkTasksComplete,
+            WorkAssistantMemoryOversee,
         ],
         StringComparer.Ordinal);
 

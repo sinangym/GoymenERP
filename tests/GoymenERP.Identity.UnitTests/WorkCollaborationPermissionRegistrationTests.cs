@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 namespace GoymenERP.Identity.UnitTests;
 
 /// <summary>
-/// W1-C: the three Work collaboration names are REGISTERED, not granted (holders are a human gate). Each is company-wide
+/// W1-C: the three Work collaboration names (and WP-C6's assistant-memory oversight name, AI-D30) are REGISTERED, not granted (holders are a human gate). Each is company-wide
 /// and NOT critical; no seeded role carries any of them. Same shape as the AI panel registration.
 /// </summary>
 public sealed class WorkCollaborationPermissionRegistrationTests
@@ -24,6 +24,7 @@ public sealed class WorkCollaborationPermissionRegistrationTests
         ErpPermissions.WorkNotesWrite,
         ErpPermissions.WorkTasksAssign,
         ErpPermissions.WorkTasksComplete,
+        ErpPermissions.WorkAssistantMemoryOversee,
     };
 
     [Fact]
@@ -32,6 +33,7 @@ public sealed class WorkCollaborationPermissionRegistrationTests
         Assert.Equal("work.notes.write", ErpPermissions.WorkNotesWrite);
         Assert.Equal("work.tasks.assign", ErpPermissions.WorkTasksAssign);
         Assert.Equal("work.tasks.complete", ErpPermissions.WorkTasksComplete);
+        Assert.Equal("work.assistant-memory.oversee", ErpPermissions.WorkAssistantMemoryOversee);
     }
 
     [Theory]

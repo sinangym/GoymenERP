@@ -122,3 +122,24 @@ geri alınır.
 `WidenWorkRecordTypesAndNoteReads` migration'ı üç kontrol kısıtını 1–12'ye genişletir ve `RecordNoteReads` tablosunu
 ekler. Down guard **52170**: okundu satırı ya da 6–12 türüne bağlı not/görev/bildirim varken geri almayı reddeder
 (forward fix).
+## WP-C6: kişisel asistan hafızası pilotu (AI-D15, AI-D22, AI-D30)
+
+- Kayıt: kısa tercih veya not (`preference` | `note`, tek satır, en çok 500 karakter); kayda bağlı değildir, ERP verisinin
+  kopyası değildir. Modele yalnız `WorkAssistantMemoryDataBlockV1` biçiminde, sabit başlıklı **veri** (JSON, HTML/ASCII dışı
+  karakterler kaçışlı) olarak verilir; talimat değildir, yetki vermez.
+- Sahip: kendi kayıtlarını görür, düzeltir (beklenen sürüm), siler (`/api/v1/work/assistant-memory/mine/**`). Görme ve silme
+  her zaman açıktır; yazma `ai.panel.use` + açık pilot ister. Silinen kaydın metni kimseye (yönetici dahil) gösterilmez;
+  fiziksel imha saklama politikasına bağlıdır (NEEDS-SINAN).
+- Yönetici: `work.assistant-memory.oversee` ile bir kişinin hafızasını görür, kaydı veya kişinin bütün hafızasını kapatır /
+  yeniden açar (`/oversight/**`). Her görüntüleme önce `AssistantMemoryOversightViews` satırı + `work.assistant-memory.viewed.v1`
+  denetim olayı olarak kaydedilir, sonra sunulur; kişi kendi hafızasını kimin ne zaman gördüğünü listeler. Denetim metni kopyalamaz.
+- Yazma şu dört koşulun hepsi sağlanmadan kapalıdır (`Work:AssistantMemory`, hepsi varsayılan boş): `PilotEnabled`,
+  `RetentionDays` (AI-D30 "ayrı karar" — NEEDS-SINAN), `MaxEntriesPerUser` (parametre — NEEDS-SINAN değer),
+  `InformationNoticeVersion` (hukukçu teyitli bilgilendirme metninin onaylı sürümü; metin şimdilik yer tutucu, onay insanda).
+
+| İzin | Anlam | Rol |
+|---|---|---|
+| `work.assistant-memory.oversee` | başkasının hafızasını görme (denetimli) ve kapatma | hiçbir role verilmedi |
+
+`AddWorkAssistantMemory` migration'ı üç tenant filtreli tablo ekler. Down guard **52210**: hafıza kaydı, kişi kapatması
+veya görüntüleme kaydı varken geri almayı reddeder (forward fix); boş depo geri alınır.
