@@ -55,7 +55,7 @@ public sealed class SecurityTechWatchAiTool(
             LimitPolicy: "security.tech-watch.summary.v1/limit-50@1",
             Catalogue: "contracts/ai/tool-catalog-v1.json",
             AuthorizationPolicy: "ai.panel.use+platform.security-events.read@1",
-            SourceContract: "contracts/security/dependency-scan-report-v1.schema.json+ISecurityEventQueryServiceV1.GetEventsAsync@v1",
+            SourceContract: "contracts/security/dependency-scan-report-v1.schema.json+SecurityEventDigestReader.ReadAsync@v1",
             RedactionPolicy: "security-events/actor-pseudonym-no-correlation-no-hash@1"));
 
     public async Task<AiReadResultV1> ReadAsync(AiToolInputV1 input, AiServerContextV1 context, CancellationToken cancellationToken = default)

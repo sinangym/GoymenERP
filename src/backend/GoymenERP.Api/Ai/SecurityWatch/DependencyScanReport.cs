@@ -33,23 +33,23 @@ public sealed partial record DependencyScanReportV1(
         try
         {
             using var document = JsonDocument.Parse(json);
-            var root = document.RootElement;
-            if (!HasExactly(root, "format", "generatedAtUtc", "sourceCommit", "scanners", "findings")
-                || root.GetProperty("format").GetString() != Format
-                || !TryUtc(root.GetProperty("generatedAtUtc"), out var generatedAtUtc)
-                || root.GetProperty("sourceCommit").GetString() is not { } commit || !CommitPattern().IsMatch(commit)
-                || root.GetProperty("scanners").ValueKind != JsonValueKind.Array
-                || root.GetProperty("findings").ValueKind != JsonValueKind.Array
-                || root.GetProperty("findings").GetArrayLength() > MaximumFindings)
+            if (Fields(document.RootElement, "format", "generatedAtUtc", "sourceCommit", "scanners", "findings") is not { } root
+                || root["format"].ValueKind != JsonValueKind.String || root["format"].GetString() != Format
+                || !TryUtc(root["generatedAtUtc"], out var generatedAtUtc)
+                || root["sourceCommit"].ValueKind != JsonValueKind.String
+                || root["sourceCommit"].GetString() is not { } commit || !CommitPattern().IsMatch(commit)
+                || root["scanners"].ValueKind != JsonValueKind.Array
+                || root["findings"].ValueKind != JsonValueKind.Array
+                || root["findings"].GetArrayLength() > MaximumFindings)
             {
                 return DependencyScanReadResultV1.Invalid;
             }
 
             var scanners = new List<DependencyScanScannerV1>();
-            foreach (var scanner in root.GetProperty("scanners").EnumerateArray())
+            foreach (var element in root["scanners"].EnumerateArray())
             {
-                if (!HasExactly(scanner, "name", "version")
-                    || !TryText(scanner.GetProperty("name"), out var name) || !TryText(scanner.GetProperty("version"), out var version))
+                if (Fields(element, "name", "version") is not { } scanner
+                    || !TryText(scanner["name"], out var name) || !TryText(scanner["version"], out var version))
                 {
                     return DependencyScanReadResultV1.Invalid;
                 }
@@ -63,21 +63,21 @@ public sealed partial record DependencyScanReportV1(
             }
 
             var findings = new List<DependencyScanFindingV1>();
-            foreach (var finding in root.GetProperty("findings").EnumerateArray())
+            foreach (var element in root["findings"].EnumerateArray())
             {
-                if (!HasExactly(finding, "ecosystem", "package", "installedVersion", "fixedVersion", "advisoryId", "severity", "title")
-                    || finding.GetProperty("ecosystem").GetString() is not { } ecosystem || !Ecosystems.Contains(ecosystem)
-                    || finding.GetProperty("severity").GetString() is not { } severity || !Severities.Contains(severity)
-                    || !TryText(finding.GetProperty("package"), out var package)
-                    || !TryText(finding.GetProperty("installedVersion"), out var installed)
-                    || !TryText(finding.GetProperty("advisoryId"), out var advisory) || !AdvisoryPattern().IsMatch(advisory)
-                    || !TryText(finding.GetProperty("title"), out var title))
+                if (Fields(element, "ecosystem", "package", "installedVersion", "fixedVersion", "advisoryId", "severity", "title") is not { } finding
+                    || !TryText(finding["ecosystem"], out var ecosystem) || !Ecosystems.Contains(ecosystem)
+                    || !TryText(finding["severity"], out var severity) || !Severities.Contains(severity)
+                    || !TryText(finding["package"], out var package)
+                    || !TryText(finding["installedVersion"], out var installed)
+                    || !TryText(finding["advisoryId"], out var advisory) || !AdvisoryPattern().IsMatch(advisory)
+                    || !TryText(finding["title"], out var title))
                 {
                     return DependencyScanReadResultV1.Invalid;
                 }
 
                 string? fixedVersion = null;
-                var fixedElement = finding.GetProperty("fixedVersion");
+                var fixedElement = finding["fixedVersion"];
                 if (fixedElement.ValueKind != JsonValueKind.Null)
                 {
                     if (!TryText(fixedElement, out var value))
@@ -99,10 +99,25 @@ public sealed partial record DependencyScanReportV1(
         }
     }
 
-    private static bool HasExactly(JsonElement element, params string[] names) =>
-        element.ValueKind == JsonValueKind.Object
-        && element.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal)
-            .SequenceEqual(names.Order(StringComparer.Ordinal), StringComparer.Ordinal);
+    /// <summary>The object's members by name when it has exactly these names (no duplicate, extra or missing key).</summary>
+    private static Dictionary<string, JsonElement>? Fields(JsonElement element, params string[] names)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var fields = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var member in element.EnumerateObject())
+        {
+            if (!names.Contains(member.Name, StringComparer.Ordinal) || !fields.TryAdd(member.Name, member.Value))
+            {
+                return null;
+            }
+        }
+
+        return fields.Count == names.Length ? fields : null;
+    }
 
     private static bool TryText(JsonElement element, out string value)
     {

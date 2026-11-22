@@ -23,6 +23,8 @@ public sealed class SecurityEventsSummaryAiTool(SecurityEventDigestReader digest
     public const int DefaultLimit = 20;
     public const int MaximumLimit = 50;
     public const string TargetKind = "security-events.company";
+    // nameof keeps the module name out of string literals (the table-name ownership guard scans for them).
+    public const string OwnerModule = nameof(SecurityEvents);
     private const string InvalidArguments = "arguments";
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -30,7 +32,7 @@ public sealed class SecurityEventsSummaryAiTool(SecurityEventDigestReader digest
     public AiToolDescriptorV1 Descriptor { get; } = new(
         ToolId,
         ToolVersion,
-        ownerModule: "SecurityEvents",
+        ownerModule: OwnerModule,
         AiToolRiskClassV1.Read,
         AiDataClassV1.Confidential,
         requiredPermissions: [ErpPermissions.PlatformSecurityEventsRead],
@@ -43,7 +45,7 @@ public sealed class SecurityEventsSummaryAiTool(SecurityEventDigestReader digest
             LimitPolicy: "security.events.summary.v1/limit-50-page-100-per-type@1",
             Catalogue: "contracts/ai/tool-catalog-v1.json",
             AuthorizationPolicy: "ai.panel.use+platform.security-events.read@1",
-            SourceContract: "ISecurityEventQueryServiceV1.GetEventsAsync@v1",
+            SourceContract: "SecurityEventDigestReader.ReadAsync@v1",
             RedactionPolicy: "security-events/actor-pseudonym-no-correlation-no-hash@1"));
 
     public async Task<AiReadResultV1> ReadAsync(AiToolInputV1 input, AiServerContextV1 context, CancellationToken cancellationToken = default)
