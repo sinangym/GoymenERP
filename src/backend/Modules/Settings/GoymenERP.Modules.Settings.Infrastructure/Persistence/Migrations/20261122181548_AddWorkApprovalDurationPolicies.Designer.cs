@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(SettingsDbContext))]
-    [Migration("20261122163033_AddWorkApprovalDurationPolicies")]
+    [Migration("20261122181548_AddWorkApprovalDurationPolicies")]
     partial class AddWorkApprovalDurationPolicies
     {
         /// <inheritdoc />
@@ -3938,6 +3938,66 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.WorkHolidayCalendarDayRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("int");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "Year", "Version", "Date");
+
+                    b.ToTable("WorkHolidayCalendarDays", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsWorkHolidayCalendarDays_Day", "[Kind] IN (1, 2) AND YEAR([Date]) = [Year]");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.WorkHolidayCalendarVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("int");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("DayCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("CompanyId", "Year", "Version");
+
+                    b.ToTable("WorkHolidayCalendarVersions", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsWorkHolidayCalendarVersions_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0 AND [Year] BETWEEN 2000 AND 2100 AND [DayCount] BETWEEN 0 AND 60 AND LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.BankInstitutionEntryRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.BankInstitutionPolicyRow", null)
@@ -4235,6 +4295,15 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("CompanyId", "ReplacedByRecordId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.WorkHolidayCalendarDayRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.WorkHolidayCalendarVersionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "Year", "Version")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }

@@ -50,6 +50,39 @@ public static class SettingsWorkApprovalDurationLimitsV1
     /// <summary>Input range only; the decided values live in recorded versions.</summary>
     public const int MaximumBusinessDays = 30;
 }
+/// <summary>YOL-D22: a listed day is an official holiday or an eve (arife); both are deducted from business days.</summary>
+public enum WorkHolidayKindV1
+{
+    Holiday = 1,
+    Eve = 2,
+}
+/// <summary>YOL-D22: the latest recorded holiday list of one year; a year missing from the answer is "not defined".</summary>
+public sealed record SettingsWorkHolidayCalendarYearV1(int Year, long Version, IReadOnlyList<DateOnly> Days)
+{
+    public string VersionText => string.Create(System.Globalization.CultureInfo.InvariantCulture,
+        $"work.holiday-calendar.{Year}:{Version}");
+}
+public sealed record SettingsWorkHolidayCalendarsV1(Guid CompanyId, IReadOnlyList<SettingsWorkHolidayCalendarYearV1> DefinedYears);
+public interface ISettingsWorkHolidayCalendarProviderV1
+{
+    /// <summary>The defined years among <paramref name="fromYear"/>..<paramref name="toYear"/> (inclusive) with their latest list.</summary>
+    Task<SettingsWorkHolidayCalendarsV1> GetWorkHolidayCalendarsAsync(Guid companyId, int fromYear, int toYear,
+        CancellationToken cancellationToken = default);
+}
+public static class SettingsWorkHolidayCalendarLimitsV1
+{
+    public const int MinimumYear = 2000;
+    public const int MaximumYear = 2100;
+    /// <summary>Input bound only: no year lists more official holidays and eves than this.</summary>
+    public const int MaximumDays = 60;
+}
+public sealed record RecordWorkHolidayDayV1(DateOnly? Date, string? Kind);
+public sealed record RecordWorkHolidayCalendarRequestV1(string? ExpectedVersion, IReadOnlyList<RecordWorkHolidayDayV1>? Days, string? Reason);
+public sealed record WorkHolidayCalendarDayViewV1(DateOnly Date, string Kind);
+public sealed record WorkHolidayCalendarVersionViewV1(string Version, int DayCount, string RecordedBy, DateTimeOffset RecordedAtUtc,
+    string Reason);
+public sealed record WorkHolidayCalendarViewV1(Guid CompanyId, int Year, bool IsDefined, string Version,
+    IReadOnlyList<WorkHolidayCalendarDayViewV1> Days, IReadOnlyList<WorkHolidayCalendarVersionViewV1> Versions);
 public sealed record RecordWorkApprovalDurationRequestV1(string? ExpectedVersion, int? Value, string? Reason);
 public sealed record WorkApprovalDurationClassViewV1(int? Value, string Version,
     IReadOnlyList<WholeNumberCompanyPolicyVersionViewV1> Versions);
@@ -75,5 +108,8 @@ public interface ISettingsOperationalPolicyAdministrationV1
     Task<CompanyPolicyCommandResultV1> RecordWorkApprovalDurationHoursAsync(RecordWorkApprovalDurationRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
     Task<CompanyPolicyCommandResultV1> RecordWorkApprovalDurationBusinessDaysAsync(RecordWorkApprovalDurationRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+    Task<WorkHolidayCalendarViewV1> GetWorkHolidayCalendarAsync(int year, CancellationToken cancellationToken = default);
+    Task<CompanyPolicyCommandResultV1> RecordWorkHolidayCalendarAsync(int year, RecordWorkHolidayCalendarRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
 }

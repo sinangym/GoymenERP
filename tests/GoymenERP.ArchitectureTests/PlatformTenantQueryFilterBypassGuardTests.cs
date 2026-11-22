@@ -511,7 +511,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 W7: source facts kept ordinal-sorted; SQL execution NOT_RUN.
                 // W8 local test database lifecycle: +1 real-SQL Fact; runtime proof pending.
                 // W8 reference-list provider failure: +1 SQL lock-timeout Fact; runtime proof pending.
-                "42cd75092f72ef4c84d605a13b6439f2e673704aea89558aa5415c37201ca116",
+                "92a49f71af5d2f852eccd8e8f3e9c69955ebbe56f87d3b7a06db9a0bec5c84a8",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -815,7 +815,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 wave 3 (integration): the team slices combined; token counts checked by the guard (1338eb2e… -> c7b896e7…).
                 // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (c7b896e7… -> a0575b35…).
                 // Re-fingerprinted for tren-1 W7: owner append-only schema changes; company filters retained; K3 review pending.
-                "6ed95ba99707fd66896d2a510add99bb41453e5d6e68e14d7115363651fa87a7",
+                "c027ac486f5d9cd66aa5299625ba941c90ed760805f78f6498ac022823d38094",
             // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
@@ -3164,7 +3164,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (df39cc97… -> f985bf2f…).
                         // Re-fingerprinted for tren-1 W6: KIM-S13: register tenant-bound money profile administration and lookup; reviewed API counts unchanged (f985bf2f... -> d9a03cdf...).
                         // Re-fingerprinted for tren-1 W7: in-process owner registrations; activation flags unchanged; K3 review pending.
-                        "1746cc472ea961fce91f827aa2b9acbcf61300b2126cc421506e93673dbe073c",
+                        "2c761031d394c3c0920706faa57627eb2ffaa5341fd2da15f62d0ea434383907",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -6188,9 +6188,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // W1-A; K3 review pending. Down refuses (52080, used by no other migration) while Work approval inbox measurement events exist; use a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261122163006_AddWorkApprovalInboxEvents.cs"] =
                     new("c2a85a0761cb686b08ec9cfbb9d1cae09fd06fa6f25f190cd59a2b5c4d9e3dc8", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
-                // W1-A; K3 review pending. Down refuses (52084, Work range, used by no other migration) while work.approval-duration-* policy versions exist; use a forward fix. 1 lexical Sql call(s).
-                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261122163033_AddWorkApprovalDurationPolicies.cs"] =
-                    new("da0ca1a11740b0aa82df740b67d35192253f66b35766cfca13d8aca27980a080", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // W1-A; K3 review pending. Down refuses (52084, Work range, used by no other migration) while work.approval-duration-* policy versions or holiday calendar versions exist; use a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261122181548_AddWorkApprovalDurationPolicies.cs"] =
+                    new("c2be1e8e212f794bb5a0c4ebdd3f98dcc805a559caa98c1a2fdc842ea0b53d18", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
             };
 
     private static readonly HashSet<string> ReviewedProjectSdks =

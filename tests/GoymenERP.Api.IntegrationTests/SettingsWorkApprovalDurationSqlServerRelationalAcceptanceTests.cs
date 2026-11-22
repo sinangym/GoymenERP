@@ -44,6 +44,37 @@ public sealed partial class SettingsCompanyPolicySqlServerRelationalAcceptanceTe
         Assert.Equal(2, await run.CountAsync("SELECT COUNT(*) FROM [settings].[CompanyPolicyVersions] WHERE [PolicyKey] LIKE 'work.approval-duration-%'"));
     }
 
+    [SqlServerFact]
+    public async Task Work_holiday_calendars_start_undefined_record_yearly_versions_with_replay_and_refuse_days_outside_the_year()
+    {
+        await using var run = await HostRun.StartAsync();
+        var subject = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SettingsOperationalPolicyPermissionsV1.WorkApprovalDurationManage);
+        using var editor = run.Client(subject, CompanyA);
+        const string root = "/api/v1/settings/company-policies/work-holiday-calendar/2026";
+        var guard = Assert.IsType<SqlOperation>(new AddWorkApprovalDurationPolicies().DownOperations[0]).Sql;
+        await run.ExecuteAsync(guard);
+
+        var initial = await editor.GetFromJsonAsync<WorkHolidayCalendarViewV1>(root);
+        Assert.Equal((CompanyA, 2026, false, "0", 0), (initial!.CompanyId, initial.Year, initial.IsDefined, initial.Version, initial.Days.Count));
+        using (var outside = await editor.SendAsync(Json(root + "/versions", "holiday-outside", new RecordWorkHolidayCalendarRequestV1("0",
+                   [new RecordWorkHolidayDayV1(new DateOnly(2027, 1, 1), "Holiday")], "SENTETIK tatil"))))
+            await ProblemAsync(outside, HttpStatusCode.BadRequest, CompanyPolicyProblemCodesV1.RequestInvalid);
+        var request = new RecordWorkHolidayCalendarRequestV1("0",
+            [new RecordWorkHolidayDayV1(new DateOnly(2026, 10, 29), "Holiday"), new RecordWorkHolidayDayV1(new DateOnly(2026, 10, 28), "Eve")],
+            "SENTETIK tatil takvimi");
+        await run.CommandAsync(editor, root + "/versions", "holiday-first", request);
+        await run.CommandAsync(editor, root + "/versions", "holiday-first", request, replay: true);
+
+        var current = await editor.GetFromJsonAsync<WorkHolidayCalendarViewV1>(root);
+        Assert.Equal((true, "1"), (current!.IsDefined, current.Version));
+        Assert.Equal([("2026-10-28", "Eve"), ("2026-10-29", "Holiday")],
+            current.Days.Select(day => (day.Date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), day.Kind)).ToArray());
+        Assert.Equal(1, await run.CountAsync("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityType] = N'Settings.WorkHolidayCalendar'"));
+        var downRefused = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
+        Assert.Equal(52084, downRefused.Number);
+        Assert.Equal(2, await run.CountAsync("SELECT COUNT(*) FROM [settings].[WorkHolidayCalendarDays]"));
+    }
+
     [Fact]
     public void Work_approval_duration_permission_is_registered_once_company_wide_and_not_critical()
     {
@@ -63,6 +94,9 @@ public sealed partial class SettingsCompanyPolicySqlServerRelationalAcceptanceTe
         Assert.Contains("THROW 52084", guard, StringComparison.Ordinal);
         Assert.Contains("'work.approval-duration-hours'", guard, StringComparison.Ordinal);
         Assert.Contains("'work.approval-duration-business-days'", guard, StringComparison.Ordinal);
+        Assert.Contains("[settings].[WorkHolidayCalendarVersions]", guard, StringComparison.Ordinal);
+        Assert.Equal(["WorkHolidayCalendarDays", "WorkHolidayCalendarVersions"],
+            migration.UpOperations.OfType<CreateTableOperation>().Select(table => table.Name).Order(StringComparer.Ordinal).ToArray());
         Assert.Single(migration.DownOperations.OfType<SqlOperation>());
     }
 }

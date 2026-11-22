@@ -52,7 +52,7 @@ public static class WorkInboxEndpoints
             .ProducesErpServiceUnavailable();
 
         endpoints.MapPost(EventsPath, async (
-                RecordWorkInboxEventRequestV1? request,
+                RecordWorkInboxEventRequestV1 request,
                 WorkInboxReadQueryV1 query,
                 HttpContext httpContext,
                 CancellationToken cancellationToken) =>

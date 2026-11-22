@@ -262,6 +262,53 @@ public sealed class WorkInboxReadQueryV1Tests
             WorkInboxDurationCalculatorV1.AddBusinessDays(DateTimeOffset.Parse(start), days));
     }
 
+    [Fact]
+    public async Task A_business_day_item_skips_the_recorded_holidays_and_says_when_a_year_has_no_calendar()
+    {
+        var finance = new Source("finance", "finance.manual-bank-payment.v1", "finance.manual-bank-payment.approve",
+            WorkApprovalDurationClassV1.BusinessDays)
+        {
+            Result = ctx => WorkInboxSourceResultV1.Found(ctx.CompanyId,
+                [Item("finance", "finance.manual-bank-payment.v1", First, Early, Maker)], hasMore: false),
+        };
+        var policy = new SettingsWorkApprovalDurationPolicyV1(Company, 4, 1, 2, 1);
+        var recorded = new Holidays(new SettingsWorkHolidayCalendarsV1(Company,
+            [new SettingsWorkHolidayCalendarYearV1(2026, 1, [new DateOnly(2026, 11, 17)]),
+                new SettingsWorkHolidayCalendarYearV1(2027, 1, [])]));
+        var partial = new Holidays(new SettingsWorkHolidayCalendarsV1(Company,
+            [new SettingsWorkHolidayCalendarYearV1(2027, 1, [])]));
+        var unreadable = new Holidays(null);
+
+        var defined = Assert.Single((await Fixture([finance], policy, recorded).Query.ListAsync(null, null, default)).Resource!.Items);
+        var undefined = Assert.Single((await Fixture([finance], policy, partial).Query.ListAsync(null, null, default)).Resource!.Items);
+        var unavailable = Assert.Single((await Fixture([finance], policy, unreadable).Query.ListAsync(null, null, default)).Resource!.Items);
+
+        // Monday 2026-11-16 10:00 local + 2 business days, Tuesday 17th a holiday → Thursday 19th 10:00 local.
+        Assert.Equal((DateTimeOffset.Parse("2026-11-19T07:00:00Z"), WorkInboxHolidayCalendarStatesV1.Defined),
+            (defined.Duration.DueAtUtc, defined.Duration.HolidayCalendar));
+        Assert.Equal((2026, 2027), recorded.Asked);
+        Assert.Equal((DateTimeOffset.Parse("2026-11-18T07:00:00Z"), WorkInboxHolidayCalendarStatesV1.Undefined),
+            (undefined.Duration.DueAtUtc, undefined.Duration.HolidayCalendar));
+        Assert.Equal((DateTimeOffset.Parse("2026-11-18T07:00:00Z"), WorkInboxHolidayCalendarStatesV1.Unavailable),
+            (unavailable.Duration.DueAtUtc, unavailable.Duration.HolidayCalendar));
+    }
+
+    [Fact]
+    public void A_wait_starting_on_a_holiday_counts_from_the_next_business_day_and_the_hour_class_has_no_calendar()
+    {
+        var holidays = new Dictionary<int, IReadOnlySet<DateOnly>>
+        {
+            [2026] = new HashSet<DateOnly> { new(2026, 11, 16) },
+        };
+        var due = WorkInboxDurationCalculatorV1.AddBusinessDays(Early, 1, holidays, out var first, out var last);
+        var hours = WorkInboxDurationCalculatorV1.Compute(WorkApprovalDurationClassV1.Hours,
+            new SettingsWorkApprovalDurationPolicyV1(Company, 4, 1, 2, 1), Early, Now,
+            new WorkInboxHolidaysV1(holidays));
+
+        Assert.Equal((DateTimeOffset.Parse("2026-11-17T21:00:00Z"), 2026, 2026), (due, first, last));
+        Assert.Null(hours.HolidayCalendar);
+    }
+
     private static WorkInboxItemV1 Item(string module, string kind, Guid id, DateTimeOffset since, string preparedBy) =>
         new(module, kind, id, "DOC-" + id.ToString("N")[..4], since, $"/{module}/{id:D}", preparedBy,
             [new WorkApprovalRuleResultV1(module + ".rule", "10", "12.5", "2.5", "%")],
@@ -298,14 +345,15 @@ public sealed class WorkInboxReadQueryV1Tests
         new HashSet<Guid>());
 
     private static WorkInboxFixture Fixture(IReadOnlyList<IWorkInboxSourceV1> sources,
-        SettingsWorkApprovalDurationPolicyV1? policy)
+        SettingsWorkApprovalDurationPolicyV1? policy, Holidays? holidays = null)
     {
         var company = new MutableCompanyContext(Company);
         var user = new MutableUser(Checker);
         var correlation = new MutableCorrelation();
         var authority = new Authority();
         var measurements = new Measurements();
-        var query = new WorkInboxReadQueryV1(company, user, correlation, authority, new Durations(policy), measurements,
+        var query = new WorkInboxReadQueryV1(company, user, correlation, authority, new Durations(policy),
+            holidays ?? new Holidays(new SettingsWorkHolidayCalendarsV1(Company, [])), measurements,
             new FixedTime(Now), NullLogger<WorkInboxReadQueryV1>.Instance, sources);
         return new(query, company, authority, measurements);
     }
@@ -353,6 +401,18 @@ public sealed class WorkInboxReadQueryV1Tests
         public Task<SettingsWorkApprovalDurationPolicyV1> GetWorkApprovalDurationAsync(Guid companyId,
             CancellationToken cancellationToken = default) =>
             policy is null ? throw new InvalidOperationException("Settings unavailable.") : Task.FromResult(policy);
+    }
+
+    private sealed class Holidays(SettingsWorkHolidayCalendarsV1? answer) : ISettingsWorkHolidayCalendarProviderV1
+    {
+        public (int From, int To)? Asked { get; private set; }
+
+        public Task<SettingsWorkHolidayCalendarsV1> GetWorkHolidayCalendarsAsync(Guid companyId, int fromYear, int toYear,
+            CancellationToken cancellationToken = default)
+        {
+            Asked = (fromYear, toYear);
+            return answer is null ? throw new InvalidOperationException("Settings unavailable.") : Task.FromResult(answer);
+        }
     }
 
     private sealed class Measurements : IWorkApprovalInboxMeasurementsV1

@@ -86,6 +86,7 @@ internal sealed class WorkInboxReadQueryV1
     private readonly ICorrelationContext correlationContext;
     private readonly IErpAuthorityRevalidationService authority;
     private readonly ISettingsWorkApprovalDurationPolicyProviderV1 durations;
+    private readonly ISettingsWorkHolidayCalendarProviderV1 holidayCalendars;
     private readonly IWorkApprovalInboxMeasurementsV1 measurements;
     private readonly TimeProvider time;
     private readonly ILogger<WorkInboxReadQueryV1> logger;
@@ -98,6 +99,7 @@ internal sealed class WorkInboxReadQueryV1
         ICorrelationContext correlationContext,
         IErpAuthorityRevalidationService authority,
         ISettingsWorkApprovalDurationPolicyProviderV1 durations,
+        ISettingsWorkHolidayCalendarProviderV1 holidayCalendars,
         IWorkApprovalInboxMeasurementsV1 measurements,
         TimeProvider time,
         ILogger<WorkInboxReadQueryV1> logger,
@@ -108,6 +110,7 @@ internal sealed class WorkInboxReadQueryV1
         this.correlationContext = correlationContext;
         this.authority = authority;
         this.durations = durations;
+        this.holidayCalendars = holidayCalendars;
         this.measurements = measurements;
         this.time = time;
         this.logger = logger;
@@ -165,7 +168,7 @@ internal sealed class WorkInboxReadQueryV1
         SettingsWorkApprovalDurationPolicyV1? policy = null;
         var policyRead = false;
         var now = time.GetUtcNow();
-        var items = new List<WorkInboxPageItemV1>();
+        var visible = new List<(IWorkInboxSourceV1 Source, WorkInboxItemV1 Item)>();
         var states = new List<WorkInboxSourceStateV1>();
         foreach (var source in selected)
         {
@@ -213,20 +216,10 @@ internal sealed class WorkInboxReadQueryV1
             foreach (var item in accepted)
             {
                 // Maker ≠ checker also in the list: a record never waits on its own maker's decision.
-                if (string.Equals(item.PreparedBy, context.UserId, StringComparison.Ordinal))
+                if (!string.Equals(item.PreparedBy, context.UserId, StringComparison.Ordinal))
                 {
-                    continue;
+                    visible.Add((source, item));
                 }
-                items.Add(new WorkInboxPageItemV1(
-                    item.Module,
-                    item.Kind,
-                    item.ItemId,
-                    item.DocumentLabel,
-                    item.Link,
-                    item.WaitingSinceUtc,
-                    source.ApproverPermission,
-                    WorkInboxDurationCalculatorV1.Compute(source.DurationClass, policy, item.WaitingSinceUtc, now),
-                    new WorkInboxExplanationV1(item.Rules, item.References)));
             }
             states.Add(State(source, SourceReady, result.HasMore));
         }
@@ -243,6 +236,30 @@ internal sealed class WorkInboxReadQueryV1
             return new(WorkInboxReadOutcomeV1.Unavailable, null);
         }
 
+        WorkInboxHolidaysV1? holidays = null;
+        if (policy is { BusinessDays: > 0 } definedPolicy
+            && visible.Any(entry => entry.Source.DurationClass == WorkApprovalDurationClassV1.BusinessDays))
+        {
+            holidays = await ReadHolidaysAsync(context, visible
+                .Where(entry => entry.Source.DurationClass == WorkApprovalDurationClassV1.BusinessDays)
+                .Select(entry => WorkInboxDurationCalculatorV1.CandidateYears(entry.Item.WaitingSinceUtc, definedPolicy.BusinessDays!.Value))
+                .ToArray(), cancellationToken);
+            if (!SameContext(context))
+            {
+                return new(WorkInboxReadOutcomeV1.Denied, null);
+            }
+        }
+        var items = visible.Select(entry => new WorkInboxPageItemV1(
+                entry.Item.Module,
+                entry.Item.Kind,
+                entry.Item.ItemId,
+                entry.Item.DocumentLabel,
+                entry.Item.Link,
+                entry.Item.WaitingSinceUtc,
+                entry.Source.ApproverPermission,
+                WorkInboxDurationCalculatorV1.Compute(entry.Source.DurationClass, policy, entry.Item.WaitingSinceUtc, now, holidays),
+                new WorkInboxExplanationV1(entry.Item.Rules, entry.Item.References)))
+            .ToArray();
         var ordered = items
             .OrderBy(item => item.WaitingSinceUtc)
             .ThenBy(item => item.Module, StringComparer.Ordinal)
@@ -406,6 +423,41 @@ internal sealed class WorkInboxReadQueryV1
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             logger.LogWarning(exception, "Work inbox could not read the approval duration policy.");
+            return null;
+        }
+    }
+
+    private async Task<WorkInboxHolidaysV1?> ReadHolidaysAsync(
+        WorkInboxSourceContextV1 context,
+        IReadOnlyList<(int FirstYear, int LastYear)> spans,
+        CancellationToken cancellationToken)
+    {
+        var fromYear = Math.Max(spans.Min(span => span.FirstYear), SettingsWorkHolidayCalendarLimitsV1.MinimumYear);
+        var toYear = Math.Min(spans.Max(span => span.LastYear), SettingsWorkHolidayCalendarLimitsV1.MaximumYear);
+        if (fromYear > toYear)
+        {
+            return new WorkInboxHolidaysV1(new Dictionary<int, IReadOnlySet<DateOnly>>());
+        }
+        try
+        {
+            var calendars = await holidayCalendars.GetWorkHolidayCalendarsAsync(context.CompanyId, fromYear, toYear, cancellationToken);
+            if (calendars is null || calendars.CompanyId != context.CompanyId)
+            {
+                return null;
+            }
+            var years = new Dictionary<int, IReadOnlySet<DateOnly>>();
+            foreach (var year in calendars.DefinedYears)
+            {
+                if (year is null || year.Year < fromYear || year.Year > toYear || !years.TryAdd(year.Year, year.Days.ToHashSet()))
+                {
+                    return null;
+                }
+            }
+            return new WorkInboxHolidaysV1(years);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogWarning(exception, "Work inbox could not read the holiday calendar.");
             return null;
         }
     }

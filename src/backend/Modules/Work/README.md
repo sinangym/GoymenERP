@@ -28,7 +28,10 @@ Work hiçbir sahip tablosunu okumaz/yazmaz; her okumada sahibe yeniden sorar.
 - Süre sınıfı sahibin bildirimidir (saat / iş günü); uzunluklar Ayarlar'da versiyonlu
   `work.approval-duration-hours` ve `work.approval-duration-business-days` kayıtlarıdır. Kayıt
   yoksa "süre tanımlı değil" gösterilir (varsayılan yok). İş günü hesabı Türkiye saatinde
-  Pazartesi–Cuma sayar; resmî tatil takvimi henüz yoktur (ASSUMPTION-W1A-1, yalnız gösterim).
+  Pazartesi–Cuma sayar ve YOL-D22 gereği şirketin Ayarlar'da yıllık, sürümlü kaydettiği resmî
+  tatil/arife listesini düşer (`settings.WorkHolidayCalendarVersions/Days`, aynı
+  `settings.work-approval-duration.manage` izni). Bir yılın listesi yoksa yalnız hafta sonu düşülür
+  ve kalemde "tatil takvimi tanımsız" uyarısı görünür; liste okunamazsa "okunamadı" uyarısı.
 - Karar kutudan verilmez; kalem sahip ekranına bağlanır.
 
 Ölçüm: `work.ApprovalInboxEvents` (yalnız ekleme, kişi kolonu yok → kişisel performans raporu
@@ -38,5 +41,5 @@ döngünün gözlem zamanı (kesin karar zamanı için sahip olay bağlaması so
 bekleme = `Arrived` → `ResolvedObserved`; aktif inceleme = ilk `Opened` → `ResolvedObserved`.
 
 `AddWorkApprovalInboxEvents` Down guard **52080**: olay varken geri alma reddedilir (forward fix).
-Ayarlar'daki `AddWorkApprovalDurationPolicies` Down guard **52084** (Work aralığı; anahtarlar
-Work'e aittir): süre kaydı varken reddeder.
+Ayarlar'daki `AddWorkApprovalDurationPolicies` Down guard **52084** (Work aralığı; anahtarlar ve
+tatil takvimi Work'e aittir): süre veya tatil takvimi kaydı varken reddeder.
