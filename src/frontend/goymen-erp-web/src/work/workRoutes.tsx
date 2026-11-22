@@ -12,6 +12,8 @@ import { ApprovalInboxDetailPage, ApprovalInboxPage } from './ApprovalInboxPages
 import { WorkQueuePage } from './WorkQueuePage'
 import { NotificationsPage } from './NotificationsPage'
 import { MyTasksPage } from './MyTasksPage'
+import { AssistantMemoryPage } from './AssistantMemoryPage'
+import { ASSISTANT_MEMORY_ROUTE } from './assistantMemoryContract'
 import { MY_TASKS_ROUTE } from './collaborationContract'
 import { NOTIFICATIONS_ROUTE } from './notificationContract'
 import { WORK_APPROVALS_CAPABILITIES, WORK_ROUTE } from './workText'
@@ -28,6 +30,9 @@ export const workRoutes: RouteObject[] = [
   { path: NOTIFICATIONS_ROUTE.slice(1), element: <NotificationsPage /> },
   // W1-C "Bana atanan": own tasks only, like the personal inbox; the server accepts no assignee override.
   { path: MY_TASKS_ROUTE.slice(1), element: <MyTasksPage /> },
+  // WP-C6 "Asistan hafızam": own memory only (see, edit, delete); the server accepts no owner override and keeps writing
+  // closed while the pilot, retention, entry limit or information notice is undecided.
+  { path: ASSISTANT_MEMORY_ROUTE.slice(1), element: <AssistantMemoryPage /> },
   // B-25 / W1-A: the Work inbox and the one-list Work queue, behind the same owners' approve capabilities (declared before the detail route).
   {
     path: WORK_ROUTE.queue.slice(1),
