@@ -190,6 +190,10 @@ export const WORK_INBOX_TEXT = {
   overdue: 'Süresi geçti',
   durationUndefined: 'Süre tanımlı değil',
   durationUnavailable: 'Süre okunamadı',
+  /** YOL-D22: the holiday calendar behind a business-day due time. */
+  holidaysDeducted: 'Resmî tatiller düşüldü',
+  holidayCalendarUndefined: 'Tatil takvimi tanımsız; yalnız hafta sonları düşüldü.',
+  holidayCalendarUnavailable: 'Tatil takvimi okunamadı; yalnız hafta sonları düşüldü.',
   /** Filters. */
   filtersLabel: 'Filtre',
   filterKind: 'Onay türü',

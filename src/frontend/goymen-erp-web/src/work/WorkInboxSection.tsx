@@ -19,12 +19,15 @@ import { fetchWorkInbox, recordWorkInboxEvent } from './workInboxApi'
 import {
   DURATION_DEFINED,
   DURATION_UNDEFINED,
+  HOLIDAY_CALENDAR_DEFINED,
+  HOLIDAY_CALENDAR_UNDEFINED,
   INBOX_EVENT_OPENED,
   INBOX_EVENT_OWNER_SCREEN_OPENED,
   INBOX_SOURCE_READY,
   INBOX_SOURCE_UNAVAILABLE,
   type WorkInbox,
   type WorkInboxDuration,
+  type WorkInboxHolidayCalendarState,
   type WorkInboxItem,
   type WorkInboxReference,
   type WorkInboxRule,
@@ -245,6 +248,17 @@ function ReferenceLine({ reference }: { readonly reference: WorkInboxReference }
   </span>
 }
 
+/** YOL-D22: a business-day due time says whether official holidays were deducted or only weekends. */
+function HolidayCalendarNote({ state }: { readonly state: WorkInboxHolidayCalendarState | null }) {
+  if (state === null) return null
+  if (state === HOLIDAY_CALENDAR_DEFINED) {
+    return <span className={styles.muted} data-testid="work-inbox-holiday-calendar" data-state={state}> · {T.holidaysDeducted}</span>
+  }
+  return <span className={styles.holidayWarning} role="note" data-testid="work-inbox-holiday-calendar" data-state={state}>
+    {state === HOLIDAY_CALENDAR_UNDEFINED ? T.holidayCalendarUndefined : T.holidayCalendarUnavailable}
+  </span>
+}
+
 export function DurationIndicator({ duration }: { readonly duration: WorkInboxDuration }) {
   if (duration.state === DURATION_DEFINED) {
     return <span data-testid="work-inbox-duration" data-state={duration.state}>
@@ -252,6 +266,7 @@ export function DurationIndicator({ duration }: { readonly duration: WorkInboxDu
       {' · '}
       <span>{durationClassText(duration.class, duration.limit)}</span>
       {duration.isOverdue ? <> <strong className={styles.overdue}>{T.overdue}</strong></> : null}
+      <HolidayCalendarNote state={duration.holidayCalendar} />
     </span>
   }
   return <span data-testid="work-inbox-duration" data-state={duration.state} className={styles.muted}>

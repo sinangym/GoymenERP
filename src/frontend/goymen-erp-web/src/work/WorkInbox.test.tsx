@@ -36,10 +36,10 @@ const PLAN_ID = 'd1000000-0000-4000-8000-000000000004'
 const PARTY_ID = 'e1000000-0000-4000-8000-000000000001'
 
 const none = (durationClass: string, state: string) =>
-  ({ class: durationClass, state, limit: null, dueAtUtc: null, isOverdue: null, policyVersion: null })
-const definedDays = (isOverdue: boolean) => ({
+  ({ class: durationClass, state, limit: null, dueAtUtc: null, isOverdue: null, policyVersion: null, holidayCalendar: null })
+const definedDays = (isOverdue: boolean, holidayCalendar = 'Defined') => ({
   class: 'BusinessDays', state: 'Defined', limit: 2, dueAtUtc: '2026-11-04T07:00:00+00:00', isOverdue,
-  policyVersion: 'work.approval-duration-business-days:1',
+  policyVersion: 'work.approval-duration-business-days:1', holidayCalendar,
 })
 
 const limitItem = {
@@ -59,7 +59,7 @@ const limitItem = {
 }
 const paymentItem = {
   module: 'finance', kind: PAYMENT_KIND, itemId: PAYMENT_ID, documentLabel: PAYMENT_ID, link: `/finans/elle-banka-odemeleri/${PAYMENT_ID}`,
-  waitingSinceUtc: '2026-11-02T07:00:00+00:00', awaitingPermission: 'finance.manual-bank-payment.approve', duration: definedDays(false),
+  waitingSinceUtc: '2026-11-02T07:00:00+00:00', awaitingPermission: 'finance.manual-bank-payment.approve', duration: definedDays(false, 'Undefined'),
   explanation: { rules: [{ ruleCode: 'finance.manual-bank-payment-approval-required', threshold: null, actual: null, deviation: null, unit: null }], references: [] },
 }
 const dispatchItem = {
@@ -205,6 +205,19 @@ describe('/onaylarim/kuyruk — Benden karar bekleyen', () => {
     expect(duration(PAYMENT_KIND).querySelector('time')?.getAttribute('dateTime')).toBe('2026-11-04T07:00:00+00:00')
     expect(duration(DISPATCH_KIND).textContent).toBe(T.durationUndefined)
     expect(duration(PLAN_KIND).textContent).toBe(T.durationUnavailable)
+    // YOL-D22: the holiday calendar behind a business-day due time; never on the hour class.
+    expect(within(duration(LIMIT_KIND)).getByTestId('work-inbox-holiday-calendar').textContent).toContain(T.holidaysDeducted)
+    expect(within(duration(PAYMENT_KIND)).getByTestId('work-inbox-holiday-calendar').textContent).toBe(T.holidayCalendarUndefined)
+    expect(within(duration(DISPATCH_KIND)).queryByTestId('work-inbox-holiday-calendar')).toBeNull()
+  })
+
+  it('warns when the holiday calendar could not be read (only weekends deducted)', async () => {
+    installFetch({ granted: [INBOX_CAP], inbox: () => json(inbox({ items: [{ ...limitItem, duration: definedDays(false, 'Unavailable') }] })) })
+    await renderAt('/onaylarim/kuyruk')
+    await screen.findByTestId('work-inbox-list')
+    const note = within(cardOf(LIMIT_KIND)).getByTestId('work-inbox-holiday-calendar')
+    expect(note.textContent).toBe(T.holidayCalendarUnavailable)
+    expect(note.getAttribute('role')).toBe('note')
   })
 
   it('opens the explanation card with rules, numbers and references, and counts the opening once', async () => {

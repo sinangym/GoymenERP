@@ -3,6 +3,7 @@
  * versioned company policy on `settings.work-approval-duration.manage`. The screen never preselects a value and never
  * assumes a default: a class that was never recorded stays "not recorded" (the inbox then says "Süre tanımlı değil").
  * Each new version is one command with an Idempotency-Key; an unknown outcome keeps the same key and payload.
+ * YOL-D22 adds the yearly official holiday/eve calendar section (`WorkHolidayCalendarSection`).
  */
 
 import { useState, type FormEvent } from 'react'
@@ -24,6 +25,7 @@ import {
   type WorkApprovalDurationPolicy,
 } from './workApprovalDurationContract'
 import { WORK_APPROVAL_DURATION_TEXT as T } from './workApprovalDurationText'
+import { WorkHolidayCalendarSection } from './WorkHolidayCalendarSection'
 import styles from './settings.module.css'
 
 const unitOf = (key: WorkApprovalDurationClassKey) => key === 'hours' ? T.hoursUnit : T.businessDaysUnit
@@ -57,7 +59,13 @@ function Screen({ namespace }: { readonly namespace: string | null }) {
           <ClassPolicy classKey="businessDays" data={state.data.businessDays} companyId={state.data.companyId} changed={() => void query.refetch()} />
         </>
         : <StateBlock state={state} subject={T.subject} onRetry={() => void query.refetch()} />
-  return <Frame title={T.title} intro={T.intro}>{content}</Frame>
+  // YOL-D22: the holiday calendar reads on its own; a failure of either read never hides the other.
+  return <Frame title={T.title} intro={T.intro}>
+    {content}
+    {ready && company !== null
+      ? <WorkHolidayCalendarSection companyId={company} namespace={namespace} routeEntryGeneration={shell.routeEntryGeneration} />
+      : null}
+  </Frame>
 }
 
 function ClassPolicy({ classKey, data, companyId, changed }: {

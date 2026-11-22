@@ -344,3 +344,11 @@
   color: var(--goy-ds-color-danger, #b42318);
   font-weight: var(--goy-ds-font-weight-medium, 500);
 }
+
+/* YOL-D22: only weekends were deducted from a business-day due time. */
+.holidayWarning {
+  display: block;
+  margin-top: 2px;
+  color: var(--goy-ds-color-warning-text, #8a4b00);
+  font-size: var(--goy-ds-font-size-sm, 0.78125rem);
+}

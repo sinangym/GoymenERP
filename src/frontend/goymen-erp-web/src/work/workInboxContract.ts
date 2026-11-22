@@ -29,6 +29,13 @@ export const DURATION_DEFINED = 'Defined'
 export const DURATION_UNDEFINED = 'Undefined'
 export const DURATION_UNAVAILABLE = 'Unavailable'
 
+/** YOL-D22: whether the company's official holiday/eve list was deducted from a defined business-day due time. */
+export const HOLIDAY_CALENDAR_DEFINED = 'Defined'
+export const HOLIDAY_CALENDAR_UNDEFINED = 'Undefined'
+export const HOLIDAY_CALENDAR_UNAVAILABLE = 'Unavailable'
+export type WorkInboxHolidayCalendarState =
+  | typeof HOLIDAY_CALENDAR_DEFINED | typeof HOLIDAY_CALENDAR_UNDEFINED | typeof HOLIDAY_CALENDAR_UNAVAILABLE
+
 export const INBOX_EVENT_OPENED = 'Opened'
 export const INBOX_EVENT_OWNER_SCREEN_OPENED = 'OwnerScreenOpened'
 export type WorkInboxEventType = typeof INBOX_EVENT_OPENED | typeof INBOX_EVENT_OWNER_SCREEN_OPENED
@@ -54,6 +61,8 @@ export type WorkInboxDuration =
     readonly dueAtUtc: string
     readonly isOverdue: boolean
     readonly policyVersion: string
+    /** Set only for the business-day class; null for the hour class. */
+    readonly holidayCalendar: WorkInboxHolidayCalendarState | null
   }
   | {
     readonly class: WorkInboxDurationClass
@@ -62,6 +71,7 @@ export type WorkInboxDuration =
     readonly dueAtUtc: null
     readonly isOverdue: null
     readonly policyVersion: null
+    readonly holidayCalendar: null
   }
 
 /** One owner rule result; numbers are the owner's invariant decimal text, never computed here. */
@@ -132,7 +142,7 @@ const ROOT_KEYS = ['companyId', 'view', 'generatedAtUtc', 'items', 'sources'] as
 const ITEM_KEYS = [
   'module', 'kind', 'itemId', 'documentLabel', 'link', 'waitingSinceUtc', 'awaitingPermission', 'duration', 'explanation',
 ] as const
-const DURATION_KEYS = ['class', 'state', 'limit', 'dueAtUtc', 'isOverdue', 'policyVersion'] as const
+const DURATION_KEYS = ['class', 'state', 'limit', 'dueAtUtc', 'isOverdue', 'policyVersion', 'holidayCalendar'] as const
 const EXPLANATION_KEYS = ['rules', 'references'] as const
 const RULE_KEYS = ['ruleCode', 'threshold', 'actual', 'deviation', 'unit'] as const
 const REFERENCE_KEYS = ['role', 'label', 'recordId', 'link'] as const
@@ -168,18 +178,25 @@ const isRuleCode = (module: string, value: unknown): value is string =>
 
 function decodeDuration(value: unknown): WorkInboxDuration | null {
   if (!isObject(value) || !exact(value, DURATION_KEYS)) return null
-  const { class: durationClass, state, limit, dueAtUtc, isOverdue, policyVersion } = value
+  const { class: durationClass, state, limit, dueAtUtc, isOverdue, policyVersion, holidayCalendar } = value
   if (!isDurationClass(durationClass)) return null
   if (state === DURATION_DEFINED) {
     if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > INT32_MAX) return null
     if (!isUtcInstant(dueAtUtc) || typeof isOverdue !== 'boolean') return null
     if (!isLabel(policyVersion, INBOX_MAX_POLICY_VERSION_LENGTH)) return null
-    return { class: durationClass, state, limit, dueAtUtc, isOverdue, policyVersion }
+    // YOL-D22: the holiday calendar state belongs to a defined business-day due time only.
+    if (durationClass === DURATION_CLASS_BUSINESS_DAYS) {
+      if (holidayCalendar !== HOLIDAY_CALENDAR_DEFINED && holidayCalendar !== HOLIDAY_CALENDAR_UNDEFINED
+        && holidayCalendar !== HOLIDAY_CALENDAR_UNAVAILABLE) return null
+      return { class: durationClass, state, limit, dueAtUtc, isOverdue, policyVersion, holidayCalendar }
+    }
+    if (holidayCalendar !== null) return null
+    return { class: durationClass, state, limit, dueAtUtc, isOverdue, policyVersion, holidayCalendar }
   }
   if (state !== DURATION_UNDEFINED && state !== DURATION_UNAVAILABLE) return null
   // Only a defined duration carries numbers: anything else claims nothing.
-  if (limit !== null || dueAtUtc !== null || isOverdue !== null || policyVersion !== null) return null
-  return { class: durationClass, state, limit, dueAtUtc, isOverdue, policyVersion }
+  if (limit !== null || dueAtUtc !== null || isOverdue !== null || policyVersion !== null || holidayCalendar !== null) return null
+  return { class: durationClass, state, limit, dueAtUtc, isOverdue, policyVersion, holidayCalendar }
 }
 
 function decodeRule(module: string, value: unknown): WorkInboxRule | null {

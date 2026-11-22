@@ -17,8 +17,8 @@ const ITEM = 'd1000000-0000-4000-8000-000000000001'
 const KIND = 'finance.party-credit-limit.v1'
 const PERMISSION = 'finance.credit-limits.approve'
 
-const defined = { class: 'BusinessDays', state: 'Defined', limit: 2, dueAtUtc: '2026-11-04T07:00:00+00:00', isOverdue: true, policyVersion: 'work.approval-duration-business-days:1' }
-const undefinedDuration = { class: 'BusinessDays', state: 'Undefined', limit: null, dueAtUtc: null, isOverdue: null, policyVersion: null }
+const defined = { class: 'BusinessDays', state: 'Defined', limit: 2, dueAtUtc: '2026-11-04T07:00:00+00:00', isOverdue: true, policyVersion: 'work.approval-duration-business-days:1', holidayCalendar: 'Defined' }
+const undefinedDuration = { class: 'BusinessDays', state: 'Undefined', limit: null, dueAtUtc: null, isOverdue: null, policyVersion: null, holidayCalendar: null }
 const rule = { ruleCode: 'finance.credit-limit-change', threshold: '1000.5', actual: '1500', deviation: '499.5', unit: 'TRY' }
 const reference = { role: 'party', label: 'SENTETIK Cari', recordId: 'e1000000-0000-4000-8000-000000000001', link: '/cari/e1000000-0000-4000-8000-000000000001' }
 const item = (overrides: Record<string, unknown> = {}) => ({
@@ -58,6 +58,23 @@ describe('decodeWorkInbox', () => {
     expect(decodeWorkInbox(inbox({ items: [item({ duration: { ...defined, isOverdue: null } })] }), COMPANY)).toBeNull()
     expect(decodeWorkInbox(inbox({ items: [item({ duration: { ...defined, limit: 0 } })] }), COMPANY)).toBeNull()
     expect(decodeWorkInbox(inbox({ items: [item({ duration: { ...defined, state: 'Late' } })] }), COMPANY)).toBeNull()
+  })
+
+  it('YOL-D22: carries the holiday calendar state only on a defined business-day duration', () => {
+    for (const holidayCalendar of ['Defined', 'Undefined', 'Unavailable']) {
+      expect(decodeWorkInbox(inbox({ items: [item({ duration: { ...defined, holidayCalendar } })] }), COMPANY)?.items[0].duration.holidayCalendar)
+        .toBe(holidayCalendar)
+    }
+    const hoursSource = source({ durationClass: 'Hours' })
+    const hours = { ...defined, class: 'Hours', limit: 4, holidayCalendar: null }
+    expect(decodeWorkInbox(inbox({ items: [item({ duration: hours })], sources: [hoursSource] }), COMPANY)).not.toBeNull()
+    // Required member, never on the hour class or on an undefined/unavailable duration, only the three states.
+    expect(decodeWorkInbox(inbox({ items: [item({ duration: { ...hours, holidayCalendar: 'Defined' } })], sources: [hoursSource] }), COMPANY)).toBeNull()
+    expect(decodeWorkInbox(inbox({ items: [item({ duration: { ...defined, holidayCalendar: null } })] }), COMPANY)).toBeNull()
+    expect(decodeWorkInbox(inbox({ items: [item({ duration: { ...defined, holidayCalendar: 'Partial' } })] }), COMPANY)).toBeNull()
+    expect(decodeWorkInbox(inbox({ items: [item({ duration: { ...undefinedDuration, holidayCalendar: 'Undefined' } })] }), COMPANY)).toBeNull()
+    const { holidayCalendar: _, ...missing } = defined
+    expect(decodeWorkInbox(inbox({ items: [item({ duration: missing })] }), COMPANY)).toBeNull()
   })
 
   it.each([
