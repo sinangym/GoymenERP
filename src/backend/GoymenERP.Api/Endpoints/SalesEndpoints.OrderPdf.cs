@@ -31,9 +31,21 @@ public static partial class SalesEndpoints
     /// revision names another customer or currency than the header, nothing is printed: 409
     /// <c>sales_order_pdf_customer_revision_pending</c> (the rejected revision is never printed in its place).
     /// </summary>
-    private static void MapOrderPdf(RouteGroupBuilder drafts)
+    private static void MapOrderPdf(RouteGroupBuilder drafts) =>
+        MapOrderPdfRoute(drafts, "/{id:guid}/pdf", "GetSalesOrderDraftPdfV1", SalesOrderPdfVariant.Order);
+
+    /// <summary>
+    /// WP13 (YOL-D11): GET …/{id}/contract-pdf — the order contract ("sipariş sözleşmesi") sent to the customer for a wet signature:
+    /// exactly the order PDF's reads, authority, price decision, version checks and refusals, laid out with the contract title,
+    /// file-name type, footer and a customer approval block (<see cref="SalesOrderPdfVariant.Contract"/>). Rendered on request and
+    /// stored nowhere; the signed copy comes back through the vault and <c>…/{id}/signed-approvals</c>.
+    /// </summary>
+    private static void MapOrderContractPdf(RouteGroupBuilder drafts) =>
+        MapOrderPdfRoute(drafts, "/{id:guid}/contract-pdf", "GetSalesOrderContractPdfV1", SalesOrderPdfVariant.Contract);
+
+    private static void MapOrderPdfRoute(RouteGroupBuilder drafts, string pattern, string name, SalesOrderPdfVariant variant)
     {
-        drafts.MapGet("/{id:guid}/pdf", async (
+        drafts.MapGet(pattern, async (
             Guid id,
             HttpContext httpContext,
             [FromServices] ISalesDraftReadServiceV1 detailService,
@@ -95,7 +107,7 @@ public static partial class SalesEndpoints
                 if (detail.Draft.Id != id || pricing is null) return Results.Problem(statusCode: 503);
                 if (detail.Draft.Version != pricing.Version) return DraftProblem(409, SalesDraftProblemCodesV1.ConcurrentChange, correlation);
                 var zone = timeZoneSource is null ? SalesOrderPdfComposer.SystemBusinessTimeZone : timeZoneSource.BusinessTimeZone;
-                var (request, _) = new SalesOrderPdfComposer(texts, zone).Compose(Guid.NewGuid(), detail, pricing);
+                var (request, _) = new SalesOrderPdfComposer(texts, zone).Compose(Guid.NewGuid(), detail, pricing, variant);
                 pdf = new DocumentPdfGenerator().Generate(request with { Branding = branding.Render });
             }
             catch (DocumentBrandingServiceException error) { return Results.Problem(statusCode: error.Status is 401 or 403 ? error.Status : 503); }
@@ -124,7 +136,7 @@ public static partial class SalesEndpoints
             headers.ContentSecurityPolicy = "default-src 'none'; sandbox";
             return Results.File(pdf.Content, pdf.MediaType, pdf.VisibleFileName);
         })
-            .WithName("GetSalesOrderDraftPdfV1")
+            .WithName(name)
             .Produces<Stream>(StatusCodes.Status200OK, TechnicalPdfGenerator.PdfMediaType)
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(SalesDraftProblemCodesV1.ConcurrentChange, SalesDraftProblemCodesV1.OrderPdfCustomerRevisionPending)

@@ -180,3 +180,37 @@ public static class SalesOrderSignedApprovalHash
     private static string Hash(string canonical) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
 }
+
+/// <summary>The strict wire readers: exactly the request's members, required ones present, the expected version canonical.</summary>
+public static class SalesOrderSignedApprovalJson
+{
+    private const int MaximumVersionLength = 19;
+
+    public static RecordSalesOrderSignedApprovalRequest ReadRecord(string json)
+    {
+        var request = JsonSerializer.Deserialize<RecordSalesOrderSignedApprovalRequest>(json, SalesDraftJson.Options)
+            ?? throw new JsonException("Request body is required.");
+        if (request.DocumentId == Guid.Empty || !CanonicalVersion(request.ExpectedOrderVersion))
+        {
+            throw new JsonException("Invalid signed approval record.");
+        }
+
+        return request;
+    }
+
+    public static DeactivateSalesOrderSignedApprovalRequest ReadDeactivation(string json)
+    {
+        var request = JsonSerializer.Deserialize<DeactivateSalesOrderSignedApprovalRequest>(json, SalesDraftJson.Options)
+            ?? throw new JsonException("Request body is required.");
+        if (!CanonicalVersion(request.ExpectedVersion) || request.Reason is null)
+        {
+            throw new JsonException("Invalid signed approval deactivation.");
+        }
+
+        return request;
+    }
+
+    private static bool CanonicalVersion(string? text) =>
+        !string.IsNullOrEmpty(text) && text.Length <= MaximumVersionLength && text[0] is >= '1' and <= '9'
+        && text.All(character => character is >= '0' and <= '9');
+}

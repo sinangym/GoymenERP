@@ -442,6 +442,9 @@ public static partial class SalesEndpoints
         // MOD-03 → Sales: the order's buyer tax and the lines' tax snapshots.
         MapDraftTax(drafts);
         MapOrderPdf(drafts);
+        // WP13 (YOL-D11): the order contract PDF and the customer's signed approval records (the file stays in the vault).
+        MapOrderContractPdf(drafts);
+        MapOrderSignedApprovals(drafts);
         MapPriceFloorExceptionApproval(drafts);
         MapDiscountExceptionApproval(drafts);
         MapCommercialRevisionCommand(drafts);
