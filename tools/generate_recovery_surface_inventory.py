@@ -1220,7 +1220,7 @@ WRITER_METHOD_SCOPES = {
     (
         "inventory.outbox",
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySupplierReturnExitParticipant.cs",
-    ): "StageAsync",
+    ): "StageExitAsync",
     (
         "logistics.customer-return-attempts",
         "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsCustomerReturnStore.cs",
@@ -1486,11 +1486,11 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryDefiniteShipmentParticipant.cs",
         "StageAsync",
     ): "0e47b4d51bd983962f5fbeda0e3cef80c027d1bda93e5403d3cda4f6b980460f",
-    # tren-1 wave 3 (stok_lojistik): K3 review pending (stok).
+    # tren-1 wave 3 (stok_lojistik); AK-8b moved the exit outbox write into the shared StageExitAsync.
     (
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySupplierReturnExitParticipant.cs",
-        "StageAsync",
-    ): '5c527fed79af5ab8974b449f612ac024c542305bf3340522f34d0f8c5ce5fc6f',
+        "StageExitAsync",
+    ): '43658b49a3a79b68f45768dea3a2c4b8114c13a4053f2aba63ba41f9442f6779',
     (
         "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductProfileWeightTableService.cs",
         "AddAttempt",
