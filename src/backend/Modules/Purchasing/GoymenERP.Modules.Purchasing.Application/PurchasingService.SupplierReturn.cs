@@ -57,6 +57,14 @@ public sealed partial class PurchasingService
         var lineId = await GuardedAsync(scope, permission,
                 () => returns.FindAcceptanceLineAsync(orderId, request.GoodsAcceptanceId, cancellationToken), cancellationToken)
             ?? throw new PurchasingServiceException(404, "not_found");
+        if (stored.Order.Lines.SingleOrDefault(line => line.Id == lineId) is { Quantity.Unit: QuantityUnit.Piece }
+            && (request.UndoQuantity is not { } undo || !int.TryParse(undo, NumberStyles.None, CultureInfo.InvariantCulture, out var pieces)
+                || pieces < 1))
+        {
+            // AK-3 (KLN-D119): the returned pieces are the undo quantity of a piece line; no count is inferred from kilograms.
+            throw new PurchasingServiceException(422, PurchaseSupplierReturnCodesV1.PieceCountRequired,
+                [new("undoQuantity", PurchaseSupplierReturnCodesV1.PieceCountRequired)]);
+        }
         if (await GuardedAsync(scope, permission, () => returns.ReturnIdExistsAsync(request.ReturnId, cancellationToken), cancellationToken))
         {
             return await ReturnTerminalAsync(scope, permission, returns, orderId, envelope, requestHash, command,

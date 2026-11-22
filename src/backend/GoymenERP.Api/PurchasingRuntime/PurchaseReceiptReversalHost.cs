@@ -96,6 +96,16 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
                     var target = RequireTarget(await Checked(() => purchase.ReadTargetAsync(write.OrderId, write.AcceptanceId,
                         cancellationToken)), companyId, write);
                     supplySource.Target = target;
+                    if (write.IsSupplierReturn && !target.UnitIsKilogram)
+                    {
+                        // AK-3 (KLN-D119): a piece purchase line's supplier return takes its undo quantity (whole pieces) out of the
+                        // piece-tracking label; a fraction or a missing undo quantity is never turned into a guessed count.
+                        if (!int.TryParse(write.Request.UndoQuantity, System.Globalization.NumberStyles.None,
+                                System.Globalization.CultureInfo.InvariantCulture, out var pieces) || pieces < 1)
+                            throw new PurchasingServiceException(422, PurchaseSupplierReturnCodesV1.PieceCountRequired,
+                                [new("undoQuantity", PurchaseSupplierReturnCodesV1.PieceCountRequired)]);
+                        stockRequest = stockRequest with { PieceCount = pieces };
+                    }
                     var next = write.Request.ReplacementReceipt;
                     if (next is not null && next.ExpectedProductVersion != target.ProductVersion)
                         throw new PurchasingServiceException(409, PurchaseAcceptanceParticipantCodes.ProductVersionConflict);

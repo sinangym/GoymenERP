@@ -128,7 +128,7 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
         var row = await context.Commands.AsNoTracking().SingleOrDefaultAsync(item => item.CommandName == Codes.CommandName
             && item.IdempotencyKeyHash == key, cancellationToken);
         if (row is null) return null;
-        if (row.ActorId != metadata.ActorId || row.PayloadHash != Engine.PayloadHash(request with { PurchaseSource = null,
+        if (row.ActorId != metadata.ActorId || row.PayloadHash != Engine.PayloadHash(request with { PurchaseSource = null, PieceCount = null,
             UndoQuantity = request.CostAllocation is null ? null : request.UndoQuantity }) || row.TargetId != request.ReversalId)
             throw Error(409, Codes.IdempotencyConflict);
         try
@@ -318,7 +318,8 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
                 settings, cancellationToken, clock);
             var result = await exit.StageAsync(new InventorySupplierReturnExitRequestV1(companyId, request.ReversalId, request.ReversalLineId, request.AcceptanceId,
                 request.InventoryMovementId, request.SourceBlock, request.QuantityKg, request.OriginalUnitCostTryPerKg,
-                request.OccurredAtUtc, request.CostAllocation, request.PurchaseSource, request.UndoQuantity), metadata, cancellationToken);
+                request.OccurredAtUtc, request.CostAllocation, request.PurchaseSource, request.UndoQuantity, request.PieceCount),
+                metadata, cancellationToken);
             if (result.IsReplay) throw Error(409, Codes.IdempotencyConflict);
             labelVersion = result.LabelVersion;
         }
@@ -338,7 +339,7 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
             AuditAiInvolvement.None, AiContextJson: null, metadata.SourceChannel, metadata.ClientIpAddress, metadata.UserAgent,
             metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
         context.Commands.Add(new InventoryCommandRow() { CompanyId = companyId, CommandName = Codes.CommandName, IdempotencyKeyHash = Engine.KeyHash(metadata.IdempotencyKey),
-            PayloadHash = Engine.PayloadHash(request with { PurchaseSource = null,
+            PayloadHash = Engine.PayloadHash(request with { PurchaseSource = null, PieceCount = null,
                 UndoQuantity = request.CostAllocation is null ? null : request.UndoQuantity }), ActorId = metadata.ActorId, TargetId = request.ReversalId,
             ResultJson = JsonSerializer.Serialize(answerResult, Engine.Json), CorrelationId = metadata.CorrelationId, RecordedAtUtc = clock.GetUtcNow() });
         context.OutboxMessages.Add(new InventoryOutboxRow() { Id = Guid.NewGuid(), CompanyId = companyId, EventType = Codes.EventType,

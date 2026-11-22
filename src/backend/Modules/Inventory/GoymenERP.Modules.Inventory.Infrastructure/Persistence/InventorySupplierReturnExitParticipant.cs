@@ -159,7 +159,7 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
                 InventorySupplierReturnExitContractV1.SourceKind,
                 receipt.MovementId,
                 request.SupplierReturnLineId),
-            [new StockMovementLine(source.Position, StockDirection.Out, input.Quantity)],
+            [new StockMovementLine(source.Position, StockDirection.Out, input.Quantity, ReturnedPieces(request.PieceCount))],
             CostResult.NotCalculated);
         if (source.QuantityKg < input.Quantity.Value)
         {
@@ -612,8 +612,16 @@ public sealed partial class InventorySupplierReturnExitParticipant : IInventoryS
         }
     }
 
+    /// <summary>AK-3 (KLN-D119): the returned pieces of a piece-tracking label; a count below one is an invalid request.</summary>
+    private static GoymenERP.Modules.Inventory.Domain.Quantities.PieceCount? ReturnedPieces(int? pieces)
+    {
+        if (pieces is null) return null;
+        try { return GoymenERP.Modules.Inventory.Domain.Quantities.PieceCount.Positive(pieces.Value); }
+        catch (ArgumentException exception) { throw Refused(400, InventorySupplierReturnExitCodesV1.InvalidRequest, exception); }
+    }
+
     private static string RequestHash(InventorySupplierReturnExitRequestV1 request) =>
-        Hash(JsonSerializer.Serialize(request with { PurchaseSource = null,
+        Hash(JsonSerializer.Serialize(request with { PurchaseSource = null, PieceCount = null,
             UndoQuantity = request.CostAllocation is null ? null : request.UndoQuantity }, Json));
 
     private static string Hash(string value) =>

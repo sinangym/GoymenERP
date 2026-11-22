@@ -26,6 +26,10 @@ public interface IInventorySupplierReturnExitParticipantV1 : IAsyncDisposable
 /// is the base-currency unit cost per stock kilogram booked at the original receipt (SAT-D306 (b)); null means that
 /// cost is unavailable and is carried as unavailable, never as zero.
 /// </summary>
+/// <remarks>
+/// AK-3 (KLN-D119): <c>PieceCount</c> is the returned piece count of a piece-tracking label (a piece purchase line's undo quantity,
+/// derived by the caller); null for a kg-only label, exactly as before. It is derived data and does not enter the payload hash.
+/// </remarks>
 public sealed record InventorySupplierReturnExitRequestV1(
     Guid CompanyId,
     Guid SupplierReturnId,
@@ -41,7 +45,9 @@ public sealed record InventorySupplierReturnExitRequestV1(
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     InventorySupplierReturnPurchaseSourceV1? PurchaseSource = null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    string? UndoQuantity = null);
+    string? UndoQuantity = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    int? PieceCount = null);
 
 /// <summary>The exact Inventory identities staged by one supplier-return exit.</summary>
 public sealed record InventorySupplierReturnExitResultV1(
