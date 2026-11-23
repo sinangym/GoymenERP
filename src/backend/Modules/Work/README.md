@@ -63,6 +63,30 @@ tatil takvimi Work'e aittir): süre veya tatil takvimi kaydı varken reddeder.
 
 `AddWorkApprovalRuleVersions` Down guard **52100**: kural sürümü varken geri alma reddedilir (forward fix).
 
+## WP2: tek hatırlatma, yükseltme, sahipsiz onay, "şimdi" bildirimi, tek bildirim deposu (YOL-D17, YOL-D25, YOL-D28, AI-D29, D9, D10)
+
+- **Tek depo (D9):** `work.Notifications` kaldırıldı; satırları kimlikleriyle `work.InboxNotifications`'a taşındı (tür 1→4
+  "tahsis serbest", 2→5 "tedarik yeniden açıldı", "özet" sınıfı); pasifleştirme satırları aynı kimliği gösterir. Eski
+  `GET /api/v1/work/notifications` sözleşmesi aynı kalır, artık tek depodan okur.
+- **Takip döngüsü:** `WorkApprovalFollowUpMaintenanceV1`, `IWorkInboxFollowUpSourceV1` uygulayan kaynaklar için kullanıcısız
+  çalışır: yeni bekleyen onayda uygun onaylayıcılara "şimdi" bildirimi (yapan ve sahibin dışladıkları hariç); süre dolunca
+  **bir** hatırlatma; hatırlatmadan sonra bir süre sınıfı daha geçince (YOL-D33) kural tablosunun yükseltme izni sahiplerine
+  yükseltme (sürüm 0: `work.approvals.escalate`; kimsede yoksa yalnız hatırlatma gider, YOL-D28); uygun onaylayıcı yoksa
+  "sahipsiz onay", `work.approvals.escalate` sahiplerine düşer (YOL-D34).
+  Otomatik onay/ret yoktur. Her adım `work.ApprovalFollowUps`'ta döngü+adım başına tek satırdır.
+- **D10:** sahip artık listelemediği ölçülmüş döngünün kararını kendi kaydından okur (`ReadDecisionAsync`); karar zamanı
+  `ApprovalInboxEvents` tür 5 (`Decided`) olarak sahibin zamanıyla yazılır. Ölçüm artık kutu açılmasını beklemez.
+- **Özet saatleri (YOL-D25):** Ayarlar anahtarları `work.digest-time-morning|midday|evening` (gece yarısından dakika; sürüm 0 =
+  09:00/13:00/17:00), yalnız iş günü (hafta sonu + kayıtlı tatil/arife düşülür), iş saat dilimi (D6). Saatleri
+  `settings.work-approval-duration.manage` değiştirir (YOL-D35).
+- **Bayrak:** döngü yalnız `Work:CollaborationScheduler:Enabled` ve `Work:CollaborationScheduler:ApprovalFollowUpEnabled` ikisi
+  de true iken çalışır (varsayılan kapalı; açmak insan kapısı).
+- **Görünüm:** `GET /api/v1/work/approval-follow-ups?view=escalated|orphaned` (`work.approvals.escalate`, şirket geneli);
+  ekran `/onay-takibi`. Bugün yalnız Lojistik irsaliye kaynağı takip kaynağıdır; diğer kaynaklar eklenene kadar takip edilmez.
+- `Wp2SingleNotificationStoreAndApprovalFollowUp`: Up kopya eksikse **52111** ile eski depoyu düşürmeden durur; Down guard
+  **52110** (taşınmış/yeni bildirim, takip satırı veya karar olayı varken reddeder, forward fix). Ayarlar
+  `Wp2WorkDigestTimes` Down guard **52112**.
+
 ## WP6: Stok / Lojistik / Üretim onay türleri (AI-D31, DALGA_PLANI_v2 1.4)
 
 Sahip modül kaynakları (Work şeması değişmedi; süre sınıfı varsayılanı iş günü, YOL-D18):
@@ -95,8 +119,8 @@ bahsetme bütün notu 422 `work_mention_refused` ile reddeder ve kişinin var ol
   açık → tamamlandı (yalnız atanan) / iptal (yalnız atayan, gerekçeli); beklenen sürüm, idempotency anahtarı, audit.
 - Bildirim sınıfları (AI-D29 varsayılanı): bahsetme ve süresi geçen görev "şimdi"; görev ataması "özet".
   Aynı alıcı + tür + kaynak için ikinci bildirim yoktur (benzersiz anahtar). Okundu bilgisi ayrı, ekleme-yalnız satır.
-- Özet saatleri Ayarlar parametresidir; Settings anahtarı henüz yok, host okuyucusu `Unavailable` döner ve özet sınıfı
-  bekletilir (erken gösterilmez). NEEDS-SINAN: varsayılan özet saatleri.
+- Özet saatleri Ayarlar parametresidir (WP2, YOL-D25/YOL-D35): `work.digest-time-*` anahtarları, sürüm 0 = 09:00/13:00/17:00,
+  yalnız iş günü; Ayarlar okunamazsa özet sınıfı bekletilir (erken gösterilmez).
 - Zamanlayıcı (`Work:CollaborationScheduler`, gecikme bildirimi + özet bırakma) varsayılan KAPALI; açılması insan kapısı.
 
 | İzin | Anlam | Rol |

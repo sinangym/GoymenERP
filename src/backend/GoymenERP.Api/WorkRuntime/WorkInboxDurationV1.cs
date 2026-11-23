@@ -114,50 +114,14 @@ internal static class WorkInboxDurationCalculatorV1
     internal static DateTimeOffset AddBusinessDays(DateTimeOffset startUtc, int days, TimeZoneInfo zone) =>
         AddBusinessDays(startUtc, days, zone, new Dictionary<int, IReadOnlySet<DateOnly>>(), out _, out _);
 
+    /// <summary>WP2: the same arithmetic the follow-up cycle uses for reminders and escalation (one shared calculator).</summary>
     internal static DateTimeOffset AddBusinessDays(
         DateTimeOffset startUtc,
         int days,
         TimeZoneInfo zone,
         IReadOnlyDictionary<int, IReadOnlySet<DateOnly>> holidays,
         out int firstYear,
-        out int lastYear)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(days);
-        ArgumentNullException.ThrowIfNull(zone);
-        var local = TimeZoneInfo.ConvertTime(startUtc, zone);
-        var date = DateOnly.FromDateTime(local.DateTime);
-        var clock = TimeOnly.FromDateTime(local.DateTime);
-        firstYear = date.Year;
-        if (!IsBusinessDay(date, holidays))
-        {
-            do
-            {
-                date = date.AddDays(1);
-            }
-            while (!IsBusinessDay(date, holidays));
-            clock = TimeOnly.MinValue;
-        }
-
-        var remaining = days;
-        while (remaining > 0)
-        {
-            date = date.AddDays(1);
-            if (IsBusinessDay(date, holidays))
-            {
-                remaining--;
-            }
-        }
-        lastYear = date.Year;
-        var dueLocal = date.ToDateTime(clock, DateTimeKind.Unspecified);
-        // A local time skipped by a clock change moves forward to the first valid minute (the zone's own rule).
-        while (zone.IsInvalidTime(dueLocal))
-        {
-            dueLocal = dueLocal.AddMinutes(1);
-        }
-        return new DateTimeOffset(dueLocal, zone.GetUtcOffset(dueLocal)).ToUniversalTime();
-    }
-
-    private static bool IsBusinessDay(DateOnly date, IReadOnlyDictionary<int, IReadOnlySet<DateOnly>> holidays) =>
-        date.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)
-        && !(holidays.TryGetValue(date.Year, out var days) && days.Contains(date));
+        out int lastYear) =>
+        GoymenERP.Modules.Work.Infrastructure.ApprovalFollowUp.WorkApprovalDueCalculatorV1.AddBusinessDays(
+            startUtc, days, zone, holidays, out firstYear, out lastYear);
 }

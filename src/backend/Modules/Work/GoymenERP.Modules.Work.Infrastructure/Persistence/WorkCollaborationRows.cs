@@ -82,6 +82,23 @@ internal sealed class WorkInboxNotificationRow : IWorkTenantRow
     public DateTimeOffset RecordedAtUtc { get; set; }
     public string CorrelationId { get; set; } = "";
     public string? CausationId { get; set; }
+
+    // D9 (WP2): the event evidence of kinds 4 (allocation released) and 5 (purchase supply revived), moved here from the
+    // retired work.Notifications table; null on every other kind. For these kinds SourceId is the row's own Id and the
+    // event grain (source, event, recipient, target lines) is unique.
+    public string? SourceName { get; set; }
+    public Guid? EventId { get; set; }
+    public Guid? SourceEntityId { get; set; }
+    public string? SourceVersion { get; set; }
+    public string? ReasonCode { get; set; }
+    public string? ReasonText { get; set; }
+    public DateTimeOffset? OccurredAtUtc { get; set; }
+    public Guid? SalesOrderId { get; set; }
+    public Guid? SalesOrderLineId { get; set; }
+    public long? ObservedSalesOrderVersion { get; set; }
+    public Guid? PurchaseOrderId { get; set; }
+    public Guid? PurchaseOrderLineId { get; set; }
+    public long? ObservedPurchaseOrderVersion { get; set; }
 }
 
 internal sealed class WorkInboxNotificationReadRow : IWorkTenantRow
@@ -108,6 +125,33 @@ internal sealed class WorkInboxDigestItemRow : IWorkTenantRow
     public Guid CompanyId { get; set; }
     public Guid NotificationId { get; set; }
     public Guid DigestId { get; set; }
+}
+
+/// <summary>
+/// WP2 (YOL-D17, YOL-D28, AI-D29): one step Work took for one pending approval cycle (kind, owner record, the time it began
+/// waiting): 1 = the approvers were told it waits ("şimdi"), 2 = the one reminder after the duration ran out, 3 = escalated
+/// to the holders of the rule's escalation permission, 4 = no eligible approver ("sahipsiz onay"). Append-only; one row per
+/// cycle and step. The owner's label and link are the ones the owner gave at that step (the follow-up view shows them to a
+/// holder who may not read the owner's queue); the decision is never taken here.
+/// </summary>
+internal sealed class WorkApprovalFollowUpRow : IWorkTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid Id { get; set; }
+    public string Kind { get; set; } = "";
+    public Guid ItemId { get; set; }
+    public DateTimeOffset CycleStartedAtUtc { get; set; }
+    public int Step { get; set; }
+    public string DocumentLabel { get; set; } = "";
+    public string Link { get; set; } = "";
+    public string ApproverPermission { get; set; } = "";
+    public string? EscalationPermission { get; set; }
+    public string RuleVersion { get; set; } = "";
+    public string? PolicyVersion { get; set; }
+    public DateTimeOffset? DueAtUtc { get; set; }
+    public int RecipientCount { get; set; }
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string CorrelationId { get; set; } = "";
 }
 
 /// <summary>Idempotency record of one collaboration command (success or recorded terminal refusal).</summary>

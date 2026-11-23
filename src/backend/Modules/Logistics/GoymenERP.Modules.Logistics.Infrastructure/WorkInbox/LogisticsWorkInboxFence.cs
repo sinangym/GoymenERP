@@ -45,6 +45,10 @@ internal sealed class LogisticsWorkInboxFence(
         }
     }
 
+    /// <summary>WP2: the follow-up read runs for the server-resolved company only (no user is asked or impersonated).</summary>
+    public bool SameCompany(Guid companyId) =>
+        companyId != Guid.Empty && companyContext.IsResolved && companyContext.CompanyId == companyId;
+
     /// <summary>A failed read answers the fence's refusal when the caller lost access meanwhile, else unavailable.</summary>
     public async Task<WorkInboxSourceResultV1> UnavailableAsync(
         WorkInboxSourceContextV1 context,

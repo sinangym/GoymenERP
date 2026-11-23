@@ -42,7 +42,7 @@ public sealed class WorkApprovalInboxMeasurementTests
         Assert.DoesNotContain(entity.GetProperties(), property =>
             property.Name.Contains("User", StringComparison.Ordinal) || property.Name.Contains("Actor", StringComparison.Ordinal)
             || property.Name.Contains("By", StringComparison.Ordinal));
-        Assert.Contains(entity.GetIndexes(), index => index.IsUnique && index.GetFilter() == "[EventType] IN (1, 4)"
+        Assert.Contains(entity.GetIndexes(), index => index.IsUnique && index.GetFilter() == "[EventType] IN (1, 4, 5)" /* D10 (WP2): one owner decision per cycle too */
             && index.Properties.Select(property => property.Name)
                 .SequenceEqual(["CompanyId", "Kind", "ItemId", "CycleStartedAtUtc", "EventType"]));
         Assert.Contains(entity.GetIndexes(), index => index.IsUnique && index.GetFilter() == "[ClientEventId] IS NOT NULL");

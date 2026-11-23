@@ -87,6 +87,55 @@ public sealed class WorkApprovalInboxMeasurementStoreV1(WorkDbContext database, 
         }
     }
 
+    public async Task<bool> RecordDecisionAsync(
+        Guid companyId,
+        string kind,
+        WorkApprovalInboxCycleV1 cycle,
+        DateTimeOffset decidedAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(cycle);
+        RequireCompany(companyId);
+        RequireKind(kind);
+        if (cycle.ItemId == Guid.Empty || cycle.WaitingSinceUtc == default || cycle.WaitingSinceUtc.Offset != TimeSpan.Zero
+            || decidedAtUtc == default || decidedAtUtc.Offset != TimeSpan.Zero || decidedAtUtc < cycle.WaitingSinceUtc)
+        {
+            throw new ArgumentException("An owner decision needs a measured cycle and a UTC decision time not before it.", nameof(decidedAtUtc));
+        }
+
+        database.ChangeTracker.Clear();
+        try
+        {
+            var arrived = (int)WorkApprovalInboxEventTypeV1.Arrived;
+            var decided = (int)WorkApprovalInboxEventTypeV1.Decided;
+            var facts = await database.ApprovalInboxEvents.AsNoTracking()
+                .Where(row => row.CompanyId == companyId && row.Kind == kind && row.ItemId == cycle.ItemId
+                    && row.CycleStartedAtUtc == cycle.WaitingSinceUtc && (row.EventType == arrived || row.EventType == decided))
+                .Select(row => row.EventType)
+                .ToListAsync(cancellationToken);
+            RequireCompany(companyId);
+            if (!facts.Contains(arrived) || facts.Contains(decided))
+            {
+                return false;
+            }
+
+            var now = time.GetUtcNow();
+            database.ApprovalInboxEvents.Add(Row(companyId, kind, cycle.ItemId, cycle.WaitingSinceUtc,
+                WorkApprovalInboxEventTypeV1.Decided, decidedAtUtc, now < decidedAtUtc ? decidedAtUtc : now, null));
+            await database.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // A racing cycle recorded the same owner decision first: the same fact.
+            return false;
+        }
+        finally
+        {
+            database.ChangeTracker.Clear();
+        }
+    }
+
     public async Task<WorkApprovalInboxInteractionOutcomeV1> RecordInteractionAsync(
         Guid companyId,
         WorkApprovalInboxInteractionV1 interaction,
@@ -139,15 +188,30 @@ public sealed class WorkApprovalInboxMeasurementStoreV1(WorkDbContext database, 
         }
     }
 
+    /// <summary>WP2: the cycles of one kind that arrived and are neither observed resolved nor decided by the owner.</summary>
+    public async Task<IReadOnlyList<WorkApprovalInboxCycleV1>> ListOpenCyclesAsync(Guid companyId, string kind,
+        CancellationToken cancellationToken = default)
+    {
+        RequireCompany(companyId);
+        RequireKind(kind);
+        var open = await OpenCyclesAsync(companyId, kind, cancellationToken);
+        RequireCompany(companyId);
+        return open.Select(cycle => new WorkApprovalInboxCycleV1(cycle.ItemId, cycle.WaitingSinceUtc))
+            .OrderBy(cycle => cycle.WaitingSinceUtc).ThenBy(cycle => cycle.ItemId).ToArray();
+    }
+
     private async Task<HashSet<(Guid ItemId, DateTimeOffset WaitingSinceUtc)>> OpenCyclesAsync(
         Guid companyId, string kind, CancellationToken cancellationToken)
     {
         var arrived = (int)WorkApprovalInboxEventTypeV1.Arrived;
         var resolved = (int)WorkApprovalInboxEventTypeV1.ResolvedObserved;
+        var decided = (int)WorkApprovalInboxEventTypeV1.Decided;
+        // D10: a cycle the owner's decision closed is not open either.
         var rows = await database.ApprovalInboxEvents.AsNoTracking()
             .Where(row => row.CompanyId == companyId && row.Kind == kind && row.EventType == arrived
                 && !database.ApprovalInboxEvents.Any(other => other.CompanyId == row.CompanyId && other.Kind == row.Kind
-                    && other.ItemId == row.ItemId && other.CycleStartedAtUtc == row.CycleStartedAtUtc && other.EventType == resolved))
+                    && other.ItemId == row.ItemId && other.CycleStartedAtUtc == row.CycleStartedAtUtc
+                    && (other.EventType == resolved || other.EventType == decided)))
             .Select(row => new { row.ItemId, row.CycleStartedAtUtc })
             .ToListAsync(cancellationToken);
         return rows.Select(row => (row.ItemId, row.CycleStartedAtUtc)).ToHashSet();

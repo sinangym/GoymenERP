@@ -6260,6 +6260,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // WP14; K3 review pending. Down refuses (52270, WP14 range, used by no other migration) while report-centre export records, saved views or command attempts exist; use a forward fix. 1 lexical Sql call(s). Fingerprint re-pinned on the tren-2 head (GOV-D9).
                 ["src/backend/Modules/Reporting/GoymenERP.Modules.Reporting.Infrastructure/Persistence/Migrations/20261122201929_AddReportingCenter.cs"] =
                     new("0000000000000000000000000000000000000000000000000000000000000000", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // WP2; K3 review pending. Up moves work.Notifications into work.InboxNotifications (THROW 52111 stops before the drop if the copy is short); Down refuses (52110, WP2 range, used by no other migration) while event or approval notifications, follow-ups or owner decision events exist; use a forward fix. 2 lexical Sql call(s). Fingerprint re-pinned on the tren-2 head (GOV-D9).
+                ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261122223348_Wp2SingleNotificationStoreAndApprovalFollowUp.cs"] =
+                    new("0000000000000000000000000000000000000000000000000000000000000000", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 2 }),
+                // WP2; K3 review pending. Down refuses (52112, WP2 range, used by no other migration) while work.digest-time-* policy versions exist; use a forward fix. 1 lexical Sql call(s). Fingerprint re-pinned on the tren-2 head (GOV-D9).
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261122224127_Wp2WorkDigestTimes.cs"] =
+                    new("0000000000000000000000000000000000000000000000000000000000000000", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // WP-A1; K3 review pending. Down refuses (52180, WP-A1 range, used by no other migration) while AI gateway policy versions or usage ledger rows exist; use a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261122202350_AddAiGatewayPolicyAndBudgetLedger.cs"] =
                     new("0c4e59499ccc2343abf5f78b80c01f8ae138d9f606d956da6556242feef0f9ad", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),

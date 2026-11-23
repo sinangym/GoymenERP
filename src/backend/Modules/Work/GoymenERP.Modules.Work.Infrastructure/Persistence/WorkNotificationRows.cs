@@ -10,29 +10,10 @@ internal sealed class WorkNotificationInboxRow : IWorkTenantRow
     public string PayloadSha256 { get; set; } = "";
     public DateTimeOffset RecordedAtUtc { get; set; }
 }
-internal sealed class WorkNotificationRow : IWorkTenantRow
-{
-    public Guid Id { get; set; }
-    public Guid CompanyId { get; set; }
-    public string SourceName { get; set; } = "";
-    public Guid EventId { get; set; }
-    public int Kind { get; set; }
-    public Guid RecipientUserId { get; set; }
-    public Guid? SalesOrderId { get; set; }
-    public Guid? SalesOrderLineId { get; set; }
-    public long? ObservedSalesOrderVersion { get; set; }
-    public Guid? PurchaseOrderId { get; set; }
-    public Guid? PurchaseOrderLineId { get; set; }
-    public long? ObservedPurchaseOrderVersion { get; set; }
-    public Guid SourceEntityId { get; set; }
-    public string SourceVersion { get; set; } = "";
-    public string ReasonCode { get; set; } = "";
-    public string ReasonText { get; set; } = "";
-    public DateTimeOffset OccurredAtUtc { get; set; }
-    public DateTimeOffset RecordedAtUtc { get; set; }
-    public string CorrelationId { get; set; } = "";
-    public string? CausationId { get; set; }
-}
+/// <summary>
+/// D9 (WP2): the passivation of one event-derived notification (kinds 4 and 5 of <c>work.InboxNotifications</c>, the single
+/// notification store). The row keeps its policy evidence; the notification itself is never deleted.
+/// </summary>
 internal sealed class WorkNotificationPassivationRow : IWorkTenantRow
 {
     public Guid CompanyId { get; set; }

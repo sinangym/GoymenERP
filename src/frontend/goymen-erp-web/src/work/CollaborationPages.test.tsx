@@ -185,7 +185,7 @@ describe('W1-C collaboration inbox', () => {
   it('shows the now class with its unread count and marks an item read', async () => {
     let read = false
     const item = { id: '87654321-0000-4000-8000-000000000001', companyId: COMPANY_A, kind: 'mention', class: 'now', sourceId: 'ffffffff-0000-4000-8000-000000000001',
-      recordType: 'sales-order-draft', recordId: RECORD, actorUserId: READER, recordedAtUtc: '2026-11-22T09:00:00+00:00', visibleAtUtc: '2026-11-22T09:00:00+00:00' }
+      recordType: 'sales-order-draft', recordId: RECORD, actorUserId: READER, recordedAtUtc: '2026-11-22T09:00:00+00:00', visibleAtUtc: '2026-11-22T09:00:00+00:00', approval: null, event: null }
     const calls = installFetch({ capabilities: [], respond: (url, init) => {
       if (url.includes('/work/notifications?')) return json({ companyId: COMPANY_A, items: [], hasMore: false, nextCursor: null })
       if (url.endsWith('/read') && init?.method === 'POST') { read = true; return json({ id: item.id, readAtUtc: '2026-11-22T09:05:00+00:00' }) }

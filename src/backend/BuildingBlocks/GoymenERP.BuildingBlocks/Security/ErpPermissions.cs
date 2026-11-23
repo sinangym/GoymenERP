@@ -1770,6 +1770,14 @@ public static class ErpPermissions
     /// </summary>
     public const string WorkAssistantMemoryOversee = "work.assistant-memory.oversee";
     /// <summary>
+    /// WP2 (YOL-D28, YOL-D17): "onay yükseltme". A holder receives in the Work inbox the approvals whose duration ran out after
+    /// the one reminder (the approval rule table's escalation permission names this one by default), and sees the "sahipsiz
+    /// onay" view (no eligible approver). It decides nothing: the decision is still the owner's command under the owner's
+    /// approver permission. Company-wide only. Not Critical. Registered, not granted: no seeded role holds it; while no one
+    /// holds it only the approvers get the reminder (YOL-D28). A grant is a human gate.
+    /// </summary>
+    public const string WorkApprovalsEscalate = "work.approvals.escalate";
+    /// <summary>
     /// Y-A1 (AI-D12, AI-D32, DALGA_PLANI_v2 A.4 (1)): may use the READ tool <c>decisions.lookup.v1</c> over the decision
     /// index in addition to <see cref="AiPanelUse"/>. AI-D36 recommends it for every user role (consistent with ROL-D16);
     /// registered company-wide only, not critical, and no seeded role holds it: applying the grant is a human gate.
@@ -2119,6 +2127,7 @@ public static class ErpPermissions
             WorkTasksAssign,
             WorkTasksComplete,
             WorkAssistantMemoryOversee,
+            WorkApprovalsEscalate,
             ReportingExport,
             ReportingAuditorPackageExport,
             ReportingIntercompanyRead,
@@ -2437,6 +2446,7 @@ public static class ErpPermissions
             WorkTasksAssign,
             WorkTasksComplete,
             WorkAssistantMemoryOversee,
+            WorkApprovalsEscalate,
             ReportingExport,
             ReportingAuditorPackageExport,
             ReportingIntercompanyRead,

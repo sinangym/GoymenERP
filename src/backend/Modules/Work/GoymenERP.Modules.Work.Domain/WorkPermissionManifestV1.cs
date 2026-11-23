@@ -8,7 +8,7 @@ namespace GoymenERP.Modules.Work.Domain;
 /// </summary>
 public static class WorkPermissionManifestV1
 {
-    public const int Version = 2;
+    public const int Version = 3;
     public const string NotesWrite = "work.notes.write";
     public const string TasksAssign = "work.tasks.assign";
     public const string TasksComplete = "work.tasks.complete";
@@ -16,6 +16,9 @@ public static class WorkPermissionManifestV1
     /// <summary>WP-C6 (AI-D30): view and close another person's assistant memory; every view is audited.</summary>
     public const string AssistantMemoryOversee = "work.assistant-memory.oversee";
 
+    /// <summary>WP2 (YOL-D28): "onay yükseltme" — escalated approvals and the "sahipsiz onay" view; decides nothing.</summary>
+    public const string ApprovalsEscalate = "work.approvals.escalate";
+
     public static IReadOnlySet<string> Names { get; } = new HashSet<string>(
-        [NotesWrite, TasksAssign, TasksComplete, AssistantMemoryOversee], StringComparer.Ordinal);
+        [NotesWrite, TasksAssign, TasksComplete, AssistantMemoryOversee, ApprovalsEscalate], StringComparer.Ordinal);
 }

@@ -459,6 +459,11 @@ public sealed class AiWpA3cReadToolsTests
         public Task<WorkApprovalInboxInteractionOutcomeV1> RecordInteractionAsync(Guid companyId,
             WorkApprovalInboxInteractionV1 interaction, CancellationToken cancellationToken = default) =>
             Task.FromResult(WorkApprovalInboxInteractionOutcomeV1.Recorded);
+        public Task<bool> RecordDecisionAsync(Guid companyId, string kind, WorkApprovalInboxCycleV1 cycle, DateTimeOffset decidedAtUtc,
+            CancellationToken cancellationToken = default) => Task.FromResult(false);
+
+        public Task<IReadOnlyList<WorkApprovalInboxCycleV1>> ListOpenCyclesAsync(Guid companyId, string kind,
+            CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<WorkApprovalInboxCycleV1>>([]);
     }
 
     private sealed class FixedCorrelation : ICorrelationContext

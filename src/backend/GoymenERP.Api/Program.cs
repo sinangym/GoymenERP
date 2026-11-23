@@ -673,6 +673,7 @@ app.MapWorkApprovalRuleEndpoints();
 app.MapWorkDeadlineEndpoints();
 app.MapWorkNotificationEndpoints();
 app.MapWorkCollaborationEndpoints();
+app.MapWorkApprovalFollowUpEndpoints();
 app.MapWorkAssistantMemoryEndpoints();
 app.MapReportingEndpoints();
 app.MapSalesEndpoints();

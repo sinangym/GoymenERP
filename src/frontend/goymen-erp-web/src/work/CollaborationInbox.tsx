@@ -1,3 +1,4 @@
+import { Link } from 'react-router'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useShellState } from '../shell/shellContext'
@@ -11,7 +12,13 @@ import type { WorkInboxClass, WorkInboxItem } from './collaborationContract'
 import { COLLABORATION_TEXT as T, RECORD_TYPE_TEXT } from './collaborationText'
 import styles from './Work.module.css'
 
-const kindText = (item: WorkInboxItem) => item.kind === 'mention' ? T.kindMention : item.kind === 'task-assigned' ? T.kindAssigned : T.kindOverdue
+const KIND_TEXT: Readonly<Record<WorkInboxItem['kind'], string>> = {
+  'mention': T.kindMention, 'task-assigned': T.kindAssigned, 'task-overdue': T.kindOverdue,
+  'allocation-released': T.kindAllocationReleased, 'purchase-supply-revived': T.kindSupplyRevived,
+  'approval-waiting': T.kindApprovalWaiting, 'approval-reminder': T.kindApprovalReminder,
+  'approval-escalated': T.kindApprovalEscalated, 'approval-orphaned': T.kindApprovalOrphaned,
+}
+const kindText = (item: WorkInboxItem) => KIND_TEXT[item.kind]
 
 /**
  * AI-D29 in-app inbox: "şimdi" (mentions, overdue work) and "özet" (the rest, released at the digest times the server
@@ -68,6 +75,11 @@ export function CollaborationInbox() {
         : <ul className={styles.noteList}>{page.items.map((item) => <li key={item.id} data-testid={`work-inbox-${item.id}`}>
           <p className={styles.noteMeta}><strong>{kindText(item)}</strong>{item.recordType === null ? null : <> · {RECORD_TYPE_TEXT[item.recordType]}</>}
             {' · '}<time dateTime={item.visibleAtUtc}>{new Date(item.visibleAtUtc).toLocaleString('tr-TR')}</time>{' · '}{item.readAtUtc === null ? T.unread : T.read}</p>
+          {item.approval === null ? null : <p className={styles.noteMeta}>{item.approval.documentLabel}{' · '}{T.approvalWaitingSince}{' '}
+            <time dateTime={item.approval.waitingSinceUtc}>{new Date(item.approval.waitingSinceUtc).toLocaleString('tr-TR')}</time>
+            {item.approval.dueAtUtc === null ? null : <>{' · '}{T.approvalDue}{' '}<time dateTime={item.approval.dueAtUtc}>{new Date(item.approval.dueAtUtc).toLocaleString('tr-TR')}</time></>}
+            {' · '}<Link to={item.approval.link}>{T.openApproval}</Link></p>}
+          {item.event === null ? null : <p className={styles.noteMeta}>{item.event.reasonText}</p>}
           {item.readAtUtc === null ? <Button type="button" size="sm" disabled={busy !== null} onClick={() => void markRead(item)}>{T.markRead}</Button> : null}
         </li>)}</ul>}
     {message === null ? null : <p role="status">{message}</p>}

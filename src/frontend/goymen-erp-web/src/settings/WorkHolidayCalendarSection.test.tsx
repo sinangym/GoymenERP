@@ -14,7 +14,9 @@ const NEXT = YEAR + 1
 const BASE = '/settings/company-policies/work-holiday-calendar'
 const DURATION = '/settings/company-policies/work-approval-duration'
 const PATH = '/ayarlar/onay-sureleri'
-const durationView = { companyId: COMPANY_A, hours: { value: null, version: '0', versions: [] }, businessDays: { value: null, version: '0', versions: [] } }
+// WP1 (D3, YOL-D18): version "0" carries the decided defaults (4 hours / 2 business days); the server never answers a null
+// length at version 0, and the strict decoder refuses one (that stale fixture hid the duration sections behind "malformed").
+const durationView = { companyId: COMPANY_A, hours: { value: 4, version: '0', versions: [] }, businessDays: { value: 2, version: '0', versions: [] } }
 const undefinedYear = (year = YEAR) => ({ companyId: COMPANY_A, year, isDefined: false, version: '0', days: [], versions: [] })
 const entry = (version: string, dayCount: number) =>
   ({ version, dayCount, recordedBy: 'SENTETIK Yönetici', recordedAtUtc: `${YEAR}-01-0${version}T07:00:00+00:00`, reason: `SENTETIK ${version}` })

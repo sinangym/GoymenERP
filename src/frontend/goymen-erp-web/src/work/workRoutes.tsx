@@ -18,7 +18,9 @@ import { MY_TASKS_ROUTE } from './collaborationContract'
 import { NOTIFICATIONS_ROUTE } from './notificationContract'
 import { WORK_APPROVALS_CAPABILITIES, WORK_ROUTE } from './workText'
 import { WORK_INBOX_CAPABILITIES } from './workInboxKinds'
-import { WORK_MY_TASKS_CAPABILITIES } from './capabilities'
+import { WORK_APPROVAL_FOLLOW_UP_CAPABILITIES, WORK_MY_TASKS_CAPABILITIES } from './capabilities'
+import { ApprovalFollowUpPage } from './ApprovalFollowUpPage'
+import { APPROVAL_FOLLOW_UP_ROUTE } from './approvalFollowUpContract'
 
 /**
  * W1-A / WP1: the one Work inbox (`/onaylarim/kuyruk`) opens for an actor holding any inbox kind's EXISTING approve
@@ -35,6 +37,11 @@ export const workRoutes: RouteObject[] = [
   {
     path: MY_TASKS_ROUTE.slice(1),
     element: <CapabilityRoute capability={WORK_MY_TASKS_CAPABILITIES}><MyTasksPage /></CapabilityRoute>,
+  },
+  // WP2 "Onay takibi": escalated and orphaned approvals, behind Work's own `work.approvals.follow-up` capability.
+  {
+    path: APPROVAL_FOLLOW_UP_ROUTE.slice(1),
+    element: <CapabilityRoute capability={WORK_APPROVAL_FOLLOW_UP_CAPABILITIES}><ApprovalFollowUpPage /></CapabilityRoute>,
   },
   // WP-C6 "Asistan hafızam": own memory only (see, edit, delete); the server accepts no owner override and keeps writing
   // closed while the pilot, retention, entry limit or information notice is undecided.

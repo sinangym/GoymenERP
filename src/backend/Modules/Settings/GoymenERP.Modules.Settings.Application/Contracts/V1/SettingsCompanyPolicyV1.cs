@@ -42,6 +42,16 @@ public static class CompanyPolicyKeysV1
     public const string WorkApprovalDurationHours = "work.approval-duration-hours";
     /// <summary>YOL-D17/YOL-D18 (W1-A): whole business days of the business-day approval duration class; no default.</summary>
     public const string WorkApprovalDurationBusinessDays = "work.approval-duration-business-days";
+    /// <summary>
+    /// YOL-D25 (AI-D29, WP2): the three daily digest times of "özet" notifications, as whole minutes after local midnight in
+    /// the company's business time zone (0–1439). No record is the decided default as version 0 (09:00, 13:00, 17:00);
+    /// digests are released on business days only. Changing one is a new recorded version.
+    /// </summary>
+    public const string WorkDigestTimeMorning = "work.digest-time-morning";
+    /// <inheritdoc cref="WorkDigestTimeMorning"/>
+    public const string WorkDigestTimeMidday = "work.digest-time-midday";
+    /// <inheritdoc cref="WorkDigestTimeMorning"/>
+    public const string WorkDigestTimeEvening = "work.digest-time-evening";
     public const int MaximumLength = 64;
 
     public static IReadOnlyList<string> All { get; } =
@@ -51,6 +61,9 @@ public static class CompanyPolicyKeysV1
         NotificationActiveDays,
         WorkApprovalDurationHours,
         WorkApprovalDurationBusinessDays,
+        WorkDigestTimeMorning,
+        WorkDigestTimeMidday,
+        WorkDigestTimeEvening,
         FinanceOpeningPeriod,
         ManufacturingDueDateBuffer,
         SalesSubcontractTaxDefault,

@@ -21,7 +21,9 @@ public sealed partial class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
     {
         await WithDatabaseAsync(async connectionString =>
         {
-            var guard = Assert.IsType<SqlOperation>(new AddPersonalNotifications().DownOperations[0]).Sql;
+            // D9 (WP2): work.Notifications was retired into work.InboxNotifications; the store's Down protection is now the
+            // forward-fix guard of the migration that moved it (it refuses while a moved or new event notification exists).
+            var guard = Assert.IsType<SqlOperation>(new Wp2SingleNotificationStoreAndApprovalFollowUp().DownOperations[0]).Sql;
             await using var database = Db(connectionString, TestCompanyIds.CompanyA);
             await database.Database.ExecuteSqlRawAsync(guard);
             await using var provider = NotificationServices(connectionString);
@@ -31,8 +33,8 @@ public sealed partial class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
             provider.GetRequiredService<NotificationClock>().Now = provider.GetRequiredService<NotificationClock>().Now.AddDays(90);
             await scope.ServiceProvider.GetRequiredService<IWorkNotificationMaintenanceV1>().PassivateExpiredAsync();
             var refusal = await Assert.ThrowsAsync<SqlException>(() => database.Database.ExecuteSqlRawAsync(guard));
-            Assert.Equal(51955, refusal.Number);
-            Assert.Equal(1, await database.Notifications.CountAsync());
+            Assert.Equal(52110, refusal.Number);
+            Assert.Equal(1, await database.InboxNotifications.CountAsync());
             Assert.Equal(1, await database.NotificationInbox.CountAsync());
             Assert.Equal(1, await database.NotificationPassivations.CountAsync());
         });
@@ -53,15 +55,15 @@ public sealed partial class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
             var owner = provider.GetRequiredService<NotificationPurchaseRecipients>();
             owner.Outcome = WorkNotificationRecipientOutcomeV1.Unassigned;
             await Assert.ThrowsAsync<InvalidOperationException>(() => delivery.DeliverAsync(command));
-            Assert.Equal(0, await CountAsync(connectionString, "Notifications", TestCompanyIds.CompanyA));
+            Assert.Equal(0, await CountAsync(connectionString, "InboxNotifications", TestCompanyIds.CompanyA));
             Assert.Equal(0, await CountAsync(connectionString, "NotificationInbox", TestCompanyIds.CompanyA));
             owner.Outcome = WorkNotificationRecipientOutcomeV1.Found;
             await delivery.DeliverAsync(command);
-            Assert.Equal(3, await CountAsync(connectionString, "Notifications", TestCompanyIds.CompanyA));
+            Assert.Equal(3, await CountAsync(connectionString, "InboxNotifications", TestCompanyIds.CompanyA));
             Assert.Equal(1, await CountAsync(connectionString, "NotificationInbox", TestCompanyIds.CompanyA));
             await using (var database = Db(connectionString, TestCompanyIds.CompanyA))
             {
-                var rows = await database.Notifications.ToArrayAsync();
+                var rows = await database.InboxNotifications.ToArrayAsync();
                 var sales = Assert.Single(rows, row => row.SalesOrderId is not null);
                 Assert.Null(sales.PurchaseOrderId);
                 Assert.Equal(command.Targets[0].SalesOrderLineId, sales.SalesOrderLineId);
@@ -72,7 +74,7 @@ public sealed partial class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
             owner.Outcome = WorkNotificationRecipientOutcomeV1.Unavailable;
             provider.GetRequiredService<NotificationRecipient>().Outcome = WorkNotificationRecipientOutcomeV1.Unavailable;
             await delivery.DeliverAsync(command); // First immutable recipients remain; later ownership cannot retarget a replay.
-            Assert.Equal(3, await CountAsync(connectionString, "Notifications", TestCompanyIds.CompanyA));
+            Assert.Equal(3, await CountAsync(connectionString, "InboxNotifications", TestCompanyIds.CompanyA));
             Assert.Equal(1, await CountAsync(connectionString, "NotificationInbox", TestCompanyIds.CompanyA));
         });
     }
@@ -91,12 +93,12 @@ public sealed partial class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
             recipient.Outcome = WorkNotificationRecipientOutcomeV1.Unassigned;
             await Assert.ThrowsAsync<InvalidOperationException>(() => delivery.DeliverAsync(command));
             Assert.Equal(0, await CountAsync(connectionString, "NotificationInbox", TestCompanyIds.CompanyA));
-            Assert.Equal(0, await CountAsync(connectionString, "Notifications", TestCompanyIds.CompanyA));
+            Assert.Equal(0, await CountAsync(connectionString, "InboxNotifications", TestCompanyIds.CompanyA));
             recipient.Outcome = WorkNotificationRecipientOutcomeV1.Found;
             await delivery.DeliverAsync(command);
             await delivery.DeliverAsync(command);
             Assert.Equal(1, await CountAsync(connectionString, "NotificationInbox", TestCompanyIds.CompanyA));
-            Assert.Equal(1, await CountAsync(connectionString, "Notifications", TestCompanyIds.CompanyA));
+            Assert.Equal(1, await CountAsync(connectionString, "InboxNotifications", TestCompanyIds.CompanyA));
             var poison = await Assert.ThrowsAsync<OutboxPermanentFailureException>(() => delivery.DeliverAsync(command with { ReasonText = "SENTETIK değişmiş olay" }));
             Assert.Equal("notification_event_payload_mismatch", poison.Code);
             var read = scope.ServiceProvider.GetRequiredService<IWorkNotificationReadV1>();
@@ -113,7 +115,7 @@ public sealed partial class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
             provider.GetRequiredService<NotificationMembership>().Allow = false;
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => read.ListMineAsync(true));
             await using var foreign = Db(connectionString, TestCompanyIds.CompanyB);
-            Assert.Empty(await foreign.Notifications.ToArrayAsync());
+            Assert.Empty(await foreign.InboxNotifications.ToArrayAsync());
         });
     }
 
@@ -138,7 +140,7 @@ public sealed partial class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
             Assert.NotNull(Assert.Single((await read.ListMineAsync(true)).Items).PassivatedAtUtc);
             provider.GetRequiredService<NotificationRetention>().Days = 365;
             Assert.Empty((await read.ListMineAsync(false)).Items);
-            Assert.Equal(1, await CountAsync(connectionString, "Notifications", TestCompanyIds.CompanyA));
+            Assert.Equal(1, await CountAsync(connectionString, "InboxNotifications", TestCompanyIds.CompanyA));
             Assert.Equal(1, await CountAsync(connectionString, "NotificationInbox", TestCompanyIds.CompanyA));
             await using var database = Db(connectionString, TestCompanyIds.CompanyA);
             var passive = Assert.Single(await database.NotificationPassivations.ToArrayAsync());

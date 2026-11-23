@@ -12,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Modules.Work.Infrastructure.Persistence;
 
-/// <summary>Derived notification/inbox effects only; original stock and money audit histories remain with their owners.</summary>
+/// <summary>D9 (WP2): writes into the single store <c>work.InboxNotifications</c> (kinds 4 and 5). Derived notification/inbox effects only; original stock and money audit histories remain with their owners.</summary>
 public sealed class WorkNotificationStoreV1(IServiceScopeFactory scopes, ICompanyContext company,
     IWorkNotificationRecipientReaderV1 recipients, IWorkNotificationRetentionReaderV1 retention, TimeProvider time,
     IWorkPurchaseNotificationRecipientReaderV1 purchaseRecipients)
@@ -66,22 +66,20 @@ public sealed class WorkNotificationStoreV1(IServiceScopeFactory scopes, ICompan
                 EventId = command.EventId, EventType = command.EventType, SchemaVersion = command.SchemaVersion,
                 PayloadSha256 = fingerprint, RecordedAtUtc = now });
             foreach (var (target, recipient) in resolved)
-                database.Notifications.Add(new WorkNotificationRow() { Id = Guid.NewGuid(), CompanyId = companyId, SourceName = command.SourceName,
-                    EventId = command.EventId, Kind = (int)command.Kind, RecipientUserId = recipient.UserId!.Value,
-                    SalesOrderId = target.SalesOrderId, SalesOrderLineId = target.SalesOrderLineId,
-                    ObservedSalesOrderVersion = recipient.ObservedSalesOrderVersion!.Value, SourceEntityId = command.SourceEntityId,
-                    SourceVersion = command.SourceVersion, ReasonCode = command.ReasonCode, ReasonText = command.ReasonText,
-                    OccurredAtUtc = command.OccurredAtUtc, RecordedAtUtc = now,
-                    CorrelationId = command.CorrelationId, CausationId = command.CausationId });
+                database.InboxNotifications.Add(Row(companyId, command, recipient.UserId!.Value, now, row =>
+                {
+                    row.SalesOrderId = target.SalesOrderId;
+                    row.SalesOrderLineId = target.SalesOrderLineId;
+                    row.ObservedSalesOrderVersion = recipient.ObservedSalesOrderVersion!.Value;
+                }));
             if (purchase is not null)
                 foreach (var recipientId in purchase.UserIds)
-                    database.Notifications.Add(new WorkNotificationRow() { Id = Guid.NewGuid(), CompanyId = companyId, SourceName = command.SourceName,
-                        EventId = command.EventId, Kind = (int)command.Kind, RecipientUserId = recipientId,
-                        PurchaseOrderId = purchase.PurchaseOrderId, PurchaseOrderLineId = purchase.PurchaseOrderLineId,
-                        ObservedPurchaseOrderVersion = purchase.ObservedOrderVersion, SourceEntityId = command.SourceEntityId,
-                        SourceVersion = command.SourceVersion, ReasonCode = command.ReasonCode, ReasonText = command.ReasonText,
-                        OccurredAtUtc = command.OccurredAtUtc, RecordedAtUtc = now,
-                        CorrelationId = command.CorrelationId, CausationId = command.CausationId });
+                    database.InboxNotifications.Add(Row(companyId, command, recipientId, now, row =>
+                    {
+                        row.PurchaseOrderId = purchase.PurchaseOrderId;
+                        row.PurchaseOrderLineId = purchase.PurchaseOrderLineId;
+                        row.ObservedPurchaseOrderVersion = purchase.ObservedOrderVersion;
+                    }));
             RequireOriginalCompany(companyId);
             await database.SaveChangesAsync(cancellationToken);
             RequireOriginalCompany(companyId);
@@ -108,7 +106,7 @@ public sealed class WorkNotificationStoreV1(IServiceScopeFactory scopes, ICompan
         try
         {
             await using var transaction = await database.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
-            var expired = await database.Notifications.AsNoTracking()
+            var expired = await EventRows(database).AsNoTracking()
                 .Where(row => row.CompanyId == companyId && row.RecordedAtUtc <= cutoff
                     && !database.NotificationPassivations.Any(passive => passive.NotificationId == row.Id))
                 .OrderBy(row => row.Id).Select(row => row.Id).ToArrayAsync(cancellationToken);
@@ -121,6 +119,40 @@ public sealed class WorkNotificationStoreV1(IServiceScopeFactory scopes, ICompan
         }
         finally { database.ChangeTracker.Clear(); }
     }
+    /// <summary>
+    /// D9 (WP2): the single notification store row of one event-derived notification. Kind 1 → 4 (allocation released),
+    /// kind 2 → 5 (purchase supply revived); "özet" class (AI-D29); the source id is the row's own id.
+    /// </summary>
+    internal static WorkInboxNotificationKindV1 StoredKind(WorkNotificationKindV1 kind) => kind switch
+    {
+        WorkNotificationKindV1.AllocationReleased => WorkInboxNotificationKindV1.AllocationReleased,
+        WorkNotificationKindV1.PurchaseSupplyRevived => WorkInboxNotificationKindV1.PurchaseSupplyRevived,
+        _ => throw new OutboxPermanentFailureException("notification_event_invalid", "The notification kind is unknown."),
+    };
+
+    private static WorkInboxNotificationRow Row(Guid companyId, DeliverWorkNotificationV1 command, Guid recipient,
+        DateTimeOffset now, Action<WorkInboxNotificationRow> target)
+    {
+        var id = Guid.NewGuid();
+        var kind = StoredKind(command.Kind);
+        var row = new WorkInboxNotificationRow
+        {
+            CompanyId = companyId, Id = id, RecipientUserId = recipient, Kind = (int)kind,
+            Class = (int)WorkInboxNotificationClassesV1.Of(kind), SourceId = id, RecordedAtUtc = now,
+            CorrelationId = command.CorrelationId, CausationId = command.CausationId, SourceName = command.SourceName,
+            EventId = command.EventId, SourceEntityId = command.SourceEntityId, SourceVersion = command.SourceVersion,
+            ReasonCode = command.ReasonCode, ReasonText = command.ReasonText, OccurredAtUtc = command.OccurredAtUtc,
+        };
+        target(row);
+        return row;
+    }
+
+    private static readonly int[] EventKinds =
+        [(int)WorkInboxNotificationKindV1.AllocationReleased, (int)WorkInboxNotificationKindV1.PurchaseSupplyRevived];
+
+    internal static IQueryable<WorkInboxNotificationRow> EventRows(WorkDbContext database) =>
+        database.InboxNotifications.Where(row => EventKinds.Contains(row.Kind));
+
     private Guid RequireCompany() => company.IsResolved && company.CompanyId != Guid.Empty ? company.CompanyId
         : throw new InvalidOperationException("A resolved notification company is required.");
     private void RequireOriginalCompany(Guid expected)
@@ -168,7 +200,8 @@ public sealed class WorkNotificationReadV1(WorkDbContext database, ICompanyConte
         await RequireStillAsync(companyId, actor!, cancellationToken);
         await maintenance.PassivateExpiredAsync(cancellationToken);
         await RequireStillAsync(companyId, actor!, cancellationToken);
-        var own = database.Notifications.AsNoTracking().Where(item => item.CompanyId == companyId && item.RecipientUserId == userId);
+        var own = WorkNotificationStoreV1.EventRows(database).AsNoTracking()
+            .Where(item => item.CompanyId == companyId && item.RecipientUserId == userId);
         if (beforeId is { } cursor)
         {
             var before = await own.Where(item => item.Id == cursor).Select(item => new { item.Id, item.RecordedAtUtc }).SingleOrDefaultAsync(cancellationToken);
@@ -182,9 +215,11 @@ public sealed class WorkNotificationReadV1(WorkDbContext database, ICompanyConte
             from passive in passives.DefaultIfEmpty()
             where item.CompanyId == companyId && item.RecipientUserId == userId && (includePassive || passive == null)
             orderby item.RecordedAtUtc descending, item.Id
-            select new WorkNotificationItemV1(item.Id, item.CompanyId, item.Kind == 1 ? "allocation-released" : "purchase-supply-revived", item.SalesOrderId, item.SalesOrderLineId,
-                item.SourceEntityId, item.SourceVersion, item.ReasonCode, item.ReasonText, item.OccurredAtUtc,
-                item.RecordedAtUtc, passive == null ? null : passive.PassivatedAtUtc, item.PurchaseOrderId, item.PurchaseOrderLineId)).Take(101).ToArrayAsync(cancellationToken);
+            select new WorkNotificationItemV1(item.Id, item.CompanyId,
+                item.Kind == (int)WorkInboxNotificationKindV1.AllocationReleased ? "allocation-released" : "purchase-supply-revived",
+                item.SalesOrderId, item.SalesOrderLineId, item.SourceEntityId!.Value, item.SourceVersion!, item.ReasonCode!,
+                item.ReasonText!, item.OccurredAtUtc!.Value, item.RecordedAtUtc, passive == null ? null : passive.PassivatedAtUtc,
+                item.PurchaseOrderId, item.PurchaseOrderLineId)).Take(101).ToArrayAsync(cancellationToken);
         await RequireStillAsync(companyId, actor!, cancellationToken);
         return new WorkNotificationPageV1(companyId, rows.Take(100).ToArray(), rows.Length > 100, rows.Length > 100 ? rows[99].Id : null);
     }

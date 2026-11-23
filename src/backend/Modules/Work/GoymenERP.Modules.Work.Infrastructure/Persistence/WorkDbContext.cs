@@ -236,7 +236,7 @@ public sealed partial class WorkDbContext(
                 throw new InvalidOperationException("Work records cannot be deleted.");
             }
 
-            if (entry.Entity is WorkObservationInboxRow or WorkOutboxRow or WorkNotificationRow or WorkNotificationInboxRow or WorkNotificationPassivationRow
+            if (entry.Entity is WorkObservationInboxRow or WorkOutboxRow or WorkNotificationInboxRow or WorkNotificationPassivationRow
                     or WorkApprovalInboxEventRow or WorkApprovalRuleVersionRow
                 && entry.State != EntityState.Added)
             {

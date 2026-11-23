@@ -133,6 +133,8 @@ public static class SettingsModuleExtensions
         // WP15 (1.16): legal deadline counters as a Work deadline source; grants nothing, writes nothing.
         services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkDeadlineSourceV1, WorkDeadlines.SettingsLegalDeadlineWorkSourceV1>();
         services.AddScoped<ISettingsNotificationRetentionAutomationV1, SettingsNotificationRetentionAutomationV1>();
+        // WP2: the Work scheduler's read of the Work timing keys (no user; resolved company only).
+        services.AddScoped<ISettingsWorkTimingAutomationV1, SettingsWorkTimingAutomationV1>();
         services.AddScoped<ISettingsInventoryCostProfileReaderV1, SettingsInventoryCostProfileReaderV1>();
         services.AddScoped<ISettingsFinancePolicyProviderV1>(provider =>
             provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());

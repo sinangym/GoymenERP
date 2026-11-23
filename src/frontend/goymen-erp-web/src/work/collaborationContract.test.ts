@@ -24,7 +24,7 @@ export const task = (overrides: Record<string, unknown> = {}) => ({
 export const inboxItem = (overrides: Record<string, unknown> = {}) => ({
   id: '87654321-0000-4000-8000-000000000001', companyId: COMPANY, kind: 'mention', class: 'now', sourceId: 'ffffffff-0000-4000-8000-000000000001',
   recordType: 'sales-order-draft', recordId: RECORD, actorUserId: AUTHOR, recordedAtUtc: '2026-11-22T09:00:00+00:00',
-  visibleAtUtc: '2026-11-22T09:00:00+00:00', readAtUtc: null, ...overrides,
+  visibleAtUtc: '2026-11-22T09:00:00+00:00', readAtUtc: null, approval: null, event: null, ...overrides,
 })
 const notePage = (items: unknown[]) => ({ companyId: COMPANY, recordType: 'sales-order-draft', recordId: RECORD, items, hasMore: false })
 
@@ -64,6 +64,30 @@ describe('W1-C collaboration decoders', () => {
     expect(decodeWorkInboxPage(page([inboxItem({ kind: 'task-assigned', class: 'now' })]), COMPANY)).toBeNull()
     expect(decodeWorkInboxPage({ ...page([inboxItem()]), unreadNowCount: -1 }, COMPANY)).toBeNull()
     expect(decodeWorkInboxPage(page([inboxItem({ companyId: OTHER })]), COMPANY)).toBeNull()
+  })
+
+  it('WP2: decodes approval follow-up notifications with their step and the moved event notifications as digest', () => {
+    const page = (items: unknown[]) => ({ companyId: COMPANY, items, hasMore: false, unreadNowCount: 1, unreadDigestCount: 0 })
+    const approval = { kind: 'logistics.dispatch-note.v1', itemId: RECORD, documentLabel: 'SENTETIK irsaliye',
+      link: '/lojistik/yukleme-talimatlari/' + RECORD, waitingSinceUtc: '2026-11-23T06:00:00+00:00', step: 'reminder', dueAtUtc: '2026-11-23T10:00:00+00:00' }
+    const approvalItem = (overrides: Record<string, unknown> = {}) => inboxItem({ kind: 'approval-reminder', class: 'now', recordType: null,
+      recordId: null, actorUserId: null, approval, ...overrides })
+    expect(decodeWorkInboxPage(page([approvalItem()]), COMPANY)?.items[0]?.approval?.step).toBe('reminder')
+    // The step must match the kind, the class is "şimdi", and an approval kind carries no actor or record type.
+    expect(decodeWorkInboxPage(page([approvalItem({ kind: 'approval-escalated' })]), COMPANY)).toBeNull()
+    expect(decodeWorkInboxPage(page([approvalItem({ class: 'digest' })]), COMPANY)).toBeNull()
+    expect(decodeWorkInboxPage(page([approvalItem({ approval: { ...approval, link: 'https://example.invalid/x' } })]), COMPANY)).toBeNull()
+    expect(decodeWorkInboxPage(page([approvalItem({ approval: { ...approval, extra: 1 } })]), COMPANY)).toBeNull()
+    expect(decodeWorkInboxPage(page([inboxItem({ approval })]), COMPANY)).toBeNull()
+    const event = { sourceEntityId: OTHER, sourceVersion: '2', reasonCode: 'acceptance-link-failed', reasonText: 'SENTETIK ayrım bırakıldı',
+      occurredAtUtc: '2026-11-17T00:00:00+00:00', salesOrderId: RECORD, salesOrderLineId: READER, purchaseOrderId: null, purchaseOrderLineId: null }
+    const eventItem = (overrides: Record<string, unknown> = {}) => inboxItem({ kind: 'allocation-released', class: 'digest', recordType: null,
+      recordId: null, actorUserId: null, event, ...overrides })
+    expect(decodeWorkInboxPage(page([eventItem()]), COMPANY)?.items[0]?.event?.reasonCode).toBe('acceptance-link-failed')
+    expect(decodeWorkInboxPage(page([eventItem({ class: 'now' })]), COMPANY)).toBeNull()
+    expect(decodeWorkInboxPage(page([eventItem({ event: null })]), COMPANY)).toBeNull()
+    expect(decodeWorkInboxPage(page([eventItem({ event: { ...event, purchaseOrderId: OTHER, purchaseOrderLineId: OTHER } })]), COMPANY)).toBeNull()
+    expect(decodeWorkInboxPage(page([inboxItem({ kind: 'approval-unknown' })]), COMPANY)).toBeNull()
   })
 
   it('D7: accepts people as id + display name only and reads a refusal by its code', () => {

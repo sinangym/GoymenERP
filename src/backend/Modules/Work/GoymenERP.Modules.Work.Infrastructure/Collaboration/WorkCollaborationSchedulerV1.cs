@@ -21,13 +21,21 @@ public sealed class WorkCollaborationSchedulerOptions
     public bool Enabled { get; set; }
     public TimeSpan? PollInterval { get; set; }
 
+    /// <summary>
+    /// WP2 (YOL-D17, YOL-D28, AI-D29, D10): also run the approval follow-up cycle (the "şimdi" notification of a waiting
+    /// approval, the one reminder, the escalation, "sahipsiz onay" and the owner's decision time). OFF unless true, and only
+    /// while the scheduler itself is enabled; turning it on is a human gate.
+    /// </summary>
+    public bool ApprovalFollowUpEnabled { get; set; }
+
     internal TimeSpan ResolvePollInterval() => PollInterval is { } poll && poll > TimeSpan.Zero
         ? poll
         : throw new InvalidOperationException($"{SectionName} is enabled but PollInterval is not configured with a valid positive value.");
 }
 
 /// <summary>Runs one <see cref="IWorkCollaborationMaintenanceV1"/> cycle per company of the shared company directory.</summary>
-public sealed class WorkCollaborationScheduler(IServiceScopeFactory scopes, ILogger<WorkCollaborationScheduler> logger)
+public sealed class WorkCollaborationScheduler(IServiceScopeFactory scopes, ILogger<WorkCollaborationScheduler> logger,
+    IOptions<WorkCollaborationSchedulerOptions>? options = null)
 {
     public async Task<int> RunOnceAsync(CancellationToken cancellationToken)
     {
@@ -54,6 +62,16 @@ public sealed class WorkCollaborationScheduler(IServiceScopeFactory scopes, ILog
             {
                 await using var scope = scopes.CreateAsyncScope();
                 scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(companyId);
+                // WP2: follow-up first, so a "şimdi" notification it writes is never held behind a digest slot.
+                if (options?.Value.ApprovalFollowUpEnabled == true
+                    && scope.ServiceProvider.GetService<IWorkApprovalFollowUpMaintenanceV1>() is { } followUp)
+                {
+                    var followed = await followUp.RunCycleAsync(cancellationToken);
+                    if (followed.KindsUnavailable > 0)
+                        logger.LogInformation("Company {CompanyId}: {Count} approval kind(s) could not be followed up this cycle.",
+                            companyId, followed.KindsUnavailable);
+                }
+
                 var cycle = await scope.ServiceProvider.GetRequiredService<IWorkCollaborationMaintenanceV1>().RunCycleAsync(cancellationToken);
                 if (!cycle.ScheduleAvailable)
                     logger.LogInformation("Company {CompanyId} has no available digest schedule; digest notifications stay held.", companyId);

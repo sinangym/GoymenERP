@@ -28,7 +28,8 @@ public sealed partial class SettingsDbContext
             table.HasCheckConstraint("CK_SettingsCompanyPolicyVersions_Key",
                 "[PolicyKey] IN ('finance.opening-period', 'manufacturing.due-date-buffer', "
                 + "'sales.subcontract-tax-default', 'purchasing.subcontract-tax-default', 'sales.contract-discount-limit', 'manufacturing.include-scrap-cost', 'work.notification-active-days', "
-                + "'work.approval-duration-hours', 'work.approval-duration-business-days')");
+                + "'work.approval-duration-hours', 'work.approval-duration-business-days', "
+                + "'work.digest-time-morning', 'work.digest-time-midday', 'work.digest-time-evening')");
             // Each key fills only its own columns: a boolean (opening period), whole working days ≥ 0 (due-date buffer), or
             // the SAT-D381 tax default shape (VAT above 0 up to 100 without an exemption code, or no VAT and no withholding;
             // withholding above 0 up to 100 with an optional code, or neither).
@@ -39,6 +40,10 @@ public sealed partial class SettingsDbContext
                 + "AND [WholeNumberValue] IS NOT NULL AND [WholeNumberValue] >= 0 AND " + noTax + ") "
                 + "OR ([PolicyKey] IN ('work.approval-duration-hours', 'work.approval-duration-business-days') AND [PercentValue] IS NULL "
                 + "AND [BooleanValue] IS NULL AND [WholeNumberValue] IS NOT NULL AND [WholeNumberValue] >= 1 AND " + noTax + ") "
+                // YOL-D25 (WP2): a digest time is a minute after local midnight.
+                + "OR ([PolicyKey] IN ('work.digest-time-morning', 'work.digest-time-midday', 'work.digest-time-evening') "
+                + "AND [PercentValue] IS NULL AND [BooleanValue] IS NULL AND [WholeNumberValue] IS NOT NULL "
+                + "AND [WholeNumberValue] >= 0 AND [WholeNumberValue] <= 1439 AND " + noTax + ") "
                 + "OR ([PolicyKey] IN ('sales.subcontract-tax-default', 'purchasing.subcontract-tax-default') "
                 + "AND [PercentValue] IS NULL AND [BooleanValue] IS NULL AND [WholeNumberValue] IS NULL "
                 + "AND [VatApplies] IS NOT NULL AND [WithholdingApplies] IS NOT NULL "

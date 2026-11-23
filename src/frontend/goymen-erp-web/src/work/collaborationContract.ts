@@ -50,11 +50,32 @@ export interface WorkTask {
 export interface WorkTaskPage { readonly companyId: string; readonly items: readonly WorkTask[]; readonly hasMore: boolean }
 
 export type WorkInboxKind = 'mention' | 'task-assigned' | 'task-overdue'
+  // D9 (WP2): event notifications moved into the single store ("özet").
+  | 'allocation-released' | 'purchase-supply-revived'
+  // WP2 (AI-D29, YOL-D17, YOL-D28): approval follow-up ("şimdi").
+  | 'approval-waiting' | 'approval-reminder' | 'approval-escalated' | 'approval-orphaned'
+export const WORK_INBOX_KINDS: readonly WorkInboxKind[] = ['mention', 'task-assigned', 'task-overdue', 'allocation-released',
+  'purchase-supply-revived', 'approval-waiting', 'approval-reminder', 'approval-escalated', 'approval-orphaned']
+const DIGEST_KINDS: readonly WorkInboxKind[] = ['task-assigned', 'allocation-released', 'purchase-supply-revived']
+const APPROVAL_KINDS: readonly WorkInboxKind[] = ['approval-waiting', 'approval-reminder', 'approval-escalated', 'approval-orphaned']
+export type WorkApprovalFollowUpStep = 'waiting' | 'reminder' | 'escalated' | 'orphaned'
+/** WP2: the approval cycle an approval notification is about; the decision is given on `link` (the owner's screen). */
+export interface WorkInboxApprovalRef {
+  readonly kind: string; readonly itemId: string; readonly documentLabel: string; readonly link: string
+  readonly waitingSinceUtc: string; readonly step: WorkApprovalFollowUpStep; readonly dueAtUtc: string | null
+}
+/** D9 (WP2): the owner event an event notification carries. */
+export interface WorkInboxEventRef {
+  readonly sourceEntityId: string; readonly sourceVersion: string; readonly reasonCode: string; readonly reasonText: string
+  readonly occurredAtUtc: string; readonly salesOrderId: string | null; readonly salesOrderLineId: string | null
+  readonly purchaseOrderId: string | null; readonly purchaseOrderLineId: string | null
+}
 export type WorkInboxClass = 'now' | 'digest'
 export interface WorkInboxItem {
   readonly id: string; readonly companyId: string; readonly kind: WorkInboxKind; readonly class: WorkInboxClass; readonly sourceId: string
   readonly recordType: WorkRecordType | null; readonly recordId: string | null; readonly actorUserId: string | null
   readonly recordedAtUtc: string; readonly visibleAtUtc: string; readonly readAtUtc: string | null
+  readonly approval: WorkInboxApprovalRef | null; readonly event: WorkInboxEventRef | null
 }
 export interface WorkInboxPage { readonly companyId: string; readonly items: readonly WorkInboxItem[]; readonly hasMore: boolean; readonly unreadNowCount: number; readonly unreadDigestCount: number }
 export interface WorkInboxRead { readonly id: string; readonly readAtUtc: string }
@@ -67,7 +88,9 @@ export const NOTE_READ_FIELDS = ['userId', 'displayName', 'readAtUtc'] as const
 export const NOTE_PAGE_FIELDS = ['companyId', 'recordType', 'recordId', 'items', 'hasMore'] as const
 export const TASK_FIELDS = ['id', 'companyId', 'recordType', 'recordId', 'title', 'details', 'assignerUserId', 'assignerDisplayName', 'assigneeUserId', 'assigneeDisplayName', 'dueAtUtc', 'status', 'version', 'createdAtUtc', 'closedAtUtc', 'closedByUserId', 'cancelReason'] as const
 export const TASK_PAGE_FIELDS = ['companyId', 'items', 'hasMore'] as const
-export const INBOX_FIELDS = ['id', 'companyId', 'kind', 'class', 'sourceId', 'recordType', 'recordId', 'actorUserId', 'recordedAtUtc', 'visibleAtUtc', 'readAtUtc'] as const
+export const INBOX_FIELDS = ['id', 'companyId', 'kind', 'class', 'sourceId', 'recordType', 'recordId', 'actorUserId', 'recordedAtUtc', 'visibleAtUtc', 'readAtUtc', 'approval', 'event'] as const
+export const INBOX_APPROVAL_FIELDS = ['kind', 'itemId', 'documentLabel', 'link', 'waitingSinceUtc', 'step', 'dueAtUtc'] as const
+export const INBOX_EVENT_FIELDS = ['sourceEntityId', 'sourceVersion', 'reasonCode', 'reasonText', 'occurredAtUtc', 'salesOrderId', 'salesOrderLineId', 'purchaseOrderId', 'purchaseOrderLineId'] as const
 export const INBOX_PAGE_FIELDS = ['companyId', 'items', 'hasMore', 'unreadNowCount', 'unreadDigestCount'] as const
 export const PERSON_FIELDS = ['userId', 'displayName'] as const
 export const PEOPLE_PAGE_FIELDS = ['companyId', 'people', 'hasMore'] as const
@@ -156,17 +179,50 @@ export function decodeWorkTaskPage(raw: unknown, companyId: string): WorkTaskPag
   return distinctIds(items) ? { companyId, items, hasMore: raw.hasMore } : null
 }
 
+const approvalKind = (value: unknown): value is string => typeof value === 'string' && value.length <= 160 && /^[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)+$/.test(value)
+const appLink = (value: unknown): value is string => typeof value === 'string' && value.length <= 512 && /^\/[A-Za-z0-9/_\-?=&.%]*$/.test(value) && !value.includes('//')
+const followUpStep = (value: unknown): value is WorkApprovalFollowUpStep => value === 'waiting' || value === 'reminder' || value === 'escalated' || value === 'orphaned'
+const stepOf: Readonly<Record<string, WorkApprovalFollowUpStep>> = {
+  'approval-waiting': 'waiting', 'approval-reminder': 'reminder', 'approval-escalated': 'escalated', 'approval-orphaned': 'orphaned',
+}
+
+function decodeApprovalRef(raw: unknown): WorkInboxApprovalRef | null {
+  if (!object(raw) || !exact(raw, INBOX_APPROVAL_FIELDS) || !approvalKind(raw.kind) || !guid(raw.itemId) || !text(raw.documentLabel, 200)
+    || !appLink(raw.link) || !instant(raw.waitingSinceUtc) || !followUpStep(raw.step) || !nullable(raw.dueAtUtc, instant)) return null
+  return raw as unknown as WorkInboxApprovalRef
+}
+
+function decodeEventRef(raw: unknown, kind: WorkInboxKind): WorkInboxEventRef | null {
+  if (!object(raw) || !exact(raw, INBOX_EVENT_FIELDS) || !guid(raw.sourceEntityId) || !text(raw.sourceVersion, 128) || !text(raw.reasonCode, 64)
+    || !text(raw.reasonText, 4000) || !instant(raw.occurredAtUtc) || !nullable(raw.salesOrderId, guid) || !nullable(raw.salesOrderLineId, guid)
+    || !nullable(raw.purchaseOrderId, guid) || !nullable(raw.purchaseOrderLineId, guid)) return null
+  const sales = raw.salesOrderId !== null && raw.salesOrderLineId !== null && raw.purchaseOrderId === null && raw.purchaseOrderLineId === null
+  const purchase = kind === 'purchase-supply-revived' && raw.purchaseOrderId !== null && raw.purchaseOrderLineId !== null
+    && raw.salesOrderId === null && raw.salesOrderLineId === null
+  return sales || purchase ? raw as unknown as WorkInboxEventRef : null
+}
+
 function decodeInboxItem(raw: unknown, companyId: string): WorkInboxItem | null {
   if (!object(raw) || !exact(raw, INBOX_FIELDS) || !guid(raw.id) || raw.companyId !== companyId
-    || (raw.kind !== 'mention' && raw.kind !== 'task-assigned' && raw.kind !== 'task-overdue')
+    || !(WORK_INBOX_KINDS as readonly unknown[]).includes(raw.kind)
     || (raw.class !== 'now' && raw.class !== 'digest') || !guid(raw.sourceId) || !nullable(raw.recordType, recordType) || !nullable(raw.recordId, guid)
     || (raw.recordType === null) !== (raw.recordId === null) || !nullable(raw.actorUserId, guid) || !instant(raw.recordedAtUtc)
     || !instant(raw.visibleAtUtc) || !nullable(raw.readAtUtc, instant)) return null
+  const kind = raw.kind as WorkInboxKind
   // AI-D29 classes as the server assigns them; a mismatch is a contract break, never re-classified here.
-  const expectedClass = raw.kind === 'task-assigned' ? 'digest' : 'now'
-  if (raw.class !== expectedClass || (raw.kind === 'mention' && (raw.recordId === null || raw.actorUserId === null))
-    || (raw.kind === 'task-overdue' && raw.actorUserId !== null) || (raw.kind === 'task-assigned' && raw.actorUserId === null)) return null
-  return raw as unknown as WorkInboxItem
+  const expectedClass = DIGEST_KINDS.includes(kind) ? 'digest' : 'now'
+  if (raw.class !== expectedClass || (kind === 'mention' && (raw.recordId === null || raw.actorUserId === null))
+    || (kind === 'task-overdue' && raw.actorUserId !== null) || (kind === 'task-assigned' && raw.actorUserId === null)) return null
+  const isApproval = APPROVAL_KINDS.includes(kind)
+  const isEvent = kind === 'allocation-released' || kind === 'purchase-supply-revived'
+  if ((isApproval || isEvent) && (raw.actorUserId !== null || raw.recordType !== null)) return null
+  // An approval notification may come without its follow-up row only if the server could not join it; the step must match.
+  const approval = raw.approval === null ? null : decodeApprovalRef(raw.approval)
+  if ((raw.approval !== null && approval === null) || (!isApproval && raw.approval !== null)
+    || (approval !== null && approval.step !== stepOf[kind])) return null
+  const event = raw.event === null ? null : decodeEventRef(raw.event, kind)
+  if ((raw.event !== null && event === null) || isEvent !== (raw.event !== null)) return null
+  return { ...(raw as unknown as WorkInboxItem), approval, event }
 }
 
 export function decodeWorkInboxPage(raw: unknown, companyId: string): WorkInboxPage | null {

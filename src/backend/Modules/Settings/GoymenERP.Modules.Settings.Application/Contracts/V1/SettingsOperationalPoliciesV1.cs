@@ -103,6 +103,47 @@ public sealed record ManufacturingScrapCostPolicyViewV1(Guid CompanyId, bool Inc
     IReadOnlyList<BooleanCompanyPolicyVersionViewV1> Versions);
 public sealed record NotificationRetentionPolicyViewV1(Guid CompanyId, int ActiveDays, string Version,
     IReadOnlyList<WholeNumberCompanyPolicyVersionViewV1> Versions);
+/// <summary>YOL-D25 (WP2): the three digest time slots, their keys and decided defaults (minutes after local midnight).</summary>
+public static class SettingsWorkDigestScheduleLimitsV1
+{
+    public const string Morning = "morning";
+    public const string Midday = "midday";
+    public const string Evening = "evening";
+    public const int MaximumMinute = 1439;
+    public const int DecidedDefaultMorningMinute = 9 * 60;
+    public const int DecidedDefaultMiddayMinute = 13 * 60;
+    public const int DecidedDefaultEveningMinute = 17 * 60;
+
+    public static IReadOnlyList<(string Slot, string Key, int DecidedDefault)> Slots { get; } =
+    [
+        (Morning, CompanyPolicyKeysV1.WorkDigestTimeMorning, DecidedDefaultMorningMinute),
+        (Midday, CompanyPolicyKeysV1.WorkDigestTimeMidday, DecidedDefaultMiddayMinute),
+        (Evening, CompanyPolicyKeysV1.WorkDigestTimeEvening, DecidedDefaultEveningMinute),
+    ];
+}
+/// <summary>One digest time in force: its slot, minute after local midnight and version text (version 0 = decided default).</summary>
+public sealed record SettingsWorkDigestTimeV1(string Slot, int Minute, long Version)
+{
+    public string VersionText => $"work.digest-time-{Slot}:{Version.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+}
+public sealed record SettingsWorkDigestScheduleV1(Guid CompanyId, IReadOnlyList<SettingsWorkDigestTimeV1> Times)
+{
+    public string VersionText => string.Join(";", Times.Select(time => time.VersionText));
+}
+/// <summary>
+/// WP2: the non-HTTP automation read of the Work timing policies for the server-resolved company (the Work scheduler has no
+/// user): the approval duration lengths (YOL-D18), the holiday lists of a year range (YOL-D22) and the digest times
+/// (YOL-D25). It reads only these keys, confers no management, and impersonates no one.
+/// </summary>
+public interface ISettingsWorkTimingAutomationV1
+{
+    Task<SettingsWorkApprovalDurationPolicyV1> GetWorkApprovalDurationAsync(CancellationToken cancellationToken = default);
+    Task<SettingsWorkHolidayCalendarsV1> GetWorkHolidayCalendarsAsync(int fromYear, int toYear, CancellationToken cancellationToken = default);
+    Task<SettingsWorkDigestScheduleV1> GetWorkDigestScheduleAsync(CancellationToken cancellationToken = default);
+}
+public sealed record RecordWorkDigestTimeRequestV1(string? ExpectedVersion, int? Minute, string? Reason);
+public sealed record WorkDigestTimeViewV1(string Slot, int Minute, string Version, IReadOnlyList<WholeNumberCompanyPolicyVersionViewV1> Versions);
+public sealed record WorkDigestScheduleViewV1(Guid CompanyId, bool BusinessDaysOnly, IReadOnlyList<WorkDigestTimeViewV1> Times);
 public interface ISettingsOperationalPolicyAdministrationV1
 {
     Task<ManufacturingScrapCostPolicyViewV1> GetScrapCostAsync(CancellationToken cancellationToken = default);
@@ -115,6 +156,9 @@ public interface ISettingsOperationalPolicyAdministrationV1
     Task<CompanyPolicyCommandResultV1> RecordWorkApprovalDurationHoursAsync(RecordWorkApprovalDurationRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
     Task<CompanyPolicyCommandResultV1> RecordWorkApprovalDurationBusinessDaysAsync(RecordWorkApprovalDurationRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+    Task<WorkDigestScheduleViewV1> GetWorkDigestScheduleAsync(CancellationToken cancellationToken = default);
+    Task<CompanyPolicyCommandResultV1> RecordWorkDigestTimeAsync(string slot, RecordWorkDigestTimeRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
     Task<WorkHolidayCalendarViewV1> GetWorkHolidayCalendarAsync(int year, CancellationToken cancellationToken = default);
     Task<CompanyPolicyCommandResultV1> RecordWorkHolidayCalendarAsync(int year, RecordWorkHolidayCalendarRequestV1 request,

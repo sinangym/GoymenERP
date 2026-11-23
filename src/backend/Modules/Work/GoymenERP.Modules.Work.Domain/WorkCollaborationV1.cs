@@ -318,6 +318,20 @@ public enum WorkInboxNotificationKindV1
     Mention = 1,
     TaskAssigned = 2,
     TaskOverdue = 3,
+
+    // D9 (WP2): the event-derived notifications of the retired work.Notifications store, now in the single store ("özet").
+    AllocationReleased = 4,
+    PurchaseSupplyRevived = 5,
+
+    // WP2 (AI-D29, YOL-D17, YOL-D28): approval follow-up, all "şimdi".
+    /// <summary>An approval the recipient may decide began waiting.</summary>
+    ApprovalWaiting = 6,
+    /// <summary>The one reminder: the approval's duration ran out.</summary>
+    ApprovalReminder = 7,
+    /// <summary>The approval was escalated to the recipient (holder of the rule's escalation permission).</summary>
+    ApprovalEscalated = 8,
+    /// <summary>The approval has no eligible approver ("sahipsiz onay").</summary>
+    ApprovalOrphaned = 9,
 }
 
 public enum WorkInboxNotificationClassV1
@@ -327,8 +341,8 @@ public enum WorkInboxNotificationClassV1
 }
 
 /// <summary>
-/// AI-D29's default class assignment: "şimdi" = mention and overdue work (and, when they are connected, waiting approvals and
-/// security events); everything else is "özet". The decision makes the assignment a Settings parameter; until a Settings
+/// AI-D29's default class assignment: "şimdi" = mention, overdue work and the approval follow-up (waiting, reminder,
+/// escalated, orphaned; WP2) — security events when connected; everything else is "özet". The decision makes the assignment a Settings parameter; until a Settings
 /// owner key exists this catalogue is the decided default and nothing else.
 /// </summary>
 public static class WorkInboxNotificationClassesV1
@@ -338,6 +352,12 @@ public static class WorkInboxNotificationClassesV1
         WorkInboxNotificationKindV1.Mention => WorkInboxNotificationClassV1.Now,
         WorkInboxNotificationKindV1.TaskOverdue => WorkInboxNotificationClassV1.Now,
         WorkInboxNotificationKindV1.TaskAssigned => WorkInboxNotificationClassV1.Digest,
+        WorkInboxNotificationKindV1.AllocationReleased => WorkInboxNotificationClassV1.Digest,
+        WorkInboxNotificationKindV1.PurchaseSupplyRevived => WorkInboxNotificationClassV1.Digest,
+        WorkInboxNotificationKindV1.ApprovalWaiting => WorkInboxNotificationClassV1.Now,
+        WorkInboxNotificationKindV1.ApprovalReminder => WorkInboxNotificationClassV1.Now,
+        WorkInboxNotificationKindV1.ApprovalEscalated => WorkInboxNotificationClassV1.Now,
+        WorkInboxNotificationKindV1.ApprovalOrphaned => WorkInboxNotificationClassV1.Now,
         _ => throw new InvalidOperationException("Unknown work inbox notification kind."),
     };
 
@@ -346,6 +366,12 @@ public static class WorkInboxNotificationClassesV1
         WorkInboxNotificationKindV1.Mention => "mention",
         WorkInboxNotificationKindV1.TaskAssigned => "task-assigned",
         WorkInboxNotificationKindV1.TaskOverdue => "task-overdue",
+        WorkInboxNotificationKindV1.AllocationReleased => "allocation-released",
+        WorkInboxNotificationKindV1.PurchaseSupplyRevived => "purchase-supply-revived",
+        WorkInboxNotificationKindV1.ApprovalWaiting => "approval-waiting",
+        WorkInboxNotificationKindV1.ApprovalReminder => "approval-reminder",
+        WorkInboxNotificationKindV1.ApprovalEscalated => "approval-escalated",
+        WorkInboxNotificationKindV1.ApprovalOrphaned => "approval-orphaned",
         _ => throw new InvalidOperationException("Unknown work inbox notification kind."),
     };
 
@@ -359,7 +385,18 @@ public static class WorkInboxNotificationClassesV1
 
 public sealed record WorkInboxNotificationViewV1(Guid Id, Guid CompanyId, string Kind, string Class, Guid SourceId,
     string? RecordType, Guid? RecordId, Guid? ActorUserId, DateTimeOffset RecordedAtUtc, DateTimeOffset VisibleAtUtc,
-    DateTimeOffset? ReadAtUtc);
+    DateTimeOffset? ReadAtUtc, WorkInboxApprovalRefV1? Approval = null, WorkInboxEventRefV1? Event = null);
+
+/// <summary>
+/// WP2: the approval cycle an approval notification (kinds 6–9) is about, as Work's follow-up row recorded it: the owner's
+/// kind, record, label and screen link, when it began waiting and the step. The decision is given on <see cref="Link"/>.
+/// </summary>
+public sealed record WorkInboxApprovalRefV1(string Kind, Guid ItemId, string DocumentLabel, string Link,
+    DateTimeOffset WaitingSinceUtc, string Step, DateTimeOffset? DueAtUtc);
+
+/// <summary>D9 (WP2): the owner event an event-derived notification (kinds 4–5) carries, as recorded at delivery.</summary>
+public sealed record WorkInboxEventRefV1(Guid SourceEntityId, string SourceVersion, string ReasonCode, string ReasonText,
+    DateTimeOffset OccurredAtUtc, Guid? SalesOrderId, Guid? SalesOrderLineId, Guid? PurchaseOrderId, Guid? PurchaseOrderLineId);
 
 public sealed record WorkInboxNotificationPageV1(Guid CompanyId, IReadOnlyList<WorkInboxNotificationViewV1> Items,
     bool HasMore, int UnreadNowCount, int UnreadDigestCount);
@@ -367,11 +404,14 @@ public sealed record WorkInboxNotificationPageV1(Guid CompanyId, IReadOnlyList<W
 public sealed record WorkInboxNotificationReadResponseV1(Guid Id, DateTimeOffset ReadAtUtc);
 
 /// <summary>
-/// The company's digest times (AI-D29: "günde yaklaşık üç kez", the hours are a Settings parameter). <see cref="Unavailable"/>
-/// (no owner key yet, or an owner failure) means no digest is released: the digest class stays held, it is never shown early.
+/// The company's digest times (AI-D29: "günde yaklaşık üç kez"; YOL-D25: 09:00, 13:00 and 17:00 on business days in the
+/// company's time zone, changeable in Ayarlar). <see cref="BusinessDaysOnly"/> releases digests only on business days
+/// (Monday–Friday minus the company's recorded holidays and eves, YOL-D22); <see cref="Holidays"/> holds the recorded days of
+/// the years the slot search may touch (a year without a list deducts weekends only). <see cref="Unavailable"/> (an owner
+/// failure, or no zone rules) means no digest is released: the digest class stays held, it is never shown early.
 /// </summary>
 public sealed record WorkDigestScheduleV1(bool Available, Guid CompanyId, IReadOnlyList<TimeOnly> LocalTimes,
-    string TimeZoneId, string Version)
+    string TimeZoneId, string Version, bool BusinessDaysOnly = false, IReadOnlySet<DateOnly>? Holidays = null)
 {
     public static WorkDigestScheduleV1 Unavailable(Guid companyId) => new(false, companyId, [], "", "");
 }
@@ -382,11 +422,15 @@ public interface IWorkDigestScheduleReaderV1
 }
 
 /// <summary>
-/// Pure slot arithmetic: the latest digest slot at or before <paramref name="nowUtc"/> (today's or yesterday's local times
-/// in the schedule's zone), or null when the schedule is unavailable or empty.
+/// Pure slot arithmetic: the latest digest slot at or before <paramref name="nowUtc"/> — a local time of the schedule on a
+/// day the schedule releases on (every day, or business days only), searched back at most <see cref="SearchDays"/> days —
+/// or null when the schedule is unavailable or empty.
 /// </summary>
 public static class WorkDigestSlotsV1
 {
+    /// <summary>Enough to cross the longest run of weekend plus a bounded holiday block (e.g. a bayram with its bridge days).</summary>
+    public const int SearchDays = 16;
+
     public static DateTimeOffset? LatestSlotAtOrBefore(WorkDigestScheduleV1 schedule, DateTimeOffset nowUtc)
     {
         if (!schedule.Available || schedule.LocalTimes.Count == 0) return null;
@@ -394,10 +438,12 @@ public static class WorkDigestSlotsV1
         try { zone = TimeZoneInfo.FindSystemTimeZoneById(schedule.TimeZoneId); }
         catch (Exception exception) when (exception is TimeZoneNotFoundException or InvalidTimeZoneException) { return null; }
         var localNow = TimeZoneInfo.ConvertTime(nowUtc, zone);
-        DateTimeOffset? best = null;
-        foreach (var dayOffset in new[] { 0, -1 })
+        var today = DateOnly.FromDateTime(localNow.DateTime);
+        for (var dayOffset = 0; dayOffset >= -SearchDays; dayOffset--)
         {
-            var day = DateOnly.FromDateTime(localNow.DateTime).AddDays(dayOffset);
+            var day = today.AddDays(dayOffset);
+            if (schedule.BusinessDaysOnly && !IsBusinessDay(day, schedule.Holidays)) continue;
+            DateTimeOffset? best = null;
             foreach (var time in schedule.LocalTimes)
             {
                 var local = day.ToDateTime(time, DateTimeKind.Unspecified);
@@ -405,10 +451,15 @@ public static class WorkDigestSlotsV1
                 var slot = new DateTimeOffset(local, zone.GetUtcOffset(local)).ToUniversalTime();
                 if (slot <= nowUtc && (best is null || slot > best)) best = slot;
             }
+
+            if (best is not null) return best;
         }
 
-        return best;
+        return null;
     }
+
+    public static bool IsBusinessDay(DateOnly day, IReadOnlySet<DateOnly>? holidays) =>
+        day.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday) && !(holidays?.Contains(day) ?? false);
 }
 
 public interface IWorkCollaborationServiceV1

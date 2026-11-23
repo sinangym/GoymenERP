@@ -14,6 +14,12 @@ public enum WorkApprovalInboxEventTypeV1
     Opened = 2,
     OwnerScreenOpened = 3,
     ResolvedObserved = 4,
+
+    /// <summary>
+    /// D10 (WP2): the owner's own decision of the cycle (approve, reject, withdraw or cancel), at the exact time the owner
+    /// recorded it (<c>OccurredAtUtc</c>), read from the owner's decision record through its port — not the time Work noticed.
+    /// </summary>
+    Decided = 5,
 }
 
 /// <summary>One pending cycle as an owner listed it: the record and the time it began waiting.</summary>
@@ -51,6 +57,24 @@ public interface IWorkApprovalInboxMeasurementsV1
         string kind,
         IReadOnlyList<WorkApprovalInboxCycleV1> pending,
         bool complete,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// D10 (WP2): records the owner's decision of one cycle at the owner's own time. A cycle without an arrival is not
+    /// recorded (nothing was measured); a second decision of the same cycle is the same fact and is ignored. Returns whether a
+    /// row was written.
+    /// </summary>
+    Task<bool> RecordDecisionAsync(
+        Guid companyId,
+        string kind,
+        WorkApprovalInboxCycleV1 cycle,
+        DateTimeOffset decidedAtUtc,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>WP2: the cycles of one kind that arrived and are neither observed resolved nor decided by the owner.</summary>
+    Task<IReadOnlyList<WorkApprovalInboxCycleV1>> ListOpenCyclesAsync(
+        Guid companyId,
+        string kind,
         CancellationToken cancellationToken = default);
 
     Task<WorkApprovalInboxInteractionOutcomeV1> RecordInteractionAsync(

@@ -355,12 +355,28 @@ public sealed class WorkCollaborationServiceV1(
         var filtered = visible.Where(row => (classFilter == null || row.Class == classFilter) && (!unreadOnly || row.ReadAtUtc == null));
         var rows = await filtered.OrderByDescending(row => row.VisibleAtUtc).ThenBy(row => row.Id)
             .Take(WorkCollaborationLimitsV1.PageSize + 1).ToArrayAsync(cancellationToken);
+        // WP2: an approval notification names its follow-up row (its source id); the row carries the owner's label and link.
+        var followUpIds = rows.Where(row => row.Kind >= (int)WorkInboxNotificationKindV1.ApprovalWaiting).Select(row => row.SourceId)
+            .Distinct().ToArray();
+        var followUps = followUpIds.Length == 0
+            ? new Dictionary<Guid, WorkApprovalFollowUpRow>()
+            : await database.ApprovalFollowUps.AsNoTracking()
+                .Where(row => row.CompanyId == actor.CompanyId && followUpIds.Contains(row.Id))
+                .ToDictionaryAsync(row => row.Id, cancellationToken);
         RequireStill(actor);
         var items = rows.Take(WorkCollaborationLimitsV1.PageSize).Select(row => new WorkInboxNotificationViewV1(row.Id, row.CompanyId,
             WorkInboxNotificationClassesV1.Wire((WorkInboxNotificationKindV1)row.Kind),
             WorkInboxNotificationClassesV1.Wire((WorkInboxNotificationClassV1)row.Class), row.SourceId,
             row.RecordType is { } type ? WorkRecordTypesV1.Wire((WorkRecordTypeV1)type) : null, row.RecordId,
-            row.ActorUserId, row.RecordedAtUtc, row.VisibleAtUtc, row.ReadAtUtc)).ToArray();
+            row.ActorUserId, row.RecordedAtUtc, row.VisibleAtUtc, row.ReadAtUtc,
+            followUps.TryGetValue(row.SourceId, out var followUp) && row.Kind >= (int)WorkInboxNotificationKindV1.ApprovalWaiting
+                ? new WorkInboxApprovalRefV1(followUp.Kind, followUp.ItemId, followUp.DocumentLabel, followUp.Link,
+                    followUp.CycleStartedAtUtc, WorkApprovalFollowUpStepsV1.Wire(followUp.Step), followUp.DueAtUtc)
+                : null,
+            row.EventId is not null
+                ? new WorkInboxEventRefV1(row.SourceEntityId!.Value, row.SourceVersion!, row.ReasonCode!, row.ReasonText!,
+                    row.OccurredAtUtc!.Value, row.SalesOrderId, row.SalesOrderLineId, row.PurchaseOrderId, row.PurchaseOrderLineId)
+                : null)).ToArray();
         return new WorkInboxNotificationPageV1(actor.CompanyId, items, rows.Length > WorkCollaborationLimitsV1.PageSize,
             counts.Where(count => count.Class == (int)WorkInboxNotificationClassV1.Now).Sum(count => count.Count),
             counts.Where(count => count.Class == (int)WorkInboxNotificationClassV1.Digest).Sum(count => count.Count));
@@ -440,6 +456,16 @@ public sealed class WorkCollaborationServiceV1(
         public DateTimeOffset RecordedAtUtc { get; init; }
         public DateTimeOffset VisibleAtUtc { get; init; }
         public DateTimeOffset? ReadAtUtc { get; init; }
+        public Guid? EventId { get; init; }
+        public Guid? SourceEntityId { get; init; }
+        public string? SourceVersion { get; init; }
+        public string? ReasonCode { get; init; }
+        public string? ReasonText { get; init; }
+        public DateTimeOffset? OccurredAtUtc { get; init; }
+        public Guid? SalesOrderId { get; init; }
+        public Guid? SalesOrderLineId { get; init; }
+        public Guid? PurchaseOrderId { get; init; }
+        public Guid? PurchaseOrderLineId { get; init; }
     }
 
     private IQueryable<VisibleRow> Visible(Actor actor)
@@ -464,6 +490,10 @@ public sealed class WorkCollaborationServiceV1(
                 RecordType = item.RecordType, RecordId = item.RecordId, ActorUserId = item.ActorUserId, RecordedAtUtc = item.RecordedAtUtc,
                 VisibleAtUtc = item.Class == (int)WorkInboxNotificationClassV1.Now ? item.RecordedAtUtc : release.ReleasedAtUtc ?? item.RecordedAtUtc,
                 ReadAtUtc = (DateTimeOffset?)read.ReadAtUtc,
+                EventId = item.EventId, SourceEntityId = item.SourceEntityId, SourceVersion = item.SourceVersion,
+                ReasonCode = item.ReasonCode, ReasonText = item.ReasonText, OccurredAtUtc = item.OccurredAtUtc,
+                SalesOrderId = item.SalesOrderId, SalesOrderLineId = item.SalesOrderLineId,
+                PurchaseOrderId = item.PurchaseOrderId, PurchaseOrderLineId = item.PurchaseOrderLineId,
             };
     }
 
