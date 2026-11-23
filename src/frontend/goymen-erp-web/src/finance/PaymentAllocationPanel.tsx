@@ -49,8 +49,9 @@ function Panel({ bound, paymentId, canWrite }: { readonly bound: NonNullable<Ret
   const frozen = attempt !== null || preparing
   /**
    * `final` (K3 P2-1): the user's explicit way out of an unknown attempt. The same key and body are sent once more;
-   * any decided server answer closes the attempt (a replay shows the recorded allocation). Only no answer or a 401/403
-   * — the session or authority, not this attempt — keeps it open, so leaving never mints a second key blindly.
+   * only a decoded command answer closes the attempt (a replay shows the recorded allocation, a decoded 409/422 says
+   * this key wrote nothing). No answer, a 401/403 (the session or authority) and a code-less 400/404/415 (answered
+   * before the command is admitted, so it says nothing about the first send) keep it open with the same key.
    */
   const run = async (value: PaymentAllocationAttempt, wasUnknown: boolean, final = false) => {
     const fence = boundary.capture()
@@ -60,7 +61,7 @@ function Panel({ bound, paymentId, canWrite }: { readonly bound: NonNullable<Ret
     if (answer.kind === 'answered' && answer.result.outcome === 'Succeeded') {
       settlePaymentAllocation(slot, value.key); setAttempt(null); setMessage(T.saved); setOpenItemId('')
       void client.invalidateQueries({ queryKey: [bound.namespace, 'finance'] })
-    } else if (final && (answer.kind === 'unknown' || (answer.kind === 'refused' && (answer.status === 401 || answer.status === 403)))) {
+    } else if (final && answer.kind !== 'answered') {
       setAttempt(unknownPaymentAllocation(slot, value.key)); setMessage(T.finalOpen)
     } else if (final) {
       settlePaymentAllocation(slot, value.key); setAttempt(null); setMessage(T.abandoned)

@@ -75,6 +75,28 @@ describe('manual bank payment unknown settlement', () => {
     expect(screen.getByText('SENTETIK-external')).toBeDefined()
   })
 
+  it.each(['record', 'approve'] as const)('keeps the %s attempt on a 503 and retries it with the same key and body', async (operation) => {
+    // The HTTP port restates a 503 as a code-less Unavailable (httpPort.ts `outcomeOnly`).
+    const unavailable: PortReply = { kind: 'body', body: { outcome: 'Unavailable', resource: null, isReplay: false, originalCorrelationId: '', issues: [] } }
+    const send = vi.fn().mockResolvedValueOnce(unavailable).mockResolvedValueOnce(unavailable)
+      .mockResolvedValueOnce(success(view(operation === 'record' ? 'Recorded' : 'Approved')))
+    const port = { manualBankPaymentDetail: vi.fn(async () => found(view(operation === 'record' ? 'Approved' : 'Draft'))),
+      recordManualBankPayment: send, approveManualBankPayment: send } as unknown as FinanceReceiptPort
+    render(page(port, { canApprove: operation === 'approve', canRecord: operation === 'record' }))
+    const start = operation === 'record' ? 'Kesin kaydet' : 'Onayla'
+    if (operation === 'record') fireEvent.click(await screen.findByLabelText('Banka sonucu gerçekleşti'))
+    fireEvent.click(await screen.findByRole('button', { name: start }))
+    await screen.findByText(TEXT.unknown)
+    expect(screen.queryByRole('button', { name: start })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: TEXT.retry }))
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+    fireEvent.click(await screen.findByRole('button', { name: TEXT.retry }))
+    await screen.findByText(operation === 'record' ? 'Giden ödeme kesin kaydedildi.' : 'Ödeme onaylandı.')
+    expect(send).toHaveBeenCalledTimes(3)
+    expect(new Set(send.mock.calls.map((call) => call[1])).size).toBe(1)
+    expect(send.mock.calls.every((call) => call[2] === send.mock.calls[0][2])).toBe(true)
+  })
+
   it('also retains the original approval attempt instead of minting a new key', async () => {
     const approve = vi.fn().mockResolvedValueOnce({ kind: 'no-reply' }).mockResolvedValueOnce(success(view('Approved')))
     const port = { manualBankPaymentDetail: vi.fn(async () => found(view('Draft'))), approveManualBankPayment: approve } as unknown as FinanceReceiptPort

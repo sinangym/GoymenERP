@@ -39,11 +39,15 @@ describe('personal notification inbox', () => {
     expect(calls.some((call) => call.url.includes('recipient'))).toBe(false)
   })
   it('rejects a foreign successful body and renders no foreign reason', async () => {
-    installFetch({ capabilities: [], respond: (url) => url.includes('/work/notifications?')
-      ? json({ companyId: item.id, items: [item], hasMore: false, nextCursor: null }) : undefined })
+    // A body that is coherent for ANOTHER company (envelope and row agree): only the company fence can refuse it.
+    const foreign = 'ffffffff-0000-4000-8000-000000000001'
+    const calls = installFetch({ capabilities: [], respond: (url) => url.includes('/work/notifications?')
+      ? json({ companyId: foreign, items: [{ ...item, companyId: foreign }], hasMore: false, nextCursor: null }) : undefined })
     mount()
     await screen.findByRole('heading', { name: T.heading })
-    await waitFor(() => expect(screen.queryByText(item.reasonText)).toBeNull())
+    await waitFor(() => expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
+    expect(calls.filter((call) => call.url.includes('/work/notifications?')).map((call) => call.headers['X-Company-Id'])).toEqual([COMPANY_A])
+    expect(screen.queryByText(item.reasonText)).toBeNull()
     expect(screen.queryByRole('table')).toBeNull()
   })
 })

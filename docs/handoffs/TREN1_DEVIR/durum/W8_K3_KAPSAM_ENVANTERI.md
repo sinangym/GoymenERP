@@ -349,9 +349,9 @@ Backend kaynaklarında literal `THROW 5xxxx` taraması: main 114 farklı numara,
 | 52061 | `src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20261122095554_AddManufacturingOutputPieces.cs:11`; `src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20261122095554_AddManufacturingOutputPieces.cs:72`; `src/backend/Modules/Manufacturing/README.md:572` |
 | 52071 | `src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261122122332_AddPurchaseSupplierReturnLineageSource.cs:9`; `src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261122122332_AddPurchaseSupplierReturnLineageSource.cs:44` |
 | 52072 | `src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261122142515_AddPurchaseSupplierReturnLineageParts.cs:9`; `src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261122142515_AddPurchaseSupplierReturnLineageParts.cs:44`; `src/backend/Modules/Purchasing/README.md:528` |
+| 52073 | `src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261122205751_AllowPurchaseSupplierReturnReplacement.cs:34`; `src/backend/Modules/Purchasing/README.md:546` |
 | 52081 | `src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20261122205421_AddFounderBootstrapSystemAudit.cs:33` |
 | 52082 | `src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20261122213615_AddUserAccountCreatedBy.cs:29` |
-| 52300 | `src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261122205751_AllowPurchaseSupplierReturnReplacement.cs:34`; `src/backend/Modules/Purchasing/README.md:546` |
 
 ### Birden çok kaynakta geçen THROW ve forward-fix sınırı
 
@@ -539,7 +539,7 @@ Aşağıdaki kayıtlar otomatik hata/başarı kararı değildir. Aynı dosyadaki
 | 52052 | `src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261122101040_AddLogisticsPieceLineKilograms.cs`; `src/backend/Modules/Logistics/README.md` |
 | 52061 | `src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20261122095554_AddManufacturingOutputPieces.cs`; `src/backend/Modules/Manufacturing/README.md` |
 | 52072 | `src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261122142515_AddPurchaseSupplierReturnLineageParts.cs`; `src/backend/Modules/Purchasing/README.md` |
-| 52300 | `src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261122205751_AllowPurchaseSupplierReturnReplacement.cs`; `src/backend/Modules/Purchasing/README.md` |
+| 52073 | `src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261122205751_AllowPurchaseSupplierReturnReplacement.cs`; `src/backend/Modules/Purchasing/README.md` |
 
 ## Main’e göre yeni permission kayıtları
 

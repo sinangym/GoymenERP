@@ -16,7 +16,8 @@ import { futureGuid, type FutureAllocation, type FutureAllocationList, type Futu
 import { FUTURE_ALLOCATION_TEXT as T } from './futureAllocationText'
 import styles from './inventory.module.css'
 
-function recall(key: string, order: string, line: string): FutureAllocationPending | null {
+function recall(key: string | null, order: string, line: string): FutureAllocationPending | null {
+  if (key === null) return null
   try {
     const value: unknown = JSON.parse(sessionStorage.getItem(key) ?? 'null')
     if (typeof value !== 'object' || value === null || !('kind' in value) || !('key' in value) || !('payload' in value)
@@ -64,8 +65,12 @@ function FutureAllocationView({ company, actor, namespace, order, line, routeEnt
   const [reason, setReason] = useState('')
   const [release, setRelease] = useState<FutureAllocation | null>(null)
   // The pending key must outlive an authority refresh: the context namespace carries the capability generation, so an unknown
-  // create would be forgotten (and a retry could mint a second allocation). Session epoch, actor, company and line only.
-  const storeKey = `goymen.inventory.future-allocation.v1:${shell.sessionEpoch}:${actor}:${company}:${order}:${line}`
+  // create would be forgotten (and a retry could mint a second allocation). Session, actor, company and line only.
+  // It is PERSISTED, so the session is the server's binding (`ShellState.sessionBinding`), never `sessionEpoch`, which restarts
+  // at 0 in every document: after an F5 the same session would miss its attempt and another session could meet it. While the
+  // binding is null nothing is persisted or recalled; the mounted screen still holds the same key.
+  const storeKey = typeof shell.sessionBinding === 'string' && shell.sessionBinding.length > 0
+    ? `goymen.inventory.future-allocation.v1:${shell.sessionBinding}:${actor}:${company}:${order}:${line}` : null
   const [pending, setPending] = useState<FutureAllocationPending | null>(() => recall(storeKey, order, line))
   const [busy, setBusy] = useState(false)
   const [commandState, setCommandState] = useState<RemoteViewState<never> | null>(null)
@@ -97,10 +102,10 @@ function FutureAllocationView({ company, actor, namespace, order, line, routeEnt
     const current = ++generation.current
     const snapshot = boundary.capture()
     setPending(attempt); setBusy(true); setCommandState(null); setMessage(null)
-    try { sessionStorage.setItem(storeKey, JSON.stringify(attempt)) } catch { /* the mounted transport still keeps the same key */ }
+    try { if (storeKey !== null) sessionStorage.setItem(storeKey, JSON.stringify(attempt)) } catch { /* the mounted transport still keeps the same key */ }
     const result = await sendFutureAllocation(company, order, line, attempt)
     if (result.type !== 'unknown' && !(result.type === 'failed' && [401, 403].includes(result.status))) {
-      try { sessionStorage.removeItem(storeKey) } catch { /* definite result */ }
+      try { if (storeKey !== null) sessionStorage.removeItem(storeKey) } catch { /* definite result */ }
     }
     if (current !== generation.current) return
     flight.current = false; setBusy(false)

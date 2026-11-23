@@ -8,9 +8,9 @@ import { FUTURE_ALLOCATION_TEXT as T } from './futureAllocationText'
 
 const id = '11111111-1111-4111-8111-111111111111'
 const api = vi.hoisted(() => ({ list: vi.fn(), options: vi.fn(), send: vi.fn() }))
-const scenario = vi.hoisted(() => ({ write: true, report: vi.fn(), namespace: 'SENTETIK-context' }))
+const scenario = vi.hoisted(() => ({ write: true, report: vi.fn(), namespace: 'SENTETIK-context', epoch: 1, binding: 'SENTETIK-binding' as string | null }))
 vi.mock('./futureAllocationApi', () => ({ fetchFutureAllocations: api.list, fetchFutureSupplyOptions: api.options, sendFutureAllocation: api.send }))
-vi.mock('../shell/shellContext', () => ({ useShellState: () => ({ routeEntryGeneration: 1, sessionEpoch: 1, activeContext: {
+vi.mock('../shell/shellContext', () => ({ useShellState: () => ({ routeEntryGeneration: 1, sessionEpoch: scenario.epoch, sessionBinding: scenario.binding, activeContext: {
   userId: 'SENTETIK-actor', companyId: '11111111-1111-4111-8111-111111111111', scopeMode: 'single' } }) }))
 vi.mock('../shell/shellState', () => ({ contextKey: () => [scenario.namespace], contextKeyString: () => scenario.namespace,
   hasCapability: (_: unknown, cap: string) => cap === 'inventory.future-allocation.write' && scenario.write }))
@@ -23,7 +23,7 @@ function mount() {
   </MemoryRouter></QueryClientProvider>)
 }
 beforeEach(() => {
-  sessionStorage.clear(); vi.clearAllMocks(); scenario.write = true; scenario.namespace = 'SENTETIK-context'
+  sessionStorage.clear(); vi.clearAllMocks(); scenario.write = true; scenario.namespace = 'SENTETIK-context'; scenario.epoch = 1; scenario.binding = 'SENTETIK-binding'
   api.list.mockResolvedValue({ type: 'ok-single', data: { companyId: id, salesOrderId: id, salesOrderLineId: id, items: [], windowFull: false, unitCodes: {}, evaluatedOn: '2026-11-17', schedules: {} } })
   api.options.mockResolvedValue({ type: 'ok-single', data: { companyId: id, salesOrderId: id, salesOrderLineId: id, productId: id,
     productVersion: '1', demandUnitId: id, demandUnitCode: 'kg', openDemandQuantity: '100', items: [{ purchaseOrderId: id, purchaseOrderLineId: id,
@@ -75,8 +75,52 @@ describe('future allocation workflow', () => {
     expect(api.send.mock.calls[1]).toEqual(api.send.mock.calls[0])
   })
 
+  it('persists an unknown create under the server session binding: a reload (epoch back to 0) recalls it, another session does not', async () => {
+    api.send.mockResolvedValueOnce({ type: 'unknown', reason: 'network-error' }).mockResolvedValueOnce({ type: 'failed', status: 422, code: null })
+    scenario.epoch = 3
+    const first = mount()
+    await screen.findByRole('option', { name: /Sentetik tedarikçi/ })
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: id } })
+    fireEvent.change(screen.getByRole('textbox', { name: /Ayrılacak miktar/ }), { target: { value: '5' } })
+    fireEvent.change(screen.getByRole('textbox', { name: T.reason }), { target: { value: 'Sentetik gerekçe' } })
+    fireEvent.click(screen.getByRole('button', { name: T.create }))
+    await screen.findByRole('button', { name: T.retry })
+    expect(Object.keys(sessionStorage)).toEqual([`goymen.inventory.future-allocation.v1:SENTETIK-binding:SENTETIK-actor:${id}:${id}:${id}`])
+    first.unmount()
+    // Another authenticated session in the same tab whose document epoch happens to be the same never meets the attempt.
+    scenario.binding = 'SENTETIK-other-binding'
+    const other = mount()
+    await screen.findByRole('option', { name: /Sentetik tedarikçi/ })
+    expect(screen.queryByRole('button', { name: T.retry })).toBeNull()
+    other.unmount()
+    // The same session after an F5: the epoch restarted at 0, the binding is the same, the same attempt is retried.
+    scenario.binding = 'SENTETIK-binding'; scenario.epoch = 0
+    mount()
+    fireEvent.click(await screen.findByRole('button', { name: T.retry }))
+    await screen.findByText(T.refused)
+    expect(api.send).toHaveBeenCalledTimes(2)
+    expect(api.send.mock.calls[1]).toEqual(api.send.mock.calls[0])
+    expect(sessionStorage.length).toBe(0)
+  })
+  it('persists and recalls nothing while the server gave no session binding', async () => {
+    scenario.binding = null
+    sessionStorage.setItem(`goymen.inventory.future-allocation.v1:null:SENTETIK-actor:${id}:${id}:${id}`, JSON.stringify({ kind: 'create', key: 'SENTETIK-key',
+      payload: { allocationId: id, salesOrderId: id, salesOrderLineId: id, purchaseOrderId: id, purchaseOrderLineId: id, unitId: id, quantityText: '5', reason: 'Sentetik gerekçe' } }))
+    api.send.mockResolvedValue({ type: 'unknown', reason: 'network-error' })
+    mount()
+    await screen.findByRole('option', { name: /Sentetik tedarikçi/ })
+    expect(screen.queryByRole('button', { name: T.retry })).toBeNull()
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: id } })
+    fireEvent.change(screen.getByRole('textbox', { name: /Ayrılacak miktar/ }), { target: { value: '5' } })
+    fireEvent.change(screen.getByRole('textbox', { name: T.reason }), { target: { value: 'Sentetik gerekçe' } })
+    fireEvent.click(screen.getByRole('button', { name: T.create }))
+    fireEvent.click(await screen.findByRole('button', { name: T.retry }))
+    await waitFor(() => expect(api.send).toHaveBeenCalledTimes(2))
+    expect(api.send.mock.calls[1]).toEqual(api.send.mock.calls[0])
+    expect(sessionStorage.length).toBe(1)
+  })
   it('recalls a stored attempt only with exactly its own members, at the top level and in the payload', async () => {
-    const storeKey = `goymen.inventory.future-allocation.v1:1:SENTETIK-actor:${id}:${id}:${id}`
+    const storeKey = `goymen.inventory.future-allocation.v1:SENTETIK-binding:SENTETIK-actor:${id}:${id}:${id}`
     const create = { kind: 'create', key: 'SENTETIK-key', payload: { allocationId: id, salesOrderId: id, salesOrderLineId: id,
       purchaseOrderId: id, purchaseOrderLineId: id, unitId: id, quantityText: '5', reason: 'Sentetik gerekçe' } }
     const release = { kind: 'release', key: 'SENTETIK-key', allocationId: id,

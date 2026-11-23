@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OfficialSalesInvoicesPage } from './OfficialSalesInvoicesPage'
-import { continueOfficialInvoice, decodeOfficialInvoice, decodeOfficialInvoicePage, type OfficialInvoiceCreateAttempt } from './officialSalesInvoiceApi'
+import { continueOfficialInvoice, decodeOfficialInvoice, decodeOfficialInvoicePage, decodeOfficialInvoiceTaxWarning, type OfficialInvoiceCreateAttempt } from './officialSalesInvoiceApi'
 
 const Company = 'ef361111-1111-4111-8111-111111111111'
 const Invoice = 'ef362222-2222-4222-8222-222222222222'
@@ -14,6 +14,9 @@ const row = (patch: Record<string, unknown> = {}) => ({ invoiceId: Invoice, comp
   taxBaseFunctionalAmount: '10.0001', vatFunctionalAmount: '0', withholdingFunctionalAmount: '0', pdfDocumentId: Pdf, pdfDocumentVersionNo: 1,
   pdfSha256: 'a'.repeat(64), version: '1', status: 'PendingApproval', recordedBy: 'SENTETIK-maker', recordedAtUtc: '2026-11-17T10:00:00Z',
   approvedBy: null, approvedAtUtc: null, rejectedBy: null, rejectedAtUtc: null, rejectionReason: null, withdrawnBy: null, withdrawnAtUtc: null, ...patch })
+// FNS-D64 wire shape of a manual record: every key present, sourceDocumentId null.
+const warning = (patch: Record<string, unknown> = {}) => ({ code: 'finance_official_invoice_tax_inconsistent', sourceDocumentId: null,
+  expectedPayableFunctionalAmount: '1250.50', payableFunctionalAmount: '1250.51', differenceFunctionalAmount: '0.01', ...patch })
 const json = (body: unknown, status = 200, extra: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...extra } })
 const replayHeaders = { 'Idempotency-Replayed': 'true', 'Idempotency-Original-Correlation-Id': 'SENTETIK' }
 const result = (value: unknown) => ({ outcome: 'Succeeded', resource: value, isReplay: false, originalCorrelationId: 'SENTETIK', issues: [], existingOfficialNo: null })
@@ -51,6 +54,38 @@ describe('official PDF first sales invoice', () => {
     expect(decodeOfficialInvoicePage({ companyId: Company, items: [row(), row()], nextCursor: null }, Company)).toBeNull()
     expect(decodeOfficialInvoice(row({ sourceDifferences: [{ importBatchId: Party, sourceDocumentId: Invoice, officialNo: 'SENTETIK-1', ettn: Invoice,
       fields: ['invoiceDate'], invoiceDate: null, payableFunctionalAmount: null, winner: 'manual' }] }), Company)?.sourceDifferences).toHaveLength(1)
+  })
+  it('decodes an invoice with and without the FNS-D64 tax warning and keeps the list readable', () => {
+    expect(decodeOfficialInvoice(row(), Company)?.taxWarning).toBeUndefined()
+    expect(decodeOfficialInvoice(row({ taxWarning: null }), Company)?.taxWarning).toBeNull()
+    expect(decodeOfficialInvoice(row({ taxWarning: warning() }), Company)?.taxWarning).toEqual(warning())
+    expect(decodeOfficialInvoicePage({ companyId: Company, items: [row({ taxWarning: warning() })], nextCursor: null }, Company)?.items).toHaveLength(1)
+    expect(decodeOfficialInvoiceTaxWarning(warning({ sourceDocumentId: Pdf }))?.sourceDocumentId).toBe(Pdf)
+    expect(decodeOfficialInvoiceTaxWarning(warning({ expectedPayableFunctionalAmount: '-5.00' }))?.expectedPayableFunctionalAmount).toBe('-5.00')
+  })
+  it('rejects a tax warning with an extra key, a missing key or a non-text amount', () => {
+    const { sourceDocumentId: _source, ...withoutSource } = warning()
+    const { differenceFunctionalAmount: _difference, ...withoutDifference } = warning()
+    for (const bad of [warning({ hidden: true }), withoutSource, withoutDifference, warning({ differenceFunctionalAmount: 0.01 }),
+      warning({ differenceFunctionalAmount: '-0.01' }), warning({ payableFunctionalAmount: '-1' }), warning({ expectedPayableFunctionalAmount: '1e3' }),
+      warning({ sourceDocumentId: 'SENTETIK' }), warning({ code: '' }), [], 'SENTETIK']) {
+      expect(decodeOfficialInvoiceTaxWarning(bad)).toBeNull()
+      expect(decodeOfficialInvoice(row({ taxWarning: bad }), Company)).toBeNull()
+    }
+    expect(decodeOfficialInvoicePage({ companyId: Company, items: [row({ taxWarning: warning({ hidden: true }) })], nextCursor: null }, Company)).toBeNull()
+  })
+  it('shows the server tax warning values on the selected invoice and nothing when there is none', async () => {
+    let item: Record<string, unknown> = row({ taxWarning: warning() })
+    vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL) => String(url).endsWith('/currency-candidates')
+      ? json({ companyId: Company, items: [{ currencyId: Currency, code: 'TRY', displayLabel: 'SENTETIK TL' }] })
+      : json({ companyId: Company, items: [item], nextCursor: null })))
+    const first = mount(); fireEvent.click(await screen.findByRole('button', { name: 'Seçin' }))
+    const note = await screen.findByRole('note')
+    expect(note.textContent).toContain('matrah + KDV − tevkifat'); expect(note.textContent).toContain('Beklenen ödenecek tutar (TL)1250.50')
+    expect(note.textContent).toContain('Kayıttaki ödenecek tutar (TL)1250.51'); expect(note.textContent).toContain('Fark (TL)0.01')
+    expect(note.textContent).toContain('finance_official_invoice_tax_inconsistent'); first.unmount()
+    item = row(); shell.generation++; mount(); fireEvent.click(await screen.findByRole('button', { name: 'Seçin' }))
+    await screen.findByText('SENTETIK belge paneli'); expect(screen.queryByRole('note')).toBeNull()
   })
   it('reserves once uploads the same PDF only once waits for scan and retries lost final record with exact identity and source bytes', async () => {
     const posts: { path: string; init: RequestInit }[] = []; let records = 0

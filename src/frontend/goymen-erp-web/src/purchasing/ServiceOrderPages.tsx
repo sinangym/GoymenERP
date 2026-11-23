@@ -249,9 +249,10 @@ function ServiceAction({ scope, order, kind, changed }: { readonly scope: Scope;
     <Field label={T.reason}>{p => <textarea {...p} value={reason} required maxLength={1000} onChange={e => setReason(e.target.value)} />}</Field>
   </fieldset>{invalid && <p role="alert">{T.invalid}</p>}<AttemptState attempt={attempt} /><Button type="submit" disabled={attempt.locked}>{kind === 'approve' ? T.approve : T.accept}</Button></form>
 }
-function AttemptState({ attempt }: { readonly attempt: { readonly sending: boolean; readonly outcome: { readonly type: string; readonly status?: number; readonly code?: string | null } | null; readonly retry: () => void } }): ReactNode {
+function AttemptState({ attempt }: { readonly attempt: { readonly sending: boolean; readonly snapshot: unknown; readonly outcome: { readonly type: string; readonly status?: number; readonly code?: string | null } | null; readonly retry: () => void } }): ReactNode {
   if (attempt.sending) return <p role="status">{T.busy}</p>
-  if (attempt.outcome?.type === 'unknown') return <div role="alert"><p>{T.unknown}</p><Button type="button" onClick={attempt.retry}>{T.retry}</Button></div>
+  // The held attempt, not the last answer, offers the retry: a remount or a new order version keeps the same key reachable.
+  if (attempt.snapshot !== null) return <div role="alert"><p>{T.unknown}</p><Button type="button" onClick={attempt.retry}>{T.retry}</Button></div>
   if (attempt.outcome?.type === 'failed') return <div role="alert">{attempt.outcome.code === 'purchasing_service_order_same_actor' ? T.sameActor : attempt.outcome.status === 409 ? T.conflict : T.refused}</div>
   return attempt.outcome?.type === 'applied' ? <p role="status">{T.saved}</p> : null
 }

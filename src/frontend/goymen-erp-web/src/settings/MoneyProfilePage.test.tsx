@@ -140,10 +140,15 @@ describe('F029-S3 money profiles', () => {
     expect(sent[0].body).toMatchObject({ expectedVersion: '1', scale: 2, unitPriceScale: 3, reason: 'SENTETIK' })
   })
 
-  it.each([503, 403, 404])('shows a %i read state without editing a guessed profile', async (status) => {
-    installFetch({ capabilities: [SETTINGS_CAPABILITY.moneyProfiles], respond: (url) => url.endsWith('/settings/money-profiles') ? problem(status) : undefined })
+  // 404 and 503 are the screen's own states (its heading stays). A read 403 is reported to the shell security boundary, which
+  // revokes the capability and closes the route: the screen and its heading are gone (non-disclosing), unlike a plain 404.
+  it.each([[503, 'service-unavailable', true, true], [403, 'not-found', false, false], [404, 'not-found', true, false]] as const)('shows a %i read state as %s (screen kept: %s, retry: %s) without editing a guessed profile', async (status, kind, screenKept, retry) => {
+    const calls = installFetch({ capabilities: [SETTINGS_CAPABILITY.moneyProfiles], respond: (url) => url.endsWith('/settings/money-profiles') ? problem(status) : undefined })
     renderAt(path)
-    await waitFor(() => expect(document.querySelector('[data-state]')).not.toBeNull())
+    await waitFor(() => expect(calls.some((call) => call.url.endsWith('/settings/money-profiles'))).toBe(true))
+    await waitFor(() => expect(Array.from(document.querySelectorAll('[data-state]'), (block) => block.getAttribute('data-state'))).toEqual([kind]))
+    expect(screen.queryByRole('heading', { name: T.title }) !== null).toBe(screenKept)
+    expect(screen.queryByRole('button', { name: 'Tekrar dene' }) !== null).toBe(retry)
     expect(screen.queryByRole('button', { name: T.edit })).toBeNull()
   })
 

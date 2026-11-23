@@ -138,3 +138,16 @@ describe('AK-4 piece line commands send the physical kg', () => {
     expect(posts[0]).toMatchObject({ allocationId: ALLOCATION, quantity: '2', quantityKg: '6.25' })
   })
 })
+
+describe('AK-4 delivery quantity label follows the line the server published', () => {
+  it('asks a piece line for pieces and a kg line for kilograms', async () => {
+    installFetch({ capabilities: [...ALL_LOGISTICS, C.delivery], onDetail: () => json(mixed()) })
+    renderLogisticsApp(path)
+    const piece = await screen.findByTestId('delivery-2')
+    expect(within(piece).getByLabelText(T.quantityPieces)).toBeTruthy()
+    expect(within(piece).queryByLabelText(T.quantity)).toBeNull()
+    const kg = screen.getByTestId('delivery-1')
+    expect(within(kg).getByLabelText(T.quantity)).toBeTruthy()
+    expect(within(kg).queryByLabelText(T.quantityPieces)).toBeNull()
+  })
+})

@@ -83,6 +83,41 @@ describe('Supplier revision screen states and replay', () => {
     expect(vi.mocked(sendSupplierRevision).mock.calls[1][0]).toEqual(first)
     expect(sessionStorage.getItem(supplierRevisionAttemptKey(1, actor, company, orderId))).toBeNull()
   })
+  it.each([401, 403])('keeps the same key when the retry of an unknown attempt is answered %s', async status => {
+    const view = mount(); await userEvent.click(screen.getByRole('button', { name: T.open }))
+    await screen.findByText(T.empty); await userEvent.click(screen.getByRole('button', { name: T.search }))
+    await screen.findByRole('option', { name: 'SENTETIK tedarikçi' })
+    await userEvent.selectOptions(screen.getByLabelText(T.supplier), `${next}|${account}`)
+    await userEvent.type(screen.getByLabelText(T.reason), 'SENTETIK correction')
+    await userEvent.click(screen.getByRole('button', { name: T.submit }))
+    await screen.findByText(T.unknown)
+    const first = vi.mocked(sendSupplierRevision).mock.calls[0][0]; const storageKey = supplierRevisionAttemptKey(1, actor, company, orderId)
+    vi.mocked(sendSupplierRevision).mockResolvedValue({ type: 'failed', status, code: null })
+    await userEvent.click(screen.getByRole('button', { name: T.retry }))
+    await waitFor(() => expect(scenario.report).toHaveBeenCalledWith(status, expect.anything()))
+    expect(JSON.parse(sessionStorage.getItem(storageKey)!)).toEqual(first)
+    expect(screen.getByText(T.unknown)).toBeTruthy(); expect(view.onSettled).not.toHaveBeenCalled()
+    vi.mocked(sendSupplierRevision).mockResolvedValue({ type: 'applied' })
+    await userEvent.click(screen.getByRole('button', { name: T.retry }))
+    await waitFor(() => expect(view.onSettled).toHaveBeenCalled())
+    expect(vi.mocked(sendSupplierRevision).mock.calls[2][0]).toEqual(first)
+    expect(sessionStorage.getItem(storageKey)).toBeNull()
+  })
+  it('keeps the restored key when its first resend after a reload is answered 403, and drops it on a decided owner refusal', async () => {
+    const storageKey = supplierRevisionAttemptKey(1, actor, company, orderId)
+    const held = { actorId: actor, companyId: company, orderId, idempotencyKey: '99999999-9999-4999-8999-999999999999',
+      command: { kind: 'supplier', expectedVersion: '3', supplierPartyId: next, companyAccountId: account, reason: 'SENTETIK correction' } }
+    sessionStorage.setItem(storageKey, JSON.stringify(held))
+    vi.mocked(sendSupplierRevision).mockResolvedValue({ type: 'failed', status: 403, code: null })
+    mount(); await userEvent.click(screen.getByRole('button', { name: T.open }))
+    await userEvent.click(await screen.findByRole('button', { name: T.retry }))
+    await waitFor(() => expect(scenario.report).toHaveBeenCalledWith(403, expect.anything()))
+    expect(JSON.parse(sessionStorage.getItem(storageKey)!)).toEqual(held)
+    // Only a decided owner answer (here a coded 409) settles the attempt and drops its key.
+    vi.mocked(sendSupplierRevision).mockResolvedValue({ type: 'failed', status: 409, code: 'purchasing_version_conflict' })
+    await userEvent.click(screen.getByRole('button', { name: T.retry }))
+    await waitFor(() => expect(sessionStorage.getItem(storageKey)).toBeNull())
+  })
   it('ALS-D126: a 409 for active allocations shows the affected allocations and the confirmation resends exactly that set with a new key', async () => {
     const allocation = '99999999-9999-4999-8999-999999999999'
     vi.mocked(fetchPurchaseOrderFutureAllocations).mockResolvedValue({ type: 'ok-single', data: { orderId, orderVersion: '3', links: [{
