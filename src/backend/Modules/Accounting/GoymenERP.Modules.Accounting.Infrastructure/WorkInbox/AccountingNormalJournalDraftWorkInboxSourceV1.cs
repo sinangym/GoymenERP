@@ -11,10 +11,10 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.WorkInbox;
 /// was prepared; it is approved and posted on the draft's approval screen by a company-wide holder of
 /// <c>accounting.normal-journal.draft.approve</c>.
 /// <para>
-/// Maker ≠ checker as the owner enforces it: the normal approval policy deliberately permits self-approval with the approve
-/// grant, so an ordinary draft names no maker (<see cref="WorkInboxItemV1.PreparedBy"/> null). Only a draft whose source is
-/// a credit movement proposal refuses its preparer (Q9, <c>accounting_credit_journal_self_approval</c>); there the preparer
-/// is the maker. The approve command accepts only a company-wide grant (D11: no scoped approver).
+/// Maker ≠ checker as the owner enforces it (ROL-D14, locked): the approve command refuses the draft's preparer
+/// (<c>accounting_normal_journal_draft_self_approval</c>; a draft whose source is a credit movement proposal keeps its Q9
+/// code <c>accounting_credit_journal_self_approval</c>), so the preparer is always the maker and no one else is excluded
+/// (YOL-D23). The approve command accepts only a company-wide grant (D11: no scoped approver).
 /// </para>
 /// </summary>
 internal sealed class AccountingNormalJournalDraftWorkInboxSourceV1(
@@ -25,7 +25,7 @@ internal sealed class AccountingNormalJournalDraftWorkInboxSourceV1(
     public const string KindName = "accounting.normal-journal-draft.v1";
     public const string ScreenPath = "/muhasebe/normal-fis-onay";
 
-    /// <summary>A normal journal draft is posted only with the approve grant.</summary>
+    /// <summary>A normal journal draft is posted only with the approve grant, by someone other than its preparer (ROL-D14).</summary>
     public const string ApprovalRequiredRule = "accounting.normal-journal-draft-approval-required";
 
     /// <summary>The draft comes from a credit movement: its preparer may not approve it (Q9).</summary>
@@ -84,6 +84,6 @@ internal sealed class AccountingNormalJournalDraftWorkInboxSourceV1(
 
         return new WorkInboxItemV1(ModuleName, KindName, row.Id, AccountingWorkInboxFence.ShortReference(row.Id),
             row.PreparedAtUtc.ToUniversalTime(), AccountingWorkInboxFence.Link(ScreenPath, row.Id),
-            creditSource ? AccountingWorkInboxFence.Actor(row.PreparedByUserId) : null, rules, references);
+            AccountingWorkInboxFence.Actor(row.PreparedByUserId), rules, references);
     }
 }

@@ -167,6 +167,33 @@ public sealed class NormalJournalDraftApprovalRaceV1Tests
     }
 
     [Fact]
+    public async Task The_preparer_of_a_normal_draft_may_not_approve_it_and_nothing_is_posted()
+    {
+        // ROL-D14 (maker != checker, locked): the generic normal draft is refused for its preparer exactly like the Q9
+        // credit draft, before any posting; another approver then posts it once.
+        var book = await Book.CreateAsync();
+        var draft = await book.CreateDraftAsync();
+
+        var refused = await book.ApproveAsync(Preparer, draft.Id, "self-approval");
+
+        Assert.Equal(AccountingApiStatus.Denied, refused.Status);
+        Assert.Equal(0, await book.JournalCountAsync());
+        var row = await book.DraftRowAsync(draft.Id);
+        Assert.Equal(((int)NormalJournalDraftStatusV1.Draft, 1L), (row.Status, row.Version));
+        Assert.Null(row.ApprovedByUserId);
+
+        await using (var scope = book.Open(Preparer))
+        {
+            var store = await Assert.ThrowsAsync<AccountingStoreException>(() => scope.Store.ApproveAndPostNormalDraftAsync(
+                draft.Id, 1, book.September, Preparer, static _ => Task.CompletedTask, Metadata()));
+            Assert.Equal(NormalJournalDraftStoreCodesV1.SelfApproval, store.Code);
+        }
+
+        Assert.Equal(AccountingApiStatus.Ok, (await book.ApproveAsync(Checker, draft.Id, "other-approver")).Status);
+        await book.AssertPostedOnceAsync(draft, Checker);
+    }
+
+    [Fact]
     public async Task The_store_itself_reports_that_interleaving_as_journal_id_taken()
     {
         // Pins WHY the owner maps the code: the same interleaving, asked of the store directly, is refused with

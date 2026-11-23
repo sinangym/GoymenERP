@@ -14,7 +14,7 @@ namespace GoymenERP.Accounting.UnitTests;
 public sealed class AccountingNormalJournalDraftWorkInboxSourceV1Tests
 {
     [Fact]
-    public async Task Only_draft_records_of_the_company_are_listed_oldest_first_and_an_ordinary_draft_names_no_maker()
+    public async Task Only_draft_records_of_the_company_are_listed_oldest_first_and_the_preparer_is_the_maker()
     {
         await using var kit = new Kit();
         var older = Draft(Kit.Start, Kit.Caller);
@@ -29,10 +29,11 @@ public sealed class AccountingNormalJournalDraftWorkInboxSourceV1Tests
         Kit.AssertContractShape(result, AccountingNormalJournalDraftWorkInboxSourceV1.KindName);
         Assert.Equal([older.Id, newer.Id], result.Items!.Select(item => item.ItemId));
         var first = result.Items![0];
-        // Business permits normal self-approval with the approve grant: the caller's own draft stays decidable by the caller.
-        Assert.Null(first.PreparedBy);
+        // ROL-D14: the owner refuses the preparer of every normal draft, so the caller's own draft is not theirs to decide.
+        Assert.Equal(Kit.CallerText, first.PreparedBy);
         Assert.Null(first.ExcludedDeciders);
-        Assert.False(first.Excludes(Kit.CallerText));
+        Assert.True(first.Excludes(Kit.CallerText));
+        Assert.Equal(Kit.Maker.ToString("D"), result.Items![1].PreparedBy);
         Assert.Equal(older.Id.ToString("D")[..8], first.DocumentLabel);
         Assert.Equal("/muhasebe/normal-fis-onay/" + older.Id.ToString("D"), first.Link);
         Assert.Equal(Kit.Start.ToUniversalTime(), first.WaitingSinceUtc);
