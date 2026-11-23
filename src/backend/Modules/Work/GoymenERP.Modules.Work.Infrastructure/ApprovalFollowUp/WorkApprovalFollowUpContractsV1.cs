@@ -137,8 +137,8 @@ public static class WorkApprovalDueCalculatorV1
     }
 
     /// <summary>
-    /// ASSUMPTION-WP2-1 (YOL-D17 "bir hatırlatma, sonra yükseltme"; the gap is not decided): the escalation falls due one more
-    /// class length after the reminder's due time — the same Settings value, so no new number is introduced.
+    /// YOL-D33 (E-58; YOL-D17/YOL-D28): after the reminder, the escalation falls due one more duration class later (4 hours in
+    /// the hour class, 2 business days in the business-day class by default) — the same Settings value, no new number.
     /// </summary>
     public static DateTimeOffset? EscalationDue(
         WorkApprovalDurationClassV1 durationClass,

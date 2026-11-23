@@ -17,8 +17,8 @@ internal sealed partial class SettingsCompanyPolicyAdministration : ISettingsOpe
     private static readonly KeySpec WorkApprovalDurationBusinessDays = new(CompanyPolicyKeysV1.WorkApprovalDurationBusinessDays,
         SettingsOperationalPolicyPermissionsV1.WorkApprovalDurationManage, "settings.work-approval-duration-business-days.record.v1",
         "settings.work-approval-duration-business-days.recorded.v1", "Settings.WorkApprovalDurationBusinessDays", "İş günü ölçekli onay süresi sürümü kaydedildi");
-    // YOL-D25 (WP2): the digest times are Work timing like the approval durations; the same registered permission records
-    // them (no new permission, none granted).
+    // YOL-D25 / YOL-D35 (WP2): the digest times are recorded with settings.work-approval-duration.manage; no separate
+    // permission is opened (none granted).
     private static readonly IReadOnlyDictionary<string, (KeySpec Spec, int DecidedDefault)> WorkDigestTimes =
         SettingsWorkDigestScheduleLimitsV1.Slots.ToDictionary(slot => slot.Slot, slot => (new KeySpec(slot.Key,
             SettingsOperationalPolicyPermissionsV1.WorkApprovalDurationManage, $"settings.work-digest-time-{slot.Slot}.record.v1",

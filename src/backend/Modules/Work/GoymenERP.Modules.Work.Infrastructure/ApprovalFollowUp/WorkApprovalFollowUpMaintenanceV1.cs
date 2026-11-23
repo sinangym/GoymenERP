@@ -20,11 +20,11 @@ namespace GoymenERP.Modules.Work.Infrastructure.ApprovalFollowUp;
 /// <item>AI-D29: a newly waiting cycle tells its eligible approvers "şimdi" — holders of the owner's approver permission now
 /// (company-wide, or scoped when the owner accepts scoped approvers and the grant covers the record, D11), minus the owner's
 /// maker and further exclusions (D4, YOL-D23).</item>
-/// <item>YOL-D17 / ROL-D3: a cycle without an eligible approver is a "sahipsiz onay": the holders of the rule's escalation
-/// permission are told and the follow-up view lists it.</item>
+/// <item>YOL-D17 / ROL-D3 / YOL-D34: a cycle without an eligible approver is a "sahipsiz onay": the holders of
+/// <c>work.approvals.escalate</c> are told and the follow-up view lists it.</item>
 /// <item>YOL-D17: once the due time passes (rule table class, Settings length, business days with the holiday list, D6 zone)
 /// the eligible approvers get the one reminder.</item>
-/// <item>YOL-D28: one more class length later (ASSUMPTION-WP2-1) the cycle is escalated to the holders of the rule's
+/// <item>YOL-D28 / YOL-D33: one more duration class after the reminder the cycle is escalated to the holders of the rule's
 /// escalation permission (<c>work.approvals.escalate</c> by default); while no one holds it nothing escalates and only the
 /// reminder went out.</item>
 /// </list>
@@ -163,6 +163,10 @@ public sealed class WorkApprovalFollowUpMaintenanceV1(
         var escalation = rule.EscalationPermission is { } escalationPermission
             ? await HoldersAsync(companyId, escalationPermission, holderCache, cancellationToken)
             : new WorkPermissionHoldersV1(true, []);
+        // YOL-D34: an orphaned approval always goes to the holders of "onay yükseltme", whatever the rule's escalation names.
+        var orphanHolders = string.Equals(rule.EscalationPermission, WorkPermissionManifestV1.ApprovalsEscalate, StringComparison.Ordinal)
+            ? escalation
+            : await HoldersAsync(companyId, WorkPermissionManifestV1.ApprovalsEscalate, holderCache, cancellationToken);
         var itemIds = pending.Select(item => item.ItemId).ToArray();
         var done = await database.ApprovalFollowUps.AsNoTracking()
             .Where(row => row.CompanyId == companyId && row.Kind == source.Kind && itemIds.Contains(row.ItemId))
@@ -188,14 +192,15 @@ public sealed class WorkApprovalFollowUpMaintenanceV1(
 
             if (eligible.Length == 0 && !taken.Contains((int)WorkApprovalFollowUpStepV1.Orphaned))
             {
-                if (!escalation.Available)
+                if (!orphanHolders.Available)
                 {
                     continue;
                 }
 
-                // ROL-D3 / YOL-D17: no one may decide it: it is visible as "sahipsiz onay" and the escalation holders are told.
+                // ROL-D3 / YOL-D17 / YOL-D34: no one may decide it: it is visible as "sahipsiz onay" and the holders of
+                // work.approvals.escalate are told.
                 Step(companyId, source, rule, item, WorkApprovalFollowUpStepV1.Orphaned, due,
-                    EscalationRecipients(escalation, item), now, correlationId, counts);
+                    EscalationRecipients(orphanHolders, item), now, correlationId, counts);
                 counts.Orphaned++;
                 added = true;
             }

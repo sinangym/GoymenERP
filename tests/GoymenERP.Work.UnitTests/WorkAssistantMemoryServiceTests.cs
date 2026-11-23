@@ -157,8 +157,8 @@ public sealed class WorkAssistantMemoryServiceTests
         // AI-D39: the person is not notified; no inbox notification of any kind is written.
         await using (var database = harness.Database())
         {
+            // D9 (WP2): work.InboxNotifications is the single notification store (event kinds included), so this covers every kind.
             Assert.Empty(await database.InboxNotifications.ToListAsync());
-            Assert.Empty(await database.Notifications.ToListAsync());
         }
     }
 

@@ -119,8 +119,8 @@ bahsetme bütün notu 422 `work_mention_refused` ile reddeder ve kişinin var ol
   açık → tamamlandı (yalnız atanan) / iptal (yalnız atayan, gerekçeli); beklenen sürüm, idempotency anahtarı, audit.
 - Bildirim sınıfları (AI-D29 varsayılanı): bahsetme ve süresi geçen görev "şimdi"; görev ataması "özet".
   Aynı alıcı + tür + kaynak için ikinci bildirim yoktur (benzersiz anahtar). Okundu bilgisi ayrı, ekleme-yalnız satır.
-- Özet saatleri Ayarlar parametresidir; Settings anahtarı henüz yok, host okuyucusu `Unavailable` döner ve özet sınıfı
-  bekletilir (erken gösterilmez). NEEDS-SINAN: varsayılan özet saatleri.
+- Özet saatleri Ayarlar parametresidir (WP2, YOL-D25/YOL-D35): `work.digest-time-*` anahtarları, sürüm 0 = 09:00/13:00/17:00,
+  yalnız iş günü; Ayarlar okunamazsa özet sınıfı bekletilir (erken gösterilmez).
 - Zamanlayıcı (`Work:CollaborationScheduler`, gecikme bildirimi + özet bırakma) varsayılan KAPALI; açılması insan kapısı.
 
 | İzin | Anlam | Rol |

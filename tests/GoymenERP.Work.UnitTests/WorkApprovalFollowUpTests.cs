@@ -46,6 +46,7 @@ public sealed class WorkApprovalFollowUpTests
     }
 
     [Fact]
+    // YOL-D33: the escalation falls due one more duration class after the reminder.
     public async Task After_the_due_time_one_reminder_goes_to_the_approvers_and_one_class_length_later_the_escalation_holders_get_it_once()
     {
         var harness = new Harness();
@@ -96,6 +97,35 @@ public sealed class WorkApprovalFollowUpTests
         var orphaned = Assert.Single(await database.ApprovalFollowUps.ToListAsync());
         Assert.Equal(((int)WorkApprovalFollowUpStepV1.Orphaned, 1), (orphaned.Step, orphaned.RecipientCount));
         var notification = Assert.Single(await database.InboxNotifications.ToListAsync());
+        Assert.Equal((Escalator, (int)WorkInboxNotificationKindV1.ApprovalOrphaned), (notification.RecipientUserId, notification.Kind));
+    }
+
+    [Fact]
+    public async Task An_orphaned_cycle_goes_to_the_onay_yukseltme_holders_even_when_the_rule_names_another_escalation_permission()
+    {
+        var harness = new Harness();
+        await using (var database = harness.Database())
+        {
+            database.ApprovalRuleVersions.Add(new WorkApprovalRuleVersionRow
+            {
+                CompanyId = Company, Id = Guid.NewGuid(), Kind = Kind, Version = 1, DurationClass = 1,
+                ApproverPermission = "logistics.dispatch-notes.approve", EscalationPermission = "settings.work-approval-duration.manage",
+                RecordedByUserId = Escalator, RecordedAtUtc = Waiting.AddDays(-1), Reason = "SENTETIK başka yükseltme izni",
+                CorrelationId = "SENTETIK-rule",
+            });
+            await database.SaveChangesAsync();
+        }
+
+        harness.Holders.Approvers = [Holder(Maker)];
+        harness.Time.Now = Waiting.AddMinutes(5);
+
+        var cycle = await harness.RunAsync();
+
+        // YOL-D34: "sahipsiz onay" is shown and notified to work.approvals.escalate holders, never to the rule's other permission.
+        Assert.Equal(1, cycle.Orphaned);
+        Assert.Contains("work.approvals.escalate", harness.Holders.Asked);
+        await using var read = harness.Database();
+        var notification = Assert.Single(await read.InboxNotifications.ToListAsync());
         Assert.Equal((Escalator, (int)WorkInboxNotificationKindV1.ApprovalOrphaned), (notification.RecipientUserId, notification.Kind));
     }
 
@@ -269,10 +299,16 @@ public sealed class WorkApprovalFollowUpTests
             [Holder(Maker), Holder(Approver), Holder(ScopedApprover, companyWide: false)];
         public IReadOnlyList<WorkPermissionHolderV1> Escalation { get; set; } = [Holder(Escalator), Holder(Maker)];
 
-        public Task<WorkPermissionHoldersV1> ListHoldersAsync(Guid companyId, string permission, CancellationToken cancellationToken = default) =>
-            Task.FromResult(!Available || companyId != Company
+        public List<string> Asked { get; } = [];
+
+        public Task<WorkPermissionHoldersV1> ListHoldersAsync(Guid companyId, string permission, CancellationToken cancellationToken = default)
+        {
+            Asked.Add(permission);
+            return Task.FromResult(!Available || companyId != Company
                 ? WorkPermissionHoldersV1.Unavailable
-                : new WorkPermissionHoldersV1(true, permission == WorkPermissionManifestV1.ApprovalsEscalate ? Escalation : Approvers));
+                : new WorkPermissionHoldersV1(true, permission == WorkPermissionManifestV1.ApprovalsEscalate ? Escalation
+                    : permission == "logistics.dispatch-notes.approve" ? Approvers : []));
+        }
     }
 
     private sealed class FakeTiming : IWorkApprovalTimingReaderV1
