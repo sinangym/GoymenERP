@@ -44,11 +44,13 @@ public sealed class WorkAssistantMemoryServiceTests
         Assert.False(status.Writable);
         Assert.Equal(new[]
         {
-            WorkAssistantMemoryDisabledReasonsV1.PilotOff, WorkAssistantMemoryDisabledReasonsV1.EntryLimitUndecided, WorkAssistantMemoryDisabledReasonsV1.InformationNoticePending,
+            WorkAssistantMemoryDisabledReasonsV1.PilotOff, WorkAssistantMemoryDisabledReasonsV1.InformationNoticePending,
         }, status.DisabledReasons);
         // AI-D38: the decided one-year retention is the default; it is not an open decision any more.
         Assert.Equal(WorkAssistantMemoryOptions.DecidedRetentionDays, status.RetentionDays);
         Assert.Equal(365, WorkAssistantMemoryOptions.DecidedRetentionDays);
+        // AI-D48: the decided limit of 200 active entries per person is the default.
+        Assert.Equal((WorkAssistantMemoryOptions.DecidedMaxEntriesPerUser, 200), (status.MaxEntriesPerUser, WorkAssistantMemoryOptions.DecidedMaxEntriesPerUser));
         var context = await harness.Service(Owner).ReadForCurrentActorAsync();
         Assert.Equal(WorkAssistantMemoryReadOutcomeV1.Disabled, context.Outcome);
         Assert.Empty(context.Items);
@@ -58,7 +60,7 @@ public sealed class WorkAssistantMemoryServiceTests
     [InlineData("retention")]
     [InlineData("limit")]
     [InlineData("notice")]
-    public async Task With_the_pilot_on_but_an_invalid_retention_or_an_undecided_limit_or_notice_writing_stays_closed(string missing)
+    public async Task With_the_pilot_on_but_an_invalid_retention_or_limit_or_an_undecided_notice_writing_stays_closed(string missing)
     {
         var options = OpenPilot();
         switch (missing)
@@ -262,6 +264,33 @@ public sealed class WorkAssistantMemoryServiceTests
         Assert.Empty((await harness.Service(Owner).ReadForCurrentActorAsync()).Items);
         Assert.Empty((await harness.Service(Owner).ListMyEntriesAsync(false)).Items);
         Assert.All((await harness.Service(Owner).ListMyEntriesAsync(true)).Items, item => Assert.Equal("passive", item.State));
+    }
+
+    [Fact]
+    public async Task At_the_decided_200_entry_limit_a_new_entry_is_refused_until_the_owner_removes_an_older_one()
+    {
+        // Only the human gates are opened; retention and the entry limit keep their decided defaults (AI-D38, AI-D48).
+        var harness = new Harness(new WorkAssistantMemoryOptions { PilotEnabled = true, InformationNoticeVersion = "SENTETIK-NOTICE-1" });
+        Guid oldest = Guid.Empty;
+        for (var index = 1; index <= WorkAssistantMemoryOptions.DecidedMaxEntriesPerUser; index++)
+        {
+            var created = await harness.Service(Owner, ErpPermissions.AiPanelUse).CreateEntryAsync(new("note", "not " + index), Meta("m" + index));
+            if (index == 1) oldest = created.Entry.Id;
+        }
+
+        var refused = await Assert.ThrowsAsync<WorkCollaborationException>(() => harness.Service(Owner, ErpPermissions.AiPanelUse)
+            .CreateEntryAsync(new("note", "not 201"), Meta("m201")));
+        Assert.Equal((409, WorkAssistantMemoryProblemCodesV1.LimitReached), (refused.Status, refused.Code));
+        await using (var database = harness.Database())
+        {
+            // Nothing is closed automatically to make room.
+            Assert.Equal(200, await database.AssistantMemoryEntries.CountAsync(row => row.State == (int)WorkAssistantMemoryStateV1.Active));
+        }
+
+        await harness.Service(Owner).DeleteEntryAsync(oldest, new("1"), Meta("m-del"));
+        var admitted = await harness.Service(Owner, ErpPermissions.AiPanelUse).CreateEntryAsync(new("note", "not 201"), Meta("m201-b"));
+        Assert.Equal("active", admitted.Entry.State);
+        Assert.Equal(200, (await harness.Service(Owner).GetMyStatusAsync()).ActiveEntryCount);
     }
 
     [Fact]

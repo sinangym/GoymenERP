@@ -19,7 +19,8 @@ export const ASSISTANT_MEMORY_TEXT = {
   more: 'Daha fazla kayıt var.',
   // Refusals by stable code (never by server text).
   disabled: 'Hafıza şu an kapalı; kayıt eklenemez veya düzeltilemez.', closedForUser: 'Hafızanız yönetici tarafından kapatıldı.',
-  limitReached: 'Kayıt sınırına ulaştınız; önce bir kaydı silin.', notActive: 'Bu kayıt artık etkin değil.',
+  limitReached: 'Kişi başı etkin kayıt sınırına ulaştınız. Yeni kayıt eklemek için önce eski bir kaydı silin.',
+  usage: 'Etkin kayıt', notActive: 'Bu kayıt artık etkin değil.',
   versionConflict: 'Kayıt başka bir işlemle değişti; listeyi yenileyin.', sameKeyMismatch: 'Önceki deneme farklı içerikle kaydedilmiş; sayfayı yenileyin.',
   concurrent: 'Kayıt aynı anda değişti; listeyi yenileyip tekrar deneyin.', validation: 'Metni kontrol edin: tek satır ve en çok 500 karakter olmalı.',
   forbidden: 'Bu işlem için yetkiniz yok.', notFound: 'Kayıt bulunamadı.', unknownOutcome: 'Sonuç alınamadı. Aynı işlem güvenle tekrar denenebilir.',
@@ -30,7 +31,7 @@ export const ASSISTANT_MEMORY_STATE_TEXT: Record<AssistantMemoryState, string> =
 export const ASSISTANT_MEMORY_REASON_TEXT: Record<AssistantMemoryDisabledReason, string> = {
   pilot_off: 'Pilot kapalı.',
   retention_invalid: 'Saklama süresi ayarı geçersiz.',
-  entry_limit_undecided: 'Kişi başı kayıt sınırı henüz belirlenmedi.',
+  entry_limit_invalid: 'Kişi başı kayıt sınırı ayarı geçersiz.',
   information_notice_pending: 'Çalışan bilgilendirme metni onay bekliyor.',
   closed_for_user: 'Hafızanız yönetici tarafından kapatıldı.',
 }

@@ -16,7 +16,7 @@ export const ASSISTANT_MEMORY_LIMITS = { body: 500, page: 100 } as const
 export const ASSISTANT_MEMORY_KINDS = ['preference', 'note'] as const
 export type AssistantMemoryKind = (typeof ASSISTANT_MEMORY_KINDS)[number]
 export type AssistantMemoryState = 'active' | 'passive' | 'closed'
-export const ASSISTANT_MEMORY_DISABLED_REASONS = ['pilot_off', 'retention_invalid', 'entry_limit_undecided', 'information_notice_pending', 'closed_for_user'] as const
+export const ASSISTANT_MEMORY_DISABLED_REASONS = ['pilot_off', 'retention_invalid', 'entry_limit_invalid', 'information_notice_pending', 'closed_for_user'] as const
 export type AssistantMemoryDisabledReason = (typeof ASSISTANT_MEMORY_DISABLED_REASONS)[number]
 
 export interface AssistantMemoryEntry {
