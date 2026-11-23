@@ -32,8 +32,6 @@ public sealed class ReportingParameterSetV1
 
     public decimal Decimal(string id) => (decimal)values[id];
 
-    public IReadOnlyList<int> WholeNumbers(string id) => (IReadOnlyList<int>)values[id];
-
     public static ReportingParameterSetV1 Parse(ReportingReportDefinitionV1 report, IReadOnlyDictionary<string, string?>? raw) =>
         Parse(report, raw, requireAll: true);
 
@@ -105,19 +103,6 @@ public sealed class ReportingParameterSetV1
                 if (!decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var number)
                     || text.StartsWith('.') || text.EndsWith('.') || !InRange(parameter, number)) throw Invalid();
                 return (number, number.ToString("0.############################", CultureInfo.InvariantCulture));
-            case ReportingParameterKindV1.AscendingWholeNumbers:
-                var parts = text.Split(',');
-                if (parts.Length is < 1 or > ReportingCatalogV1.MaximumBucketBoundaries) throw Invalid();
-                var list = new List<int>(parts.Length);
-                foreach (var part in parts)
-                {
-                    if (!int.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out var boundary)
-                        || boundary.ToString(CultureInfo.InvariantCulture) != part || !InRange(parameter, boundary)
-                        || (list.Count > 0 && boundary <= list[^1])) throw Invalid();
-                    list.Add(boundary);
-                }
-
-                return (list.AsReadOnly(), string.Join(',', list.Select(item => item.ToString(CultureInfo.InvariantCulture))));
             default:
                 throw Invalid();
         }

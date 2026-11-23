@@ -3,9 +3,11 @@ using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Reporting.Domain;
 using GoymenERP.Modules.Reporting.Infrastructure;
+using GoymenERP.Modules.Sales.Application.Contracts;
 
 namespace GoymenERP.Api.ReportingRuntime;
 
@@ -144,11 +146,152 @@ internal sealed class ReportingFinancePartyAgingSourceV1(IFinanceOpenItemReadSer
     }
 }
 
+/// <summary>
+/// YOL-D29 OTIF: Sales names the promised lines (open and closed orders, approved quantity, order unit); Logistics names the dated
+/// shipment shares of APPROVED dispatch notes per order line (the shipment date is the Europe/Istanbul business day of the
+/// recorded shipment). Neither owner reads the other's tables; the join is here. A share in another unit, an answer for another
+/// company or a shipment window the owner reports as cut is fail-closed (never a partial OTIF).
+/// </summary>
+internal sealed class ReportingSalesLogisticsOtifSourceV1(ISalesOrderPromiseReadPortV1 promises, IServiceProvider services, ICompanyContext company)
+    : IReportingOtifSourceV1
+{
+    /// <summary>Technical bounds (not business thresholds).</summary>
+    internal const int MaximumDraftPages = 100;
+    internal const int ShipmentLimit = 5000;
+
+    public async Task<ReportingOtifSourcePageV1> ReadAsync(Guid companyId, DateOnly from, DateOnly to, int page, int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (!company.IsResolved || company.CompanyId != companyId) return new(ReportingSourceOutcomeV1.Denied, companyId, [], false);
+        if (services.GetService(typeof(ISalesInvoiceableShipmentReadPortV1)) is not ISalesInvoiceableShipmentReadPortV1 shipments)
+            return new(ReportingSourceOutcomeV1.NotConnected, companyId, [], false);
+        if (!TimeZoneInfo.TryFindSystemTimeZoneById("Europe/Istanbul", out var zone))
+            return new(ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+
+        var wanted = (long)page * pageSize + 1;
+        var lines = new List<SalesOrderPromisedLineV1>();
+        var unmeasured = 0;
+        string? cursor = null;
+        var pages = 0;
+        do
+        {
+            if (++pages > MaximumDraftPages) return new(ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+            var answer = await promises.ListPromisedLinesAsync(from, to, ISalesOrderPromiseReadPortV1.MaximumPageSize, cursor, cancellationToken);
+            if (answer.CompanyId != companyId || answer.Lines.Any(line => line.CompanyId != companyId))
+                return new(ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+            lines.AddRange(answer.Lines);
+            unmeasured += answer.UnmeasuredLines;
+            cursor = answer.NextCursor;
+        }
+        while (cursor is not null && lines.Count < wanted);
+
+        var ordered = lines.OrderBy(line => line.PromisedOn).ThenBy(line => line.DocumentNo, StringComparer.Ordinal).ThenBy(line => line.LineNo).ToArray();
+        var slice = ordered.Skip((page - 1) * pageSize).Take(pageSize).ToArray();
+        var hasMore = ordered.Length > (long)page * pageSize || cursor is not null;
+        var byLine = new Dictionary<Guid, List<ReportingOtifShipmentV1>>();
+        foreach (var chunk in slice.Select(line => line.OrderId).Distinct().Chunk(SalesInvoiceableShipmentQueryV1.MaximumOrderIds))
+        {
+            var answer = await shipments.ReadInvoiceableShipmentsAsync(new SalesInvoiceableShipmentQueryV1(null, ShipmentLimit, chunk), cancellationToken);
+            if (answer.Outcome == SalesDispatchReadOutcomeV1.Denied) return new(ReportingSourceOutcomeV1.Denied, companyId, [], false);
+            if (answer.Outcome != SalesDispatchReadOutcomeV1.Found || answer.CompanyId != companyId || answer.HasMore)
+                return new(ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+            foreach (var share in answer.Shares.Where(share => chunk.Contains(share.SalesOrderId)))
+            {
+                if (!byLine.TryGetValue(share.SalesOrderLineId, out var list)) byLine[share.SalesOrderLineId] = list = [];
+                list.Add(new ReportingOtifShipmentV1(DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(share.ShippedAtUtc, zone).DateTime), share.Quantity)
+                    { UnitId = share.UnitId });
+            }
+        }
+
+        var result = new List<ReportingOtifSourceLineV1>(slice.Length);
+        foreach (var line in slice)
+        {
+            var shares = byLine.TryGetValue(line.LineId, out var found) ? found : [];
+            // A share recorded in another unit is never converted: the owner answer is not comparable.
+            if (shares.Any(share => share.UnitId != line.UnitId)
+                || !decimal.TryParse(line.Quantity, System.Globalization.NumberStyles.AllowDecimalPoint, System.Globalization.CultureInfo.InvariantCulture,
+                    out var quantity))
+                return new(ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+            result.Add(new ReportingOtifSourceLineV1(line.OrderId, line.DocumentNo, line.LineNo, line.PartyId, line.UnitCode, line.PromisedOn, quantity,
+                shares));
+        }
+
+        return new(ReportingSourceOutcomeV1.Found, companyId, result, hasMore, unmeasured);
+    }
+}
+
+/// <summary>
+/// YOL-D31 intercompany: Counterparty names the linked parties (party ↔ group company on the card, never a tax-number match);
+/// Finance answers its sub-ledger items (any status) through its own authorized read. A link to the active company itself is not
+/// an intercompany leg. The list is newest first; the read stops at the first item admitted before the period; more than the
+/// technical bound sets WindowFull (the centre then refuses rather than show a cut dump).
+/// </summary>
+internal sealed class ReportingCounterpartyFinanceIntercompanySourceV1(ICounterpartyGroupCompanyLinkReadPortV1 links,
+    IFinanceOpenItemReadServiceV1 openItems, ICompanyContext company, ICurrentUser user, ICorrelationContext correlation)
+    : IReportingIntercompanySourceV1
+{
+    internal const int MaximumScannedItems = 10000;
+
+    public async Task<ReportingIntercompanySourcePageV1> ReadAsync(Guid companyId, DateOnly from, DateOnly to, int page, int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (!company.IsResolved || company.CompanyId != companyId || user.UserId is not { Length: > 0 } actor)
+            return new(ReportingSourceOutcomeV1.Denied, companyId, [], false);
+        if (!TimeZoneInfo.TryFindSystemTimeZoneById("Europe/Istanbul", out var zone))
+            return new(ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+        var linked = (await links.ListLinksAsync(cancellationToken))
+            .Where(link => link.GroupCompanyId != companyId)
+            .GroupBy(link => link.PartyId)
+            .ToDictionary(group => group.Key, group => group.First().GroupCompanyId);
+        if (linked.Count == 0) return new(ReportingSourceOutcomeV1.Found, companyId, [], false);
+
+        var context = new FinanceContext(companyId, actor, correlation.IsResolved ? correlation.CorrelationId : Guid.NewGuid().ToString("N"),
+            correlation.IsResolved ? correlation.CausationId : null);
+        var rows = new List<ReportingIntercompanySourceRowV1>();
+        var scanned = 0;
+        string? cursor = null;
+        var reachedOlder = false;
+        do
+        {
+            var result = await openItems.ListAuthorizedAsync(context, new SourceListRequest(cursor), cancellationToken);
+            if (result.Outcome != ReadOutcome.Found || result.Resource is not { } listed)
+                return new(result.Outcome == ReadOutcome.Denied ? ReportingSourceOutcomeV1.Denied : ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+            if (listed.CompanyId != companyId) return new(ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+            foreach (var item in listed.Items)
+            {
+                if (item.CompanyId != companyId) return new(ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+                if (++scanned > MaximumScannedItems) return new(ReportingSourceOutcomeV1.Found, companyId, [], false, true);
+                var day = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(item.CreatedAtUtc, zone).DateTime);
+                if (day < from)
+                {
+                    reachedOlder = true;
+                    break;
+                }
+
+                if (day > to || !linked.TryGetValue(item.PartyId, out var groupCompany)) continue;
+                if (item.Status is not { } status || item.InitialAmount.Money is not { } initial || item.OutstandingAmount.Money is not { } outstanding
+                    || item.InitialAmount.Disclosure != AmountDisclosure.Visible || item.OutstandingAmount.Disclosure != AmountDisclosure.Visible)
+                    return new(ReportingSourceOutcomeV1.Denied, companyId, [], false);
+                rows.Add(new ReportingIntercompanySourceRowV1(day, item.SourceKind, item.SourceId, item.PartyId, groupCompany,
+                    item.Direction == FinanceOpenItemDirectionV1.Receivable ? "receivable" : "payable", item.CurrencyId, initial.Amount,
+                    outstanding.Amount, status.ToString()));
+            }
+
+            cursor = listed.NextCursor;
+        }
+        while (cursor is not null && !reachedOlder);
+
+        var ordered = rows.OrderBy(row => row.DocumentDate).ThenBy(row => row.SourceId).ToArray();
+        var slice = ordered.Skip((page - 1) * pageSize).Take(pageSize).ToArray();
+        return new(ReportingSourceOutcomeV1.Found, companyId, slice, ordered.Length > (long)page * pageSize);
+    }
+}
+
 public static class ReportingRuntimeServiceCollectionExtensions
 {
     /// <summary>
-    /// WP14: the report centre with its connected owner sources. OTIF (no owner read of promised day × dated shipment per order
-    /// line yet) and the intercompany dump (YOL-D31's party ↔ company link is not recorded by Counterparty yet) stay "not connected".
+    /// WP14: the report centre with its connected owner sources: stock aging and recall (Inventory), mizan (Accounting),
+    /// receivable/payable aging (Finance), OTIF (Sales × Logistics) and the intercompany dump (Counterparty links × Finance).
     /// </summary>
     public static IServiceCollection AddReportingRuntimeV1(this IServiceCollection services)
     {
@@ -156,6 +299,8 @@ public static class ReportingRuntimeServiceCollectionExtensions
         services.AddScoped<IReportingRecallSourceV1, ReportingInventoryRecallSourceV1>();
         services.AddScoped<IReportingTrialBalanceSourceV1, ReportingAccountingTrialBalanceSourceV1>();
         services.AddScoped<IReportingPartyAgingSourceV1, ReportingFinancePartyAgingSourceV1>();
+        services.AddScoped<IReportingOtifSourceV1, ReportingSalesLogisticsOtifSourceV1>();
+        services.AddScoped<IReportingIntercompanySourceV1, ReportingCounterpartyFinanceIntercompanySourceV1>();
         return services;
     }
 }

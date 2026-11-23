@@ -362,9 +362,34 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Contains(
             "20261118165020_RepairPartyIdentityRevisionTaxNumberFormat",
             dbContext.Database.GetMigrations());
-        // FNS-D121 appends the cari IBAN list.
-        Assert.Equal("20261123075528_AddPartyIbans", dbContext.Database.GetMigrations().Last());
+        // FNS-D121 appends the cari IBAN list; WP14 (YOL-D31) appends the group company link after it.
+        var migrations = dbContext.Database.GetMigrations().ToArray();
+        Assert.Equal("20261123075528_AddPartyIbans", migrations[^2]);
+        Assert.EndsWith(
+            "_AddPartyGroupCompanyLink",
+            migrations[^1],
+            StringComparison.Ordinal);
         Assert.False(dbContext.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void Group_company_link_migration_is_DDL_and_Down_first_refuses_with_THROW_52271_while_a_link_exists()
+    {
+        var migration = new GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations.AddPartyGroupCompanyLink();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]).Sql;
+        Assert.Contains("THROW 52271", guard, StringComparison.Ordinal);
+        Assert.Contains("[counterparty].[Parties] WHERE [GroupCompanyId] IS NOT NULL", guard, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+
+        using var dbContext = CreateContext();
+        var party = dbContext.Model.FindEntityType(typeof(Party))!;
+        var column = party.FindProperty(nameof(Party.GroupCompanyId))!;
+        Assert.True(column.IsNullable);
+        var index = Assert.Single(party.GetIndexes(), item => item.GetDatabaseName() == "IX_Parties_GroupCompanyId");
+        Assert.Equal("[GroupCompanyId] IS NOT NULL", index.GetFilter());
+        var foreign = Assert.Single(party.GetForeignKeys(), key => key.Properties.Single().Name == nameof(Party.GroupCompanyId));
+        Assert.Equal(DeleteBehavior.Restrict, foreign.DeleteBehavior);
     }
 
     [Fact]

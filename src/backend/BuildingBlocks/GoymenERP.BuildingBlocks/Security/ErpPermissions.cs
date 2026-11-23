@@ -1827,6 +1827,12 @@ public static class ErpPermissions
     /// </summary>
     public const string ReportingIntercompanyRead = "reporting.intercompany.read";
     /// <summary>
+    /// WP14 (YOL-D31): link a party card to the Göymen group company it is, or clear the link (the intercompany report's only
+    /// definition of a group company; never a tax-number match). Group-wide field, changed from the active company with an audit
+    /// event. Company-wide only. Not Critical. Registered, not granted: no seeded role holds it; a grant is a human gate.
+    /// </summary>
+    public const string CounterpartyPartiesGroupCompanyLinkUpdate = "counterparty.parties.group-company-link.update";
+    /// <summary>
     /// WP-A4 (AI-D32 "onaylı karar dizini", DALGA_PLANI_v2 A.4): approve (or withdraw the approval of) one published AI
     /// knowledge package version (the decision index or the release behaviour knowledge) for the company; until an
     /// approval of the exact packaged bytes exists, the reading tools answer unavailable. Company-wide only. Not marked
@@ -2145,6 +2151,7 @@ public static class ErpPermissions
             ReportingExport,
             ReportingAuditorPackageExport,
             ReportingIntercompanyRead,
+            CounterpartyPartiesGroupCompanyLinkUpdate,
         ],
         StringComparer.Ordinal);
 
@@ -2466,6 +2473,7 @@ public static class ErpPermissions
             ReportingExport,
             ReportingAuditorPackageExport,
             ReportingIntercompanyRead,
+            CounterpartyPartiesGroupCompanyLinkUpdate,
         ],
         StringComparer.Ordinal);
 

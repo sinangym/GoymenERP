@@ -25,6 +25,7 @@ public sealed class ReportingPermissionRegistrationTests
         ErpPermissions.ReportingExport,
         ErpPermissions.ReportingAuditorPackageExport,
         ErpPermissions.ReportingIntercompanyRead,
+        ErpPermissions.CounterpartyPartiesGroupCompanyLinkUpdate,
     };
 
     [Fact]
@@ -33,6 +34,7 @@ public sealed class ReportingPermissionRegistrationTests
         Assert.Equal("reporting.export", ErpPermissions.ReportingExport);
         Assert.Equal("reporting.auditor-package.export", ErpPermissions.ReportingAuditorPackageExport);
         Assert.Equal("reporting.intercompany.read", ErpPermissions.ReportingIntercompanyRead);
+        Assert.Equal("counterparty.parties.group-company-link.update", ErpPermissions.CounterpartyPartiesGroupCompanyLinkUpdate);
     }
 
     [Theory]

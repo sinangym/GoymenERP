@@ -58,11 +58,13 @@ public sealed record ReportingOtifSourceLineV1(
     decimal OrderedQuantity,
     IReadOnlyList<ReportingOtifShipmentV1> Shipments);
 
+/// <summary><paramref name="UnmeasuredLines"/>: promised lines the owner could not name a quantity for (counted, never guessed).</summary>
 public sealed record ReportingOtifSourcePageV1(
     ReportingSourceOutcomeV1 Outcome,
     Guid CompanyId,
     IReadOnlyList<ReportingOtifSourceLineV1> Lines,
-    bool HasMore);
+    bool HasMore,
+    int UnmeasuredLines = 0);
 
 /// <summary>The label trace (recall / traceability) as the stock owner walks it.</summary>
 public interface IReportingRecallSourceV1
@@ -91,9 +93,9 @@ public sealed record ReportingRecallSourceV1(
     IReadOnlyList<KeyValuePair<string, string>> Statuses);
 
 /// <summary>
-/// ROL-D15 / EK-40 / YOL-D31: the company's intercompany legs — documents with a party whose card carries a party ↔ company
-/// link (never a tax-number match). No owner records that link yet, so the host answers
-/// <see cref="ReportingSourceOutcomeV1.NotConnected"/> — never a guessed counterparty match.
+/// ROL-D15 / EK-40 / YOL-D31: the company's intercompany legs — the Finance sub-ledger items (receivables and payables, any
+/// status) of parties whose card carries a party ↔ group company link to ANOTHER group company (never a tax-number match),
+/// admitted in [from, to] (Europe/Istanbul business day). More than the technical bound sets <c>WindowFull</c>.
 /// </summary>
 public interface IReportingIntercompanySourceV1
 {
@@ -104,16 +106,21 @@ public interface IReportingIntercompanySourceV1
 public sealed record ReportingIntercompanySourceRowV1(
     DateOnly DocumentDate,
     string DocumentKind,
-    string DocumentNumber,
+    Guid SourceId,
+    Guid PartyId,
     Guid CounterpartyCompanyId,
-    string CurrencyCode,
-    string NetAmount);
+    string Direction,
+    Guid CurrencyId,
+    string InitialAmount,
+    string OutstandingAmount,
+    string Status);
 
 public sealed record ReportingIntercompanySourcePageV1(
     ReportingSourceOutcomeV1 Outcome,
     Guid CompanyId,
     IReadOnlyList<ReportingIntercompanySourceRowV1> Rows,
-    bool HasMore);
+    bool HasMore,
+    bool WindowFull = false);
 
 /// <summary>YOL-D30: the company's OPEN items of one direction (Finance's sub-ledger), with their due date and outstanding money.</summary>
 public interface IReportingPartyAgingSourceV1

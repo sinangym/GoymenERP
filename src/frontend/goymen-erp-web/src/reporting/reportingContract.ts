@@ -12,7 +12,7 @@ export const AUDITOR_PACKAGE_PATH = '/reporting/auditor-packages'
 export const REPORTING_ROUTE = { center: '/raporlar', report: '/raporlar/:reportId', auditor: '/raporlar/denetci-paketi' } as const
 export const reportRoute = (reportId: string) => `/raporlar/${encodeURIComponent(reportId)}`
 
-export type ParameterKind = 'date' | 'guid' | 'choice' | 'whole-number' | 'decimal' | 'ascending-whole-numbers'
+export type ParameterKind = 'date' | 'guid' | 'choice' | 'whole-number' | 'decimal'
 export type ColumnKind = 'text' | 'number' | 'date' | 'instant' | 'identifier' | 'flag'
 export interface ReportParameter { readonly id: string; readonly kind: ParameterKind; readonly required: boolean; readonly choices: readonly string[]; readonly minimum: string | null; readonly maximum: string | null }
 export interface ReportColumn { readonly id: string; readonly kind: ColumnKind }
@@ -31,7 +31,7 @@ export interface SavedView {
 export interface SavedViewPage { readonly companyId: string; readonly reportId: string; readonly items: readonly SavedView[] }
 export interface SavedViewBody { readonly reportId: string; readonly name: string; readonly parameters: Readonly<Record<string, string>>; readonly columns: readonly string[]; readonly expectedVersion: string | null }
 
-const PARAMETER_KINDS: readonly ParameterKind[] = ['date', 'guid', 'choice', 'whole-number', 'decimal', 'ascending-whole-numbers']
+const PARAMETER_KINDS: readonly ParameterKind[] = ['date', 'guid', 'choice', 'whole-number', 'decimal']
 const COLUMN_KINDS: readonly ColumnKind[] = ['text', 'number', 'date', 'instant', 'identifier', 'flag']
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 const exact = (value: Record<string, unknown>, names: readonly string[]) => Object.keys(value).length === names.length && names.every((name) => Object.hasOwn(value, name))

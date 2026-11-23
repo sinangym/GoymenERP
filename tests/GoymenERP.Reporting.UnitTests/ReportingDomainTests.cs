@@ -18,12 +18,13 @@ public sealed class ReportingDomainTests
         Assert.All(ReportingCatalogV1.Reports.SelectMany(report => report.RequiredPermissions),
             permission => Assert.True(ErpPermissions.IsKnown(permission)));
         Assert.Equal(new[] { "stock-aging", "otif", "recall", "intercompany", "party-aging" }, ReportingCatalogV1.Reports.Select(report => report.Id).ToArray());
-        Assert.Equal(new[] { ErpPermissions.ReportingIntercompanyRead },
+        // ROL-D15: the separate intercompany permission, plus Finance's own reads (the dump shows sub-ledger money).
+        Assert.Equal(new[] { ErpPermissions.ReportingIntercompanyRead, ErpPermissions.FinanceOpenItemsRead, ErpPermissions.FinanceOpenItemsAmountRead },
             ReportingCatalogV1.Find(ReportingCatalogV1.Intercompany)!.RequiredPermissions.ToArray());
     }
 
     [Fact]
-    public void Decided_measures_take_no_parameter_and_the_undecided_stock_buckets_stay_required()
+    public void Decided_measures_take_no_parameter()
     {
         // YOL-D29: OTIF has no tolerance; only the period is asked.
         var otif = ReportingCatalogV1.Find(ReportingCatalogV1.Otif)!;
@@ -32,25 +33,22 @@ public sealed class ReportingDomainTests
         var party = ReportingCatalogV1.Find(ReportingCatalogV1.PartyAging)!;
         Assert.Equal(new[] { "asOf", "direction" }, party.Parameters.Select(parameter => parameter.Id).ToArray());
         Assert.Equal(new[] { ErpPermissions.FinanceOpenItemsRead, ErpPermissions.FinanceOpenItemsAmountRead }, party.RequiredPermissions.ToArray());
+        // YOL-D39: stock aging has fixed buckets from the label root's entry; only the measuring date and narrowing are asked.
         var aging = ReportingCatalogV1.Find(ReportingCatalogV1.StockAging)!;
-        Assert.True(aging.Parameters.Single(parameter => parameter.Id == "bucketDays").Required);
-        Assert.DoesNotContain(aging.Parameters, parameter => parameter.Id == "ageBasis");
-        var missing = Assert.Throws<ReportingException>(() => ReportingParameterSetV1.Parse(aging,
-            new Dictionary<string, string?> { ["asOf"] = "2026-11-22" }));
-        Assert.Equal((422, ReportingProblemCodesV1.ParameterRequired, "bucketDays"), (missing.StatusCode, missing.Code, missing.Field));
+        Assert.Equal(new[] { "asOf", "productId", "locationId" }, aging.Parameters.Select(parameter => parameter.Id).ToArray());
+        var missing = Assert.Throws<ReportingException>(() => ReportingParameterSetV1.Parse(aging, new Dictionary<string, string?>()));
+        Assert.Equal((422, ReportingProblemCodesV1.ParameterRequired, "asOf"), (missing.StatusCode, missing.Code, missing.Field));
     }
 
     [Theory]
     [InlineData("nope", "1", 400, "reporting_parameter_unknown")]
-    [InlineData("bucketDays", "30,30", 422, "reporting_parameter_invalid")]
-    [InlineData("bucketDays", "60,30", 422, "reporting_parameter_invalid")]
-    [InlineData("bucketDays", "0", 422, "reporting_parameter_invalid")]
-    [InlineData("bucketDays", "30, 60", 422, "reporting_parameter_invalid")]
+    [InlineData("asOf", " 2026-11-22", 422, "reporting_parameter_invalid")]
+    [InlineData("locationId", "not-a-guid", 422, "reporting_parameter_invalid")]
     [InlineData("asOf", "2026-13-01", 422, "reporting_parameter_invalid")]
     [InlineData("productId", "00000000-0000-0000-0000-000000000000", 422, "reporting_parameter_invalid")]
     public void A_wrong_parameter_is_refused_with_its_status_and_field(string name, string value, int status, string code)
     {
-        var raw = new Dictionary<string, string?> { ["asOf"] = "2026-11-22", ["bucketDays"] = "30,60" };
+        var raw = new Dictionary<string, string?> { ["asOf"] = "2026-11-22" };
         raw[name] = value;
         var refused = Assert.Throws<ReportingException>(() => ReportingParameterSetV1.Parse(ReportingCatalogV1.Find("stock-aging")!, raw));
         Assert.Equal((status, code, name), (refused.StatusCode, refused.Code, refused.Field));
@@ -66,23 +64,25 @@ public sealed class ReportingDomainTests
             new Dictionary<string, string?> { ["from"] = "2025-01-01", ["to"] = "2026-01-02" })).Field);
         var aging = ReportingParameterSetV1.Parse(ReportingCatalogV1.Find(ReportingCatalogV1.StockAging)!, new Dictionary<string, string?>
         {
-            ["bucketDays"] = "30,60", ["asOf"] = "2026-11-22",
+            ["productId"] = "B0000000-0000-4000-8000-000000000001", ["asOf"] = "2026-11-22",
         });
-        Assert.Equal(new[] { "asOf", "bucketDays" }, aging.Canonical.Keys.ToArray());
-        Assert.Equal(new[] { 30, 60 }, aging.WholeNumbers("bucketDays").ToArray());
+        Assert.Equal(new[] { "asOf", "productId" }, aging.Canonical.Keys.ToArray());
+        Assert.Equal("b0000000-0000-4000-8000-000000000001", aging.Canonical["productId"]);
     }
 
     [Theory]
     [InlineData(0, "0-30")]
     [InlineData(30, "0-30")]
     [InlineData(31, "31-60")]
+    [InlineData(60, "31-60")]
+    [InlineData(61, "61-90")]
     [InlineData(90, "61-90")]
-    [InlineData(91, "91+")]
+    [InlineData(91, "90+")]
     [InlineData(-1, "after-as-of")]
-    public void An_age_falls_into_the_bucket_whose_upper_boundary_it_does_not_exceed(int age, string bucket)
+    public void A_stock_age_falls_into_the_decided_bucket(int age, string bucket)
     {
-        Assert.Equal(bucket, ReportingStockAgingCalculatorV1.Bucket(age, [30, 60, 90]));
-        Assert.Equal(new[] { "0-30", "31-60", "61-90", "91+", "after-as-of" }, ReportingStockAgingCalculatorV1.Buckets([30, 60, 90]).ToArray());
+        Assert.Equal(bucket, ReportingStockAgingCalculatorV1.Bucket(age));
+        Assert.Equal(new[] { "0-30", "31-60", "61-90", "90+", "after-as-of" }, ReportingStockAgingCalculatorV1.Buckets.ToArray());
         Assert.Equal(21, ReportingStockAgingCalculatorV1.AgeDays(new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 22)));
     }
 

@@ -155,13 +155,12 @@ public sealed class ReportingServiceV1(
     {
         var zone = BusinessZone();
         var asOf = set.Date("asOf");
-        var boundaries = set.WholeNumbers("bucketDays");
         var answer = await stockAging.ReadAsync(actor.CompanyId, page, pageSize, set.OptionalGuid("productId"), set.OptionalGuid("locationId"),
             cancellationToken);
         RequireStill(actor);
         RequireFound(answer.Outcome, answer.CompanyId, actor);
         if (answer.Items.Count > pageSize) throw new ReportingException(503, ReportingProblemCodesV1.SourceUnavailable);
-        var bucketKg = ReportingStockAgingCalculatorV1.Buckets(boundaries).ToDictionary(name => name, _ => 0m, StringComparer.Ordinal);
+        var bucketKg = ReportingStockAgingCalculatorV1.Buckets.ToDictionary(name => name, _ => 0m, StringComparer.Ordinal);
         decimal unknownKg = 0, totalKg = 0;
         var rows = new List<IReadOnlyList<string?>>(answer.Items.Count);
         foreach (var item in answer.Items)
@@ -175,7 +174,7 @@ public sealed class ReportingServiceV1(
             {
                 var entryDate = BusinessDate(instant, zone);
                 var age = ReportingStockAgingCalculatorV1.AgeDays(entryDate, asOf);
-                bucket = ReportingStockAgingCalculatorV1.Bucket(age, boundaries);
+                bucket = ReportingStockAgingCalculatorV1.Bucket(age);
                 entryText = DateText(entryDate);
                 ageText = age.ToString(CultureInfo.InvariantCulture);
                 bucketKg[bucket] += kg;
@@ -223,6 +222,7 @@ public sealed class ReportingServiceV1(
         {
             new("pageLines", rows.Count.ToString(CultureInfo.InvariantCulture)),
             new("otifLines", otifLines.ToString(CultureInfo.InvariantCulture)),
+            new("unmeasuredLines", answer.UnmeasuredLines.ToString(CultureInfo.InvariantCulture)),
         };
         if (ReportingOtifCalculatorV1.Percent(otifLines, rows.Count) is { } percent) summary.Add(new("otifPercent", percent));
         return Table(actor, report, set, rows, page, pageSize, answer.HasMore, summary, []);
@@ -307,16 +307,19 @@ public sealed class ReportingServiceV1(
         var answer = await intercompany.ReadAsync(actor.CompanyId, set.Date("from"), set.Date("to"), page, pageSize, cancellationToken);
         RequireStill(actor);
         RequireFound(answer.Outcome, answer.CompanyId, actor);
+        if (answer.WindowFull) throw new ReportingException(503, ReportingProblemCodesV1.SourceWindowFull);
         if (answer.Rows.Count > pageSize || answer.Rows.Any(row => row.CounterpartyCompanyId == actor.CompanyId))
             throw new ReportingException(503, ReportingProblemCodesV1.SourceUnavailable);
-        var rows = answer.Rows.Select(row => (IReadOnlyList<string?>)
-        [
-            DateText(row.DocumentDate), row.DocumentKind, row.DocumentNumber, row.CounterpartyCompanyId.ToString("D"), row.CurrencyCode,
-            Number(OwnerNumber(row.NetAmount)),
-        ]).ToArray();
+        var rows = answer.Rows.Select(IntercompanyRow).ToArray();
         return Table(actor, report, set, rows, page, pageSize, answer.HasMore,
             [new("pageRows", rows.Length.ToString(CultureInfo.InvariantCulture))], []);
     }
+
+    private static IReadOnlyList<string?> IntercompanyRow(ReportingIntercompanySourceRowV1 row) =>
+    [
+        DateText(row.DocumentDate), row.DocumentKind, row.SourceId.ToString("D"), row.PartyId.ToString("D"), row.CounterpartyCompanyId.ToString("D"),
+        row.Direction, row.CurrencyId.ToString("D"), Number(OwnerNumber(row.InitialAmount)), Number(OwnerNumber(row.OutstandingAmount)), row.Status,
+    ];
 
     private ReportingTableV1 Table(Actor actor, ReportingReportDefinitionV1 report, ReportingParameterSetV1 set,
         IReadOnlyList<IReadOnlyList<string?>> rows, int page, int pageSize, bool hasMore, IReadOnlyList<ReportingSummaryItemV1> summary,
@@ -510,16 +513,18 @@ public sealed class ReportingServiceV1(
             sections.Add(new Section("stock-positions", "forbidden", 0, null, null, null, false));
         }
 
-        // Intercompany legs (ROL-D15): only for a holder of the separate permission.
-        if (await HoldsAsync(actor, ReportingPermissionManifestV1.IntercompanyRead, cancellationToken))
+        // Intercompany legs (ROL-D15): only for a holder of the separate permission and of Finance's open-item reads.
+        if (await HoldsAsync(actor, ReportingPermissionManifestV1.IntercompanyRead, cancellationToken)
+            && await HoldsAsync(actor, ErpPermissions.FinanceOpenItemsRead, cancellationToken)
+            && await HoldsAsync(actor, ErpPermissions.FinanceOpenItemsAmountRead, cancellationToken))
         {
             var answer = await intercompany.ReadAsync(actor.CompanyId, from, to, 1, ReportingCatalogV1.MaximumExportPageSize, cancellationToken);
             RequireStill(actor);
-            if (answer.Outcome == ReportingSourceOutcomeV1.Found && answer.CompanyId == actor.CompanyId)
+            if (answer.Outcome == ReportingSourceOutcomeV1.Found && answer.CompanyId == actor.CompanyId && !answer.WindowFull
+                && answer.Rows.All(row => row.CounterpartyCompanyId != actor.CompanyId))
             {
                 var report = ReportingCatalogV1.Find(ReportingCatalogV1.Intercompany)!;
-                var rows = answer.Rows.Select(row => (IReadOnlyList<string?>)[DateText(row.DocumentDate), row.DocumentKind, row.DocumentNumber,
-                    row.CounterpartyCompanyId.ToString("D"), row.CurrencyCode, row.NetAmount]).ToArray();
+                var rows = answer.Rows.Select(IntercompanyRow).ToArray();
                 AddSection(sections, files, "intercompany", report.Columns.Select(column => new ReportingSheetColumnV1(column.Id, column.Kind)).ToArray(),
                     rows, null, !answer.HasMore);
             }

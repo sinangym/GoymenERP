@@ -485,6 +485,9 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<Guid?>("GroupCompanyId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
@@ -527,6 +530,10 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("Code")
                         .IsUnique();
+
+                    b.HasIndex("GroupCompanyId")
+                        .HasDatabaseName("IX_Parties_GroupCompanyId")
+                        .HasFilter("[GroupCompanyId] IS NOT NULL");
 
                     b.HasIndex("IsActive");
 
@@ -1218,6 +1225,11 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Parties.Party", b =>
                 {
+                    b.HasOne("GoymenERP.Modules.Counterparty.Infrastructure.Persistence.CounterpartyDbContext+OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("GroupCompanyId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("GoymenERP.Modules.Counterparty.Domain.Parties.Party", null)
                         .WithMany()
                         .HasForeignKey("MergedIntoPartyId")

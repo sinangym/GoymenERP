@@ -307,3 +307,17 @@ and its add/deactivate controls only with the manage control; the API re-checks 
 envelopes and the CARI-ACCEPTANCE-006 profile keep both controls closed/outside. The screen pre-checks only the ISO 13616
 shape and check digits; the country length table stays the server's.
 Real SQL facts are written and NOT_RUN locally.
+## Grup şirketi bağlantısı (WP14, YOL-D31)
+
+`Party.GroupCompanyId` cari kartının hangi Göymen grup şirketi olduğunu tutar (grup geneli; cari gibi bütün şirketlerde aynı).
+Grup içi işlem dökümü grup şirketini **yalnız** bu bağlantıyla tanır; VKN eşleşmesi grup şirketi saymaz.
+
+- `GET /api/v1/counterparties/{partyId}/group-company-link` (`counterparty.parties.read`): bağlantı, PARTY sürümü, izin bilgisi.
+- `PUT …/group-company-link` (`counterparty.parties.group-company-link.update` + read; kayıtlı, **kimseye verilmedi**):
+  `{ expectedVersion, groupCompanyId | null }`; tek Idempotency-Key, PARTY sürüm çiti, gerçek değişiklikte bir audit olayı
+  (`counterparty.party.group-company-link.changed.v1`), aynı değer no-op. Hedef Organization'ın şirket yaşam döngüsü
+  okumasında etkin bir şirket değilse 400; dizin bağlı değilse 503.
+- Okuma portu `ICounterpartyGroupCompanyLinkReadPortV1` bütün bağlantıları verir (yetki taşımaz, yazmaz).
+- Migration `AddPartyGroupCompanyLink`: nullable kolon, filtreli indeks, `organization.Companies`'e Restrict FK. Down guard
+  **52271** bağlantılı cari varken reddeder (forward fix); bağlantı yoksa geri alınır. Party yazma koruması bu komutta yalnız
+  `GroupCompanyId`, `Version`, `UpdatedAtUtc`, `RowVersion` değişimine izin verir.

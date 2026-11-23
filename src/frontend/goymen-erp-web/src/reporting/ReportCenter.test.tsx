@@ -22,13 +22,12 @@ const agingDefinition = {
   id: 'stock-aging', ownerModule: 'inventory', canExport: true,
   parameters: [
     { id: 'asOf', kind: 'date', required: true, choices: [], minimum: null, maximum: null },
-    { id: 'bucketDays', kind: 'ascending-whole-numbers', required: true, choices: [], minimum: '1', maximum: '36500' },
   ],
   columns: [{ id: 'labelCode', kind: 'text' }, { id: 'labelId', kind: 'identifier' }, { id: 'physicalKg', kind: 'number' }, { id: 'bucket', kind: 'text' }],
 }
 const catalog = (reports: unknown[], canBuildAuditorPackage = false) => ({ companyId: COMPANY_A, reports, canBuildAuditorPackage })
 const table = {
-  companyId: COMPANY_A, reportId: 'stock-aging', parameters: { asOf: '2026-11-22', bucketDays: '30,60' },
+  companyId: COMPANY_A, reportId: 'stock-aging', parameters: { asOf: '2026-11-22' },
   columns: ['labelCode', 'labelId', 'physicalKg', 'bucket'], rows: [['SENTETIK-ETK-1', LABEL, '1250.5', '0-30']], page: 1, pageSize: 50, hasMore: false,
   summary: [{ id: 'bucketKg:0-30', value: '1250.5' }, { id: 'pageTotalKg', value: '1250.5' }], sourceStatuses: [], generatedAtUtc: '2026-11-22T09:00:00Z',
 }
@@ -76,18 +75,16 @@ describe('report centre', () => {
     const user = userEvent.setup()
     await screen.findByRole('heading', { level: 1, name: T.reports['stock-aging'] })
     await user.type(screen.getByLabelText(/Ölçüm tarihi/), '2026-11-22')
-    await user.type(screen.getByLabelText(/Yaş aralığı sınırları/), '30,60')
     await user.click(screen.getByRole('button', { name: T.run }))
     expect(await screen.findByText('SENTETIK-ETK-1')).toBeTruthy()
     expect(screen.getByText(T.pageOnly)).toBeTruthy()
     expect(screen.getByText(`${T.bucketPrefix}0-30`)).toBeTruthy()
     const run = calls.find((call) => call.url.includes('/reporting/reports/stock-aging?'))!
     expect(run.url).toContain('asOf=2026-11-22')
-    expect(run.url).toContain('bucketDays=30%2C60')
     await user.click(screen.getByRole('button', { name: T.exportCsv }))
     expect(await screen.findByText(T.exported)).toBeTruthy()
     const exported = calls.find((call) => call.url.includes('/exports'))!
-    expect(exported.body).toEqual({ format: 'csv', parameters: { asOf: '2026-11-22', bucketDays: '30,60' }, page: 1, pageSize: 50,
+    expect(exported.body).toEqual({ format: 'csv', parameters: { asOf: '2026-11-22' }, page: 1, pageSize: 50,
       columns: ['labelCode', 'labelId', 'physicalKg', 'bucket'] })
     expect(createObjectURL).toHaveBeenCalledOnce()
   })

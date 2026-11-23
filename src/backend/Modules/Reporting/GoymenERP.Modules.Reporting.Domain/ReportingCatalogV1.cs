@@ -10,7 +10,6 @@ public enum ReportingParameterKindV1
     Choice = 3,
     WholeNumber = 4,
     Decimal = 5,
-    AscendingWholeNumbers = 6,
 }
 
 /// <summary>The kind of one column's cells (all cells are invariant text on the wire; numbers are lossless).</summary>
@@ -50,8 +49,8 @@ public sealed record ReportingReportDefinitionV1(
 /// WP14: the closed report catalogue. Report ids, parameter ids and column ids are wire names (the screen holds the Turkish
 /// labels). Measures come from the decisions — OTIF (YOL-D29: on or before the promised day AND the whole quantity, no
 /// tolerance), receivable/payable aging (YOL-D30: from the due date, 0-30/31-60/61-90/90+, not-yet-due apart), group company
-/// (YOL-D31: the party ↔ company link on the party card). A measure no decision defines stays a required parameter: the stock
-/// aging buckets (NEEDS-SINAN).
+/// (YOL-D31: the party ↔ company link on the party card). Stock aging (YOL-D39) uses the same fixed buckets from the label root's
+/// first entry. A measure no decision defines would stay a required parameter.
 /// </summary>
 public static class ReportingCatalogV1
 {
@@ -70,8 +69,6 @@ public static class ReportingCatalogV1
     public const int MaximumPageSize = 500;
     public const int DefaultPageSize = 50;
     public const int MaximumExportPageSize = 5000;
-    public const int MaximumBucketBoundaries = 10;
-    public const int MaximumBucketDays = 36500;
     public const int MaximumPeriodDays = 366;
 
     private static ReportingParameterDefinitionV1 Date(string id) => new(id, ReportingParameterKindV1.Date, true, [], null, null);
@@ -83,7 +80,6 @@ public static class ReportingCatalogV1
         new(StockAging, "inventory", [ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead],
         [
             Date("asOf"),
-            new("bucketDays", ReportingParameterKindV1.AscendingWholeNumbers, true, [], 1, MaximumBucketDays),
             new("productId", ReportingParameterKindV1.Guid, false, [], null, null),
             new("locationId", ReportingParameterKindV1.Guid, false, [], null, null),
         ],
@@ -119,14 +115,17 @@ public static class ReportingCatalogV1
             Col("partyCode", ReportingColumnKindV1.Text), Col("partyName", ReportingColumnKindV1.Text),
             Col("sourceKind", ReportingColumnKindV1.Text), Col("sourceId", ReportingColumnKindV1.Identifier),
         ]),
-        new(Intercompany, "accounting", [ReportingPermissionManifestV1.IntercompanyRead],
+        new(Intercompany, "finance", [ReportingPermissionManifestV1.IntercompanyRead, ErpPermissions.FinanceOpenItemsRead,
+            ErpPermissions.FinanceOpenItemsAmountRead],
         [
             Date("from"), Date("to"),
         ],
         [
             Col("documentDate", ReportingColumnKindV1.Date), Col("documentKind", ReportingColumnKindV1.Text),
-            Col("documentNumber", ReportingColumnKindV1.Text), Col("counterpartyCompanyId", ReportingColumnKindV1.Identifier),
-            Col("currencyCode", ReportingColumnKindV1.Text), Col("netAmount", ReportingColumnKindV1.Number),
+            Col("sourceId", ReportingColumnKindV1.Identifier), Col("partyId", ReportingColumnKindV1.Identifier),
+            Col("counterpartyCompanyId", ReportingColumnKindV1.Identifier), Col("direction", ReportingColumnKindV1.Text),
+            Col("currencyId", ReportingColumnKindV1.Identifier), Col("initialAmount", ReportingColumnKindV1.Number),
+            Col("outstandingAmount", ReportingColumnKindV1.Number), Col("status", ReportingColumnKindV1.Text),
         ]),
         new(PartyAging, "finance", [ErpPermissions.FinanceOpenItemsRead, ErpPermissions.FinanceOpenItemsAmountRead],
         [

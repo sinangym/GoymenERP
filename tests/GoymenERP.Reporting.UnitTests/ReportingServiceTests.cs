@@ -19,7 +19,7 @@ public sealed class ReportingServiceTests
 
     private static Dictionary<string, string?> AgingParameters() => new()
     {
-        ["asOf"] = "2026-11-22", ["bucketDays"] = "30,60",
+        ["asOf"] = "2026-11-22",
     };
 
     private static ReportingHarness WithStock()
@@ -51,10 +51,13 @@ public sealed class ReportingServiceTests
         Assert.All(inventory.Reports, report => Assert.True(report.CanExport));
 
         // ROL-D15: the intercompany dump appears only for its own separate permission.
-        var intercompany = await harness.Service(Reader, ErpPermissions.ReportingIntercompanyRead).ListReportsAsync();
-        Assert.Equal(new[] { "intercompany" }, intercompany.Reports.Select(report => report.Id).ToArray());
+        var financeOnly = await harness.Service(Reader, ErpPermissions.FinanceOpenItemsRead, ErpPermissions.FinanceOpenItemsAmountRead).ListReportsAsync();
+        Assert.Equal(new[] { "party-aging" }, financeOnly.Reports.Select(report => report.Id).ToArray());
+        var intercompany = await harness.Service(Reader, ErpPermissions.ReportingIntercompanyRead, ErpPermissions.FinanceOpenItemsRead,
+            ErpPermissions.FinanceOpenItemsAmountRead).ListReportsAsync();
+        Assert.Equal(new[] { "intercompany", "party-aging" }, intercompany.Reports.Select(report => report.Id).ToArray());
         Assert.False(intercompany.Reports[0].CanExport);
-        Assert.Equal("ascending-whole-numbers", inventory.Reports[0].Parameters.Single(parameter => parameter.Id == "bucketDays").Kind);
+        Assert.Equal("date", inventory.Reports[0].Parameters.Single(parameter => parameter.Id == "asOf").Kind);
     }
 
     [Fact]
@@ -66,11 +69,11 @@ public sealed class ReportingServiceTests
         Assert.Equal(ReportingHarness.Company, table.CompanyId);
         Assert.Equal(new string?[] { "ETK-1", Label.ToString("D"), Product.ToString("D"), Location.ToString("D"), "D-1", null, "1250.5",
             "2026-11-01", "false", "21", "0-30" }, table.Rows[0].ToArray());
-        Assert.Equal(new string?[] { "2026-09-01", "true", "82", "61+" }, table.Rows[1].Skip(7).ToArray());
+        Assert.Equal(new string?[] { "2026-09-01", "true", "82", "61-90" }, table.Rows[1].Skip(7).ToArray());
         // An entry the owner could not name stays unknown, never guessed.
         Assert.Equal(new string?[] { null, "false", null, null }, table.Rows[2].Skip(7).ToArray());
         Assert.Contains(table.Summary, item => item is { Id: "bucketKg:0-30", Value: "1250.5" });
-        Assert.Contains(table.Summary, item => item is { Id: "bucketKg:61+", Value: "300" });
+        Assert.Contains(table.Summary, item => item is { Id: "bucketKg:61-90", Value: "300" });
         Assert.Contains(table.Summary, item => item is { Id: "unknownAgeKg", Value: "50" });
         Assert.Contains(table.Summary, item => item is { Id: "pageTotalKg", Value: "1600.5" });
     }
@@ -115,12 +118,13 @@ public sealed class ReportingServiceTests
     }
 
     [Fact]
-    public async Task Otif_and_intercompany_are_not_connected_and_never_answer_an_empty_report()
+    public async Task A_source_the_host_did_not_connect_answers_not_connected_and_never_an_empty_report()
     {
         var harness = new ReportingHarness();
         Assert.Equal((503, ReportingProblemCodesV1.SourceNotConnected), await Code(() => harness.Service(Reader, ErpPermissions.SalesReportsRead)
             .RunAsync("otif", new Dictionary<string, string?> { ["from"] = "2026-11-01", ["to"] = "2026-11-30" }, null, null)));
-        Assert.Equal((503, ReportingProblemCodesV1.SourceNotConnected), await Code(() => harness.Service(Reader, ErpPermissions.ReportingIntercompanyRead)
+        Assert.Equal((503, ReportingProblemCodesV1.SourceNotConnected), await Code(() => harness.Service(Reader, ErpPermissions.ReportingIntercompanyRead,
+                ErpPermissions.FinanceOpenItemsRead, ErpPermissions.FinanceOpenItemsAmountRead)
             .RunAsync("intercompany", new Dictionary<string, string?> { ["from"] = "2026-11-01", ["to"] = "2026-11-30" }, null, null)));
     }
 
@@ -158,14 +162,14 @@ public sealed class ReportingServiceTests
 
         var file = await harness.Service(Reader, [.. InventoryRead, ErpPermissions.ReportingExport]).ExportAsync("stock-aging", request);
         var text = Encoding.UTF8.GetString(file.Content, 3, file.Content.Length - 3);
-        Assert.Equal("Etiket,Fiziksel kg,Yaş aralığı\r\nETK-1,1250.5,0-30\r\n'=ETK-2,300,61+\r\nETK-3,50,\r\n", text);
+        Assert.Equal("Etiket,Fiziksel kg,Yaş aralığı\r\nETK-1,1250.5,0-30\r\n'=ETK-2,300,61-90\r\nETK-3,50,\r\n", text);
         Assert.Equal(3, file.RowCount);
         await using var database = harness.Database();
         var record = Assert.Single(await database.Exports.ToListAsync());
         Assert.Equal((ReportingHarness.Company, Reader, "stock-aging", "csv", 1, 100, 3, file.ContentSha256, file.ExportId, "corr-test"),
             (record.CompanyId, record.ActorUserId, record.ReportId, record.Format, record.Page, record.PageSize, record.RowCount, record.ContentSha256,
                 record.Id, record.CorrelationId));
-        Assert.Equal("""{"asOf":"2026-11-22","bucketDays":"30,60"}""", record.ParametersJson);
+        Assert.Equal("""{"asOf":"2026-11-22"}""", record.ParametersJson);
         var audit = Assert.Single(harness.Audit.Events);
         Assert.Equal(("reporting.report.exported.v1", ReportingHarness.Company, ErpPermissions.ReportingExport, file.ExportId.ToString("D")),
             (audit.EventType, audit.CompanyId, audit.PermissionCode, audit.EntityId));
@@ -217,12 +221,12 @@ public sealed class ReportingServiceTests
     public async Task A_saved_view_is_personal_replays_its_key_and_refuses_a_reused_key_with_another_body()
     {
         var harness = new ReportingHarness();
-        var request = new ReportingSavedViewRequestV1("stock-aging", " 90 gün ", new Dictionary<string, string?> { ["bucketDays"] = "30,60,90" },
+        var request = new ReportingSavedViewRequestV1("stock-aging", " 90 gün ", new Dictionary<string, string?> { ["locationId"] = "10000000-0000-4000-8000-000000000001" },
             ["labelCode", "bucket"], null);
         var created = await harness.Service(Reader, InventoryRead).CreateSavedViewAsync(request, Meta("k1"));
         Assert.False(created.IsReplay);
         Assert.Equal(("90 gün", "1", true), (created.View.Name, created.View.Version, created.View.IsActive));
-        Assert.Equal("30,60,90", created.View.Parameters["bucketDays"]);
+        Assert.Equal("10000000-0000-4000-8000-000000000001", created.View.Parameters["locationId"]);
         var replay = await harness.Service(Reader, InventoryRead).CreateSavedViewAsync(request, Meta("k1", "corr-2"));
         Assert.Equal((true, "corr-1", created.View.Id), (replay.IsReplay, replay.CorrelationId, replay.View.Id));
         Assert.Equal((409, ReportingProblemCodesV1.SameKeyPayloadMismatch), await Code(() =>

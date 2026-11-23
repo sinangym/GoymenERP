@@ -29,7 +29,8 @@ internal sealed partial class CounterpartyCommandService(
     ILogger<CounterpartyCommandService> logger,
     TimeProvider timeProvider,
     ISettingsEInvoiceScenarioPolicyProviderV1? eInvoiceScenarioPolicy = null,
-    IUserDirectoryReadPortV1? userDirectory = null)
+    IUserDirectoryReadPortV1? userDirectory = null,
+    ICompanyLifecycleReadPortV1? companyLifecycle = null)
     : ICounterpartyCommandService, ICounterpartyContactInformationService
 {
     private const int CommandExecutionSchemaVersion = 1;

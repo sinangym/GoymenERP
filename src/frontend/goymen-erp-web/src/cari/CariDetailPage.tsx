@@ -37,6 +37,7 @@ import { AccountStatusControl, AccountStatusRecoveryNotice } from './AccountStat
 import { CariCompanyRelationships } from './CariCompanyRelationships'
 import { CariTaxIdentityPanel } from './CariTaxIdentityPanel'
 import { CariTradeNamePanel } from './CariTradeNamePanel'
+import { CariGroupCompanyLinkPanel } from './CariGroupCompanyLinkPanel'
 import { CariLegalNamePanel } from './CariLegalNamePanel'
 import { CariMergePanel } from './CariMergePanel'
 import { CariIdentityHistoryPanel, IDENTITY_HISTORY_QUERY_KIND } from './CariIdentityHistoryPanel'
@@ -439,6 +440,15 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
             namespace={namespace}
             contractContext={contractContext}
             onChanged={onNamesChanged}
+          />
+        ) : null}
+        {/* YOL-D31 (WP14): which Göymen group company this party is — the intercompany report's only definition. */}
+        {namespace !== null && activeCompanyId !== null ? (
+          <CariGroupCompanyLinkPanel
+            partyId={detail.id}
+            companyId={activeCompanyId}
+            namespace={namespace}
+            contractContext={contractContext}
           />
         ) : null}
         {namespace !== null && activeCompanyId !== null ? (

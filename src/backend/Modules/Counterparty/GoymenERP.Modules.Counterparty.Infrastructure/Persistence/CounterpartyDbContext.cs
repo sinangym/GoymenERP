@@ -170,6 +170,14 @@ public sealed partial class CounterpartyDbContext(
             .IsRequired();
         entity.Property(x => x.LegalName).HasMaxLength(250).IsRequired();
         entity.Property(x => x.TradeName).HasMaxLength(200);
+        // YOL-D31: the group company a party IS (WP14 intercompany report); restrict, never cascade.
+        entity.HasIndex(x => x.GroupCompanyId)
+            .HasFilter("[GroupCompanyId] IS NOT NULL")
+            .HasDatabaseName("IX_Parties_GroupCompanyId");
+        entity.HasOne<OrganizationCompanyReference>()
+            .WithMany()
+            .HasForeignKey(x => x.GroupCompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
         entity.Property(x => x.TaxIdentityNumber).HasMaxLength(11).IsUnicode(false);
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();
@@ -671,6 +679,7 @@ public sealed partial class CounterpartyDbContext(
             if (entry.State == EntityState.Modified
                 && !IsTaxIdentityOnlyPartyChange(entry)
                 && !IsTradeNameOnlyPartyChange(entry)
+                && !IsGroupCompanyOnlyPartyChange(entry)
                 && !IsLegalNameOnlyPartyChange(entry)
                 && !IsMergedPartyChange(entry)
                 && !IsMergeSurvivorFence(entry))
@@ -1064,6 +1073,25 @@ public sealed partial class CounterpartyDbContext(
             .ToArray();
         return modified.Contains(nameof(Party.TaxIdentityNumber), StringComparer.Ordinal)
             && modified.All(name => MutableTaxIdentityPartyProperties.Contains(name, StringComparer.Ordinal));
+    }
+
+    /// <summary>YOL-D31 (WP14): the group-company link edit touches only these; no name or tax identity rides along.</summary>
+    private static readonly string[] MutableGroupCompanyPartyProperties =
+    [
+        nameof(Party.GroupCompanyId),
+        nameof(Party.Version),
+        nameof(Party.UpdatedAtUtc),
+        nameof(Party.RowVersion),
+    ];
+
+    private static bool IsGroupCompanyOnlyPartyChange(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<Party> entry)
+    {
+        var modified = entry.Properties.Where(property => property.IsModified)
+            .Select(property => property.Metadata.Name)
+            .ToArray();
+        return modified.Contains(nameof(Party.GroupCompanyId), StringComparer.Ordinal)
+            && modified.All(name => MutableGroupCompanyPartyProperties.Contains(name, StringComparer.Ordinal));
     }
 
     private static bool IsTradeNameOnlyPartyChange(
