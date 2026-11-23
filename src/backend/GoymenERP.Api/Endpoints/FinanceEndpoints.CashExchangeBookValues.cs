@@ -37,6 +37,7 @@ public static partial class FinanceEndpoints
                 return http.Request.HasJsonContentType() ? Results.Problem(statusCode: 400) : Results.StatusCode(415);
             return BookValueResult(http, await service.ProposeAsync(Context(company, user, correlation), new(key), body, ct));
         }).WithName("ProposeFinanceCashExchangeBookValueV1").WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK)
             .Accepts<ProposeCashExchangeBookValueV1>("application/json").Produces<CashExchangeBookValueCommandResultV1>()
             .Produces<CashExchangeBookValueCommandResultV1>(409).Produces<CashExchangeBookValueCommandResultV1>(422)
             .ProducesErpAuthenticatedProblems().ProducesErpBadRequest().AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody()
@@ -50,6 +51,7 @@ public static partial class FinanceEndpoints
                 return http.Request.HasJsonContentType() ? Results.Problem(statusCode: 400) : Results.StatusCode(415);
             return BookValueResult(http, await service.DecideAsync(Context(company, user, correlation), new(key), body, ct));
         }).WithName("DecideFinanceCashExchangeBookValueV1").WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK)
             .Accepts<DecideCashExchangeBookValueV1>("application/json").Produces<CashExchangeBookValueCommandResultV1>()
             .Produces<CashExchangeBookValueCommandResultV1>(409).Produces<CashExchangeBookValueCommandResultV1>(422)
             .ProducesErpAuthenticatedProblems().ProducesErpBadRequest().AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody()

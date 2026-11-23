@@ -97,6 +97,18 @@ const STATUS = new Set<AllocationStatus>(['Active', 'Consumed', 'Released'])
 const record = (value: unknown): Record<string, unknown> | null =>
   typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null
 
+/** Exact key set: `keys` (sorted) must all be present, `optional` may be absent, nothing else is accepted. */
+const exactKeys = (source: Record<string, unknown>, keys: readonly string[], optional: readonly string[] = []) => {
+  const actual = Object.keys(source).filter((key) => !optional.includes(key)).sort()
+  return actual.length === keys.length && actual.every((key, index) => key === keys[index])
+}
+/** `InventoryPhysicalAllocationViewV1`: required members (sorted) and the members the server may omit. */
+const ALLOCATION_KEYS = ['allocatedKg', 'allocationId', 'companyId', 'createdAtUtc', 'demandId', 'demandKind', 'demandLineId',
+  'demandProductVersion', 'labelId', 'productId', 'reason', 'remainingKg', 'reservedUntilUtc', 'status', 'updatedAtUtc', 'version']
+const ALLOCATION_OPTIONAL_KEYS = ['allocatedPieces', 'isSubstitute', 'remainingPieces']
+const ALLOCATION_PAGE_KEYS = ['items', 'searchWindowFull']
+const ALLOCATION_ITEM_KEYS = ['allocation', 'labelVersion']
+
 const text = (value: unknown): value is string => typeof value === 'string' && value.trim() === value && value.length > 0
 const guid = (value: unknown): value is string => text(value) && GUID.test(value) && value.toLowerCase() !== NIL_GUID
 const version = (value: unknown): value is string => text(value) && VERSION.test(value)
@@ -119,7 +131,8 @@ export function parseAllocationPieceCount(value: string): number | null {
 
 export function decodePhysicalAllocation(value: unknown, expected: AllocationScope): PhysicalAllocation | null {
   const source = record(value)
-  if (source === null || !guid(source.allocationId) || !guid(source.companyId) || !version(source.version)
+  if (source === null || !exactKeys(source, ALLOCATION_KEYS, ALLOCATION_OPTIONAL_KEYS)
+    || !guid(source.allocationId) || !guid(source.companyId) || !version(source.version)
     || typeof source.status !== 'string' || !STATUS.has(source.status as AllocationStatus)
     || !guid(source.labelId) || !guid(source.productId) || source.demandKind !== 'sales.order-line'
     || !guid(source.demandId) || !guid(source.demandLineId) || !text(source.demandProductVersion)
@@ -142,12 +155,12 @@ export function decodePhysicalAllocation(value: unknown, expected: AllocationSco
 
 export function decodePhysicalAllocationPage(value: unknown, expected: AllocationScope): PhysicalAllocationPage | null {
   const source = record(value)
-  if (source === null || !Array.isArray(source.items) || typeof source.searchWindowFull !== 'boolean') return null
+  if (source === null || !exactKeys(source, ALLOCATION_PAGE_KEYS) || !Array.isArray(source.items) || typeof source.searchWindowFull !== 'boolean') return null
   const items: PhysicalAllocationItem[] = []
   const ids = new Set<string>()
   for (const raw of source.items) {
     const item = record(raw)
-    const allocation = item === null ? null : decodePhysicalAllocation(item.allocation, expected)
+    const allocation = item === null || !exactKeys(item, ALLOCATION_ITEM_KEYS) ? null : decodePhysicalAllocation(item.allocation, expected)
     if (item === null || allocation === null || !version(item.labelVersion) || ids.has(allocation.allocationId)) return null
     ids.add(allocation.allocationId)
     items.push({ allocation, labelVersion: item.labelVersion })
@@ -223,10 +236,6 @@ const SUGGESTION_KEYS = ['isSubstitute', 'kind', 'labelCode', 'labelId', 'labelV
 const POSITIVE_DECIMAL = (value: unknown): value is string => decimal(value) && !/^0(?:\.0+)?$/.test(value)
 const optionalText = (value: unknown): value is string | null => value === null || text(value)
 const SUGGESTION_OPTIONAL_KEYS = ['unreservedPieces']
-const exactKeys = (source: Record<string, unknown>, keys: readonly string[], optional: readonly string[] = []) => {
-  const actual = Object.keys(source).filter((key) => !optional.includes(key)).sort()
-  return actual.length === keys.length && actual.every((key, index) => key === keys[index])
-}
 
 function decodeSuggestion(value: unknown, expected: AllocationScope, mode: SimilarProductMode): AllocationSuggestion | null {
   const source = record(value)

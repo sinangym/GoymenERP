@@ -35,7 +35,7 @@ export async function sendUserManagement(company: string, id: string | null, act
     const response = await fetch(`${API_BASE}${path}`, { method: 'POST', headers: { ...headers(company), 'Content-Type': 'application/json', 'Idempotency-Key': key }, credentials: 'same-origin', cache: 'no-store', body: JSON.stringify(body) })
     let raw: unknown = null; try { raw = await response.json() } catch { /* success without receipt is unknown */ }
     if (response.status === (id === null ? 201 : 200)) {
-      if (!record(raw) || !isWellFormedId(raw.id as string) || !accessGrantVersion(raw.version) || !['Active', 'Inactive'].includes(raw.status as string) || raw.roleAssignmentId !== null
+      if (!record(raw) || Object.keys(raw).sort().join(',') !== 'id,roleAssignmentId,status,version' || !isWellFormedId(raw.id as string) || !accessGrantVersion(raw.version) || !['Active', 'Inactive'].includes(raw.status as string) || raw.roleAssignmentId !== null
         || (id !== null && raw.id !== id)) return { type: 'unknown', reason: 'unexpected' }
       return { type: 'applied', data: raw as unknown as AccessGrantOutcome, replayed: response.headers.get('Idempotency-Replayed') === 'true' }
     }

@@ -60,8 +60,9 @@ function Workspace({ companyId, actorId, canPrepare, canApprove, namespace, gene
     if (!live.current) return
     busy.current = false; setSending(false)
     if (answer.kind === 'unknown') { setMessage(T.unknown); return }
-    if (answer.kind === 'refused' && retryingUnknown) {
-      // A refusal before the owner reads its receipt does not settle the first send.
+    if (answer.kind === 'refused' && retryingUnknown && answer.status !== 409 && answer.status !== 422) {
+      // A code-less refusal before the owner reads its receipt does not settle the first send. A decoded 409/422 is
+      // the owner's answer for this key (a recorded first send would have replayed), so it falls through and releases.
       setMessage(T.unknown)
       if (answer.status === 401 || answer.status === 403) { boundary.report(answer.status, captured); setAuthorityStatus(answer.status) }
       return

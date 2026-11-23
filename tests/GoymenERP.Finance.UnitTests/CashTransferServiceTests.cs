@@ -63,6 +63,54 @@ public sealed class CashTransferServiceTests
     }
 
     [Fact]
+    public async Task A_transfer_out_of_a_cash_account_whose_passivation_waits_is_refused_and_allowed_after_rejection()
+    {
+        await using var run = await Run.StartAsync();
+        async Task SetChangeAsync(int status)
+        {
+            await using var context = run.Context();
+            var cash = await context.CashAccounts.SingleAsync(candidate => candidate.Id == CashLira);
+            cash.ChangeKind = 1;
+            cash.ChangeStatus = status;
+            if (status == 1)
+            {
+                cash.ChangeProposedBy = "cash-maker";
+                cash.ChangeProposedAtUtc = DateTimeOffset.UtcNow;
+            }
+            cash.ChangeDecidedBy = status == 1 ? null : "cash-checker";
+            cash.ChangeDecidedAtUtc = status == 1 ? null : DateTimeOffset.UtcNow;
+            cash.ChangeRejectionReason = status == 3 ? "SENTETIK gerekce" : null;
+            cash.Version = checked(cash.Version + 1);
+            cash.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            await context.SaveChangesAsync();
+        }
+
+        await SetChangeAsync(1);
+        var outOfCash = new CommitCashTransferRequest(SameCurrency(amount: "10.00", source: CashLira,
+            sourceKind: CashTransferAccountKind.Cash, target: Bank, targetKind: CashTransferAccountKind.Bank), true);
+        await using (var scope = run.Scope("treasurer", new AllowAll(), Sufficient()))
+        {
+            // FNS-D50: the pending passivation refuses the transfer out of the cash account.
+            var refused = await scope.Service.CommitAsync(scope.Context, Key("out-1"), outOfCash, CancellationToken.None);
+            Assert.Equal((CommandOutcome.ValidationFailed, "sourceAccountId", CashTransferService.SourcePassivationPendingCode),
+                (refused.Outcome, Assert.Single(refused.Issues).Field, refused.Issues[0].Code));
+            // Receiving into that account is not a payment from it.
+            var into = await scope.Service.CommitAsync(scope.Context, Key("in-1"),
+                new CommitCashTransferRequest(SameCurrency(amount: "10.00"), true), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, into.Outcome);
+        }
+
+        await using (var verify = run.Context()) Assert.Equal(1, await verify.CashTransfers.CountAsync());
+
+        await SetChangeAsync(3);
+        await using (var scope = run.Scope("treasurer", new AllowAll(), Sufficient()))
+        {
+            var committed = await scope.Service.CommitAsync(scope.Context, Key("out-1"), outOfCash, CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, committed.Outcome);
+        }
+    }
+
+    [Fact]
     public async Task Same_key_with_another_payload_or_another_actor_is_an_idempotency_conflict()
     {
         await using var run = await Run.StartAsync();

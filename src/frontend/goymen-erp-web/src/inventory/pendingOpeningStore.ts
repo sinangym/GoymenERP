@@ -26,7 +26,8 @@ export function lastOpeningCountKey(sessionEpoch: number, actorId: string | null
 function pending(value: unknown): PendingOpeningCount | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
   const candidate = value as Partial<PendingOpeningCount>
-  return typeof candidate.actorId === 'string' && candidate.actorId.length > 0 &&
+  // Exactly the four members checked below: a stored value with any other key is not this store's attempt.
+  return Object.keys(candidate).length === 4 && typeof candidate.actorId === 'string' && candidate.actorId.length > 0 &&
     typeof candidate.companyId === 'string' && GUID.test(candidate.companyId) &&
     typeof candidate.idempotencyKey === 'string' && GUID.test(candidate.idempotencyKey) &&
     isOpeningCountRequest(candidate.payload)
@@ -37,7 +38,7 @@ function pending(value: unknown): PendingOpeningCount | null {
 function last(value: unknown): LastOpeningCount | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
   const candidate = value as Partial<LastOpeningCount>
-  return typeof candidate.actorId === 'string' && candidate.actorId.length > 0 &&
+  return Object.keys(candidate).length === 3 && typeof candidate.actorId === 'string' && candidate.actorId.length > 0 &&
     typeof candidate.companyId === 'string' && GUID.test(candidate.companyId) &&
     typeof candidate.countId === 'string' && GUID.test(candidate.countId)
     ? candidate as LastOpeningCount

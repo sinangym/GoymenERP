@@ -123,12 +123,63 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.False((await StageReceiptReversalAsync(run, seed, request, metadata, commit: true)).IsReplay);
     }
 
+    [SqlServerFact]
+    public async Task Receipt_reversal_refuses_a_partial_release_of_a_piece_holding_allocation_without_effects()
+    {
+        await using var run = await Run.StartAsync();
+        var seed = await SeedReceiptReversalAsync(run, pieces: 4, heldPieces: 3);
+        // KLN-D120: a partial kilogram release of a piece-holding hold needs its pieces; without them, or with pieces that
+        // would leave no piece with the remaining kilograms, it is refused and nothing is written.
+        foreach (var pieces in new int?[] { null, 3 })
+        {
+            var refused = await Assert.ThrowsAsync<InventoryGoodsReceiptReversalException>(() => StageReceiptReversalAsync(run, seed,
+                ReceiptReversalRequest(seed.Receipt) with { PieceCount = pieces }, SupplierReturnMetadata(run), commit: true));
+            Assert.Equal((422, InventoryGoodsReceiptReversalCodesV1.PartialQuantityNotRepresentable), (refused.Status, refused.Code));
+        }
+
+        await using var context = run.Context(CompanyA);
+        Assert.Empty(await context.GoodsReceiptReversals.ToListAsync());
+        var physical = await context.Allocations.AsNoTracking().SingleAsync(row => row.Id == seed.PhysicalId);
+        Assert.Equal((3m, 3m, 3, 3, 1L), (physical.AllocatedKg, physical.RemainingKg, physical.AllocatedPieces, physical.RemainingPieces,
+            physical.Version));
+    }
+
+    [SqlServerFact]
+    public async Task Receipt_reversal_releases_part_of_a_piece_holding_allocation_with_its_pieces()
+    {
+        await using var run = await Run.StartAsync();
+        var seed = await SeedReceiptReversalAsync(run, pieces: 4, heldPieces: 3);
+        // KLN-D120: the 2 kg leaving the label all come out of the hold, so their 2 pieces leave the hold with them.
+        var result = await StageReceiptReversalAsync(run, seed, ReceiptReversalRequest(seed.Receipt) with { PieceCount = 2 },
+            SupplierReturnMetadata(run), commit: true);
+        Assert.False(result.IsReplay);
+        await using var context = run.Context(CompanyA);
+        var physical = await context.Allocations.AsNoTracking().SingleAsync(row => row.Id == seed.PhysicalId);
+        Assert.Equal((1m, 1m, 1, 1, (int)StockAllocationStatus.Active), (physical.AllocatedKg, physical.RemainingKg,
+            physical.AllocatedPieces, physical.RemainingPieces, physical.Status));
+    }
+
+    [SqlServerFact]
+    public async Task Receipt_reversal_that_releases_a_piece_holding_allocation_in_full_leaves_it_holding_no_pieces()
+    {
+        await using var run = await Run.StartAsync();
+        var seed = await SeedReceiptReversalAsync(run, pieces: 4, heldPieces: 3);
+        var result = await StageReceiptReversalAsync(run, seed, ReceiptReversalRequest(seed.Receipt) with { QuantityKg = "3", PieceCount = 3 },
+            SupplierReturnMetadata(run), commit: true);
+        Assert.False(result.IsReplay);
+        await using var context = run.Context(CompanyA);
+        var physical = await context.Allocations.AsNoTracking().SingleAsync(row => row.Id == seed.PhysicalId);
+        Assert.Equal((0m, (int)StockAllocationStatus.Released, 3, 0), (physical.RemainingKg, physical.Status,
+            physical.AllocatedPieces, physical.RemainingPieces));
+    }
+
     private sealed record ReceiptReversalSeed(InventoryGoodsReceiptRequestV1 Receipt, Guid FutureId,
         Guid ConversionId, Guid PhysicalId, Guid SalesOrder, Guid SalesLine);
 
-    private static async Task<ReceiptReversalSeed> SeedReceiptReversalAsync(Run run, char conversionKey = 'a')
+    private static async Task<ReceiptReversalSeed> SeedReceiptReversalAsync(Run run, char conversionKey = 'a', int? pieces = null,
+        int? heldPieces = null)
     {
-        var receipt = await ReceiveForSupplierReturnAsync(run, BlockState.Free);
+        var receipt = await ReceiveForSupplierReturnAsync(run, BlockState.Free, pieces: pieces);
         var seed = new ReceiptReversalSeed(receipt, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
         await using var context = run.Context(CompanyA);
         context.FutureSupplyLines.Add(new() { CompanyId = CompanyA, PurchaseOrderId = receipt.PurchaseOrderId,
@@ -148,8 +199,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             LocationId = receipt.LocationId, LabelId = receipt.LabelId, Block = (int)BlockState.Free,
             DemandKind = InventoryAllocationDemandKindsV1.SalesOrderLine, DemandId = seed.SalesOrder, DemandLineId = seed.SalesLine,
             DemandProductId = receipt.ProductId, DemandProductVersion = receipt.ExpectedProductVersion,
-            AllocatedKg = 3m, RemainingKg = 3m, Status = (int)StockAllocationStatus.Active, Version = 1,
-            Reason = "SENTETIK original conversion", CreatedAtUtc = GoodsReceiptTime, UpdatedAtUtc = GoodsReceiptTime });
+            AllocatedKg = 3m, RemainingKg = 3m, AllocatedPieces = heldPieces, RemainingPieces = heldPieces,
+            Status = (int)StockAllocationStatus.Active, Version = 1, Reason = "SENTETIK original conversion", CreatedAtUtc = GoodsReceiptTime, UpdatedAtUtc = GoodsReceiptTime });
         context.FutureSupplyConversions.Add(new() { Id = seed.ConversionId, CompanyId = CompanyA,
             AcceptanceId = receipt.AcceptanceId, FutureAllocationId = seed.FutureId, LabelId = receipt.LabelId,
             Outcome = (int)InventoryFutureSupplyConversionOutcomeV1.Converted, Quantity = 3m,

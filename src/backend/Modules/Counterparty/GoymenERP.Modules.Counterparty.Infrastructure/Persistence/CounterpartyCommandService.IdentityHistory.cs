@@ -171,15 +171,27 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyIdentity
         }
 
         var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
-        var requestHash = IdempotencyHash.ComputePayload(new
-        {
-            PredecessorPartyId = predecessorPartyId,
-            ExpectedVersion = expectedVersion,
-            command.SuccessorPartyId,
-            Kind = kind,
-            LegalBasis = legalBasis,
-            command.EffectiveOn,
-        });
+        // An unacknowledged request keeps the pre-ALS-D99 fingerprint, so answers stored before this change replay unchanged.
+        var requestHash = command.ExposureWarningAcknowledged
+            ? IdempotencyHash.ComputePayload(new
+            {
+                PredecessorPartyId = predecessorPartyId,
+                ExpectedVersion = expectedVersion,
+                command.SuccessorPartyId,
+                Kind = kind,
+                LegalBasis = legalBasis,
+                command.EffectiveOn,
+                ExposureWarningAcknowledged = true,
+            })
+            : IdempotencyHash.ComputePayload(new
+            {
+                PredecessorPartyId = predecessorPartyId,
+                ExpectedVersion = expectedVersion,
+                command.SuccessorPartyId,
+                Kind = kind,
+                LegalBasis = legalBasis,
+                command.EffectiveOn,
+            });
 
         var account = await dbContext.CompanyPartyAccounts
             .SingleOrDefaultAsync(
@@ -258,6 +270,32 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyIdentity
                 keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
         }
 
+        // ALS-D99: the succession makes the predecessor's ACTIVE account passive, so the deactivation warning is re-read here,
+        // server-side, exactly as the plain deactivation does; open, unavailable or denied lines need the acknowledgement and never
+        // block. An already passive predecessor shows no warning (nothing becomes passive).
+        CounterpartyDeactivationExposureView? deactivationWarning = null;
+        if (account.IsActive)
+        {
+            deactivationWarning = await deactivationExposureReader.ReadAsync(
+                metadata.CompanyId, metadata.ActorId, predecessorPartyId, cancellationToken);
+            if (deactivationWarning is null)
+            {
+                return await CompleteCommandAsync(RecordPartySuccessionCommandName, Responses.NotFound(),
+                    keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
+            }
+
+            if (deactivationWarning.AcknowledgementRequired && !command.ExposureWarningAcknowledged)
+            {
+                // Not stored and not audited: nothing was decided, and the next attempt re-reads the live warning.
+                await beforeSave(cancellationToken);
+                logger.LogInformation(
+                    "Counterparty succession refused until the deactivation warning is acknowledged. CompanyId={CompanyId} PartyId={PartyId} ActorId={ActorId} CorrelationId={CorrelationId}",
+                    metadata.CompanyId, predecessorPartyId, metadata.ActorId, metadata.CorrelationId);
+                return new CounterpartyCommandExecution(
+                    Responses.DeactivationWarningAcknowledgementRequired(), false, metadata.CorrelationId);
+            }
+        }
+
         var versionBefore = account.Version;
         var isActiveBefore = account.IsActive;
         account.Deactivate();
@@ -285,7 +323,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyIdentity
             ErpPermissions.CounterpartyPartiesSuccessionRecord,
             scope.RoleCodes,
             SerializeAccountAuditSnapshot(account, isActiveBefore, versionBefore),
-            SerializeSuccessionAuditSnapshot(account, succession),
+            SerializeSuccessionAuditSnapshot(account, succession, deactivationWarning, command.ExposureWarningAcknowledged),
             legalBasis,
             ApprovalContextJson: null,
             AuditAiInvolvement.None,
@@ -511,7 +549,12 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyIdentity
             revision.RecordedAtUtc);
     }
 
-    private static string SerializeSuccessionAuditSnapshot(CompanyPartyAccount account, PartySuccession succession) =>
+    /// <summary>
+    /// The succession audit's after-image; ALS-D99: when the succession made an active account passive it also records the
+    /// warning the server read (counts and outcomes only, never amounts) and whether it was acknowledged, scope "succession".
+    /// </summary>
+    private static string SerializeSuccessionAuditSnapshot(CompanyPartyAccount account, PartySuccession succession,
+        CounterpartyDeactivationExposureView? warning, bool acknowledged) =>
         JsonSerializer.Serialize(new
         {
             account.Id,
@@ -529,7 +572,22 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyIdentity
                 EffectiveOn = succession.EffectiveOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 BalanceMoved = false,
             },
+            DeactivationWarning = warning is null
+                ? null
+                : new
+                {
+                    Scope = DeactivationWarningScopeSuccession,
+                    Shown = true,
+                    warning.AcknowledgementRequired,
+                    Acknowledged = acknowledged,
+                    Items = warning.Items
+                        .Select(item => new { item.Kind, item.Outcome, item.OpenItemCount })
+                        .ToArray(),
+                },
         });
+
+    /// <summary>ALS-D99: the deactivation warning's audit scope when a succession closes the old account.</summary>
+    private const string DeactivationWarningScopeSuccession = "succession";
 
     private static class SuccessionResponses
     {

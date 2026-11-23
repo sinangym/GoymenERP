@@ -5,6 +5,7 @@
  * the same (URN-D3: one manager records, no second approval, every change audited; URN-D4: never before today).
  */
 
+import { EditedAttemptNotice } from './EditedAttemptNotice'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '../ui/Button'
@@ -154,6 +155,7 @@ export function AttemptFooter<T>({
           {refusalText(status.status, status.code)}
         </p>
       ) : null}
+      <EditedAttemptNotice status={status} />
       {status.kind === 'unknown' ? (
         <p role="alert" className={styles.error}>
           {POLICY_TEXT.unknownOutcome}

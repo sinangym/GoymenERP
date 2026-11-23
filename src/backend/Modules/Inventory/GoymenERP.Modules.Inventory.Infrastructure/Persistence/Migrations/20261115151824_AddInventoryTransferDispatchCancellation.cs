@@ -29,6 +29,12 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
                 nullable: false,
                 defaultValue: 1);
 
+            // KLN-D25 (7) / LOJ-D10: a dispatch recorded before this column existed never stored its "kantardan geçer" value.
+            // Backfilling Off ("undefined") would invent a value it never had; it is a read error (Unreadable) instead,
+            // so the cancel window closes fail-closed and the dispatch surfaces in the scale-check review list.
+            migrationBuilder.Sql(
+                "UPDATE [inventory].[TransferDispatches] SET [SourceScaleSettingAtDispatch] = 3;");
+
             migrationBuilder.CreateTable(
                 name: "TransferDispatchCancelClosures",
                 schema: "inventory",

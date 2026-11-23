@@ -244,7 +244,7 @@ describe('actual pending requests and stale context fences', () => {
     fireEvent.change(screen.getByLabelText(T.when), { target: { value: '2026-11-17T15:00:00' } })
     await userEvent.setup().click(screen.getByRole('button', { name: T.decideOverage })); expect(await screen.findByText(T.invalid)).toBeTruthy(); expect(commands()).toHaveLength(0)
     await userEvent.setup().selectOptions(screen.getByLabelText(T.decision), 'Reject'); await userEvent.setup().click(screen.getByRole('button', { name: T.decideOverage }))
-    await screen.findByText(T.saved); expect(JSON.parse(String(commands()[0].init?.body))).toMatchObject({ decision: 'Reject', requestNumber: 1 })
+    await screen.findByText(T.saved); expect(JSON.parse(String(commands()[0].init?.body))).toMatchObject({ expectedTransferVersion: '3', decision: 'Reject', requestNumber: 1 })
   })
   it('withdraws the actual numbered pending loss without converting withdrawal into a physical write-off', async () => {
     pendingLoss(); mount(); await purpose('loss-request')

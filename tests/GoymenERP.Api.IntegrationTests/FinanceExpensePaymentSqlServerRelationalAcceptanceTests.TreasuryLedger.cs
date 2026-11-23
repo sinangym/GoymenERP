@@ -257,7 +257,7 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
             IFinanceTreasuryBalanceGuard guard = new InternalLedgerTreasuryBalanceGuard(db, companyContext);
             var service = new ExpensePaymentService(db, companyContext, new FixedCurrentUser(actor, company), new SyntheticPermissions(),
                 new SingleExpenseItemCatalog(), decorate?.Invoke(guard) ?? guard, new SyntheticSettings(company),
-                new SyntheticOpenPeriod(), collector, new ExpensePaymentBinding(FinanceMoneyOperations.ManualBankPaymentV1),
+                new SyntheticOpenPeriod(), collector, new ExpensePaymentBinding(FinanceMoneyOperations.ExpensePaymentV1),
                 new ExpensePaymentAuditEnvelopes(Envelope(FinancePermissionNames.ExpensePaymentDraftSave),
                     Envelope(FinancePermissionNames.ExpensePaymentApprove), Envelope(FinancePermissionNames.ExpensePaymentRecord)), TimeProvider.System, documentNumbers: new SyntheticFinanceRecordNumbers());
             return new Scope(db, service, new FinanceContext(company, actor, Correlation, null));

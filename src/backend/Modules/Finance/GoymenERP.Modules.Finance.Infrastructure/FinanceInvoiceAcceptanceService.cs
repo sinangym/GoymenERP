@@ -62,13 +62,6 @@ public sealed class FinanceInvoiceAcceptanceService(
     internal const string AllocationRequiredCode = "finance_customer_return_allocation_required";
     /// <summary>Stored amounts or item state the acceptance cannot read back safely: nothing is written.</summary>
     internal const string StoredStateNotUnderstoodCode = "finance_customer_return_state_not_understood";
-    /// <summary>
-    /// KLN-D71 moves an item's whole open balance to the successor account (a <see cref="FinancePartyBalanceAssignmentRow"/>).
-    /// A return whose reduction would have to be split between the original account's own part and a successor's
-    /// assignment is refused: which account a return reduces after a transfer is not decided (NEEDS-SINAN). Nothing is
-    /// written.
-    /// </summary>
-    internal const string TransferredBalanceSplitCode = "finance_customer_return_transferred_balance_split";
     private const int TokenMaximumLength = 128;
     private const string EntityType = "Finance.CustomerReturnCredit";
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
@@ -253,12 +246,13 @@ public sealed class FinanceInvoiceAcceptanceService(
     }
 
     /// <summary>
-    /// The party balance assignments the return's reductions must follow, so an item's outstanding amount never falls
-    /// below the part assigned to a successor account (the allocation positions would no longer read). An item without a
-    /// live assignment keeps its whole reduction on the original account. An item whose whole outstanding amount is held
-    /// by one successor (KLN-D71: the whole open balance moves) reduces that assignment by the same amount. Any other
-    /// shape would need a split between accounts and is refused (<see cref="TransferredBalanceSplitCode"/>); stored
-    /// assignments that do not read back are refused as not understood.
+    /// FNS-D115 / FNS-D117: the return's reduction of an item whose balance was partly transferred (KLN-D71) takes the
+    /// original account's remaining part first; the rest is taken from the successors' assignments starting with the most
+    /// recently transferred one (the assignment's last transfer by business date, then by record time; the successor
+    /// account identity only orders an exact tie). The item's outstanding amount therefore never falls below the parts
+    /// assigned to successors (the allocation positions keep reading). The advance stays with the original party on the
+    /// credit itself. Every part changes in the acceptance's single save; no second movement is written. Stored
+    /// assignments or transfers that do not read back are refused as not understood.
     /// </summary>
     private async Task<(IReadOnlyList<(FinancePartyBalanceAssignmentRow Assignment, FinanceExactDecimalText Reduced)>
         Reductions, ValidationIssue? Issue)> TransferredReductionsAsync(FinanceCustomerReturnPlan plan,
@@ -268,12 +262,19 @@ public sealed class FinanceInvoiceAcceptanceService(
         var assignments = await dbContext.PartyBalanceAssignments
             .Where(row => row.Kind == FinanceBalanceAssignmentKinds.OpenItem && ids.Contains(row.SourceId))
             .ToListAsync(cancellationToken);
-        return TransferredReductions(plan, assignments);
+        var transferIds = assignments.Select(row => row.LastTransferId).Distinct().ToArray();
+        var transfers = await dbContext.PartyBalanceTransfers.AsNoTracking()
+            .Where(row => transferIds.Contains(row.Id))
+            .Select(row => new { row.Id, row.OccurredOn, row.RecordedAtUtc })
+            .ToListAsync(cancellationToken);
+        return TransferredReductions(plan, assignments,
+            transfers.ToDictionary(row => row.Id, row => (row.OccurredOn, row.RecordedAtUtc)));
     }
 
     internal static (IReadOnlyList<(FinancePartyBalanceAssignmentRow Assignment, FinanceExactDecimalText Reduced)>
         Reductions, ValidationIssue? Issue) TransferredReductions(FinanceCustomerReturnPlan plan,
-        IReadOnlyList<FinancePartyBalanceAssignmentRow> assignments)
+        IReadOnlyList<FinancePartyBalanceAssignmentRow> assignments,
+        IReadOnlyDictionary<Guid, (DateOnly OccurredOn, DateTimeOffset RecordedAtUtc)> transfers)
     {
         var result = new List<(FinancePartyBalanceAssignmentRow, FinanceExactDecimalText)>();
         var bySource = assignments.ToLookup(row => row.SourceId);
@@ -297,16 +298,35 @@ public sealed class FinanceInvoiceAcceptanceService(
             }
 
             var live = rows.Where(row => !FinanceAllocationPositions.Amount(row.AvailableAmountText).IsZero).ToArray();
-            if (live.Length == 0)
+            var originalAvailable = FinanceAllocationPositions.Amount(positions[0].AvailableAmount);
+            if (live.Length == 0 || reduced.CompareTo(originalAvailable) <= 0)
             {
                 continue;
             }
-            var originalAvailable = FinanceAllocationPositions.Amount(positions[0].AvailableAmount);
-            if (!originalAvailable.IsZero || live.Length != 1)
+            if (live.Any(row => !transfers.ContainsKey(row.LastTransferId)))
             {
-                return ([], new ValidationIssue("allocations", TransferredBalanceSplitCode));
+                return ([], new ValidationIssue("originalInvoiceId", StoredStateNotUnderstoodCode));
             }
-            result.Add((live[0], reduced));
+
+            var rest = reduced.Subtract(originalAvailable);
+            foreach (var row in live
+                .OrderByDescending(row => transfers[row.LastTransferId].OccurredOn)
+                .ThenByDescending(row => transfers[row.LastTransferId].RecordedAtUtc)
+                .ThenBy(row => row.CurrentAccountId))
+            {
+                if (rest.IsZero)
+                {
+                    break;
+                }
+                var available = FinanceAllocationPositions.Amount(row.AvailableAmountText);
+                var taken = rest.CompareTo(available) <= 0 ? rest : available;
+                result.Add((row, taken));
+                rest = rest.Subtract(taken);
+            }
+            if (!rest.IsZero)
+            {
+                return ([], new ValidationIssue("originalInvoiceId", StoredStateNotUnderstoodCode));
+            }
         }
         return (result, null);
     }

@@ -39,7 +39,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 OverageRenewalReason), renewer with { IdempotencyKey = Guid.NewGuid().ToString("N") }));
 
         var rejected = await DecideOverageAsync(run, transferId, lineId, new DecideInventoryTransferOverageV1(
-            InventoryTransferDecisionKindV1.Reject, At.AddHours(3), OverageDecisionReason), checker);
+            received.Transfer.Version, InventoryTransferDecisionKindV1.Reject, At.AddHours(3), OverageDecisionReason),
+            checker);
         Assert.Equal("Rejected", Assert.Single(rejected.Facts.Receipts).OverageStatus);
         var version = rejected.Transfer.Version;
 
@@ -68,20 +69,25 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             renewer with { IdempotencyKey = Guid.NewGuid().ToString("N") }));
         // A decision without a number is the receipt's own request, which is already decided.
         await AssertLossRefusedAsync(InventoryTransferReceiptCodesV1.AlreadyDecided, () => DecideOverageAsync(run,
-            transferId, lineId, new DecideInventoryTransferOverageV1(InventoryTransferDecisionKindV1.Approve,
-                At.AddHours(5), OverageDecisionReason), LossChecker(run)));
+            transferId, lineId, new DecideInventoryTransferOverageV1(version,
+                InventoryTransferDecisionKindV1.Approve, At.AddHours(5), OverageDecisionReason), LossChecker(run)));
+        // K3: a decision made against a transfer version the decider did not see is refused before it is weighed.
+        await AssertLossRefusedAsync(InventoryTransferCodesV1.TransferVersionConflict, () => DecideOverageAsync(run,
+            transferId, lineId, new DecideInventoryTransferOverageV1("999",
+                InventoryTransferDecisionKindV1.Approve, At.AddHours(5), OverageDecisionReason, RequestNumber: 2),
+            LossChecker(run)));
         // Maker-checker: neither the receiver nor the re-requester decides the re-request.
         await AssertLossRefusedAsync(InventoryTransferReceiptCodesV1.SelfApproval, () => DecideOverageAsync(run,
-            transferId, lineId, new DecideInventoryTransferOverageV1(InventoryTransferDecisionKindV1.Approve,
-                At.AddHours(5), OverageDecisionReason, RequestNumber: 2),
+            transferId, lineId, new DecideInventoryTransferOverageV1(version,
+                InventoryTransferDecisionKindV1.Approve, At.AddHours(5), OverageDecisionReason, RequestNumber: 2),
             receiver with { IdempotencyKey = Guid.NewGuid().ToString("N") }));
         await AssertLossRefusedAsync(InventoryTransferReceiptCodesV1.SelfApproval, () => DecideOverageAsync(run,
-            transferId, lineId, new DecideInventoryTransferOverageV1(InventoryTransferDecisionKindV1.Approve,
-                At.AddHours(5), OverageDecisionReason, RequestNumber: 2),
+            transferId, lineId, new DecideInventoryTransferOverageV1(version,
+                InventoryTransferDecisionKindV1.Approve, At.AddHours(5), OverageDecisionReason, RequestNumber: 2),
             renewer with { IdempotencyKey = Guid.NewGuid().ToString("N") }));
 
         var approvalRequest = new DecideInventoryTransferOverageV1(
-            InventoryTransferDecisionKindV1.Approve, At.AddHours(5), OverageDecisionReason, RequestNumber: 2);
+            version, InventoryTransferDecisionKindV1.Approve, At.AddHours(5), OverageDecisionReason, RequestNumber: 2);
         var approvalMetadata = LossChecker(run);
         var beforeApproval = (
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"),

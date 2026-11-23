@@ -16,8 +16,11 @@ public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompany
     IFinancePermissionPort permissions, ISettingsPrerequisiteProvider settings, IFinanceOpeningPeriodReader openingPeriod,
     IFinanceCreditAccountingPeriodPortV1 accountingPeriod, IFinanceTreasuryBalanceGuard treasury,
     IAuditEventCollector audit, FinanceCreditAccountEnvelopes envelopes, TimeProvider time,
-    IAuditTransactionWriterV1? auditOwner = null) : IFinanceCreditMovementServiceV1
+    IAuditTransactionWriterV1? auditOwner = null, FinanceCreditGroupGateV1? groupGate = null) : IFinanceCreditMovementServiceV1
 {
+    // FNS-D106: without an explicit gate every group is closed (fail-closed).
+    private readonly FinanceCreditGroupGateV1 _groupGate = groupGate ?? FinanceCreditGroupGateV1.NoneApproved;
+
     public const string ProposeCommand = "finance.credit-movement.propose";
     public const string DecideCommand = "finance.credit-movement.decide";
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
@@ -40,6 +43,8 @@ public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompany
             if (account is null) return await Terminal(context, metadata, action, ProposeCommand, payload, CommandOutcome.ValidationFailed, cancellationToken, new ValidationIssue("creditAccountId", "credit_account_not_found"));
             if (account.Version.ToString(CultureInfo.InvariantCulture) != request.ExpectedCreditVersion || account.Status != 2)
                 return await Terminal(context, metadata, action, ProposeCommand, payload, CommandOutcome.VersionConflict, cancellationToken, new ValidationIssue("creditAccountId", "credit_account_must_be_current_and_approved"));
+            if (!_groupGate.MovementsOpen(account.CreditGroup))
+                return await Terminal(context, metadata, action, ProposeCommand, payload, CommandOutcome.ValidationFailed, cancellationToken, new ValidationIssue("creditAccountId", FinanceCreditGroupGateV1.GroupClosedCode));
             var validation = await Sources(context, action, request, account, cancellationToken);
             if (validation.Failure is { } invalid) return invalid;
             var sourceHash = SourceHash(request);
@@ -89,6 +94,8 @@ public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompany
                 if (await Fence(context, action, cancellationToken) is { } afterAccount) return afterAccount;
                 if (account is null || account.Status != 2 || account.CurrencyId != row.CurrencyId || account.Version.ToString(CultureInfo.InvariantCulture) != source.ExpectedCreditVersion)
                     return await Terminal(context, metadata, action, DecideCommand, payload, CommandOutcome.VersionConflict, cancellationToken);
+                if (!_groupGate.MovementsOpen(account.CreditGroup))
+                    return await Terminal(context, metadata, action, DecideCommand, payload, CommandOutcome.ValidationFailed, cancellationToken, new ValidationIssue("creditAccountId", FinanceCreditGroupGateV1.GroupClosedCode));
                 var validation = await Sources(context, action, source, account, cancellationToken);
                 if (validation.Failure is { } invalid) return invalid;
                 if (JsonSerializer.Serialize(validation.Profile, Json) != row.MoneyProfileJson || validation.OpeningVersion != row.OpeningPeriodVersion)
@@ -155,7 +162,7 @@ public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompany
             || money.Profile.Version < 1 || money.Scale is < 0 or > 28 || money.EffectiveFrom > source.TransactionDate || money.EffectiveThrough < source.TransactionDate)
             return (Failure(context, CommandOutcome.Unavailable, new ValidationIssue("profile", "credit_plan_profile_unavailable")), null, null);
         // The source is kept exactly, including its fractional precision. The currency smallest unit is
-        // FNS-D99's plan tolerance, not authorization to round or replace actual bank components.
+        // FNS-D99's plan tolerance (FNS-D116), not authorization to round or replace actual bank components.
         if (source.BankEffect is { } bank)
         {
             var eligible = await db.BankAccounts.AsNoTracking().AnyAsync(x => x.Id == bank.BankAccountId && x.CurrencyId == account.CurrencyId

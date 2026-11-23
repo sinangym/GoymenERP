@@ -32,3 +32,13 @@ describe('actual non kg consumption contract', () => {
     expect(fetch.mock.calls[0][1].headers['Idempotency-Key']).toBe(attempt.key)
   })
 })
+const without = (value: object, key: string) => Object.fromEntries(Object.entries(value).filter(([name]) => name !== key))
+describe('non kg history exact key set (SENTETIK)', () => {
+  it('rejects an extra or a missing key on the history and on every fact', () => {
+    expect(decodeNonKgHistory(history, company, order)).toEqual(history)
+    expect(decodeNonKgHistory({ ...history, extra: 1 }, company, order)).toBeNull()
+    for (const key of Object.keys(history)) expect(decodeNonKgHistory(without(history, key), company, order)).toBeNull()
+    expect(decodeNonKgHistory({ ...history, facts: [{ ...entry, extra: 1 }] }, company, order)).toBeNull()
+    for (const key of Object.keys(entry)) expect(decodeNonKgHistory({ ...history, facts: [without(entry, key)] }, company, order)).toBeNull()
+  })
+})

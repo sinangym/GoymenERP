@@ -1,3 +1,5 @@
+import { decodeOfficialInvoiceTaxWarning, type OfficialInvoiceTaxWarning } from './officialSalesInvoiceApi'
+
 export type DecodeResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false }
 
 export interface OfficialInvoicePendingBatch {
@@ -48,6 +50,8 @@ export interface OfficialInvoicePendingDetail {
       readonly rows: readonly OfficialInvoicePendingRow[]
     }
     readonly issues: readonly never[]
+    /** FNS-D64: non-blocking warnings; the key is absent (or null) when the server found none. */
+    readonly taxWarnings?: readonly OfficialInvoiceTaxWarning[] | null
   }
 }
 
@@ -135,7 +139,10 @@ export function decodePendingDetail(value: unknown): DecodeResult<OfficialInvoic
   if (!object(value) || !exact(value, ['batch', 'preview'])) return { ok: false }
   const summary = decodePendingBatch(value.batch)
   if (!summary.ok || !object(value.preview)
-    || !exact(value.preview, ['templateVersion', 'sourceSha256', 'batch', 'issues', 'isValid'])
+    || !exact(value.preview, ['templateVersion', 'sourceSha256', 'batch', 'issues', 'isValid',
+      ...('taxWarnings' in value.preview ? ['taxWarnings'] : [])])
+    || value.preview.taxWarnings != null && (!Array.isArray(value.preview.taxWarnings)
+      || value.preview.taxWarnings.some((warning) => decodeOfficialInvoiceTaxWarning(warning) === null))
     || value.preview.templateVersion !== summary.value.templateVersion
     || value.preview.sourceSha256 !== summary.value.batchChecksum || value.preview.isValid !== true
     || !Array.isArray(value.preview.issues)

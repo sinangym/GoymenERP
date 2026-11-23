@@ -174,6 +174,35 @@ describe('transfer departure explicit events and retained outcome', () => {
     await screen.findByText(/Çakışma/)
     expect(screen.getByText(T.unknown)).toBeTruthy(); expect((screen.getByLabelText(T.transfer) as HTMLSelectElement).disabled).toBe(true)
   })
+  it('K3 P2-6: leaves an unresolved departure by reading the transfer again: not recorded releases, read failure keeps', async () => {
+    let sends = 0; commandReply = async () => ++sends === 1 ? json({}, 503) : json({ code: 'logistics_transfer_departure_version_conflict' }, 409)
+    mount(); const user = await vehicleForm(); await user.click(screen.getByRole('button', { name: T.save }))
+    await screen.findByText(T.unknown); await user.click(screen.getByRole('button', { name: T.retry }))
+    await screen.findByText(/Çakışma/)
+    // A failed read decides nothing: the attempt stays frozen.
+    factsReply = async () => json({}, 503)
+    await user.click(screen.getByRole('button', { name: T.finalCheck }))
+    expect(await screen.findByText(T.finalOpen)).toBeTruthy()
+    expect((screen.getByLabelText(T.transfer) as HTMLSelectElement).disabled).toBe(true)
+    // The transfer shows no vehicle exit: this attempt did not apply and its stale version never can, so it is released.
+    factsReply = async () => json(facts())
+    await user.click(screen.getByRole('button', { name: T.finalCheck }))
+    expect(await screen.findByText(T.released)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: T.finalCheck })).toBeNull()
+    await waitFor(() => expect((screen.getByLabelText(T.transfer) as HTMLSelectElement).disabled).toBe(false))
+    expect(commands()).toHaveLength(2)
+  })
+  it('K3 P2-6: completes an unresolved departure whose exit the fresh read shows at this attempt instant', async () => {
+    commandReply = async () => json({}, 503)
+    mount(); const user = await vehicleForm(); await user.click(screen.getByRole('button', { name: T.save }))
+    await screen.findByText(T.unknown)
+    const sent = JSON.parse(String(commands()[0].init?.body)) as { occurredAtUtc: string }
+    factsReply = async () => json({ ...facts(), version: 2, sourceVersion: `${SOURCE}/2`, vehicleExitAtUtc: sent.occurredAtUtc })
+    await user.click(screen.getByRole('button', { name: T.finalCheck }))
+    expect(await screen.findByText(T.replayed)).toBeTruthy()
+    expect(screen.queryByText(T.unknown)).toBeNull()
+    expect(commands()).toHaveLength(1)
+  })
   it('refetches facts on a fresh definite version conflict without claiming a saved record', async () => {
     commandReply = async () => json({ code: 'logistics_transfer_departure_version_conflict' }, 409)
     mount(); const user = await vehicleForm(); await user.click(screen.getByRole('button', { name: T.save }))

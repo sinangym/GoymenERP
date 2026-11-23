@@ -10,8 +10,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 /// <summary>
 /// BS-1 (F-011): the Purchasing-owned answer to <see cref="IPurchaseInvoiceCostRateReadPortV1"/> over Purchasing's own
 /// company-filtered rows. It finds the acceptance share (the goods receipt line), then the order it counts on and that order's
-/// recorded currency. A fully matched and finalised supplier invoice supplies its official rate. Until all receipt shares have
-/// a finalised source, or when the receipt has different official rates, the single-rate contract remains unavailable.
+/// recorded currency. A fully matched and finalised supplier invoice supplies its official rate. Until the receipt's remaining
+/// quantity (accepted minus undone/returned, ALS-D127) has a finalised source, or when the receipt has different official rates, the single-rate contract remains unavailable.
 /// BS-1 allows no provisional rate, so neither the order's day nor the receipt's day stands in for the invoice. Untracked; creates
 /// nothing (no attempt, audit or version effect). A stored row that cannot be answered (a share without its order, a share or order
 /// outside the asked company, a half money snapshot) throws, never a guessed answer.
@@ -96,9 +96,12 @@ internal sealed class PurchaseInvoiceCostRateReadPort(PurchasingDbContext dbCont
             hasPending |= invoice.Status < PurchaseIncomingInvoiceStatus.FinancePending;
             rates.Add((invoice.CurrencyId, invoice.FunctionalCurrencyId, invoice.OfficialRate));
         }
-        if (covered > share.Quantity) throw Unreadable();
-        if (hasPending) return Unavailable(PurchaseInvoiceCostRateReasonsV1.InvoiceNotFinalized);
-        if (covered < share.Quantity) return Unavailable(PurchaseInvoiceCostRateReasonsV1.InvoiceCoverageIncomplete);
+        // ALS-D127 (BS-1 detail): the undone / supplier-returned part of the receipt is deducted; the rate is final once the
+        // REMAINING quantity is wholly invoiced. Purchasing's own adjustment rows, same tenant filter.
+        var undone = await dbContext.ReceiptAdjustments.AsNoTracking()
+            .Where(row => row.AcceptanceId == goodsReceiptLineId)
+            .SumAsync(row => (decimal?)row.UndoQuantity, cancellationToken) ?? 0m;
+        if (CoverageRefusal(share.Quantity, undone, covered, hasPending) is { } refusal) return Unavailable(refusal);
         var distinctRates = rates.Distinct().ToArray();
         if (distinctRates.Length != 1) return Unavailable(PurchaseInvoiceCostRateReasonsV1.MultipleOfficialRates);
         var official = distinctRates[0];
@@ -110,6 +113,20 @@ internal sealed class PurchaseInvoiceCostRateReadPort(PurchasingDbContext dbCont
 
         PurchaseInvoiceCostRateAnswerV1 Unavailable(string reason) => PurchaseInvoiceCostRateAnswerV1.Unavailable(companyId,
             goodsReceiptLineId, share.OrderId, share.LineId, order.CurrencyId, order.CurrencyCode, reason);
+    }
+
+    /// <summary>
+    /// ALS-D127: whether the invoices bound to a receipt fix its cost rate. The remaining quantity is the accepted quantity minus
+    /// what was undone or returned; it must be wholly invoiced by finalised invoices. An invoice bound before a later return may
+    /// cover more than remains (never more than was accepted). A wholly undone/returned receipt has nothing left to cost: no
+    /// rate coverage (Unavailable, coverage incomplete). Null when the rate is final; an impossible stored state throws.
+    /// </summary>
+    internal static string? CoverageRefusal(decimal accepted, decimal undone, decimal covered, bool hasPending)
+    {
+        if (accepted <= 0m || undone < 0m || undone > accepted || covered < 0m || covered > accepted) throw Unreadable();
+        if (hasPending) return PurchaseInvoiceCostRateReasonsV1.InvoiceNotFinalized;
+        var remaining = accepted - undone;
+        return remaining == 0m || covered < remaining ? PurchaseInvoiceCostRateReasonsV1.InvoiceCoverageIncomplete : null;
     }
 
     private static InvalidOperationException Unreadable() => new InvalidOperationException("Kayıtlı mal kabul satırının alış kuru okunamadı.");

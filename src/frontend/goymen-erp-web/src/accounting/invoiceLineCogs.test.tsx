@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
-import { decodeCogsHistory, decodeCogsProposal, decodeCogsSourceSelection, sendCogsCorrection } from './invoiceLineCogsApi'
+import { decodeCogsHistory, decodeCogsOptions, decodeCogsProposal, decodeCogsSourceSelection, sendCogsCorrection } from './invoiceLineCogsApi'
+import { keyProbes } from './exactKeysTestSupport'
 import { ACCOUNTING_CAPABILITY, invoiceLineCogsPath } from './capabilities'
 import { COMPANY_A, COMPANY_B, PREPARER, APPROVER, ACCOUNT_DEBIT, PERIOD_SEPTEMBER, installFetch, json, renderAt, requestsFor } from './testHarness'
 
@@ -71,5 +72,43 @@ describe('invoice line COGS correction', () => {
     vi.stubGlobal('fetch', vi.fn(async () => json({ status: 'Approved' })))
     expect(await sendCogsCorrection(COMPANY_A, { invoiceId: invoice, lineId: line, proposalId: proposal, operation: 'approve',
       key: 'SENTETIK-key', request: { expectedVersion: 1 } })).toEqual({ type: 'unknown' })
+  })
+})
+describe('invoice line COGS exact key sets', () => {
+  const evidence = { companyId: COMPANY_A, invoiceId: invoice, invoiceLineId: line, finalizedVersion: 5, journalId: proposal,
+    cogsJournalLineNumber: 1, counterJournalLineNumber: 2, cogsAccountId: ACCOUNT_DEBIT, counterAccountId: invoice, currencyId: invoice,
+    amount: '25.13', sourceFingerprint: 'A'.repeat(64) }
+  it('rejects an unknown or missing key on a proposal, its account plan, account and posted evidence', () => {
+    const value = proposalFixture({ postedEvidence: evidence })
+    expect(decodeCogsProposal(value, COMPANY_A, invoice, line)).not.toBeNull()
+    for (const [label, body] of keyProbes(value, [[[], 'valueDate'], [['accountPlan'], 'catalogVersion'], [['accountPlan', 'account'], 'code'],
+      [['postedEvidence'], 'currencyId']]))
+      expect(decodeCogsProposal(body, COMPANY_A, invoice, line), label).toBeNull()
+  })
+  it('rejects an unknown or missing key on the history, its source, product reference, proposals and revisions', () => {
+    expect(decodeCogsHistory(historyFixture(), COMPANY_A, invoice, line)).not.toBeNull()
+    for (const [label, body] of keyProbes(historyFixture(), [[[], 'current'], [['source'], 'ettn'], [['productReference'], 'outcome'],
+      [['proposals', 0], 'reason'], [['proposals', 0, 'accountPlan'], 'sourceSha256']]))
+      expect(decodeCogsHistory(body, COMPANY_A, invoice, line), label).toBeNull()
+    const revision = (patch: Record<string, unknown> = {}) => ({ version: 1, proposalId: proposal, classification: 2, accountPlan: plan,
+      preparedBy: PREPARER, approvedBy: APPROVER, approvedAtUtc: '2026-09-17T10:00:00Z', periodId: PERIOD_SEPTEMBER,
+      transactionDate: '2026-09-17', accountingDate: '2026-09-17', reversingCorrectionJournalId: null, replacementCorrectionJournalId: null,
+      reason: 'SENTETIK source correction', ...patch })
+    const revised = (patch?: Record<string, unknown>) => historyFixture({ lineVersion: 1, current: revision(patch), revisions: [revision(patch)] })
+    expect(decodeCogsHistory(revised(), COMPANY_A, invoice, line)).not.toBeNull()
+    expect(decodeCogsHistory(revised({ sentetikExtraKey: null }), COMPANY_A, invoice, line)).toBeNull()
+    const { reason: _reason, ...withoutReason } = revision()
+    expect(decodeCogsHistory(historyFixture({ lineVersion: 1, current: withoutReason, revisions: [withoutReason] }), COMPANY_A, invoice, line)).toBeNull()
+  })
+  it('rejects an unknown or missing key on the source selection and the options', () => {
+    const source = historyFixture().source
+    const selection = { companyId: COMPANY_A, invoiceId: invoice, officialInvoiceNumber: source.officialInvoiceNumber, ettn: source.ettn, lines: [source] }
+    expect(decodeCogsSourceSelection(selection, COMPANY_A)).not.toBeNull()
+    for (const [label, body] of keyProbes(selection, [[[], 'officialInvoiceNumber'], [['lines', 0], 'fingerprint']]))
+      expect(decodeCogsSourceSelection(body, COMPANY_A), label).toBeNull()
+    const options = { companyId: COMPANY_A, accounts: [plan.account], openPeriods: [{ periodId: PERIOD_SEPTEMBER, startsOn: '2026-09-01', endsOn: '2026-09-30' }] }
+    expect(decodeCogsOptions(options, COMPANY_A)).not.toBeNull()
+    for (const [label, body] of keyProbes(options, [[[], 'accounts'], [['accounts', 0], 'name'], [['openPeriods', 0], 'endsOn']]))
+      expect(decodeCogsOptions(body, COMPANY_A), label).toBeNull()
   })
 })

@@ -33,4 +33,41 @@ describe('URN-D6 manufacturing profile contract', () => {
     expect(decodeManufacturingProfileReceipt({ profileId: MANUFACTURING_PROFILE_ID, profileVersion: '2', stateVersion: '2', status: 'Published' })).toMatchObject({ status: 'Published' })
     expect(decodeManufacturingProfileReceipt({ status: 'Published' })).toBeNull()
   })
+
+  it('K3 P2: accepts only the exact key sets of the receipt, the list, each profile, each value and each key definition', () => {
+    const without = (value: object, key: string) => Object.fromEntries(Object.entries(value).filter(([name]) => name !== key))
+    const receipt = { profileId: MANUFACTURING_PROFILE_ID, profileVersion: '2', stateVersion: '2', status: 'Published' }
+    expect(decodeManufacturingProfileReceipt(receipt)).toEqual(receipt)
+    expect(decodeManufacturingProfileReceipt({ ...receipt, extra: 'SENTETIK' })).toBeNull()
+    for (const key of Object.keys(receipt)) expect(decodeManufacturingProfileReceipt(without(receipt, key))).toBeNull()
+
+    for (const kind of ['parameters', 'tolerances'] as const) {
+      const list: Record<string, unknown> = manufacturingProfileFixture(kind)
+      const [profile] = list.profiles as Record<string, unknown>[]
+      expect(decodeManufacturingProfiles(list, COMPANY_A, kind)).not.toBeNull()
+      expect(decodeManufacturingProfiles({ ...list, extra: 'SENTETIK' }, COMPANY_A, kind)).toBeNull()
+      for (const key of Object.keys(list)) expect(decodeManufacturingProfiles(without(list, key), COMPANY_A, kind)).toBeNull()
+      expect(decodeManufacturingProfiles({ ...list, profiles: [{ ...profile, extra: 'SENTETIK' }] }, COMPANY_A, kind)).toBeNull()
+      for (const key of Object.keys(profile)) expect(decodeManufacturingProfiles({ ...list, profiles: [without(profile, key)] }, COMPANY_A, kind)).toBeNull()
+    }
+
+    // Each list carries only its own schema's keys: the other kind's fields are unknown keys here.
+    const parameters = manufacturingProfileFixture('parameters') as Record<string, unknown>
+    const tolerances = manufacturingProfileFixture('tolerances') as Record<string, unknown>
+    const [parameterProfile] = parameters.profiles as Record<string, unknown>[]
+    const [toleranceProfile] = tolerances.profiles as Record<string, unknown>[]
+    expect(decodeManufacturingProfiles({ ...parameters, startingValues: [] }, COMPANY_A, 'parameters')).toBeNull()
+    expect(decodeManufacturingProfiles({ ...tolerances, keys: [] }, COMPANY_A, 'tolerances')).toBeNull()
+    expect(decodeManufacturingProfiles({ ...parameters, profiles: [{ ...parameterProfile, maximumFirePercent: '3' }] }, COMPANY_A, 'parameters')).toBeNull()
+    expect(decodeManufacturingProfiles({ ...tolerances, profiles: [{ ...toleranceProfile, values: [] }] }, COMPANY_A, 'tolerances')).toBeNull()
+    expect(decodeManufacturingProfiles({ ...tolerances, startingValues: [{ ...toleranceProfile, extra: 'SENTETIK' }] }, COMPANY_A, 'tolerances')).toBeNull()
+    expect(decodeManufacturingProfiles({ ...tolerances, profiles: [], startingValues: [toleranceProfile] }, COMPANY_A, 'tolerances')?.startingValues).toHaveLength(1)
+
+    const [value] = parameterProfile.values as Record<string, unknown>[]
+    const [definition] = parameters.keys as Record<string, unknown>[]
+    expect(decodeManufacturingProfiles({ ...parameters, profiles: [{ ...parameterProfile, values: [{ ...value, extra: 'SENTETIK' }] }] }, COMPANY_A, 'parameters')).toBeNull()
+    for (const key of Object.keys(value)) expect(decodeManufacturingProfiles({ ...parameters, profiles: [{ ...parameterProfile, values: [without(value, key)] }] }, COMPANY_A, 'parameters')).toBeNull()
+    expect(decodeManufacturingProfiles({ ...parameters, keys: [{ ...definition, extra: 'SENTETIK' }] }, COMPANY_A, 'parameters')).toBeNull()
+    for (const key of Object.keys(definition)) expect(decodeManufacturingProfiles({ ...parameters, keys: [without(definition, key)] }, COMPANY_A, 'parameters')).toBeNull()
+  })
 })

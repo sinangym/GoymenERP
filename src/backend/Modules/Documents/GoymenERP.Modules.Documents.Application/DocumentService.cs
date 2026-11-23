@@ -20,7 +20,8 @@ namespace GoymenERP.Modules.Documents.Application;
 /// <item><b>Content</b> (DEC-DOC-009): a safe file name, an allowlisted kind proven by the bytes' signature (or the
 /// structural check of a bank-statement kind), a kind every record the file is shown on accepts (FNS-D52: the standard
 /// kinds unless the owner port opts in to more), a configured size bound; then the malware scan. Malware is refused and
-/// nothing is stored; no scanner, or a scanner that cannot answer, stores the version as NotScanned — never served.</item>
+/// nothing is stored; KLN-D60 (3): no scanner, or a scanner that cannot answer, refuses the upload (503) and stores nothing.
+/// A NotScanned version recorded before that rule stays stored and is never served.</item>
 /// <item><b>Replay</b> (ADR-011): the attempt of (company, command, key hash) answers first; another body or actor under
 /// the same key is one 409.</item>
 /// <item><b>Duplicates</b> (AT-057, DEC-DOC-002): the same content in the same company is a warning, never a refusal —
@@ -123,7 +124,8 @@ public sealed partial class DocumentService(
             throw new DocumentServiceException(422, DocumentProblemCodesV1.ContentRejected, [new("file", DocumentProblemCodesV1.ContentRejected)]);
         }
 
-        var scanState = verdict == DocumentScanVerdictV1.Clean ? DocumentScanState.Clean : DocumentScanState.NotScanned;
+        RequireScannedClean(verdict);
+        var scanState = DocumentScanState.Clean;
         var objectKey = DocumentObjectKeys.For(scope.CompanyId, sha256);
         var objectStore = objects ?? throw new DocumentServiceException(503, "service_unavailable");
         try
@@ -251,7 +253,8 @@ public sealed partial class DocumentService(
                 [new("file", DocumentProblemCodesV1.ContentRejected)]);
         }
 
-        var scanState = verdict == DocumentScanVerdictV1.Clean ? DocumentScanState.Clean : DocumentScanState.NotScanned;
+        RequireScannedClean(verdict);
+        var scanState = DocumentScanState.Clean;
         var objectKey = DocumentObjectKeys.For(scope.CompanyId, sha256);
         var objectStore = objects ?? throw new DocumentServiceException(503, "service_unavailable");
         try
@@ -895,6 +898,18 @@ public sealed partial class DocumentService(
 
     private static bool IsReadableDuplicateOwner(DocumentOwnerAccessV1 access) =>
         access == DocumentOwnerAccessV1.Readable;
+
+    /// <summary>
+    /// KLN-D60 (3): every user upload and new version is scanned; without a scanner, or when it cannot answer, the upload
+    /// is refused fail-closed (503, code-less like every vault 503) and nothing is stored — no object, version or attempt.
+    /// </summary>
+    private static void RequireScannedClean(DocumentScanVerdictV1 verdict)
+    {
+        if (verdict != DocumentScanVerdictV1.Clean)
+        {
+            throw new DocumentServiceException(503, "service_unavailable");
+        }
+    }
 
     private async Task<DocumentScanVerdictV1> ScanAsync(byte[] content, DocumentFileKind kind, CancellationToken cancellationToken)
     {

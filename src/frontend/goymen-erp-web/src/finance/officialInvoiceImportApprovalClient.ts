@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { decodeOfficialInvoiceTaxWarning, type OfficialInvoiceTaxWarning } from './officialSalesInvoiceApi'
 import type { AuthBoundary } from '../shell/useAuthBoundary'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { useFinanceBinding } from './financePort'
@@ -246,6 +247,14 @@ export function decodeImportPreview(
     || !Array.isArray(value.issues)) return null
   const issues = value.issues.map(decodeIssue)
   if (issues.some((issue) => issue === null)) return null
+  // FNS-D64: optional in the schema and omitted when there is no warning; a present list must decode completely.
+  let taxWarnings: OfficialInvoiceTaxWarning[] = []
+  if (value.taxWarnings !== undefined && value.taxWarnings !== null) {
+    if (!Array.isArray(value.taxWarnings)) return null
+    const decoded = value.taxWarnings.map(decodeOfficialInvoiceTaxWarning)
+    if (decoded.some((warning) => warning === null)) return null
+    taxWarnings = decoded as OfficialInvoiceTaxWarning[]
+  }
   let rowCount = 0
   if (value.batch !== null) {
     if (!isObject(value.batch) || value.batch.batchId !== source.batchId || value.batch.companyId !== companyId
@@ -260,6 +269,7 @@ export function decodeImportPreview(
     batchVersion: source.batchVersion,
     rowCount,
     issues: issues as OfficialInvoiceImportIssue[],
+    taxWarnings,
   }
 }
 
