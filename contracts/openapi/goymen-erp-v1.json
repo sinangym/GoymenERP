@@ -53368,6 +53368,7 @@
               "inventory_transfer_self_approval",
               "inventory_transfer_source_position_conflict",
               "inventory_transfer_state_conflict",
+              "inventory_transfer_version_conflict",
               "organization.company.setup_pending"
             ]
           },
@@ -88275,6 +88276,7 @@
               }
             },
             "x-erp-problem-codes": [
+              "deactivation_warning_acknowledgement_required",
               "succession_same_party",
               "succession_same_tax_identity"
             ]
@@ -182097,6 +182099,8 @@
             "x-erp-problem-codes": [
               "concurrent_change",
               "organization.company.setup_pending",
+              "purchasing_future_allocation_set_changed",
+              "purchasing_line_has_allocations",
               "purchasing_supplier_revision_blocked",
               "purchasing_supplier_revision_no_change",
               "purchasing_supplier_revision_not_draft",
@@ -260098,12 +260102,16 @@
       },
       "DecideInventoryTransferOverageV1": {
         "required": [
+          "expectedTransferVersion",
           "decision",
           "decidedAtUtc",
           "reason"
         ],
         "type": "object",
         "properties": {
+          "expectedTransferVersion": {
+            "type": "string"
+          },
           "decision": {
             "$ref": "#/components/schemas/InventoryTransferDecisionKindV1"
           },
@@ -263672,6 +263680,15 @@
               "$ref": "#/components/schemas/FinanceOfficialInvoiceImportIssueV1"
             }
           },
+          "taxWarnings": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/FinanceOfficialInvoiceTaxWarningV1"
+            }
+          },
           "isValid": {
             "type": "boolean"
           }
@@ -263886,6 +263903,37 @@
             ]
           },
           "winner": {
+            "type": "string"
+          }
+        }
+      },
+      "FinanceOfficialInvoiceTaxWarningV1": {
+        "required": [
+          "code",
+          "sourceDocumentId",
+          "expectedPayableFunctionalAmount",
+          "payableFunctionalAmount",
+          "differenceFunctionalAmount"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "sourceDocumentId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "expectedPayableFunctionalAmount": {
+            "type": "string"
+          },
+          "payableFunctionalAmount": {
+            "type": "string"
+          },
+          "differenceFunctionalAmount": {
             "type": "string"
           }
         }
@@ -264326,6 +264374,16 @@
             "items": {
               "$ref": "#/components/schemas/FinanceOfficialInvoiceSourceDifferenceV1"
             }
+          },
+          "taxWarning": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FinanceOfficialInvoiceTaxWarningV1"
+              }
+            ]
           }
         }
       },
@@ -295474,6 +295532,10 @@
           "effectiveOn": {
             "type": "string",
             "format": "date"
+          },
+          "exposureWarningAcknowledged": {
+            "type": "boolean",
+            "default": false
           }
         },
         "additionalProperties": false
@@ -298449,6 +298511,15 @@
           },
           "reason": {
             "type": "string"
+          },
+          "seenAllocations": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PurchaseFutureAllocationSeenRequest"
+            }
           }
         }
       },
