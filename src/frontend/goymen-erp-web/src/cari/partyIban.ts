@@ -36,9 +36,14 @@ const id = (v: unknown): v is string => typeof v === 'string' && UUID.test(v) &&
 const text = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.trim() === v
 const instant = (v: unknown): v is string => typeof v === 'string' && v.length <= 64 && !Number.isNaN(Date.parse(v)) && /[Zz]|[+-]\d{2}:\d{2}$/.test(v)
 
-/** TR + 24 digits with a valid ISO 13616 check (the same rule the server applies; the server stays the authority). */
-export function isTurkishIban(value: string): boolean {
-  if (!/^TR\d{24}$/.test(value)) return false
+/**
+ * FNS-D122: an IBAN's ISO 13616 shape and check digits — two-letter country, two digits, 15..34 upper-case letters/digits,
+ * mod-97 = 1; a Turkish IBAN keeps TR + 24 digits (FNS-D121). The per-country length table is the server's alone
+ * (IbanRegistryV1): an unknown country or a wrong length is answered by the server with its own code, never guessed here.
+ */
+export function isIbanShape(value: string): boolean {
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(value)) return false
+  if (value.startsWith('TR') && !/^TR\d{24}$/.test(value)) return false
   const moved = value.slice(4) + value.slice(0, 4)
   let remainder = 0
   for (const char of moved) {
@@ -47,11 +52,6 @@ export function isTurkishIban(value: string): boolean {
   }
   return remainder === 1
 }
-/**
- * FNS-D121 (fail-closed until Sinan decides on foreign IBANs): a well-formed IBAN of another country (two letters, two
- * check digits, then 11–30 letters/digits) is recognised only to explain the refusal; it is never accepted.
- */
-export const isForeignIban = (value: string) => /^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(value) && !value.startsWith('TR')
 
 /** FNS-D121 shell controls inside C-03; listing them grants nothing (the server snapshot decides). */
 export const PARTY_IBAN_CAPABILITY = {
@@ -65,7 +65,7 @@ export const groupIban = (value: string) => value.replace(/(.{4})/g, '$1 ').trim
 export function decodePartyIban(value: unknown, companyId: string, partyId: string): PartyIbanView | null {
   const v = rec(value)
   if (v === null || !exact(v, VIEW_KEYS) || !id(v.id) || v.companyId !== companyId || v.partyId !== partyId
-    || typeof v.iban !== 'string' || !isTurkishIban(v.iban) || !text(v.bankName) || (v.description !== null && !text(v.description))
+    || typeof v.iban !== 'string' || !isIbanShape(v.iban) || !text(v.bankName) || (v.description !== null && !text(v.description))
     || typeof v.isActive !== 'boolean' || !text(v.addedBy) || !instant(v.addedAtUtc)) return null
   if (v.isActive ? v.version !== '1' || v.deactivatedBy !== null || v.deactivatedAtUtc !== null || v.deactivationReason !== null
     : v.version !== '2' || !text(v.deactivatedBy) || !instant(v.deactivatedAtUtc) || !text(v.deactivationReason)) return null

@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Banking;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -11,8 +12,6 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// </summary>
 internal static class FinanceBankStatementLinePolicy
 {
-    private const int TurkishIbanLength = 26;
-
     /// <summary>
     /// The SHA-256 (upper-case hex) of the line's canonical content: dates, direction, exact amount (trailing fraction
     /// zeros dropped, so <c>10,50</c> and <c>10,5</c> are one amount), balance, currency, reference and description. The bank
@@ -35,10 +34,12 @@ internal static class FinanceBankStatementLinePolicy
     }
 
     /// <summary>
-    /// The one counterparty IBAN the line names, or null. Only Turkish IBANs (<c>TR</c> + 24 digits, spaces between groups
-    /// allowed) with a valid ISO 13616 check are read from the reference and description; the account's own IBAN is ignored.
-    /// Zero or more than one distinct IBAN is "no identity": nothing is chosen between two. The IBAN is only LOOKED UP in the
-    /// cari IBAN lists (FNS-D114); it is never written to a cari card.
+    /// The one counterparty IBAN the line names, or null. FNS-D122: an IBAN of any registered country is read from the
+    /// reference and description (spaces between groups allowed) when it starts at a word boundary, has exactly its country's
+    /// registry length, is not followed directly by another letter or digit and passes ISO 13616 (<see cref="IbanRegistryV1"/>;
+    /// a Turkish IBAN keeps TR + 24 digits). The account's own IBAN is ignored. Zero or more than one distinct IBAN is "no
+    /// identity": nothing is chosen between two. The IBAN is only LOOKED UP in the cari IBAN lists (FNS-D114/D121); it is never
+    /// written to a cari card.
     /// </summary>
     public static string? CounterpartyIban(string? reference, string description, string? ownIban)
     {
@@ -47,24 +48,28 @@ internal static class FinanceBankStatementLinePolicy
         {
             if (string.IsNullOrEmpty(text)) continue;
             var upper = text.ToUpperInvariant();
-            for (var start = 0; start + 1 < upper.Length; start++)
+            for (var start = 0; start + 3 < upper.Length; start++)
             {
-                if (upper[start] != 'T' || upper[start + 1] != 'R') continue;
+                if (!char.IsAsciiLetterUpper(upper[start]) || !char.IsAsciiLetterUpper(upper[start + 1])
+                    || !char.IsAsciiDigit(upper[start + 2]) || !char.IsAsciiDigit(upper[start + 3]))
+                    continue;
                 if (start > 0 && char.IsAsciiLetterOrDigit(upper[start - 1])) continue;
-                var candidate = new StringBuilder("TR");
-                var position = start + 2;
-                while (position < upper.Length && candidate.Length < TurkishIbanLength)
+                if (!IbanRegistryV1.Lengths.TryGetValue(upper.Substring(start, 2), out var length)) continue;
+                var candidate = new StringBuilder(length);
+                var position = start;
+                while (position < upper.Length && candidate.Length < length)
                 {
                     var character = upper[position];
-                    if (char.IsAsciiDigit(character)) candidate.Append(character);
-                    else if (character != ' ' || position + 1 >= upper.Length || !char.IsAsciiDigit(upper[position + 1])) break;
+                    if (char.IsAsciiLetterOrDigit(character)) candidate.Append(character);
+                    else if (character != ' ' || position + 1 >= upper.Length
+                        || !char.IsAsciiLetterOrDigit(upper[position + 1]) || candidate.Length < 4) break;
                     position++;
                 }
 
-                if (candidate.Length != TurkishIbanLength) continue;
-                if (position < upper.Length && char.IsAsciiDigit(upper[position])) continue;
+                if (candidate.Length != length) continue;
+                if (position < upper.Length && char.IsAsciiLetterOrDigit(upper[position])) continue;
                 var iban = candidate.ToString();
-                if (FinanceIban.IsStructurallyValid(iban) && !string.Equals(iban, ownIban, StringComparison.Ordinal)) found.Add(iban);
+                if (IbanRegistryV1.IsValid(iban) && !string.Equals(iban, ownIban, StringComparison.Ordinal)) found.Add(iban);
             }
         }
 

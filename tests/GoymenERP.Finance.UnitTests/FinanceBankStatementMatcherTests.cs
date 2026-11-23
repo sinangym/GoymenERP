@@ -130,6 +130,18 @@ public sealed class FinanceBankStatementMatcherTests
         string? expected) =>
         Assert.Equal(expected, FinanceBankStatementLinePolicy.CounterpartyIban(reference, description, Own));
 
+    [Theory]
+    [InlineData("SEPA DE89 3704 0044 0532 0130 00 SENTETIK", null, "DE89370400440532013000")]
+    [InlineData("Wire GB82WEST12345698765432", null, "GB82WEST12345698765432")]
+    [InlineData("Ref NL91ABNA0417164300 fatura", null, "NL91ABNA0417164300")]
+    [InlineData("Bozuk DE88370400440532013000", null, null)]
+    [InlineData("Kisa DE8937040044053201300", null, null)]
+    [InlineData("Bilinmeyen XX89370400440532013000", null, null)]
+    [InlineData("Iki ulke DE89370400440532013000", "NL91ABNA0417164300", null)]
+    public void Fns_d122_a_foreign_iban_of_a_registered_country_is_read_with_its_length_and_mod_97(string description,
+        string? reference, string? expected) =>
+        Assert.Equal(expected, FinanceBankStatementLinePolicy.CounterpartyIban(reference, description, Own));
+
     [Fact]
     public void Fingerprint_ignores_trailing_fraction_zeros_but_not_any_other_content()
     {

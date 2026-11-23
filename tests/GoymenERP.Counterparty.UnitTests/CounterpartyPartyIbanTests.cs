@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Banking;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
@@ -22,14 +23,59 @@ public sealed class CounterpartyPartyIbanTests
     private const string OtherIban = "TR550011100000000000000003";
 
     [Theory]
-    [InlineData("TR13 0006 2000 0000 0000 0000 02", true)]
-    [InlineData("tr130006200000000000000002", true)]
-    [InlineData("TR130006200000000000000003", false)]
-    [InlineData("TR13000620000000000000000", false)]
-    [InlineData("DE89370400440532013000", false)]
-    [InlineData("TR1300062000000000000000A2", false)]
-    public void Only_a_turkish_iban_with_valid_mod_97_check_digits_is_accepted(string text, bool valid) =>
-        Assert.Equal(valid, CounterpartyIbanV1.IsValidTurkish(CounterpartyIbanV1.Normalize(text)));
+    [InlineData("TR13 0006 2000 0000 0000 0000 02", IbanCheckV1.Valid)]
+    [InlineData("tr130006200000000000000002", IbanCheckV1.Valid)]
+    [InlineData("DE89 3704 0044 0532 0130 00", IbanCheckV1.Valid)]
+    [InlineData("GB82 WEST 1234 5698 7654 32", IbanCheckV1.Valid)]
+    [InlineData("NL91ABNA0417164300", IbanCheckV1.Valid)]
+    [InlineData("TR130006200000000000000003", IbanCheckV1.CheckDigits)]
+    [InlineData("DE88370400440532013000", IbanCheckV1.CheckDigits)]
+    [InlineData("GB82WEST12345698765433", IbanCheckV1.CheckDigits)]
+    [InlineData("TR13000620000000000000000", IbanCheckV1.WrongLength)]
+    [InlineData("DE8937040044053201300", IbanCheckV1.WrongLength)]
+    [InlineData("NL91ABNA04171643001", IbanCheckV1.WrongLength)]
+    [InlineData("XX89370400440532013000", IbanCheckV1.UnknownCountry)]
+    [InlineData("ZZ00", IbanCheckV1.UnknownCountry)]
+    [InlineData("TR1300062000000000000000A2", IbanCheckV1.Malformed)]
+    [InlineData("12", IbanCheckV1.Malformed)]
+    [InlineData("", IbanCheckV1.Malformed)]
+    public void Fns_d122_any_registered_country_iban_with_its_length_and_mod_97_is_accepted_and_tr_keeps_its_rule(
+        string text, IbanCheckV1 expected)
+    {
+        var normalized = CounterpartyIbanV1.Normalize(text);
+        Assert.Equal(expected, IbanRegistryV1.Check(normalized));
+        Assert.Equal(expected == IbanCheckV1.Valid, CounterpartyIbanV1.IsValid(normalized));
+    }
+
+    [Fact]
+    public void Fns_d122_every_registry_length_is_within_iso_13616_bounds_and_turkey_is_26() =>
+        Assert.All(IbanRegistryV1.Lengths, entry =>
+        {
+            Assert.Matches("^[A-Z]{2}$", entry.Key);
+            Assert.InRange(entry.Value, IbanRegistryV1.MinimumLength, IbanRegistryV1.MaximumLength);
+            if (entry.Key == IbanRegistryV1.TurkeyCountryCode) Assert.Equal(26, entry.Value);
+        });
+
+    [Fact]
+    public async Task Fns_d122_a_foreign_iban_is_listed_and_found_and_each_refusal_has_its_own_code()
+    {
+        await using var run = new Run();
+        var added = await run.AddAsync("SENTETIK-a",
+            new AddCounterpartyPartyIbanV1(Guid.NewGuid(), "de89 3704 0044 0532 0130 00", "SENTETIK Bank", null));
+        Assert.Equal((CounterpartyPartyIbanOutcomeV1.Succeeded, "DE89370400440532013000"), (added.Outcome, added.Resource!.Iban));
+        Assert.Equal(CounterpartyPartyIbanCodesV1.IbanCountryUnknown,
+            (await run.AddAsync("SENTETIK-b", new(Guid.NewGuid(), "XX89370400440532013000", "SENTETIK", null))).Code);
+        Assert.Equal(CounterpartyPartyIbanCodesV1.IbanLengthInvalid,
+            (await run.AddAsync("SENTETIK-c", new(Guid.NewGuid(), "DE8937040044053201300", "SENTETIK", null))).Code);
+        Assert.Equal(CounterpartyPartyIbanCodesV1.IbanCheckDigitsInvalid,
+            (await run.AddAsync("SENTETIK-d", new(Guid.NewGuid(), "DE88370400440532013000", "SENTETIK", null))).Code);
+        Assert.Equal(CounterpartyPartyIbanCodesV1.IbanInvalid,
+            (await run.AddAsync("SENTETIK-e", new(Guid.NewGuid(), "TR1300062000000000000000A2", "SENTETIK", null))).Code);
+        run.Db.ChangeTracker.Clear();
+        var source = new CounterpartyPartyIbanSourceV1(run.Db, run.Company);
+        var found = (await source.FindPartiesAsync(["DE89370400440532013000"], default))!;
+        Assert.Equal([run.Party], found["DE89370400440532013000"]);
+    }
 
     [Fact]
     public async Task Add_lists_replays_and_refuses_another_payload_a_second_active_copy_and_an_invalid_iban()
@@ -45,7 +91,7 @@ public sealed class CounterpartyPartyIbanTests
             (await run.AddAsync("SENTETIK-a", request with { BankName = "Baska" })).Outcome);
         var copy = await run.AddAsync("SENTETIK-b", request with { IbanId = Guid.NewGuid() });
         Assert.Equal((CounterpartyPartyIbanOutcomeV1.VersionConflict, CounterpartyPartyIbanCodesV1.AlreadyListed), (copy.Outcome, copy.Code));
-        Assert.Equal(CounterpartyPartyIbanCodesV1.IbanInvalid,
+        Assert.Equal(CounterpartyPartyIbanCodesV1.IbanCheckDigitsInvalid,
             (await run.AddAsync("SENTETIK-c", request with { IbanId = Guid.NewGuid(), Iban = "TR130006200000000000000003" })).Code);
         Assert.Equal(CounterpartyPartyIbanCodesV1.BankNameRequired,
             (await run.AddAsync("SENTETIK-d", request with { IbanId = Guid.NewGuid(), Iban = OtherIban, BankName = " " })).Code);

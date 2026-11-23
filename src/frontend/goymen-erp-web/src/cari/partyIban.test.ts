@@ -1,6 +1,6 @@
 // SENTETIK: FNS-D121 decoder and TR mod-97 evidence.
 import { describe, expect, it } from 'vitest'
-import { decodePartyIbanCommandResult, decodePartyIbanList, groupIban, isForeignIban, isTurkishIban, normalizeIban } from './partyIban'
+import { decodePartyIbanCommandResult, decodePartyIbanList, groupIban, isIbanShape, normalizeIban } from './partyIban'
 
 const company = 'aaaaaaaa-0000-4000-8000-000000000001'
 const party = '11111111-1111-4111-8111-111111111111'
@@ -9,13 +9,15 @@ const ibanRow = { id: '22222222-2222-4222-8222-222222222222', companyId: company
   deactivatedBy: null, deactivatedAtUtc: null, deactivationReason: null }
 
 describe('cari IBAN contract', () => {
-  it('validates TR mod-97 and normalizes grouping', () => {
-    expect(isTurkishIban(normalizeIban('tr13 0006 2000 0000 0000 0000 02'))).toBe(true)
-    expect(isTurkishIban('TR130006200000000000000003')).toBe(false)
-    expect(isTurkishIban('DE89370400440532013000')).toBe(false)
-    expect(isForeignIban('DE89370400440532013000')).toBe(true)
-    expect(isForeignIban('TR130006200000000000000002')).toBe(false)
-    expect(isForeignIban('TR13')).toBe(false)
+  it('validates the ISO 13616 shape (FNS-D122, TR keeps 24 digits) and normalizes grouping', () => {
+    expect(isIbanShape(normalizeIban('tr13 0006 2000 0000 0000 0000 02'))).toBe(true)
+    expect(isIbanShape('TR130006200000000000000003')).toBe(false)
+    expect(isIbanShape('TR1300062000000000000000A2')).toBe(false)
+    expect(isIbanShape(normalizeIban('DE89 3704 0044 0532 0130 00'))).toBe(true)
+    expect(isIbanShape('GB82WEST12345698765432')).toBe(true)
+    expect(isIbanShape('NL91ABNA0417164300')).toBe(true)
+    expect(isIbanShape('DE88370400440532013000')).toBe(false)
+    expect(isIbanShape('TR13')).toBe(false)
     expect(groupIban('TR130006200000000000000002')).toBe('TR13 0006 2000 0000 0000 0000 02')
   })
 

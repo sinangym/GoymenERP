@@ -39,7 +39,7 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
                     CompanyId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     PartyId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Version = table.Column<long>(type: "bigint", nullable: false),
-                    Iban = table.Column<string>(type: "varchar(26)", unicode: false, maxLength: 26, nullable: false, collation: "Latin1_General_100_BIN2"),
+                    Iban = table.Column<string>(type: "varchar(34)", unicode: false, maxLength: 34, nullable: false, collation: "Latin1_General_100_BIN2"),
                     BankName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     Description = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
                     IsActive = table.Column<bool>(type: "bit", nullable: false),
@@ -52,7 +52,7 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_PartyIbans", x => new { x.CompanyId, x.Id });
-                    table.CheckConstraint("CK_PartyIbans_Content", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([Iban]) = 26 AND LEFT([Iban], 2) = 'TR' AND SUBSTRING([Iban], 3, 24) NOT LIKE '%[^0-9]%' AND LEN([BankName]) > 0 AND LEN([AddedBy]) > 0");
+                    table.CheckConstraint("CK_PartyIbans_Content", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([Iban]) BETWEEN 15 AND 34 AND LEFT([Iban], 2) NOT LIKE '%[^A-Z]%' AND SUBSTRING([Iban], 3, 2) NOT LIKE '%[^0-9]%' AND [Iban] NOT LIKE '%[^A-Z0-9]%' AND (LEFT([Iban], 2) <> 'TR' OR (LEN([Iban]) = 26 AND SUBSTRING([Iban], 3, 24) NOT LIKE '%[^0-9]%')) AND LEN([BankName]) > 0 AND LEN([AddedBy]) > 0");
                     table.CheckConstraint("CK_PartyIbans_State", "([IsActive] = 1 AND [Version] = 1 AND [DeactivatedBy] IS NULL AND [DeactivatedAtUtc] IS NULL AND [DeactivationReason] IS NULL) OR ([IsActive] = 0 AND [Version] = 2 AND LEN([DeactivatedBy]) > 0 AND [DeactivatedAtUtc] IS NOT NULL AND LEN([DeactivationReason]) > 0)");
                 });
 

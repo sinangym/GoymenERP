@@ -46,15 +46,25 @@ describe('cari IBAN panel', () => {
     expect(screen.queryByLabelText(T.iban)).toBeNull()
   })
 
-  it('refuses a foreign IBAN with its own Turkish message and sends nothing', async () => {
+  it('FNS-D122: sends a foreign IBAN and shows the server Turkish refusal for an unknown country', async () => {
     vi.mocked(fetchPartyIbans).mockResolvedValue({ type: 'ok', data: { companyId: company, partyId: party, ibans: [] } })
+    vi.mocked(addPartyIban)
+      .mockResolvedValueOnce({ kind: 'answered', result: { outcome: 'Succeeded',
+        resource: { ...row, iban: 'DE89370400440532013000' }, code: null, replayed: false } })
+      .mockResolvedValueOnce({ kind: 'answered', result: { outcome: 'ValidationFailed', resource: null,
+        code: 'counterparty_party_iban_country_unknown', replayed: false } })
     renderPanel()
     await screen.findByText(T.empty)
-    fireEvent.change(screen.getByLabelText(T.iban), { target: { value: 'DE89 3704 0044 0532 0130 00' } })
+    fireEvent.change(screen.getByLabelText(T.iban), { target: { value: 'de89 3704 0044 0532 0130 00' } })
     fireEvent.change(screen.getByLabelText(T.bank), { target: { value: 'SENTETIK Bank' } })
     fireEvent.click(screen.getByRole('button', { name: T.add }))
-    expect(await screen.findByText(T.foreignIban)).toBeTruthy()
-    expect(addPartyIban).not.toHaveBeenCalled()
+    expect(await screen.findByText(T.added)).toBeTruthy()
+    expect(vi.mocked(addPartyIban).mock.calls[0][3].iban).toBe('DE89370400440532013000')
+    // A shape-valid IBAN of a country outside the registry: the server decides, the screen shows its message.
+    fireEvent.change(screen.getByLabelText(T.iban), { target: { value: 'XX46370400440532013000' } })
+    fireEvent.change(screen.getByLabelText(T.bank), { target: { value: 'SENTETIK Bank' } })
+    fireEvent.click(screen.getByRole('button', { name: T.add }))
+    expect(await screen.findByText(T.codes.counterparty_party_iban_country_unknown)).toBeTruthy()
   })
 
   it('refuses an invalid IBAN locally and retries an unknown add with the same key and body', async () => {

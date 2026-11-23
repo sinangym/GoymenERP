@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { addPartyIban, deactivatePartyIban, fetchPartyIbans, type PartyIbanReply } from './partyIbanApi'
-import { groupIban, isForeignIban, isTurkishIban, normalizeIban, type PartyIbanView } from './partyIban'
+import { groupIban, isIbanShape, normalizeIban, type PartyIbanView } from './partyIban'
 import { PARTY_IBAN_TEXT as T } from './partyIbanText'
 
 interface Props {
@@ -75,8 +75,7 @@ export function CariPartyIbanPanel({ partyId, companyId, namespace, canManage }:
 
   const normalized = normalizeIban(iban)
   const submitAdd = () => {
-    if (isForeignIban(normalized)) { setMessage(T.foreignIban); return }
-    if (!isTurkishIban(normalized)) { setMessage(T.invalidIban); return }
+    if (!isIbanShape(normalized)) { setMessage(T.invalidIban); return }
     if (bank.trim() === '') { setMessage(T.bankRequired); return }
     const request = { ibanId: crypto.randomUUID(), iban: normalized, bankName: bank.trim(),
       description: description.trim() === '' ? null : description.trim() }

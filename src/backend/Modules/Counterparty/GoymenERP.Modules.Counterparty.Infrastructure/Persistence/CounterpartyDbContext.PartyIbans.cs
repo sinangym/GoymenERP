@@ -9,9 +9,14 @@ public sealed partial class CounterpartyDbContext
 
     private const string NoGuid = "'00000000-0000-0000-0000-000000000000'";
 
-    /// <summary>FNS-D121: a Turkish IBAN (TR + 24 digits; the mod-97 check is the service's), identity and text present.</summary>
+    /// <summary>
+    /// FNS-D121 / FNS-D122: an IBAN shape (15..34 upper-case letters/digits, two-letter country, two check digits; a TR IBAN is
+    /// TR + 24 digits), identity and text present. The country length table and mod-97 are the service's (IbanRegistryV1).
+    /// </summary>
     internal const string PartyIbanContentCheck = "[Id] <> " + NoGuid + " AND [CompanyId] <> " + NoGuid + " AND [PartyId] <> " + NoGuid
-        + " AND LEN([Iban]) = 26 AND LEFT([Iban], 2) = 'TR' AND SUBSTRING([Iban], 3, 24) NOT LIKE '%[^0-9]%'"
+        + " AND LEN([Iban]) BETWEEN 15 AND 34 AND LEFT([Iban], 2) NOT LIKE '%[^A-Z]%' AND SUBSTRING([Iban], 3, 2) NOT LIKE '%[^0-9]%'"
+        + " AND [Iban] NOT LIKE '%[^A-Z0-9]%'"
+        + " AND (LEFT([Iban], 2) <> 'TR' OR (LEN([Iban]) = 26 AND SUBSTRING([Iban], 3, 24) NOT LIKE '%[^0-9]%'))"
         + " AND LEN([BankName]) > 0 AND LEN([AddedBy]) > 0";
 
     /// <summary>FNS-D121: active at version 1 without a deactivation; passive at version 2 with who/when/why.</summary>
@@ -30,7 +35,7 @@ public sealed partial class CounterpartyDbContext
         iban.HasKey(x => new { x.CompanyId, x.Id });
         iban.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
         iban.Property(x => x.Version).IsConcurrencyToken();
-        iban.Property(x => x.Iban).HasMaxLength(26).IsUnicode(false).UseCollation("Latin1_General_100_BIN2");
+        iban.Property(x => x.Iban).HasMaxLength(34).IsUnicode(false).UseCollation("Latin1_General_100_BIN2");
         iban.Property(x => x.BankName).HasMaxLength(200);
         iban.Property(x => x.Description).HasMaxLength(500);
         iban.Property(x => x.AddedBy).HasMaxLength(128).UseCollation("Latin1_General_100_BIN2");

@@ -15,7 +15,7 @@ namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// FNS-D121 (K3): the cari IBAN list against real SQL Server — one save of row + command record + audit, the filtered unique
-/// index (one active copy per party), the state check, company isolation of the owner source and the Down guard (THROW 52252).
+/// index (one active copy per party), the state check, FNS-D122 foreign IBAN storage with the TR rule kept in the check, company isolation of the owner source and the Down guard (THROW 52252).
 /// The permission measurement is SENTETIK (registered names are granted to nobody).
 /// </summary>
 public sealed class CounterpartyPartyIbanSqlServerRelationalAcceptanceTests
@@ -75,11 +75,25 @@ public sealed class CounterpartyPartyIbanSqlServerRelationalAcceptanceTests
                 Assert.Empty((await source.FindPartiesAsync([Iban], default))!);
             }
 
+            // FNS-D122: a foreign IBAN (34-character column) is stored; the check keeps the TR rule (TR + 24 digits) for any writer.
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var service = Service(scope.ServiceProvider, TestCompanyIds.CompanyA);
+                var foreignIban = await service.AddAsync(party, new(Guid.NewGuid(), "GB82 WEST 1234 5698 7654 32", "SENTETIK Bank", null),
+                    "SENTETIK-g", "SENTETIK-iban", null, "Web", null, null, default);
+                Assert.Equal((CounterpartyPartyIbanOutcomeV1.Succeeded, "GB82WEST12345698765432"),
+                    (foreignIban.Outcome, foreignIban.Resource!.Iban));
+            }
+
+            Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(() => ExecuteAsync(factory.DatabaseConnectionString,
+                "INSERT INTO counterparty.PartyIbans (CompanyId, Id, PartyId, Version, Iban, BankName, IsActive, AddedBy, AddedAtUtc) "
+                + "SELECT TOP (1) CompanyId, NEWID(), PartyId, 1, 'TR1300062000000000000000A2', BankName, 1, AddedBy, AddedAtUtc "
+                + "FROM counterparty.PartyIbans"))).Number);
             Assert.Equal(547, (await Assert.ThrowsAsync<SqlException>(() => ExecuteAsync(factory.DatabaseConnectionString,
                 "UPDATE counterparty.PartyIbans SET DeactivationReason = NULL"))).Number);
-            Assert.Equal(2, await ScalarAsync(factory.DatabaseConnectionString,
+            Assert.Equal(3, await ScalarAsync(factory.DatabaseConnectionString,
                 "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType LIKE N'counterparty.party-iban.%'"));
-            Assert.Equal(2, await ScalarAsync(factory.DatabaseConnectionString, "SELECT COUNT(*) FROM counterparty.PartyIbanCommands"));
+            Assert.Equal(3, await ScalarAsync(factory.DatabaseConnectionString, "SELECT COUNT(*) FROM counterparty.PartyIbanCommands"));
             Assert.Equal(52252, (await Assert.ThrowsAsync<SqlException>(() =>
                 ExecuteAsync(factory.DatabaseConnectionString, guard))).Number);
         }

@@ -275,11 +275,14 @@ while any tax-number history (`Attribute = 1`) exists, then restores the previou
 history or an empty table the guard passes. Existing tax history is retained; use a reviewed forward fix instead.
 The model, ASCII/trailing-space SQL regression and Down guard evidence remain subject to the final K3 review.
 
-## FNS-D121 — IBAN list on the Cari card (Sinan, 2026-11-23) — K3
+## FNS-D121 / FNS-D122 — IBAN list on the Cari card (Sinan, 2026-11-22/23) — K3
 
 The Counterparty owner keeps each party's IBAN list in `counterparty.PartyIbans` (IBAN, bank name, optional description;
-versioned, audited). Only Turkish IBANs pass (`TR` + 24 digits, ISO 7064 mod-97); the value is stored normalized (no
-spaces, upper case). Personal data class Confidential (AI-D42: `iban` in `CounterpartyAiRelease`).
+versioned, audited). FNS-D122: an IBAN of any registered country passes ISO 13616 — the per-country length table of
+`IbanRegistryV1` (BuildingBlocks, source: SWIFT IBAN Registry) plus mod-97; a Turkish IBAN keeps `TR` + 24 digits. An
+unknown country, a wrong length and wrong check digits are refused with their own codes
+(`counterparty_party_iban_country_unknown`, `_length_invalid`, `_check_digits_invalid`; malformed text `_invalid`). The
+value is stored normalized (no spaces, upper case, `varchar(34)`); the SQL check keeps the shape and the TR rule. Personal data class Confidential (AI-D42: `iban` in `CounterpartyAiRelease`).
 
 | Part | What |
 |---|---|
@@ -293,6 +296,6 @@ spaces, upper case). Personal data class Confidential (AI-D42: `iban` in `Counte
 Shell (Counterparty 1.6): controls `cari.party-ibans.read` and `cari.party-ibans.manage` inside C-03 (same route,
 context and scope as the detail; declarations grant nothing). The Cari detail draws the panel only with the read control
 and its add/deactivate controls only with the manage control; the API re-checks each request. The two disposable C-01
-envelopes and the CARI-ACCEPTANCE-006 profile keep both controls closed/outside. A foreign IBAN is refused (fail-closed,
-NEEDS-SINAN) with an explicit Turkish message.
+envelopes and the CARI-ACCEPTANCE-006 profile keep both controls closed/outside. The screen pre-checks only the ISO 13616
+shape and check digits; the country length table stays the server's.
 Real SQL facts are written and NOT_RUN locally.

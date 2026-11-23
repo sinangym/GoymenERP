@@ -1030,9 +1030,9 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Iban")
                         .IsRequired()
-                        .HasMaxLength(26)
+                        .HasMaxLength(34)
                         .IsUnicode(false)
-                        .HasColumnType("varchar(26)")
+                        .HasColumnType("varchar(34)")
                         .UseCollation("Latin1_General_100_BIN2");
 
                     b.Property<bool>("IsActive")
@@ -1058,7 +1058,7 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
 
                     b.ToTable("PartyIbans", "counterparty", t =>
                         {
-                            t.HasCheckConstraint("CK_PartyIbans_Content", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([Iban]) = 26 AND LEFT([Iban], 2) = 'TR' AND SUBSTRING([Iban], 3, 24) NOT LIKE '%[^0-9]%' AND LEN([BankName]) > 0 AND LEN([AddedBy]) > 0");
+                            t.HasCheckConstraint("CK_PartyIbans_Content", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([Iban]) BETWEEN 15 AND 34 AND LEFT([Iban], 2) NOT LIKE '%[^A-Z]%' AND SUBSTRING([Iban], 3, 2) NOT LIKE '%[^0-9]%' AND [Iban] NOT LIKE '%[^A-Z0-9]%' AND (LEFT([Iban], 2) <> 'TR' OR (LEN([Iban]) = 26 AND SUBSTRING([Iban], 3, 24) NOT LIKE '%[^0-9]%')) AND LEN([BankName]) > 0 AND LEN([AddedBy]) > 0");
 
                             t.HasCheckConstraint("CK_PartyIbans_State", "([IsActive] = 1 AND [Version] = 1 AND [DeactivatedBy] IS NULL AND [DeactivatedAtUtc] IS NULL AND [DeactivationReason] IS NULL) OR ([IsActive] = 0 AND [Version] = 2 AND LEN([DeactivatedBy]) > 0 AND [DeactivatedAtUtc] IS NOT NULL AND LEN([DeactivationReason]) > 0)");
                         });

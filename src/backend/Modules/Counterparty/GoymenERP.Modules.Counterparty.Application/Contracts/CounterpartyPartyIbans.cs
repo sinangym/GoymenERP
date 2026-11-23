@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Banking;
 using System.Text.Json.Serialization;
 
 namespace GoymenERP.Modules.Counterparty.Application.Contracts;
@@ -19,6 +20,9 @@ public static class CounterpartyPartyIbanCodesV1
 {
     public const string RequestInvalid = "counterparty_party_iban_request_invalid";
     public const string IbanInvalid = "counterparty_party_iban_invalid";
+    public const string IbanCountryUnknown = "counterparty_party_iban_country_unknown";
+    public const string IbanLengthInvalid = "counterparty_party_iban_length_invalid";
+    public const string IbanCheckDigitsInvalid = "counterparty_party_iban_check_digits_invalid";
     public const string BankNameRequired = "counterparty_party_iban_bank_name_required";
     public const string TextTooLong = "counterparty_party_iban_text_too_long";
     public const string ReasonRequired = "counterparty_party_iban_reason_required";
@@ -37,34 +41,27 @@ public static class CounterpartyPartyIbanLimitsV1
 }
 
 /// <summary>
-/// FNS-D121: a Turkish IBAN (TR mod-97). The stored form has no spaces and is upper case; <c>TR</c> + 24 digits, ISO 13616
-/// check digits valid. Other countries are refused (the rule names TR mod-97 only).
+/// FNS-D121 / FNS-D122: an IBAN of any registered country, validated by ISO 13616 (country length table + mod-97) through
+/// <see cref="IbanRegistryV1"/>; a Turkish IBAN keeps its FNS-D121 rule (<c>TR</c> + 24 digits). The stored form has no
+/// spaces and is upper case. An unknown country code, a wrong length or wrong check digits is refused with its own code.
 /// </summary>
 public static class CounterpartyIbanV1
 {
-    public const int TurkishLength = 26;
+    public const int MaximumLength = IbanRegistryV1.MaximumLength;
 
-    public static string Normalize(string? text) =>
-        string.IsNullOrWhiteSpace(text)
-            ? string.Empty
-            : new string(text.Where(character => character is not (' ' or '\t' or '-')).Select(char.ToUpperInvariant).ToArray());
+    public static string Normalize(string? text) => IbanRegistryV1.Normalize(text);
 
-    public static bool IsValidTurkish(string? normalized)
+    public static bool IsValid(string? normalized) => IbanRegistryV1.IsValid(normalized);
+
+    /// <summary>The refusal code for a normalized value, or null when it is valid.</summary>
+    public static string? RefusalCode(string? normalized) => IbanRegistryV1.Check(normalized) switch
     {
-        if (normalized is null || normalized.Length != TurkishLength || normalized[0] != 'T' || normalized[1] != 'R'
-            || !normalized.Skip(2).All(char.IsAsciiDigit))
-            return false;
-        var remainder = 0;
-        for (var offset = 0; offset < normalized.Length; offset++)
-        {
-            var character = normalized[(offset + 4) % normalized.Length];
-            remainder = char.IsAsciiDigit(character)
-                ? (remainder * 10 + (character - '0')) % 97
-                : (remainder * 100 + (character - 'A' + 10)) % 97;
-        }
-
-        return remainder == 1;
-    }
+        IbanCheckV1.Valid => null,
+        IbanCheckV1.UnknownCountry => CounterpartyPartyIbanCodesV1.IbanCountryUnknown,
+        IbanCheckV1.WrongLength => CounterpartyPartyIbanCodesV1.IbanLengthInvalid,
+        IbanCheckV1.CheckDigits => CounterpartyPartyIbanCodesV1.IbanCheckDigitsInvalid,
+        _ => CounterpartyPartyIbanCodesV1.IbanInvalid,
+    };
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]

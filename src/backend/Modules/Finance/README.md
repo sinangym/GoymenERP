@@ -869,7 +869,7 @@ late authority loss or Audit failure rolls all of it back. No table in another m
 Migration SQL, new entity construction and the owner Audit binding remain in the K3 review scope. Model/SQL/HTTP
 and UI test sources are written; runtime, DB apply, browser and CI remain **NOT_RUN**.
 
-## WP12 / DALGA_PLANI_v2 1.13: bank statement import and matching (FNS-D13, FNS-D52, FNS-D113, FNS-D114, FNS-D119, FNS-D120, FNS-D121) — Finance K3
+## WP12 / DALGA_PLANI_v2 1.13: bank statement import and matching (FNS-D13, FNS-D52, FNS-D113, FNS-D114, FNS-D119, FNS-D120, FNS-D121, FNS-D122) — Finance K3
 
 > **Two independent exact-head reviews (K3):** DB migrations/constraints, permission registration, cross-module contracts
 > (vault owner kind, Settings mapping port, cari IBAN port) and money-adjacent matching. Code complete, **activation is a
@@ -898,7 +898,8 @@ overlapping later file stores only its new lines; the same file (SHA-256) twice 
 
 **Suggestions (FNS-D113, a read).** No tolerance: a candidate is an unmatched recorded movement of the same bank account
 with the same direction, exactly the same amount and the line's transaction date (receipts at bank net for POS, party
-payments, recorded expense payments, transfer legs). The line's single Turkish IBAN is compared where a source exists
+payments, recorded expense payments, transfer legs). The line's single IBAN (FNS-D122: any registered country, ISO 13616
+through `IbanRegistryV1`; TR keeps TR + 24 digits) is compared where a source exists
 (FNS-D114): the **cari IBAN list** through `IFinancePartyIbanReadPortV1` for a party record, the other own account's
 approved IBAN for a transfer. A Mismatch removes the candidate; a Verified one wins over NotAvailable ones; exactly one
 remaining candidate (not pointed at by another line) is Suggested with its `CounterpartyCheck`; everything else is Manual.

@@ -71,8 +71,8 @@ internal sealed class CounterpartyPartyIbanService(
             return replay;
 
         var iban = CounterpartyIbanV1.Normalize(request.Iban);
-        if (!CounterpartyIbanV1.IsValidTurkish(iban))
-            return Refused(CounterpartyPartyIbanOutcomeV1.ValidationFailed, CounterpartyPartyIbanCodesV1.IbanInvalid);
+        if (CounterpartyIbanV1.RefusalCode(iban) is { } ibanRefusal)
+            return Refused(CounterpartyPartyIbanOutcomeV1.ValidationFailed, ibanRefusal);
         var bank = request.BankName?.Trim() ?? string.Empty;
         if (bank.Length == 0 || bank.Any(char.IsControl))
             return Refused(CounterpartyPartyIbanOutcomeV1.ValidationFailed, CounterpartyPartyIbanCodesV1.BankNameRequired);
@@ -250,7 +250,7 @@ internal sealed class CounterpartyPartyIbanSourceV1(CounterpartyDbContext dbCont
         cancellationToken.ThrowIfCancellationRequested();
         if (ibans is null || !companyContext.IsResolved || companyContext.CompanyId == Guid.Empty) return null;
         var companyId = companyContext.CompanyId;
-        var asked = ibans.Select(CounterpartyIbanV1.Normalize).Where(CounterpartyIbanV1.IsValidTurkish)
+        var asked = ibans.Select(CounterpartyIbanV1.Normalize).Where(CounterpartyIbanV1.IsValid)
             .Distinct(StringComparer.Ordinal).ToArray();
         var result = new Dictionary<string, IReadOnlyList<Guid>>(StringComparer.Ordinal);
         try
