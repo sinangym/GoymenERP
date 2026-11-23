@@ -101,6 +101,11 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | E-87 | Asistan hafızası çalışan bilgilendirme metni? | **Taslak hazırlansın, hukuk onayıyla açılsın (Önerilen)** | Seçilmeyen: "Şimdilik hafıza kapalı kalsın". |
 | E-88 | Kredi grubu alan taslakları (FNS-D106)? | **Taslak hazırlansın, size sunulsun (Önerilen)** | Seçilmeyen: "Şimdilik kapalı kalsın". |
 | E-89 | AI aylık bütçesi sağlayıcı karşılaştırmasından sonra mı belirlensin? (YOL-D21) | **Evet, karşılaştırmadan sonra (Önerilen)** | Seçilmeyen: "Şimdi başlangıç tavanı koyalım". |
+| E-90 | Nakdi kredi alan listesi onaylansın mı? (FNS-D123, docs/features/FINANCE_CREDIT_GROUP_FIELDS_DRAFT_v1.md v1.1) | **Evet; rotatif/KMH/kart kaynak hareketiyle (Önerilen)** | Seçilmeyen: "Hayır, kapalı kalsın". |
+| E-91 | Gayrinakdi kredi alan listesi onaylansın mı? | **Evet; teminat kullanım sayılmaz (Önerilen)** | Seçilmeyen: "Hayır, kapalı kalsın". |
+| E-92 | Çek/senet + faktoring alan listesi onaylansın mı? | **Evet; fatura referansı zorunlu (Önerilen)** | Seçilmeyen: "Hayır, kapalı kalsın". |
+| E-93 | Leasing alan listesi onaylansın mı? | **Evet; taksit = anapara+faiz+KDV+dahil masraf (Önerilen)** | Seçilmeyen: "Hayır, kapalı kalsın". |
+| E-94 | Banka ekstresi içe alma ve görme izinleri kime önerilsin? | **İçe alma FIN; görme FIN+FINM+GM (Önerilen)** | Seçilmeyen: "İçe alma ve görme FIN+FINM". |
 
 ## Kararlar
 
@@ -169,6 +174,11 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | AI-D50 | Hafıza bilgilendirme metni (E-87; AI-D38/D39/D48 ile) | Ne saklandığını, kimin gördüğünü (yönetici gözetimi, AI-D30/D39), 1 yıl saklamayı, 200 kayıt sınırını ve silme hakkını anlatan Türkçe **taslak** metin hazırlanır; hafıza, hukukçu onaylayıp metin sürümü girilene kadar **kapalı** kalır. |
 | FNS-D123 | Kredi grubu alan taslağı (E-88; FNS-D106 uygulaması) | Kredi grupları için alan taslakları mevcut kararlardan hazırlanıp Sinan'ın onayına sunulur; onaylanan grubun hareketleri açılır, diğerleri kapalı kalır. |
 | YOL-D43 | AI bütçesi sırası (E-89; YOL-D21 teyidi) | Aylık AI bütçesi sağlayıcı karşılaştırma raporu sunulduktan sonra belirlenir; o zamana kadar bütün AI özellikleri kapalıdır. |
+| FNS-D124 | Nakdi kredi grubu (E-90; FNS-D106/D123) | `docs/features/FINANCE_CREDIT_GROUP_FIELDS_DRAFT_v1.md` v1.1'deki nakdi kredi alan listesi **onaylandı**; grup açılır. Rotatif, KMH ve kredi kartı taksit planı yerine kaynak hareketleriyle izlenir; diğer nakdi türler taksit planıyla (FNS-D99/D116). |
+| FNS-D125 | Gayrinakdi kredi grubu (E-91) | Alan listesi **onaylandı**; grup açılır. Teminat tutarı kredi kullanımı sayılmaz; nakit hareket yalnız tazminde oluşur; nazım hesap izlemesi şimdilik kapalıdır. |
+| FNS-D126 | Çek/senet + faktoring grubu (E-92) | Alan listesi **onaylandı**; grup açılır. Faktoringde fatura referansı zorunludur; rücu'lu işlemin riski Cari risk panelinde kalır (FNS-D58/D82). |
+| FNS-D127 | Leasing grubu (E-93) | Alan listesi **onaylandı**; grup açılır. Taksit = anapara + faiz + KDV + kaynakta beyan edilen dahil masraf (BSMV/KKDF yerine KDV); tolerans FNS-D116; KDV için muhasebe eşleme anahtarı ayrıca açılır. |
+| ROL-D25 | Banka ekstresi izinleri (E-94; atama insan kapısı) | Rol taslağına öneri: `finance.bank-statements.import` → FIN; `finance.bank-statements.read` → FIN, FINM, GM. Hiçbir role/seed'e atanmaz. |
 | YOL-D33 | Yükseltme zamanı (E-58; YOL-D17/YOL-D28 ayrıntısı) | Süresi dolan onaya hatırlatma gider; **bir süre sınıfı daha** (saat sınıfında 4 saat, iş günü sınıfında 2 iş günü) karar verilmezse onay yükseltme izni sahiplerine yükseltilir. ASSUMPTION-WP2-1'in yerine geçer. |
 | YOL-D34 | Sahipsiz onay (E-59; ROL-D3 uygulaması) | Onaylayabilecek kimse olmayan onay **`work.approvals.escalate`** izni sahiplerine gösterilir ve bildirilir; izin hiçbir role verilmez (atama insan kapısı). |
 | YOL-D35 | Özet saatleri izni (E-60; YOL-D25 ayrıntısı) | Günlük özet saatlerini **`settings.work-approval-duration.manage`** izni olan değiştirir; ayrı izin açılmaz. |
