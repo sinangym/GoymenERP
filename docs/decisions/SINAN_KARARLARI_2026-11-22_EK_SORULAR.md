@@ -61,6 +61,10 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | E-47 | CI gerçek SQL parçası süre sınırı 10.800 sn (koddaki "18 Kasım kullanıcı kararı" notunun kaydı yok) sizin kararınız mı? | **Serbest cevap:** "Mantıklı olan şekilde neyse" | Önerilen "Evet, 3 saat kalsın" uygulanır (GOV-D18). Seçilmeyen: "Daha kısa olsun". |
 | E-48 | FNS-D99 kredi planı toleransı TL dışında ne olsun, plan eşitliğine hangi masraflar girsin? | **O para biriminin en küçük birimi + beyan edilen masraflar (Önerilen)** | Seçilmeyen: "Her para biriminde 0,01, tüm masraflar dahil". |
 | E-49 | Bakiye birden fazla halef cariye devredilmişse iadenin eski hesap payını aşan kısmı halefler arasında hangi sırayla düşsün? | **En son devredilenden başlayarak (Önerilen)** | Seçilmeyenler: "İlk devredilenden başlayarak"; "Payları oranında". |
+| E-50 | Adet/kg formül golden'ları main'e ayrı girmeden tren-1 içinde kodla birlikte duruyor; nasıl olsun? (PR #1201 K3 hükmü) | **Trenle birlikte girsin (Önerilen)** | Seçilmeyen: "Önce belgeler ayrı girsin". |
+| E-51 | Tedarikçi revizyonunda, o alış satırına bağlı gelecek tahsis varsa ne olsun? (K3FIX-G4) | **Onayla serbest bıraksın** | Seçilmeyen: "Reddedilsin, önce tahsis kaldırılsın (Önerilen)". |
+| E-52 | Dövizli alışta kabul kısmen geri alınır/iade edilirse maliyet kuru ne zaman kesinleşsin? (K3FIX-G4, BS-1) | **Kalan miktar faturalanınca (Önerilen)** | Seçilmeyen: "İlk miktarın tamamı faturalanınca". |
+| E-53 | Adet tutan fiziksel tahsis kg olarak kısmen bırakılırsa kaç adet geri verilsin? (K3FIX-G3/F2) | **Adet zorunlu girilsin (Önerilen)** | Seçilmeyenler: "Kg oranıyla hesaplansın"; "Kısmi bırakma yasak kalsın". |
 
 ## Kararlar
 
@@ -115,6 +119,10 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | GOV-D18 | CI SQL parça süresi (E-47) | Geniş gerçek SQL parçasının süre sınırı **10.800 sn**, yerel parça **2.400 sn** olarak kalır. |
 | FNS-D116 | Kredi planı toleransı (FNS-D99 ayrıntısı) | Tolerans kredinin para biriminin **en küçük birimi**dir (TL'de 0,01 TL); plan eşitliğine yalnız kaynakta **beyan edilen dahil masraflar** girer. |
 | FNS-D117 | Çoklu halefte iade sırası (FNS-D115 ayrıntısı) | İadenin eski hesap payını aşan kısmı halefler arasında **en son devredilenden başlayarak** düşülür. |
+| GOV-D19 | Golden'ın trenle girmesi (E-50; SAT-D431 uygulaması) | İki bağımsız DOCS incelemesinden geçmiş formül golden belgeleri (PR #1204, #1205, #1206 içerikleri) ve onlara dayanan kod **aynı tren birleştirmesiyle** main'e girebilir; golden'ın main'e ayrı ve önce girmesi aranmaz. Şart: golden trende bulunur, satırları testlerle kimliğiyle sabitlenir ve trenin exact-head K3 incelemesi ikisini birlikte kapsar. |
+| ALS-D126 | Tedarikçi revizyonu ve gelecek tahsis (E-51) | Tedarikçi revizyonu istenen alış satırına bağlı aktif gelecek tahsis varsa kullanıcıya etkilenen tahsisler gösterilir; kullanıcı **onaylarsa** revizyon bu tahsisleri serbest bırakır (sipariş iptalindeki onaylı serbest bırakma gibi), onaysız istek reddedilir. Serbest bırakma denetime yazılır. |
+| ALS-D127 | Kısmi geri alma/iade sonrası maliyet kuru (E-52; BS-1 ayrıntısı) | Dövizli alışta kabulün bir kısmı geri alınmış veya iade edilmişse maliyet kuru, geri alınan/iade edilen kısım düşüldükten sonra **kalan miktarın tamamı faturalandığında** kesinleşir. |
+| KLN-D120 | Adetli tahsisin kısmi bırakılması (E-53; SAT-D463 ile aynı ilke) | Adet tutan fiziksel tahsis kg olarak kısmen bırakılırken kg ile birlikte **adet zorunludur**; adetsiz kısmi bırakma reddedilir. Tam bırakmada kalan adet sıfırlanır. |
 
 ## Taslağa doğrudan yansıyanlar (yeni karar değil)
 
