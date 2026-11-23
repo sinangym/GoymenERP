@@ -199,12 +199,12 @@ public sealed class AiYa1ReadToolsTests
     {
         var harness = new Harness();
 
-        var result = await harness.Service().AskAsync(Ask(DecisionLookupAiTool.ToolId, "{\"decisionId\":\"AI-D34\"}"));
+        var result = await harness.Service().AskAsync(Ask(DecisionLookupAiTool.ToolId, "{\"decisionId\":\"AI-D24\"}"));
 
         Assert.Equal(AiAskStatusV1.Answered, result.Status);
         var toolResult = Assert.Single(result.Response!.ToolResults);
         Assert.Equal(AiToolResultOutcomesV1.Succeeded, toolResult.Outcome);
-        Assert.Contains("\"AI-D34\"", toolResult.ContentJson!, StringComparison.Ordinal);
+        Assert.Contains("\"AI-D24\"", toolResult.ContentJson!, StringComparison.Ordinal);
         Assert.Equal(DecisionLookupAiTool.TargetKind, toolResult.Source!.TargetKind);
         Assert.Equal(
             new[] { SecurityEventPhasesV1.Started, SecurityEventPhasesV1.Completed },
@@ -219,7 +219,7 @@ public sealed class AiYa1ReadToolsTests
         var harness = new Harness();
         harness.Authority.Revoke(ErpPermissions.AiDecisionsRead);
 
-        var result = await harness.Service().AskAsync(Ask(DecisionLookupAiTool.ToolId, "{\"decisionId\":\"AI-D34\"}"));
+        var result = await harness.Service().AskAsync(Ask(DecisionLookupAiTool.ToolId, "{\"decisionId\":\"AI-D24\"}"));
 
         Assert.Equal(AiAskStatusV1.Refused, result.Status);
         var denied = Assert.Single(harness.Writer.Events);
@@ -501,12 +501,12 @@ public sealed class AiYa1ReadToolsTests
         return rows;
     }
 
-    /// <summary>The repository index is approved for the SENTETIK company (WP-A4); approval itself is tested elsewhere.</summary>
+    /// <summary>The repository index is approved for the group (WP-A4, AI-D46); approval itself is tested elsewhere.</summary>
     private sealed class ApprovedPackages : IAiKnowledgeApprovalReaderV1
     {
-        public Task<AiKnowledgeApprovalStateV1> GetStateAsync(Guid companyId, AiKnowledgeSourceKindV1 kind, string packageSha256,
+        public Task<AiKnowledgeApprovalStateV1> GetStateAsync(AiKnowledgeSourceKindV1 kind, string packageSha256,
             CancellationToken cancellationToken = default) =>
-            Task.FromResult(companyId == Company && kind == AiKnowledgeSourceKindV1.DecisionIndex
+            Task.FromResult(kind == AiKnowledgeSourceKindV1.DecisionIndex
                             && packageSha256 == RepositoryIndex.Value.PackageSha256
                 ? AiKnowledgeApprovalStateV1.Approved
                 : AiKnowledgeApprovalStateV1.NotApproved);

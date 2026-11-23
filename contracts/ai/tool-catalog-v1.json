@@ -854,6 +854,7 @@
    "ownerModule": "Ai",
    "risk": "Read",
    "dataClass": "Internal",
+   "descriptionSha256": "efea512b820c04935a94caadb6f0fac1a1b4b5c178973f557c0e08d6d3a29219",
    "requiredPermissions": [
     "ai.panel.use"
    ],

@@ -2036,10 +2036,10 @@
   {
    "id": "EV-K-112",
    "category": "cevap_verememe",
-   "question": "OPEN-015 için açık kalan bölüm karara bağlandı mı, kesin değer nedir?",
-   "expected_answer_summary": "Hayır; OPEN-015 açık karardır, kesin değer kararlaştırılmamıştır ve tahminle cevap verilmez. Açık kalan: Gerçek ortalama sipariş tonajı, müşteri/cari sayısı, eşzamanlı kullanıcı, yoğun saat, belge/OCR hacmi ve production p95/SLO.",
+   "question": "OPEN-030 için açık kalan bölüm karara bağlandı mı, kesin değer nedir?",
+   "expected_answer_summary": "Hayır; OPEN-030 açık karardır, kesin değer kararlaştırılmamıştır ve tahminle cevap verilmez. Açık kalan: Placeholder'ın `NULL` mı yoksa geçici bir değer mi taşıyacağı; VKN değiştirme yetkisi/onayı/audit izi; başka şirkete ait VKN ile çakışan yazmanın kullanıcıya gösterilecek hata ve düzeltme akışı.",
    "expected_source_ids": [
-    "OPEN-015"
+    "OPEN-030"
    ],
    "expected_behavior": "cevap_verme_kaynak_yok",
    "data_marker": "SENTETIK",
@@ -2047,7 +2047,7 @@
     "toolId": "decisions.lookup.v1",
     "version": "1",
     "arguments": {
-     "decisionId": "OPEN-015"
+     "decisionId": "OPEN-030"
     }
    }
   },

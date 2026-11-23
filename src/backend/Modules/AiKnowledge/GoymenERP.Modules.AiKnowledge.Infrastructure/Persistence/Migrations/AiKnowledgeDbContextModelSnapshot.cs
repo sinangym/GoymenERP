@@ -24,10 +24,8 @@ namespace GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiKnowledgeApprovalRow", b =>
                 {
-                    b.Property<Guid>("CompanyId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTimeOffset>("ApprovedAtUtc")
@@ -44,6 +42,9 @@ namespace GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("OriginCompanyId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("PackageSha256")
                         .IsRequired()
@@ -77,20 +78,27 @@ namespace GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("WithdrawnByUserId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.HasKey("CompanyId", "Id");
+                    b.Property<Guid?>("WithdrawnOriginCompanyId")
+                        .HasColumnType("uniqueidentifier");
 
-                    b.HasIndex("CompanyId", "SourceKind", "PackageSha256")
+                    b.HasKey("Id");
+
+                    b.HasIndex("OriginCompanyId");
+
+                    b.HasIndex("WithdrawnOriginCompanyId");
+
+                    b.HasIndex("SourceKind", "PackageSha256")
                         .IsUnique()
                         .HasDatabaseName("UX_AiKnowledgePackageApprovals_Active")
                         .HasFilter("[Status] = 1");
 
-                    b.HasIndex("CompanyId", "SourceKind", "ApprovedAtUtc", "Id");
+                    b.HasIndex("SourceKind", "ApprovedAtUtc", "Id");
 
                     b.ToTable("PackageApprovals", "aiknowledge", t =>
                         {
-                            t.HasCheckConstraint("CK_AiKnowledgePackageApprovals_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [ApprovedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [SourceKind] IN (1, 2) AND LEN([CorrelationId]) > 0 AND DATALENGTH([PackageSha256]) = 64 AND [PackageSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%'");
+                            t.HasCheckConstraint("CK_AiKnowledgePackageApprovals_Identity", "[OriginCompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [ApprovedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [SourceKind] IN (1, 2) AND LEN([CorrelationId]) > 0 AND DATALENGTH([PackageSha256]) = 64 AND [PackageSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%'");
 
-                            t.HasCheckConstraint("CK_AiKnowledgePackageApprovals_State", "([Status] = 1 AND [Version] = 1 AND [WithdrawnByUserId] IS NULL AND [WithdrawnAtUtc] IS NULL AND [WithdrawReason] IS NULL) OR ([Status] = 2 AND [Version] = 2 AND [WithdrawnByUserId] IS NOT NULL AND [WithdrawnByUserId] <> '00000000-0000-0000-0000-000000000000' AND [WithdrawnAtUtc] IS NOT NULL AND [WithdrawnAtUtc] >= [ApprovedAtUtc] AND [WithdrawReason] IS NOT NULL AND LEN([WithdrawReason]) > 0)");
+                            t.HasCheckConstraint("CK_AiKnowledgePackageApprovals_State", "([Status] = 1 AND [Version] = 1 AND [WithdrawnByUserId] IS NULL AND [WithdrawnOriginCompanyId] IS NULL AND [WithdrawnAtUtc] IS NULL AND [WithdrawReason] IS NULL) OR ([Status] = 2 AND [Version] = 2 AND [WithdrawnByUserId] IS NOT NULL AND [WithdrawnByUserId] <> '00000000-0000-0000-0000-000000000000' AND [WithdrawnOriginCompanyId] IS NOT NULL AND [WithdrawnOriginCompanyId] <> '00000000-0000-0000-0000-000000000000' AND [WithdrawnAtUtc] IS NOT NULL AND [WithdrawnAtUtc] >= [ApprovedAtUtc] AND [WithdrawReason] IS NOT NULL AND LEN([WithdrawReason]) > 0)");
                         });
                 });
 
@@ -327,9 +335,14 @@ namespace GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.Migrations
                 {
                     b.HasOne("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiKnowledgeCompanyReference", null)
                         .WithMany()
-                        .HasForeignKey("CompanyId")
+                        .HasForeignKey("OriginCompanyId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiKnowledgeCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("WithdrawnOriginCompanyId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiKnowledgeCommandAttemptRow", b =>

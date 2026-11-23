@@ -96,7 +96,7 @@ public sealed class FixedAiReleaseKnowledgeSource(AiReleaseKnowledge? package) :
 
 /// <summary>
 /// The host side of <see cref="IAiKnowledgePackageCatalogV1"/>: what this build has packaged, for the approval screen and
-/// the approval command (an approver can only approve the bytes that are packaged now).
+/// the approval command (an approver can only approve the bytes that are packaged now; the approval is group-wide, AI-D46).
 /// </summary>
 public sealed class PackagedAiKnowledgeCatalog(IAiDecisionIndexSource decisionIndex, IAiReleaseKnowledgeSource releaseKnowledge)
     : IAiKnowledgePackageCatalogV1
@@ -119,6 +119,6 @@ public sealed class PackagedAiKnowledgeCatalog(IAiDecisionIndexSource decisionIn
 /// </summary>
 public sealed class UnconfiguredAiKnowledgeApprovalReader : IAiKnowledgeApprovalReaderV1
 {
-    public Task<AiKnowledgeApprovalStateV1> GetStateAsync(Guid companyId, AiKnowledgeSourceKindV1 kind, string packageSha256,
+    public Task<AiKnowledgeApprovalStateV1> GetStateAsync(AiKnowledgeSourceKindV1 kind, string packageSha256,
         CancellationToken cancellationToken = default) => Task.FromResult(AiKnowledgeApprovalStateV1.Unavailable);
 }

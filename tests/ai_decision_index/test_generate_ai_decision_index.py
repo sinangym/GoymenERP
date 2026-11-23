@@ -200,7 +200,7 @@ class FixtureTests(unittest.TestCase):
     def test_cloud_eligibility_follows_content_and_data_class(self) -> None:
         self.assertEqual(("bulut_uygun_aday", "internal"),
                          (self.records["TST-D3"]["cloud_eligibility"], self.records["TST-D3"]["cloud_data_class"]))
-        self.assertEqual(("maskeli_bulut_uygun_aday", "internal"),
+        self.assertEqual(("yerel_kalir", "confidential"),
                          (self.records["TST-D16"]["cloud_eligibility"], self.records["TST-D16"]["cloud_data_class"]))
         self.assertEqual(("yerel_kalir", "confidential"),
                          (self.records["TST-D17"]["cloud_eligibility"], self.records["TST-D17"]["cloud_data_class"]))

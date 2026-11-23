@@ -9,10 +9,10 @@ namespace GoymenERP.Api.Ai.Knowledge;
 /// <summary>
 /// WP-A4 READ tool <c>release-knowledge.lookup.v1</c> (DALGA_PLANI_v2 A.4 (3)): how the PUBLISHED software behaves — usage
 /// notes bound to this build (the package is API content). One note by exact identity, or up to ten by keyword, each with its
-/// source file and line. Rules: the package is used only when its exact bytes are approved for the company
-/// (<c>ai.knowledge.approve</c>, AI-D32); a note is released only to an actor who holds every permission it names, checked
+/// source file and line. Rules: the package is used only when its exact bytes are approved for the group
+/// (<c>ai.knowledge.approve</c>, AI-D32, AI-D46); a note is released only to an actor who holds every permission it names, checked
 /// fresh in the server company (a note the actor may not see is not counted either, so its existence does not leak);
-/// unimplemented features are not in the package at all; content labelled <c>yerel_kalir</c> (AI-D34 d) is withheld from this
+/// unimplemented features are not in the package at all; content labelled <c>yerel_kalir</c> (AI-D34 d, AI-D49) is withheld from this
 /// Internal-class tool and only counted. No database row, SQL or network is read besides the approval and the permission check.
 /// </summary>
 public sealed partial class ReleaseKnowledgeLookupAiTool(
@@ -69,7 +69,7 @@ public sealed partial class ReleaseKnowledgeLookupAiTool(
             return new AiReadResultV1(AiToolOutcomeV1.Unavailable);
         }
 
-        if (await approvals.GetStateAsync(context.CompanyId, AiKnowledgeSourceKindV1.ReleaseKnowledge, package.PackageSha256,
+        if (await approvals.GetStateAsync(AiKnowledgeSourceKindV1.ReleaseKnowledge, package.PackageSha256,
                 cancellationToken) != AiKnowledgeApprovalStateV1.Approved)
         {
             return new AiReadResultV1(AiToolOutcomeV1.Unavailable);

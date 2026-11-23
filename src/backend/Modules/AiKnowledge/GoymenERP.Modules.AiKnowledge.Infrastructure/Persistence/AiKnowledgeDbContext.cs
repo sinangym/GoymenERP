@@ -6,8 +6,11 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence;
 
 /// <summary>
-/// WP-A4 knowledge package approvals (schema <c>aiknowledge</c>). Every row carries CompanyId and is read only through the
-/// company query filter; approvals are never deleted (Approved → Withdrawn by one version step), attempts are append-only.
+/// WP-A4 knowledge package approvals (schema <c>aiknowledge</c>). AI-D46: an approval is group-wide (one approval of a package
+/// version holds in every company), so approval rows have no company query filter; they carry the verified origin company of
+/// the approving (and withdrawing) request instead, and a write is accepted only from that company context. Attempts are the
+/// request records of the origin company (CompanyId + query filter). Approvals are never deleted (Approved → Withdrawn by one
+/// version step); attempts are append-only.
 /// </summary>
 public sealed class AiKnowledgeDbContext(
     DbContextOptions<AiKnowledgeDbContext> options,
@@ -18,12 +21,14 @@ public sealed class AiKnowledgeDbContext(
     internal const string HexCheck = "DATALENGTH([{0}]) = 64 AND [{0}] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%'";
     internal const string ActiveApprovalIndexName = "UX_AiKnowledgePackageApprovals_Active";
     internal const string ApprovalIdentityCheck =
-        "[CompanyId] <> " + EmptyGuid + " AND [Id] <> " + EmptyGuid + " AND [ApprovedByUserId] <> " + EmptyGuid
+        "[OriginCompanyId] <> " + EmptyGuid + " AND [Id] <> " + EmptyGuid + " AND [ApprovedByUserId] <> " + EmptyGuid
         + " AND [SourceKind] IN (1, 2) AND LEN([CorrelationId]) > 0"
         + " AND DATALENGTH([PackageSha256]) = 64 AND [PackageSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%'";
     internal const string ApprovalStateCheck =
-        "([Status] = 1 AND [Version] = 1 AND [WithdrawnByUserId] IS NULL AND [WithdrawnAtUtc] IS NULL AND [WithdrawReason] IS NULL)"
+        "([Status] = 1 AND [Version] = 1 AND [WithdrawnByUserId] IS NULL AND [WithdrawnOriginCompanyId] IS NULL"
+        + " AND [WithdrawnAtUtc] IS NULL AND [WithdrawReason] IS NULL)"
         + " OR ([Status] = 2 AND [Version] = 2 AND [WithdrawnByUserId] IS NOT NULL AND [WithdrawnByUserId] <> " + EmptyGuid
+        + " AND [WithdrawnOriginCompanyId] IS NOT NULL AND [WithdrawnOriginCompanyId] <> " + EmptyGuid
         + " AND [WithdrawnAtUtc] IS NOT NULL AND [WithdrawnAtUtc] >= [ApprovedAtUtc]"
         + " AND [WithdrawReason] IS NOT NULL AND LEN([WithdrawReason]) > 0)";
     internal const string AttemptCheck =
@@ -49,19 +54,21 @@ public sealed class AiKnowledgeDbContext(
             table.HasCheckConstraint("CK_AiKnowledgePackageApprovals_Identity", ApprovalIdentityCheck);
             table.HasCheckConstraint("CK_AiKnowledgePackageApprovals_State", ApprovalStateCheck);
         });
-        approval.HasKey(row => new { row.CompanyId, row.Id });
+        approval.HasKey(row => row.Id);
         approval.Property(row => row.PackageSha256).HasColumnType("char(64)").IsUnicode(false).IsFixedLength().IsRequired();
         approval.Property(row => row.WithdrawReason).HasMaxLength(500);
         approval.Property(row => row.CorrelationId).HasMaxLength(128).IsRequired();
         approval.Property(row => row.CausationId).HasMaxLength(128);
         approval.Property(row => row.Version).IsConcurrencyToken();
         approval.Property(row => row.RowVersion).IsRowVersion();
-        // At most one active approval per company, kind and packaged bytes (a race leaves one).
-        approval.HasIndex(row => new { row.CompanyId, row.SourceKind, row.PackageSha256 }).IsUnique()
+        // AI-D46: at most one active approval per kind and packaged bytes in the whole group (a race leaves one).
+        approval.HasIndex(row => new { row.SourceKind, row.PackageSha256 }).IsUnique()
             .HasFilter("[Status] = 1").HasDatabaseName(ActiveApprovalIndexName);
-        approval.HasIndex(row => new { row.CompanyId, row.SourceKind, row.ApprovedAtUtc, row.Id });
-        approval.HasOne<AiKnowledgeCompanyReference>().WithMany().HasForeignKey(row => row.CompanyId).OnDelete(DeleteBehavior.Restrict);
-        approval.HasQueryFilter(row => row.CompanyId == companyContext.CompanyId);
+        approval.HasIndex(row => new { row.SourceKind, row.ApprovedAtUtc, row.Id });
+        approval.HasOne<AiKnowledgeCompanyReference>().WithMany().HasForeignKey(row => row.OriginCompanyId).OnDelete(DeleteBehavior.Restrict);
+        approval.HasOne<AiKnowledgeCompanyReference>().WithMany().HasForeignKey(row => row.WithdrawnOriginCompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        // Deliberately no company query filter: the approval is group-wide (AI-D46); it holds no company records.
 
         var attempt = modelBuilder.Entity<AiKnowledgeCommandAttemptRow>();
         attempt.ToTable("CommandAttempts", Schema, table => table.HasCheckConstraint("CK_AiKnowledgeCommandAttempts_Identity", AttemptCheck));
@@ -103,9 +110,11 @@ public sealed class AiKnowledgeDbContext(
         foreach (var entry in ChangeTracker.Entries())
         {
             if (entry.State is EntityState.Unchanged or EntityState.Detached || entry.Entity is AuditEvent) continue;
+            // A group-wide approval is written only from the company context it names as origin (approval) or withdrawal origin.
             var companyId = entry.Entity switch
             {
-                AiKnowledgeApprovalRow row => row.CompanyId,
+                AiKnowledgeApprovalRow { WithdrawnOriginCompanyId: { } withdrawnIn } when entry.State == EntityState.Modified => withdrawnIn,
+                AiKnowledgeApprovalRow row => row.OriginCompanyId,
                 AiKnowledgeCommandAttemptRow row => row.CompanyId,
                 _ => throw new InvalidOperationException("Unknown AI knowledge record."),
             };
@@ -121,6 +130,7 @@ public sealed class AiKnowledgeDbContext(
                     || !Equals(entry.Property(nameof(approval.PackageSha256)).OriginalValue, approval.PackageSha256)
                     || !Equals(entry.Property(nameof(approval.ApprovedByUserId)).OriginalValue, approval.ApprovedByUserId)
                     || !Equals(entry.Property(nameof(approval.ApprovedAtUtc)).OriginalValue, approval.ApprovedAtUtc)
+                    || !Equals(entry.Property(nameof(approval.OriginCompanyId)).OriginalValue, approval.OriginCompanyId)
                     || entry.Property(nameof(approval.Status)).OriginalValue is not 1
                     || approval.Status != 2
                     || entry.Property(nameof(approval.Version)).OriginalValue is not long version

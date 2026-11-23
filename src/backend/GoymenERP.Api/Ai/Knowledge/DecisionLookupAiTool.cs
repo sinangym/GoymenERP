@@ -15,10 +15,10 @@ namespace GoymenERP.Api.Ai.Knowledge;
 /// the runtime has already checked the actor, the server company context, <c>ai.panel.use</c> and
 /// <see cref="ErpPermissions.AiDecisionsRead"/>. Registered here, callable only when <c>Ai:AllowedTools</c> admits it
 /// (default deny). WP-A4: the index is the packaged one, and it is used ONLY when a person holding
-/// <c>ai.knowledge.approve</c> has approved exactly the packaged bytes for the company (AI-D32 "onaylı karar dizini");
-/// otherwise the tool is closed (unavailable). Names are masked at generation (plan D2, AI-D36). Records whose content is
-/// labelled <c>yerel_kalir</c> (commercially sensitive candidate, AI-D34 d) are withheld from this Internal-class tool and
-/// only counted.
+/// <c>ai.knowledge.approve</c> has approved exactly the packaged bytes for the group (AI-D32 "onaylı karar dizini", AI-D46);
+/// otherwise the tool is closed (unavailable). Names are masked at generation (plan D2, AI-D36). Records labelled
+/// <c>yerel_kalir</c> (a money amount or a person name even masked, AI-D34 d / AI-D49: in-house model only) are withheld from
+/// this Internal-class tool and only counted.
 /// </summary>
 public sealed partial class DecisionLookupAiTool(
     IAiDecisionIndexSource indexSource,
@@ -74,7 +74,7 @@ public sealed partial class DecisionLookupAiTool(
         }
 
         // AI-D32: only an approved index version is a source; an unapproved or unanswerable approval closes the tool.
-        if (await approvals.GetStateAsync(context.CompanyId, AiKnowledgeSourceKindV1.DecisionIndex, index.PackageSha256,
+        if (await approvals.GetStateAsync(AiKnowledgeSourceKindV1.DecisionIndex, index.PackageSha256,
                 cancellationToken) != AiKnowledgeApprovalStateV1.Approved)
         {
             return new AiReadResultV1(AiToolOutcomeV1.Unavailable);

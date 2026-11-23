@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "goymen.ai.decision-index.v1",
   "title": "Göymen ERP yapay zekâ karar dizini v1",
-  "description": "tools/generate_ai_decision_index.py çıktısı; yalnız docs/decisions kaynaklarından deterministik üretilir (AI-D12, DALGA_PLANI_v2 A.4 (1)); kişi adları üretimde maskelenir (plan D2, AI-D36), bulut uygunluğu içerik ve veri sınıfından türetilir (AI-D34 d).",
+  "description": "tools/generate_ai_decision_index.py çıktısı; yalnız docs/decisions kaynaklarından deterministik üretilir (AI-D12, DALGA_PLANI_v2 A.4 (1)); kişi adları üretimde maskelenir (plan D2, AI-D36), bulut uygunluğu içerik ve veri sınıfından türetilir (AI-D34 d, AI-D49).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -426,7 +426,6 @@
           "cloud_eligibility": {
             "enum": [
               "bulut_uygun_aday",
-              "maskeli_bulut_uygun_aday",
               "yerel_kalir"
             ]
           },

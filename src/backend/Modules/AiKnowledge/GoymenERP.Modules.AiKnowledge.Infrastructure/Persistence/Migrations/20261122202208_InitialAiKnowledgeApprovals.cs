@@ -48,8 +48,8 @@ namespace GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.Migrations
                 schema: "aiknowledge",
                 columns: table => new
                 {
-                    CompanyId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    OriginCompanyId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     SourceKind = table.Column<int>(type: "int", nullable: false),
                     PackageSha256 = table.Column<string>(type: "char(64)", unicode: false, fixedLength: true, nullable: false),
                     Status = table.Column<int>(type: "int", nullable: false),
@@ -57,6 +57,7 @@ namespace GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.Migrations
                     ApprovedByUserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     ApprovedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                     WithdrawnByUserId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    WithdrawnOriginCompanyId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     WithdrawnAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
                     WithdrawReason = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
                     CorrelationId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
@@ -65,12 +66,19 @@ namespace GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.Migrations
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_PackageApprovals", x => new { x.CompanyId, x.Id });
-                    table.CheckConstraint("CK_AiKnowledgePackageApprovals_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [ApprovedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [SourceKind] IN (1, 2) AND LEN([CorrelationId]) > 0 AND DATALENGTH([PackageSha256]) = 64 AND [PackageSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%'");
-                    table.CheckConstraint("CK_AiKnowledgePackageApprovals_State", "([Status] = 1 AND [Version] = 1 AND [WithdrawnByUserId] IS NULL AND [WithdrawnAtUtc] IS NULL AND [WithdrawReason] IS NULL) OR ([Status] = 2 AND [Version] = 2 AND [WithdrawnByUserId] IS NOT NULL AND [WithdrawnByUserId] <> '00000000-0000-0000-0000-000000000000' AND [WithdrawnAtUtc] IS NOT NULL AND [WithdrawnAtUtc] >= [ApprovedAtUtc] AND [WithdrawReason] IS NOT NULL AND LEN([WithdrawReason]) > 0)");
+                    table.PrimaryKey("PK_PackageApprovals", x => x.Id);
+                    table.CheckConstraint("CK_AiKnowledgePackageApprovals_Identity", "[OriginCompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [ApprovedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [SourceKind] IN (1, 2) AND LEN([CorrelationId]) > 0 AND DATALENGTH([PackageSha256]) = 64 AND [PackageSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%'");
+                    table.CheckConstraint("CK_AiKnowledgePackageApprovals_State", "([Status] = 1 AND [Version] = 1 AND [WithdrawnByUserId] IS NULL AND [WithdrawnOriginCompanyId] IS NULL AND [WithdrawnAtUtc] IS NULL AND [WithdrawReason] IS NULL) OR ([Status] = 2 AND [Version] = 2 AND [WithdrawnByUserId] IS NOT NULL AND [WithdrawnByUserId] <> '00000000-0000-0000-0000-000000000000' AND [WithdrawnOriginCompanyId] IS NOT NULL AND [WithdrawnOriginCompanyId] <> '00000000-0000-0000-0000-000000000000' AND [WithdrawnAtUtc] IS NOT NULL AND [WithdrawnAtUtc] >= [ApprovedAtUtc] AND [WithdrawReason] IS NOT NULL AND LEN([WithdrawReason]) > 0)");
                     table.ForeignKey(
-                        name: "FK_PackageApprovals_Companies_CompanyId",
-                        column: x => x.CompanyId,
+                        name: "FK_PackageApprovals_Companies_OriginCompanyId",
+                        column: x => x.OriginCompanyId,
+                        principalSchema: "organization",
+                        principalTable: "Companies",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_PackageApprovals_Companies_WithdrawnOriginCompanyId",
+                        column: x => x.WithdrawnOriginCompanyId,
                         principalSchema: "organization",
                         principalTable: "Companies",
                         principalColumn: "Id",
@@ -78,16 +86,28 @@ namespace GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_PackageApprovals_CompanyId_SourceKind_ApprovedAtUtc_Id",
+                name: "IX_PackageApprovals_OriginCompanyId",
                 schema: "aiknowledge",
                 table: "PackageApprovals",
-                columns: new[] { "CompanyId", "SourceKind", "ApprovedAtUtc", "Id" });
+                column: "OriginCompanyId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_PackageApprovals_SourceKind_ApprovedAtUtc_Id",
+                schema: "aiknowledge",
+                table: "PackageApprovals",
+                columns: new[] { "SourceKind", "ApprovedAtUtc", "Id" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_PackageApprovals_WithdrawnOriginCompanyId",
+                schema: "aiknowledge",
+                table: "PackageApprovals",
+                column: "WithdrawnOriginCompanyId");
 
             migrationBuilder.CreateIndex(
                 name: "UX_AiKnowledgePackageApprovals_Active",
                 schema: "aiknowledge",
                 table: "PackageApprovals",
-                columns: new[] { "CompanyId", "SourceKind", "PackageSha256" },
+                columns: new[] { "SourceKind", "PackageSha256" },
                 unique: true,
                 filter: "[Status] = 1");
         }

@@ -52,6 +52,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string SettingsDbContextAuditEventPath =
         "src/backend/Modules/Settings/"
         + "GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsDbContext.cs";
+    // WP-A4: the AI knowledge approvals append their audit events in the same save, under the same company filter (the
+    // group-wide approval row itself has no company filter, AI-D46; its audit event lives in the approving origin company).
+    private const string AiKnowledgeDbContextAuditEventPath =
+        "src/backend/Modules/AiKnowledge/"
+        + "GoymenERP.Modules.AiKnowledge.Infrastructure/Persistence/AiKnowledgeDbContext.cs";
     private const string WorkMigrationDesignerAuditModelPath =
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/"
         + "Migrations/20261005190000_InitialWorkDesiredStateStorage.Designer.cs";
@@ -95,6 +100,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             [WorkDbContextAuditEventPath] = "WorkDbContext",
             [ReportingDbContextAuditEventPath] = "ReportingDbContext",
             [SettingsDbContextAuditEventPath] = "SettingsDbContext",
+            [AiKnowledgeDbContextAuditEventPath] = "AiKnowledgeDbContext",
         };
 
     [Fact]

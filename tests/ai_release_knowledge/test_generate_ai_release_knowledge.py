@@ -163,7 +163,7 @@ class FixtureTests(unittest.TestCase):
         self.assertNotIn("ayse@example.com", rendered)
 
     def test_cloud_eligibility_follows_content(self) -> None:
-        self.assertEqual("maskeli_bulut_uygun_aday", self.notes["RK-TST-YAYINDA"]["cloud_eligibility"])
+        self.assertEqual("yerel_kalir", self.notes["RK-TST-YAYINDA"]["cloud_eligibility"])
         self.assertEqual(("yerel_kalir", "confidential"),
                          (self.notes["RK-TST-TUTAR"]["cloud_eligibility"], self.notes["RK-TST-TUTAR"]["cloud_data_class"]))
 

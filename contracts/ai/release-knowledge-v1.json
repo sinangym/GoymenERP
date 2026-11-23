@@ -20,14 +20,13 @@
  ],
  "evidence_basis": "her kanıt dosyası bu ağaçta var ve verilen ifadeyi içeriyor (yayımlanan derlemeyle aynı ağaç)",
  "mask_policy": "ai-d36-person-name-mask-at-generation@1",
- "cloud_eligibility_basis": "AI-D34 d: içerik ve veri sınıfı (kişisel veri sinyali maskelenir, para tutarı yerel kalır); belge adı kullanılmaz",
+ "cloud_eligibility_basis": "AI-D34 d, AI-D49: para tutarı veya kişi adı (maskeli olsa da) içeren kayıt yerel kalır, diğer kural metinleri bulut adayıdır; belge adı kullanılmaz",
  "statistics": {
   "note_count": 2,
   "excluded_count": 1,
   "masked_note_count": 0,
   "cloud_eligibility_counts": {
    "bulut_uygun_aday": 2,
-   "maskeli_bulut_uygun_aday": 0,
    "yerel_kalir": 0
   }
  },
