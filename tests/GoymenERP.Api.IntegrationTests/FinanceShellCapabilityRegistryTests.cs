@@ -50,6 +50,10 @@ public sealed class FinanceShellCapabilityRegistryTests
                 ("finance.bank-accounts.approve", "F-04", "finance.bank-accounts.list"),
                 ("finance.bank-accounts.list", "F-04", null),
                 ("finance.bank-accounts.propose", "F-04-NEW", null),
+                // WP12 (Finance 1.18, FNS-D13/D113): import and match are controls of the statement workspace.
+                ("finance.bank-statements.import", "F-13-BANK-STATEMENT", "finance.bank-statements.read"),
+                ("finance.bank-statements.match", "F-13-BANK-STATEMENT", "finance.bank-statements.read"),
+                ("finance.bank-statements.read", "F-13-BANK-STATEMENT", null),
                 ("finance.cash-exchange-book-values.approve", "F-32-EXCHANGE-BOOK-APPROVE", null),
                 ("finance.cash-exchange-book-values.prepare", "F-32-EXCHANGE-BOOK-PREPARE", null),
                 // FNS-D24 (Finance 1.11): one transfer is one transaction; the commit is a control of the workspace.
@@ -122,7 +126,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(providers,
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision(providers)]));
 
-        Assert.Equal(48, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
+        Assert.Equal(51, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
     }
 
     [Fact]

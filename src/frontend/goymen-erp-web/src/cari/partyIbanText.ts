@@ -1,0 +1,24 @@
+/** FNS-D121 cari IBAN list texts (Turkish, one place). */
+export const PARTY_IBAN_TEXT = {
+  heading: 'IBAN listesi',
+  explanation: 'Banka ekstresi eşleştirmesi karşı tarafı yalnız bu listeden tanır; ekstreden IBAN öğrenilmez.',
+  iban: 'IBAN', bank: 'Banka', description: 'Açıklama', state: 'Durum', active: 'Etkin', passive: 'Pasif',
+  addedBy: 'Ekleyen', reason: 'Pasifleştirme gerekçesi',
+  add: 'IBAN ekle', deactivate: 'Pasifleştir', confirmDeactivate: 'Pasifleştirmeyi onayla', cancel: 'Vazgeç',
+  retry: 'Aynı anahtarla yeniden dene',
+  empty: 'Bu cari için IBAN kaydı yok.',
+  forbidden: 'IBAN listesini görme yetkiniz yok.',
+  invalidIban: 'Geçerli bir TR IBAN girin (TR ile başlayan 26 karakter, kontrol basamakları doğru).',
+  bankRequired: 'Banka adı zorunludur.', reasonRequired: 'Gerekçe zorunludur.',
+  added: 'IBAN eklendi.', deactivated: 'IBAN pasifleştirildi.',
+  unknown: 'Gönderimin sonucu bilinmiyor. Aynı anahtarla yeniden deneyin; yeni bir işlem başlatılamaz.',
+  conflict: 'Kayıt değişmiş veya bu IBAN zaten listede. Listeyi yenileyin.',
+  refused: 'İşlem kaydedilmedi.',
+  codes: {
+    counterparty_party_iban_invalid: 'IBAN geçersiz.',
+    counterparty_party_iban_already_listed: 'Bu IBAN listede zaten etkin.',
+    counterparty_party_iban_bank_name_required: 'Banka adı zorunludur.',
+    counterparty_party_iban_reason_required: 'Gerekçe zorunludur.',
+    counterparty_party_iban_text_too_long: 'Metin çok uzun.',
+  } as Record<string, string>,
+} as const

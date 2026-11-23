@@ -42,6 +42,7 @@ import { CariMergePanel } from './CariMergePanel'
 import { CariIdentityHistoryPanel, IDENTITY_HISTORY_QUERY_KIND } from './CariIdentityHistoryPanel'
 import { CariCustomerGroupPanel } from './CariCustomerGroupPanel'
 import { CariEDocumentPanel } from './CariEDocumentPanel'
+import { CariPartyIbanPanel } from './CariPartyIbanPanel'
 import {
   armTaxIdentityDiscard,
   forgetTaxIdentityAttempt,
@@ -524,6 +525,10 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
             namespace={namespace}
             contractContext={contractContext}
           />
+        ) : null}
+        {/* FNS-D121: the cari IBAN list in the selected company (Confidential, its own read and manage names). */}
+        {namespace !== null && activeCompanyId !== null && account.companyId === activeCompanyId ? (
+          <CariPartyIbanPanel partyId={detail.id} companyId={activeCompanyId} namespace={namespace} />
         ) : null}
         {/* F018 §L3: Finance's credit limit and collateral figures of this account. Read only; Finance owns them. */}
         {namespace !== null && activeCompanyId !== null && account.companyId === activeCompanyId &&

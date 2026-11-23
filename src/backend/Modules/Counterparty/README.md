@@ -274,3 +274,21 @@ Up replaces only this check constraint; no column or data is changed. Down first
 while any tax-number history (`Attribute = 1`) exists, then restores the previous constraint. With only legal-name
 history or an empty table the guard passes. Existing tax history is retained; use a reviewed forward fix instead.
 The model, ASCII/trailing-space SQL regression and Down guard evidence remain subject to the final K3 review.
+
+## FNS-D121 — IBAN list on the Cari card (Sinan, 2026-11-23) — K3
+
+The Counterparty owner keeps each party's IBAN list in `counterparty.PartyIbans` (IBAN, bank name, optional description;
+versioned, audited). Only Turkish IBANs pass (`TR` + 24 digits, ISO 7064 mod-97); the value is stored normalized (no
+spaces, upper case). Personal data class Confidential (AI-D42: `iban` in `CounterpartyAiRelease`).
+
+| Part | What |
+|---|---|
+| Permissions | `counterparty.party-ibans.read`, `counterparty.party-ibans.manage` (company-wide, no grant) |
+| Endpoints | `GET/POST /api/v1/counterparties/{partyId}/ibans`, `POST …/ibans/{ibanId}/deactivate` (expected version + reason) |
+| Skeleton | Fence, Idempotency-Key replay, expected version, one save of row + command record + audit (`counterparty.party-iban.added.v1`, `.deactivated.v1`) |
+| Rules | One active row per (company, party, IBAN); deactivation is the only change (version 1 → 2); no delete |
+| Migration | `20261123075528_AddPartyIbans`; Down refuses with **THROW 52252** while rows exist (forward fix) |
+| Read port | `ICounterpartyPartyIbanSourceV1` answers Finance's statement IBAN question (active rows, same company) |
+
+The Cari detail screen shows the list; the shell has no separate IBAN control (the API answers 403 without permission).
+Real SQL facts are written and NOT_RUN locally.

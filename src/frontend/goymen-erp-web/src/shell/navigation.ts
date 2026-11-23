@@ -73,6 +73,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'finance.party-ledger.accounting',
   'finance.party-ledger.cari',
   'finance.party-balance-transfers.record',
+  'finance.bank-statements.read',
   /**
    * Listed together with the route that serves it, on purpose: a nav entry whose route
    * is not mounted is a link to the not-found block. It still renders only where the
@@ -304,6 +305,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'finance.party-ledger.accounting': 'Cari Hesaplar',
   'finance.party-ledger.cari': 'Cari Hesap Takibi',
   'finance.party-balance-transfers.record': 'Cari Bakiye Devri',
+  'finance.bank-statements.read': 'Banka Ekstresi',
   'finance.receipts.reverse.approve': 'Ters Kayıt Onayları',
   'finance.bank-accounts.list': 'Banka Hesapları',
   // None of these three: the new draft is entered from a Cari account, the detail from a list row and
@@ -532,6 +534,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     entries: [
       'finance.credits.workspace',
       'finance.party-balance-transfers.record',
+      'finance.bank-statements.read',
       'finance.official-sales-invoices.record',
       'finance.official-sales-invoices.approve',
       'finance.receipts.list',

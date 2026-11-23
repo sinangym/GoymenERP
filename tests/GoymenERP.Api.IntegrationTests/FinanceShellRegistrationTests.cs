@@ -61,9 +61,9 @@ public sealed class FinanceShellRegistrationTests
         // Fifteen routes plus six controls, later grown; API-23 (Finance 1.8) adds the two payment reversal controls; FNS-D25 (Finance 1.9) the expense-payment
         // workspace and its three controls; F-018 L1 (Finance 1.10) the credit-limit route and its two controls;
         // FNS-D24 (Finance 1.11) the cash-transfer workspace and its commit control; F-018 L2 (Finance 1.12) the collateral
-        // route and its record control; FIN-S9 (Finance 1.13) the opening-balance route and its propose/approve controls. A declaration still grants nothing: each route or control service measures its own
+        // route and its record control; FIN-S9 (Finance 1.13) the opening-balance route and its propose/approve controls; WP12 (Finance 1.18) the bank-statement route and its import/match controls. A declaration still grants nothing: each route or control service measures its own
         // Finance permission afresh.
-        Assert.Equal(48, finance.Length);
+        Assert.Equal(51, finance.Length);
         Assert.All(finance, item => Assert.Equal(
             !FinanceShellCapabilityRegistryTests.TrainStagedCapabilities.Contains(item.Declaration.CapabilityId),
             item.Declaration.ImplementationAvailable));

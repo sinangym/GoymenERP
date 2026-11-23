@@ -40,6 +40,7 @@ import { ManualBankPaymentStartPage, type ManualBankPaymentEntryContext } from '
 import { CustomerInstrumentPortfolioPage } from './CustomerInstrumentPortfolioPage'
 import { PartyLedgerWorkspacePage } from './PartyLedgerWorkspacePage'
 import { PartyBalanceTransferPage } from './PartyBalanceTransferPage'
+import { BankStatementPage } from './BankStatementPage'
 import { WORKSPACE_NEEDS_COMPANY, WORKSPACE_TITLE_ACCOUNTING, WORKSPACE_TITLE_CARI } from './partyLedgerText'
 import { AllocationPage } from './AllocationPages'
 import { OpenItemDetailPage, OpenItemListPage } from './OpenItemReadPage'
@@ -252,6 +253,7 @@ function PartyBalanceTransferRoute() {
 
 export const financeRoutes: RouteObject[] = [
   { path: FINANCE_ROUTE.partyBalanceTransfers.slice(1), element: gate(FINANCE_CAPABILITY.partyBalanceTransfers, <PartyBalanceTransferRoute />) },
+  { path: FINANCE_ROUTE.bankStatements.slice(1), element: gate(FINANCE_CAPABILITY.bankStatements, <BankStatementPage />) },
   { path: FINANCE_ROUTE.creditsWorkspace.slice(1), element: gate(FINANCE_CAPABILITY.creditsWorkspace, <CreditAccountsPage />) },
   { path: FINANCE_ROUTE.officialInvoicesRecord.slice(1), element: gate(FINANCE_CAPABILITY.officialInvoicesRecord, <OfficialSalesInvoicesPage />) },
   { path: FINANCE_ROUTE.officialInvoicesApprove.slice(1), element: gate(FINANCE_CAPABILITY.officialInvoicesApprove, <OfficialSalesInvoicesPage />) },

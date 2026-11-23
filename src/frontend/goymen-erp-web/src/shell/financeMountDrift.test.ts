@@ -31,6 +31,7 @@ const ROUTED = [
   [CAPABILITY.financeExchangeBookValuesPrepare, FINANCE_CAPABILITY.exchangeBookValuesPrepare, FINANCE_ROUTE.exchangeBookValuesPrepare],
   [CAPABILITY.financeExchangeBookValuesApprove, FINANCE_CAPABILITY.exchangeBookValuesApprove, FINANCE_ROUTE.exchangeBookValuesApprove],
   [CAPABILITY.financePartyBalanceTransfers, FINANCE_CAPABILITY.partyBalanceTransfers, FINANCE_ROUTE.partyBalanceTransfers],
+  [CAPABILITY.financeBankStatements, FINANCE_CAPABILITY.bankStatements, FINANCE_ROUTE.bankStatements],
   [CAPABILITY.financeCreditsWorkspace, FINANCE_CAPABILITY.creditsWorkspace, FINANCE_ROUTE.creditsWorkspace],
   [CAPABILITY.financeOfficialInvoicesRecord, FINANCE_CAPABILITY.officialInvoicesRecord, FINANCE_ROUTE.officialInvoicesRecord],
   [CAPABILITY.financeOfficialInvoicesApprove, FINANCE_CAPABILITY.officialInvoicesApprove, FINANCE_ROUTE.officialInvoicesApprove],
@@ -81,6 +82,8 @@ const ROUTED = [
  * this test loudly instead of being quietly appended to a filter.
  */
 const CONTROLS: readonly string[] = [
+  FINANCE_CAPABILITY.bankStatementsImport,
+  FINANCE_CAPABILITY.bankStatementsMatch,
   FINANCE_CAPABILITY.creditsPropose,
   FINANCE_CAPABILITY.creditsApprove,
   FINANCE_CAPABILITY.officialInvoicesWithdraw,
@@ -184,6 +187,7 @@ describe('shell ↔ Finance lane capability ids', () => {
       'finance.cash-exchange-book-values.prepare': 'Döviz defter değeri hazırla',
       'finance.cash-exchange-book-values.approve': 'Döviz defter değeri onayları',
       'finance.party-balance-transfers.record': 'Cari Bakiye Devri',
+      'finance.bank-statements.read': 'Banka Ekstresi',
       'finance.credits.workspace': 'Krediler',
       'finance.official-sales-invoices.record': 'Resmî satış faturaları',
       'finance.official-sales-invoices.approve': 'Resmî satış faturası onayları',
