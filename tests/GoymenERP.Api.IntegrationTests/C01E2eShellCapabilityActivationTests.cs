@@ -44,7 +44,7 @@ public sealed class C01E2eShellCapabilityActivationTests
         var provider = serviceProvider.GetRequiredService<IShellCapabilityProvider>();
         Assert.IsType<C01E2eShellCapabilityProvider>(provider);
         var declarations = provider.GetDeclarations();
-        Assert.Equal(4, declarations.Count);
+        Assert.Equal(6, declarations.Count); // Counterparty 1.6: four routes plus the two closed FNS-D121 IBAN controls.
         var list = Assert.Single(
             declarations,
             item => item.CapabilityId

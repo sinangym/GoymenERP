@@ -90,7 +90,12 @@ public sealed class CounterpartyMigrationScriptTests
             script,
             StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("MERSIS", script, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("IBAN", script, StringComparison.OrdinalIgnoreCase);
+        // FNS-D121 decided the cari IBAN list: it is created empty in its own table (no backfill, no IBAN column elsewhere).
+        Assert.Contains("20261123075528_AddPartyIbans", script, StringComparison.Ordinal);
+        Assert.Contains("CREATE TABLE [counterparty].[PartyIbans]", script, StringComparison.Ordinal);
+        Assert.Contains("CREATE TABLE [counterparty].[PartyIbanCommands]", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("INSERT INTO [counterparty].[PartyIbans]", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ADD [Iban]", script, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class UnresolvedCompanyContext : ICompanyContext

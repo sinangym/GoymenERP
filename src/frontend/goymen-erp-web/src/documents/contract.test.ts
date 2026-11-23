@@ -56,6 +56,7 @@ describe('document owner contract', () => {
       salesOrder: 'sales.order',
       logisticsDispatchNote: 'logistics.dispatch-note',
       financeOfficialSalesInvoice: 'finance.official-sales-invoice',
+      financeBankStatementImport: 'finance.bank-statement-import',
     });
   });
 

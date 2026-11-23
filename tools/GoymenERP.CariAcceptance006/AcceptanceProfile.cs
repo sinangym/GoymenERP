@@ -101,7 +101,7 @@ public static class AcceptanceProfile
     public const string ReadOnlyActor = "company-a-user";
     // Offline canonical fingerprint for these six exact, single-company declarations.
     // The real registry checks it. It is NOT derived from arbitrary providers at runtime.
-    public const string Revision = "sha256:Nlre07D02B9tlVJzDEm4WG8YbpWf8ntitbKEMslCnDE";
+    public const string Revision = "sha256:RcPZNH-580AVN3rnWBOc3dOa3RJp4KhMlXLGSq7TWhI"; // Counterparty 1.6 (FNS-D121), re-derived in place.
     public static void Configure(IServiceCollection services, string environment, RunSettings identity)
     {
         identity.Validate(environment);
@@ -134,7 +134,11 @@ public sealed class CariAcceptanceProvider : IShellCapabilityProvider
     public string Owner => _source.Owner;
     public string ContractVersion => _source.ContractVersion;
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
-        Array.AsReadOnly(_source.GetDeclarations().Select(x => x with
+        // FNS-D121 (Counterparty 1.6): the IBAN controls are outside this profile's four reads and contact edit.
+        Array.AsReadOnly(_source.GetDeclarations()
+            .Where(x => x.CapabilityId is not CounterpartyShellCapabilityProvider.PartyIbansReadCapabilityId
+                and not CounterpartyShellCapabilityProvider.PartyIbansManageCapabilityId)
+            .Select(x => x with
         {
             ContextRequirement = ShellCapabilityContextRequirement.SingleCompany,
             ImplementationAvailable = true,

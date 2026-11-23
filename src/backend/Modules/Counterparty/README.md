@@ -283,3 +283,27 @@ Read-only `IWorkInboxSourceV1` sources: `counterparty.tax-identity-change.v1` (p
 `counterparty.parties.read`; maker = proposer). Both flag a request prepared against a party version that moved since. The
 tax numbers are never put into the inbox. The party merge (`ApproveCounterpartyPartyMergeV1`) is a single-step approved record
 with no pending state, so it has no inbox source: nothing waits for a decision.
+## FNS-D121 / FNS-D122 — IBAN list on the Cari card (Sinan, 2026-11-22/23) — K3
+
+The Counterparty owner keeps each party's IBAN list in `counterparty.PartyIbans` (IBAN, bank name, optional description;
+versioned, audited). FNS-D122: an IBAN of any registered country passes ISO 13616 — the per-country length table of
+`IbanRegistryV1` (BuildingBlocks, source: SWIFT IBAN Registry) plus mod-97; a Turkish IBAN keeps `TR` + 24 digits. An
+unknown country, a wrong length and wrong check digits are refused with their own codes
+(`counterparty_party_iban_country_unknown`, `_length_invalid`, `_check_digits_invalid`; malformed text `_invalid`). The
+value is stored normalized (no spaces, upper case, `varchar(34)`); the SQL check keeps the shape and the TR rule. Personal data class Confidential (AI-D42: `iban` in `CounterpartyAiRelease`).
+
+| Part | What |
+|---|---|
+| Permissions | `counterparty.party-ibans.read`, `counterparty.party-ibans.manage` (company-wide, no grant) |
+| Endpoints | `GET/POST /api/v1/counterparties/{partyId}/ibans`, `POST …/ibans/{ibanId}/deactivate` (expected version + reason) |
+| Skeleton | Fence, Idempotency-Key replay, expected version, one save of row + command record + audit (`counterparty.party-iban.added.v1`, `.deactivated.v1`) |
+| Rules | One active row per (company, party, IBAN); deactivation is the only change (version 1 → 2); no delete |
+| Migration | `20261123075528_AddPartyIbans`; Down refuses with **THROW 52252** while rows exist (forward fix) |
+| Read port | `ICounterpartyPartyIbanSourceV1` answers Finance's statement IBAN question (active rows, same company) |
+
+Shell (Counterparty 1.6): controls `cari.party-ibans.read` and `cari.party-ibans.manage` inside C-03 (same route,
+context and scope as the detail; declarations grant nothing). The Cari detail draws the panel only with the read control
+and its add/deactivate controls only with the manage control; the API re-checks each request. The two disposable C-01
+envelopes and the CARI-ACCEPTANCE-006 profile keep both controls closed/outside. The screen pre-checks only the ISO 13616
+shape and check digits; the country length table stays the server's.
+Real SQL facts are written and NOT_RUN locally.

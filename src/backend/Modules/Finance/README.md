@@ -869,7 +869,7 @@ late authority loss or Audit failure rolls all of it back. No table in another m
 Migration SQL, new entity construction and the owner Audit binding remain in the K3 review scope. Model/SQL/HTTP
 and UI test sources are written; runtime, DB apply, browser and CI remain **NOT_RUN**.
 
-## WP12 / DALGA_PLANI_v2 1.13: bank statement import and matching (FNS-D13, FNS-D52, FNS-D113, FNS-D114) — Finance K3
+## WP12 / DALGA_PLANI_v2 1.13: bank statement import and matching (FNS-D13, FNS-D52, FNS-D113, FNS-D114, FNS-D119, FNS-D120, FNS-D121, FNS-D122) — Finance K3
 
 > **Two independent exact-head reviews (K3):** DB migrations/constraints, permission registration, cross-module contracts
 > (vault owner kind, Settings mapping port, cari IBAN port) and money-adjacent matching. Code complete, **activation is a
@@ -886,9 +886,10 @@ reverses one.
 **Parse rules.** CSV uses the bank's active `ISettingsBankCsvMappingProviderV1` mapping exactly; no fallback, no guessed
 column. MT940: `:25:` account (refused when it is a valid IBAN other than the account's approved IBAN), `:60F/M:` currency,
 `:61:` line (entry date = transaction date, else value date; `RC`/`RD` keep the direction they produce), `:86:` description.
-XLSX (NEEDS-SINAN WP12-S2, no column source decided): only the known headers of `FinanceBankStatementXlsxHeadersV1`
-(Turkish case-insensitive); the header row is the first row with a known date header; amounts only from the explicit
-inflow/outflow pair as numeric cells; formulas, macros, external links and the 1904 date system are refused. Any issue
+XLSX: only the known headers of `FinanceBankStatementXlsxHeadersV1` (Turkish case-insensitive); the header row is the
+first row with a known date header; amounts as numeric cells either from one signed `Tutar` column (FNS-D120: minus is
+an outflow, plus an inflow, zero refused) or from the explicit inflow/outflow pair — a file carrying both forms is refused
+(`xlsx_amount_columns_conflict`); formulas, macros, external links and the 1904 date system are refused. Any issue
 refuses the whole file; nothing is stored. Text cells starting with `= + - @` are stored with a `'` prefix.
 
 **Duplicate protection.** Each line's SHA-256 fingerprint (dates, direction, exact amount without trailing fraction
@@ -897,21 +898,23 @@ overlapping later file stores only its new lines; the same file (SHA-256) twice 
 
 **Suggestions (FNS-D113, a read).** No tolerance: a candidate is an unmatched recorded movement of the same bank account
 with the same direction, exactly the same amount and the line's transaction date (receipts at bank net for POS, party
-payments, recorded expense payments, transfer legs). The line's single Turkish IBAN is compared where a source exists
+payments, recorded expense payments, transfer legs). The line's single IBAN (FNS-D122: any registered country, ISO 13616
+through `IbanRegistryV1`; TR keeps TR + 24 digits) is compared where a source exists
 (FNS-D114): the **cari IBAN list** through `IFinancePartyIbanReadPortV1` for a party record, the other own account's
 approved IBAN for a transfer. A Mismatch removes the candidate; a Verified one wins over NotAvailable ones; exactly one
 remaining candidate (not pointed at by another line) is Suggested with its `CounterpartyCheck`; everything else is Manual.
 An IBAN is never learned from a statement or written to a cari card.
 
-**Cari IBAN list (FNS-D114).** The Counterparty card has no IBAN list on this tree, so the host registers
-`UnavailableFinancePartyIbanReadPort` (`TryAdd`): party IBAN matching is **off** (`NotAvailable`) until the Counterparty owner
-adds the list and registers its own port. Transfer matching by own-account IBAN works.
+**Cari IBAN list (FNS-D114, FNS-D121).** The Counterparty owner keeps the list (`counterparty.PartyIbans`, see the
+Counterparty README); the host registers `CounterpartyFinancePartyIbanReadPortV1`, which asks only the active entries of the
+same company. A source failure answers Unavailable (party IBAN check `NotAvailable`, never a guess).
 
 **Confirmation (FNS-D113).** A match is final only when a person confirms it: the record must be a recorded movement of the
 line's bank account with the same direction and exactly the same amount (the date is the person's decision); a proven
 counterparty Mismatch is refused; neither the line nor the record may hold another active match (filtered unique indexes).
 A confirmed match is immutable; it is undone only by a reversal record (`BankStatementMatchReversals`, mandatory reason)
-which links to the match once (version 1 → 2); nothing is deleted. No movement, allocation or journal is created.
+which links to the match once (version 1 → 2); nothing is deleted. FNS-D119: the person who confirmed may also reverse
+(the single `.match` permission covers both; the reason is mandatory and audited). No movement, allocation or journal is created.
 
 | Part | What |
 |---|---|
@@ -920,6 +923,6 @@ which links to the match once (version 1 → 2); nothing is deleted. No movement
 | Command skeleton | Fence before/after each await, Idempotency-Key replay (same actor + payload) before validation, expected version (Parse, Reverse), one Serializable save of rows + command record + audit (`finance.bank-statement-import.reserved/parsed.v1`, `finance.bank-statement-match.confirmed/reversed.v1`) |
 | Write guard | An import changes once (Reserved → Parsed); a match changes once (its reversal link); lines, reversals and command records are append-only |
 
-**Not in this package:** the screen and its shell capability (frontend), the cari IBAN list itself (Counterparty owner),
-the XLSX column source (WP12-S2). Pins (OpenAPI, guard fingerprints, relational fingerprint, recovery, release manifest)
+**Screen.** `/finans/banka-ekstresi` (`F-13-BANK-STATEMENT`, Finance shell 1.18): route `finance.bank-statements.read`,
+controls `finance.bank-statements.import` and `.match` inside it; declarations grant nothing. Pins (OpenAPI, guard fingerprints, relational fingerprint, recovery, release manifest)
 are produced at the tren-2 head. Real SQL facts are written and **NOT_RUN** locally.

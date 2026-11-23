@@ -144,9 +144,9 @@ public sealed partial class ShellCapabilityRegistryTests
         // controls; B-15 adds the work-centre calendar edit control; KIM-S23 adds the company tax-id route) +
         // Product's eight (four screens, the approve / deactivate / reactivate controls and
         // SAT-D419 / SAT-D422's explicit global COGS classification control).
-        Assert.Equal(25, combined.Registrations.Count);
+        Assert.Equal(27, combined.Registrations.Count); // Counterparty 1.6 adds two IBAN controls
         Assert.Equal(8, combined.Registrations.Count(item => item.Declaration.GlobalProductOperation is not null));
-        Assert.Equal(12, combined.Registrations.Count(item => item.Declaration.ParentCapabilityId is not null));
+        Assert.Equal(14, combined.Registrations.Count(item => item.Declaration.ParentCapabilityId is not null));
         var activation = Assert.Single(combined.Registrations,
             item => item.Declaration.CapabilityId == "product.items.activate");
         Assert.Equal("product.items.detail", activation.Declaration.ParentCapabilityId);

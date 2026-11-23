@@ -360,6 +360,7 @@ public static partial class CounterpartyEndpoints
         MapDeactivationEndpoints(group);
 
         MapContactInformationEndpoints(group);
+        MapPartyIbanEndpoints(group);
         MapTaxIdentityEndpoints(group);
         MapTradeNameEndpoints(group);
         MapLegalNameEndpoints(group);

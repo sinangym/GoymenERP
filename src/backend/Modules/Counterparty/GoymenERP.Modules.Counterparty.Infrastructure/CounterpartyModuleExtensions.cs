@@ -132,6 +132,9 @@ public static class CounterpartyModuleExtensions
         services.AddScoped<ICounterpartyIdentityHistoryService>(provider =>
             provider.GetRequiredService<CounterpartyCommandService>());
         services.AddScoped<ICounterpartyCompanyAccountLinkService, CounterpartyCompanyAccountLinkService>();
+        // FNS-D121: the cari IBAN list (owner commands and the read for the Finance statement matching).
+        services.AddScoped<ICounterpartyPartyIbanService, CounterpartyPartyIbanService>();
+        services.AddScoped<ICounterpartyPartyIbanSourceV1, CounterpartyPartyIbanSourceV1>();
         // ALS-D99/D100: owner modules register ICounterpartyDeactivationExposureSourceV1 adapters in the API host; with none
         // registered every warning line reads as unavailable (fail-closed), never as "nothing open".
         services.AddScoped<ICounterpartyDeactivationExposureReader, CounterpartyDeactivationExposureReader>();

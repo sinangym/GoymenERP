@@ -17,7 +17,7 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(48, declarations.Count);
+        Assert.Equal(51, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             !declaration.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)
             && !declaration.CapabilityId.StartsWith("finance.official-sales-invoices.", StringComparison.Ordinal)
@@ -32,13 +32,19 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.17", provider.ContractVersion);
+        Assert.Equal("1.18", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("finance.cash-exchange-book-values.prepare", "finance.cash-exchange-book-values.prepare", "/finans/doviz-defter-degeri-hazirla", "F-32-EXCHANGE-BOOK-PREPARE",
                 ShellCapabilityRoutePrecedence.Static, [ErpPermissions.AccountingNormalJournalDraftCreate]),
             ("finance.cash-exchange-book-values.approve", "finance.cash-exchange-book-values.approve", "/finans/doviz-defter-degeri-onaylari", "F-32-EXCHANGE-BOOK-APPROVE",
                 ShellCapabilityRoutePrecedence.Static, [ErpPermissions.AccountingNormalJournalDraftApprove]),
+            ("finance.bank-statements.read", "finance.bank-statements.read", "/finans/banka-ekstresi", "F-13-BANK-STATEMENT",
+                ShellCapabilityRoutePrecedence.Static, [FinanceBankStatementPermissionsV1.Read]),
+            ("finance.bank-statements.import", "finance.bank-statements.read", "/finans/banka-ekstresi", "F-13-BANK-STATEMENT",
+                ShellCapabilityRoutePrecedence.Static, [FinanceBankStatementPermissionsV1.Read, FinanceBankStatementPermissionsV1.Import]),
+            ("finance.bank-statements.match", "finance.bank-statements.read", "/finans/banka-ekstresi", "F-13-BANK-STATEMENT",
+                ShellCapabilityRoutePrecedence.Static, [FinanceBankStatementPermissionsV1.Read, FinanceBankStatementPermissionsV1.Match]),
             ("finance.party-balance-transfers.record", "finance.party-balance-transfers.record", "/finans/cari-bakiye-devri", "F-32-PARTY-BALANCE-TRANSFER",
                 ShellCapabilityRoutePrecedence.Static, [FinancePartyBalanceTransferPermissionsV1.Record, FinancePermissionNames.PartyLedgerRead,
                     FinancePermissionNames.PartyLedgerAmountRead]),
@@ -284,7 +290,7 @@ public sealed class FinanceShellCapabilityProviderTests
                     control.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
             }
         }
-        Assert.Equal(20, declarations.Count(item => item.ParentCapabilityId is not null));
+        Assert.Equal(22, declarations.Count(item => item.ParentCapabilityId is not null));
     }
 
     [Fact]
@@ -323,7 +329,7 @@ public sealed class FinanceShellCapabilityProviderTests
                 "F-02-OFFICIAL-INVOICE-APPROVALS", "F-02-OFFICIAL-INVOICE-UPLOAD",
                 "F-02-PAYMENT-DETAIL", "F-02-PAYMENT-NEW",
                 "F-02-PAYMENTS", "F-02-REVERSAL-APPROVAL", "F-03", "F-03-OPEN-ITEM-DETAIL",
-                "F-03-OPEN-ITEMS", "F-04", "F-04-NEW", "F-18-COLLATERALS", "F-18-CREDIT-LIMITS", "F-23-OPENING-BALANCES",
+                "F-03-OPEN-ITEMS", "F-04", "F-04-NEW", "F-13-BANK-STATEMENT", "F-18-COLLATERALS", "F-18-CREDIT-LIMITS", "F-23-OPENING-BALANCES",
                 "F-25-EXPENSE-PAYMENTS", "F-32-CASH-TRANSFERS", "F-32-EXCHANGE-BOOK-APPROVE", "F-32-EXCHANGE-BOOK-PREPARE",
                 "F-32-PARTY-BALANCE-TRANSFER", "F-47-CREDITS", "M-03"],
             routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));

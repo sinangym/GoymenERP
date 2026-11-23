@@ -45,6 +45,8 @@ export const OWNER_KIND = {
   logisticsDispatchNote: 'logistics.dispatch-note',
   financeOfficialSalesInvoice: 'finance.official-sales-invoice',
   financeCashExchange: 'finance.cash-exchange',
+  /** WP12 / FNS-D52: the statement file (XLSX, MT940, CSV) is uploaded on the reserved Finance import. */
+  financeBankStatementImport: 'finance.bank-statement-import',
 } as const
 export type OwnerKind = (typeof OWNER_KIND)[keyof typeof OWNER_KIND]
 

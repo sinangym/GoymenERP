@@ -76,11 +76,21 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 /// only a notice while the Settings opening period is not open. No name is Critical and no role or user receives any of
 /// these names here.
 /// </para>
+/// <para>
+/// <b>1.18 (WP12; FNS-D13, FNS-D52, FNS-D113):</b> the bank statement workspace opens at <c>/finans/banka-ekstresi</c> under
+/// <c>finance.bank-statements.read</c>; importing a statement and confirming/reversing a match are controls under
+/// <c>finance.bank-statements.import</c> and <c>finance.bank-statements.match</c>. No role or user receives these names here.
+/// </para>
 /// </summary>
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.17";
+    public const string OwnerContractVersion = "1.18";
+    public const string BankStatementCapabilityId = "finance.bank-statements.read";
+    public const string BankStatementImportCapabilityId = "finance.bank-statements.import";
+    public const string BankStatementMatchCapabilityId = "finance.bank-statements.match";
+    public const string BankStatementPath = "/finans/banka-ekstresi";
+    public const string BankStatementScreenId = "F-13-BANK-STATEMENT";
     public const string ExchangeBookValuePrepareCapabilityId = "finance.cash-exchange-book-values.prepare";
     public const string ExchangeBookValueApproveCapabilityId = "finance.cash-exchange-book-values.approve";
     public const string ExchangeBookValuePreparePath = "/finans/doviz-defter-degeri-hazirla";
@@ -239,6 +249,9 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
         var credits = Declaration(CreditAccountsCapabilityId, CreditAccountsRouteId, CreditAccountsRoutePath,
             CreditAccountsScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCreditsRead])
             with { ImplementationAvailable = false };
+        // 1.18 (WP12; FNS-D13/D52/D113): the bank statement workspace; import and match are its controls.
+        var bankStatements = Declaration(BankStatementCapabilityId, BankStatementCapabilityId, BankStatementPath,
+            BankStatementScreenId, ShellCapabilityRoutePrecedence.Static, [FinanceBankStatementPermissionsV1.Read]);
         var officialRecord = Declaration(OfficialInvoiceRecordCapabilityId, OfficialInvoiceRecordCapabilityId,
             OfficialInvoiceRecordPath, "F-005-OFFICIAL", ShellCapabilityRoutePrecedence.Static,
             [FinanceOfficialSalesInvoicePermissionNamesV1.Record]) with { ImplementationAvailable = false };
@@ -252,6 +265,11 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
             Declaration(ExchangeBookValueApproveCapabilityId, ExchangeBookValueApproveCapabilityId,
                 ExchangeBookValueApprovePath, "F-32-EXCHANGE-BOOK-APPROVE", ShellCapabilityRoutePrecedence.Static,
                 [ErpPermissions.AccountingNormalJournalDraftApprove]) with { ImplementationAvailable = false },
+            bankStatements,
+            bankStatements with { CapabilityId = BankStatementImportCapabilityId, ParentCapabilityId = BankStatementCapabilityId,
+                RequiredPermissions = [FinanceBankStatementPermissionsV1.Read, FinanceBankStatementPermissionsV1.Import] },
+            bankStatements with { CapabilityId = BankStatementMatchCapabilityId, ParentCapabilityId = BankStatementCapabilityId,
+                RequiredPermissions = [FinanceBankStatementPermissionsV1.Read, FinanceBankStatementPermissionsV1.Match] },
             Declaration(PartyBalanceTransferCapabilityId, PartyBalanceTransferCapabilityId, PartyBalanceTransferPath,
                 "F-32-PARTY-BALANCE-TRANSFER", ShellCapabilityRoutePrecedence.Static,
                 [FinancePartyBalanceTransferPermissionsV1.Record, FinancePermissionNames.PartyLedgerRead,

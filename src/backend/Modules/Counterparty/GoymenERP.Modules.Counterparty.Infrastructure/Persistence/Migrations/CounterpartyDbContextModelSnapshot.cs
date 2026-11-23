@@ -943,6 +943,124 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Counterparty.Infrastructure.Persistence.CounterpartyPartyIbanCommandRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("KeyHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("CommandName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CompanyId", "KeyHash");
+
+                    b.ToTable("PartyIbanCommands", "counterparty", t =>
+                        {
+                            t.HasCheckConstraint("CK_PartyIbanCommands_Evidence", "LEN([KeyHash]) = 64 AND LEN([PayloadHash]) = 64 AND LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND ISJSON([ResultJson]) = 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Counterparty.Infrastructure.Persistence.CounterpartyPartyIbanRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("AddedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("AddedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("BankName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset?>("DeactivatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DeactivatedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("DeactivationReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Iban")
+                        .IsRequired()
+                        .HasMaxLength(34)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(34)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("PartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "Iban")
+                        .HasDatabaseName("IX_PartyIbans_ActiveIban")
+                        .HasFilter("[IsActive] = 1");
+
+                    b.HasIndex("CompanyId", "PartyId", "Iban")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PartyIbans_ActivePartyIban")
+                        .HasFilter("[IsActive] = 1");
+
+                    b.ToTable("PartyIbans", "counterparty", t =>
+                        {
+                            t.HasCheckConstraint("CK_PartyIbans_Content", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([Iban]) BETWEEN 15 AND 34 AND LEFT([Iban], 2) NOT LIKE '%[^A-Z]%' AND SUBSTRING([Iban], 3, 2) NOT LIKE '%[^0-9]%' AND [Iban] NOT LIKE '%[^A-Z0-9]%' AND (LEFT([Iban], 2) <> 'TR' OR (LEN([Iban]) = 26 AND SUBSTRING([Iban], 3, 24) NOT LIKE '%[^0-9]%')) AND LEN([BankName]) > 0 AND LEN([AddedBy]) > 0");
+
+                            t.HasCheckConstraint("CK_PartyIbans_State", "([IsActive] = 1 AND [Version] = 1 AND [DeactivatedBy] IS NULL AND [DeactivatedAtUtc] IS NULL AND [DeactivationReason] IS NULL) OR ([IsActive] = 0 AND [Version] = 2 AND LEN([DeactivatedBy]) > 0 AND [DeactivatedAtUtc] IS NOT NULL AND LEN([DeactivationReason]) > 0)");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Idempotency.Domain.Executions.CommandExecution", b =>
                 {
                     b.Property<Guid>("Id")

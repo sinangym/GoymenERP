@@ -321,6 +321,27 @@ public sealed class FinanceBankStatementImportServiceTests
     }
 
     [Fact]
+    public async Task Fns_d119_the_person_who_confirmed_may_reverse_with_a_mandatory_reason_and_it_is_audited()
+    {
+        await using var run = new Run();
+        var receipt = await run.SeedReceiptAsync("250.00", new DateOnly(2026, 11, 17));
+        await run.ReserveAsync("SENTETIK-r");
+        await run.ParseAsync("SENTETIK-p", Csv);
+        var match = (await run.Service.ConfirmMatchAsync(run.Context, new("SENTETIK-c"), run.ImportId,
+            new(Guid.NewGuid(), await run.LineAsync("E-1"), FinanceBankStatementCandidateKindV1.Receipt, receipt), default)).Resource!;
+        Assert.Equal(run.Context.ActorId, match.ConfirmedBy);
+        Assert.Equal(FinanceBankStatementCodesV1.ReasonRequired, (await run.Service.ReverseMatchAsync(run.Context, new("SENTETIK-e"),
+            match.Id, new("1", Guid.NewGuid(), ""), default)).Code);
+
+        var reversed = (await run.Service.ReverseMatchAsync(run.Context, new("SENTETIK-v"), match.Id,
+            new("1", Guid.NewGuid(), "SENTETIK onaylayan geri aldi"), default)).Resource!;
+        Assert.Equal((run.Context.ActorId, "SENTETIK onaylayan geri aldi"), (reversed.ReversedBy, reversed.ReversalReason));
+        var audit = run.Audit.Events[^1];
+        Assert.Equal(("finance.bank-statement-match.reversed.v1", "SENTETIK onaylayan geri aldi", run.Context.ActorId),
+            (audit.EventType, audit.Reason, audit.ActorId));
+    }
+
+    [Fact]
     public async Task Match_commands_need_their_own_permission()
     {
         await using var run = new Run();

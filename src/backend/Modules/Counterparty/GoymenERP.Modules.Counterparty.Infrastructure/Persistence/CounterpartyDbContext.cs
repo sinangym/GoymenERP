@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 
-public sealed class CounterpartyDbContext(
+public sealed partial class CounterpartyDbContext(
     DbContextOptions<CounterpartyDbContext> options,
     ICompanyContext companyContext)
     : DbContext(options)
@@ -104,6 +104,7 @@ public sealed class CounterpartyDbContext(
         ConfigurePartySuccession(modelBuilder);
         ConfigureOutboxMessages(modelBuilder);
         ConfigureOrganizationCompanyReference(modelBuilder);
+        ConfigurePartyIbans(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -652,6 +653,7 @@ public sealed class CounterpartyDbContext(
     private void ApplyWriteGuards()
     {
         CounterpartyAuditEventTenantGuard.Validate(this, companyContext);
+        GuardPartyIbans();
 
         foreach (var entry in ChangeTracker.Entries<Party>())
         {

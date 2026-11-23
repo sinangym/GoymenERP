@@ -13,6 +13,10 @@
  */
 
 export const FINANCE_CAPABILITY = {
+  /** WP12 (FNS-D13/D113) bank statement workspace; import and match are controls of it. */
+  bankStatements: 'finance.bank-statements.read',
+  bankStatementsImport: 'finance.bank-statements.import',
+  bankStatementsMatch: 'finance.bank-statements.match',
   partyBalanceTransfers: 'finance.party-balance-transfers.record',
   officialInvoicesRecord: 'finance.official-sales-invoices.record',
   officialInvoicesApprove: 'finance.official-sales-invoices.approve',
@@ -100,6 +104,7 @@ export const FINANCE_CAPABILITY = {
 export type FinanceCapabilityId = (typeof FINANCE_CAPABILITY)[keyof typeof FINANCE_CAPABILITY]
 
 export const FINANCE_ROUTE = {
+  bankStatements: '/finans/banka-ekstresi',
   partyBalanceTransfers: '/finans/cari-bakiye-devri',
   officialInvoicesRecord: '/finans/resmi-satis-faturalari',
   officialInvoicesApprove: '/finans/resmi-satis-faturasi-onaylari',
