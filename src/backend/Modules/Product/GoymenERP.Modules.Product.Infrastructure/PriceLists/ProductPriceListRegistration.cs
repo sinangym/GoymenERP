@@ -43,6 +43,10 @@ public static class ProductPriceListRegistration
         });
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped(CreateStore);
+        // WP7-2 (AI-D31/AI-D32): the read-only Work inbox source(s) of Product pending decisions; they decide nothing.
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddScoped<GoymenERP.BuildingBlocks.Work.WorkInboxCompanyWideFenceV1>(services);
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1, WorkInbox.ProductPackageStandardWorkInboxSourceV1>();
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1, WorkInbox.ProductPriceListVersionWorkInboxSourceV1>();
         services.AddScoped<IProductPriceListServiceV1>(CreateService);
         services.AddScoped<IProductPriceReferenceReaderV1>(CreateReader);
         services.AddScoped<IProductQuantityPriceReferenceReaderV1>(CreateReader);

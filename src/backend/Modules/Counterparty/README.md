@@ -274,3 +274,12 @@ Up replaces only this check constraint; no column or data is changed. Down first
 while any tax-number history (`Attribute = 1`) exists, then restores the previous constraint. With only legal-name
 history or an empty table the guard passes. Existing tax history is retained; use a reviewed forward fix instead.
 The model, ASCII/trailing-space SQL regression and Down guard evidence remain subject to the final K3 review.
+
+## WP7-2 — Work inbox sources (AI-D31/AI-D32)
+
+Read-only `IWorkInboxSourceV1` sources: `counterparty.tax-identity-change.v1` (pending VKN/TCKN change requests;
+`counterparty.parties.tax-identity.approve` + `counterparty.parties.read`, company-wide; maker = requester) and
+`counterparty.legal-name-change.v1` (pending legal name change requests; `counterparties.legal_name.approve` +
+`counterparty.parties.read`; maker = proposer). Both flag a request prepared against a party version that moved since. The
+tax numbers are never put into the inbox. The party merge (`ApproveCounterpartyPartyMergeV1`) is a single-step approved record
+with no pending state, so it has no inbox source: nothing waits for a decision.

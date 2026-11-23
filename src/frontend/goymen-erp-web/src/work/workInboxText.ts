@@ -21,13 +21,14 @@ import {
 } from './inboxKinds/inventoryText'
 import { FINANCE_ACCOUNTING_INBOX_TEXT } from './inboxKinds/financeAccountingText'
 import { IDENTITY_INBOX_TEXT } from './inboxKinds/identityText'
+import { MASTER_DATA_INBOX_TEXT } from './inboxKinds/masterDataText'
 import { PURCHASING_INBOX_TEXT } from './inboxKinds/purchasingText'
 import { SETTINGS_INBOX_TEXT } from './inboxKinds/settingsText'
 import type { WorkInboxModuleText } from './inboxKinds/textTypes'
 
 /** WP4–WP7: the per-module text files merged after the W1-A maps below. */
 const MODULE_TEXTS: readonly WorkInboxModuleText[] = [
-  PURCHASING_INBOX_TEXT, IDENTITY_INBOX_TEXT, SETTINGS_INBOX_TEXT, FINANCE_ACCOUNTING_INBOX_TEXT,
+  PURCHASING_INBOX_TEXT, IDENTITY_INBOX_TEXT, SETTINGS_INBOX_TEXT, FINANCE_ACCOUNTING_INBOX_TEXT, MASTER_DATA_INBOX_TEXT,
 ]
 const merged = (pick: (text: WorkInboxModuleText) => Readonly<Record<string, string>> | undefined): Record<string, string> =>
   Object.assign({}, ...MODULE_TEXTS.map((text) => pick(text) ?? {}))

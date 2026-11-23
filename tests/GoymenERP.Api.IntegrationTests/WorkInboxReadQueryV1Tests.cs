@@ -454,6 +454,42 @@ public sealed class WorkInboxReadQueryV1Tests
                 result.Resource.Items.Single(item => item.ItemId == Second).Duration.DueAtUtc!.Value));
     }
 
+    [Fact]
+    public async Task An_invalid_source_registration_is_left_out_while_valid_sources_and_an_underscore_permission_still_answer()
+    {
+        var finance = new Source("finance", "finance.manual-bank-payment.v1", "finance.manual-bank-payment.approve")
+        {
+            Result = ctx => WorkInboxSourceResultV1.Found(ctx.CompanyId,
+                [Item("finance", "finance.manual-bank-payment.v1", First, Early, Maker)], hasMore: false),
+        };
+        var legalName = new Source("counterparty", "counterparty.legal-name-change.v1", "counterparties.legal_name.approve")
+        {
+            Result = ctx => WorkInboxSourceResultV1.Found(ctx.CompanyId,
+                [Item("counterparty", "counterparty.legal-name-change.v1", Second, Late, Maker)], hasMore: false),
+        };
+        var broken = new Source("inventory", "inventory.broken.v1", "Not A Permission");
+        var fixture = Fixture([finance, broken, legalName], Defaults);
+
+        var result = await fixture.Query.ListAsync(null, null, default);
+
+        Assert.Equal(WorkInboxReadOutcomeV1.Found, result.Outcome);
+        Assert.Equal([First, Second], result.Resource!.Items.Select(item => item.ItemId).ToArray());
+        Assert.Equal(["counterparty.legal-name-change.v1", "finance.manual-bank-payment.v1"],
+            result.Resource.Sources.Select(source => source.Kind).ToArray());
+        Assert.Equal(0, broken.Calls);
+    }
+
+    [Fact]
+    public async Task Two_sources_claiming_one_kind_keep_the_inbox_unavailable()
+    {
+        var first = new Source("finance", "finance.manual-bank-payment.v1", "finance.manual-bank-payment.approve");
+        var second = new Source("finance", "finance.manual-bank-payment.v1", "finance.manual-bank-payment.approve");
+
+        var result = await Fixture([first, second], Defaults).Query.ListAsync(null, null, default);
+
+        Assert.Equal(WorkInboxReadOutcomeV1.Unavailable, result.Outcome);
+    }
+
     private static PermissionScope Scoped(Guid[]? sites = null, Guid[]? locations = null) => new(
         true, false, new HashSet<string>(StringComparer.Ordinal), new HashSet<Guid>(sites ?? []), new HashSet<Guid>(locations ?? []),
         new HashSet<Guid>());

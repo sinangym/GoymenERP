@@ -132,15 +132,32 @@ internal sealed class WorkInboxReadQueryV1
         this.time = time;
         this.logger = logger;
 
+        // WP7-2 (ASSUMPTION-WP7-PERM-2, reversible): a source whose kind or approve permission breaks the contract is a
+        // registration error — it is logged as an error naming the source and left out of the inbox, while every valid source
+        // still answers (one bad registration no longer makes the whole inbox unavailable). Two sources claiming the same kind
+        // stay a whole-inbox failure: which owner's rule applies is then ambiguous (fail closed).
         var valid = true;
         var byKind = new Dictionary<string, IWorkInboxSourceV1>(StringComparer.Ordinal);
         foreach (var source in registered)
         {
-            if (source is null
-                || !NativeApprovalQueueRulesV1.IsValidKind(source.Module, source.Kind)
-                || !WorkInboxRulesV1.IsValidPermission(source.ApproverPermission)
-                || !byKind.TryAdd(source.Kind, source))
+            if (source is null)
             {
+                logger.LogError("Work inbox source registration is null; it is left out of the inbox.");
+                continue;
+            }
+
+            if (!NativeApprovalQueueRulesV1.IsValidKind(source.Module, source.Kind)
+                || !WorkInboxRulesV1.IsValidPermission(source.ApproverPermission))
+            {
+                logger.LogError(
+                    "Work inbox source registration is invalid and is left out of the inbox. SourceType={SourceType}",
+                    source.GetType().FullName);
+                continue;
+            }
+
+            if (!byKind.TryAdd(source.Kind, source))
+            {
+                logger.LogError("Work inbox kind is registered twice; the inbox is unavailable. Kind={Kind}", source.Kind);
                 valid = false;
             }
         }

@@ -11,7 +11,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.WorkInbox;
 /// for its exception approval (SAT-D393), as Purchasing lists them for the Work inbox. A return waits while it is
 /// PendingCostException — exactly what <c>ApprovePurchaseSupplierReturnCostExceptionV1</c> accepts; it is decided on the
 /// order's own screen (the return panel) under <c>purchasing.orders.approve</c> (SAT-D396) by someone other than the person
-/// who entered it (fail-closed reading of SAT-D396, <see cref="PurchaseSupplierReturnRuleCodes.SameActor"/>). Every pending
+/// who entered it (ALS-D128, E-75, completing SAT-D396; <see cref="PurchaseSupplierReturnRuleCodes.SameActor"/>). Every pending
 /// return of the company is returned, the enterer's own included: Work hides it from its maker.
 /// <para>
 /// The rule carries the manual unit cost (TRY per kg) the return would leave stock at only when the caller may see purchase

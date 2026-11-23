@@ -1,0 +1,106 @@
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Work;
+using GoymenERP.Modules.Counterparty.Application.Contracts;
+using GoymenERP.Modules.Counterparty.Domain.Parties;
+using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+
+namespace GoymenERP.Modules.Counterparty.Infrastructure.WorkInbox;
+
+/// <summary>
+/// WP7-2 (AI-D31, AI-D32, YOL-D18; AT-009, CARI-DEC-004): the requests to replace a party's VKN/TCKN waiting for the checker,
+/// as Counterparty lists them for the Work inbox. A request waits while it is Pending — exactly what
+/// <c>DecideCounterpartyTaxIdentityChangeV1</c> accepts; it is decided on the party's own screen by a holder of
+/// <c>counterparty.parties.tax-identity.approve</c> (with <c>counterparty.parties.read</c>), both company-wide — the two names
+/// the decision command measures — never by its maker (<see cref="PartyTaxIdentityChangeRequest.IsRequestedBy"/>). A request
+/// prepared against a party version that has moved since is stale and its rule says so. The label is the party's legal name;
+/// the tax numbers themselves (a TCKN is personal data) are not put into the inbox.
+/// </summary>
+internal sealed class CounterpartyTaxIdentityChangeWorkInboxSourceV1(
+    CounterpartyDbContext database,
+    WorkInboxCompanyWideFenceV1 fence) : IWorkInboxSourceV1
+{
+    public const string ModuleName = "counterparty";
+    public const string KindName = "counterparty.tax-identity-change.v1";
+
+    /// <summary>Replacing a party's VKN/TCKN needs another person's approval (AT-009 maker-checker).</summary>
+    public const string ApprovalRequiredRule = "counterparty.tax-identity-change-approval-required";
+
+    /// <summary>The party changed after the request was prepared.</summary>
+    public const string StaleRule = "counterparty.tax-identity-change-stale";
+
+    /// <summary>The party screen (<c>CAPABILITY.cariPartiesDetail</c>, <c>/cari/:partyId</c>).</summary>
+    internal const string PartyScreenPath = "/cari";
+
+    private static readonly IReadOnlyList<string> Permissions =
+        [CounterpartyTaxIdentityPermissionsV1.Approve, ErpPermissions.CounterpartyPartiesRead];
+
+    public string Module => ModuleName;
+
+    public string Kind => KindName;
+
+    public string ApproverPermission => CounterpartyTaxIdentityPermissionsV1.Approve;
+
+    public async Task<WorkInboxSourceResultV1> ListPendingAsync(
+        WorkInboxSourceContextV1 context,
+        int maxCount,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCount);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (await fence.CheckAsync(context, Permissions, cancellationToken) is { } refused)
+        {
+            return refused;
+        }
+
+        List<PartyTaxIdentityChangeRequest> rows;
+        Dictionary<Guid, (string LegalName, long Version)> parties;
+        int total;
+        try
+        {
+            var pending = database.PartyTaxIdentityChangeRequests.AsNoTracking()
+                .Where(request => request.CompanyId == context.CompanyId && request.Status == PartyTaxIdentityChangeStatus.Pending);
+            total = await pending.CountAsync(cancellationToken);
+            rows = await pending.OrderBy(request => request.RequestedAtUtc).ThenBy(request => request.Id)
+                .Take(maxCount).ToListAsync(cancellationToken);
+            var partyIds = rows.Select(row => row.PartyId).Distinct().ToArray();
+            parties = (await database.Parties.AsNoTracking()
+                    .Where(party => partyIds.Contains(party.Id))
+                    .Select(party => new { party.Id, party.LegalName, party.Version })
+                    .ToListAsync(cancellationToken))
+                .ToDictionary(party => party.Id, party => (party.LegalName, party.Version));
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            return await fence.CheckAsync(context, Permissions, cancellationToken) ?? WorkInboxSourceResultV1.Unavailable();
+        }
+
+        if (await fence.CheckAsync(context, Permissions, cancellationToken) is { } afterRead)
+        {
+            return afterRead;
+        }
+
+        var items = new List<WorkInboxItemV1>(rows.Count);
+        foreach (var row in rows)
+        {
+            if (row.Id == Guid.Empty || string.IsNullOrWhiteSpace(row.RequestedBy) || !parties.TryGetValue(row.PartyId, out var party)
+                || string.IsNullOrWhiteSpace(party.LegalName) || party.LegalName.Length > WorkInboxRulesV1.MaxDocumentLabelLength)
+            {
+                return WorkInboxSourceResultV1.Unavailable();
+            }
+
+            var rules = new List<WorkApprovalRuleResultV1>(2) { new(ApprovalRequiredRule, null, null, null, null) };
+            if (party.Version != row.PartyVersionAtRequest)
+            {
+                rules.Add(new(StaleRule, null, null, null, null));
+            }
+
+            var link = WorkInboxCompanyWideFenceV1.Link(PartyScreenPath, row.PartyId);
+            items.Add(new WorkInboxItemV1(ModuleName, KindName, row.Id, party.LegalName, row.RequestedAtUtc.ToUniversalTime(), link,
+                row.RequestedBy, rules, [new("party", party.LegalName, row.PartyId, link)]));
+        }
+
+        return WorkInboxSourceResultV1.Found(context.CompanyId, items, total > rows.Count);
+    }
+}
