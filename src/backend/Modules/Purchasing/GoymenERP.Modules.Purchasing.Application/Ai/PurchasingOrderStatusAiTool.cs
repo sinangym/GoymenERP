@@ -11,8 +11,9 @@ namespace GoymenERP.Modules.Purchasing.Application.Ai;
 /// supplier. Read ONLY through the Purchasing owner's order list
 /// (<see cref="IPurchasingOrderReadServiceV1.GetOrderListAsync"/>, which measures <c>purchasing.orders.read</c> company-wide
 /// around every read); the tool measures the same name for the server company before and after. No price, no amount and
-/// no supplier display name are released (identities only). Whether an approved order still waits for goods is the
-/// <c>purchasing.pending-receipts.v1</c> tool's answer, not this one's. Over the scan cap the counts are withheld.
+/// no supplier display name are released (identities only). This is a document-status count, not the "açık alış siparişi"
+/// answer: by KLN-D42 an open purchase order is an approved order line still waiting for goods, which is the
+/// <c>purchasing.pending-receipts.v1</c> tool's answer. Over the scan cap the counts are withheld.
 /// </summary>
 public sealed class PurchasingOrderStatusAiTool(IPurchasingOrderReadServiceV1 orders, IErpAuthorityRevalidationService authority,
     TimeProvider timeProvider) : IAiOwnerReadToolV1

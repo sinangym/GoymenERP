@@ -1121,3 +1121,15 @@ SQL/Unit/HTTP/UI acceptance sources accompany this change; runtime remains **NOT
 | HTTP | `GET /api/v1/settings/company-policies/ai-gateway` (policy in force, current month's committed units, version history); `POST …/ai-gateway/versions` (full snapshot; K3 path: fresh permission, mandatory reason, Idempotency-Key, expected version, one audit event per real change, insert-only). |
 | Ledger | `ISettingsAiBudgetLedgerV1`: a reservation re-reads the version in force (it must equal the version the gateway routed with), creates the month row on first use and moves the committed total only while `committed + reservation ≤ ceiling` in one conditional update; settlement moves it by `used − reserved` once. Entries are append-only. The budget month is the calendar month in `Europe/Istanbul`. |
 | Migration | `20261122202350_AddAiGatewayPolicyAndBudgetLedger` (dotnet ef, pure DDL Up; five tables). `Down` refuses with **THROW 52180** (WP-A1 range 52180–52189) while any policy version, ledger entry or month total exists (forward fix); an empty store rolls back freely. |
+
+## WP15 — legal deadline calendar (DALGA_PLANI_v2 1.16, YOL-D4 (c))
+
+`GET/POST /api/v1/settings/company-policies/legal-deadline-calendar[/versions]` on `settings.legal-deadline-calendar.manage`
+(registered, not granted): insert-only versions of periodic obligations (closed catalogue: KDV, muhtasar, e-defter berat,
+BA/BS, geçici vergi, kurumlar vergisi, damga vergisi, SGK) with period length 1/3/12 months, months after period end and
+due day. Nothing is seeded: values wait for the financial advisor (`docs/delivery/MALI_MUSAVIR_SORULARI_v1.md`); until
+then every counter is "undefined" and does not run. `LegalDeadlineCalculatorV1` is the only calculator. YOL-D32: a due day
+on a weekend or a company holiday/eve (YOL-D22 calendar) is shown on the first business day with the legal date as a note;
+without the holiday calendar of a needed year nothing is moved and the item says so. Settings serves the counters as a Work deadline source
+(`IWorkDeadlineSourceV1`, `GET /api/v1/work/deadlines`) on `settings.legal-deadlines.read` (registered, not granted).
+`20261122202227_AddLegalDeadlineCalendars`: Down refuses with `THROW 52280` while a calendar version exists (forward fix).

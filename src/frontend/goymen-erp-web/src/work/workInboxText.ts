@@ -7,6 +7,27 @@
 
 import { CAPABILITY_NAV_LABEL } from '../shell/navigation'
 import { DURATION_CLASS_HOURS, type WorkInboxDurationClass } from './workInboxContract'
+import {
+  SALES_INBOX_KIND_TEXT,
+  SALES_INBOX_PERMISSION_TEXT,
+  SALES_INBOX_ROLE_TEXT,
+  SALES_INBOX_RULE_TEXT,
+} from './inboxKinds/salesText'
+import {
+  WP6_INBOX_KIND_TEXT,
+  WP6_INBOX_PERMISSION_TEXT,
+  WP6_INBOX_ROLE_TEXT,
+  WP6_INBOX_RULE_TEXT,
+} from './inboxKinds/inventoryText'
+import { IDENTITY_INBOX_TEXT } from './inboxKinds/identityText'
+import { PURCHASING_INBOX_TEXT } from './inboxKinds/purchasingText'
+import { SETTINGS_INBOX_TEXT } from './inboxKinds/settingsText'
+import type { WorkInboxModuleText } from './inboxKinds/textTypes'
+
+/** WP4–WP7: the per-module text files merged after the W1-A maps below. */
+const MODULE_TEXTS: readonly WorkInboxModuleText[] = [PURCHASING_INBOX_TEXT, IDENTITY_INBOX_TEXT, SETTINGS_INBOX_TEXT]
+const merged = (pick: (text: WorkInboxModuleText) => Readonly<Record<string, string>> | undefined): Record<string, string> =>
+  Object.assign({}, ...MODULE_TEXTS.map((text) => pick(text) ?? {}))
 
 /** Kind → Turkish name (one per connected owner source). */
 export const WORK_INBOX_KIND_TEXT: Readonly<Record<string, string>> = {
@@ -27,6 +48,9 @@ export const WORK_INBOX_KIND_TEXT: Readonly<Record<string, string>> = {
   'inventory.stock-count.v1': 'Stok sayım farkı onayı',
   'inventory.stock-scrap.v1': 'Stok hurda çıkışı onayı',
   'sales.order-draft.v1': 'Satış siparişi taslağı onayı',
+  ...SALES_INBOX_KIND_TEXT,
+  ...WP6_INBOX_KIND_TEXT,
+  ...merged((text) => text.kinds),
 }
 
 export const WORK_INBOX_MODULE_TEXT: Readonly<Record<string, string>> = {
@@ -36,6 +60,7 @@ export const WORK_INBOX_MODULE_TEXT: Readonly<Record<string, string>> = {
   purchasing: 'Satın alma',
   finance: 'Finans',
   inventory: 'Stok',
+  ...merged((text) => text.modules),
 }
 
 /** Owner rule code → the sentence the explanation card shows. Codes of other modules are added as their sources land. */
@@ -83,6 +108,9 @@ export const WORK_INBOX_RULE_TEXT: Readonly<Record<string, string>> = {
   'finance.official-invoice-import-approval': 'Resmî fatura içe alma partisi onay bekliyor',
   'inventory.stock-count-difference': 'Sayılan kg defter kaydından farklı (sayılan / fark)',
   'inventory.stock-scrap-request': 'Hurda çıkışı talebi (hurda kg)',
+  ...SALES_INBOX_RULE_TEXT,
+  ...WP6_INBOX_RULE_TEXT,
+  ...merged((text) => text.rules),
 }
 
 /** Reference role → label in "Dayandığı kayıtlar". */
@@ -105,6 +133,9 @@ export const WORK_INBOX_ROLE_TEXT: Readonly<Record<string, string>> = {
   'manufacturing-order': 'Üretim emri',
   'inventory-label': 'Etiket',
   location: 'Lokasyon',
+  ...SALES_INBOX_ROLE_TEXT,
+  ...WP6_INBOX_ROLE_TEXT,
+  ...merged((text) => text.roles),
 }
 
 /** The owners' approve permission names ("kimde bekliyor"). */
@@ -125,6 +156,9 @@ export const WORK_INBOX_PERMISSION_TEXT: Readonly<Record<string, string>> = {
   'inventory.stock-count.approve': 'Stok sayım onayı',
   'inventory.stock-scrap.approve': 'Stok hurda onayı',
   'sales.orders.approve': 'Satış siparişi onayı',
+  ...SALES_INBOX_PERMISSION_TEXT,
+  ...WP6_INBOX_PERMISSION_TEXT,
+  ...merged((text) => text.permissions),
 }
 
 export const inboxKindText = (kind: string): string => WORK_INBOX_KIND_TEXT[kind] ?? kind

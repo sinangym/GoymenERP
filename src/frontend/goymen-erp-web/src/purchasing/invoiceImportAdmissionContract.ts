@@ -22,7 +22,9 @@ export interface ImportInstallment { readonly id: string; readonly openItemId: s
   readonly amount: string; readonly functionalAmount: string | null }
 export interface ImportAdmission { readonly source: ImportPreviewRequest; readonly expectedInvoiceVersion: '0'; readonly supplierPartyId: string
   readonly companyAccountId: string; readonly expectedPartyVersion: string; readonly expectedAccountVersion: string; readonly currencyId: string
-  readonly lines: readonly ImportLineMapping[]; readonly installments: readonly ImportInstallment[] }
+  readonly lines: readonly ImportLineMapping[]; readonly installments: readonly ImportInstallment[]
+  /** ALS-D125: sent only after the server warned about a similar recorded invoice; it goes to the audit. */
+  readonly duplicateReason?: string }
 export interface ImportRecordSnapshot { readonly request: ImportAdmission; readonly facts: SourceInvoice }
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
 const exact = (v: Record<string, unknown>, keys: readonly string[]) => Object.keys(v).length === keys.length && keys.every(k => Object.hasOwn(v, k))

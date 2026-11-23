@@ -14,6 +14,7 @@ import {
   type AiAskRequest,
   type AiCapabilities,
 } from './aiContract'
+import { AI_DOCUMENT_DRAFT_PATH, decodeDocumentDraft, type DocumentDraft, type DraftRequest } from './documentDraftContract'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
@@ -70,6 +71,28 @@ export function askAi(request: AiAskRequest, companyId: string, signal?: AbortSi
       }),
     },
     decodeAiAskAnswer,
+    signal,
+  )
+}
+
+/** WP-B3: a document becomes a draft only; the response is data when it decodes (and never claims a created record). */
+export function createDocumentDraft(
+  request: DraftRequest,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<DocumentDraft>> {
+  return send(
+    AI_DOCUMENT_DRAFT_PATH,
+    {
+      method: 'POST',
+      headers: { ...headers(companyId), 'Content-Type': 'application/json' },
+      body: JSON.stringify(
+        'contentBase64' in request
+          ? { draftKind: request.draftKind, mediaType: request.mediaType, contentBase64: request.contentBase64 }
+          : { draftKind: request.draftKind, text: request.text, textSource: request.textSource },
+      ),
+    },
+    decodeDocumentDraft,
     signal,
   )
 }

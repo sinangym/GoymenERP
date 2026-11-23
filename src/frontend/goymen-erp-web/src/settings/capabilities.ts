@@ -24,6 +24,15 @@ export const SETTINGS_CAPABILITY = {
   notificationRetention: 'settings.notification-retention.manage',
   /** W1-A (YOL-D18) AY-OS-01: the two approval duration class lengths. */
   workApprovalDuration: 'settings.work-approval-duration.manage',
+  /**
+   * WP-A5 (AI-20, provider 1.21) AY-YZG-01: route `/ayarlar/yapay-zeka-ag-gecidi`, the AI management screen on
+   * `settings.ai-gateway.manage` (company-wide, not Critical, granted to no role here).
+   */
+  aiGateway: 'settings.ai-gateway.manage',
+  /** WP15 (1.16) AY-YST-01: the versioned legal deadline calendar (values wait for the financial advisor). */
+  legalDeadlineCalendar: 'settings.legal-deadline-calendar.manage',
+  /** WP15 (1.16) AY-YS-01: the upcoming legal deadline counters (Work deadline view). */
+  legalDeadlines: 'settings.legal-deadlines.read',
   documentNumberSeries: 'settings.document-number-series.manage',
   manufacturingParameters: 'settings.manufacturing-parameter-profiles.read',
   manufacturingTolerances: 'settings.manufacturing-tolerance-profiles.read',
@@ -95,6 +104,14 @@ export const SETTINGS_EXCHANGE_RATE_CONTROL = {
   import: 'settings.exchange-rates.import',
 } as const
 
+/**
+ * WP-A5 (provider 1.21): the AI management screen's read-only event list control — the screen's name plus
+ * `platform.security-events.read`. It gates the event section only; the server re-authorizes the read.
+ */
+export const SETTINGS_AI_GATEWAY_CONTROL = {
+  events: 'settings.ai-gateway.events.read',
+} as const
+
 export type SettingsCapabilityId = (typeof SETTINGS_CAPABILITY)[keyof typeof SETTINGS_CAPABILITY]
 
 export const SETTINGS_FINANCE_POLICY_CONTROL = {
@@ -122,6 +139,9 @@ export const SETTINGS_ROUTE: Record<SettingsCapabilityId, string> = {
   [SETTINGS_CAPABILITY.manufacturingScrapCost]: '/ayarlar/fire-maliyet-katilimi',
   [SETTINGS_CAPABILITY.notificationRetention]: '/ayarlar/bildirim-etkinlik-suresi',
   [SETTINGS_CAPABILITY.workApprovalDuration]: '/ayarlar/onay-sureleri',
+  [SETTINGS_CAPABILITY.aiGateway]: '/ayarlar/yapay-zeka-ag-gecidi',
+  [SETTINGS_CAPABILITY.legalDeadlineCalendar]: '/ayarlar/yasal-sure-takvimi',
+  [SETTINGS_CAPABILITY.legalDeadlines]: '/ayarlar/yasal-sureler',
   [SETTINGS_CAPABILITY.documentNumberSeries]: '/ayarlar/belge-numara-serileri',
   [SETTINGS_CAPABILITY.manufacturingParameters]: '/ayarlar/uretim-parametre-profilleri',
   [SETTINGS_CAPABILITY.manufacturingTolerances]: '/ayarlar/uretim-tolerans-profilleri',
@@ -154,6 +174,9 @@ export const SETTINGS_NAV_LABEL: Record<SettingsCapabilityId, string> = {
   [SETTINGS_CAPABILITY.manufacturingScrapCost]: 'Fire maliyete katılımı',
   [SETTINGS_CAPABILITY.notificationRetention]: 'Bildirim etkinlik süresi',
   [SETTINGS_CAPABILITY.workApprovalDuration]: 'Onay süreleri',
+  [SETTINGS_CAPABILITY.aiGateway]: 'Yapay zekâ yönetimi',
+  [SETTINGS_CAPABILITY.legalDeadlineCalendar]: 'Yasal süre takvimi',
+  [SETTINGS_CAPABILITY.legalDeadlines]: 'Yaklaşan yasal süreler',
   [SETTINGS_CAPABILITY.documentNumberSeries]: 'Belge numara serileri',
   [SETTINGS_CAPABILITY.manufacturingParameters]: 'Üretim parametre profilleri',
   [SETTINGS_CAPABILITY.manufacturingTolerances]: 'Üretim tolerans profilleri',

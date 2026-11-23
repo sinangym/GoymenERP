@@ -1,9 +1,11 @@
 namespace GoymenERP.ArchitectureTests;
 
 /// <summary>
-/// security.SecurityEvents is append-only. The standalone writer/store and the typed operator-recovery
-/// participant are its two explicit owner paths. The latter joins the caller's Serializable transaction
-/// (KIM-D27 and the explicit-target recovery decision) and remains pending independent K3 review.
+/// security.SecurityEvents is append-only. The standalone writer/store is one explicit owner path; the two
+/// owner-transaction participants are the other: the typed operator-recovery participant joins the caller's
+/// Serializable transaction (KIM-D27 and the explicit-target recovery decision) and the permission-changed
+/// participant joins the grant's own transaction (ADR-SEC-001 §4: identity.permission.changed is written in the
+/// owner's SQL transaction, fail-closed; K3-A P3). Both remain pending independent K3 review.
 /// </summary>
 public sealed class SecurityEventsWriteOwnershipGuardTests
 {
@@ -21,13 +23,16 @@ public sealed class SecurityEventsWriteOwnershipGuardTests
     private const string WriterPath = InfrastructureRoot + "Writing/SecurityEventWriter.cs";
     private const string OperatorRecoveryWriterPath =
         InfrastructureRoot + "Writing/LocalTwoFactorOperatorRecoverySecurityWriterV1.cs";
+    private const string PermissionChangedWriterPath =
+        InfrastructureRoot + "Writing/PermissionChangedSecurityEventWriterV1.cs";
     private const string QueryServicePath = InfrastructureRoot + "Reading/SecurityEventQueryService.cs";
 
     [Fact]
     public void SecurityEventsDbContext_IsReferencedOnlyByReviewedModuleFiles()
     {
         Assert.Equal(
-            new[] { DbContextPath, DesignTimeFactoryPath, StorePath, ModuleExtensionsPath, QueryServicePath, OperatorRecoveryWriterPath }
+            new[] { DbContextPath, DesignTimeFactoryPath, StorePath, ModuleExtensionsPath, QueryServicePath, OperatorRecoveryWriterPath,
+                    PermissionChangedWriterPath }
                 .Order(StringComparer.Ordinal),
             FindProductionSourcesContaining("SecurityEventsDbContext")
                 .Where(path => !path.StartsWith(MigrationsRoot, StringComparison.Ordinal)));
@@ -39,8 +44,9 @@ public sealed class SecurityEventsWriteOwnershipGuardTests
         Assert.Equal(
             new[] { StorePath },
             FindProductionSourcesContaining(".AppendAsync(securityEvent"));
+        // The owner-transaction path: exactly the two reviewed participants borrow the caller's transaction.
         Assert.Equal(
-            new[] { OperatorRecoveryWriterPath },
+            new[] { OperatorRecoveryWriterPath, PermissionChangedWriterPath }.Order(StringComparer.Ordinal),
             FindProductionSourcesContaining("owner.AppendAsync(row"));
         Assert.Equal(
             new[] { DbContextPath },

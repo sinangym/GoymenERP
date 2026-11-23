@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
-/// WP-A3b: the nine Inventory / Manufacturing / Purchasing READ tools are registered by their owner modules in the real
+/// WP-A3b: the ten Inventory / Manufacturing / Purchasing READ tools are registered by their owner modules in the real
 /// host composition, every dependency resolves, and the default configuration (<c>Ai:AllowedTools</c> empty) admits none
 /// of them. The catalog contract itself is checked against these descriptors in <see cref="AiYa1ReadToolsTests"/>.
 /// </summary>
@@ -20,6 +20,7 @@ public sealed class AiWpa3bReadToolsTests
         InventoryStockPositionsAiTool.ToolId,
         InventoryNegativeStockAttemptsAiTool.ToolId,
         InventoryPendingStockCountsAiTool.ToolId,
+        InventoryAverageCostAiTool.ToolId,
         ManufacturingOrderStatusAiTool.ToolId,
         ManufacturingPlanStatusAiTool.ToolId,
         ManufacturingWorkCenterQueueAiTool.ToolId,
@@ -34,6 +35,7 @@ public sealed class AiWpa3bReadToolsTests
         new InventoryStockPositionsAiTool(null!, null!, TimeProvider.System).Descriptor,
         new InventoryNegativeStockAttemptsAiTool(null!, null!, TimeProvider.System).Descriptor,
         new InventoryPendingStockCountsAiTool(null!, null!, TimeProvider.System).Descriptor,
+        new InventoryAverageCostAiTool(null!, null!, TimeProvider.System).Descriptor,
         new ManufacturingOrderStatusAiTool(null!, null!, TimeProvider.System).Descriptor,
         new ManufacturingPlanStatusAiTool(null!, null!, TimeProvider.System).Descriptor,
         new ManufacturingWorkCenterQueueAiTool(null!, null!, TimeProvider.System).Descriptor,
@@ -43,7 +45,7 @@ public sealed class AiWpa3bReadToolsTests
     ];
 
     [Fact]
-    public void The_host_registers_and_resolves_the_nine_owner_read_tools_and_the_default_allowlist_admits_none()
+    public void The_host_registers_and_resolves_the_ten_owner_read_tools_and_the_default_allowlist_admits_none()
     {
         using var factory = new GoymenErpApiFactory();
         using var scope = factory.Services.CreateScope();
@@ -59,7 +61,7 @@ public sealed class AiWpa3bReadToolsTests
     }
 
     [Fact]
-    public void Every_tool_is_a_read_tool_without_an_owner_command_and_only_the_invoice_variance_tool_is_confidential()
+    public void Every_tool_is_a_read_tool_and_only_the_cost_and_invoice_variance_tools_are_confidential_and_never_cloud_routable()
     {
         var descriptors = Descriptors();
 
@@ -69,12 +71,14 @@ public sealed class AiWpa3bReadToolsTests
             Assert.Equal(AiToolRiskClassV1.Read, descriptor.Risk);
             Assert.Null(descriptor.OwnerCommandName);
             Assert.NotEmpty(descriptor.RequiredPermissions);
-            Assert.Contains("limit", descriptor.FieldAllowlist);
             Assert.DoesNotContain("companyId", descriptor.FieldAllowlist);
         });
-        Assert.Equal(new[] { PurchasingInvoiceVariancesAiTool.ToolId },
-            descriptors.Where(d => d.DataClass == AiDataClassV1.Confidential).Select(d => d.ToolId).ToArray());
-        Assert.All(descriptors.Where(d => d.ToolId != PurchasingInvoiceVariancesAiTool.ToolId),
+        var confidential = new[] { InventoryAverageCostAiTool.ToolId, PurchasingInvoiceVariancesAiTool.ToolId };
+        Assert.Equal(confidential.Order(StringComparer.Ordinal),
+            descriptors.Where(d => d.DataClass == AiDataClassV1.Confidential).Select(d => d.ToolId).Order(StringComparer.Ordinal));
+        Assert.All(descriptors.Where(d => confidential.Contains(d.ToolId)), descriptor =>
+            Assert.False(AiGatewayPlacementRulesV1.PlacementAllows(AiModelPlacementV1.Cloud, descriptor.DataClass)));
+        Assert.All(descriptors.Where(d => !confidential.Contains(d.ToolId)),
             descriptor => Assert.Equal(AiDataClassV1.Internal, descriptor.DataClass));
     }
 
@@ -99,8 +103,9 @@ public sealed class AiWpa3bReadToolsTests
             MaxDataClass = AiDataClassV1.Confidential,
             AllowedTools =
             [
-                new AiAllowedToolOptions { ToolId = InventoryStockPositionsAiTool.ToolId, Version = "1" },
-                new AiAllowedToolOptions { ToolId = PurchasingInvoiceVariancesAiTool.ToolId, Version = "2" },
+                // WP-A6: both entries carry the approved card pin; the version still decides admission.
+                new AiAllowedToolOptions { ToolId = InventoryStockPositionsAiTool.ToolId, Version = "1", DescriptionSha256 = AiToolDescriptionPinV1.Compute(tools[0].Descriptor) },
+                new AiAllowedToolOptions { ToolId = PurchasingInvoiceVariancesAiTool.ToolId, Version = "2", DescriptionSha256 = AiToolDescriptionPinV1.Compute(tools[1].Descriptor) },
             ],
         }));
 

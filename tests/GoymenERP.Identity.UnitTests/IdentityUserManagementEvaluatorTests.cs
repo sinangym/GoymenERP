@@ -108,6 +108,22 @@ public sealed class IdentityUserManagementEvaluatorTests : IDisposable
         Assert.False(await Evaluator().AnyOtherActiveUserMayManageAsync(target, [companyA], Now, CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Managed_companies_are_only_the_company_wide_holdings_of_the_actor()
+    {
+        var actor = AddUser();
+        var siteCompany = Guid.NewGuid();
+        var expiredCompany = Guid.NewGuid();
+        Assign(actor, managerRoleId, companyA);
+        Assign(actor, plainRoleId, companyB);
+        Assign(actor, managerRoleId, siteCompany, siteScopeOnly: true);
+        Assign(actor, managerRoleId, expiredCompany, validUntilUtc: Now.AddDays(-1));
+        Assign(AddUser(), managerRoleId, companyB);
+
+        Assert.Equal([companyA], await Evaluator().GetCompanyWideManagedCompanyIdsAsync(actor, Now, CancellationToken.None));
+        Assert.Empty(await Evaluator().GetCompanyWideManagedCompanyIdsAsync(AddUser(isActive: false), Now, CancellationToken.None));
+    }
+
     public void Dispose() => context.Dispose();
 
     private IdentityUserManagementEvaluator Evaluator() => new(context);

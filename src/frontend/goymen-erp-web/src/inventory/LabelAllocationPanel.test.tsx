@@ -492,6 +492,37 @@ describe('KLN-D119 pieces of a sales allocation on the label detail', () => {
     expect(api.change.mock.calls[0][1]).toMatchObject({ targetLabelId: OTHER_LABEL, quantityKg: '60', pieceCount: 4 })
   })
 
+  it('SAT-D463: requires the pieces on a move of a piece-holding allocation and sends them', async () => {
+    api.allocations.mockResolvedValue({ type: 'ok-single', data: pieceRead() })
+    api.change.mockImplementation(async (_id: string, request: AllocationChangeRequest) => ({
+      type: 'applied', replayed: false,
+      response: { kind: 'Move', replaced: allocation({ status: 'Released', remainingKg: '0', version: '2', ...PIECES, remainingPieces: 0 }),
+        allocation: allocation({ allocationId: request.newAllocationId!, labelId: OTHER_LABEL, remainingKg: '60',
+          allocatedPieces: request.pieceCount, remainingPieces: request.pieceCount }) },
+    }))
+    const user = userEvent.setup(); mount()
+    const line = await row()
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi revize et' }))
+    await user.type(within(line).getByLabelText('Yeni tahsis kg'), '60')
+    await user.click(within(line).getByLabelText('Başka etikete taşı'))
+    const pieces = within(line).getByLabelText(PT.changePieceCount) as HTMLInputElement
+    expect(pieces.required).toBe(true)
+    expect(pieces.getAttribute('aria-required')).toBe('true')
+    expect(within(line).getByText(PT.changePieceCountHeldMoveHint(8))).toBeTruthy()
+    expect(within(line).queryByText(PT.changePieceCountMoveHint)).toBeNull()
+    await user.type(within(line).getByLabelText('Hedef etiket kimliği'), OTHER_LABEL)
+    await user.type(within(line).getByLabelText('Hedef etiket sürümü'), '9')
+    await user.type(within(line).getByLabelText('Değişiklik gerekçesi'), 'Başka demet')
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi değiştir' }))
+    expect(await screen.findByText(PT.changePieceCountRequired)).toBeTruthy()
+    expect(api.change).not.toHaveBeenCalled()
+
+    await user.type(pieces, '8')
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi değiştir' }))
+    await screen.findByText(/Tahsis başka etikete taşındı/)
+    expect(api.change.mock.calls[0][1]).toMatchObject({ targetLabelId: OTHER_LABEL, quantityKg: '60', pieceCount: 8 })
+  })
+
   it.each([
     [422, 'inventory_allocation_piece_count_required'],
     [422, 'inventory_allocation_piece_count_not_tracked'],

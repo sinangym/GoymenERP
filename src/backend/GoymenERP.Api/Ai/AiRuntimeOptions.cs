@@ -59,6 +59,13 @@ public sealed class AiAllowedToolOptions
     public string? ToolId { get; set; }
 
     public string? Version { get; set; }
+
+    /// <summary>
+    /// WP-A6: the approved pin of the tool's model card (<see cref="AiToolDescriptionPinV1"/>, lower-case hex SHA-256).
+    /// A tool whose registered card no longer hashes to this value — its description, fields, permissions or data class
+    /// changed — is not admitted until a human approves the new pin. Missing or malformed means not admitted.
+    /// </summary>
+    public string? DescriptionSha256 { get; set; }
 }
 
 public static class AiProviderKindsV1

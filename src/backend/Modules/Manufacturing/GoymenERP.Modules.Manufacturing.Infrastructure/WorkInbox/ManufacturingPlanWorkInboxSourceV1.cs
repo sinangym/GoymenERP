@@ -26,6 +26,11 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.WorkInbox;
 /// and which recorded condition the approval would refuse today (a rejection not yet answered by a revision, a missing termin);
 /// none carries numbers. Plans carry no document number, so the label is the plan's identity.
 /// </para>
+/// <para>
+/// WP6 (D11): the item carries the plan's work center as its scope. The plan approval commands accept only a company-wide grant
+/// of <c>manufacturing.plans.approve</c>, so <see cref="IWorkInboxSourceV1.AcceptsScopedApprovers"/> stays false and a
+/// work-center scoped holder is not asked; opening scoped approval is the owner's decision, not the inbox's.
+/// </para>
 /// </summary>
 internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkInboxSourceV1
 {
@@ -105,7 +110,7 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkInboxSourceV1
         var items = new List<WorkInboxItemV1>(Math.Min(ordered.Count, maxCount));
         foreach (var candidate in ordered.Take(maxCount))
         {
-            if (candidate.PlanId == Guid.Empty
+            if (candidate.PlanId == Guid.Empty || candidate.WorkCenterId == Guid.Empty
                 || candidate.Reapproval && (candidate.ReleasedByOrderId is not { } orderId || orderId == Guid.Empty))
             {
                 // A record Manufacturing cannot read as its own invariants say: unavailable, never a partial list.
@@ -127,6 +132,7 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkInboxSourceV1
              select new
              {
                  plan.Id,
+                 plan.WorkCenterId,
                  plan.CreatedAtUtc,
                  plan.CreatedBy,
                  plan.RequestedDueDate,
@@ -151,6 +157,7 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkInboxSourceV1
              select new
              {
                  plan.Id,
+                 plan.WorkCenterId,
                  WaitingSinceUtc = waitingSinceUtc,
                  PreparedBy = plan.LastRevisedBy ?? plan.CreatedBy,
                  plan.RequestedDueDate,
@@ -159,7 +166,7 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkInboxSourceV1
             .Take(take),
             cancellationToken);
         return [.. read.Select(plan => new Pending(plan.Id, false, plan.WaitingSinceUtc, plan.PreparedBy,
-            plan.RejectedNotRevised, plan.RequestedDueDate is null, null))];
+            plan.RejectedNotRevised, plan.RequestedDueDate is null, null, plan.WorkCenterId))];
     }
 
     private async Task<IReadOnlyList<Pending>> ReadReleasedAsync(Guid companyId, int take, CancellationToken cancellationToken)
@@ -177,6 +184,7 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkInboxSourceV1
              select new
              {
                  plan.Id,
+                 plan.WorkCenterId,
                  plan.CreatedBy,
                  LastRevisedBy = rows.PlanRevisions
                      .Where(revision => revision.CompanyId == companyId && revision.PlanId == plan.Id
@@ -201,6 +209,7 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkInboxSourceV1
              select new
              {
                  plan.Id,
+                 plan.WorkCenterId,
                  plan.ReleasedAtUtc,
                  PreparedBy = plan.LastRevisedBy ?? plan.CreatedBy,
                  plan.ReleasedByOrderId,
@@ -216,7 +225,8 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkInboxSourceV1
                 throw new InvalidOperationException("Manufacturing order cancellation without its time.");
             }
 
-            pending.Add(new Pending(plan.Id, true, releasedAtUtc, plan.PreparedBy, false, false, plan.ReleasedByOrderId));
+            pending.Add(new Pending(plan.Id, true, releasedAtUtc, plan.PreparedBy, false, false, plan.ReleasedByOrderId,
+                plan.WorkCenterId));
         }
 
         return pending;
@@ -247,7 +257,8 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkInboxSourceV1
             : [];
         return new WorkInboxItemV1(ModuleName, KindName, candidate.PlanId, ManufacturingWorkInboxFence.Id(candidate.PlanId),
             candidate.WaitingSinceUtc.ToUniversalTime(), ManufacturingWorkInboxFence.PlanLink(candidate.PlanId),
-            string.IsNullOrWhiteSpace(candidate.PreparedBy) ? null : candidate.PreparedBy.Trim(), rules, references);
+            string.IsNullOrWhiteSpace(candidate.PreparedBy) ? null : candidate.PreparedBy.Trim(), rules, references,
+            Scope: new WorkInboxItemScopeV1(null, null, candidate.WorkCenterId));
     }
 
     private sealed record Pending(
@@ -257,5 +268,6 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkInboxSourceV1
         string? PreparedBy,
         bool RejectedNotRevised,
         bool DueDateMissing,
-        Guid? ReleasedByOrderId);
+        Guid? ReleasedByOrderId,
+        Guid WorkCenterId);
 }

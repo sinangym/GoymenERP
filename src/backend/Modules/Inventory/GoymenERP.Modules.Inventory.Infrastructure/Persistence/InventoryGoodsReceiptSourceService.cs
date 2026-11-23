@@ -186,7 +186,17 @@ internal static class InventoryGoodsReceiptSourceProjection
             (BlockState)line.Block,
             movement.Id,
             quantity,
-            movement.OccurredAtUtc);
+            movement.OccurredAtUtc)
+        {
+            // KLN-D119 (AK-2): the received pieces of a piece-tracking receipt are the immutable movement line's own; a
+            // reader (the invoice kg share, a replay, a reversal) sees the receipt as it was staged, never a kg-only copy.
+            PieceCount = line.PieceCount,
+        };
+        if (line.PieceCount is <= 0)
+        {
+            throw Unavailable();
+        }
+
         try
         {
             InventoryGoodsReceiptContractV1.ValidateRequest(request, companyId);

@@ -488,9 +488,9 @@ public sealed class AiAskServiceTests
         var options = Harness.ReadyOptions();
         options.AllowedTools =
         [
-            new AiAllowedToolOptions { ToolId = ToolId, Version = ToolVersion },
-            new AiAllowedToolOptions { ToolId = "test.duplicate.v1", Version = ToolVersion },
-            new AiAllowedToolOptions { ToolId = "test.draft-tool.v1", Version = ToolVersion },
+            new AiAllowedToolOptions { ToolId = ToolId, Version = ToolVersion, DescriptionSha256 = AiToolDescriptionPinV1.Compute(read.Descriptor) },
+            new AiAllowedToolOptions { ToolId = "test.duplicate.v1", Version = ToolVersion, DescriptionSha256 = AiToolDescriptionPinV1.Compute(duplicateA.Descriptor) },
+            new AiAllowedToolOptions { ToolId = "test.draft-tool.v1", Version = ToolVersion, DescriptionSha256 = AiToolDescriptionPinV1.Compute(draft.Descriptor) },
         ];
 
         var catalog = new AiToolCatalog([read, duplicateA, duplicateB, draft, notAllowlisted], Options.Create(options));
@@ -649,6 +649,7 @@ public sealed class AiAskServiceTests
             ["Ai:MaxDataClass"] = "Internal",
             ["Ai:AllowedTools:0:ToolId"] = ToolId,
             ["Ai:AllowedTools:0:Version"] = ToolVersion,
+            ["Ai:AllowedTools:0:DescriptionSha256"] = AiToolDescriptionPinV1.Compute(Descriptor(ToolId, AiToolRiskClassV1.Read, ["itemId"])),
         };
         var valid = BoundOptions(settings);
         settings[$"Ai:{key}"] = value;
@@ -811,6 +812,13 @@ public sealed class AiAskServiceTests
             options = ReadyOptions();
             configure?.Invoke(options);
             Tool = new FakeReadTool(Descriptor(ToolId, AiToolRiskClassV1.Read, allowlist ?? ["itemId"]));
+            // WP-A6: the harness approves the pin of the card it registers, unless a test configured its own pin.
+            foreach (var entry in options.AllowedTools.Where(entry => entry.ToolId == ToolId && entry.Version == ToolVersion
+                         && entry.DescriptionSha256 is null))
+            {
+                entry.DescriptionSha256 = AiToolDescriptionPinV1.Compute(Tool.Descriptor);
+            }
+
             CompanyScope.Set(Company);
             Correlation.Set("corr-ai-sentetik", null, SourceChannels.Web, null, null);
         }

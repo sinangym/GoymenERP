@@ -32,8 +32,8 @@ public sealed record ReportingStockAgingSourceRowV1(
     string? HeatNumber,
     string? CoilNumber,
     string PhysicalKg,
-    DateTimeOffset LabelCreatedAtUtc,
-    DateTimeOffset? FirstIncomingAtUtc);
+    DateTimeOffset? EntryAtUtc,
+    bool EntryInherited);
 
 public sealed record ReportingStockAgingSourcePageV1(
     ReportingSourceOutcomeV1 Outcome,
@@ -41,7 +41,7 @@ public sealed record ReportingStockAgingSourcePageV1(
     IReadOnlyList<ReportingStockAgingSourceRowV1> Items,
     bool HasMore);
 
-/// <summary>OTIF lines whose requested delivery date is in [from, to]; shipments in the line's own unit.</summary>
+/// <summary>OTIF lines whose promised delivery day is in [from, to]; dated shipments in the line's own unit.</summary>
 public interface IReportingOtifSourceV1
 {
     Task<ReportingOtifSourcePageV1> ReadAsync(Guid companyId, DateOnly from, DateOnly to, int page, int pageSize,
@@ -54,7 +54,7 @@ public sealed record ReportingOtifSourceLineV1(
     int LineNumber,
     Guid CustomerId,
     string UnitCode,
-    DateOnly RequestedDate,
+    DateOnly PromisedDate,
     decimal OrderedQuantity,
     IReadOnlyList<ReportingOtifShipmentV1> Shipments);
 
@@ -91,8 +91,9 @@ public sealed record ReportingRecallSourceV1(
     IReadOnlyList<KeyValuePair<string, string>> Statuses);
 
 /// <summary>
-/// ROL-D15 / EK-40: the company's intercompany legs. The decisions say ERP "marks and reports" the legs but name no marking yet,
-/// so the host answers <see cref="ReportingSourceOutcomeV1.NotConnected"/> (NEEDS-SINAN) — never a guessed counterparty match.
+/// ROL-D15 / EK-40 / YOL-D31: the company's intercompany legs — documents with a party whose card carries a party ↔ company
+/// link (never a tax-number match). No owner records that link yet, so the host answers
+/// <see cref="ReportingSourceOutcomeV1.NotConnected"/> — never a guessed counterparty match.
 /// </summary>
 public interface IReportingIntercompanySourceV1
 {
@@ -114,6 +115,23 @@ public sealed record ReportingIntercompanySourcePageV1(
     IReadOnlyList<ReportingIntercompanySourceRowV1> Rows,
     bool HasMore);
 
+/// <summary>YOL-D30: the company's OPEN items of one direction (Finance's sub-ledger), with their due date and outstanding money.</summary>
+public interface IReportingPartyAgingSourceV1
+{
+    /// <summary>The technical read bound (not a business threshold): more open items set <c>WindowFull</c>.</summary>
+    const int MaximumItems = 10000;
+
+    Task<ReportingPartyAgingSourceV1> ReadAsync(Guid companyId, bool receivable, CancellationToken cancellationToken = default);
+}
+
+public sealed record ReportingPartyAgingItemV1(Guid PartyId, Guid CompanyAccountId, Guid CurrencyId, DateOnly? DueOn, string OutstandingAmount);
+
+public sealed record ReportingPartyAgingSourceV1(
+    ReportingSourceOutcomeV1 Outcome,
+    Guid CompanyId,
+    IReadOnlyList<ReportingPartyAgingItemV1> Items,
+    bool WindowFull);
+
 /// <summary>YOL-D13 auditor package section "mizan": the Accounting owner's trial balance (its own authority applies too).</summary>
 public interface IReportingTrialBalanceSourceV1
 {
@@ -131,8 +149,11 @@ public sealed record ReportingTrialBalanceSourceV1(
 
 /// <summary>Defaults registered by the module: a source the host has not replaced answers "not connected", never "nothing".</summary>
 public sealed class ReportingNotConnectedSourcesV1 : IReportingStockAgingSourceV1, IReportingOtifSourceV1, IReportingRecallSourceV1,
-    IReportingIntercompanySourceV1, IReportingTrialBalanceSourceV1
+    IReportingIntercompanySourceV1, IReportingTrialBalanceSourceV1, IReportingPartyAgingSourceV1
 {
+    public Task<ReportingPartyAgingSourceV1> ReadAsync(Guid companyId, bool receivable, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new ReportingPartyAgingSourceV1(ReportingSourceOutcomeV1.NotConnected, companyId, [], false));
+
     public Task<ReportingStockAgingSourcePageV1> ReadAsync(Guid companyId, int page, int pageSize, Guid? productId, Guid? locationId,
         CancellationToken cancellationToken = default) =>
         Task.FromResult(new ReportingStockAgingSourcePageV1(ReportingSourceOutcomeV1.NotConnected, companyId, [], false));

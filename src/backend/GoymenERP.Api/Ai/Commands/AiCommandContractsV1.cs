@@ -14,6 +14,8 @@ public enum AiCommandStatusV1
     NotFound = 5,
     Previewed = 6,
     Approved = 7,
+    /// <summary>YOL-D27: a different authorized person approved with password re-entry; the preparer may execute.</summary>
+    SecondApproved = 12,
     Executed = 8,
     Rejected = 9,
     /// <summary>The approval no longer binds what would run (record/input changed, preview expired, authority moved).</summary>
@@ -42,6 +44,8 @@ public static class AiCommandReasonCodesV1
     public const string ApprovalRequired = "approval_required";
     public const string ApprovalMismatch = "approval_mismatch";
     public const string StepUpRequired = "step_up_required";
+    public const string SamePerson = "same_person";
+    public const string SecondApprovalRequired = "second_approval_required";
     public const string NotActor = "not_actor";
     public const string Terminal = "terminal";
     public const string Concurrent = "concurrent_change";
@@ -87,6 +91,7 @@ public enum AiCommandStateV1
     Rejected = 6,
     Invalidated = 7,
     Unknown = 8,
+    SecondApproved = 9,
 }
 
 /// <summary>
@@ -110,7 +115,10 @@ public sealed record AiCommandRecordV1(
     string? ApprovedBy = null,
     DateTimeOffset? ApprovedAtUtc = null,
     string? ResultVersion = null,
-    string? ReasonCode = null)
+    string? ReasonCode = null,
+    Guid? SecondApprovalId = null,
+    string? SecondApprovedBy = null,
+    DateTimeOffset? SecondApprovedAtUtc = null)
 {
     public Guid CompanyId => Context.CompanyId;
 
@@ -129,6 +137,7 @@ public enum AiCommandEventKindV1
     Invalidated = 7,
     Refused = 8,
     OutcomeUnknown = 9,
+    ExecutionStarted = 10,
 }
 
 /// <summary>
@@ -195,16 +204,10 @@ public sealed class UnconfiguredAiCommandLedger : IAiCommandLedgerV1
 public sealed record AiStepUpChallengeV1(Guid CompanyId, string ActorId, string SessionId, Guid PreviewId, string PreviewHash);
 
 /// <summary>
-/// Decision 156 (2026-10-21): AI write tools require a second approval and step-up. The step-up method is not decided
-/// (D-IDP), so the default verifier never verifies and execution is refused with <c>step_up_required</c>.
+/// Decision 156 / YOL-D27: the second approver types their password again at the approval. The password travels only
+/// as this call's argument (never in a record, event or log); a failure is a refusal and counts toward the login lockout.
 /// </summary>
 public interface IAiStepUpVerifierV1
 {
-    Task<bool> IsVerifiedAsync(AiStepUpChallengeV1 challenge, CancellationToken cancellationToken = default);
-}
-
-public sealed class UnconfiguredAiStepUpVerifier : IAiStepUpVerifierV1
-{
-    public Task<bool> IsVerifiedAsync(AiStepUpChallengeV1 challenge, CancellationToken cancellationToken = default) =>
-        Task.FromResult(false);
+    Task<bool> IsVerifiedAsync(AiStepUpChallengeV1 challenge, string? password, CancellationToken cancellationToken = default);
 }

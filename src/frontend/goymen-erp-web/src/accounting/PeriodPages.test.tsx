@@ -6,8 +6,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { ACCOUNTING_CAPABILITY } from './capabilities'
 import {
+  APPROVER,
   APPROVER_CAPABILITIES,
+  COMPANY_A,
+  PERIOD_AUGUST,
   PERIOD_SEPTEMBER,
   PREPARER_CAPABILITIES,
   READER_CAPABILITIES,
@@ -174,5 +178,47 @@ describe('M-07 period proposal', () => {
     await user.type(screen.getByLabelText('Bitiş'), '2026-09-30')
     await user.click(screen.getByRole('button', { name: 'Öner' }))
     expect(await screen.findByText('Bu tarihler şirketin kayıtlı bir dönemiyle çakışıyor.')).toBeTruthy()
+  })
+})
+
+describe('M-07 period reopening approval (ROL-D12)', () => {
+  const PROPOSER = 'a2000000-0000-4000-8000-000000000003'
+  const CLOSURE = 'a8000000-0000-4000-8000-000000000001'
+  const REOPENING = 'a8000000-0000-4000-8000-000000000002'
+  const closed = () => openPeriod({ status: 'Closed', version: 3, closedByUserId: APPROVER, closedAtUtc: '2026-10-01T09:00:00+00:00' })
+  const lifecycle = () => ({
+    companyId: COMPANY_A, periodId: PERIOD_SEPTEMBER, periodVersion: 3,
+    closures: [{ id: CLOSURE, companyId: COMPANY_A, periodId: PERIOD_SEPTEMBER, closedPeriodVersion: 3, targetPeriodId: PERIOD_AUGUST,
+      carryVoucherId: 'a8000000-0000-4000-8000-000000000003', sourceHash: 'a'.repeat(64), lineCount: 2, closedBy: APPROVER,
+      closedAtUtc: '2026-10-01T09:00:00+00:00', reopeningId: null, reopenedBy: null, reopenedAtUtc: null }],
+    reopenings: [{ id: REOPENING, companyId: COMPANY_A, periodId: PERIOD_SEPTEMBER, closureId: CLOSURE, closedPeriodVersion: 3,
+      proposedBy: PROPOSER, proposedAtUtc: '2026-10-02T09:00:00+00:00', reason: 'SENTETIK düzeltme', approvedBy: null, approvedAtUtc: null, version: 1 }],
+  })
+  function stubReopening(capabilities: readonly string[]) {
+    return installFetch({
+      capabilities,
+      respond: (url) => {
+        if (url.includes('/lifecycle')) return json(lifecycle())
+        if (url.includes('/accounting/periods')) return json(periodPage([closed()]))
+        return undefined
+      },
+    })
+  }
+
+  it('offers the reopening approval only to the separate reopen capability', async () => {
+    stubReopening([ACCOUNTING_CAPABILITY.periodsList, ACCOUNTING_CAPABILITY.periodsReopen])
+    renderAt('/muhasebe/donemler')
+    await userEvent.click(await screen.findByRole('button', { name: 'Kapanış ve devir geçmişi' }))
+    expect(await screen.findByRole('button', { name: 'Yeniden açmayı onayla' })).toBeTruthy()
+  })
+
+  it('does not let the period-opening approval capability reopen a period', async () => {
+    const recorded = stubReopening([ACCOUNTING_CAPABILITY.periodsList, ACCOUNTING_CAPABILITY.periodsApprove, ACCOUNTING_CAPABILITY.periodsClose])
+    renderAt('/muhasebe/donemler')
+    await userEvent.click(await screen.findByRole('button', { name: 'Kapanış ve devir geçmişi' }))
+    expect(await screen.findByText('SENTETIK düzeltme')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Yeniden açmayı onayla' })).toBeNull()
+    expect(screen.getByText('Bu işlem için dönem yetkiniz yok.')).toBeTruthy()
+    expect(requestsFor(recorded, '/reopening-proposals', 'POST')).toHaveLength(0)
   })
 })

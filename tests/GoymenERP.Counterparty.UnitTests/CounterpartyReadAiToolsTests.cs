@@ -41,23 +41,32 @@ public sealed class CounterpartyReadAiToolsTests
             Assert.Null(descriptor.OwnerCommandName);
             Assert.Equal(new[] { "counterparty.parties.read" }, descriptor.RequiredPermissions);
         });
-        Assert.Equal(AiDataClassV1.Confidential, lookup.DataClass);
-        Assert.Equal(AiDataClassV1.Confidential, summary.DataClass);
+        // AI-D42: the party title, code, roles and counts are Internal; only the authorised-person tool is Confidential.
+        Assert.Equal(AiDataClassV1.Internal, lookup.DataClass);
+        Assert.Equal(AiDataClassV1.Internal, summary.DataClass);
         Assert.Equal(AiDataClassV1.Internal, counts.DataClass);
+        var contacts = new CounterpartyPartyContactsAiTool(new ContactOwner(), new FixedTime(Now)).Descriptor;
+        Assert.Equal(AiDataClassV1.Confidential, contacts.DataClass);
+        Assert.Equal(new[] { "counterparty.parties.read" }, contacts.RequiredPermissions);
+        Assert.Equal(new[] { "limit", "partyId" }, contacts.FieldAllowlist);
         Assert.Equal(new[] { "limit", "query", "role" }, lookup.FieldAllowlist);
         Assert.Equal(new[] { "partyId" }, summary.FieldAllowlist);
         Assert.Empty(counts.FieldAllowlist);
     }
 
     [Fact]
-    public void The_counterparty_module_registers_the_three_read_tools_as_scoped_owner_tools()
+    public void The_counterparty_module_registers_the_four_read_tools_as_scoped_owner_tools()
     {
         var services = new ServiceCollection();
         services.AddCounterpartyModule(new TestConfiguration());
 
         var tools = services.Where(descriptor => descriptor.ServiceType == typeof(IAiOwnerToolV1)).ToArray();
         Assert.Equal(
-            new[] { typeof(CounterpartyPartyLookupAiTool), typeof(CounterpartyPartySummaryAiTool), typeof(CounterpartyRoleCountsAiTool) },
+            new[]
+            {
+                typeof(CounterpartyPartyContactsAiTool), typeof(CounterpartyPartyLookupAiTool), typeof(CounterpartyPartySummaryAiTool),
+                typeof(CounterpartyRoleCountsAiTool),
+            },
             tools.Select(descriptor => descriptor.ImplementationType!).OrderBy(type => type.Name, StringComparer.Ordinal).ToArray());
         Assert.All(tools, descriptor => Assert.Equal(ServiceLifetime.Scoped, descriptor.Lifetime));
     }
@@ -95,7 +104,12 @@ public sealed class CounterpartyReadAiToolsTests
         Assert.Equal("SENTETIK", request.Query.Query);
         Assert.Equal((PartyRole.Customer, CounterpartyRecordState.Active, 2, true),
             (request.Query.Roles, request.Query.PartyState, request.Query.PageSize, request.Query.IncludeCount));
-        Assert.Equal(AiDataClassV1.Confidential, result.Source!.DataClass);
+        Assert.Equal(AiDataClassV1.Internal, result.Source!.DataClass);
+        Assert.Equal("Internal", root.GetProperty("dataClass").GetString());
+        Assert.Equal("AI-D42", root.GetProperty("fieldPolicy").GetString());
+        Assert.All(root.GetProperty("fieldClasses").EnumerateObject(), field => Assert.Equal("Internal", field.Value.GetString()));
+        Assert.Contains(root.GetProperty("fieldClasses").EnumerateObject(), field => field.Name == "legalName");
+        Assert.DoesNotContain("phone", result.ContentJson!, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -250,6 +264,116 @@ public sealed class CounterpartyReadAiToolsTests
             .ReadAsync(new AiToolInputV1("{\"companyId\":\"aaaaaaaa-0000-4000-8000-0000000000a1\"}"), Context());
         Assert.Equal(AiToolOutcomeV1.Invalid, invalid.Outcome);
         Assert.Empty(owner.Requests);
+    }
+
+    [Fact]
+    public async Task Contacts_release_names_and_channels_as_confidential_with_per_field_classes()
+    {
+        var party = Id(1);
+        var owner = new ContactOwner
+        {
+            View = ContactView(party, Company, "0212 000 00 00", "info@sentetik.example",
+            [
+                new CounterpartyOperationalContact(Id(21), "1", true, "Sentetik Yetkili", "Satın Alma", "purchasing",
+                [
+                    new CounterpartyContactChannel(Id(31), "1", true, "phone", "0532 000 00 00", null),
+                    new CounterpartyContactChannel(Id(32), "1", false, "email", "eski@sentetik.example", null),
+                ]),
+                new CounterpartyOperationalContact(Id(22), "1", false, "Pasif Kisi", null, "other", []),
+            ]),
+        };
+
+        var result = await new CounterpartyPartyContactsAiTool(owner, new FixedTime(Now))
+            .ReadAsync(new AiToolInputV1($"{{\"partyId\":\"{party:D}\"}}"), Context());
+
+        Assert.Equal(AiToolOutcomeV1.Succeeded, result.Outcome);
+        using var content = JsonDocument.Parse(result.ContentJson!);
+        var root = content.RootElement;
+        Assert.Equal("Confidential", root.GetProperty("dataClass").GetString());
+        var classes = root.GetProperty("fieldClasses").EnumerateObject().ToDictionary(field => field.Name, field => field.Value.GetString());
+        Assert.Equal("Confidential", classes["contactName"]);
+        Assert.Equal("Confidential", classes["phone"]);
+        Assert.Equal("Confidential", classes["email"]);
+        Assert.Equal("Internal", classes["contactJobTitle"]);
+        Assert.Equal(1, root.GetProperty("activeContactCount").GetInt32());
+        var contact = Assert.Single(root.GetProperty("contacts").EnumerateArray());
+        Assert.Equal("Sentetik Yetkili", contact.GetProperty("displayName").GetString());
+        Assert.Single(contact.GetProperty("channels").EnumerateArray());
+        Assert.DoesNotContain("eski@sentetik.example", result.ContentJson!, StringComparison.Ordinal);
+        Assert.DoesNotContain("Pasif Kisi", result.ContentJson!, StringComparison.Ordinal);
+        Assert.DoesNotContain("SENTETIK Sokak", result.ContentJson!, StringComparison.Ordinal);
+        Assert.DoesNotContain("sentetik.example/web", result.ContentJson!, StringComparison.Ordinal);
+        Assert.Equal(AiDataClassV1.Confidential, result.Source!.DataClass);
+    }
+
+    [Fact]
+    public async Task An_account_without_person_phone_or_email_answers_internal()
+    {
+        var party = Id(1);
+        var owner = new ContactOwner { View = ContactView(party, Company, null, null, []) };
+
+        var result = await new CounterpartyPartyContactsAiTool(owner, new FixedTime(Now))
+            .ReadAsync(new AiToolInputV1($"{{\"partyId\":\"{party:D}\"}}"), Context());
+
+        using var content = JsonDocument.Parse(result.ContentJson!);
+        Assert.Equal("Internal", content.RootElement.GetProperty("dataClass").GetString());
+        Assert.Empty(content.RootElement.GetProperty("fieldClasses").EnumerateObject());
+        Assert.Equal(AiDataClassV1.Internal, result.Source!.DataClass);
+    }
+
+    [Fact]
+    public async Task Contacts_fail_closed_for_another_company_an_unknown_channel_a_refusal_or_nothing()
+    {
+        var party = Id(1);
+        foreach (var view in new[]
+                 {
+                     ContactView(party, OtherCompany, "0212", null, []),
+                     ContactView(Id(2), Company, "0212", null, []),
+                     ContactView(party, Company, null, null,
+                         [new CounterpartyOperationalContact(Id(21), "1", true, "Sentetik", null, "other",
+                             [new CounterpartyContactChannel(Id(31), "1", true, "fax", "0212", null)])]),
+                 })
+        {
+            var result = await new CounterpartyPartyContactsAiTool(new ContactOwner { View = view }, new FixedTime(Now))
+                .ReadAsync(new AiToolInputV1($"{{\"partyId\":\"{party:D}\"}}"), Context());
+            Assert.Equal(AiToolOutcomeV1.Unavailable, result.Outcome);
+            Assert.Null(result.ContentJson);
+        }
+
+        Assert.Equal(AiToolOutcomeV1.Denied, (await new CounterpartyPartyContactsAiTool(
+                new ContactOwner { Failure = new UnauthorizedAccessException("SENTETIK") }, new FixedTime(Now))
+            .ReadAsync(new AiToolInputV1($"{{\"partyId\":\"{party:D}\"}}"), Context())).Outcome);
+        Assert.Equal(AiToolOutcomeV1.NotFound, (await new CounterpartyPartyContactsAiTool(new ContactOwner(), new FixedTime(Now))
+            .ReadAsync(new AiToolInputV1($"{{\"partyId\":\"{party:D}\"}}"), Context())).Outcome);
+        var unread = new ContactOwner();
+        Assert.Equal(AiToolOutcomeV1.Invalid, (await new CounterpartyPartyContactsAiTool(unread, new FixedTime(Now))
+            .ReadAsync(new AiToolInputV1($"{{\"partyId\":\"{party:D}\",\"includeTckn\":true}}"), Context())).Outcome);
+        Assert.Empty(unread.PartyIds);
+    }
+
+    private static CounterpartyContactInformationView ContactView(Guid party, Guid company, string? phone, string? email,
+        IReadOnlyList<CounterpartyOperationalContact> contacts) => new(
+        party, Id(11), company, "3", true,
+        new CounterpartyContactInformation(phone, phone is null ? null : "12", email, "https://sentetik.example/web",
+            [new CounterpartyOperationalAddress(Id(41), "1", true, "billing", "TR", "SENTETIK Sokak 1", null, "İstanbul", null, null)],
+            contacts));
+
+    /// <summary>A SENTETIK Cari contact read: one fixed view, a failure, or nothing.</summary>
+    private sealed class ContactOwner : ICounterpartyContactInformationService
+    {
+        public CounterpartyContactInformationView? View { get; init; }
+        public Exception? Failure { get; init; }
+        public List<Guid> PartyIds { get; } = [];
+
+        public Task<CounterpartyContactInformationView?> GetContactInformationAsync(Guid partyId, CancellationToken cancellationToken)
+        {
+            PartyIds.Add(partyId);
+            return Failure is null ? Task.FromResult(View) : Task.FromException<CounterpartyContactInformationView?>(Failure);
+        }
+
+        public Task<CounterpartyCommandExecution> UpdateContactInformationAsync(Guid partyId, UpdateCounterpartyContactInformation command,
+            CounterpartyCommandMetadata metadata, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("The tool never writes.");
     }
 
     private static AiServerContextV1 Context() => new(Company, Actor, Session, $"company:{Company:D}", "roles:sentetik",

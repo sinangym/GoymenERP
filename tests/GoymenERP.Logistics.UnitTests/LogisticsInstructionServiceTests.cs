@@ -672,6 +672,9 @@ public sealed partial class LogisticsInstructionServiceTests
         /// <summary>SAT-D111: when set, the loading read answers this owner-resolved limit (the current shipping cap).</summary>
         public string? ShippingCap { get; set; }
 
+        /// <summary>The approved line's order unit (kg unless a test orders in pieces).</summary>
+        public Guid OrderUnitId { get; set; } = KgUnit;
+
         public Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineForLoadingAsync(Guid orderId, Guid lineId, DateOnly effectiveOn,
             CancellationToken cancellationToken = default)
         {
@@ -738,7 +741,7 @@ public sealed partial class LogisticsInstructionServiceTests
                 "not-found" => Task.FromResult(new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.NotFound, null, null)),
                 _ => Task.FromResult(new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.Approved,
                     new SalesOrderLineReferenceV1(Fault == "other-company" ? Guid.NewGuid() : Company, orderId, lineId, 1,
-                        Fault == "other-customer" ? Guid.NewGuid() : Party, Account, Product, "7", KgUnit,
+                        Fault == "other-customer" ? Guid.NewGuid() : Party, Account, Product, "7", OrderUnitId,
                         // The generic approved line must cover the pre-existing weighbridge fixtures (up to 24,000 kg).
                         // The dedicated revised case remains deliberately capped at 2 kg.
                         Fault == "remainder-revised" ? "2" : "100000", Revision,
@@ -764,10 +767,14 @@ public sealed partial class LogisticsInstructionServiceTests
                 "unit-access-denied" => Task.FromException<UnitProfileV1>(new SettingsPrerequisiteException("settings_access_denied")),
                 "unit-unavailable" => Task.FromException<UnitProfileV1>(new SettingsPrerequisiteException("settings_provider_unavailable")),
                 _ => Task.FromResult(new UnitProfileV1(Fault == "unit-other-company" ? Guid.NewGuid() : Company, unitId,
-                    Fault == "unit-piece" ? "adet" : "kg", Fault == "unit-piece" ? "count" : "weight", Fault != "unit-piece",
+                    IsPiece(unitId) ? "adet" : "kg", IsPiece(unitId) ? "count" : "weight", !IsPiece(unitId),
                     new ProfileVersionV1(KgProfile, 4), 3, true, new DateOnly(2026, 9, 1), null)),
             };
         }
+
+        /// <summary>"unit-piece" answers every unit as a count unit; "piece-identity" only the approved piece identity (AK-4).</summary>
+        private bool IsPiece(Guid unitId) =>
+            Fault == "unit-piece" || Fault == "piece-identity" && unitId == SettingsUnitIdentitiesV1.Piece;
 
         public Task<MoneyProfileV1> GetMoneyProfileAsync(Guid currencyId, string operation, DateOnly effectiveOn, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();

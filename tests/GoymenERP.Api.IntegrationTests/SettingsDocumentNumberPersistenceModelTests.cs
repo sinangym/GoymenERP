@@ -14,7 +14,7 @@ public sealed class SettingsDocumentNumberPersistenceModelTests
     public void The_number_series_and_operational_policy_migration_is_DDL_with_a_first_forward_fix_guard_and_matching_snapshot()
     {
         using var database = Create();
-        Assert.Equal(new[] { "20261116220424_AddDocumentNumberSeriesAndOperationalPolicies", "20261117001828_AddManufacturingProfileBaselineTransfers", "20261117085524_AddPurchaseInvoiceVariancePolicies", "20261117111242_AddWarehouseTransferScalePolicies", "20261117200733_AddFinanceDocumentNumberSeries", "20261117220044_AddFinancePolicyFamilies", "20261120101534_HardenWorkCenterSafetyBufferNullPairs", "20261122181548_AddWorkApprovalDurationPolicies", "20261122202350_AddAiGatewayPolicyAndBudgetLedger", "20261122224127_Wp2WorkDigestTimes" },
+        Assert.Equal(new[] { "20261116220424_AddDocumentNumberSeriesAndOperationalPolicies", "20261117001828_AddManufacturingProfileBaselineTransfers", "20261117085524_AddPurchaseInvoiceVariancePolicies", "20261117111242_AddWarehouseTransferScalePolicies", "20261117200733_AddFinanceDocumentNumberSeries", "20261117220044_AddFinancePolicyFamilies", "20261120101534_HardenWorkCenterSafetyBufferNullPairs", "20261122181548_AddWorkApprovalDurationPolicies", "20261122202227_AddLegalDeadlineCalendars", "20261122202350_AddAiGatewayPolicyAndBudgetLedger", "20261122224127_Wp2WorkDigestTimes" },
             database.Database.GetMigrations().TakeLast(10));
         Assert.False(database.Database.HasPendingModelChanges());
         var migration = new AddDocumentNumberSeriesAndOperationalPolicies();

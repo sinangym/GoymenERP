@@ -236,6 +236,16 @@ public sealed class PurchaseRequest
         Touch(now);
     }
 
+    /// <summary>
+    /// WP7 (D4): the request's "may not decide" set exactly as <see cref="Approve"/> and <see cref="Reject"/> measure it
+    /// (ALS-D2): the preparer and the submitter, ordinal. Null when either maker is not recorded — then no one may decide
+    /// (<see cref="PurchasingRuleCodes.RequestMakerUnknown"/>), which a reader must not show as decidable.
+    /// </summary>
+    public static IReadOnlyList<string>? DeciderExclusions(string? preparedBy, string? submittedBy) =>
+        string.IsNullOrWhiteSpace(preparedBy) || string.IsNullOrWhiteSpace(submittedBy)
+            ? null
+            : new[] { preparedBy, submittedBy }.Distinct(StringComparer.Ordinal).ToArray();
+
     /// <summary>Hazırlayan ≠ onaylayan (ALS-D2): both makers must be known and neither may decide; ordinal comparison.</summary>
     private void RequireChecker(string actor)
     {

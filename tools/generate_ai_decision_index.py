@@ -15,7 +15,15 @@ clock, no network, no environment value and no model is used. Nothing is guessed
 * status mapping ASSUMPTION-AI-INDEX-STATUS-1 (reversible technical reading): ACIK_KARARLAR KAPANDI -> kilitli,
   KISMEN/AÇIK -> acik, registry ERTELENDI -> ertelendi (its own status), formula goldens -> belirsiz;
 * the data class candidate (AI-D34 d) is content based: a person name taken from the registry's own ``Sahip`` column,
-  an e-mail, a phone, an 11-digit national id or an IBAN marks the record ``kisisel_veri_adayi``.
+  an e-mail, a phone, an 11-digit national id or an IBAN marks the record ``kisisel_veri_adayi``;
+* WP-A4 / plan D2 (AI-D36 "kişi adları dizinde maskelenir"): the index text is masked HERE, at generation. Person names
+  become ``[KİŞİ]``, e-mail/phone/national id/IBAN become ``[GİZLİ]`` in the title, text and scope of every record that
+  carries a signal; the name terms themselves are not written to the index (only their count). A masked record that
+  still contains a term is a generation error;
+* the cloud eligibility label (AI-D34 d) is derived from content and data class, never from the file name:
+  ``bulut_uygun_aday`` (no personal or commercial signal), ``maskeli_bulut_uygun_aday`` (personal signals, masked) and
+  ``yerel_kalir`` (a money amount: commercially sensitive candidate, stays local). The label is a candidate; which data
+  class may leave for a cloud model is the gateway policy (human gate: provider contract, KVKK).
 
 Usage::
 
@@ -100,6 +108,15 @@ EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 PHONE = re.compile(r"(?<![0-9])(?:\+90|0)\s?5[0-9]{2}\s?[0-9]{3}\s?[0-9]{2}\s?[0-9]{2}(?![0-9])")
 NATIONAL_ID = re.compile(r"(?<![0-9])[1-9][0-9]{10}(?![0-9])")
 IBAN = re.compile(r"\bTR[0-9]{2}(?:\s?[0-9A-Z]{4}){5}\s?[0-9A-Z]{2}\b")
+# Commercially sensitive candidate (AI-D34 d): a money amount (number + currency, or currency sign + number).
+MONEY = re.compile(r"(?<![\w.,])[0-9][0-9.,]*\s?(?:TL|TRY|USD|EUR|GBP|₺|€|\$)(?![A-Za-z])|(?:₺|€|\$)\s?[0-9]")
+
+PERSON_MASK = "[KİŞİ]"
+SECRET_MASK = "[GİZLİ]"
+MASK_POLICY = "ai-d36-person-name-mask-at-generation@1"
+CLOUD_LABELS = ("bulut_uygun_aday", "maskeli_bulut_uygun_aday", "yerel_kalir")
+CLOUD_DATA_CLASS = {"bulut_uygun_aday": "internal", "maskeli_bulut_uygun_aday": "internal", "yerel_kalir": "confidential"}
+CLOUD_BASIS = "AI-D34 d: içerik ve veri sınıfı (kişisel veri sinyali maskelenir, para tutarı yerel kalır); belge adı kullanılmaz"
 
 
 class DecisionIndexError(Exception):
@@ -242,10 +259,22 @@ def _owner_names(registry_rows: list[dict[str, str]]) -> list[str]:
     return sorted(names, key=lambda value: (-len(value), value))
 
 
+def owner_name_terms(root: Path = REPOSITORY_ROOT) -> list[str]:
+    """The person-name terms (registry ``Sahip`` column), read from the sources; the index itself never carries them (D2)."""
+    path = root / DECISIONS_DIRECTORY / REGISTRY_CSV
+    if not path.is_file():
+        return []
+    return _owner_names(list(_registry_csv(path).values()))
+
+
+def _name_pattern(name: str) -> re.Pattern[str]:
+    return re.compile(r"(?<![\wÇĞİÖŞÜçğıöşü])" + re.escape(name) + r"(?![A-Za-zÇĞİÖŞÜçğıöşü])")
+
+
 def _personal_signals(text: str, names: list[str]) -> list[str]:
     signals: list[str] = []
     for name in names:
-        if re.search(r"(?<![\wÇĞİÖŞÜçğıöşü])" + re.escape(name) + r"(?![A-Za-zÇĞİÖŞÜçğıöşü])", text):
+        if _name_pattern(name).search(text):
             signals.append("kisi_adi")
             break
     if EMAIL.search(text):
@@ -257,6 +286,29 @@ def _personal_signals(text: str, names: list[str]) -> list[str]:
     if IBAN.search(text):
         signals.append("iban")
     return signals
+
+
+def commercial_signals(text: str) -> list[str]:
+    return ["para_tutari"] if MONEY.search(text) else []
+
+
+def mask_text(text: str | None, names: list[str]) -> str | None:
+    """Person names (longest first) -> [KİŞİ]; e-mail, IBAN, phone, national id -> [GİZLİ]. Same order as the C# reader."""
+    if text is None:
+        return None
+    masked = text
+    for name in names:
+        masked = _name_pattern(name).sub(PERSON_MASK, masked)
+    masked = EMAIL.sub(SECRET_MASK, masked)
+    masked = IBAN.sub(SECRET_MASK, masked)
+    masked = PHONE.sub(SECRET_MASK, masked)
+    return NATIONAL_ID.sub(SECRET_MASK, masked)
+
+
+def cloud_label(personal: list[str], commercial: list[str]) -> str:
+    if commercial:
+        return "yerel_kalir"
+    return "maskeli_bulut_uygun_aday" if personal else "bulut_uygun_aday"
 
 
 def _header_role(header: list[str]) -> tuple[int, int, int | None, int | None, int | None, str] | None:
@@ -373,6 +425,10 @@ def _record(identity: str, kind: str, title: str, text: str, status: str, status
         "superseded_by": [],
         "data_class_candidate": "kisisel_veri_isareti_yok",
         "personal_data_signals": [],
+        "commercial_signals": [],
+        "masked": False,
+        "cloud_eligibility": "bulut_uygun_aday",
+        "cloud_data_class": "internal",
         "has_conflict": False,
     }
 
@@ -536,9 +592,27 @@ def build_index(root: Path = REPOSITORY_ROOT) -> dict[str, Any]:
 
     records = [builder.records[identity] for identity in builder.order]
     for record in records:
-        signals = _personal_signals(record["title"] + "\n" + record["text"], owner_names)
+        content = "\n".join(value for value in (record["title"], record["text"], record["scope"]["area"],
+                                                 record["scope"]["affected"]) if value)
+        signals = _personal_signals(content, owner_names)
+        commercial = commercial_signals(content)
         record["personal_data_signals"] = signals
         record["data_class_candidate"] = "kisisel_veri_adayi" if signals else "kisisel_veri_isareti_yok"
+        record["commercial_signals"] = commercial
+        record["cloud_eligibility"] = cloud_label(signals, commercial)
+        record["cloud_data_class"] = CLOUD_DATA_CLASS[record["cloud_eligibility"]]
+        # Plan D2 / AI-D36: masked at generation; the published index never carries the plain name.
+        if signals:
+            record["title"] = mask_text(record["title"], owner_names)
+            record["text"] = mask_text(record["text"], owner_names)
+            record["scope"] = {"area": mask_text(record["scope"]["area"], owner_names),
+                               "affected": mask_text(record["scope"]["affected"], owner_names)}
+            record["masked"] = True
+            leaked = _personal_signals("\n".join(value for value in (record["title"], record["text"],
+                                                                     record["scope"]["area"], record["scope"]["affected"])
+                                                 if value), owner_names)
+            if leaked:
+                raise DecisionIndexError(f"{record['id']}: maskeleme sonrası kişisel veri kaldı ({', '.join(leaked)})")
         unique: list[dict[str, Any]] = []
         for relation in record["relations"]:
             if relation not in unique:
@@ -576,7 +650,9 @@ def build_index(root: Path = REPOSITORY_ROOT) -> dict[str, Any]:
         "source_set_sha256": source_set,
         "sources": sources,
         "personal_name_terms_basis": "KARAR_SICILI.csv Sahip sütunu",
-        "personal_name_terms": owner_names,
+        "personal_name_term_count": len(owner_names),
+        "mask_policy": MASK_POLICY,
+        "cloud_eligibility_basis": CLOUD_BASIS,
         "statistics": {
             "record_count": len(records),
             "conflict_count": len(conflicts),
@@ -584,6 +660,9 @@ def build_index(root: Path = REPOSITORY_ROOT) -> dict[str, Any]:
             "status_counts": {status: sum(1 for r in records if r["status"] == status) for status in STATUSES},
             "kind_counts": {kind: sum(1 for r in records if r["kind"] == kind) for kind in KINDS},
             "personal_data_candidate_count": sum(1 for r in records if r["data_class_candidate"] == "kisisel_veri_adayi"),
+            "masked_record_count": sum(1 for r in records if r["masked"]),
+            "cloud_eligibility_counts": {label: sum(1 for r in records if r["cloud_eligibility"] == label)
+                                         for label in CLOUD_LABELS},
         },
         "records": records,
         "conflicts": conflicts,
@@ -664,6 +743,10 @@ def check_invariants(index: dict[str, Any]) -> list[str]:
     if index["statistics"]["conflict_count"] != len(index["conflicts"]):
         errors.append("çelişki sayısı istatistiği tutmuyor")
     for record in index["records"]:
+        if record["masked"] != (record["data_class_candidate"] == "kisisel_veri_adayi"):
+            errors.append(f"{record['id']}: maskeleme işareti veri sınıfıyla tutmuyor")
+        if record["cloud_eligibility"] != cloud_label(record["personal_data_signals"], record["commercial_signals"]):
+            errors.append(f"{record['id']}: bulut uygunluğu içerikten türetilmemiş")
         if record["status"] == "gecersiz" and not any(
                 link["confidence"] == "acik" and link["type"] in ("yerine_gecer", "gecersiz_kilar")
                 for link in record["superseded_by"]):

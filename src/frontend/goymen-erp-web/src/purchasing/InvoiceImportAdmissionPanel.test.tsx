@@ -1,5 +1,5 @@
 /** Synthetic UI sources; real HTTP/SQL/browser runtime acceptance NOT_RUN. */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -11,6 +11,7 @@ import { admissionFacts, admissionReferences, admissionProducts, admissionSuppli
 import { importRequestFixture, importTestId as id } from './invoiceImportFixtures.testSupport'
 import { resetAdjustmentAttemptsForTests } from './useReceiptAdjustmentAttempt'
 import { INVOICE_IMPORT_TEXT as T } from './invoiceImportText'
+import { DUPLICATE_REASON_REQUIRED, INVOICE_DUPLICATE_TEXT as D } from './invoiceDuplicateText'
 
 let shell: ShellState
 const auth = vi.hoisted(() => ({ capture: vi.fn(() => ({ synthetic: true })), report: vi.fn() }))
@@ -64,6 +65,25 @@ describe('actual-reference invoice admission workspace', () => {
     expect(recordInvoiceImport).toHaveBeenCalledWith(id(2), id(1), expect.objectContaining({ request: expect.objectContaining({ expectedPartyVersion: '4', expectedAccountVersion: '5',
       lines: [expect.objectContaining({ productId: id(16), expectedProductVersion: '6', itemType: 'Steel', expectedItemTypeVersion: '7', linePurpose: 'resale' })],
       installments: [expect.objectContaining({ amount: '12', functionalAmount: null })] }) }), expect.any(String))
+  })
+  it('ALS-D125: a duplicate warning asks for a reason, never blocks, and resends with it under a new key', async () => {
+    vi.mocked(recordInvoiceImport).mockResolvedValueOnce({ type: 'failed', status: 422, code: DUPLICATE_REASON_REQUIRED })
+    mount(); await map()
+    fireEvent.click(screen.getByRole('button', { name: T.recordInvoice }))
+    const warning = await screen.findByTestId('import-duplicate-warning')
+    expect(within(warning).getByRole('alert').textContent).toBe(D.importWarning)
+    expect(screen.queryByText(T.rejected)).toBeNull()
+    expect(vi.mocked(recordInvoiceImport).mock.calls[0][2].request.duplicateReason).toBeUndefined()
+    // Without a reason nothing is sent.
+    fireEvent.click(screen.getByRole('button', { name: T.recordInvoice }))
+    expect(await screen.findByText(D.importReasonRequired)).not.toBeNull()
+    expect(recordInvoiceImport).toHaveBeenCalledTimes(1)
+    fireEvent.change(screen.getByLabelText(D.importReason), { target: { value: '  SENTETIK düzeltme faturası  ' } })
+    fireEvent.click(screen.getByRole('button', { name: T.recordInvoice }))
+    await waitFor(() => expect(recordInvoiceImport).toHaveBeenCalledTimes(2))
+    const [first, second] = vi.mocked(recordInvoiceImport).mock.calls
+    expect(second[2].request.duplicateReason).toBe('SENTETIK düzeltme faturası')
+    expect(second[3]).not.toBe(first[3])
   })
   it('freezes the original request and retries with the same key after an unknown response', async () => {
     const view = mount(); await map(); fireEvent.click(screen.getByRole('button', { name: T.recordInvoice })); await screen.findByText(T.unknown)

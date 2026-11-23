@@ -24,6 +24,7 @@ COPIED = (
     EVALUATOR.EVAL_SCHEMA_PATH,
     EVALUATOR.TOOL_CATALOG_PATH,
     "contracts/ai/decision-index-v1.json",
+    "docs/decisions/KARAR_SICILI.csv",
 )
 
 
@@ -75,6 +76,13 @@ class MutationTests(unittest.TestCase):
     def test_personal_data_is_an_error(self) -> None:
         document = copy.deepcopy(self.document)
         self.first(document, "yetki_disi")["question"] = "Bilgiyi ornek@example.com adresine gönder."
+        self.assertTrue(any("kişisel veri" in error for error in self.evaluate_with(document)["errors"]))
+
+    def test_a_registry_owner_name_is_an_error_without_reading_names_from_the_index(self) -> None:
+        names = EVALUATOR.GENERATOR.owner_name_terms(self.root)
+        self.assertTrue(names)
+        document = copy.deepcopy(self.document)
+        self.first(document, "yetki_disi")["question"] = f"SENTETIK: {names[0]} kimdir?"
         self.assertTrue(any("kişisel veri" in error for error in self.evaluate_with(document)["errors"]))
 
     def test_duplicate_identity_is_an_error(self) -> None:

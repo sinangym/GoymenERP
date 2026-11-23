@@ -1,4 +1,10 @@
-import { SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY, SALES_RISK_EXCEPTION_APPROVE_CAPABILITY } from '../../sales/capabilities'
+import {
+  SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
+  SALES_INVOICE_APPROVE_CAPABILITY,
+  SALES_POOL_CAPABILITY_ID,
+  SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY,
+  SALES_RISK_EXCEPTION_APPROVE_CAPABILITY,
+} from '../../sales/capabilities'
 import { SALES_SOURCE } from '../workText'
 import type { WorkInboxKind } from './types'
 
@@ -10,4 +16,12 @@ export const SALES_INBOX_KINDS: readonly WorkInboxKind[] = [
   { kind: 'sales.risk-exception.v1', module: 'sales', capability: SALES_RISK_EXCEPTION_APPROVE_CAPABILITY },
   // WP1 D5: the native D-05 sales order draft is in the one inbox too (the owner's `sales.orders.approve`).
   { kind: 'sales.order-draft.v1', module: 'sales', capability: SALES_SOURCE.capability },
+  // WP4: the remaining Sales approval kinds, each with the owner's existing approve control (none is new).
+  { kind: 'sales.request.v1', module: 'sales', capability: SALES_POOL_CAPABILITY_ID.requestsDecide },
+  { kind: 'sales.invoice.v1', module: 'sales', capability: SALES_INVOICE_APPROVE_CAPABILITY },
+  // The subcontract service invoice is decided under the same `sales.invoices.approve` control (on the order screen).
+  { kind: 'sales.subcontract-invoice.v1', module: 'sales', capability: SALES_INVOICE_APPROVE_CAPABILITY },
+  { kind: 'sales.customer-return.v1', module: 'sales', capability: SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY },
+  // S-11 is not routed: its `sales.contracts.discount-approve` control is not published by the shell yet.
+  { kind: 'sales.contract-discount.v1', module: 'sales', capability: null },
 ]

@@ -14,6 +14,7 @@ namespace GoymenERP.Api.Endpoints;
 public static partial class FinanceEndpoints
 {
     public const string BankStatementImportsPath = "/api/v1/finance/bank-statement-imports";
+    public const string BankStatementMatchesPath = "/api/v1/finance/bank-statement-matches";
 
     public static IEndpointRouteBuilder MapFinanceBankStatementImportsV1(this IEndpointRouteBuilder endpoints)
     {
@@ -81,7 +82,56 @@ public static partial class FinanceEndpoints
             .ProducesErpAuthenticatedProblems().ProducesErpBadRequest().AllowsEmptyErpBadRequestBody()
             .AllowsCodeLessErpBadRequestBody().ProducesErpCodeLessNotFound().ProducesErpUnsupportedMediaType()
             .ProducesErpServiceUnavailable();
+        endpoints.MapPost(BankStatementImportsPath + "/{importId:guid}/matches", async (Guid importId,
+            IFinanceBankStatementImportServiceV1 service, ICompanyContext company, ICurrentUser user,
+            ICorrelationContext correlation, HttpContext http, CancellationToken token) =>
+        {
+            SetPrivateNoStore(http);
+            if (!TryReadIdempotencyKey(http.Request.Headers, out var key)) return Results.Problem(statusCode: 400);
+            if (await ReadBodyAsync<ConfirmFinanceBankStatementMatchV1>(http, token) is not { } body)
+                return http.Request.HasJsonContentType() ? Results.Problem(statusCode: 400) : Results.StatusCode(415);
+            return BankStatementMatchCommand(http,
+                await service.ConfirmMatchAsync(Context(company, user, correlation), new(key), importId, body, token));
+        }).WithName("ConfirmFinanceBankStatementMatchV1").WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .Accepts<ConfirmFinanceBankStatementMatchV1>("application/json").Produces<FinanceBankStatementMatchCommandResultV1>()
+            .Produces<FinanceBankStatementMatchCommandResultV1>(409).Produces<FinanceBankStatementMatchCommandResultV1>(422)
+            .ProducesErpAuthenticatedProblems().ProducesErpBadRequest().AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody().ProducesErpCodeLessNotFound().ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(BankStatementMatchesPath + "/{matchId:guid}/reverse", async (Guid matchId,
+            IFinanceBankStatementImportServiceV1 service, ICompanyContext company, ICurrentUser user,
+            ICorrelationContext correlation, HttpContext http, CancellationToken token) =>
+        {
+            SetPrivateNoStore(http);
+            if (!TryReadIdempotencyKey(http.Request.Headers, out var key)) return Results.Problem(statusCode: 400);
+            if (await ReadBodyAsync<ReverseFinanceBankStatementMatchV1>(http, token) is not { } body)
+                return http.Request.HasJsonContentType() ? Results.Problem(statusCode: 400) : Results.StatusCode(415);
+            return BankStatementMatchCommand(http,
+                await service.ReverseMatchAsync(Context(company, user, correlation), new(key), matchId, body, token));
+        }).WithName("ReverseFinanceBankStatementMatchV1").WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .Accepts<ReverseFinanceBankStatementMatchV1>("application/json").Produces<FinanceBankStatementMatchCommandResultV1>()
+            .Produces<FinanceBankStatementMatchCommandResultV1>(409).Produces<FinanceBankStatementMatchCommandResultV1>(422)
+            .ProducesErpAuthenticatedProblems().ProducesErpBadRequest().AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody().ProducesErpCodeLessNotFound().ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
         return endpoints;
+    }
+
+    private static IResult BankStatementMatchCommand(HttpContext http, FinanceBankStatementMatchCommandResultV1 result)
+    {
+        if (result.Replayed) http.Response.Headers["Idempotency-Replayed"] = "true";
+        return result.Outcome switch
+        {
+            CommandOutcome.Succeeded => Results.Ok(result),
+            CommandOutcome.Denied => Results.Problem(statusCode: 403),
+            CommandOutcome.ValidationFailed when result.Code is FinanceBankStatementCodesV1.ImportNotFound
+                or FinanceBankStatementCodesV1.LineNotFound or FinanceBankStatementCodesV1.MatchNotFound =>
+                Results.Problem(statusCode: 404),
+            CommandOutcome.VersionConflict or CommandOutcome.IdempotencyConflict => Results.Json(result, statusCode: 409),
+            CommandOutcome.ValidationFailed => Results.Json(result, statusCode: 422),
+            _ => Results.Problem(statusCode: 503),
+        };
     }
 
     private static IResult BankStatementCommand(HttpContext http, FinanceBankStatementCommandResultV1 result)

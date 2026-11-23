@@ -51,6 +51,33 @@ internal sealed class IdentityUserManagementEvaluator(IdentityDbContext dbContex
             .OrderBy(companyId => companyId)
             .ToListAsync(cancellationToken);
 
+    /// <summary>
+    /// The companies where <paramref name="actorUserId"/> holds <c>identity.users.manage</c> company-wide at
+    /// <paramref name="nowUtc"/> (the same authority rule as <see cref="EvaluateAsync"/>). A target is KIM-D16 manageable by
+    /// the actor exactly when its membership companies are a non-empty subset of this set; the managed-user list uses it to
+    /// filter in one query instead of evaluating each row.
+    /// </summary>
+    internal async Task<IReadOnlyList<Guid>> GetCompanyWideManagedCompanyIdsAsync(
+        Guid actorUserId,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken) =>
+        await dbContext.RoleAssignments.AsNoTracking()
+            .Where(assignment => assignment.UserId == actorUserId
+                && assignment.Status == RoleAssignmentStatus.Active
+                && assignment.ValidFromUtc <= nowUtc
+                && (assignment.ValidUntilUtc == null || assignment.ValidUntilUtc > nowUtc)
+                && dbContext.Users.Any(user => user.Id == assignment.UserId && user.IsActive)
+                && dbContext.Roles.Any(role => role.Id == assignment.RoleId && role.IsActive)
+                && dbContext.RolePermissions.Any(rolePermission =>
+                    rolePermission.RoleId == assignment.RoleId
+                    && rolePermission.PermissionCode == ManagementPermission)
+                && assignment.Scopes.Any(scope =>
+                    scope.ScopeType == AccessScopeType.Company && scope.ScopeId == assignment.CompanyId))
+            .Select(assignment => assignment.CompanyId)
+            .Distinct()
+            .OrderBy(companyId => companyId)
+            .ToListAsync(cancellationToken);
+
     /// <summary>KIM-D16 fence first, then KIM-D19 (a target without membership cannot be managed from the screen).</summary>
     internal async Task<IdentityUserManagementDecision> EvaluateAsync(
         Guid actorUserId,

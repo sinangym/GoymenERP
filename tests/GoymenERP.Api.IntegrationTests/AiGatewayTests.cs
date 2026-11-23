@@ -80,6 +80,25 @@ public sealed class AiGatewayTests
         Assert.Equal(17, store.CommittedUnits);
     }
 
+    [Fact]
+    public async Task A_number_next_to_an_escaped_non_ascii_character_in_canonical_content_is_still_supported()
+    {
+        var store = new InMemoryAiGatewayStore(Company);
+        var content = AiCanonicalJson.Canonicalize("{\"madde\":\"SENTETIK §9.1 ve ↔ 1.035 kg\"}");
+        Assert.Contains("\\u00a79.1", content, StringComparison.OrdinalIgnoreCase);
+        var composer = new CountingComposer(AiModelPlacementV1.OnPremises) { Text = "[1] SENTETIK §9.1 ve 1.035 kg.", Cited = [1] };
+        var gateway = AiGatewayTestDoubles.Gateway(ReadyOptions(), store, [composer]);
+
+        var supported = await gateway.ComposeAsync(Request(grounding: [Item(content)]));
+        var unsupported = await AiGatewayTestDoubles.Gateway(ReadyOptions(), store,
+                [new CountingComposer(AiModelPlacementV1.OnPremises) { Text = "[1] SENTETIK §9.2.", Cited = [1] }])
+            .ComposeAsync(Request(grounding: [Item(content)]));
+
+        Assert.Equal(AiGatewayStatusV1.Answered, supported.Status);
+        Assert.Equal(AiGatewayStatusV1.CannotAnswer, unsupported.Status);
+        Assert.Equal(AiGatewayCannotAnswerReasonsV1.Unsupported, unsupported.CannotAnswerReason);
+    }
+
     [Theory]
     [InlineData(new int[0])]
     [InlineData(new[] { 2 })]

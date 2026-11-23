@@ -4,6 +4,7 @@
     <ProjectReference Include="..\BuildingBlocks\GoymenERP.BuildingBlocks\GoymenERP.BuildingBlocks.csproj" />
     <ProjectReference Include="..\DocumentGeneration\GoymenERP.DocumentGeneration.Pdf\GoymenERP.DocumentGeneration.Pdf.csproj" />
     <ProjectReference Include="..\Modules\Audit\GoymenERP.Modules.Audit.Application\GoymenERP.Modules.Audit.Application.csproj" />
+    <ProjectReference Include="..\Modules\AiKnowledge\GoymenERP.Modules.AiKnowledge.Infrastructure\GoymenERP.Modules.AiKnowledge.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Accounting\GoymenERP.Modules.Accounting.Infrastructure\GoymenERP.Modules.Accounting.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Audit\GoymenERP.Modules.Audit.Infrastructure\GoymenERP.Modules.Audit.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Counterparty\GoymenERP.Modules.Counterparty.Application\GoymenERP.Modules.Counterparty.Application.csproj" />
@@ -45,6 +46,12 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+  </ItemGroup>
+
+  <!-- WP-A4: the versioned AI knowledge packages ship inside the publish output (not a configured path). -->
+  <ItemGroup>
+    <Content Include="..\..\..\contracts\ai\decision-index-v1.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\..\..\contracts\ai\release-knowledge-v1.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <PropertyGroup>

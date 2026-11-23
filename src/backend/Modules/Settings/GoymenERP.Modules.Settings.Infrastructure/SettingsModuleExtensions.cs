@@ -32,6 +32,14 @@ public static class SettingsModuleExtensions
         services.Replace(ServiceDescriptor.Scoped<ISettingsManufacturingToleranceProviderV1,
             SettingsManufacturingToleranceProviderV1>());
         services.TryAddSingleton(TimeProvider.System);
+        // WP7 (AI-D31/AI-D32): the read-only Work inbox sources of Ayarlar policy versions waiting for publication; they publish nothing.
+        services.AddScoped<WorkInbox.SettingsWorkInboxFence>();
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1, WorkInbox.SettingsFinanceApprovalPolicyWorkInboxSourceV1>();
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1, WorkInbox.SettingsCashCountDifferencePolicyWorkInboxSourceV1>();
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1, WorkInbox.SettingsBankInstitutionPolicyWorkInboxSourceV1>();
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1, WorkInbox.SettingsCollateralRatePolicyWorkInboxSourceV1>();
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1, WorkInbox.SettingsManufacturingParameterProfileWorkInboxSourceV1>();
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1, WorkInbox.SettingsManufacturingToleranceProfileWorkInboxSourceV1>();
         services.AddScoped<SettingsDocumentNumberSeriesV1>();
         services.AddScoped<ISettingsDocumentNumberSeriesV1>(sp => sp.GetRequiredService<SettingsDocumentNumberSeriesV1>());
         services.AddScoped<ISettingsDocumentNumberSeriesAdministrationV1>(sp => sp.GetRequiredService<SettingsDocumentNumberSeriesV1>());
@@ -115,11 +123,15 @@ public static class SettingsModuleExtensions
         services.AddScoped<SettingsAiGatewayStoreV1>();
         services.AddScoped<ISettingsAiGatewayPolicyProviderV1>(provider => provider.GetRequiredService<SettingsAiGatewayStoreV1>());
         services.AddScoped<ISettingsAiBudgetLedgerV1>(provider => provider.GetRequiredService<SettingsAiGatewayStoreV1>());
+        services.AddScoped<ISettingsLegalDeadlineCalendarAdministrationV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyAdministration>());
         services.AddScoped<SettingsCompanyPolicyProviderV1>();
         services.AddScoped<ISettingsManufacturingScrapCostPolicyProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
         services.AddScoped<ISettingsNotificationRetentionPolicyProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
         services.AddScoped<ISettingsWorkApprovalDurationPolicyProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
         services.AddScoped<ISettingsWorkHolidayCalendarProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
+        services.AddScoped<ISettingsLegalDeadlineCalendarProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
+        // WP15 (1.16): legal deadline counters as a Work deadline source; grants nothing, writes nothing.
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkDeadlineSourceV1, WorkDeadlines.SettingsLegalDeadlineWorkSourceV1>();
         services.AddScoped<ISettingsNotificationRetentionAutomationV1, SettingsNotificationRetentionAutomationV1>();
         // WP2: the Work scheduler's read of the Work timing keys (no user; resolved company only).
         services.AddScoped<ISettingsWorkTimingAutomationV1, SettingsWorkTimingAutomationV1>();

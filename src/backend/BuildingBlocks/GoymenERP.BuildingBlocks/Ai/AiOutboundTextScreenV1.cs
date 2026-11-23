@@ -53,3 +53,21 @@ public static partial class AiOutboundTextScreenV1
         return new AiOutboundTextScreenResultV1(findings.AsReadOnly());
     }
 }
+
+/// <summary>
+/// AI-D44: the data class of a free panel question's own text. Internal by default; Confidential when the text carries
+/// personal data (an IBAN, an e-mail address, or a digit run such as a phone or national identity number). A source with a
+/// higher class still wins in the gateway (the effective class is the highest of the text and every source).
+/// </summary>
+public static class AiQuestionDataClassV1
+{
+    public static AiDataClassV1 Classify(string question)
+    {
+        ArgumentNullException.ThrowIfNull(question);
+        var findings = AiOutboundTextScreenV1.Screen(question).Findings;
+        return findings.Any(finding => finding is AiOutboundTextFindingV1.Iban or AiOutboundTextFindingV1.EmailAddress
+            or AiOutboundTextFindingV1.DigitSequence)
+            ? AiDataClassV1.Confidential
+            : AiDataClassV1.Internal;
+    }
+}

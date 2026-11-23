@@ -24,7 +24,8 @@ public sealed class SettingsSalesContractDiscountLimitContractTests
                 "20261117085524_AddPurchaseInvoiceVariancePolicies", "20261117111242_AddWarehouseTransferScalePolicies",
                 "20261117200733_AddFinanceDocumentNumberSeries", "20261117220044_AddFinancePolicyFamilies",
                 "20261120101534_HardenWorkCenterSafetyBufferNullPairs", "20261122181548_AddWorkApprovalDurationPolicies",
-                "20261122202350_AddAiGatewayPolicyAndBudgetLedger", "20261122224127_Wp2WorkDigestTimes"], database.Database.GetMigrations().TakeLast(12));
+                "20261122202227_AddLegalDeadlineCalendars", "20261122202350_AddAiGatewayPolicyAndBudgetLedger",
+                "20261122224127_Wp2WorkDigestTimes"], database.Database.GetMigrations().TakeLast(13));
         Assert.False(database.Database.HasPendingModelChanges());
     }
 
@@ -59,7 +60,7 @@ public sealed class SettingsSalesContractDiscountLimitContractTests
         var shape = row.GetCheckConstraints().Single(check => check.Name == "CK_SettingsCompanyPolicyVersions_Value").Sql;
         Assert.Contains("[PercentValue] IS NOT NULL AND [PercentValue] >= 0 AND [PercentValue] <= 100", shape, StringComparison.Ordinal);
         // Every non-percent key family pins the percent column to NULL: boolean, whole days, the W1-A approval durations, the
-        // WP2 digest times (YOL-D25) and the tax defaults. (The base expected 3 and already failed at 4 after W1-A.)
+        // WP2 digest times (YOL-D25) and the tax defaults.
         Assert.Equal(5, shape.Split("[PercentValue] IS NULL", StringSplitOptions.None).Length - 1);
         Assert.Equal(ErpPermissions.SettingsSalesContractDiscountLimitManage, SettingsSalesContractDiscountLimitPermissionsV1.Manage);
         Assert.True(ErpPermissions.IsKnown(SettingsSalesContractDiscountLimitPermissionsV1.Manage));

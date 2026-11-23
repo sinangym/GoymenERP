@@ -58,8 +58,7 @@ public sealed partial class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
                 .ViewUserMemoryAsync(MemoryOwner);
             Assert.Equal(new[] { created.Entry.Id }, view.Items.Select(item => item.Id));
             Assert.Equal(1, await CountAsync(connectionString, "AssistantMemoryOversightViews", TestCompanyIds.CompanyA));
-            var seen = Assert.Single((await MemoryService(connectionString, MemoryOwner).ListViewsOfMyMemoryAsync()).Items);
-            Assert.Equal((view.ViewId, MemoryOverseer, 1), (seen.Id, seen.ViewerUserId, seen.EntryCount));
+            Assert.Equal(0, await CountAsync(connectionString, "InboxNotifications", TestCompanyIds.CompanyA));
 
             // A deletion recorded by anyone but the owner, and a closure without a reason, are refused by the table itself.
             var forged = Sql(await Assert.ThrowsAnyAsync<Exception>(() => ExecAsync(connectionString,

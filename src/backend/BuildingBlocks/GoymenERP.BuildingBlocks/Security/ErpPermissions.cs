@@ -356,6 +356,16 @@ public static class ErpPermissions
     public const string InventoryOpeningCostApprove = "inventory.opening-cost.approve";
 
     /// <summary>
+    /// AI-D45 (SINAN_KARARLARI_2026-11-22_EK_SORULAR.md, WP-A3b): the "maliyet görme izni" for the Inventory moving-average
+    /// purchase cost (SAT-D262 <c>IInventoryAverageCostReadPortV1</c>). It governs DISCLOSURE of the stock cost to its holder;
+    /// the first reader is the AI assistant's <c>inventory.average-cost.v1</c> READ tool (CONFIDENTIAL, never sent to a cloud
+    /// model). Its own name: no other Inventory, Sales or Purchasing name confers it and it confers none (the Sales margin read
+    /// stays <see cref="SalesOrdersMarginRead"/>). Registered, not granted: no seeded role and no real user receives it; the
+    /// persona → grant mapping is a human gate. Company-wide only, like the other Inventory reads. Not Critical.
+    /// </summary>
+    public const string InventoryAverageCostRead = "inventory.average-cost.read";
+
+    /// <summary>
     /// Finance bank-account master (FS0, #312): names are the Finance owner's technical mapping
     /// (Business #254 5654539215). Registering them makes them KNOWN, not granted: no role and no
     /// user receives them here, and who holds which is a human gate. All three are company-wide
@@ -741,6 +751,12 @@ public static class ErpPermissions
 
     /// <summary>WP12: read statement imports, lines and the exact match suggestions. Registered, not granted. Company-wide only.</summary>
     public const string FinanceBankStatementsRead = "finance.bank-statements.read";
+
+    /// <summary>
+    /// WP12 / FNS-D113: confirm a statement line as one recorded movement (the only way a match becomes final) and reverse
+    /// a confirmed match with a reversal record. Registered, not granted. Company-wide only; not Critical.
+    /// </summary>
+    public const string FinanceBankStatementsMatch = "finance.bank-statements.match";
 
     /// <summary>FI04 independent read and amount disclosure; registration grants no user or role access.</summary>
     public const string FinanceOpenItemsRead = "finance.open-items.read";
@@ -1370,6 +1386,16 @@ public static class ErpPermissions
     /// <inheritdoc cref="AccountingPeriodsRead"/>
     public const string AccountingPeriodsClose = "accounting.periods.close";
 
+    /// <summary>
+    /// ROL-D12 (SINAN_KARARLARI_2026-11-22_ROL_YETKI.md): reopening a closed period is its own permission, apart from
+    /// approving a period opening (<see cref="AccountingPeriodsApprove"/>). The approval that reopens a period requires
+    /// this name; proposing a reopening keeps <see cref="AccountingPeriodsPropose"/> and the maker-checker rule stays in the
+    /// Accounting service. The decision names only the General Manager as holder; the grant is a human gate. Registered,
+    /// not granted: no role, seed or user receives it here, so the reopening approval is closed (403) until a person
+    /// grants it. Company-wide only (a period belongs to its company). Not Critical (W5-3.1 reading for new names).
+    /// </summary>
+    public const string AccountingPeriodsReopen = "accounting.periods.reopen";
+
     /// <inheritdoc cref="AccountingPeriodsRead"/>
     public const string AccountingJournalsRead = "accounting.journals.read";
 
@@ -1561,6 +1587,16 @@ public static class ErpPermissions
     /// The budget value and the grant are human gates.
     /// </summary>
     public const string SettingsAiGatewayManage = "settings.ai-gateway.manage";
+    /// <summary>
+    /// WP15 (DALGA_PLANI_v2 1.16, YOL-D4 (c)): reads and records the company's legal deadline calendar versions. Registered, not
+    /// granted; company-wide only; not Critical.
+    /// </summary>
+    public const string SettingsLegalDeadlineCalendarManage = "settings.legal-deadline-calendar.manage";
+    /// <summary>
+    /// WP15 (1.16): sees the upcoming legal deadline counters in the Work view. Registered, not granted; company-wide only; not
+    /// Critical.
+    /// </summary>
+    public const string SettingsLegalDeadlinesRead = "settings.legal-deadlines.read";
     public const string SettingsDocumentNumberSeriesManage = "settings.document-number-series.manage";
 
     /// <summary>
@@ -1728,7 +1764,7 @@ public static class ErpPermissions
     public const string WorkTasksComplete = "work.tasks.complete";
     /// <summary>
     /// WP-C6 (AI-D30; DALGA_PLANI_v2 C.6): view another person's personal assistant memory in the company and close one of
-    /// their entries or their whole memory. Every view is written as an audit event and as a Work view row the person can list.
+    /// their entries or their whole memory. Every view and closure is audited and, per AI-D39, not notified to the person.
     /// It never lets the holder edit or read the text of an entry its owner deleted. Separate from every other permission as
     /// AI-D30 requires. Company-wide only. Not Critical. Registered, not granted: no seeded role holds it; a grant is a human gate.
     /// </summary>
@@ -1748,6 +1784,20 @@ public static class ErpPermissions
     /// </summary>
     public const string AiDecisionsRead = "ai.decisions.read";
     /// <summary>
+    /// WP-B3 (AI-D22 "belgeden taslak", AI-D34 c, DALGA_PLANI_v2 B.3): may turn an e-mail, PDF, pasted text or structured
+    /// file into a sales order, supplier confirmation or incoming invoice DRAFT, in addition to <see cref="AiPanelUse"/> and
+    /// the owner module's own permission for that kind. A draft creates no record. Company-wide only, not critical.
+    /// Registered, not granted: no seeded role holds it; a grant is a human gate.
+    /// </summary>
+    public const string AiDocumentDraftsPrepare = "ai.document-drafts.prepare";
+    /// <summary>
+    /// WP-B3, AI-D41 ("belgeden taslak teyidi"): may turn a supplier's confirmation document into a supplier confirmation
+    /// DRAFT, in addition to <see cref="AiPanelUse"/> and <see cref="AiDocumentDraftsPrepare"/>. Replaces
+    /// ASSUMPTION-AI-DRAFT-CONFIRMATION-1. A draft creates no record. Company-wide only, not critical. Registered, not
+    /// granted: no seeded role holds it; a grant is a human gate.
+    /// </summary>
+    public const string AiDocumentDraftsSupplierConfirmation = "ai.document-drafts.supplier-confirmation";
+    /// <summary>
     /// WP14 (DALGA_PLANI_v2 1.15, DEC-DOC-009): download a report-centre page as CSV/XLSX. The report's own owner read permissions
     /// are required as well; every export writes an append-only export record and an audit event. Company-wide only. Not Critical
     /// (a Critical marking is a human decision). Registered, not granted: no seeded role holds it; a grant is a human gate.
@@ -1764,6 +1814,13 @@ public static class ErpPermissions
     /// Not Critical.
     /// </summary>
     public const string ReportingIntercompanyRead = "reporting.intercompany.read";
+    /// <summary>
+    /// WP-A4 (AI-D32 "onaylı karar dizini", DALGA_PLANI_v2 A.4): approve (or withdraw the approval of) one published AI
+    /// knowledge package version (the decision index or the release behaviour knowledge) for the company; until an
+    /// approval of the exact packaged bytes exists, the reading tools answer unavailable. Company-wide only. Not marked
+    /// Critical (marking it is a human gate). Registered, not granted: no seeded role holds it; a grant is a human gate.
+    /// </summary>
+    public const string AiKnowledgeApprove = "ai.knowledge.approve";
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(
         [
@@ -1882,6 +1939,7 @@ public static class ErpPermissions
             InventoryStockTransferLossApprove,
             InventoryOpeningCostSubmit,
             InventoryOpeningCostApprove,
+            InventoryAverageCostRead,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
@@ -1927,6 +1985,7 @@ public static class ErpPermissions
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
             AccountingPeriodsClose,
+            AccountingPeriodsReopen,
             AccountingJournalsRead,
             AccountingPostingQueuesRead,
             AccountingNormalJournalDraftCreate,
@@ -1993,6 +2052,7 @@ public static class ErpPermissions
         FinancePartyBalanceTransfersRecord,
         FinanceBankStatementsImport,
         FinanceBankStatementsRead,
+        FinanceBankStatementsMatch,
         FinanceOpenItemsRead,
         FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,
@@ -2029,6 +2089,8 @@ public static class ErpPermissions
             SettingsNotificationRetentionManage,
             SettingsWorkApprovalDurationManage,
             SettingsAiGatewayManage,
+            SettingsLegalDeadlineCalendarManage,
+            SettingsLegalDeadlinesRead,
             SettingsDocumentNumberSeriesManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,
@@ -2056,6 +2118,9 @@ public static class ErpPermissions
             IdentityAssignmentsRead,
             AiPanelUse,
             AiDecisionsRead,
+            AiDocumentDraftsPrepare,
+            AiDocumentDraftsSupplierConfirmation,
+            AiKnowledgeApprove,
             IdentityUsersManage,
             PlatformSecurityEventsRead,
             WorkNotesWrite,
@@ -2197,6 +2262,7 @@ public static class ErpPermissions
             InventoryStockTransferLossApprove,
             InventoryOpeningCostSubmit,
             InventoryOpeningCostApprove,
+            InventoryAverageCostRead,
             LogisticsLoadingInstructionsCreate,
             LogisticsLoadingInstructionsRead,
             LogisticsLoadsRecord,
@@ -2242,6 +2308,7 @@ public static class ErpPermissions
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
             AccountingPeriodsClose,
+            AccountingPeriodsReopen,
             AccountingJournalsRead,
             AccountingPostingQueuesRead,
             AccountingNormalJournalDraftCreate,
@@ -2308,6 +2375,7 @@ public static class ErpPermissions
         FinancePartyBalanceTransfersRecord,
         FinanceBankStatementsImport,
         FinanceBankStatementsRead,
+        FinanceBankStatementsMatch,
         FinanceOpenItemsRead,
         FinanceOpenItemsAmountRead,
         FinanceAllocationWrite,
@@ -2344,6 +2412,8 @@ public static class ErpPermissions
             SettingsNotificationRetentionManage,
             SettingsWorkApprovalDurationManage,
             SettingsAiGatewayManage,
+            SettingsLegalDeadlineCalendarManage,
+            SettingsLegalDeadlinesRead,
             SettingsDocumentNumberSeriesManage,
             SettingsReferenceListsManage,
             SettingsProductionReferenceListsManage,
@@ -2367,6 +2437,9 @@ public static class ErpPermissions
             IdentityAssignmentsRead,
             AiPanelUse,
             AiDecisionsRead,
+            AiDocumentDraftsPrepare,
+            AiDocumentDraftsSupplierConfirmation,
+            AiKnowledgeApprove,
             IdentityUsersManage,
             PlatformSecurityEventsRead,
             WorkNotesWrite,

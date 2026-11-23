@@ -70,13 +70,15 @@ tatil takvimi Work'e aittir): süre veya tatil takvimi kaydı varken reddeder.
   `GET /api/v1/work/notifications` sözleşmesi aynı kalır, artık tek depodan okur.
 - **Takip döngüsü:** `WorkApprovalFollowUpMaintenanceV1`, `IWorkInboxFollowUpSourceV1` uygulayan kaynaklar için kullanıcısız
   çalışır: yeni bekleyen onayda uygun onaylayıcılara "şimdi" bildirimi (yapan ve sahibin dışladıkları hariç); süre dolunca
-  **bir** hatırlatma; bir sınıf süresi daha sonra kural tablosunun yükseltme izni sahiplerine yükseltme (sürüm 0:
-  `work.approvals.escalate`; kimsede yoksa yalnız hatırlatma gider, YOL-D28); uygun onaylayıcı yoksa "sahipsiz onay".
+  **bir** hatırlatma; hatırlatmadan sonra bir süre sınıfı daha geçince (YOL-D33) kural tablosunun yükseltme izni sahiplerine
+  yükseltme (sürüm 0: `work.approvals.escalate`; kimsede yoksa yalnız hatırlatma gider, YOL-D28); uygun onaylayıcı yoksa
+  "sahipsiz onay", `work.approvals.escalate` sahiplerine düşer (YOL-D34).
   Otomatik onay/ret yoktur. Her adım `work.ApprovalFollowUps`'ta döngü+adım başına tek satırdır.
 - **D10:** sahip artık listelemediği ölçülmüş döngünün kararını kendi kaydından okur (`ReadDecisionAsync`); karar zamanı
   `ApprovalInboxEvents` tür 5 (`Decided`) olarak sahibin zamanıyla yazılır. Ölçüm artık kutu açılmasını beklemez.
 - **Özet saatleri (YOL-D25):** Ayarlar anahtarları `work.digest-time-morning|midday|evening` (gece yarısından dakika; sürüm 0 =
-  09:00/13:00/17:00), yalnız iş günü (hafta sonu + kayıtlı tatil/arife düşülür), iş saat dilimi (D6).
+  09:00/13:00/17:00), yalnız iş günü (hafta sonu + kayıtlı tatil/arife düşülür), iş saat dilimi (D6). Saatleri
+  `settings.work-approval-duration.manage` değiştirir (YOL-D35).
 - **Bayrak:** döngü yalnız `Work:CollaborationScheduler:Enabled` ve `Work:CollaborationScheduler:ApprovalFollowUpEnabled` ikisi
   de true iken çalışır (varsayılan kapalı; açmak insan kapısı).
 - **Görünüm:** `GET /api/v1/work/approval-follow-ups?view=escalated|orphaned` (`work.approvals.escalate`, şirket geneli);
@@ -84,6 +86,23 @@ tatil takvimi Work'e aittir): süre veya tatil takvimi kaydı varken reddeder.
 - `Wp2SingleNotificationStoreAndApprovalFollowUp`: Up kopya eksikse **52111** ile eski depoyu düşürmeden durur; Down guard
   **52110** (taşınmış/yeni bildirim, takip satırı veya karar olayı varken reddeder, forward fix). Ayarlar
   `Wp2WorkDigestTimes` Down guard **52112**.
+
+## WP6: Stok / Lojistik / Üretim onay türleri (AI-D31, DALGA_PLANI_v2 1.4)
+
+Sahip modül kaynakları (Work şeması değişmedi; süre sınıfı varsayılanı iş günü, YOL-D18):
+
+| Tür | Sahip izni | Bekleme | Onaylayamaz (sahip kuralı) |
+|---|---|---|---|
+| `inventory.transfer-overage.v1` | `inventory.stock-transfer.overage-approve` | kabulde fazla (talep 1) veya reddedilen fazlanın düzeltilmiş yeni talebi, kararsız | kabulü kaydeden + yeni talebi kaydeden (KLN-D24/D107) |
+| `inventory.transfer-loss.v1` | `inventory.stock-transfer.loss-approve` | kararsız ve geri çekilmemiş kayıp talebi | talebi kaydeden (KLN-D23 c/D97) |
+| `logistics.customer-return.v1` | `logistics.customer-returns.decision` | `Pending` fiziksel iade | iadeyi hazırlayan |
+
+- Tartım farkı (`logistics.weighing-difference.v1`): sahip kuralındaki kantar/sevk girenler `ExcludedDeciders` olarak eklendi (D4).
+- Üretim planı kalemi iş merkezini, transfer kalemleri varış lokasyonunu kapsam olarak taşır (D11). Sahip komutları yalnız
+  şirket geneli izni kabul ettiğinden `AcceptsScopedApprovers` false kalır; kapsamlı onay açılışı sahip modül kararıdır.
+- Kapsam dışı kalanlar: açılış maliyeti onayı (`inventory.opening-cost.approve`) — sahip ekranı/shell yeteneği yok, kalem
+  bağlanacak ekran olmadan kutuya alınmadı; üretim emri kapanış istisnası ve çıktı düzeltmesi bekleyen durum taşımaz (karar
+  komutun içinde verilir); Ayarlar üretim profili onayları WP7'dedir.
 ## W1-C: kayda bağlı not, bahsetme, görev ve iki sınıflı bildirim (AI-D20, AI-D23, AI-D29, YOL-D19)
 
 Yapay zekâ yoktur. Kayıt türleri: satış siparişi taslağı, alış siparişi, stok etiketi, üretim planı, cari (WP9 ile
@@ -144,20 +163,23 @@ geri alınır.
 `WidenWorkRecordTypesAndNoteReads` migration'ı üç kontrol kısıtını 1–12'ye genişletir ve `RecordNoteReads` tablosunu
 ekler. Down guard **52170**: okundu satırı ya da 6–12 türüne bağlı not/görev/bildirim varken geri almayı reddeder
 (forward fix).
-## WP-C6: kişisel asistan hafızası pilotu (AI-D15, AI-D22, AI-D30)
+## WP-C6: kişisel asistan hafızası pilotu (AI-D15, AI-D22, AI-D30, AI-D38, AI-D39)
 
 - Kayıt: kısa tercih veya not (`preference` | `note`, tek satır, en çok 500 karakter); kayda bağlı değildir, ERP verisinin
   kopyası değildir. Modele yalnız `WorkAssistantMemoryDataBlockV1` biçiminde, sabit başlıklı **veri** (JSON, HTML/ASCII dışı
   karakterler kaçışlı) olarak verilir; talimat değildir, yetki vermez.
 - Sahip: kendi kayıtlarını görür, düzeltir (beklenen sürüm), siler (`/api/v1/work/assistant-memory/mine/**`). Görme ve silme
-  her zaman açıktır; yazma `ai.panel.use` + açık pilot ister. Silinen kaydın metni kimseye (yönetici dahil) gösterilmez;
-  fiziksel imha saklama politikasına bağlıdır (NEEDS-SINAN).
+  her zaman açıktır; yazma `ai.panel.use` + açık pilot ister. Silinen kaydın metni kimseye (yönetici dahil) gösterilmez.
+- Saklama (AI-D38): kayıt **son kullanımdan 1 yıl** sonra pasife alınır (`passive`; asistana verilmez). Kullanım = sahibin
+  yazması veya asistanın kaydı okuması (okuma yalnız geçerlilik tarihini ileri alır; sürüm ve metin değişmez). Fiziksel imha
+  kapalıdır (ayrı politika). `RetentionDays` varsayılanı 365; pozitif olmayan değer hafızayı kapatır.
 - Yönetici: `work.assistant-memory.oversee` ile bir kişinin hafızasını görür, kaydı veya kişinin bütün hafızasını kapatır /
   yeniden açar (`/oversight/**`). Her görüntüleme önce `AssistantMemoryOversightViews` satırı + `work.assistant-memory.viewed.v1`
-  denetim olayı olarak kaydedilir, sonra sunulur; kişi kendi hafızasını kimin ne zaman gördüğünü listeler. Denetim metni kopyalamaz.
-- Yazma şu dört koşulun hepsi sağlanmadan kapalıdır (`Work:AssistantMemory`, hepsi varsayılan boş): `PilotEnabled`,
-  `RetentionDays` (AI-D30 "ayrı karar" — NEEDS-SINAN), `MaxEntriesPerUser` (parametre — NEEDS-SINAN değer),
-  `InformationNoticeVersion` (hukukçu teyitli bilgilendirme metninin onaylı sürümü; metin şimdilik yer tutucu, onay insanda).
+  denetim olayı olarak kaydedilir, sonra sunulur. AI-D39: görüntüleme ve kapatma kullanıcıya **bildirilmez** (bildirim,
+  "kim görüntüledi" listesi ve kapatma gerekçesi yoktur); yalnız denetim kaydı. Denetim metni kopyalamaz.
+- Yazma şu üç koşul sağlanmadan kapalıdır (`Work:AssistantMemory`): `PilotEnabled` (varsayılan kapalı, insan kapısı),
+  `MaxEntriesPerUser` (parametre — değer NEEDS-SINAN), `InformationNoticeVersion` (hukukçu teyitli bilgilendirme metninin
+  onaylı sürümü; metin yer tutucu, NEEDS-SINAN).
 
 | İzin | Anlam | Rol |
 |---|---|---|

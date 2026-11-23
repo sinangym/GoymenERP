@@ -9,6 +9,9 @@ public sealed partial class PurchasingDbContext
     internal const string IncomingInvoiceSourceCheck = "[CompanyId] <> " + EmptyGuid + " AND [InvoiceId] <> " + EmptyGuid
         + " AND [SupplierPartyId] <> " + EmptyGuid + " AND [Ettn] <> " + EmptyGuid + " AND [DocumentId] <> " + EmptyGuid
         + " AND [DocumentVersion] > 0 AND LEN([OfficialNumber]) > 0 AND LEN([DocumentSha256]) = 64";
+    /// <summary>WP15: the duplicate facts are all present (written since the column exists) or all absent (older records).</summary>
+    internal const string IncomingInvoiceDuplicateFactsCheck = "([InvoiceDate] IS NULL AND [CurrencyId] IS NULL AND [PayableAmount] IS NULL) OR "
+        + "([InvoiceDate] IS NOT NULL AND [CurrencyId] IS NOT NULL AND [CurrencyId] <> " + EmptyGuid + " AND [PayableAmount] IS NOT NULL)";
     internal const string IncomingInvoiceSnapshotCheck = "[Version] > 0 AND [Status] IN (1,2,3,4) AND ISJSON([SnapshotJson]) = 1";
     internal const string IncomingInvoiceAttemptCheck = "([SnapshotJson] IS NOT NULL AND ISJSON([SnapshotJson]) = 1 AND [RefusalJson] IS NULL) OR "
         + "([SnapshotJson] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
@@ -21,12 +24,19 @@ public sealed partial class PurchasingDbContext
     private void ConfigureIncomingInvoices(ModelBuilder modelBuilder)
     {
         var invoice = modelBuilder.Entity<PurchaseIncomingInvoiceRow>();
-        invoice.ToTable("IncomingInvoices", Schema, table => table.HasCheckConstraint("CK_IncomingInvoices_Source", IncomingInvoiceSourceCheck));
+        invoice.ToTable("IncomingInvoices", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_IncomingInvoices_Source", IncomingInvoiceSourceCheck);
+            table.HasCheckConstraint("CK_IncomingInvoices_DuplicateFacts", IncomingInvoiceDuplicateFactsCheck);
+        });
         invoice.HasKey(row => new { row.CompanyId, row.InvoiceId });
         invoice.HasIndex(row => new { row.CompanyId, row.Ettn }).IsUnique();
         invoice.HasIndex(row => new { row.CompanyId, row.SupplierPartyId, row.OfficialNumber }).IsUnique();
         invoice.Property(row => row.OfficialNumber).HasMaxLength(128).UseCollation(IdentityCollation);
         invoice.Property(row => row.DocumentSha256).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation);
+        invoice.Property(row => row.PayableAmount).HasPrecision(24, 6);
+        invoice.HasIndex(row => new { row.CompanyId, row.SupplierPartyId, row.InvoiceDate })
+            .HasDatabaseName("IX_IncomingInvoices_DuplicateDate");
         invoice.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(row => row.CompanyId).OnDelete(DeleteBehavior.Restrict);
         invoice.HasQueryFilter(row => row.CompanyId == companyContext.CompanyId);
 

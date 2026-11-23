@@ -32,7 +32,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                 name: "CK_PurchaseSupplierReturns_Lineage",
                 schema: "purchasing",
                 table: "PurchaseSupplierReturns",
-                sql: "([SourceLabelId] IS NULL AND [LineageMode] IS NULL) OR ([SourceLabelId] IS NOT NULL AND [SourceLabelId] <> '00000000-0000-0000-0000-000000000000' AND [LineageMode] IN (1, 2))");
+                sql: "([SourceLabelId] IS NULL AND [LineageMode] IS NULL) OR ([SourceLabelId] IS NOT NULL AND [SourceLabelId] <> '00000000-0000-0000-0000-000000000000' AND [LineageMode] IS NOT NULL AND [LineageMode] IN (1, 2))");
         }
 
         /// <inheritdoc />

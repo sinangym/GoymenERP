@@ -41,7 +41,8 @@ public sealed partial class AccountingApiService
             || request.ExpectedPeriodVersion < 1) return Task.FromResult(Invalid<AccountingPeriodReopeningViewV1>("expectedVersion"));
         if (periods is not IAccountingPeriodReopeningStoreV1 store)
             return Task.FromResult(PeriodLifecycleUnavailable<AccountingPeriodReopeningViewV1>());
-        return RunAsync<AccountingPeriodReopeningViewV1>(AccountingPermissionManifestV1.PeriodsApprove, idempotencyKey,
+        // ROL-D12: the reopening approval is its own permission, never the period-opening approval name.
+        return RunAsync<AccountingPeriodReopeningViewV1>(AccountingPermissionManifestV1.PeriodsReopen, idempotencyKey,
             "accounting.period.reopening.approve.v1", new { periodId, proposalId, request }, AccountingApiStatus.Ok,
             async (metadata, actor) => new(AccountingApiStatus.Ok,
                 await store.ApproveReopeningAsync(periodId, proposalId, request, actor, metadata, cancellationToken), false, null),

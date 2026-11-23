@@ -271,11 +271,16 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM inventory.Movements WHERE Kind = @kind", ("@kind", (int)StockMovementKind.SupplierReturnExit)));
     }
 
-    private static async Task<InventoryGoodsReceiptRequestV1> ReceiveForSupplierReturnAsync(Run run, BlockState block)
+    /// <summary>
+    /// A received label of its own receipt. <paramref name="lotId"/> receives it into an existing lot (same product, heat, coil
+    /// and documents): a merge joins only labels of one lot, so a lineage of two receipts is built from one lot.
+    /// </summary>
+    private static async Task<InventoryGoodsReceiptRequestV1> ReceiveForSupplierReturnAsync(Run run, BlockState block, Guid? lotId = null)
     {
         var location = await run.LocationOfAsync(CompanyA);
         var seed = await SeedGoodsReceiptPurchaseOrderAsync(run);
         var receipt = Receipt(seed, Guid.NewGuid(), "4", location) with { InitialBlock = block };
+        if (lotId is { } lot) receipt = receipt with { LotId = lot };
         return await StageGoodsReceiptAndCommitAsync(run, seed, receipt, "4",
             $"supplier-return-receipt-{Guid.NewGuid():N}", $"supplier-return-receipt-{Guid.NewGuid():N}");
     }

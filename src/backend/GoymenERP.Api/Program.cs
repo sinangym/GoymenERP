@@ -31,6 +31,7 @@ using GoymenERP.Modules.Accounting.Infrastructure;
 using GoymenERP.Modules.Accounting.Infrastructure.Shell;
 using GoymenERP.Modules.Accounting.Application.Contracts;
 using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.AiKnowledge.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure;
@@ -227,6 +228,7 @@ builder.Services.AddScoped<WorkInboxReadQueryV1>();
 builder.Services.AddScoped<GoymenERP.BuildingBlocks.Ai.IAiOwnerToolV1, GoymenERP.Api.WorkRuntime.Ai.WorkInboxAwaitingMeAiTool>();
 builder.Services.AddScoped<GoymenERP.BuildingBlocks.Ai.IAiOwnerToolV1, GoymenERP.Api.WorkRuntime.Ai.WorkOverdueApprovalsAiTool>();
 builder.Services.AddScoped<GoymenERP.BuildingBlocks.Ai.IAiOwnerToolV1, GoymenERP.Api.WorkRuntime.Ai.WorkMyTasksAiTool>();
+builder.Services.AddScoped<WorkDeadlineReadQueryV1>();
 builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();
 // B-17: the version bump with the account's roles (dual role) and supplier IBAN view; V1 stays for its consumers.
 builder.Services.AddScoped<IFinancePartyAccountPortV2, CounterpartyFinancePartyAccountPortV2>();
@@ -271,6 +273,12 @@ builder.Services.AddAuditModule(builder.Configuration);
 builder.Services.AddSecurityEventsModule(builder.Configuration);
 // E8 and the AI provider key: secret store reader only; no secret value is configured here.
 builder.Services.AddErpSecretStore(builder.Configuration);
+// WP-A4: approvals of the packaged AI knowledge versions (ai.knowledge.approve, granted to no role); before the runtime so
+// the tools read the real approvals instead of the fail-closed default.
+builder.Services.AddAiKnowledgeModule(
+    builder.Configuration,
+    (services, options) => options.AddInterceptors(
+        services.GetRequiredService<AuditSaveChangesInterceptor>()));
 // AI-3: READ-only AI runtime, off unless configured (Ai:Enabled); no owner tool is registered here.
 builder.Services.AddAiRuntime(builder.Configuration);
 builder.Services.AddAiSecurityWatchTools();
@@ -316,6 +324,8 @@ builder.Services.AddProductPriceListHost(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddProductPurchaseSelection(p => p.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
 builder.Services.AddProductLogisticsDocumentDisplay(p => p.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
+// WP13: the purchase order PDF names its products through the Product owner under the Purchasing order read.
+builder.Services.AddProductPurchasingDocumentDisplay(p => p.GetRequiredService<ProductRuntimeOptions>().IsEnabled);
 builder.Services.AddCounterpartyModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -641,6 +651,7 @@ app.MapIdentityEndpoints();
 app.MapAuditEndpoints();
 app.MapSecurityEventsEndpoints();
 app.MapAiEndpoints();
+app.MapAiKnowledgeEndpoints();
 app.MapCounterpartyEndpoints();
 app.MapProductEndpoints();
 app.MapProductPriceListEndpoints();
@@ -659,6 +670,7 @@ app.MapWorkApprovalEndpoints();
 app.MapWorkQueueEndpoints();
 app.MapWorkInboxEndpoints();
 app.MapWorkApprovalRuleEndpoints();
+app.MapWorkDeadlineEndpoints();
 app.MapWorkNotificationEndpoints();
 app.MapWorkCollaborationEndpoints();
 app.MapWorkApprovalFollowUpEndpoints();
@@ -678,6 +690,8 @@ app.MapLogisticsTransferDepartureEndpoints();
 app.MapLogisticsTransferOutgoingDocumentEndpoints();
 app.MapLogisticsWeighingDifferenceEndpoints();
 app.MapLogisticsDispatchPdfEndpoints();
+app.MapPurchaseOrderPdfEndpoints();
+app.MapSalesQuotePdfEndpoints();
 app.MapLogisticsCustomerReturnEndpoints();
 app.MapPurchasingEndpoints();
 app.MapPurchaseServiceOrderEndpointsV1();
@@ -747,6 +761,8 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializeWorkModuleAsync();
     // After Organization: the report centre's tables are tenant-scoped by CompanyId.
     await app.Services.InitializeReportingModuleAsync();
+    // After Organization: the AI knowledge approvals are tenant-scoped by CompanyId.
+    await app.Services.InitializeAiKnowledgeModuleAsync();
     // After Organization: the document vault's foreign keys reference its tables.
     await app.Services.InitializeDocumentsModuleAsync();
 }

@@ -88,4 +88,14 @@
   <data name="TotalTaxNoSource" xml:space="preserve"><value>Hesaplanamadı: vergi kaynağı olmayan satır var</value></data>
   <data name="TotalsNote" xml:space="preserve"><value>Tutarlar satır bazında yuvarlanır; belge toplamları satır tutarlarının toplamıdır. Tevkifat, yuvarlanmış satır KDV'si üzerinden hesaplanır.</value></data>
   <data name="PricesNotShown" xml:space="preserve"><value>Fiyat bilgileri bu belgede yer almaz.</value></data>
+  <data name="TitleContract" xml:space="preserve"><value>Sipariş Sözleşmesi {0}</value></data>
+  <data name="DocumentTypeContract" xml:space="preserve"><value>Sipariş Sözleşmesi</value></data>
+  <data name="DocumentTypeContractWithoutPrices" xml:space="preserve"><value>Sipariş Sözleşmesi Fiyatsız</value></data>
+  <data name="ContractFooter" xml:space="preserve"><value>{0} · {1} · Sipariş sözleşmesi; müşteri onayı için imzalanır.</value></data>
+  <data name="HeadingContractApproval" xml:space="preserve"><value>Müşteri Onayı</value></data>
+  <data name="ContractApprovalNote" xml:space="preserve"><value>Bu sözleşme siparişin {0} revizyonu içindir. İmzalı onay belgesi siparişe yüklenir.</value></data>
+  <data name="ContractApprovalName" xml:space="preserve"><value>Ad Soyad / Unvan</value></data>
+  <data name="ContractApprovalDate" xml:space="preserve"><value>Tarih</value></data>
+  <data name="ContractApprovalSignature" xml:space="preserve"><value>İmza / Kaşe</value></data>
+  <data name="ContractSignatureLine" xml:space="preserve"><value>________________________________</value></data>
 </root>

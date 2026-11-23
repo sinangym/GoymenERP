@@ -254,7 +254,15 @@ public sealed class AiWpA3cReadToolsTests
 
         var one = new AiRuntimeOptions
         {
-            AllowedTools = [new AiAllowedToolOptions { ToolId = AccountingPeriodStatusAiTool.ToolId, Version = AccountingPeriodStatusAiTool.ToolVersion }],
+            AllowedTools =
+            [
+                new AiAllowedToolOptions
+                {
+                    ToolId = AccountingPeriodStatusAiTool.ToolId, Version = AccountingPeriodStatusAiTool.ToolVersion,
+                    DescriptionSha256 = AiToolDescriptionPinV1.Compute(
+                        tools.Single(tool => tool.Descriptor.ToolId == AccountingPeriodStatusAiTool.ToolId).Descriptor),
+                },
+            ],
         };
         var admitted = Assert.Single(new AiToolCatalog(tools, Options.Create(one)).Descriptors);
         Assert.Equal(AccountingPeriodStatusAiTool.ToolId, admitted.ToolId);
@@ -587,7 +595,14 @@ public sealed class AiWpA3cReadToolsTests
                 MaxArgumentBytes = 256,
                 MaxToolCallsPerRequest = 1,
                 MaxDataClass = maxDataClass,
-                AllowedTools = [new AiAllowedToolOptions { ToolId = FinanceDueOpenItemsAiTool.ToolId, Version = FinanceDueOpenItemsAiTool.ToolVersion }],
+                AllowedTools =
+                [
+                    new AiAllowedToolOptions
+                    {
+                        ToolId = FinanceDueOpenItemsAiTool.ToolId, Version = FinanceDueOpenItemsAiTool.ToolVersion,
+                        DescriptionSha256 = AiToolDescriptionPinV1.Compute(new FinanceDueOpenItemsAiTool(owner, new FixedTime(Now)).Descriptor),
+                    },
+                ],
             };
             Authority = new AskAuthority(granted);
             CompanyScope.Set(Company);

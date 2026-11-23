@@ -20,9 +20,11 @@ public enum InventoryStockAgingOutcomeV1
 public sealed record InventoryStockAgingQueryV1(Guid CompanyId, int Page, int PageSize, Guid? ProductId, Guid? LocationId);
 
 /// <summary>
-/// One label's physical stock at one location, with the two dates an age can be measured from: when the label was created
-/// in Inventory and when its first incoming movement occurred (null when the label has no incoming movement line). Which
-/// one is the "age" is the report caller's parameter, never decided here. Kilograms are lossless invariant text.
+/// One label's physical stock at one location, with its entry date: the first incoming movement of the label's ROOT — a label
+/// made by a split (or merge) inherits the entry of the label(s) it came from (DEC-LBL-002 keeps the root trace; the WP14
+/// coordinator's reading of YOL-D30, NEEDS-SINAN to confirm). A merge of several roots takes the OLDEST root's entry
+/// (NEEDS-SINAN). A manufacturing output is new goods: its own first incoming movement. Null when the root has no incoming
+/// movement or the chain is longer than the owner's walk bound: unknown, never guessed. Kilograms are lossless invariant text.
 /// </summary>
 public sealed record InventoryStockAgingPositionV1(
     Guid LabelId,
@@ -32,8 +34,8 @@ public sealed record InventoryStockAgingPositionV1(
     string? HeatNumber,
     string? CoilNumber,
     string PhysicalKg,
-    DateTimeOffset LabelCreatedAtUtc,
-    DateTimeOffset? FirstIncomingAtUtc);
+    DateTimeOffset? EntryAtUtc,
+    bool EntryInherited);
 
 public sealed record InventoryStockAgingPageV1(
     InventoryStockAgingOutcomeV1 Outcome,

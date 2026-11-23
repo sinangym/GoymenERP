@@ -46,6 +46,7 @@ public sealed class LocalTwoFactorOperatorRecoveryCommandLineTests
         public string? ReadDisplayName() => throw new InvalidOperationException();
         public string? ReadNewPassword() => throw new InvalidOperationException();
         public string? ReadNewPasswordConfirmation() => throw new InvalidOperationException();
+        public FounderRecoveryOperatorDeclaration? ReadOperatorDeclaration() => throw new InvalidOperationException();
     }
     private sealed class OperatorConsole : ILocalTwoFactorOperatorRecoveryConsoleV1
     {

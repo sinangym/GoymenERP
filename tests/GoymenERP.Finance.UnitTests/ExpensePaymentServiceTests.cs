@@ -139,6 +139,74 @@ public sealed class ExpensePaymentServiceTests
         Assert.Equal(ExpensePaymentStatuses.Draft, (await verify.ExpensePayments.SingleAsync()).Status);
     }
 
+    [Fact]
+    public async Task Reviser_of_the_draft_cannot_approve_it_and_a_third_actor_can()
+    {
+        await using var run = await Run.StartAsync();
+        ExpensePaymentCommandResult draft;
+        await using (var maker = run.Scope("maker", new AllowAll(), new UnavailableTreasuryBalanceGuard()))
+        {
+            draft = await maker.Service.DraftSaveAsync(maker.Context, Key("draft-1"), Draft(), CancellationToken.None);
+        }
+
+        ExpensePaymentCommandResult revised;
+        ExpensePaymentCommandResult reviserApproval;
+        await using (var reviser = run.Scope("reviser", new AllowAll(), new UnavailableTreasuryBalanceGuard()))
+        {
+            revised = await reviser.Service.DraftSaveAsync(reviser.Context, Key("draft-2"),
+                Draft("SENTETIK revize kirtasiye") with
+                {
+                    PaymentId = draft.Resource!.Id,
+                    ExpectedVersion = draft.Resource.Version,
+                },
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, revised.Outcome);
+            reviserApproval = await reviser.Service.ApproveAsync(reviser.Context, Key("approve-reviser"),
+                new ApproveExpensePaymentRequest(revised.Resource!.Id, revised.Resource.Version),
+                CancellationToken.None);
+        }
+
+        Assert.Equal(CommandOutcome.ValidationFailed, reviserApproval.Outcome);
+        Assert.Equal("payment_approval_invalid", Assert.Single(reviserApproval.Issues).Code);
+        await using (var verify = run.Context())
+        {
+            Assert.Equal(ExpensePaymentStatuses.Draft, (await verify.ExpensePayments.SingleAsync()).Status);
+        }
+
+        ExpensePaymentCommandResult checkerApproval;
+        await using (var checker = run.Scope("checker", new AllowAll(), new UnavailableTreasuryBalanceGuard()))
+        {
+            checkerApproval = await checker.Service.ApproveAsync(checker.Context, Key("approve-checker"),
+                new ApproveExpensePaymentRequest(revised.Resource.Id, revised.Resource.Version),
+                CancellationToken.None);
+        }
+
+        Assert.Equal((CommandOutcome.Succeeded, ExpensePaymentStatus.Approved),
+            (checkerApproval.Outcome, checkerApproval.Resource!.Status));
+    }
+
+    [Fact]
+    public async Task Actor_whose_draft_revision_was_refused_is_not_a_maker()
+    {
+        await using var run = await Run.StartAsync();
+        ExpensePaymentCommandResult draft;
+        await using (var maker = run.Scope("maker", new AllowAll(), new UnavailableTreasuryBalanceGuard()))
+        {
+            draft = await maker.Service.DraftSaveAsync(maker.Context, Key("draft-1"), Draft(), CancellationToken.None);
+        }
+
+        await using var checker = run.Scope("checker", new AllowAll(), new UnavailableTreasuryBalanceGuard());
+        var stale = await checker.Service.DraftSaveAsync(checker.Context, Key("draft-stale"),
+            Draft("SENTETIK revize kirtasiye") with { PaymentId = draft.Resource!.Id, ExpectedVersion = "7" },
+            CancellationToken.None);
+        Assert.Equal(CommandOutcome.VersionConflict, stale.Outcome);
+        var approved = await checker.Service.ApproveAsync(checker.Context, Key("approve-checker"),
+            new ApproveExpensePaymentRequest(draft.Resource.Id, draft.Resource.Version), CancellationToken.None);
+
+        Assert.Equal((CommandOutcome.Succeeded, ExpensePaymentStatus.Approved),
+            (approved.Outcome, approved.Resource!.Status));
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("   ")]

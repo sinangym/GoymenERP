@@ -610,6 +610,82 @@ public sealed class FinanceInvoiceAcceptanceTests
         Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
     }
 
+    [Fact]
+    public void A_return_of_a_wholly_transferred_item_reduces_the_successors_assignment_so_the_positions_still_read()
+    {
+        var item = Item("100.00", "100.00");
+        var assignment = Assignment(item, "100.00");
+        var plan = FinanceInvoiceAcceptanceService.Plan([item], "30.00");
+
+        var transferred = FinanceInvoiceAcceptanceService.TransferredReductions(plan, [assignment]);
+
+        Assert.Null(transferred.Issue);
+        var reduction = Assert.Single(transferred.Reductions);
+        Assert.Same(assignment, reduction.Assignment);
+        Assert.True(FinanceExactDecimalText.Equal("30.00", reduction.Reduced.Text));
+        // Without following the transfer the item would hold less than its successor's assignment and stop reading.
+        Assert.Throws<InvalidOperationException>(() => new FinanceAllocationPositions(Party, Account, Currency,
+            plan.Reductions[0].After.Text, [assignment]).All());
+        assignment.AvailableAmountText = FinanceAllocationPositions.Amount(assignment.AvailableAmountText)
+            .Subtract(reduction.Reduced).Text;
+        var positions = new FinanceAllocationPositions(Party, Account, Currency, plan.Reductions[0].After.Text,
+            [assignment]).All();
+        Assert.True(FinanceAllocationPositions.Amount(positions[0].AvailableAmount).IsZero);
+        Assert.True(FinanceExactDecimalText.Equal("70.00", positions[1].AvailableAmount));
+    }
+
+    [Fact]
+    public void A_return_of_an_item_without_a_live_assignment_stays_on_the_original_account()
+    {
+        var untouched = Item("100.00", "100.00");
+        var released = Item("50.00", "50.00");
+        var plan = FinanceInvoiceAcceptanceService.Plan([untouched, released], "150.00");
+
+        var transferred = FinanceInvoiceAcceptanceService.TransferredReductions(plan, [Assignment(released, "0.00")]);
+
+        Assert.Null(transferred.Issue);
+        Assert.Empty(transferred.Reductions);
+    }
+
+    [Fact]
+    public void A_return_that_would_split_between_the_original_account_and_a_successor_is_refused()
+    {
+        var item = Item("100.00", "100.00");
+        var plan = FinanceInvoiceAcceptanceService.Plan([item], "30.00");
+
+        var transferred = FinanceInvoiceAcceptanceService.TransferredReductions(plan, [Assignment(item, "80.00")]);
+
+        Assert.Empty(transferred.Reductions);
+        Assert.Equal(FinanceInvoiceAcceptanceService.TransferredBalanceSplitCode, transferred.Issue!.Code);
+    }
+
+    [Fact]
+    public void A_stored_assignment_above_the_items_outstanding_amount_is_not_understood()
+    {
+        var item = Item("100.00", "100.00");
+        var plan = FinanceInvoiceAcceptanceService.Plan([item], "30.00");
+
+        var transferred = FinanceInvoiceAcceptanceService.TransferredReductions(plan, [Assignment(item, "120.00")]);
+
+        Assert.Empty(transferred.Reductions);
+        Assert.Equal(FinanceInvoiceAcceptanceService.StoredStateNotUnderstoodCode, transferred.Issue!.Code);
+    }
+
+    private static FinancePartyBalanceAssignmentRow Assignment(FinanceOpenItemRow item, string available) => new()
+    {
+        CompanyId = TestCompany,
+        Kind = FinanceBalanceAssignmentKinds.OpenItem,
+        SourceId = item.Id,
+        OriginalPartyId = item.PartyId,
+        OriginalAccountId = item.CompanyAccountId,
+        CurrentPartyId = Guid.Parse("77777777-7777-4777-8777-777777777777"),
+        CurrentAccountId = Guid.Parse("88888888-8888-4888-8888-888888888888"),
+        CurrencyId = item.CurrencyId,
+        AvailableAmountText = available,
+        LastTransferId = Guid.Parse("99999999-9999-4999-8999-999999999999"),
+        Version = 1,
+    };
+
     private static FinanceInvoiceAcceptanceV2 Acceptance() => new(
         Guid.Parse("44444444-4444-4444-8444-444444444444"),
         FinanceInvoiceProducerV1.Sales,

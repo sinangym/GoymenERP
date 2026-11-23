@@ -1,4 +1,5 @@
 using GoymenERP.Api.Ai;
+using GoymenERP.Api.Ai.DocumentDrafts;
 using GoymenERP.Api.Errors;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
@@ -15,6 +16,9 @@ public static class AiEndpoints
     public const string AiDisabledCode = "ai_disabled";
     public const string AiToolUnavailableCode = "ai_tool_unavailable";
     public const string AiRequestInvalidCode = "ai_request_invalid";
+    public const string AiDocumentDraftsDisabledCode = "ai_document_drafts_disabled";
+    public const string AiDocumentDraftInvalidCode = "ai_document_draft_invalid";
+    public const string AiDocumentUnreadableCode = "ai_document_unreadable";
 
     /// <summary>WP-A1: the panel feature switch is off in the company's AI gateway policy.</summary>
     public const string AiFeatureDisabledCode = "ai_feature_disabled";
@@ -105,6 +109,65 @@ public static class AiEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpAuthenticatedProblems()
             .ProducesErpServiceUnavailable(AiDisabledCode, AiToolUnavailableCode, AiFeatureDisabledCode, AiBudgetExhaustedCode);
+
+        // WP-B3: a document becomes a DRAFT only. No record is created; the response names the owner screen.
+        endpoints.MapPost("/api/v1/ai/document-drafts", async (
+                AiDocumentDraftRequestV1 request,
+                AiDocumentDraftService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                NoStore(httpContext);
+                var result = await service.DraftAsync(request, cancellationToken);
+                return result.Status switch
+                {
+                    AiDocumentDraftStatusV1.Drafted when result.Draft is not null => Results.Ok(result.Draft),
+                    AiDocumentDraftStatusV1.Disabled => Results.Problem(
+                        title: "Belgeden taslak kapalı.",
+                        detail: "Bu ortamda belgeden taslak hazırlama açık değil. ERP işlemleri etkilenmez.",
+                        statusCode: StatusCodes.Status503ServiceUnavailable,
+                        extensions: new Dictionary<string, object?> { ["code"] = AiDocumentDraftsDisabledCode }),
+                    AiDocumentDraftStatusV1.Invalid => Results.Problem(
+                        title: "Taslak isteği geçersiz.",
+                        detail: "Taslak türünü, dosya türünü ve içeriği kontrol edip yeniden deneyin.",
+                        statusCode: StatusCodes.Status400BadRequest,
+                        extensions: new Dictionary<string, object?>
+                        {
+                            ["code"] = AiDocumentDraftInvalidCode,
+                            ["invalidFields"] = result.InvalidFields,
+                        }),
+                    AiDocumentDraftStatusV1.Unreadable => Results.Problem(
+                        title: "Belge okunamadı.",
+                        detail: "Belgeden alan okunamadı. Dosyayı kontrol edin ya da kaydı sahip ekranda elle girin.",
+                        statusCode: StatusCodes.Status422UnprocessableEntity,
+                        extensions: new Dictionary<string, object?>
+                        {
+                            ["code"] = AiDocumentUnreadableCode,
+                            ["invalidFields"] = result.InvalidFields,
+                        }),
+                    AiDocumentDraftStatusV1.Unavailable => Results.Problem(
+                        title: "Belgeden taslak şu anda kullanılamıyor.",
+                        detail: "İstek güvenli biçimde işlenemediği için taslak hazırlanmadı.",
+                        statusCode: StatusCodes.Status503ServiceUnavailable,
+                        extensions: new Dictionary<string, object?> { ["code"] = ErpProblemCodes.ServiceUnavailable }),
+                    _ => Results.Problem(
+                        statusCode: StatusCodes.Status403Forbidden,
+                        extensions: new Dictionary<string, object?> { ["code"] = ErpProblemCodes.Forbidden }),
+                };
+            })
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithTags("Ai")
+            .WithName("CreateAiDocumentDraftV1")
+            .Accepts<AiDocumentDraftRequestV1>("application/json")
+            .Produces<AiDocumentDraftResponseV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(AiDocumentDraftInvalidCode)
+            .ProducesErpUnprocessableEntity(AiDocumentUnreadableCode)
+            .AllowsCodeLessErpBadRequestBody()
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpServiceUnavailable(AiDocumentDraftsDisabledCode);
 
         return endpoints;
     }

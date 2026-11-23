@@ -10,11 +10,13 @@
  */
 
 import { FINANCE_INBOX_KINDS } from './inboxKinds/finance'
+import { IDENTITY_INBOX_KINDS } from './inboxKinds/identity'
 import { INVENTORY_INBOX_KINDS } from './inboxKinds/inventory'
 import { LOGISTICS_INBOX_KINDS } from './inboxKinds/logistics'
 import { MANUFACTURING_INBOX_KINDS } from './inboxKinds/manufacturing'
 import { PURCHASING_INBOX_KINDS } from './inboxKinds/purchasing'
 import { SALES_INBOX_KINDS } from './inboxKinds/sales'
+import { SETTINGS_INBOX_KINDS } from './inboxKinds/settings'
 import type { WorkInboxKind } from './inboxKinds/types'
 
 export type { WorkInboxKind } from './inboxKinds/types'
@@ -26,6 +28,8 @@ export const WORK_INBOX_KINDS: readonly WorkInboxKind[] = [
   ...PURCHASING_INBOX_KINDS,
   ...FINANCE_INBOX_KINDS,
   ...INVENTORY_INBOX_KINDS,
+  ...IDENTITY_INBOX_KINDS,
+  ...SETTINGS_INBOX_KINDS,
 ]
 
 /** The existing capabilities any one of which shows the inbox view (and opens the route). */

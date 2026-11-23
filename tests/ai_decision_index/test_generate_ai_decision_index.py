@@ -64,6 +64,8 @@ SECOND = """# Sinan Kararları — test 2
 | TST-D4 | Tekrar | Aynı metin. | Stok |
 | TST-D5 | Çelişen | İkinci metin. | Stok |
 | TST-D14 | Araç | Önceki TST-D2 TST-D10 ile geçersizdir. | Genel |
+| TST-D16 | Sahiplik | Ayşe Örnek bu kuralı onaylar; iletişim 0532 123 45 67. | Ayşe ekibi |
+| TST-D17 | Limit | Kredi limiti 25.000 TL üzerindeyse ikinci onay gerekir. | Finans |
 """
 
 GOLDEN = """# Test Golden v1 (TST-D1)
@@ -165,7 +167,51 @@ class FixtureTests(unittest.TestCase):
         self.assertEqual(["e_posta"], self.records["TST-D13"]["personal_data_signals"])
         self.assertEqual("kisisel_veri_adayi", self.records["TST-D13"]["data_class_candidate"])
         self.assertEqual("kisisel_veri_isareti_yok", self.records["TST-D3"]["data_class_candidate"])
-        self.assertIn("Ayşe Örnek", self.index["personal_name_terms"])
+        # Plan D2: the name terms are counted, never published.
+        self.assertEqual(3, self.index["personal_name_term_count"])
+        self.assertNotIn("personal_name_terms", self.index)
+
+    def test_person_names_and_patterns_are_masked_at_generation(self) -> None:
+        record = self.records["TST-D16"]
+        self.assertTrue(record["masked"])
+        self.assertEqual(["kisi_adi", "telefon"], record["personal_data_signals"])
+        self.assertEqual("[KİŞİ] bu kuralı onaylar; iletişim [GİZLİ].", record["text"])
+        self.assertEqual("[KİŞİ] ekibi", record["scope"]["affected"])
+        self.assertEqual("[GİZLİ] adresine", self.records["TST-D13"]["text"].split("Sorular ", 1)[1][:16])
+        self.assertFalse(self.records["TST-D3"]["masked"])
+        rendered = GENERATOR.render(self.index).decode("utf-8")
+        for plain in ("Ayşe", "Örnek", "test@example.com", "0532 123 45 67"):
+            self.assertNotIn(plain, rendered)
+
+    def test_registry_owner_column_is_not_copied_into_the_index(self) -> None:
+        rendered = GENERATOR.render(self.index).decode("utf-8")
+        self.assertNotIn("Ayşe", rendered)
+        self.assertNotIn("Örnek", rendered)
+
+    def test_masking_leak_is_a_generation_error(self) -> None:
+        original = GENERATOR.mask_text
+        try:
+            GENERATOR.mask_text = lambda text, names: text
+            with self.assertRaises(GENERATOR.DecisionIndexError):
+                GENERATOR.build_index(self.root)
+        finally:
+            GENERATOR.mask_text = original
+
+    def test_cloud_eligibility_follows_content_and_data_class(self) -> None:
+        self.assertEqual(("bulut_uygun_aday", "internal"),
+                         (self.records["TST-D3"]["cloud_eligibility"], self.records["TST-D3"]["cloud_data_class"]))
+        self.assertEqual(("maskeli_bulut_uygun_aday", "internal"),
+                         (self.records["TST-D16"]["cloud_eligibility"], self.records["TST-D16"]["cloud_data_class"]))
+        self.assertEqual(("yerel_kalir", "confidential"),
+                         (self.records["TST-D17"]["cloud_eligibility"], self.records["TST-D17"]["cloud_data_class"]))
+        self.assertEqual(["para_tutari"], self.records["TST-D17"]["commercial_signals"])
+        counts = self.index["statistics"]["cloud_eligibility_counts"]
+        self.assertEqual(len(self.index["records"]), sum(counts.values()))
+
+    def test_tampered_cloud_label_fails_the_invariants(self) -> None:
+        record = next(r for r in self.index["records"] if r["id"] == "TST-D17")
+        record["cloud_eligibility"] = "bulut_uygun_aday"
+        self.assertTrue(any("bulut" in error for error in GENERATOR.check_invariants(self.index)))
 
     def test_numeric_rows_and_goldens(self) -> None:
         self.assertIn("SK-2026-01-01-7", self.records)

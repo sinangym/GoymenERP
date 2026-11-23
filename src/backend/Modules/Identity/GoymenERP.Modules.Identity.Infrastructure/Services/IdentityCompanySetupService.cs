@@ -26,7 +26,7 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Services;
 public sealed class IdentityCompanySetupService(IdentityDbContext database, ICompanyContext companyContext,
     ICurrentUser currentUser, ICompanyLifecycleReadPortV1 lifecycle, IOptions<IdentityBootstrapOptions> options,
     ICompanySetupGroupAuthorityV1 groupAuthority, IAuditEventCollector auditEvents, IAuditTransactionWriterV1 auditWriter,
-    IRefusedAttemptRecorderV1 refusedAttempts, ISecurityEventWriterV1 securityEvents, TimeProvider timeProvider)
+    IRefusedAttemptRecorderV1 refusedAttempts, IPermissionChangedSecurityEventWriterV1 securityEvents, TimeProvider timeProvider)
     : IIdentityCompanySetupServiceV1, IIdentityFirstAdminCandidatesV1, IWorkInboxConsumerV1
 {
     public const string ConsumerName = "identity.company-opened";
@@ -175,7 +175,9 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
                 metadata.CorrelationId, now, 1)));
             await database.SaveChangesAsync(cancellationToken);
             await auditWriter.WritePendingAsync(transaction.GetDbTransaction(), cancellationToken);
-            if (terminal.StatusCode == 201) await WriteSecurityEventAsync(metadata, now, cancellationToken);
+            // ADR-SEC-001 §4: the grant's identity.permission.changed in THIS transaction — the assignment and its security event
+            // commit together; a later refusal (authority lost, commit failure) leaves neither (K3-A P3).
+            if (terminal.StatusCode == 201) await WriteSecurityEventAsync(transaction.GetDbTransaction(), metadata, now, cancellationToken);
             await RequireStillAsync(authority, companyId, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return Result(terminal, metadata);
@@ -245,10 +247,9 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
                 metadata.UserAgent, metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
         return assignment;
     }
-    private async Task WriteSecurityEventAsync(IdentityAccessCommandMetadataV1 metadata, DateTimeOffset now,
-        CancellationToken cancellationToken)
-    {
-        var security = await securityEvents.WriteAsync(new SecurityEventV1
+    private Task WriteSecurityEventAsync(IDbTransaction transaction, IdentityAccessCommandMetadataV1 metadata,
+        DateTimeOffset now, CancellationToken cancellationToken) =>
+        securityEvents.AppendAsync(transaction, new SecurityEventV1
         {
             EventId = Guid.NewGuid(), OccurredAtUtc = now, ScopeKind = SecurityEventScopeKindsV1.Company,
             CompanyId = metadata.CompanyId, ActorType = SecurityEventActorTypesV1.User, ActorId = metadata.ActorId,
@@ -256,8 +257,6 @@ public sealed class IdentityCompanySetupService(IdentityDbContext database, ICom
             Severity = SecurityEventSeveritiesV1.High, PermissionCode = ErpPermissions.IdentityCompanyFirstAdminAssign,
             CorrelationId = metadata.CorrelationId, CausationId = metadata.CausationId, SourceChannel = metadata.SourceChannel,
         }, cancellationToken);
-        if (!security.CallerMayContinue) throw new InvalidOperationException("First Admin security event unavailable.");
-    }
     private static RefusedAttemptV1 Attempt(IdentityAccessCommandAnswerV1 answer, IdentityAccessCommandMetadataV1 metadata, long version) => new RefusedAttemptV1()
     {
         CompanyId = metadata.CompanyId, CommandName = CommandName, Operation = "Assign", TargetType = "Organization.Company",

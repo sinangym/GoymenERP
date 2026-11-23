@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { initialShellState, type ShellState } from '../shell/shellState'
 import type { ViewOutcome } from '../shell/uiState'
 import { IncomingInvoiceDetailPage, IncomingInvoiceListPage } from './IncomingInvoicePages'
-import { fetchIncomingInvoice, fetchIncomingInvoices, fetchInvoiceReceipts, fetchInvoiceAdditionalCosts, submitInvoiceCommand } from './incomingInvoiceApi'
+import { fetchIncomingInvoice, fetchIncomingInvoices, fetchInvoiceReceipts, fetchInvoiceAdditionalCosts, fetchInvoiceDuplicates, submitInvoiceCommand } from './incomingInvoiceApi'
+import { INVOICE_DUPLICATE_REASON, INVOICE_DUPLICATE_TEXT } from './invoiceDuplicateText'
 import { incomingInvoiceFixture, invoiceReceiptFixture, invoiceTestId as id } from './incomingInvoiceFixtures.testSupport'
 import { INCOMING_INVOICE_PROBLEM_TEXT, INCOMING_INVOICE_TEXT as T } from './incomingInvoiceText'
 import { PURCHASE_KG_PRICE_UNAVAILABLE_TEXT } from './purchaseOrderDetailText'
@@ -17,7 +18,7 @@ let currentShell: ShellState
 const auth = vi.hoisted(() => ({ capture: vi.fn(() => ({ synthetic: true })), report: vi.fn() }))
 vi.mock('../shell/shellContext', () => ({ useShellState: () => currentShell }))
 vi.mock('../shell/useAuthBoundary', () => ({ useAuthBoundary: () => auth }))
-vi.mock('./incomingInvoiceApi', () => ({ fetchIncomingInvoice: vi.fn(), fetchIncomingInvoices: vi.fn(), fetchInvoiceReceipts: vi.fn(), fetchInvoiceAdditionalCosts: vi.fn(), submitInvoiceCommand: vi.fn() }))
+vi.mock('./incomingInvoiceApi', () => ({ fetchIncomingInvoice: vi.fn(), fetchIncomingInvoices: vi.fn(), fetchInvoiceReceipts: vi.fn(), fetchInvoiceAdditionalCosts: vi.fn(), fetchInvoiceDuplicates: vi.fn(), submitInvoiceCommand: vi.fn() }))
 const clients: QueryClient[] = []
 function mount(detail = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0, refetchOnWindowFocus: false } } }); clients.push(client)
@@ -37,9 +38,32 @@ beforeEach(() => {
   vi.mocked(fetchIncomingInvoice).mockResolvedValue({ type: 'ok-single', data: incomingInvoiceFixture() })
   vi.mocked(fetchInvoiceReceipts).mockResolvedValue({ type: 'ok-single', data: invoiceReceiptFixture() })
   vi.mocked(submitInvoiceCommand).mockResolvedValue({ type: 'unknown', reason: 'malformed' })
+  vi.mocked(fetchInvoiceDuplicates).mockResolvedValue({ type: 'ok-single', data: { behavior: 'warn', warnings: [], truncated: false } })
 })
 afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()); resetAdjustmentAttemptsForTests() })
 describe('Incoming invoice workspace (synthetic, NOT_ENV)', () => {
+  it('WP15: shows the rule-based duplicate warning without blocking the workspace', async () => {
+    vi.mocked(fetchInvoiceDuplicates).mockResolvedValue({ type: 'ok-single', data: { behavior: 'warn', truncated: true, warnings: [
+      { invoiceId: id(70), code: 'purchasing.invoice-duplicate.same-supplier-number', officialNumber: 'sentetik-0001', invoiceDate: '2026-11-20',
+        link: `/satinalma/faturalar/${id(70)}` }] } })
+    mount(true)
+    const panel = await screen.findByTestId('invoice-duplicates')
+    expect(await within(panel).findByRole('alert')).toHaveProperty('textContent', INVOICE_DUPLICATE_TEXT.warning)
+    expect(within(panel).getByRole('link', { name: 'sentetik-0001' }).getAttribute('href')).toBe(`/satinalma/faturalar/${id(70)}`)
+    expect(within(panel).getByText('20.11.2026')).toBeTruthy()
+    expect(within(panel).getByText(INVOICE_DUPLICATE_REASON['purchasing.invoice-duplicate.same-supplier-number'])).toBeTruthy()
+    expect(within(panel).getByText(INVOICE_DUPLICATE_TEXT.truncated)).toBeTruthy()
+    expect(vi.mocked(fetchInvoiceDuplicates).mock.calls[0].slice(0, 2)).toEqual([id(2), id(1)])
+  })
+  it('WP15: no match says so and a failed check is its own retryable state', async () => {
+    mount(true)
+    expect(await screen.findByTestId('invoice-duplicates-none')).toHaveProperty('textContent', INVOICE_DUPLICATE_TEXT.none)
+    cleanup(); clients.splice(0).forEach((client) => client.clear())
+    vi.mocked(fetchInvoiceDuplicates).mockResolvedValue({ type: 'http', status: 503 })
+    mount(true)
+    const panel = await screen.findByTestId('invoice-duplicates')
+    await waitFor(() => expect(panel.querySelector('[data-state="service-unavailable"]')).not.toBeNull())
+  })
   it('submits a partial expense as money, keeps official quantities intact and retries the exact expense selection and key', async () => {
     const existing = incomingInvoiceFixture(), line = { ...existing.lines[0], productId: '00000000-0000-0000-0000-000000000000', itemType: 'Expense', linePurpose: 'expense' }
     const invoice = { ...existing, lines: [line] }

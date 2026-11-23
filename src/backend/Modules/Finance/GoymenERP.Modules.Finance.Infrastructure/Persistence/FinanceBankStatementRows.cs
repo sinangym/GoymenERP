@@ -62,6 +62,38 @@ internal sealed class FinanceBankStatementCommandRow : IFinanceTenantRow
     public DateTimeOffset RecordedAtUtc { get; set; }
 }
 
+/// <summary>
+/// FNS-D113: a person's confirmation that a statement line is one recorded movement. Immutable except the single step that
+/// links its reversal record (<c>ReversalId</c>, version 1 → 2). One active match per line and per record (filtered unique
+/// indexes). No deletion.
+/// </summary>
+internal sealed class FinanceBankStatementMatchRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public long Version { get; set; }
+    public Guid ImportId { get; set; }
+    public Guid LineId { get; set; }
+    public Guid BankAccountId { get; set; }
+    public int CandidateKind { get; set; }
+    public Guid RecordId { get; set; }
+    public int CounterpartyCheck { get; set; }
+    public string ConfirmedBy { get; set; } = string.Empty;
+    public DateTimeOffset ConfirmedAtUtc { get; set; }
+    public Guid? ReversalId { get; set; }
+}
+
+/// <summary>The reversal record ("ters kayıt") of a confirmed match. Append-only.</summary>
+internal sealed class FinanceBankStatementMatchReversalRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid MatchId { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string ReversedBy { get; set; } = string.Empty;
+    public DateTimeOffset ReversedAtUtc { get; set; }
+}
+
 internal static class FinanceBankStatementImportStates
 {
     public const int Reserved = 1;

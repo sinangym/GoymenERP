@@ -22,6 +22,7 @@ internal sealed class ReportingHarness
     public FakeStockAging StockAging { get; } = new();
     public FakeRecall Recall { get; } = new();
     public FakeTrialBalance TrialBalance { get; } = new();
+    public FakePartyAging PartyAging { get; } = new();
     public ReportingNotConnectedSourcesV1 NotConnected { get; } = new();
     public FakeAuthority? LastAuthority { get; private set; }
 
@@ -32,7 +33,7 @@ internal sealed class ReportingHarness
         LastAuthority = authority;
         var company = new FixedCompany(companyId);
         return new ReportingServiceV1(Database(company), company, new FakeUser(actor, companyId), authority, StockAging, NotConnected, Recall,
-            NotConnected, TrialBalance, Audit, new FakeCorrelation(), new FixedTime());
+            NotConnected, TrialBalance, PartyAging, Audit, new FakeCorrelation(), new FixedTime());
     }
 
     public ReportingDbContext Database(ICompanyContext? company = null) => new(
@@ -125,4 +126,19 @@ internal sealed class FakeTrialBalance : IReportingTrialBalanceSourceV1
         Task.FromResult(new ReportingTrialBalanceSourceV1(ReportingSourceOutcomeV1.Found, companyId,
             [new(Guid.Parse("a1000000-0000-4000-8000-000000000001"), Guid.Parse("e1000000-0000-4000-8000-000000000001"), "100", "40", "Debit", "60")],
             "sha256:test"));
+}
+
+internal sealed class FakePartyAging : IReportingPartyAgingSourceV1
+{
+    public List<(Guid Company, bool Receivable)> Asked { get; } = [];
+    public bool WindowFull { get; set; }
+    public List<ReportingPartyAgingItemV1> Receivables { get; } = [];
+    public List<ReportingPartyAgingItemV1> Payables { get; } = [];
+
+    public Task<ReportingPartyAgingSourceV1> ReadAsync(Guid companyId, bool receivable, CancellationToken cancellationToken = default)
+    {
+        Asked.Add((companyId, receivable));
+        return Task.FromResult(new ReportingPartyAgingSourceV1(ReportingSourceOutcomeV1.Found, companyId,
+            receivable ? Receivables : Payables, WindowFull));
+    }
 }

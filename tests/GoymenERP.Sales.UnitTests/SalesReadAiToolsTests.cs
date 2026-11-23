@@ -162,7 +162,12 @@ public sealed class SalesReadAiToolsTests
         Assert.Equal(1, root.GetProperty("convertedCount").GetInt32());
         Assert.Equal(1, root.GetProperty("lostCount").GetInt32());
         Assert.Equal("SENTETIK-Q-4", root.GetProperty("items")[0].GetProperty("documentNo").GetString());
-        Assert.DoesNotContain("price", result.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        // No price member is released (the loss reason CODE "price_too_high" is a list code, not a price).
+        foreach (var member in new[] { "unitPrice", "priceUnitId", "discountPercent", "dueTerms", "\"price\"" })
+        {
+            Assert.DoesNotContain(member, result.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        }
+
         Assert.Equal(new[] { "Open", "Converted", "Lost" }, proxy.Queries.Select(query => query.State).ToArray());
         Assert.All(proxy.Queries, query => Assert.Equal(SalesQuoteStatusAiTool.PageSize, query.PageSize));
     }
@@ -233,6 +238,86 @@ public sealed class SalesReadAiToolsTests
         Assert.Equal(JsonValueKind.Null, content.RootElement.GetProperty("openCount").ValueKind);
         Assert.Equal(JsonValueKind.Null, content.RootElement.GetProperty("lostCount").ValueKind);
         Assert.Equal(20, content.RootElement.GetProperty("listedCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task Expired_open_quotes_are_counted_from_the_owner_expiry_measure_never_recomputed()
+    {
+        var proxy = QuoteProxy.Create();
+        proxy.Rows.AddRange([Quote(1, "Open"), Quote(2, "Open"), Quote(3, "Open"), Quote(4, "Lost")]);
+        proxy.Expired.UnionWith([Id(1), Id(2)]);
+        proxy.ExpiryApproved.Add(Id(2));
+
+        var result = await new SalesQuoteStatusAiTool(proxy.Service, new FixedTime(Now)).ReadAsync(new AiToolInputV1("{}"), Context());
+
+        using var content = JsonDocument.Parse(result.ContentJson!);
+        var root = content.RootElement;
+        Assert.True(root.GetProperty("expiryComplete").GetBoolean());
+        Assert.Equal("2026-11-22", root.GetProperty("businessDay").GetString());
+        Assert.Equal(2, root.GetProperty("expiredOpenCount").GetInt32());
+        Assert.Equal(1, root.GetProperty("expiredApprovedForConversionCount").GetInt32());
+        Assert.Equal(SalesQuoteStatusAiTool.ValidityRule, root.GetProperty("validityRule").GetString());
+        var items = root.GetProperty("items").EnumerateArray().ToDictionary(item => item.GetProperty("documentNo").GetString()!);
+        // Quote 1's validity date (2026-12-01) is after the business day, yet the owner says expired: the tool follows the owner.
+        Assert.True(items["SENTETIK-Q-1"].GetProperty("isExpired").GetBoolean());
+        Assert.False(items["SENTETIK-Q-3"].GetProperty("isExpired").GetBoolean());
+        Assert.Equal("price_too_high", items["SENTETIK-Q-4"].GetProperty("lossReasonCode").GetString());
+        Assert.Equal("Fiyat yüksek", items["SENTETIK-Q-4"].GetProperty("lossReasonLabel").GetString());
+        Assert.Equal(JsonValueKind.Null, items["SENTETIK-Q-4"].GetProperty("isExpired").ValueKind);
+        Assert.DoesNotContain("serbest aciklama", result.ContentJson!, StringComparison.Ordinal);
+        Assert.DoesNotContain("actor-sentetik", result.ContentJson!, StringComparison.Ordinal);
+        Assert.DoesNotContain("SENTETIK not", result.ContentJson!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Owner_business_days_that_differ_between_reads_withhold_the_expiry_counts()
+    {
+        var proxy = QuoteProxy.Create();
+        proxy.Rows.AddRange([Quote(1, "Open"), Quote(2, "Open")]);
+        proxy.BusinessDays[Id(2)] = new DateOnly(2026, 11, 23);
+
+        var result = await new SalesQuoteStatusAiTool(proxy.Service, new FixedTime(Now)).ReadAsync(new AiToolInputV1("{}"), Context());
+
+        using var content = JsonDocument.Parse(result.ContentJson!);
+        var root = content.RootElement;
+        Assert.False(root.GetProperty("expiryComplete").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("expiredOpenCount").ValueKind);
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("businessDay").ValueKind);
+        Assert.All(root.GetProperty("items").EnumerateArray(), item => Assert.Equal(JsonValueKind.Null, item.GetProperty("isExpired").ValueKind));
+        Assert.Equal(2, root.GetProperty("openCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task More_open_quotes_than_the_expiry_check_limit_leave_the_expiry_counts_null_and_read_only_listed_details()
+    {
+        var proxy = QuoteProxy.Create();
+        for (var number = 1; number <= SalesQuoteStatusAiTool.ExpiryCheckLimit + 1; number++)
+        {
+            proxy.Rows.Add(Quote(number, "Open"));
+        }
+
+        var result = await new SalesQuoteStatusAiTool(proxy.Service, new FixedTime(Now)).ReadAsync(new AiToolInputV1("{\"limit\":5}"), Context());
+
+        using var content = JsonDocument.Parse(result.ContentJson!);
+        Assert.False(content.RootElement.GetProperty("expiryComplete").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, content.RootElement.GetProperty("expiredOpenCount").ValueKind);
+        Assert.Equal(SalesQuoteStatusAiTool.ExpiryCheckLimit + 1, content.RootElement.GetProperty("openCount").GetInt32());
+        Assert.Equal(5, proxy.DetailIds.Count);
+    }
+
+    [Fact]
+    public async Task Asking_only_lost_quotes_reads_no_expiry_and_leaves_the_expiry_counts_null()
+    {
+        var proxy = QuoteProxy.Create();
+        proxy.Rows.AddRange([Quote(1, "Open"), Quote(2, "Lost")]);
+
+        var result = await new SalesQuoteStatusAiTool(proxy.Service, new FixedTime(Now))
+            .ReadAsync(new AiToolInputV1("{\"state\":\"Lost\"}"), Context());
+
+        using var content = JsonDocument.Parse(result.ContentJson!);
+        Assert.False(content.RootElement.GetProperty("expiryComplete").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, content.RootElement.GetProperty("expiredOpenCount").ValueKind);
+        Assert.Equal(new[] { Id(2) }, proxy.DetailIds);
     }
 
     [Fact]
@@ -412,11 +497,29 @@ public sealed class SalesReadAiToolsTests
         public List<SalesQuoteSummaryView> Rows { get; } = [];
         public List<SalesQuoteListQuery> Queries { get; } = [];
         public Exception? Failure { get; set; }
+        public HashSet<Guid> Expired { get; } = [];
+        public HashSet<Guid> ExpiryApproved { get; } = [];
+        public Dictionary<Guid, DateOnly> BusinessDays { get; } = [];
+        public List<Guid> DetailIds { get; } = [];
 
         public static QuoteProxy Create() => (QuoteProxy)(object)DispatchProxy.Create<ISalesQuoteService, QuoteProxy>();
 
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
         {
+            if (targetMethod?.Name == nameof(ISalesQuoteService.GetQuoteDetailAsync))
+            {
+                // The owner's detail: its SAT-D24 expiry measure on the server business day and, for a lost quote, the list reason.
+                var id = (Guid)args![0]!;
+                DetailIds.Add(id);
+                var summary = Rows.Single(row => row.Id == id);
+                var loss = summary.State == "Lost"
+                    ? new SalesQuoteLossV1("SENTETIK serbest aciklama", "actor-sentetik", Now, Guid.NewGuid(), "price_too_high", "Fiyat yüksek")
+                    : null;
+                return Task.FromResult(new SalesQuoteDetailView(summary, [], null, "SENTETIK not", [], loss, null, "actor-sentetik", [], [],
+                    new SalesQuoteExpiryV1(BusinessDays.GetValueOrDefault(id, new DateOnly(2026, 11, 22)), Expired.Contains(id),
+                        ExpiryApproved.Contains(id))));
+            }
+
             if (targetMethod?.Name != nameof(ISalesQuoteService.GetQuoteListAsync))
             {
                 throw new NotSupportedException(targetMethod?.Name);

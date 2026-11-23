@@ -47,6 +47,8 @@ public static class SecurityEventsModuleExtensions
         services.AddSingleton<ISecurityEventStore, StandaloneSecurityEventStore>();
         services.AddSingleton<ISecurityEventWriterV1, SecurityEventWriter>();
         services.AddScoped<ILocalTwoFactorOperatorRecoverySecurityWriterV1, LocalTwoFactorOperatorRecoverySecurityWriterV1>();
+        // ADR-SEC-001 §4: identity.permission.changed in the owner's own SQL transaction (fail-closed, no commit here).
+        services.AddScoped<IPermissionChangedSecurityEventWriterV1, PermissionChangedSecurityEventWriterV1>();
         // F023-2 / KIM-D10: one authz.denied per refused request, built from the request context (scoped).
         services.AddScoped<IAuthorizationDenialRecorderV1, AuthorizationDenialRecorder>();
         // ADR-SEC-001 section 5 company read; it records security.events.read before reading (fail-closed).

@@ -164,6 +164,24 @@ public sealed record AiGatewayPolicyViewV1(
     IReadOnlyList<AiGatewayPolicyVersionViewV1> Versions);
 
 /// <summary>
+/// WP-A5 (AI-20, DALGA_PLANI_v2 A.5): one feature's line of the current business month, read from the append-only ledger.
+/// <see cref="CommittedUnits"/> counts a settled entry with its used units and an open reservation with its reserved units
+/// (the same conservative sum as the month fence). Counts only; no question text, actor or correlation leaves the ledger.
+/// </summary>
+public sealed record AiFeatureUsageViewV1(string Feature, int EntryCount, int OpenReservationCount, long CommittedUnits);
+
+/// <summary>
+/// WP-A5: the current business month's usage of the company, total and per feature (features without an entry are not
+/// listed). The month is <see cref="SettingsAiBudgetMonthV1"/> of the server clock.
+/// </summary>
+public sealed record AiGatewayUsageViewV1(
+    Guid CompanyId,
+    int BudgetMonth,
+    long CommittedUnits,
+    int EntryCount,
+    IReadOnlyList<AiFeatureUsageViewV1> Features);
+
+/// <summary>
 /// The K3 administration of the gateway policy on <see cref="SettingsAiGatewayPermissionsV1.Manage"/>: company-wide
 /// permission measured first and fresh before the save, mandatory reason, one Idempotency-Key per command, expected
 /// version, one audit event per real change, insert-only versions. A cloud route above
@@ -175,4 +193,10 @@ public interface ISettingsAiGatewayAdministrationV1
 
     Task<CompanyPolicyCommandResultV1> RecordAiGatewayPolicyAsync(RecordAiGatewayPolicyRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// WP-A5: the current month's ledger counts per feature, on the same company-wide
+    /// <see cref="SettingsAiGatewayPermissionsV1.Manage"/> fence as the policy read (measured first and again after the read).
+    /// </summary>
+    Task<AiGatewayUsageViewV1> GetAiGatewayUsageAsync(CancellationToken cancellationToken = default);
 }

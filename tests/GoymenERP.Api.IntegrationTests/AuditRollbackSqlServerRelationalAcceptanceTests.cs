@@ -35,11 +35,14 @@ public sealed class AuditRollbackSqlServerRelationalAcceptanceTests
         }
         var payload = await run.PayloadAsync();
         var history = await run.HistoryAsync();
-        Assert.EndsWith("_ProtectAuditHistoryRollback", history[^1], StringComparison.Ordinal);
-        foreach (var target in new[] { history[^2], Migration.InitialDatabase })
+        // K3-B finding 3: the founder bootstrap audit migration is now the latest and refuses first (52081), before
+        // ProtectAuditHistoryRollback (51900) could run; neither payload nor history changes.
+        Assert.EndsWith("_AddFounderBootstrapSystemAudit", history[^1], StringComparison.Ordinal);
+        Assert.EndsWith("_ProtectAuditHistoryRollback", history[^2], StringComparison.Ordinal);
+        foreach (var target in new[] { history[^2], history[^3], Migration.InitialDatabase })
         {
             var refused = await Assert.ThrowsAsync<SqlException>(() => run.MigrateAsync(target));
-            Assert.Equal(51900, refused.Number);
+            Assert.Equal(52081, refused.Number);
             Assert.Equal(payload, await run.PayloadAsync());
             Assert.Equal(history, await run.HistoryAsync());
         }
@@ -64,8 +67,9 @@ public sealed class AuditRollbackSqlServerRelationalAcceptanceTests
 
         // EF Core 10 commits per migration. The inter-migration barrier must survive
         // the successful Down commit, rather than relying on that transaction's table lock.
-        await run.MigrateAsync(expectedHistory[^2]);
-        Assert.Equal(expectedHistory[..^1], await run.HistoryAsync());
+        // Roll back below ProtectAuditHistoryRollback (the founder bootstrap audit migration sits above it).
+        await run.MigrateAsync(expectedHistory[^3]);
+        Assert.Equal(expectedHistory[..^2], await run.HistoryAsync());
         await using (var empty = await run.OpenAsync())
         await using (var noRows = empty.CreateCommand())
         {

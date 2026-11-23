@@ -33,7 +33,7 @@ internal sealed record FinanceStatementParseResult(
 /// FNS-D52: reads a CSV statement with the bank's Settings column mapping (exactly; no fallback, no guessed column) and a
 /// SWIFT MT940 statement. Every value is parsed strictly; a value that does not fit is an issue, never a default.
 /// </summary>
-internal static class FinanceBankStatementParser
+internal static partial class FinanceBankStatementParser
 {
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 

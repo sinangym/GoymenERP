@@ -10,6 +10,7 @@ import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { currencyShown, WithCurrencyCodes } from '../finance/currencyCodes'
 import { useReceiptAdjustmentAttempt } from './useReceiptAdjustmentAttempt'
+import { InvoiceDuplicatePanel } from './InvoiceDuplicatePanel'
 import { fetchIncomingInvoice, fetchIncomingInvoices, fetchInvoiceReceipts, fetchInvoiceAdditionalCosts, submitInvoiceCommand } from './incomingInvoiceApi'
 import { invoiceQuantity, type IncomingInvoice, type IncomingInvoiceLine, type InvoiceCommand, type InvoiceCommandResponse,
   type InvoiceReceiptSelection, type InvoiceAdditionalCostSelection } from './incomingInvoiceContract'
@@ -98,6 +99,7 @@ function InvoiceDetail({ binding, id }: { readonly binding: Binding; readonly id
   return <section className={styles.page} aria-labelledby="incoming-invoice-heading">
     <Link to={listPath}>{T.back}</Link><h1 id="incoming-invoice-heading">{T.detail}</h1>
     <ReadState data={read.data} loading={read.isFetching} refresh={() => void read.refetch()} />
+    {invoice === null ? null : <InvoiceDuplicatePanel company={binding.company} namespace={binding.namespace} entry={binding.entry} invoiceId={invoice.id} />}
     {invoice === null ? null : <InvoiceWorkspace key={invoice.version} binding={binding} invoice={invoice} />}
     {invoice === null ? null : <RecordNotesSection recordType="purchase-incoming-invoice" recordId={invoice.id} />}
   </section>

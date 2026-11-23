@@ -48,6 +48,41 @@ public sealed class FinanceBankStatementPersistenceModelTests
         Assert.Contains("[finance].[BankStatementCommands]", guard);
         Assert.Single(migration.DownOperations.OfType<SqlOperation>());
         Assert.False(db.Database.HasPendingModelChanges());
-        Assert.Equal("20261122201621_AddBankStatementImports", db.Database.GetMigrations().Last());
+        Assert.Contains("20261122201621_AddBankStatementImports", db.Database.GetMigrations());
+    }
+
+    [Fact]
+    public void Confirmed_matches_are_one_active_per_line_and_record_and_their_down_refuses_while_rows_exist()
+    {
+        var company = new CompanyContext(); company.Set(Guid.NewGuid());
+        using var db = new FinanceDbContext(new DbContextOptionsBuilder<FinanceDbContext>()
+            .UseSqlServer("Server=invalid;Database=Synthetic;Integrated Security=true;TrustServerCertificate=true").Options, company);
+        var model = db.GetService<IDesignTimeModel>().Model;
+        var match = model.FindEntityType(typeof(FinanceBankStatementMatchRow))!;
+        var reversal = model.FindEntityType(typeof(FinanceBankStatementMatchReversalRow))!;
+        Assert.Equal(FinanceDbContext.BankStatementMatchCheck,
+            Assert.Single(match.GetCheckConstraints(), x => x.Name == "CK_BankStatementMatches_Content").Sql);
+        Assert.Equal(FinanceDbContext.BankStatementMatchReversalCheck,
+            Assert.Single(reversal.GetCheckConstraints(), x => x.Name == "CK_BankStatementMatchReversals_Content").Sql);
+        Assert.NotEmpty(match.GetDeclaredQueryFilters());
+        Assert.NotEmpty(reversal.GetDeclaredQueryFilters());
+        Assert.True(match.FindProperty(nameof(FinanceBankStatementMatchRow.Version))!.IsConcurrencyToken);
+        var active = match.GetIndexes().Where(x => x.IsUnique).ToDictionary(x => x.GetDatabaseName()!);
+        Assert.Equal(["CompanyId", "LineId"], active["UX_BankStatementMatches_ActiveLine"].Properties.Select(x => x.Name).ToArray());
+        Assert.Equal(["CompanyId", "CandidateKind", "RecordId"],
+            active["UX_BankStatementMatches_ActiveRecord"].Properties.Select(x => x.Name).ToArray());
+        Assert.All(active.Values, x => Assert.Equal("[ReversalId] IS NULL", x.GetFilter()));
+        Assert.Equal(["CompanyId", "MatchId"], Assert.Single(reversal.GetIndexes(), x => x.IsUnique).Properties.Select(x => x.Name).ToArray());
+
+        var migration = new AddBankStatementMatches();
+        Assert.Empty(migration.UpOperations.OfType<SqlOperation>());
+        Assert.Equal(2, migration.UpOperations.OfType<CreateTableOperation>().Count());
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql;
+        Assert.Contains("THROW 52251", guard);
+        Assert.Contains("[finance].[BankStatementMatches]", guard);
+        Assert.Contains("[finance].[BankStatementMatchReversals]", guard);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.False(db.Database.HasPendingModelChanges());
+        Assert.Equal("20261122220335_AddBankStatementMatches", db.Database.GetMigrations().Last());
     }
 }

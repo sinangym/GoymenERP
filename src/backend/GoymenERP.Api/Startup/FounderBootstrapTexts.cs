@@ -48,6 +48,9 @@ internal static class FounderBootstrapTexts
         FounderBootstrapStatus.PolicyViolation => "Parola politikası karşılanmadı.",
         FounderBootstrapStatus.SecurityEventRefused =>
             "Güvenlik olayı kaydedilemedi; hiçbir değişiklik yazılmadı.",
+        FounderBootstrapStatus.OperatorDeclarationMissing =>
+            "Operatör beyanı (işletim sistemi kullanıcısı ve makine adı) okunamadı; hiçbir değişiklik yazılmadı.",
+        FounderBootstrapStatus.AuditRefused => "Denetim kaydı yazılamadı; hiçbir değişiklik yazılmadı.",
         _ => "Kurucu hesabı oluşturulamadı.",
     };
 }

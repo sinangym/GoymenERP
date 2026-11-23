@@ -6,7 +6,7 @@ public sealed partial class AuditEvent
     {
     }
 
-    private AuditEvent(AuditEventData data, bool founderRecovery = false, bool credentialSelfService = false)
+    private AuditEvent(AuditEventData data, bool founderRecovery = false, bool credentialSelfService = false, bool founderBootstrap = false)
     {
         ArgumentNullException.ThrowIfNull(data.Envelope);
         var envelope = data.Envelope;
@@ -21,7 +21,7 @@ public sealed partial class AuditEvent
         EntityVersionAfter = envelope.EntityVersionAfter;
         ActorType = RequireText(envelope.ActorType, nameof(envelope.ActorType), 32);
         ActorId = RequireText(envelope.ActorId, nameof(envelope.ActorId), 128);
-        PermissionCode = founderRecovery || credentialSelfService ? null : RequireText(
+        PermissionCode = founderRecovery || credentialSelfService || founderBootstrap ? null : RequireText(
             envelope.PermissionCode ?? throw new ArgumentException("A normal audit event requires its permission."),
             nameof(envelope.PermissionCode),
             160);

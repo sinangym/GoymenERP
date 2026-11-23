@@ -71,6 +71,9 @@ public static class IdentityModuleExtensions
             provider => provider.GetRequiredService<ErpAuthorizationService>());
         services.AddScoped<IActiveRoleCodeReader>(
             provider => provider.GetRequiredService<ErpAuthorizationService>());
+        // WP7 (AI-D31/AI-D32): the read-only Work inbox source of pending access grant requests; it decides and grants nothing.
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1,
+            WorkInbox.IdentityAccessGrantRequestWorkInboxSourceV1>();
         services.TryAddSingleton<IAuthorizationSnapshotReadObserver,
             NullAuthorizationSnapshotReadObserver>();
         services.TryAddSingleton<IPermissionScopeReadObserver,
@@ -112,6 +115,8 @@ public static class IdentityModuleExtensions
         services.AddScoped<ILocalCredentialCommandStore, SqlLocalCredentialCommandStore>();
         services.AddScoped<ILocalPasswordContextTermSource, SqlLocalPasswordContextTermSource>();
         services.AddScoped<ILocalAccountPasswordChangeService, LocalAccountPasswordChangeService>();
+        // YOL-D27: password re-entry at an AI second approval; same KS-8 lockout counter and policy as login.
+        services.AddScoped<ILocalAccountReauthenticationServiceV1, LocalAccountReauthenticationService>();
         // ID-2 one-shot founder bootstrap (KIM-D5/KIM-D18); the Admin role code has no default.
         services.AddOptions<IdentityBootstrapOptions>()
             .Bind(configuration.GetSection(IdentityBootstrapOptions.SectionName));
@@ -122,6 +127,7 @@ public static class IdentityModuleExtensions
         services.AddScoped<IdentityUserManagementEvaluator>();
         services.AddScoped<IFounderRecoveryCompanyLock, SqlFounderRecoveryCompanyLock>();
         services.AddScoped<IFounderRecoveryAuditParticipant, FounderRecoveryAuditParticipant>();
+        services.AddScoped<IFounderBootstrapAuditParticipant, FounderBootstrapAuditParticipant>();
         services.AddScoped<IFounderRecoveryService, FounderRecoveryService>();
         services.AddScoped<ISystemRolePermissionReconciler, SystemRolePermissionReconciler>();
         services.AddScoped<IdentityDataSeeder>();
