@@ -58,11 +58,13 @@ public sealed record ReportingOtifSourceLineV1(
     decimal OrderedQuantity,
     IReadOnlyList<ReportingOtifShipmentV1> Shipments);
 
+/// <summary><paramref name="UnmeasuredLines"/>: promised lines the owner could not name a quantity for (counted, never guessed).</summary>
 public sealed record ReportingOtifSourcePageV1(
     ReportingSourceOutcomeV1 Outcome,
     Guid CompanyId,
     IReadOnlyList<ReportingOtifSourceLineV1> Lines,
-    bool HasMore);
+    bool HasMore,
+    int UnmeasuredLines = 0);
 
 /// <summary>The label trace (recall / traceability) as the stock owner walks it.</summary>
 public interface IReportingRecallSourceV1

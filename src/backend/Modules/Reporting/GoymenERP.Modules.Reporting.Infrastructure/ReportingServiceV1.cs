@@ -222,6 +222,7 @@ public sealed class ReportingServiceV1(
         {
             new("pageLines", rows.Count.ToString(CultureInfo.InvariantCulture)),
             new("otifLines", otifLines.ToString(CultureInfo.InvariantCulture)),
+            new("unmeasuredLines", answer.UnmeasuredLines.ToString(CultureInfo.InvariantCulture)),
         };
         if (ReportingOtifCalculatorV1.Percent(otifLines, rows.Count) is { } percent) summary.Add(new("otifPercent", percent));
         return Table(actor, report, set, rows, page, pageSize, answer.HasMore, summary, []);

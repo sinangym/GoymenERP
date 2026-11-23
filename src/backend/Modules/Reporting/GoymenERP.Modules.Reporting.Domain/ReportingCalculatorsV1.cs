@@ -26,7 +26,11 @@ public static class ReportingStockAgingCalculatorV1
     };
 }
 
-public sealed record ReportingOtifShipmentV1(DateOnly ShippedOn, decimal Quantity);
+public sealed record ReportingOtifShipmentV1(DateOnly ShippedOn, decimal Quantity)
+{
+    /// <summary>The unit the owner recorded the share in (checked by the host adapter; never converted).</summary>
+    public Guid UnitId { get; init; }
+}
 
 public sealed record ReportingOtifLineResultV1(
     decimal ShippedQuantity,

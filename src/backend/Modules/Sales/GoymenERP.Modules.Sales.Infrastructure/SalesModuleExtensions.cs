@@ -106,6 +106,8 @@ public static class SalesModuleExtensions
         // and loading consumers, over the same company-filtered store. Registered here, in the module
         // (no host file), so that a consumer module reads Sales only through this port.
         services.AddScoped<ISalesOrderLineReferencePortV1, SalesOrderLineReferencePort>();
+        // WP14 (YOL-D29): order lines by promised day for the OTIF report; no authority, creates nothing.
+        services.AddScoped<ISalesOrderPromiseReadPortV1, SalesOrderPromiseReadPort>();
         services.AddScoped<ISalesOrderCostRateSourceReadPortV1, SalesOrderCostRateSourceReadPortV1>();
         // S-3 / SAT-D175 (EK25): the Sales-owned subcontract service order read port for the Production consumer (URT-D22), over
         // the same company-filtered store; the Production lane binds its consumer to it.

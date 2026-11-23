@@ -6,6 +6,7 @@ using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Reporting.Domain;
 using GoymenERP.Modules.Reporting.Infrastructure;
+using GoymenERP.Modules.Sales.Application.Contracts;
 
 namespace GoymenERP.Api.ReportingRuntime;
 
@@ -144,11 +145,85 @@ internal sealed class ReportingFinancePartyAgingSourceV1(IFinanceOpenItemReadSer
     }
 }
 
+/// <summary>
+/// YOL-D29 OTIF: Sales names the promised lines (open and closed orders, approved quantity, order unit); Logistics names the dated
+/// shipment shares of APPROVED dispatch notes per order line (the shipment date is the Europe/Istanbul business day of the
+/// recorded shipment). Neither owner reads the other's tables; the join is here. A share in another unit, an answer for another
+/// company or a shipment window the owner reports as cut is fail-closed (never a partial OTIF).
+/// </summary>
+internal sealed class ReportingSalesLogisticsOtifSourceV1(ISalesOrderPromiseReadPortV1 promises, IServiceProvider services, ICompanyContext company)
+    : IReportingOtifSourceV1
+{
+    /// <summary>Technical bounds (not business thresholds).</summary>
+    internal const int MaximumDraftPages = 100;
+    internal const int ShipmentLimit = 5000;
+
+    public async Task<ReportingOtifSourcePageV1> ReadAsync(Guid companyId, DateOnly from, DateOnly to, int page, int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (!company.IsResolved || company.CompanyId != companyId) return new(ReportingSourceOutcomeV1.Denied, companyId, [], false);
+        if (services.GetService(typeof(ISalesInvoiceableShipmentReadPortV1)) is not ISalesInvoiceableShipmentReadPortV1 shipments)
+            return new(ReportingSourceOutcomeV1.NotConnected, companyId, [], false);
+        if (!TimeZoneInfo.TryFindSystemTimeZoneById("Europe/Istanbul", out var zone))
+            return new(ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+
+        var wanted = (long)page * pageSize + 1;
+        var lines = new List<SalesOrderPromisedLineV1>();
+        var unmeasured = 0;
+        string? cursor = null;
+        var pages = 0;
+        do
+        {
+            if (++pages > MaximumDraftPages) return new(ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+            var answer = await promises.ListPromisedLinesAsync(from, to, ISalesOrderPromiseReadPortV1.MaximumPageSize, cursor, cancellationToken);
+            if (answer.CompanyId != companyId || answer.Lines.Any(line => line.CompanyId != companyId))
+                return new(ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+            lines.AddRange(answer.Lines);
+            unmeasured += answer.UnmeasuredLines;
+            cursor = answer.NextCursor;
+        }
+        while (cursor is not null && lines.Count < wanted);
+
+        var ordered = lines.OrderBy(line => line.PromisedOn).ThenBy(line => line.DocumentNo, StringComparer.Ordinal).ThenBy(line => line.LineNo).ToArray();
+        var slice = ordered.Skip((page - 1) * pageSize).Take(pageSize).ToArray();
+        var hasMore = ordered.Length > (long)page * pageSize || cursor is not null;
+        var byLine = new Dictionary<Guid, List<ReportingOtifShipmentV1>>();
+        foreach (var chunk in slice.Select(line => line.OrderId).Distinct().Chunk(SalesInvoiceableShipmentQueryV1.MaximumOrderIds))
+        {
+            var answer = await shipments.ReadInvoiceableShipmentsAsync(new SalesInvoiceableShipmentQueryV1(null, ShipmentLimit, chunk), cancellationToken);
+            if (answer.Outcome == SalesDispatchReadOutcomeV1.Denied) return new(ReportingSourceOutcomeV1.Denied, companyId, [], false);
+            if (answer.Outcome != SalesDispatchReadOutcomeV1.Found || answer.CompanyId != companyId || answer.HasMore)
+                return new(ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+            foreach (var share in answer.Shares.Where(share => chunk.Contains(share.SalesOrderId)))
+            {
+                if (!byLine.TryGetValue(share.SalesOrderLineId, out var list)) byLine[share.SalesOrderLineId] = list = [];
+                list.Add(new ReportingOtifShipmentV1(DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(share.ShippedAtUtc, zone).DateTime), share.Quantity)
+                    { UnitId = share.UnitId });
+            }
+        }
+
+        var result = new List<ReportingOtifSourceLineV1>(slice.Length);
+        foreach (var line in slice)
+        {
+            var shares = byLine.TryGetValue(line.LineId, out var found) ? found : [];
+            // A share recorded in another unit is never converted: the owner answer is not comparable.
+            if (shares.Any(share => share.UnitId != line.UnitId)
+                || !decimal.TryParse(line.Quantity, System.Globalization.NumberStyles.AllowDecimalPoint, System.Globalization.CultureInfo.InvariantCulture,
+                    out var quantity))
+                return new(ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+            result.Add(new ReportingOtifSourceLineV1(line.OrderId, line.DocumentNo, line.LineNo, line.PartyId, line.UnitCode, line.PromisedOn, quantity,
+                shares));
+        }
+
+        return new(ReportingSourceOutcomeV1.Found, companyId, result, hasMore, unmeasured);
+    }
+}
+
 public static class ReportingRuntimeServiceCollectionExtensions
 {
     /// <summary>
-    /// WP14: the report centre with its connected owner sources. OTIF (no owner read of promised day × dated shipment per order
-    /// line yet) and the intercompany dump (YOL-D31's party ↔ company link is not recorded by Counterparty yet) stay "not connected".
+    /// WP14: the report centre with its connected owner sources. OTIF joins Sales's promised lines with Logistics's dated shares;
+    /// the intercompany dump (YOL-D31's party ↔ company link is not recorded by Counterparty yet) stay "not connected".
     /// </summary>
     public static IServiceCollection AddReportingRuntimeV1(this IServiceCollection services)
     {
@@ -156,6 +231,7 @@ public static class ReportingRuntimeServiceCollectionExtensions
         services.AddScoped<IReportingRecallSourceV1, ReportingInventoryRecallSourceV1>();
         services.AddScoped<IReportingTrialBalanceSourceV1, ReportingAccountingTrialBalanceSourceV1>();
         services.AddScoped<IReportingPartyAgingSourceV1, ReportingFinancePartyAgingSourceV1>();
+        services.AddScoped<IReportingOtifSourceV1, ReportingSalesLogisticsOtifSourceV1>();
         return services;
     }
 }

@@ -59,6 +59,32 @@ public sealed class SalesOrderUserCloseSqlServerRelationalAcceptanceTests
     private static readonly SalesDraftStateAudit ClosedAudit = new("sales.order-draft.closed.v1", "Close", "SENTETIK kapatıldı");
 
     [SqlServerFact]
+    public async Task Promise_port_lists_the_promised_line_of_an_open_and_of_a_user_closed_order_and_nothing_for_another_company_on_real_sql()
+    {
+        await using var run = await Run.StartAsync(readySeam: true);
+        var draft = await run.ApprovedDraftAsync(CompanyA, "p", "6");
+        var orderLine = Assert.Single(draft.Lines);
+        var promised = draft.Header.RequestedDeliveryDate!.Value;
+        var open = await run.PromisedLinesAsync(CompanyA, promised, promised);
+        var line = Assert.Single(open.Lines, item => item.OrderId == draft.Id);
+        Assert.Equal((orderLine.Id, promised, "6", draft.DocumentNo), (line.LineId, line.PromisedOn, line.Quantity, line.DocumentNo));
+        Assert.DoesNotContain((await run.PromisedLinesAsync(CompanyA, promised.AddDays(1), promised.AddDays(30))).Lines, item => item.OrderId == draft.Id);
+        Assert.Empty((await run.PromisedLinesAsync(CompanyB, promised, promised)).Lines);
+
+        await run.ShippedInFullAsync(CompanyA, draft, "p");
+        var subject = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersClose);
+        using var client = run.Client(subject, CompanyA);
+        using (var closed = await client.SendAsync(Close($"{SalesEndpoints.DraftsPath}/{draft.Id:D}/close", "SENTETIK-promise-close", "4")))
+        {
+            Assert.Equal(HttpStatusCode.OK, closed.StatusCode);
+        }
+
+        // A delivered, closed order still counts in OTIF with its approved quantity.
+        var afterClose = Assert.Single((await run.PromisedLinesAsync(CompanyA, promised, promised)).Lines, item => item.OrderId == draft.Id);
+        Assert.Equal("6", afterClose.Quantity);
+    }
+
+    [SqlServerFact]
     public async Task A_ready_order_is_closed_through_the_real_route_in_one_save_replays_and_its_lines_stop_being_a_demand_on_real_sql()
     {
         await using var run = await Run.StartAsync(readySeam: true);
@@ -460,6 +486,15 @@ public sealed class SalesOrderUserCloseSqlServerRelationalAcceptanceTests
             await ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents]"),
             await ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftUserClosures]"),
             await ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draftId)));
+
+        /// <summary>WP14: the Sales promise port (what the OTIF report asks) over the real store of the company.</summary>
+        public async Task<SalesOrderPromisePageV1> PromisedLinesAsync(Guid company, DateOnly from, DateOnly to)
+        {
+            await using var scope = SalesStore(company);
+            var context = new CompanyContext();
+            context.Set(company);
+            return await new SalesOrderPromiseReadPort((SalesStore)scope.Store, context).ListPromisedLinesAsync(from, to, 100, null);
+        }
 
         /// <summary>The Sales line port (what Inventory and Logistics ask) over the real store of the company.</summary>
         public async Task<SalesOrderLineReferenceAnswerV1> LineAsync(Guid company, Guid orderId, Guid lineId)
