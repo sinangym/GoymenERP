@@ -43,7 +43,9 @@ public static partial class FinanceEndpoints
         }).WithName("DecideFinanceCreditMovementV1").Accepts<CreditMovementDecisionBodyV1>("application/json"));
     }
     private static RouteHandlerBuilder CreditMovementProblems(RouteHandlerBuilder builder) => builder.WithTags("Finance")
-        .RequireAuthorization().RequireCompanyContext().Produces<CreditMovementResultV1>()
+        .RequireAuthorization().RequireCompanyContext()
+        .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity)
+        .Produces<CreditMovementResultV1>()
         .Produces<CreditMovementResultV1>(StatusCodes.Status422UnprocessableEntity)
         .Produces<CreditMovementResultV1>(StatusCodes.Status409Conflict)
         .ProducesErpAuthenticatedProblems().ProducesErpBadRequest().AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody()

@@ -4,7 +4,7 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Settings.Application;
 
-/// <summary>No 133/URN-D3/D4/6960531086. Exact comparisons only: no rounding or assumed threshold.</summary>
+/// <summary>No 133/URN-D3/D4/6960531086 (GOV-D16). Exact comparisons only: no rounding or assumed threshold.</summary>
 public static class FinancePolicyRulesV1
 {
     public const int AmountMaximumLength = 64;

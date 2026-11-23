@@ -40,6 +40,35 @@ public sealed partial class FinanceCreditAccountTests
     }
 
     [Fact]
+    public async Task Credit_group_without_an_approved_field_spec_keeps_its_movements_closed_until_approval()
+    {
+        await using var run = new Run();
+        var account = await ApprovedCredit(run);
+        var input = Movement(account);
+        // Host default (FNS-D106): no group spec is approved, so the proposal is a recorded refusal and writes nothing.
+        var closed = await run.Movement(Maker, service => service.ProposeAsync(Ctx(Maker), new("closed-p"), input, default),
+            gate: FinanceCreditGroupGateV1.NoneApproved);
+        Assert.Equal(CommandOutcome.ValidationFailed, closed.Outcome);
+        Assert.Equal(("creditAccountId", FinanceCreditGroupGateV1.GroupClosedCode),
+            (Assert.Single(closed.Issues).Field, closed.Issues[0].Code));
+        var otherGroupOnly = await run.Movement(Maker, service => service.ProposeAsync(Ctx(Maker), new("other-p"), input, default),
+            gate: new FinanceCreditGroupGateV1([CreditAccountGroup.Leasing]));
+        Assert.Equal(CommandOutcome.ValidationFailed, otherGroupOnly.Outcome);
+
+        // A proposal made while open cannot be approved once the gate is closed: approval re-checks the group.
+        var proposal = await run.Movement(Maker, service => service.ProposeAsync(Ctx(Maker), new("open-p"), input, default));
+        Assert.Equal(CommandOutcome.Succeeded, proposal.Outcome);
+        var refused = await run.Movement(Checker, service => service.DecideAsync(Ctx(Checker), new("closed-a"),
+            new(proposal.Resource!.Id, "1", true, null), default), gate: FinanceCreditGroupGateV1.NoneApproved);
+        Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
+        Assert.Equal(FinanceCreditGroupGateV1.GroupClosedCode, Assert.Single(refused.Issues).Code);
+
+        await using var db = run.Memory(CompanyA);
+        Assert.Equal(1, (await db.CreditMovements.SingleAsync()).Status);
+        Assert.Empty(await db.OutboxMessages.ToListAsync());
+    }
+
+    [Fact]
     public async Task Actual_source_duplicate_stale_version_and_foreign_company_never_create_a_second_fact()
     {
         await using var run = new Run();
@@ -135,10 +164,15 @@ public sealed partial class FinanceCreditAccountTests
         public Task<TreasuryBalanceAnswer> CheckOutgoingAsync(FinanceContext context, ExpensePaymentSourceKind sourceKind,
             Guid treasuryAccountId, MoneyText money, CancellationToken cancellationToken) => Task.FromResult(new TreasuryBalanceAnswer(TreasuryBalanceOutcome.Sufficient, null));
     }
+    /// <summary>SENTETIK: the movement mechanics are tested as if every group's FNS-D106 spec were approved; the host
+    /// default (<see cref="FinanceCreditGroupGateV1.NoneApproved"/>) is tested separately.</summary>
+    private static readonly FinanceCreditGroupGateV1 OpenGroups = new(Enum.GetValues<CreditAccountGroup>());
+
     private sealed partial class Run
     {
         public async Task<CreditMovementResultV1> Movement(string actor, Func<FinanceCreditMovementServiceV1, Task<CreditMovementResultV1>> call,
-            MovementPeriods? periods = null, IFinancePermissionPort? permissions = null, Action? auditObserved = null)
+            MovementPeriods? periods = null, IFinancePermissionPort? permissions = null, Action? auditObserved = null,
+            FinanceCreditGroupGateV1? gate = null)
         {
             var company = new CompanyContext(); company.Set(CompanyA);
             var collector = new AuditEventCollector();
@@ -146,7 +180,8 @@ public sealed partial class FinanceCreditAccountTests
                 .AddInterceptors(new AuditSaveChangesInterceptor(collector, company)).Options, company);
             periods ??= new();
             return await call(new(db, company, new FixedUser(actor, CompanyA), permissions ?? new RecordingPermission(PermissionDecision.Allowed),
-                new SyntheticCreditSources(CompanyA), periods, periods, new SyntheticMovementBalance(), new ObservedMovementAudit(collector, auditObserved), Envelopes(), new FixedClock()));
+                new SyntheticCreditSources(CompanyA), periods, periods, new SyntheticMovementBalance(), new ObservedMovementAudit(collector, auditObserved), Envelopes(), new FixedClock(),
+                groupGate: gate ?? OpenGroups));
         }
     }
     private sealed class ObservedMovementAudit(IAuditEventCollector inner, Action? observed) : IAuditEventCollector

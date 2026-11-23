@@ -30,8 +30,13 @@ const obj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' 
 const guid = (v: unknown): v is string => typeof v === 'string' && GUID.test(v)
 const revision = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= 0
 const score = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= -2147483648 && (v as number) <= 2147483647
+// Key sets mirror PlanPriorityViewV1 / PlanWorkCenterQueueViewV1 / PlanWorkCenterQueueLineV1 one-to-one.
+const exact = (v: Record<string, unknown>, names: readonly string[]) => Object.keys(v).length === names.length && names.every(key => Object.hasOwn(v, key))
+const PRIORITY_KEYS = ['companyId', 'planId', 'planVersion', 'priorityScore', 'priorityRevision', 'recordedBy', 'recordedAtUtc', 'reason'] as const
+const QUEUE_KEYS = ['contractVersion', 'companyId', 'workCenterId', 'targetPlanId', 'targetPlanVersion', 'items', 'queueRevision', 'hasManualOrder'] as const
+const QUEUE_LINE_KEYS = ['planId', 'dueDate', 'priorityScore', 'priorityRevision', 'plannedKg', 'processedKg', 'remainingKg', 'isOverPlanned', 'isQueued'] as const
 export function decodePlanPriority(v: unknown): PlanPriority | null {
-  if (!obj(v) || !guid(v.companyId) || !guid(v.planId) || !revision(v.planVersion) || v.planVersion === 0
+  if (!obj(v) || !exact(v, PRIORITY_KEYS) || !guid(v.companyId) || !guid(v.planId) || !revision(v.planVersion) || v.planVersion === 0
     || !score(v.priorityScore) || !revision(v.priorityRevision)) return null
   if (v.priorityRevision === 0) {
     if (v.priorityScore !== 0 || v.recordedBy !== null || v.recordedAtUtc !== null || v.reason !== null) return null
@@ -40,12 +45,12 @@ export function decodePlanPriority(v: unknown): PlanPriority | null {
   return v as unknown as PlanPriority
 }
 export function decodePlanQueue(v: unknown): PlanQueue | null {
-  if (!obj(v) || v.contractVersion !== 1 || !guid(v.companyId) || !guid(v.workCenterId) || !guid(v.targetPlanId)
+  if (!obj(v) || !exact(v, QUEUE_KEYS) || v.contractVersion !== 1 || !guid(v.companyId) || !guid(v.workCenterId) || !guid(v.targetPlanId)
     || !revision(v.queueRevision) || typeof v.hasManualOrder !== 'boolean' || v.hasManualOrder !== (v.queueRevision > 0)
     || !revision(v.targetPlanVersion) || v.targetPlanVersion === 0 || !Array.isArray(v.items) || !v.items.length) return null
   const ids = new Set<string>()
   for (const line of v.items) {
-    if (!obj(line) || !guid(line.planId) || ids.has(line.planId.toLowerCase()) || !score(line.priorityScore)
+    if (!obj(line) || !exact(line, QUEUE_LINE_KEYS) || !guid(line.planId) || ids.has(line.planId.toLowerCase()) || !score(line.priorityScore)
       || !revision(line.priorityRevision) || typeof line.isOverPlanned !== 'boolean' || typeof line.isQueued !== 'boolean'
       || (line.dueDate !== null && (typeof line.dueDate !== 'string' || !calendarDate(line.dueDate)))
       || ['plannedKg', 'processedKg', 'remainingKg'].some((key) => typeof line[key] !== 'string' || !KG.test(line[key] as string))) return null

@@ -446,6 +446,36 @@ describe('CashTransferPage preview and commit', () => {
     expect(posts[2].body).toEqual(posts[0].body)
   })
 
+  it.each([400, 404, 415])('K3 P2-9: keeps the key when the retry of an unknown commit is answered by a code-less %i', async (status) => {
+    let attempts = 0
+    const calls = reads(() => json(page([])), (call) => {
+      if (call.method === 'POST' && call.url === PREVIEW_URL) return json({ outcome: 'Succeeded', preparation: call.body, issues: [] })
+      if (call.method === 'POST' && call.url === BASE) {
+        attempts += 1
+        return attempts === 1 ? json({}, 503) : attempts === 2 ? json({}, status) : json(succeeded(transfer()))
+      }
+      if (call.method === 'GET' && call.url === DETAIL_URL) return json(transfer())
+      return undefined
+    })
+    show()
+    const { user, form } = await fill()
+    await user.click(within(form).getByRole('button', { name: T.preview }))
+    await user.click(await within(form).findByRole('checkbox', { name: T.commitConfirm }))
+    await user.click(within(form).getByRole('button', { name: T.commit }))
+    expect(await within(form).findByText(T.unknownHeading)).toBeTruthy()
+    await user.click(within(form).getByRole('button', { name: T.retrySame }))
+    await waitFor(() => expect(attempts).toBe(2))
+    expect(await within(form).findByText(T.unknownHeading)).toBeTruthy()
+    expect(within(form).queryByRole('button', { name: T.commit })).toBeNull()
+    expect(boundary.report).not.toHaveBeenCalled()
+    await user.click(within(form).getByRole('button', { name: T.retrySame }))
+    expect(await screen.findByTestId('finance-cash-transfer-detail')).toBeTruthy()
+    const posts = calls.filter((call) => call.method === 'POST' && call.url === BASE)
+    expect(posts).toHaveLength(3)
+    expect(new Set(posts.map((post) => post.key)).size).toBe(1)
+    expect(posts[2].body).toEqual(posts[0].body)
+  })
+
   it('treats a replay the headers do not confirm as unknown', async () => {
     reads(() => json(page([])), (call) => {
       if (call.method === 'POST' && call.url === PREVIEW_URL) return json({ outcome: 'Succeeded', preparation: call.body, issues: [] })

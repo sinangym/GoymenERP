@@ -48,10 +48,35 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             PurchaseOrderMoney.Of(InvoiceCostRateCurrency, "TRY", InvoiceCostRateProfile, 1, 2), Day);
         var supplier = Guid.NewGuid(); var account = Guid.NewGuid();
         var envelope = run.Envelope("supplier-revise") with { ActorId = OrderApprover, PermissionCode = PurchasingPermissionManifestV1.OrdersRevise };
+        // ALS-D126: the allocation guard runs inside the revision's own SQL transaction after the domain decided; when it refuses
+        // (an active allocation without a confirmed set) nothing of the revision is written, no attempt is recorded.
+        await using (StoreScope scope = run.Store(CompanyA))
+        {
+            var refusedEnvelope = run.Envelope("supplier-revise-allocated") with { ActorId = OrderApprover,
+                PermissionCode = PurchasingPermissionManifestV1.OrdersRevise };
+            var refused = await Assert.ThrowsAsync<PurchaseFutureAllocationLinkException>(() =>
+                ((IPurchasingSupplierRevisionStoreV1)scope.Store).ReviseSupplierAsync(id, version, supplier, account,
+                    "SENTETIK supplier revision", refusedEnvelope, Hash("supplier-revise-allocated"), _ => Task.CompletedTask, default,
+                    (order, _, _) =>
+                    {
+                        Assert.Equal((PurchaseOrderStatus.Draft, supplier), (order.Status, order.SupplierPartyId));
+                        throw new PurchaseFutureAllocationLinkException(409, PurchasingProblemCodesV1.LineHasAllocations, terminal: false);
+                    }));
+            Assert.Equal(PurchasingProblemCodesV1.LineHasAllocations, refused.Code);
+        }
+        Assert.Equal((2, version), (await run.ScalarAsync<int>("SELECT Status FROM purchasing.PurchaseOrders WHERE Id=@id", ("@id", id)),
+            await run.ScalarAsync<long>("SELECT Version FROM purchasing.PurchaseOrders WHERE Id=@id", ("@id", id))));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseOrders WHERE Id=@id AND SupplierRevisionHistoryJson IS NOT NULL",
+            ("@id", id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseAttempts WHERE OrderId=@id AND CommandName=@command",
+            ("@id", id), ("@command", PurchasingCommands.OrderSupplierReviseV1)));
+        var guardCalls = 0;
         await using (StoreScope scope = run.Store(CompanyA))
         {
             var result = await ((IPurchasingSupplierRevisionStoreV1)scope.Store).ReviseSupplierAsync(id, version, supplier, account,
-                "SENTETIK supplier revision", envelope, Hash("supplier-revise"), _ => Task.CompletedTask);
+                "SENTETIK supplier revision", envelope, Hash("supplier-revise"), _ => Task.CompletedTask, default,
+                (_, _, _) => { guardCalls++; return Task.CompletedTask; });
+            Assert.Equal(1, guardCalls);
             Assert.Equal((PurchaseOrderStatus.Draft, version + 1, supplier, account, OrderApprover),
                 (result!.Order.Order.Status, result.Order.Order.Version, result.Order.Order.SupplierPartyId, result.Order.CompanyAccountId, result.Order.Order.PreparedBy));
             Assert.Null(result.Order.Order.Approval);

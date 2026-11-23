@@ -190,18 +190,23 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
         // MOD-15 / ALS-D42: only RECEIVABLE items are the customer's risk. A payable to the same party (it may also be a
         // supplier, DEC-CAR-001) is the company's own debt: it is neither added nor netted off here.
         var receivable = FinanceOpenItemDirectionCodes.Receivable;
-        var rows = await dbContext.OpenItems.AsNoTracking()
-            .Where(row => row.CompanyId == companyId && row.PartyId == partyId && row.CompanyAccountId == companyAccountId
-                && row.Status == open && row.Direction == receivable)
-            .Select(row => new { row.CurrencyId, row.SourceKind, row.OutstandingAmountText })
+        // FNS cari devir (PartyBalanceAssignments): an item transferred to this account counts with its transferred amount;
+        // an item of this account transferred away counts only with what stays here. Historical rows are never rewritten.
+        var rows = await FinancePartyBalanceAssignment.OpenItemsOf(dbContext, partyId, companyAccountId).AsNoTracking()
+            .Where(row => row.CompanyId == companyId && row.Status == open && row.Direction == receivable)
+            .Select(row => new { row.Id, row.PartyId, row.CompanyAccountId, row.CurrencyId, row.SourceKind, row.OutstandingAmountText })
             .ToListAsync(cancellationToken);
+        var itemAssignments = await AssignmentsAsync(companyId, FinanceBalanceAssignmentKinds.OpenItem,
+            rows.Select(row => row.Id).ToList(), cancellationToken);
 
         var sums = new SortedDictionary<Guid, FinanceExactDecimalText>();
         foreach (var row in rows)
         {
             if (row.CurrencyId == Guid.Empty
                 || !string.Equals(row.SourceKind, FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment, StringComparison.Ordinal)
-                || !FinanceExactDecimalText.TryParseNonNegative(row.OutstandingAmountText, out var outstanding))
+                || !FinanceExactDecimalText.TryParseNonNegative(row.OutstandingAmountText, out _)
+                || Share(row.PartyId, row.CompanyAccountId, row.CurrencyId, row.OutstandingAmountText,
+                    itemAssignments[row.Id].ToArray(), partyId, companyAccountId) is not { } outstanding)
             {
                 // A stored row Finance cannot read (or an open-item source whose tax basis is not known here): no partial sum.
                 return Unavailable();
@@ -258,10 +263,14 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
     {
         var receipt = MoneyEventKinds.ManualBankReceiptRecorded;
         var collected = MoneyEventKinds.CustomerInstrumentCollected;
+        const int receiptAssignment = FinanceBalanceAssignmentKinds.Receipt;
         var payments = await dbContext.MoneyEvents.AsNoTracking()
-            .Where(row => row.CompanyId == companyId && row.PartyId == partyId && row.CompanyAccountId == companyAccountId
-                && (row.Kind == receipt || row.Kind == collected))
-            .Select(row => new { row.SourceId, row.CurrencyId, row.AmountText })
+            .Where(row => row.CompanyId == companyId && (row.Kind == receipt || row.Kind == collected)
+                && (row.PartyId == partyId && row.CompanyAccountId == companyAccountId
+                    || row.Kind == receipt && dbContext.PartyBalanceAssignments.Any(a => a.CompanyId == companyId
+                        && a.Kind == receiptAssignment && a.SourceId == row.SourceId
+                        && a.CurrentPartyId == partyId && a.CurrentAccountId == companyAccountId)))
+            .Select(row => new { row.SourceId, row.Kind, row.PartyId, row.CompanyAccountId, row.CurrencyId, row.AmountText })
             .ToListAsync(cancellationToken);
         var sourceIds = payments.Select(row => row.SourceId).ToList();
         var approved = ReversalProposalStatuses.Approved;
@@ -278,6 +287,8 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
                 .Select(row => new { row.SourceId, row.CurrencyId, row.OriginalAmountText, row.UnallocatedAmountText })
                 .ToListAsync(cancellationToken);
         var stateBySource = states.ToDictionary(row => row.SourceId);
+        var receiptAssignments = await AssignmentsAsync(companyId, receiptAssignment,
+            payments.Where(row => row.Kind == receipt).Select(row => row.SourceId).ToList(), cancellationToken);
 
         var sums = new SortedDictionary<Guid, FinanceExactDecimalText>();
         foreach (var payment in payments)
@@ -306,7 +317,15 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
                 }
             }
 
-            sums[payment.CurrencyId] = sums.TryGetValue(payment.CurrencyId, out var sum) ? sum.Add(unallocated) : unallocated;
+            // A transferred receipt: only the unallocated amount explicitly assigned to an account counts there.
+            var assigned = payment.Kind == receipt ? receiptAssignments[payment.SourceId].ToArray() : [];
+            if (Share(payment.PartyId, payment.CompanyAccountId, payment.CurrencyId, unallocated.Text, assigned,
+                    partyId, companyAccountId) is not { } share)
+            {
+                return null;
+            }
+
+            sums[payment.CurrencyId] = sums.TryGetValue(payment.CurrencyId, out var sum) ? sum.Add(share) : share;
         }
 
         // Review A P2-1: a recorded R47 outgoing payment to the same customer account (e.g. an advance refunded) gives that money
@@ -314,15 +333,23 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
         // in fact a supplier payment (a party that is both) can only make the deduction smaller — the receivable larger — never
         // the other way. Any outgoing row Finance cannot read → null (Unavailable), never a partial netting. API-23: an
         // outgoing payment with an approved reversal gave nothing back, so it is not netted.
+        const int paymentAssignment = FinanceBalanceAssignmentKinds.Payment;
         var outgoing = await dbContext.OutgoingMoneyEvents.AsNoTracking()
-            .Where(row => row.CompanyId == companyId && row.PartyId == partyId && row.CompanyAccountId == companyAccountId
+            .Where(row => row.CompanyId == companyId
+                && (row.PartyId == partyId && row.CompanyAccountId == companyAccountId
+                    || dbContext.PartyBalanceAssignments.Any(a => a.CompanyId == companyId && a.Kind == paymentAssignment
+                        && a.SourceId == row.PaymentId && a.CurrentPartyId == partyId && a.CurrentAccountId == companyAccountId))
                 && !dbContext.OutgoingMoneyEventReversals.Any(reversal =>
                     reversal.CompanyId == companyId && reversal.OriginalEventId == row.Id))
-            .Select(row => new { row.CurrencyId, row.AmountText })
+            .Select(row => new { row.PaymentId, row.PartyId, row.CompanyAccountId, row.CurrencyId, row.AmountText })
             .ToListAsync(cancellationToken);
+        var paymentAssignments = await AssignmentsAsync(companyId, paymentAssignment,
+            outgoing.Select(row => row.PaymentId).ToList(), cancellationToken);
         foreach (var refund in outgoing)
         {
-            if (refund.CurrencyId == Guid.Empty || !FinanceExactDecimalText.TryParsePositive(refund.AmountText, out var paidOut))
+            if (refund.CurrencyId == Guid.Empty || !FinanceExactDecimalText.TryParsePositive(refund.AmountText, out _)
+                || Share(refund.PartyId, refund.CompanyAccountId, refund.CurrencyId, refund.AmountText,
+                    paymentAssignments[refund.PaymentId].ToArray(), partyId, companyAccountId) is not { } paidOut)
             {
                 return null;
             }
@@ -334,6 +361,34 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
         }
 
         return sums;
+    }
+
+    private async Task<ILookup<Guid, FinancePartyBalanceAssignmentRow>> AssignmentsAsync(Guid companyId, int kind,
+        IReadOnlyList<Guid> sourceIds, CancellationToken cancellationToken) => sourceIds.Count == 0
+        ? Array.Empty<FinancePartyBalanceAssignmentRow>().ToLookup(row => row.SourceId)
+        : (await dbContext.PartyBalanceAssignments.AsNoTracking()
+            .Where(row => row.CompanyId == companyId && row.Kind == kind && sourceIds.Contains(row.SourceId))
+            .ToListAsync(cancellationToken)).ToLookup(row => row.SourceId);
+
+    /// <summary>
+    /// The part of one source's amount that belongs to the read account under the explicit balance transfers
+    /// (<see cref="FinanceAllocationPositions"/>): the original account keeps what was not transferred, a successor holds
+    /// its assigned amount. An assignment Finance cannot reconcile with its source → null (Unavailable, never a guess).
+    /// </summary>
+    private static FinanceExactDecimalText? Share(Guid originalPartyId, Guid originalAccountId, Guid currencyId,
+        string basis, IReadOnlyList<FinancePartyBalanceAssignmentRow> assignments, Guid partyId, Guid companyAccountId)
+    {
+        try
+        {
+            var position = new FinanceAllocationPositions(originalPartyId, originalAccountId, currencyId, basis, assignments)
+                .All().SingleOrDefault(x => x.PartyId == partyId && x.CompanyAccountId == companyAccountId);
+            var zero = new FinanceExactDecimalText(0, 0);
+            return position is null ? zero : FinanceAllocationPositions.Amount(position.AvailableAmount);
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     private static SalesPartyRiskFigureV1 Available(IReadOnlyList<SalesPartyRiskAmountV1> amounts) =>

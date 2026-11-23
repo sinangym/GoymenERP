@@ -93,7 +93,7 @@ namespace GoymenERP.Modules.Idempotency.Infrastructure.Persistence.Migrations
                 """
                 IF EXISTS (SELECT 1 FROM [idempotency].[RetentionPurgeRecords])
                 BEGIN
-                    THROW 51563, 'Idempotency retention purge evidence exists; AddIdempotencyRetentionPurge is not rolled back (forward fix).', 1;
+                    THROW 51564, 'Idempotency retention purge evidence exists; AddIdempotencyRetentionPurge is not rolled back (forward fix).', 1;
                 END;
                 """);
 

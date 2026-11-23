@@ -39,8 +39,18 @@ const quantity = (scalar: unknown, exact: unknown): boolean => {
   return BigInt(whole + fraction) * BigInt(exact.denominator) === BigInt(exact.numerator) * 10n ** BigInt(fraction.length)
 }
 export const costQuantityText = (scalar: string | null, exact?: CostQuantityRatio) => scalar ?? (exact === undefined ? '—' : `${exact.numerator} / ${exact.denominator}`)
+// Key sets mirror ManufacturingCostGenerationHistoryV1 / ...ViewV1 / ...OutputViewV1; the two ratios are optional on the wire.
+const exact = (v: Record<string, unknown>, required: readonly string[], optional: readonly string[] = []) => {
+  const own = Object.keys(v)
+  return required.every(key => own.includes(key)) && own.every(key => required.includes(key) || optional.includes(key))
+}
+const GENERATION_KEYS = ['companyId', 'orderId', 'generationId', 'closedOrderVersion', 'revision', 'inventoryVersion', 'state', 'inputFingerprint',
+  'calculatorVersion', 'recordedAtUtc', 'reason', 'correlationId', 'costDifferenceEventId', 'outputs'] as const
+const OUTPUT_KEYS = ['outputId', 'labelId', 'netKg', 'remainingKg', 'consumedKg', 'originalTlAmount', 'remainingTlValue', 'consumedTlDifference', 'usdUnitCostPerKg'] as const
+const OUTPUT_OPTIONAL_KEYS = ['remainingKgRatio', 'consumedKgRatio'] as const
+const HISTORY_KEYS = ['orderId', 'orderVersion', 'generations'] as const
 export function decodeCostGeneration(value: unknown, company: string, order: string): CostGeneration | null {
-  if (!object(value) || value.companyId !== company || value.orderId !== order || !id(value.generationId)
+  if (!object(value) || !exact(value, GENERATION_KEYS) || value.companyId !== company || value.orderId !== order || !id(value.generationId)
     || !Number.isSafeInteger(value.closedOrderVersion) || (value.closedOrderVersion as number) < 2
     || !Number.isSafeInteger(value.revision) || (value.revision as number) < 1 || !text(value.inventoryVersion)
     || !['Pending', 'Unreadable', 'Recognized', 'Reversed'].includes(String(value.state))
@@ -50,7 +60,7 @@ export function decodeCostGeneration(value: unknown, company: string, order: str
     || !(value.costDifferenceEventId === null || id(value.costDifferenceEventId)) || !Array.isArray(value.outputs)) return null
   const ids = new Set<string>()
   for (const row of value.outputs) {
-    if (!object(row) || !id(row.outputId) || !id(row.labelId) || ids.has(row.outputId)
+    if (!object(row) || !exact(row, OUTPUT_KEYS, OUTPUT_OPTIONAL_KEYS) || !id(row.outputId) || !id(row.labelId) || ids.has(row.outputId)
       || typeof row.netKg !== 'string' || !number.test(row.netKg) || !quantity(row.remainingKg, row.remainingKgRatio)
       || !quantity(row.consumedKg, row.consumedKgRatio)
       || ![row.originalTlAmount, row.usdUnitCostPerKg].every(decimal) || !signedDecimal(row.remainingTlValue) || !signedDecimal(row.consumedTlDifference)
@@ -77,7 +87,7 @@ export function clearCostAttempt(key: string): boolean {
   try { sessionStorage.removeItem(key); return sessionStorage.getItem(key) === null } catch { return false }
 }
 export function decodeCostHistory(value: unknown, company: string, order: string): CostGenerationHistory | null {
-  if (!object(value) || value.orderId !== order || !Number.isSafeInteger(value.orderVersion) || (value.orderVersion as number) < 1
+  if (!object(value) || !exact(value, HISTORY_KEYS) || value.orderId !== order || !Number.isSafeInteger(value.orderVersion) || (value.orderVersion as number) < 1
     || !Array.isArray(value.generations)) return null
   const keys = new Set<string>(); let close = 0; let revision = 0
   for (const row of value.generations) {

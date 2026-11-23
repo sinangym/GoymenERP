@@ -185,4 +185,18 @@ describe('pending transformation store', () => {
     sessionStorage.setItem(key!, JSON.stringify({ actorId: 'actor-a', companyId: COMPANY, originLabelId: OUT_A, idempotencyKey: KEY, payload: split }))
     expect(recallPendingTransformation(key)).toBeNull()
   })
+  it('recalls only a stored attempt with exactly its own members', () => {
+    const key = pendingTransformationKey(1, 'actor-a', COMPANY, SOURCE)
+    const pending = { actorId: 'actor-a', companyId: COMPANY, originLabelId: SOURCE, idempotencyKey: KEY, payload: split }
+    sessionStorage.setItem(key!, JSON.stringify(pending))
+    expect(recallPendingTransformation(key)).toEqual(pending)
+    sessionStorage.setItem(key!, JSON.stringify({ ...pending, extra: 1 }))
+    expect(recallPendingTransformation(key)).toBeNull()
+    for (const name of Object.keys(pending)) {
+      sessionStorage.setItem(key!, JSON.stringify({ ...pending, [name]: undefined }))
+      expect(recallPendingTransformation(key)).toBeNull()
+    }
+    sessionStorage.setItem(key!, JSON.stringify({ ...pending, payload: { ...split, extra: 1 } }))
+    expect(recallPendingTransformation(key)).toBeNull()
+  })
 })

@@ -53,6 +53,30 @@ describe('Documents branding management UI source', () => {
     await waitFor(() => expect(writeBranding).toHaveBeenCalledTimes(2))
     expect(vi.mocked(writeBranding).mock.calls[0]).toEqual(vi.mocked(writeBranding).mock.calls[1])
   })
+  it.each([401, 403])('K3 P2-8: releases the key on a first-send %i; the authority answer is definite', async (status) => {
+    vi.mocked(writeBranding).mockResolvedValueOnce({ type: 'refused', status, code: null })
+    mount(); await screen.findByText(T.noBranding)
+    fireEvent.change(screen.getByLabelText(T.reason), { target: { value: 'SENTETIK reason' } })
+    fireEvent.click(screen.getByRole('button', { name: T.save }))
+    await waitFor(() => expect(security.report).toHaveBeenCalledWith(status, expect.anything()))
+    expect(screen.queryByRole('button', { name: T.retry })).toBeNull()
+    expect(screen.queryByText(T.unknown)).toBeNull()
+  })
+  it.each([[401, null], [403, null], [400, null], [404, null], [415, null]] as const)(
+    'K3 P2-8: keeps the key when the retry of an unknown write is answered %i before the receipt', async (status, code) => {
+      vi.mocked(writeBranding).mockResolvedValueOnce({ type: 'unknown', reason: 'service-unavailable' })
+        .mockResolvedValueOnce({ type: 'refused', status, code })
+        .mockResolvedValueOnce({ type: 'unknown', reason: 'network-error' })
+      mount(); await screen.findByText(T.noBranding)
+      fireEvent.change(screen.getByLabelText(T.reason), { target: { value: 'SENTETIK reason' } })
+      fireEvent.click(screen.getByRole('button', { name: T.save }))
+      fireEvent.click(await screen.findByRole('button', { name: T.retry }))
+      await waitFor(() => expect(writeBranding).toHaveBeenCalledTimes(2))
+      fireEvent.click(await screen.findByRole('button', { name: T.retry }))
+      await waitFor(() => expect(writeBranding).toHaveBeenCalledTimes(3))
+      const calls = vi.mocked(writeBranding).mock.calls
+      expect(calls[1]).toEqual(calls[0]); expect(calls[2]).toEqual(calls[0])
+    })
   it.each([['offline', /Bağlantı yok/], ['network-error', /Sunucuya ulaşılamadı/], ['malformed', /Beklenmeyen yanıt/]] as const)('distinguishes %s', async (type, text) => {
     vi.mocked(fetchBranding).mockResolvedValue({ type }); mount(); expect(await screen.findByText(text)).toBeTruthy()
   })

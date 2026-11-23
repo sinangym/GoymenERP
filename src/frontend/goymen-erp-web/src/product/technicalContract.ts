@@ -41,6 +41,18 @@ export interface TechnicalOptions {
 function object(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
+// Exact wire key set: every required key present, nothing outside required ∪ optional (OpenAPI non-`required` properties).
+const exact = (value: Record<string, unknown>, required: readonly string[], optional: readonly string[] = []) =>
+  required.every(key => Object.hasOwn(value, key)) && Object.keys(value).every(key => required.includes(key) || optional.includes(key))
+// OpenAPI: ProductTemplateOption (fields is not in `required`), ProductTemplateFieldOption, ProductDictionaryOption,
+// ProductDictionaryEntryOption, ProductFamilyFactsOption, ProductUnitOption.
+const TEMPLATE_KEYS = ['id', 'version', 'displayName'] as const
+const TEMPLATE_OPTIONAL_KEYS = ['fields'] as const
+const FIELD_KEYS = ['key', 'kind', 'role', 'required', 'dictionary', 'allowsCandidate', 'appliesWhenField', 'appliesWhenCode', 'parentField'] as const
+const DICTIONARY_KEYS = ['name', 'entries'] as const
+const ENTRY_KEYS = ['code', 'displayName', 'status', 'parentCode', 'isExplicitNone', 'massGm2'] as const
+const FAMILY_FACT_KEYS = ['id', 'code', 'displayName', 'cins', 'tur', 'tip', 'templateId', 'templateVersion'] as const
+const UNIT_KEYS = ['id', 'displayName', 'symbol', 'isKilogram'] as const
 const text = (value: unknown): value is string => isNonEmptyString(value, 250)
 const nullableText = (value: unknown) => value === null || text(value)
 const decimalText = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/
@@ -61,12 +73,12 @@ export function decodeTechnicalOptions(raw: Record<string, unknown>): TechnicalO
     if (raw[key] != null && !Array.isArray(raw[key])) return null
   }
   for (const item of (raw.templates ?? []) as unknown[]) {
-    if (!object(item) || !isBoundUuid(item.id) || !text(item.displayName)
+    if (!object(item) || !exact(item, TEMPLATE_KEYS, TEMPLATE_OPTIONAL_KEYS) || !isBoundUuid(item.id) || !text(item.displayName)
       || !isLosslessVersion(item.version)
       || (item.fields != null && !Array.isArray(item.fields))) return null
     const fields: TemplateField[] = []
     for (const field of (item.fields ?? []) as unknown[]) {
-      if (!object(field) || !text(field.key) || ['__proto__', 'constructor', 'prototype'].includes(field.key)
+      if (!object(field) || !exact(field, FIELD_KEYS) || !text(field.key) || ['__proto__', 'constructor', 'prototype'].includes(field.key)
         || (field.kind !== 'measureMillimetre' && field.kind !== 'dictionaryReference')
         || typeof field.required !== 'boolean' || typeof field.allowsCandidate !== 'boolean'
         || !['role', 'dictionary', 'appliesWhenField', 'appliesWhenCode', 'parentField'].every(k => nullableText(field[k]))
@@ -78,10 +90,10 @@ export function decodeTechnicalOptions(raw: Record<string, unknown>): TechnicalO
     templates.push({ id: item.id, version: item.version, displayName: item.displayName, fields })
   }
   for (const item of (raw.dictionaries ?? []) as unknown[]) {
-    if (!object(item) || !text(item.name) || !Array.isArray(item.entries)) return null
+    if (!object(item) || !exact(item, DICTIONARY_KEYS) || !text(item.name) || !Array.isArray(item.entries)) return null
     const entries: DictionaryEntry[] = []
     for (const entry of item.entries) {
-      if (!object(entry) || !text(entry.code) || !text(entry.displayName)
+      if (!object(entry) || !exact(entry, ENTRY_KEYS) || !text(entry.code) || !text(entry.displayName)
         || (entry.status !== 'approved' && entry.status !== 'candidate')
         || !nullableText(entry.parentCode) || typeof entry.isExplicitNone !== 'boolean'
         || !nullableDecimal(entry.massGm2)) return null
@@ -91,7 +103,7 @@ export function decodeTechnicalOptions(raw: Record<string, unknown>): TechnicalO
     dictionaries.push({ name: item.name, entries })
   }
   for (const item of (raw.familyFacts ?? []) as unknown[]) {
-    if (!object(item) || !isBoundUuid(item.id) || !text(item.code) || !text(item.displayName)
+    if (!object(item) || !exact(item, FAMILY_FACT_KEYS) || !isBoundUuid(item.id) || !text(item.code) || !text(item.displayName)
       || !text(item.cins) || !text(item.tur) || !text(item.tip)
       || (item.templateId !== null && !isBoundUuid(item.templateId))
       || !nullableText(item.templateVersion)
@@ -99,7 +111,7 @@ export function decodeTechnicalOptions(raw: Record<string, unknown>): TechnicalO
     familyFacts.push(item as unknown as TechnicalOptions['familyFacts'][number])
   }
   for (const item of (raw.units ?? []) as unknown[]) {
-    if (!object(item) || !isBoundUuid(item.id) || !text(item.displayName) || !text(item.symbol)
+    if (!object(item) || !exact(item, UNIT_KEYS) || !isBoundUuid(item.id) || !text(item.displayName) || !text(item.symbol)
       || typeof item.isKilogram !== 'boolean') return null
     units.push(item as unknown as TechnicalOptions['units'][number])
   }

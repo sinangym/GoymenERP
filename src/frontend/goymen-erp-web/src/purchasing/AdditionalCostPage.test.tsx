@@ -64,6 +64,24 @@ describe('ALC-S8 user-completable read source', () => {
     await waitFor(() => expect(recordAdditionalCost).toHaveBeenCalledTimes(2))
     expect(vi.mocked(recordAdditionalCost).mock.calls[1]).toEqual(first)
   })
+  it('offers the retry of an unknown write again after the screen is reopened and resends the same key and body', async () => {
+    current = { ...current, activeContext: { ...current.activeContext!, capabilities: [C.read, C.record] } }
+    mount(); await screen.findAllByText('SENTETIK nakliye')
+    fireEvent.change(screen.getByLabelText(T.date), { target: { value: '2026-11-17' } })
+    await screen.findByText(T.untyped)
+    fireEvent.change(screen.getByLabelText(T.supplier), { target: { value: id(6) } })
+    fireEvent.change(screen.getByLabelText(T.description), { target: { value: 'SENTETIK taşıma' } })
+    fireEvent.change(screen.getByLabelText(T.net), { target: { value: '100,01' } })
+    fireEvent.change(screen.getByLabelText(T.vat), { target: { value: 'SENTETIK-20' } })
+    fireEvent.change(screen.getByLabelText(T.reason), { target: { value: 'SENTETIK belge' } })
+    fireEvent.click(screen.getByRole('button', { name: T.record })); await screen.findByText(T.unknown)
+    const first = vi.mocked(recordAdditionalCost).mock.calls[0]
+    cleanup(); mount(); await screen.findAllByText('SENTETIK nakliye')
+    expect(screen.getByRole('button', { name: T.record }).matches(':disabled')).toBe(true)
+    fireEvent.click(await screen.findByRole('button', { name: T.retry }))
+    await waitFor(() => expect(recordAdditionalCost).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(recordAdditionalCost).mock.calls[1]).toEqual(first)
+  })
   it.each([403, 404, 409, 503])('shows the %s failure without former financial data', async status => {
     vi.mocked(fetchAdditionalCosts).mockResolvedValue({ type: 'http', status })
     mount(); await waitFor(() => expect(fetchAdditionalCosts).toHaveBeenCalled())

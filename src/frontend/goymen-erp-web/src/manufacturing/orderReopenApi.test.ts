@@ -29,3 +29,11 @@ describe('reopening contract', () => {
     expect(await reopenOrder(COMPANY_A, ORDER, attempt)).toEqual({ type: 'failed', status: 422, code: 'manufacturing_order_reopen_period_not_open' })
   })
 })
+const without = (value: object, key: string) => Object.fromEntries(Object.entries(value).filter(([name]) => name !== key))
+describe('reopening history exact key set (SENTETIK)', () => {
+  it('rejects an extra or a missing key on a reopening row', () => {
+    expect(decodeOrder(order({ version: 5, reopenings: [history] }))?.reopenings).toEqual([history])
+    expect(decodeOrder(order({ version: 5, reopenings: [{ ...history, extra: 1 }] }))).toBeNull()
+    for (const key of Object.keys(history)) expect(decodeOrder(order({ version: 5, reopenings: [without(history, key)] }))).toBeNull()
+  })
+})

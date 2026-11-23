@@ -1,6 +1,6 @@
 namespace GoymenERP.Modules.Identity.Application.Contracts;
 
-/// <summary>KIM-D27, human answer relayed at #1189/6951606530. Server terminal only; no web endpoint or role grant.</summary>
+/// <summary>KIM-D27, human answer relayed at #1189/6951606530 (GOV-D16). Server terminal only; no web endpoint or role grant.</summary>
 public interface ILocalTwoFactorOperatorRecoveryConsoleV1
 {
     bool IsInteractive { get; }

@@ -94,7 +94,7 @@ async function read<T>(path: string, company: string, decode: (raw: unknown) => 
 }
 export const fetchTransferDepartureCandidates = (company: string, signal?: AbortSignal) => read(`${TRANSFER_DEPARTURE_PATH}/candidates`, company,
   (raw) => decodeTransferDepartureCandidates(raw, company), signal)
-export const fetchTransferDepartureFacts = (company: string, item: TransferDepartureCandidate, signal?: AbortSignal) => read(`${TRANSFER_DEPARTURE_PATH}/${encodeURIComponent(item.transferId)}`, company,
+export const fetchTransferDepartureFacts = (company: string, item: Pick<TransferDepartureCandidate, 'transferId' | 'sourceLocationId'>, signal?: AbortSignal) => read(`${TRANSFER_DEPARTURE_PATH}/${encodeURIComponent(item.transferId)}`, company,
   (raw) => decodeTransferDepartureFacts(raw, company, item.transferId, item.sourceLocationId), signal)
 export type TransferDepartureCommandOutcome = { readonly type: 'applied'; readonly facts: TransferDepartureFacts; readonly replayed: boolean }
   | { readonly type: 'refused'; readonly status: number; readonly code: string | null }
@@ -166,5 +166,23 @@ export function finishTransferDepartureAttempt(snapshot: TransferDepartureSnapsh
 export function leaveTransferDepartureAttempt(binding: string | null) {
   const current = transferDepartureAttempt(binding)
   if (binding !== null && current.phase === 'sending') publish(binding, { phase: 'unknown', snapshot: current.snapshot, reason: 'network-error' })
+}
+/**
+ * K3 P2-6: the explicit way out of an unresolved departure, decided by a fresh READ of the transfer — nothing is sent.
+ * This owner stores success only, so a later refusal cannot disprove a lost commit; the facts can. If the departure of
+ * this kind is recorded at this attempt's instant, the attempt is completed. If it is not recorded (or another instant
+ * holds it), this attempt did not apply, and its stale expected version can never apply later, so the slot is
+ * released. Anything else keeps it open.
+ */
+export function resolveTransferDepartureAttempt(binding: string | null, facts: TransferDepartureFacts): 'completed' | 'released' | 'open' {
+  const current = transferDepartureAttempt(binding)
+  if (binding === null || !transferDepartureFrozen(current) || current.phase === 'idle' || current.phase === 'sending') return 'open'
+  const { snapshot } = current
+  if (facts.transferId !== snapshot.transferId || facts.sourceLocationId !== snapshot.sourceLocationId) return 'open'
+  const at = snapshot.payload.kind === 1 ? facts.exitWeighingAtUtc : facts.vehicleExitAtUtc
+  if (at !== null && instant(at) === instant(snapshot.payload.occurredAtUtc)) {
+    publish(binding, { phase: 'completed', snapshot, replayed: true }); return 'completed'
+  }
+  publish(binding, idle); return 'released'
 }
 export function resetTransferDepartureAttemptsForTests() { attempts.clear(); listeners.clear() }

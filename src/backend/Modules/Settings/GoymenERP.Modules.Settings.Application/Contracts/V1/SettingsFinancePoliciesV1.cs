@@ -67,7 +67,7 @@ public sealed record PublishSettingsFinancePolicyV1(string? ExpectedStateVersion
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record RetireSettingsFinancePolicyV1(string? ExpectedStateVersion, DateOnly RetiredFrom, string? Reason);
 
-/// <summary>DEC-FIN-012 and 6960531086: threshold comparison is inclusive. No role permission is conferred by a row.</summary>
+/// <summary>DEC-FIN-012 and 6960531086 (GOV-D16): threshold comparison is inclusive. No role permission is conferred by a row.</summary>
 public sealed record SettingsFinanceApprovalRuleV1(Guid RuleId, string OperationPermission, Guid CurrencyId,
     Guid ApproverRoleId, string ApproverRoleCode, string RoleSourceVersion, int ApprovalStep, string AmountThreshold);
 

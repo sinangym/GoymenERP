@@ -20,7 +20,7 @@ using static GoymenERP.Modules.Inventory.Application.InventorySubcontractDeliver
 
 namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 
-/// <summary>6957941048: an explicit hold release, independent of dispatch. Existing owner tables only.</summary>
+/// <summary>6957941048 (GOV-D16): an explicit hold release, independent of dispatch. Existing owner tables only.</summary>
 public sealed class InventorySubcontractAllocationReleaseStoreV1(InventoryDbContext db, InventoryStore physical,
     ICompanyContext company, ISalesOrderLineSerializationLockBinderV1 salesLocks, IAuditEventCollector audit,
     IAuditTransactionWriterV1 auditWriter, IRefusedAttemptRecorderV1 refusals, TimeProvider clock)

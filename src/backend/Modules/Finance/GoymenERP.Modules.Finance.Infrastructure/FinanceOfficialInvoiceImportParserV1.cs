@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using GoymenERP.Modules.Finance.Contracts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Finance.Infrastructure;
 
@@ -172,9 +173,44 @@ public sealed class FinanceOfficialInvoiceImportParserV1 : IFinanceOfficialInvoi
         }
         return issues.Count == 0
             ? new FinanceOfficialInvoiceImportParseResult(
-                new FinanceOfficialInvoiceImportPreviewV1(templateVersion, checksum, batch, []),
+                new FinanceOfficialInvoiceImportPreviewV1(templateVersion, checksum, batch, [],
+                    TaxWarnings(documents.InOrder, rows)),
                 documents.InOrder)
             : Result(checksum, issues, templateVersion);
+    }
+
+    /// <summary>
+    /// FNS-D64 on the CSV preview, through the same calculator as the manual record. The payable TL is the v3 column;
+    /// a v2 document has none, so it is the sum of its installments only when every installment is in Turkish lira (the
+    /// functional currency) — otherwise the payable TL is unknown and no verdict is given (never converted, never zero).
+    /// </summary>
+    private static IReadOnlyList<FinanceOfficialInvoiceTaxWarningV1>? TaxWarnings(
+        IReadOnlyList<FinanceOfficialSalesInvoiceImportDocumentV2> documents,
+        IReadOnlyList<ApprovedFinanceOpenItemSourceRow> rows)
+    {
+        var warnings = new List<FinanceOfficialInvoiceTaxWarningV1>();
+        foreach (var document in documents)
+        {
+            var payable = document.PayableFunctionalAmount ?? LiraInstallmentTotal(
+                rows.Where(row => row.SourceDocumentId == document.SourceDocumentId).ToArray());
+            if (FinanceOfficialInvoiceTaxConsistencyV1.Check(document.TaxBaseFunctionalAmount, document.VatFunctionalAmount,
+                    document.WithholdingFunctionalAmount, payable, document.SourceDocumentId) is { } warning)
+                warnings.Add(warning);
+        }
+        return warnings.Count == 0 ? null : warnings;
+    }
+
+    private static string? LiraInstallmentTotal(IReadOnlyList<ApprovedFinanceOpenItemSourceRow> installments)
+    {
+        if (installments.Count == 0
+            || installments.Any(row => row.CurrencyId != SettingsCurrencyIdentitiesV1.TurkishLira)) return null;
+        var total = new FinanceExactDecimalText(0, 0);
+        foreach (var row in installments)
+        {
+            if (!FinanceExactDecimalText.TryParseNonNegative(row.Amount, out var amount)) return null;
+            total = total.Add(amount);
+        }
+        return total.Text;
     }
 
     private static FinanceOfficialInvoiceImportParseResult Result(

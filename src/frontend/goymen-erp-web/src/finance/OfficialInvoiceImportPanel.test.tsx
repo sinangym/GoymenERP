@@ -27,7 +27,8 @@ const otherSource = {
   displayName: 'Ekim onaylı fatura taksitleri',
 }
 
-function preview(issues: OfficialInvoiceImportPreview['issues'] = []): OfficialInvoiceImportPreview {
+function preview(issues: OfficialInvoiceImportPreview['issues'] = [],
+  taxWarnings: OfficialInvoiceImportPreview['taxWarnings'] = []): OfficialInvoiceImportPreview {
   return {
     templateVersion: 'finance-official-invoice-v1',
     sourceSha256: checksum,
@@ -35,6 +36,7 @@ function preview(issues: OfficialInvoiceImportPreview['issues'] = []): OfficialI
     batchVersion: source.batchVersion,
     rowCount: 1,
     issues,
+    taxWarnings,
   }
 }
 
@@ -138,6 +140,33 @@ describe('official invoice import panel', () => {
     await user.click(screen.getByRole('button', { name: /yeniden aç/i }))
     expect(await screen.findByText(/kalan 250.50 \/ sürüm 2/i)).toBeTruthy()
     expect(api.reopen).toHaveBeenCalledWith(source.batchId, expect.any(AbortSignal))
+  })
+
+  it('shows the server tax warnings of the preview without blocking apply', async () => {
+    const user = userEvent.setup()
+    const api = client({ preview: vi.fn().mockResolvedValue(preview([], [{ code: 'finance_official_invoice_tax_inconsistent',
+      sourceDocumentId: '33333333-3333-4333-8333-333333333333', expectedPayableFunctionalAmount: '1200',
+      payableFunctionalAmount: '1200.01', differenceFunctionalAmount: '0.01' }])) })
+    render(<OfficialInvoiceImportPanel source={source} client={api} attemptContext={attemptContext} />)
+    await upload(user)
+    await user.click(screen.getByRole('button', { name: /^önizle$/i }))
+
+    const note = await screen.findByRole('note')
+    expect(note.textContent).toContain('matrah + KDV − tevkifat')
+    expect(note.textContent).toContain('Belge: 33333333-3333-4333-8333-333333333333')
+    expect(note.textContent).toContain('Beklenen ödenecek tutar (TL): 1200')
+    expect(note.textContent).toContain('Dosyadaki ödenecek tutar (TL): 1200.01')
+    expect(note.textContent).toContain('Fark (TL): 0.01')
+    expect((screen.getByRole('button', { name: /yetkili uygula/i }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('shows no tax warning note when the preview has none', async () => {
+    const user = userEvent.setup()
+    render(<OfficialInvoiceImportPanel source={source} client={client()} attemptContext={attemptContext} />)
+    await upload(user)
+    await user.click(screen.getByRole('button', { name: /^önizle$/i }))
+    await screen.findByText(`SHA-256: ${checksum}`)
+    expect(screen.queryByRole('note')).toBeNull()
   })
 
   it('shows strict preview issues and never enables apply', async () => {
