@@ -1,4 +1,5 @@
 import { isDateOnly } from '../finance/dateOnly'
+import { exactKeys } from './exactKeys'
 
 export interface PostedManufacturingCostShare {
   readonly companyId: string; readonly sourceEventId: string; readonly outputId: string; readonly generationId: string
@@ -19,12 +20,22 @@ const hash = (value: unknown) => typeof value === 'string' && /^[a-f0-9]{64}$/i.
 const decimal = (value: unknown) => typeof value === 'string' && /^-?(0|[1-9][0-9]*)(\.[0-9]{0,27}[1-9])?$/.test(value) && value !== '-0'
 const positiveInteger = (value: unknown) => Number.isSafeInteger(value) && (value as number) > 0
 const utc = (value: unknown) => typeof value === 'string' && /(?:Z|\+00:00)$/.test(value) && Number.isFinite(Date.parse(value))
-const ratio = (value: unknown) => record(value) && typeof value.numerator === 'string' && /^-?(0|[1-9][0-9]*)$/.test(value.numerator)
+const ratio = (value: unknown) => record(value) && exactKeys(value, ['numerator', 'denominator']) && typeof value.numerator === 'string' && /^-?(0|[1-9][0-9]*)$/.test(value.numerator)
   && value.numerator !== '-0' && typeof value.denominator === 'string' && /^[1-9][0-9]*$/.test(value.denominator)
+// OpenAPI: PostedManufacturingCostShareV1, ManufacturingAttributionShipmentV1 (returns is not in `required`),
+// ManufacturingAttributionReturnV1, AccountingInventoryCostRatioV1.
+const SHARE_KEYS = ['companyId', 'sourceEventId', 'outputId', 'generationId', 'generationVersion', 'receiptMovementId', 'journalId',
+  'currencyId', 'cogsAccountId', 'counterAccountId', 'journalTotal', 'signedAmount', 'exactSignedAmount', 'signedRoundingResidue',
+  'moneyProfileId', 'moneyProfileVersion', 'moneyScale', 'profileAccountingDate', 'shipment', 'sourcePayloadSha256', 'lineageSha256',
+  'historySha256', 'fingerprint'] as const
+const SHIPMENT_KEYS = ['shipmentId', 'movementId', 'movementLineNumber', 'loadingInstructionLineId', 'productId', 'labelId',
+  'physicalQuantityKg', 'rootShare', 'netRootQuantityKg', 'recordedAtUtc', 'provenOriginalSequence', 'hasReturns', 'physicalProofJson'] as const
+const SHIPMENT_OPTIONAL_KEYS = ['returns'] as const
+const RETURN_KEYS = ['returnId', 'movementId', 'movementLineNumber', 'sourceIssueMovementId', 'quantityKg', 'recordedAtUtc'] as const
 
 // Shape and identity validation only. The browser never computes a monetary share, sum or remainder.
 export function postedManufacturingCostShare(value: unknown, company: string, product?: string): value is PostedManufacturingCostShare {
-  if (!record(value) || !same(value.companyId, company)
+  if (!record(value) || !exactKeys(value, SHARE_KEYS) || !same(value.companyId, company)
     || !['sourceEventId', 'outputId', 'generationId', 'receiptMovementId', 'journalId', 'currencyId', 'cogsAccountId', 'counterAccountId', 'moneyProfileId'].every(key => guid(value[key]))
     || same(value.cogsAccountId, value.counterAccountId as string) || typeof value.generationVersion !== 'string' || !/^[1-9][0-9]*$/.test(value.generationVersion)
     || !['journalTotal', 'signedAmount', 'signedRoundingResidue'].every(key => decimal(value[key]))
@@ -34,12 +45,15 @@ export function postedManufacturingCostShare(value: unknown, company: string, pr
     || !['sourcePayloadSha256', 'lineageSha256', 'historySha256', 'fingerprint'].every(key => hash(value[key]))
     || !record(value.shipment)) return false
   const shipment = value.shipment
-  if (!guid(shipment.movementId) || !positiveInteger(shipment.movementLineNumber)) return false
+  if (!exactKeys(shipment, SHIPMENT_KEYS, SHIPMENT_OPTIONAL_KEYS) || !guid(shipment.movementId) || !positiveInteger(shipment.movementLineNumber)
+    || !guid(shipment.loadingInstructionLineId) || !guid(shipment.labelId) || !ratio(shipment.rootShare) || !ratio(shipment.netRootQuantityKg)
+    || shipment.provenOriginalSequence !== null && !positiveInteger(shipment.provenOriginalSequence)
+    || typeof shipment.physicalProofJson !== 'string' || typeof shipment.hasReturns !== 'boolean') return false
   if (shipment.hasReturns === true) {
     if (!Array.isArray(shipment.returns) || shipment.returns.length === 0 || shipment.returns.length > 65536) return false
     const ids = new Set<string>(); const movements = new Set<string>([`${shipment.movementId}:${shipment.movementLineNumber}`.toLowerCase()])
     for (const item of shipment.returns) {
-      if (!record(item) || !guid(item.returnId) || !guid(item.movementId) || !positiveInteger(item.movementLineNumber)
+      if (!record(item) || !exactKeys(item, RETURN_KEYS) || !guid(item.returnId) || !guid(item.movementId) || !positiveInteger(item.movementLineNumber)
         || !same(item.sourceIssueMovementId, shipment.movementId as string)
         || typeof item.quantityKg !== 'number' || !Number.isFinite(item.quantityKg) || item.quantityKg <= 0 || !utc(item.recordedAtUtc)) return false
       const identity = item.returnId.toLowerCase(); const movement = `${item.movementId}:${item.movementLineNumber}`.toLowerCase()

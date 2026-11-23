@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { postedPurchaseCostShare } from './postedPurchaseCostProof'
 import { decodeInventoryCost } from './inventoryCostApi'
 import { decodeCogsHistory, decodeCogsProposal } from './invoiceLineCogsApi'
+import { keyProbes } from './exactKeysTestSupport'
 import { COMPANY_A, COMPANY_B, PREPARER, APPROVER, ACCOUNT_DEBIT, ACCOUNT_CREDIT, JOURNAL } from './testHarness'
 
 const id = 'c0633000-0000-4000-8000-000000000001'
@@ -40,6 +41,9 @@ describe('actual first purchase posted share proof', () => {
       preparedBy: PREPARER, preparedAtUtc: at, approvedBy: null, approvedAtUtc: null, reason: 'SENTETIK',
       postedEvidence: null, reversingCorrectionJournalId: null, replacementCorrectionJournalId: null, purchaseAttributedEvidence: [linked] }
     expect(decodeCogsProposal(proposal, COMPANY_A, id, line)?.purchaseAttributedEvidence?.[0].source.approval.proposalId).toBe(id)
+    for (const [label, body] of keyProbes(proposal, [[['purchaseAttributedEvidence', 0], 'currentJournalTotal'],
+      [['purchaseAttributedEvidence', 0, 'source', 'approval'], 'status']]))
+      expect(decodeCogsProposal(body, COMPANY_A, id, line), label).toBeNull()
     const approved = { ...proposal, version: 2, status: 'Approved', approvedBy: APPROVER, approvedAtUtc: at,
       attributedCorrections: [{ attributionFingerprint: value.fingerprint, sourceJournalId: JOURNAL,
         reversingCorrectionJournalId: id, replacementCorrectionJournalId: line }] }
@@ -70,7 +74,7 @@ describe('actual first purchase posted share proof', () => {
     const body = { proposalId: id, companyId: COMPANY_A, eventId: id, kind: 1, invoiceId: id, invoiceVersion: 1, admissionId: id,
       invoiceDate: '2026-11-17', officialInvoiceNumber: 'SENTETIK', version: 1, status: 'AlreadyAccounted', sourceOccurredAtUtc: at,
       exactTlAmount: '0.01', component: { componentKey: `invoice-line:${line}`, productId: id, invoiceLineId: line, invoiceLineNumber: 1,
-        locationId: null, signedTlAmount: ratio, sourceProofSha256: 'a'.repeat(64), alreadyPostedPurchaseComponents: [value] },
+        locationId: null, signedTlAmount: ratio, sourceProofJson: '{}', sourceProofSha256: 'a'.repeat(64), alreadyPostedPurchaseComponents: [value] },
       preparation: null, approvedBy: null, approvedAtUtc: null, journalId: null, cancellationId: null, reversalProposal: null }
     expect(decodeInventoryCost(body, COMPANY_A, 1)?.component.alreadyPostedPurchaseComponents?.[0].approval.journalId).toBe(JOURNAL)
     expect(decodeInventoryCost({ ...body, component: { ...body.component, alreadyPostedPurchaseComponents: undefined } }, COMPANY_A, 1)).toBeNull()
@@ -78,5 +82,26 @@ describe('actual first purchase posted share proof', () => {
       recordedRounding: { ...value.approval.recordedRounding, rounding: { ...value.approval.recordedRounding.rounding, roundedSignedAmount: '0' } } } }
     expect(postedPurchaseCostShare(rounded, COMPANY_A, id)).toBe(true)
     expect(postedPurchaseCostShare({ ...rounded, approval: { ...rounded.approval, journalId: JOURNAL } }, COMPANY_A, id)).toBe(false)
+  })
+})
+describe('posted purchase share exact key sets', () => {
+  it('rejects an unknown or missing key on every level of the share', () => {
+    const value = source()
+    Object.assign(value.candidates[0].shipment, { returns: [{ returnId: line, movementId: line, movementLineNumber: 1,
+      sourceIssueMovementId: value.movementId, quantityKg: 0.5, recordedAtUtc: at }] })
+    expect(postedPurchaseCostShare(value, COMPANY_A, id)).toBe(true)
+    for (const [label, body] of keyProbes(value, [[[], 'candidates'], [['exactSignedAmount'], 'denominator'], [['approval'], 'fingerprint'],
+      [['approval', 'recordedRounding'], 'moneyScale'], [['approval', 'recordedRounding', 'rounding'], 'ruleVersion'],
+      [['approval', 'recordedRounding', 'rounding', 'exactSignedResidue'], 'numerator'], [['candidates', 0], 'rootLabelId'],
+      [['candidates', 0, 'exactTlAmount'], 'numerator'], [['candidates', 0, 'shipment'], 'labelId'],
+      [['candidates', 0, 'shipment', 'rootShare'], 'numerator'], [['candidates', 0, 'shipment', 'returns', 0], 'quantityKg']]))
+      expect(postedPurchaseCostShare(body, COMPANY_A, id), label).toBe(false)
+  })
+  it('accepts a rounding proof without the optional display texts but not with a mistyped one', () => {
+    const value = source(); const rounding: Record<string, unknown> = value.approval.recordedRounding.rounding
+    delete rounding.exactSignedAmountText; delete rounding.exactSignedResidueText
+    expect(postedPurchaseCostShare(value, COMPANY_A, id)).toBe(true)
+    rounding.exactSignedAmountText = 1
+    expect(postedPurchaseCostShare(value, COMPANY_A, id)).toBe(false)
   })
 })

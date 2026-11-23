@@ -443,8 +443,8 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<ISettingsPrerequisiteProvider>(),
             provider.GetRequiredService<IFinanceRecordPeriodRule>(),
             provider.GetRequiredService<IAuditEventCollector>(),
-            // No dedicated Settings money operation exists for expense payments yet; the outgoing bank payment
-            // operation's approved profile governs the amount until one is catalogued (NEEDS-SINAN).
+            // FNS-D48/FNS-D55: the expense payment reads its own Settings money profile row
+            // (finance.expense-payment.v1), managed apart from the manual bank payment's.
             new ExpensePaymentBinding(FinanceMoneyOperations.ExpensePaymentV1),
             new ExpensePaymentAuditEnvelopes(
                 Envelope(provider, FinancePermissionNames.ExpensePaymentDraftSave, permissions,

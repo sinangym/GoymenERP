@@ -91,6 +91,12 @@ function Workspace({ namespace }: { readonly namespace: string | null }) {
           {row.sourceDifferences?.length ? <aside><p>{T.differences}</p><ul>{row.sourceDifferences.map((difference, index) => <li key={`${difference.importBatchId}:${index}`}>
             {difference.officialNo} · {difference.fields.map(field => T.sourceFields[field as keyof typeof T.sourceFields] ?? T.sourceDifference).join(', ')}
           </li>)}</ul></aside> : null}
+          {row.taxWarning ? <aside role="note" aria-label={T.taxWarningCode}><p>{T.taxWarning}</p><dl>
+            <dt>{T.taxWarningExpected}</dt><dd>{row.taxWarning.expectedPayableFunctionalAmount}</dd>
+            <dt>{T.taxWarningPayable}</dt><dd>{row.taxWarning.payableFunctionalAmount}</dd>
+            <dt>{T.taxWarningDifference}</dt><dd>{row.taxWarning.differenceFunctionalAmount}</dd>
+            <dt>{T.taxWarningCode}</dt><dd>{row.taxWarning.code}</dd>
+          </dl></aside> : null}
           <p>{T.pinnedPdf} {row.pdfDocumentVersionNo}</p>
           <DocumentsPanel ownerKind={OFFICIAL_INVOICE_OWNER} ownerId={row.invoiceId} companyId={company} namespace={namespace!} entryGeneration={shell.routeEntryGeneration} heading={T.pdf} />
           {row.status === 'PendingApproval' ? <div className={styles.actions}>

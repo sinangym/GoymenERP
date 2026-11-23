@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import styles from './Finance.module.css'
 import { OFFICIAL_INVOICE_IMPORT_TEXT, officialInvoiceIssueLine } from './officialInvoiceImportText'
+import type { OfficialInvoiceTaxWarning } from './officialSalesInvoiceApi'
 
 export interface OfficialInvoiceImportSourceSelection {
   readonly batchId: string
@@ -27,6 +28,20 @@ export interface OfficialInvoiceImportPreview {
   readonly batchVersion: string
   readonly rowCount: number
   readonly issues: readonly OfficialInvoiceImportIssue[]
+  /** FNS-D64: non-blocking; empty when the server sent none. */
+  readonly taxWarnings: readonly OfficialInvoiceTaxWarning[]
+}
+
+/** FNS-D64: the server's warnings as it sent them — no amount is computed or compared here. */
+export function OfficialInvoiceTaxWarningList({ warnings }: { readonly warnings: readonly OfficialInvoiceTaxWarning[] }) {
+  const T = OFFICIAL_INVOICE_IMPORT_TEXT
+  return warnings.length === 0 ? null : <aside role="note" aria-label={T.taxWarningCode}><p>{T.taxWarnings}</p><ul>
+    {warnings.map((warning, index) => <li key={`${warning.sourceDocumentId ?? ''}:${index}`}>
+      {T.taxWarningDocument}: {warning.sourceDocumentId ?? T.taxWarningNoDocument} · {T.taxWarningExpected}: {warning.expectedPayableFunctionalAmount}
+      {' · '}{T.taxWarningPayable}: {warning.payableFunctionalAmount} · {T.taxWarningDifference}: {warning.differenceFunctionalAmount}
+      {' · '}{T.taxWarningCode}: {warning.code}
+    </li>)}
+  </ul></aside>
 }
 
 export interface OfficialInvoiceOpenItem {
@@ -385,6 +400,7 @@ function OfficialInvoiceImportPanelState({
           <p>Şablon: {current.preview.templateVersion}</p>
           <p>Satır: {current.preview.rowCount}</p>
           <p>SHA-256: {current.preview.sourceSha256}</p>
+          <OfficialInvoiceTaxWarningList warnings={current.preview.taxWarnings} />
         </article>
       )}
       {current.issues.length === 0 ? null : (

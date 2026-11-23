@@ -6,15 +6,16 @@ export interface CollateralTypes { readonly companyId: string; readonly entries:
 export interface CreateCollateralType { readonly code: string; readonly name: string; readonly kind: CollateralKind; readonly reason: string }
 export interface RecordCollateralType { readonly expectedVersion: string; readonly name: string; readonly active: boolean; readonly ratePercent: string; readonly reason: string }
 const object = (raw: unknown): raw is Record<string, unknown> => typeof raw === 'object' && raw !== null && !Array.isArray(raw)
+const exact = (raw: Record<string, unknown>, keys: readonly string[]) => Object.keys(raw).length === keys.length && keys.every(key => Object.hasOwn(raw, key))
 const text = (raw: unknown): raw is string => typeof raw === 'string' && raw.trim().length > 0
 const guid = (raw: unknown): raw is string => typeof raw === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw) && !/^0{8}-0{4}-0{4}-0{4}-0{12}$/.test(raw)
 // Transport syntax only. The backend owns rate limits and all calculations.
 const rate = (raw: unknown): raw is string => typeof raw === 'string' && raw.length <= 64 && /^(0|[1-9]\d*)(\.\d*[1-9])?$/.test(raw)
 export function decodeCollateralTypes(raw: unknown, company: string): CollateralTypes | null {
-  if (!object(raw) || raw.companyId !== company || !Array.isArray(raw.entries)) return null
+  if (!object(raw) || !exact(raw, ['companyId', 'entries']) || raw.companyId !== company || !Array.isArray(raw.entries)) return null
   const entries: CollateralType[] = []
   for (const item of raw.entries) {
-    if (!object(item) || !guid(item.id) || entries.some(entry => entry.id === item.id || entry.code === item.code)
+    if (!object(item) || !exact(item, ['id', 'code', 'name', 'kind', 'active', 'ratePercent', 'version', 'recordedBy', 'recordedAtUtc']) || !guid(item.id) || entries.some(entry => entry.id === item.id || entry.code === item.code)
       || !text(item.code) || item.code.length > 32 || !/^[A-Z0-9][A-Z0-9._-]*$/.test(item.code)
       || !text(item.name) || item.name.length > 200 || item.name !== item.name.trim() || /[\u0000-\u001f\u007f]/.test(item.name)
       || typeof item.kind !== 'string' || !COLLATERAL_KINDS.includes(item.kind as CollateralKind)

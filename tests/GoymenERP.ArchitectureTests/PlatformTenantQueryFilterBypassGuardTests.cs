@@ -4270,7 +4270,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Sql"] = 1
                         }),
-                // tren-1 wave 3 — one-step party credit limit: Down refuses (51563, number shared with the Idempotency retention purge migration) while direct limits exist (forward fix). One Sql; K3 review pending.
+                // tren-1 wave 3 — one-step party credit limit: Down refuses (51563; the Idempotency retention purge Down guard has its own number, 51564) while direct limits exist (forward fix). One Sql; K3 review pending.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "Persistence/Migrations/20261115163811_RestorePartyCreditLimitOneStep.cs"] =
                     new(
@@ -4288,7 +4288,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Sql"] = 1
                         }),
-                // tren-1 wave 3 — OPEN-021 / NS-12 retention purge: an append-only trigger on the purge evidence (51561/51562), the CommandExecutions mutation trigger re-created to admit the recorded purge (51010), and in Down a refusal (51563, shared with the Finance one-step credit limit migration) plus the original trigger restored. Four Sql; K3 review pending.
+                // tren-1 wave 3 — OPEN-021 / NS-12 retention purge: an append-only trigger on the purge evidence (51561/51562), the CommandExecutions mutation trigger re-created to admit the recorded purge (51010), and in Down a refusal (51564; 51563 belongs to the Finance one-step credit limit migration) plus the original trigger restored. Four Sql; K3 review pending.
                 ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
                  + "Persistence/Migrations/20261115162318_AddIdempotencyRetentionPurge.cs"] =
                     new(
@@ -6240,7 +6240,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20261122213615_AddUserAccountCreatedBy.cs"] =
                     new("8410925ac218229082bf6f975335ddefa38b0e2d365cf4dbc849034d97a3c7ba", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // Tren-1 K3 fix F4 (ALS-D91 replacement-expected supplier return); K3 review in the train-1 exact-head review. Down
-                // refuses (52300, used by no other migration) while a marked return exists; use a forward fix. 1 lexical Sql call(s).
+                // refuses (52073, used by no other migration) while a marked return exists; use a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261122205751_AllowPurchaseSupplierReturnReplacement.cs"] =
                     new("33893073ded647ba118b6647fd822673720e158ef55cf1fc497f145a2f72efc3", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
             };

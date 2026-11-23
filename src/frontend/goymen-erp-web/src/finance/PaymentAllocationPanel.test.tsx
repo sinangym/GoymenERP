@@ -53,7 +53,11 @@ describe('Transferred payment allocation workflow', () => {
       () => new Response(null, { status: 503 }),
       () => { throw new TypeError('failed to fetch') },
       () => new Response(null, { status: 403 }),
+      () => new Response(null, { status: 400 }),
       () => new Response(null, { status: 404 }),
+      () => new Response(null, { status: 415 }),
+      () => new Response(JSON.stringify({ outcome: 'ValidationFailed', resource: null, isReplay: false,
+        originalCorrelationId: 'sentetik-correlation', issues: [{ field: 'amount', code: 'SENTETIK_refusal' }] }), { status: 422 }),
     ]
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input).includes('/candidates/')) return new Response(JSON.stringify(candidate(own)))
@@ -78,9 +82,20 @@ describe('Transferred payment allocation workflow', () => {
     await waitFor(() => expect(posts).toHaveLength(3))
     await screen.findByText(T.unknown)
     expect((await screen.findByLabelText(T.amount) as HTMLInputElement).disabled).toBe(true)
-    // A decided answer closes it and releases the form.
+    // A code-less 400/404/415 is answered before the command is admitted: it does not settle the first send, so the
+    // attempt stays open and frozen with the same key.
+    for (const count of [4, 5, 6]) {
+      fireEvent.click(await screen.findByRole('button', { name: T.finalCheck }))
+      await waitFor(() => expect(posts).toHaveLength(count))
+      await screen.findByRole('button', { name: T.finalCheck })
+      expect(screen.queryByText(T.abandoned)).toBeNull()
+      expect((screen.getByLabelText(T.amount) as HTMLInputElement).disabled).toBe(true)
+    }
+    await screen.findByText(T.finalOpen)
+    // A decoded refusal is the decided answer: it closes the attempt and releases the form.
     fireEvent.click(screen.getByRole('button', { name: T.finalCheck }))
     await screen.findByText(T.abandoned)
+    expect(posts).toHaveLength(7)
     expect(screen.queryByRole('button', { name: T.finalCheck })).toBeNull()
     expect((screen.getByLabelText(T.amount) as HTMLInputElement).disabled).toBe(false)
     expect(new Set(posts.map((post) => post.key)).size).toBe(1)

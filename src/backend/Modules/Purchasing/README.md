@@ -543,7 +543,7 @@ activates nothing; real-SQL acceptance is **NOT_RUN** and independent K3 accepta
 `20261122205751_AllowPurchaseSupplierReturnReplacement` widens `CK_PurchaseSupplierReturns_Values`
 (`PurchasingDbContext.SupplierReturnValuesCheck`): `ReplacementExpected = 1` is allowed only with the receipt-adjusting
 facts (`ExpectedPurchaseOrderVersion` and `UndoQuantity`), exactly what the service and the store accept; the earlier
-`[ReplacementExpected] = 0` refused the decided path on SQL Server. Pure DDL Up; Down first refuses with `THROW 52300`
+`[ReplacementExpected] = 0` refused the decided path on SQL Server. Pure DDL Up; Down first refuses with `THROW 52073`
 while such a return exists (forward fix).
 
 ## AK-3b (adet/kg — alışı tamamlama)

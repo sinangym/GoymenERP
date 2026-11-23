@@ -1,11 +1,12 @@
 import type { ViewOutcome } from '../shell/uiState'
 import { isDateOnly } from '../finance/dateOnly'
 import { ACCOUNTING_BASE, devHeaders } from './api'
+import { exactKeys } from './exactKeys'
 import { decodeJournalReversalProposal, type JournalReversalProposal } from './journalReversalContract'
 import { postedManufacturingCostShare, type PostedManufacturingCostShare } from './postedManufacturingCostProof'
 import { postedPurchaseCostShare, type PostedPurchaseCostShare } from './postedPurchaseCostProof'
 import { decodeInventoryCostCancellation, type InventoryCostCancellation } from './inventoryCostCancellation'
-import { decodeInventoryCostSuccession, type InventoryCostClaimSuccession } from './inventoryCostSuccession'
+import { decodeInventoryCostSuccession, PHYSICAL_CLAIM_KEYS, type InventoryCostClaimSuccession } from './inventoryCostSuccession'
 
 export type InventoryCostKind = 1 | 2
 export interface InventoryCostAccount { readonly accountId: string; readonly code: string; readonly name: string }
@@ -66,13 +67,42 @@ const date = (v: unknown): v is string => typeof v === 'string' && isDateOnly(v)
 const utc = (v: unknown) => typeof v === 'string' && /(?:Z|\+00:00)$/.test(v) && Number.isFinite(Date.parse(v))
 const canonicalDecimal = (v: unknown): v is string => typeof v === 'string'
   && /^-?(0|[1-9][0-9]*)(\.[0-9]{0,27}[1-9])?$/.test(v) && v !== '-0'
-const account = (v: unknown): v is InventoryCostAccount => rec(v) && guid(v.accountId) && text(v.code) && text(v.name)
-const costRatio = (value: unknown): value is { numerator: string; denominator: string } => rec(value)
+// OpenAPI: AccountingInventoryCostListV1, AccountingInventoryCostProposalV1, AccountingInventoryCostComponentV1,
+// AccountingSalesPhysicalCostClaimV1, AccountingInventoryCostRecordedRoundingV1, AccountingInventoryCostRoundingV1,
+// AccountingInventoryCostRatioV1, AccountingInventoryCostPreparationV1, AccountingInventoryCostClassificationV1,
+// InvoiceLineCogsAccountV1, InvoiceLineCogsOptionsV1, InvoiceLineCogsPeriodOptionV1.
+// *_OPTIONAL_KEYS are the properties that are not in the schema's `required`.
+const LIST_KEYS = ['companyId', 'items'] as const
+const PROPOSAL_KEYS = ['proposalId', 'companyId', 'eventId', 'kind', 'invoiceId', 'invoiceVersion', 'admissionId', 'invoiceDate',
+  'officialInvoiceNumber', 'component', 'version', 'status', 'sourceOccurredAtUtc'] as const
+const PROPOSAL_OPTIONAL_KEYS = ['preparation', 'approvedBy', 'approvedAtUtc', 'journalId', 'cancellationId', 'reversalProposal',
+  'currentPostedJournalId', 'componentCancellation', 'exactTlAmount', 'unpostedTlAmountText'] as const
+const COMPONENT_KEYS = ['componentKey', 'productId', 'invoiceLineId', 'invoiceLineNumber', 'locationId', 'signedTlAmount',
+  'sourceProofJson', 'sourceProofSha256'] as const
+const COMPONENT_OPTIONAL_KEYS = ['salesPhysicalClaims', 'alreadyPostedComponents', 'recordedRounding', 'unpostedTlAmount',
+  'alreadyPostedPurchaseComponents', 'claimSuccession'] as const
+const RATIO_KEYS = ['numerator', 'denominator'] as const
+const RECORDED_ROUNDING_KEYS = ['currencyId', 'moneyProfileId', 'moneyProfileVersion', 'moneyScale', 'rounding'] as const
+const ROUNDING_KEYS = ['exactSignedAmount', 'roundedSignedAmount', 'exactSignedResidue', 'ruleVersion'] as const
+const ROUNDING_OPTIONAL_KEYS = ['exactSignedAmountText', 'exactSignedResidueText'] as const
+const PREPARATION_KEYS = ['periodId', 'accountingDate', 'transactionDate', 'currencyId', 'signedAmount', 'moneyProfileId',
+  'moneyProfileVersion', 'moneyScale', 'classification', 'counterAccount', 'accountPlanPackageId', 'accountPlanPackageVersion',
+  'accountPlanCatalogVersion', 'accountPlanSourceVersion', 'accountPlanSha256', 'preparedBy', 'preparedAtUtc', 'reason'] as const
+const PREPARATION_OPTIONAL_KEYS = ['rounding'] as const
+const CLASSIFICATION_KEYS = ['classification', 'accountId', 'origin', 'productVersion', 'classificationVersion', 'mappingVersion',
+  'invoiceLineRevision'] as const
+const ACCOUNT_KEYS = ['accountId', 'code', 'name'] as const
+const OPTIONS_KEYS = ['companyId', 'accounts', 'openPeriods'] as const
+const PERIOD_OPTION_KEYS = ['periodId', 'startsOn', 'endsOn'] as const
+const physicalClaim = (v: unknown) => rec(v) && exactKeys(v, PHYSICAL_CLAIM_KEYS) && guid(v.shipmentId) && guid(v.movementId)
+  && guid(v.productId) && version(v.movementLineNumber) && (typeof v.quantityKg === 'number' || typeof v.quantityKg === 'string')
+const account = (v: unknown): v is InventoryCostAccount => rec(v) && exactKeys(v, ACCOUNT_KEYS) && guid(v.accountId) && text(v.code) && text(v.name)
+const costRatio = (value: unknown): value is { numerator: string; denominator: string } => rec(value) && exactKeys(value, RATIO_KEYS)
   && typeof value.numerator === 'string' && /^-?(0|[1-9][0-9]*)$/.test(value.numerator) && value.numerator !== '-0'
   && typeof value.denominator === 'string' && /^[1-9][0-9]*$/.test(value.denominator)
 const ratioDisplay = (value: unknown, ratio: { numerator: string; denominator: string }) => canonicalDecimal(value)
   || value === `${ratio.numerator} / ${ratio.denominator}`
-const roundingProof = (value: unknown): value is InventoryCostRounding => rec(value)
+const roundingProof = (value: unknown): value is InventoryCostRounding => rec(value) && exactKeys(value, ROUNDING_KEYS, ROUNDING_OPTIONAL_KEYS)
   && value.ruleVersion === 'accounting.inventory-cost-component-total.v1' && costRatio(value.exactSignedAmount)
   && costRatio(value.exactSignedResidue) && canonicalDecimal(value.roundedSignedAmount)
   && ratioDisplay(value.exactSignedAmountText, value.exactSignedAmount) && ratioDisplay(value.exactSignedResidueText, value.exactSignedResidue)
@@ -99,12 +129,14 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
       || body.status === 'CancelledByComponentReversal' && nested?.status !== 'Approved') return null
     return { ...baseValue, status: body.status as string, cancellationId: body.cancellationId, componentCancellation: nested }
   }
-  if (!rec(body) || !['proposalId', 'companyId', 'eventId', 'invoiceId', 'admissionId'].every(k => guid(body[k]))
+  if (!rec(body) || !exactKeys(body, PROPOSAL_KEYS, PROPOSAL_OPTIONAL_KEYS) || !['proposalId', 'companyId', 'eventId', 'invoiceId', 'admissionId'].every(k => guid(body[k]))
     || !same(body.companyId as string, company) || body.kind !== kind || !version(body.invoiceVersion) || !version(body.version)
     || !date(body.invoiceDate) || !utc(body.sourceOccurredAtUtc) || !text(body.exactTlAmount) || body.officialInvoiceNumber !== null && !text(body.officialInvoiceNumber)
     || !['AwaitingPreparation', 'Prepared', 'Posted', 'NoCost', 'RoundedNoCost', 'RoundedNoCostCancelled', 'Cancelled', 'CancellationReversalPending', 'CancelledByReversal', 'AlreadyAccounted', 'AttributedCancellationPending', 'MixedCancellationPending'].includes(body.status as string)) return null
   const c = body.component
-  if (!rec(c) || !text(c.componentKey) || !guid(c.productId) || !hash(c.sourceProofSha256) || !rec(c.signedTlAmount)
+  if (!rec(c) || !exactKeys(c, COMPONENT_KEYS, COMPONENT_OPTIONAL_KEYS) || typeof c.sourceProofJson !== 'string'
+    || c.salesPhysicalClaims != null && (!Array.isArray(c.salesPhysicalClaims) || !c.salesPhysicalClaims.every(physicalClaim))
+    || !text(c.componentKey) || !guid(c.productId) || !hash(c.sourceProofSha256) || !rec(c.signedTlAmount) || !exactKeys(c.signedTlAmount, RATIO_KEYS)
     || typeof c.signedTlAmount.numerator !== 'string' || !/^-?(0|[1-9][0-9]*)$/.test(c.signedTlAmount.numerator)
     || typeof c.signedTlAmount.denominator !== 'string' || !/^[1-9][0-9]*$/.test(c.signedTlAmount.denominator)) return null
   if (c.claimSuccession != null && (kind !== 1 || decodeInventoryCostSuccession(c.claimSuccession, body, c) === null)) return null
@@ -114,7 +146,7 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
   const firstPurchase = firstLine || firstParts.length === 3 && firstParts[0] === 'purchase-first' && guid(firstParts[1]) && guid(firstParts[2])
     && c.componentKey === `purchase-first/${firstParts[1].toLowerCase()}/${firstParts[2].toLowerCase()}`
   const recorded = c.recordedRounding
-  if (firstPurchase ? kind !== 2 || !rec(recorded) || !guid(recorded.currencyId) || !guid(recorded.moneyProfileId)
+  if (firstPurchase ? kind !== 2 || !rec(recorded) || !exactKeys(recorded, RECORDED_ROUNDING_KEYS) || !guid(recorded.currencyId) || !guid(recorded.moneyProfileId)
       || !version(recorded.moneyProfileVersion) || !Number.isSafeInteger(recorded.moneyScale) || (recorded.moneyScale as number) < 0 || (recorded.moneyScale as number) > 28
       || !roundingProof(recorded.rounding) || recorded.rounding.exactSignedAmount.numerator.startsWith('-')
       || recorded.rounding.exactSignedAmount.numerator === '0' && (recorded.rounding.roundedSignedAmount !== '0' || recorded.rounding.exactSignedResidue.numerator !== '0')
@@ -149,7 +181,7 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
   const postingRatio = mixed ? c.unpostedTlAmount as { numerator: string; denominator: string } : c.signedTlAmount
   const postingText = mixed ? body.unpostedTlAmountText : body.exactTlAmount
   if (p !== null) {
-    if (!rec(p) || !guid(p.periodId) || !guid(p.currencyId) || !guid(p.preparedBy) || !utc(p.preparedAtUtc)
+    if (!rec(p) || !exactKeys(p, PREPARATION_KEYS, PREPARATION_OPTIONAL_KEYS) || !guid(p.periodId) || !guid(p.currencyId) || !guid(p.preparedBy) || !utc(p.preparedAtUtc)
       || !date(p.accountingDate) || !date(p.transactionDate) || !canonicalDecimal(p.signedAmount)
       || !text(p.reason)
       || !guid(p.moneyProfileId) || !version(p.moneyProfileVersion) || !Number.isSafeInteger(p.moneyScale) || (p.moneyScale as number) < 0 || (p.moneyScale as number) > 28
@@ -166,7 +198,7 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
         || rounding.exactSignedAmountText !== postingText) return null
     } else if (firstPurchase || mixed || body.exactTlAmount !== p.signedAmount) return null
     const cl = p.classification
-    if (![1, 2].includes(cl.classification as number) || !guid(cl.accountId) || same(cl.accountId, p.counterAccount.accountId)
+    if (!exactKeys(cl, CLASSIFICATION_KEYS) || ![1, 2].includes(cl.classification as number) || !guid(cl.accountId) || same(cl.accountId, p.counterAccount.accountId)
       || cl.origin === 'Product' && (!text(cl.productVersion) || !text(cl.classificationVersion) || !version(cl.mappingVersion) || cl.invoiceLineRevision !== 0)
       || cl.origin === 'InvoiceLine' && (!version(cl.invoiceLineRevision) || cl.productVersion !== null || cl.classificationVersion !== null || cl.mappingVersion !== null)
       || cl.origin !== 'Product' && cl.origin !== 'InvoiceLine') return null
@@ -207,14 +239,14 @@ async function read<T>(path: string, company: string, decode: (body: unknown) =>
   } catch { return signal?.aborted ? { type: 'fence-stale' } : navigator.onLine ? { type: 'network-error' } : { type: 'offline' } }
 }
 export const fetchInventoryCosts = (company: string, kind: InventoryCostKind, signal?: AbortSignal) => read<readonly InventoryCostProposal[]>(`${base}/${kind}`, company, body => {
-  if (!rec(body) || !guid(body.companyId) || !same(body.companyId, company) || !Array.isArray(body.items)) return null
+  if (!rec(body) || !exactKeys(body, LIST_KEYS) || !guid(body.companyId) || !same(body.companyId, company) || !Array.isArray(body.items)) return null
   const values = body.items.map(v => decodeInventoryCost(v, company, kind))
   return values.some(v => v === null) || new Set(values.map(v => v?.proposalId.toLowerCase())).size !== values.length ? null : values as InventoryCostProposal[]
 }, signal)
 export const fetchInventoryCostOptions = (company: string, kind: InventoryCostKind, signal?: AbortSignal) => read<InventoryCostOptions>(`${base}/${kind}/options`, company, body => {
-  if (!rec(body) || !guid(body.companyId) || !same(body.companyId, company) || !Array.isArray(body.accounts) || !body.accounts.every(account)
+  if (!rec(body) || !exactKeys(body, OPTIONS_KEYS) || !guid(body.companyId) || !same(body.companyId, company) || !Array.isArray(body.accounts) || !body.accounts.every(account)
     || new Set(body.accounts.map(v => v.accountId.toLowerCase())).size !== body.accounts.length || !Array.isArray(body.openPeriods)
-    || body.openPeriods.some(v => !rec(v) || !guid(v.periodId) || !date(v.startsOn) || !date(v.endsOn) || v.startsOn > v.endsOn)) return null
+    || body.openPeriods.some(v => !rec(v) || !exactKeys(v, PERIOD_OPTION_KEYS) || !guid(v.periodId) || !date(v.startsOn) || !date(v.endsOn) || v.startsOn > v.endsOn)) return null
   return body as unknown as InventoryCostOptions
 }, signal)
 const definitive = new Set(['idempotency_conflict', 'accounting_version_conflict', 'accounting_concurrent_change',

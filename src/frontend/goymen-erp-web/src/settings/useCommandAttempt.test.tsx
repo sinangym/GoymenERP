@@ -166,4 +166,20 @@ describe('settings unresolved command attempts', () => {
     act(() => denied.result.current.reset())
     expect(denied.result.current.status.kind).toBe('idle')
   })
+
+  it('K3 P2: restores a stored attempt only when the slot holds exactly key, payload and claim', () => {
+    const stored = { key: '11111111-1111-4111-8111-111111111111', payload: { value: 'A' }, claim: '22222222-2222-4222-8222-222222222222' }
+    const pendingFor = (slot: Record<string, unknown>) => {
+      sessionStorage.setItem(storeKey, JSON.stringify(slot))
+      const hook = renderHook(() => useCommandAttempt<true>({ storeKey, execute: () => Promise.resolve(applied) }))
+      const pending = hook.result.current.pendingPayload
+      hook.unmount()
+      return pending
+    }
+    expect(pendingFor(stored)).toEqual({ value: 'A' })
+    expect(pendingFor({ ...stored, extra: 'synthetic' })).toBeNull()
+    for (const field of Object.keys(stored)) {
+      expect(pendingFor(Object.fromEntries(Object.entries(stored).filter(([name]) => name !== field)))).toBeNull()
+    }
+  })
 })
