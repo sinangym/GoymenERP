@@ -27,7 +27,8 @@ public sealed record ProductPurchaseUnitConversionSourceV1(Guid CompanyId, Guid 
     Guid? DefaultPriceUnitId, UnitConversionClassV1 ConversionClass,
     IReadOnlyList<ProductPurchaseConversionUnitV1> Units, string FormulaVersion,
     long? DimensionVersion, long? WeightTableVersion, string? WeightTableSource,
-    Guid? PolicyId, long? PolicyVersion, string? Reason, decimal? PolicyDensityGramsPerCubicCentimetre = null)
+    Guid? PolicyId, long? PolicyVersion, string? Reason, decimal? PolicyDensityGramsPerCubicCentimetre = null,
+    ProductWeightTableOrientationConflictV1? OrientationConflict = null)
 {
     public int ContractVersion => ProductPurchaseUnitConversionContractV1.Version;
 }
@@ -60,3 +61,15 @@ public interface IProductPurchaseUnitConversionV1
     Task<ProductPurchaseWeighbridgeResultV1> CheckWeighbridgeAsync(ProductPurchaseWeighbridgeRequestV1 request,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// SAT-D477 (URN-D19): the kg/m table holds the card's profile measures in both directions with different values. The source
+/// keeps answering the conflict (<see cref="ProductPurchaseUnitConversionSourceV1.Reason"/>, no unit figure); this optional
+/// detail names the entered direction's kg/m (the card's width × height, the document value) and the reversed one, and each
+/// formula unit's coefficient computed by the same calculator from each — never a new formula, never a pick of the larger.
+/// </summary>
+public sealed record ProductWeightTableOrientationConflictV1(decimal EnteredKgPerMetre, decimal ReversedKgPerMetre,
+    IReadOnlyList<ProductWeightTableOrientationConflictUnitV1> Units);
+
+/// <summary>One formula unit's coefficient from the entered and from the reversed direction's kg/m.</summary>
+public sealed record ProductWeightTableOrientationConflictUnitV1(Guid UnitId, decimal EnteredKgPerUnit, decimal ReversedKgPerUnit);

@@ -14,6 +14,7 @@ import userEvent from '@testing-library/user-event'
 import { INVENTORY_STOCK_POSITIONS_CAPABILITY } from '../inventory/capabilities'
 import { MANUFACTURING_CAPABILITY } from './capabilities'
 import { OUTPUT_1, OUTPUT_LABEL_1, orderLineage } from './lineageFixture'
+import { clearPendingCorrections, recallPendingCorrection, releasePendingCorrection, reservePendingCorrection } from './pendingCorrectionStore'
 import {
   APPROVER,
   COMPANY_A,
@@ -37,6 +38,15 @@ vi.mock('../inventory/labelDetailApi', () => ({
     return { type: 'ok-single', data: { labelVersion: '7' } }
   },
 }))
+
+vi.mock('./pendingCorrectionStore', async (original) => {
+  const actual = await original<typeof import('./pendingCorrectionStore')>()
+  return {
+    ...actual,
+    reservePendingCorrection: vi.fn(actual.reservePendingCorrection),
+    releasePendingCorrection: vi.fn(actual.releasePendingCorrection),
+  }
+})
 
 const PATH = `/uretim/emir/${ORDER}`
 const HEADING = 'Çıktı düzeltme'
@@ -98,6 +108,9 @@ async function submitAndConfirm(user: ReturnType<typeof userEvent.setup>, sectio
 
 beforeEach(() => {
   labelDetailCalls.length = 0
+  clearPendingCorrections()
+  vi.mocked(reservePendingCorrection).mockClear()
+  vi.mocked(releasePendingCorrection).mockClear()
 })
 
 afterEach(() => {
@@ -179,6 +192,45 @@ describe('output correction (UI-14)', () => {
     expect(posts(recorded)).toHaveLength(2)
     expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
     expect(second.body).toEqual(first.body)
+  })
+
+  it.each([401, 403])('keeps the same key held when the re-send of an unknown correction is answered %s', async (status) => {
+    const user = userEvent.setup()
+    const recorded = stub({
+      commands: [() => problem(503, { code: 'manufacturing_unavailable' }), () => problem(status, {})],
+    })
+    renderAt(PATH)
+
+    const section = await fillCorrection(user)
+    await submitAndConfirm(user, section)
+    await within(section).findByText('Düzeltmenin sonucu bilinmiyor')
+    await user.click(within(section).getByRole('button', { name: 'Aynı işlem anahtarıyla yeniden gönder' }))
+
+    // Two reservations per send: before the request leaves, and for its answer. The shell owns what a 401/403 does to
+    // the session and the capability; this section only must not let go of the key of a correction that may be recorded.
+    await waitFor(() => expect(vi.mocked(reservePendingCorrection)).toHaveBeenCalledTimes(4))
+    const [first, second] = posts(recorded)
+    expect(posts(recorded)).toHaveLength(2)
+    expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
+    expect(second.body).toEqual(first.body)
+    expect(releasePendingCorrection).not.toHaveBeenCalled()
+    const storeKey = vi.mocked(reservePendingCorrection).mock.calls[0][0]
+    const held = recallPendingCorrection(storeKey)
+    expect(held?.snapshot.idempotencyKey).toBe(first.headers['Idempotency-Key'])
+    expect(held?.unknown).toEqual({ kind: 'service-unavailable', status: 503 })
+  })
+
+  it('settles a first-send 403 as a decided refusal: its key is released', async () => {
+    const user = userEvent.setup()
+    const recorded = stub({ commands: [() => problem(403, {})] })
+    renderAt(PATH)
+
+    const section = await fillCorrection(user)
+    await submitAndConfirm(user, section)
+
+    await waitFor(() => expect(releasePendingCorrection).toHaveBeenCalledTimes(1))
+    expect(posts(recorded)).toHaveLength(1)
+    expect(recallPendingCorrection(vi.mocked(reservePendingCorrection).mock.calls[0][0])).toBeNull()
   })
 
   it('keeps an unknown correction across leaving and reopening the order: frozen, re-sent with the same key and ids only', async () => {

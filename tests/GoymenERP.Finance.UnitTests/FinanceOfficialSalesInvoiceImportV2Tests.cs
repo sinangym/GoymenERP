@@ -2,6 +2,7 @@ using System.Text;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Finance.UnitTests;
 
@@ -43,6 +44,50 @@ public sealed class FinanceOfficialSalesInvoiceImportV2Tests
         var parsed = FinanceOfficialInvoiceImportParserV1.Parse(Context(), new(Batch, "v3", bytes));
         Assert.False(parsed.Preview.IsValid);
         Assert.Contains(parsed.Preview.Issues, issue => issue.Field == field);
+    }
+
+    [Theory]
+    [InlineData("1042.08", "208.42", "0", "1250.50", null, null)]
+    [InlineData("1042.08", "208.42", "0", "1250.51", "1250.50", "0.01")]
+    [InlineData("1042.08", "208.42", "41.68", "1250.50", "1208.82", "41.68")]
+    [InlineData("10", "2", "20", "0", "-8", "8")]
+    public void Fns_d64_tax_check_warns_on_any_difference_through_one_calculator(string taxBase, string vat,
+        string withholding, string payable, string? expected, string? difference)
+    {
+        var warning = FinanceOfficialInvoiceTaxConsistencyV1.Check(taxBase, vat, withholding, payable);
+        Assert.Equal(expected, warning?.ExpectedPayableFunctionalAmount);
+        Assert.Equal(difference, warning?.DifferenceFunctionalAmount);
+        if (warning is not null) Assert.Equal(FinanceOfficialInvoiceTaxWarningV1.InconsistentCode, warning.Code);
+        // An unknown payable TL is never zero: no verdict.
+        Assert.Null(FinanceOfficialInvoiceTaxConsistencyV1.Check(taxBase, vat, withholding, null));
+    }
+
+    [Fact]
+    public void Fns_d64_csv_preview_warns_without_blocking_the_file()
+    {
+        string V3(string payable) => FinanceOfficialSalesInvoiceImportTemplateV3.Header + "\n"
+            + Row(1, DocumentA, "SNT1", EttnA) + ",2026-11-16," + payable + "\n";
+        var held = FinanceOfficialInvoiceImportParserV1.Parse(Context(), new(Batch, "v3", Encoding.UTF8.GetBytes(V3("1200"))));
+        Assert.True(held.Preview.IsValid);
+        Assert.Null(held.Preview.TaxWarnings);
+
+        var off = FinanceOfficialInvoiceImportParserV1.Parse(Context(), new(Batch, "v3", Encoding.UTF8.GetBytes(V3("1200.01"))));
+        Assert.True(off.Preview.IsValid);
+        var warning = Assert.Single(off.Preview.TaxWarnings!);
+        Assert.Equal((DocumentA, "1200", "1200.01", "0.01"), (warning.SourceDocumentId!.Value,
+            warning.ExpectedPayableFunctionalAmount, warning.PayableFunctionalAmount, warning.DifferenceFunctionalAmount));
+
+        // v2: the payable TL is the installment total only when every installment is in Turkish lira.
+        var lira = SettingsCurrencyIdentitiesV1.TurkishLira.ToString("D");
+        string Lira(string row) => row.Replace("26000000-0000-0000-0000-000000000001", lira, StringComparison.Ordinal);
+        var v2 = FinanceOfficialInvoiceImportParserV1.Parse(Context(), new(Batch, "v2", Csv(
+            Lira(Row(1, DocumentA, "SNT1", EttnA, taxBase: "1001")), Lira(Row(2, DocumentA, "SNT1", EttnA, installment: 2, taxBase: "1001")))));
+        Assert.True(v2.Preview.IsValid);
+        Assert.Equal("1", Assert.Single(v2.Preview.TaxWarnings!).DifferenceFunctionalAmount);
+        var foreign = FinanceOfficialInvoiceImportParserV1.Parse(Context(), new(Batch, "v2", Csv(
+            Row(1, DocumentA, "SNT1", EttnA, taxBase: "1001"))));
+        Assert.True(foreign.Preview.IsValid);
+        Assert.Null(foreign.Preview.TaxWarnings);
     }
 
     [Fact]

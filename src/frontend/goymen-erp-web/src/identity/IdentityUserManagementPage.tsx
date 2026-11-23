@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { EditedAttemptNotice } from '../settings/EditedAttemptNotice'
 import { Link } from 'react-router'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
@@ -71,7 +72,7 @@ function UserForm({ company, user, action, finish }: { readonly company: string;
     {user === null && <><Field label={T.name}>{(p) => <input {...p} required maxLength={200} value={displayName} onChange={(e) => setName(e.target.value)} />}</Field><Field label={T.userName}>{(p) => <input {...p} required maxLength={256} autoComplete="off" value={userName} onChange={(e) => setUserName(e.target.value)} />}</Field></>}
     {passwordRequired && <Field label={T.password}>{(p) => <input {...p} required type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />}</Field>}
     <Field label={T.reason}>{(p) => <textarea {...p} required maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />}</Field></fieldset>
-    {frozen !== null && <p role="alert">{T.unknown}</p>}{error && <p role="alert">{error}</p>}
+    {frozen !== null && <p role="alert">{T.unknown}</p>}<EditedAttemptNotice status={attempt.status} />{error && <p role="alert">{error}</p>}
     <Button type="submit" disabled={busy || (!valid && frozen === null)}>{busy ? T.pending : frozen !== null ? T.retry : T.submit}</Button><Button type="button" disabled={busy || frozen !== null} onClick={() => finish(null)}>{T.cancel}</Button>
   </form>
 }

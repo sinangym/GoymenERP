@@ -328,6 +328,8 @@ public sealed class SettingsHostWiringTests
             new[]
             {
                 FinanceMoneyOperations.ManualBankPaymentV1, FinanceMoneyOperations.ManualBankReceiptV1,
+                // FNS-D55: the expense payment's own row.
+                FinanceMoneyOperations.ExpensePaymentV1,
                 SalesMoneyOperations.OrderDraftV1,
                 AccountingMoneyOperations.JournalAmountV1,
                 // A2a-1b: the Purchasing owner's key (ALS-D63 narrow exception).
@@ -380,27 +382,29 @@ public sealed class SettingsHostWiringTests
     [InlineData("gdc")]
     [InlineData("gsp")]
     [InlineData("gin")]
-    public async Task The_expense_payment_money_key_stays_unavailable_through_the_host_until_a_profile_is_approved(string company)
+    public async Task The_expense_payment_money_key_is_answered_through_the_host_by_the_approved_FNS_D55_row(string company)
     {
-        // KIM-S26 (FNS-D48): the expense payment has its own key, managed apart from the manual bank payment's. No
-        // approved profile names it yet, so the host answers fail-closed instead of the manual bank payment's profile.
-        // The literal is the decision's key; Finance publishes its constant when it switches its binding (FIN-S18).
+        // KIM-S26 (FNS-D48, FNS-D55): the expense payment has its own key, managed apart from the manual bank payment's,
+        // approved with its values (TRY, scale 2) on every seed company's own profile — no authored profile is needed.
         const string expensePayment = "finance.expense-payment.v1";
         var companyId = company switch { "gdc" => Gdc, "gsp" => Gsp, _ => Gin };
         using var factory = Host(companyId);
         using var scope = factory.Services.CreateScope();
         var provider = scope.ServiceProvider.GetRequiredService<ISettingsPrerequisiteProvider>();
 
-        Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
-            () => provider.GetMoneyProfileAsync(SettingsCurrencyIdentitiesV1.TurkishLira, expensePayment, ExtraApproval))).Code);
-        Assert.DoesNotContain(ApprovedMoneyProfileCatalog.Approved.Entries,
-            entry => entry.Operations.Contains(expensePayment));
+        var profile = await provider.GetMoneyProfileAsync(SettingsCurrencyIdentitiesV1.TurkishLira, expensePayment, ExtraApproval);
+        Assert.Equal((companyId, expensePayment, 2), (profile.CompanyId, profile.Operation, profile.Scale));
+        Assert.Contains(ApprovedMoneyProfileCatalog.Approved.Entries,
+            entry => entry.CompanyId == companyId && entry.Operations.Contains(expensePayment)
+                && entry.ProfileId == profile.Profile.ProfileId);
     }
 
     [Fact]
-    public void The_GSP_and_GIN_money_profiles_answer_exactly_the_Sales_and_Purchasing_owners_published_keys()
+    public void The_GSP_and_GIN_money_profiles_answer_exactly_the_Sales_Purchasing_and_expense_payment_keys()
     {
-        var expected = new[] { SalesMoneyOperations.OrderDraftV1, PurchasingMoneyOperationsV1.OrderV1 }.Order(StringComparer.Ordinal).ToArray();
+        // FNS-D55 adds each company's own expense payment row; no other Finance key (SAT-D18).
+        var expected = new[] { SalesMoneyOperations.OrderDraftV1, PurchasingMoneyOperationsV1.OrderV1,
+            FinanceMoneyOperations.ExpensePaymentV1 }.Order(StringComparer.Ordinal).ToArray();
         Assert.Equal(expected, ApprovedMoneyProfileCatalog.GspTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
         Assert.Equal(expected, ApprovedMoneyProfileCatalog.GinTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
     }

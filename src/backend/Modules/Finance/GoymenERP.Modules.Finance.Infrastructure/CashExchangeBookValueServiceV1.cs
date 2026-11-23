@@ -16,7 +16,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 namespace GoymenERP.Modules.Finance.Infrastructure;
 
 /// <summary>
-/// FIN-S14 / #1189/6960684942. Documents-backed carrying value, explicitly entered by Accounting and approved by
+/// FIN-S14 / #1189/6960684942 (GOV-D16). Documents-backed carrying value, explicitly entered by Accounting and approved by
 /// another Accounting actor. Serializable Finance-owned proof transaction; no balance movement or journal posting.
 /// </summary>
 public sealed class CashExchangeBookValueServiceV1(FinanceDbContext db, ICompanyContext company, ICurrentUser user,

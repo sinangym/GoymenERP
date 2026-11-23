@@ -3,7 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
 import { SourceVouchersPage } from './SourceVouchersPage'
-import { approveSourceVoucher, decodeSourceVoucher, proposeSourceVoucherReversal } from './sourceVoucherApi'
+import { approveSourceVoucher, decodeSourceVoucher, fetchSourceVouchers, proposeSourceVoucherReversal } from './sourceVoucherApi'
+import { keyProbes } from './exactKeysTestSupport'
 
 const state = vi.hoisted(() => ({ company: 'b0438000-0000-4000-8000-000000000001', actor: 'b0438000-0000-4000-8000-000000000002', reversal: false }))
 const maker = 'b0438000-0000-4000-8000-000000000003'; const id = 'b0438000-0000-4000-8000-000000000004'
@@ -110,5 +111,21 @@ describe('source invoice cancellation reversal proposal', () => {
     expect(await proposeSourceVoucherReversal(state.company, { id, key: 'SENTETIK', request: { expectedVersion: 2,
       proposalId: body.proposalId, periodId: body.periodId, transactionDate: '2026-12-02', accountingDate: '2026-12-04', valueDate: null,
       reason: body.reason } })).toEqual({ type: 'unknown' })
+  })
+})
+describe('source voucher exact key sets', () => {
+  it('rejects an unknown or missing key on the voucher and its lines', () => {
+    expect(decodeSourceVoucher(fixture(), state.company)).not.toBeNull()
+    for (const [label, body] of keyProbes(fixture(), [[[], 'officialInvoiceNo'], [['lines', 0], 'vatRateCode']]))
+      expect(decodeSourceVoucher(body, state.company), label).toBeNull()
+  })
+  it('rejects an unknown or missing key on the list envelope', async () => {
+    const list = { companyId: state.company, items: [fixture()] }
+    vi.stubGlobal('fetch', vi.fn(async () => json(list)))
+    expect((await fetchSourceVouchers(state.company)).type).toBe('ok-single')
+    for (const [label, body] of keyProbes(list, [[[], 'companyId'], [['items', 0], 'mappingVersion']])) {
+      vi.stubGlobal('fetch', vi.fn(async () => json(body)))
+      expect((await fetchSourceVouchers(state.company)).type, label).toBe('malformed')
+    }
   })
 })

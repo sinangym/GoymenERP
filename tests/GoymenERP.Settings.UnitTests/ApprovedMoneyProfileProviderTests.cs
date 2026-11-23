@@ -21,6 +21,7 @@ public sealed class ApprovedMoneyProfileProviderTests
     private static readonly Guid Try = Guid.Parse("9e60dcf0-f4bd-5bca-b464-f9a2db98e31a");
     private static readonly DateOnly Approval = new(2026, 9, 18);
     private const string FinancePayment = "finance.manual-bank-payment.v1";
+    private const string ExpensePayment = "finance.expense-payment.v1";
     private const string FinanceReceipt = "finance.manual-bank-receipt.v1";
     private const string SalesDraft = "sales.order-draft.v1";
     // ACC-V0a: the Accounting owner's key on the same approved profile (a journal amount is a final TRY amount, Ö2).
@@ -157,8 +158,9 @@ public sealed class ApprovedMoneyProfileProviderTests
         Assert.Contains(ApprovedMoneyProfileCatalog.GdcTurkishLiraV1, entries);
         Assert.Contains(ApprovedMoneyProfileCatalog.GspTurkishLiraV1, entries);
         Assert.Contains(ApprovedMoneyProfileCatalog.GinTurkishLiraV1, entries);
-        Assert.Equal(new[] { PurchasingOrder, SalesDraft }, ApprovedMoneyProfileCatalog.GspTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
-        Assert.Equal(new[] { PurchasingOrder, SalesDraft }, ApprovedMoneyProfileCatalog.GinTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
+        // FNS-D55: GSP/GIN also carry their own expense payment row; no other Finance key (SAT-D18).
+        Assert.Equal(new[] { ExpensePayment, PurchasingOrder, SalesDraft }, ApprovedMoneyProfileCatalog.GspTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
+        Assert.Equal(new[] { ExpensePayment, PurchasingOrder, SalesDraft }, ApprovedMoneyProfileCatalog.GinTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
     }
 
     [Theory]
@@ -235,7 +237,7 @@ public sealed class ApprovedMoneyProfileProviderTests
     {
         var entry = Assert.Single(ApprovedMoneyProfileCatalog.Approved.Entries, entry => entry.CompanyId == Gdc);
         Assert.Same(ApprovedMoneyProfileCatalog.GdcTurkishLiraV1, entry);
-        Assert.Equal(new[] { FinancePayment, FinanceReceipt, SalesDraft, AccountingJournalAmount, PurchasingOrder }.Order(StringComparer.Ordinal),
+        Assert.Equal(new[] { FinancePayment, FinanceReceipt, SalesDraft, AccountingJournalAmount, PurchasingOrder, ExpensePayment }.Order(StringComparer.Ordinal),
             entry.Operations.Order(StringComparer.Ordinal));
         Assert.Contains("5722637822", entry.Source, StringComparison.Ordinal);
     }

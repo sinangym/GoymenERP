@@ -1,3 +1,4 @@
+using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -16,7 +17,11 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World
         {
-            KilogramsPerUnit = new FakeKilogramsPerUnit { Figure = 12.345m },
+            // SAT-D473: without a figure the owner READ the card and says it gives none; the approval goes on unpinned.
+            KilogramsPerUnit = pinFigure
+                ? new FakeKilogramsPerUnit { Figure = 12.345m }
+                : new FakeKilogramsPerUnit { Outcome = ProductTheoreticalKilogramsPerUnitOutcomeV1.NoSource,
+                    Code = ProductTheoreticalKilogramsPerUnitCodesV1.NoSource },
             LineTaxes = new FakeLineTaxes
             {
                 Defaults =
@@ -46,14 +51,7 @@ public sealed partial class SalesDraftServiceTests
         var approved = (await world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version),
             Metadata("k-piece-invoice-approve"))).Detail;
         await world.Service().RecordCustomerAcceptanceAsync(approved.Draft.Id, Command(approved.Draft.Version), Metadata("k-piece-invoice-accept"));
-        if (!pinFigure)
-        {
-            // Represents an order line without a pinned figure (the store never back-fills one); the snapshot list is private state.
-            var draft = Assert.Single(world.Store.Drafts);
-            var field = typeof(GoymenERP.Modules.Sales.Domain.Drafts.SalesOrderDraft).GetField("kilogramsPerUnit",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
-            ((System.Collections.IList)field.GetValue(draft)!).Clear();
-        }
+        Assert.Equal(pinFigure ? "12.345" : null, approved.Lines[0].TheoreticalKilogramsPerUnit);
 
         var invoicing = InvoiceWorld.Around(world, approved);
         invoicing.Shipments.Answer = _ => new(SalesDispatchReadOutcomeV1.Found, Company,
@@ -112,16 +110,32 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
-    public async Task SAT_D437_a_piece_share_whose_line_has_no_pinned_figure_waits_and_nothing_is_stored()
+    public async Task SAT_D473_a_piece_line_approved_without_a_figure_is_invoiced_in_pieces_with_its_scale_kg_and_no_theoretical_kg()
     {
+        // The card gave no kg/unit at approval: 40 adet × 250,00 = 10 000,00 still; kantar 500,160 kg travels; teorik kg boş, sıfır değil.
         var invoicing = await PieceInvoiceWorldAsync(40m, 495m, 500.16m, pinFigure: false);
 
-        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-piece-no-figure")));
+        var invoice = (await invoicing.Service().CreateInvoiceAsync(invoicing.Request(), Metadata("k-piece-no-figure"))).Invoice;
 
-        Assert.Equal((409, SalesInvoiceProblemCodesV1.InvoiceNotReady), Status(refused));
-        Assert.Equal([new SalesDraftFieldError("shares[0]", SalesInvoiceReasonCodesV1.KilogramsPerUnitMissing)], refused.Errors);
-        Assert.Empty(invoicing.Invoices.Stored);
+        var line = Assert.Single(invoice.Lines);
+        Assert.Equal(("40", "10000.00"), (line.Quantity, line.Amounts.NetAmount));
+        Assert.Equal(((string?)null, "500.16"), (line.TheoreticalKg, line.ActualKg));
+        var stored = Assert.Single(Assert.Single(invoicing.Invoices.Stored).Value.Lines);
+        Assert.Equal((40m, (decimal?)null, (decimal?)500.16m), (stored.Share.Quantity, stored.Share.TheoreticalKilograms, stored.Share.ActualKilograms));
+        // Golden M11/K13: the theoretical kg price "cannot be calculated"; the actual kg price is the scale kg's.
+        var prices = invoice.KilogramPrices!;
+        Assert.Equal("Computed", prices.State);
+        var linePrices = Assert.Single(prices.Lines!);
+        Assert.Equal(("TheoreticalKgUnavailable", (string?)null), (linePrices.TheoreticalPrice.State, linePrices.TheoreticalPrice.Value));
+        Assert.Equal(("Shown", "19.99"), (linePrices.ActualPrice.State, linePrices.ActualPrice.Value));
+        Assert.Equal(("DocumentNotAllKilogramLines", (string?)null), (prices.DocumentTheoreticalPrice!.State, prices.DocumentTheoreticalPrice.Value));
+
+        // The order's kg price read: the theoretical kg and price stay unavailable (never 0).
+        var order = GoymenERP.Modules.Sales.Application.SalesDraftService.KilogramPrices(Assert.Single(invoicing.World.Store.Drafts),
+            [Assert.Single(invoicing.Invoices.Stored).Value]);
+        var orderLine = Assert.Single(order.Lines!);
+        Assert.Null(orderLine.TheoreticalKg);
+        Assert.Equal(("TheoreticalKgUnavailable", (string?)null), (orderLine.TheoreticalPrice.State, orderLine.TheoreticalPrice.Value));
     }
 
     [Fact]

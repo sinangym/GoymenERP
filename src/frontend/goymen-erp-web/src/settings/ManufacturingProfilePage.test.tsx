@@ -94,10 +94,15 @@ describe('KIM-S15 manufacturing profile single flow', () => {
     expect(commands(calls)[0].body).toMatchObject({ expectedVersion: '1', process: 'Slitting', workCenterId: null, values: [{ key: 'densityKgPerCubicMetre', value: '7851.125' }] })
   })
 
-  it.each([403, 404, 503])('shows read refusal %i without an invented profile', async (status) => {
+  // 404 and 503 are the screen's own states (its heading stays). A read 403 is reported to the shell security boundary, which
+  // revokes the capability and closes the route: the screen and its heading are gone (non-disclosing), unlike a plain 404.
+  it.each([[403, 'not-found', false, false], [404, 'not-found', true, false], [503, 'service-unavailable', true, true]] as const)('shows read refusal %i as %s (screen kept: %s, retry: %s) without an invented profile', async (status, kind, screenKept, retry) => {
     const calls = installFetch({ capabilities: [SETTINGS_CAPABILITY.manufacturingParameters], respond: (url) => url.endsWith(read) ? problem(status) : undefined })
     renderAt(path)
-    await waitFor(() => expect(document.querySelector('[data-state]')).not.toBeNull())
+    await waitFor(() => expect(calls.some((call) => call.url.endsWith(read))).toBe(true))
+    await waitFor(() => expect(Array.from(document.querySelectorAll('[data-state]'), (block) => block.getAttribute('data-state'))).toEqual([kind]))
+    expect(screen.queryByRole('heading', { name: T.parametersTitle }) !== null).toBe(screenKept)
+    expect(screen.queryByRole('button', { name: 'Tekrar dene' }) !== null).toBe(retry)
     expect(screen.queryByRole('button', { name: T.publish })).toBeNull()
     expect(commands(calls)).toEqual([])
   })

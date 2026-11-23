@@ -154,6 +154,7 @@ import { SubcontractInvoiceCreate } from './SubcontractInvoiceCreate'
 import { SubcontractInvoiceLifecycle } from './SubcontractInvoiceLifecycle'
 import { SalesOrderPdfAction } from './SalesOrderPdfAction'
 import styles from './SalesDraftDetailPage.module.css'
+import { KilogramsPerUnitConflictWarning } from './KilogramsPerUnitConflictWarning'
 
 const orUnknown = (value: string | null) => value ?? T.unknown
 
@@ -1378,6 +1379,9 @@ function LineView({ line, unitCodes, futureAllocationLink }: {
         <p className={styles.muted} data-testid={`sales-line-${line.lineNo}-kg-per-unit`}>
           {`${KILOGRAM_PRICE_TEXT.kilogramsPerUnit}: ${line.theoreticalKilogramsPerUnit}`}
         </p>
+      )}
+      {line.theoreticalKilogramsPerUnitConflict === undefined ? null : (
+        <KilogramsPerUnitConflictWarning lineNo={line.lineNo} conflict={line.theoreticalKilogramsPerUnitConflict} />
       )}
       <dl className={`${styles.facts} ${styles.lineFacts}`} data-testid={`sales-line-${line.lineNo}-facts`}>
         <div>

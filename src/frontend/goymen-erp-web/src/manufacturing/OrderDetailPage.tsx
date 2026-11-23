@@ -1216,7 +1216,10 @@ function FactSection({
   const busy = attempt.phase === 'submitting'
   const closed = order.status !== 'Open'
 
-  const dirty = unresolved || Object.entries(form).some(([key, value]) => key !== 'kind' && value.length > 0)
+  // K3 P2-7: dirty means "differs from the empty form", not "any non-empty field" — the output class and remnant
+  // classification start with their decided defaults (URT-D43, BS-14) and are not user edits.
+  const dirty = unresolved || (Object.keys(form) as (keyof FormValues)[])
+    .some((key) => key !== 'kind' && form[key] !== EMPTY_FORM[key])
   useEffect(() => {
     shellDispatch({ type: dirty ? 'DIRTY_SET' : 'DIRTY_CLEAR', scope: DIRTY_SCOPE })
   }, [dirty, shellDispatch])

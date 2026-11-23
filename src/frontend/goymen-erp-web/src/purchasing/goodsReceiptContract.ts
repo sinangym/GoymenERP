@@ -80,6 +80,12 @@ export interface GoodsReceiptResponse {
 
 const record = (value: unknown): Record<string, unknown> | null => typeof value === 'object' && value !== null && !Array.isArray(value)
   ? value as Record<string, unknown> : null
+/** Exactly the required keys plus, at most, the optional ones: an unknown or a missing key fails the decoder closed. */
+const exact = (value: Record<string, unknown>, required: readonly string[], optional: readonly string[] = []) =>
+  required.every((key) => Object.hasOwn(value, key)) && Object.keys(value).every((key) => required.includes(key) || optional.includes(key))
+const SOURCE_FIELDS = ['companyId', 'purchaseOrderId', 'purchaseOrderLineId', 'purchaseOrderVersion', 'productId', 'productVersion',
+  'unitId', 'effectiveOn'] as const
+const LOCATION_FIELDS = ['locationId', 'locationCode', 'locationName', 'siteName'] as const
 const text = (value: unknown): value is string => typeof value === 'string' && value.trim() === value && value.length > 0
 const guid = (value: unknown): value is string => text(value) && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
   && value !== '00000000-0000-0000-0000-000000000000'
@@ -113,7 +119,7 @@ export function decodeGoodsReceipt(value: unknown, detail: PurchaseOrderDetail):
 
 export function decodeGoodsReceiptPage(value: unknown, detail: PurchaseOrderDetail): GoodsReceiptPage | null {
   const body = record(value)
-  if (body === null || !Array.isArray(body.items) || body.items.length > 100 || typeof body.searchWindowFull !== 'boolean') return null
+  if (body === null || !exact(body, ['items', 'searchWindowFull']) || !Array.isArray(body.items) || body.items.length > 100 || typeof body.searchWindowFull !== 'boolean') return null
   const items: GoodsReceipt[] = []
   for (const raw of body.items) {
     const item = decodeGoodsReceipt(raw, detail)
@@ -139,7 +145,8 @@ export function decodeGoodsReceiptOptions(value: unknown, detail: PurchaseOrderD
   const source = record(body?.source)
   const futureSupply = record(body?.futureSupply)
   const generalLineId = line.kind === 'General' ? line.lineId : line.parentLineId
-  if (body === null || source === null || source.companyId !== detail.order.companyId || source.purchaseOrderId !== detail.order.id
+  if (body === null || !exact(body, ['source', 'locations', 'searchWindowFull', 'futureSupply']) || source === null || !exact(source, SOURCE_FIELDS)
+    || source.companyId !== detail.order.companyId || source.purchaseOrderId !== detail.order.id
     || source.purchaseOrderLineId !== line.lineId || source.purchaseOrderVersion !== detail.order.version
     || source.productId !== line.productId || source.productVersion !== line.productVersion || source.unitId !== line.unitId
     || source.effectiveOn !== detail.order.effectiveOn || !Array.isArray(body.locations) || body.locations.length > 100
@@ -150,7 +157,7 @@ export function decodeGoodsReceiptOptions(value: unknown, detail: PurchaseOrderD
   const locations: ReceiptLocation[] = []
   for (const raw of body.locations) {
     const location = record(raw)
-    if (location === null || !guid(location.locationId) || !text(location.locationCode) || !text(location.locationName)
+    if (location === null || !exact(location, LOCATION_FIELDS) || !guid(location.locationId) || !text(location.locationCode) || !text(location.locationName)
       || !text(location.siteName) || locations.some((item) => item.locationId === location.locationId)) return null
     locations.push(location as unknown as ReceiptLocation)
   }
@@ -162,7 +169,8 @@ export function decodeGoodsReceiptResponse(value: unknown, detail: PurchaseOrder
   sent: GoodsReceiptRequest, replayHeader: boolean): GoodsReceiptResponse | null {
   const body = record(value)
   const receipt = body === null ? null : decodeGoodsReceipt(body.receipt, detail)
-  if (body === null || receipt === null || body.isReplay !== replayHeader || !text(body.originalCorrelationId)
+  if (body === null || !exact(body, ['receipt', 'isReplay', 'originalCorrelationId'], ['futureSupplyReleases', 'pieceKilograms'])
+    || receipt === null || body.isReplay !== replayHeader || !text(body.originalCorrelationId)
     || (!replayHeader && receipt.initialBlock !== 'Free')
     || receipt.purchaseOrderLineId !== lineId || receipt.acceptanceId !== sent.acceptanceId
     || receipt.productVersion !== sent.expectedProductVersion || receipt.acceptedQuantity !== sent.acceptedQuantity

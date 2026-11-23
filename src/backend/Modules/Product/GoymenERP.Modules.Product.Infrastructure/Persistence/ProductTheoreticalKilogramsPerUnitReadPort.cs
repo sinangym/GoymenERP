@@ -55,14 +55,32 @@ public sealed class ProductTheoreticalKilogramsPerUnitReadPort(IProductPurchaseU
         if (requested.KgPerUnit is not > 0m)
         {
             // BS-13: a weight-table conflict on a formula unit is shown as a refusal, never resolved by picking a row.
-            return requested.Kind is ProductPhysicalUnitKindV1.Metre or ProductPhysicalUnitKindV1.Piece
-                && string.Equals(card.Reason, ProductPurchaseUnitConversionService.WeightConflictReason, StringComparison.Ordinal)
-                ? ProductTheoreticalKilogramsPerUnitAnswerV1.Without(ProductTheoreticalKilogramsPerUnitOutcomeV1.Refused,
-                    ProductTheoreticalKilogramsPerUnitCodesV1.WeightConflict)
-                : ProductTheoreticalKilogramsPerUnitAnswerV1.Without(ProductTheoreticalKilogramsPerUnitOutcomeV1.NoSource,
+            if (requested.Kind is not (ProductPhysicalUnitKindV1.Metre or ProductPhysicalUnitKindV1.Piece)
+                || !string.Equals(card.Reason, ProductPurchaseUnitConversionService.WeightConflictReason, StringComparison.Ordinal))
+                return ProductTheoreticalKilogramsPerUnitAnswerV1.Without(ProductTheoreticalKilogramsPerUnitOutcomeV1.NoSource,
                     ProductTheoreticalKilogramsPerUnitCodesV1.NoSource);
+            // SAT-D477: the refusal stays; when both directions are known it also names the entered direction's figure.
+            var conflictUnits = card.OrientationConflict?.Units?.Where(unit => unit is not null && unit.UnitId == unitId).ToArray() ?? [];
+            if (conflictUnits.Length == 1 && conflictUnits[0] is { EnteredKgPerUnit: > 0m, ReversedKgPerUnit: > 0m } conflictUnit
+                && card.OrientationConflict is { EnteredKgPerMetre: > 0m, ReversedKgPerMetre: > 0m } orientation
+                && orientation.EnteredKgPerMetre != orientation.ReversedKgPerMetre
+                && Evidence(card, requested, companyId, productId, unitId) is { } conflictEvidence)
+                return ProductTheoreticalKilogramsPerUnitAnswerV1.RefusedWithTableConflict(new(conflictUnit.EnteredKgPerUnit,
+                    conflictUnit.ReversedKgPerUnit, orientation.EnteredKgPerMetre, orientation.ReversedKgPerMetre,
+                    ProductTheoreticalKilogramsPerUnitTableConflictV1.EnteredOrientation, conflictEvidence));
+            return ProductTheoreticalKilogramsPerUnitAnswerV1.Without(ProductTheoreticalKilogramsPerUnitOutcomeV1.Refused,
+                ProductTheoreticalKilogramsPerUnitCodesV1.WeightConflict);
         }
 
+        return Evidence(card, requested, companyId, productId, unitId) is { } evidence
+            ? ProductTheoreticalKilogramsPerUnitAnswerV1.Found(requested.KgPerUnit.Value, evidence)
+            : Unavailable();
+    }
+
+    /// <summary>The figure's source evidence; null when any part is not provable (a figure then is not given).</summary>
+    private static ProductTheoreticalKilogramsPerUnitEvidenceV1? Evidence(ProductPurchaseUnitConversionSourceV1 card,
+        ProductPurchaseConversionUnitV1 requested, Guid companyId, Guid productId, Guid unitId)
+    {
         // A figure exists only for a usable profile and a found unit meaning; anything less is not a provable figure.
         if (requested.Kind is not { } kind || !Enum.IsDefined(kind) || requested.UnitProfileId is not { } profileId
             || profileId == Guid.Empty || requested.UnitProfileVersion is not >= 1
@@ -71,13 +89,12 @@ public sealed class ProductTheoreticalKilogramsPerUnitReadPort(IProductPurchaseU
             || (card.PolicyId is null) != (card.PolicyVersion is null)
             || (card.PolicyId is null) != (card.PolicyDensityGramsPerCubicCentimetre is null)
             || card.PolicyId == Guid.Empty || card.PolicyVersion is < 1 || card.PolicyDensityGramsPerCubicCentimetre is <= 0m)
-            return Unavailable();
+            return null;
 
-        var evidence = new ProductTheoreticalKilogramsPerUnitEvidenceV1(companyId, productId, unitId, kind, card.ProductVersion,
+        return new ProductTheoreticalKilogramsPerUnitEvidenceV1(companyId, productId, unitId, kind, card.ProductVersion,
             card.FormulaVersion, card.DimensionVersion, card.WeightTableVersion, card.WeightTableSource, card.PolicyId,
             card.PolicyVersion, card.PolicyDensityGramsPerCubicCentimetre, profileId, requested.UnitProfileVersion.Value,
             requested.UnitSourceVersion);
-        return ProductTheoreticalKilogramsPerUnitAnswerV1.Found(requested.KgPerUnit.Value, evidence);
     }
 
     private static ProductTheoreticalKilogramsPerUnitAnswerV1 Unavailable() =>

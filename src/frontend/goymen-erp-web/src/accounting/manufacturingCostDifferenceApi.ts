@@ -1,6 +1,7 @@
 import type { ViewOutcome } from '../shell/uiState'
 import { isDateOnly } from '../finance/dateOnly'
 import { ACCOUNTING_BASE, devHeaders } from './api'
+import { exactKeys } from './exactKeys'
 
 export interface CostOutput {
   readonly outputId: string; readonly receiptMovementId: string; readonly labelId: string
@@ -45,14 +46,25 @@ const quantity = (value: unknown): value is string => typeof value === 'string'
   && (/^(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(value) || /^[1-9][0-9]* \/ [1-9][0-9]*$/.test(value))
 const nullableGuid = (value: unknown) => value === null || guid(value)
 const nullableDate = (value: unknown) => value === null || typeof value === 'string' && isDateOnly(value)
+// OpenAPI: ManufacturingCostDifferenceListV1, ManufacturingCostDifferenceViewV1 (accountPlan is not in `required`),
+// ManufacturingCostDifferenceOutputViewV1, ManufacturingCostDifferenceAccountPlanV1, ManufacturingCostDifferenceAccountV1.
+const LIST_KEYS = ['companyId', 'items'] as const
+const VIEW_KEYS = ['proposalId', 'companyId', 'manufacturingOrderId', 'generationId', 'generationVersion', 'status', 'version',
+  'signedTlDifference', 'outputs', 'sourceOccurredAtUtc', 'periodId', 'accountingDate', 'transactionDate', 'debitAccountId',
+  'creditAccountId', 'preparedBy', 'approvedBy', 'journalId', 'reason'] as const
+const VIEW_OPTIONAL_KEYS = ['accountPlan'] as const
+const OUTPUT_KEYS = ['outputId', 'receiptMovementId', 'labelId', 'netQuantityKg', 'remainingQuantityKg', 'consumedQuantityKg',
+  'tlUnitCostPerKg', 'remainingTlValue', 'consumedTlDifference', 'usdUnitCostPerKg', 'originalTlAmount'] as const
+const PLAN_KEYS = ['packageId', 'packageVersion', 'catalogVersion', 'sourceVersion', 'sha256', 'debit', 'credit'] as const
+const ACCOUNT_KEYS = ['accountId', 'code', 'name'] as const
 
 export function decodeCostDifference(body: unknown, company: string): CostDifference | null {
-  if (!rec(body) || !guid(body.proposalId) || !guid(body.companyId) || body.companyId.toLowerCase() !== company.toLowerCase()
+  if (!rec(body) || !exactKeys(body, VIEW_KEYS, VIEW_OPTIONAL_KEYS) || !guid(body.proposalId) || !guid(body.companyId) || body.companyId.toLowerCase() !== company.toLowerCase()
     || !guid(body.manufacturingOrderId) || !guid(body.generationId) || typeof body.generationVersion !== 'string'
     || !/^[1-9][0-9]*$/.test(body.generationVersion) || !Number.isSafeInteger(body.version) || (body.version as number) < 1
     || !['AwaitingPreparation', 'Prepared', 'Posted', 'NoDifference'].includes(body.status as string)
     || !decimal(body.signedTlDifference) || typeof body.sourceOccurredAtUtc !== 'string' || !Number.isFinite(Date.parse(body.sourceOccurredAtUtc))
-    || !Array.isArray(body.outputs) || body.outputs.length === 0 || body.outputs.some(output => !rec(output)
+    || !Array.isArray(body.outputs) || body.outputs.length === 0 || body.outputs.some(output => !rec(output) || !exactKeys(output, OUTPUT_KEYS)
       || !['outputId', 'receiptMovementId', 'labelId'].every(key => guid(output[key]))
       || !['netQuantityKg', 'remainingQuantityKg', 'consumedQuantityKg'].every(key => quantity(output[key]))
       || !['tlUnitCostPerKg', 'remainingTlValue', 'consumedTlDifference', 'originalTlAmount'].every(key => decimal(output[key]))
@@ -63,10 +75,10 @@ export function decodeCostDifference(body: unknown, company: string): CostDiffer
   if (new Set(body.outputs.map(output => output.outputId.toLowerCase())).size !== body.outputs.length) return null
   const prepared = body.status === 'Prepared' || body.status === 'Posted'
   const plan = body.accountPlan
-  if (prepared && (!rec(plan) || !guid(plan.packageId) || !Number.isSafeInteger(plan.packageVersion)
+  if (prepared && (!rec(plan) || !exactKeys(plan, PLAN_KEYS) || !guid(plan.packageId) || !Number.isSafeInteger(plan.packageVersion)
     || (plan.packageVersion as number) < 1 || plan.catalogVersion !== null && (!Number.isSafeInteger(plan.catalogVersion) || (plan.catalogVersion as number) < 1)
     || typeof plan.sourceVersion !== 'string' || plan.sourceVersion.trim() === '' || typeof plan.sha256 !== 'string' || !/^[0-9a-f]{64}$/i.test(plan.sha256)
-    || ![plan.debit, plan.credit].every(account => rec(account) && guid(account.accountId)
+    || ![plan.debit, plan.credit].every(account => rec(account) && exactKeys(account, ACCOUNT_KEYS) && guid(account.accountId)
       && typeof account.code === 'string' && account.code.trim() !== '' && typeof account.name === 'string' && account.name.trim() !== '')
     || (plan.debit as Record<string, unknown>).accountId !== body.debitAccountId || (plan.credit as Record<string, unknown>).accountId !== body.creditAccountId)) return null
   if (!prepared && plan !== null) return null
@@ -85,7 +97,7 @@ export async function fetchCostDifferences(company: string, signal?: AbortSignal
     const response = await fetch(base, { headers: { ...devHeaders(), 'X-Company-Id': company }, signal })
     const body: unknown = await response.json().catch(() => null)
     if (response.status !== 200) return { type: 'http', status: response.status, body }
-    if (!rec(body) || typeof body.companyId !== 'string' || body.companyId.toLowerCase() !== company.toLowerCase() || !Array.isArray(body.items)) return { type: 'malformed' }
+    if (!rec(body) || !exactKeys(body, LIST_KEYS) || typeof body.companyId !== 'string' || body.companyId.toLowerCase() !== company.toLowerCase() || !Array.isArray(body.items)) return { type: 'malformed' }
     const items = body.items.map(item => decodeCostDifference(item, company))
     if (items.some(item => item === null) || new Set(items.map(item => item?.proposalId.toLowerCase())).size !== items.length) return { type: 'malformed' }
     return { type: 'ok-single', data: items as CostDifference[] }

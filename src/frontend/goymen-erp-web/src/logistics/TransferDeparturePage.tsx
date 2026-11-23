@@ -8,7 +8,7 @@ import { StateBlock } from '../shell/StateBlock'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { beginTransferDepartureAttempt, fetchTransferDepartureCandidates, fetchTransferDepartureFacts, finishTransferDepartureAttempt,
-  leaveTransferDepartureAttempt, recordTransferDeparture, subscribeTransferDepartureAttempt, transferDepartureAttempt,
+  leaveTransferDepartureAttempt, recordTransferDeparture, resolveTransferDepartureAttempt, subscribeTransferDepartureAttempt, transferDepartureAttempt,
   transferDepartureBinding, transferDepartureFrozen, transferDepartureKilograms, transferDepartureUtc,
   TRANSFER_DEPARTURE_CAPABILITY, type RecordTransferDeparture, type TransferDepartureFacts } from './transferDepartureApi'
 import { TRANSFER_DEPARTURE_STATUS_TEXT as STATUS, TRANSFER_DEPARTURE_TEXT as T } from './transferDepartureMessages.tr'
@@ -37,6 +37,7 @@ function Screen({ company, namespace, shell }: { readonly company: string; reado
   const [transfer, setTransfer] = useState(''); const [kind, setKind] = useState(''); const [occurred, setOccurred] = useState('')
   const [reason, setReason] = useState(''); const [direction, setDirection] = useState(''); const [firstKg, setFirstKg] = useState(''); const [secondKg, setSecondKg] = useState('')
   const [localError, setLocalError] = useState<string | null>(null)
+  const [finalNotice, setFinalNotice] = useState<string | null>(null); const [checking, setChecking] = useState(false)
   function resetForm() { setKind(''); setOccurred(''); setReason(''); setDirection(''); setFirstKg(''); setSecondKg(''); setLocalError(null) }
   const candidates = useQuery({ queryKey: [namespace, shell.routeEntryGeneration, 'transfer-departure', 'candidates'], retry: false,
     queryFn: async ({ signal }) => {
@@ -62,6 +63,7 @@ function Screen({ company, namespace, shell }: { readonly company: string; reado
   const canRecord = canEdit && (kind === '1' ? view?.exitWeighingAtUtc === null : kind === '2' ? view?.vehicleExitAtUtc === null : true)
   async function send(transferId: string, sourceLocationId: string, payload: RecordTransferDeparture) {
     const snapshot = beginTransferDepartureAttempt(binding, company, transferId, sourceLocationId, payload); if (snapshot === null) return
+    setFinalNotice(null)
     const security = boundary.capture(); const outcome = await recordTransferDeparture(snapshot)
     if (outcome.type === 'refused') boundary.report(outcome.status, security)
     finishTransferDepartureAttempt(snapshot, outcome)
@@ -69,6 +71,21 @@ function Screen({ company, namespace, shell }: { readonly company: string; reado
     if (outcome.type === 'applied' || outcome.type === 'refused' && (outcome.status === 409 || outcome.status === 404) && !transferDepartureFrozen(transferDepartureAttempt(binding))) {
       resetForm(); if (selected !== null) void facts.refetch()
     }
+  }
+  /** K3 P2-6: leave an unresolved departure by READING the transfer again; nothing is sent. */
+  async function finalCheck() {
+    const current = transferDepartureAttempt(binding)
+    if (checking || current.phase === 'idle' || !transferDepartureFrozen(current) || current.phase === 'sending') return
+    setChecking(true); setFinalNotice(null)
+    const security = boundary.capture()
+    const result = await fetchTransferDepartureFacts(company, current.snapshot)
+    if (result.type === 'http') boundary.report(result.status, security)
+    if (!alive.current) return
+    setChecking(false)
+    if (result.type !== 'ok-single') { setFinalNotice(T.finalOpen); return }
+    const decision = resolveTransferDepartureAttempt(binding, result.data)
+    setFinalNotice(decision === 'released' ? T.released : decision === 'open' ? T.finalOpen : null)
+    if (decision !== 'open') { resetForm(); if (selected !== null) void facts.refetch() }
   }
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -88,8 +105,11 @@ function Screen({ company, namespace, shell }: { readonly company: string; reado
     {attempt.phase === 'unknown' || attempt.phase === 'failed' && attempt.unresolved ? <div className={styles.notice} data-tone="unknown">
       <p role="alert">{T.unknown}</p>
       <StateBlock subject={T.subject} state={attempt.phase === 'unknown' ? { kind: attempt.reason } : classifyOutcome({ type: 'http', status: attempt.status })} />
-      <Button type="button" onClick={() => void send(attempt.snapshot.transferId, attempt.snapshot.sourceLocationId, attempt.snapshot.payload)}>{T.retry}</Button>
+      <Button type="button" disabled={checking} onClick={() => void send(attempt.snapshot.transferId, attempt.snapshot.sourceLocationId, attempt.snapshot.payload)}>{T.retry}</Button>
+      <Button type="button" disabled={checking} aria-describedby="transfer-departure-final-help" onClick={() => void finalCheck()}>{T.finalCheck}</Button>
+      <p id="transfer-departure-final-help">{T.finalCheckHelp}</p>
     </div> : null}
+    {finalNotice === null ? null : <p role="status">{finalNotice}</p>}
     {attempt.phase === 'failed' && !attempt.unresolved ? attempt.status === 400 || attempt.status === 422
       ? <p role="alert">{T.refused}</p> : <StateBlock subject={T.subject} state={classifyOutcome({ type: 'http', status: attempt.status })} /> : null}
     {localError === null ? null : <p role="alert">{localError}</p>}

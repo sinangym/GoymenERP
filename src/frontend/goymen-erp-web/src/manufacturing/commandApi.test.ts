@@ -5,6 +5,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { closeOrder, recordFact } from './commandApi'
+import { failureText } from './manufacturingText'
 import type { CloseSnapshot, FactSnapshot } from './contract'
 import { COMPANY_A, ORDER, ROLL_1, ROLL_2, json, problem, stockShortfall } from './testHarness'
 
@@ -146,6 +147,11 @@ describe('recordFact', () => {
       problem(409, { code: 'manufacturing_version_conflict', expectedVersion: '4', currentVersion: '6' }),
       { kind: 'version-conflict', expectedVersion: 4, currentVersion: 6, conflictIsCurrent: true },
     ],
+    // K3 P2-5: a taken output label code is a definite refusal, not UNKNOWN.
+    [
+      problem(409, { code: 'manufacturing_output_label_code_conflict', field: 'labelCode' }),
+      { kind: 'rule', code: 'manufacturing_output_label_code_conflict' },
+    ],
     [problem(422, { code: 'manufacturing_return_exceeds_issued' }), { kind: 'rule', code: 'manufacturing_return_exceeds_issued' }],
     [
       problem(422, { code: 'manufacturing_return_exceeds_unconsumed' }),
@@ -183,6 +189,13 @@ describe('recordFact', () => {
     expect(await recordFact(COMPANY_A, ORDER, SNAPSHOT)).toEqual({ type: 'unknown', unknown })
   })
 
+  it('K3 P2-5: shows the taken label code as its own Turkish refusal, never the generic code echo', async () => {
+    answer(problem(409, { code: 'manufacturing_output_label_code_conflict', field: 'labelCode' }))
+    const outcome = await recordFact(COMPANY_A, ORDER, SNAPSHOT)
+    expect(outcome.type).toBe('failed')
+    if (outcome.type !== 'failed') return
+    expect(failureText(outcome.failure)).toContain('etiket kodu şirkette zaten kullanılıyor')
+  })
   it('treats no response to a write as unknown, not as not-applied', async () => {
     answer(() => {
       throw new TypeError('failed to fetch')

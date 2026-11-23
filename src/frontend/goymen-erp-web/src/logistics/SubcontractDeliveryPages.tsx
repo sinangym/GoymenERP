@@ -13,7 +13,7 @@ import { issuePath, parseQuantityInput, weighingsPath } from './contract'
 import { generateClientId } from './instructionAttempt'
 import { REALIZATION_CAPABILITY } from './realizationContract'
 import { beginSubcontractAttempt, fetchSubcontractCandidates, fetchSubcontractInstruction, fetchSubcontractList, fetchSubcontractSalesLines,
-  finishSubcontractAttempt, leaveSubcontractAttempt, retrySubcontractAttempt, sendSubcontractAttempt, subcontractAttempt, subcontractCreateLine,
+  finishSubcontractAttempt, leaveSubcontractAttempt, resolveSubcontractAttempt, retrySubcontractAttempt, sendSubcontractAttempt, subcontractAttempt, subcontractCreateLine,
   subcontractFrozen, subscribeSubcontractAttempt, type SubcontractAttempt } from './subcontractDeliveryApi'
 import { SUBCONTRACT_CAPABILITY as CAP, SUBCONTRACT_DELIVERY_PATH as PATH, SUBCONTRACT_DELIVERY_ROUTE as ROUTE, subcontractKg,
   type SubcontractCandidate, type SubcontractCreateLine, type SubcontractInstruction, type SubcontractLine, type SubcontractAdditionalAllocationUse } from './subcontractDeliveryContract'
@@ -47,17 +47,37 @@ function useCommands(binding: string, shell: ShellState, onApplied: (view: Subco
   const boundary = useAuthBoundary(); const alive = useRef(false)
   const state = useSyncExternalStore(callback => subscribeSubcontractAttempt(binding, callback), () => subcontractAttempt(binding), () => subcontractAttempt(binding))
   useLayoutEffect(() => { alive.current = true; return () => { alive.current = false; leaveSubcontractAttempt(binding) } }, [binding])
+  const [finalNotice, setFinalNotice] = useState<string | null>(null); const [checking, setChecking] = useState(false)
   async function send(snapshot: SubcontractAttempt | null) {
     if (snapshot === null) return
+    setFinalNotice(null)
     const security = boundary.capture(); const outcome = await sendSubcontractAttempt(snapshot)
     if (outcome.type === 'refused') boundary.report(outcome.status, security)
     finishSubcontractAttempt(snapshot, outcome)
     if (alive.current && outcome.type === 'applied') onApplied(outcome.view)
   }
+  /** K3 P2-6: leave an unresolved command by READING its instruction again; nothing is sent. */
+  async function finalCheck() {
+    const current = subcontractAttempt(binding)
+    if (checking || current.phase !== 'unknown') return
+    setChecking(true); setFinalNotice(null)
+    const security = boundary.capture()
+    const result = await fetchSubcontractInstruction(current.snapshot.company, current.snapshot.instructionId)
+    if (result.type === 'http' && result.status !== 404) boundary.report(result.status, security)
+    if (!alive.current) return
+    setChecking(false)
+    const view = result.type === 'ok-single' ? result.data : null
+    if (view === null && !(result.type === 'http' && result.status === 404)) { setFinalNotice(T.finalOpen); return }
+    const decision = resolveSubcontractAttempt(binding, view)
+    setFinalNotice(decision === 'released' ? T.released : decision === 'open' ? T.finalOpen : null)
+    if (decision === 'completed') onApplied(view)
+  }
   const notice = state.phase === 'sending' ? <p role="status">{T.pending}</p> : state.phase === 'unknown' ? <div>
     <p role="alert">{T.unknown}</p><StateBlock subject={T.subject} state={{ kind: state.outcome.reason }} />
     {canRetryCommand(shell, state.snapshot)
-      ? <Button type="button" onClick={() => void send(retrySubcontractAttempt(binding))}>{T.retry}</Button> : null}</div>
+      ? <Button type="button" disabled={checking} onClick={() => void send(retrySubcontractAttempt(binding))}>{T.retry}</Button> : null}
+    <Button type="button" disabled={checking} aria-describedby="subcontract-final-help" onClick={() => void finalCheck()}>{T.finalCheck}</Button>
+    <p id="subcontract-final-help">{T.finalCheckHelp}</p>{finalNotice === null ? null : <p role="status">{finalNotice}</p>}</div>
     : state.phase === 'completed' ? state.outcome.type === 'applied' ? <p role="status">{state.outcome.replayed ? T.replayed : T.saved}</p>
       : state.outcome.type === 'refused' ? <div role="alert"><p>{state.outcome.code === 'logistics_subcontract_delivery_active_invoice' ? T.activeInvoice : T.refused}</p>
         {canRetryCommand(shell, state.snapshot) && <>
@@ -66,7 +86,7 @@ function useCommands(binding: string, shell: ShellState, onApplied: (view: Subco
             && state.outcome.detail !== null && <p>{state.outcome.detail}</p>}
         </>}
         {state.outcome.status !== 400 && state.outcome.status !== 422 ? <StateBlock subject={T.subject} state={classifyOutcome({ type: 'http', status: state.outcome.status })} /> : null}</div> : null : null
-  return { state, frozen: subcontractFrozen(state), send, notice }
+  return { state, frozen: subcontractFrozen(state), send, notice: <>{notice}{state.phase !== 'unknown' && finalNotice !== null ? <p role="status">{finalNotice}</p> : null}</> }
 }
 export function SubcontractDeliveryListPage() { return <Boundary capability={CAP.list}>{(company, binding, shell) => <List company={company} binding={binding} shell={shell} />}</Boundary> }
 function List({ company, binding, shell }: { readonly company: string; readonly binding: string; readonly shell: ShellState }) {

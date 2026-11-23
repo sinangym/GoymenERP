@@ -83,8 +83,10 @@ public sealed class ManualBankPaymentServiceTests
         Assert.Equal("TR120006100519786457841327", bank.PendingIban);
     }
 
+    /// <summary>FNS-D118: with no separate send step, every reviser of the draft is on the preparer's side and cannot
+    /// approve it; an approver who never saved the draft can.</summary>
     [Fact]
-    public async Task Reviser_of_the_draft_cannot_approve_it_and_a_third_actor_can()
+    public async Task Fns_d118_reviser_of_the_draft_is_a_preparer_and_cannot_approve_it_and_a_third_actor_can()
     {
         await using var run = await Run.StartAsync();
         ManualBankPaymentCommandResult draft;

@@ -344,19 +344,19 @@ public sealed class GeneratedDocumentStoreTests
     }
 
     [Fact]
-    public async Task A_user_upload_without_a_scanner_still_fails_closed_as_not_scanned()
+    public async Task A_user_upload_without_a_scanner_still_fails_closed_and_stores_nothing()
     {
         var world = World();
         world.Readable.Add((CompanyA, Label));
         var a = new Harness(CompanyA, scanner: null, world: world).Grant(Upload, Read);
 
-        var uploaded = await a.Service.UploadAsync(Harness.Upload(Label, Pdf), a.Metadata("u-no-scanner"));
+        // KLN-D60 (3): skipping the scan is the server producer's alone; a user upload without a scanner is refused.
+        var refusal = await Assert.ThrowsAsync<DocumentServiceException>(() =>
+            a.Service.UploadAsync(Harness.Upload(Label, Pdf), a.Metadata("u-no-scanner")));
 
-        var document = Assert.Single(world.Documents);
-        Assert.Equal(DocumentScanState.NotScanned, document.ScanState);
-        Assert.Equal((uploaded.Document.Id, "NotScanned", false), (document.Id, uploaded.Document.ScanState, uploaded.Document.Downloadable));
-        var refusal = await Assert.ThrowsAsync<DocumentServiceException>(() => a.Service.GetContentAsync(document.Id));
-        Assert.Equal((409, DocumentProblemCodesV1.NotScanned), (refusal.Status, refusal.Code));
+        Assert.Equal((503, "service_unavailable"), (refusal.Status, refusal.Code));
+        Assert.Empty(world.Documents);
+        Assert.Empty(world.Attempts);
     }
 
     [Fact]

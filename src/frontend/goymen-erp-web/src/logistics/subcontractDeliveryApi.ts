@@ -65,6 +65,28 @@ export function leaveSubcontractAttempt(binding: string) {
   const state = subcontractAttempt(binding)
   if (state.phase === 'sending') finishSubcontractAttempt(state.snapshot, { type: 'unknown', reason: 'network-error' })
 }
+/**
+ * K3 P2-6: the explicit way out of an unresolved command, decided by a fresh READ of its instruction — nothing is sent.
+ * A create is completed when the instruction exists and released when the owner answers 404. Every other command
+ * carries the instruction's expected version: an unchanged version proves it did not apply (and a late commit would
+ * make any new attempt conflict), so the slot is released; a changed version cannot tell whose write it was, so the
+ * attempt stays open and the same-key retry decides it.
+ */
+export function resolveSubcontractAttempt(binding: string, view: SubcontractInstruction | null): 'completed' | 'released' | 'open' {
+  const state = subcontractAttempt(binding)
+  if (state.phase !== 'unknown') return 'open'
+  const { snapshot } = state
+  if (view !== null && (view.companyId !== snapshot.company || view.instructionId !== snapshot.instructionId)) return 'open'
+  if (snapshot.path === PATH) {
+    attempts.set(binding, view === null ? idle : { phase: 'completed', snapshot, outcome: { type: 'applied', replayed: true, view } }); emit(binding)
+    return view === null ? 'released' : 'completed'
+  }
+  if (view === null) { attempts.set(binding, idle); emit(binding); return 'released' }
+  const sent = JSON.parse(snapshot.body) as { readonly expectedVersion?: unknown }
+  if (typeof sent.expectedVersion !== 'string' || !/^\d+$/.test(sent.expectedVersion) || !/^\d+$/.test(view.version)
+    || BigInt(view.version) !== BigInt(sent.expectedVersion)) return 'open'
+  attempts.set(binding, idle); emit(binding); return 'released'
+}
 export async function sendSubcontractAttempt(snapshot: SubcontractAttempt): Promise<SubcontractResult> {
   let response: Response
   try { response = await fetch(`${API_BASE}${snapshot.path}`, { method: 'POST', headers: { ...logisticsHeaders(snapshot.company),

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { CogsMappingPage } from './CogsMappingPage'
 import { decodePostingMapping, decodePostingMappingWorkspace, sendPostingMapping } from './postingMappingApi'
 import { POSTING_MAPPING_TEXT as T } from './postingMappingText'
+import { keyProbes } from './exactKeysTestSupport'
 
 const state = vi.hoisted(() => ({ company: 'e0419000-0000-4000-8000-000000000001', actor: 'e0419000-0000-4000-8000-000000000002' }))
 const maker = 'e0419000-0000-4000-8000-000000000003'
@@ -70,5 +71,20 @@ describe('COGS mapping workspace', () => {
     vi.stubGlobal('fetch', vi.fn(async () => json(mapping({ status: 'Active', version: 2, activatedByUserId: manufactured, activatedAtUtc: '2026-11-17T10:00:00Z' }))))
     expect(await sendPostingMapping(state.company, { kind: 'activate', key: 'SENTETIK-key', mappingVersion: 1,
       request: { expectedVersion: 1, expectedActiveMappingVersion: 0 } }, state.actor)).toEqual({ type: 'unknown' })
+  })
+})
+describe('posting mapping exact key sets', () => {
+  it('rejects an unknown or missing key on a mapping and its rows', () => {
+    expect(decodePostingMapping(mapping(), state.company)).not.toBeNull()
+    for (const [label, body] of keyProbes(mapping(), [[[], 'version'], [['rows', 0], 'itemType']]))
+      expect(decodePostingMapping(body, state.company), label).toBeNull()
+  })
+  it('rejects an unknown or missing key on the workspace, its accounts, defaults and nested mappings', () => {
+    const active = mapping({ mappingVersion: 2, status: 'Active', version: 2, activatedByUserId: state.actor, activatedAtUtc: '2026-11-17T10:00:00Z' })
+    const value = workspace({ latestMappingVersion: 2, active })
+    expect(decodePostingMappingWorkspace(value, state.company)).not.toBeNull()
+    for (const [label, body] of keyProbes(value, [[[], 'active'], [['accounts', 0], 'name'], [['cogsDefaults', 0], 'accountId'],
+      [['prepared', 0], 'status'], [['prepared', 0, 'rows', 0], 'linePurpose'], [['active'], 'status'], [['active', 'rows', 0], 'isExport']]))
+      expect(decodePostingMappingWorkspace(body, state.company), label).toBeNull()
   })
 })

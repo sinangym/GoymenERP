@@ -6,10 +6,11 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 namespace GoymenERP.Settings.UnitTests;
 
 /// <summary>
-/// KIM-S26 (FNS-D48): the expense payment uses its own money-operation key, <c>finance.expense-payment.v1</c>, managed
-/// apart from the manual bank payment's <c>finance.manual-bank-payment.v1</c>. No approved profile names the key yet
-/// (its values are not chosen by Settings), so every read for it stays fail-closed and is never answered from the
-/// manual bank payment's profile; a reviewed version that names it answers it with that version's own values.
+/// KIM-S26 (FNS-D48, FNS-D55): the expense payment uses its own money-operation key, <c>finance.expense-payment.v1</c>,
+/// managed apart from the manual bank payment's <c>finance.manual-bank-payment.v1</c>. FNS-D55 chose its values — "ayrı
+/// satır; değerleri manuel banka ödemesiyle aynıdır (GDC/GSP/GIN şirket profilleri ayrı, TRY 2 ondalık)" — so every seed
+/// company's own approved TRY entry answers it (scale 2, no unit-price scale) without any human-authored profile, and the
+/// key never opens another Finance key for GSP/GIN.
 /// </summary>
 public sealed class ApprovedMoneyProfileExpensePaymentKeyTests
 {
@@ -22,53 +23,59 @@ public sealed class ApprovedMoneyProfileExpensePaymentKeyTests
     [InlineData("gdc")]
     [InlineData("gsp")]
     [InlineData("gin")]
-    public async Task The_expense_payment_key_has_no_approved_profile_and_is_unavailable_in_every_seed_company(string company)
+    public async Task The_expense_payment_key_is_answered_by_each_seed_company_s_own_approved_TRY_row(string company)
     {
-        var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
-            () => Provider(Company(company)).GetMoneyProfileAsync(
-                SettingsCurrencyIdentitiesV1.TurkishLira, ExpensePayment, AfterEveryApproval));
+        var companyId = Company(company);
+        var profile = await Provider(companyId).GetMoneyProfileAsync(
+            SettingsCurrencyIdentitiesV1.TurkishLira, ExpensePayment, AfterEveryApproval);
 
-        // Not "not found" and never a defaulted profile: nothing is approved to ask (fail-closed).
-        Assert.Equal("settings_provider_unavailable", failure.Code);
+        // FNS-D55: the manual bank payment's values — TRY, scale 2 — on the company's own profile identity.
+        Assert.Equal((companyId, ExpensePayment, "TRY", 2, (int?)null, true),
+            (profile.CompanyId, profile.Operation, profile.CurrencyCode, profile.Scale, profile.UnitPriceScale, profile.IsActive));
+        Assert.Equal(Entry(company).ProfileId, profile.Profile.ProfileId);
+        // The stored baseline row keeps the entry's source text within its 400-character column.
+        Assert.InRange(Entry(company).Source.Length, 1, 400);
     }
 
     [Theory]
     [InlineData("gdc")]
     [InlineData("gsp")]
     [InlineData("gin")]
-    public async Task The_expense_payment_key_lists_no_currency_candidate_in_any_seed_company(string company)
+    public async Task The_expense_payment_key_lists_TRY_as_its_only_currency_candidate(string company)
     {
         ISettingsMoneyCandidateReaderV2 reader = Provider(Company(company));
 
-        var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
-            () => reader.GetMoneyCurrencyCandidatesAsync(ExpensePayment));
+        var candidates = await reader.GetMoneyCurrencyCandidatesAsync(ExpensePayment);
 
-        Assert.Equal("settings_provider_unavailable", failure.Code);
+        Assert.Equal(SettingsCurrencyIdentitiesV1.TurkishLira, Assert.Single(candidates).CurrencyId);
     }
 
     [Fact]
-    public async Task The_expense_payment_key_is_not_borrowed_from_the_manual_bank_payment_profile()
+    public async Task The_expense_payment_row_carries_the_manual_bank_payment_values_and_GSP_GIN_get_no_other_finance_key()
     {
-        // FNS-D48: the two keys are managed apart. GDC's manual bank payment keeps its approved answer, and that
-        // answer is never handed out for the expense payment key.
-        Assert.DoesNotContain(ApprovedMoneyProfileCatalog.Approved.Entries, entry => entry.Operations.Contains(ExpensePayment));
-        var provider = Provider(ApprovedUnitProfileCatalog.GdcCompanyId);
+        var gdc = Provider(ApprovedUnitProfileCatalog.GdcCompanyId);
+        var manual = await gdc.GetMoneyProfileAsync(SettingsCurrencyIdentitiesV1.TurkishLira, ManualBankPayment, AfterEveryApproval);
+        var expense = await gdc.GetMoneyProfileAsync(SettingsCurrencyIdentitiesV1.TurkishLira, ExpensePayment, AfterEveryApproval);
+        Assert.Equal((manual.CurrencyCode, manual.Scale, manual.UnitPriceScale), (expense.CurrencyCode, expense.Scale, expense.UnitPriceScale));
+        Assert.Equal((ManualBankPayment, ExpensePayment), (manual.Operation, expense.Operation));
 
-        var manual = await provider.GetMoneyProfileAsync(
-            SettingsCurrencyIdentitiesV1.TurkishLira, ManualBankPayment, AfterEveryApproval);
-
-        Assert.Equal(ManualBankPayment, manual.Operation);
-        Assert.Equal(ApprovedMoneyProfileCatalog.GdcTurkishLiraV1.ProfileId, manual.Profile.ProfileId);
-        Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
-            () => provider.GetMoneyProfileAsync(
-                SettingsCurrencyIdentitiesV1.TurkishLira, ExpensePayment, AfterEveryApproval))).Code);
+        foreach (var company in new[] { ApprovedUnitProfileCatalog.GspCompanyId, ApprovedUnitProfileCatalog.GinCompanyId })
+        {
+            Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+                () => Provider(company).GetMoneyProfileAsync(
+                    SettingsCurrencyIdentitiesV1.TurkishLira, ManualBankPayment, AfterEveryApproval))).Code);
+            Assert.DoesNotContain(MoneyProfileAuthoringCatalogV1.Targets(company),
+                target => target.Operation is MoneyProfileAuthoringCatalogV1.CreditPlanOperation
+                    or MoneyProfileAuthoringCatalogV1.CashTransferOperation);
+            Assert.Contains(MoneyProfileAuthoringCatalogV1.Targets(company), target => target.Operation == ExpensePayment);
+        }
     }
 
     [Fact]
-    public async Task The_unapproved_key_leaves_GDC_s_operation_less_candidates_as_they_were()
+    public async Task The_expense_payment_key_leaves_GDC_s_operation_less_candidates_as_they_were()
     {
-        // The key is listed on no profile, so it does not narrow what "unrestricted" means: GDC's TRY bank-account
-        // currency check (Finance FS0) keeps its single TRY candidate.
+        // GDC lists every key, so it stays unrestricted: GDC's TRY bank-account currency check (Finance FS0) keeps its
+        // single TRY candidate.
         ISettingsMoneyCandidateReader reader = Provider(ApprovedUnitProfileCatalog.GdcCompanyId);
 
         var candidates = await reader.GetMoneyCurrencyCandidatesAsync();
@@ -118,6 +125,13 @@ public sealed class ApprovedMoneyProfileExpensePaymentKeyTests
             () => provider.GetMoneyProfileAsync(
                 SettingsCurrencyIdentitiesV1.TurkishLira, ManualBankPayment, AfterEveryApproval))).Code);
     }
+
+    private static ApprovedMoneyProfileEntry Entry(string company) => company switch
+    {
+        "gdc" => ApprovedMoneyProfileCatalog.GdcTurkishLiraV1,
+        "gsp" => ApprovedMoneyProfileCatalog.GspTurkishLiraV1,
+        _ => ApprovedMoneyProfileCatalog.GinTurkishLiraV1,
+    };
 
     private static Guid Company(string company) => company switch
     {
