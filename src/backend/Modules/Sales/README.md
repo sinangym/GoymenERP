@@ -1137,3 +1137,19 @@ line (K17/K18). The order realization counts only **finalised** invoices - one n
 admits a re-drive, SAT-D457 / EK1 E21-E21a; a re-drive answered unavailable/retry/denied does not bring it back, and a ledger
 with more than one non-admitted answer stays out because it keeps only the last answer); an invoice's own kg price block is shown on the document in every state. Real-SQL
 acceptance is not run locally.
+
+## WP4 — approval requests (SAT-D475 / SAT-D476)
+
+`sales.ApprovalRequests` (+ `sales.ApprovalRequestAttempts`) holds two request kinds. **Quote conversion (SAT-D476):** the
+salesperson (`sales.quotes.write`) asks for the conversion of an expired open quote's current revision
+(`POST /api/v1/sales/quotes/{id}/expired-conversion-requests`); the quote's own expired-conversion approval answers it (the
+request reads `Approved`, or `Stale` when the quote moved on); a rejection needs `sales.quotes.expired-conversion.approve` and a
+reason. An expired quote without a request is never counted as waiting. **Over-delivery (SAT-D475):** the Logistics definite
+shipment calls `ISalesOverDeliveryGatePortV1` with the line's shipped total before it and the attempted quantity; Sales judges the
+total with the order business date's Settings tolerance and the realization calculator — within/warn pass, the approval band
+opens (or answers) the line's one pending request in the shipper's name and the shipment stops (recorded 409
+`logistics_over_delivery_approval_pending`), the block band stops for good. `POST …/drafts/{id}/over-delivery-requests/{no}/approval`
+(`sales.orders.over-delivery.approve`, never the shipper — SAT-D216) re-judges the requested total and appends the order's
+over-delivery approval fact covering it in the same save; the next shipment attempt then passes. No new permission is registered.
+Both kinds are Work inbox sources (`sales.quote-conversion-request.v1`, `sales.over-delivery-request.v1`).
+`20261123075846_AddSalesApprovalRequests`: pure DDL; Down refuses with **THROW 52130** while a request or attempt exists (forward fix).
