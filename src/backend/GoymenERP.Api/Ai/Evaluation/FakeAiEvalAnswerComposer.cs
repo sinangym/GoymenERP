@@ -49,6 +49,12 @@ public sealed class FakeAiEvalAnswerComposer(AiModelPlacementV1 placement) : IAi
 
     private static void AppendDecisions(StringBuilder text, JsonElement records)
     {
+        if (records.GetArrayLength() == 0)
+        {
+            text.Append(" Paylaşılabilir kayıt yok; kesin değer yok, cevap veremem.");
+            return;
+        }
+
         foreach (var record in records.EnumerateArray())
         {
             text.Append(CultureInfo.InvariantCulture,

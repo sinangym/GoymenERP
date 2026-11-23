@@ -193,6 +193,16 @@ public sealed partial class AiEvalRunner
                     return new AiEvalChecksV1(false, null, false, null);
                 }
 
+                // The tool released no record of the asked decision (it only counted a local-only one): an answer that says
+                // it cannot answer is the correct abstention; anything else claims what no source holds.
+                var releasedIds = cited.SelectMany(entry => DecisionIdentities(entry.ContentJson)).ToHashSet(StringComparer.Ordinal);
+                if (!reasons.Contains(AiEvalReasonsV1.CitationNotReturned) && !item.ExpectedSourceIds.Any(releasedIds.Contains))
+                {
+                    var declined = scoring.CannotAnswerMarkers.Any(marker => text.Contains(AiDecisionIndex.Fold(marker), StringComparison.Ordinal));
+                    if (!declined) reasons.Add(AiEvalReasonsV1.AnsweredWithoutSettledSource);
+                    return new AiEvalChecksV1(null, null, declined, null);
+                }
+
                 var sourceOk = !reasons.Contains(AiEvalReasonsV1.CitationNotReturned) && ExpectedSourcesCited(item, cited, reasons);
                 var open = item.ExpectedSourceIds.All(id => DecisionStatuses(cited, id)
                                .Any(status => scoring.OpenDecisionStatuses.Contains(status, StringComparer.Ordinal)))
@@ -356,7 +366,10 @@ public sealed partial class AiEvalRunner
     private static AiEvalItemResultV1 Result(AiEvalItemV1 item, AiEvalVerdictV1 verdict, IReadOnlyList<string> reasons,
         AiEvalChecksV1 checks, AiDataClassV1 dataClass, int plannedCalls, int releasedSources, AiGatewayResultV1? composed) =>
         new(item.Id, item.Category, item.ExpectedBehavior, verdict, [.. reasons], checks, dataClass, plannedCalls, releasedSources,
-            composed?.Status, composed?.CannotAnswerReason, composed?.Answer?.Citations.Count ?? 0, composed?.Answer?.UsageUnits ?? 0);
+            composed?.Status, composed?.CannotAnswerReason, composed?.Answer?.Citations.Count ?? 0, composed?.Answer?.UsageUnits ?? 0)
+        {
+            AnswerText = composed?.Answer?.Text,
+        };
 
     internal static AiEvalTotalsV1 Totals(IReadOnlyList<AiEvalItemResultV1> results)
     {
