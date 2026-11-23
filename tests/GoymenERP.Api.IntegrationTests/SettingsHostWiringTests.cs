@@ -328,6 +328,8 @@ public sealed class SettingsHostWiringTests
             new[]
             {
                 FinanceMoneyOperations.ManualBankPaymentV1, FinanceMoneyOperations.ManualBankReceiptV1,
+                // FNS-D55: the expense payment's own row.
+                FinanceMoneyOperations.ExpensePaymentV1,
                 SalesMoneyOperations.OrderDraftV1,
                 AccountingMoneyOperations.JournalAmountV1,
                 // A2a-1b: the Purchasing owner's key (ALS-D63 narrow exception).
@@ -398,9 +400,11 @@ public sealed class SettingsHostWiringTests
     }
 
     [Fact]
-    public void The_GSP_and_GIN_money_profiles_answer_exactly_the_Sales_and_Purchasing_owners_published_keys()
+    public void The_GSP_and_GIN_money_profiles_answer_exactly_the_Sales_Purchasing_and_expense_payment_keys()
     {
-        var expected = new[] { SalesMoneyOperations.OrderDraftV1, PurchasingMoneyOperationsV1.OrderV1 }.Order(StringComparer.Ordinal).ToArray();
+        // FNS-D55 adds each company's own expense payment row; no other Finance key (SAT-D18).
+        var expected = new[] { SalesMoneyOperations.OrderDraftV1, PurchasingMoneyOperationsV1.OrderV1,
+            FinanceMoneyOperations.ExpensePaymentV1 }.Order(StringComparer.Ordinal).ToArray();
         Assert.Equal(expected, ApprovedMoneyProfileCatalog.GspTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
         Assert.Equal(expected, ApprovedMoneyProfileCatalog.GinTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
     }

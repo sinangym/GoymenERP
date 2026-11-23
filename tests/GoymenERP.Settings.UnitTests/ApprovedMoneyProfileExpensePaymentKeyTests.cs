@@ -33,6 +33,8 @@ public sealed class ApprovedMoneyProfileExpensePaymentKeyTests
         Assert.Equal((companyId, ExpensePayment, "TRY", 2, (int?)null, true),
             (profile.CompanyId, profile.Operation, profile.CurrencyCode, profile.Scale, profile.UnitPriceScale, profile.IsActive));
         Assert.Equal(Entry(company).ProfileId, profile.Profile.ProfileId);
+        // The stored baseline row keeps the entry's source text within its 400-character column.
+        Assert.InRange(Entry(company).Source.Length, 1, 400);
     }
 
     [Theory]

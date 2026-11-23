@@ -114,7 +114,7 @@ public sealed class ApprovedMoneyProfileCatalog
         EffectiveFrom: new DateOnly(2026, 9, 18),
         EffectiveThrough: null,
         Source: "Sinan Ö2 2026-09-18 (#66 5722637822); operation keys: Finance/Sales/Accounting owners (Business #254 5654539215); "
-            + PurchasingSource + "; expense payment: FNS-D55 (SINAN_KARARLARI_2026-11-15_DALGA2_SORULARI.md)",
+            + PurchasingSource,
         UnitPriceScales: PurchasingUnitPriceScales);
 
     /// <summary>
@@ -134,7 +134,7 @@ public sealed class ApprovedMoneyProfileCatalog
         ProfileId = Guid.Parse("5b863ed2-e21a-5c43-b219-fa113dcc50b3"),
         EffectiveFrom = new DateOnly(2026, 10, 26),
         Source = "SAT-D18 (SINAN_KARARLARI_2026-10-26_SATIS_EK.md); scale Sinan Ö2 2026-09-18; operation key: Sales owner; " + PurchasingSource
-            + "; expense payment: FNS-D55 (SINAN_KARARLARI_2026-11-15_DALGA2_SORULARI.md)",
+           ,
     };
 
     /// <summary>
@@ -151,7 +151,7 @@ public sealed class ApprovedMoneyProfileCatalog
         ProfileId = Guid.Parse("d78eee0d-4940-52e3-bd80-3b5ebdb6d760"),
         EffectiveFrom = new DateOnly(2026, 10, 26),
         Source = "SAT-D18 (SINAN_KARARLARI_2026-10-26_SATIS_EK.md); scale Sinan Ö2 2026-09-18; operation key: Sales owner; " + PurchasingSource
-            + "; expense payment: FNS-D55 (SINAN_KARARLARI_2026-11-15_DALGA2_SORULARI.md)",
+           ,
     };
 
     public static ApprovedMoneyProfileCatalog Approved { get; } = new([GdcTurkishLiraV1, GspTurkishLiraV1, GinTurkishLiraV1]);
