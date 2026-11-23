@@ -62,6 +62,37 @@ public sealed class ExpensePaymentServiceTests
     }
 
     [Fact]
+    public async Task Expense_payment_reads_its_own_money_profile_and_never_the_manual_bank_payment_profile()
+    {
+        Assert.Equal("finance.expense-payment.v1", FinanceMoneyOperations.ExpensePaymentV1);
+        Assert.Equal(FinanceMoneyOperations.ExpensePaymentV1, MoneyProfileAuthoringCatalogV1.ExpensePaymentOperation);
+        Assert.Contains(MoneyProfileAuthoringCatalogV1.Targets(ApprovedUnitProfileCatalog.GdcCompanyId),
+            target => target.Operation == FinanceMoneyOperations.ExpensePaymentV1);
+        Assert.DoesNotContain(ApprovedMoneyProfileCatalog.Approved.Entries,
+            row => row.Operations.Contains(FinanceMoneyOperations.ExpensePaymentV1));
+
+        await using var run = await Run.StartAsync();
+        await using (var legacy = run.Scope("maker", new AllowAll(), new UnavailableTreasuryBalanceGuard(),
+                         FinanceMoneyOperations.ManualBankPaymentV1))
+        {
+            var refused = await legacy.Service.DraftSaveAsync(legacy.Context, Key("draft-legacy"), Draft(),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Unavailable, refused.Outcome);
+            Assert.Equal("settings_provider_unavailable", Assert.Single(refused.Issues).Code);
+        }
+
+        await using (var maker = run.Scope("maker", new AllowAll(), new UnavailableTreasuryBalanceGuard()))
+        {
+            var saved = await maker.Service.DraftSaveAsync(maker.Context, Key("draft-own"), Draft(),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, saved.Outcome);
+        }
+
+        await using var verify = run.Context();
+        Assert.Equal(1, await verify.ExpensePayments.CountAsync());
+    }
+
+    [Fact]
     public async Task Registered_unavailable_balance_refuses_the_record_and_keeps_the_payment_approved()
     {
         await using var run = await Run.StartAsync();
@@ -315,6 +346,44 @@ public sealed class ExpensePaymentServiceTests
     }
 
     [Fact]
+    public async Task A_draft_prepared_before_the_passivation_proposal_is_not_approved_while_it_waits()
+    {
+        await using var run = await Run.StartAsync();
+        ExpensePaymentCommandResult draft;
+        await using (var maker = run.Scope("maker", new AllowAll(), new UnavailableTreasuryBalanceGuard()))
+        {
+            draft = await maker.Service.DraftSaveAsync(maker.Context, Key("draft-1"), CashDraft(), CancellationToken.None);
+        }
+        Assert.Equal(CommandOutcome.Succeeded, draft.Outcome);
+
+        // FNS-D65: the passivation is proposed after the draft; until it is decided the approval is refused.
+        await run.SetCashChangeAsync(PassivationChange, PendingChange);
+        var approve = new ApproveExpensePaymentRequest(draft.Resource!.Id, draft.Resource.Version);
+        await using (var checker = run.Scope("checker", new AllowAll(), new UnavailableTreasuryBalanceGuard()))
+        {
+            var refused = await checker.Service.ApproveAsync(checker.Context, Key("approve-1"), approve, CancellationToken.None);
+            Assert.Equal((CommandOutcome.ValidationFailed, "expense_payment_treasury_account_passivation_pending"),
+                (refused.Outcome, Assert.Single(refused.Issues).Code));
+            Assert.Null(refused.Resource);
+        }
+
+        await using (var verify = run.Context())
+        {
+            Assert.Equal(ExpensePaymentStatuses.Draft, (await verify.ExpensePayments.SingleAsync()).Status);
+            Assert.Equal(1, await verify.ExpensePaymentCommands.CountAsync());
+        }
+
+        // The passivation is rejected: the same key now approves the draft.
+        await run.SetCashChangeAsync(PassivationChange, RejectedChange);
+        await using (var checker = run.Scope("checker", new AllowAll(), new UnavailableTreasuryBalanceGuard()))
+        {
+            var approved = await checker.Service.ApproveAsync(checker.Context, Key("approve-1"), approve, CancellationToken.None);
+            Assert.Equal((CommandOutcome.Succeeded, ExpensePaymentStatus.Approved),
+                (approved.Outcome, approved.Resource!.Status));
+        }
+    }
+
+    [Fact]
     public async Task A_cash_account_whose_passivation_waits_pays_nothing_new_and_pays_again_after_a_rejection()
     {
         await using var run = await Run.StartAsync();
@@ -479,7 +548,8 @@ public sealed class ExpensePaymentServiceTests
                 .UseInMemoryDatabase(databaseName).Options, company);
         }
 
-        public Scope Scope(string actor, IFinancePermissionPort permission, IFinanceTreasuryBalanceGuard balance)
+        public Scope Scope(string actor, IFinancePermissionPort permission, IFinanceTreasuryBalanceGuard balance,
+            string? moneyOperation = FinanceMoneyOperations.ExpensePaymentV1)
         {
             var company = new CompanyContext();
             company.Set(Company);
@@ -489,7 +559,7 @@ public sealed class ExpensePaymentServiceTests
                 .AddInterceptors(new AuditSaveChangesInterceptor(collector, company)).Options, company);
             var service = new ExpensePaymentService(context, company, new User(actor), permission,
                 new SingleExpenseItemCatalog(), balance, new SettingsPort(), new OpenPeriod(), collector,
-                new ExpensePaymentBinding(FinanceMoneyOperations.ManualBankPaymentV1),
+                new ExpensePaymentBinding(moneyOperation),
                 new ExpensePaymentAuditEnvelopes(
                     Envelope(FinancePermissionNames.ExpensePaymentDraftSave),
                     Envelope(FinancePermissionNames.ExpensePaymentApprove),
@@ -545,9 +615,13 @@ public sealed class ExpensePaymentServiceTests
     private sealed class SettingsPort : ISettingsPrerequisiteProvider
     {
         public Task<MoneyProfileV1> GetMoneyProfileAsync(Guid currencyId, string operation, DateOnly effectiveOn,
-            CancellationToken cancellationToken = default) => Task.FromResult(new MoneyProfileV1(
-            Company, Currency, "TRY", FinanceMoneyOperations.ManualBankPaymentV1,
-            new ProfileVersionV1(Profile, 1), 2, true, new DateOnly(2026, 1, 1), null));
+            CancellationToken cancellationToken = default) =>
+            // FNS-D48/FNS-D55: only the expense payment's own row is published here; the manual bank payment's
+            // profile key answers unavailable, as Settings does for an operation it has no row for.
+            operation == FinanceMoneyOperations.ExpensePaymentV1
+                ? Task.FromResult(new MoneyProfileV1(Company, Currency, "TRY", operation,
+                    new ProfileVersionV1(Profile, 1), 2, true, new DateOnly(2026, 1, 1), null))
+                : throw new SettingsPrerequisiteException("settings_provider_unavailable");
 
         public Task<UnitProfileV1> GetUnitProfileAsync(Guid unitId, DateOnly effectiveOn,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();

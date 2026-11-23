@@ -29,7 +29,8 @@ public sealed partial class FinanceCreditAccountTests
 {
     private static readonly Guid CompanyA = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid CompanyB = Guid.Parse("12121212-1212-1212-1212-121212121212");
-    private static readonly Guid Currency = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    // FNS-D99: the 0,01 TL line tolerance is decided for the Turkish lira; the fixture uses its Settings identity.
+    private static readonly Guid Currency = SettingsCurrencyIdentitiesV1.TurkishLira;
     private static readonly Guid OtherCurrency = Guid.Parse("23232323-2323-2323-2323-232323232323");
     private static readonly DateTimeOffset At = new DateTimeOffset(2026, 11, 16, 9, 0, 0, TimeSpan.Zero);
     private static readonly DateOnly Start = new(2026, 11, 15);

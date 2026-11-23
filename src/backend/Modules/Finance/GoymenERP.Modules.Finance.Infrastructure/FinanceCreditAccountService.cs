@@ -127,7 +127,7 @@ public sealed partial class FinanceCreditAccountService(
         var moneyProfile = source.MoneyProfile!;
         if (request.Profile!.PlanNature == CreditPlanNatureV1.Installments)
         {
-            var plan = FinanceCreditPlanCalculator.Validate(request.PrincipalAmount, request.Installments, moneyProfile.Scale);
+            var plan = FinanceCreditPlanCalculator.Validate(request.PrincipalAmount, request.Installments, request.CurrencyId);
             if (!plan.IsValid) return Refused(context, CommandOutcome.ValidationFailed, [.. plan.Issues]);
         }
 
@@ -346,7 +346,7 @@ public sealed partial class FinanceCreditAccountService(
         var profileRead = await MoneyProfileAsync(context, FinanceAction.ProposeCredit, currencyId, effectiveOn, cancellationToken);
         if (profileRead.Refusal is { } failure)
             return new ReadResult<CreditPlanValidationView>(failure.Outcome == CommandOutcome.Denied ? ReadOutcome.Denied : ReadOutcome.Unavailable, null);
-        var verdict = FinanceCreditPlanCalculator.Validate(request.PrincipalAmount, request.Installments, profileRead.Profile!.Scale);
+        var verdict = FinanceCreditPlanCalculator.Validate(request.PrincipalAmount, request.Installments, currencyId);
         return new ReadResult<CreditPlanValidationView>(ReadOutcome.Found,
             new CreditPlanValidationView(context.CompanyId, verdict.IsValid, verdict.Totals, verdict.Issues,
                 Snapshot(profileRead.Profile!)));
@@ -460,7 +460,7 @@ public sealed partial class FinanceCreditAccountService(
             }
         }
         var verdict = storedProfile?.PlanNature == CreditPlanNatureV1.SourceMovements ? null
-            : FinanceCreditPlanCalculator.Validate(row.PrincipalAmountText, Inputs(lines), row.CurrencyScale);
+            : FinanceCreditPlanCalculator.Validate(row.PrincipalAmountText, Inputs(lines), row.CurrencyId);
         if (status == Approved && verdict is { IsValid: false })
         {
             dbContext.ChangeTracker.Clear();
@@ -800,7 +800,7 @@ public sealed partial class FinanceCreditAccountService(
         // The stored plan always reads (the database checks and the proposal's calculator); an unreadable one fails closed.
         var profile = Profile(row);
         var totals = profile?.PlanNature == CreditPlanNatureV1.SourceMovements ? null
-            : FinanceCreditPlanCalculator.Validate(row.PrincipalAmountText, Inputs(ordered), row.CurrencyScale).Totals
+            : FinanceCreditPlanCalculator.Validate(row.PrincipalAmountText, Inputs(ordered), row.CurrencyId).Totals
                 ?? throw new InvalidOperationException("Kredi hesabının kayıtlı ödeme planı okunamadı.");
         return new CreditAccountView(row.Id, row.CompanyId, GroupOf(row.CreditGroup), row.LenderName,
             row.ContractReference, row.CurrencyId, row.PrincipalAmountText, row.StartDate, StatusOf(row.Status),
