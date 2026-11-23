@@ -20,10 +20,9 @@ clock, no network, no environment value and no model is used. Nothing is guessed
   become ``[KİŞİ]``, e-mail/phone/national id/IBAN become ``[GİZLİ]`` in the title, text and scope of every record that
   carries a signal; the name terms themselves are not written to the index (only their count). A masked record that
   still contains a term is a generation error;
-* the cloud eligibility label (AI-D34 d) is derived from content and data class, never from the file name:
-  ``bulut_uygun_aday`` (no personal or commercial signal), ``maskeli_bulut_uygun_aday`` (personal signals, masked) and
-  ``yerel_kalir`` (a money amount: commercially sensitive candidate, stays local). The label is a candidate; which data
-  class may leave for a cloud model is the gateway policy (human gate: provider contract, KVKK).
+* the cloud eligibility label (AI-D34 d, AI-D49) is derived from content and data class, never from the file name: a
+  record with a money amount OR a person name (even masked) is ``yerel_kalir`` (processed only by the in-house model);
+  every other rule text is ``bulut_uygun_aday``. Which provider actually runs is the gateway policy (human gate).
 
 Usage::
 
@@ -114,9 +113,9 @@ MONEY = re.compile(r"(?<![\w.,])[0-9][0-9.,]*\s?(?:TL|TRY|USD|EUR|GBP|₺|€|\$
 PERSON_MASK = "[KİŞİ]"
 SECRET_MASK = "[GİZLİ]"
 MASK_POLICY = "ai-d36-person-name-mask-at-generation@1"
-CLOUD_LABELS = ("bulut_uygun_aday", "maskeli_bulut_uygun_aday", "yerel_kalir")
-CLOUD_DATA_CLASS = {"bulut_uygun_aday": "internal", "maskeli_bulut_uygun_aday": "internal", "yerel_kalir": "confidential"}
-CLOUD_BASIS = "AI-D34 d: içerik ve veri sınıfı (kişisel veri sinyali maskelenir, para tutarı yerel kalır); belge adı kullanılmaz"
+CLOUD_LABELS = ("bulut_uygun_aday", "yerel_kalir")
+CLOUD_DATA_CLASS = {"bulut_uygun_aday": "internal", "yerel_kalir": "confidential"}
+CLOUD_BASIS = "AI-D34 d, AI-D49: para tutarı veya kişi adı (maskeli olsa da) içeren kayıt yerel kalır, diğer kural metinleri bulut adayıdır; belge adı kullanılmaz"
 
 
 class DecisionIndexError(Exception):
@@ -306,9 +305,8 @@ def mask_text(text: str | None, names: list[str]) -> str | None:
 
 
 def cloud_label(personal: list[str], commercial: list[str]) -> str:
-    if commercial:
-        return "yerel_kalir"
-    return "maskeli_bulut_uygun_aday" if personal else "bulut_uygun_aday"
+    # AI-D49: a money amount or a person name (even after masking) keeps the record on the in-house model.
+    return "yerel_kalir" if commercial or personal else "bulut_uygun_aday"
 
 
 def _header_role(header: list[str]) -> tuple[int, int, int | None, int | None, int | None, str] | None:

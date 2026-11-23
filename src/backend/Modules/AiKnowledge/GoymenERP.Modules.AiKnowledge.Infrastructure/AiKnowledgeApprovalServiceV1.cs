@@ -20,7 +20,10 @@ namespace GoymenERP.Modules.AiKnowledge.Infrastructure;
 /// write), expected version on withdrawal, the idempotency key per actor with request-hash replay before any not-found or
 /// validation, correlation/causation in every row and audit, refusals of state recorded so the same key replays them, and one
 /// SaveChanges per command. The approver names the SHA-256 of the package they reviewed; a different packaged version is
-/// refused (an approval binds to the concrete bytes that were seen). The permission is registered, never granted here.
+/// refused (an approval binds to the concrete bytes that were seen). AI-D46: the approval is group-wide — one approval of a
+/// package version holds in every company; the approver is any user holding the permission company-wide in the company of the
+/// request, which is recorded as the origin company and carries the audit event (entity <c>AiKnowledge.GroupPackageApproval</c>,
+/// scope "group" in the audit payload). The permission is registered, never granted here (AI-D46: not Critical, no role).
 /// </summary>
 public sealed partial class AiKnowledgeApprovalServiceV1(
     AiKnowledgeDbContext database,
@@ -44,8 +47,8 @@ public sealed partial class AiKnowledgeApprovalServiceV1(
             AiKnowledgeApprovalViewV1? active = null;
             if (package is not null)
             {
-                var row = await database.Approvals.AsNoTracking().SingleOrDefaultAsync(item => item.CompanyId == scope.CompanyId
-                    && item.SourceKind == (int)kind && item.PackageSha256 == package.PackageSha256
+                var row = await database.Approvals.AsNoTracking().SingleOrDefaultAsync(item =>
+                    item.SourceKind == (int)kind && item.PackageSha256 == package.PackageSha256
                     && item.Status == (int)AiKnowledgeApprovalStatusV1.Approved, cancellationToken);
                 active = row is null ? null : View(row);
             }
@@ -55,7 +58,7 @@ public sealed partial class AiKnowledgeApprovalServiceV1(
         }
 
         RequireStill(scope);
-        return new AiKnowledgePackageStatusPageV1(scope.CompanyId, items);
+        return new AiKnowledgePackageStatusPageV1(AiKnowledgeApprovalScopesV1.Group, items);
     }
 
     public async Task<AiKnowledgeApprovalResponseV1> ApproveAsync(ApproveAiKnowledgePackageRequestV1 request,
@@ -68,7 +71,7 @@ public sealed partial class AiKnowledgeApprovalServiceV1(
         var command = AiKnowledgeCommandsV1.ApprovePackage;
         var requestHash = Hash(command, request.SourceKind, request.PackageSha256);
         var replay = await FindReplayAsync(scope, metadata, command, requestHash, cancellationToken);
-        if (replay is not null) return new(await ViewAsync(scope.CompanyId, replay.TargetId, cancellationToken), true, replay.CorrelationId);
+        if (replay is not null) return new(await ViewAsync(replay.TargetId, cancellationToken), true, replay.CorrelationId);
 
         if (!AiKnowledgeSourceKindsV1.TryParse(request.SourceKind, out var kind) || request.PackageSha256 is null
             || !Sha256Pattern().IsMatch(request.PackageSha256))
@@ -79,8 +82,8 @@ public sealed partial class AiKnowledgeApprovalServiceV1(
             throw new AiKnowledgeException(422, AiKnowledgeProblemCodesV1.PackageChanged);
 
         var approvalId = Guid.NewGuid();
-        var active = await database.Approvals.AsNoTracking().AnyAsync(row => row.CompanyId == scope.CompanyId
-            && row.SourceKind == (int)kind && row.PackageSha256 == package.PackageSha256
+        var active = await database.Approvals.AsNoTracking().AnyAsync(row =>
+            row.SourceKind == (int)kind && row.PackageSha256 == package.PackageSha256
             && row.Status == (int)AiKnowledgeApprovalStatusV1.Approved, cancellationToken);
         if (active)
             throw await TerminalAsync(scope, metadata, command, requestHash, approvalId, AiKnowledgeProblemCodesV1.AlreadyApproved,
@@ -91,17 +94,17 @@ public sealed partial class AiKnowledgeApprovalServiceV1(
         var now = time.GetUtcNow();
         var row = new AiKnowledgeApprovalRow
         {
-            CompanyId = scope.CompanyId, Id = approvalId, SourceKind = (int)kind, PackageSha256 = package.PackageSha256,
+            OriginCompanyId = scope.CompanyId, Id = approvalId, SourceKind = (int)kind, PackageSha256 = package.PackageSha256,
             Status = (int)approval.Status, Version = approval.Version, ApprovedByUserId = approval.ApprovedByUserId, ApprovedAtUtc = now,
             CorrelationId = metadata.CorrelationId, CausationId = metadata.CausationId,
         };
         database.Approvals.Add(row);
         AddAttempt(scope, metadata, command, requestHash, approvalId, 201, null, now);
         Audit(scope, metadata, "ai-knowledge.package.approved.v1", approvalId, "ApprovePackage", null, 1, "{}", ApprovalAudit(row),
-            "Yapay zekâ bilgi paketi sürümü onaylandı.");
+            "Yapay zekâ bilgi paketi sürümü grup genelinde onaylandı.");
         var saved = await SaveAsync(scope, metadata, command, requestHash, cancellationToken);
-        if (saved is not null) return new(await ViewAsync(scope.CompanyId, saved.TargetId, cancellationToken), true, saved.CorrelationId);
-        return new(await ViewAsync(scope.CompanyId, approvalId, cancellationToken), false, metadata.CorrelationId);
+        if (saved is not null) return new(await ViewAsync(saved.TargetId, cancellationToken), true, saved.CorrelationId);
+        return new(await ViewAsync(approvalId, cancellationToken), false, metadata.CorrelationId);
     }
 
     public async Task<AiKnowledgeApprovalResponseV1> WithdrawAsync(Guid approvalId, WithdrawAiKnowledgeApprovalRequestV1 request,
@@ -115,12 +118,12 @@ public sealed partial class AiKnowledgeApprovalServiceV1(
         var command = AiKnowledgeCommandsV1.WithdrawApproval;
         var requestHash = Hash(command, approvalId, request.ExpectedVersion, request.Reason);
         var replay = await FindReplayAsync(scope, metadata, command, requestHash, cancellationToken);
-        if (replay is not null) return new(await ViewAsync(scope.CompanyId, replay.TargetId, cancellationToken), true, replay.CorrelationId);
+        if (replay is not null) return new(await ViewAsync(replay.TargetId, cancellationToken), true, replay.CorrelationId);
         if (approvalId == Guid.Empty) throw new AiKnowledgeException(404, "not_found");
         if (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > AiKnowledgeApprovalV1.ReasonMaximumLength)
             throw new AiKnowledgeException(422, AiKnowledgeProblemCodesV1.ValidationFailed);
-        var row = await database.Approvals.SingleOrDefaultAsync(item => item.CompanyId == scope.CompanyId && item.Id == approvalId,
-            cancellationToken) ?? throw new AiKnowledgeException(404, "not_found");
+        var row = await database.Approvals.SingleOrDefaultAsync(item => item.Id == approvalId, cancellationToken)
+            ?? throw new AiKnowledgeException(404, "not_found");
         var approval = AiKnowledgeApprovalV1.Restore(row.ApprovedByUserId, (AiKnowledgeApprovalStatusV1)row.Status, row.Version);
         var before = ApprovalAudit(row);
         var now = time.GetUtcNow();
@@ -138,14 +141,15 @@ public sealed partial class AiKnowledgeApprovalServiceV1(
         row.Status = (int)approval.Status;
         row.Version = approval.Version;
         row.WithdrawnByUserId = approval.WithdrawnByUserId;
+        row.WithdrawnOriginCompanyId = scope.CompanyId;
         row.WithdrawnAtUtc = approval.WithdrawnAtUtc;
         row.WithdrawReason = approval.WithdrawReason;
         AddAttempt(scope, metadata, command, requestHash, approvalId, 200, null, now);
         Audit(scope, metadata, "ai-knowledge.approval.withdrawn.v1", approvalId, "WithdrawApproval", approval.Version - 1, approval.Version,
             before, ApprovalAudit(row), request.Reason);
         var saved = await SaveAsync(scope, metadata, command, requestHash, cancellationToken);
-        if (saved is not null) return new(await ViewAsync(scope.CompanyId, saved.TargetId, cancellationToken), true, saved.CorrelationId);
-        return new(await ViewAsync(scope.CompanyId, approvalId, cancellationToken), false, metadata.CorrelationId);
+        if (saved is not null) return new(await ViewAsync(saved.TargetId, cancellationToken), true, saved.CorrelationId);
+        return new(await ViewAsync(approvalId, cancellationToken), false, metadata.CorrelationId);
     }
 
     // ---- Fence -------------------------------------------------------------------------------------------------------------
@@ -274,7 +278,7 @@ public sealed partial class AiKnowledgeApprovalServiceV1(
 
     private void Audit(Scope scope, AiKnowledgeCommandMetadataV1 metadata, string eventType, Guid entityId, string operation,
         long? before, long? after, string beforeJson, string afterJson, string reason) =>
-        audit.Enqueue(new AuditEventDraft(scope.CompanyId, eventType, "AiKnowledge.PackageApproval", entityId.ToString("D"), operation,
+        audit.Enqueue(new AuditEventDraft(scope.CompanyId, eventType, "AiKnowledge.GroupPackageApproval", entityId.ToString("D"), operation,
             before, after, AuditActorTypes.User, scope.ActorId, scope.Permission, scope.RoleCodes, beforeJson, afterJson, reason, null,
             AuditAiInvolvement.None, null, correlation.IsResolved ? correlation.SourceChannel : "api",
             correlation.IsResolved ? correlation.ClientIpAddress : null, correlation.IsResolved ? correlation.UserAgent : null,
@@ -282,23 +286,25 @@ public sealed partial class AiKnowledgeApprovalServiceV1(
 
     private static string ApprovalAudit(AiKnowledgeApprovalRow row) => JsonSerializer.Serialize(new
     {
-        row.Id, sourceKind = AiKnowledgeSourceKindsV1.Wire((AiKnowledgeSourceKindV1)row.SourceKind), row.PackageSha256, row.Status,
+        scope = AiKnowledgeApprovalScopesV1.Group, row.Id, row.OriginCompanyId, row.WithdrawnOriginCompanyId, sourceKind = AiKnowledgeSourceKindsV1.Wire((AiKnowledgeSourceKindV1)row.SourceKind), row.PackageSha256, row.Status,
         row.Version, row.ApprovedByUserId, row.ApprovedAtUtc, row.WithdrawnByUserId, row.WithdrawnAtUtc,
         withdrawReasonLength = row.WithdrawReason?.Length,
     }, HashJson);
 
-    private async Task<AiKnowledgeApprovalViewV1> ViewAsync(Guid companyId, Guid approvalId, CancellationToken cancellationToken)
+    private async Task<AiKnowledgeApprovalViewV1> ViewAsync(Guid approvalId, CancellationToken cancellationToken)
     {
         var row = await database.Approvals.AsNoTracking()
-            .SingleOrDefaultAsync(item => item.CompanyId == companyId && item.Id == approvalId, cancellationToken)
+            .SingleOrDefaultAsync(item => item.Id == approvalId, cancellationToken)
             ?? throw new AiKnowledgeException(503, "service_unavailable");
         return View(row);
     }
 
-    internal static AiKnowledgeApprovalViewV1 View(AiKnowledgeApprovalRow row) => new(row.Id, row.CompanyId,
+    internal static AiKnowledgeApprovalViewV1 View(AiKnowledgeApprovalRow row) => new(row.Id, AiKnowledgeApprovalScopesV1.Group,
+        row.OriginCompanyId,
         AiKnowledgeSourceKindsV1.Wire((AiKnowledgeSourceKindV1)row.SourceKind), row.PackageSha256,
         AiKnowledgeApprovalV1.WireStatus((AiKnowledgeApprovalStatusV1)row.Status), AiKnowledgeApprovalV1.WireVersion(row.Version),
-        row.ApprovedByUserId, row.ApprovedAtUtc, row.WithdrawnByUserId, row.WithdrawnAtUtc, row.WithdrawReason);
+        row.ApprovedByUserId, row.ApprovedAtUtc, row.WithdrawnByUserId, row.WithdrawnOriginCompanyId, row.WithdrawnAtUtc,
+        row.WithdrawReason);
 
     [GeneratedRegex(@"\A[0-9a-f]{64}\z", RegexOptions.CultureInvariant)]
     private static partial Regex Sha256Pattern();
@@ -309,19 +315,19 @@ public sealed partial class AiKnowledgeApprovalServiceV1(
 }
 
 /// <summary>
-/// Read port for the AI tools. Reads only the server-resolved company (explicit predicate plus the company query filter);
-/// a store failure answers <see cref="AiKnowledgeApprovalStateV1.Unavailable"/> (fail-closed, never "approved").
+/// Read port for the AI tools: is the exact package version approved group-wide (AI-D46)? A store failure answers
+/// <see cref="AiKnowledgeApprovalStateV1.Unavailable"/> (fail-closed, never "approved").
 /// </summary>
 public sealed class AiKnowledgeApprovalReaderV1(AiKnowledgeDbContext database) : IAiKnowledgeApprovalReaderV1
 {
-    public async Task<AiKnowledgeApprovalStateV1> GetStateAsync(Guid companyId, AiKnowledgeSourceKindV1 kind, string packageSha256,
+    public async Task<AiKnowledgeApprovalStateV1> GetStateAsync(AiKnowledgeSourceKindV1 kind, string packageSha256,
         CancellationToken cancellationToken = default)
     {
-        if (companyId == Guid.Empty || string.IsNullOrEmpty(packageSha256)) return AiKnowledgeApprovalStateV1.NotApproved;
+        if (string.IsNullOrEmpty(packageSha256)) return AiKnowledgeApprovalStateV1.NotApproved;
         try
         {
-            var approved = await database.Approvals.AsNoTracking().AnyAsync(row => row.CompanyId == companyId
-                && row.SourceKind == (int)kind && row.PackageSha256 == packageSha256
+            var approved = await database.Approvals.AsNoTracking().AnyAsync(row =>
+                row.SourceKind == (int)kind && row.PackageSha256 == packageSha256
                 && row.Status == (int)AiKnowledgeApprovalStatusV1.Approved, cancellationToken);
             return approved ? AiKnowledgeApprovalStateV1.Approved : AiKnowledgeApprovalStateV1.NotApproved;
         }

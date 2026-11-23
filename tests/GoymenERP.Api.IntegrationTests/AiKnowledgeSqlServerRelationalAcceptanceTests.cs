@@ -31,13 +31,13 @@ public sealed class AiKnowledgeSqlServerRelationalAcceptanceTests
             await Service(connectionString).ApproveAsync(new("decision-index", PackageSha), new("down-1", "corr-down", null));
             var refusal = await Assert.ThrowsAsync<SqlException>(() => ExecAsync(connectionString, guard));
             Assert.Equal(52290, refusal.Number);
-            Assert.Equal(1, await CountAsync(connectionString, "PackageApprovals", TestCompanyIds.CompanyA));
+            Assert.Equal(1, await ApprovalCountAsync(connectionString, TestCompanyIds.CompanyA));
             Assert.Equal(1, await CountAsync(connectionString, "CommandAttempts", TestCompanyIds.CompanyA));
         });
     }
 
     [SqlServerFact]
-    public async Task An_approval_and_its_attempt_are_one_save_and_racing_approvals_of_one_package_leave_one_active_approval()
+    public async Task An_approval_and_its_attempt_are_one_save_and_racing_approvals_of_one_package_leave_one_group_wide_approval()
     {
         await WithDatabaseAsync(async connectionString =>
         {
@@ -45,7 +45,7 @@ public sealed class AiKnowledgeSqlServerRelationalAcceptanceTests
                 Service(connectionString).ApproveAsync(new("decision-index", PackageSha), new("race-1", "corr-a", null)),
                 Service(connectionString).ApproveAsync(new("decision-index", PackageSha), new("race-1", "corr-b", null)));
             Assert.Single(sameKey.Select(answer => answer.Approval.Id).Distinct());
-            Assert.Equal(1, await CountAsync(connectionString, "PackageApprovals", TestCompanyIds.CompanyA));
+            Assert.Equal(1, await ApprovalCountAsync(connectionString, TestCompanyIds.CompanyA));
             Assert.Equal(1, await CountAsync(connectionString, "CommandAttempts", TestCompanyIds.CompanyA));
 
             var otherKeys = await Task.WhenAll(
@@ -55,10 +55,13 @@ public sealed class AiKnowledgeSqlServerRelationalAcceptanceTests
             Assert.Single(otherKeys, outcome => outcome.Error is { Status: 409 } error
                 && (error.Code == AiKnowledgeProblemCodesV1.AlreadyApproved || error.Code == AiKnowledgeProblemCodesV1.ConcurrentChange));
             Assert.Equal(1, int.Parse((await ScalarAsync(connectionString,
-                $"SELECT COUNT(*) FROM [aiknowledge].[PackageApprovals] WHERE [CompanyId] = '{TestCompanyIds.CompanyA}' AND [SourceKind] = 2 AND [Status] = 1"))!));
-            Assert.Equal(0, await CountAsync(connectionString, "PackageApprovals", TestCompanyIds.CompanyB));
+                "SELECT COUNT(*) FROM [aiknowledge].[PackageApprovals] WHERE [SourceKind] = 2 AND [Status] = 1"))!));
+            // AI-D46: the approval is group-wide: another company reads it and its tools see it as approved.
             await using var other = Db(connectionString, TestCompanyIds.CompanyB);
-            Assert.Empty(await other.Approvals.ToListAsync());
+            Assert.Equal(2, (await other.Approvals.ToListAsync()).Count);
+            Assert.Equal(AiKnowledgeApprovalStateV1.Approved,
+                await new AiKnowledgeApprovalReaderV1(other).GetStateAsync(AiKnowledgeSourceKindV1.ReleaseKnowledge, PackageSha));
+            Assert.Equal(0, await CountAsync(connectionString, "CommandAttempts", TestCompanyIds.CompanyB));
         });
     }
 
@@ -69,8 +72,9 @@ public sealed class AiKnowledgeSqlServerRelationalAcceptanceTests
         {
             var company = TestCompanyIds.CompanyA;
             await ExecAsync(connectionString, Insert(company, Guid.NewGuid(), 1, PackageSha, 1, 1, "NULL", "NULL", "NULL"));
+            // A second active approval of the same bytes is refused even from another company (group-wide, AI-D46).
             var duplicate = Sql(await Assert.ThrowsAnyAsync<Exception>(() =>
-                ExecAsync(connectionString, Insert(company, Guid.NewGuid(), 1, PackageSha, 1, 1, "NULL", "NULL", "NULL"))));
+                ExecAsync(connectionString, Insert(TestCompanyIds.CompanyB, Guid.NewGuid(), 1, PackageSha, 1, 1, "NULL", "NULL", "NULL"))));
             Assert.Contains(duplicate.Number, new[] { 2601, 2627 });
             var badDigest = Sql(await Assert.ThrowsAnyAsync<Exception>(() =>
                 ExecAsync(connectionString, Insert(company, Guid.NewGuid(), 1, new string('A', 64), 1, 1, "NULL", "NULL", "NULL"))));
@@ -84,15 +88,16 @@ public sealed class AiKnowledgeSqlServerRelationalAcceptanceTests
             // A withdrawn approval does not block a new active one of the same package.
             await ExecAsync(connectionString, Insert(company, Guid.NewGuid(), 2, PackageSha, 2, 2, $"'{Approver}'", "SYSUTCDATETIME()", "N'SENTETIK'"));
             await ExecAsync(connectionString, Insert(company, Guid.NewGuid(), 2, PackageSha, 1, 1, "NULL", "NULL", "NULL"));
-            Assert.Equal(3, await CountAsync(connectionString, "PackageApprovals", company));
+            Assert.Equal(3, await ApprovalCountAsync(connectionString, company));
         });
     }
 
     private static string Insert(Guid company, Guid id, int kind, string sha, int status, long version, string withdrawnBy,
         string withdrawnAt, string reason) => $"""
-        INSERT INTO [aiknowledge].[PackageApprovals] ([CompanyId],[Id],[SourceKind],[PackageSha256],[Status],[Version],[ApprovedByUserId],
-            [ApprovedAtUtc],[WithdrawnByUserId],[WithdrawnAtUtc],[WithdrawReason],[CorrelationId],[CausationId])
-        VALUES ('{company}','{id}',{kind},'{sha}',{status},{version},'{Approver}',DATEADD(minute,-1,SYSUTCDATETIME()),{withdrawnBy},{withdrawnAt},{reason},'c',NULL);
+        INSERT INTO [aiknowledge].[PackageApprovals] ([OriginCompanyId],[Id],[SourceKind],[PackageSha256],[Status],[Version],[ApprovedByUserId],
+            [ApprovedAtUtc],[WithdrawnByUserId],[WithdrawnOriginCompanyId],[WithdrawnAtUtc],[WithdrawReason],[CorrelationId],[CausationId])
+        VALUES ('{company}','{id}',{kind},'{sha}',{status},{version},'{Approver}',DATEADD(minute,-1,SYSUTCDATETIME()),{withdrawnBy},
+            {(withdrawnBy == "NULL" ? "NULL" : $"'{company}'")},{withdrawnAt},{reason},'c',NULL);
         """;
 
     private static async Task<(AiKnowledgeApprovalResponseV1? Response, AiKnowledgeException? Error)> Capture(
@@ -168,6 +173,10 @@ public sealed class AiKnowledgeSqlServerRelationalAcceptanceTests
         await using var command = new SqlCommand(sql, connection);
         return Convert.ToString(await command.ExecuteScalarAsync());
     }
+
+    private static async Task<int> ApprovalCountAsync(string connectionString, Guid originCompanyId) =>
+        int.Parse((await ScalarAsync(connectionString,
+            $"SELECT COUNT(*) FROM [aiknowledge].[PackageApprovals] WHERE [OriginCompanyId] = '{originCompanyId}'"))!);
 
     private static async Task<int> CountAsync(string connectionString, string table, Guid companyId) =>
         int.Parse((await ScalarAsync(connectionString, $"SELECT COUNT(*) FROM [aiknowledge].[{table}] WHERE [CompanyId] = '{companyId}'"))!);

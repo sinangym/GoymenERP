@@ -23,17 +23,19 @@ Sınırlar: hiçbir model/sağlayıcı çağrısı, anahtar veya dış ağ yok; 
   API derleme ve yayın çıktısına (derlemenin yanına) kopyalanır; eski `Ai:Knowledge:DecisionIndexPath` ayarı kaldırıldı. Bilgi,
   onu sunan derlemeyle aynı ağaçtan gelir. Paket sürümü = dosya baytlarının SHA-256'sı. Mimari guard API projesindeki
   onaysız `Content` öğesini reddeder; gerekli inceleme kaydı (PDF yazı tipi içeriği gibi) **tren-2 head'inde** yapılır.
-- **Onay (AI-D32 "onaylı karar dizini"):** bir paket sürümü, şirkette `ai.knowledge.approve` iznine sahip bir kişinin tam o
-  baytları onaylamasıyla (`POST /api/v1/ai/knowledge/approvals`, `GET .../packages`, `POST .../approvals/{id}/withdrawal`)
-  kaynak olur. İzin kayıtlıdır, hiçbir role verilmez, Critical işaretlenmemiştir (insan kapısı). Onaysız ya da onayı
+- **Onay (AI-D32 "onaylı karar dizini", AI-D46):** bir paket sürümü **grup genelinde bir kez** onaylanır ve tüm şirketlerde
+  geçerlidir; herhangi bir şirkette `ai.knowledge.approve` iznini şirket çapında taşıyan bir kişi tam o baytları onaylar (`POST /api/v1/ai/knowledge/approvals`, `GET .../packages`, `POST .../approvals/{id}/withdrawal`)
+  kaynak olur. Onaylayanın şirketi `OriginCompanyId` olarak, geri alanınki `WithdrawnOriginCompanyId` olarak kaydedilir; audit
+  olayı o şirkette `AiKnowledge.GroupPackageApproval` varlığıyla, yükünde `scope: group` ile yazılır. İzin kayıtlıdır, hiçbir
+  role verilmez, Critical değildir (AI-D46). Onaysız ya da onayı
   okunamayan pakette araçlar **kapalıdır** (`Unavailable`); "onaylı değil" uyarısıyla içerik dönülmez. Paket değişirse
   (yeni SHA-256) yeniden onay gerekir. Kayıtlar `aiknowledge` şemasında; geri alma silmez, sürüm adımıyla `geri_alindi` olur.
 - **Maskeleme (plan D2, AI-D36):** kişi adları dizin **üretiminde** `[KİŞİ]`, e-posta/telefon/kimlik/IBAN `[GİZLİ]` olur;
   dizin ad listesini taşımaz (yalnız sayısı). Üretim sonrası ad kalırsa üretim hatadır. Okuyucu ad listesi içeren ya da
   `mask_policy` taşımayan dizini reddeder. `[KİŞİ] ERP` gibi fazla maskeleme bilerek güvenli yönde bırakıldı.
-- **Bulut uygunluğu (AI-D34 d):** her kayıt/not içerik ve veri sınıfından etiketlenir: `bulut_uygun_aday`,
-  `maskeli_bulut_uygun_aday`, `yerel_kalir` (para tutarı: ticari hassas aday → `confidential`). Internal sınıflı araçlar
-  `yerel_kalir` içeriği vermez, yalnız sayar. Hangi sınıfın buluta gidebileceği ağ geçidi politikasıdır (insan kapısı).
+- **Bulut uygunluğu (AI-D34 d, AI-D49):** para tutarı **veya** kişi adı (maskeli olsa da) içeren kayıt/not `yerel_kalir`
+  (`confidential`, yalnız şirket içi model); diğer kural metinleri `bulut_uygun_aday` (`internal`). Internal sınıflı araçlar
+  `yerel_kalir` içeriği vermez, yalnız sayar.
 - Dizin ve yayın paketi tren head'inde yeniden üretilir; karar PR'larından dizin üretimi beklenmez (dizin bayatsa
   `tests/ai_decision_index` kırmızı olur). Durum eşlemesi `ASSUMPTION-AI-INDEX-STATUS-1`: KAPANDI → kilitli, KISMEN/AÇIK →
   açık, ERTELENDI ayrı durum, golden → belirsiz. Bekleyen sevkiyat tanımı AI-D35; `ai.decisions.read` önerisi AI-D36 (grant

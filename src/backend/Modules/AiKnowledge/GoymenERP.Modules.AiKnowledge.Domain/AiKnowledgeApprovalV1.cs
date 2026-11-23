@@ -51,7 +51,7 @@ public enum AiKnowledgeApprovalStatusV1
 }
 
 /// <summary>
-/// One human approval of one packaged knowledge version for one company. Approved (version 1) → Withdrawn (version 2) is
+/// One human approval of one packaged knowledge version, valid in every company of the group (AI-D46). Approved (version 1) → Withdrawn (version 2) is
 /// the only transition; an approval is never edited or deleted, and a withdrawn approval never comes back (a new approval
 /// is a new record). A changed package has a new SHA-256 and therefore needs a new approval: an approval never moves to
 /// other bytes (the same rule as AI-D34 a: an approval binds to the concrete thing that was seen).
@@ -121,6 +121,12 @@ public static class AiKnowledgePermissionManifestV1
     public static IReadOnlySet<string> Names { get; } = new HashSet<string>([Approve], StringComparer.Ordinal);
 }
 
+public static class AiKnowledgeApprovalScopesV1
+{
+    /// <summary>AI-D46: a knowledge package version is approved once for the whole group and holds in every company.</summary>
+    public const string Group = "group";
+}
+
 public static class AiKnowledgeCommandsV1
 {
     public const string ApprovePackage = "ai-knowledge.package.approve.v1";
@@ -180,13 +186,13 @@ public enum AiKnowledgeApprovalStateV1
 }
 
 /// <summary>
-/// Read port for the AI reading tools: is this exact package version approved for this company now? No authority (the
+/// Read port for the AI reading tools: is this exact package version approved (group-wide, AI-D46) now? No authority (the
 /// tool runtime has already fenced the caller); answers <see cref="AiKnowledgeApprovalStateV1.Unavailable"/> instead of
 /// guessing when the store cannot answer.
 /// </summary>
 public interface IAiKnowledgeApprovalReaderV1
 {
-    Task<AiKnowledgeApprovalStateV1> GetStateAsync(Guid companyId, AiKnowledgeSourceKindV1 kind, string packageSha256,
+    Task<AiKnowledgeApprovalStateV1> GetStateAsync(AiKnowledgeSourceKindV1 kind, string packageSha256,
         CancellationToken cancellationToken = default);
 }
 
@@ -198,7 +204,8 @@ public sealed record WithdrawAiKnowledgeApprovalRequestV1(string? ExpectedVersio
 
 public sealed record AiKnowledgeApprovalViewV1(
     Guid Id,
-    Guid CompanyId,
+    string Scope,
+    Guid OriginCompanyId,
     string SourceKind,
     string PackageSha256,
     string Status,
@@ -206,6 +213,7 @@ public sealed record AiKnowledgeApprovalViewV1(
     Guid ApprovedByUserId,
     DateTimeOffset ApprovedAtUtc,
     Guid? WithdrawnByUserId,
+    Guid? WithdrawnOriginCompanyId,
     DateTimeOffset? WithdrawnAtUtc,
     string? WithdrawReason);
 
@@ -221,7 +229,8 @@ public sealed record AiKnowledgePackageStatusV1(
     int? MaskedItemCount,
     AiKnowledgeApprovalViewV1? ActiveApproval);
 
-public sealed record AiKnowledgePackageStatusPageV1(Guid CompanyId, IReadOnlyList<AiKnowledgePackageStatusV1> Packages);
+/// <summary>The packages of this build and their group-wide approvals; <paramref name="Scope"/> is always "group" (AI-D46).</summary>
+public sealed record AiKnowledgePackageStatusPageV1(string Scope, IReadOnlyList<AiKnowledgePackageStatusV1> Packages);
 
 public interface IAiKnowledgeApprovalServiceV1
 {

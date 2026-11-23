@@ -111,7 +111,7 @@ public sealed class AiKnowledgeApprovalTests
         Assert.Equal(("ai-knowledge.package.approved.v1", ErpPermissions.AiKnowledgeApprove, "k1", Company),
             (audit.EventType, audit.PermissionCode, audit.IdempotencyKey, audit.CompanyId));
         Assert.Equal(AiKnowledgeApprovalStateV1.Approved,
-            await new AiKnowledgeApprovalReaderV1(harness.Database()).GetStateAsync(Company, AiKnowledgeSourceKindV1.DecisionIndex, DecisionSha));
+            await new AiKnowledgeApprovalReaderV1(harness.Database()).GetStateAsync(AiKnowledgeSourceKindV1.DecisionIndex, DecisionSha));
     }
 
     [Fact]
@@ -190,7 +190,7 @@ public sealed class AiKnowledgeApprovalTests
         Assert.Equal(("geri_alindi", "2", Approver, "Yeni karar dosyası geldi."),
             (withdrawn.Approval.Status, withdrawn.Approval.Version, withdrawn.Approval.WithdrawnByUserId, withdrawn.Approval.WithdrawReason));
         Assert.Equal(AiKnowledgeApprovalStateV1.NotApproved,
-            await new AiKnowledgeApprovalReaderV1(harness.Database()).GetStateAsync(Company, AiKnowledgeSourceKindV1.DecisionIndex, DecisionSha));
+            await new AiKnowledgeApprovalReaderV1(harness.Database()).GetStateAsync(AiKnowledgeSourceKindV1.DecisionIndex, DecisionSha));
         var notActive = await Assert.ThrowsAsync<AiKnowledgeException>(() => harness.Service(ErpPermissions.AiKnowledgeApprove)
             .WithdrawAsync(approved.Approval.Id, new("2", "Tekrar."), Meta("w2")));
         Assert.Equal((409, AiKnowledgeProblemCodesV1.ApprovalNotActive), (notActive.Status, notActive.Code));
@@ -216,7 +216,7 @@ public sealed class AiKnowledgeApprovalTests
 
         var page = await harness.Service(ErpPermissions.AiKnowledgeApprove).ListPackagesAsync();
 
-        Assert.Equal(Company, page.CompanyId);
+        Assert.Equal(AiKnowledgeApprovalScopesV1.Group, page.Scope);
         var decision = Assert.Single(page.Packages, item => item.SourceKind == "decision-index");
         Assert.False(decision.Packaged);
         Assert.Null(decision.ActiveApproval);
@@ -231,19 +231,52 @@ public sealed class AiKnowledgeApprovalTests
     }
 
     [Fact]
-    public async Task Approvals_are_company_scoped_in_the_reader_and_the_store()
+    public async Task An_approval_is_group_wide_any_company_holder_may_withdraw_it_and_each_side_is_audited_in_its_origin_company()
     {
         var harness = new Harness();
-        await harness.Service(ErpPermissions.AiKnowledgeApprove).ApproveAsync(new("decision-index", DecisionSha), Meta("k1"));
+        var approved = await harness.Service(ErpPermissions.AiKnowledgeApprove).ApproveAsync(new("decision-index", DecisionSha), Meta("k1"));
+        Assert.Equal((AiKnowledgeApprovalScopesV1.Group, Company), (approved.Approval.Scope, approved.Approval.OriginCompanyId));
 
+        // AI-D46: the same approval holds in another company; no second approval of the same bytes is possible there.
         var other = new CompanyContext();
         other.Set(OtherCompany);
-        await using var otherDatabase = new AiKnowledgeDbContext(harness.Options(), other);
-        Assert.Empty(await otherDatabase.Approvals.ToListAsync());
+        await using (var otherDatabase = new AiKnowledgeDbContext(harness.Options(), other))
+        {
+            Assert.Single(await otherDatabase.Approvals.ToListAsync());
+            Assert.Equal(AiKnowledgeApprovalStateV1.Approved,
+                await new AiKnowledgeApprovalReaderV1(otherDatabase).GetStateAsync(AiKnowledgeSourceKindV1.DecisionIndex, DecisionSha));
+        }
+
+        var page = await harness.ServiceIn(OtherCompany, ErpPermissions.AiKnowledgeApprove).ListPackagesAsync();
+        Assert.Equal(approved.Approval.Id, Assert.Single(page.Packages, item => item.SourceKind == "decision-index").ActiveApproval!.Id);
+        var again = await Assert.ThrowsAsync<AiKnowledgeException>(() => harness.ServiceIn(OtherCompany, ErpPermissions.AiKnowledgeApprove)
+            .ApproveAsync(new("decision-index", DecisionSha), Meta("k2")));
+        Assert.Equal((409, AiKnowledgeProblemCodesV1.AlreadyApproved), (again.Status, again.Code));
+
+        // A holder of the permission in another company may withdraw it; the withdrawal records that company as its origin.
+        var withdrawn = await harness.ServiceIn(OtherCompany, ErpPermissions.AiKnowledgeApprove)
+            .WithdrawAsync(approved.Approval.Id, new("1", "Grup adına geri alındı."), Meta("w1"));
+        Assert.Equal((Company, OtherCompany), (withdrawn.Approval.OriginCompanyId, withdrawn.Approval.WithdrawnOriginCompanyId));
         Assert.Equal(AiKnowledgeApprovalStateV1.NotApproved,
-            await new AiKnowledgeApprovalReaderV1(otherDatabase).GetStateAsync(OtherCompany, AiKnowledgeSourceKindV1.DecisionIndex, DecisionSha));
+            await new AiKnowledgeApprovalReaderV1(harness.Database()).GetStateAsync(AiKnowledgeSourceKindV1.DecisionIndex, DecisionSha));
+        Assert.Contains(harness.Audit.Events, item => item.EventType == "ai-knowledge.package.approved.v1" && item.CompanyId == Company
+            && item.EntityType == "AiKnowledge.GroupPackageApproval" && item.AfterJson.Contains("\"scope\":\"group\"", StringComparison.Ordinal));
+        Assert.Contains(harness.Audit.Events, item => item.EventType == "ai-knowledge.approval.withdrawn.v1" && item.CompanyId == OtherCompany);
         Assert.Equal(AiKnowledgeApprovalStateV1.NotApproved,
-            await new AiKnowledgeApprovalReaderV1(harness.Database()).GetStateAsync(Guid.Empty, AiKnowledgeSourceKindV1.DecisionIndex, DecisionSha));
+            await new AiKnowledgeApprovalReaderV1(harness.Database()).GetStateAsync(AiKnowledgeSourceKindV1.DecisionIndex, ""));
+    }
+
+    [Fact]
+    public async Task A_group_approval_is_written_only_from_its_origin_company_context()
+    {
+        var harness = new Harness();
+        await using var database = harness.Database();
+        database.Approvals.Add(new AiKnowledgeApprovalRow
+        {
+            OriginCompanyId = OtherCompany, Id = Guid.NewGuid(), SourceKind = 1, PackageSha256 = DecisionSha, Status = 1, Version = 1,
+            ApprovedByUserId = Approver, ApprovedAtUtc = Now, CorrelationId = "c",
+        });
+        await Assert.ThrowsAsync<InvalidOperationException>(() => database.SaveChangesAsync());
     }
 
     [Fact]
@@ -302,7 +335,12 @@ public sealed class AiKnowledgeApprovalTests
         var active = Assert.Single(approval.GetIndexes(), index => index.GetDatabaseName() == AiKnowledgeDbContext.ActiveApprovalIndexName);
         Assert.True(active.IsUnique);
         Assert.Equal("[Status] = 1", active.GetFilter());
-        Assert.NotNull(approval.GetDeclaredQueryFilters().SingleOrDefault());
+        // AI-D46: group-wide, keyed by kind + bytes only, no company filter, origin company recorded.
+        Assert.Equal(new[] { "SourceKind", "PackageSha256" }, active.Properties.Select(property => property.Name));
+        Assert.Empty(approval.GetDeclaredQueryFilters());
+        Assert.Equal(new[] { "Id" }, approval.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Null(approval.FindProperty("CompanyId"));
+        Assert.False(approval.FindProperty("OriginCompanyId")!.IsNullable);
         var attempt = model.FindEntityType(typeof(AiKnowledgeCommandAttemptRow))!;
         Assert.Equal(AiKnowledgeDbContext.AttemptCheck, Assert.Single(attempt.GetCheckConstraints()).Sql);
         Assert.NotNull(attempt.GetDeclaredQueryFilters().SingleOrDefault());
@@ -373,7 +411,7 @@ public sealed class AiKnowledgeApprovalTests
     // ---- Tools ---------------------------------------------------------------------------------------------------------
 
     [Fact]
-    public async Task The_decision_tool_is_closed_until_the_exact_packaged_index_is_approved_for_the_company()
+    public async Task The_decision_tool_is_closed_until_the_exact_packaged_index_is_approved_for_the_group()
     {
         var index = AiDecisionIndex.Parse(Encoding.UTF8.GetBytes(DecisionIndexJson(AiDecisionIndex.MaskPolicy, false)));
         var approvals = new FixedApprovals();
@@ -381,13 +419,14 @@ public sealed class AiKnowledgeApprovalTests
         var input = new AiToolInputV1("{\"decisionId\":\"TST-D1\"}");
 
         Assert.Equal(AiToolOutcomeV1.Unavailable, (await tool.ReadAsync(input, Context(Company))).Outcome);
-        approvals.Approve(Company, AiKnowledgeSourceKindV1.DecisionIndex, new string('0', 64));
+        approvals.Approve(AiKnowledgeSourceKindV1.DecisionIndex, new string('0', 64));
         Assert.Equal(AiToolOutcomeV1.Unavailable, (await tool.ReadAsync(input, Context(Company))).Outcome);
-        approvals.Approve(Company, AiKnowledgeSourceKindV1.DecisionIndex, index.PackageSha256);
+        approvals.Approve(AiKnowledgeSourceKindV1.DecisionIndex, index.PackageSha256);
         var approved = await tool.ReadAsync(input, Context(Company));
         Assert.Equal(AiToolOutcomeV1.Succeeded, approved.Outcome);
         Assert.Equal(index.PackageSha256, approved.Source!.SourceVersion);
-        Assert.Equal(AiToolOutcomeV1.Unavailable, (await tool.ReadAsync(input, Context(OtherCompany))).Outcome);
+        // AI-D46: the group approval also opens the tool in another company.
+        Assert.Equal(AiToolOutcomeV1.Succeeded, (await tool.ReadAsync(input, Context(OtherCompany))).Outcome);
         approvals.Unavailable = true;
         Assert.Equal(AiToolOutcomeV1.Unavailable, (await tool.ReadAsync(input, Context(Company))).Outcome);
     }
@@ -397,20 +436,20 @@ public sealed class AiKnowledgeApprovalTests
     {
         var index = AiDecisionIndex.Parse(Encoding.UTF8.GetBytes(DecisionIndexJson(AiDecisionIndex.MaskPolicy, false)));
         var approvals = new FixedApprovals();
-        approvals.Approve(Company, AiKnowledgeSourceKindV1.DecisionIndex, index.PackageSha256);
+        approvals.Approve(AiKnowledgeSourceKindV1.DecisionIndex, index.PackageSha256);
         var tool = new DecisionLookupAiTool(new FixedAiDecisionIndexSource(index), approvals, new FixedTime(Now));
 
         var result = await tool.ReadAsync(new AiToolInputV1("{\"keyword\":\"kural\"}"), Context(Company));
 
         Assert.Equal(AiToolOutcomeV1.Succeeded, result.Outcome);
         using var content = JsonDocument.Parse(result.ContentJson!);
-        Assert.Equal(1, content.RootElement.GetProperty("withheldLocalOnlyCount").GetInt32());
-        var records = content.RootElement.GetProperty("records").EnumerateArray().ToArray();
-        Assert.DoesNotContain(records, record => record.GetProperty("id").GetString() == "TST-D3");
-        var masked = Assert.Single(records, record => record.GetProperty("id").GetString() == "TST-D2");
-        Assert.Equal("[KİŞİ] kuralı onaylar; iletişim [GİZLİ].", masked.GetProperty("text").GetString());
-        Assert.True(masked.GetProperty("masked").GetBoolean());
-        Assert.Equal("maskeli_bulut_uygun_aday", masked.GetProperty("cloudEligibility").GetString());
+        // AI-D49: a money amount (TST-D3) or a person name even masked (TST-D2) stays on the in-house model.
+        Assert.Equal(2, content.RootElement.GetProperty("withheldLocalOnlyCount").GetInt32());
+        var record = Assert.Single(content.RootElement.GetProperty("records").EnumerateArray());
+        Assert.Equal(("TST-D1", "bulut_uygun_aday"), (record.GetProperty("id").GetString(), record.GetProperty("cloudEligibility").GetString()));
+        var masked = index.Find("TST-D2")!;
+        Assert.Equal("[KİŞİ] kuralı onaylar; iletişim [GİZLİ].", masked.Text);
+        Assert.True(masked.Masked);
         Assert.Equal(AiDataClassV1.Internal, result.Source!.DataClass);
     }
 
@@ -424,7 +463,7 @@ public sealed class AiKnowledgeApprovalTests
         var byId = new AiToolInputV1("{\"noteId\":\"RK-TST-NOT\"}");
 
         Assert.Equal(AiToolOutcomeV1.Unavailable, (await tool.ReadAsync(byId, Context(Company))).Outcome);
-        approvals.Approve(Company, AiKnowledgeSourceKindV1.ReleaseKnowledge, package.PackageSha256);
+        approvals.Approve(AiKnowledgeSourceKindV1.ReleaseKnowledge, package.PackageSha256);
         // Without work.notes.write the note is not there for this actor (no existence leak).
         Assert.Equal(AiToolOutcomeV1.NotFound, (await tool.ReadAsync(byId, Context(Company))).Outcome);
         var keyword = await tool.ReadAsync(new AiToolInputV1("{\"keyword\":\"özellik\"}"), Context(Company));
@@ -459,7 +498,7 @@ public sealed class AiKnowledgeApprovalTests
     {
         var package = AiReleaseKnowledge.Parse(Encoding.UTF8.GetBytes(ReleaseKnowledgeJson()));
         var approvals = new FixedApprovals();
-        approvals.Approve(Company, AiKnowledgeSourceKindV1.ReleaseKnowledge, package.PackageSha256);
+        approvals.Approve(AiKnowledgeSourceKindV1.ReleaseKnowledge, package.PackageSha256);
         var tool = new ReleaseKnowledgeLookupAiTool(new FixedAiReleaseKnowledgeSource(package), approvals, new GrantingAuthority(), new FixedTime(Now));
 
         var result = await tool.ReadAsync(new AiToolInputV1(arguments), Context(Company));
@@ -527,7 +566,7 @@ public sealed class AiKnowledgeApprovalTests
         var records = new[]
         {
             Record("TST-D1", "Bu kural yayındadır.", false, "bulut_uygun_aday", "internal"),
-            Record("TST-D2", "[KİŞİ] kuralı onaylar; iletişim [GİZLİ].", true, "maskeli_bulut_uygun_aday", "internal"),
+            Record("TST-D2", "[KİŞİ] kuralı onaylar; iletişim [GİZLİ].", true, "yerel_kalir", "confidential"),
             Record("TST-D3", "Kredi kuralı 25.000 TL üzerindedir.", false, "yerel_kalir", "confidential"),
         };
         var root = new Dictionary<string, object?>
@@ -606,12 +645,16 @@ public sealed class AiKnowledgeApprovalTests
 
         public AiKnowledgeApprovalServiceV1 Anonymous(string? permission) => Build(null, permission, false, Company);
 
-        private AiKnowledgeApprovalServiceV1 Build(Guid? actor, string? permission, bool siteScoped, Guid allowedCompany)
+        public AiKnowledgeApprovalServiceV1 ServiceIn(Guid companyId, string? permission) =>
+            Build(Approver, permission, false, companyId, companyId);
+
+        private AiKnowledgeApprovalServiceV1 Build(Guid? actor, string? permission, bool siteScoped, Guid allowedCompany,
+            Guid? contextCompany = null)
         {
             var company = new CompanyContext();
-            company.Set(Company);
+            company.Set(contextCompany ?? Company);
             return new AiKnowledgeApprovalServiceV1(new AiKnowledgeDbContext(Options(), company), company,
-                new FakeUser(actor, allowedCompany), new FakeAuthority(permission, siteScoped), Catalog, Audit,
+                new FakeUser(actor, allowedCompany), new FakeAuthority(permission, siteScoped, contextCompany ?? Company), Catalog, Audit,
                 new FakeCorrelation(), new FixedTime(Now));
         }
     }
@@ -631,15 +674,15 @@ public sealed class AiKnowledgeApprovalTests
 
     private sealed class FixedApprovals : IAiKnowledgeApprovalReaderV1
     {
-        private readonly HashSet<(Guid, AiKnowledgeSourceKindV1, string)> approved = [];
+        private readonly HashSet<(AiKnowledgeSourceKindV1, string)> approved = [];
         public bool Unavailable { get; set; }
 
-        public void Approve(Guid company, AiKnowledgeSourceKindV1 kind, string sha) => approved.Add((company, kind, sha));
+        public void Approve(AiKnowledgeSourceKindV1 kind, string sha) => approved.Add((kind, sha));
 
-        public Task<AiKnowledgeApprovalStateV1> GetStateAsync(Guid companyId, AiKnowledgeSourceKindV1 kind, string packageSha256,
+        public Task<AiKnowledgeApprovalStateV1> GetStateAsync(AiKnowledgeSourceKindV1 kind, string packageSha256,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(Unavailable ? AiKnowledgeApprovalStateV1.Unavailable
-                : approved.Contains((companyId, kind, packageSha256)) ? AiKnowledgeApprovalStateV1.Approved : AiKnowledgeApprovalStateV1.NotApproved);
+                : approved.Contains((kind, packageSha256)) ? AiKnowledgeApprovalStateV1.Approved : AiKnowledgeApprovalStateV1.NotApproved);
     }
 
     private sealed class GrantingAuthority : IErpAuthorityRevalidationService
@@ -658,10 +701,10 @@ public sealed class AiKnowledgeApprovalTests
         }
     }
 
-    private sealed class FakeAuthority(string? granted, bool siteScoped) : IErpAuthorityRevalidationService
+    private sealed class FakeAuthority(string? granted, bool siteScoped, Guid grantedIn) : IErpAuthorityRevalidationService
     {
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(permission == granted && companyId == Company
+            Task.FromResult(permission == granted && companyId == grantedIn
                 ? new PermissionScope(true, !siteScoped, new HashSet<string>(["SENTETIK_ROLE"]),
                     siteScoped ? new HashSet<Guid>([Guid.NewGuid()]) : new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())
                 : PermissionScope.Denied);

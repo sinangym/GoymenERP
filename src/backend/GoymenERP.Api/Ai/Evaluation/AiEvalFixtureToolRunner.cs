@@ -31,7 +31,7 @@ public sealed class AiEvalFixtureToolRunner : IAiEvalToolRunnerV1
         // WP-A4: the lookup tool serves only an approved package; the offline fixture run treats exactly the given index
         // bytes as approved for its own synthetic company (no database, nothing else approved).
         decisions = new DecisionLookupAiTool(new FixedDecisionIndexSource(decisionIndex),
-            new FixtureApprovedDecisionIndex(companyId, decisionIndex?.PackageSha256), timeProvider);
+            new FixtureApprovedDecisionIndex(decisionIndex?.PackageSha256), timeProvider);
         context = new AiServerContextV1(companyId, "ai-eval-runner", "ai-eval-session", "ai-eval-scope@1",
             "ai-eval-authority@1", "ai-eval", null, null, null);
         CompanyId = companyId;
@@ -121,12 +121,15 @@ public sealed class AiEvalFixtureToolRunner : IAiEvalToolRunnerV1
     }
 }
 
-/// <summary>The fixture run's approval: only the given decision index bytes, only for the run's own company.</summary>
-internal sealed class FixtureApprovedDecisionIndex(Guid companyId, string? packageSha256) : IAiKnowledgeApprovalReaderV1
+/// <summary>
+/// The fixture run's approval: only the given decision index bytes. An approval is group-wide (AI-D46), so it names no company;
+/// the run's company still reaches the tool through the server context.
+/// </summary>
+internal sealed class FixtureApprovedDecisionIndex(string? packageSha256) : IAiKnowledgeApprovalReaderV1
 {
-    public Task<AiKnowledgeApprovalStateV1> GetStateAsync(Guid requestedCompanyId, AiKnowledgeSourceKindV1 kind, string requestedPackageSha256,
+    public Task<AiKnowledgeApprovalStateV1> GetStateAsync(AiKnowledgeSourceKindV1 kind, string requestedPackageSha256,
         CancellationToken cancellationToken = default) =>
-        Task.FromResult(requestedCompanyId == companyId && kind == AiKnowledgeSourceKindV1.DecisionIndex && packageSha256 is not null
+        Task.FromResult(kind == AiKnowledgeSourceKindV1.DecisionIndex && packageSha256 is not null
                 && string.Equals(requestedPackageSha256, packageSha256, StringComparison.Ordinal)
             ? AiKnowledgeApprovalStateV1.Approved
             : AiKnowledgeApprovalStateV1.Unavailable);
