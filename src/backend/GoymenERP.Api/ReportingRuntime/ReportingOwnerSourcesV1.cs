@@ -3,6 +3,7 @@ using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Reporting.Domain;
 using GoymenERP.Modules.Reporting.Infrastructure;
@@ -219,11 +220,78 @@ internal sealed class ReportingSalesLogisticsOtifSourceV1(ISalesOrderPromiseRead
     }
 }
 
+/// <summary>
+/// YOL-D31 intercompany: Counterparty names the linked parties (party ↔ group company on the card, never a tax-number match);
+/// Finance answers its sub-ledger items (any status) through its own authorized read. A link to the active company itself is not
+/// an intercompany leg. The list is newest first; the read stops at the first item admitted before the period; more than the
+/// technical bound sets WindowFull (the centre then refuses rather than show a cut dump).
+/// </summary>
+internal sealed class ReportingCounterpartyFinanceIntercompanySourceV1(ICounterpartyGroupCompanyLinkReadPortV1 links,
+    IFinanceOpenItemReadServiceV1 openItems, ICompanyContext company, ICurrentUser user, ICorrelationContext correlation)
+    : IReportingIntercompanySourceV1
+{
+    internal const int MaximumScannedItems = 10000;
+
+    public async Task<ReportingIntercompanySourcePageV1> ReadAsync(Guid companyId, DateOnly from, DateOnly to, int page, int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (!company.IsResolved || company.CompanyId != companyId || user.UserId is not { Length: > 0 } actor)
+            return new(ReportingSourceOutcomeV1.Denied, companyId, [], false);
+        if (!TimeZoneInfo.TryFindSystemTimeZoneById("Europe/Istanbul", out var zone))
+            return new(ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+        var linked = (await links.ListLinksAsync(cancellationToken))
+            .Where(link => link.GroupCompanyId != companyId)
+            .GroupBy(link => link.PartyId)
+            .ToDictionary(group => group.Key, group => group.First().GroupCompanyId);
+        if (linked.Count == 0) return new(ReportingSourceOutcomeV1.Found, companyId, [], false);
+
+        var context = new FinanceContext(companyId, actor, correlation.IsResolved ? correlation.CorrelationId : Guid.NewGuid().ToString("N"),
+            correlation.IsResolved ? correlation.CausationId : null);
+        var rows = new List<ReportingIntercompanySourceRowV1>();
+        var scanned = 0;
+        string? cursor = null;
+        var reachedOlder = false;
+        do
+        {
+            var result = await openItems.ListAuthorizedAsync(context, new SourceListRequest(cursor), cancellationToken);
+            if (result.Outcome != ReadOutcome.Found || result.Resource is not { } listed)
+                return new(result.Outcome == ReadOutcome.Denied ? ReportingSourceOutcomeV1.Denied : ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+            if (listed.CompanyId != companyId) return new(ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+            foreach (var item in listed.Items)
+            {
+                if (item.CompanyId != companyId) return new(ReportingSourceOutcomeV1.Unavailable, companyId, [], false);
+                if (++scanned > MaximumScannedItems) return new(ReportingSourceOutcomeV1.Found, companyId, [], false, true);
+                var day = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(item.CreatedAtUtc, zone).DateTime);
+                if (day < from)
+                {
+                    reachedOlder = true;
+                    break;
+                }
+
+                if (day > to || !linked.TryGetValue(item.PartyId, out var groupCompany)) continue;
+                if (item.Status is not { } status || item.InitialAmount.Money is not { } initial || item.OutstandingAmount.Money is not { } outstanding
+                    || item.InitialAmount.Disclosure != AmountDisclosure.Visible || item.OutstandingAmount.Disclosure != AmountDisclosure.Visible)
+                    return new(ReportingSourceOutcomeV1.Denied, companyId, [], false);
+                rows.Add(new ReportingIntercompanySourceRowV1(day, item.SourceKind, item.SourceId, item.PartyId, groupCompany,
+                    item.Direction == FinanceOpenItemDirectionV1.Receivable ? "receivable" : "payable", item.CurrencyId, initial.Amount,
+                    outstanding.Amount, status.ToString()));
+            }
+
+            cursor = listed.NextCursor;
+        }
+        while (cursor is not null && !reachedOlder);
+
+        var ordered = rows.OrderBy(row => row.DocumentDate).ThenBy(row => row.SourceId).ToArray();
+        var slice = ordered.Skip((page - 1) * pageSize).Take(pageSize).ToArray();
+        return new(ReportingSourceOutcomeV1.Found, companyId, slice, ordered.Length > (long)page * pageSize);
+    }
+}
+
 public static class ReportingRuntimeServiceCollectionExtensions
 {
     /// <summary>
-    /// WP14: the report centre with its connected owner sources. OTIF joins Sales's promised lines with Logistics's dated shares;
-    /// the intercompany dump (YOL-D31's party ↔ company link is not recorded by Counterparty yet) stay "not connected".
+    /// WP14: the report centre with its connected owner sources: stock aging and recall (Inventory), mizan (Accounting),
+    /// receivable/payable aging (Finance), OTIF (Sales × Logistics) and the intercompany dump (Counterparty links × Finance).
     /// </summary>
     public static IServiceCollection AddReportingRuntimeV1(this IServiceCollection services)
     {
@@ -232,6 +300,7 @@ public static class ReportingRuntimeServiceCollectionExtensions
         services.AddScoped<IReportingTrialBalanceSourceV1, ReportingAccountingTrialBalanceSourceV1>();
         services.AddScoped<IReportingPartyAgingSourceV1, ReportingFinancePartyAgingSourceV1>();
         services.AddScoped<IReportingOtifSourceV1, ReportingSalesLogisticsOtifSourceV1>();
+        services.AddScoped<IReportingIntercompanySourceV1, ReportingCounterpartyFinanceIntercompanySourceV1>();
         return services;
     }
 }

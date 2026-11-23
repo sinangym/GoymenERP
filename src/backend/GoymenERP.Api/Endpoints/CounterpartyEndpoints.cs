@@ -362,6 +362,7 @@ public static partial class CounterpartyEndpoints
         MapContactInformationEndpoints(group);
         MapTaxIdentityEndpoints(group);
         MapTradeNameEndpoints(group);
+        MapGroupCompanyLinkEndpoints(group);
         MapLegalNameEndpoints(group);
         MapPartyMergeEndpoints(group);
         MapCustomerGroupEndpoints(group);

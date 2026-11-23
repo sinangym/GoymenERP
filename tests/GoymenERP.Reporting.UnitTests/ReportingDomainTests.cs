@@ -18,7 +18,8 @@ public sealed class ReportingDomainTests
         Assert.All(ReportingCatalogV1.Reports.SelectMany(report => report.RequiredPermissions),
             permission => Assert.True(ErpPermissions.IsKnown(permission)));
         Assert.Equal(new[] { "stock-aging", "otif", "recall", "intercompany", "party-aging" }, ReportingCatalogV1.Reports.Select(report => report.Id).ToArray());
-        Assert.Equal(new[] { ErpPermissions.ReportingIntercompanyRead },
+        // ROL-D15: the separate intercompany permission, plus Finance's own reads (the dump shows sub-ledger money).
+        Assert.Equal(new[] { ErpPermissions.ReportingIntercompanyRead, ErpPermissions.FinanceOpenItemsRead, ErpPermissions.FinanceOpenItemsAmountRead },
             ReportingCatalogV1.Find(ReportingCatalogV1.Intercompany)!.RequiredPermissions.ToArray());
     }
 

@@ -6260,6 +6260,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // WP14; K3 review pending. Down refuses (52270, WP14 range, used by no other migration) while report-centre export records, saved views or command attempts exist; use a forward fix. 1 lexical Sql call(s). Fingerprint re-pinned on the tren-2 head (GOV-D9).
                 ["src/backend/Modules/Reporting/GoymenERP.Modules.Reporting.Infrastructure/Persistence/Migrations/20261122201929_AddReportingCenter.cs"] =
                     new("0000000000000000000000000000000000000000000000000000000000000000", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // WP14 (YOL-D31); K3 review pending. Down refuses (52271, WP14 range, used by no other migration) while a party group-company link exists; use a forward fix. 1 lexical Sql call(s). Fingerprint re-pinned on the tren-2 head (GOV-D9).
+                ["src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/Migrations/20261123075942_AddPartyGroupCompanyLink.cs"] =
+                    new("0000000000000000000000000000000000000000000000000000000000000000", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // WP-A1; K3 review pending. Down refuses (52180, WP-A1 range, used by no other migration) while AI gateway policy versions or usage ledger rows exist; use a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/20261122202350_AddAiGatewayPolicyAndBudgetLedger.cs"] =
                     new("0c4e59499ccc2343abf5f78b80c01f8ae138d9f606d956da6556242feef0f9ad", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),

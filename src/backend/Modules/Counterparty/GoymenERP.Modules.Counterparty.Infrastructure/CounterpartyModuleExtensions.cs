@@ -117,6 +117,10 @@ public static class CounterpartyModuleExtensions
             provider.GetRequiredService<CounterpartyCommandService>());
         services.AddScoped<ICounterpartyTradeNameService>(provider =>
             provider.GetRequiredService<CounterpartyCommandService>());
+        // YOL-D31 (WP14): the party ↔ group company link and its owner read port.
+        services.AddScoped<ICounterpartyGroupCompanyLinkService>(provider =>
+            provider.GetRequiredService<CounterpartyCommandService>());
+        services.AddScoped<ICounterpartyGroupCompanyLinkReadPortV1, CounterpartyGroupCompanyLinkReadPortV1>();
         services.AddScoped<ICounterpartyLegalNameService>(provider =>
             provider.GetRequiredService<CounterpartyCommandService>());
         services.AddScoped<ICounterpartyPartyMergeService>(provider =>

@@ -54,6 +54,12 @@ public sealed class Party
     /// </summary>
     public Guid? MergedIntoPartyId { get; private set; }
 
+    /// <summary>
+    /// YOL-D31 (WP14): the Göymen group company this party IS, when someone linked it on the card; null otherwise. A party is a
+    /// group company only through this link — never by a tax-number match. Group-wide like the party itself.
+    /// </summary>
+    public Guid? GroupCompanyId { get; private set; }
+
     public long Version { get; private set; } = 1;
 
     public byte[] RowVersion { get; private set; } = [];
@@ -118,6 +124,27 @@ public sealed class Party
         }
 
         TradeName = normalized;
+        Touch(utcNow);
+        return true;
+    }
+
+    /// <summary>
+    /// YOL-D31 (WP14): link the party to a group company, or clear the link with null. Returns false and leaves the version
+    /// untouched when the value is the stored one, so a repeated save is not a business change.
+    /// </summary>
+    internal bool ChangeGroupCompany(Guid? groupCompanyId, DateTimeOffset utcNow)
+    {
+        if (groupCompanyId == Guid.Empty)
+        {
+            throw new ArgumentException("Grup şirketi kimliği boş olamaz.", nameof(groupCompanyId));
+        }
+
+        if (GroupCompanyId == groupCompanyId)
+        {
+            return false;
+        }
+
+        GroupCompanyId = groupCompanyId;
         Touch(utcNow);
         return true;
     }

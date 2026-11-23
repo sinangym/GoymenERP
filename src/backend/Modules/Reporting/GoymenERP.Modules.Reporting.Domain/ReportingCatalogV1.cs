@@ -115,14 +115,17 @@ public static class ReportingCatalogV1
             Col("partyCode", ReportingColumnKindV1.Text), Col("partyName", ReportingColumnKindV1.Text),
             Col("sourceKind", ReportingColumnKindV1.Text), Col("sourceId", ReportingColumnKindV1.Identifier),
         ]),
-        new(Intercompany, "accounting", [ReportingPermissionManifestV1.IntercompanyRead],
+        new(Intercompany, "finance", [ReportingPermissionManifestV1.IntercompanyRead, ErpPermissions.FinanceOpenItemsRead,
+            ErpPermissions.FinanceOpenItemsAmountRead],
         [
             Date("from"), Date("to"),
         ],
         [
             Col("documentDate", ReportingColumnKindV1.Date), Col("documentKind", ReportingColumnKindV1.Text),
-            Col("documentNumber", ReportingColumnKindV1.Text), Col("counterpartyCompanyId", ReportingColumnKindV1.Identifier),
-            Col("currencyCode", ReportingColumnKindV1.Text), Col("netAmount", ReportingColumnKindV1.Number),
+            Col("sourceId", ReportingColumnKindV1.Identifier), Col("partyId", ReportingColumnKindV1.Identifier),
+            Col("counterpartyCompanyId", ReportingColumnKindV1.Identifier), Col("direction", ReportingColumnKindV1.Text),
+            Col("currencyId", ReportingColumnKindV1.Identifier), Col("initialAmount", ReportingColumnKindV1.Number),
+            Col("outstandingAmount", ReportingColumnKindV1.Number), Col("status", ReportingColumnKindV1.Text),
         ]),
         new(PartyAging, "finance", [ErpPermissions.FinanceOpenItemsRead, ErpPermissions.FinanceOpenItemsAmountRead],
         [

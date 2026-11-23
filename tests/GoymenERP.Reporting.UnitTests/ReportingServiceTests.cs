@@ -51,8 +51,11 @@ public sealed class ReportingServiceTests
         Assert.All(inventory.Reports, report => Assert.True(report.CanExport));
 
         // ROL-D15: the intercompany dump appears only for its own separate permission.
-        var intercompany = await harness.Service(Reader, ErpPermissions.ReportingIntercompanyRead).ListReportsAsync();
-        Assert.Equal(new[] { "intercompany" }, intercompany.Reports.Select(report => report.Id).ToArray());
+        var financeOnly = await harness.Service(Reader, ErpPermissions.FinanceOpenItemsRead, ErpPermissions.FinanceOpenItemsAmountRead).ListReportsAsync();
+        Assert.Equal(new[] { "party-aging" }, financeOnly.Reports.Select(report => report.Id).ToArray());
+        var intercompany = await harness.Service(Reader, ErpPermissions.ReportingIntercompanyRead, ErpPermissions.FinanceOpenItemsRead,
+            ErpPermissions.FinanceOpenItemsAmountRead).ListReportsAsync();
+        Assert.Equal(new[] { "intercompany", "party-aging" }, intercompany.Reports.Select(report => report.Id).ToArray());
         Assert.False(intercompany.Reports[0].CanExport);
         Assert.Equal("date", inventory.Reports[0].Parameters.Single(parameter => parameter.Id == "asOf").Kind);
     }
@@ -115,12 +118,13 @@ public sealed class ReportingServiceTests
     }
 
     [Fact]
-    public async Task Otif_and_intercompany_are_not_connected_and_never_answer_an_empty_report()
+    public async Task A_source_the_host_did_not_connect_answers_not_connected_and_never_an_empty_report()
     {
         var harness = new ReportingHarness();
         Assert.Equal((503, ReportingProblemCodesV1.SourceNotConnected), await Code(() => harness.Service(Reader, ErpPermissions.SalesReportsRead)
             .RunAsync("otif", new Dictionary<string, string?> { ["from"] = "2026-11-01", ["to"] = "2026-11-30" }, null, null)));
-        Assert.Equal((503, ReportingProblemCodesV1.SourceNotConnected), await Code(() => harness.Service(Reader, ErpPermissions.ReportingIntercompanyRead)
+        Assert.Equal((503, ReportingProblemCodesV1.SourceNotConnected), await Code(() => harness.Service(Reader, ErpPermissions.ReportingIntercompanyRead,
+                ErpPermissions.FinanceOpenItemsRead, ErpPermissions.FinanceOpenItemsAmountRead)
             .RunAsync("intercompany", new Dictionary<string, string?> { ["from"] = "2026-11-01", ["to"] = "2026-11-30" }, null, null)));
     }
 
