@@ -32,8 +32,7 @@ public sealed partial class FinanceCreditAccountSqlServerRelationalAcceptanceTes
     private const int CheckViolation = 547;
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
-    // FNS-D99: the 0,01 TL line tolerance is decided for the Turkish lira; the fixture uses its Settings identity.
-    private static readonly Guid Currency = SettingsCurrencyIdentitiesV1.TurkishLira;
+    private static readonly Guid Currency = Guid.Parse("9b3f4e5d-6c7b-4809-9b2c-3d4e5f6a7d01");
 
     [SqlServerFact]
     public async Task A_makers_credit_account_with_its_bank_plan_is_approved_by_another_person_in_one_save_each_with_its_attempt_and_audit()
@@ -192,19 +191,10 @@ public sealed partial class FinanceCreditAccountSqlServerRelationalAcceptanceTes
             var lines = request.Installments.ToArray();
             lines[0] = lines[0] with { Installment = "546.2345", Charges = [new("SENTETIK ücret", "5",
                 CreditChargeTreatmentV1.IncludedInInstallment, "SENTETIK-BANK-1")] };
-            // FNS-D94/FNS-D99: a charge's treatment is not decided, so a plan carrying one is refused fail-closed.
-            var refused = await maker.Credits.ProposeAsync(maker.Context, Key("source-p-0"), request with { Installments = lines },
-                CancellationToken.None);
-            Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
-            Assert.Contains(refused.Issues, issue => issue.Code == "credit_plan_charges_undecided");
-            proposed = (await maker.Credits.ProposeAsync(maker.Context, Key("source-p-1"), request,
+            proposed = (await maker.Credits.ProposeAsync(maker.Context, Key("source-p-1"), request with { Installments = lines },
                 CancellationToken.None)).Resource!;
         }
-        Assert.Null(proposed.PlanTotals!.Charges);
-        // A row stored before the fail-closed rule (legacy charge JSON) is still protected by the database checks.
-        await run.ExecuteAsync("UPDATE finance.CreditAccountInstallments SET ChargesJson = "
-            + "N'[{\"description\":\"SENTETIK ücret\",\"amount\":\"5\",\"treatment\":\"IncludedInInstallment\",\"sourceDocumentReference\":\"SENTETIK-BANK-1\"}]' "
-            + "WHERE CreditAccountId = @id AND [Sequence] = 1", ("@id", proposed.Id));
+        Assert.Equal("5", proposed.PlanTotals!.Charges!.IncludedInInstallment);
         Assert.Equal(51961, (await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard))).Number);
         Assert.Equal(CheckViolation, (await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
             "UPDATE finance.CreditAccounts SET MoneyProfileVersion = NULL WHERE Id = @id", ("@id", proposed.Id)))).Number);

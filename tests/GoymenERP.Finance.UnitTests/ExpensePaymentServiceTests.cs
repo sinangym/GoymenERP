@@ -68,6 +68,9 @@ public sealed class ExpensePaymentServiceTests
         Assert.Equal(FinanceMoneyOperations.ExpensePaymentV1, MoneyProfileAuthoringCatalogV1.ExpensePaymentOperation);
         Assert.Contains(MoneyProfileAuthoringCatalogV1.Targets(ApprovedUnitProfileCatalog.GdcCompanyId),
             target => target.Operation == FinanceMoneyOperations.ExpensePaymentV1);
+        // The Settings money profile screen lists and accepts this row (the same write path as every authoring target).
+        Assert.True(MoneyProfileAuthoringCatalogV1.Allows(ApprovedUnitProfileCatalog.GdcCompanyId,
+            SettingsCurrencyIdentitiesV1.TurkishLira, FinanceMoneyOperations.ExpensePaymentV1));
         Assert.DoesNotContain(ApprovedMoneyProfileCatalog.Approved.Entries,
             row => row.Operations.Contains(FinanceMoneyOperations.ExpensePaymentV1));
 

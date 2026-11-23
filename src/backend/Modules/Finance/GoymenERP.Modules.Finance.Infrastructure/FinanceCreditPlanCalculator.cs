@@ -1,6 +1,5 @@
 using System.Globalization;
 using GoymenERP.Modules.Finance.Contracts;
-using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Finance.Infrastructure;
 
@@ -10,12 +9,10 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// <list type="bullet">
 /// <item>The plan's amounts are taken AS GIVEN: exact non-negative decimal text (digits and at most one inner dot), never
 /// rounded, never converted. The system never calculates interest.</item>
-/// <item>Each line (FNS-D99): installment = principal + interest + BSMV + KKDF within 0,01 TL per line. The tolerance is
-/// Sinan's decided TRY amount, not a currency's smallest unit: for any other currency no tolerance is decided, so the plan
-/// is refused fail-closed (<see cref="ToleranceUndecided"/>, NEEDS-SINAN). Without a currency no tolerance is granted.</item>
-/// <item>Charges (commission/fee lines on the bank plan): FNS-D94 leaves their treatment open and FNS-D99's equality has no
-/// charge term, so a plan carrying any charge is refused fail-closed (<see cref="ChargesUndecided"/>, NEEDS-SINAN); a
-/// charge is never added to the installment's components.</item>
+/// <item>Each line (FNS-D99, FNS-D116 — SINAN_KARARLARI_2026-11-22_EK_SORULAR.md): installment equals principal + interest +
+/// BSMV + KKDF + the charges the source DECLARES as included in the installment, within one smallest unit of the credit's
+/// currency from its approved Settings profile (0,01 TL for the lira; the profile's own scale for any other currency).
+/// Separately collected charges never enter the equality; no source amount is rounded.</item>
 /// <item>The plan: the sum of the principals = the credit amount (exact positive text), exactly.</item>
 /// <item>Sequences run 1..n in the given order. Dates are carried as given (FNS-D94 checks the totals only).</item>
 /// </list>
@@ -39,11 +36,6 @@ internal static class FinanceCreditPlanCalculator
     internal const string InstallmentSumMismatch = "credit_plan_installment_sum_mismatch";
     internal const string PrincipalTotalMismatch = "credit_plan_principal_total_mismatch";
     internal const string PrincipalAmountInvalid = "credit_amount_invalid";
-    internal const string ToleranceUndecided = "credit_plan_tolerance_undecided";
-    internal const string ChargesUndecided = "credit_plan_charges_undecided";
-
-    /// <summary>FNS-D99 (SINAN_KARARLARI_2026-11-16_DALGA4_EK23.md): "satır başına 0,01 TL" — one hundredth of a lira.</summary>
-    private static readonly FinanceExactDecimalText TurkishLiraLineTolerance = new(1, 2);
 
     /// <summary>The plan's verdict: its issues and, when every line could be read, its exact totals.</summary>
     internal sealed record Result(IReadOnlyList<ValidationIssue> Issues, CreditPlanTotalsView? Totals)
@@ -52,12 +44,11 @@ internal static class FinanceCreditPlanCalculator
     }
 
     internal static Result Validate(string? principalAmount, IReadOnlyList<CreditPlanInstallmentInput>? installments,
-        Guid? currencyId = null)
+        int? currencyScale = null)
     {
+        if (currencyScale is < 0 or > 28) throw new ArgumentOutOfRangeException(nameof(currencyScale));
+        var tolerance = new FinanceExactDecimalText(currencyScale is null ? 0 : 1, currencyScale ?? 0);
         var issues = new List<ValidationIssue>();
-        var tolerance = new FinanceExactDecimalText(0, 0);
-        if (currencyId == SettingsCurrencyIdentitiesV1.TurkishLira) tolerance = TurkishLiraLineTolerance;
-        else if (currencyId is not null) issues.Add(new ValidationIssue("currencyId", ToleranceUndecided));
         var amount = default(FinanceExactDecimalText);
         var amountReadable = principalAmount is not null && principalAmount.Length <= AmountMaximumLength
             && FinanceExactDecimalText.TryParsePositive(principalAmount, out amount);
@@ -143,10 +134,12 @@ internal static class FinanceCreditPlanCalculator
                     }
                     hasCharges = true;
                     if (charge.Treatment == CreditChargeTreatmentV1.IncludedInInstallment)
+                    {
+                        components = components.Add(chargeAmount);
                         totalIncludedCharges = totalIncludedCharges.Add(chargeAmount);
+                    }
                     else totalSeparateCharges = totalSeparateCharges.Add(chargeAmount);
                 }
-                if (charges.Count != 0) issues.Add(new ValidationIssue(prefix + "charges", ChargesUndecided));
             }
             var difference = installment.CompareTo(components) >= 0
                 ? installment.Subtract(components) : components.Subtract(installment);

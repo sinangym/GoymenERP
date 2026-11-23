@@ -2,7 +2,6 @@ using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations;
-using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -34,55 +33,60 @@ public sealed partial class FinanceCreditAccountTests
     }
 
     [Theory]
-    [InlineData("100.01", "100.010001")]
-    [InlineData("99.99", "99.989999")]
-    public void Turkish_lira_installments_hold_within_one_hundredth_of_a_lira_per_line(string within, string outside)
+    [InlineData(0, "101", "101.0001")]
+    [InlineData(2, "100.01", "100.010001")]
+    [InlineData(3, "100.001", "100.001001")]
+    public void Imported_installments_use_one_smallest_currency_unit_without_conversion_or_rounding(int scale, string within, string outside)
     {
         CreditPlanInstallmentInput Line(string installment) => new(1, Start, installment, "100", "0", "0", "0");
-        var accepted = FinanceCreditPlanCalculator.Validate("100", [Line(within)], SettingsCurrencyIdentitiesV1.TurkishLira);
+        var accepted = FinanceCreditPlanCalculator.Validate("100", [Line(within)], scale);
         Assert.True(accepted.IsValid);
         Assert.Equal(within, accepted.Totals!.Installment);
-        Assert.Contains(FinanceCreditPlanCalculator.Validate("100", [Line(outside)], SettingsCurrencyIdentitiesV1.TurkishLira).Issues,
+        Assert.Contains(FinanceCreditPlanCalculator.Validate("100", [Line(outside)], scale).Issues,
             x => x.Code == FinanceCreditPlanCalculator.InstallmentSumMismatch);
-        Assert.Contains(FinanceCreditPlanCalculator.Validate("100.01", [Line(within)], SettingsCurrencyIdentitiesV1.TurkishLira).Issues,
+        Assert.Contains(FinanceCreditPlanCalculator.Validate("100.01", [Line(within)], scale).Issues,
             x => x.Code == FinanceCreditPlanCalculator.PrincipalTotalMismatch);
     }
 
     [Fact]
-    public void A_currency_without_a_decided_tolerance_is_refused_and_never_gets_its_smallest_unit()
+    public void Bank_document_included_charge_enters_the_installment_and_separate_charge_remains_separate()
     {
-        var line = new CreditPlanInstallmentInput(1, Start, "100", "100", "0", "0", "0");
-        foreach (var currency in new[] { SettingsCurrencyIdentitiesV1.UnitedStatesDollar, SettingsCurrencyIdentitiesV1.Euro })
-        {
-            var verdict = FinanceCreditPlanCalculator.Validate("100", [line], currency);
-            Assert.False(verdict.IsValid);
-            var issue = Assert.Single(verdict.Issues);
-            Assert.Equal(("currencyId", FinanceCreditPlanCalculator.ToleranceUndecided), (issue.Field, issue.Code));
-        }
+        var line = new CreditPlanInstallmentInput(1, Start, "117", "100", "10", "1", "1",
+            [new("SENTETIK komisyon", "5", CreditChargeTreatmentV1.IncludedInInstallment, "BANK-1"),
+             new("SENTETIK ayrı masraf", "9", CreditChargeTreatmentV1.CollectedSeparately, "BANK-2")]);
+        var verdict = FinanceCreditPlanCalculator.Validate("100", [line], 2);
+        Assert.True(verdict.IsValid);
+        Assert.Equal(new CreditPlanChargeTotalsV1("5", "9"), verdict.Totals!.Charges);
+        Assert.Equal("117", verdict.Totals.Installment);
+        var missing = FinanceCreditPlanCalculator.Validate("100", [line with
+            { Charges = [line.Charges![0] with { Amount = null! }] }], 2);
+        Assert.False(missing.IsValid);
+        Assert.Null(missing.Totals);
+    }
+
+    [Theory]
+    [InlineData(2, "100.01", "100.02")]
+    [InlineData(3, "100.001", "100.002")]
+    public void Fns_d116_a_non_lira_credit_uses_its_own_profile_smallest_unit(int scale, string within, string outside)
+    {
+        // FNS-D116: the tolerance is the credit currency's smallest unit from its Settings profile, not a fixed TL amount.
+        CreditPlanInstallmentInput Line(string installment) => new(1, Start, installment, "100", "0", "0", "0");
+        Assert.True(FinanceCreditPlanCalculator.Validate("100", [Line(within)], scale).IsValid);
+        var refused = FinanceCreditPlanCalculator.Validate("100", [Line(outside)], scale);
+        Assert.Equal(("installments[0].installment", FinanceCreditPlanCalculator.InstallmentSumMismatch),
+            (Assert.Single(refused.Issues).Field, refused.Issues[0].Code));
     }
 
     [Fact]
-    public void A_bank_plan_charge_is_refused_fail_closed_and_never_enters_the_installment()
+    public void Fns_d116_a_separately_collected_charge_never_enters_the_installment_equality()
     {
-        var included = new CreditPlanInstallmentInput(1, Start, "117", "100", "10", "1", "1",
-            [new("SENTETIK komisyon", "5", CreditChargeTreatmentV1.IncludedInInstallment, "BANK-1")]);
-        var verdict = FinanceCreditPlanCalculator.Validate("100", [included], SettingsCurrencyIdentitiesV1.TurkishLira);
-        Assert.False(verdict.IsValid);
-        // 117 = 100 + 10 + 1 + 1 + 5 holds only if the charge is added; FNS-D99's equality has no charge term.
-        Assert.Contains(verdict.Issues, x => (x.Field, x.Code) == ("installments[0].charges", FinanceCreditPlanCalculator.ChargesUndecided));
-        Assert.Contains(verdict.Issues, x => (x.Field, x.Code) == ("installments[0].installment", FinanceCreditPlanCalculator.InstallmentSumMismatch));
-
-        var separate = new CreditPlanInstallmentInput(1, Start, "112", "100", "10", "1", "1",
+        // 121 balances only if the separate 9 were added (100 + 10 + 1 + 1 + 9); FNS-D116 admits only declared included charges.
+        var line = new CreditPlanInstallmentInput(1, Start, "121", "100", "10", "1", "1",
             [new("SENTETIK ayrı masraf", "9", CreditChargeTreatmentV1.CollectedSeparately, "BANK-2")]);
-        var separateVerdict = FinanceCreditPlanCalculator.Validate("100", [separate], SettingsCurrencyIdentitiesV1.TurkishLira);
-        Assert.False(separateVerdict.IsValid);
-        var issue = Assert.Single(separateVerdict.Issues);
-        Assert.Equal(("installments[0].charges", FinanceCreditPlanCalculator.ChargesUndecided), (issue.Field, issue.Code));
-
-        var missing = FinanceCreditPlanCalculator.Validate("100", [included with
-            { Charges = [included.Charges![0] with { Amount = null! }] }], SettingsCurrencyIdentitiesV1.TurkishLira);
-        Assert.False(missing.IsValid);
-        Assert.Null(missing.Totals);
+        var verdict = FinanceCreditPlanCalculator.Validate("100", [line], 2);
+        Assert.Equal(("installments[0].installment", FinanceCreditPlanCalculator.InstallmentSumMismatch),
+            (Assert.Single(verdict.Issues).Field, verdict.Issues[0].Code));
+        Assert.Equal(new CreditPlanChargeTotalsV1("0", "9"), verdict.Totals!.Charges);
     }
 
     [Fact]
@@ -145,21 +149,17 @@ public sealed partial class FinanceCreditAccountTests
     }
 
     [Fact]
-    public async Task Source_profile_snapshot_survives_persistence_and_replay_and_a_charged_plan_stores_nothing()
+    public async Task Source_charge_and_profile_snapshot_survive_persistence_and_replay_without_recalculation()
     {
         await using var run = new Run();
         var plan = Plan();
-        plan[0] = plan[0] with { Charges = [new("SENTETIK masraf", "5",
-            CreditChargeTreatmentV1.CollectedSeparately, "BANK-1")] };
-        AssertIssue(await run.ProposeAsync(Maker, Request() with { Installments = plan }), CommandOutcome.ValidationFailed,
-            "installments[0].charges", FinanceCreditPlanCalculator.ChargesUndecided);
-        Assert.Empty(await run.AllRowsAsync());
-
-        var proposed = await run.ProposeAsync(Maker, Request());
+        plan[0] = plan[0] with { Installment = "546.2345", Charges = [new("SENTETIK masraf", "5",
+            CreditChargeTreatmentV1.IncludedInInstallment, "BANK-1")] };
+        var proposed = await run.ProposeAsync(Maker, Request() with { Installments = plan });
         var read = await run.GetAsync(Checker, proposed.Resource!.Id);
         Assert.Equal(proposed.Resource.Profile, read.Resource!.Profile);
-        Assert.Null(read.Resource.PlanTotals!.Charges);
-        Assert.Equal(Plan()[0].Installment, read.Resource.Installments[0].Installment);
+        Assert.Equal("5", read.Resource.PlanTotals!.Charges!.IncludedInInstallment);
+        Assert.Equal("546.2345", read.Resource.Installments[0].Installment);
         Assert.Equal(1, read.Resource.Tolerance!.ProfileVersion);
     }
 }
