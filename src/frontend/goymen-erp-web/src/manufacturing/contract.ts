@@ -1282,6 +1282,8 @@ export function decodeOrder(body: unknown): ProductionOrderView | null {
   }
 }
 
+// Mirrors OrderReopeningViewV1 one-to-one.
+const ORDER_REOPENING_KEYS = ['closedOrderVersion', 'closedByUserId', 'closedAtUtc', 'reopenedOrderVersion', 'reopenedByUserId', 'reopenedAtUtc', 'reason'] as const
 function decodeOrderReopenings(value: unknown, orderVersion: number): OrderReopeningHistory[] | null {
   if (value === undefined || value === null) return [] // Legacy ADR-011 answers had no reopening member.
   if (!Array.isArray(value)) return null
@@ -1289,7 +1291,7 @@ function decodeOrderReopenings(value: unknown, orderVersion: number): OrderReope
   for (const row of value) {
     if (typeof row !== 'object' || row === null || Array.isArray(row)) return null
     const v = row as Record<string, unknown>
-    if (!Number.isSafeInteger(v.closedOrderVersion) || (v.closedOrderVersion as number) < 2 || (v.closedOrderVersion as number) <= previousVersion
+    if (!hasExactKeys(v, ORDER_REOPENING_KEYS) || !Number.isSafeInteger(v.closedOrderVersion) || (v.closedOrderVersion as number) < 2 || (v.closedOrderVersion as number) <= previousVersion
       || v.reopenedOrderVersion !== (v.closedOrderVersion as number) + 1 || (v.reopenedOrderVersion as number) > orderVersion
       || nullableGuid(v.closedByUserId) == null || nullableGuid(v.reopenedByUserId) == null
       || nullableInstant(v.closedAtUtc) == null || nullableInstant(v.reopenedAtUtc) == null

@@ -16,4 +16,13 @@ describe('SC32b separate contract discount limit decoder', () => {
     expect(decodeContractDiscountLimit({ companyId: company, limitPercent: '0', version: '1', versions: [] }, company)).toBeNull()
     expect(decodeContractDiscountLimit({ companyId: company, limitPercent: '0', version: '1', versions: [item,item] }, company)).toBeNull()
   })
+  it('K3 P2: accepts only the exact key sets of the view and of each version', () => {
+    const view = { companyId: company, limitPercent: '0', version: '1', versions: [item] }
+    const without = (value: object, key: string) => Object.fromEntries(Object.entries(value).filter(([name]) => name !== key))
+    expect(decodeContractDiscountLimit(view, company)).toEqual(view)
+    expect(decodeContractDiscountLimit({ ...view, extra: 'synthetic' }, company)).toBeNull()
+    expect(decodeContractDiscountLimit({ ...view, versions: [{ ...item, extra: 'synthetic' }] }, company)).toBeNull()
+    for (const key of Object.keys(view)) expect(decodeContractDiscountLimit(without(view, key), company)).toBeNull()
+    for (const key of Object.keys(item)) expect(decodeContractDiscountLimit({ ...view, versions: [without(item, key)] }, company)).toBeNull()
+  })
 })

@@ -259,6 +259,7 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
         var remainingKg = undoKg;
         var results = new List<InventoryGoodsReceiptConversionReversalV1>();
         var reversalRows = new List<FutureSupplyConversionReversalRow>();
+        var heldPiecesReleased = false;
         // Reverse the ACTUAL recorded receipt order, including a host override or manual sequence; never today's due date.
         var ordered = target.Links.OrderByDescending(link => link.OriginalConsumptionSequence);
         foreach (var link in ordered)
@@ -278,7 +279,9 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
             if (isOpen) heldKg[link.SalesOrderLineId] -= physicalUndo;
             var plan = FutureSupplyReceiptReversal.Plan(originalQuantity, originalKg, undone, takeKg, activeKg, isOpen,
                 isOpen ? Math.Max(0m, openKg[link.SalesOrderLineId] - heldKg[link.SalesOrderLineId]) : 0m, supplyRemaining);
-            if (physicalUndo > 0m) ReleasePhysical(physical, physicalUndo, request.Reason, metadata);
+            if (physicalUndo > 0m)
+                heldPiecesReleased |= ReleasePhysical(physical, physicalUndo, undoKg, request.PieceCount, heldPiecesReleased,
+                    request.Reason, metadata);
             var eligible = plan.ReopenedQuantity + plan.OverflowReleasedQuantity;
             if (eligible > 0m)
             {
@@ -403,11 +406,36 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
         return request.PieceCount is { } pieces ? Engine.PayloadHash(new { Core = kilogramHash, PieceCount = pieces }) : kilogramHash;
     }
 
-    private void ReleasePhysical(AllocationRow row, decimal kg, string reason, InventoryCommandMetadata metadata)
+    /// <summary>
+    /// Releases <paramref name="kg"/> of a physical hold. KLN-D120: a piece-holding hold released in full holds no pieces; a
+    /// PARTIAL kilogram release of it needs its pieces with the kilograms, else it is refused. Those pieces are the request's
+    /// <paramref name="exitPieces"/> (the pieces leaving the label, already in the request hash) and only when every leaving
+    /// kilogram came out of this one hold (<paramref name="kg"/> equals <paramref name="undoKg"/>); a second partial piece
+    /// release, missing pieces, or pieces that would not leave at least one piece with the remaining kilograms fail closed
+    /// (422) before any write. Returns whether the request's pieces were used.
+    /// </summary>
+    private bool ReleasePhysical(AllocationRow row, decimal kg, decimal undoKg, int? exitPieces, bool exitPiecesUsed,
+        string reason, InventoryCommandMetadata metadata)
     {
-        var before = row.RemainingKg; var version = row.Version;
-        if (kg == before) { row.RemainingKg = 0m; row.Status = (int)StockAllocationStatus.Released; row.ReleasedAtUtc = clock.GetUtcNow(); row.ReleaseReason = reason; }
-        else { row.RemainingKg -= kg; row.AllocatedKg -= kg; }
+        var before = row.RemainingKg; var piecesBefore = row.RemainingPieces; var version = row.Version;
+        var partialPieces = kg != before && row.RemainingPieces is not null;
+        if (partialPieces && (exitPieces is not { } released || exitPiecesUsed || kg != undoKg
+                || released <= 0 || released >= row.RemainingPieces!.Value || row.AllocatedPieces is null))
+            throw Error(422, Codes.PartialQuantityNotRepresentable);
+        if (kg == before)
+        {
+            row.RemainingKg = 0m; row.Status = (int)StockAllocationStatus.Released; row.ReleasedAtUtc = clock.GetUtcNow(); row.ReleaseReason = reason;
+            if (row.RemainingPieces is not null) row.RemainingPieces = 0;
+        }
+        else
+        {
+            row.RemainingKg -= kg; row.AllocatedKg -= kg;
+            if (partialPieces)
+            {
+                // The kilograms and their pieces leave the hold together; the remaining kilograms keep at least one piece.
+                row.RemainingPieces -= exitPieces!.Value; row.AllocatedPieces -= exitPieces.Value;
+            }
+        }
         row.Version = checked(row.Version + 1); row.UpdatedAtUtc = clock.GetUtcNow();
         if (row.RemainingKg > 0m)
             context.AllocationChanges.Add(new AllocationChangeRow() { Id = Guid.NewGuid(), CompanyId = companyId, Kind = ResizeChangeKind,
@@ -416,10 +444,11 @@ public sealed partial class InventoryGoodsReceiptReversalParticipant : IInventor
                 ChangedBy = metadata.ActorId, CorrelationId = metadata.CorrelationId, ChangedAtUtc = clock.GetUtcNow() });
         audit.Enqueue(new AuditEventDraft(companyId, "inventory.physical-allocation.receipt-reversed.v1", "Inventory.StockAllocation",
             row.Id.ToString("D"), "ReverseReceiptHold", version, row.Version, AuditActorTypes.User, metadata.ActorId,
-            metadata.PermissionCode, metadata.RoleCodes, JsonSerializer.Serialize(new { remainingKg = before }, Engine.Json),
-            JsonSerializer.Serialize(new { remainingKg = row.RemainingKg, row.Status }, Engine.Json), reason,
+            metadata.PermissionCode, metadata.RoleCodes, JsonSerializer.Serialize(new { remainingKg = before, remainingPieces = piecesBefore }, Engine.Json),
+            JsonSerializer.Serialize(new { remainingKg = row.RemainingKg, remainingPieces = row.RemainingPieces, row.Status }, Engine.Json), reason,
             ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null, metadata.SourceChannel,
             metadata.ClientIpAddress, metadata.UserAgent, metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
+        return partialPieces;
     }
 
     private async Task<decimal> ReversedKgAsync(Guid movementId, CancellationToken token) =>

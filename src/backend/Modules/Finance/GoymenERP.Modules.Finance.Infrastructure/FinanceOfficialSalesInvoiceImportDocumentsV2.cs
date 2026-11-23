@@ -13,8 +13,8 @@ internal sealed record FinanceOfficialInvoiceImportParseResult(
 /// FIN-S5 v2 document columns: reads one row's columns with FNS-D17's field rules (official number required and at
 /// most the D1 length, ETTN a canonical "D" GUID, the three functional amounts exact non-negative decimals) and
 /// collects one document per source document. Rows of the same source document must repeat identical columns; two
-/// different source documents of one file may not share an official number or an ETTN. No formula check is made
-/// (FNS-D17 Sınırlar), and a zero amount is accepted because no positivity rule was chosen.
+/// different source documents of one file may not share an official number or an ETTN. The FNS-D64 tax formula is
+/// only a preview warning (FinanceOfficialInvoiceImportParserV1), never a row issue, and a zero amount is accepted because no positivity rule was chosen.
 /// </summary>
 internal sealed class FinanceOfficialSalesInvoiceImportDocumentsV2
 {

@@ -61,6 +61,26 @@ public sealed class InventoryManufacturingConsumedCostLineageContractTests
     }
 
     [Fact]
+    public void Two_labels_of_one_output_under_the_same_shipment_id_are_refused_before_any_attribution_row_exists()
+    {
+        // K3 review: Accounting keeps one attribution share per (source event, output, shipment). A shipment id is one
+        // Logistics share (one allocation, one label, one issue movement; a second share with the same id is refused
+        // inside an instruction), so this evidence can only arise from a reused id. It is refused here, in the
+        // generation transaction, and therefore never reaches the unique index as a second row.
+        var first = Shipment() with { Returns = [], NetRootQuantityKg = new("1", "1") };
+        var sameShipmentOtherLabel = first with
+        {
+            MovementId = Guid.NewGuid(), LabelId = Guid.NewGuid(), LoadingInstructionLineId = Guid.NewGuid(),
+        };
+        Assert.Throws<InvalidOperationException>(() => InventoryManufacturingConsumedCostLineageEvidenceV1.Create(
+            Company, Output, Receipt, Root, 3m, new("2", "1"), [first, sameShipmentOtherLabel]));
+        var valid = InventoryManufacturingConsumedCostLineageEvidenceV1.Create(Company, Output, Receipt, Root, 3m, new("2", "1"),
+            [first, sameShipmentOtherLabel with { ShipmentId = Guid.NewGuid() }]);
+        Assert.False(InventoryManufacturingConsumedCostLineageEvidenceV1.IsValid(Company, Output, Receipt, Root, 3m,
+            valid with { Shipments = [first, sameShipmentOtherLabel] }));
+    }
+
+    [Fact]
     public void Legacy_generation_output_json_keeps_a_missing_lineage_distinct_from_a_proved_empty_shipment_list()
     {
         var old = JsonSerializer.Deserialize<InventoryManufacturingCostGenerationOutputResultV1>(

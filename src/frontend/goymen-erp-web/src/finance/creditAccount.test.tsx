@@ -24,7 +24,12 @@ vi.mock('../shell/shellState', async original => ({ ...await original<typeof imp
   contextKey: () => ['SENTETIK', String(shell.generation)], contextKeyString: (value: readonly string[]) => value.join(':'),
   hasCapability: (_state: unknown, capability: string) => shell.capabilities.includes(capability),
 }))
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: {
+  'Content-Type': 'application/json',
+  // Contract: a body replay is announced by the same headers (K3 P2-3).
+  ...(typeof body === 'object' && body !== null && ((body as { isReplay?: unknown }).isReplay === true)
+    ? { 'Idempotency-Replayed': 'true', 'Idempotency-Original-Correlation-Id': String((body as { originalCorrelationId?: unknown }).originalCorrelationId) } : {}),
+} })
 const mount = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><CreditAccountsPage /></QueryClientProvider>)
 beforeEach(() => { shell.generation++; boundary.report.mockClear() })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })

@@ -31,15 +31,24 @@ function object(value: unknown): value is Record<string, unknown> {
 function guid(value: unknown): value is string { return typeof value === 'string' && GUID.test(value) }
 function positive(value: unknown): value is number { return Number.isSafeInteger(value) && (value as number) > 0 }
 
+// Key sets mirror PlanInputAvailabilityViewV1 / PlanInputAvailabilityLineV1 / PlanCancelledOrderReferenceV1 one-to-one.
+function exact(value: Record<string, unknown>, names: readonly string[]): boolean {
+  return Object.keys(value).length === names.length && names.every((key) => Object.hasOwn(value, key))
+}
+const VIEW_KEYS = ['contractVersion', 'companyId', 'planId', 'planVersion', 'inputs', 'cancelledOrders', 'readAtUtc'] as const
+const LINE_KEYS = ['labelId', 'productId', 'labelVersion', 'requestedKg', 'physicalKg', 'blockedKg', 'allocatedKg', 'freeKg', 'missingKg',
+  'freePositionCount'] as const
+const CANCELLED_ORDER_KEYS = ['orderId', 'planVersionAfterCancel'] as const
+
 /** All kg fields are server text. The decoder never subtracts or rounds quantities. */
 export function decodePlanInputAvailability(value: unknown): PlanInputAvailability | null {
-  if (!object(value) || value.contractVersion !== 1 || !guid(value.companyId) || !guid(value.planId)
+  if (!object(value) || !exact(value, VIEW_KEYS) || value.contractVersion !== 1 || !guid(value.companyId) || !guid(value.planId)
     || !positive(value.planVersion) || !Array.isArray(value.inputs) || value.inputs.length === 0
     || !Array.isArray(value.cancelledOrders) || typeof value.readAtUtc !== 'string'
     || !Number.isFinite(Date.parse(value.readAtUtc))) return null
   const labels = new Set<string>()
   for (const line of value.inputs) {
-    if (!object(line) || !guid(line.labelId) || labels.has(line.labelId.toLowerCase()) || !guid(line.productId)
+    if (!object(line) || !exact(line, LINE_KEYS) || !guid(line.labelId) || labels.has(line.labelId.toLowerCase()) || !guid(line.productId)
       || typeof line.labelVersion !== 'string' || !VERSION.test(line.labelVersion)
       || !Number.isSafeInteger(line.freePositionCount) || (line.freePositionCount as number) < 0) return null
     if (['requestedKg', 'physicalKg', 'blockedKg', 'allocatedKg', 'freeKg', 'missingKg']
@@ -49,7 +58,7 @@ export function decodePlanInputAvailability(value: unknown): PlanInputAvailabili
   const orders = new Set<string>()
   let previous = 0
   for (const entry of value.cancelledOrders) {
-    if (!object(entry) || !guid(entry.orderId) || orders.has(entry.orderId.toLowerCase())
+    if (!object(entry) || !exact(entry, CANCELLED_ORDER_KEYS) || !guid(entry.orderId) || orders.has(entry.orderId.toLowerCase())
       || !positive(entry.planVersionAfterCancel) || entry.planVersionAfterCancel <= previous
       || entry.planVersionAfterCancel > value.planVersion) return null
     orders.add(entry.orderId.toLowerCase()); previous = entry.planVersionAfterCancel

@@ -1,3 +1,4 @@
+import { EditedAttemptNotice } from './EditedAttemptNotice'
 import { useState, type FormEvent } from 'react'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
@@ -53,6 +54,6 @@ function Editor({ company, entry, finish }: { readonly company: string; readonly
   return <form className={styles.form} onSubmit={event => void submit(event)} aria-busy={busy}><fieldset disabled={busy || frozen !== null}>
     {entry === null ? <><Field label={T.code}>{control => <input {...control} required maxLength={32} value={code} onChange={event => setCode(event.target.value)} />}</Field><Field label={T.kind}>{control => <select {...control} required value={kind} onChange={event => setKind(event.target.value as CollateralKind | '')}><option value="">{T.choose}</option>{COLLATERAL_KINDS.map(value => <option key={value} value={value}>{COLLATERAL_KIND_TEXT[value]}</option>)}</select>}</Field><p>{T.initial}</p></> : <><p>{entry.code} — {COLLATERAL_KIND_TEXT[entry.kind]}</p><Field label={T.rate}>{control => <input {...control} required inputMode="decimal" maxLength={64} value={rate} onChange={event => setRate(event.target.value)} />}</Field><Field label={T.state}>{control => <select {...control} value={active ? 'active' : 'inactive'} onChange={event => setActive(event.target.value === 'active')}><option value="active">{T.active}</option><option value="inactive">{T.inactive}</option></select>}</Field></>}
     <Field label={T.name}>{control => <input {...control} required maxLength={200} value={name} onChange={event => setName(event.target.value)} />}</Field><Field label={T.reason}>{control => <textarea {...control} required maxLength={4000} value={reason} onChange={event => setReason(event.target.value)} />}</Field>
-    </fieldset>{attempt.status.kind === 'unknown' && <p role="alert">{T.unknown}</p>}{attempt.status.kind === 'refused' && <p role="alert">{T.refused}</p>}
+    </fieldset>{attempt.status.kind === 'unknown' && <p role="alert">{T.unknown}</p>}<EditedAttemptNotice status={attempt.status} />{attempt.status.kind === 'refused' && <p role="alert">{T.refused}</p>}
     <Button type="submit" disabled={busy || (!valid && frozen === null)}>{busy ? T.pending : frozen !== null ? T.retry : T.save}</Button><Button type="button" disabled={busy || frozen !== null} onClick={() => finish(null)}>{T.cancel}</Button></form>
 }

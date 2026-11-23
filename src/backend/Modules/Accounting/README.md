@@ -603,7 +603,7 @@ evidence when another output supplies the actual nonzero aggregate journal. Miss
 unavailable. A wholly zero source with no actual journal is not assigned a fabricated journal identity. The remaining
 mixed-component and later-delta integration above is still pending.
 
-Inventory cost component rounding follows the explicit Q11 answer (#1189 / 6958102286): one exact component total is
+Inventory cost component rounding follows the explicit Q11 answer (#1189 / 6958102286 (GOV-D16)): one exact component total is
 rounded once using the actual company Accounting money profile. The preparation freezes the exact ratio, profile
 identity/version/scale, posted amount and signed residue (`exact = posted + residue`). Approval revalidates that
 proof and the current profile. General manual-journal scale rules are unchanged; residue writes neither another

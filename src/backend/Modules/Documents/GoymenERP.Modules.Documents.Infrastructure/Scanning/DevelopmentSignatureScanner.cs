@@ -9,7 +9,7 @@ namespace GoymenERP.Modules.Documents.Infrastructure.Scanning;
 /// scanner product. Everything else it calls clean, and it says so in its identity — every version it clears carries
 /// <see cref="Id"/>, so no such version can pass for a production scan. The module registers it only where the host
 /// allows development storage (Development/Testing); production uses <see cref="WindowsDefenderDocumentScanner"/>
-/// when configured, and without it stores every upload as NotScanned (not downloadable).
+/// when configured, and without it every upload is refused (KLN-D60 (3), fail-closed).
 /// </summary>
 public sealed class DevelopmentSignatureScanner : IDocumentContentScannerV1
 {

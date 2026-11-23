@@ -183,6 +183,12 @@ public static partial class ErpOpenApiContract
                     schema.Required?.Remove("exposureWarningAcknowledged");
                 }
 
+                if (context.JsonTypeInfo.Type == typeof(RecordCounterpartyPartySuccession))
+                {
+                    // ALS-D99: the succession's deactivation acknowledgement is optional, false when omitted.
+                    schema.Required?.Remove("exposureWarningAcknowledged");
+                }
+
                 if (context.JsonTypeInfo.Type == typeof(CounterpartyGroupDeactivationTarget))
                 {
                     SetPositiveInteger(schema, "expectedVersion");

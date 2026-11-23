@@ -17,5 +17,11 @@ export const SUPPLIER_REVISION_TEXT = {
   failed: 'İşlem kaydedilmedi. Alanları ve siparişin güncel durumunu kontrol edin.',
   loadingSuppliers: 'Cariler yükleniyor…', noSuppliers: 'Uygun cari bulunamadı.',
   supplierSource: 'Cari kaynağı şu anda okunamıyor.', noCurrency: 'Fiyat girmek için siparişte kayıtlı para birimi bulunmalıdır.',
+  allocationsHeading: 'Etkilenen gelecek tahsisler',
+  allocationsNote: 'Bu siparişin satırlarına bağlı aktif gelecek tahsisler var. Cari revizyonu onaylarsanız aşağıdaki tahsisler serbest bırakılır ve denetime yazılır.',
+  allocationsChanged: 'Tahsis listesi değişti. Güncel listeyi inceleyip yeniden onaylayın.',
+  allocationsLoading: 'Etkilenen tahsisler yükleniyor…', allocationsUnavailable: 'Etkilenen tahsisler okunamadı; revizyon gönderilmedi.',
+  allocationsConfirm: 'Tahsisleri serbest bırakarak cari revizyonunu aç', allocationsCancel: 'Vazgeç',
+  allocationLine: (lineNo: number | null, remaining: string) => `${lineNo === null ? 'Satır' : `Satır ${lineNo}`} · kalan tahsis ${remaining}`,
   revision: (value: number) => `Cari revizyonu ${value}`, priceLine: (value: number) => `Satır ${value}`,
 } as const

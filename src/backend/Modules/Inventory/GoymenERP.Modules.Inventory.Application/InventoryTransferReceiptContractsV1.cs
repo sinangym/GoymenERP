@@ -65,9 +65,12 @@ public enum InventoryTransferDecisionKindV1
 /// <see cref="RequestNumber"/> names the request decided (KLN-D107): absent, it is the receipt's own declared excess (1),
 /// so a stale decision never lands on a corrected re-request opened after a rejection. Deciding a re-request applies its
 /// own (smaller or equal) kilograms and runs maker≠approver against both the receiver and the re-requester.
+/// <see cref="ExpectedTransferVersion"/> is the transfer version the decider saw; a decision on a transfer that moved
+/// since answers 409 version conflict. The decision itself does not advance the transfer version.
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record DecideInventoryTransferOverageV1(
+    [property: JsonRequired] string ExpectedTransferVersion,
     [property: JsonRequired] InventoryTransferDecisionKindV1 Decision,
     [property: JsonRequired] DateTimeOffset DecidedAtUtc,
     [property: JsonRequired] string Reason,

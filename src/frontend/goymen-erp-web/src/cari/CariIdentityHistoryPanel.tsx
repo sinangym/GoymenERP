@@ -18,7 +18,9 @@ import { useCallback, useId, useMemo, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ContractContext } from './clientContract'
 import {
+  IDENTITY_HISTORY_PROBLEM_CODE,
   IDENTITY_HISTORY_TEXT as T,
+  identityHistoryProblemCodeOf,
   LEGAL_BASIS_MAX,
   SUCCESSION_KINDS,
   checkSuccession,
@@ -26,6 +28,9 @@ import {
   type SuccessionLink,
 } from './identityHistory'
 import { fetchIdentityHistory, recordPartySuccession } from './identityHistoryApi'
+import { fetchDeactivationWarning, type SideReadOutcome } from './deactivationWarningApi'
+import { DEACTIVATION_WARNING_OUTCOME, type DeactivationWarningItem, type DeactivationWarningView } from './deactivationWarning'
+import { CARI_ACCOUNT_STATUS_TEXT } from './cariCommandText'
 import { useSuccessionCommand } from './useSuccessionCommand'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './CariTradeName.module.css'
@@ -43,6 +48,26 @@ interface Props {
 }
 
 const EMPTY_DRAFT: SuccessionDraft = { successorPartyId: '', kind: '', legalBasis: '', effectiveOn: '' }
+
+/** ALS-D99: the old account's deactivation warning, read only after the server asked for its acknowledgement. */
+type SuccessionWarning =
+  | { readonly status: 'loading' }
+  | { readonly status: 'ready'; readonly view: DeactivationWarningView }
+  | { readonly status: 'failed' }
+
+function warningLine(item: DeactivationWarningItem): string {
+  const W = CARI_ACCOUNT_STATUS_TEXT.warning
+  switch (item.outcome) {
+    case DEACTIVATION_WARNING_OUTCOME.open:
+      return W.outcome.open(item.openItemCount ?? 0)
+    case DEACTIVATION_WARNING_OUTCOME.clear:
+      return W.outcome.clear
+    case DEACTIVATION_WARNING_OUTCOME.denied:
+      return W.outcome.denied
+    default:
+      return W.outcome.unavailable
+  }
+}
 
 function LinkFacts({ link }: { readonly link: SuccessionLink }) {
   return (
@@ -88,6 +113,18 @@ export function CariIdentityHistoryPanel({ partyId, companyId, namespace, contra
   const command = useSuccessionCommand(companyId, contractContext, `cari.succession:${partyId}`, refresh)
   const [draft, setDraft] = useState<SuccessionDraft>(EMPTY_DRAFT)
   const [fieldError, setFieldError] = useState<{ field: keyof SuccessionDraft; message: string } | null>(null)
+  const [warning, setWarning] = useState<SuccessionWarning | null>(null)
+  const [acknowledged, setAcknowledged] = useState(false)
+  const [acknowledgementMissing, setAcknowledgementMissing] = useState(false)
+
+  const readWarning = useCallback(async () => {
+    setWarning({ status: 'loading' })
+    setAcknowledged(false)
+    const captured = boundary.capture()
+    const answer: SideReadOutcome<DeactivationWarningView> = await fetchDeactivationWarning(partyId, companyId)
+    if (answer.type === 'http' && (answer.status === 401 || answer.status === 403)) boundary.report(answer.status, captured)
+    setWarning(answer.type === 'ok' ? { status: 'ready', view: answer.data } : { status: 'failed' })
+  }, [boundary, companyId, partyId])
 
   if (read.isPending) {
     return (
@@ -142,15 +179,33 @@ export function CariIdentityHistoryPanel({ partyId, companyId, namespace, contra
       return
     }
     setFieldError(null)
-    const payload = check.value
+    // ALS-D99: once the server asked for it, the acknowledgement is required before the next send, and only the warning
+    // read for this form travels with it.
+    const acknowledging = warning?.status === 'ready' && warning.view.acknowledgementRequired
+    if (warning !== null && (warning.status !== 'ready' || (acknowledging && !acknowledged))) {
+      setAcknowledgementMissing(warning.status === 'ready')
+      return
+    }
+    setAcknowledgementMissing(false)
+    const payload = acknowledging ? { ...check.value, exposureWarningAcknowledged: true as const } : check.value
+    let warningRequired = false
     const ok = await command.run(
-      `record:${partyId}`,
-      (context) => recordPartySuccession(context, partyId, view.accountVersion, payload),
+      `record:${partyId}${acknowledging ? ':acknowledged' : ''}`,
+      async (context) => {
+        const outcome = await recordPartySuccession(context, partyId, view.accountVersion, payload)
+        warningRequired = outcome.type === 'http' && outcome.status === 422
+          && identityHistoryProblemCodeOf(outcome.body) === IDENTITY_HISTORY_PROBLEM_CODE.deactivationWarningAcknowledgementRequired
+        return outcome
+      },
       T.saved,
     )
     if (ok) {
       setDraft(EMPTY_DRAFT)
+      setWarning(null)
+      setAcknowledged(false)
       onSucceeded?.()
+    } else if (warningRequired) {
+      await readWarning()
     }
   }
 
@@ -303,6 +358,51 @@ export function CariIdentityHistoryPanel({ partyId, companyId, namespace, contra
           <p id={`${formId}-effective-hint`} className={styles.muted}>
             {T.effectiveOnHint}
           </p>
+
+          {warning === null ? null : (
+            <section aria-label={T.warningHeading} data-succession-warning={warning.status}>
+              <h4>{T.warningHeading}</h4>
+              {warning.status === 'loading' ? (
+                <p className={styles.muted} role="status">{T.warningLoading}</p>
+              ) : warning.status === 'failed' ? (
+                <>
+                  <p className={styles.error} role="alert">{T.warningUnavailable}</p>
+                  <button type="button" className={styles.button} disabled={locked} onClick={() => void readWarning()}>
+                    {T.warningReadAgain}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <ul data-warning-items>
+                    {warning.view.items.map((item) => (
+                      <li key={item.kind} data-kind={item.kind} data-outcome={item.outcome}>
+                        {CARI_ACCOUNT_STATUS_TEXT.warning.kind[item.kind]}: {warningLine(item)}
+                      </li>
+                    ))}
+                  </ul>
+                  {warning.view.acknowledgementRequired ? (
+                    <label htmlFor={`${formId}-acknowledge`}>
+                      <input
+                        id={`${formId}-acknowledge`}
+                        type="checkbox"
+                        checked={acknowledged}
+                        disabled={locked}
+                        aria-invalid={acknowledgementMissing ? 'true' : undefined}
+                        onChange={(event) => {
+                          setAcknowledged(event.target.checked)
+                          setAcknowledgementMissing(false)
+                        }}
+                      />{' '}
+                      {T.warningAcknowledge}
+                    </label>
+                  ) : null}
+                  {acknowledgementMissing ? (
+                    <p className={styles.error} role="alert">{T.warningAcknowledgeRequired}</p>
+                  ) : null}
+                </>
+              )}
+            </section>
+          )}
 
           {fieldError === null ? null : (
             <p id={errorId} className={styles.error} role="alert">

@@ -30,6 +30,23 @@ describe('settings unresolved command attempts', () => {
     expect(result.current.hasPendingRetry).toBe(false)
   })
 
+  it('K3 P2-4: marks an edited submit explicitly, sends nothing and clears the mark on the same-body retry', async () => {
+    const original = vi.fn<(key: string) => Promise<CommandOutcome<true>>>()
+      .mockResolvedValueOnce(unknown).mockResolvedValueOnce(applied)
+    const edited = vi.fn<(key: string) => Promise<CommandOutcome<true>>>().mockResolvedValue(applied)
+    const { result } = renderHook(() => useCommandAttempt<true>())
+    await act(async () => { await result.current.run({ reason: 'SENTETIK' }, original) })
+    expect(result.current.status).toEqual({ kind: 'unknown' })
+    await act(async () => { await result.current.run({ reason: 'SENTETIK edited' }, edited) })
+    expect(edited).not.toHaveBeenCalled()
+    expect(original).toHaveBeenCalledTimes(1)
+    expect(result.current.status).toEqual({ kind: 'unknown', edited: true })
+    expect(result.current.pendingPayload).toEqual({ reason: 'SENTETIK' })
+    await act(async () => { await result.current.retry() })
+    expect(original.mock.calls[1][0]).toBe(original.mock.calls[0][0])
+    expect(result.current.status.kind).toBe('applied')
+  })
+
   it.each([400, 401, 403, 404, 415])('does not settle an earlier unknown response on an HTTP %i refusal', async status => {
     const send = vi.fn<(key: string) => Promise<CommandOutcome<true>>>()
       .mockResolvedValueOnce(unknown)
@@ -148,5 +165,21 @@ describe('settings unresolved command attempts', () => {
     expect(denied.result.current.hasPendingRetry).toBe(false)
     act(() => denied.result.current.reset())
     expect(denied.result.current.status.kind).toBe('idle')
+  })
+
+  it('K3 P2: restores a stored attempt only when the slot holds exactly key, payload and claim', () => {
+    const stored = { key: '11111111-1111-4111-8111-111111111111', payload: { value: 'A' }, claim: '22222222-2222-4222-8222-222222222222' }
+    const pendingFor = (slot: Record<string, unknown>) => {
+      sessionStorage.setItem(storeKey, JSON.stringify(slot))
+      const hook = renderHook(() => useCommandAttempt<true>({ storeKey, execute: () => Promise.resolve(applied) }))
+      const pending = hook.result.current.pendingPayload
+      hook.unmount()
+      return pending
+    }
+    expect(pendingFor(stored)).toEqual({ value: 'A' })
+    expect(pendingFor({ ...stored, extra: 'synthetic' })).toBeNull()
+    for (const field of Object.keys(stored)) {
+      expect(pendingFor(Object.fromEntries(Object.entries(stored).filter(([name]) => name !== field)))).toBeNull()
+    }
   })
 })

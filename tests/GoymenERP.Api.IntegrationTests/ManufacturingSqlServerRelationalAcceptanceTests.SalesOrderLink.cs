@@ -47,7 +47,11 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
         await using var context = run.Context(CompanyA);
         var owner = SupplyReadPort(context, CompanyA);
-        Assert.Empty(await owner.ListOpenForSalesOrderAsync(CompanyA, LinkedSalesOrder, null));
+        // URT-D34: the cancel released the plan back to Approved with no order; the cancelled order is not open supply,
+        // the released plan is (it can open a new order after its re-approval).
+        var open = Assert.Single(await owner.ListOpenForSalesOrderAsync(CompanyA, LinkedSalesOrder, null));
+        Assert.Equal((plan.Id, nameof(PlanStatus.Approved), (Guid?)null, (string?)null, LinkedSalesLine),
+            (open.PlanId, open.PlanStatus, open.OrderId, open.OrderStatus, open.SalesOrderLineId));
         var item = Assert.Single(await owner.ListLinkedForSalesOrderAsync(CompanyA, LinkedSalesOrder, null));
         Assert.Equal((orderId, "Cancelled", plan.Id), (item.OrderId, item.OrderStatus, item.PlanId));
         await Assert.ThrowsAsync<InvalidOperationException>(() =>

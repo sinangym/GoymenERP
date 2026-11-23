@@ -236,17 +236,24 @@ public sealed partial class InventoryTransferTests
             {"expectedTransferVersion":"2","receivedAtUtc":"2026-09-30T14:00:00Z","incomingDocument":{"kind":"inventory.transfer.incoming","id":"7a000000-0000-4000-8000-000000000001","lineId":null},"receivedKg":"9.5","overageReason":null,"shortageKg":"0.5"}
             """;
         var decisionWithoutReason = """
-            {"decision":"Approve","decidedAtUtc":"2026-09-30T15:00:00Z"}
+            {"expectedTransferVersion":"3","decision":"Approve","decidedAtUtc":"2026-09-30T15:00:00Z"}
+            """;
+        var decisionWithoutExpectedVersion = """
+            {"decision":"Reject","decidedAtUtc":"2026-09-30T15:00:00Z","reason":"SENTETIK tartı tekrarı"}
             """;
         var decision = """
-            {"decision":"Reject","decidedAtUtc":"2026-09-30T15:00:00Z","reason":"SENTETIK tartı tekrarı"}
+            {"expectedTransferVersion":"3","decision":"Reject","decidedAtUtc":"2026-09-30T15:00:00Z","reason":"SENTETIK tartı tekrarı"}
             """;
 
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<ReceiveInventoryTransferLineV1>(receive, web));
         Assert.Throws<JsonException>(() =>
             JsonSerializer.Deserialize<DecideInventoryTransferOverageV1>(decisionWithoutReason, web));
-        Assert.Equal(InventoryTransferDecisionKindV1.Reject,
-            JsonSerializer.Deserialize<DecideInventoryTransferOverageV1>(decision, web)!.Decision);
+        // K3: the overage decision carries the transfer version its decider saw, like the loss decision.
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<DecideInventoryTransferOverageV1>(decisionWithoutExpectedVersion, web));
+        var parsedDecision = JsonSerializer.Deserialize<DecideInventoryTransferOverageV1>(decision, web)!;
+        Assert.Equal((InventoryTransferDecisionKindV1.Reject, "3"),
+            (parsedDecision.Decision, parsedDecision.ExpectedTransferVersion));
         Assert.Equal("SENTETIK açıklama", InventoryTransferReceiptApiV1.NormalizeText("  SENTETIK açıklama "));
         Assert.Null(InventoryTransferReceiptApiV1.NormalizeText(" "));
         Assert.Null(InventoryTransferReceiptApiV1.NormalizeText(null));
@@ -428,7 +435,7 @@ public sealed partial class InventoryTransferTests
                 new ReceiveInventoryTransferLineV1("2", At.AddHours(2),
                     new("inventory.transfer.incoming", Guid.NewGuid(), null), "9.5", null), transport),
             "overage" => service.DecideOverageAsync(transferId, lineId,
-                new DecideInventoryTransferOverageV1(InventoryTransferDecisionKindV1.Approve, At.AddHours(3),
+                new DecideInventoryTransferOverageV1("3", InventoryTransferDecisionKindV1.Approve, At.AddHours(3),
                     "SENTETIK tartı onayı"), transport),
             "loss-request" => service.RequestLossAsync(transferId, lineId,
                 new RequestInventoryTransferLossV1("2", At.AddHours(3), "SENTETIK yolda kayıp"), transport),

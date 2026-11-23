@@ -14,8 +14,13 @@ const optionalAmount = (value: unknown) => value === null || amount(value)
 const guid = (value: unknown) => typeof value === 'string' && /^(?!00000000-0000-0000-0000-000000000000)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
 const day = (value: unknown): boolean => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
   && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value
+// Key sets mirror ManufacturingProductionUsdCostViewV1 / ManufacturingUsdCostLineViewV1 / ManufacturingUsdCostRateViewV1 one-to-one.
+const exact = (value: Record<string, unknown>, names: readonly string[]) => Object.keys(value).length === names.length && names.every(key => Object.hasOwn(value, key))
+const COST_KEYS = ['orderId', 'orderVersion', 'status', 'costPerKgUsd', 'inputTotalUsd', 'distributedTotalUsd', 'lines', 'scrapRates', 'reasonCode'] as const
+const LINE_KEYS = ['outputLabelId', 'outputClass', 'kilograms', 'unitCostPerKgUsd', 'amountUsd', 'separateScrapExpenseUsd', 'remainderUsd'] as const
+const RATE_KEYS = ['weighingDay', 'bulletinDay', 'tryPerUsd', 'recordId', 'recordVersion', 'source'] as const
 export function decodeUsdCost(value: unknown, orderId: string): UsdCost | null {
-  if (!object(value) || value.orderId !== orderId || !Number.isSafeInteger(value.orderVersion) || (value.orderVersion as number) < 1
+  if (!object(value) || !exact(value, COST_KEYS) || value.orderId !== orderId || !Number.isSafeInteger(value.orderVersion) || (value.orderVersion as number) < 1
     || !['available', 'pending', 'unreadable', 'unavailable'].includes(String(value.status)) || !Array.isArray(value.lines) || !Array.isArray(value.scrapRates)
     || ![value.costPerKgUsd, value.inputTotalUsd, value.distributedTotalUsd].every(optionalAmount)) return null
   if (value.status === 'available') {
@@ -25,13 +30,13 @@ export function decodeUsdCost(value: unknown, orderId: string): UsdCost | null {
     || value.lines.length !== 0 || value.scrapRates.length !== 0 || typeof value.reasonCode !== 'string' || !value.reasonCode.trim()) return null
   const ids = new Set<string>()
   for (const line of value.lines) {
-    if (!object(line) || !guid(line.outputLabelId) || ids.has(String(line.outputLabelId)) || typeof line.outputClass !== 'string'
+    if (!object(line) || !exact(line, LINE_KEYS) || !guid(line.outputLabelId) || ids.has(String(line.outputLabelId)) || typeof line.outputClass !== 'string'
       || !amount(line.kilograms) || ![line.unitCostPerKgUsd, line.amountUsd, line.separateScrapExpenseUsd].every(optionalAmount)
       || typeof line.remainderUsd !== 'string' || !/^-?(0|[1-9]\d*)(\.\d+)?$/.test(line.remainderUsd)) return null
     ids.add(String(line.outputLabelId))
   }
   for (const rate of value.scrapRates) {
-    if (!object(rate) || !guid(rate.recordId) || typeof rate.recordVersion !== 'string' || !rate.recordVersion.trim() || rate.source !== 'Tcmb'
+    if (!object(rate) || !exact(rate, RATE_KEYS) || !guid(rate.recordId) || typeof rate.recordVersion !== 'string' || !rate.recordVersion.trim() || rate.source !== 'Tcmb'
       || !amount(rate.tryPerUsd) || /^0(?:\.0+)?$/.test(rate.tryPerUsd) || !day(rate.weighingDay) || !day(rate.bulletinDay)) return null
   }
   return value as unknown as UsdCost

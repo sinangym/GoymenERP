@@ -660,7 +660,10 @@ public sealed class InventoryPersistenceModelTests
         Assert.Contains("[inventory].[TransferDispatchCancelClosures]", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[SourceScaleSettingAtDispatch] <> 1", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[Status] = 5", guard.Sql, StringComparison.Ordinal);
-        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        // The only Up SQL is the backfill: an earlier dispatch never stored its setting, so it is Unreadable (3), not Off.
+        var backfill = Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Equal("UPDATE [inventory].[TransferDispatches] SET [SourceScaleSettingAtDispatch] = 3;", backfill.Sql);
+        Assert.Equal(3, (int)GoymenERP.Modules.Inventory.Domain.Transfers.InventoryTransferSourceScaleSetting.Unreadable);
         Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
         var narrowed = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(
             migration.DownOperations[^1]);

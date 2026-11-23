@@ -43,6 +43,8 @@ export const IDENTITY_HISTORY_PROBLEM_CODE = {
   successionSuccessorInactive: 'succession_successor_inactive',
   successionCycle: 'succession_cycle',
   successionAlreadyRecorded: 'succession_already_recorded',
+  /** ALS-D99: the succession makes the old account passive; its open balance/document warning must be acknowledged (422, unstored). */
+  deactivationWarningAcknowledgementRequired: 'deactivation_warning_acknowledgement_required',
 } as const
 
 export type IdentityHistoryProblemCode =
@@ -342,6 +344,8 @@ export interface SuccessionPayload {
   readonly kind: SuccessionKind
   readonly legalBasis: string
   readonly effectiveOn: string
+  /** ALS-D99: sent (as true) only after the actor saw the old account's deactivation warning and acknowledged it. */
+  readonly exposureWarningAcknowledged?: true
 }
 
 export type SuccessionCheck =
@@ -430,6 +434,12 @@ export const IDENTITY_HISTORY_TEXT = {
   submit: 'Halef kaydını yap ve bu cariyi pasife al',
   submitting: 'Kaydediliyor…',
   saved: 'Halef kaydı yapıldı; bu carinin hesabı pasife alındı.',
+  warningHeading: 'Eski carinin pasife alma uyarısı',
+  warningLoading: 'Açık bakiye ve açık belgeler kontrol ediliyor…',
+  warningUnavailable: 'Pasife alma uyarısı okunamadı; halef kaydı gönderilmedi. Uyarıyı yeniden okuyun.',
+  warningReadAgain: 'Uyarıyı yeniden oku',
+  warningAcknowledge: 'Uyarıları gördüm; halef kaydıyla eski cari yine de pasife alınsın.',
+  warningAcknowledgeRequired: 'Halef kaydını göndermek için uyarıları gördüğünüzü onaylayın.',
   readOnlyNote: 'Halef kaydı yapma yetkiniz yok; yalnız görüntüleyebilirsiniz.',
   successorRequired: 'Halef carinin kimliğini girin.',
   successorSelf: 'Bir cari kendisinin halefi olamaz.',
@@ -456,5 +466,7 @@ export const IDENTITY_HISTORY_TEXT = {
     [IDENTITY_HISTORY_PROBLEM_CODE.successionSuccessorInactive]: 'Halef carinin bu şirketteki hesabı pasif.',
     [IDENTITY_HISTORY_PROBLEM_CODE.successionCycle]: 'Bu kayıt halef zincirinde döngü oluşturur.',
     [IDENTITY_HISTORY_PROBLEM_CODE.successionAlreadyRecorded]: 'Bu cari için bu şirkette zaten bir halef kaydı var.',
+    [IDENTITY_HISTORY_PROBLEM_CODE.deactivationWarningAcknowledgementRequired]:
+      'Halef kaydı eski cariyi pasife alır. Aşağıdaki açık bakiye ve açık belge uyarısını inceleyip onaylayın; kayıt henüz yapılmadı.',
   } as Readonly<Record<string, string>>,
 } as const

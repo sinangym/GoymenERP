@@ -61,6 +61,19 @@ describe('official invoice import upload client', () => {
     expect(fetcher.mock.calls[1][1].headers).toMatchObject({ 'X-Company-Id': companyId, 'Idempotency-Key': 'same-key' })
   })
 
+  it('carries the FNS-D64 tax warnings of the preview and keeps a malformed warning unknown', async () => {
+    const warning = { code: 'finance_official_invoice_tax_inconsistent', sourceDocumentId: '44444444-4444-4444-8444-444444444444',
+      expectedPayableFunctionalAmount: '1200', payableFunctionalAmount: '1200.01', differenceFunctionalAmount: '0.01' }
+    const ask = (body: unknown) => createOfficialInvoiceUploadClient(context, boundary(), vi.fn().mockResolvedValue(response(body)))
+      .preview(batchId, 'invoice-v1', prepared, new AbortController().signal)
+    await expect(ask({ ...preview, taxWarnings: [warning] })).resolves.toMatchObject({ kind: 'ready', preview: { taxWarnings: [warning] } })
+    await expect(ask(preview)).resolves.toMatchObject({ kind: 'ready', preview: { taxWarnings: [] } })
+    const { sourceDocumentId: _omitted, ...missingKey } = warning
+    await expect(ask({ ...preview, taxWarnings: [{ ...warning, hidden: true }] })).resolves.toEqual({ kind: 'unknown' })
+    await expect(ask({ ...preview, taxWarnings: [missingKey] })).resolves.toEqual({ kind: 'unknown' })
+    await expect(ask({ ...preview, taxWarnings: warning })).resolves.toEqual({ kind: 'unknown' })
+  })
+
   it.each([
     ['foreign preview company', { ...preview, batch: { ...preview.batch, companyId: '99999999-9999-4999-8999-999999999999' } }],
     ['wrong preview batch', { ...preview, batch: { ...preview.batch, batchId: '99999999-9999-4999-8999-999999999999' } }],

@@ -343,7 +343,8 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<IFinanceTreasuryBalanceGuard>(), provider.GetRequiredService<IAuditEventCollector>(),
             new FinanceCreditAccountEnvelopes(Envelope(provider, ErpPermissions.FinanceCreditsPropose, permissions, FinanceAction.ProposeCredit),
                 Envelope(provider, ErpPermissions.FinanceCreditsApprove, permissions, FinanceAction.ApproveCredit)),
-            provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<IAuditTransactionWriterV1>());
+            provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<IAuditTransactionWriterV1>(),
+            FinanceCreditGroupGateV1.NoneApproved);
     }
 
     private static FinanceCreditLimitServiceV1 CreateCreditLimitService(IServiceProvider provider)
@@ -460,9 +461,9 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<ISettingsPrerequisiteProvider>(),
             provider.GetRequiredService<IFinanceRecordPeriodRule>(),
             provider.GetRequiredService<IAuditEventCollector>(),
-            // No dedicated Settings money operation exists for expense payments yet; the outgoing bank payment
-            // operation's approved profile governs the amount until one is catalogued (NEEDS-SINAN).
-            new ExpensePaymentBinding(FinanceMoneyOperations.ManualBankPaymentV1),
+            // FNS-D48/FNS-D55: the expense payment reads its own Settings money profile row
+            // (finance.expense-payment.v1), managed apart from the manual bank payment's.
+            new ExpensePaymentBinding(FinanceMoneyOperations.ExpensePaymentV1),
             new ExpensePaymentAuditEnvelopes(
                 Envelope(provider, FinancePermissionNames.ExpensePaymentDraftSave, permissions,
                     FinanceAction.SaveExpensePaymentDraft),

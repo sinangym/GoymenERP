@@ -4,15 +4,19 @@ export interface ContractDiscountLimit { readonly companyId: string; readonly li
 export interface RecordContractDiscountLimit { readonly expectedVersion: string; readonly limitPercent: string; readonly reason: string }
 const object = (raw: unknown): raw is Record<string, unknown> => typeof raw === 'object' && raw !== null && !Array.isArray(raw)
 const text = (raw: unknown): raw is string => typeof raw === 'string' && raw.trim().length > 0
+/** Exact key sets of SalesContractDiscountLimitViewV1 / SalesContractDiscountLimitVersionViewV1: an unknown or missing key fails closed. */
+const VIEW_FIELDS = ['companyId', 'limitPercent', 'version', 'versions'] as const
+const VERSION_FIELDS = ['version', 'limitPercent', 'recordedBy', 'recordedAtUtc', 'reason'] as const
+const exact = (raw: Record<string, unknown>, keys: readonly string[]) => Object.keys(raw).length === keys.length && keys.every((key) => Object.hasOwn(raw, key))
 const version = (raw: unknown): raw is string => typeof raw === 'string' && raw.length <= 19 && /^(0|[1-9]\d*)$/.test(raw) && BigInt(raw) <= 9223372036854775807n
 // Published percentage transport shape only; no order/contract approval or money calculation runs in the screen.
 const rate = (raw: unknown): raw is string => typeof raw === 'string' && /^(100|(?:[1-9]?\d)(?:\.\d{1,4})?)$/.test(raw)
 export function decodeContractDiscountLimit(raw: unknown, company: string): ContractDiscountLimit | null {
-  if (!object(raw) || raw.companyId !== company || !version(raw.version) || !Array.isArray(raw.versions)
+  if (!object(raw) || !exact(raw, VIEW_FIELDS) || raw.companyId !== company || !version(raw.version) || !Array.isArray(raw.versions)
     || raw.limitPercent !== null && !rate(raw.limitPercent)) return null
   const versions: ContractDiscountLimitVersion[] = []
   for (const item of raw.versions) {
-    if (!object(item) || !version(item.version) || item.version === '0' || !rate(item.limitPercent) || !text(item.recordedBy) || !text(item.reason)
+    if (!object(item) || !exact(item, VERSION_FIELDS) || !version(item.version) || item.version === '0' || !rate(item.limitPercent) || !text(item.recordedBy) || !text(item.reason)
       || typeof item.recordedAtUtc !== 'string' || !/^\d{4}-\d\d-\d\dT/.test(item.recordedAtUtc) || !Number.isFinite(Date.parse(item.recordedAtUtc))
       || BigInt(item.version) > BigInt(raw.version) || versions.some(entry => entry.version === item.version)) return null
     versions.push({ version: item.version, limitPercent: item.limitPercent, recordedBy: item.recordedBy, recordedAtUtc: item.recordedAtUtc, reason: item.reason })

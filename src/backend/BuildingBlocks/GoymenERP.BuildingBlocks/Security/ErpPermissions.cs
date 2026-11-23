@@ -1162,7 +1162,7 @@ public static class ErpPermissions
     public const string LogisticsShipmentsRecord = "logistics.shipments.record";
 
     /// <summary>
-    /// SAT-D417, direct user answer transferred at #1189/6963301286: approve a separately recorded plan-excess share.
+    /// SAT-D417, direct user answer transferred at #1189/6963301286 (GOV-D16): approve a separately recorded plan-excess share.
     /// Company-wide registration only. The Sales manager assignment is a human grant; no role or Critical class is assigned.
     /// This name does not confer load, shipment, general Logistics read or physical quantity override authority.
     /// </summary>

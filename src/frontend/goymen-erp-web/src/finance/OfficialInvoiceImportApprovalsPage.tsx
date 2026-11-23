@@ -8,6 +8,7 @@ import type {
   OfficialInvoicePendingDetail,
   OfficialInvoicePendingPage,
 } from './officialInvoiceImportApprovalContract'
+import { OfficialInvoiceTaxWarningList } from './OfficialInvoiceImportPanel'
 import styles from './OfficialInvoiceImportApprovals.module.css'
 
 export interface OfficialInvoiceApprovalClient {
@@ -348,6 +349,7 @@ function OfficialInvoiceImportApprovalsPageState({ client, context,
               <td data-label="Vade">{row.dueOn ?? 'Yok'}</td>
             </tr>)}</tbody></table>
           </div>
+          <OfficialInvoiceTaxWarningList warnings={detail.preview.taxWarnings ?? []} />
           {detail.batch.uploadedBy === context.actorId ? <p role="status">Bu kaynağı siz yüklediniz; başka bir yetkili onaylamalı.</p> : null}
           {phase === 'unknown' ? <div role="status"><p>Sonuç bilinmiyor; aynı anahtarla yeniden gönderin.</p>
             <button type="button" onClick={() => approve(true)}>Aynı anahtarla yeniden gönder</button></div> : null}
