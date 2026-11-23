@@ -45,8 +45,13 @@ export interface SupplierRevisionPriceRequest extends CreatePurchaseOrderLinePri
   readonly deferralAmount?: string
 }
 export type SupplierRevisionCommand =
-  | { readonly kind: 'supplier'; readonly expectedVersion: string; readonly supplierPartyId: string; readonly companyAccountId: string; readonly reason: string }
+  | { readonly kind: 'supplier'; readonly expectedVersion: string; readonly supplierPartyId: string; readonly companyAccountId: string; readonly reason: string
+      /** ALS-D126: the active future allocations the actor saw and confirmed; the revision releases exactly these. */
+      readonly seenAllocations?: readonly SupplierRevisionSeenAllocation[] }
   | { readonly kind: 'price'; readonly expectedVersion: string; readonly lineId: string; readonly price: SupplierRevisionPriceRequest }
+export interface SupplierRevisionSeenAllocation { readonly allocationId: string; readonly expectedAllocationVersion: string }
+/** ALS-D126: an active future allocation refuses the unconfirmed revision; a confirmed set that is no longer the active set too. */
+export const SUPPLIER_REVISION_ALLOCATION_CODES = ['purchasing_line_has_allocations', 'purchasing_future_allocation_set_changed'] as const
 export interface SupplierRevisionAttempt { readonly actorId: string; readonly companyId: string; readonly orderId: string; readonly idempotencyKey: string; readonly command: SupplierRevisionCommand }
 export type SupplierRevisionOutcome = { readonly type: 'applied' } | { readonly type: 'failed'; readonly status: number; readonly code: string | null }
   | { readonly type: 'unknown' }
@@ -54,7 +59,9 @@ export async function sendSupplierRevision(attempt: SupplierRevisionAttempt): Pr
   const command = attempt.command
   const suffix = command.kind === 'supplier' ? 'supplier-revisions' : `lines/${encodeURIComponent(command.lineId)}/supplier-revision-price`
   const body = command.kind === 'supplier' ? { expectedVersion: command.expectedVersion, supplierPartyId: command.supplierPartyId,
-    companyAccountId: command.companyAccountId, reason: command.reason } : { expectedVersion: command.expectedVersion, price: command.price }
+    companyAccountId: command.companyAccountId, reason: command.reason,
+    ...(command.seenAllocations === undefined ? {} : { seenAllocations: command.seenAllocations }) }
+    : { expectedVersion: command.expectedVersion, price: command.price }
   try {
     const response = await fetch(`${PURCHASING_ORDERS_BASE}/${encodeURIComponent(attempt.orderId)}/${suffix}`, {
       method: 'POST', headers: { ...purchasingHeaders(attempt.companyId), 'Content-Type': 'application/json', 'Idempotency-Key': attempt.idempotencyKey },
@@ -87,8 +94,20 @@ export function readSupplierRevisionAttempt(key: string, actorId: string, compan
   const command = value.command
   if (command.kind === 'supplier' ? !text(command.supplierPartyId) || !guid.test(command.supplierPartyId)
       || !text(command.companyAccountId) || !guid.test(command.companyAccountId) || !text(command.reason)
+      || !validSeen(command.seenAllocations)
     : command.kind !== 'price' || !text(command.lineId) || !guid.test(command.lineId) || !validPrice(command.price)) throw new Error('invalid pending command')
   return value as unknown as SupplierRevisionAttempt
+}
+function validSeen(value: unknown): boolean {
+  if (value === undefined) return true
+  if (!Array.isArray(value)) return false
+  const ids = new Set<string>()
+  for (const item of value) {
+    if (!object(item) || Object.keys(item).length !== 2 || !text(item.allocationId) || !guid.test(item.allocationId)
+      || !text(item.expectedAllocationVersion) || !version.test(item.expectedAllocationVersion) || ids.has(item.allocationId)) return false
+    ids.add(item.allocationId)
+  }
+  return true
 }
 function validPrice(value: unknown): boolean {
   if (!object(value)) return false

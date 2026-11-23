@@ -57,15 +57,21 @@ public sealed partial class PurchasingService : IPurchasingSupplierRevisionServi
                     || revision.Reason.Trim().Length > PurchaseOrder.SupplierRevisionReasonMaximumLength)
                     throw new PurchasingServiceException(422, "validation_failed");
                 // F-017 §3.4 / STOK F017-b: a future allocation lives only on an APPROVED purchase general line, and the revision
-                // returns the order to draft. No decision chooses to release them here, so an active allocation refuses the
-                // revision (409 purchasing_line_has_allocations, not stored; the link drop releases it first) — fail-closed, and
-                // without the Inventory participant the revision is not decided at all (503). NEEDS-SINAN: release-with-confirm.
+                // returns the order to draft. ALS-D126: without a confirmed set an active allocation refuses the revision (409
+                // purchasing_line_has_allocations, not stored; the client shows GET …/future-allocations); with one the set must be
+                // exactly the active set and the revision releases them through the Inventory owner in its own transaction, under
+                // every general line lock, audited by the owner — the order cancellation's confirmed-release pattern. Without the
+                // Inventory participant the revision is not decided at all (503).
                 if (allocationLinks is null) throw new PurchasingServiceException(503, "service_unavailable");
-                var revisionReason = revision.Reason;
+                var revisionReason = revision.Reason.Trim();
+                var seen = revision.SeenAllocations is null ? null : Seen(revision.SeenAllocations);
+                if (seen is { Count: > 0 }) await RequireStillAsync(scope, bindings.FutureAllocationReleasePermission, token);
                 result = await revisions.ReviseSupplierAsync(orderId, expected, revision.SupplierPartyId, revision.CompanyAccountId,
                     revision.Reason, envelope, hash, Fence, token,
                     (order, transaction, cancellationToken) => GuardFutureAllocationsAsync(transaction, order.Id, GeneralLineIds(order),
-                        seen: null, PurchaseFutureAllocationLinkReasonsV1.SourceCancelled, revisionReason, envelope, cancellationToken));
+                        // The Inventory owner's fixed codes: the purchase quantities do not change, the link to this
+                        // supplier's line is dropped (the revision reason is the audited text).
+                        seen, PurchaseFutureAllocationLinkReasonsV1.LinkDropped, revisionReason, envelope, cancellationToken));
             }
             else
             {

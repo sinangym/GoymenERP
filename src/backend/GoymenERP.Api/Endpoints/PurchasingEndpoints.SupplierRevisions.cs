@@ -26,8 +26,8 @@ public static partial class PurchasingEndpoints
             MutateAsync(context, correlation, PurchaseSupplierRevisionJsonV1.ReadRevision,
                 (body, metadata) => service.ReviseOrderSupplierAsync(id, body, metadata, token), token))
             .WithName("RevisePurchaseOrderSupplierV1").Accepts<RevisePurchaseOrderSupplierRequest>("application/json"),
-            // F-017 §3.4: an active future allocation on a general line refuses the revision (it would leave a draft line allocated).
-            PurchasingProblemCodesV1.LineHasAllocations);
+            // F-017 §3.4 / ALS-D126: an active future allocation refuses an unconfirmed revision; a confirmed set must be the active set.
+            PurchasingProblemCodesV1.LineHasAllocations, PurchasingProblemCodesV1.FutureAllocationSetChanged);
         MapRevisionMutation(group.MapPost("/{id:guid}/lines/{lineId:guid}/supplier-revision-price", (Guid id, Guid lineId, HttpContext context,
             [FromServices] IPurchasingSupplierRevisionServiceV1 service, ICorrelationContext correlation, CancellationToken token) =>
             MutateAsync(context, correlation, PurchaseSupplierRevisionJsonV1.ReadPrice,

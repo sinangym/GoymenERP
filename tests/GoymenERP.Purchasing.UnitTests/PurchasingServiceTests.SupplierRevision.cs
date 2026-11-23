@@ -90,6 +90,89 @@ public sealed partial class PurchasingServiceTests
     }
 
     [Fact]
+    public async Task ALS_D126_a_confirmed_allocation_set_is_released_with_the_revision_reason_and_the_revision_records_once()
+    {
+        var world = new World(); var (id, line) = await SupplierRevisionApprovedOrderAsync(world);
+        var links = new FakeAllocationLinks();
+        var allocationId = links.Add(id, line, version: 4);
+        world.AllocationLinks = links;
+        var request = new RevisePurchaseOrderSupplierRequest("3", Guid.NewGuid(), Guid.NewGuid(), " SENTETIK revision ",
+            [new PurchaseFutureAllocationSeenRequest(allocationId, "4")]);
+
+        var result = await world.Service().ReviseOrderSupplierAsync(id, request, Metadata("revision-release"));
+
+        Assert.Equal(("Draft", "4"), (result.Detail.Order.Status, result.Detail.Order.Version));
+        var release = Assert.Single(links.Releases);
+        Assert.Equal((allocationId, 4L, PurchaseFutureAllocationLinkReasonsV1.LinkDropped, "SENTETIK revision"),
+            (release.AllocationId, release.ExpectedAllocationVersion, release.ReasonCode, release.ReasonText));
+        Assert.Contains(PurchasingPermissionManifestV1.FutureAllocationRelease, world.Authority.Measured);
+        var replay = await world.Service().ReviseOrderSupplierAsync(id, request, Metadata("revision-release", correlation: "retry"));
+        Assert.True(replay.IsReplay);
+        Assert.Single(links.Releases);
+        Assert.Single(world.Store.Transitions, item => item.Command == PurchasingCommands.OrderSupplierReviseV1);
+    }
+
+    [Fact]
+    public async Task ALS_D126_releasing_with_the_revision_needs_the_future_allocation_release_permission()
+    {
+        var world = new World(); var (id, line) = await SupplierRevisionApprovedOrderAsync(world);
+        var links = new FakeAllocationLinks();
+        var allocationId = links.Add(id, line, version: 1);
+        world.AllocationLinks = links;
+        world.Authority.Denied.Add(PurchasingPermissionManifestV1.FutureAllocationRelease);
+        var request = new RevisePurchaseOrderSupplierRequest("3", Guid.NewGuid(), Guid.NewGuid(), "SENTETIK revision",
+            [new PurchaseFutureAllocationSeenRequest(allocationId, "1")]);
+
+        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().ReviseOrderSupplierAsync(id, request,
+            Metadata("revision-release-denied")));
+
+        Assert.Equal(403, refusal.Status);
+        Assert.Empty(links.Releases);
+        Assert.Equal(PurchaseOrderStatus.Approved, (await world.Store.FindOrderAsync(id))!.Order.Status);
+    }
+
+    [Theory]
+    [InlineData("stale-version")]
+    [InlineData("missing")]
+    [InlineData("extra")]
+    public async Task ALS_D126_a_confirmed_set_that_is_not_the_active_set_refuses_the_revision_and_releases_nothing(string fault)
+    {
+        var world = new World(); var (id, line) = await SupplierRevisionApprovedOrderAsync(world);
+        var links = new FakeAllocationLinks();
+        var allocationId = links.Add(id, line, version: 2);
+        world.AllocationLinks = links;
+        IReadOnlyList<PurchaseFutureAllocationSeenRequest> seen = fault switch
+        {
+            "stale-version" => [new(allocationId, "1")],
+            "missing" => [],
+            _ => [new(allocationId, "2"), new(Guid.NewGuid(), "1")],
+        };
+        var request = new RevisePurchaseOrderSupplierRequest("3", Guid.NewGuid(), Guid.NewGuid(), "SENTETIK revision", seen);
+
+        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().ReviseOrderSupplierAsync(id, request,
+            Metadata($"revision-set-{fault}")));
+
+        Assert.Equal((409, PurchasingProblemCodesV1.FutureAllocationSetChanged), (refusal.Status, refusal.Code));
+        Assert.Empty(links.Releases);
+        Assert.DoesNotContain(world.Store.Transitions, item => item.Command == PurchasingCommands.OrderSupplierReviseV1);
+        Assert.Equal(PurchaseOrderStatus.Approved, (await world.Store.FindOrderAsync(id))!.Order.Status);
+    }
+
+    [Theory]
+    [InlineData("{\"expectedVersion\":\"3\",\"supplierPartyId\":\"11111111-1111-4111-8111-111111111111\",\"companyAccountId\":\"22222222-2222-4222-8222-222222222222\",\"reason\":\"SENTETIK\",\"seenAllocations\":[{\"allocationId\":\"00000000-0000-0000-0000-000000000000\",\"expectedAllocationVersion\":\"1\"}]}")]
+    [InlineData("{\"expectedVersion\":\"3\",\"supplierPartyId\":\"11111111-1111-4111-8111-111111111111\",\"companyAccountId\":\"22222222-2222-4222-8222-222222222222\",\"reason\":\"SENTETIK\",\"seenAllocations\":[{\"allocationId\":\"33333333-3333-4333-8333-333333333333\",\"expectedAllocationVersion\":\"0\"}]}")]
+    public void ALS_D126_the_revision_wire_refuses_a_malformed_confirmed_set(string json) =>
+        Assert.Throws<System.Text.Json.JsonException>(() => PurchaseSupplierRevisionJsonV1.ReadRevision(json));
+
+    [Fact]
+    public void ALS_D126_an_unconfirmed_revision_keeps_its_wire_and_request_hash_shape()
+    {
+        var request = PurchaseSupplierRevisionJsonV1.ReadRevision("{\"expectedVersion\":\"3\",\"supplierPartyId\":\"11111111-1111-4111-8111-111111111111\",\"companyAccountId\":\"22222222-2222-4222-8222-222222222222\",\"reason\":\"SENTETIK\"}");
+        Assert.Null(request.SeenAllocations);
+        Assert.DoesNotContain("seenAllocations", System.Text.Json.JsonSerializer.Serialize(request, PurchasingJson.Options));
+    }
+
+    [Fact]
     public async Task Without_the_inventory_allocation_participant_the_supplier_revision_is_not_decided()
     {
         var world = new World(); var (id, _) = await SupplierRevisionApprovedOrderAsync(world);

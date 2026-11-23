@@ -3,7 +3,10 @@ import { useQuery } from '@tanstack/react-query'
 import type { PurchaseOrderLine, PurchaseOrderSummary, PurchasingSupplierOffer } from './contract'
 import { fetchPurchasingSupplierOptions } from './api'
 import { clearSupplierRevisionAttempt, fetchSupplierRevisions, readSupplierRevisionAttempt, saveSupplierRevisionAttempt,
-  sendSupplierRevision, supplierRevisionAttemptKey, type SupplierRevisionAttempt, type SupplierRevisionCommand, type SupplierRevisionHistory, type SupplierRevisionPriceRequest } from './supplierRevisionApi'
+  sendSupplierRevision, SUPPLIER_REVISION_ALLOCATION_CODES, supplierRevisionAttemptKey, type SupplierRevisionAttempt, type SupplierRevisionCommand,
+  type SupplierRevisionHistory, type SupplierRevisionPriceRequest } from './supplierRevisionApi'
+import { fetchPurchaseOrderFutureAllocations } from './allocationLinkApi'
+import type { PurchaseOrderFutureAllocationLink } from './allocationLinkContract'
 import { SUPPLIER_REVISION_TEXT as T } from './supplierRevisionText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { StateBlock } from '../shell/StateBlock'
@@ -38,6 +41,9 @@ function SupplierRevisionBody(props: Props) {
   const [search, setSearch] = useState(''); const [supplier, setSupplier] = useState(''); const [reason, setReason] = useState('')
   const [suppliers, setSuppliers] = useState<PurchasingSupplierOffer | null>(null); const [supplierStatus, setSupplierStatus] = useState('')
   const supplierGeneration = useRef(0)
+  // ALS-D126: the revision refused because of active future allocations, with the list the actor must confirm.
+  const [allocationReview, setAllocationReview] = useState<{ readonly command: Extract<SupplierRevisionCommand, { kind: 'supplier' }>
+    readonly links: readonly PurchaseOrderFutureAllocationLink[] | null; readonly status: string } | null>(null)
   const [lineId, setLineId] = useState(''); const [unitPrice, setUnitPrice] = useState('')
   const [discountKind, setDiscountKind] = useState('none'); const [discount, setDiscount] = useState('')
   const [deferralKind, setDeferralKind] = useState('none'); const [deferral, setDeferral] = useState('')
@@ -70,9 +76,29 @@ function SupplierRevisionBody(props: Props) {
     if (result.type === 'failed' && (result.status === 401 || result.status === 403)) boundary.report(result.status, captured)
     try { clearSupplierRevisionAttempt(storageKey, attempt); setPending(null) }
     catch { setStorageFault(true); setMessage(T.pendingStorage); return }
+    if (result.type === 'failed' && result.status === 409 && attempt.command.kind === 'supplier'
+      && (SUPPLIER_REVISION_ALLOCATION_CODES as readonly (string | null)[]).includes(result.code)) {
+      setMessage(result.code === 'purchasing_future_allocation_set_changed' ? T.allocationsChanged : T.allocationsNote)
+      void reviewAllocations({ ...attempt.command, seenAllocations: undefined })
+      return
+    }
     setMessage(result.type === 'applied' ? T.saved : result.status === 401 || result.status === 403 ? T.denied
       : result.status === 404 ? T.missing : result.code === 'purchasing_supplier_revision_blocked' ? T.blocked : result.status === 409 ? T.stale : T.failed)
     if (result.type === 'applied' || result.status === 409) { await onSettled(); if (alive.current) await history.refetch() }
+  }
+  async function reviewAllocations(command: Extract<SupplierRevisionCommand, { kind: 'supplier' }>) {
+    setAllocationReview({ command, links: null, status: T.allocationsLoading }); const captured = boundary.capture()
+    const answer = await fetchPurchaseOrderFutureAllocations(companyId, order.id)
+    if (!alive.current) return
+    if (answer.type === 'http' && (answer.status === 401 || answer.status === 403)) boundary.report(answer.status, captured)
+    // The confirmed set is only ever the owner's list read for the very order version the command expects.
+    setAllocationReview(answer.type === 'ok-single' && answer.data.orderVersion === command.expectedVersion
+      ? { command, links: answer.data.links, status: '' } : { command, links: null, status: T.allocationsUnavailable })
+  }
+  function confirmAllocations() {
+    if (allocationReview?.links == null) return
+    const { command, links } = allocationReview; setAllocationReview(null)
+    prepare({ ...command, seenAllocations: links.map(link => ({ allocationId: link.allocationId, expectedAllocationVersion: link.version })) })
   }
   function prepare(command: SupplierRevisionCommand) {
     if (frozen || actorId === null || storageKey === null) return
@@ -103,6 +129,13 @@ function SupplierRevisionBody(props: Props) {
     {!current ? <p role="alert">{T.stale}</p> : null}
     {message || storageFault ? <p role="status">{storageFault ? T.pendingStorage : message}</p> : null}
     {pending !== null ? <Button type="button" disabled={sending || !canEdit || storageFault} onClick={() => void send(pending)}>{T.retry}</Button> : null}
+    {allocationReview !== null ? <section aria-label={T.allocationsHeading}><h3>{T.allocationsHeading}</h3>
+      {allocationReview.status ? <p role="status">{allocationReview.status}</p> : null}
+      {allocationReview.links !== null ? <><p>{T.allocationsNote}</p><ul aria-label={T.allocationsHeading}>{allocationReview.links.map(link =>
+        <li key={link.allocationId}>{T.allocationLine(lines.find(item => item.lineId === link.lineId)?.lineNo ?? null, link.remainingQuantity)}</li>)}</ul>
+        <Button type="button" disabled={frozen} onClick={confirmAllocations}>{T.allocationsConfirm}</Button></> : null}
+      <Button type="button" variant="secondary" onClick={() => setAllocationReview(null)}>{T.allocationsCancel}</Button>
+    </section> : null}
     <Button type="button" variant="secondary" disabled={sending} onClick={() => void onSettled().then(() => history.refetch())}>{T.reload}</Button>
     {!canEdit || actorId === null ? <p>{T.denied}</p> : order.status === 'Approved' ? <fieldset disabled={frozen || !hasCurrency}><legend>{T.heading}</legend>
       {!hasCurrency ? <p role="alert">{T.noCurrency}</p> : null}
