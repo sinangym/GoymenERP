@@ -48,7 +48,7 @@ describe('report centre decoders', () => {
 
   it('decodes only active saved views of the asked report and company', () => {
     const view = { id: 'cccccccc-0000-4000-8000-000000000001', companyId: COMPANY, reportId: 'stock-aging', name: 'SENTETIK görünüm',
-      parameters: { bucketDays: '30,60' }, columns: ['labelCode'], version: '2', isActive: true,
+      parameters: { asOf: '2026-11-22' }, columns: ['labelCode'], version: '2', isActive: true,
       createdAtUtc: '2026-11-22T09:00:00Z', updatedAtUtc: '2026-11-22T09:05:00Z' }
     expect(decodeSavedViews({ companyId: COMPANY, reportId: 'stock-aging', items: [view] }, COMPANY, 'stock-aging')?.items).toHaveLength(1)
     expect(decodeSavedViews({ companyId: COMPANY, reportId: 'stock-aging', items: [{ ...view, isActive: false }] }, COMPANY, 'stock-aging')).toBeNull()

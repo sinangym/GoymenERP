@@ -51,7 +51,7 @@ export const REPORTING_TEXT = {
     'party-aging': 'Alacak / borç yaşlandırma',
   } as Record<string, string>,
   parameterLabels: {
-    asOf: 'Ölçüm tarihi', bucketDays: 'Yaş aralığı sınırları (gün, virgülle)', productId: 'Ürün kimliği',
+    asOf: 'Ölçüm tarihi', productId: 'Ürün kimliği',
     locationId: 'Lokasyon kimliği', from: 'Başlangıç', to: 'Bitiş',
     labelId: 'Etiket kimliği', direction: 'Yön',
   } as Record<string, string>,

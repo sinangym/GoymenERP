@@ -155,13 +155,12 @@ public sealed class ReportingServiceV1(
     {
         var zone = BusinessZone();
         var asOf = set.Date("asOf");
-        var boundaries = set.WholeNumbers("bucketDays");
         var answer = await stockAging.ReadAsync(actor.CompanyId, page, pageSize, set.OptionalGuid("productId"), set.OptionalGuid("locationId"),
             cancellationToken);
         RequireStill(actor);
         RequireFound(answer.Outcome, answer.CompanyId, actor);
         if (answer.Items.Count > pageSize) throw new ReportingException(503, ReportingProblemCodesV1.SourceUnavailable);
-        var bucketKg = ReportingStockAgingCalculatorV1.Buckets(boundaries).ToDictionary(name => name, _ => 0m, StringComparer.Ordinal);
+        var bucketKg = ReportingStockAgingCalculatorV1.Buckets.ToDictionary(name => name, _ => 0m, StringComparer.Ordinal);
         decimal unknownKg = 0, totalKg = 0;
         var rows = new List<IReadOnlyList<string?>>(answer.Items.Count);
         foreach (var item in answer.Items)
@@ -175,7 +174,7 @@ public sealed class ReportingServiceV1(
             {
                 var entryDate = BusinessDate(instant, zone);
                 var age = ReportingStockAgingCalculatorV1.AgeDays(entryDate, asOf);
-                bucket = ReportingStockAgingCalculatorV1.Bucket(age, boundaries);
+                bucket = ReportingStockAgingCalculatorV1.Bucket(age);
                 entryText = DateText(entryDate);
                 ageText = age.ToString(CultureInfo.InvariantCulture);
                 bucketKg[bucket] += kg;

@@ -3,55 +3,27 @@ using System.Globalization;
 namespace GoymenERP.Modules.Reporting.Domain;
 
 /// <summary>
-/// WP14 stock aging: the age of a stock position in whole business days and its bucket. The boundaries are the caller's
-/// parameter (no stock bucket set is decided, NEEDS-SINAN); the entry date is the Inventory owner's (label entry, inherited on
-/// split); the business day is the Europe/Istanbul calendar day (P7).
-/// The screen never recomputes either value.
+/// WP14 stock aging (YOL-D39): the age of a stock position in whole business days, counted from the label root's first entry
+/// (the Inventory owner's date; a split takes the root's date, a merge the OLDEST root's), and its bucket: 0-30 / 31-60 / 61-90 /
+/// 90+ days (the YOL-D30 buckets). The business day is the Europe/Istanbul calendar day (P7). The screen never recomputes.
 /// </summary>
 public static class ReportingStockAgingCalculatorV1
 {
     /// <summary>The bucket of a position that entered after the measuring date.</summary>
     public const string AfterAsOfBucket = "after-as-of";
 
+    public static IReadOnlyList<string> Buckets { get; } = ["0-30", "31-60", "61-90", "90+", AfterAsOfBucket];
+
     public static int AgeDays(DateOnly entryDate, DateOnly asOf) => asOf.DayNumber - entryDate.DayNumber;
 
-    /// <summary>
-    /// Boundaries [30, 60, 90] give "0-30", "31-60", "61-90" and "91+"; the boundary day belongs to the lower bucket. A negative
-    /// age is <see cref="AfterAsOfBucket"/>.
-    /// </summary>
-    public static string Bucket(int ageDays, IReadOnlyList<int> boundaries)
+    public static string Bucket(int ageDays) => ageDays switch
     {
-        ArgumentNullException.ThrowIfNull(boundaries);
-        if (boundaries.Count == 0) throw new ArgumentException("At least one boundary is required.", nameof(boundaries));
-        if (ageDays < 0) return AfterAsOfBucket;
-        var lower = 0;
-        foreach (var boundary in boundaries)
-        {
-            if (ageDays <= boundary) return Range(lower, boundary);
-            lower = boundary + 1;
-        }
-
-        return lower.ToString(CultureInfo.InvariantCulture) + "+";
-    }
-
-    /// <summary>Every bucket name of a boundary set, in order (the after-as-of bucket last).</summary>
-    public static IReadOnlyList<string> Buckets(IReadOnlyList<int> boundaries)
-    {
-        var names = new List<string>();
-        var lower = 0;
-        foreach (var boundary in boundaries)
-        {
-            names.Add(Range(lower, boundary));
-            lower = boundary + 1;
-        }
-
-        names.Add(lower.ToString(CultureInfo.InvariantCulture) + "+");
-        names.Add(AfterAsOfBucket);
-        return names;
-    }
-
-    private static string Range(int lower, int upper) =>
-        lower.ToString(CultureInfo.InvariantCulture) + "-" + upper.ToString(CultureInfo.InvariantCulture);
+        < 0 => AfterAsOfBucket,
+        <= 30 => "0-30",
+        <= 60 => "31-60",
+        <= 90 => "61-90",
+        _ => "90+",
+    };
 }
 
 public sealed record ReportingOtifShipmentV1(DateOnly ShippedOn, decimal Quantity);
