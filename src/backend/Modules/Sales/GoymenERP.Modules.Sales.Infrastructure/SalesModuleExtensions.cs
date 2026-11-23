@@ -102,6 +102,9 @@ public static class SalesModuleExtensions
         services.AddScoped<IWorkInboxSourceV1, SalesSubcontractInvoiceWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, SalesCustomerReturnWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, SalesContractDiscountWorkInboxSourceV1>();
+        // SAT-D475 / SAT-D476: the request-based kinds (an expired quote or an over-delivery waits only through its request).
+        services.AddScoped<IWorkInboxSourceV1, SalesQuoteConversionRequestWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, SalesOverDeliveryRequestWorkInboxSourceV1>();
         // SALES-A1: the Sales-owned line reference port (Business 5737989917 = B) for the allocation
         // and loading consumers, over the same company-filtered store. Registered here, in the module
         // (no host file), so that a consumer module reads Sales only through this port.

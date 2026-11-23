@@ -381,7 +381,8 @@ public static partial class LogisticsEndpoints
                 // STK-S27 (L-1..L-7, FNS-D30, SAT-D310, SAT-D285): the customer risk gate's terminal stops; a gate that
                 // cannot be read is a code-less 503 that records nothing.
                 LogisticsShipmentRiskGateCodesV1.OverLimit, LogisticsShipmentRiskGateCodesV1.CreditLimitNotSet,
-                LogisticsShipmentRiskGateCodesV1.RiskUnavailable, LogisticsShipmentRiskGateCodesV1.ExceptionUsed)
+                LogisticsShipmentRiskGateCodesV1.RiskUnavailable, LogisticsShipmentRiskGateCodesV1.ExceptionUsed,
+                LogisticsOverDeliveryGateCodesV1.ApprovalPending, LogisticsOverDeliveryGateCodesV1.Blocked)
             .ProducesErpUnprocessableEntity("validation_failed", LogisticsProblemCodesV1.UnsupportedUnit)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();

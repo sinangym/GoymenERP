@@ -67,6 +67,11 @@ public sealed partial class LogisticsInstructionService
                 // key after a 503), last before the write and never cached. A stop is a terminal 409 recorded under the key, so
                 // its replay (answered above) never reads the gate again; a port failure is a 503 that records nothing.
                 var gate = await ReadShipmentRiskGateAsync(scope, permission, request.ShipmentId, line.Source.OrderId, instructionId, token);
+                // WP4 (SAT-D475): the Sales over-delivery gate, read on every execution after the risk gate and last before the write.
+                // In the approval band Sales opens (or answers) the line's over-delivery request and the shipment stops (recorded 409);
+                // a port failure is a 503 that records nothing.
+                await RequireOverDeliveryGateAsync(scope, permission, envelope, line.Source.OrderId, line.Source.LineId, line.UnitId,
+                    quantity.Value, request.ShipmentId, instructionId, token);
                 var gateStore = store as ILogisticsShipmentRiskGateStoreV1
                     ?? throw new LogisticsInstructionServiceException(503, LogisticsShipmentRiskGateCodesV1.GateUnavailable);
                 var expected = long.Parse(request.ExpectedVersion, CultureInfo.InvariantCulture);
@@ -263,6 +268,58 @@ public sealed partial class LogisticsInstructionService
             [new(LogisticsShipmentRiskGateCodesV1.ExceptionErrorField, decision.ExceptionStatus)]);
     }
 
+    /// <summary>
+    /// WP4 (SAT-D475): the Sales over-delivery gate for this shipment — the order line's shipped total before it (Logistics' own
+    /// sum, read in the shipment's transaction) plus the attempted quantity, judged by the Sales owner. Pass continues; Held (a
+    /// pending request) and Blocked are 409s the caller records as terminal; an unregistered or failing port, or an answer about
+    /// another question, is a 503 that records nothing.
+    /// </summary>
+    private async Task RequireOverDeliveryGateAsync(Scope scope, string? permission, LogisticsWriteEnvelope envelope, Guid orderId,
+        Guid orderLineId, Guid unitId, decimal quantity, Guid shipmentId, Guid instructionId, CancellationToken cancellationToken)
+    {
+        var port = overDeliveryGate
+            ?? throw new LogisticsInstructionServiceException(503, LogisticsOverDeliveryGateCodesV1.GateUnavailable);
+        var shipped = await GuardedAsync(scope, permission,
+            () => store.SumShippedForOrderLineAsync(orderId, orderLineId, unitId, cancellationToken), cancellationToken);
+        if (shipped < 0m)
+        {
+            throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
+        }
+
+        var question = new SalesOverDeliveryGateRequestV1(orderId, orderLineId, instructionId, shipmentId, shipped, quantity,
+            new SalesDraftWriteEnvelope(envelope.ActorId, envelope.PermissionCode, envelope.RoleCodes, envelope.CorrelationId,
+                envelope.CausationId, envelope.IdempotencyKey, envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent));
+        SalesOverDeliveryGateReadV1 read;
+        try
+        {
+            read = await GuardedAsync(scope, permission, () => port.EvaluateAsync(question, cancellationToken), cancellationToken);
+        }
+        catch (Exception exception) when (exception is not (OperationCanceledException or LogisticsInstructionServiceException))
+        {
+            throw new LogisticsInstructionServiceException(503, LogisticsOverDeliveryGateCodesV1.GateUnavailable);
+        }
+
+        if (read is null || read.OrderId != orderId || read.LineId != orderLineId
+            || !string.Equals(read.ContractVersion, SalesOverDeliveryGateContractV1.Version, StringComparison.Ordinal))
+        {
+            throw new LogisticsInstructionServiceException(503, LogisticsOverDeliveryGateCodesV1.GateUnavailable);
+        }
+
+        switch (read.Result)
+        {
+            case SalesOverDeliveryGateResultV1.Pass:
+                return;
+            case SalesOverDeliveryGateResultV1.Held when read.RequestNo is >= 1:
+                throw new LogisticsInstructionServiceException(409, LogisticsOverDeliveryGateCodesV1.ApprovalPending,
+                    [new(LogisticsOverDeliveryGateCodesV1.ErrorField, LogisticsOverDeliveryGateCodesV1.ApprovalPending)]);
+            case SalesOverDeliveryGateResultV1.Blocked:
+                throw new LogisticsInstructionServiceException(409, LogisticsOverDeliveryGateCodesV1.Blocked,
+                    [new(LogisticsOverDeliveryGateCodesV1.ErrorField, LogisticsOverDeliveryGateCodesV1.Blocked)]);
+            default:
+                throw new LogisticsInstructionServiceException(503, LogisticsOverDeliveryGateCodesV1.GateUnavailable);
+        }
+    }
+
     private async Task<LoadingInstructionResponse> RunRealizationAsync(Scope scope, string? permission,
         LogisticsWriteEnvelope envelope, string hash, string command, Func<Task<LoadingInstructionResponse>> execute,
         CancellationToken cancellationToken)
@@ -353,5 +410,6 @@ public sealed partial class LogisticsInstructionService
         code is LogisticsRealizationCodesV1.AllocationSourceMismatch or LogisticsProblemCodesV1.OrderLineState
         or LogisticsPlanExcessV1.ApprovalRequired or LogisticsPlanExcessV1.Conflict
         || LogisticsRealizationDependenciesV1.InventoryTerminalConflictCodes.Contains(code)
-        || LogisticsShipmentRiskGateCodesV1.TerminalCodes.Contains(code);
+        || LogisticsShipmentRiskGateCodesV1.TerminalCodes.Contains(code)
+        || LogisticsOverDeliveryGateCodesV1.TerminalCodes.Contains(code);
 }

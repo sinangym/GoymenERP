@@ -18,6 +18,7 @@ internal static class SalesWorkInboxItemsV1
     public const string SubcontractInvoiceRole = "sales-subcontract-invoice";
     public const string CustomerReturnRole = "sales-customer-return";
     public const string ContractRole = "sales-contract";
+    public const string QuoteRole = "sales-quote";
 
     private static readonly Regex CurrencyUnitPattern = new("^[A-Za-z]{1,16}\\z", RegexOptions.CultureInvariant);
 
@@ -35,6 +36,9 @@ internal static class SalesWorkInboxItemsV1
     /// published), so the link opens the shell's not-found page until it is; the decision is never given from the inbox.
     /// </summary>
     public const string ContractsLink = "/satis/sozlesmeler";
+
+    /// <summary>WP4 (SAT-D476): S-01 one quote (<c>/satis/teklifler/:quoteId</c>): the request list and the expired-conversion approval.</summary>
+    public static string QuoteLink(Guid quoteId) => $"/satis/teklifler/{quoteId:D}";
 
     /// <summary>WP4: S-10 one customer return (<c>/satis/iadeler/:returnId</c>): the approval control.</summary>
     public static string CustomerReturnLink(Guid returnId) => $"/satis/iadeler/{returnId:D}";

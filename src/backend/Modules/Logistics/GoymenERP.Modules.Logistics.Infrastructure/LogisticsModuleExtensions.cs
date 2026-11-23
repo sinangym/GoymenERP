@@ -155,7 +155,9 @@ public static class LogisticsModuleExtensions
         serviceProvider.GetRequiredService<TimeProvider>(),
         serviceProvider.GetService<ILogisticsRealizationTransactionRunnerV1>(),
         // STK-S27: Sales registers the shipment risk gate; without it a definite shipment answers 503 (L-7, fail-closed).
-        serviceProvider.GetService<ISalesShipmentRiskGateReadPortV1>());
+        serviceProvider.GetService<ISalesShipmentRiskGateReadPortV1>(),
+        // WP4 (SAT-D475): Sales registers the over-delivery gate; without it a definite shipment answers 503 (fail-closed).
+        serviceProvider.GetService<ISalesOverDeliveryGatePortV1>());
 
     /// <summary>Applies Logistics's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeLogisticsModuleAsync(this IServiceProvider services, CancellationToken cancellationToken = default)
