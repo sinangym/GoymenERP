@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain.ApprovalRequests;
 using GoymenERP.Modules.Sales.Domain.CustomerReturns;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Domain.Invoices;
@@ -10,8 +11,8 @@ using GoymenERP.Modules.Sales.Domain.Requests;
 using GoymenERP.Modules.Sales.Domain.RiskExceptions;
 using GoymenERP.Modules.Sales.Domain.SalesContracts;
 using GoymenERP.Modules.Sales.Domain.SignedApprovals;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 
@@ -821,6 +822,7 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
         ConfigureInvoices(modelBuilder);
         ConfigureInvoiceFinalizations(modelBuilder);
         ConfigureShipmentRiskExceptions(modelBuilder);
+        ConfigureApprovalRequests(modelBuilder);
         ConfigureCustomerReturns(modelBuilder);
         ConfigureContracts(modelBuilder);
         ConfigureOrderSignedApprovals(modelBuilder);
@@ -2564,6 +2566,14 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
                     ],
                     ShipmentRiskExceptionAttemptRow => [],
                     ShipmentRiskExceptionUsageRow => [],
+                    // WP4 (SAT-D475 / SAT-D476): an approval request moves only along its one decision (checked below); the request
+                    // facts never change; its attempts are APPEND-ONLY.
+                    ApprovalRequestRow =>
+                    [
+                        nameof(ApprovalRequestRow.State), nameof(ApprovalRequestRow.DecidedBy), nameof(ApprovalRequestRow.DecidedAtUtc),
+                        nameof(ApprovalRequestRow.DecisionReason), nameof(ApprovalRequestRow.Version), nameof(ApprovalRequestRow.UpdatedAtUtc),
+                    ],
+                    ApprovalRequestAttemptRow => [],
                     // API-40 (SAT-D290): a customer return moves only along its approval axis, one allowed step (checked below);
                     // the header, the customer's document, the lines and the totals never change; its attempts are APPEND-ONLY.
                     CustomerReturnRow =>
@@ -2649,6 +2659,19 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
                                 or (int)SalesShipmentRiskExceptionState.Rejected or (int)SalesShipmentRiskExceptionState.Withdrawn))
                     {
                         throw new InvalidOperationException("Risk istisnasının durumu yalnız bir kez, Onay bekliyor → Onaylı/Reddedildi/Geri çekildi yönünde değişir.");
+                    }
+                }
+
+                if (entry.Entity is ApprovalRequestRow)
+                {
+                    // WP4: a decision is taken once — Requested → Approved | Rejected; nothing else.
+                    var requestState = entry.Property(nameof(ApprovalRequestRow.State));
+                    if (!(requestState.IsModified
+                            && (int)requestState.OriginalValue! == (int)SalesApprovalRequestState.Requested
+                            && (int)requestState.CurrentValue! is (int)SalesApprovalRequestState.Approved
+                                or (int)SalesApprovalRequestState.Rejected))
+                    {
+                        throw new InvalidOperationException("Onay talebinin durumu yalnız bir kez, Bekliyor → Onaylı/Reddedildi yönünde değişir.");
                     }
                 }
 

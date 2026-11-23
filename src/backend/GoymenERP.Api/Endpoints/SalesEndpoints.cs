@@ -461,6 +461,7 @@ public static partial class SalesEndpoints
         MapDraftInvoices(drafts);
         // API-07 (SAT-D153…D162): the single-shipment risk exception — request, approval, rejection and the order's list.
         MapRiskExceptions(drafts);
+        MapOverDeliveryRequests(drafts);
         MapRiskCheck(drafts);
         MapRiskWarnings(drafts);
         MapCancellationImpact(drafts);

@@ -233,6 +233,15 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
     /// The Sales owner's gate answer for the asked order and instruction (the hosted tests' default is within the limit with no
     /// exception). Records every question so a test can prove a replay never reads the gate again.
     /// </summary>
+    /// <summary>WP4 (SAT-D475): the hosted over-delivery gate of the SYNTHETIC orders — always within the tolerance.</summary>
+    private sealed class HostedOverDeliveryGate : ISalesOverDeliveryGatePortV1
+    {
+        public Task<SalesOverDeliveryGateReadV1> EvaluateAsync(SalesOverDeliveryGateRequestV1 request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new SalesOverDeliveryGateReadV1(request.OrderId, request.LineId, SalesOverDeliveryGateResultV1.Pass, null,
+                SalesOverDeliveryGateContractV1.Version));
+    }
+
     private sealed class HostedRiskGate : ISalesShipmentRiskGateReadPortV1
     {
         private readonly List<(Guid OrderId, Guid InstructionId)> requests = [];

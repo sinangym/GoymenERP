@@ -438,6 +438,18 @@ public static class SalesRuleCodes
     /// <summary>API-07 (SAT-D153/D159): the person who requested a single-shipment risk exception does not approve or reject it.</summary>
     public const string RiskExceptionSelfDecision = "sales_risk_exception_self_decision";
 
+    /// <summary>SAT-D475 / SAT-D216: the shipper who opened an over-delivery request never decides it.</summary>
+    public const string ApprovalRequestSelfDecision = "sales_approval_request_self_decision";
+
+    /// <summary>SAT-D475 / SAT-D476: a rejection of an approval request carries its reason.</summary>
+    public const string ApprovalRequestReasonRequired = "sales_approval_request_reason_required";
+
+    /// <summary>SAT-D475 / SAT-D476: a reason or note longer than its bound is refused, never cut.</summary>
+    public const string ApprovalRequestTextTooLong = "sales_approval_request_text_too_long";
+
+    /// <summary>SAT-D476: the request kind cannot take this decision (a quote request is approved by the quote's own approval).</summary>
+    public const string ApprovalRequestKindMismatch = "sales_approval_request_kind_mismatch";
+
     /// <summary>API-07 (SAT-D154, DEC-FIN-009): a risk exception request, and its rejection, carry a reason (the audit names it).</summary>
     public const string RiskExceptionReasonRequired = "sales_risk_exception_reason_required";
 

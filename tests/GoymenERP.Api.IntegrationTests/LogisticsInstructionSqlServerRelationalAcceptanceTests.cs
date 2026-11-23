@@ -755,6 +755,10 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
                 // STK-S27: the Sales owner's customer risk gate; within the limit unless a test sets another answer.
                 services.RemoveAll<ISalesShipmentRiskGateReadPortV1>();
                 services.AddSingleton<ISalesShipmentRiskGateReadPortV1>(riskGate ?? new HostedRiskGate());
+                // WP4 (SAT-D475): the Sales owner's over-delivery gate; these orders are SYNTHETIC (no Sales draft), so the
+                // hosted gate passes unless a test configures another answer (the real gate is proven by the Sales facts).
+                services.RemoveAll<ISalesOverDeliveryGatePortV1>();
+                services.AddSingleton<ISalesOverDeliveryGatePortV1>(new HostedOverDeliveryGate());
                 configure?.Invoke(services);
             });
         });

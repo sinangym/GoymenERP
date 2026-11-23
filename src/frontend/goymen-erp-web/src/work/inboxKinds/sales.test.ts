@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import {
   SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
   SALES_INVOICE_APPROVE_CAPABILITY,
+  SALES_OVER_DELIVERY_APPROVE_CAPABILITY,
   SALES_POOL_CAPABILITY_ID,
 } from '../../sales/capabilities'
 import { WORK_INBOX_CAPABILITIES, WORK_INBOX_KINDS } from '../workInboxKinds'
@@ -26,6 +27,9 @@ const WP4_KINDS = {
   'sales.subcontract-invoice.v1': SALES_INVOICE_APPROVE_CAPABILITY,
   'sales.customer-return.v1': SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
   'sales.contract-discount.v1': null,
+  // SAT-D476 / SAT-D475: the request-based kinds.
+  'sales.quote-conversion-request.v1': SALES_POOL_CAPABILITY_ID.quotesApproveExpired,
+  'sales.over-delivery-request.v1': SALES_OVER_DELIVERY_APPROVE_CAPABILITY,
 } as const
 
 describe('WP4 Sales inbox kinds', () => {
@@ -52,15 +56,17 @@ describe('WP4 Sales inbox kinds', () => {
     for (const code of [
       'sales.request-approval-required', 'sales.invoice-approval-required', 'sales.subcontract-invoice-approval-required',
       'sales.customer-return-approval-required', 'sales.contract-discount-over-limit', 'sales.contract-discount-limit-undefined',
+      'sales.quote-expired-conversion-requested', 'sales.over-delivery-requested',
     ]) expect(inboxRuleText(code)).toEqual(expect.any(String))
-    for (const role of ['sales-request', 'sales-invoice', 'sales-subcontract-invoice', 'sales-customer-return', 'sales-contract'])
+    for (const role of ['sales-request', 'sales-invoice', 'sales-subcontract-invoice', 'sales-customer-return', 'sales-contract', 'sales-quote'])
       expect(inboxRoleText(role)).toEqual(expect.any(String))
     // The original invoice of a return and a subcontract invoice's order reuse the existing roles.
     expect(inboxRoleText('sales-order-draft')).toBe('Satış siparişi')
   })
 
   it('labels the owners\' approve permissions and keeps the contract figures as the server sent them', () => {
-    for (const permission of ['sales.requests.approve', 'sales.invoices.approve', 'sales.returns.approve', 'sales.contracts.discount.approve'])
+    for (const permission of ['sales.requests.approve', 'sales.invoices.approve', 'sales.returns.approve', 'sales.contracts.discount.approve',
+      'sales.quotes.expired-conversion.approve', 'sales.orders.over-delivery.approve'])
       expect(inboxPermissionText(permission)).not.toBe(permission)
     expect([formatWithUnit('10', '%'), formatWithUnit('12.5', '%'), formatWithUnit('2.5', '%')]).toEqual(['%10', '%12,5', '%2,5'])
   })

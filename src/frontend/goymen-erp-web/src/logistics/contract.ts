@@ -421,6 +421,13 @@ export const LOGISTICS_PROBLEM_CODE = {
   shipmentRiskUnavailable: 'logistics_shipment_risk_unavailable',
   /** STK-S27 (L-4): the order's single-shipment risk exception was already consumed by another definite shipment. */
   shipmentRiskExceptionUsed: 'logistics_shipment_risk_exception_used',
+  /**
+   * WP4 (SAT-D475): the Sales over-delivery gate stopped the definite shipment — in the order's approval band an over-delivery
+   * request was opened (or was already pending) and the shipment waits for its approval; in the block band it never ships.
+   * Both are recorded terminal refusals (a new attempt is needed once the request is approved). Nothing was shipped.
+   */
+  overDeliveryApprovalPending: 'logistics_over_delivery_approval_pending',
+  overDeliveryBlocked: 'logistics_over_delivery_blocked',
   sameKeyPayloadMismatch: 'same_key_payload_mismatch',
   concurrentChange: 'concurrent_change',
   unsupportedUnit: 'unsupported_unit',

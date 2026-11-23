@@ -31,6 +31,7 @@ import { APPROVAL_STATE_TEXT, ORDER_STATUS_TEXT as T } from './salesText'
 import { orderUnitCodes } from './unitNames'
 import { UnitName } from './UnitName'
 import { SalesOverDeliveryApproval } from './SalesOverDeliveryApproval'
+import { SalesOverDeliveryRequests } from './SalesApprovalRequests'
 import { SalesLineClosure } from './SalesLineClosure'
 import { useLineClosure } from './lineClosure'
 import { useShellState } from '../shell/shellContext'
@@ -84,13 +85,17 @@ export function SalesOrderStatusAxes({ detail, onRecorded }: { readonly detail: 
   const overDelivery = onRecorded === undefined || companyId === null
     ? undefined
     : (status: OrderStatus) => (
-      <SalesOverDeliveryApproval
-        shell={shell}
-        detail={detail}
-        status={status}
-        companyId={companyId}
-        onRecorded={reread}
-      />
+      <>
+        <SalesOverDeliveryApproval
+          shell={shell}
+          detail={detail}
+          status={status}
+          companyId={companyId}
+          onRecorded={reread}
+        />
+        {/* WP4 (SAT-D475): the over-delivery requests the Logistics shipment opened, decided here. */}
+        <SalesOverDeliveryRequests detail={detail} companyId={companyId} onRecorded={reread} />
+      </>
     )
   const lineClosure = onRecorded === undefined || companyId === null
     ? undefined

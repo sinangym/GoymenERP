@@ -102,6 +102,9 @@ public static class SalesModuleExtensions
         services.AddScoped<IWorkInboxSourceV1, SalesSubcontractInvoiceWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, SalesCustomerReturnWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, SalesContractDiscountWorkInboxSourceV1>();
+        // SAT-D475 / SAT-D476: the request-based kinds (an expired quote or an over-delivery waits only through its request).
+        services.AddScoped<IWorkInboxSourceV1, SalesQuoteConversionRequestWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, SalesOverDeliveryRequestWorkInboxSourceV1>();
         // SALES-A1: the Sales-owned line reference port (Business 5737989917 = B) for the allocation
         // and loading consumers, over the same company-filtered store. Registered here, in the module
         // (no host file), so that a consumer module reads Sales only through this port.
@@ -154,6 +157,10 @@ public static class SalesModuleExtensions
         // evaluation as a company-scoped system read, with the shipment's risk exception embedded. Read-only; amount-free.
         services.AddScoped<ISalesShipmentRiskGateSource>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesShipmentRiskGateReadPortV1, SalesShipmentRiskGateReadPort>();
+        // WP4 (SAT-D475 / SAT-D476): the approval requests — store, service and the Logistics over-delivery gate port.
+        services.AddScoped<ISalesApprovalRequestStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        services.AddScoped<ISalesApprovalRequestService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
+        services.AddScoped<ISalesOverDeliveryGatePortV1, SalesOverDeliveryGatePort>();
         // API-40 (SAT-D288…SAT-D294): the customer return invoice over the Sales store and the invoice store. The Finance reversal
         // port is the Finance owner's and is NOT composed here: without it the finalisation is 503 before any read (SAT-D294).
         services.AddScoped<ISalesCustomerReturnStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());

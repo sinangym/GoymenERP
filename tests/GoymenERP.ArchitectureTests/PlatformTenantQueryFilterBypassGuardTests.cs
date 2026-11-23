@@ -6281,6 +6281,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // refuses (52073, used by no other migration) while a marked return exists; use a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261122205751_AllowPurchaseSupplierReturnReplacement.cs"] =
                     new("4bd1cf52c3423fdf7567444a64d1ae3325b699e3da96887f0109712d16b2c26c", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // WP4 (SAT-D475 / SAT-D476); K3 review pending. Down refuses (52130, WP4 range, used by no other migration) while an
+                // approval request or its attempt exists; use a forward fix. 1 lexical Sql call(s). FINGERPRINT NOT PINNED: produced on
+                // the tren-2 head (WORK_AI_ORTAK_KURALLAR: pin'li dosyalar tek seferde üretilir); until then this entry fails closed.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261123075846_AddSalesApprovalRequests.cs"] =
+                    new("0000000000000000000000000000000000000000000000000000000000000000", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // WP-A4; K3 review pending. Down refuses (52290, WP-A4 range, used by no other migration) while AI knowledge package
                 // approvals or attempts exist; use a forward fix. 1 lexical Sql call(s). FINGERPRINT NOT PINNED: produced on the tren-2
                 // head (WORK_AI_ORTAK_KURALLAR: pin'li dosyalar tek seferde üretilir); until then this entry fails closed.

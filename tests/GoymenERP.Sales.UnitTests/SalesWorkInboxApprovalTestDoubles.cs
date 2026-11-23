@@ -10,6 +10,8 @@ internal sealed class SalesWorkInboxApprovalFakeStore : ISalesWorkInboxApprovalS
     public IReadOnlyList<SalesWorkInboxInvoiceV1> SubcontractInvoices { get; set; } = [];
     public IReadOnlyList<SalesWorkInboxCustomerReturnV1> Returns { get; set; } = [];
     public IReadOnlyList<SalesWorkInboxContractV1> Contracts { get; set; } = [];
+    public IReadOnlyList<SalesWorkInboxQuoteConversionRequestV1> QuoteRequests { get; set; } = [];
+    public IReadOnlyList<SalesWorkInboxOverDeliveryRequestV1> OverDeliveryRequests { get; set; } = [];
     public Exception? Failure { get; set; }
     public List<(string Query, Guid CompanyId, int Take)> Calls { get; } = [];
 
@@ -28,6 +30,13 @@ internal sealed class SalesWorkInboxApprovalFakeStore : ISalesWorkInboxApprovalS
 
     public Task<IReadOnlyList<SalesWorkInboxContractV1>> ListPendingDiscountContractsAsync(Guid companyId, int take,
         CancellationToken cancellationToken) => Answer(nameof(ListPendingDiscountContractsAsync), companyId, take, Contracts);
+
+    public Task<IReadOnlyList<SalesWorkInboxQuoteConversionRequestV1>> ListPendingQuoteConversionRequestsAsync(Guid companyId, int take,
+        CancellationToken cancellationToken) => Answer(nameof(ListPendingQuoteConversionRequestsAsync), companyId, take, QuoteRequests);
+
+    public Task<IReadOnlyList<SalesWorkInboxOverDeliveryRequestV1>> ListPendingOverDeliveryRequestsAsync(Guid companyId, int take,
+        CancellationToken cancellationToken) =>
+        Answer(nameof(ListPendingOverDeliveryRequestsAsync), companyId, take, OverDeliveryRequests);
 
     private Task<IReadOnlyList<T>> Answer<T>(string query, Guid companyId, int take, IReadOnlyList<T> rows)
     {

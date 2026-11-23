@@ -11,6 +11,8 @@ export const SALES_INBOX_KIND_TEXT: Readonly<Record<string, string>> = {
   'sales.subcontract-invoice.v1': 'Fason hizmet faturası onayı',
   'sales.customer-return.v1': 'Müşteri iadesi onayı',
   'sales.contract-discount.v1': 'Sözleşme iskontosu onayı',
+  'sales.quote-conversion-request.v1': 'Süresi dolmuş teklif dönüşüm talebi',
+  'sales.over-delivery-request.v1': 'Fazla teslim onay talebi',
 }
 
 export const SALES_INBOX_RULE_TEXT: Readonly<Record<string, string>> = {
@@ -22,6 +24,8 @@ export const SALES_INBOX_RULE_TEXT: Readonly<Record<string, string>> = {
     'Müşteri iade faturası onaya gönderildi; hazırlayan ve gönderen dışında bir kişinin onayını bekliyor',
   'sales.contract-discount-over-limit': 'Sözleşme iskontosu kayıttaki sınırı aşıyor (sınır / iskonto oranı / fark)',
   'sales.contract-discount-limit-undefined': 'Kayıt anında iskonto sınırı tanımlı değildi; her iskonto onaya düşer',
+  'sales.quote-expired-conversion-requested': 'Satışçı süresi dolmuş teklifin siparişe dönüştürülmesi için onay istedi',
+  'sales.over-delivery-requested': 'Sevk, sipariş satırını tolerans onay bandına taşıyor (sipariş / talep edilen sevk toplamı / fazla)',
 }
 
 export const SALES_INBOX_ROLE_TEXT: Readonly<Record<string, string>> = {
@@ -30,6 +34,7 @@ export const SALES_INBOX_ROLE_TEXT: Readonly<Record<string, string>> = {
   'sales-subcontract-invoice': 'Fason hizmet faturası',
   'sales-customer-return': 'Müşteri iadesi',
   'sales-contract': 'Satış sözleşmesi',
+  'sales-quote': 'Satış teklifi',
 }
 
 export const SALES_INBOX_PERMISSION_TEXT: Readonly<Record<string, string>> = {
@@ -37,4 +42,6 @@ export const SALES_INBOX_PERMISSION_TEXT: Readonly<Record<string, string>> = {
   'sales.invoices.approve': 'Satış faturası onayı',
   'sales.returns.approve': 'Müşteri iadesi onayı',
   'sales.contracts.discount.approve': 'Sözleşme iskontosu onayı',
+  'sales.quotes.expired-conversion.approve': 'Süresi dolmuş teklif dönüşüm onayı',
+  'sales.orders.over-delivery.approve': 'Fazla teslim onayı',
 }

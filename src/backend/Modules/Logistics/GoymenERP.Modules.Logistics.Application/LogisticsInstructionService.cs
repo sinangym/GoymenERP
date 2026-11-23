@@ -39,7 +39,8 @@ public sealed partial class LogisticsInstructionService(
     LogisticsInstructionServiceBindings bindings,
     TimeProvider timeProvider,
     ILogisticsRealizationTransactionRunnerV1? realization = null,
-    ISalesShipmentRiskGateReadPortV1? shipmentRiskGate = null) : ILogisticsInstructionService, ILogisticsRealizationServiceV1,
+    ISalesShipmentRiskGateReadPortV1? shipmentRiskGate = null,
+    ISalesOverDeliveryGatePortV1? overDeliveryGate = null) : ILogisticsInstructionService, ILogisticsRealizationServiceV1,
     IApprovedDispatchInvoiceSourceV1
 {
     private const int DefaultPageSize = 50;
