@@ -142,7 +142,7 @@ public sealed class FinanceBankStatementImportDocumentOwnerLinkPort(
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     ICorrelationContext correlation,
-    IFinanceBankStatementImportServiceV1 imports) : IDocumentOwnerLinkPortV1
+    IServiceProvider services) : IDocumentOwnerLinkPortV1
 {
     public string Kind => DocumentOwnerLinkKindsV1.FinanceBankStatementImport;
 
@@ -163,6 +163,9 @@ public sealed class FinanceBankStatementImportDocumentOwnerLinkPort(
         var actorId = currentUser.UserId!;
         try
         {
+            // Resolve only on use: the import service's statement read adapter itself consumes IDocumentService, so
+            // capturing it in this constructor would make the vault's owner-port collection cyclic (a resolve deadlock).
+            var imports = services.GetRequiredService<IFinanceBankStatementImportServiceV1>();
             var outcome = await imports.CheckDocumentOwnerAsync(
                 new FinanceContext(companyId, actorId, correlation.CorrelationId, correlation.CausationId), ownerId,
                 cancellationToken);

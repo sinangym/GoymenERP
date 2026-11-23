@@ -5,6 +5,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Documents.Application.Contracts;
 using GoymenERP.Modules.Documents.Domain;
 using GoymenERP.Modules.Finance.Contracts;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -67,7 +68,8 @@ public sealed class FinanceBankStatementDocumentOwnerLinkPortTests
     }
 
     private static IDocumentOwnerLinkPortV1 Port(Imports imports, MutableCompany company, MutableUser user) =>
-        new FinanceBankStatementImportDocumentOwnerLinkPort(company, user, new FixedCorrelation(), imports);
+        new FinanceBankStatementImportDocumentOwnerLinkPort(company, user, new FixedCorrelation(),
+            new ServiceCollection().AddSingleton<IFinanceBankStatementImportServiceV1>(imports).BuildServiceProvider());
 
     private sealed class Imports(Func<Guid, ReadOutcome> answer) : IFinanceBankStatementImportServiceV1
     {
