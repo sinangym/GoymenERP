@@ -66,6 +66,30 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | E-52 | Dövizli alışta kabul kısmen geri alınır/iade edilirse maliyet kuru ne zaman kesinleşsin? (K3FIX-G4, BS-1) | **Kalan miktar faturalanınca (Önerilen)** | Seçilmeyen: "İlk miktarın tamamı faturalanınca". |
 | E-53 | Adet tutan fiziksel tahsis kg olarak kısmen bırakılırsa kaç adet geri verilsin? (K3FIX-G3/F2) | **Adet zorunlu girilsin (Önerilen)** | Seçilmeyenler: "Kg oranıyla hesaplansın"; "Kısmi bırakma yasak kalsın". |
 | E-54 | Adetle satılan üründe adet başına kg hesaplanamıyorsa sipariş onayı ne olsun? (PR #1201 K3-B, SAT-D437) | **Onaylansın, kg bilgisi boş kalsın** | Seçilmeyenler: "Onay reddedilsin (Önerilen)"; "Onaylansın ama uyarı + gerekçe". |
+| E-55 | Masraf ve elle banka ödemesinde (ayrı "onaya gönder" adımı yok) kim onaylayamasın? (PR #1201 K3-A P2-1, YOL-D23) | **Serbest cevap:** "Burdada siparişlerdeki gibi kaydı giren değiştirebilsin, onaycı müdür olsun" | Seçilmeyenler: "İlk hazırlayan + son değiştiren (Önerilen)"; "Yalnız son değiştiren"; "Dokunan herkes (şu anki hal)". Yorum: FNS-D118. |
+| E-56 | Kart adet başına kg için çelişkili sonuç verirse sipariş onayı? (SAT-D473 ayrıntısı) | **Serbest cevap:** "Onaylasın, teorik kg olarak siparişler devam etsin" | Seçilmeyenler: "Reddedilsin, kart düzeltilsin (Önerilen)"; "Onaylansın, kg boş kalsın". |
+| E-57 | Çelişkide siparişe hangi teorik kg yazılsın? | **Ağırlık tablosu (Önerilen)** | Seçilmeyenler: "Formül sonucu"; "Büyük olan". |
+| E-58 | Hatırlatmadan ne kadar sonra yükseltme? (WP2) | **Bir süre sınıfı daha (Önerilen)** | Seçilmeyenler: "Hatırlatmayla aynı anda"; "Yarım süre sonra". |
+| E-59 | Sahipsiz onay kime gösterilsin? (WP2, ROL-D3) | **Yükseltme izni sahiplerine (Önerilen)** | Seçilmeyen: "Modül yönetim izni sahiplerine". |
+| E-60 | Günlük özet saatlerini kim değiştirsin? (WP2) | **Onay süresi izni sahibi (Önerilen)** | Seçilmeyen: "Ayrı izin". |
+| E-61 | Fazla teslim onayı iş kutusuna nasıl girsin? (WP4) | **Sevkte talep kaydı oluşsun (Önerilen)** | Seçilmeyen: "İş kutusuna girmesin". |
+| E-62 | Süresi dolmuş teklifin dönüşüm onayı? (WP4) | **Dönüşüm talebi adımı açılsın (Önerilen)** | Seçilmeyen: "İş kutusuna girmesin". |
+| E-63 | Transfer/plan onayında kapsamlı (tesis/lokasyon/iş merkezi) yetki? (WP6) | **Şimdilik hayır, şirket geneli (Önerilen)** | Seçilmeyen: "Evet, kendi alanını". |
+| E-64 | Ortak muhasebe onay izinleri bölünsün mü? (WP5) | **Ortak kalsın (Önerilen)** | Seçilmeyen: "İşlem başına ayrı izin". |
+| E-65 | Sürümlü Ayarlar politikasını hazırlayan yayımlayabilir mi? (WP7; K15 ↔ URN-D3/D6) | **URN-D3 gibi: aynı kişi yayımlayabilir (Önerilen)** | Seçilmeyen: "K15 gibi: farklı kişi yayımlasın". |
+| E-66 | Ekstre eşleştirmesini onaylayan geri alabilir mi? (WP12) | **Evet, gerekçeyle (Önerilen)** | Seçilmeyen: "Farklı kişi geri alsın". |
+| E-67 | Ekstrede tek işaretli "Tutar" sütunu kabul edilsin mi? (WP12) | **Kabul edilsin, işaret yönü belirler (Önerilen)** | Seçilmeyen: "Yalnız ayrı giriş/çıkış sütunları". |
+| E-68 | Cari kartına IBAN listesi açılsın mı? (WP12, FNS-D114) | **Evet, şimdi açılsın (Önerilen)** | Seçilmeyen: "Sonraki dalgada". |
+| E-69 | Birleşen etiketin stok yaşı? (WP14) | **En eski kökün tarihi (Önerilen)** | Seçilmeyenler: "Kg ağırlıklı ortalama tarih"; "En yeni kökün tarihi". |
+| E-70 | Stok yaşlandırma dilimleri? (WP14) | **0-30/31-60/61-90/90+ gün (Önerilen)** | Seçilmeyenler: "0-90/91-180/181-365/365+ gün"; "Kullanıcı raporda seçsin". |
+| E-71 | AI bilgi paketi onayı? (WP-A4) | **Grup genelinde tek onay (Önerilen)** | Seçilmeyen: "Şirket başına onay". |
+| E-72 | `ai.knowledge.approve` Critical olsun mu? (WP-A4) | **Critical olmasın (Önerilen)** | Seçilmeyen: "Critical olsun". |
+| E-73 | Sağlayıcı karşılaştırmasında insan incelemesi? (WP-A2, YOL-D21) | **%10 insan incelemesi (Önerilen)** | Seçilmeyenler: "%25 insan incelemesi"; "Yalnız otomatik". |
+| E-74 | Kişi başı asistan hafıza kaydı sınırı? (WP-C6) | **200 kayıt (Önerilen)** | Seçilmeyenler: "100 kayıt"; "500 kayıt". |
+| E-75 | Tedarikçi iadesi maliyet istisnasını iadeyi giren onaylayabilir mi? (SAT-D396'nın açık bıraktığı) | **Hayır, farklı kişi onaylasın (Önerilen)** | Seçilmeyen: "Evet, aynı kişi onaylayabilir". |
+| E-76 | Hangi AI bilgi içeriği yalnız şirket içinde işlensin? (WP-A4, AI-D34 d) | **Para tutarı ve kişi adı içeren (Önerilen)** | Seçilmeyenler: "Yalnız para tutarı içeren"; "Hepsi yerel kalsın". |
+| E-77 | Bayatlayan SMM düzeltme önerisi? (WP5) | **Bayat diye kapatılsın + bildirim (Önerilen)** | Seçilmeyen: "Kutuda 'bayat' olarak kalsın". |
+| E-78 | Ekranı olmayan onaylar (açılış maliyeti, kasa hesabı)? (WP5/WP6) | **İş kutusundan karar verilsin (Önerilen)** | Seçilmeyen: "Ayrı ekranlar yapılsın". |
 
 ## Kararlar
 
@@ -125,6 +149,27 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | ALS-D127 | Kısmi geri alma/iade sonrası maliyet kuru (E-52; BS-1 ayrıntısı) | Dövizli alışta kabulün bir kısmı geri alınmış veya iade edilmişse maliyet kuru, geri alınan/iade edilen kısım düşüldükten sonra **kalan miktarın tamamı faturalandığında** kesinleşir. |
 | KLN-D120 | Adetli tahsisin kısmi bırakılması (E-53; SAT-D463 ile aynı ilke) | Adet tutan fiziksel tahsis kg olarak kısmen bırakılırken kg ile birlikte **adet zorunludur**; adetsiz kısmi bırakma reddedilir. Tam bırakmada kalan adet sıfırlanır. |
 | SAT-D473 | Kg/adet yokken sipariş onayı (SAT-D437 ayrıntısı) | Adetle satılan ürünün teorik kg/adedi hesaplanamıyorsa satış siparişinin onayı **reddedilmez**; o satırın kg/adet kaydı **boş kalır** ve satırda kg fiyatı ile adetli marj "hesaplanamıyor" görünür (golden M11/K13). Ürün kartı sonradan düzeltilse de onaylı belge değişmez (SAT-D437). Sevkte fiziksel kg girişi (SAT-D462–D464) ve faturadaki gerçek kg kuralları aynen geçerlidir. |
+| FNS-D118 | Masraf ve elle banka ödemesi onayı (E-55; YOL-D23 uygulaması) | Siparişlerdeki gibi: kaydı giren taslağı değiştirebilir; onayı onay izni olan **müdür** verir. Ayrı "onaya gönder" adımı olmadığından taslağı giren ve değiştiren her kullanıcı hazırlayan tarafındadır ve **onaylayamaz** (bugünkü davranış karar olarak kabul edilir); başka ek dışlama yoktur. |
+| SAT-D474 | Kart kg/adedinde çelişki (E-56, E-57; SAT-D473'ü tamamlar) | Ürün kartının kaynakları adet başına teorik kg için farklı sonuç verirse sipariş onayı **reddedilmez**; belgeye **ağırlık tablosu** değeri yazılır ve sipariş teorik kg ile devam eder. Onaylayana iki değer ve fark uyarı olarak gösterilir; uyarı denetime yazılır. |
+| YOL-D33 | Yükseltme zamanı (E-58; YOL-D17/YOL-D28 ayrıntısı) | Süresi dolan onaya hatırlatma gider; **bir süre sınıfı daha** (saat sınıfında 4 saat, iş günü sınıfında 2 iş günü) karar verilmezse onay yükseltme izni sahiplerine yükseltilir. ASSUMPTION-WP2-1'in yerine geçer. |
+| YOL-D34 | Sahipsiz onay (E-59; ROL-D3 uygulaması) | Onaylayabilecek kimse olmayan onay **`work.approvals.escalate`** izni sahiplerine gösterilir ve bildirilir; izin hiçbir role verilmez (atama insan kapısı). |
+| YOL-D35 | Özet saatleri izni (E-60; YOL-D25 ayrıntısı) | Günlük özet saatlerini **`settings.work-approval-duration.manage`** izni olan değiştirir; ayrı izin açılmaz. |
+| SAT-D475 | Fazla teslim onay talebi (E-61; SAT-D417 ile) | Plan üstü/fazla sevk denendiğinde bir **onay talebi kaydı** (kim, ne zaman, miktar, sipariş satırı) oluşur; iş kutusuna bu zamanla girer ve SAT-D417'deki onaylayıcı karar verir. Talep onaylanmadan fazla sevk kesinleşmez. |
+| SAT-D476 | Süresi dolan teklif dönüşüm talebi (E-62) | Süresi dolmuş açık teklif siparişe dönüştürülmek istendiğinde satışçı **dönüşüm onayı talebi** açar; talep iş kutusuna girer, onay sonrası dönüşüm yapılır. Süresi dolmuş her teklif kendiliğinden bekleyen sayılmaz. |
+| YOL-D36 | Kapsamlı onay yetkisi (E-63) | Transfer ve üretim planı onayları **şirket geneli** izinle verilir; tesis/lokasyon/iş merkezi kapsamlı yetki bu onaylarda kabul edilmez. |
+| YOL-D37 | Muhasebe onay izinleri (E-64) | Birden çok muhasebe onayını kapsayan mevcut izinler **ortak kalır**; işlem başına izin açılmaz. |
+| YOL-D38 | Sürümlü politika yayımı (E-65; K15 ↔ URN-D3/D6) | Sürümlü Ayarlar politikalarını yayım izni olan müdür **hazırlayıp yayımlayabilir** (URN-D3/D6); her yayım denetime yazılır. K15'in "yayımlayan ≠ hazırlayan" kuralı bu politikalarda uygulanmaz. |
+| FNS-D119 | Ekstre eşleşmesini geri alma (E-66; FNS-D113 ayrıntısı) | Eşleştirmeyi onaylayan kişi de eşleşmeyi geri alabilir; **gerekçe zorunlu**, geri alma ters kayıtla yapılır ve denetime yazılır. |
+| FNS-D120 | Ekstrede tek tutar sütunu (E-67) | Excel ekstresinde tek işaretli **"Tutar"** sütunu kabul edilir: eksi çıkış, artı giriş. Hem tek sütun hem ayrı giriş/çıkış sütunları varsa dosya reddedilir. |
+| FNS-D121 | Cari IBAN listesi (E-68; FNS-D114'ü tamamlar) | Cari kartına **IBAN listesi** (IBAN, banka, açıklama; sürümlü, denetimli; Cari modülü sahibi) eklenir; ekstre eşleştirmesi IBAN önerisini yalnız bu listeden yapar. |
+| YOL-D39 | Stok yaşlandırma (E-69, E-70; YOL-D30 ile) | Stok yaşı etiket kökünün ilk giriş tarihinden sayılır; bölünen etiket kökün tarihini, birleşen etiket **en eski kökün** tarihini alır. Dilimler **0-30 / 31-60 / 61-90 / 90+** gündür. |
+| AI-D46 | Bilgi paketi onayı (E-71, E-72) | AI bilgi paketi (karar dizini, sürüm bilgisi) **grup genelinde bir kez** onaylanır ve tüm şirketlerde geçerlidir. `ai.knowledge.approve` **Critical değildir**; hiçbir role verilmez (atama insan kapısı). |
+| AI-D47 | Sağlayıcı karşılaştırmasında insan incelemesi (E-73; YOL-D21 ayrıntısı) | Her adayın cevaplarından rastgele **%10'u** bir kişi tarafından doğru/yanlış işaretlenir; otomatik puanla fark raporlanır. |
+| AI-D48 | Hafıza kayıt sınırı (E-74; AI-D38 ile) | Kişi başı en fazla **200** etkin asistan hafıza kaydı tutulur; sınıra gelince yeni kayıt için eski bir kayıt kapatılır. Sınır Ayarlar'dan değiştirilebilir. |
+| ALS-D128 | Tedarikçi iadesi maliyet istisnası (E-75; SAT-D396'yı tamamlar) | İadeyi giren kişi elle maliyet istisnasını **onaylayamaz**; `purchasing.orders.approve` izni olan farklı bir kişi onaylar (bugünkü davranış). |
+| AI-D49 | Yerel kalan bilgi içeriği (E-76; AI-D34 d ayrıntısı) | **Para tutarı veya kişi adı** (maskeli olsa da) içeren karar/not yalnız şirket içi modelde işlenir; diğer kural metinleri buluta gidebilir. |
+| YOL-D40 | Bayat SMM önerisi (E-77) | Kaynağı değişip bayatlayan SMM düzeltme önerisi Muhasebe modülünce **"bayatladı"** nedeniyle kapatılır, denetime yazılır ve hazırlayana bildirim gider. |
+| YOL-D41 | Ekranı olmayan onaylar (E-78) | Açılış maliyeti onayı ve kasa hesabı açma/pasifleştirme/yeniden etkinleştirme onayları için ayrı ekran yapılmaz; **iş kutusundan karar** (WP8) bu onayları kapsar, ayrıntı açıklama kartında gösterilir. |
 
 ## Taslağa doğrudan yansıyanlar (yeni karar değil)
 
