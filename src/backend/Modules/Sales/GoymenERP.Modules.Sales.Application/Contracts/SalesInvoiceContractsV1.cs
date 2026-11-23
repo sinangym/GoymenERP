@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Invoices;
 
@@ -257,6 +258,7 @@ public static class SalesInvoiceReasonCodesV1
     public const string MoneyProfileMismatch = "money_profile_mismatch";
     public const string RateUnresolved = "rate_unresolved";
     public const string RateMismatch = "rate_mismatch";
+    public const string UsdShipmentDayMismatch = "usd_shipment_day_mismatch";
     public const string DueTermsMissing = "due_terms_missing";
     public const string DueDatePending = "due_date_pending";
     public const string DueDateMismatch = "due_date_mismatch";
@@ -270,6 +272,27 @@ public static class SalesInvoiceReasonCodesV1
 
     /// <summary>SAT-D157: the payable amount cannot be split into the due plan's instalments.</summary>
     public const string DueAmountNotSplittable = "due_amount_not_splittable";
+
+    /// <summary>SAT-D389 / SAT-D405: the share's dispatch note has no weighing-difference record — it cannot be invoiced.</summary>
+    public const string WeighingDifferenceNotRecorded = "weighing_difference_not_recorded";
+
+    /// <summary>SAT-D319 (6): the note's weighing difference is above the rate and waits for its approval.</summary>
+    public const string WeighingDifferencePendingApproval = "weighing_difference_pending_approval";
+
+    /// <summary>
+    /// SAT-D320 (3) / SAT-D322 (1): the sale passes at the scale kilograms, but the owner's per-line scale kilograms are not readable
+    /// yet (the Logistics V1 read carries the note totals only) — the share waits rather than guess a split.
+    /// </summary>
+    public const string WeighingKgTransferPending = "weighing_kg_transfer_pending";
+
+    /// <summary>The Logistics weighing-difference owner is not composed, failed or answered inconsistently — never invoiced unread.</summary>
+    public const string WeighingDifferenceUnavailable = "weighing_difference_unavailable";
+
+    /// <summary>
+    /// SAT-D437 (AK-4): a piece line's share is invoiced only with the theoretical kg/unit pinned at the order's approval; an
+    /// order line without one (never expected after AK-4; no back-fill) waits rather than inventing the kg information.
+    /// </summary>
+    public const string KilogramsPerUnitMissing = "kg_per_unit_missing";
 }
 
 /// <summary>The invoice routes' problem codes beside the draft's (<see cref="SalesDraftProblemCodesV1"/>).</summary>
@@ -301,6 +324,7 @@ public static class SalesInvoiceProblemCodesV1
 
     /// <summary>409 (recorded): the recorded match carries a difference; finalisation stays blocked until it is resolved (SAT-D229).</summary>
     public const string MatchDifferenceOpen = SalesRuleCodes.InvoiceMatchDifferenceOpen;
+    public const string MatchSourceProofRequired = SalesRuleCodes.InvoiceMatchSourceProofRequired;
 
     /// <summary>422: the foreign-currency instalments cannot be converted to TL without a negative or zero last remainder (SAT-D227, SAT-D233).</summary>
     public const string InstalmentFunctionalInvalid = SalesRuleCodes.InvoiceInstalmentFunctionalInvalid;
@@ -348,7 +372,11 @@ public sealed record SalesInvoiceLineView(
     string VatPercent,
     string? WithholdingShare,
     SalesInvoiceAmountsView Amounts,
-    SalesInvoiceLineFunctionalView? Functional);
+    SalesInvoiceLineFunctionalView? Functional,
+    // SAT-D434 (AK-4): a piece line's theoretical kg (pieces × the pinned kg/unit) and actual (scale) kg, information only;
+    // omitted on a kg line, whose Quantity already is the scale kg.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TheoreticalKg = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ActualKg = null);
 
 /// <summary>API-32 detail (and the create's answer). Amounts are prices: the read also needs <c>sales.orders.price.read</c>.</summary>
 public sealed record SalesInvoiceDetailView(
@@ -373,7 +401,9 @@ public sealed record SalesInvoiceDetailView(
     string? PaymentAllocationWarning = null,
     bool IsReplay = false,
     SalesInvoiceMatchView? Match = null,
-    SalesInvoiceFinalizationView? Finalization = null);
+    SalesInvoiceFinalizationView? Finalization = null,
+    // SAT-D436 (AK-5): the kg prices of an invoice with a piece line; omitted on a kg-only invoice.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SalesInvoiceKilogramPricesV1? KilogramPrices = null);
 
 /// <summary>The Finance axis of a finalised invoice (SAT-D208): Sales commits first and never calls a waiting invoice admitted.</summary>
 public static class SalesInvoiceFinanceStatusesV1
@@ -452,7 +482,10 @@ public sealed record SalesInvoiceExportQuery(string? Format, DateOnly From, Date
 public sealed record SalesInvoiceExportLineV1(int LineNo, string DispatchNoteNumber, int NoteLineNo, DateOnly ShipmentDate,
     Guid SalesOrderId, string SalesOrderNo, Guid ProductId, Guid UnitId, string Quantity, string NetUnitPrice, string? DiscountPercent,
     string? DiscountAmount, string? SurchargePercent, string? SurchargeAmount, string VatPercent, string? WithholdingShare,
-    SalesInvoiceAmountsView Amounts, SalesInvoiceAmountsView? FunctionalAmounts);
+    SalesInvoiceAmountsView Amounts, SalesInvoiceAmountsView? FunctionalAmounts,
+    // SAT-D434 (AK-4): the official invoice source states a piece line in pieces (Quantity) and carries its kg as information.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TheoreticalKg = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ActualKg = null);
 
 /// <summary>
 /// API-34 (SAT-D236/D244/D248): one finalised invoice of the export — header, the official match, the day of finalisation, the
@@ -550,6 +583,14 @@ public interface ISalesInvoiceStore
 
     /// <summary>The shipments among <paramref name="shipmentIds"/> already on an active invoice line of this company.</summary>
     Task<IReadOnlySet<Guid>> FindInvoicedShipmentsAsync(IReadOnlyCollection<Guid> shipmentIds, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// API-06 / plan S0 (a): the shipments among <paramref name="shipmentIds"/> on an active line of a FINALIZED invoice of this
+    /// company — the only moment a share leaves "shipped, not invoiced". A draft, pending, approved (not yet finalized), rejected or
+    /// cancelled invoice does not take it (a rejected or cancelled invoice has released its lines anyway).
+    /// </summary>
+    Task<IReadOnlySet<Guid>> FindFinalizedInvoiceShipmentsAsync(IReadOnlyCollection<Guid> shipmentIds,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// API-34: this company's FINALISED invoices whose finalisation instant is in [<paramref name="fromUtc"/>,

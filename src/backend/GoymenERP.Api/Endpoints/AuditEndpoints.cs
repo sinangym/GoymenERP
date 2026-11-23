@@ -17,13 +17,15 @@ public static class AuditEndpoints
                 string? correlationId,
                 string? entityType,
                 string? entityId,
+                string? outcome,
                 IAuditQueryService service,
                 CancellationToken cancellationToken) =>
             {
                 if (IsTooLong(correlationId, 128)
                     || IsTooLong(cursor, 128)
                     || IsTooLong(entityType, 160)
-                    || IsTooLong(entityId, 128))
+                    || IsTooLong(entityId, 128)
+                    || IsTooLong(outcome, 32))
                 {
                     return Results.Problem(
                         title: "Audit filtresi geçersiz.",
@@ -37,6 +39,7 @@ public static class AuditEndpoints
                     correlationId,
                     entityType,
                     entityId,
+                    outcome,
                     cancellationToken);
                 return result.Status switch
                 {
@@ -44,6 +47,10 @@ public static class AuditEndpoints
                     AuditEventQueryStatus.InvalidCursor => Results.Problem(
                         title: "Audit cursor bilgisi geçersiz.",
                         detail: "Audit listesini ilk sayfadan yeniden açın.",
+                        statusCode: StatusCodes.Status400BadRequest),
+                    AuditEventQueryStatus.InvalidOutcome => Results.Problem(
+                        title: "Audit filtresi geçersiz.",
+                        detail: "Sonuç filtresi yalnız Succeeded veya Refused olabilir.",
                         statusCode: StatusCodes.Status400BadRequest),
                     // BLG-03: authority revoked before or during the read; nothing is released.
                     _ => Results.Problem(

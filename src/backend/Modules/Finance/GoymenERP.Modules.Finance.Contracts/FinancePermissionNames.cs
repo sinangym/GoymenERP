@@ -34,6 +34,17 @@ public static class FinancePermissionNames
     public const string ManualBankPaymentApprove = "finance.manual-bank-payment.approve";
     public const string ManualBankPaymentRecord = "finance.manual-bank-payment.record";
 
+    // FNS-D25 (API-25): the payment not tied to a party. Registration only; a human grants them, and the
+    // approver must be a different user from the preparer.
+    public const string ExpensePaymentDraftSave = "finance.expense-payment.draft.save";
+    public const string ExpensePaymentDraftRead = "finance.expense-payment.draft.read";
+    public const string ExpensePaymentApprove = "finance.expense-payment.approve";
+    public const string ExpensePaymentRecord = "finance.expense-payment.record";
+
+    // FNS-D24 (API-32/34): the transfer between two treasury accounts. Registration only; a human grants them.
+    public const string CashTransferRead = "finance.cash-transfers.read";
+    public const string CashTransferCommit = "finance.cash-transfers.commit";
+
     // API-23: maker-checker reversal of a recorded outgoing payment. Registration only; a human grants them, and the
     // approver must be a different user from the proposer.
     public const string PaymentReversePropose = "finance.manual-bank-payment.reverse.propose";

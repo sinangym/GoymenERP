@@ -1,4 +1,6 @@
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.BuildingBlocks.Messaging;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Infrastructure.Seeding;
@@ -42,14 +44,26 @@ public static class OrganizationModuleExtensions
             configureDbContext?.Invoke(serviceProvider, options);
         });
         services.AddScoped<OrganizationBootstrapWriteScope>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<OrganizationCompanyLifecycleReader>();
+        services.AddScoped<ICompanyLifecycleReadPortV1>(sp => sp.GetRequiredService<OrganizationCompanyLifecycleReader>());
+        services.AddScoped<IOutboxCompanyDirectoryV1>(sp => sp.GetRequiredService<OrganizationCompanyLifecycleReader>());
+        services.AddScoped<OrganizationCompanySetupInboxConsumer>();
+        services.AddScoped<IOrganizationCompanyOpeningV1, OrganizationCompanyOpeningV1>();
         services.AddScoped<IOrganizationService, OrganizationService>();
         services.AddScoped<IOrganizationMasterDataService, OrganizationMasterDataService>();
+        // B-15 calendar master: the same command protocol and helpers as the master edit (one partial class).
+        services.AddScoped<IOrganizationWorkCenterCalendarService, OrganizationMasterDataService>();
+        services.AddScoped<IOrganizationCompanyTaxIdService, OrganizationMasterDataService>();
         services.TryAddScoped<IOrganizationLocationOperatorEligibilityPortV1, UnavailableOrganizationLocationOperatorEligibilityPortV1>();
         services.AddScoped<IOrganizationTransferDestinationSourceV1, OrganizationTransferDestinationSourceV1>();
         // The module read for other modules' commands: company-scoped, no user permission gate.
         services.AddScoped<IOrganizationLocationStatusReaderV1, OrganizationLocationStatusReader>();
         services.AddScoped<IOrganizationLocationCandidatesV1, OrganizationLocationCandidateReader>();
+        services.AddScoped<IOrganizationTransferDestinationCandidatesV1, OrganizationTransferDestinationCandidateReader>();
         services.AddScoped<IOrganizationLocationDisplayReaderV1, OrganizationLocationDisplayReader>();
+        // KIM-D35: the company's "VKN girilmemiş" mark for modules that issue a VKN-bearing official document.
+        services.AddScoped<IOrganizationCompanyTaxIdStatusReaderV1, OrganizationCompanyTaxIdStatusReader>();
         services.AddOrganizationWorkCenterPlanningReferences();
         services.AddScoped<OrganizationDataSeeder>();
         services.AddSingleton<IShellCapabilityProvider, OrganizationShellCapabilityProvider>();

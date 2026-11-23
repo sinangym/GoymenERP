@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace GoymenERP.Modules.Purchasing.Application.Contracts;
@@ -17,14 +18,75 @@ public sealed record PurchaseGoodsReceiptViewV1(
     Guid LotId, Guid LabelId, string LabelCode, string LabelVersion, Guid MovementId, Guid LocationId,
     string MeasuredQuantityKg, string InitialBlock, DateTimeOffset OccurredAtUtc);
 
-public sealed record PurchaseGoodsReceiptResponseV1(PurchaseGoodsReceiptViewV1 Receipt, bool IsReplay, string OriginalCorrelationId);
+public sealed record PurchaseGoodsReceiptResponseV1(PurchaseGoodsReceiptViewV1 Receipt, bool IsReplay, string OriginalCorrelationId)
+{
+    /// <summary>
+    /// KLN-D94 (SINAN-CEVAP 34): future supply allocations of the received line that this receipt could not link to its label
+    /// and that Inventory therefore released in full (<c>acceptance-link-failed</c>). The receipt itself stands; this list only
+    /// tells the receiving user which Sales reservations were dropped. KLN-D110 (2): after a link failure every allocation still
+    /// Active on the received line is released whole too and listed with the same failure code. A replay answers Inventory's
+    /// stored conversion list (the KLN-D110 sweep is not repeated or re-listed on replay). Empty when nothing was released.
+    /// </summary>
+    public IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1> FutureSupplyReleases { get; init; } = [];
+
+    /// <summary>
+    /// AK-3 (BS-16/BS-17, golden TA4): on a piece-unit line, how the weighed kilograms compare with the theoretical kilograms
+    /// (accepted pieces × the line's recorded kg per piece). Information and warning only — the receipt stands and its cost is
+    /// computed from the weighed kilograms; null on a kilogram line.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public PurchaseGoodsReceiptPieceKilogramsV1? PieceKilograms { get; init; }
+}
+
+/// <summary>
+/// AK-3: one piece receipt's kilograms. <see cref="TheoreticalQuantityKg"/> = <see cref="PieceCount"/> × <see cref="KilogramsPerUnit"/>
+/// (three decimals, URN-D9); <see cref="DifferenceKg"/> = weighed − theoretical (signed); <see cref="VarianceOutcome"/> is
+/// <c>GoodsReceiptKgVarianceOutcome</c>'s name against the Ayarlar tolerance (<see cref="TolerancePercent"/>, null = not set).
+/// </summary>
+public sealed record PurchaseGoodsReceiptPieceKilogramsV1(int PieceCount, string KilogramsPerUnit, string TheoreticalQuantityKg,
+    string MeasuredQuantityKg, string DifferenceKg, string VarianceOutcome, string? TolerancePercent);
+
+/// <summary>
+/// KLN-D94: one future supply allocation released at goods receipt because its label link failed. <see cref="ReleasedQuantity"/>
+/// is the WHOLE remainder Inventory released (purchase unit), not only this receipt's share (Q34.8). <see cref="FailureCode"/>
+/// is one of <see cref="PurchaseReceiptFutureSupplyReleaseCodesV1"/>; the user text is localized by the client.
+/// </summary>
+public sealed record PurchaseReceiptFutureSupplyReleaseV1(Guid FutureAllocationId, string ReleasedQuantity, string FailureCode);
+
+/// <summary>The link failure codes Inventory reports for a released future allocation (F-017 STOK §3.5).</summary>
+public static class PurchaseReceiptFutureSupplyReleaseCodesV1
+{
+    public const string LabelBlocked = "label-blocked";
+    public const string UnitConversionUnavailable = "unit-conversion-unavailable";
+    public const string DemandNotApproved = "demand-not-approved";
+    public const string ProductMismatch = "product-mismatch";
+    public const string InsufficientLabelQuantity = "insufficient-label-quantity";
+    public const string OwnerNotCompany = "owner-not-company";
+
+    public static IReadOnlySet<string> All { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        LabelBlocked, UnitConversionUnavailable, DemandNotApproved, ProductMismatch, InsufficientLabelQuantity, OwnerNotCompany,
+    };
+}
 public sealed record PurchaseGoodsReceiptDetailV1(PurchaseGoodsReceiptViewV1 Receipt);
 public sealed record PurchaseGoodsReceiptPageV1(IReadOnlyList<PurchaseGoodsReceiptViewV1> Items, bool SearchWindowFull);
 public sealed record PurchaseReceiptLocationV1(Guid LocationId, string LocationCode, string LocationName, string SiteName);
 public sealed record PurchaseReceiptSourceV1(Guid CompanyId, Guid PurchaseOrderId, Guid PurchaseOrderLineId,
-    string PurchaseOrderVersion, Guid ProductId, string ProductVersion, Guid UnitId, DateOnly EffectiveOn);
+    string PurchaseOrderVersion, Guid ProductId, string ProductVersion, Guid UnitId, DateOnly EffectiveOn)
+{
+    /// <summary>Purchasing-owned internal routing fact; resolved from the order aggregate, never from browser input.</summary>
+    [JsonIgnore]
+    public Guid PurchaseOrderGeneralLineId { get; init; }
+}
 public sealed record PurchaseGoodsReceiptOptionsV1(PurchaseReceiptSourceV1 Source,
-    IReadOnlyList<PurchaseReceiptLocationV1> Locations, bool SearchWindowFull);
+    IReadOnlyList<PurchaseReceiptLocationV1> Locations, bool SearchWindowFull)
+{
+    /// <summary>STK-S18: advisory Inventory owner measurement, not a reservation or a promise of receipt conversion.</summary>
+    public PurchaseReceiptFutureSupplySummaryV1? FutureSupply { get; init; }
+}
+
+public sealed record PurchaseReceiptFutureSupplySummaryV1(Guid CompanyId, Guid PurchaseOrderId,
+    Guid PurchaseOrderGeneralLineId, Guid UnitId, string ActiveAllocatedQuantity);
 
 public interface IPurchaseGoodsReceiptServiceV1
 {
@@ -47,6 +109,12 @@ public static class PurchaseGoodsReceiptApiV1
 
 public static class PurchaseGoodsReceiptCodesV1
 {
+    /// <summary>AK-3 (SAT-D437, fail-closed): a piece line has no recorded theoretical kg per piece, so it takes no receipt (409).</summary>
+    public const string TheoreticalKilogramsMissing = "purchasing_receipt_theoretical_kilograms_missing";
+
+    /// <summary>AK-3 (KLN-D119): a piece line's accepted quantity is not a whole piece count Inventory can hold (400).</summary>
+    public const string PieceCountInvalid = "purchasing_receipt_piece_count_invalid";
+
     public const string Unavailable = "purchasing_goods_receipt_unavailable";
     public const string DocumentSourceUnavailable = "purchasing_receipt_document_source_unavailable";
     public const string SourceInvalid = "purchasing_goods_receipt_source_invalid";
@@ -72,9 +140,19 @@ public static class PurchaseGoodsReceiptDocumentPolicyV1
 /// </summary>
 public interface IPurchaseGoodsReceiptTransactionV1
 {
-    Task<T> ExecuteAsync<T>(Guid companyId, Func<IPurchaseGoodsReceiptParticipantsV1, CancellationToken, Task<T>> operation,
+    Task<T> ExecuteAsync<T>(Guid companyId, PurchaseGoodsReceiptTargetV1 target, Guid acceptanceId,
+        PurchasingWriteEnvelope envelope, Func<IPurchaseGoodsReceiptParticipantsV1, CancellationToken, Task<T>> operation,
         Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Server-authorized receipt intent. The host resolves its general line from Purchasing's owner participant, pre-reads its
+/// active Inventory demand set, locks every Sales line ascending and then every purchase general line ascending, and re-reads
+/// the set before invoking the business callback ONCE. An expanding set retries only this read/lock preparation in a fresh
+/// transaction. The expected version is checked by the existing acceptance stage, never used to block an immutable replay.
+/// </summary>
+public sealed record PurchaseGoodsReceiptTargetV1(Guid PurchaseOrderId, Guid PurchaseOrderLineId,
+    string ExpectedPurchaseOrderVersion);
 
 public interface IPurchaseGoodsReceiptParticipantsV1
 {
@@ -122,11 +200,21 @@ public sealed record PurchaseReceiptStockRequestV1(Guid CompanyId, Guid Acceptan
     // ReadOriginalAsync must copy Inventory's stored value, never apply today's default to history.
     // This DTO is not the public request: callers cannot submit block/document/ownership facts.
     public string InitialBlock { get; init; } = PurchaseGoodsReceiptApiV1.InitialBlock;
+
+    /// <summary>
+    /// AK-3 (KLN-D119): the received piece count of a piece-unit line (its whole accepted quantity), handed to Inventory's
+    /// <c>PieceCount</c>; null on a kilogram line, exactly as before.
+    /// </summary>
+    public int? PieceCount { get; init; }
 }
 
 public sealed record PurchaseReceiptStockResultV1(Guid CompanyId, Guid AcceptanceId, Guid PurchaseOrderId, Guid PurchaseOrderLineId,
     string PurchaseOrderVersion, Guid ProductId, string ProductVersion, Guid PurchaseUnitId, Guid LotId, Guid LabelId,
-    string LabelVersion, Guid MovementId, string QuantityKg, bool IsReplay, string OriginalCorrelationId);
+    string LabelVersion, Guid MovementId, string QuantityKg, bool IsReplay, string OriginalCorrelationId)
+{
+    /// <summary>KLN-D94: the future allocations the same transaction released because their label link failed (host-supplied).</summary>
+    public IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1> FutureSupplyReleases { get; init; } = [];
+}
 
 public static class PurchaseGoodsReceiptJsonV1
 {

@@ -2,20 +2,35 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using GoymenERP.Modules.Finance.Contracts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Finance.Infrastructure;
 
 /// <summary>
-/// Strict parser for the application-owned v1 CSV template. It computes provenance from the exact
-/// uploaded bytes and emits only the already-published canonical Finance source contract. It does
-/// not read a native Mikro layout, approve a file, resolve a party mapping or persist anything.
+/// Strict parser for the application-owned CSV templates: v1 (installments only, unchanged) and FIN-S5's v2
+/// (<see cref="FinanceOfficialSalesInvoiceImportTemplateV2"/>: v1 plus the official document columns). The exact
+/// header selects the template. It computes provenance from the exact uploaded bytes and emits only the
+/// already-published canonical Finance source contract; v2's document facts are returned beside it through
+/// <see cref="Parse"/>. It does not read a native Mikro layout, approve a file, resolve a party mapping or persist
+/// anything.
 /// </summary>
 public sealed class FinanceOfficialInvoiceImportParserV1 : IFinanceOfficialInvoiceImportParserV1
 {
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private static readonly string[] Header = FinanceOfficialInvoiceImportTemplateV1.Header.Split(',');
+    private static readonly string[] HeaderV2 = FinanceOfficialSalesInvoiceImportTemplateV2.Header.Split(',');
+    private static readonly string[] HeaderV3 = FinanceOfficialSalesInvoiceImportTemplateV3.Header.Split(',');
 
     public FinanceOfficialInvoiceImportPreviewV1 Preview(
+        FinanceContext context,
+        FinanceOfficialInvoiceImportPreviewRequestV1 request) =>
+        Parse(context, request).Preview;
+
+    /// <summary>
+    /// The preview plus, for a valid v2 file, one document per distinct source document in first-row order. A v1 file
+    /// and every invalid file return no documents.
+    /// </summary>
+    internal static FinanceOfficialInvoiceImportParseResult Parse(
         FinanceContext context,
         FinanceOfficialInvoiceImportPreviewRequestV1 request)
     {
@@ -65,23 +80,34 @@ public sealed class FinanceOfficialInvoiceImportParserV1 : IFinanceOfficialInvoi
         {
             lines = lines[..^1];
         }
-        if (lines.Length == 0 || !TryParseLine(lines[0], out var actualHeader)
-            || !actualHeader.SequenceEqual(Header, StringComparer.Ordinal))
+        if (lines.Length == 0 || !TryParseLine(lines[0], out var actualHeader))
         {
             issues.Add(new(1, "header", FinanceOfficialInvoiceImportCodesV1.HeaderInvalid));
             return Result(checksum, issues);
         }
+        var isV2 = actualHeader.SequenceEqual(HeaderV2, StringComparer.Ordinal);
+        var isV3 = actualHeader.SequenceEqual(HeaderV3, StringComparer.Ordinal);
+        if (!isV2 && !isV3 && !actualHeader.SequenceEqual(Header, StringComparer.Ordinal))
+        {
+            issues.Add(new(1, "header", FinanceOfficialInvoiceImportCodesV1.HeaderInvalid));
+            return Result(checksum, issues);
+        }
+        var templateVersion = isV3 ? FinanceOfficialSalesInvoiceImportTemplateV3.Version : isV2
+            ? FinanceOfficialSalesInvoiceImportTemplateV2.Version
+            : FinanceOfficialInvoiceImportTemplateV1.Version;
+        var expectedFields = isV3 ? HeaderV3.Length : isV2 ? HeaderV2.Length : Header.Length;
         if (lines.Length - 1 > FinanceOfficialInvoiceImportTemplateV1.MaximumRows)
         {
             issues.Add(new(0, "rows", FinanceOfficialInvoiceImportCodesV1.RowLimitExceeded));
-            return Result(checksum, issues);
+            return Result(checksum, issues, templateVersion);
         }
 
         var rows = new List<ApprovedFinanceOpenItemSourceRow>(Math.Max(0, lines.Length - 1));
+        var documents = new FinanceOfficialSalesInvoiceImportDocumentsV2();
         for (var index = 1; index < lines.Length; index++)
         {
             var rowNumber = index + 1;
-            if (!TryParseLine(lines[index], out var fields) || fields.Length != Header.Length)
+            if (!TryParseLine(lines[index], out var fields) || fields.Length != expectedFields)
             {
                 issues.Add(new(rowNumber, "row", FinanceOfficialInvoiceImportCodesV1.RowShapeInvalid));
                 continue;
@@ -106,7 +132,18 @@ public sealed class FinanceOfficialInvoiceImportParserV1 : IFinanceOfficialInvoi
                 dueOn = parsedDueOn;
             }
 
+            FinanceOfficialSalesInvoiceImportDocumentV2? document = null;
+            if (isV2 || isV3)
+            {
+                document = FinanceOfficialSalesInvoiceImportDocumentsV2.Read(
+                    documentId, fields.AsSpan(Header.Length), rowNumber, rowIssues, isV3);
+            }
+
             issues.AddRange(rowIssues);
+            if (rowIssues.Count == 0 && document is not null)
+            {
+                documents.Add(document, rowNumber, issues);
+            }
             if (rowIssues.Count == 0)
             {
                 rows.Add(new ApprovedFinanceOpenItemSourceRow(
@@ -123,7 +160,7 @@ public sealed class FinanceOfficialInvoiceImportParserV1 : IFinanceOfficialInvoi
         }
         if (issues.Count > 0)
         {
-            return Result(checksum, issues);
+            return Result(checksum, issues, templateVersion);
         }
 
         var batch = new ApprovedFinanceOpenItemSourceBatch(
@@ -135,15 +172,52 @@ public sealed class FinanceOfficialInvoiceImportParserV1 : IFinanceOfficialInvoi
             issues.Add(new(rowNumber, field, issue.Code));
         }
         return issues.Count == 0
-            ? new FinanceOfficialInvoiceImportPreviewV1(
-                FinanceOfficialInvoiceImportTemplateV1.Version, checksum, batch, [])
-            : Result(checksum, issues);
+            ? new FinanceOfficialInvoiceImportParseResult(
+                new FinanceOfficialInvoiceImportPreviewV1(templateVersion, checksum, batch, [],
+                    TaxWarnings(documents.InOrder, rows)),
+                documents.InOrder)
+            : Result(checksum, issues, templateVersion);
     }
 
-    private static FinanceOfficialInvoiceImportPreviewV1 Result(
+    /// <summary>
+    /// FNS-D64 on the CSV preview, through the same calculator as the manual record. The payable TL is the v3 column;
+    /// a v2 document has none, so it is the sum of its installments only when every installment is in Turkish lira (the
+    /// functional currency) — otherwise the payable TL is unknown and no verdict is given (never converted, never zero).
+    /// </summary>
+    private static IReadOnlyList<FinanceOfficialInvoiceTaxWarningV1>? TaxWarnings(
+        IReadOnlyList<FinanceOfficialSalesInvoiceImportDocumentV2> documents,
+        IReadOnlyList<ApprovedFinanceOpenItemSourceRow> rows)
+    {
+        var warnings = new List<FinanceOfficialInvoiceTaxWarningV1>();
+        foreach (var document in documents)
+        {
+            var payable = document.PayableFunctionalAmount ?? LiraInstallmentTotal(
+                rows.Where(row => row.SourceDocumentId == document.SourceDocumentId).ToArray());
+            if (FinanceOfficialInvoiceTaxConsistencyV1.Check(document.TaxBaseFunctionalAmount, document.VatFunctionalAmount,
+                    document.WithholdingFunctionalAmount, payable, document.SourceDocumentId) is { } warning)
+                warnings.Add(warning);
+        }
+        return warnings.Count == 0 ? null : warnings;
+    }
+
+    private static string? LiraInstallmentTotal(IReadOnlyList<ApprovedFinanceOpenItemSourceRow> installments)
+    {
+        if (installments.Count == 0
+            || installments.Any(row => row.CurrencyId != SettingsCurrencyIdentitiesV1.TurkishLira)) return null;
+        var total = new FinanceExactDecimalText(0, 0);
+        foreach (var row in installments)
+        {
+            if (!FinanceExactDecimalText.TryParseNonNegative(row.Amount, out var amount)) return null;
+            total = total.Add(amount);
+        }
+        return total.Text;
+    }
+
+    private static FinanceOfficialInvoiceImportParseResult Result(
         string checksum,
-        IReadOnlyList<FinanceOfficialInvoiceImportIssueV1> issues) =>
-        new(FinanceOfficialInvoiceImportTemplateV1.Version, checksum, null, issues);
+        IReadOnlyList<FinanceOfficialInvoiceImportIssueV1> issues,
+        string templateVersion = FinanceOfficialInvoiceImportTemplateV1.Version) =>
+        new(new FinanceOfficialInvoiceImportPreviewV1(templateVersion, checksum, null, issues), []);
 
     private static Guid GuidField(
         string value,

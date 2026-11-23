@@ -4,8 +4,7 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 namespace GoymenERP.Settings.UnitTests;
 
 /// <summary>
-/// PRD-UNIT-1: the company-independent unit identities, derived only from the approved unit-profile
-/// catalog. Every value asserted here is <see cref="ApprovedUnitProfileCatalog.GdcKilogramV1"/>'s.
+/// PRD-UNIT-1 / Master §28.1 / ALS-D43/D51: global unit identities do not grant or create company profiles.
 /// </summary>
 public sealed class ApprovedUnitIdentityCatalogTests
 {
@@ -13,12 +12,20 @@ public sealed class ApprovedUnitIdentityCatalogTests
     private static readonly Guid Gsp = Guid.Parse("10000000-0000-0000-0000-000000000002");
 
     [Fact]
-    public async Task The_approved_catalog_holds_exactly_the_kilogram_identity()
+    public async Task Standard_unit_identities_are_explicit_and_only_kilogram_and_piece_carry_company_profiles()
     {
         var catalog = new ApprovedSettingsUnitIdentityCatalog();
 
         var expected = new UnitIdentityV1(Kg, "kg", "weight", IsKilogram: true);
-        Assert.Equal([expected], await catalog.ListAsync());
+        Assert.Equal(new[] {
+            new UnitIdentityV1(Guid.Parse("5e0cbe45-61cc-541a-834a-366355de36e5"), "adet", "count", false), expected,
+            new UnitIdentityV1(Guid.Parse("564b68b4-02a8-5e72-af2a-4f5cb9b91702"), "m", "length", false),
+            new UnitIdentityV1(Guid.Parse("ab3cea5c-850e-515f-8de5-16f192ad7771"), "t", "weight", false),
+        }, await catalog.ListAsync());
+        // AK-1: kg and piece carry company profiles; metre and tonne remain identities only.
+        Assert.Equal(6, ApprovedUnitProfileCatalog.Approved.Entries.Count);
+        Assert.All(ApprovedUnitProfileCatalog.Approved.Entries,
+            entry => Assert.Contains(entry.UnitId, new[] { Kg, SettingsUnitIdentitiesV1.Piece }));
         Assert.Equal(expected, await catalog.ReadAsync(Kg));
     }
 

@@ -39,7 +39,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// owner's SHARED item type (SAT-D149) feeding the Settings line tax port end to end, with the forward-fix move (51151/51152).
 /// Every grant is a fresh synthetic role; codes and amounts are SENTETIK.
 /// </summary>
-public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
+public sealed partial class SettingsTaxMasterSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
@@ -384,7 +384,8 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
         Assert.True(migration > 0);
         var rollback = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[migration - 1]));
         Assert.Equal(51152, rollback.Number);
-        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        // Later, empty Product migrations (BS-9 dimensions) may roll back before the refusal; the move and what precedes it stay.
+        Assert.Equal(applied.Take(migration + 1), (await context.Database.GetAppliedMigrationsAsync()).Take(migration + 1));
     }
 
     [SqlServerFact]

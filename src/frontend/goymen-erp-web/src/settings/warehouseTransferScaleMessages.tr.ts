@@ -1,0 +1,17 @@
+export const WAREHOUSE_TRANSFER_SCALE_TEXT = {
+  title: 'Depo transfer çıkış tartısı',
+  intro: 'Depo başına transfer çıkış tartısı ayarını görüntüleyin ve gerekçeyle kaydedin.',
+  subject: 'depo transfer tartısı ayarı', warehouses: 'depolar',
+  search: 'Depoları ara', query: 'Depo veya tesis kodu/adı', choose: 'Depo seçin', warehouse: 'Depo',
+  empty: 'Aramanıza uygun etkin iç depo bulunamadı.', windowFull: 'İlk 25 depo gösteriliyor. Aramanızı daraltın.',
+  selection: 'Ayarını görmek için gerçek bir depo seçin.', invalidQuery: 'Arama metni en fazla 200 karakter olmalı ve kontrol karakteri içermemelidir.',
+  notConfigured: 'Bu depo için ayar kaydı yok. Karar gereği çıkış tartısı kapalı; kayıtlı sürüm oluşturulmamıştır.',
+  configured: 'Bu depo için açık bir ayar sürümü kaydedilmiş.', enabled: 'Açık', disabled: 'Kapalı', value: 'Çıkış tartısı gereksinimi',
+  chooseValue: 'Kaydedilecek değeri seçin', reason: 'Değişiklik gerekçesi', save: 'Ayarı kaydet',
+  pending: 'Kaydediliyor.', saved: 'Depo ayarı kaydedildi. Güncel kaynak yeniden okunuyor.', replayed: 'Önceki işlem sonucu alındı. Güncel kaynak yeniden okunuyor.',
+  required: 'Açık veya kapalı değerini ve en fazla 4000 karakterlik, tek satırlık gerekçeyi belirtin.',
+  unknown: 'İşlem sonucu belirsiz. Aynı isteği aynı anahtarla tekrar gönderin; yeni değişiklik yapmayın.',
+  retry: 'Aynı isteği tekrar gönder', refused: 'İstek reddedildi. Güncel ayarı ve girişleri kontrol edin.',
+  refresh: 'Ayarı yenile', history: 'Depo ayarı sürümleri', version: 'Sürüm', who: 'Kaydeden', when: 'Kayıt zamanı',
+  noHistory: 'Kaydedilmiş ayar sürümü yok.',
+} as const

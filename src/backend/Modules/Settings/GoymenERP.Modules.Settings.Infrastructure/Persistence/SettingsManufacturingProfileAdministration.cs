@@ -6,6 +6,7 @@ using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -13,8 +14,10 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 
 /// <summary>
 /// API-01/02 (Üretim U1-a; URT-D6, D7, D9, D10; DEC-SET-001): the write path of the Manufacturing parameter profiles and of the
-/// Manufacturing tolerance registry, on the D-MFG-PROFILE-AUTH-01=A lifecycle (<see cref="ManufacturingToleranceProfileLifecyclePolicyV1"/>:
-/// prepare → approve → publish; the approver and the publisher are not the preparer).
+/// Manufacturing tolerance registry, on the URN-D6 single flow (<see cref="ManufacturingToleranceProfileLifecyclePolicyV1"/>:
+/// prepare → publish by an authorized actor, the preparer included; no second approval, the audit records who published).
+/// The approval routes stay and answer the registered <see cref="ManufacturingProfileProblemCodesV1.ApprovalRetired"/>;
+/// versions approved or published under D-MFG-PROFILE-AUTH-01=A keep their approval as history and are not rewritten.
 /// <list type="bullet">
 /// <item><b>Authority</b>: each action its own name (<see cref="ManufacturingParameterProfileActionsV1"/>,
 /// <see cref="ManufacturingToleranceProfileActionsV1"/>, <see cref="ManufacturingToleranceProfileReadActionV1"/>), company-wide,
@@ -34,7 +37,8 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
     IErpAuthorityRevalidationService revalidation,
     IAuditEventCollector auditEvents,
     TimeProvider timeProvider,
-    ILogger<SettingsManufacturingProfileAdministration> logger)
+    ILogger<SettingsManufacturingProfileAdministration> logger,
+    IAuditTransactionWriterV1? auditWriter = null)
     : ISettingsManufacturingParameterProfileAdministrationV1, ISettingsManufacturingToleranceProfileAdministrationV1
 {
     private const int CommandExecutionSchemaVersion = 1;
@@ -103,10 +107,21 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
         }
     }
 
-    private Task<CommandExecution?> FindExecutionAsync(string commandName, string keyHash, CancellationToken cancellationToken) =>
-        ReadAsync(() => database.CommandExecutions.AsNoTracking()
-            .SingleOrDefaultAsync(execution => execution.CommandName == commandName && execution.IdempotencyKeyHash == keyHash,
+    private async Task<CommandExecution?> FindExecutionAsync(string commandName, string keyHash, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await ReadAsync(() => database.CommandExecutions.AsNoTracking()
+                .SingleOrDefaultAsync(execution => execution.CommandName == commandName && execution.IdempotencyKeyHash == keyHash,
                 cancellationToken));
+        }
+        catch (Exception exception) when (exception is SqlException
+            or InvalidOperationException { InnerException: SqlException })
+        {
+            // Covers direct and EF-wrapped receipt reads, including reads inside a save-race catch.
+            throw new SettingsPrerequisiteException(ManufacturingProfileProblemCodesV1.ProviderUnavailable);
+        }
+    }
 
     private static ManufacturingProfileCommandResultV1 Replay(CommandExecution execution, string requestHash,
         SettingsCommandMetadataV1 metadata)
@@ -149,8 +164,9 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
     /// <summary>Stores a refusal (no business change) as the key's terminal answer; a same-key winner replays.</summary>
     private async Task<ManufacturingProfileCommandResultV1> StoreRefusalAsync(string commandName,
         ManufacturingProfileCommandAnswerV1 answer, string keyHash, string requestHash, SettingsCommandMetadataV1 metadata,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, Func<Task>? revalidate = null)
     {
+        if (revalidate is not null) await revalidate();
         database.ChangeTracker.Clear();
         AddExecution(commandName, answer, keyHash, requestHash, metadata);
         try
@@ -158,16 +174,25 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
             await database.SaveChangesAsync(cancellationToken);
             return new ManufacturingProfileCommandResultV1(answer, false, metadata.CorrelationId);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+            || exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
         {
             database.ChangeTracker.Clear();
             var winner = await FindExecutionAsync(commandName, keyHash, cancellationToken);
+            if (revalidate is not null) await revalidate();
             if (winner is null)
             {
                 throw new SettingsPrerequisiteException(ManufacturingProfileProblemCodesV1.ProviderUnavailable);
             }
 
             return Replay(winner, requestHash, metadata);
+        }
+        catch (Exception exception) when (exception is DbUpdateException or SqlException
+            or InvalidOperationException { InnerException: DbUpdateException or SqlException })
+        {
+            // A provider failure is not a terminal business refusal and never consumes the retry key.
+            database.ChangeTracker.Clear();
+            throw new SettingsPrerequisiteException(ManufacturingProfileProblemCodesV1.ProviderUnavailable);
         }
     }
 
@@ -186,7 +211,8 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
             await database.SaveChangesAsync(cancellationToken);
             return new ManufacturingProfileCommandResultV1(answer, false, metadata.CorrelationId);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+            || exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
         {
             database.ChangeTracker.Clear();
             var winner = await FindExecutionAsync(commandName, keyHash, cancellationToken);
@@ -197,6 +223,13 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
 
             var refusal = await ReadAsync(() => onConflict(cancellationToken));
             return await StoreRefusalAsync(commandName, refusal, keyHash, requestHash, metadata, cancellationToken);
+        }
+        catch (Exception exception) when (exception is DbUpdateException or SqlException
+            or InvalidOperationException { InnerException: DbUpdateException or SqlException })
+        {
+            // A provider failure is not a terminal business refusal and never consumes the retry key.
+            database.ChangeTracker.Clear();
+            throw new SettingsPrerequisiteException(ManufacturingProfileProblemCodesV1.ProviderUnavailable);
         }
     }
 
@@ -245,6 +278,7 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
 
     private static string AuditDescription(string eventType) => eventType switch
     {
+        BaselineTransferredEvent => "Üretim başlangıç profilleri değerleri değiştirilmeden aktarıldı",
         ParameterPreparedEvent => "Üretim parametre profili taslağı hazırlandı; gerekçe kayıt içeriğindedir",
         ParameterApprovedEvent => "Üretim parametre profili onaylandı; gerekçe kayıt içeriğindedir",
         ParameterPublishedEvent => "Üretim parametre profili yayımlandı; gerekçe kayıt içeriğindedir",
@@ -276,10 +310,8 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
             ManufacturingToleranceProfileLifecycleCodesV1.VersionConflict => Answers.VersionConflict(),
             ManufacturingToleranceProfileLifecycleCodesV1.InvalidTransition => Answers.Problem(409,
                 ManufacturingProfileProblemCodesV1.TransitionInvalid, "Bu adım uygulanamaz.",
-                "Profil bu adım için uygun durumda değil (taslak onaylanır, onaylı profil yayımlanır)."),
-            ManufacturingToleranceProfileLifecycleCodesV1.MakerSeparationRequired => Answers.Problem(422,
-                ManufacturingProfileProblemCodesV1.MakerSeparationRequired, "Hazırlayan onaylayamaz.",
-                "Profili hazırlayan kişi onaylayamaz veya yayımlayamaz; başka bir yetkili gerekir."),
+                "Profil bu adım için uygun durumda değil (yalnız taslak ya da önceden onaylanmış profil yayımlanır)."),
+            ManufacturingToleranceProfileLifecycleCodesV1.ApprovalRetired => Answers.ApprovalRetired(),
             _ => Answers.Invalid("Komut bilgileri profil yaşam döngüsü kurallarına uymuyor."),
         };
 
@@ -341,6 +373,11 @@ internal sealed partial class SettingsManufacturingProfileAdministration(
         public static ManufacturingProfileCommandAnswerV1 WindowOverlap() =>
             Problem(409, ManufacturingProfileProblemCodesV1.WindowOverlap, "Geçerlilik aralığı çakışıyor.",
                 "Bu prosesin yayımlanmış bir tolerans profili aynı tarihleri kapsıyor; yayımlanmış profil değiştirilemez.");
+
+        /// <summary>URN-D6: the separate approval step is retired; the draft is published directly.</summary>
+        public static ManufacturingProfileCommandAnswerV1 ApprovalRetired() =>
+            Problem(409, ManufacturingProfileProblemCodesV1.ApprovalRetired, "Onay adımı kaldırıldı.",
+                "Üretim profilleri artık ayrı onay almaz; yetkili kişi taslağı doğrudan yayımlar.");
 
         public static ManufacturingProfileCommandAnswerV1 Problem(int status, string code, string title, string detail) =>
             new ManufacturingProfileCommandAnswerV1(status, code, title, detail, null);

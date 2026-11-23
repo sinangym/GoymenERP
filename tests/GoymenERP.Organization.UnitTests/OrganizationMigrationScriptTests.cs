@@ -57,7 +57,10 @@ public sealed class OrganizationMigrationScriptTests
         Assert.Contains("CK_Companies_Vkn_Format", script, StringComparison.Ordinal);
         Assert.Contains("Latin1_General_100_BIN2", script, StringComparison.Ordinal);
         Assert.Contains("CK_Companies_Placeholder_InvoiceDisabled", script, StringComparison.Ordinal);
-        Assert.DoesNotContain("IX_Companies_Vkn", script, StringComparison.Ordinal);
+        // KIM-D28/DEC-ORG-005 later migrations add the required VKN fence to the full history.
+        Assert.Contains("CREATE UNIQUE INDEX [IX_Companies_Vkn]", script, StringComparison.Ordinal);
+        Assert.Contains("WHERE [Vkn] IS NOT NULL", script, StringComparison.Ordinal);
+        Assert.Contains("CK_Companies_Vkn_RequiredUnlessPlaceholder", script, StringComparison.Ordinal);
         Assert.Contains("AddLocationOperatorParty", script, StringComparison.Ordinal);
         Assert.Contains("[OperatorPartyId]", script, StringComparison.Ordinal);
         Assert.Contains("CK_Locations_InternalOperatorParty", script, StringComparison.Ordinal);

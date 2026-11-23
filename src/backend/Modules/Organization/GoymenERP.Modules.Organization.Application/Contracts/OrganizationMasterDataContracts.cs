@@ -35,8 +35,15 @@ public static class OrganizationPermissionManifestV1
     /// </summary>
     public const string WorkCentersWrite = "organization.work-centers.write";
 
+    /// <summary>
+    /// PUT /api/v1/organization/work-centers/{id}/calendar (B-15): the work centre's shifts and closed dates, on the
+    /// work-centre read predicate of this grant. Site / location / work-centre scoped. Kept apart from
+    /// <see cref="WorkCentersWrite"/> so editing a calendar is not silently granted to whoever may rename a work centre.
+    /// </summary>
+    public const string WorkCenterCalendarsWrite = "organization.work-centers.calendar.write";
+
     public static IReadOnlySet<string> Names { get; } = new HashSet<string>(
-        [SitesWrite, LocationsWrite, WorkCentersWrite],
+        [SitesWrite, LocationsWrite, WorkCentersWrite, WorkCenterCalendarsWrite],
         StringComparer.Ordinal);
 }
 
@@ -52,6 +59,39 @@ public static class OrganizationProblemCodesV1
     public const string LocationOperatorIneligible = "organization_location_operator_ineligible";
 
     public const string LocationOperatorDependencyUnavailable = "organization_location_operator_dependency_unavailable";
+
+    /// <summary>422 — KIM-S23 (KIM-D28, DEC-ORG-005): the VKN already belongs to another company of the group.</summary>
+    public const string CompanyTaxIdInUse = "organization_company_tax_id_in_use";
+
+    /// <summary>409 — KIM-S23: the company already has a pending VKN change request.</summary>
+    public const string CompanyTaxIdChangePending = "organization_company_tax_id_change_pending";
+
+    /// <summary>409 — KIM-S23: the change request under decision is no longer pending.</summary>
+    public const string CompanyTaxIdChangeNotPending = "organization_company_tax_id_change_not_pending";
+
+    /// <summary>409 — KIM-S23: the company moved after the request was prepared; the request cannot be applied.</summary>
+    public const string CompanyTaxIdChangeStale = "organization_company_tax_id_change_stale";
+
+    /// <summary>409 — KIM-S23: the preparer may not decide their own request (maker-checker).</summary>
+    public const string CompanyTaxIdSelfDecision = "organization_company_tax_id_self_decision";
+
+    /// <summary>409 — KIM-S23: the proposed VKN equals the current one.</summary>
+    public const string CompanyTaxIdUnchanged = "organization_company_tax_id_unchanged";
+
+    /// <summary>422 — KIM-D40: the proposed VKN fails the official last-digit check (refused before approval).</summary>
+    public const string CompanyTaxIdCheckDigitInvalid = "organization_company_tax_id_check_digit_invalid";
+
+    /// <summary>409 — KIM-D48: the staged VKN correction is no longer pending (already applied).</summary>
+    public const string CompanyTaxIdCorrectionNotPending = "organization_company_tax_id_correction_not_pending";
+
+    /// <summary>409 — KIM-D48: the company's VKN moved after the correction was staged; it cannot be applied.</summary>
+    public const string CompanyTaxIdCorrectionStale = "organization_company_tax_id_correction_stale";
+
+    /// <summary>409 — KIM-S23: the company's version differs from <c>expectedVersion</c>; reload the tax-id view.</summary>
+    public const string CompanyTaxIdVersionConflict = "organization_company_tax_id_version_conflict";
+
+    /// <summary>409 — KIM-S23: the Idempotency-Key was reused with another body or actor.</summary>
+    public const string CompanyTaxIdIdempotencyConflict = "organization_company_tax_id_idempotency_conflict";
 }
 
 /// <summary>

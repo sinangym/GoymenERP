@@ -12,6 +12,9 @@ internal sealed class PurchaseAcceptanceRow : IPurchasingTenantRow
 
     public decimal Quantity { get; set; }
 
+    /// <summary>AK-3 (ALS-D119/ALS-D121): the weighed kilograms of a piece-line acceptance; null on a kilogram line and on older rows.</summary>
+    public decimal? MeasuredQuantityKg { get; set; }
+
     public long OrderVersionAfter { get; set; }
 
     public DateTimeOffset RecordedAtUtc { get; set; }

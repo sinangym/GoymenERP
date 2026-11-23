@@ -39,9 +39,7 @@ public sealed partial class SalesDraftService
 
         // SAT-D250 / SAT-D266: the margin is a SEPARATE disclosure, asked after the price read (the price read never confers it).
         var margin = await DiscloseMarginAsync(scope, cancellationToken) == SalesMarginDisclosure.Visible
-            ? new SalesDraftMarginV1(SalesMarginDisclosure.Visible, SalesDraftMarginTextsV1.PurchaseCostOnly, SalesDraftMarginTextsV1.Preview,
-                [.. draft.Lines.OrderBy(line => line.LineNo).Select(line => LineMargin(line.Id, line.LineNo,
-                    SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CostSourceMissing)))])
+            ? await ReadMarginsAsync(scope, draft, cancellationToken)
             : new SalesDraftMarginV1(SalesMarginDisclosure.Withheld, null, null, null);
         return new SalesOrderDraftLinePricingResponse(draft.Version.ToString(CultureInfo.InvariantCulture),
             [.. draft.Lines.Select(line => Pricing(line.Id, line.LineNo, line.Commercial))], margin);
@@ -65,19 +63,7 @@ public sealed partial class SalesDraftService
             : SalesMarginDisclosure.Withheld;
     }
 
-    /// <summary>
-    /// SAT-D265 (5): no cost source exists yet (the unit cost is the company-wide, all-warehouse weighted moving-average purchase
-    /// cost that Stok supplies through its versioned read port — SAT-D272, orders carry no warehouse, no manual cost entry — and
-    /// that port is another lane's) and the formula is not activated before its golden is in main, so the line-pricing read hands every line the <c>Unavailable</c> / <c>CostSourceMissing</c>
-    /// result directly — the calculator is not called (it would also need the functional currency, which Sales does not read
-    /// yet). The cost read, the functional currency and the one <see cref="SalesLineMarginCalculator"/> are wired here once the
-    /// cost port's contract is accepted, with the line's <see cref="SalesLineTotal.NetAmountBeforeSurcharge"/> (after discount,
-    /// before the vade farkı — SAT-D275) as the net sale; this mapping is already the calculator result's wire form.
-    /// The order-side cost snapshot is a separate later slice and is NOT written here (SAT-D268…SAT-D274: pinned at internal
-    /// approval; a revision re-pins only new lines and lines whose product or quantity changed — a price, discount or commercial
-    /// term change alone keeps the pinned cost and only the margin is recomputed; lines approved before the port existed stay
-    /// "kullanılamıyor" with no backfill).
-    /// </summary>
+    // The wire uses the single deterministic calculator result; cost snapshots are owned by this aggregate.
     private static SalesDraftLineMarginV1 LineMargin(Guid lineId, int lineNo, SalesLineMargin margin) =>
         new(lineId, lineNo, margin.State.ToString(), margin.UnavailableReason?.ToString(),
             margin.Amount is { } amount ? amount.Amount.ToString("F" + SalesLineMarginCalculator.AmountScale.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture) : null,

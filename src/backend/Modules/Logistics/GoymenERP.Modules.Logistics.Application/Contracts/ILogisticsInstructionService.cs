@@ -30,6 +30,10 @@ public interface ILogisticsInstructionService
     Task<LoadingInstructionResponse> CancelInstructionAsync(Guid instructionId, CancelInstructionRequest request,
         LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default);
 
+    /// <summary>LOJ-D17: the manual unload weighing of a cancelled instruction with loaded goods (one per instruction; a difference warns, never refuses; no stock movement).</summary>
+    Task<LoadingInstructionResponse> RecordUnloadWeighingAsync(Guid instructionId, RecordUnloadWeighingRequest request,
+        LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default);
+
     /// <summary>AT-055 (user decision 2026-09-30): approve a draft; the company's next system number is assigned in the same save.</summary>
     Task<LoadingInstructionResponse> ApproveDispatchNoteAsync(Guid instructionId, Guid dispatchNoteId, ApproveDispatchNoteRequest request,
         LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default);

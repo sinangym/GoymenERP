@@ -1,6 +1,7 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
+using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
@@ -14,6 +15,42 @@ public sealed class CounterpartyDbContext(
     ICompanyContext companyContext)
     : DbContext(options)
 {
+    /// <summary>EK-18 #76: a merged party points at another party and is passive for good.</summary>
+    internal const string PartyMergedIntoCheck =
+        "[MergedIntoPartyId] IS NULL OR ([MergedIntoPartyId] <> [Id] AND [IsActive] = 0)";
+
+    /// <summary>EK-18 #76: a merge names two different parties and the approving company.</summary>
+    internal const string PartyMergeIdentityCheck =
+        "[Id] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [ApprovalCompanyId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [SurvivorPartyId] <> [MergedPartyId]";
+
+    internal const string PartyMergeVersionCheck = "[SurvivorPartyVersion] >= 1 AND [MergedPartyVersion] >= 1";
+
+    internal const string PartyMergeTextCheck =
+        "LEN([Reason]) > 0 AND LEN([ApprovedBy]) > 0 AND LEN([CorrelationId]) > 0";
+
+    /// <summary>ALS-D111/D113: a legal-name change request names one status of three.</summary>
+    internal const string PartyLegalNameChangeStatusCheck = "[Status] IN (N'Pending', N'Approved', N'Rejected')";
+
+    /// <summary>ALS-D111/D113: both names are non-blank and a proposal never repeats the current legal name.</summary>
+    internal const string PartyLegalNameChangeNamesCheck =
+        "LEN([CurrentLegalName]) > 0 AND LEN([ProposedLegalName]) > 0"
+        + " AND [ProposedLegalName] COLLATE Latin1_General_100_BIN2 <> [CurrentLegalName] COLLATE Latin1_General_100_BIN2";
+
+    /// <summary>
+    /// ALS-D111/D113 maker-checker in the database too: a decision names its decider, who is never the proposer (actor
+    /// ids compared byte-wise, so a case or accent variant of the proposer is not a second person).
+    /// </summary>
+    internal const string PartyLegalNameChangeDecisionCheck =
+        "([Status] = N'Pending' AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionNote] IS NULL)"
+        + " OR ([Status] <> N'Pending' AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL"
+        + " AND LEN([DecidedBy]) > 0"
+        + " AND [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [RequestedBy] COLLATE Latin1_General_100_BIN2)";
+
+    internal const string PartyLegalNameChangeTextCheck =
+        "LEN([Reason]) > 0 AND LEN([RequestedBy]) > 0 AND [Version] >= 1 AND [PartyVersionAtRequest] >= 1";
+
     public DbSet<Party> Parties => Set<Party>();
 
     public DbSet<CompanyPartyAccount> CompanyPartyAccounts => Set<CompanyPartyAccount>();
@@ -21,13 +58,32 @@ public sealed class CounterpartyDbContext(
     public DbSet<PartyTaxIdentityChangeRequest> PartyTaxIdentityChangeRequests =>
         Set<PartyTaxIdentityChangeRequest>();
 
+    /// <summary>ALS-D111/D113: proposed legal-name changes awaiting (or carrying) a second person's decision.</summary>
+    public DbSet<PartyLegalNameChangeRequest> PartyLegalNameChangeRequests => Set<PartyLegalNameChangeRequest>();
+
     /// <summary>SAT-D57: each company's customer (price) group list.</summary>
     public DbSet<CustomerGroup> CustomerGroups => Set<CustomerGroup>();
 
     /// <summary>SAT-D119: the group-level, VKN-keyed customer e-belge profiles (shared across all companies).</summary>
     public DbSet<CustomerEDocumentProfile> CustomerEDocumentProfiles => Set<CustomerEDocumentProfile>();
 
+    /// <summary>KLN-D38: the group-level, append-only dated history of a party's VKN/TCKN and legal name.</summary>
+    public DbSet<PartyIdentityRevision> PartyIdentityRevisions => Set<PartyIdentityRevision>();
+
+    /// <summary>KLN-D38: the group-level, append-only dated history of a VKN's e-belge status.</summary>
+    public DbSet<CustomerEDocumentStatusRevision> CustomerEDocumentStatusRevisions =>
+        Set<CustomerEDocumentStatusRevision>();
+
+    /// <summary>KLN-D38 (2): each company's predecessor → successor links between cari accounts (append-only).</summary>
+    public DbSet<PartySuccession> PartySuccessions => Set<PartySuccession>();
+
     public DbSet<CommandExecution> CommandExecutions => Set<CommandExecution>();
+
+    /// <summary>EK-18 #76-#77: the group-level, append-only record of each approved party merge (no unmerge).</summary>
+    public DbSet<PartyMerge> PartyMerges => Set<PartyMerge>();
+
+    /// <summary>F-027: Counterparty-owned events stored in the producer transaction (append-only, unpublished).</summary>
+    internal DbSet<CounterpartyOutboxRow> OutboxMessages => Set<CounterpartyOutboxRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -39,8 +95,14 @@ public sealed class CounterpartyDbContext(
         ConfigureParty(modelBuilder);
         ConfigureCompanyPartyAccount(modelBuilder);
         ConfigurePartyTaxIdentityChangeRequest(modelBuilder);
+        ConfigurePartyLegalNameChangeRequest(modelBuilder);
         ConfigureCustomerGroup(modelBuilder);
         ConfigureCustomerEDocumentProfile(modelBuilder);
+        ConfigurePartyMerge(modelBuilder);
+        ConfigurePartyIdentityRevision(modelBuilder);
+        ConfigureCustomerEDocumentStatusRevision(modelBuilder);
+        ConfigurePartySuccession(modelBuilder);
+        ConfigureOutboxMessages(modelBuilder);
         ConfigureOrganizationCompanyReference(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
@@ -91,6 +153,8 @@ public sealed class CounterpartyDbContext(
             table.HasCheckConstraint(
                 "CK_Parties_TaxIdentityNumber",
                 TaxIdentityNumberFormatSql("TaxIdentityNumber", nullable: true));
+            // EK-18 #76: a merged party points at another party and is passive for good.
+            table.HasCheckConstraint("CK_Parties_MergedInto", PartyMergedIntoCheck);
         });
         entity.HasKey(x => x.Id);
         entity.Property(x => x.Code)
@@ -114,6 +178,53 @@ public sealed class CounterpartyDbContext(
         // firm), never a refusal (user decision 2026-09-30).
         entity.HasIndex(x => x.TaxIdentityNumber)
             .HasFilter("[TaxIdentityNumber] IS NOT NULL");
+        entity.HasOne<Party>()
+            .WithMany()
+            .HasForeignKey(x => x.MergedIntoPartyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasIndex(x => x.MergedIntoPartyId)
+            .HasFilter("[MergedIntoPartyId] IS NOT NULL");
+    }
+
+    /// <summary>
+    /// EK-18 #76-#77: one row per approved merge, group level (no company query filter: Party is global), naming the
+    /// company the approval was given in. A duplicate is merged at most once (unique), and the row is never updated or
+    /// deleted here (the write guard).
+    /// </summary>
+    private static void ConfigurePartyMerge(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PartyMerge>();
+        entity.ToTable("PartyMerges", "counterparty", table =>
+        {
+            table.HasCheckConstraint("CK_PartyMerges_Identity", PartyMergeIdentityCheck);
+            table.HasCheckConstraint("CK_PartyMerges_Version", PartyMergeVersionCheck);
+            table.HasCheckConstraint("CK_PartyMerges_Text", PartyMergeTextCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Reason).HasMaxLength(PartyMerge.ReasonMaximumLength).IsRequired();
+        entity.Property(x => x.ApprovedBy).HasMaxLength(PartyMerge.ActorMaximumLength).IsRequired();
+        entity.Property(x => x.CorrelationId)
+            .HasMaxLength(PartyMerge.CorrelationIdMaximumLength)
+            .UseCollation("Latin1_General_100_BIN2")
+            .IsRequired();
+        entity.HasIndex(x => x.MergedPartyId)
+            .IsUnique()
+            .HasDatabaseName("UX_PartyMerges_MergedParty");
+        entity.HasIndex(x => x.SurvivorPartyId);
+        entity.HasIndex(x => x.ApprovalCompanyId);
+        entity.HasOne<Party>()
+            .WithMany()
+            .HasForeignKey(x => x.SurvivorPartyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<Party>()
+            .WithMany()
+            .HasForeignKey(x => x.MergedPartyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<OrganizationCompanyReference>()
+            .WithMany()
+            .HasForeignKey(x => x.ApprovalCompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 
     private void ConfigurePartyTaxIdentityChangeRequest(ModelBuilder modelBuilder)
@@ -157,6 +268,48 @@ public sealed class CounterpartyDbContext(
             .IsUnique()
             .HasFilter("[Status] = N'Pending'")
             .HasDatabaseName("UX_PartyTaxIdentityChangeRequests_Pending");
+        entity.HasIndex(x => new { x.CompanyId, x.PartyId, x.RequestedAtUtc });
+
+        entity.HasOne<Party>()
+            .WithMany()
+            .HasForeignKey(x => x.PartyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        entity.HasOne<OrganizationCompanyReference>()
+            .WithMany()
+            .HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    private void ConfigurePartyLegalNameChangeRequest(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PartyLegalNameChangeRequest>();
+        entity.ToTable("PartyLegalNameChangeRequests", "counterparty", table =>
+        {
+            table.HasCheckConstraint("CK_PartyLegalNameChangeRequests_Status", PartyLegalNameChangeStatusCheck);
+            table.HasCheckConstraint("CK_PartyLegalNameChangeRequests_Names", PartyLegalNameChangeNamesCheck);
+            table.HasCheckConstraint("CK_PartyLegalNameChangeRequests_Decision", PartyLegalNameChangeDecisionCheck);
+            table.HasCheckConstraint("CK_PartyLegalNameChangeRequests_Text", PartyLegalNameChangeTextCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.CurrentLegalName).HasMaxLength(Party.LegalNameMaximumLength).IsRequired();
+        entity.Property(x => x.ProposedLegalName).HasMaxLength(Party.LegalNameMaximumLength).IsRequired();
+        entity.Property(x => x.Reason).HasMaxLength(PartyLegalNameChangeRequest.ReasonMaximumLength).IsRequired();
+        entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(16).IsRequired();
+        entity.Property(x => x.RequestedBy)
+            .HasMaxLength(PartyLegalNameChangeRequest.ActorMaximumLength).IsRequired();
+        entity.Property(x => x.DecidedBy).HasMaxLength(PartyLegalNameChangeRequest.ActorMaximumLength);
+        entity.Property(x => x.DecisionNote).HasMaxLength(PartyLegalNameChangeRequest.NoteMaximumLength);
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        // One pending legal-name change per party per company; a concurrent second proposal loses on this index.
+        entity.HasIndex(x => new { x.CompanyId, x.PartyId })
+            .IsUnique()
+            .HasFilter("[Status] = N'Pending'")
+            .HasDatabaseName("UX_PartyLegalNameChangeRequests_Pending");
         entity.HasIndex(x => new { x.CompanyId, x.PartyId, x.RequestedAtUtc });
 
         entity.HasOne<Party>()
@@ -312,6 +465,183 @@ public sealed class CounterpartyDbContext(
             .HasConstraintName("FK_CustomerEDocumentProfiles_Companies_CheckedInCompanyId");
     }
 
+    private static void ConfigurePartyIdentityRevision(ModelBuilder modelBuilder)
+    {
+        // KLN-D38: GROUP-LEVEL like Party (DEC-CAR-001) — no CompanyId, no query filter; the recording company is
+        // provenance only. Append-only: the write guard refuses every update and delete.
+        var entity = modelBuilder.Entity<PartyIdentityRevision>();
+        entity.ToTable("PartyIdentityRevisions", "counterparty", table =>
+        {
+            table.HasCheckConstraint("CK_PartyIdentityRevisions_Attribute", "[Attribute] IN (1, 2)");
+            table.HasCheckConstraint("CK_PartyIdentityRevisions_Kind", "[Kind] IN (1, 2, 3, 4)");
+            table.HasCheckConstraint("CK_PartyIdentityRevisions_Sequence", "[Sequence] >= 1");
+            table.HasCheckConstraint(
+                "CK_PartyIdentityRevisions_Value",
+                // Value also holds Turkish legal names, so it stays nvarchar. ASCII digits
+                // occupy two bytes here; the ordinary party number columns remain varchar.
+                "LEN([Value]) > 0 AND ([Attribute] <> 1 OR (LEN([Value]) IN (10, 11)"
+                + " AND DATALENGTH([Value]) = 2 * LEN([Value])"
+                + " AND [Value] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9]%'))");
+            // A baseline or a first entry stands for "since always"; a correction or a dated change carries its date.
+            table.HasCheckConstraint(
+                "CK_PartyIdentityRevisions_EffectiveFrom",
+                "([Kind] IN (1, 2) AND [EffectiveFrom] IS NULL) OR ([Kind] IN (3, 4) AND [EffectiveFrom] IS NOT NULL)");
+            // KLN-D38 (1): a correction is a reasoned, approved VKN/TCKN change request; nothing else names a request.
+            table.HasCheckConstraint(
+                "CK_PartyIdentityRevisions_Correction",
+                "([Kind] = 3 AND [Attribute] = 1 AND [SourceChangeRequestId] IS NOT NULL AND [Reason] IS NOT NULL"
+                + " AND LEN([Reason]) > 0) OR ([Kind] <> 3 AND [SourceChangeRequestId] IS NULL)");
+            table.HasCheckConstraint(
+                "CK_PartyIdentityRevisions_Recorded",
+                "[Kind] = 1 OR ([RecordedByUserId] IS NOT NULL AND LEN([RecordedByUserId]) > 0"
+                + " AND [RecordedInCompanyId] IS NOT NULL)");
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Attribute).HasConversion<int>().IsRequired();
+        entity.Property(x => x.Kind).HasConversion<int>().IsRequired();
+        entity.Property(x => x.Value).HasMaxLength(PartyIdentityRevision.ValueMaximumLength).IsRequired();
+        entity.Property(x => x.Reason).HasMaxLength(PartyIdentityRevision.ReasonMaximumLength);
+        entity.Property(x => x.RecordedByUserId).HasMaxLength(PartyIdentityRevision.ActorMaximumLength);
+        // One revision per party version and attribute; a concurrent second writer of the same version loses here.
+        entity.HasIndex(x => new { x.PartyId, x.Attribute, x.Sequence })
+            .IsUnique()
+            .HasDatabaseName("UX_PartyIdentityRevisions_PartySequence");
+
+        entity.HasOne<Party>()
+            .WithMany()
+            .HasForeignKey(x => x.PartyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        entity.HasOne<PartyTaxIdentityChangeRequest>()
+            .WithMany()
+            .HasForeignKey(x => x.SourceChangeRequestId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        entity.HasOne<OrganizationCompanyReference>()
+            .WithMany()
+            .HasForeignKey(x => x.RecordedInCompanyId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("FK_PartyIdentityRevisions_Companies_RecordedInCompanyId");
+    }
+
+    private static void ConfigureCustomerEDocumentStatusRevision(ModelBuilder modelBuilder)
+    {
+        // KLN-D38: GROUP-LEVEL like its profile (SAT-D119) — no CompanyId, no query filter. Append-only.
+        var entity = modelBuilder.Entity<CustomerEDocumentStatusRevision>();
+        entity.ToTable("CustomerEDocumentStatusRevisions", "counterparty", table =>
+        {
+            table.HasCheckConstraint("CK_CustomerEDocumentStatusRevisions_Status", "[Status] IN (0, 1, 2)");
+            table.HasCheckConstraint("CK_CustomerEDocumentStatusRevisions_Kind", "[Kind] IN (1, 2)");
+            table.HasCheckConstraint("CK_CustomerEDocumentStatusRevisions_Sequence", "[Sequence] >= 1");
+            table.HasCheckConstraint(
+                "CK_CustomerEDocumentStatusRevisions_Recorded",
+                "[Kind] = 1 OR ([RecordedByUserId] IS NOT NULL AND LEN([RecordedByUserId]) > 0"
+                + " AND [RecordedInCompanyId] IS NOT NULL)");
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Status).HasConversion<int>().IsRequired();
+        entity.Property(x => x.Kind).HasConversion<int>().IsRequired();
+        entity.Property(x => x.RecordedByUserId).HasMaxLength(CustomerEDocumentStatusRevision.ActorMaximumLength);
+        entity.HasIndex(x => new { x.ProfileId, x.Sequence })
+            .IsUnique()
+            .HasDatabaseName("UX_CustomerEDocumentStatusRevisions_ProfileSequence");
+
+        entity.HasOne<CustomerEDocumentProfile>()
+            .WithMany()
+            .HasForeignKey(x => x.ProfileId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        entity.HasOne<OrganizationCompanyReference>()
+            .WithMany()
+            .HasForeignKey(x => x.RecordedInCompanyId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("FK_CustomerEDocumentStatusRevisions_Companies_RecordedInCompanyId");
+    }
+
+    private void ConfigurePartySuccession(ModelBuilder modelBuilder)
+    {
+        // KLN-D38 (2): company-scoped, append-only predecessor → successor link. It never carries a balance.
+        var entity = modelBuilder.Entity<PartySuccession>();
+        entity.ToTable("PartySuccessions", "counterparty", table =>
+        {
+            table.HasCheckConstraint("CK_PartySuccessions_Kind", "[Kind] IN (1, 2, 3)");
+            table.HasCheckConstraint(
+                "CK_PartySuccessions_Parties",
+                "[PredecessorPartyId] <> [SuccessorPartyId]");
+            table.HasCheckConstraint(
+                "CK_PartySuccessions_Text",
+                "LEN([LegalBasis]) > 0 AND LEN([RecordedByUserId]) > 0");
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Kind).HasConversion<int>().IsRequired();
+        entity.Property(x => x.LegalBasis).HasMaxLength(PartySuccession.LegalBasisMaximumLength).IsRequired();
+        entity.Property(x => x.RecordedByUserId).HasMaxLength(PartySuccession.ActorMaximumLength).IsRequired();
+        // One successor per predecessor per company; a concurrent second link loses on this index.
+        entity.HasIndex(x => new { x.CompanyId, x.PredecessorPartyId })
+            .IsUnique()
+            .HasDatabaseName("UX_PartySuccessions_Predecessor");
+        entity.HasIndex(x => new { x.CompanyId, x.SuccessorPartyId });
+
+        entity.HasOne<Party>()
+            .WithMany()
+            .HasForeignKey(x => x.PredecessorPartyId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("FK_PartySuccessions_Parties_PredecessorPartyId");
+
+        entity.HasOne<Party>()
+            .WithMany()
+            .HasForeignKey(x => x.SuccessorPartyId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("FK_PartySuccessions_Parties_SuccessorPartyId");
+
+        entity.HasOne<OrganizationCompanyReference>()
+            .WithMany()
+            .HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    internal const string OutboxIdentityCheck =
+        "[Id] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [AggregateId] <> '00000000-0000-0000-0000-000000000000'";
+
+    internal const string OutboxEnvelopeCheck =
+        "LEN([EventType]) > 0 AND [SchemaVersion] >= 1 AND LEN([SourceOperation]) > 0 "
+        + "AND LEN([AggregateType]) > 0 AND [AggregateVersion] >= 1 AND [Sequence] >= 1 "
+        + "AND LEN([CorrelationId]) > 0 AND ISJSON([PayloadJson]) = 1";
+
+    /// <summary>
+    /// F-027: the module's transactional outbox. One row per event, in the company that wrote it, never updated or
+    /// deleted here; (company, event, aggregate, sequence) is unique so one account version yields one event.
+    /// </summary>
+    private void ConfigureOutboxMessages(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<CounterpartyOutboxRow>();
+        entity.ToTable("OutboxMessages", "counterparty", table =>
+        {
+            table.HasCheckConstraint("CK_OutboxMessages_Identity", OutboxIdentityCheck);
+            table.HasCheckConstraint("CK_OutboxMessages_Envelope", OutboxEnvelopeCheck);
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.EventType).HasMaxLength(160).IsUnicode(false).IsRequired();
+        entity.Property(x => x.SourceOperation).HasMaxLength(128).IsUnicode(false).IsRequired();
+        entity.Property(x => x.AggregateType).HasMaxLength(160).IsUnicode(false).IsRequired();
+        entity.Property(x => x.PayloadJson).HasColumnType("nvarchar(max)").IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).UseCollation("Latin1_General_100_BIN2").IsRequired();
+        entity.Property(x => x.CausationId).HasMaxLength(128).UseCollation("Latin1_General_100_BIN2");
+        entity.HasIndex(x => new { x.CompanyId, x.EventType, x.AggregateId, x.Sequence })
+            .IsUnique().HasDatabaseName("UX_OutboxMessages_AggregateSequence");
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private static void ConfigureOrganizationCompanyReference(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<OrganizationCompanyReference>();
@@ -336,10 +666,30 @@ public sealed class CounterpartyDbContext(
                     "Grup seviyesindeki Party kaydı fiziksel olarak silinemez.");
             }
 
-            if (entry.State == EntityState.Modified && !IsTaxIdentityOnlyPartyChange(entry))
+            if (entry.State == EntityState.Modified
+                && !IsTaxIdentityOnlyPartyChange(entry)
+                && !IsTradeNameOnlyPartyChange(entry)
+                && !IsLegalNameOnlyPartyChange(entry)
+                && !IsMergedPartyChange(entry)
+                && !IsMergeSurvivorFence(entry))
             {
                 throw new InvalidOperationException(
                     "Grup seviyesindeki Party kaydı bu dilimde doğrudan değiştirilemez.");
+            }
+
+            // EK-18 #77: a merge is never undone or redirected in place; a wrong merge is corrected forward.
+            if (entry.State == EntityState.Modified
+                && entry.Property(x => x.MergedIntoPartyId).OriginalValue is not null
+                && (entry.Property(x => x.MergedIntoPartyId).IsModified
+                    || entry.Property(x => x.IsActive).IsModified))
+            {
+                throw new InvalidOperationException(
+                    "Birleştirilmiş cari geri alınamaz veya başka cariye yönlendirilemez.");
+            }
+
+            if (entry.State == EntityState.Added && entry.Entity.MergedIntoPartyId is not null)
+            {
+                throw new InvalidOperationException("Yeni cari birleştirilmiş olarak oluşturulamaz.");
             }
 
             if (!companyContext.IsResolved)
@@ -420,6 +770,71 @@ public sealed class CounterpartyDbContext(
             }
         }
 
+        // KLN-D38: dated identity history is append-only. A group-level revision names its recording company only as
+        // provenance, and that company is always the active one.
+        foreach (var entry in ChangeTracker.Entries<PartyIdentityRevision>())
+        {
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State is EntityState.Modified or EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Cari kimlik tarihçesi değiştirilemez veya silinemez; düzeltme yeni bir kayıttır.");
+            }
+
+            if (!companyContext.IsResolved
+                || entry.Entity.RecordedInCompanyId is { } recordedIn && recordedIn != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "Cari kimlik tarihçesi yalnız aktif şirket bağlamında yazılır.");
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<CustomerEDocumentStatusRevision>())
+        {
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State is EntityState.Modified or EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "e-belge durum tarihçesi değiştirilemez veya silinemez.");
+            }
+
+            if (!companyContext.IsResolved
+                || entry.Entity.RecordedInCompanyId is { } recordedIn && recordedIn != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "e-belge durum tarihçesi yalnız aktif şirket bağlamında yazılır.");
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<PartySuccession>())
+        {
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State is EntityState.Modified or EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Öncül/halef bağı değiştirilemez veya silinemez.");
+            }
+
+            if (!companyContext.IsResolved
+                || entry.Entity.CompanyId != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "Öncül/halef bağı aktif şirket bağlamıyla eşleşmelidir.");
+            }
+        }
+
         foreach (var entry in ChangeTracker.Entries<CustomerGroup>())
         {
             if (entry.State == EntityState.Unchanged)
@@ -475,6 +890,55 @@ public sealed class CounterpartyDbContext(
             }
         }
 
+        foreach (var entry in ChangeTracker.Entries<PartyLegalNameChangeRequest>())
+        {
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State == EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Resmi unvan değişiklik talebi silinemez; karar geçmişi korunur.");
+            }
+
+            if (entry.State == EntityState.Modified
+                && ImmutableLegalNameChangeRequestProperties.Any(name => entry.Property(name).IsModified))
+            {
+                throw new InvalidOperationException(
+                    "Resmi unvan değişiklik talebinin kimlik, şirket, cari, unvan ve talep eden bilgisi değiştirilemez.");
+            }
+
+            if (!companyContext.IsResolved
+                || entry.Entity.CompanyId != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "Resmi unvan değişiklik talebi aktif şirket bağlamıyla eşleşmelidir.");
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<PartyMerge>())
+        {
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State is EntityState.Modified or EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Cari birleştirme kaydı değiştirilemez veya silinemez; birleştirme geri alınmaz.");
+            }
+
+            if (!companyContext.IsResolved
+                || entry.Entity.ApprovalCompanyId != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "Cari birleştirme onayı aktif şirket bağlamında kaydedilmelidir.");
+            }
+        }
+
         foreach (var entry in ChangeTracker.Entries<CommandExecution>())
         {
             if (entry.State == EntityState.Unchanged)
@@ -495,11 +959,66 @@ public sealed class CounterpartyDbContext(
                     "Idempotency kaydı aktif şirket bağlamıyla eşleşmelidir.");
             }
         }
+
+        foreach (var entry in ChangeTracker.Entries<CounterpartyOutboxRow>())
+        {
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State is EntityState.Modified or EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Cari olay kutusu kayıtları değiştirilemez veya silinemez.");
+            }
+
+            if (!companyContext.IsResolved
+                || (entry.Entity.CompanyId != companyContext.CompanyId && !IsPartyMergeNotification(entry.Entity)))
+            {
+                throw new InvalidOperationException(
+                    "Cari olay kutusu kaydı aktif şirket bağlamıyla eşleşmelidir.");
+            }
+        }
     }
 
     private static readonly string[] MutableTaxIdentityPartyProperties =
     [
         nameof(Party.TaxIdentityNumber),
+        nameof(Party.Version),
+        nameof(Party.UpdatedAtUtc),
+        nameof(Party.RowVersion),
+    ];
+
+    /// <summary>
+    /// F-027 / C-02: the trade name edit touches only these. The official legal name never rides along: it has its own
+    /// maker-checker commands and permissions (ALS-D111/D113), and a tax identity change never rides along either.
+    /// </summary>
+    private static readonly string[] MutableTradeNamePartyProperties =
+    [
+        nameof(Party.TradeName),
+        nameof(Party.Version),
+        nameof(Party.UpdatedAtUtc),
+        nameof(Party.RowVersion),
+    ];
+
+    /// <summary>
+    /// ALS-D111/D113 (approved legal-name change; formerly ALS-D95 19.22): the legal name change touches only these. The trade name and the tax identity never ride along,
+    /// so each name change is fenced and audited under its own permission.
+    /// </summary>
+    private static readonly string[] MutableLegalNamePartyProperties =
+    [
+        nameof(Party.LegalName),
+        nameof(Party.Version),
+        nameof(Party.UpdatedAtUtc),
+        nameof(Party.RowVersion),
+    ];
+
+    /// <summary>EK-18 #76: the merge touches only these on the duplicate (it becomes passive and points at the survivor).</summary>
+    private static readonly string[] MutableMergedPartyProperties =
+    [
+        nameof(Party.MergedIntoPartyId),
+        nameof(Party.IsActive),
         nameof(Party.Version),
         nameof(Party.UpdatedAtUtc),
         nameof(Party.RowVersion),
@@ -518,6 +1037,19 @@ public sealed class CounterpartyDbContext(
         nameof(PartyTaxIdentityChangeRequest.RequestedAtUtc),
     ];
 
+    private static readonly string[] ImmutableLegalNameChangeRequestProperties =
+    [
+        nameof(PartyLegalNameChangeRequest.Id),
+        nameof(PartyLegalNameChangeRequest.CompanyId),
+        nameof(PartyLegalNameChangeRequest.PartyId),
+        nameof(PartyLegalNameChangeRequest.CurrentLegalName),
+        nameof(PartyLegalNameChangeRequest.ProposedLegalName),
+        nameof(PartyLegalNameChangeRequest.PartyVersionAtRequest),
+        nameof(PartyLegalNameChangeRequest.Reason),
+        nameof(PartyLegalNameChangeRequest.RequestedBy),
+        nameof(PartyLegalNameChangeRequest.RequestedAtUtc),
+    ];
+
     /// <summary>
     /// AT-009: the one Party update this module writes — its VKN/TCKN with the version and timestamp it moves. Every
     /// other Party column stays read-only here, exactly as before.
@@ -531,6 +1063,77 @@ public sealed class CounterpartyDbContext(
         return modified.Contains(nameof(Party.TaxIdentityNumber), StringComparer.Ordinal)
             && modified.All(name => MutableTaxIdentityPartyProperties.Contains(name, StringComparer.Ordinal));
     }
+
+    private static bool IsTradeNameOnlyPartyChange(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<Party> entry)
+    {
+        var modified = entry.Properties.Where(property => property.IsModified)
+            .Select(property => property.Metadata.Name)
+            .ToArray();
+        return modified.Contains(nameof(Party.TradeName), StringComparer.Ordinal)
+            && modified.All(name => MutableTradeNamePartyProperties.Contains(name, StringComparer.Ordinal));
+    }
+
+    private static bool IsLegalNameOnlyPartyChange(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<Party> entry)
+    {
+        var modified = entry.Properties.Where(property => property.IsModified)
+            .Select(property => property.Metadata.Name)
+            .ToArray();
+        return modified.Contains(nameof(Party.LegalName), StringComparer.Ordinal)
+            && modified.All(name => MutableLegalNamePartyProperties.Contains(name, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// EK-18 #76: the duplicate's merge. Only the merge columns move, the party was not merged before, it now points at
+    /// another party, and the merge record naming this exact pair is added in the same save.
+    /// </summary>
+    private bool IsMergedPartyChange(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<Party> entry)
+    {
+        var modified = entry.Properties.Where(property => property.IsModified)
+            .Select(property => property.Metadata.Name)
+            .ToArray();
+        var mergedInto = entry.Entity.MergedIntoPartyId;
+        return modified.Contains(nameof(Party.MergedIntoPartyId), StringComparer.Ordinal)
+            && modified.All(name => MutableMergedPartyProperties.Contains(name, StringComparer.Ordinal))
+            && entry.Property(x => x.MergedIntoPartyId).OriginalValue is null
+            && mergedInto is { } survivorId
+            && survivorId != entry.Entity.Id
+            && !entry.Entity.IsActive
+            && ChangeTracker.Entries<PartyMerge>().Any(merge =>
+                merge.State == EntityState.Added
+                && merge.Entity.MergedPartyId == entry.Entity.Id
+                && merge.Entity.SurvivorPartyId == survivorId);
+    }
+
+    /// <summary>
+    /// EK-18 #76: the survivor's version fence. Its merge column is marked modified without a value change, so the save
+    /// carries its Version + rowversion predicate; this is admitted only beside a merge record naming it as survivor.
+    /// </summary>
+    private bool IsMergeSurvivorFence(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<Party> entry)
+    {
+        var modified = entry.Properties.Where(property => property.IsModified)
+            .Select(property => property.Metadata.Name)
+            .ToArray();
+        return modified.Length == 1
+            && string.Equals(modified[0], nameof(Party.MergedIntoPartyId), StringComparison.Ordinal)
+            && entry.Property(x => x.MergedIntoPartyId).OriginalValue is null
+            && entry.Entity.MergedIntoPartyId is null
+            && ChangeTracker.Entries<PartyMerge>().Any(merge =>
+                merge.State == EntityState.Added
+                && merge.Entity.SurvivorPartyId == entry.Entity.Id);
+    }
+
+    /// <summary>
+    /// EK-18 #76: the one outbox row admitted outside the active company — the merge notification for another company
+    /// that holds a card of either party, written beside the merge record (approved in the active company) it names.
+    /// </summary>
+    private bool IsPartyMergeNotification(CounterpartyOutboxRow row) =>
+        string.Equals(row.EventType, CounterpartyPartyMergedOutboxV1.EventType, StringComparison.Ordinal)
+        && ChangeTracker.Entries<PartyMerge>().Any(merge =>
+            merge.State == EntityState.Added
+            && merge.Entity.Id == row.AggregateId
+            && merge.Entity.ApprovalCompanyId == companyContext.CompanyId);
 
     private sealed class OrganizationCompanyReference
     {

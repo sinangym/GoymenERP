@@ -3,18 +3,35 @@ import type { RouteObject } from 'react-router'
 import { CapabilityRoute } from '../shell/CapabilityRoute'
 import type { CapabilityId } from '../shell/capabilities'
 import {
+  INVENTORY_LABEL_TRACE_ROUTE,
+  INVENTORY_SUBCONTRACT_RELEASE_CAPABILITY,
+  INVENTORY_SUBCONTRACT_RELEASE_ROUTE,
   INVENTORY_OPENING_CAPABILITY,
   INVENTORY_MOVEMENT_TIMELINE_ROUTE,
   INVENTORY_OPENING_ROUTE,
+  INVENTORY_SHORTAGE_WARNINGS_ROUTE,
+  INVENTORY_NEGATIVE_STOCK_ATTEMPTS_ROUTE,
   INVENTORY_STOCK_POSITIONS_CAPABILITY,
   INVENTORY_STOCK_POSITIONS_ROUTE,
+  INVENTORY_TRANSFERS_ROUTE,
+  INVENTORY_TRANSFER_PLANNING_ROUTE,
+  INVENTORY_TRANSFER_PLANNING_CAPABILITY,
+  INVENTORY_TRANSFER_ACTION_ROUTE,
+  INVENTORY_FUTURE_ALLOCATION_ROUTE,
+  INVENTORY_FUTURE_ALLOCATION_READ_CAPABILITY,
 } from './capabilities'
+import { SubcontractAllocationReleasePage } from './SubcontractAllocationReleasePage'
+import { InventoryLabelTracePage } from './InventoryLabelTracePage'
 import { InventoryMovementTimelinePage } from './InventoryMovementTimelinePage'
 import { InventoryOpeningCreatePage } from './InventoryOpeningCreatePage'
 import { InventoryOpeningDetailPage } from './InventoryOpeningDetailPage'
 import { InventoryOpeningHomePage } from './InventoryOpeningHomePage'
+import { InventoryShortageWarningPage } from './InventoryShortageWarningPage'
+import { NegativeStockAttemptPage } from './NegativeStockAttemptPage'
 import { InventoryLabelDetailPage } from './InventoryLabelDetailPage'
 import { InventoryStockPositionPage } from './InventoryStockPositionPage'
+import { InventoryTransferPage } from './InventoryTransferPage'
+import { InventoryFutureAllocationPage } from './InventoryFutureAllocationPage'
 import { INVENTORY_LABEL_DETAIL_ROUTE } from './labelDetailRoute'
 
 function gate(children: ReactNode) {
@@ -22,6 +39,19 @@ function gate(children: ReactNode) {
 }
 
 export const inventoryRoutes: RouteObject[] = [
+  { path: INVENTORY_SUBCONTRACT_RELEASE_ROUTE.slice(1), element: <CapabilityRoute capability={INVENTORY_SUBCONTRACT_RELEASE_CAPABILITY}>
+    <SubcontractAllocationReleasePage /></CapabilityRoute> },
+  ...Object.entries(INVENTORY_TRANSFER_ACTION_ROUTE).map(([capability, path]) => ({
+    path: path.slice(1), element: <CapabilityRoute capability={capability as CapabilityId}><InventoryTransferPage /></CapabilityRoute>,
+  })),
+  { path: INVENTORY_TRANSFER_PLANNING_ROUTE.slice(1), element: <CapabilityRoute capability={INVENTORY_TRANSFER_PLANNING_CAPABILITY as CapabilityId}>
+    <InventoryTransferPage /></CapabilityRoute> },
+  { path: INVENTORY_NEGATIVE_STOCK_ATTEMPTS_ROUTE.slice(1), element: <CapabilityRoute capability={INVENTORY_STOCK_POSITIONS_CAPABILITY as CapabilityId}>
+    <NegativeStockAttemptPage /></CapabilityRoute> },
+  { path: INVENTORY_FUTURE_ALLOCATION_ROUTE.slice(1), element: <CapabilityRoute capability={INVENTORY_FUTURE_ALLOCATION_READ_CAPABILITY as CapabilityId}>
+    <InventoryFutureAllocationPage /></CapabilityRoute> },
+  { path: INVENTORY_TRANSFERS_ROUTE.slice(1), element: <CapabilityRoute capability={INVENTORY_STOCK_POSITIONS_CAPABILITY as CapabilityId}>
+    <InventoryTransferPage /></CapabilityRoute> },
   {
     path: INVENTORY_STOCK_POSITIONS_ROUTE.slice(1),
     element: (
@@ -43,6 +73,22 @@ export const inventoryRoutes: RouteObject[] = [
     element: (
       <CapabilityRoute capability={INVENTORY_STOCK_POSITIONS_CAPABILITY as CapabilityId}>
         <InventoryMovementTimelinePage />
+      </CapabilityRoute>
+    ),
+  },
+  {
+    path: INVENTORY_SHORTAGE_WARNINGS_ROUTE.slice(1),
+    element: (
+      <CapabilityRoute capability={INVENTORY_STOCK_POSITIONS_CAPABILITY as CapabilityId}>
+        <InventoryShortageWarningPage />
+      </CapabilityRoute>
+    ),
+  },
+  {
+    path: INVENTORY_LABEL_TRACE_ROUTE.slice(1),
+    element: (
+      <CapabilityRoute capability={INVENTORY_STOCK_POSITIONS_CAPABILITY as CapabilityId}>
+        <InventoryLabelTracePage />
       </CapabilityRoute>
     ),
   },

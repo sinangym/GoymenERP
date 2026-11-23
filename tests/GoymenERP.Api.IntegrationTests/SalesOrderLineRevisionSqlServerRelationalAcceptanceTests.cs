@@ -440,7 +440,12 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
     {
         // K3 review B P2-2: the re-read at the decision (409 sales_revision_blocked, 503 unreadable) on real routes and real SQL.
         var owner = new LinkedSupplyOwner();
-        await using var run = await Run.StartAsync(services => SyntheticPurchasingOwner(services, owner));
+        var diagnostic = new SalesFutureDemandReductionSqlDiagnostic();
+        await using var run = await Run.StartAsync(services =>
+        {
+            SyntheticPurchasingOwner(services, owner);
+            diagnostic.Register(services);
+        });
         var draft = await run.ApprovedDraftAsync(CompanyA, "w");
         var first = draft.Lines[0];
         owner.Line = first.Id;
@@ -496,9 +501,22 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
 
         // Closed in its owner: the approval goes through (company A asked every time).
         owner.Mode = "none";
-        Assert.Equal(HttpStatusCode.OK, (await SendAsync(approverClient, $"{basePath}/approval", "SENTETIK-d219w-approve-3", 2)).Status);
+        var approvedAnswer = await SendAsync(approverClient, $"{basePath}/approval", "SENTETIK-d219w-approve-3", 2);
+        Assert.True(approvedAnswer.Status == HttpStatusCode.OK,
+            $"Expected HTTP 200; actual HTTP {(int)approvedAnswer.Status}; public problem code: {SafeApprovalProblemCode(approvedAnswer.Code)}. participant: {diagnostic.Summary}.");
         Assert.All(owner.Queries, query => Assert.Equal((CompanyA, draft.Id), (query.CompanyId, query.OrderId)));
     }
+
+    // Diagnostic only: never emit an arbitrary response value or change the required successful status.
+    private static string SafeApprovalProblemCode(string? code) => code switch
+    {
+        "service_unavailable" => "service_unavailable",
+        "revision_impact_unavailable" => "revision_impact_unavailable",
+        "sales_revision_blocked" => "sales_revision_blocked",
+        "validation_failed" => "validation_failed",
+        "forbidden" => "forbidden",
+        _ => "unknown",
+    };
 
     // ---- helpers --------------------------------------------------------------------------------
 

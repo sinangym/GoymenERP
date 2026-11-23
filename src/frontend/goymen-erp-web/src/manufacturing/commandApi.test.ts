@@ -4,9 +4,10 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { recordFact } from './commandApi'
-import type { FactSnapshot } from './contract'
-import { COMPANY_A, ORDER, ROLL_1, json, problem } from './testHarness'
+import { closeOrder, recordFact } from './commandApi'
+import { failureText } from './manufacturingText'
+import type { CloseSnapshot, FactSnapshot } from './contract'
+import { COMPANY_A, ORDER, ROLL_1, ROLL_2, json, problem, stockShortfall } from './testHarness'
 
 const SNAPSHOT: FactSnapshot = {
   kind: 'input-issues',
@@ -54,6 +55,7 @@ describe('recordFact', () => {
       kind: 'outputs',
       expectedParentLabelVersion: '8',
       outputClass: 'GoodProduct',
+      remnantClassification: null,
       productId: 'f0000000-0000-4000-8000-000000000010',
       expectedProductVersion: '12',
       lotId: 'f0000000-0000-4000-8000-000000000011',
@@ -145,7 +147,16 @@ describe('recordFact', () => {
       problem(409, { code: 'manufacturing_version_conflict', expectedVersion: '4', currentVersion: '6' }),
       { kind: 'version-conflict', expectedVersion: 4, currentVersion: 6, conflictIsCurrent: true },
     ],
+    // K3 P2-5: a taken output label code is a definite refusal, not UNKNOWN.
+    [
+      problem(409, { code: 'manufacturing_output_label_code_conflict', field: 'labelCode' }),
+      { kind: 'rule', code: 'manufacturing_output_label_code_conflict' },
+    ],
     [problem(422, { code: 'manufacturing_return_exceeds_issued' }), { kind: 'rule', code: 'manufacturing_return_exceeds_issued' }],
+    [
+      problem(422, { code: 'manufacturing_return_exceeds_unconsumed' }),
+      { kind: 'rule', code: 'manufacturing_return_exceeds_unconsumed' },
+    ],
     [problem(400, { code: 'manufacturing_request_invalid', field: 'kg' }), { kind: 'validation', field: 'kg' }],
     [problem(403, { code: 'forbidden' }), { kind: 'forbidden' }],
     [problem(404), { kind: 'not-found' }],
@@ -178,10 +189,147 @@ describe('recordFact', () => {
     expect(await recordFact(COMPANY_A, ORDER, SNAPSHOT)).toEqual({ type: 'unknown', unknown })
   })
 
+  it('K3 P2-5: shows the taken label code as its own Turkish refusal, never the generic code echo', async () => {
+    answer(problem(409, { code: 'manufacturing_output_label_code_conflict', field: 'labelCode' }))
+    const outcome = await recordFact(COMPANY_A, ORDER, SNAPSHOT)
+    expect(outcome.type).toBe('failed')
+    if (outcome.type !== 'failed') return
+    expect(failureText(outcome.failure)).toContain('etiket kodu şirkette zaten kullanılıyor')
+  })
   it('treats no response to a write as unknown, not as not-applied', async () => {
     answer(() => {
       throw new TypeError('failed to fetch')
     })
     expect(await recordFact(COMPANY_A, ORDER, SNAPSHOT)).toMatchObject({ type: 'unknown' })
+  })
+})
+
+describe('recordFact — SAT-D318 physical-stock refusal detail', () => {
+  const CODE = 'inventory_manufacturing_physical_stock_insufficient'
+  const PLAIN = { type: 'failed', replayed: false, failure: { kind: 'rule', code: CODE } }
+
+  function detail(overrides: Record<string, unknown> = {}) {
+    return stockShortfall(SNAPSHOT.factId, '900.5', '480.25', overrides)
+  }
+
+  function withoutMember(name: string): Record<string, unknown> {
+    const value: Record<string, unknown> = { ...detail() }
+    delete value[name]
+    return value
+  }
+
+  it('keeps the detail that names exactly the sent issue, its order, label and quantity', async () => {
+    answer(problem(409, { code: CODE, stockShortfall: detail() }))
+
+    expect(await recordFact(COMPANY_A, ORDER, SNAPSHOT)).toEqual({
+      type: 'failed',
+      replayed: false,
+      failure: { kind: 'rule', code: CODE, stockShortfall: detail() },
+    })
+  })
+
+  it('compares the quantity by value, as the server writes the sent kilograms back without trailing zeros', async () => {
+    answer(problem(409, { code: CODE, stockShortfall: detail() }))
+    expect(await recordFact(COMPANY_A, ORDER, { ...SNAPSHOT, kg: '900.500' })).toEqual({
+      ...PLAIN,
+      failure: { kind: 'rule', code: CODE, stockShortfall: detail() },
+    })
+
+    answer(problem(409, { code: CODE, stockShortfall: detail({ requestedKg: '900' }) }))
+    expect(await recordFact(COMPANY_A, ORDER, { ...SNAPSHOT, kg: '900.000' })).toMatchObject({
+      failure: { stockShortfall: { requestedKg: '900' } },
+    })
+  })
+
+  it.each([
+    ['nothing usable', '0'],
+    ['a whole number', '900'],
+    ['just below the request', '900.499'],
+    ['the finest server figure below it', '900.4999999'],
+  ])('keeps the usable kilograms the server computed when they are %s', async (_case, availableKg) => {
+    answer(problem(409, { code: CODE, stockShortfall: detail({ availableKg }) }))
+
+    expect(await recordFact(COMPANY_A, ORDER, SNAPSHOT)).toMatchObject({
+      failure: { kind: 'rule', code: CODE, stockShortfall: { requestedKg: '900.5', availableKg } },
+    })
+  })
+
+  it('keeps a detail with no place when the label holds no stock anywhere', async () => {
+    answer(problem(409, { code: CODE, stockShortfall: detail({ locationId: null }) }))
+
+    expect(await recordFact(COMPANY_A, ORDER, SNAPSHOT)).toMatchObject({
+      failure: { kind: 'rule', code: CODE, stockShortfall: { locationId: null, labelId: ROLL_1 } },
+    })
+  })
+
+  it('reads the identities in either letter case as the same issue', async () => {
+    const upper = detail({ sourceId: ORDER.toUpperCase(), sourceLineId: SNAPSHOT.factId.toUpperCase() })
+    answer(problem(409, { code: CODE, stockShortfall: upper }))
+
+    expect(await recordFact(COMPANY_A, ORDER, SNAPSHOT)).toMatchObject({ failure: { stockShortfall: upper } })
+  })
+
+  it('keeps the same definite refusal without the detail when an older server sends none', async () => {
+    answer(problem(409, { code: CODE }))
+    expect(await recordFact(COMPANY_A, ORDER, SNAPSHOT)).toEqual(PLAIN)
+  })
+
+  it.each([
+    ['an undeclared free physical figure', detail({ freePhysicalKg: '1000' })],
+    ['a reserved figure', detail({ reservedKg: '1000' })],
+    ['no usable member', withoutMember('availableKg')],
+    ['a null usable figure', detail({ availableKg: null })],
+    ['a numeric usable figure', detail({ availableKg: 480.25 })],
+    ['a negative usable figure', detail({ availableKg: '-1' })],
+    ['a padded usable figure', detail({ availableKg: '480.250' })],
+    ['a grouped usable figure', detail({ availableKg: '1,000' })],
+    ['usable kg equal to the request', detail({ availableKg: '900.5' })],
+    ['usable kg just above the request', detail({ availableKg: '900.5000001' })],
+    ['usable kg above the request in the whole part', detail({ availableKg: '1000' })],
+    ['no place member', withoutMember('locationId')],
+    ['no quantity member', withoutMember('requestedKg')],
+    ['a null detail', null],
+    ['an array', [detail()]],
+    ['a text', 'stok yok'],
+    ['another movement kind', detail({ movementKind: 'Return' })],
+    ['another source kind', detail({ sourceKind: 'manufacturing.input-return' })],
+    ['another order', detail({ sourceId: 'd0000000-0000-4000-8000-000000000099' })],
+    ['another issue', detail({ sourceLineId: 'f0000000-0000-4000-8000-000000000099' })],
+    ['no issue line', detail({ sourceLineId: null })],
+    ['another label', detail({ labelId: ROLL_2 })],
+    ['another quantity', detail({ requestedKg: '900.6' })],
+    ['a padded quantity', detail({ requestedKg: '900.50' })],
+    ['a numeric quantity', detail({ requestedKg: 900.5 })],
+    ['a zero quantity', detail({ requestedKg: '0' })],
+    ['a nil product', detail({ productId: '00000000-0000-0000-0000-000000000000' })],
+    ['a missing product', detail({ productId: null })],
+    ['a malformed place', detail({ locationId: 'depo-1' })],
+    ['a nil place', detail({ locationId: '00000000-0000-0000-0000-000000000000' })],
+  ])('drops a detail with %s and keeps the definite refusal, never UNKNOWN', async (_case, shortfall) => {
+    answer(problem(409, { code: CODE, stockShortfall: shortfall }))
+    expect(await recordFact(COMPANY_A, ORDER, SNAPSHOT)).toEqual(PLAIN)
+  })
+
+  it('does not take a replayed detail as this attempt’s', async () => {
+    answer(problem(409, { code: CODE, stockShortfall: detail() }, { 'Idempotency-Replayed': 'true' }))
+    expect(await recordFact(COMPANY_A, ORDER, SNAPSHOT)).toEqual({ ...PLAIN, replayed: true })
+  })
+
+  it('reads the detail only on an input issue’s physical-stock refusal', async () => {
+    answer(problem(409, { code: CODE, stockShortfall: detail() }))
+    const ret: FactSnapshot = { ...SNAPSHOT, kind: 'input-returns', expectedParentLabelVersion: '7' }
+    expect(await recordFact(COMPANY_A, ORDER, ret)).toEqual(PLAIN)
+
+    const other = 'inventory_manufacturing_parent_label_not_releasable'
+    answer(problem(409, { code: other, stockShortfall: detail() }))
+    expect(await recordFact(COMPANY_A, ORDER, SNAPSHOT)).toEqual({
+      type: 'failed',
+      replayed: false,
+      failure: { kind: 'rule', code: other },
+    })
+
+    const close: CloseSnapshot = { idempotencyKey: 'close-1', expectedVersion: 4 }
+    answer(problem(409, { code: CODE, stockShortfall: detail() }))
+    expect(await closeOrder(COMPANY_A, ORDER, close)).toEqual(PLAIN)
   })
 })

@@ -38,7 +38,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// drafts are built from ISOLATED SYNTHETIC owner snapshots (the store validates nothing about the
 /// owners); this proves the approval slice, not a sale. Every identity is SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
+public sealed partial class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
@@ -793,12 +793,11 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
                 await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id))));
         }
 
-        // The sales schema's tables, by name: no money, no stock, no shipment movement table exists here for a withdrawal to touch
-        // (the risk exception tables hold approval requests only, not shipments; the customer return tables hold return documents
-        // written only by their own commands, never by an order withdrawal).
+        // The sales schema's complete current owner table set, including contract, margin and immutable invoice evidence.
+        // Physical stock and money movement ledgers belong to other modules; the withdrawal's precise row counts below stay unchanged.
         var tables = await run.ScalarAsync<string>(
-            "SELECT STRING_AGG([name], N',') WITHIN GROUP (ORDER BY [name]) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'sales') AND [name] <> N'__EFMigrationsHistory'");
-        Assert.Equal("CustomerReturnAttempts,CustomerReturns,DocumentCounters,DraftAttempts,DraftCancellations,DraftCustomerRejections,DraftDeliveryScheduleDates,DraftDeliverySchedules,DraftDeliverySlices,DraftForceClosures,DraftLineClosures,DraftLines,DraftNumbers,DraftOverDeliveryApprovals,DraftRemainderChanges,DraftRemainderDecisions,DraftRevisionHeaders,DraftRevisionLines,DraftRevisions,Drafts,DraftSourcePlanLines,DraftUserClosures,InvoiceAttempts,InvoiceFinalizations,InvoiceLines,InvoiceMatches,Invoices,OutboxMessages,QuoteAttempts,QuoteExpiryApprovals,QuoteLines,QuoteRequests,QuoteRevisions,Quotes,RequestAttempts,RequestLines,Requests,ShipmentRiskExceptionAttempts,ShipmentRiskExceptions", tables);
+            "SELECT STRING_AGG([name], N',') WITHIN GROUP (ORDER BY [name] COLLATE Latin1_General_BIN2) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'sales') AND [name] <> N'__EFMigrationsHistory'");
+        Assert.Equal("ContractAttempts,Contracts,CustomerReturnAttempts,CustomerReturns,DocumentCounters,DraftAttempts,DraftCancellations,DraftCustomerRejections,DraftDeliveryScheduleDates,DraftDeliverySchedules,DraftDeliverySlices,DraftForceClosures,DraftLineClosures,DraftLineKilogramsPerUnit,DraftLines,DraftMarginCosts,DraftNumbers,DraftOverDeliveryApprovals,DraftRemainderChanges,DraftRemainderDecisions,DraftRevisionHeaders,DraftRevisionLines,DraftRevisions,DraftRiskWarnings,DraftSourcePlanLines,DraftUserClosures,Drafts,InvoiceAttempts,InvoiceFinalizations,InvoiceLines,InvoiceMatches,Invoices,OfficialInvoiceCancellationAttempts,OfficialInvoiceCancellationDeliveries,OfficialInvoiceCancellations,OfficialInvoiceClaims,OutboxMessages,QuoteAttempts,QuoteExpiryApprovals,QuoteLines,QuoteRequests,QuoteRevisions,Quotes,RequestAttempts,RequestLines,Requests,ShipmentRiskExceptionAttempts,ShipmentRiskExceptionUsages,ShipmentRiskExceptions,SubcontractInvoiceCommandAttempts,SubcontractInvoiceLifecycles,SubcontractServiceInvoiceAttempts,SubcontractServiceInvoiceLines,SubcontractServiceInvoices", tables);
         async Task<(int Drafts, int Lines, int Slices, int Numbers, int Revisions, int RevisionLines)> QuietCountsAsync() => (
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[Drafts] WHERE [CompanyId] = @c", ("@c", CompanyA)),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [CompanyId] = @c", ("@c", CompanyA)),
@@ -807,10 +806,16 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisions] WHERE [CompanyId] = @c", ("@c", CompanyA)),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisionLines] WHERE [CompanyId] = @c", ("@c", CompanyA)));
         Task<int> AttemptsAsync() => run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CompanyId] = @c", ("@c", CompanyA));
-        Task<int> EventsAsync(Guid id) => run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.OrderDraft' AND EntityId = @id", ("@id", id.ToString()));
+        Task<int> EventsAsync(Guid id) => run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.OrderDraft' AND EntityId = @id AND EventType <> @risk",
+            ("@id", id.ToString()), ("@risk", SalesOrderRiskWarnings.RecordedEventType));
+        Task<int> RiskEventsAsync(Guid id) => run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.OrderDraft' AND EntityId = @id AND EventType = @risk",
+            ("@id", id.ToString()), ("@risk", SalesOrderRiskWarnings.RecordedEventType));
         var quiet = await QuietCountsAsync();
         var attempts = await AttemptsAsync();
         var events = (await EventsAsync(priced.Id), await EventsAsync(unpriced.Id));
+        var riskEvents = (await RiskEventsAsync(priced.Id), await RiskEventsAsync(unpriced.Id));
 
         // (1) The preparer, holding the approve name too (a Satış Destek that WAS granted it): the own decision is refused at the
         //     service — approve on the priced, reject on the unpriced — with nothing recorded and the columns untouched.
@@ -848,6 +853,11 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 
         Assert.Equal((attempts + 2, (events.Item1 + 1, events.Item2 + 1), quiet),
             (await AttemptsAsync(), (await EventsAsync(priced.Id), await EventsAsync(unpriced.Id)), await QuietCountsAsync()));
+        Assert.Equal((riskEvents.Item1 + 1, riskEvents.Item2),
+            (await RiskEventsAsync(priced.Id), await RiskEventsAsync(unpriced.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id AND EventType = N'sales.order-draft.approved.v1'",
+            ("@id", priced.Id.ToString("D"))));
         attempts += 2;
 
         // (3) Withdrawal. Someone else holding the create name: 403, nothing recorded. The creator: the rejected draft goes
@@ -1556,7 +1566,8 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
             InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
-            barrier.SignalAndWait(TimeSpan.FromSeconds(30));
+            if (!barrier.SignalAndWait(TimeSpan.FromSeconds(30), cancellationToken))
+                throw new TimeoutException("Concurrent save barrier timed out before both writers arrived.");
             return ValueTask.FromResult(result);
         }
     }

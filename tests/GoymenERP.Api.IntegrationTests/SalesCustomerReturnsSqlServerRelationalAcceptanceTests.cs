@@ -77,17 +77,21 @@ public sealed class SalesCustomerReturnsSqlServerRelationalAcceptanceTests
         var reader = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead);
         using var client = run.Client(reader, CompanyA);
         var path = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/customer-returns";
+        var progressPath = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/delivery-progress";
 
         // Delivered, nothing returned yet: the owner answered and every line shows a definite zero.
         Assert.Equal([(orderLine.Id, 1, "6", "0"), (secondLine.Id, 2, "3", "0")], Lines(await run.ReadAsync(client, path)));
+        Assert.Equal([(orderLine.Id, "4", "2"), (secondLine.Id, "3", "0")], ProgressLines(await run.ReadAsync(client, progressPath)));
 
         // A pending request is not a return yet: nothing is counted.
         var first = await run.RequestReturnAsync(CompanyA, source, 1.5m, "k-r1");
         Assert.Equal([(orderLine.Id, 1, "6", "0"), (secondLine.Id, 2, "3", "0")], Lines(await run.ReadAsync(client, path)));
+        Assert.Equal([(orderLine.Id, "4", "2"), (secondLine.Id, "3", "0")], ProgressLines(await run.ReadAsync(client, progressPath)));
 
         // Approved in Logistics: the order, opened again, shows the exact approved quantity in its order unit on that line
         // only; the other line stays a definite zero.
         await run.DecideReturnAsync(CompanyA, first, approve: true, "k-r1-approve");
+        Assert.Equal([(orderLine.Id, "4", "3.5"), (secondLine.Id, "3", "0")], ProgressLines(await run.ReadAsync(client, progressPath)));
         var opened = await run.ReadAsync(client, path);
         Assert.Equal([(orderLine.Id, 1, "6", "1.5"), (secondLine.Id, 2, "3", "0")], Lines(opened));
         Assert.Equal("5", opened.GetProperty("draftVersion").GetString());
@@ -102,10 +106,12 @@ public sealed class SalesCustomerReturnsSqlServerRelationalAcceptanceTests
         var other = await run.RequestReturnAsync(CompanyA, secondSource, 1m, "k-r4");
         await run.DecideReturnAsync(CompanyA, other, approve: true, "k-r4-approve");
         Assert.Equal([(orderLine.Id, 1, "6", "2.25"), (secondLine.Id, 2, "3", "1")], Lines(await run.ReadAsync(client, path)));
+        Assert.Equal([(orderLine.Id, "4", "4.25"), (secondLine.Id, "3", "1")], ProgressLines(await run.ReadAsync(client, progressPath)));
 
         // The read writes nothing in either module (no attempt, audit, return or version effect).
         var before = await run.EffectsAsync(draft.Id);
         await run.ReadAsync(client, path);
+        await run.ReadAsync(client, progressPath);
         Assert.Equal(before, await run.EffectsAsync(draft.Id));
         Assert.Equal((4, 3), (before.Returns, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [logistics].[CustomerReturns] WHERE [SourceOrderId] = @id AND [Status] = @approved",
@@ -162,10 +168,17 @@ public sealed class SalesCustomerReturnsSqlServerRelationalAcceptanceTests
         using (var clientOfA = run.Client(readerOfA, CompanyA))
         {
             Assert.Equal(("6", "0"), Line(await run.ReadAsync(clientOfA, path), orderLine.Id));
+            Assert.Equal([(orderLine.Id, "0", "6")], ProgressLines(await run.ReadAsync(clientOfA,
+                $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/delivery-progress")));
         }
     }
 
     // ---- helpers --------------------------------------------------------------------------------
+
+    private static (Guid LineId, string Shipped, string Remaining)[] ProgressLines(JsonElement progress) =>
+        [.. progress.GetProperty("lines").EnumerateArray().Select(line =>
+            (Guid.Parse(line.GetProperty("lineId").GetString()!), line.GetProperty("shipped").GetString()!,
+                line.GetProperty("remaining").GetString()!))];
 
     private static (string Ordered, string ApprovedReturned) Line(JsonElement returns, Guid lineId)
     {

@@ -313,6 +313,7 @@ export const ORDER_CANCELLATION_PROBLEM_TEXT: Readonly<Record<string, string>> =
   purchasing_order_cancellation_reason_too_long: 'İptal gerekçesi 4000 karakteri aşamaz.',
   concurrent_change: 'Sipariş aynı anda başka bir işlemle değişti; kayıt yeniden okundu.',
   same_key_payload_mismatch: 'Aynı işlem anahtarı başka bir içerikle kullanıldı.',
+  purchasing_line_has_allocations: 'Siparişte etkin gelecek tedarik ayırması var; kalanı ayırmalarla birlikte iptal edin.',
 }
 
 /** Known withdrawal refusal codes in user words; an unknown code is shown as-is beside the generic text. */

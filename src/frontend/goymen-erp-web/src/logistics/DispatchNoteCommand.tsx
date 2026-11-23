@@ -22,6 +22,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router'
 import { approveDispatchNote, cancelDispatchNote, createDispatchNote, setEDispatchNumber } from './api'
+import { DispatchKilogramsPanel } from './DispatchKilogramsPanel'
+import { DispatchNotePdfButton } from './DispatchNotePdfButton'
 import {
   CANCEL_REASON_MAX,
   DISPATCH_NOTE_STATUS,
@@ -87,13 +89,15 @@ export function DispatchNoteFacts({ detail }: { readonly detail: InstructionDeta
           {T.none}
         </p>
       ) : (
-        detail.dispatchNotes.map((note) => <DispatchNoteBlock key={note.dispatchNoteId} note={note} lineNo={lineNo} />)
+        detail.dispatchNotes.map((note) => <DispatchNoteBlock key={note.dispatchNoteId} note={note} lineNo={lineNo}
+          instructionId={detail.instruction.id} companyId={detail.instruction.companyId} />)
       )}
     </section>
   )
 }
 
-function DispatchNoteBlock({ note, lineNo }: { readonly note: DispatchNote; readonly lineNo: (lineId: string) => number | string }) {
+function DispatchNoteBlock({ note, lineNo, instructionId, companyId }: { readonly note: DispatchNote
+  readonly lineNo: (lineId: string) => number | string; readonly instructionId: string; readonly companyId: string }) {
   return (
     <article id={dispatchNoteAnchor(note.dispatchNoteId)} className={styles.section} data-testid={`logistics-dispatch-note-${note.dispatchNoteId}`}
       aria-label={noteName(note)} data-status={note.status}>
@@ -156,6 +160,8 @@ function DispatchNoteBlock({ note, lineNo }: { readonly note: DispatchNote; read
           </>
         )}
       </dl>
+      {note.status === DISPATCH_NOTE_STATUS.approved
+        ? <DispatchNotePdfButton instructionId={instructionId} dispatchNoteId={note.dispatchNoteId} companyId={companyId} /> : null}
       <div className={styles.tableWrap}>
         <table className={styles.table}>
           <caption className={styles.muted}>{T.caption}</caption>
@@ -379,7 +385,10 @@ export function DispatchNoteLifecycles({
     <section className={styles.section} aria-labelledby="logistics-dispatch-note-lifecycle-heading" data-testid="logistics-dispatch-note-lifecycles">
       <h2 id="logistics-dispatch-note-lifecycle-heading">{T.actionsLabel}</h2>
       {detail.dispatchNotes.map((note) => (
-        <DispatchNoteLifecycle key={note.dispatchNoteId} shell={shell} detail={detail} note={note} companyId={companyId} onRecorded={onRecorded} />
+        <div key={note.dispatchNoteId}>
+          <DispatchNoteLifecycle shell={shell} detail={detail} note={note} companyId={companyId} onRecorded={onRecorded} />
+          <DispatchKilogramsPanel shell={shell} note={note} companyId={companyId} />
+        </div>
       ))}
     </section>
   )

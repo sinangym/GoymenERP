@@ -21,7 +21,7 @@ namespace GoymenERP.Modules.Accounting.Application;
 /// </list>
 /// No grant is registered here and no account is chosen here.
 /// </summary>
-public sealed class AccountingPostingAccountMappingServiceV1(
+public sealed partial class AccountingPostingAccountMappingServiceV1(
     IAccountingPostingAccountMappingStoreV1 mappings,
     IAccountingCommandLog commands,
     IErpAuthorityRevalidationService authority,
@@ -321,6 +321,11 @@ public sealed class AccountingPostingAccountMappingServiceV1(
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.CompanyContextMismatch)
         {
             return Denied();
+        }
+        catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ProviderUnavailable)
+        {
+            if (!await AuthorizeCapturedAsync(permission, company, actor, cancellationToken)) return Denied();
+            return Unavailable();
         }
         catch (AccountingStoreException)
         {

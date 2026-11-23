@@ -40,6 +40,12 @@ internal sealed class LabelRow : IInventoryTenantRow
     public string? HeatNumber { get; set; }
     public string? CoilNumber { get; set; }
     public int? Classification { get; set; }
+
+    /// <summary>
+    /// STK-S9 (BS-5): the label's production status (1 = UsableRemnant), written once when a Manufacturing output
+    /// creates the label and never modified (it is not in the label's modifiable columns). Null for every other label.
+    /// </summary>
+    public int? ProductionStatus { get; set; }
     public string RequiredDocumentsJson { get; set; } = "[]";
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];
@@ -92,6 +98,8 @@ internal sealed class LabelTransformationInputRow : IInventoryTenantRow
     public Guid LabelId { get; set; }
     public long LabelVersion { get; set; }
     public decimal QuantityKg { get; set; }
+    /// <summary>KLN-D119 (AK-2): the piece count; null on a label that does not track pieces.</summary>
+    public int? PieceCount { get; set; }
 }
 
 /// <summary>An output-label edge captured when its new physical identity is created.</summary>
@@ -103,6 +111,8 @@ internal sealed class LabelTransformationOutputRow : IInventoryTenantRow
     public Guid LabelId { get; set; }
     public long LabelVersion { get; set; }
     public decimal QuantityKg { get; set; }
+    /// <summary>KLN-D119 (AK-2): the piece count; null on a label that does not track pieces.</summary>
+    public int? PieceCount { get; set; }
 }
 
 /// <summary>
@@ -161,6 +171,8 @@ internal sealed class MovementLineRow : IInventoryTenantRow
     public Guid ProductId { get; set; }
     public int Block { get; set; }
     public decimal QuantityKg { get; set; }
+    /// <summary>KLN-D119 (AK-2): the piece count; null on a label that does not track pieces.</summary>
+    public int? PieceCount { get; set; }
 }
 
 /// <summary>
@@ -180,6 +192,8 @@ internal sealed class BalanceRow : IInventoryTenantRow
     public Guid ProductId { get; set; }
     public int Block { get; set; }
     public decimal QuantityKg { get; set; }
+    /// <summary>KLN-D119 (AK-2): the piece count; null on a label that does not track pieces.</summary>
+    public int? PieceCount { get; set; }
     public byte[] RowVersion { get; set; } = [];
 }
 
@@ -208,6 +222,15 @@ internal sealed class AllocationRow : IInventoryTenantRow
     public DateTimeOffset? ReservedUntilUtc { get; set; }
     public decimal AllocatedKg { get; set; }
     public decimal RemainingKg { get; set; }
+
+    /// <summary>
+    /// KLN-D119 / SAT-D434 (AK-4b): the pieces the allocation reserved on a piece-tracking label; null when it holds
+    /// kilograms only (a kg-only label, or a row written before AK-4b: no backfill).
+    /// </summary>
+    public int? AllocatedPieces { get; set; }
+
+    /// <summary>KLN-D119: the pieces still reserved; null exactly when <see cref="AllocatedPieces"/> is null.</summary>
+    public int? RemainingPieces { get; set; }
     public int Status { get; set; }
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];
@@ -218,6 +241,12 @@ internal sealed class AllocationRow : IInventoryTenantRow
 
     /// <summary>B-01: the kg a plan-input release returned to free stock, so consumed = allocated − remaining − released.</summary>
     public decimal? ReleasedKg { get; set; }
+
+    /// <summary>
+    /// KLN-D39: a sales allocation whose label is of another, similar product ("muadil") than the demand product. Only a
+    /// sales order line allocation can carry it; it is fixed at create and never changes.
+    /// </summary>
+    public bool IsSubstitute { get; set; }
 }
 
 /// <summary>
@@ -271,6 +300,7 @@ internal sealed class AverageCostLedgerRow : IInventoryTenantRow
 /// </summary>
 internal sealed class InventoryOutboxRow : IInventoryTenantRow
 {
+    public ulong Position { get; set; }
     public Guid Id { get; set; }
     public Guid CompanyId { get; set; }
     public string EventType { get; set; } = string.Empty;
@@ -377,6 +407,9 @@ internal sealed class StockCountRow : IInventoryTenantRow
     public int Block { get; set; }
     public decimal BookKg { get; set; }
     public decimal CountedKg { get; set; }
+    /// <summary>KLN-D119 (AK-2): the book and counted pieces of a piece-tracking label; both null on a kg-only label.</summary>
+    public int? BookPieceCount { get; set; }
+    public int? CountedPieceCount { get; set; }
     public DateTimeOffset CountedAtUtc { get; set; }
     public string Reason { get; set; } = string.Empty;
     public string PayloadHash { get; set; } = string.Empty;
@@ -423,6 +456,9 @@ internal sealed class StockScrapRow : IInventoryTenantRow
     public int Block { get; set; }
     public decimal BookKg { get; set; }
     public decimal ScrapKg { get; set; }
+    /// <summary>KLN-D119 (AK-2b): the book and scrapped pieces of a piece-tracking label; both null on a kg-only label.</summary>
+    public int? BookPieceCount { get; set; }
+    public int? ScrapPieceCount { get; set; }
     public DateTimeOffset ScrappedAtUtc { get; set; }
     public string Reason { get; set; } = string.Empty;
     public string PayloadHash { get; set; } = string.Empty;
@@ -442,6 +478,44 @@ internal sealed class StockScrapDecisionRow : IInventoryTenantRow
     public int Decision { get; set; }
     public string Reason { get; set; } = string.Empty;
     public Guid? MovementId { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset DecidedAtUtc { get; set; }
+    public string DecidedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// SAT-D304 opening-stock cost submission: the manually entered base-currency unit cost per stock kilogram of one
+/// (location, product) position, with its mandatory reason. A submission changes no cost ledger.
+/// <see cref="PayloadHash"/> is the canonical request, so the same id again is a replay or a conflict. The submitter is
+/// kept for the maker≠checker rule and the audit. Append-only.
+/// </summary>
+internal sealed class OpeningCostRow : IInventoryTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid LocationId { get; set; }
+    public Guid ProductId { get; set; }
+    public decimal UnitCostPerKg { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// The one decision on an opening-cost submission: approved with the company's own stock on hand it costed (the schema
+/// requires a positive figure), or rejected with none. The key (company, submission) allows exactly one decision.
+/// Append-only.
+/// </summary>
+internal sealed class OpeningCostDecisionRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid OpeningCostId { get; set; }
+    public int Decision { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public decimal? CostedStockKg { get; set; }
     public string PayloadHash { get; set; } = string.Empty;
     public DateTimeOffset DecidedAtUtc { get; set; }
     public string DecidedBy { get; set; } = string.Empty;
@@ -491,7 +565,54 @@ internal sealed class InventoryTransferDispatchRow : IInventoryTenantRow
     public string DocumentKind { get; set; } = string.Empty;
     public Guid DocumentId { get; set; }
     public Guid? DocumentLineId { get; set; }
+
+    /// <summary>
+    /// B-22a: the exact Logistics outgoing-document version the dispatch was proved against. Null only on dispatches
+    /// recorded before the proof binding existed.
+    /// </summary>
+    public int? DocumentVersion { get; set; }
     public DateTimeOffset DispatchedAtUtc { get; set; }
+
+    /// <summary>
+    /// KLN-D25 (7)(f): the source warehouse "kantardan geçer" value read at dispatch
+    /// (<see cref="Domain.Transfers.InventoryTransferSourceScaleSetting"/>). Dispatches recorded before the setting
+    /// existed carry Off (KLN-D27 (7)).
+    /// </summary>
+    public int SourceScaleSettingAtDispatch { get; set; } = (int)Domain.Transfers.InventoryTransferSourceScaleSetting.Off;
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// KLN-D27 (5): the moment and basis at which the dispatch-cancel window of one dispatch closed. Insert-only and final:
+/// a later owner reading (for example a late e-İrsaliye link) never reopens or moves it.
+/// </summary>
+internal sealed class InventoryTransferDispatchCancelClosureRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public int Basis { get; set; }
+    public DateTimeOffset ClosedAtUtc { get; set; }
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// KLN-D20: the one immutable cancellation of a whole dispatch, linked to its reverse movement, with the owner
+/// confirmation versions the window required (null when that confirmation was not required).
+/// </summary>
+internal sealed class InventoryTransferDispatchCancellationRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid MovementId { get; set; }
+    public DateTimeOffset CancelledAtUtc { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public long? LogisticsConfirmationVersion { get; set; }
+    public long? EDispatchConfirmationVersion { get; set; }
     public string PayloadHash { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
     public string RecordedBy { get; set; } = string.Empty;
@@ -525,6 +646,8 @@ internal sealed class InventoryTransferBucketRow : IInventoryTenantRow
     public Guid ProductId { get; set; }
     public int Block { get; set; }
     public decimal QuantityKg { get; set; }
+    /// <summary>KLN-D119 (AK-2b): the bucket's dispatched pieces; null on a label that does not track pieces.</summary>
+    public int? PieceCount { get; set; }
 }
 
 /// <summary>One immutable whole-line target acceptance and its physical movement.</summary>
@@ -542,4 +665,158 @@ internal sealed class InventoryTransferAcceptanceRow : IInventoryTenantRow
     public DateTimeOffset RecordedAtUtc { get; set; }
     public string RecordedBy { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// B-22c receipt of one accepted line (KLN-D21/KLN-D24). Immutable: the receiver's weighed kilograms, the derived
+/// shortage (moved out at once as an automatic fire) or excess (pending a different person's decision) and the label
+/// version right after the receipt, which an excess approval must still find.
+/// </summary>
+internal sealed class InventoryTransferReceiptRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid LineId { get; set; }
+    public decimal DispatchedKg { get; set; }
+    public decimal ReceivedKg { get; set; }
+    public decimal ShortageKg { get; set; }
+    public decimal OverageKg { get; set; }
+    /// <summary>KLN-D119 (AK-2b): dispatched/received/shortage/excess pieces of a piece-tracking label; all null otherwise.</summary>
+    public int? DispatchedPieceCount { get; set; }
+    public int? ReceivedPieceCount { get; set; }
+    public int? ShortagePieceCount { get; set; }
+    public int? OveragePieceCount { get; set; }
+    public Guid? ShortageMovementId { get; set; }
+    public long LabelVersionAfterReceipt { get; set; }
+    public string? OverageReason { get; set; }
+    public DateTimeOffset ReceivedAtUtc { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// KLN-D24: the one immutable decision on one numbered receipt-excess request (1 approve with movement, 2 reject). KLN-D107:
+/// request 1 is the receipt's own declared excess; a corrected re-request after a rejection takes the next number (see
+/// <see cref="InventoryTransferOverageRenewalRow"/>). A line has at most one approval.
+/// </summary>
+internal sealed class InventoryTransferOverageDecisionRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid LineId { get; set; }
+    public int RequestNumber { get; set; } = 1;
+    public int Decision { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public Guid? MovementId { get; set; }
+    public DateTimeOffset DecidedAtUtc { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string DecidedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// KLN-D107: one immutable corrected re-request of a rejected receipt excess, numbered from 2 (request 1 is the receipt's
+/// own declared excess). Its quantity never exceeds the receipt's first declared excess; it is decided under the overage
+/// approval like the first request.
+/// </summary>
+internal sealed class InventoryTransferOverageRenewalRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid LineId { get; set; }
+    public int RequestNumber { get; set; }
+    public decimal OverageKg { get; set; }
+    /// <summary>KLN-D119 (AK-2b): the re-requested excess pieces of a piece-tracking label; null otherwise.</summary>
+    public int? OveragePieceCount { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public DateTimeOffset RequestedAtUtc { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// KLN-D108: the one immutable withdrawal of an undecided numbered loss request. A withdrawn request is never decided and
+/// no longer blocks dispatch cancellation (KLN-D98).
+/// </summary>
+internal sealed class InventoryTransferLossWithdrawalRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid LineId { get; set; }
+    public int RequestNumber { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public DateTimeOffset WithdrawnAtUtc { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string WithdrawnBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// KLN-D23 (c): one immutable loss request of a pending line, with its explanation. KLN-D97: requests are numbered per
+/// line from 1; a rejected request stays as it was and a new one takes the next number.
+/// </summary>
+internal sealed class InventoryTransferLossRequestRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid LineId { get; set; }
+    public int RequestNumber { get; set; }
+    public string Explanation { get; set; } = string.Empty;
+    public DateTimeOffset RequestedAtUtc { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// KLN-D23 (c): the one immutable decision on one numbered loss request (1 approve with movement, 2 reject); a line
+/// has at most one approval.
+/// </summary>
+internal sealed class InventoryTransferLossDecisionRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid LineId { get; set; }
+    public int RequestNumber { get; set; }
+    public int Decision { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public Guid? MovementId { get; set; }
+    public DateTimeOffset DecidedAtUtc { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string DecidedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// KLN-D22: the immutable link of one reverse transfer (a new transfer in the opposite direction) to the accepted
+/// transfer it undoes, with the mandatory reason. One link per reverse transfer.
+/// </summary>
+internal sealed class InventoryTransferReversalRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid OriginalTransferId { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>KLN-D22: one reverse transfer line and the accepted original line it brings back. Immutable.</summary>
+internal sealed class InventoryTransferReversalLineRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid TransferId { get; set; }
+    public Guid LineId { get; set; }
+    public Guid OriginalTransferId { get; set; }
+    public Guid OriginalLineId { get; set; }
 }

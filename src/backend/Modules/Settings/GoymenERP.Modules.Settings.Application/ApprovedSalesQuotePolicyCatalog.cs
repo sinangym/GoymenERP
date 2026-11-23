@@ -178,6 +178,14 @@ public sealed class ApprovedSalesQuotePolicyCatalog
     /// <summary>Whether the company has an approved Sales policy source at all.</summary>
     public bool Serves(Guid companyId) => _companies.Contains(companyId);
 
+    /// <summary>Every reviewed loss reason list version (the source of the one-time Settings baseline transfer).</summary>
+    public IReadOnlyCollection<ApprovedSalesQuoteLossReasonListEntry> LossReasonLists =>
+        _lossReasons.Values.SelectMany(versions => versions).ToArray();
+
+    /// <summary>Every reviewed default quote validity version (the source of the one-time Settings baseline transfer).</summary>
+    public IReadOnlyCollection<ApprovedSalesQuoteDefaultValidityEntry> DefaultValidities =>
+        _validities.Values.SelectMany(versions => versions).ToArray();
+
     /// <summary>
     /// The list version in force on the date, or — outside every window — the nearest earlier version (or the first one)
     /// with its REAL window, so the consumer's own check rejects it. Null when the company has no list.

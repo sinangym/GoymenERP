@@ -81,6 +81,11 @@ public sealed partial class LogisticsInstructionService
             prepare: null, cancellationToken);
     }
 
+    /// <summary>
+    /// F-020 instruction cancel. LOJ-D18: only the instruction's status moves; the cancel calls no Inventory port, so the physical
+    /// allocations its lines name stay with the Sales order and a new instruction may reuse them. Releasing an allocation is the
+    /// separate, audited Inventory release (DEC-STK-005).
+    /// </summary>
     public Task<LoadingInstructionResponse> CancelInstructionAsync(Guid instructionId, CancelInstructionRequest request,
         LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default)
     {
@@ -163,6 +168,6 @@ public sealed partial class LogisticsInstructionService
             {
                 var source = instruction.Lines.Single(candidate => candidate.Id == line.InstructionLineId);
                 return new DispatchNoteLineView(line.LineNo, line.ShipmentId, line.InstructionLineId, source.Source.OrderId, source.Source.LineId,
-                    source.ProductId, source.UnitId, Text(line.Quantity));
+                    source.ProductId, source.UnitId, Text(line.Quantity), line.Kilograms is { } kilograms ? Text(kilograms) : null);
             })]);
 }

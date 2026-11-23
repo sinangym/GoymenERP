@@ -12,6 +12,7 @@ import type {
   LabelAllocations,
 } from './allocationChangeContract'
 import type { InventoryLabelDetailWithMovementTimeline } from './labelDetailContract'
+import { ALLOCATION_PIECE_REFUSAL_TEXT, ALLOCATION_PIECE_TEXT as PT } from './allocationPieceText'
 
 const COMPANY = '11111111-1111-1111-1111-111111111111'
 const LABEL = '22222222-2222-2222-2222-222222222222'
@@ -380,5 +381,174 @@ describe('AT-063 release of an allocation on the label detail (existing Inventor
     api.allocations.mockResolvedValue({ type: 'ok-single', data: labelRead({ items: [RELEASED_ITEM] }) })
     mount(`/stok/etiket/${LABEL}?islem=serbest-birak`)
     expect(await screen.findByText('Bu etikette serbest bırakılacak aktif tahsis yok.')).toBeTruthy()
+  })
+})
+
+describe('KLN-D119 pieces of a sales allocation on the label detail', () => {
+  const PIECES = { allocatedPieces: 12, remainingPieces: 8 }
+  const pieceRead = () => labelRead({
+    items: [{ allocation: allocation(PIECES), releasedAtUtc: null, releaseReason: null, changes: [] }],
+  })
+
+  it('shows the reserved and remaining pieces beside the kilograms only when the allocation holds pieces', async () => {
+    api.allocations.mockResolvedValue({ type: 'ok-single', data: pieceRead() })
+    mount()
+    const line = await row()
+    expect(within(line).getByTestId(`inventory-allocation-pieces-${ALLOCATION}`).textContent).toBe('12 adet / 8 adet')
+    expect(within(line).getByText(/60 kg \/ 60 kg/)).toBeTruthy()
+    cleanup()
+
+    api.allocations.mockResolvedValue({ type: 'ok-single', data: labelRead() })
+    mount()
+    expect(within(await row()).queryByTestId(`inventory-allocation-pieces-${ALLOCATION}`)).toBeNull()
+  })
+
+  it('asks the pieces held afterwards on a resize of a piece-holding allocation and sends them', async () => {
+    api.allocations.mockResolvedValue({ type: 'ok-single', data: pieceRead() })
+    api.change.mockImplementation(async (_id: string, request: AllocationChangeRequest) => ({
+      type: 'applied', replayed: false,
+      response: { kind: 'Resize', replaced: null, allocation: allocation({ version: '2', allocatedKg: request.quantityKg,
+        remainingKg: request.quantityKg, allocatedPieces: request.pieceCount, remainingPieces: request.pieceCount }) },
+    }))
+    const user = userEvent.setup(); mount()
+    const line = await row()
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi revize et' }))
+    const pieces = within(line).getByLabelText(PT.changePieceCount) as HTMLInputElement
+    expect(pieces.required).toBe(true)
+    expect(within(line).getByText(PT.changePieceCountRequiredHint(8))).toBeTruthy()
+
+    await user.type(within(line).getByLabelText('Yeni tahsis kg'), '25')
+    await user.type(within(line).getByLabelText('Değişiklik gerekçesi'), 'Sipariş azaldı')
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi değiştir' }))
+    expect(await screen.findByText(PT.changePieceCountRequired)).toBeTruthy()
+
+    await user.type(pieces, '2,5')
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi değiştir' }))
+    expect(await screen.findByText(PT.changePieceCountFormat)).toBeTruthy()
+    expect(api.change).not.toHaveBeenCalled()
+
+    await user.clear(pieces)
+    await user.type(pieces, '5')
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi değiştir' }))
+    await screen.findByText(/Tahsis güncellendi: 25 kg \(5 adet\) ayrılmış durumda/)
+    expect(api.change.mock.calls[0][1]).toEqual({
+      expectedAllocationVersion: '1', salesOrderId: ORDER, salesOrderLineId: LINE, targetLabelId: LABEL,
+      expectedTargetLabelVersion: '4', quantityKg: '25', reason: 'Sipariş azaldı', newAllocationId: null, pieceCount: 5,
+    })
+  })
+
+  it('treats the same kilograms with other pieces as a change, and the same of both as none', async () => {
+    api.allocations.mockResolvedValue({ type: 'ok-single', data: pieceRead() })
+    const user = userEvent.setup(); mount()
+    const line = await row()
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi revize et' }))
+    await user.type(within(line).getByLabelText('Yeni tahsis kg'), '60')
+    await user.type(within(line).getByLabelText(PT.changePieceCount), '8')
+    await user.type(within(line).getByLabelText('Değişiklik gerekçesi'), 'Aynı')
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi değiştir' }))
+    expect(await screen.findByText(PT.unchangedWithPieces)).toBeTruthy()
+    expect(api.change).not.toHaveBeenCalled()
+
+    await user.clear(within(line).getByLabelText(PT.changePieceCount))
+    await user.type(within(line).getByLabelText(PT.changePieceCount), '6')
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi değiştir' }))
+    await waitFor(() => expect(api.change).toHaveBeenCalledTimes(1))
+    expect(api.change.mock.calls[0][1]).toMatchObject({ quantityKg: '60', pieceCount: 6 })
+  })
+
+  it('shows no piece field and sends no piece count on a resize of a kg-only allocation', async () => {
+    const user = userEvent.setup(); mount()
+    const line = await row()
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi revize et' }))
+    expect(within(line).queryByLabelText(PT.changePieceCount)).toBeNull()
+    await user.type(within(line).getByLabelText('Yeni tahsis kg'), '25')
+    await user.type(within(line).getByLabelText('Değişiklik gerekçesi'), 'Sipariş azaldı')
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi değiştir' }))
+    await waitFor(() => expect(api.change).toHaveBeenCalledTimes(1))
+    expect('pieceCount' in (api.change.mock.calls[0][1] as object)).toBe(false)
+  })
+
+  it('offers an optional piece count on a move, where the target label decides, and drops it when the move is unticked', async () => {
+    api.change.mockImplementation(async (_id: string, request: AllocationChangeRequest) => ({
+      type: 'applied', replayed: false,
+      response: { kind: 'Move', replaced: allocation({ status: 'Released', remainingKg: '0', version: '2' }),
+        allocation: allocation({ allocationId: request.newAllocationId!, labelId: OTHER_LABEL, remainingKg: '60',
+          allocatedPieces: request.pieceCount, remainingPieces: request.pieceCount }) },
+    }))
+    const user = userEvent.setup(); mount()
+    const line = await row()
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi revize et' }))
+    await user.type(within(line).getByLabelText('Yeni tahsis kg'), '60')
+    await user.click(within(line).getByLabelText('Başka etikete taşı'))
+    const pieces = within(line).getByLabelText(PT.changePieceCount) as HTMLInputElement
+    expect(pieces.required).toBe(false)
+    expect(within(line).getByText(PT.changePieceCountMoveHint)).toBeTruthy()
+    await user.type(pieces, '4')
+    await user.type(within(line).getByLabelText('Hedef etiket kimliği'), OTHER_LABEL)
+    await user.type(within(line).getByLabelText('Hedef etiket sürümü'), '9')
+    await user.type(within(line).getByLabelText('Değişiklik gerekçesi'), 'Başka demet')
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi değiştir' }))
+    await screen.findByText(/Tahsis başka etikete taşındı/)
+    expect(api.change.mock.calls[0][1]).toMatchObject({ targetLabelId: OTHER_LABEL, quantityKg: '60', pieceCount: 4 })
+  })
+
+  it('SAT-D463: requires the pieces on a move of a piece-holding allocation and sends them', async () => {
+    api.allocations.mockResolvedValue({ type: 'ok-single', data: pieceRead() })
+    api.change.mockImplementation(async (_id: string, request: AllocationChangeRequest) => ({
+      type: 'applied', replayed: false,
+      response: { kind: 'Move', replaced: allocation({ status: 'Released', remainingKg: '0', version: '2', ...PIECES, remainingPieces: 0 }),
+        allocation: allocation({ allocationId: request.newAllocationId!, labelId: OTHER_LABEL, remainingKg: '60',
+          allocatedPieces: request.pieceCount, remainingPieces: request.pieceCount }) },
+    }))
+    const user = userEvent.setup(); mount()
+    const line = await row()
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi revize et' }))
+    await user.type(within(line).getByLabelText('Yeni tahsis kg'), '60')
+    await user.click(within(line).getByLabelText('Başka etikete taşı'))
+    const pieces = within(line).getByLabelText(PT.changePieceCount) as HTMLInputElement
+    expect(pieces.required).toBe(true)
+    expect(pieces.getAttribute('aria-required')).toBe('true')
+    expect(within(line).getByText(PT.changePieceCountHeldMoveHint(8))).toBeTruthy()
+    expect(within(line).queryByText(PT.changePieceCountMoveHint)).toBeNull()
+    await user.type(within(line).getByLabelText('Hedef etiket kimliği'), OTHER_LABEL)
+    await user.type(within(line).getByLabelText('Hedef etiket sürümü'), '9')
+    await user.type(within(line).getByLabelText('Değişiklik gerekçesi'), 'Başka demet')
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi değiştir' }))
+    expect(await screen.findByText(PT.changePieceCountRequired)).toBeTruthy()
+    expect(api.change).not.toHaveBeenCalled()
+
+    await user.type(pieces, '8')
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi değiştir' }))
+    await screen.findByText(/Tahsis başka etikete taşındı/)
+    expect(api.change.mock.calls[0][1]).toMatchObject({ targetLabelId: OTHER_LABEL, quantityKg: '60', pieceCount: 8 })
+  })
+
+  it.each([
+    [422, 'inventory_allocation_piece_count_required'],
+    [422, 'inventory_allocation_piece_count_not_tracked'],
+    [422, 'inventory_allocation_piece_count_invalid'],
+    [409, 'inventory_allocation_insufficient_free_pieces'],
+  ])('tells the %i %s refusal in Turkish', async (status, code) => {
+    api.allocations.mockResolvedValue({ type: 'ok-single', data: pieceRead() })
+    api.change.mockResolvedValue({ type: 'failed', status, code })
+    const user = userEvent.setup(); mount()
+    const line = await row()
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi revize et' }))
+    await user.type(within(line).getByLabelText('Yeni tahsis kg'), '25')
+    await user.type(within(line).getByLabelText(PT.changePieceCount), '5')
+    await user.type(within(line).getByLabelText('Değişiklik gerekçesi'), 'Revize')
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi değiştir' }))
+    const text = ALLOCATION_PIECE_REFUSAL_TEXT[code]
+    expect(text).toMatch(/\S/)
+    expect(text).not.toContain(code)
+    expect(await screen.findByText(text)).toBeTruthy()
+  })
+
+  it('names the remaining pieces in the release form of a piece-holding allocation', async () => {
+    api.allocations.mockResolvedValue({ type: 'ok-single', data: pieceRead() })
+    const user = userEvent.setup(); mount()
+    const line = await row()
+    await user.click(within(line).getByRole('button', { name: 'Tahsisi serbest bırak' }))
+    expect(within(line).getByText(new RegExp(PT.releasePieces(8).replace('.', '\\.')))).toBeTruthy()
   })
 })

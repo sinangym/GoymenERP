@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 
 namespace GoymenERP.BuildingBlocks.Monetary;
 
@@ -98,6 +99,26 @@ public readonly record struct Money : IComparable<Money>
     {
         RequireIdentity(currencyId, scale);
         return new Money(Normalize(decimal.Round(exactAmount, scale, RoundingMode)), currencyId, scale);
+    }
+
+    /// <summary>
+    /// The same half-away-from-zero rounding for an exact rational amount. DivRem avoids an intermediate
+    /// Decimal division (and its implicit precision loss). The caller still owns when rounding is authorized.
+    /// </summary>
+    public static Money Round(BigInteger numerator, BigInteger denominator, Guid currencyId, int scale)
+    {
+        RequireIdentity(currencyId, scale);
+        if (denominator <= 0) throw new ArgumentOutOfRangeException(nameof(denominator));
+        var units = BigInteger.DivRem(BigInteger.Abs(numerator) * BigInteger.Pow(10, scale), denominator, out var remainder);
+        if (remainder * 2 >= denominator) units++;
+        var decimalScale = scale;
+        // Trailing zeros are not precision. A large unit integer can still be a representable Decimal.
+        while (decimalScale > 0 && units % 10 == 0) { units /= 10; decimalScale--; }
+        if (units > (BigInteger.One << 96) - 1) throw new OverflowException("The rounded money amount exceeds Decimal's range.");
+        var mask = new BigInteger(uint.MaxValue);
+        var amount = new decimal(unchecked((int)(uint)(units & mask)), unchecked((int)(uint)((units >> 32) & mask)),
+            unchecked((int)(uint)((units >> 64) & mask)), numerator.Sign < 0, (byte)decimalScale);
+        return Of(amount, currencyId, scale);
     }
 
     public static Money Zero(Guid currencyId, int scale) => Of(0m, currencyId, scale);

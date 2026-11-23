@@ -10,6 +10,9 @@ public static class FinanceMoneyOperations
     // Technical Settings lookup key. It does not select scale, currency, grant or period policy.
     public const string ManualBankReceiptV1 = "finance.manual-bank-receipt.v1";
     public const string ManualBankPaymentV1 = "finance.manual-bank-payment.v1";
+    public const string CashTransferV1 = "finance.cash-transfer.v1";
+    // FNS-D48/FNS-D55: the expense payment reads its own Settings money profile row, never the manual bank payment's.
+    public const string ExpensePaymentV1 = "finance.expense-payment.v1";
 }
 
 public sealed record DraftReadContextRequest(Guid TreasuryAccountId, Guid PartyId,

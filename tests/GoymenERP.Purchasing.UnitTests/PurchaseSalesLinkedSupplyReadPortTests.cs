@@ -81,6 +81,24 @@ public sealed class PurchaseSalesLinkedSupplyReadPortTests
     }
 
     [Fact]
+    public void Definitive_returns_on_general_and_technical_shares_do_not_reopen_linked_supply()
+    {
+        var general = General(ordered: 100m, technical: 40m, accepted: 50m) with { DefinitiveReturned = 10m };
+        var technical = Slice(general.LineId, 40m, accepted: 35m) with { DefinitiveReturned = 5m };
+
+        Assert.Empty(PurchaseSalesLinkedSupplyComposer.Compose([general, technical], Company));
+    }
+
+    [Fact]
+    public void A_replacement_expected_return_reopens_only_its_net_returned_share()
+    {
+        // Accepted originally 100; 10 returned definitively and 5 awaiting replacement. Current accepted is 85.
+        var general = General(ordered: 100m, accepted: 85m) with { DefinitiveReturned = 10m };
+
+        Assert.Equal("5", Assert.Single(PurchaseSalesLinkedSupplyComposer.Compose([general], Company)).OpenQuantityText);
+    }
+
+    [Fact]
     public void Several_commitments_are_listed_by_order_then_line_number()
     {
         var second = General(lineNo: 2, salesLine: Guid.NewGuid());

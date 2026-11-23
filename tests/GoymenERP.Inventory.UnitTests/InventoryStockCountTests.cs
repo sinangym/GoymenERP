@@ -130,6 +130,50 @@ public sealed class InventoryStockCountTests
     }
 
     [Fact]
+    public void A_label_shown_at_zero_is_counted_and_its_approved_surplus_puts_it_back_in_stock()
+    {
+        // SAT-D330: the system shows the label at 0 (its balance row stays, at zero); the counter finds 7.25 kg.
+        var position = Position();
+        var ledger = StockLedger.FromStoredBalances([new StockBalance(position, Kilograms.Of(0m))]);
+        var count = Count(0m, 7.25m);
+
+        Assert.Equal((0m, "7.25"), (count.Book.Value, InventoryStore.SignedKilograms(count.Difference)));
+        var line = Assert.Single(count.Adjustment(Guid.NewGuid(), At).Lines);
+        Assert.Equal((StockDirection.In, 7.25m), (line.Direction, line.Quantity.Value));
+
+        ledger.Apply(count.Adjustment(Guid.NewGuid(), At));
+        Assert.Equal(7.25m, ledger.QuantityAt(position).Value);
+    }
+
+    [Fact]
+    public void A_zero_book_count_of_zero_has_no_difference()
+    {
+        var count = Count(0m, 0m);
+
+        Assert.False(count.HasDifference);
+        Assert.Equal(InventoryRuleCodes.InvalidStockCount,
+            Assert.Throws<InventoryRuleException>(() => count.Adjustment(Guid.NewGuid(), At)).Code);
+    }
+
+    [Fact]
+    public void A_refused_issue_leaves_the_label_as_it_was_so_the_next_movement_and_a_count_go_through()
+    {
+        // SAT-D329: a stopped (refused) transaction never locks the label: nothing of it is applied.
+        var position = Position();
+        var ledger = StockLedger.FromStoredBalances([new StockBalance(position, Kilograms.Of(10m))]);
+
+        var refusal = Assert.Throws<InventoryRuleException>(() =>
+            ledger.Apply(Issue(position, 12m)));
+        Assert.Equal(InventoryRuleCodes.NegativePhysicalStock, refusal.Code);
+        Assert.Equal(10m, ledger.QuantityAt(position).Value);
+
+        ledger.Apply(Issue(position, 4m));
+        Assert.Equal(6m, ledger.QuantityAt(position).Value);
+        ledger.Apply(Count(6m, 5.5m).Adjustment(Guid.NewGuid(), At));
+        Assert.Equal(5.5m, ledger.QuantityAt(position).Value);
+    }
+
+    [Fact]
     public async Task Record_measures_the_record_permission_through_the_writer_fence_and_derives_the_metadata()
     {
         var world = new World();
@@ -406,15 +450,18 @@ public sealed class InventoryStockCountTests
             && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "MovementId"])
             && key.DeleteBehavior == DeleteBehavior.Restrict);
         Assert.Contains(decision.GetCheckConstraints(), check => check.Name == "CK_StockCountDecisions_Decision");
+        Assert.Equal(InventoryDbContext.StockCountStateCheck,
+            count.GetCheckConstraints().Single(check => check.Name == "CK_StockCounts_State").Sql);
+        Assert.Contains("[BookKg] >= 0", InventoryDbContext.StockCountStateCheck, StringComparison.Ordinal);
 
         var movements = model.FindEntityType(typeof(MovementRow))!;
-        Assert.Equal("[Kind] BETWEEN 1 AND 9",
+        Assert.Equal("[Kind] BETWEEN 1 AND 16",
             movements.GetCheckConstraints().Single(check => check.Name == "CK_Movements_Kind").Sql);
         Assert.Equal(6, (int)StockMovementKind.CountAdjustment);
     }
 
     private static StockCount Count(decimal book, decimal counted) =>
-        new(CountId, CompanyA, Position(), Kilograms.Positive(book), Kilograms.Of(counted), At, "Sayım farkı");
+        new(CountId, CompanyA, Position(), Kilograms.Of(book), Kilograms.Of(counted), At, "Sayım farkı");
 
     private static readonly Guid Company = CompanyA;
 

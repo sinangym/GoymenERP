@@ -1,0 +1,18 @@
+export const SOURCE_VOUCHER_TEXT = {
+  title: 'Fatura fişleri', subject: 'kaynak fatura fişleri', intro: 'Faturanın kesinleşmiş tutarları ve hesap eşlemesi korunur. Onay, fatura tarihinin açık dönemine tek yevmiye kaydı oluşturur.',
+  empty: 'Kaynak fatura fişi bulunmuyor.', refresh: 'Yeniden oku', select: 'Fişi aç', invoice: 'Resmî fatura', date: 'Fatura tarihi',
+  amount: 'Ödenecek TL', status: 'Durum', source: 'Kaynak', sale: 'Satış', purchase: 'Alış', missingNumber: 'Kaynakta fatura numarası yok',
+  account: 'Hesap', accountMissing: 'Hesap planı kaynağı eksik', side: 'Yön', debit: 'Borç', credit: 'Alacak', lineAmount: 'TL tutarı',
+  approve: 'Onayla ve yevmiyeye geçir', own: 'Kesinleştirdiğiniz faturanın fişini başka bir muhasebe yetkilisi onaylamalı.',
+  period: 'Fatura tarihine ait açık dönem bekleniyor. Başka bir dönem veya tarih kendiliğinden seçilmez.',
+  reversal: 'Kaynak fatura iptali kaydedildi. Muhasebe yetkilisi açık dönemi ve tarihi seçerek ters kayıt önerir; farklı bir muhasebe yetkilisi onaylar. Önceki yevmiye korunur.',
+  statuses: { AwaitingApproval: 'Onay bekliyor', PeriodWaiting: 'Dönem bekliyor', Posted: 'Muhasebeleştirildi', Cancelled: 'Taslak iptal edildi', CancellationReversalPending: 'Ters kayıt bekliyor', CancelledByReversal: 'Ters kayıt onaylandı' },
+  reversalTitle: 'İptal için ters kayıt', reversalPropose: 'Ters kayıt önerisini kaydet', reversalDone: 'Ters kayıt önerisi kaydedildi; ayrı onay bekliyor.',
+  reversalApproval: 'Ters kayıt onayını aç', reversalOwn: 'Hazırladığınız ters kayıt önerisini farklı bir muhasebe yetkilisi onaylamalı.',
+  reversalMissingProof: 'Resmî iptal kaynak kanıtı eksik; ters kayıt önerisi hazırlanamaz.',
+  reversalDenied: 'Ters kayıt hazırlama yetkisi bulunmuyor.', reversalTransactionDate: 'İşlem tarihi', reversalAccountingDate: 'Muhasebe tarihi',
+  reversalValueDate: 'Valör tarihi (isteğe bağlı)', reversalReason: 'Ters kayıt gerekçesi', reversalInvalid: 'Açık dönem, geçerli tarihler ve gerekçeyi tamamlayın.',
+  reversalPeriodRefused: 'Seçilen dönem açık değil veya muhasebe tarihini kapsamıyor. Dönem listesini yeniden okuyup seçiminizi düzeltin.',
+  unknown: 'İşlemin sonucu doğrulanamadı. Aynı komut yeniden gönderilmeden yeni onay başlatılamaz.', resend: 'Aynı komutu yeniden gönder',
+  done: 'Fiş onaylandı.', refused: 'İşlem tamamlanamadı. Yetki, güncel sürüm, açık dönem ve hesap planını kontrol edin.',
+} as const

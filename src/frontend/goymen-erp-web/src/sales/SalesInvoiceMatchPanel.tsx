@@ -4,8 +4,8 @@
  *
  *  - The difference, the tolerance and who approved an excess are the server's text, shown verbatim; the screen never compares,
  *    rounds or recomputes an amount or a tolerance (SAT-D229, AGENTS.md "Fiyat/formül/toleransı ekran içinde yeniden yazma").
- *  - The form shows only when the server's state allows a match (Approved, no match) AND the caller may use it. The shell
- *    publishes no capability for `sales.invoices.match` yet, so the routed tab mounts it with `canMatch` false and says so.
+ *  - The form shows only when the server's state allows a match (Approved, no match) AND the caller holds the Sales shell 1.27
+ *    `sales.invoices.match` control; without it the panel says so neutrally.
  *  - The difference-approval fields appear only after the server asked for an approval for exactly this number and ETTN, and
  *    only when `canApproveDifference` (SAT-D106 / SAT-D204); otherwise the need for a separate approval is said neutrally.
  *  - 401/403 go to the shell's auth boundary; an unknown outcome keeps the same key until it is retried or left.
@@ -73,6 +73,17 @@ export function SalesInvoiceMatchPanel({
  * SAT-D241: the VAT and withholding comparison rows of a recorded match (inside a `<dl>`), the server's TL text as written. A match
  * recorded before SAT-D241 carries no comparison and says so (it is never shown as zero differences).
  */
+export function MatchSourceFacts({ match }: { readonly match: InvoiceMatch }) {
+  if (match.sourceProof === null || match.invoiceDate === null) {
+    return <div><dt>{T.source}</dt><dd>{T.sourceMissing}</dd></div>
+  }
+  return <>
+    <div><dt>{T.invoiceDate}</dt><dd>{match.invoiceDate}</dd></div>
+    <div><dt>{T.source}</dt><dd>{match.sourceProof.sourceKind === 'manual' ? T.sourceManual : T.sourceImport}</dd></div>
+    {match.sourceProof.hasPendingManual ? <div><dt>{T.source}</dt><dd role="status">{T.pendingManual}</dd></div> : null}
+  </>
+}
+
 export function MatchTaxFacts({ match, testIdPrefix }: { readonly match: InvoiceMatch; readonly testIdPrefix: string }) {
   const taxes = match.taxes
   if (taxes === null) {
@@ -106,6 +117,7 @@ function MatchNotice({ controller }: { readonly controller: InvoiceMatchControll
       )}
       {match === null ? null : (
         <dl className={styles.facts} aria-label={T.resultCaption} data-testid="sales-invoice-match-result">
+          <MatchSourceFacts match={match} />
           <div><dt>{T.resultDifference}</dt><dd className={styles.numericValue} data-testid="sales-invoice-match-result-difference">{match.difference}</dd></div>
           <div><dt>{T.resultTolerance}</dt><dd className={styles.numericValue} data-testid="sales-invoice-match-result-tolerance">{match.tolerance}</dd></div>
           <MatchTaxFacts match={match} testIdPrefix="sales-invoice-match-result" />

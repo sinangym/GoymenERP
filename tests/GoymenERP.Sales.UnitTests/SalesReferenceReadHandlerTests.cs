@@ -167,6 +167,20 @@ public sealed partial class SalesReferenceReadHandlerTests
         Assert.Equal(5, f.Auth.Calls);
     }
 
+    [Theory]
+    [InlineData("length", false)] // metre (SAT-D443): not sold in this train
+    [InlineData("count", false)]  // a count profile that is not the Settings standard piece identity
+    public async Task SAT_D443_a_metre_or_other_non_piece_order_unit_is_not_offered(string dimension, bool isKilogram)
+    {
+        var f = new Fixture();
+        f.Settings.Units[f.Unit] = f.Settings.Units[f.Unit] with { DimensionCode = dimension, IsKilogram = isKilogram, UnitCode = "m" };
+
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+
+        Assert.Equal((422, "unsupported_unit"), (result.StatusCode, result.Code));
+        Assert.Null(result.Value);
+    }
+
     [Fact]
     public async Task Stale_product_or_profile_version_has_no_positive_option()
     {
@@ -818,7 +832,8 @@ public sealed partial class SalesReferenceReadHandlerTests
             // Three distinct units and profiles, so a lookup of the wrong binding cannot pass.
             var stock = AddUnit(StockUnit, "stock-unit", Guid.NewGuid(), 1);
             var sales = AddUnit(SalesUnit, "sales-unit", Guid.NewGuid(), 2);
-            var order = AddUnit(Unit, "order-unit", OrderProfile, 3);
+            // SAT-D443: a sales order unit is kilogram or the standard piece; the fixture's order unit is a kilogram profile.
+            var order = AddUnit(Unit, "order-unit", OrderProfile, 3, isKilogram: true);
             Products.Result = new(new(Product, "7", "P001", "Example Product", stock, sales, order, Day), []);
             // SALES-A2a: two candidates of the company; the second has its own profile (in effect too).
             Candidates.List = [new(Currency, "XYZ", "XYZ - Example"), new(SecondCurrency, "ABC", "ABC - Second")];
@@ -841,9 +856,9 @@ public sealed partial class SalesReferenceReadHandlerTests
             new(Context, User, Auth, Accounts, Settings, productMissing ? null : Products, bindings ?? Bindings,
                 candidatesMissing || operationAware ? null : Candidates, contactMissing ? null : ContactInformation,
                 operationAware ? Candidates : null);
-        private ProductSalesUnitProfileV1 AddUnit(Guid unitId, string code, Guid profileId, long version)
+        private ProductSalesUnitProfileV1 AddUnit(Guid unitId, string code, Guid profileId, long version, bool isKilogram = false)
         {
-            Settings.Units[unitId] = new(Company, unitId, code, "owner-dimension", false,
+            Settings.Units[unitId] = new(Company, unitId, code, isKilogram ? "weight" : "owner-dimension", isKilogram,
                 new(profileId, version), 3, true, Day.AddDays(-1), null);
             return new(Company, unitId, profileId, version.ToString(CultureInfo.InvariantCulture));
         }

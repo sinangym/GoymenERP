@@ -1,0 +1,776 @@
+# TREN-1 W8 — sabit kapsam kaynak ve yerel doğrulama kapanışı
+
+174/174 dilim kaynakta tamamlandı (%100). W8 son pakettir; yeni dalga açılmaz.
+Aşağıdaki ekip checkpoint kayıtları tarihçedir. Final yerel sonuçlar son bölümde,
+gerçek SQL/CI/browser/K3 kabulü ayrı belirtilir.
+
+## Birleştirilen ekip kaynakları
+
+| Ekip | Alınan kaynak | Entegrasyon |
+|---|---|---|
+| satis | `a27517bd5` | `06825b5bb` |
+| alis_cari | `82d31f300` | `e77f3d8bd` |
+| uretim | `4d9b8bfca` | `d8a2f100d` |
+| finans | `9e9b8eebe`, ardından B-28 kaynak takibi `0f9d4bc71` | `2294f9763`, `167a4a4ac` |
+| kimlik / Settings / Work | `f2781f6eb`, hesap güvenliği `244783f03` | `9ce344a0b`, `a840b380e` |
+| stok_lojistik / Product | `b6ba56727` | `04ee1f625` |
+
+Platformun bağımsız yeni ekip dalı yoktur; kişisel bildirim deposu Kimlik/Work
+checkpoint'indedir. Finans B-28 tamamlayıcı kaydı stok birleşiminden önce alındı.
+Birleşimler `--no-ff` ile yapıldı; rebase, force veya eski commit değişikliği yoktur.
+
+## Çatışma ve merkezi bağlantı
+
+- Manufacturing'in taşıdığı eski Purchasing kopyasında güncel numaralama ve cari
+  revizyonu korundu. Ortak Inventory sözleşmelerinde exact oran ve ilk giriş kuru
+  birlikte kaldı. Purchasing batch tersleme/tedarikçi iade ilaveleri korundu.
+- Kimlik birleşiminde Inventory geçmiş satış bağlantısı okuyucusunun ortak
+  transaction'a katılan güncel sürümü ve bu sürümün SQL testi korundu.
+- Stok birleşiminde owner'ın strict ilk giriş kur doğrulaması ve Product boya
+  üyeliği sözleşmesi alındı. Güncel Purchasing onaylı sipariş kuru kanıtı,
+  Settings numara serisi kayıtları ve Kimlik raporu korundu.
+- Belge owner sözlüğüne hem lojistik irsaliye hem resmî satış faturası eklendi.
+- Gerçek Product birim dönüşümü mevcut runtime koşuluna bağlandı. Inventory
+  consumer'ı aynı owner calculator'ını kullanır; yeni katsayı veya aktivasyon yoktur.
+- Tekli/toplu mal kabul ve kabul düzeltmesi, yeni Purchasing kabulünü aynı açık
+  transaction üzerinden okuyan maliyet kaynağına bağlandı. Bilinmeyen TL/USD
+  maliyet sıfır olmaz; ödünç kaynak commit/rollback sahibi değildir. Bunun SQL
+  kaynak testi `Receipt_cost_host_reads_the_uncommitted_acceptance_and_keeps_unknown_prices_null_without_owning_the_transaction` adındadır.
+- Alış kabul geri alma/batch factory'leri, Cari V2 portu, üretim boya seçimi,
+  gerçek Settings teminat listesi ve kredi Cari owner'ı merkezi DI'a bağlandı.
+- Inventory/Purchasing/Finance outbox kaynakları ile bildirim, üretim SMM ve kredi
+  muhasebe tüketicileri kaydedildi. Purchasing fatura tüketicisi kayıtlıdır;
+  gerçek gelen fatura producer'ı hâlâ açık iştir. Dispatcher etkinleştirilmedi.
+- Kredi, resmî satış faturası, üretim maliyet farkı, kullanıcı yönetimi ve boya
+  ürünleri route/menüleri bağlandı. Hesap güvenliği sayfasına ana sayfadan giriş
+  eklendi. Mevcut capability/permission kapıları korunur; staged Finance ve
+  Accounting bildirimleri runtime kabulü olarak yükseltilmedi.
+
+## Kaynak doğrulaması ve kalan
+
+- Birleşik API ve Api.IntegrationTests kaynakları exit 0, .NET uyarı/hata 0.
+  TypeScript `npx tsc -b` exit 0. Son merkezi DI ilavesinden sonra API tekrar
+  derlemesi de exit 0, uyarı/hata 0 verdi.
+  Derlemede OpenAPI üretimi kapalıdır; otomatik uygulama veya DB başlatılmadı.
+- Bütün UnitTests/ArchitectureTests ortak derlemesi ve pin üretimi bu son merkezi
+  bağlantılardan sonra yapılacaktır. Pin sırası Shell → OpenAPI → recovery/release
+  → mimari guard → ilişkisel envanter/test gruplarıdır.
+- Runtime Unit/SQL/HTTP/Vitest/browser/CI ve bağımsız K3 kabulü **NOT_RUN**.
+  Yeni context construction ve sabit SQL horizon okumaları için K3 gerekçeleri
+  korunur; guard izin listesine sessiz ekleme yapılmadı.
+- Açık geliştirme: üretim maliyet/reopen gerçek provider bileşimi; Product açık
+  ticari mal/mamul sınıfı; gelen alış faturası/muhasebe zinciri; Finans dönem/devir
+  ve diğer B-28 kaynakları; Sales maliyet pini/son resmî kaynak provenance'ı;
+  W5 kaynak hizaları ve son tamamlanma denetimi.
+- Cevabı beklenen kararlar: KIM-D27 kurtarma kapsamı (`6933574705`), SAT-S12 pin
+  yenileme sınırı (`6934716192`), FIN-S17 yeni dönem yokken devir ve yeniden açma
+  yetkisi (`6935152814`). Yanıt gelmeden bu politikalar uygulanmaz; diğer işler sürer.
+
+Bu rapor W8'in bittiği, trene push edildiği veya ürünün kullanılabilir/kabul
+edilmiş olduğu anlamına gelmez. Ana plan sayısı tam dilim denetiminden sonra güncellenir.
+
+## Son owner bağlantıları — 17 Kasım kaynak devamı
+
+- Üretim yeniden açma işleminde gerçek Accounting dönem okuyucusu aynı Serializable
+  transaction'a katılır (`d93914f54`); bağlantıyı kapatma/commit etme sahibi değildir.
+  Yeni context construction K3 inceleme listesindedir, guard'a sessiz eklenmedi.
+- FIN-S14 gerçek gider/nakit transferi olayları immutable muhasebe kaynak kuyruğuna
+  bağlandı (`6ee4c7a75`). `20261117102540_AddFinanceJournalSources`, Down **51989**;
+  onaylı eşleme ve aynı tutar kanıtı olmadan muhasebe önerisi oluşmaz. Kur değişimi
+  muhasebe satır politikası açık kalır. Dispatcher ve Finance STOP değişmedi.
+- Product boya üyeliği için gerçek ürün adayı (`6c710040d`) ve Inventory ortalama
+  maliyetin para birimi kanıtı (`f9b175a42`) alındı. Eski/bilinmeyen maliyet para
+  birimi TL varsayılmaz. Üretim USD gösterimi resmî TL tutarı/kabul günü USD kuru
+  çapraz dönüşümüne bağlandı (`d6f24c79d`); TL ana maliyet değişmez.
+- SAT-S9 termin uyarısı (`b7e959a2f`) ve SAT-S13 gerçek kantar farkı görüntüsü
+  (`b06da2eee`) alındı. Geçmiş termin ayırmayı kendiliğinden bırakmaz; ekran hesap
+  yapmaz. Resmî irsaliyeden faturaya kg aktarımının önceki kaynakları korunur.
+- Gelen alış faturası listesi/eşleştirme/kesinleştirme mevcut owner'a bağlandı;
+  dosya içe aktarma hâlâ açık FIN-S13 kapsamıdır. Product ticari mal/mamul kontrolü,
+  Ayarlar alış fatura fark toleransı, Finans cari bakiye devri ve Muhasebe satır
+  sınıfı/SMM düzeltme route/menü bağlantıları eklendi. Mevcut staged Finance/
+  Accounting kapıları ve gerçek yetki sınırları korunur; grant yapılmadı.
+- Sales invoice finalized ve Finance gerçek hareket kaynakları, Work registry'de
+  ilgili Accounting consumers ile eşlendi. Registry validator/dispatch kapalı
+  olma test kaynağı eklendi. Shell provider sürümleri Settings **1.13**, Finance
+  **1.16**; authority hashleri merkezi üretici aşamasında güncellenecek.
+- Birleşik API, Api.IntegrationTests, Finance.UnitTests, Inventory.UnitTests,
+  Product.UnitTests kaynak derlemeleri exit 0, uyarı/hata 0. TypeScript derlemesi
+  exit 0; son mount parity test kaynaklarının derlemesi bir sonraki TSC'ye dahildir.
+  Bütün runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**. Plan **135/174 (%77,6)**
+  kalır; tamamlanmış dilim denetimi/pin/FF push öncesi yüzde artırılmadı.
+
+## Dosya ve fiziksel belge sahipleri — devam checkpointi
+
+- FIN-S13 dosya kaynağı `929f6e57a`, kullanıcı önizlemesi `fd6c33fb1`, kayıtlı
+  kaynağı yeniden açma `85c2a4769` entegrasyona alındı. XML/UBL, CSV ve XLSX;
+  gerçek Documents owner, immutable sürüm/hash ve temiz dosya denetimi vardır.
+  Gerçek cari/ürün/birim/vergi/vade eşlemesi ve fatura kayıt admission'ı hâlâ açık;
+  import capability list parent'ı ile birlikte staged kalır. Dosya önizlemesi
+  finansal kayıt veya resmî belge doğrulaması sayılmaz.
+- ALC-S7 fiyat/actual vergi kaynağı `7e3aad912` / rapor `9c2812891`; ALC-S8 kayıt
+  `60a2e3110` / rapor `93e1f98c3`, additive ExpenseTypeId `a3d1512a5` alındı.
+  Ek masraf mevcut OrdersRevise ile kaydedilir; ilgili API/route merkezde bağlandı.
+  Parçalı fatura eşleştirmesi `368216c5d` / rapor `555503e1b` ile alındı;
+  fiziksel kabul, stok hareketi veya Inventory ortalama maliyeti üretilmez.
+- ALS-D105 güncel insan cevabı [6947126872](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6947126872):
+  satış fason vergi varsayılanı/satır kodu mevcut sales.orders.approve, alış tarafı
+  mevcut purchasing.orders.approve ile değişir. Önceki iki yeni izin cevabı geri
+  alınmıştır. Yeni izin/grant yok; bu yetki düzeltmesinin kod takibi owner'dadır.
+- STK-S8 belge/ayrılış/Settings owner'ları `06a4e2953`, gerçek müşteri rolü kanıtı
+  `c86f24b46` alındı. Settings tartı ve Logistics transfer çıkışı route'ları bağlandı;
+  üç mevcut owner yeni izin kaydı merkez kataloğuna eklendi, grant verilmedi.
+  Transfer planlama mevcut stock-transfer.write ile ayrı route'tur; genel stok
+  raporu izinleri bu komuta eklenmez. Plan/kabul workspace kaynak takibi sürer.
+- SAT-SC34 lifecycle `f8cf8b24b`, siparişe bağlı gerçek belge seçimi `924ddd6d0`
+  alındı. Okuyucu/onaylayan write izni olmadan lifecycle paneline ulaşabilir.
+  Kesinleşmiş iptalin Finans/Muhasebe bağı ve B-04 fiş onayı hâlâ açık;
+  [6947269325](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6947269325)
+  dönem/tarih sorusu yanıt bekler. Tamamlanmış iptal iddiası yapılmaz.
+- Bu owner checkpointlerinin raporlarında API/ilgili Unit/Integration/TypeScript
+  derlemeleri exit 0 kayıtlıdır. Merkezde ortak provider/route değişiklikleriyle
+  API, Purchasing, Inventory, Logistics, Counterparty, Accounting, Settings,
+  Identity UnitTests ve Api.IntegrationTests derlemeleri exit 0 alındı.
+  Counterparty test kaynağındaki ConfigurationBuilder bağımlılığı ve xUnit
+  predicate kullanımı derleme hataları düzeltildi; proje yeniden exit 0 verdi.
+  Son merkez TypeScript derlemesi, bu owner birleşimleriyle birlikte exit 0 aldı.
+  Son parçalı masraf eşleştirmesi kendi owner'ında C# exit 0 aldı; bu son deltanın
+  merkez C# derlemesi sonraki entegrasyon derlemesine dahildir.
+  Test çalışma zamanı, gerçek SQL, Vitest/browser ve CI **NOT_RUN**.
+  Shell/OpenAPI/recovery/mimari/ilişkisel pin üretimi ve tren FF push henüz yapılmadı.
+  Sabit ölçüm **135/174 (%77,6)**, W8 son pakettir; yeni dalga açılmadı.
+
+## Transfer kabul owner'ı ve fatura commit çiti — devam
+
+- STK-S8 gerçek plan/kabul kaynağı `1127e5993` alındı. Inventory kabul belgesi
+  Draft/Effective değişmez geçmişi ve typed belge kanıtı, action-purpose kuyruk
+  okumaları, gerçek plan adayları ve komut ekranı vardır. EF üretimi
+  `20261117122205_AddInventoryTransferReceiptDocuments`, Down **51999**; DB'ye
+  uygulanmadı. Owner API, Inventory/Counterparty/Organization UnitTests,
+  Api.IntegrationTests ve TypeScript derlemeleri exit 0, uyarı/hata 0 aldı.
+- İki yeni Inventory endpoint map'i gerçek host'a bağlandı. Fazla kabul onayı,
+  kayıp talebi ve kayıp onayı mevcut ayrı yetkileriyle bağımsız gateway'e açıldı;
+  genel stok raporu veya Product gösterim yetkisi komuta eklenmedi. Inventory
+  shell provider **1.12**, 20 bildirimdir. Merkez birleşik TypeScript exit 0;
+  bu son mount/provider C# derlemesi sıradaki merkez derlemesini bekler.
+- FIN-S13 `87fac44cd`: fatura kayıt ve terminal ret işlemleri kendi transaction'ında
+  SQL Save sonrası fresh yetki çitinden geçer. Ret halinde belge/geçmiş/denetim/
+  attempt commit edilmez. İki SQL fact kaynağı, Purchasing.UnitTests ve
+  Api.IntegrationTests derlemeleri exit 0; runtime **NOT_RUN**. Alış fason vergi
+  snapshot'ının immutable eşleştirme metadata'sı `bc0524b5f` de alındı; resmî
+  fatura tutarları değiştirilmez. D105 yetki düzeltmesinin kalan owner kaynağı sürer.
+- Kaynakta TL satır/toplam olmayan dövizli alış faturası yuvarlama dağılımı için
+  [6947890400](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6947890400)
+  karar bekler. Linked GİB gerçek provider'ı 503 kalır; mock veya unavailable
+  kullanılabilirlik sayılmaz. Pin/son tren FF ve runtime kabulü henüz alınmadı.
+
+## Kaynak fişi onayı ve resmî fatura kimliği — devam
+
+- FIN-S13 kaynak fiş owner'ı `3044b80fb` alındı. Gerçek hesap planı ve açık dönemle
+  ayrı hazırlayan/onaylayan fiş akışı, iptal olayı önce gelirse tombstone ve
+  onaylanmamış kaynak fişin iptal kaydı vardır. Kesinleşmiş yevmiyenin ters kayıt
+  dönem/tarihi yanıtı bekler; kendiliğinden ters kayıt veya dönem açma yapılmaz.
+- Kaynak fişi endpoint'i host'a, okuma ekranı tek menü/gateway'e bağlandı.
+  Onay aynı ekranın ayrı kontrolüdür: mevcut JournalsRead ve normal fiş onay
+  yetkileri gerekir. Accounting provider **1.7**, 20 bildirimdir; yeni izin/grant
+  yoktur. Yeni finans ekranları SQL/browser kabulüne kadar staged kalır.
+- Muhasebe iptal tüketicisinin host kimliği mevcut kapalı başlangıç anahtarını
+  korur. Gerçek Sales iptal üreticisi tamamlanmadan Work aboneliği kaydedilmez;
+  DI kaydı olayın işlendiği veya iptalin uçtan uca tamamlandığı anlamına gelmez.
+- `987759ebd`: alış faturasının resmî numarası additive/null-omit olay alanıyla
+  Muhasebe kaynağına taşınır. Eski olaylar için numara tahmin edilmez. Purchasing
+  UnitTests ve Api.IntegrationTests derlemeleri exit 0, uyarı/hata 0 aldı.
+- Bu birleşim ve host/provider kaynaklarıyla merkez API, Inventory.UnitTests,
+  Accounting.UnitTests, Api.IntegrationTests ve TypeScript derlemeleri exit 0,
+  uyarı/hata 0 aldı. Çalışma zamanı testleri, SQL, HTTP, Vitest/browser ve CI
+  **NOT_RUN**. Sabit ölçüm **135/174 (%77,6)**; pinler ve tren FF henüz yoktur.
+
+## ALS-D105 son yetki cevabının entegrasyonu
+
+- `e67f53fc7` / rapor `46eeef92f` alındı. Satış ve alış fason varsayılanları ve
+  satır vergi kodu değişiklikleri mevcut ayrı sipariş onay yetkilerini kullanır.
+  Önceki “iki yeni izin” yanıtı geri alınmıştır; yeni ERP permission, grant,
+  rol veya Critical sınıflaması yoktur. Vergi revizyonu normal yeniden onaya gider.
+- İki ayrı Ayarlar route'u gerçek `SubcontractTaxDefaultPage` bileşenine bağlandı.
+  Settings provider **1.15**, 31 bildirimdir; yeni adlar yalnız teknik ekran
+  capability kimliğidir. Satış ekranı yalnız sales.orders.approve, alış ekranı
+  yalnız purchasing.orders.approve gerektirir. Yeni iki ekran runtime kabulüne
+  kadar staged kalır. Mevcut genel vergi ana verisi yetkisi değiştirilmez.
+- Owner API, Purchasing/Sales/Settings UnitTests ve Api.IntegrationTests
+  derlemeleri exit 0, uyarı/hata 0 aldı. Birleşik merkez TypeScript exit 0;
+  son merkez provider/authority-test kaynaklarının C# derlemesi sıradadır.
+  Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**; kaynak DONE sayısı artırılmadı.
+
+## Sıralı devam ve tartı/fatura claim kaynağı
+
+- ALS-D105 merkez birleşimiyle API, Settings/Purchasing/Sales UnitTests ve
+  Api.IntegrationTests kaynak derlemeleri exit 0, uyarı/hata 0 aldı. İki Ayarlar
+  ekranının önceki merkez TypeScript derlemesi exit 0'dır.
+- `f8f39bbc9` / rapor `4c6aaa3e1` ile fiyat taşımayan Sales claim reader ve
+  gerçek Lojistik işlem içi yeniden okuması alındı. Merkez Sales.UnitTests ve
+  Api.IntegrationTests derlemeleri exit 0; index Down round-trip fact kaynağı da
+  bu derlemeye dahildir. Runtime kabulü **NOT_RUN**; tartı düzeltme host'unun
+  claim bağlaması ve kesinleşmiş iptal zinciri halen açıktır.
+- EF `20261117135232_AddSubcontractInvoiceClaimRange` yalnız index ekler/kaldırır;
+  veri kaybı yok, yeni THROW yok, DB uygulaması yok. İki yeni borrowed read-context
+  construction kaynağı K3 incelemesine bırakıldı; guard allowlist genişletilmedi.
+- Paralel yürütücüler sonlandı; kalan kaynak işi tek yazarla sırayla sürer.
+  STK-S3 / STK-S29 yarım kaynakları korunur; migration/host/PDF bağlantısı
+  tamamlanmış sayılmaz. Üretim completion V2 kanıtı henüz yazılmadı.
+- Ana plan ALC-S7 ve ALC-S8 için PLANNED yerine gerçek PARTIAL durumuna geçirildi.
+  **135 DONE (%77,6), 25 PARTIAL, 14 diğer açık; toplam 174, açık 39**.
+  Kaynak kodun ilerlemesi tam dilim DONE veya runtime kabulü diye sayılmadı.
+  W8 son pakettir; yeni dalga yok. Pinler ve tren FF henüz tamamlanmadı.
+
+## W8 paralel devam ve yeni insan cevapları
+
+- Daha önce kota hatası veren mevcut yürütücüler yeniden yanıt verdi; üretim,
+  stok/lojistik ve finans işleri ayrı worktree/dosya sahipliğiyle yeniden başladı.
+  Tek .NET/EF ve tek Node derleme slotu, açık lease devri ve her yeni araç
+  sürecinde en az 2 GiB boş RAM koşulu korunur. Yeni dalga açılmadı.
+- `93bfba4ac` / `ba38bc6da` / `cea19b720` kaynakları merkezde alındı. Inventory
+  fason müşteri malı rezervasyon/sevk participant'ı ve Documents marka/şablon
+  depoları PARTIAL'dır; gerçek host/renderer eksikliği başarı sayılmaz.
+  Merkez API, Documents.UnitTests, Inventory.UnitTests, Api.IntegrationTests
+  derlemeleri exit 0, hata/uyarı 0; birleşik TypeScript derlemesi exit 0.
+- Oturumdaki doğrudan insan cevapları, kaynak sınırı açık ajan aktarımlarıyla
+  Issue #1189'a kaydedildi: [6951273717](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6951273717)
+  yalnız faturalanan maliyet payının kesinleşmesi ve kalanın beklemesi;
+  [6951274243](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6951274243)
+  ilk SMM önerisinin kesinleşen faturanın gerçek sevk maliyeti payından oluşması;
+  [6951274771](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6951274771)
+  resmen iptal edilen fason faturanın ters kaydında seçilen açık dönem/tarih ve
+  farklı muhasebe onaylayanı. Bu aktarımlar bağımsız DOCS incelemesi değildir.
+- KIM-S8 ve STK-S29 ana planda gerçek mevcut kaynakları nedeniyle PARTIAL'a
+  hizalandı. **135 DONE (%77,6), 27 PARTIAL, 12 diğer açık**; toplam 174 ve
+  açık 39 değişmedi. Runtime Unit/SQL/HTTP/Vitest/browser/CI **NOT_RUN**.
+
+### STK-S29 gerçek üretici ve merkezi bağlantılar
+
+- `e53576af9` gerçek PDF üretimi, yayımlı şablon/varlık kaynağı, Inventory
+  sabit yayımla tekrar üretim ve yalnız miktarlı Logistics irsaliye PDF okumasını
+  ekledi. Product görünümü gerçek sahibinden fiyat içermeyen dar sözleşmeyle
+  okunur; mevcut Product runtime kapısı korunur.
+- Yedi Documents izni yalnız kayıtlıdır; grant, rol veya Critical değişikliği
+  yoktur. Mevcut Settings shell sahibi altında dört ekran ve bağımsız
+  hazırlama/yayımlama kontrolleri bağlandı; yalnız yayımlama yetkilisi de tek
+  menü öğesinden erişebilir. Teknik kaplar runtime kabulüne kadar staged kalır.
+- API, Identity.UnitTests, Api.IntegrationTests ve Accounting.UnitTests
+  kaynak derlemeleri exit 0, uyarı/hata 0; birleşik TypeScript derlemesi exit 0;
+  `git diff --check` exit 0. SQL/HTTP/Vitest/browser/CI **NOT_RUN**.
+- MIME alt kümesi yapılandırma devamı, merkezi pinler ve yayımlanmış trene
+  fast-forward beklediğinden ana plan STK-S29 halen PARTIAL'dır.
+
+
+## STK-S3 — gerçek fason teslim merkezi bağlantısı
+
+- Owner kaynakları `b6774f25c` / `415f46df4` merkeziye alındı. Gerçek Sales, Manufacturing,
+  Inventory ve Logistics zincirinin host/runtime endpoint kayıtları bağlandı; hizmet
+  ürünü ile fiziksel etiket ürünü ayrı kalır. İşlem içinde tek owner yazımı korunur.
+- Logistics provider 1.5, sekiz yeni S3 screen/action bildirimi: tamamı kabul kanıtına
+  kadar staged. Mevcut ordinary-delivery bildirimleri yayımlanmış durumunu korur.
+  `logistics.weighings.correct` yalnız All/CompanyWideOnly kayıtlarına eklendi;
+  Critical/grant/rol ataması yapılmadı.
+- Üç ekran, sekiz capability ve tek Fason teslimler menü girdisi gerçek owner sayfalarına
+  bağlandı. Normal Logistics mount-drift envanteri eski ve yeni owner kümelerini birlikte
+  korur. Yetki/route/menü karşı örnekleri ve kayıt/model test kaynakları hizalandı.
+- API, Logistics.UnitTests, Accounting.UnitTests, Identity.UnitTests ve Api.IntegrationTests
+  kaynak derlemeleri exit 0, 0 uyarı/hata. Merkezi TypeScript derlemesi exit 0; hafif
+  backlog/bootstrap doğrulayıcıları exit 0. Runtime Unit/SQL/HTTP/Vitest/browser/CI NOT_RUN.
+- 100 ayrılıp 80 yüklenen kısmi sevkte kalan ayırma politikası insan cevabı bekliyor.
+  Yeni S3 host'un negatif fiziksel ret günlüğü/detail takip düzeltmesi mevcut S21
+  diliminde sürer. Bu nedenle STK-S3 bütünü PARTIAL; yeni dalga açılmadı.
+- Registry/OpenAPI/recovery/architecture/relational/test-group pin üretimi ve tren FF
+  henüz yapılmadı. Kaynak derlemesi runtime veya kullanılabilirlik kabulü değildir.
+
+
+## FIN-S17 — gerçek devir owner'ı ve transaction boyunca dönem çiti
+
+- `5edcd80b0` ve `dd46601ae` owner kaynakları merkeziye alındı. Accounting kapanışı
+  ile Finance para birimi bazlı gerçek devir fişi tek Serializable host transaction'ına
+  bağlandı. Fiziksel/finansal olay ikinci kez üretilmez; cari ekstre açılış kanıtı ve
+  aralık köprüsü toplamı çift saymaz. İki kişili yeniden açma mevcut izinlerle kalır.
+- Gerçek `FinancePeriodCarryForwardPortV1` kaydedildi. Finance kayıt dönem kuralı,
+  gerçek borrowed Accounting owner okumasıyla işlem bitimine kadar kilidi koruyan
+  `TransactionalOccurredOnFinanceRecordPeriodRule` oldu; AddFinanceServices öncesinde
+  tek scoped descriptor kaydı korunur. Tarih seçimi occurredOn olarak kalır.
+- Composition kaynak testleri tek descriptor/fallback ayrımını ve occurredOn'un
+  valueOn/recordedAt'ten bağımsız gerçek port girişine taşındığını doğrular.
+- Son merkezi API, Accounting.UnitTests, Identity.UnitTests, Logistics.UnitTests ve
+  Api.IntegrationTests derlemeleri exit 0, 0 uyarı/hata. Owner Finance.Unit/TSC de exit 0.
+  Runtime Unit/SQL/HTTP/Vitest/browser/CI NOT_RUN.
+- Banka işlem tarihi/muhasebe tarihi devir ayrımı ve sonraki kapalı devir zinciri
+  insan cevabı bekler; kaynak fail-closed kalır. FIN-S17 PARTIAL; pinler/tren FF bekler.
+
+
+## FIN-S13 / ALS-D7 — gerçek ürün araması ve tür sahibi merkezi bağlantısı
+
+- `AddPurchaseInvoiceImportProductSearch()` gerçek host kaydı eklendi. Aynı scoped adapter gerçek Product aday okuyucusunu ve bağımsız tür/sürüm portunu sağlar; `General` varsayımı kullanılmaz. Service ürünü mal satırına çevrilmez; hizmet/masraf için açık Ayarlar seçimi sürer.
+- Owner kaynakları `c5570b816` ve raporu `cdb3a521e` merkezi entegrasyona alındı. Yetki/şirket değişimi ve eski nullable snapshot/hash uyumluluğu owner test kaynaklarında korunur.
+- Birleşik kaynakta API, Purchasing.UnitTests, Inventory.UnitTests ve Api.IntegrationTests derlemeleri exit 0, 0 uyarı/hata. Standart tek süreç parametreleri ve her süreç öncesi bellek kapısı kullanıldı. Owner TSC exit 0; merkezi yeni frontend farkı için son birleşik TSC ayrıca alınacak.
+- Runtime birim/SQL/HTTP/Vitest/browser/CI ve merkezi pinler NOT_RUN. FIN-S13 bütünü için bu kayıt tek başına DONE/kabul değildir.
+
+
+## STK-SC36-a / SAT-D385/D404/D413 — gerçek geç alış faturası maliyet bağlantısı
+
+- Owner checkpoint `0501f9abd` merkezi entegrasyona alındı. `AddInventoryPurchaseInvoiceCostsV1()` gerçek Inventory store'unu scoped kaydeder; gerçek Purchasing finalized olayı Work manifestinde Inventory maliyet tüketicisine bağlanır. Inventory maliyet farkı olayı da kaynak bildirimine eklendi. Dispatcher/production ayarı değiştirilmedi.
+- Composition test kaynağı gerçek registry doğrulayıcısı, tüketici/source event eşleşmesi, gerçek scoped store türü ve dispatcher başlatılmamasını kontrol eder. Yeni tablo/migration/immutable guard kaynakları owner raporundadır; sessiz guard izin listesi eklenmedi.
+- Birleşik kaynakta API, Purchasing.UnitTests, Inventory.UnitTests ve Api.IntegrationTests derlemeleri exit 0, 0 uyarı/hata; `git diff --check` exit 0. Runtime birim/SQL/Vitest/browser/CI ve pin üretimi NOT_RUN.
+- İlk maliyet tanımasının kısmi stok/sevk payı ve parasal artık politikası için #1189 `6954342313` ve `6954297311` cevapları bekleniyor. Accounting gerçek SMM önerisi/eşleme kaynağı ilgili owner'da sürüyor. Dilim PARTIAL; bu bağlantı maliyet kabulü veya production aktivasyonu değildir.
+
+
+## ALC-S5 / SAT-D306,D392,D393 — gerçek alış iade maliyet sağlayıcısı
+
+- Owner `c67daf71f` merkezi entegrasyona alındı; `IPurchaseSupplierReturnInvoiceCostReadPortV1` gerçek `PurchaseSupplierReturnInvoiceCostReadPort` scoped kaydıyla bağlandı. Fiziksel kabul okuması mevcut gerçek `PurchaseGoodsReceiptHost` üzerinden sürer.
+- Normal komutun işlem öncesi sorgusunda tek kesin fatura satırının tek tam kabule bağlı net TL/orijinal kg kanıtı kullanılır. Kaynak yokluğu mevcut manuel/onay yolundan ayrıdır: bozuk kanıt, tam dört ondalıkta temsil edilemeyen kesin maliyet ve desteklenmeyen aktif borrowed transaction açık 503 verir. Başka bağlantı aynı işlem diye gösterilmez.
+- Owner altı gerçek SQL fact kaynağı yazdı; merkezi composition testi gerçek scoped sağlayıcının varlığını kontrol eder. Birleşik API, Accounting.UnitTests, Logistics.UnitTests ve IntegrationTests derlemeleri exit 0, 0 uyarı/hata. Owner Purchasing.UnitTests de exit 0; ilk eksik assets/dar restore kanıtı owner raporundadır.
+- Runtime testler, merkezi pinler ve tren fast-forward henüz NOT_RUN; kabul/production değildir.
+
+
+## STK-SC36-a / SAT-D419,D420 — gerçek SMM hesap eşleme merkezi akışı
+
+- Owner `c51d83d86` gerçek eşleme workspace'i, yalnız onaylı plandaki 621/620 seçenekleri, Product sınıfı/eşleme sürümlü resolver ve gerçek hazırlama/yayımlama ekranıyla entegrasyona alındı. Mevcut diğer eşlemeler hazırlanırken korunur; hesap planı veya eşleme kendiliğinden kurulmaz.
+- Gerçek workspace endpoint'i ve scoped resolver bağlandı. Muhasebe altında tek hesap eşleme rotası/menü girişi ve ayrı hazırlama/etkinleştirme kontrolleri eklendi. Üç yetenek mevcut muhasebe eşleme izinlerini kullanır, şirket bazlıdır ve `ImplementationAvailable:false` kalır. Provider 1.8; yeni izin, grant veya Critical sınıf değişikliği yoktur.
+- Shell/route drift ve owner capability test kaynakları yeni kaydı ve mevcut yayımlanmış kümenin korunmasını doğrular. Birleşik API, Accounting.UnitTests, Logistics.UnitTests, IntegrationTests derlemeleri exit 0, 0 uyarı/hata; merkezi TSC exit 0. Owner gerçek EF `20261117171929_WidenPostingMappingsToCogs`, Down 51929 ve SQL fact kaynakları raporundadır.
+- Runtime SQL/Vitest/browser/CI, merkezi pin üretimi ve tren FF NOT_RUN. Bu kayıt ilk SMM veya geç fatura farkı önerisinin tamamlandığı anlamına gelmez; ilgili Accounting sahibi kaynak akışını sürdürür.
+
+
+## STK-SC36-a / SAT-D419 — ilk SMM için gerçek sevk kimlik zinciri
+
+- Sales owner `fdc417b38` / rapor `c0a799e09` normal kesinleşmiş fatura satırına değişmez `ShipmentSource` ekler; bu yeni bir stok/para olayı değildir. Ticari fatura kg'sı fiziksel çıkış kg'sı sayılmaz ve geçmiş outbox yeniden yazılmaz.
+- Inventory owner `0eedb43ba` gerçek shipment kimliğinden kendi tek komut/sonuç/hareket/outbox izini çözerek mevcut orijinal TL damgası okuyucusuna bağlanır. Available yalnız fiziksel iz kanıtıdır, Known TL iddiası değildir. Yeni model/EF yoktur.
+- Logistics owner iç `ILogisticsInvoicedShipmentProofReadPortV1` okuması aynı şirket ve dayanıklı sürümde onaylı irsaliye satırı, gerçek sevk payı, talimat satırı, sipariş/ürün/birim kimliklerini çapraz doğrular. Fiyat, maliyet ve oran üretmez. Kullanıcı yetkili irsaliye seçicisi değiştirilmez; yeni browser route veya grant yoktur. Bu sistem amaçlı çapraz modül okuma yüzeyi K3 review bekler; guard izin listesine sessiz eklenmedi.
+- Altı unit fact kaynağı ve mevcut gerçek SQL source fact'inde çoklu sipariş, yabancı şirket, yanlış sevk ve iptal kanıtları eklendi. API, Accounting.UnitTests, Logistics.UnitTests, IntegrationTests birleşik kaynak derlemeleri exit 0, 0 uyarı/hata; runtime NOT_RUN. Yeni ilişkisel FQN yok; Inventory owner üç yeni SQL fact'i final envanter üretiminde alınacak.
+- Accounting gerçek hazırlama/onay ve iptal zincirini diğer kaynaklarla birleştirir; ilk SMM bütünü henüz DONE değildir. Merkezi pinler, tren FF ve gerçek kabul NOT_RUN.
+
+
+## STK-SC36-a / SAT-D419 — sevk kanıtı değişirken fail-closed kaynak testi
+
+- Logistics owner kaynak anlık görüntüsü alındıktan sonra irsaliyenin gerçek domain iptalini araya alan deterministik bir unit fact kaynağı eklendi. İkinci owner okuması değişen sürüm/iptali görür; maliyet tüketicisine eski onaylı kanıt verilmez. Mevcut fake-store hook varsayılan boş kalır.
+- Birleşik API, Accounting.UnitTests, Logistics.UnitTests, Finance.UnitTests, IntegrationTests derlemeleri exit0; runtime unit/SQL ve eşzamanlı gerçek SQL kanıtı NOT_RUN. Bu kaynak testi gerçek SQL yarış kabulü diye sunulmaz.
+
+
+## STK-SC36-a / FIN-S13 / FIN-S14 — gerçek maliyet önerileri ve kur kaynaklarının merkezi montajı
+
+- Accounting owner `b5dbcca00` ve P2 düzeltmesi `5e459ceff` merkeze alındı. İlk Sales sevk SMM ve geç Inventory alış farkı, gerçek owner source reader/store/service ile bağlandı; `accounting.inventory-cost-proposals` Work tüketicisi iki gerçek yayımlanmış olaya kayıtlıdır. Dispatch kendiliğinden açılmaz. Gerçek endpoint grubu, mevcut prepare/approve/reversal izinlerine ayrı beş ekran rotası ve menüyle bağlandı; tüm yeni declarations staged kalır. Accounting provider1.9/28declaration; yeni permission/grant/Critical yoktur.
+- Owner ilk SMM kaydı mevcut invoice-line/version trace ve iki satırlı gerçek fiş akışını korur. Kaynak/fatura iptali, açık dönem, profil, sınıf ve hesap eşleme güncelliği hazırlama/onayda tekrar ölçülür; eski stok hareketi yeniden yazılmaz. Kaynak seçenek okumasının hata yolundaki fresh authority kontrolü ve on test vaka kaynağı korunur.
+- FIN-S14 owner `92235738f` / rapor `da6397da6` gerçek Settings para profili/TCMB quote kaynağı, değişmez kur snapshot'ı ve existing transfer UI ile merkeze alındı. `AddFinanceCashExchangeSources()` merkezi DI'ya bağlandı. İki finansal TL değerinin kararı ve muhasebe eşleme sınırı halen açıktır; benchmark farkı otomatik kâr/zarar değildir.
+- Birleşik API, Accounting.UnitTests, Logistics.UnitTests, Finance.UnitTests ve IntegrationTests derlemeleri exit0, sıfır uyarı/hata; merkezi `tsc -b` exit0. Work registry ve DI kaynak testleri gerçek iki event ve owner implementasyonlarını kapsar. Yeni shell beyanları mevcut published kümeyi değiştirmez; route drift kaynakları eklendi. Güncel parent-control sayısı mevcut altı kayıtla hizalandı; guard fingerprint üretici aşamasındadır, elle hash değiştirilmedi.
+- EF kaynakları owner raporlarındadır: Accounting inventory proposals51930/51931/51932 ve Finance cash snapshot51933. İki Finance raporu append çatışması her iki kayıt korunarak çözüldü; uygulama kaynak/test çatışması olmadı.
+- Kalan: para ölçeğine sığmayan exact ilk SMM/fark ve BS1 pay kararları; original-Unavailable sevkin sonradan generic üretim SMM'sine gerçek fatura satırı bağlantısı; gerçek iptal producer yetkisi; kur değerleme kararı. Bunlar tamamlanmadan ilgili dilimler DONE/usable sayılmaz. Runtime birim/SQL/Vitest/browser/CI, pin üretimi ve tren FF NOT_RUN.
+
+
+## STK-SC36-a / SAT-D419,D422 — değişmez üretim/sevk izi, fatura claim okuması ve ekran kanıtı
+
+- Sales owner `216bf74ce` gerçek finalized invoice/outbox/immutable shipment paylaşımını company-filtered, en fazla128 kimlikli typed iç portla okur. Her asenkron sınırda gerçek tüketici çiti gerekir; çift snapshot yalnız point-in-time kanıttır, son yazım kilidi değildir. Actual ilk PriceBasisRevision=0 kabulü maliyet adapter'ında korundu. Merkezi scoped Sales reader kaydı ve DI kaynak testi eklendi; browser endpoint veya yeni permission yoktur.
+- Inventory owner `870695de7` mevcut generation TX ve FenceLineage içindeki gerçek shipment/movement/line/root paylarını/iade bağlarını değişmez history JSON'unda tutar. Outbox küçük generation/version/history-SHA referansı taşır; gerçek typed reader kayıtlıdır. Geçmişte eksik kanıt bugünkü grafikten üretilmez. RecordedAtUtc gerçek hareket kanıtıdır; sonradan eklenen rowversion ilk creation sırası sayılmaz. Kesin eşit zaman sırası kanıtsızsa açık unresolved kalır. Yeni model/migration yoktur; altı yeni SQL fact kaynağı final envanter üretimini bekler.
+- Owner `a83142368` iki bozuk yanıt kapısını ve unknown-replay sürekliliğini düzeltir. Hazırlanmış tutar gösterilen canonical tutarla uyuşmalıdır; exact oranlı bekleyen kaynaklar backend'in gerçek metin biçimini korur. Orijinal JournalId ile actual CurrentPostedJournalId ayrıdır; SAT-D422 replacement sonrası ters öneri gerçek güncel fiş kimliğine bağlanır. Capability/context revision yenilendiğinde query çiti değişir, fakat aynı session/actor/company/kind için bilinmeyen isteğin anahtar/gövdesi korunur. Başka kimliğe taşınmaz.
+- Birleşik API, Inventory.UnitTests, Sales.UnitTests, Accounting.UnitTests ve IntegrationTests derlemeleri exit0; merkezi `tsc -b` exit0. Runtime birim/SQL/Vitest/browser/CI, OpenAPI/pin üretimi ve tren FF NOT_RUN. Owner kaynak incelemeleri K3 exact-head imzası değildir.
+- Kullanıcının doğrudan attribution dağıtım cevabı #1189 aktarımları6956807403 ve6957337880'dedir: her gerçek output'un kayıtlı SMM toplamı kg paylarına bölünür; artık en ağır/önce kaydedilen sevkten başlanarak toplam korunacak şekilde uygulanır, pay sıfıra ulaşınca kalan aynı sıradaki sonraki paya geçer. Bu yalnız mevcut fişin pay bağlantısıdır; ikinci SMM yaratılmaz. Ayrı ilk BS1 ve fiş ölçeği kararları bununla seçilmez. Accounting gerçek attribution/tek ekonomik claim/SAT-D422 component bağlantısı halen WIP olduğundan enclosing dilim DONE değildir.
+
+
+## STK-SC36-a / BS-1 — ilk alış maliyeti kaynak checkpointi PARTIAL
+
+- Doğrudan kullanıcı cevaplarının açık ajan aktarımları6958072219 (5/6) ve6958102286 (11) uygulanır. Gerçek Purchasing kaynak/acceptance/version/document çitleri korunur. Bilinmeyen orijinal maliyet sıfır veya bugünkü ortalama yapılmaz; ilk tanıma geç farktan ayrı, immutable InitialRecognitions kanıtıdır.
+- İlk kısmi fatura mevcut fiziksel stok/net sevk kök oranını kullanır; mevcut producer yalnız acceptance bağı taşır, bulunmayan daha dar fiziksel bağ uydurulmaz. Faturalanmayan oran pending kalır. Orijinal receipt/issue stamp ve miktar hareketi değişmez. Şirketli aynı Serializable işleminde gerçek lineage label sürümleri çitlenir; exact miktarlı özel priced pool yalnız faturalanan stok payını alır. Tamamlanmamış ortalama bütün stok maliyeti diye yayımlanmaz.
+- SMM payı gerçek şirket TL journal profile ölçeğiyle bir kez yuvarlanır; exact pay/signed artık/profil-kimlik/sürüm/ölçek korunur. Stok payları authoritative kalanı korur; artık kg/ilk kaynak satırı/ordinal lokasyon kodu önceliğindedir, pozitif pay eksiye düşmez. Tam sevkte alt-kuruş farkı sahte stok yaratmaz. Çok küçük kaynak bir yuvarlanmış SMM payını finanse edemiyorsa negatif stok değeri üretilmez; açık refusal kalır.
+- Mevcut Settings journal profile timeline için dar internal şirketli reader ve Organization gerçek lokasyon kodu host adapterı eklendi. Kullanıcı taklidi, yeni profil/ölçek varsayımı, grant veya HTTP capability yok. Bu yeni automation yüzeyi K3 review bekliyor; filtre bypass/ham SQL/allowlist eklenmedi. Model/migration değişmedi.
+- Altı birim test kaynağı, iki gerçek Inventory SQL fact kaynağı ve gerçek Settings journal timeline/şirket/aktiflik SQL fact kaynağı yazıldı. Actual owner portları SQL fixture sınırlarında sentetik olduğu yerde açık gösterilir. İlk Unit compile CS8752 üç params/target-new hatası verdi; açık türle düzeltilip ilk log/exit korundu. API kaynak derlemesi0; Unit tekrar0; Integration ve API bağımlılık derlemesi0, .NET0 uyarı/hata. Sonraki typed physical DTO/Settings fact/owner-fence ekleri yeni birleşik derlemeyi bekler; exact son head PASS denmez.
+- Gerçek onaylı ilk purchase SMM payının Sales fatura claim'ine ikinci fiş yaratmadan bağlanması ve Accounting parser/RecordedRounding entegrasyonu halen kaynak işi olarak sürer. Bu checkpoint enclosing dilimi DONE yapmaz. Runtime unit/SQL/HTTP/Vitest/browser/CI ve pin üretimi NOT_RUN; tren135/174 (%77,6), W8 son pakettir, W9 açılmaz.
+
+
+## STK-SC36-a / BS-1 — tek fatura satırı, birden çok gerçek kabul
+
+- İlk yerel kernelin kabul başına maliyet şekli yayımlanmadan düzeltildi: aynı fatura satırının gerçek kabullerindeki exact tüketilmiş TL katkıları toplanır; SMM satır toplamı yalnız bir kez gerçek şirket para profiliyle yuvarlanır. `.005 + .005` için `.01 + .01` üretilemez.
+- Yeni immutable kaynakta satır başlığı tek maliyet bileşenidir; her kabulün gerçek acceptance/receipt/root kimliği, kendi fiyatı, faturalanan fiziksel payı, tüketilmiş exact katkısı ve typed fiziksel JSON/hash korunur. Stok konumları satırda gruplanır; farklı kabullerin fiyatları ortalanarak yeniden seçilmez. Kalan stok parasal artığı mevcut kg/kaynak satırı/konum kodu kuralıyla korunur.
+- İlk tanıma `purchase-first-line/{invoiceLineId}` Accounting bileşenine bağlandı. Kaynak yuvarlaması/profil sürümü/exact artık aynen taşınır; hayali tek kabul konumu veya Manufacturing generation/output kimliği yoktur. Exact tutar sıfır değil fakat fiş tutarı sıfırsa gerçek ayrı sıfır maliyet onayı için kanıt tutulur; sahte sıfır fiş oluşturulmaz.
+- Adapter fiziksel/finansal toplamları, gerçek root/sevk/iade/konum paylarını ve kayıtlı yuvarlamayı doğrular. Kaynağın hash'i, satır/cari/ETTN bağı ve foreign company çiti bozulursa kalıcı ret olur. Fiziksel hareket veya eski unavailable maliyet damgası değiştirilmez.
+- Üç yeni calculator, üç adapter ve bir gerçek SQL fact kaynağı eklendi; önceki tek-kabul SQL kaynakları yeni satır başlığıyla korunur. Bunlar test kaynaklarıdır; runtime/SQL koşulmadı.
+- Bu checkpoint kaynak derlemesi **QUEUED**: Q11/line-key Accounting bağımlılıkları sonraki no-ff entegrasyonla alınacaktır. Önceki e408 kernel derlemesi bu yeni aggregate/adapter delta için PASS değildir. Migration yoktur. Inventory kaynak fact envanterine gerçek tam ad eklendi; guard hashleri final üretici sırasındadır.
+- Dilim halen PARTIAL: actual purchase posted attribution, Mixed/SAT422 ve üretim delta bağlantılarının kalan kısmı Accounting sahibiyle tamamlanıyor. Bu kernel veya derleme, bütün STK-SC36-a'nın bittiği iddiası değildir.
+
+
+## SAT-SC34 — merkez resmî iptal kaydı bağlantısı
+
+- Owner checkpoint `5455cb849` no-ff ile alındı; gerçek Program'da `AddSalesFinanceCancellationHost`, mevcut Work registry'de Accounting Sales cancellation consumer/subscription bağlandı. Dispatcher/production ayarı açılmadı.
+- Sales shell 1.26, yalnız mevcut `sales.invoices.finalize` yetkisini kullanan tek şirketli, fiyat gerektirmeyen bağımsız `/satis/fatura-resmi-iptal` ekranını yayımlar. Yeni izin/grant/rol/Critical yoktur. Ekran Sales route listesine ve merkezi menüye bağlandı; backend yetkisi her istekte tekrar ölçülür.
+- Gerçek sağlayıcı yokluğu typed 503 olarak korunur (kullanıcı Q12). Resmî iptal olmuş gibi kanıt üretilmez. Kaynak/route/host hazır olması dış belge iptalinin kullanılabilir kabulü değildir; dilim PARTIAL kalır.
+- Provider/host/mount sözleşme test kaynakları güncellendi; owner'ın altı gerçek SQL fact tam adı sıralı Sales envanterine eklendi. Shell registry otoriteleri, OpenAPI, recovery ve guard pinleri finalde üreticiyle yeniden üretilecek; elle hash yazılmadı.
+- Owner API/EF/Sales.Unit/Integration/TSC derlemeleri exit0. Bu merkezi delta için derlemeler QUEUED; runtime/SQL/Vitest/browser/CI NOT_RUN.
+
+
+## STK-S3 — ayrı yetkili kullanılmayan fason ayırma komutu
+
+- Owner kaynak checkpoint'i `372e27303` alındı; gerçek Program DI ve endpoint mount'u bağlandı. Kullanılmış pay veya fiziksel stok/hareket değişmez; yalnız aktif kullanılmayan pay açık komutla bırakılır. Sipariş/label/capacity çitleri owner işleminde kalır.
+- Inventory shell 1.13 bağımsız `/stok/fason-ayirma-birak` ekranını yalnız mevcut `inventory.physical-allocation.write` izniyle yayımlar. Teknik route capability `inventory.subcontract-allocations.release-unused` bir ERP izni değildir; eski stok-detail control'ünün ekstra okuma izinleri yeni write-purpose gateway'e yüklenmez. Sayfa, route ve menü aynı teknik capability'ye bağlandı.
+- Kayıtlı fresh izin/version/idempotency/Audit/replay ve HTTP/fiziksel rollback kaynakları owner'dadır. Merkezi mount/provider test kaynakları ve üç gerçek SQL fact tam adı güncellendi. Şema/migration, yeni izin/grant/rol veya production aktivasyonu yoktur.
+- Kaynak derleme owner zinciri sürüyor; merkez delta için son birleşik derleme QUEUED. Runtime/SQL/Vitest/browser/CI NOT_RUN. Pinler final üretici sırasındadır; elle hash yazılmadı.
+
+
+## Birleşik kaynak derleme checkpoint'i — 398a55566
+
+- Kaynak bu head'de bütün zincir boyunca donduruldu. API **exit0**, Inventory.UnitTests **exit0**, Sales.UnitTests **exit0**, Api.IntegrationTests **exit0**; tamamı 0 uyarı/0 hata. Parametreler `--no-restore -m:1 -nr:false -p:UseSharedCompilation=false -p:OpenApiGenerateDocumentsOnBuild=false -v:q`. Native log/exit kayıtları depodışında korundu.
+- Aynı kaynakta `npx tsc -b` **exit0**. .NET ve Node ayrı lease'lerle, her süreç başlangıcında >=2GiB fiziksel boş bellek ölçülerek çalıştı. Sonrasında iki lease bırakıldı; model/SQL çalıştırılmadı.
+- Bu kaynak ilk alış invoice-line aggregate + API adapter/Q11 recorded rounding/Mixed tüketimi, Q7 numaralama/gerçek EF, resmî iptal host/subscription ve iki yeni standalone route'u beraber derler. Eski ayrı owner compile sonuçlarından birleşik PASS türetilmedi.
+- Hafif kontroller: `validate_delivery_backlog` exit0; `validate_dotnet_bootstrap_integrity` exit0; delivery Python paketi 64 test/skip0/exit0; bootstrap Python paketi 56 test/9 koşullu skip/exit0. Skipler mevcut dosya sistemi symlink/case-variant yetenek sınırlarındandır; skip0 kanıtı değildir, koşumlar değiştirilmedi. `git diff --check` exit0.
+- Bunlar kaynak derlemeleri ve izinli hafif doğrulayıcılardır. Tam runtime Unit/mimari/gerçek SQL/HTTP/Vitest/browser/CI, OpenAPI/pin üretimi, tren FF ve K3 kabulü henüz tamamlanmadı. Yeni Accounting purchase attribution ve KIM-S19 kaynakları owner dallarında sürer; bu checkpoint onları kapsamaz.
+- STK-S3 sekiz fason shell deklarasyonunun `ImplementationAvailable:false` bekleyişi kendi staged-profile kabul kapısıdır. Kabul koşmadan sunum kapısını true'ya çevirip testi atlamadık; gerçek endpoint/route/maliyet kaynaklarının varlığı kullanılabilirlik kanıtı sayılmaz. Son kabul/publish işi açık kayıtlıdır.
+
+## 18 Kasım — ilk alış atfı ve SAT-S12 P2 birleşik kaynak checkpoint'i
+
+- U `938b171e7` Settings teminat okuma çiti ve Finance `3ea0f8300` gerçek ilk alış maliyeti atfı no-ff ile çakışmasız alındı. Actual purchase lineage reader ve posted purchase reader scoped DI kayıtları, mevcut provider zinciri ve kompozisyon test kaynakları bağlandı. Yeni kaynaklar helper olarak kalmadı; gerçek Inbox/öneri/onay/Sales tüketimi aynı owner sözleşmelerini kullanır.
+- `65618ac1ec70b97d2a5d05bc6f6cf05e2f2dcea9` kaynağı zincir boyunca sabit kaldı. API, Accounting.Unit, Sales.Unit, Integration ve TSC derlemeleri exit0, backend 0 uyarı/0 hata. En az 2 GiB fiziksel RAM ve tek .NET/ayrı Node lease kapısı korundu. Derlemeler OpenAPI üretimi kapalıydı; runtime Unit/SQL/HTTP/Vitest/browser/CI veya DB apply değildir.
+- Dört purchase attribution, dört üretim transfer geri alma, yedi finans numaralama ve iki Settings geç yetki kaybı SQL fact tam adı gerçek kaynaklardan merkezi sıralı envantere eklendi. Hash/fingerprint elle değiştirilmedi; final pin üretimi bekler.
+- SAT-S12 P2-1 gerçek Settings TL kimliğine bağlandı; USD/USD snapshot bile TL marjı gibi hesaplanamaz. Golden DOCS adayı #1200 exact `63913e087f850441f51be2136977344b6410102a` ayrı main tabanlı tek dosyalık daldadır. İki bağımsız DOCS ve en az bir ayrı ChatGPT golden kabulü/main koşulu tamamlanmadan kapı açılmaz; son K3 ayrıca sürer.
+- Yeni doğrudan sıfır maliyet cevabı `6960913297` üzerine `11e2f6e` kaynağı yazıldı; canlı ve restore sıfır maliyet marjı `CostUnreadable`, sipariş iç onayı engellenmez. Bu ekin Sales.Unit kaynak derlemesi exit0, 0 uyarı/hata; regression runtime koşulmadı. Sonrasında .NET lease Finance SAT-D422 kaynağı için açıkça bırakıldı.
+- Yerel kaynak sayımı değişmedi: 165/174 (%94,8), 9 açık; yayımlanmış tren135/174 (%77,6). Yeni dalga/implementation PR/push veya runtime başarı iddiası yoktur. #1200 yalnız gerekli bağımsız golden DOCS adayıdır.
+
+## Sonraki kaynak devamı — 166/174
+
+- FIN-S13 özgün B-04 fatura→120/320 kaynak bağlantısı gerçek kaynak/ancestry/Program/Inbox/route ile kapandı: yerel166/174 (%95,4), 8 açık. İlk SMM/üretim atfı ayrı STK-SC36-a içinde kalır; ayrıntı `W8_FIN13_KAYNAK_KAPANISI.md`.
+- Finance `189b335e1` gerçek alış payı SAT-D422 düzeltme checkpoint'i normal no-ff ile çakışmasız alındı; ek `IPostedPurchaseShipmentCostReaderV1` mevcut typed scoped constructor kaydından çözülür. Ayrı factory değişikliği yoktur. Üç gerçek SQL fact adı merkezi sıralı envantere eklendi; owner API/Accounting.Unit/Integration/TSC0, yeni birleşik head derlemesi QUEUED. Runtime kanıtı değildir.
+- Stock Q10/FIN14 sözleşme `08b0d6dc9` merkezde no-ff alındı. Finance gerçek belgeli kaynak defter değeri/farklı onay ve Accounting bileşen köprüsü owner dallarında sürer; 51810 Accounting ve51912–15 Finance guard numaraları rezerve. Yeni Settings aileleri51807/08 için union teyidi kaynakta tutulur; gerçek EF üretimi dışında migration icat edilmez.
+- SAT-S12 golden #1200 P2 düzeltmesiyle yeni head `dfab7e934fd6e7fc3b0dd5ca40bd9a3643d3ee4f`; iki yeni DOCS imzası bekler. Kullanıcı bu aday için iki ayrı bağımsız Claude oturumuna dar istisna verdi (`6961293621`); genel K3 kuralı değişmez. Banka listesi sorusu da yanıtlandı (`6961276925`); Settings/K6 kaynak çalışması devam eder.
+- Entegrasyon ekip dalı normal push ile yedeklendi; `claude/tren-1`135/174 üzerinde kaldı. W8 son pakettir, W9/implementation PR/CI/deployment açılmadı; source build ile runtime kabulü ayrıdır.
+
+## Golden main ve ayrı SAT-S12 kaynak kapanışı — 167/174
+
+- PR #1200 exact `dfab7e934fd6e7fc3b0dd5ca40bd9a3643d3ee4f` iki bağımsız DOCS imzasıyla ayrı koordinatör tarafından main `3c1b47878447570210b933b83d874646f9c52e4b` oldu; #1189 makbuzu6961778667. Bu oturum kendi doküman PR'ını merge etmedi. Yeni main farkı yalnız tek golden dosyasıydı; `fb95e43cb` ile no-ff trene alındı, kaynak/test/migration çatışması yoktu.
+- Ayrı uygulama `19ca53a178dc97e86cdc576ba775d9ee89543a4f` golden kabul koşulunu kaynakta karşılar. Gerçek TL para birimi bağı, sıfır maliyet unavailable, canlı önizleme/anlık görüntü ayrımı ve yetki geri alma korumaları korunur. 15 bağımsız golden vektörü gerçek uygulama hesap bağına; G01 ve foreign satış gerçek servis okumasına test kaynağı olarak eklendi. Sales.Unit kaynak derlemesi exit0/0 uyarı/hata/42,95 saniye. SAT-S12 kaynak DONE; yerel **167/174 (%96,0), 7 açık**. K3 ve runtime kabulü değildir.
+- FIN14 gerçek belge kanıtı, owner-link DI, endpoint, iki ayrı staged purpose route ve Finance outbox manifesti merkez `6ff5e4f63` kaynağında bağlandı. API/Finance.Unit/Integration/TSC kaynak derlemeleri exit0, backend0 uyarı/hata; ayrıntı `W8_FIN14_MERKEZ_BAGLANTISI.md`. Yeni shell kayıtları ImplementationAvailable:false; kabul öncesi açılmadı.
+- Accounting owner `c6555ab24` gerçek onaylı bozdurma kaynak/eşleme köprüsü trene no-ff alındı. Finance5/Accounting4 gerçek SQL fact adı sıralı envantere eklendi. Hedef de dövizken ayrı belgeli hedef TL consumer/owner kaynak checkpointleri ve gerçek sıfır maliyet atıfları ekiplerde sürer; FIN14/STK-SC36-a henüz DONE sayılmaz.
+- Kaynaklar ayrı worktree'lerde sürer. Ağır .NET/EF/Node sahibi, açık lease devriyle Settings/K6 sahibine geçti. Runtime Unit/SQL/HTTP/Vitest/browser/CI, pin üretimi ve son tam dalga kabulü NOT_RUN. Yayımlanmış tren135/174; bu ara kayıt tren fast-forward veya yeni implementation PR değildir.
+
+## Son W8 kaynak kapanışı — yerel174/174 (%100)
+
+Plan üstü sevk `ad3e0caeb` ve sayım maliyeti `49bd8c9ea` no-ff/çakışmasız entegrasyonla donuk `146f1ec79a30ca9a55d5fa78b119abc13e4bec75` içinde. API,22 test projesi ve TSC kaynak derlemeleri exit0/0 uyarı-hata. Eski Manufacturing.Unit restore grafiği hatası korundu; sabit sürümlü restore sonrası aynı kaynakta düzeldi, test/kod silinmedi. Güncel main3c1b ancestor exit0. KALAN_PLAN174 DONE/0PARTIAL/0başlanmamış, W8de39/39 kaynak kapanışı; W9 yok.
+
+Ayrıntı `W8_KAYNAK_TAMAMLANDI.md`. Son pin/envanter/hafif kontroller, tren fast-forward, runtime/SQL/browser/CI ve K3 kapıları ayrıca bekler. Yerel kaynak yüzdesi production veya kullanılabilirlik değildir. Yeni iş kapsamı açılmaz.
+
+## Son yerel kapanış sonucu
+
+Sabit kapsam **174/174 DONE (%100 kaynak)**; W8 son pakettir, yeni dalga yoktur.
+
+| Doğrulama | Kaynak ve gerçek sonuç |
+|---|---|
+| Tam modül grubu | `e41360340dc3be1bca13a66c48ade37aaa537bda`: mevcut grup doğrulayıcısı, 20 proje, **13.325/13.325 PASS, 0 FAIL, 0 skip**, exit0. 18 UnitTests toplamı 13.171; PDF 82 ve RCSI CLI 72 bu toplamın içindedir. |
+| Tam mimari grup | `25b7477b0e93de39ac8d5de08f508a69fb2eb996`: **405/405 PASS, 0 FAIL, 0 skip**, exit0. |
+| Tam frontend | `c6168c8e23afa323af003dc79fdab3c9fbc00872`: **614 dosya, 9.854/9.854 PASS, 0 FAIL, 0 skip**; lint/build exit0. Sonraki değişiklikler frontend kaynağını değiştirmedi. |
+| OpenAPI / Integration | `25b7477b0e93de39ac8d5de08f508a69fb2eb996`: Release build exit0, 0 hata/uyarı; gerçek üretim ve byte drift exit0; **10/10 PASS, 0 skip**. 9.746.060 byte, SHA256 `432c013a9dd5b992d91536c89aca1ab8805563524dc1b9cb5238a84bbb71056a`. |
+| Recovery / release | Donuk `3123ef92f`: 36/36 ve 16/16 PASS, skip0. Son gerçek üretici `321201b2b` exit0; 19 context, 339 migration, 66 durable store. Sonraki değişiklikler backend/build-control girdisini değiştirmedi; bu ayrım final CI exact-head kanıtının yerine geçmez. |
+| Hafif kontroller | Backlog 64/64; bootstrap 56 testte mevcut 9 Windows koşullu skip; backend-group 28/28; RCSI envanter 48/48; OpenAPI drift 16 testte mevcut 2 koşullu skip. Native exit0; skip sayıları gizlenmez. |
+| Bekleyen kabul | Yerel gerçek SQL NOT_CONFIGURED; tam API/gerçek SQL mevcut final CI'da koşacak. Tarayıcı/E2E, iki bağımsız exact-head K3 review ve genel analiz ayrı kapılardır. |
+
+İlk başarısız koşumların log/exit/TRX kayıtları ve önceki tarihsel bölümler korunur.
+`artifacts/local-final-e41360340/proofs/modules.json` ve
+`artifacts/local-final-25b7477b0/proofs/architecture.json` yerel native grup kanıtlarıdır;
+bunlar GitHub CI artifact'ı olarak sunulmaz. Grant/rol, production, OPEN veya Finance STOP değişmedi.
+
+## İlk CI düzeltmelerinin yerel kapanışı
+
+Kaynak `54bec41070da4f8c2e42c5e40c64d847094df8e4`; sabit 174/174 kaynak DONE (%100), W8 son paket. Önceki başarısız koşumlar korunur.
+
+- Birleşik Integration Release build `edf25498d`: 0 hata/0 uyarı, exit0. OpenAPI, Accounting lineage, future-supply HTTP, Counterparty ve Manufacturing değişen fixture hedefleri **69/69 PASS, 0 FAIL, 0 skip**, native exit0. Gerçek scoped DbContext şirket filtresi korunur; mutable double yalnız drift enjeksiyonundadır.
+- Tam Cari C006 Windows native koşumu `54bec4107`: restore0; **378/378 PASS, 0 FAIL, 0 skip**, test exit0. Bu test paketi gerçek tarayıcı kabulünün yerine geçmez.
+- Sales repair persistence agent koşumu: **128/128 PASS, 0 FAIL, 0 skip**, Release build0. Gerçek SQL yerelde NOT_CONFIGURED/NOT_RUN; yeni CI sonucu gereklidir.
+- OpenAPI 11/11 PASS bu 69 hedef içindedir. Gerçek belge 9.746.060 byte, 826 operasyon/1721 schema; SHA256 `091cc64a9e71f90ddc12b7c2ab9784b3f22fd8e181234f7f7b50603dc30dec04`. Schema serialization V3/V31 için ordinal ve kültür bağımsızdır; JSON iş değerleri değişmez. Önceki agent birleşik 12 koşumunda Accounting fixture hatasıyla exit1 korunur; root69 tekrarı bu fixture'ı ayrıca doğrular.
+- Sales actor karşılaştırmasının iki tarafı açık BIN2 olur. EF üretimli `20261118050006_RepairSalesOfficialInvoiceCancellationActorCollation` Up/Down güvenli ALTER trigger'ı tekrar uygular; veri/model/snapshot değişimi ve yeni THROW yoktur. K3 review bekler. Toplam340 migration, main'e göre177 yeni migration; 313 toplam/199 yeni THROW ve118 yeni izin kaydı değişmedi.
+- Gerçek recovery üreticisi `54bec4107`: exit0,19 context/340 migration/66 durable store; kaynak3119, riskli1461, riskli SHA `9af854faccd37fccca382a68dd8d6316d4d00824fbd438ec91b3784243ac9854`. İlk CRLF dosya-byte ve ardından index-stat nedeniyle temiz-worktree kontrolü exit2 tekrarları korunur. Çalışan üretici committed blob ile byte eşitlenip aynı içerik Git index'i yenilendikten sonra yeni boş kanıt dizininde gerçek exit0 alındı; filtre/üretici kapısı gevşetilmedi.
+- Güncel hafif kontroller: iki validator0; backlog64/64; bootstrap56 test/9 mevcut Windows koşullu skip; backend-group28/28; RCSI48/48; OpenAPI-drift16 test/2 mevcut koşullu skip; hepsi native0. Windows Faz0 safe-summary64/64,skip0. Tam recovery36/release16 önceki donuk kaynağa aittir; güncel340 exact-source CI kanıtı ayrıca beklenir.
+- Yayındaki `94e0e88e` CI `44238350645` artık tamamlandı: recovery exact-source ve release manifest PASS; modül/mimari/API-1/dört frontend shard PASS. Diğer API/SQL/OpenAPI ve güvenlik hataları önceki bölümdeki gibi FAIL'dir. Yerel düzeltmeler henüz bu CI head'inde yoktur; yeni normal FF yayını yeni koşumu başlatacaktır.
+
+İki bağımsız tam exact-head K3 incelemesi için tek istem: [K3 bağımsız inceleme istemi](../K3_BAGIMSIZ_INCELEME_ISTEMI.md). Review/CI/SQL/browser açıkken genel kabul veya production tamamlandı denmez. Upstream Picomatch güvenlik engeli korunur; audit kapısı gevşetilmez.
+
+### Güncel tam mimari ve SQL fixture kapanışı
+
+- `c07255c4970ea3cbdae8f0a2f8b334b0b57f431f`: tam mimari405 testte404 PASS/1 FAIL/skip0, native1. Build-security negatif testinde CRLF raw-string nedeniyle paket silme mutantı unchanged kalıyordu. LF normalizasyonu ve her mutantın canonical'dan farklı olduğunu açıkça doğrulayan ek assert sorunu çözer; guard gevşetilmez. İlk TRX korunur.
+- `fce8792f515bf8263e753dc2fb6b20b96d057288`: mevcut tam grup doğrulayıcısı **405/405 PASS, 0 FAIL, 0 skip**, native0; proof `artifacts/local-final-fce8792f5/proofs/architecture.json`.
+- `e994d1df21207db654ee16a8a37395e0bfd1d032`: Organization SQL fixture eski Version13 yerine KIM-D48 staging gereği12 bekler; onay gelmeden gerçek şirket değeri/sürümü ilerlemez. İki eski history count4 yerine11 tam migration kimliği ve sıra doğrulanır. Counterparty Down testi ilk SQL'den önce mevcut client ile lazy host'u başlatır; bütün Down/rollback/constraint assertları korunur.
+- `47429c2a576bfa3d1c2c07291083ca5244cbc680`: iki mevcut SQL Run.StartAsync, initializer hata verdiğinde caller'a geçemeyen disposable factory'yi temizler; asıl exception ve stack yeniden fırlatılır. Önceki üç SQL shard'ında1377 doğrudan inotify IOException görüldü; dar cleanup'ın tamamını çözdüğü henüz kanıtlanmadı. Bu SQL fixture değişiklikleri yerelde SQL PASS sayılmaz; gerçek CI tekrarı gereklidir.
+
+Birleşik kaynak `e35cd8cb4ecf502b0cb77cf81a334dd92077adff`; yeni kaynak/migration/işletme politikası eklenmez, yalnız sabit W8 kabul hataları kapatılır. Eski başarısız kanıtlar korunur.
+
+Son birleşik SQL-fixture kaynağı `e35cd8cb4ecf502b0cb77cf81a334dd92077adff`: Integration Release build **exit0, 0 hata/0 uyarı**,365.88 saniye. Gerçek OpenAPI yeniden üretimi aynı `091cc64a9e71f90ddc12b7c2ab9784b3f22fd8e181234f7f7b50603dc30dec04` byte SHA değerini verdi. Bu derleme gerçek SQL koşumu değildir.
+
+## Son sınırlı doğrulama kapanışı — 18 Kasım 2026
+
+**174/174 kaynak DONE (%100); W8 son paket, yeni dalga yok.** Bu ek kaynak/test düzeltmesi ve gerçek koşum kaydıdır; final CI veya bağımsız K3 kabulü değildir. Önceki başarısız kanıtlar korunur.
+
+- Üretim kaynak checkpoint'i `581d01e7807bdb4dcbfcf7b9a5965ddb664b3924`: tam Release Integration derlemesi exit0. Gerçek sağlayıcı testiyle üretilen azaltılmış Shell authority değeri `sha256:pTSIaODoh7NURxieNmmuzSy5Zal6xRKy0dgPcML2PvE`; Shell 10/10 PASS, 0 skip.
+- Aynı kaynakta 76 API metodu/138 SDK vakası: 137 PASS, 1 FAIL, exit1. Tek kalan AuthenticationProviders login fixture hatası silinmedi. InMemory fixture gerçek SQL ExecuteUpdate mağazası yerine mevcut tracked credential fixture'ını kullanacak şekilde düzeltildi; üretim giriş/SQL politikası değişmedi.
+- `6f9ca88db4cb71e46d098ee44cae2972ef840f49`: AuthenticationProviders sınıfının 10 metot/15 SDK vakası **15/15 PASS, 0 skip**; değişen runtime korumaları **3/3 PASS, 0 skip**. Fresh SDK discovery ve özgün exact TRX doğrulayıcısı PASS; fixture derlemeleri exit0. Bu head'de tam backend tekrar derlenmedi; üretim ağacı 581d01e78 ile aynıdır. Bu kanıt 138 API vakasının veya bütün API gruplarının yeni head'de tam yeşil olduğu iddiası değildir.
+- `581d01e78`: InventoryFutureAllocationContractTests 15 metot/45 vaka **45/45 PASS, 0 skip**, kanonik sürüm negatif vektörleri dahil. RCSI/discovery mimari koruması **1/1 PASS, 0 skip**. `03` gibi kanonik olmayan sürüm kilit/owner çağrısından önce reddedilir; mevcut sözleşme ve bypass yüzeyi genişlemez.
+- Aynı gerçek API derlemesinin OpenAPI drift kontrolü exit0: 826 operasyon, 1721 şema, 9.746.060 byte, SHA256 `091cc64a9e71f90ddc12b7c2ab9784b3f22fd8e181234f7f7b50603dc30dec04`.
+- `6f9ca88db`: strict recovery ve release manifest gerçek üreticileri exit0; SOURCE_ONLY. 19 context, 340 migration, 66 durable store, 3119 kaynak/1461 riskli kaynak. Riskli SHA256 `f83a4a44766f40bb6666735273a586720fb90fc9762b9dfb790e6d25873ba93d`; backend kaynak SHA256 `3e481305b77de7a12cdd6315b30fc91c2e5404ca63c7406adf171db395d9206e`. Recovery36/36 ve release16/16 tam paket PASS/skip0 kanıtı önceki exact `8eb2668d0` içindir.
+- SQL verifier canlı ilerleme çıktısı: 68/68 Python PASS, 0 skip; aynı 2400 saniye son tarih ve native hata/timeout/skip0/discovery/TRX kapıları korunur. Windows API filter sınırı: 38/38 Python PASS, 0 skip; yalnız fazla uzun argv için bütün SDK kimliklerini eşitleyen sınıf filtresi; test atlama yok. Workflow değişmedi.
+- Önceki yayımlı `8eb2668d0` CI `44244586757` tamamlandı, overall FAIL; test edilen merge `44a2749f8fb28061e24cefdb3a6e7e6e8ca69763`. Build/modül/mimari/API1, dört frontend shard, OpenAPI/recovery/release PASS; gerçek RCSI14/14 PASS, 0 skip. API2/3 fixture hataları yerelde düzeltildi; tam yeni CI bekler. Geniş SQL A/B/C ayrı ayrı 2400 saniye timeout: tamamlanan test sayısı UNKNOWN, başarılı sayılmaz. C014 tarayıcı10/10 PASS; network evidence FAIL ve activation SKIPPED; dar allowlist/evidence düzeltmesi yeni CI bekler.
+- Picomatch `GHSA-fc5q-39xc-vjpf` için resmi advisory'de düzeltilmiş sürüm bulunmaması ve registry latest4.0.7 doğrulandı. Güvenlik kapısı bypass edilmez; audit kırmızısı ve final CI/SQL/browser/K3 kapıları açık kalır. Kaynak %100, kabul/production %100 değildir.
+- Son plan üstü sevk kararı önceki kaynakta uygulanmıştır: plan100 korunur, ek20 ayrı satış müdürü istisnasıdır; gerçek yüklenenden fazlası sevk edilmez. Gerçek grant/rol verilmedi. Yeni karar sorusu yok; mevcut OPEN ve insan kapıları kapanmadı.
+
+## K3 REQUEST-CHANGES sonrası sonlu düzeltme — 18 Kasım
+
+**174/174 kaynak DONE; W8 son pakettir. Runtime kabulü tamamlanmadı.** İki COMMENT incelemesi `4d2a620972d1cdb55a317c76531d80cdc12bfa9a` için REQUEST-CHANGES: [A](https://github.com/sinangym/GoymenERP/pull/1201#pullrequestreview-5953258185), [B](https://github.com/sinangym/GoymenERP/pull/1201#pullrequestreview-5953265437). Bunlar kırmızı-CI üzerinde kısmi ön incelemelerdir; tam K3 onayı veya bütün migration/izin/muhasebe/UI kapsamının okunması değildir.
+
+- Yayımlı4d2 ana CI44267292714 **tamamlandı, FAIL**; test edilen merge `c645a6e84d116dfb111587e49ad7f8e3a0f7e417`. Recovery/release, backend build, modül, mimari, API1/API2, OpenAPI ve dört frontend test shard'ı PASS. Cari44267292685, C-01 run44267292744 ve UI katalog44267292698 SUCCESS. API2 exact proof2488 sonuç/1687 PASS/801 ayrı SQL işlerine bırakılan izinli skip; bu SQL kabulü değildir.
+- API3 native test sonucu değil exact sayım uyuşmazlığıyla11/51 batch'te durdu: `Found_without_actual_bound_active_customer_evidence_is_unavailable` serileştirilemeyen record MemberData discovery1/koşum12 üretiyordu. Aynı12 negatif kayıt serileştirilebilir sabit vaka adlarıyla korundu; doğrulayıcı gevşetilmedi. `eb279bf6230357de77cc6d7f7564dc687b0b62aa` dar Integration fixture build0; fresh discovery12 ve bütün ilgili sınıf **24/24 PASS, skip0**, özgün exact TRX kontrolü PASS.
+- Aynı ara adayda isteğe bağlı tam API3 tanısı19/55 batch'e kadar595 PASS/220 izinli SQL skip ve exact kontrollerle ilerledi. Yeni SQL test kodunun derlemesine geçmek için yalnız yazarın yerel tanı süreç ağacı20. batch sürerken sonlandırıldı; native exit1/author-stop kanıtı korunur. **Bu koşum tamamlanmış API3 veya resmi grup proof'u değildir.** Hiçbir GitHub koşumu iptal edilmedi; zorunlu tam grup yeni head CI'ında koşacaktır.
+- SQL A/B/C her biri2400 saniyede timeout, final TRX/proof yok. Canlı kayıtlar A168 PASS/115 FAIL, B295 PASS/51 FAIL, C287 PASS/49 FAIL gösterir: bunlar yalnız **gözlenen olaylar**, doğrulanmış nihai toplam değildir. Sorun yalnız süre değildir; gerçek başarısızlıklar da vardır ve nedenleri henüz kesinleşmedi.
+- `Concurrent_customer_returns_leave_only_one_bounded_effect` testinde şirket kilidinden sonraki iki-taraflı bariyer somut bekleme döngüsü oluşturuyordu. Bariyer Stage/kilitten önceye taşındı; bounded cancellation/finally bırakması, tek bakiye/sürüm/hareket/komut/audit/outbox ve değişikliksiz replay kontrolleri eklendi. Üretim kilidi korunur; ham sağlayıcı hataları başarı sayılmaz. `e24388892` Integration fixture derlemesi exit0/0 hata/0 uyarı. Yerel SQL NOT_CONFIGURED; gerçek kabul yeni CI bekler.
+- Collation repair için önceki head'de zaten davranışsal gerçek-SQL fact'i vardı; eksik olan başarılı koşum kanıtıydı. Fact Up ve Down'ı ayrı ayrı ikişer kez uygulayıp iki yönlü actor harf farkını51223 ile reddeder, exact actor'u kabul edip rollback sonrası veri/pay/JSON korunmasını doğrular. Yeni fact kimliği, migration veya iş politikası eklenmedi. Bu test derlendi; SQL PASS iddiası yok. P3 iptal-nedeni binary karşılaştırma notu değiştirilmedi.
+- TRX özeti artık JSON/konsolda yalnız observed_trx_results_only, groupCompleteness=unknown, jobAcceptance=not_evaluated der; failed0 yalnız görülen sonuçları sayar. Başarısız son TRX için kapalı SQL-provider hata kodu yansıtılır; raw mesaj/tablo/yol/bağlantı/client kimliği yayımlanmaz. Tam Python paketi **76/76 PASS, skip0**. Bu kod tek başına kök neden veya kabul kanıtı değildir.
+- Broad/shard SQL çalıştırıcısı teoriyi bölmeyen8 yöntem/16 execution sınırında, sınıflar arasında deterministik round-robin grupları ve numaralı TRX kullanır. **Tek toplam2400 saniye** bütün gruplar/preflight/pipe tamamlanmasını kapsar; her batch'e yeni40 dakika verilmez. İlk native hata korunur, tamamlanan TRX tanı için kalır. Canonical nonzero UUID/duplicate alias, normal dosya, kullanılan tanımlar, exact yöntem/teori sayımı, tam union ve skip0 zorunludur; eksik/başarısız union'dan proof yazılmaz. RCSI14 tek süreç yolu ve proof şeması aynı kalır; workflow değiştirilmedi. Süreç/static ömür değişikliği K3 review bekler; bu değişiklik hız veya yeşil koşum garantisi değildir. Tam Python paketi **91/91 PASS, skip0**.
+- Ev üreticisi SQL verifier fingerprint `8adf932dec0fee8f16e121d74392b863530b76c96cb375269bdf529a1aa297e9`; mevcut verifier-test fingerprint `f81256442c584997842457d45f57e383ee6af10c13dbd4a22c7e23c4bf8d4162`. `5064a06ddbb3409a24a36170af76d5e3785f0f7b` mimari fixture build0, fresh SDK/exact TRX ile ilgili koruma **1/1 PASS, skip0**. Tam backend yeniden derlenmedi; üretim kaynak ağacı581d01e78 ile aynıdır.
+- Picomatch advisory GHSA-fc5q-39xc-vjpf düzeltilmiş sürümNone; güvenlik kapısı açık. Audit-ignore/force downgrade uygulanmadı. Yeni exact-head CI, gerçek geniş SQL ve iki bağımsız **tam** K3 review gereklidir; yeni karar sorusu veya yeni dalga yok, production/grant/OPEN/Finance STOP değişmedi.
+
+
+## Yeni SQL tanısı ve sınırlı düzeltme — 18 Kasım
+
+**174/174 kaynak DONE (%100), W8 son paket; runtime kabulü açık.**
+Yayımlı kaynak `9ddaa2e5cb7d249e2a7771c1912cadcd5befda48`,
+[CI 44276883719](https://github.com/sinangym/GoymenERP/actions/runs/44276883719),
+test edilen birleşik ağaç `5fabb3397d4cc10f5dcf893d47b71f3579c80b96`.
+Önceki başarısız koşumlar ve iki kısmi REQUEST-CHANGES incelemesi korunur.
+
+- Derleme, modül, mimari, API1, OpenAPI, RCSI, release manifest ve dört frontend shard PASS.
+  C01 gerçek tarayıcı, Cari C006 ve UI catalog ayrı koşumları PASS.
+  API2, API3 ve recovery bu kayıt anında sürüyor; başarı sayılmaz.
+  Picomatch audit FAIL, ardından lint/build SKIPPED; güvenlik kapısı gevşetilmedi.
+- Yeni SQL batch yolu gerçek TRX bıraktı: A ilk8 testte7 PASS/1 FAIL, B iki batch16 testte15 PASS/1 FAIL,
+  C ilk8 testte7 PASS/1 FAIL; üçünde skip0. Bunlar yalnız tamamlanan32 sonucun29 PASS/3 FAIL
+  kaydıdır; tam shard veya kabul proof'u değildir.
+  Başarısız yöntemler:
+  `ManufacturingCostDifferenceSqlServerRelationalAcceptanceTests.Concurrent_approvals_leave_one_journal_and_one_proposal_decision`,
+  `FinanceCommandApiSqlServerRelationalAcceptanceTests.A_customer_POS_collection_is_saved_reopened_and_recorded_once_over_HTTP`,
+  `CounterpartyAuditEventTenantGuardSqlServerRelationalAcceptanceTests.AuditSidecar_IsTenantFilteredAndAllWritePathsFailClosed`.
+- Counterparty testindeki eski7 migration beklentisi, sahibin güncel11 migration kimliğini
+  gerçek SQL geçmişindeki tam kimlik listesiyle ordinal eşitleyen kontrolle değişti.
+  Tenant/yazma/atomicity kontrolleri ve audit sayısı2 korunur.
+  `1eeac20ba980dc9ac5e0ed6a083e5cb8ea4f3236` Integration fixture build exit0,
+  0 hata/0 uyarı,118.05 saniye. Bu yerel derleme SQL PASS değildir.
+- `66a97595785b9b08cd23d750b19e89023d0b4796`: güvenli özet kapalı assertionKind ve
+  yalnız tek tam FQN frame'inden sayısal sourceLine yansıtır. Ham mesaj, expected/actual veya
+  yerel yol yayımlanmaz. Satır untrusted TRX metaverisidir; kaynakla doğrulanmış kök neden değildir.
+  Taşma/yinelenen/nested/foreign alanlar kapalıdır. Python **86/86 PASS, skip0**.
+  Üretim eşzamanlı onay ve Finans POS hatalarının kesin kök nedeni hâlâ bilinmiyor;
+  beklenti veya para/yetki davranışı tahminle değiştirilmedi.
+- `e73727bc4d7c134b1238f08cfd890bd0ad47f8ff`: yalnız gerçek native1 ve eksiksiz,
+  exact kimlik/sayım/counter doğrulaması geçen Failed TRX'ten sonra kalan SQL batch'leri
+  tanı için birer kez sürer. İlk hata kalıcıdır, nihai komut başarısızdır, kabul proof'u yazılmaz.
+  Altyapı/eksik/bozuk/skip/diğer native hata hemen durdurur.
+  Tek toplam2400 saniye, aynı envanter ve RCSI tek süreç yolu korunur; workflow değişmedi.
+  Python **99/99 PASS, skip0**. Ev üreticisi verifier fingerprint:
+  `8fbae0393b3510886508bb6b0af594b572a6bbd149b2f3df6f9494f6a35d8958`.
+  Aynı head'de mimari fixture build0, fresh discovery ve strict TRX ile ilgili guard **1/1 PASS, skip0**;
+  tam backend yeniden derlenmedi, üretim ağacı581d01e78 ile aynıdır.
+- İki hafif validator exit0; backlog64/64 PASS/skip0; bootstrap56 test/9 mevcut Windows koşullu skip,
+  native0; diff-check0. Yerel SQL NOT_CONFIGURED/NOT_RUN.
+  Mevcut CI işlerini otomatik iptal etmemek için yeni tren push'u işlerin bitmesini bekler.
+  Yeni exact-head CI, geniş gerçek SQL/collation kanıtı ve iki bağımsız tam K3 review hâlâ gerekir.
+  Yeni dalga/karar sorusu, grant/rol/production/OPEN/Finance STOP değişikliği yok.
+
+
+## Normal çalıştırıcı uyarısı sonrası tanı kapanışı — 18 Kasım
+
+Kaynak174/174 DONE (%100), W8 son paket; kabul açık. Önceki20bfbc750
+[CI44285710026](https://github.com/sinangym/GoymenERP/actions/runs/44285710026)
+tamamlandı: API2/API3 dahil bütün backend test grupları, build/OpenAPI/RCSI/recovery/release
+ve dört frontend shard PASS; C01/Cari/UI ayrı koşumları PASS. Geniş SQL A/B/C ve frontend audit FAIL.
+Test edilen merge609323a9a6192bb9d971da349be2d4af4adad128. Tam SQL proof yok.
+
+- SQL A7 PASS/1 FAIL, B15 PASS/1 FAIL, C15 PASS/1 FAIL; yalnız tamamlanmış batch sonuçları, skip0.
+  Counterparty audit migration-history fact'i bu kez PASS; C'nin sonraki hatası e-belge VKN değişimi
+  fact'idir. Üretim maliyet farkı eşzamanlı onay ve Finans POS başlangıç hataları sürer.
+  Bunların kesin kök nedeni henüz bilinmiyor; beklenti veya iş politikası tahminle değiştirilmedi.
+- Bütün shard'lar normal RunInfo uyarısını altyapı hatası sayan tanısal devam kontrolünde durdu.
+  Başarılı yerel TRX'lerde de Warning metaverisi bulundu. b4fd38b43 yalnız bu normal outcome'u
+  tanısal devamda kabul eder; Error/Aborted/unknown/eksik outcome, bozuk/eksik sonuç veya skip yine durdurur.
+  İlk native1 kalıcıdır ve hiçbir hata kabul proof'u üretemez; tek2400s sınırı değişmedi.
+  Tam Python paketi101/101 PASS/skip0.
+- 158c7dc83: kapalı exceptionKind ve aynı test sınıfının en yakın yardımcı frame satırı
+  (en çok8 geçerli benzersiz frame) eklendi. Ham mesaj/yol/yöntem adı yayımlanmaz;
+  sourceLine ve sourceFrameScope untrusted TRX metaverisidir, kaynakla doğrulanmış kök neden değildir.
+  Exact test frame önceliği ve taşma/belirsizlik kapıları korunur. Python96/96 PASS/skip0.
+- 4192f1531: Finans SQL fixture başlangıcında health/migrate/document_numbers kapalı fazları;
+  başarısız başlangıçta dispose denemesi ve asıl hatayı inner exception olarak koruyan tanı eklendi.
+  Integration fixture Release build0/0 hata/0 uyarı145.07s. Yerel gerçek SQL koşulmadı.
+- 158c7dc83 native mimari fixture build0/fresh discovery/strict TRX: ilgili guard1/1 PASS/skip0.
+  Ev üreticisi verifier fingerprint c5650132ff237c072a1f8c1c28ae33333dbb6125bceb8a232ad4d8e43afc0cb1.
+  Tam backend tekrar derlenmedi; üretim kaynak ağacı581d01e78 ile aynıdır.
+- Resmî Picomatch advisory patched=None, registry latest4.0.7 tekrar doğrulandı.
+  Audit-ignore/downgrade/vendor override yok. Yeni migration/THROW/izin/bypass/context/dalga/işletme politikası yok.
+  Yeni doğal exact-head CI, tam gerçek SQL ve iki bağımsız tam K3 review beklenir; production/grant/OPEN değişmedi.
+
+
+## W8 son SQL teşhis eki — kaynak 9bd94c2187c0
+
+- Önceki yayımlanmış kaynak `c00c4726e210c89d2362257f8832bd912574064a`, CI `44299253899`, test edilen merge `81df7e173784a72056305539a6a83fc0b20edada`: tamamlandı, FAIL. API-1/2/3, modüller, mimari, OpenAPI, RCSI, recovery/release ve dört frontend test parçası PASS; geniş SQL A/B/C ve frontend güvenlik kapısı FAIL. C-01 browser, Cari ve UI catalog ayrı koşuları PASS. Toplu kabul yok.
+- Tamamlanan SQL batch kayıtları: A 7 PASS/1 FAIL, B 15 PASS/1 FAIL, C 15 PASS/1 FAIL; skip 0. Bunlar tam shard sayıları değildir. A: `argument_out_of_range`; B: `finance_command_startup_document_numbers` aşamasında `invalid_operation` sarmalayıcısı; C: `Equal`. Gerçek kaynak satırı henüz bilinmiyor; iş kuralı veya test beklentisi tahminle değiştirilmedi. Counterparty audit migration-history fact'i PASS.
+- `d12a853aa`: yalnız eksiksiz, exact kimlikli Failed TRX + native exit 1 teşhis yolunda RunInfo veto edilmez. İlk hata korunur, son exit başarısızdır ve kabul proof'u yazılmaz. Başarılı kabul yolu ve yapısal/kimlik/çokluk/sayaç/skip/timeout kontrolleri değişmez; global süre sınırı korunur. Önceki RunInfo veto açıklamalarının bu teşhis yolu için yerini bu kural alır. K3 incelemesi bekler.
+- `9bd94c2187c041ca5e800f1a775b88e67060ab34`: hata özeti, sınırlı ve doğrulanmış Git'te izlenen C# dosyasının depo göreli yolunu/satırını gösterebilir. Özel yol öneki, yöntem ve ham mesaj yayımlanmaz. İç exception kaynak frame'i önceliklidir; bu konum TRX metadatasıdır, kök neden veya kabul kanıtı değildir.
+- Gerçek yerel kanıt: safe summary 103/103 PASS, SQL verifier 101/101 PASS, skip 0. Mimari fixture build/discovery exit 0, strict TRX guard 1/1 PASS, skip 0. Tam backend yeniden derlenmedi; production kaynak değişmedi. İki hafif doğrulayıcı exit 0; backlog 64/64 PASS, bootstrap 56 test exit 0 (mevcut Windows koşullu 9 skip, SQL skip0 kanıtı değildir). Yerel SQL NOT_RUN.
+- 174/174 kaynak DONE (%100), W8 son paket. Yeni dalga/dilim, migration, izin, grant, OPEN/production/Finance STOP değişikliği yok. Tam SQL kabulü, frontend güvenlik kapısı ve iki yeni exact-head tam bağımsız K3 review hâlâ bekler.
+
+
+## W8 SQL fixture ve cari ekstre düzeltmesi — kaynak 853f1ea01095
+
+- Yayımlanmış `4ffd8cd3976df1dfa34d10fdb5173aa2918c24bc`, CI `44317154064`, tested merge `ca4fe7eec935d195d3d201c4a8978aed971d55bd`: tamamlandı, FAIL. Bütün backend/API grupları, OpenAPI/RCSI/recovery/release ve dört frontend test shard'ı PASS; C01/Cari/UI ayrı koşuları SUCCESS. Geniş SQL ve frontend audit FAIL. SQL A23 tamamlanmış TRX/119PASS65FAIL; B37/245PASS51FAIL; C29/218PASS21FAIL; toplam719 gözlenen sonuç=582PASS137FAIL, skip0. Üç shard global2400s sınırında durdu; tam proof yok. A15/B1 hata grubu ayrıntısı kırpıldı, toplam sayaçlar kırpılmadı.
+- Somut ortak fixture nedeni: gerçek Audit fabrikası kapalı SourceChannel sözleşmesinde Test/UnitTest kabul etmiyor. `383b125f521dc8edc87ab8c8643a1ea96cb50ddb` dokuz fixture dosyasındaki on bu tür metadata değerini mevcut Web sabitiyle düzeltir. Audit izin listesi, negatif testler ve iş beklentileri değişmedi. Manufacturing maliyet farkı, Finance/Settings belge numaraları ve Purchasing ortak setup/ithal/fatura akışları gerçek Audit yazımına bağlıdır. Bu kaynak bulgusu bütün137 SQL hatasının kapandığı iddiası değildir.
+- Organization audit guard `c248c6fae` ve Counterparty ana SQL fixture `c13e3d5b8`: eskimiş sabit migration sayısı yerine owner'ın bütün sıralı migration kimlikleri gerçek SQL geçmişiyle eşitlenir; tenant/write/constraint/seed kontrolleri korunur. Diğer Counterparty ilk vergi kimliği PUT hatalarının gerçek HTTP cevabı hâlâ bilinmiyor; onay/yetki davranışı değiştirilmedi.
+- Gerçek Finance provider regresyonu `6f64099a26fb84d6bf203804fd8b9e44ed954c79`: ilk build NETSDK1004 eksik assets nedeniyle FAIL; locked restore0 ve build0 sonrasında test native1, InvalidOperationException/could-not-be-translated hatasıyla mevcut açılış sorgusunu yeniden üretti. `3a7f4caa896070424e0863988a443520f3003b3c` yalnız OpeningFact projeksiyonunu üye başlatma biçimine çevirir; sekiz alan, şirket/cari/hesap filtresi, tarih, sıra ve limit aynı, istemcide filtreleme yok. Aynı test build0/test0; ilgili tüm PartyLedger hedefleri39/39 PASS, skip0, native0. Bağlantı açılmadı; gerçek SQL kabulü değildir. Allocation hata önceliği ve reversal yarış hatası bu düzeltmeye katılmadı.
+- Son kaynak `853f1ea010953e331601f6c2bd20d2ca3533056b`: Integration fixture build0/0hata/0uyarı; tam backend yeniden derlenmedi. Gerçek recovery ve release üreticileri exit0/SOURCE_ONLY. 19context/340migration/66store/3119kaynak/1461riskli kaynak değişmedi. Üretici çıktısından risk SHA `a0912a048e044efd925d4d75cb3d8d7fc650ea28534f871b2df5ec6e64651a8a`, tam backend kaynak SHA `0528dbd291847ffd91fb5c637f1957a0444d7ab8f631697dcfba420b37025f2a`. Önceki581d üretim ankrajından sonra yalnız bu Finance kaynak düzeltmesi geldi; eski kanıtın yeni head'de yeniden koştuğu iddia edilmez.
+- İki hafif validator exit0, backlog64/64PASSskip0, bootstrap56test/9mevcutWindowskoşulluskip/native0, diff0. Yeni tam CI ve iki tam bağımsız exact-head K3 bekler; yerel gerçek SQL NOT_RUN. 174/174 kaynak DONE (%100), W8 son paket; yeni dalga/izin/migration/THROW/bypass/grant/OPEN/production/Finance STOP değişikliği yok.
+
+## W8 SQL kapanış düzeltmeleri — 18 Kasım, kaynak 1dcfa3328
+
+- Önceki yayımlanmış kaynak `b41e2ba3dc51762cc7f9d47eb7b2917d08fa1c6c`, CI `44332161172`, tested merge `b7a41e8c587e4f8aec7921a3215e22a36c66ebbb`: tamamlandı, FAIL. Backend build/modüller/mimari/API-1/2/3, OpenAPI, RCSI, recovery/release ve dört frontend test shard'ı PASS; C01/Cari/UI ayrı koşuları SUCCESS. Geniş SQL A/B/C ve frontend audit FAIL; toplu kabul yok.
+- Tamamlanmış SQL batch sonuçları A240=195PASS45FAIL, B192=176PASS16FAIL, C231=213PASS18FAIL; toplam663 gözlenen sonuç=584PASS79FAIL, skip0. Bunlar tam shard kapsamı değildir; önceki koşumla kapsam değiştiği için hata azalması yüzdesi çıkarılmaz.
+- `3f3df76b0`: alış iptalinde belge numarası bırakma, owner'ın açtığı Serializable işlemde yürür. Ödünç alınmış işlem sahipliği korunur; rollback/retry/gap/replay SQL senaryosu güçlendirildi. Settings işlem çiti gevşetilmedi.
+- `6db22567b` gerçek RED: ödeme eşleştirme hizmetinde dört senaryodan ikisi yanlış hata önceliğiyle FAIL. `91f4b9891` saf politika kontrolünü bakiye çitlerinden önce çalıştırır; iki kullanılabilirlik çiti yazımlardan önce kalır. Son hedefli native build0/test0, 48/48 PASS, skip0 (`357e7b8a8`). Terminal komut/replay kaydı korunur; ekonomik durum değişmez. InMemory kanıtıdır, gerçek SQL değildir.
+- `5cc655ec5`: muhasebe dönem SQL fixture'ı geliştirme kullanıcı metnini GUID'e çevirmek yerine mevcut kimlik eşlemesinden gerçek actor GUID alır. `0306a07f7`: temel dört owner'ın eski sabit migration sayıları yerine bütün sıralı migration kimlikleri gerçek SQL geçmişiyle karşılaştırılır. İş beklentileri/tenant/seed/constraint kontrolleri korunur.
+- `b5591d56d`, EF üretimi `6fbd0252a`, ayrı Down guard düzeltmesi `357e7b8a8`, testler `cf31c1715`: Unicode revision sütununda ASCII10/11 vergi numarası için DATALENGTH=2*LEN; normal varchar denetimleri değişmez. Gerçek EF10.0.8 üretimi `20261118165020_RepairPartyIdentityRevisionTaxNumberFormat` yalnız CHECK Drop/Add yapar. Down, vergi revision geçmişi varsa önce THROW51799 ile reddeder; mevcut veri/sütun değiştirilmez. İlk üretilmiş committe eksik guard sonraki normal committe, yayımlamadan önce eklendi; tarihçe korunur. Model/snapshot/migration unitleri native34/34 PASS, skip0 (`8f7f39087`). Gerçek SQL geçerli/geçersiz Unicode ve Down geçmiş senaryoları yazıldı; yerelde NOT_RUN.
+- `6f7268cf7`: gerçek recovery ve release üreticileri exit0/SOURCE_ONLY. 19context/341migration/66store/3121kaynak/1463riskli kaynak. Risk SHA `7f7ecd3b78c28a94ba49b7f4ca075ceb2e0fa6467c21bd4c760ec7576b3376bc`; tam backend SHA `b7525d134264c539cacd904141ea166bdf3f6f58df49409d1710269f831dfce9`. Yeni mutation guard yalnız Down korumasını gerekçesiyle kaydeder; bağımsız K3 incelemesi bekler.
+- Kullanıcının 18 Kasım açık onayı, `1dcfa3328`: geniş SQL shard başına tek toplam10800s (180dk); her native süreç/setup/RCSI sınırı2400s kalır. Süre yenileme/retry/skip/kapsam düşürme/partial proof yok; workflow, hesap/kota, ücretli hizmet değişikliği yok. Verifier103/103 PASS, skip0; iki yeni regresyon uzun toplam bütçenin tek süreç sınırını büyütmediğini doğrular. Önceki tek2400s açıklamaları tarihsel koşumlara aittir.
+- Hafif validatorlar exit0; backlog64/64PASSskip0; bootstrap56test/native0, mevcutWindowskoşullu9skip. Bu skipler SQL kabulü değildir.
+- Kaynak174/174 DONE (%100), W8 son paket; yeni dalga/dilim yok. Tam yeni-head CI/gerçek SQL, frontend güvenlik kapısı ve iki bağımsız tam K3 incelemesi bekler. Yerel SQL bağlantısı/DB/container/service oluşturulmadı; grant/rol/OPEN/production/Finance STOP değişmedi.
+
+Canlı kaynak notu (18 Kasım): [GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf) bugün Withdrawn olarak işaretlenmiştir. Önceki CI npm audit FAIL sonucu tarihsel olarak korunur; yeni npm audit koşmadan kapı PASS sayılmaz. Audit istisnası, paket veya gate değişikliği yapılmadı.
+
+Son native doğrulama: temiz `6f7268cf7` üzerinde IntegrationTests Release ve bütün proje bağımlılıkları build exit0, 0hata/0uyarı (411.02s). Bu, yukarıdaki backend/migration/SQL-fixture değişikliklerini derler; gerçek SQL çalıştırmaz. Aynı frontend lock dosyasının yeni `npm audit --package-lock-only --audit-level=high` koşumu exit1: aynı GHSA üzerinden6high. Resmî Withdrawn kaydı npm denetimine henüz yansımamış görünüyor; güvenlik kapısı açık tutuldu, istisna/downgrade uygulanmadı.
+
+Yayımlama öncesi mimari checkpoint: temiz6f7268cf7 fixture build0/discovery0, strict hedef koşum native1:4test/2PASS2FAIL/skip0. İki neden, eksik Finance allocation fingerprint'i ve Counterparty'nin genel taramadan dışlanmasına rağmen yeni migration'ın genel listeye eklenmesidir. `2d7d7c700` gerçek producer Finance SHA d2aaf08c47463649bd1cf41cc4c05b816c3c29ee7b5c7fb362f987c98de5bbe1 ve değişmeyen tek SqlClient race-classification sayısını kaydeder; yalnız yeni deployment migration'ını mutation doğrulamasının kaynaklarına açıkça dahil eder. Diğer Counterparty runtime dışlama/ayrı guard sınırı korunur. Bu düzeltmenin yeni-head yerel mimari tekrarı henüz NOT_RUN; fresh CI gereklidir. Recovery/release birim paketlerinin ilk denemesi kirli çalışma ağacını setup'ta reddetti (0test,exit1); temiz6f tekrarının kaynak çözümlemesi sürüyor, PASS sayılmaz. Önceki gerçek iki üretici exit0 kanıtları ayrı korunur. Taslakta normal yayımlama, bu eksik test kanıtlarını kabul veya merge yetkisine dönüştürmez.
+
+## W8 SQL kapanis onarimi — 19 Kasim, kaynak d395b5eae55e
+
+- Sabit kapsam174/174 kaynak DONE (%100); W8 son paket, yeni dalga/dilim yok. Kabul tamamlanmadi.
+- Onceki a6bcc67553a09b909e2583f50870450574301038, CI44357816788, tested merge d83a065d8c3118f52d2fc7096a90698152373442: tamamlandi FAIL. Backend/API/moduller/mimari/OpenAPI/RCSI/recovery-release ve frontend audit/lint/build/test kapilari PASS; genis SQL A/B/C FAIL. Frontend guvenlik engeli bu eski head'in yeni gercek audit sonucunda yesildir; audit-ignore/paket/gate degisikligi yok.
+- SQL'de gozlenen1762 sonuc=1536PASS226FAIL,skip0 (A638=493/145; B627=580/47; C497=463/34). A'da95 failure-group ayrintisi ozet siniri nedeniyle yoktur. Bunlar kabul proof'u degildir; farkli kapsamli eski kosumla hata yuzdesi karsilastirilmaz.
+- DEC-FIN-006: odeme eslestirmesi tenant-filtered gercek original OutgoingMoneyEvent ister; Recorded status tek basina para kaydi kaniti degildir. Ilk gercek RED11testte5PASS6FAIL; owner duzeltmesi375d11b0 sonrasi hedef11/11 ve tam Finance1556/1556PASS,skip0,native0. Tahsilat saf politika hata onceligi iki bakiye citinden once, iki cit de yazimdan once korunur. InMemory/unit kanitidir, SQL degildir.
+- EF10.0.8 gercek uretimi c015d872f:20261118211933_RejectNullAccessGrantApprovalModes, yalniz iki mevcut CHECK Drop/Add. Approved+NULL, SQL UNKNOWN ile ikinci kisi denetiminden gecemez. Down Approved gecmiste once THROW51798 ile reddeder. Yeni grant/rol/izin/sinif veya veri rewrite yok. Mevcut SQL fact; NULL/oz-onay retleri, bos ve onayli gecmiste exact Down ilk guard'i ve rollback testiyle genisletildi; yerel SQL NOT_RUN.
+- Guncel Identity tam unit 767/767PASS,skip0; degisen mimari guardlar 4/4PASS,skip0; native build/discovery/test0 ve mevcut exact SDK/TRX verifier PASS. Integration ve butun backend proje bagimliliklari Release derleme0; ilk iki xUnit2031 hatasi ve duzeltme tekrarlarinin kayitlari korunur.
+- Ilk Identity native test baslatma, Windows komut uzunlugu sinirinda test baslamadan reddedildi. Son tam proje filtresiz kosumu767 exact SDK/TRX kimligini aynen dogruladi; eski baslatma hatasi PASS sayilmadi.
+- SQL fixture onarimlari: gercek Settings numaralama owner'i; guncel owner migration/table envanteri; eski Down guard'inin tarihsel konumunda sinanmasi; gercek customer-return owner baglantisi; izinli test actor/kanal; tam immutable COGS graph esitligi. Test silme, atlama, karantina veya fiziksel/finansal beklenti gevsetme yok. Yeni SQL sonucu olmadan kac kirmizinin kapandigi soylenmez.
+- Gercek recovery/release ureticileri native0/SOURCE_ONLY:19context342migration66store,3123backend/1465riskli kaynak. Main farki179 yeni timestamped migration;315 tekil THROW numarasi (main migration numaralarindan201 fazla), yeni51798 tekil. Risk SHA1095737f09bc9700fa105767e62c0f9871d9498aa4e4392ce6dab487e83dcaf8; migration SHA7c94aea3b1d34e1427569c13ad3b9be8c71ea8fd957ceebd45f617668aac5f21. Guard hashleri ev ureticisinden; bagimsiz K3 review bekler.
+- API build uretimi OpenAPI byte drift exit0; canonical SHA091cc64a9e71f90ddc12b7c2ab9784b3f22fd8e181234f7f7b50603dc30dec04,9746060byte. Public contract degismedi.
+- Iki hafif validator0; backlog64/64PASSskip0; bootstrap56test/native0 ve mevcut9Windows kosullu skip (SQLskip0 degildir). Recovery ilk yerel denemesi calisan dosya/commit byte esitligi nedeniyle exit2; yalniz satir sonu exact commit byte'ina esitlendi, kapi degismedi. Gercek uretici tekrari ayri kanittir.
+- Acik tani: iki resmi fatura/fason iptal yarisi ve iki son revizyon onayi. Guvenli ozet ve job logu gercek inner exception/HTTP sonucu vermiyor; failed TRX artifact'i yok. Kaynak daraltildi fakat neden tahmin edilmedi ve citlar gevsetilmedi. Yeni SQL kaniti gerekir.
+- Siradaki kapi: normal FF push ile yeni dogal CI, genis SQL'in ayni kapsamla tamamlanmasi; sonra iki yeni bagimsiz tam exact-head K3. Taslak#1201 hazir/merge yapilmaz; mevcut yardimci ajanlar yazardir, bagimsiz reviewer degildir. Yerel SQL/DB/container/service, workflow, grant/rol/OPEN/production/Finance STOP degismedi.
+
+
+## 2026-11-19 - mevcut yerel SQL ile hedefli tani
+
+- Kullanici mevcut yerel SQL kullanimini ve yalitilmis test kurulumunu acikca onayladi. Mevcut sunucu zaten calisiyordu; servis yeniden baslatilmadi. Test dosyalari ayrilmis bir alanda, baglanti/konum yalniz test surecinde; instance varsayilanlari ve mevcut sirket DB'leri degismedi. Onceki NOT_CONFIGURED/NOT_RUN satirlari tarihseldir.
+- Sabit174/174 kaynak DONE (%100); W8 son paket, yeni dalga/dilim yok. Kabul tamamlanmadi.
+- Yayinli71e8dd2c CI44404510203 tamamlandi FAIL: gozlenen1762 SQL sonucu1610PASS152FAILskip0 (A638=531/107, B627=594/33, C497=485/12). A'nin ozetindeki57eksik hata adi mevcut guvenli job tani satirlarindan kurtarildi; toplam107. Bu sayilar basarili grup proof'u degildir.
+- Ilk yerel SQL turu0279d4b47f7189adae5cfefcd1bcf01d07345382:11 hedef=9PASS2FAILskip0. Resmi iptal yarisi, iptal sonrasi yeni fason faturasi, belge uretimi/branding, iki customer-return Down, draft approval, invoiced quantity ve temel SQL fact PASS. Iki revizyon onayi503kaldi; her ilk kirmizi kayit korundu.
+- Kaynak 9fa1588031c770a4ac40700ea90d8e7eb789725c: tam Integration+backend bagimlilik derlemesi native0; Documents tam263/263PASSskip0, depolama guard3/3PASSskip0, iki revizyon onayi2/2 gercekSQL PASSskip0. SDK discovery ve TRX kimlikleri ev dogrulayicisiyle kontrol edildi. A6+B12 tani hedefi bu kayitta RUNNING; PASS sayilmadi.
+- Revizyon503: hostta kayitli futureDemandReduction, SalesModuleExtensions explicitfactory'sinde verilmemisti; yalniz mevcut participant baglantisi eklendi (SAT-S8/KLN-D105). Citleme/transaction sahibi korunur. Iptal edilmis fason fatura state7, aktif claim sayilmadan immutable history'de korunur.
+- Muhasebe/Finans yarislarinda gercek SQL1205'in EF InvalidOperation/DbUpdate wrapper'i olculdu. Yalniz bu zincir mevcut ConcurrentChange veya Unavailable reddine cevrilir; otomatik retry/EnableRetryOnFailure veya basari cevabi eklenmedi. Duzeltme sonrasi genis SQL sonucu henuz yoktur.
+- Fixture onarimlari: mevcut Audit Integration kanali, real Settings numara formati, real banka kimligi (acilis/bakiye icat edilmeden), SELECT-projection collation ve SQL keyword escaping; guard/yetki/para beklentisi gevsetilmedi. Documents realmapper unit kurulumu mevcut sentetik Audit ayarlariyla263yesil.
+- Yerel SQL major17, CI SQLServer2022 major16: yerel tani son CI kabulu yerine gecmez. OpenAPI byte drift0, SHA091cc64a9e71f90ddc12b7c2ab9784b3f22fd8e181234f7f7b50603dc30dec04.
+- Mevcut kaynak yuzeylerinin hashleri ev aracindan olculdu; 3a399af25f62 pin checkpoint'i K3 review bekler. Yeni migration/izin/grant/rol, instance policy, OPEN, production veya Finance STOP degisikligi yok.
+- Hafif kontroller: iki validator0; backlog64/64PASS; bootstrap56/native0 ve9Windows kosullu skip; backend verifier38/38PASS; RCSI verifier103/103PASS; OpenAPI validator16/native0 ve2Windows kosullu skip. Bunlar SQLskip0 kanitindan ayridir.
+- Siradaki kapi: yerel tani ve kaynak duzeltmeleri bitirilecek, pinler son kaynakta yeniden dogrulanacak, sonra normal FF push ile yeni dogal tam CI. Taslak#1201 ready/merge yapilmaz; iki yeni bagimsiz tam exact-head K3 review gerekir. Yazara yardimci ajanlar bagimsiz reviewer sayilmaz.
+
+
+### 2026-11-19 - yerel SQL hedeflerinin ikinci checkpoint'i
+
+- 9fa1588031c770a4ac40700ea90d8e7eb789725c turu tamamlandi:20 hedef12PASS8FAILskip0; bunun A6+B12 altkumesi18=10PASS8FAIL, iki revizyon2PASS. Onceki RUNNING satiri bu tamamlanmis kayitla guncellenir; genis CI kaniti degildir.
+- a1ac08d7abb60229ea436d2d207ad59807a4d066: tam Integration+backend derlemesi0hata0uyari (401.281s); depolama3/3PASSskip0; yedi SQL hedef5PASS2FAILskip0. Transfer iptali, batch revival, iki kabulde tek ilk-fatura kurusu, order-cancellation Down ve Work dispatch gercek SQL'de PASS. Paint eksiksecim ve Identity Sales403 kaldi; ilk hatalar saklandi.
+- Paint HTTP422'nin kapali kodu manufacturing_paint_selection_required: test gercek Product Excel uyeligi ve gercek Cari tedarikci surumleriyle tamamlandi. Identity port/adapter gecerken Sales403, yalniz Identity'de bulunan sentetik sirketin Organization'da olmamasiydi; gercek owner bootstrap'a yalitilmis sirketler eklendi. Uygulama yetki/uygunluk citlari gevsetilmedi.
+- Manufacturing unit1428/1428 nativePASSskip0 fakat SDK1425 vaka: custom-object MemberData kesifte1, kosumda4gorunuyordu. Dort ayni vaka primitive InlineData olarak korundu (972f75493); onceki exactproof NOT_PASS, yeniden kosum gerekir.
+- Manufacturing iptal write-guard fingerprint'i ev ureticisinden olculdu; recovery1465kaynak pin'i yeniden olculup3b0f53244'te gercek source-only consumer exit0 alindi:19context342migration66store. Yeni migration/izin veya tenantbypass eklenmedi. OpenAPI byte drift0.
+- cc53a6363'te16 mevcut SQL hedefi ve tam Manufacturing unit kosumu baslatildi: RUNNING, PASS sayilmaz. Yalniz fixture/test/pin degisikligi oldugu git diff ile dogrulandi; hedefli derleme a1'de derlenmis degismemis backend bagimliliklarini kullanir. Son tam taze CI ayri kapidir.
+- Kaynak174/174 (%100); W8 son paket. Yayinli71e8dd2c tam SQL CI halen FAIL152 ve taslakK3#1201 kabul bekler. Yerel SQL17 kaniti CI16, iki tam bagimsiz exact-head K3 ve insan kapilarinin yerine gecmez.
+
+### 2026-11-19 — hedefli SQL onarımı ve alış outbox sözleşmesi
+
+- Sabit 174/174 kaynak DONE (%100), W8 son paket; yeni dalga veya dilim yok. Yayımlı `71e8dd2c` CI sonucu halen 1.762 SQL = 1.610 PASS / 152 FAIL / skip0; yeni geniş CI kabulü alınmadı.
+- `cc53a6363fe941c8dfcb2f51a9f68df2f6dafab4` yerel turu tamamlandı: 16 SQL hedefi 4 PASS / 12 FAIL / skip0. Aynı kaynakta tam Manufacturing birim testleri 1.428/1.428 PASS, skip0 ve exact SDK/TRX eşleşmesi PASS. Önceki RUNNING kayıtları bu sonuçla tamamlanır.
+- `4358d76ef5cc391837815a73aa157105afe51f6e` hedefli derlemeler exit0; tam Purchasing birim testleri 884/884 PASS, skip0 ve exact SDK/TRX PASS. Seçili 17 gerçek SQL hedefi 13 PASS / 4 FAIL / skip0. Kimlik dizini, bozdurma muhasebesi, cari ekstre HTTP, alış faturası kesinleştirme/iade maliyeti ve yeni outbox Down guard fact'i geçenler arasındadır. Başarılı altküme toplu kabul değildir.
+- Gerçek alış faturası kesinleştirme, modeldeki eski iki olaylı CHECK yüzünden reddediliyordu. EK24 FNS-D105'in mevcut `purchasing.invoice.finalized.v1` olayını kapalı üçüncü değer olarak ekleyen `20261119012425_AllowPurchaseIncomingInvoiceFinalizedOutboxEvents`, pinli dotnet-ef 10.0.8 ile üretildi; yalnız CHECK Drop/Add, veri yazımı yok. Down ilk adımda bu olay varsa THROW51815 ile durur. Numara canlı main ve diğer açık PR head'leriyle çakışma taramasından geçti. Gerçek SQL koruma testi ve model/DDL birim testleri PASS; tam boş Down/up kanıtı güçlendirilmiş yeni fact ile sıradaki turdadır. K3 incelemesi bekler.
+- Dört kalan hedef için dar düzeltmeler: şirket açma deadlock'unda sadece daha önce commit edilmiş kazananın mevcut replay yolundan okunması; receipt-prelock fixture'ında gerçek scope/şirket/aktör ve kayıtlı maliyet portları; sıfır banka bakiyesinde mevcut FNS-D87 hata önceliği; profile-weight fixture SQL sütununun kaçışlanması. İş politikası, otomatik retry, para hesabı, grant veya aktivasyon eklenmedi. `4878fcafc90955cf186451e58b66b35945d09e2b` kaynağında beş SQL fact'i ve tam mimari test turu RUNNING; henüz PASS sayılmaz.
+- Ev recovery üreticisi `4878fcafc90955cf186451e58b66b35945d09e2b` için exit0: 19 context / 343 migration / 66 durable store, SOURCE_ONLY. Yerel SQL17, CI SQL2022/16 kabulünün yerine geçmez; son taze CI ve iki bağımsız tam exact-head K3 incelemesi bekler. Taslak #1201 ready/merge yapılmaz.
+
+### 2026-11-19 — kalan SQL ailelerinin ölçümü ve dar onarım adayı
+
+- `4878fcafc90955cf186451e58b66b35945d09e2b`: beş onarılmış gerçek SQL fact'i 5/5 PASS, skip0, exact SDK/TRX PASS; yeni alış outbox migration'ı boş tam Down/up ve dolu guard korumasını geçti. Mimari 405 test:403 PASS/2 FAIL/skip0; sebepler beş EF OriginalValues.GetValue çağrısı ve iki yanlış eşlenmiş dosya fingerprint'iydi. Guard gevşetilmedi; tipli Property.OriginalValue erişimi ve ev aracından ölçülen doğru dosya pinleri hazırlandı. Yeni yerel OpenAPI byte karşılaştırması exit0, kanonik SHA değişmedi.
+- `118aa796dfcec1dfd628539ba0aa09226b82c4fc`: başka 26 eski kırmızı SQL hedefi tamamlandı, 8 PASS/18 FAIL/skip0. Bu ayrı kümedir; önceki turdan çıkarılıp yeni geniş CI toplamı üretilmez. İlk kırmızılar ve özel test kanıtları korundu.
+- Dar kaynak onarımları: kaynak fatura iptalinin ölçülen exact EF-wrapped1205 reddi; source-voucher onay DTO'sunda bilinmeyen JSON alanlarının reddi; transfer mal kabulünde mevcut owner/borrowed işlem sarmalayıcısı; kesirli exact maliyet havuzu değişmeden eski projeksiyon gerekçesinin eşlenmesi. Para/formül/izin/iş politikası, otomatik retry veya dış aktivasyon eklenmedi.
+- Test onarımları: iki tarihsel Down guard'ı yeni koruma kayıtlarını silmeden kendi ilk SQL adımıyla sınanıyor; boş tam Down/up yolları korunuyor. Yarışlarda nonterminal anahtarın saklanmaması, aynı aktör/anahtarla yeni scope'taki açık isteğin ikinci ekonomik olay üretmemesi güçlendirildi. Source-grain yarış bariyeri fiziksel mutex öncesine, süre sınırıyla taşındı. Gerçek banka ve numaralama aktörü önkoşulları tamamlandı; bigint ve nullable rezervasyon beklentileri mevcut sözleşmeyle hizalandı. ALS-D92'nin geçerli kapalı+iptal payı pozitif sınanırken negatif/toplam sınırları korunuyor. Üretim output denetimi yedi kapalı olaylık tam listeyle doğrulanıyor.
+- `31b90670b` kaynak kodunda dört değişen backend hedef derlemesi exit0; API/fixture, 20 SQL fact'i ve tam Manufacturing/Inventory/Accounting birim testleri RUNNING. Sonuçlar tamamlanana kadar PASS sayılmaz. Son mimari ve tam taze CI ayrıca gereklidir. Yeni dalga yok; kaynak174/174 (%100), runtime/release kabulü tamamlanmadı; taslak #1201 ready/merge yapılmaz.
+
+- Sözleşme devam kaydı: `31b90670b` değişen backend ve API derlemeleri exit0. OpenAPI byte kontrolü exit2 ile durdu; fixture/birim/SQL aşamaları bu ilk denemede NOT_RUN. Gerçek üretilen JSON farkı yalnız `ApproveAccountingSourceVoucherV1.additionalProperties=false`: yeni bilinmeyen alan reddinin sözleşme karşılığı. Baseline gerçek API artifact'ından kopyalandı, şema semantik testi bunu açıkça doğrular. Backend kaynağının derlenmiş kimlikle eşitliği kontrol edilerek geçen derlemeler tekrar edilmeden yeni fixture ve test turuna devam edilecek; eski hata kanıtı korunur.
+
+### 2026-11-19 — yerel 20 SQL sonucu ve son üç hedef
+
+- `de140ea9aa19c72adad3ad3279bbdd90f37741f7`: 20 gerçek SQL fact'i 17 PASS/3 FAIL/skip0; exact SDK/TRX eşleşmesi başarısız fact'lerde NOT_PASS olarak korundu. Önceki 18 hata ve iki regresyon hedefidir, geniş CI kabulü değildir.
+- Aynı head'de tam Manufacturing 1428/1428, Inventory 1967/1967, Accounting 679/679 PASS, skip0 ve exact SDK/TRX PASS. OpenAPI byte kontrolü exit0 ve üretim sözleşmesi fact'i 1/1 PASS, skip0. Fixture derlemesi exit0; backend derleme kanıtı kaynak eşitliği doğrulanarak 31b90670b üzerinden devralındı, taze derleme diye sunulmaz.
+- Üç kalan: SQL17 sıralı aggregate hatası nedeniyle Üretim audit sorgusu; şirketin teknik fiziksel doğrulama guard'ında ilk INSERT PK yarışının ham sağlayıcı hatası; sıfır bakiye yerinin eski null test beklentisi. İlkinde aggregate yerine parametreli, binary sıralı satır okuma; ikincisinde yalnız guard PK2627 ve optimistic update yarışının mevcut ConcurrentChange reddine çevrilmesi; üçüncüsünde kayıtlı sıfır bakiyenin yeri ve 0 kg kanıtı eklendi. İş politikası/otomatik retry/commit/para hesabı eklenmedi. Guard kaynağı ve tipli sağlayıcı hata sınıflandırması K3 review bekler.
+- `118aa796dfcec1dfd628539ba0aa09226b82c4fc` hafif doğrulama zincirinin tamamı exit0: backlog64, bootstrap56 (mevcut9 Windows koşullu skip), recovery36, release16, backend verifier38, RCSI103, OpenAPI drift16 (mevcut Windows koşullu skip); SQL skip0 bu koşullu birim skip'lerinden ayrıdır. Recovery/release eski head kanıtıdır; yeni riskli kaynak pin'i ev üreticisinden ölçüldü, yeni consumer kontrolü ve tam mimari koşusu bekler.
+- Kaynak sabit174/174 (%100), W8 son paket; yeni dalga/dilim yok. Runtime/release tamamlanmadı. Üç SQL hedefi + tam Inventory ve mimari doğrulaması sırada; daha önce yerelde ölçülmemiş81 eski SQL A hatasının tanısı ardından alınacak. Yeni tam GitHub CI ve iki bağımsız tam exact-head K3 review olmadan #1201 ready/merge yapılmaz.
+
+### 2026-11-19 — üç SQL düzeltmesi ve tam mimari sonucu
+
+- Kaynak `698d9e82ff646ec40a5d3e141289bcf952b9a7c6`: son üç gerçek SQL hedefi 3/3 PASS, skip0, exact SDK/TRX PASS. Üretim audit olaylarının yedi elemanlık listesi, source-grain yarışında tek ekonomik etki ve sıfır bakiye ret ayrıntısı doğrulandı. Önceki17/20 sonucu kendi head'inde tutulur; bu iki koşum taze geniş CI toplamı değildir.
+- Aynı head'de Inventory tam1967/1967 PASS, tam mimari405/405 PASS, skip0; exact SDK/TRX PASS. API, Inventory altyapısı, Integration ve mimari fixture derlemeleri exit0. OpenAPI byte kontrolü exit0, üretim sözleşmesi1/1 ve yerel test depolama3/3 PASS, skip0.
+- Recovery gerçek consumer exit0/SOURCE_ONLY:19 context343 migration66 durable store, riskli kaynak1467/fingerprint4b5054dd87f1dac93a69c404db85b28c17228082de92845264943067c48f5588. Bu runtime/restore kabulü değildir. İlk producer yürütümü yalnız çalışma dosyası satır sonu/exact-commit eşitliği yüzünden durdu; commit byte'ı ve Git index aynı blob'a eşitlenip temiz worktree doğrulandıktan sonraki consumer sonucu ayrıdır. Kapı değişmedi.
+- Daha önce yerelde ölçülmemiş81 eski SQL A hatası aynı derlenmiş kaynakta ayrı tanı kuyruğuna alındı, RUNNING; her süreç40 dakika/toplam180 dakika sınırında, SQL skip0 ve exact kimlik kapıları korunuyor. Bir testi atlamak, başarısız sonucu silmek veya kısmi sonuçtan başarı kanıtı üretmek yok.
+- Kaynak incelemesi, aynı teknik guard yarışının bazı participant girişlerinde mevcut typed409 dönüşümünden önce oluşabildiğini gösterdi. Mevcut ConcurrentChange hata sözleşmesini koruyan dar eşleme ve anlamlı birim testleri hazırlanıyor; henüz derleme/SQL sonucu değildir. Otomatik retry/para hesabı/yeni iş politikası eklenmez.
+- Kapsam174/174 kaynak DONE (%100), W8 son paket; runtime/release tamamlanmadı. Son taze GitHub CI ve iki bağımsız tam exact-head K3 review bekler; #1201 taslak kalır.
+
+### 2026-11-19 — 81 eski SQL A hedefinin tanısı ve dar düzeltmeler
+
+- `698d9e82ff646ec40a5d3e141289bcf952b9a7c6` üzerinde81 gerçek SQL fact'i tamamlandı:23 PASS/58 FAIL/skip0. SQL aşamaları49,36 dakika, ortanca35,54 saniye. Başarısız TRX ve native sonuçlar korunur; bu taze geniş CI kabulü veya yeni genel başarı yüzdesi değildir.
+- Düzeltme kaynağı `34556dea80897a38a038ad8578b037fe54053cf9`: teknik fiziksel guard yarışları mevcut typed409 sözleşmesine eşlendi; muhasebe ve üretim kuyruğunda yalnız ölçülen EF-wrapped SQL1205, mevcut rollback/tracker temizliği sonrasında ConcurrentChange olur. Otomatik retry/yeni iş politikası yok. Üretim çıktı düzeltmesinin130 karakterlik iç anahtarı tam şirket/emir/fact kimlikleri korunarak120 karaktere indirildi; gerçek metadata factory'sine saf regresyon fact'i eklendi.
+- Fixture'lar gerçek boya sahiplerine, şirket köküne, termin revizyon0 sözleşmesine ve fiziksel toplam/taslak ile serbest kg/onay ayrımına bağlandı. Eski endpoint/tablo/sütun beklentileri düzeltildi. Tarihsel Down guard'ları sonraki bağımsız guard'ları veya kalıcı kanıtı silmeden kendi gerçek SQL işlemleriyle sınanır; boş tam Down/Up ve tam geçmiş/bütünlük kanıtları korunur.
+- ALS-D85/KLN-D105 satır kilidi altında iki alış termin yazması testi, imkânsız iki-save bariyeri yerine kontrollü gerçek owner kilidiyle tek revision ve diğer yazarda yalnız mevcut LineBusy reddini sınar; kaybedenin attempt/audit üretmediği ayrıca doğrulanır. Fact yeniden adlandırıldı; sayı aynı, envanter sıralı, fingerprint ev üreticisinden ölçüldü.
+- Recovery gerçek consumer `190f58b1dd78ade4dbc1a6e08eb5be1457bf262c` üzerinde exit0/SOURCE_ONLY:19 context343 migration66 durable store; riskli1467 kaynak fingerprint9904f4c24f490df7095508e707fed56c1ec2d8a5bb48e0e293ec7a7552bbf8c6. Sonraki farklar yalnız fixture/envanter/rapor; backend ve generator byte'ları aynı. Bu restore/runtime kabulü değildir.
+- Sırada taze API/fixture derlemesi, tam Inventory/Accounting/Manufacturing birimleri,58 düzeltilmiş SQL hedefi+3 regresyon, OpenAPI ve tam mimari var: QUEUED/NOT_RUN. SQL motoru yerelde17, CI'da16 olduğu için yerel kanıt son CI yerine geçmez. Native işler tek kuyrukta; süreç40 dakika, toplam SQL180 dakika kapıları korunur.
+- Sabit kapsam174/174 kaynak DONE (%100), W8 son paket; yeni dalga/dilim yok. Runtime/release tamamlanmadı. Henüz yeni train push/tam CI veya yeni bağımsız tam exact-head K3 onayı yok; #1201 taslak kalır.
+
+### 2026-11-19 — yerel onarılmış A turu ve dar takip
+
+- `7004b0dcc4d759709d5a32662128c8c278fac7bb` üzerinde61 gerçek SQL fact'i tamamlandı: 54 PASS/7 FAIL/skip0. SQL süresi37.42 dakika; başarısız TRX ve exact kimlik sonuçları korunur. Tam Inventory1987/1987, Accounting679/679, Manufacturing1428/1428 PASS; tümünde skip0 ve exact SDK/TRX PASS. Yeni iç anahtar regresyonu1/1, OpenAPI üretim sözleşmesi1/1 ve yerel depolama3/3 PASS. Taze fixture derlemesi exit0; API tam referanslı derlemesi f134166b1a4c üzerinde exit0, yalnız test farkı kaynak eşitliğiyle devralındı, taze diye sunulmaz. OpenAPI byte kontrolü exit0. Mimari süreç exit0; ayrıntılı SDK/TRX kanıtı yerel rapordadır.
+- Takip kaynağı `3ff63092b8be99c5f001828b993d312d43c0b1bc`: başarılı DDL'de yalnız SQL rowversion değişimi ayrılır, iş Version alanı korunur; reddedilen guard bütün satırı aynen korur. Transfer kaybı kararı mevcut owned/borrowed işlem örüntüsüne bağlandı; gerçek geç-save hata rollback'i, host rollback'i ve aynı anahtarla retry/replay kanıtı eklendi. Fazla teslim CHECK ve unique index testleri birbirinden ayrıldı. URT-D111 serbest stok onayı mevcut409 sözleşmesiyle hizalandı; taslak/sürüm değişmeme kontrolleri durur. Alış batch Down koruması kendi SQL adımıyla ayrıldı; boş tam Down/up eklendi. Outbox zaman aşımında RCSI ve gerçek okuyucu izolasyonunu ölçen tanı kontrolleri eklendi; kök neden henüz kapanmadı. Alış participant kanıtında LineNo kaçışlandı ve bütün JSON sonuçları scalar sarmalayıcıyla kesilmeden karşılaştırılır. İş politikası, otomatik retry, grant veya yeni dalga yok.
+- Recovery consumer df86ded540fd üzerinde exit0/SOURCE_ONLY:19 context343 migration66 durable store, riskli1467 kaynak fingerprintf67f2a589d7df947280c2cf491a08beb2e0413a838d65ad539bbab0fabe666ca. Sonraki fark yalnız testlerdir; restore/runtime kabulü değildir. Takipte taze API/fixture, tam Inventory ve yalnız kalan7 SQL hedefi ile mimari doğrulaması QUEUED/NOT_RUN.
+- Sabit174/174 kaynak DONE (%100), W8 son paket; runtime/release tamamlanmadı. Yayımlı71e8dd2c geniş CI sonucu değişmedi; henüz taze train push/tam CI veya iki yeni bağımsız tam exact-head K3 onayı yok. Yerel SQL17 hedefCI SQL2022/16 yerine geçmez; #1201 taslak kalır.
+
+### 2026-11-19 — yedi hedefin sonucu ve iki hedeflik takip
+
+- `94479216856fe83563e3fc7ba8afe0e5046636a3` taze API tam referanslı derleme ve fixture exit0; OpenAPI byte kontrolü exit0 ve üretim sözleşmesi1/1 PASS. Tam Inventory1987/1987 ve mimari405/405 PASS, skip0 ve exact SDK/TRX PASS. Yedi gerçek SQL hedefi5 PASS/2 FAIL/skip0; başarılı beşin exact kimliği PASS, iki başarısız kanıt korunur. Satır sürümü, kayıp/fazla teslim işlem sınırı, serbest stok hata sözleşmesi ve numaralı batch guard+boş tam Down/up geçmiştir.
+- Outbox tanısı: gerçek veritabanında RCSI açık; ambient/EF transaction yok, fakat gerçek okuyucu oturum izolasyonu READ COMMITTED değil. Süre artırmak yerine kaynak yalnız kendi READ COMMITTED okuma sınırını açacak; uyumlu host işlemini commit/rollback/dispose etmeyecek, uyumsuz/ambient sınırı sorgudan önce reddedecek. Horizon, şirket filtresi, sıralama ve cursor aynı; test gerçek komut izolasyonunu ve host sahipliğini ölçecek. K3 review bekler, henüz runtime PASS değildir. İkinci hata boş JSON scalar'ın DBNull dönmesidir; kanıt sorguları tam JSON'u ve boş dizi karşılığını açıkça korur.
+- Takip kaynağı `111f1ebfe47cb791a5bc224151bb59f09083b2e7`: yalnız bu iki SQL hedefi, değişen Purchasing birimleri ve mimari doğrulaması QUEUED/NOT_RUN. Diğer backend/build-control kaynaklarının944792168 ile eşitliği doğrulanarak yalnız değişen Purchasing bileşeni yeniden derlenecek; API/fixture yine güncel çıktıyla derlenir. Riskli1467 kaynak ölçümü190fd826f5f863fa0d87ae2c80e67e05fe79cb527a4ce536d1493ae63351ad93; consumer doğrulaması sıradadır. Backlog/bootstrap/test-grubu/RCSI/OpenAPI hafif doğrulayıcıları944792168 üzerinde exit0;9 bootstrap ve2 OpenAPI Windows koşullu skip SQL skip0 yerine geçmez.
+- Sabit174/174 kaynak DONE (%100), W8 son paket; yeni dalga veya iş politikası yok. Runtime/release tamamlanmadı; yayımlı71e8dd2c CI kaydı değişmedi. Taze tam CI ve iki bağımsız tam exact-head K3 onayı bekler; #1201 taslak kalır.
+
+### 2026-11-19 — son iki SQL hedefi yerelde kapandı; taze CI sırada
+
+- `e728607c921ad51ef96fdc71ea576ff40cd35a9f`: iki gerçek SQL fact'i2/2 PASS, skip0 ve exact SDK/TRX PASS. Gerçek outbox komutları, SERIALIZABLE test oturumu önkoşuluna rağmen kendi READ COMMITTED işleminde yürütülür; uyumlu host işlemi açık kalır, uyumsuz/ambient işlem sorgudan önce reddedilir. Önceki açık A olayı atlanmadan A→B ve cursor/şirket sınırları korunur. Alış kabul participant tam geçmiş/constraint/iş kaydı kanıtı ve gerçek host rollback'i geçti.
+- Aynı kaynakta tam Purchasing884/884 ve mimari405/405 PASS, skip0 ve exact SDK/TRX PASS. Değişen Purchasing bileşeni9,765s/API34,903s exit0; değişmeyen backend/build-control kaynaklarının944792168 ile eşitliği doğrulanarak önceki tam referans derlemesi açıkça devralındı. Yeni fixture113,016s exit0. OpenAPI byte kontrolü exit0, üretim sözleşmesi1/1 ve yerel depolama3/3 PASS. Recovery gerçek consumer exit0/SOURCE_ONLY:19 context343 migration66 durable store; riskli1467 kaynak190fd826f5f863fa0d87ae2c80e67e05fe79cb527a4ce536d1493ae63351ad93. Bu restore kanıtı değildir. Hafif doğrulayıcıların tamamı exit0; Windows koşullu9 bootstrap/2 OpenAPI atlaması SQL skip0'dan ayrıdır.
+- Yayımlı71e8dd2c CI'sındaki152 başarısız methodun tamamı, korunmuş yerel exact SDK/TRX sonuçlarında son ölçümü PASS olarak bulundu; açık/ölçülmemiş0. A güvenli özetindeki57 kesilmiş grup, korunmuş tam107 FQN listesiyle tamamlandı. Güvenli method/kaynak-head matrisi W8_CI71_YEREL_HATA_KAPSAMI.json içindedir. Kanıtlar farklı onarım head'lerindedir;152/152 yerel izleme tek head'de1762 testin PASS olduğu anlamına gelmez.
+- Kaynak174/174 DONE (%100), W8 son paket; yeni dalga yok. Bilinen yerel kırmızılar giderildi; runtime/release kabulü hâlâ tamamlanmadı. Son normal fast-forward train push'u ile taze GitHub SQL2022/16 tam CI alınacak; sonra iki bağımsız tam exact-head K3 incelemesi gerekir. Önceki kırmızı CI/ilk hata kanıtları korunur. #1201 taslak kalır, yazar merge etmez.
+
+### 2026-11-19 — CI87 keşif sınıflaması düzeltildi
+
+- `87c12ac994eae9a51612972b29b97b2c938dc553`, CI run44463834664: FAILURE. Backend api1/api2/api3/modules/architecture, frontend audit/lint/build ve dört shard, OpenAPI, RCSI, recovery/release ile ayrı gerçek tarayıcı/Cari/UI golden işleri SUCCESS. Üç geniş SQL shard'ı, beklenen1756 yerine1757 yöntem bulduğu için geniş test yürütümüne başlamadı: NOT_RUN; eski152 hatanın tekrar ettiği veya SQL kabulünün geçtiği söylenmez.
+- Fazla yöntem, yazarın SQL adlı partial sınıfa eklediği saf metadata Fact'idir. `43bfd3c3d9d35fe2d587c0700133e8fd0b599f2a` testin bütün gövdesini değiştirmeden ayrı ManufacturingOutputCorrectionMetadataTests sınıfına taşır. Test silinmedi/atlanmadı; hiçbir SQL fact'i, kayıtlı envanter veya kapı değiştirilmedi.
+- Aynı43bfd3c3d kaynağında taze fixture derlemesi exit0; gerçek SDK/console keşfiyle mevcut broad doğrulayıcı tam1756 yöntem, eksik0/fazla0 PASS. Taşınan Fact1/1 PASS, skip0 ve exact SDK/TRX PASS. Backend test-grubu ve RCSI Python doğrulayıcıları exit0. Backend/build-control kaynaklarının e728607c921a ile eşitliği doğrulandı; önceki backend derlemesi açıkça devralındı. Bu yeni tam SQL koşumu değildir.
+- Sabit174/174 kaynak DONE (%100), W8 son paket; runtime/release tamamlanmadı. Normal fast-forward train push ile taze tam CI, ardından iki bağımsız tam exact-head K3 review gerekir. #1201 taslak kalır; manuel rerun, workflow değişikliği, yeni dalga veya yazar merge'ü yok.
+
+### 2026-11-19 — CI4888 iki SQL hatası; yayımlanmamış dar takip
+
+- Güncel yayımlı b5373e67e, run44481418363 FAILURE: A638 PASS/1 FAIL/skip0; B626 PASS/1 FAIL/skip0; C PASS. Diğer somut backend/frontend/mimari/OpenAPI/RCSI/recovery/release ve ayrı browser/Cari/UI kontrolleri PASS. Toplu kabul başarısız ve container SKIPPED; kısmi yeşil tam kabul değildir.
+- A hatası Transfer_refuses_stale_foreign_allocated_or_conflicting_commands_without_a_stock_effect; gerçek alt adım nedeni henüz doğrulanmadı. B hatası Two_racing_decisions_on_one_passivation_store_one: onay treasury SERIALIZABLE işlemindeyken ret aynı sınırda değildi; yalnız VersionConflict bekleyen bariyer her iki gerçek SQL1205 kaybedenini kapsamıyordu.
+- Yayımlanmamış ada125245: ret mevcut FinanceTreasuryTransaction sınırını kullanır; her iki karar aktörü ayrı test bağlantısı önceliğiyle bir kez gerçek1205 kaybedeni olur. Tek kazanan, tek typed Unavailable, sürüm4, dört komut ve tek karar denetimi sıkıdır. Test önceliği pool'a taşınmaz. Otomatik retry/yeni iş politikası/grant yok. Gerçek SQL ve derleme henüz NOT_RUN; kaynak inceleyen yardımcı bağımsız K3 reviewer değildir.
+- Yerel tam SQL b537 kaynağında ayrıca grain Fact'i line241'de başarısız oldu. Canlı sunucu collation Turkish_CI_AS; sentetik purchase.receipt/PURCHASE.RECEIPT i/I karşılaştırması bu ortamda eşit değildir. 1ead6b21f yalnız bu Fact'te source.test/SOURCE.TEST/Source.Test kullanır; case varyantı, bütün/satır, duplicate/FK/unique kontrolleri korunur. Üretim collation/sorgu/migration değişmez; keyfi source token'larının kültür politikasını seçmiş sayılmaz.
+- Mevcut tam yerel SQL çalışması kendi b537 kaynak/output'larında sürer. Ayrı üç hedeflik takip kuyruğu mevcut koşum bitip native lease ve2200MiB kapısı boşalınca temiz committed takip kaynağını alır; derleme ve exact SDK/TRX/skip0 ile üç Fact'i çalıştırır. Çalışan worktree değiştirilmedi; ikinci ağır süreç yok. Sıradan optimistic/host rollback/same-key kapsamı bu yeni deadlock Fact'inin kanıtı diye sunulmaz.
+- Sabit174/174 kaynak DONE (%100), W8 son paket; runtime/release tamamlanmadı. Doğrulanmamış takip push edilmez; #1201 taslak, yeni tam CI ve ardından iki bağımsız tam exact-head K3 incelemesi gerekir.
+
+### 2026-11-19 — transfer guard sınırında dar hata eşlemesi
+
+- Yayımlanmamış b0b9f07b6: dispatch/accept doğrudan fiziksel guard alımındaki yalnız InventoryStoreCodes.ConcurrentChange artık mevcut InventoryTransferCodesV1.ConcurrentChange/409 olur. Önceden bu çağrı movement staging hata eşlemesinin dışındaydı ve gerçek guard optimistic/ilk-insert yarışı stok istisnası olarak dışarı çıkabiliyordu. Owner transaction rollback'i, tazelik/yetki/CompanyId ve idempotency aynı; timeout/deadlock/diğer istisnalara genel409 eşlemesi yok.
+- Kaynak boşluğu doğrulandı; CI4888'deki asıl failing alt adımın bu olduğu henüz kanıtlanmadı. Mevcut transfer SQL regression Fact'i korunur. Derleme/gerçek SQL NOT_RUN; bu aşamada çözülmüş veya kabul edilmiş diye sunulmaz.
+- Üç hedeflik takip kuyruğu ikinci değişen Inventory bileşenini de derleyecek şekilde güncellendi. Yalnız native başlatmamış bekleme operatörü durdurulup yenisi açıldı; çalışan tam b537 SQL/test süreci durdurulmadı veya değiştirilmedi. Eski test/kanıt korunur, mevcut tam sıra bittikten sonra aynı tek native lease kullanılır. Push yok.
+
+### 2026-11-19 — düzeltmeler ve yazar kaynak ön kontrolü, native yok
+
+Cleanup8f2949a99, Finans ön-validation/nullable252762651 ve gerçek timeout budget tanısı9077fdf4f tamamlandı.4e8124799 ölçülen risky/cash fingerprint'lerini günceller; yeni bypass/izin yok. Ayrıntı W8_SQL_ON_ANALIZ_20261119.md son bölümünde. Kaynak/error/owner rollback/CompanyId/connection culture ve unchanged40/180 kapıları yazar tarafından incelendi; Python AST ve Git diff whitespace kontrolü dışında build/test başlatılmadı. Kullanıcı talebiyle hedef kuyruğu HELD kalır; eski b537 tam yerel koşum ayrı kaynakta sürer. Hedefli SQL, compile, Python regression, tam recovery/mimari ve fresh CI NOT_RUN; bu kendi incelemem bağımsız K3 review değildir. Süre/performance sorunu kapanmadı.174/174 kaynak (%100), W8 son paket; runtime/release tamamlanmadı, push/ready/merge yok.

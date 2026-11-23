@@ -5,8 +5,13 @@
 
 import type { RiskFigureKind, RiskFigureState, RiskReasonComponent, RiskResult, RiskTaxBasis } from './riskCheck'
 import type { RiskExceptionState } from './riskException'
+import type { RiskHoldCategory } from './riskExceptionHold'
 
 export const RISK_CHECK_TEXT = {
+  collateralPolicyHeading: 'Teminat oranı kaynakları',
+  collateralPolicy: (revision: string, rate: string, source: string, day: string) =>
+    `Teminat sürümü ${revision} · %${rate} · ${day} · ${source}`,
+  noBankPolicy: 'Banka belirtilmemiş; banka özel oranı uygulanmadı.',
   heading: 'Müşteri riski',
   note:
     'Brüt risk = açık alacak + faturalanmamış sevkiyat + sevk edilmemiş onaylı sipariş kalanı; karar, bu siparişle birlikte ' +
@@ -53,6 +58,7 @@ export const RISK_CHECK_TEXT = {
     OpenReceivables: 'Açık alacak',
     ShippedNotInvoiced: 'Faturalanmamış sevkiyat',
     ApprovedUnshippedRemainder: 'Sevk edilmemiş onaylı sipariş kalanı',
+    InvoicedAwaitingFinance: 'Faturası kesilmiş, Finans\'ın henüz işlemediği (faturalanmamış sevkiyatın içinde)',
     ThisOrder: 'Bu sipariş',
     CreditLimit: 'Kredi limiti',
     Collateral: 'Teminat (yalnız gösterim)',
@@ -72,6 +78,7 @@ export const RISK_CHECK_TEXT = {
     OpenReceivables: 'Açık alacak',
     ShippedNotInvoiced: 'Faturalanmamış sevkiyat',
     ApprovedUnshippedRemainder: 'Onaylı sipariş kalanı',
+    InvoicedAwaitingFinance: 'Finans\'ın işlemediği fatura',
     ThisOrder: 'Bu sipariş',
     CreditLimit: 'Kredi limiti',
     Collateral: 'Teminat',
@@ -82,9 +89,16 @@ export const RISK_CHECK_TEXT = {
     // Sales risk read (`SalesDraftRiskReasonCodesV1`).
     party_risk_provider_unavailable: 'Müşteri finans kaynağı (Finans) bağlı değil ya da yanıt vermedi.',
     party_risk_answer_invalid: 'Müşteri finans kaynağı başka bir müşteri/şirket ya da geçersiz bir değer yanıtladı.',
-    invoicing_owner_missing: 'Satış faturaları henüz yok; sevk edilip faturalanmamış tutar bilinmiyor.',
+    shipment_provider_unavailable: 'İrsaliyeli sevkiyat kaynağı (Lojistik) bağlı değil ya da yanıt vermedi.',
+    shipment_answer_invalid: 'İrsaliyeli sevkiyat kaynağı başka bir müşteri/şirket ya da geçersiz bir değer yanıtladı.',
+    shipment_read_bound_exceeded: 'Müşterinin irsaliyeli sevkiyatı tek okumanın sınırından fazla; eksik toplam gösterilmez.',
+    shipment_facts_inconsistent: 'Onaylı irsaliyelerdeki miktar kesin sevk miktarından fazla; iki kayıt uyuşmuyor.',
+    invoice_record_unavailable: 'Satış faturası kayıtları okunamadı; faturalanmamış sevk tutarı bilinmiyor.',
+    finance_processed_set_unavailable: 'Kesinleşmiş bir faturanın Finans\'ta işlenip işlenmediği henüz okunamıyor; eksik toplam gösterilmez.',
     delivery_provider_unavailable: 'Sevkiyat kaynağı (Lojistik) bağlı değil ya da yanıt vermedi.',
     delivery_answer_invalid: 'Sevkiyat kaynağı geçersiz bir değer yanıtladı.',
+    plan_provider_unavailable: 'Sevk planı kaynağı (Lojistik yükleme talimatları) bağlı değil ya da yanıt vermedi.',
+    plan_answer_invalid: 'Sevk planı kaynağı geçersiz bir değer yanıtladı.',
     order_line_unpriced: 'Onaylı bir siparişin fiyatı olmayan satırı var; fiyatsız satır sıfır sayılmaz.',
     price_unit_conversion_unavailable: 'Bir satırın fiyat birimi sipariş biriminden farklı; birim çevrimi yapılmaz.',
     order_basis_unreadable: 'Yeniden onay bekleyen bir siparişin onaylı miktarları okunamadı.',
@@ -101,8 +115,13 @@ export const RISK_CHECK_TEXT = {
     credit_limit_not_defined: 'Kredi limiti tek bir tutar olarak tanımlı değil; limitsiz ya da sıfır sayılmaz.',
     limit_currency_unavailable: 'Kredi limitinin para biriminin ölçeği okunamadı.',
     // The Finance owner (`FinanceSalesPartyRiskReadPortV1`).
+    // Kept for older answers; FIN-S1 answers `finance_credit_limit_not_set` once the credit-limit master exists.
     finance_credit_limit_owner_missing: 'Kredi limiti tanımı (Finans) henüz yok.',
+    finance_credit_limit_not_set: 'Bu cari hesap için Finans\'ta geçerli bir kredi limiti yok; sıfır ya da limitsiz sayılmaz.',
+    finance_credit_limit_unreadable: 'Kredi limiti kaydı (Finans) tam okunamadı; limit kıyası yapılmaz.',
     finance_collateral_owner_missing: 'Teminat tanımı (Finans) henüz yok.',
+    finance_collateral_type_rate_unavailable: 'Bir teminat türünün oranı Ayarlar\'dan tam okunamadı; ağırlıklı teminat gösterilmez.',
+    finance_collateral_unreadable: 'Teminat kaydı (Finans) tam okunamadı; kısmi teminat toplamı gösterilmez.',
     finance_open_item_unreadable: 'Açık kalemlerden biri okunamadı; kısmi toplam gösterilmez.',
     finance_customer_unidentified: 'Müşteri Finans tarafında tanımlanamadı.',
   } as Readonly<Record<string, string>>,
@@ -122,8 +141,10 @@ export function riskReasonText(code: string): string {
 export const RISK_EXCEPTION_TEXT = {
   heading: 'Tek sevk risk istisnası',
   note:
-    'Risk limiti aşıldığında tek bir sevkiyat için istisna istenebilir. Onay, onaylandığı iş gününün (Türkiye saati) sonuna kadar ' +
-    'geçerlidir; sevkiyat iptal edilirse istisna düşer. İsteyen kişi kendi talebini onaylayamaz. İstisna sipariş revizyonu açmaz.',
+    'Risk limiti aşıldığında, cari hesabın geçerli bir kredi limiti olmadığında ya da risk okunamadığında sevkiyat durur ve tek bir ' +
+    'sevkiyat için istisna istenebilir. Onay, onaylandığı iş gününün (Türkiye saati) sonuna kadar geçerlidir; sevkiyat iptal ' +
+    'edilirse istisna düşer. İsteyen kişi kendi talebini onaylayamaz. İstisna sipariş revizyonu açmaz; limitsiz ya da sıfır limit ' +
+    'sayılmaz.',
   subject: 'Risk istisnaları',
   empty: 'Bu sipariş için risk istisnası yok.',
   forbidden: 'Risk istisnalarını görme yetkiniz yok.',
@@ -180,4 +201,34 @@ export const RISK_EXCEPTION_TEXT = {
   validToday: (day: string) => `Bugün geçerli (iş günü ${day}).`,
   lapsed: (day: string) => `Süresi doldu (iş günü ${day} sona erdi).`,
   supportCode: (id: string) => `Destek kodu: ${id}`,
+  /** FNS-D30 / SAT-D310: why the shipment is held, from the risk read; never an amount (SAT-D162). */
+  hold: {
+    heading: 'Sevkiyat risk durumu',
+    loading: 'Risk durumu okunuyor…',
+    within: 'Müşteri riski limit içinde; sevkiyat için risk istisnası gerekmez.',
+    category: {
+      OverLimit: 'Risk limiti aşıldı: sevkiyat durur. Onaylanan tek sevk istisnası yalnız o sevkiyatı bırakır.',
+      CreditLimitNotSet:
+        'Limit tanımlı değil: bu cari hesabın geçerli bir kredi limiti yok, sevkiyat durur. Bu durum limitsiz ya da sıfır limit ' +
+        'sayılmaz; onaylanan tek sevk istisnası yalnız o sevkiyatı bırakır.',
+      SourceUnavailable:
+        'Risk okunamadı: sevkiyat durur. Onaylanan tek sevk istisnası yalnız o sevkiyatı bırakır.',
+    } as Readonly<Record<RiskHoldCategory, string>>,
+    unreadable: 'Risk durumu okunamadı; istisna talebi yine açılabilir, kararı sunucu verir.',
+    forbidden: 'Risk durumunu görme yetkiniz yok; istisna talebi yine açılabilir, kararı sunucu verir.',
+    serviceUnavailable: 'Risk servisi şu an kullanılamıyor; istisna talebi yine açılabilir, kararı sunucu verir.',
+    stale: 'Risk durumu bu açılışa ait değil; sayfayı yenileyin.',
+    retry: 'Risk durumunu yeniden oku',
+    note: 'Bu ekran durdurma kararı vermez; sevkiyatı Lojistik kapısı ve sunucu durdurur.',
+  },
+  /** FNS-D30 (2): the approver's optional shortcut to define a limit on the Cari card (FNS-D27a). */
+  shortcut: {
+    defineLimit: 'Cari kartında kredi limitini tanımla',
+    defineLimitHint: 'Limit onay yetkinizle tek adımda yürürlüğe girer (Cari kartı → Finans paneli → Kredi Limitleri).',
+    proposeLimit: 'Cari kartında kredi limiti öner',
+    proposeLimitHint:
+      'Yalnız bir öneri açılır; limit, başka bir onaylayıcı karar verene kadar yürürlüğe girmez (Cari kartı → Finans paneli → ' +
+      'Kredi Limitleri).',
+    optional: 'Kısayolu kullanmak isteğe bağlıdır; istisna kararı limit tanımından bağımsızdır.',
+  },
 } as const

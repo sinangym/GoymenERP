@@ -12,6 +12,18 @@ public static class DocumentsApiV1
     public const string OwnerIdField = "ownerId";
     public const string FileField = "file";
     public const string ExpectedCurrentVersionField = "expectedCurrentVersion";
+
+    /// <summary>B-26: the sub-route that links an existing document to one more owner record.</summary>
+    public const string LinksSegment = "links";
+
+    /// <summary>
+    /// KLN-D50: the probe that lists the earlier documents with the same content a record may link instead of uploading the
+    /// same file again. Its query names are <see cref="OwnerKindField"/>, <see cref="OwnerIdField"/> and
+    /// <see cref="Sha256Query"/>; any other name is refused.
+    /// </summary>
+    public const string LinkCandidatesSegment = "link-candidates";
+
+    public const string Sha256Query = "sha256";
 }
 
 /// <summary>The command names under which an attempt (ADR-011) is recorded.</summary>
@@ -20,7 +32,13 @@ public static class DocumentCommands
     public const string UploadV1 = "documents.upload.v1";
     public const string AppendVersionV1 = "documents.append-version.v1";
 
-    public static bool IsKnown(string commandName) => commandName is UploadV1 or AppendVersionV1;
+    /// <summary>B-26: link an existing document to one more owner record (DEC-DOC-002).</summary>
+    public const string LinkV1 = "documents.link.v1";
+
+    /// <summary>F-026 (PLT-S9): store a PDF a producing module generated, as a new document with its template snapshot.</summary>
+    public const string StoreGeneratedV1 = "documents.store-generated.v1";
+
+    public static bool IsKnown(string commandName) => commandName is UploadV1 or AppendVersionV1 or LinkV1 or StoreGeneratedV1;
 }
 
 /// <summary>The problem codes of the vault's routes. Platform 401/403/404 and every 503 stay code-less.</summary>
@@ -36,6 +54,12 @@ public static class DocumentProblemCodesV1
 
     /// <summary>The version was not scanned (no scanner configured or it could not answer): it is not served.</summary>
     public const string NotScanned = "document_not_scanned";
+
+    /// <summary>B-26: the document is already linked to that owner record; nothing was written.</summary>
+    public const string AlreadyLinked = "document_already_linked";
+
+    /// <summary>B-26: the owner kind does not accept an existing document (its owner did not opt in); nothing was written.</summary>
+    public const string LinkNotAccepted = "document_link_not_accepted";
 }
 
 /// <summary>What the upload route read from the multipart body; validated by the service.</summary>
@@ -43,6 +67,9 @@ public sealed record UploadDocumentRequest(string? OwnerKind, Guid OwnerId, stri
 
 /// <summary>A new immutable version of an existing logical document.</summary>
 public sealed record AppendDocumentVersionRequest(int ExpectedCurrentVersion, string? FileName, string? DeclaredContentType, byte[] Content);
+
+/// <summary>B-26: link an existing document (at its current version) to one more owner record of the context company.</summary>
+public sealed record LinkDocumentRequest(string? OwnerKind, Guid OwnerId, int ExpectedCurrentVersion);
 
 /// <summary>The command metadata the route read from the headers (the Logistics shape).</summary>
 public sealed record DocumentCommandMetadata(string IdempotencyKey, string CorrelationId, string? CausationId);
@@ -81,14 +108,45 @@ public sealed record DocumentUploadResponse(DocumentView Document, IReadOnlyList
 /// <summary>An append answer; a replay returns the exact version created by the first attempt.</summary>
 public sealed record DocumentVersionWriteResponse(DocumentView Document, bool IsReplay, string OriginalCorrelationId);
 
+/// <summary>
+/// B-26: a link answer — the document shown under the NEWLY linked owner; a replay answers the first attempt's link with
+/// that attempt's correlation.
+/// </summary>
+public sealed record DocumentLinkWriteResponse(DocumentView Document, bool IsReplay, string OriginalCorrelationId);
+
 /// <summary>A deterministic immutable-history page, newest version first.</summary>
 public sealed record DocumentVersionHistoryResponse(Guid DocumentId, IReadOnlyList<DocumentView> Versions, string? NextCursor);
 
 /// <summary>The upload bounds the client may pre-check against; the server re-checks every upload regardless.</summary>
 public sealed record DocumentUploadLimitsView(long MaximumBytes, IReadOnlyList<string> Extensions, IReadOnlyList<string> ContentTypes);
 
-/// <summary>An owner record's documents, newest first, and whether the actor may upload to it now.</summary>
-public sealed record DocumentListResponse(IReadOnlyList<DocumentView> Items, bool CanUpload, DocumentUploadLimitsView Limits);
+/// <summary>
+/// An owner record's documents, newest first, whether the actor may upload to it now, and (KLN-D50) whether the actor may
+/// link an earlier document to it now: the link name measured company-wide AND the record's kind accepting existing
+/// documents. Both are measurements of the actor's current authority, never grants; every command re-checks.
+/// </summary>
+public sealed record DocumentListResponse(IReadOnlyList<DocumentView> Items, bool CanUpload, DocumentUploadLimitsView Limits,
+    bool CanLink);
+
+/// <summary>
+/// KLN-D50: an earlier document of the SAME company whose current version has the asked content hash, which the target
+/// record may link instead of a second upload. <see cref="SourceOwnerKind"/>/<see cref="SourceOwnerId"/> name a linked
+/// record the actor may read (KLN-D49 (3): the link needs one readable source record); a document none of whose records
+/// the actor may read is not listed at all.
+/// </summary>
+public sealed record DocumentLinkCandidateView(
+    Guid DocumentId,
+    int VersionNo,
+    string FileName,
+    string ContentType,
+    long SizeBytes,
+    DateTimeOffset UploadedAtUtc,
+    string SourceOwnerKind,
+    Guid SourceOwnerId);
+
+/// <summary>KLN-D50: the target record and its linkable candidates, newest first (bounded; never the already linked ones).</summary>
+public sealed record DocumentLinkCandidatesResponse(string OwnerKind, Guid OwnerId, string Sha256,
+    IReadOnlyList<DocumentLinkCandidateView> Items);
 
 /// <summary>A downloadable version's verified content (its hash re-checked against the stored one).</summary>
 public sealed record DocumentContentV1(Guid DocumentId, string FileName, string ContentType, byte[] Content, string Sha256);
@@ -130,6 +188,17 @@ public interface IDocumentService
         CancellationToken cancellationToken = default);
 
     Task<DocumentContentV1> GetVersionContentAsync(Guid documentId, int versionNo, CancellationToken cancellationToken = default);
+
+    /// <summary>B-26 / DEC-DOC-002: links an existing document to one more owner record, without a new upload.</summary>
+    Task<DocumentLinkWriteResponse> LinkAsync(Guid documentId, LinkDocumentRequest request, DocumentCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// KLN-D50: the earlier documents with this content the target record may link instead of a second upload (a read; it
+    /// writes nothing). The link itself is <see cref="LinkAsync"/>, which re-checks everything.
+    /// </summary>
+    Task<DocumentLinkCandidatesResponse> ListLinkCandidatesAsync(string? ownerKind, Guid ownerId, string? sha256,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

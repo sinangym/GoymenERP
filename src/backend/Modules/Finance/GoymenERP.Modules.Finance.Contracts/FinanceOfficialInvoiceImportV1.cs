@@ -44,7 +44,10 @@ public sealed record FinanceOfficialInvoiceImportPreviewV1(
     string TemplateVersion,
     string SourceSha256,
     ApprovedFinanceOpenItemSourceBatch? Batch,
-    IReadOnlyList<FinanceOfficialInvoiceImportIssueV1> Issues)
+    IReadOnlyList<FinanceOfficialInvoiceImportIssueV1> Issues,
+    // FNS-D64: non-blocking tax consistency warnings of the v2/v3 documents; absent when there is none.
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<FinanceOfficialInvoiceTaxWarningV1>? TaxWarnings = null)
 {
     public bool IsValid => Batch is not null && Issues.Count == 0;
 }

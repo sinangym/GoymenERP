@@ -25,7 +25,7 @@ public sealed partial class LogisticsInstructionService
         var runner = realization ?? throw new LogisticsInstructionServiceException(503, LogisticsRealizationCodesV1.Unavailable);
 
         return await RunRealizationAsync(scope, permission, envelope, hash, LogisticsCommands.RecordShipmentV1,
-            () => runner.ExecuteShipmentAsync(scope.CompanyId, async (stock, token) =>
+            () => RunShipmentWithExcessAsync(runner, request.PlanExcessUses is not null, scope.CompanyId, async (stock, token) =>
             {
                 // A winner may have committed between the outer read and the transaction opening.
                 var won = await FindRealizationReplayAsync(scope, permission, envelope, hash,
@@ -35,6 +35,19 @@ public sealed partial class LogisticsInstructionService
                 var line = stored.Instruction.Lines.SingleOrDefault(candidate => candidate.Id == lineId)
                     ?? throw new LogisticsInstructionServiceException(404, "not_found");
                 var quantity = await VerifyUnitAsync(scope, permission, line.UnitId, request.Quantity, stored.EffectiveOn, "shipment", token);
+                // AK-4 (KLN-D119, SAT-D434): a piece line ships whole pieces (the commercial quantity) and their physical kg; the kg
+                // leaves the stock and the pieces leave the label (Inventory PieceCount). A kg line names no separate kg.
+                var piece = quantity.Unit == QuantityUnit.Piece;
+                if (piece != (request.QuantityKg is not null))
+                    throw new LogisticsInstructionServiceException(422, "validation_failed", [new("quantityKg",
+                        piece ? LogisticsRuleCodes.PhysicalKilogramsRequired : LogisticsRuleCodes.PhysicalKilogramsOnKilogramLine)]);
+                // Inventory counts the label's pieces in an int: a piece count beyond it is the column's refusal (422, nothing
+                // read or written further), never an overflow after the instruction was mutated (K3-A P3).
+                if (piece && quantity.Value > int.MaxValue)
+                    throw new LogisticsInstructionServiceException(422, "validation_failed",
+                        [new("shipment.quantity", LogisticsStoreCodes.ValueDoesNotFit)]);
+                int? shippedPieces = piece ? decimal.ToInt32(quantity.Value) : null;
+                Quantity? shippedKg = piece ? Quantity.Positive(ReadWeighingKg(request.QuantityKg!, "quantityKg"), QuantityUnit.Kilogram) : null;
                 await RequireShipmentSourceAsync(scope, permission, stored, line, quantity.Value, token);
                 var allocation = await GuardedAsync(scope, permission,
                     () => stock.FindAllocationAsync(line.Source.OrderId, line.Source.LineId, request.AllocationId, token), token);
@@ -50,16 +63,31 @@ public sealed partial class LogisticsInstructionService
                     throw new LogisticsInstructionServiceException(409, LogisticsRealizationCodesV1.AllocationSourceMismatch);
                 }
 
+                // STK-S27 (L-1..L-7, FNS-D30, SAT-D310): the Sales risk gate is read on EVERY execution (a new key, or the same
+                // key after a 503), last before the write and never cached. A stop is a terminal 409 recorded under the key, so
+                // its replay (answered above) never reads the gate again; a port failure is a 503 that records nothing.
+                var gate = await ReadShipmentRiskGateAsync(scope, permission, request.ShipmentId, line.Source.OrderId, instructionId, token);
+                var gateStore = store as ILogisticsShipmentRiskGateStoreV1
+                    ?? throw new LogisticsInstructionServiceException(503, LogisticsShipmentRiskGateCodesV1.GateUnavailable);
                 var expected = long.Parse(request.ExpectedVersion, CultureInfo.InvariantCulture);
-                var result = await GuardedAsync(scope, permission,
-                    () => store.MutateInstructionAsync(envelope, hash, LogisticsCommands.RecordShipmentV1, instructionId,
-                        (instruction, _) => instruction.MarkShipped(expected, request.ShipmentId, lineId, quantity, request.OccurredAtUtc),
-                        new LogisticsMutationAudit("logistics.loading-instruction.shipment-recorded.v1", "RecordShipment", "Definite shipment recorded"), token), token)
+                Task<LogisticsStoreResult?> Mutate(CancellationToken ct) => request.PlanExcessUses is null
+                    ? gateStore.MutateInstructionWithShipmentRiskGateAsync(envelope, hash, LogisticsCommands.RecordShipmentV1, instructionId,
+                        (instruction, _) => instruction.MarkShipped(expected, request.ShipmentId, lineId, quantity, request.OccurredAtUtc, shippedKg),
+                        new LogisticsMutationAudit("logistics.loading-instruction.shipment-recorded.v1", "RecordShipment", "Definite shipment recorded"),
+                        gate, ct)
+                    : store is ILogisticsPlanExcessMutationStoreV1 excessStore
+                        ? excessStore.MutateWithPlanExcessAsync(envelope, hash, LogisticsCommands.RecordShipmentV1, instructionId,
+                            (instruction, _) => instruction.MarkShipped(expected, request.ShipmentId, lineId, quantity, request.OccurredAtUtc, shippedKg),
+                            new("logistics.loading-instruction.shipment-recorded.v1", "RecordShipment", "Definite shipment recorded with approved plan exception"),
+                            null, gate, new Dictionary<Guid, IReadOnlyList<LogisticsPlanExcessUseV1>?> { [lineId] = request.PlanExcessUses }, ct)
+                        : throw new LogisticsInstructionServiceException(503, LogisticsPlanExcessV1.Unavailable);
+                var result = await GuardedAsync(scope, permission, () => Mutate(token), token)
                     ?? throw new LogisticsInstructionServiceException(404, "not_found");
 
                 var stockRequest = new LogisticsShipmentStockRequestV1(scope.CompanyId, request.ShipmentId, instructionId, lineId,
                     allocation.AllocationId, request.ExpectedAllocationVersion, allocation.LabelId, request.ExpectedLabelVersion,
-                    request.MovementId, request.Quantity, request.OccurredAtUtc);
+                    request.MovementId, piece ? request.QuantityKg! : request.Quantity, request.OccurredAtUtc,
+                    shippedPieces);
                 var staged = await GuardedAsync(scope, permission, () => stock.StageAsync(stockRequest, envelope, token), token);
                 if (staged is null || staged.CompanyId != scope.CompanyId || staged.ShipmentId != request.ShipmentId
                     || staged.AllocationId != allocation.AllocationId || staged.LabelId != allocation.LabelId
@@ -78,6 +106,10 @@ public sealed partial class LogisticsInstructionService
                 await RequireStillAsync(scope, LogisticsRealizationDependenciesV1.InventoryPhysicalAllocationWritePermission, token);
             }, cancellationToken), cancellationToken);
     }
+
+    private static Task<T> RunShipmentWithExcessAsync<T>(ILogisticsRealizationTransactionRunnerV1 runner, bool hasExcess, Guid companyId,
+        Func<ILogisticsShipmentStockV1, CancellationToken, Task<T>> operation, Func<CancellationToken, Task> fence, CancellationToken token) =>
+        hasExcess ? runner.ExecutePlanExcessShipmentAsync(companyId, operation, fence, token) : runner.ExecuteShipmentAsync(companyId, operation, fence, token);
 
     public async Task<LoadingInstructionResponse> RecordDeliveryAsync(Guid instructionId, Guid lineId,
         RecordDeliveryRequest request, LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default)
@@ -203,6 +235,34 @@ public sealed partial class LogisticsInstructionService
         }
     }
 
+    /// <summary>
+    /// One read of the Sales gate port for this order and instruction (L-4). Only the embedded exception answer is used
+    /// (L-2); an unregistered or failing port, and an answer that is not about THIS question, are 503s that record
+    /// nothing (L-7, fail-closed, no automatic retry). A stop is a 409 the caller records as terminal.
+    /// </summary>
+    private async Task<LogisticsShipmentRiskGateFactsV1> ReadShipmentRiskGateAsync(Scope scope, string? permission,
+        Guid shipmentId, Guid salesOrderId, Guid instructionId, CancellationToken cancellationToken)
+    {
+        var port = shipmentRiskGate
+            ?? throw new LogisticsInstructionServiceException(503, LogisticsShipmentRiskGateCodesV1.GateUnavailable);
+        SalesShipmentRiskGateReadV1 read;
+        try
+        {
+            read = await GuardedAsync(scope, permission, () => port.GetAsync(salesOrderId, instructionId, cancellationToken),
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is not (OperationCanceledException or LogisticsInstructionServiceException))
+        {
+            throw new LogisticsInstructionServiceException(503, LogisticsShipmentRiskGateCodesV1.GateUnavailable);
+        }
+
+        var decision = LogisticsShipmentRiskGate.Evaluate(read, shipmentId, salesOrderId, instructionId)
+            ?? throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
+        if (decision.Facts is { } facts) return facts;
+        throw new LogisticsInstructionServiceException(409, decision.RefusalCode ?? LogisticsShipmentRiskGateCodesV1.RiskUnavailable,
+            [new(LogisticsShipmentRiskGateCodesV1.ExceptionErrorField, decision.ExceptionStatus)]);
+    }
+
     private async Task<LoadingInstructionResponse> RunRealizationAsync(Scope scope, string? permission,
         LogisticsWriteEnvelope envelope, string hash, string command, Func<Task<LoadingInstructionResponse>> execute,
         CancellationToken cancellationToken)
@@ -216,7 +276,7 @@ public sealed partial class LogisticsInstructionService
         catch (LogisticsInstructionServiceException exception) when (
             exception.Status == 409 && IsTerminalRealizationConflict(exception.Code))
         {
-            terminal = new(409, exception.Code, exception.Errors);
+            terminal = new(409, exception.Code, exception.Errors, exception.Detail);
         }
         catch (LogisticsRuleException exception)
         {
@@ -228,6 +288,8 @@ public sealed partial class LogisticsInstructionService
                 LogisticsRuleCodes.ShipmentExceedsLoaded => LogisticsRealizationCodesV1.ShipmentExceedsLoaded,
                 LogisticsRuleCodes.DeliveryExceedsShipment => LogisticsRealizationCodesV1.DeliveryExceedsShipment,
                 LogisticsRuleCodes.ShipmentNotFound or LogisticsRuleCodes.ShipmentOfAnotherLine => LogisticsRealizationCodesV1.ShipmentSourceInvalid,
+                // SAT-D285 (1): the store found the order's exception already consumed by another definite shipment.
+                LogisticsShipmentRiskGateCodesV1.ExceptionUsed => LogisticsShipmentRiskGateCodesV1.ExceptionUsed,
                 _ => null,
             };
             if (exception.Code == LogisticsRuleCodes.LineNotFound) throw new LogisticsInstructionServiceException(404, "not_found");
@@ -259,7 +321,7 @@ public sealed partial class LogisticsInstructionService
         }
         catch (LogisticsStoreException exception) { throw Store(exception); }
 
-        throw new LogisticsInstructionServiceException(terminal.Status, terminal.Code, terminal.Errors);
+        throw new LogisticsInstructionServiceException(terminal.Status, terminal.Code, terminal.Errors, detail: terminal.Detail);
     }
 
     private async Task<LogisticsReplay?> FindRealizationReplayAsync(Scope scope, string? permission,
@@ -289,5 +351,7 @@ public sealed partial class LogisticsInstructionService
 
     private static bool IsTerminalRealizationConflict(string code) =>
         code is LogisticsRealizationCodesV1.AllocationSourceMismatch or LogisticsProblemCodesV1.OrderLineState
-        || LogisticsRealizationDependenciesV1.InventoryTerminalConflictCodes.Contains(code);
+        or LogisticsPlanExcessV1.ApprovalRequired or LogisticsPlanExcessV1.Conflict
+        || LogisticsRealizationDependenciesV1.InventoryTerminalConflictCodes.Contains(code)
+        || LogisticsShipmentRiskGateCodesV1.TerminalCodes.Contains(code);
 }

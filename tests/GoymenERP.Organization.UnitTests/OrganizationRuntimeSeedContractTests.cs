@@ -35,7 +35,8 @@ public sealed class OrganizationRuntimeSeedContractTests
             companies["GIN"],
             "10000000-0000-0000-0000-000000000003",
             "Göymen İnşaat",
-            "1111111111",
+            // KIM-D35: the placeholder company's VKN is not known; it is "VKN girilmemiş" (null), never a stand-in.
+            null,
             isPlaceholder: true,
             invoiceCapable: false,
             applyTopology: false);
@@ -78,7 +79,7 @@ public sealed class OrganizationRuntimeSeedContractTests
         JsonElement company,
         string id,
         string legalName,
-        string vkn,
+        string? vkn,
         bool isPlaceholder,
         bool invoiceCapable,
         bool applyTopology)

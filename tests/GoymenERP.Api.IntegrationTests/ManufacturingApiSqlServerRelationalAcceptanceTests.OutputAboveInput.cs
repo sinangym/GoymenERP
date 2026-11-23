@@ -98,6 +98,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             [new PlannedInputRequestV1(firstRoll.Id, "1000", firstRoll.Version),
                 new PlannedInputRequestV1(secondRoll.Id, "1000", secondRoll.Version)], null);
         Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", plan)).StatusCode);
+        await run.EnterTerminAsync(plan.PlanId);
         Assert.Equal(HttpStatusCode.OK, (await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync(
             $"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1))).StatusCode);
         var twoRollOrder = Guid.NewGuid();
@@ -230,6 +231,9 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                 Assert.Equal((read.PlanId, read.WorkCenterId, "Slitting", read.Version, closedBy, CatalogDay, approvedClose),
                     (closure.PlanId, closure.WorkCenterId, closure.Process, closure.Version, closure.ClosedByUserId,
                         closure.ClosedAtUtc, closure.ClosedWithExceptionApproval));
+                // URT-D52 (1): the cost of each listed close gives no amount and reads the decided text.
+                Assert.Equal(new OutputAboveInputCostViewV1("Unreadable", "output_exceeds_input",
+                    "hesaplanamadı — çıkan giren kg'dan fazla"), closure.Cost);
                 var line = Assert.Single(closure.Rolls);
                 Assert.Equal(new OutputAboveInputRollViewV1(roll, new MassDifferenceViewV1("1000", accounted, difference, false)),
                     line);

@@ -8,12 +8,14 @@ using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
+using GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -144,16 +146,49 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
             return await scope.Service.RecordAsync(scope.Context, Key(key), new RecordRequest(draft.Id, draft.Version), CancellationToken.None);
         }
 
-        var results = await Task.WhenAll(
-            Task.Run(() => RecordAsync("race-a", "SENTETIK-operator-a")),
-            Task.Run(() => RecordAsync("race-b", "SENTETIK-operator-b")));
+        (string Key, string Actor)[] attempts =
+            [("race-a", "SENTETIK-operator-a"), ("race-b", "SENTETIK-operator-b")];
+        var results = await Task.WhenAll(attempts.Select(attempt =>
+            Task.Run(() => RecordAsync(attempt.Key, attempt.Actor))));
 
         Assert.Single(results, result => result.Outcome == CommandOutcome.Succeeded && !result.IsReplay);
-        Assert.Single(results, result => result.Outcome is CommandOutcome.VersionConflict or CommandOutcome.ValidationFailed);
-        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents WHERE SourceId = @s", ("@s", draft.Id)));
-        Assert.Equal(2L, await run.ScalarAsync<long>("SELECT Version FROM finance.ReceiptDrafts"));
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.manual-receipt.recorded.v1'"));
+        var loser = Assert.Single(results, result => result.Outcome != CommandOutcome.Succeeded);
+        Assert.Contains(loser.Outcome,
+            new[] { CommandOutcome.VersionConflict, CommandOutcome.ValidationFailed, CommandOutcome.Unavailable });
+        async Task AssertSingleEconomicOutcomeAsync()
+        {
+            Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents WHERE SourceId = @s", ("@s", draft.Id)));
+            Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ReceiptDrafts"));
+            Assert.Equal(2L, await run.ScalarAsync<long>("SELECT Version FROM finance.ReceiptDrafts"));
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.manual-receipt.recorded.v1'"));
+        }
+        await AssertSingleEconomicOutcomeAsync();
+        if (loser.Outcome == CommandOutcome.Unavailable)
+        {
+            // A treasury rollback leaves no terminal key or partial money/audit record. This is
+            // an explicit same-actor/key request in a fresh scope, never an automatic retry.
+            var attempt = attempts[Array.IndexOf(results, loser)];
+            var loserKeyHash = FinanceCommandKeys.Hash(attempt.Key);
+            Assert.Null(loser.Resource);
+            Assert.False(loser.IsReplay);
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CompanyId=@company AND CommandName=@command AND IdempotencyKeyHash=@hash",
+                ("@company", CompanyA), ("@command", ReceiptDraftService.RecordCommand), ("@hash", loserKeyHash)));
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CommandName=@command", ("@command", ReceiptDraftService.RecordCommand)));
+            var reissued = await RecordAsync(attempt.Key, attempt.Actor);
+            Assert.Equal(CommandOutcome.VersionConflict, reissued.Outcome);
+            Assert.Null(reissued.Resource);
+            Assert.False(reissued.IsReplay);
+            Assert.Contains(reissued.Issues, issue => issue.Field == "expectedVersion" && issue.Code == "version_conflict");
+            await AssertSingleEconomicOutcomeAsync();
+            Assert.Equal(1, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CompanyId=@company AND CommandName=@command AND IdempotencyKeyHash=@hash",
+                ("@company", CompanyA), ("@command", ReceiptDraftService.RecordCommand), ("@hash", loserKeyHash)));
+            Assert.Equal(2, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM finance.Commands WHERE CommandName=@command", ("@command", ReceiptDraftService.RecordCommand)));
+        }
     }
 
     [SqlServerFact]
@@ -170,8 +205,11 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
             await context.Database.MigrateAsync();
         }
 
+        var guard = Assert.IsType<SqlOperation>(new AddMoneyEvents().DownOperations[0]).Sql;
+        Assert.Equal(1, await run.ScalarAsync<int>(guard + "; SELECT 1"));
         var owners = Owners.For(CompanyA);
         var draft = await run.SaveDraftAsync(owners, "10");
+        Assert.Equal(1, await run.ScalarAsync<int>(guard + "; SELECT 1"));
         await using (var a = run.Service(CompanyA, owners))
         {
             Assert.Equal(CommandOutcome.Succeeded, (await a.Service.RecordAsync(a.Context, Key("r-1"),
@@ -180,12 +218,15 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
 
         await using (var context = run.Context(CompanyA))
         {
-            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(beforeMoneyEvents));
+            // Newer numbering evidence has its own guard; test this money-fact guard without walking unrelated migrations.
+            var appliedBefore = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            var error = await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(guard + "; SELECT 1"));
             Assert.Equal(51051, error.Number);
-            Assert.EndsWith("_AddMoneyEvents", (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+            Assert.Equal(appliedBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
         }
 
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents WHERE SourceId=@source", ("@source", draft.Id)));
     }
 
     /// <summary>
@@ -338,8 +379,9 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
 
         // A CLOSED period over the transaction date, and an OPEN one over "today" — the shape the decision
         // names: a back-dated event recorded today must NOT move into today's period.
-        var closed = await run.PeriodAsync(CompanyA, new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), close: true);
+        // Closing requires an already OPEN target period; prepare this exact September period before closing August.
         var open = await run.PeriodAsync(CompanyA, new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30), close: false);
+        var closed = await run.PeriodAsync(CompanyA, new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), close: true);
         Assert.NotEqual(closed, open);
 
         // (1) occurredOn in the CLOSED period, recorded today: refused, and it is the period's refusal —
@@ -418,6 +460,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var owners = Owners.For(CompanyA);
+        await run.SeedApprovedBankAccountAsync(owners);
         var draft = await run.SaveDraftAsync(owners, "1250.50");
 
         CommandResult recorded;
@@ -541,8 +584,9 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
             Audits: await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'finance.receipt-reversal.proposed.v1'")));
 
-        // The first definitive reversal does not prevent an auditor from seeing a later proposal attempt,
-        // but the database and service together prevent that proposal from becoming a second money fact.
+        // The first definitive reversal leaves this real bank balance at zero. A later proposal remains visible,
+        // but FNS-D87's outgoing balance guard refuses its approval before the separate source-allocation barrier.
+        // This case proves that earlier guard and the absence of any second economic fact, not the barrier's error code.
         var secondMaker = Guid.NewGuid().ToString("D");
         ReversalProposalCommandResult secondProposal;
         await using (var maker = run.ReversalService(CompanyA, secondMaker))
@@ -560,7 +604,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                 new ApproveReversalRequest(secondProposal.Resource!.Id, secondProposal.Resource.Version),
                 CancellationToken.None);
             Assert.Equal(CommandOutcome.ValidationFailed, refused.Outcome);
-            Assert.Equal(new ValidationIssue("sourceId", "finance_allocation_state_invalid"),
+            Assert.Equal(new ValidationIssue("money.amount", TreasuryBalanceAnswer.InsufficientCode),
                 Assert.Single(refused.Issues));
             Assert.Null(refused.Resource);
         }
@@ -948,6 +992,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var owners = Owners.For(CompanyA);
+        await run.SeedApprovedBankAccountAsync(owners);
         var draft = await run.SaveDraftAsync(owners, "1250.50");
         CommandResult recorded;
         await using (var recording = run.Service(CompanyA, owners))
@@ -1035,6 +1080,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var owners = Owners.For(CompanyA);
+        await run.SeedApprovedBankAccountAsync(owners);
         var installment = new ApprovedFinanceOpenItemSourceRow(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "invoice-v1",
             FinanceOpenItemSourceKinds.OfficialInvoiceInstallmentDocument, owners.Party, owners.Account, Currency, "1000.00",
             new DateOnly(2026, 10, 31));
@@ -1595,7 +1641,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                 new FinanceAuditEnvelope(ReceiptDraftService.SaveDraftCommand, ["SENTETIK-FINANCE"], "Web"),
                 TimeProvider.System,
                 new FinanceAuditEnvelope(ReceiptDraftService.RecordCommand, ["SENTETIK-FINANCE"], "Web"),
-                rule ?? (productRule ? new UndecidedFinanceRecordPeriodRule() : new SyntheticOpenPeriodRule()));
+                rule ?? (productRule ? new UndecidedFinanceRecordPeriodRule() : new SyntheticOpenPeriodRule()), documentNumbers: new SyntheticFinanceRecordNumbers());
             return new ServiceScope(dbContext, service, new FinanceContext(company, actor ?? Actor, correlation ?? Correlation, null));
         }
 
@@ -1620,7 +1666,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                 new FinanceReversalEnvelopes(
                     new FinanceAuditEnvelope(ReversalProposalService.ProposeCommand, ["SENTETIK-FINANCE"], "Web"),
                     new FinanceAuditEnvelope(ReversalProposalService.ApproveCommand, ["SENTETIK-FINANCE"], "Web")),
-                TimeProvider.System);
+                TimeProvider.System, new InternalLedgerTreasuryBalanceGuard(dbContext, companyContext));
             return new ReversalServiceScope(dbContext, service,
                 new FinanceContext(company, actor, correlation ?? $"fin-t06-{Guid.NewGuid():N}", null));
         }
@@ -1718,7 +1764,8 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                     new FinanceAuditEnvelope(ManualBankPaymentService.DraftCommand, ["SENTETIK-FINANCE"], "Web"),
                     new FinanceAuditEnvelope(ManualBankPaymentService.ApproveCommand, ["SENTETIK-FINANCE"], "Web"),
                     new FinanceAuditEnvelope(ManualBankPaymentService.RecordCommand, ["SENTETIK-FINANCE"], "Web")),
-                TimeProvider.System);
+                TimeProvider.System,
+                new SufficientBankBalance(), documentNumbers: new SyntheticFinanceRecordNumbers());
             return new PaymentServiceScope(dbContext, service,
                 new FinanceContext(company, actor, $"r47-refund-{Guid.NewGuid():N}", null));
         }
@@ -1877,7 +1924,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
             var approved = await store.ApprovePeriodAsync(periodId, proposed.Version, approver, PeriodMetadata());
             if (close)
             {
-                await store.ClosePeriodAsync(periodId, approved.Version, approver, PeriodMetadata());
+                await AccountingPeriodCarrySqlFixture.CloseAsync(Factory, company, periodId, approved.Version, approver, PeriodMetadata());
             }
 
             return periodId;
@@ -2069,6 +2116,15 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
 
     /// <summary>TEST INPUT: answers "open" for any date. Not a period policy — the product's rule (K1, #66 5748258299)
     /// is what the case below measures against real Accounting periods.</summary>
+    /// <summary>SENTETIK: the bank account covers every payment of this class (FNS-D87 balance answer).</summary>
+    private sealed class SufficientBankBalance : IFinanceTreasuryBalanceGuard
+    {
+        public Task<TreasuryBalanceAnswer> CheckOutgoingAsync(FinanceContext context,
+            ExpensePaymentSourceKind sourceKind, Guid treasuryAccountId, MoneyText money,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new TreasuryBalanceAnswer(TreasuryBalanceOutcome.Sufficient, null));
+    }
+
     private sealed class SyntheticOpenPeriodRule : IFinanceRecordPeriodRule
     {
         public Task<RecordPeriodAnswer> CheckAsync(FinanceContext context, DateOnly occurredOn, DateOnly? valueOn,

@@ -17,6 +17,8 @@ export interface FinanceAllocation {
   readonly releasedBy: string | null
   readonly releasedAtUtc: string | null
   readonly releaseReason: string | null
+  readonly allocationPartyId?: string
+  readonly allocationAccountId?: string
 }
 
 export type FinanceAllocationCommandResult =
@@ -43,6 +45,8 @@ export interface CreateFinanceAllocationRequest {
   readonly expectedOpenItemVersion: string
   readonly amount: string
   readonly reason: string
+  readonly allocationPartyId?: string
+  readonly allocationAccountId?: string
 }
 
 export interface ReleaseFinanceAllocationRequest {
@@ -107,6 +111,7 @@ export function decodeFinanceAllocation(value: unknown, companyId: string): Deco
   if (source === null || !exact(source, [
     'id', 'companyId', 'sourceId', 'openItemId', 'currencyId', 'amount', 'status', 'version', 'reason',
     'createdBy', 'createdAtUtc', 'releasedBy', 'releasedAtUtc', 'releaseReason',
+    ...(source.allocationPartyId === undefined && source.allocationAccountId === undefined ? [] : ['allocationPartyId', 'allocationAccountId']),
   ])) return FAIL
   if (!guid(source.id) || !guid(source.companyId) || source.companyId !== companyId || !guid(source.sourceId) ||
       !guid(source.openItemId) || !guid(source.currencyId) || !text(source.amount) || !AMOUNT.test(source.amount) ||
@@ -114,6 +119,8 @@ export function decodeFinanceAllocation(value: unknown, companyId: string): Deco
       !text(source.createdBy) || !instant(source.createdAtUtc) ||
       (source.status !== 'Active' && source.status !== 'Released')) return FAIL
 
+  if ((source.allocationPartyId !== undefined || source.allocationAccountId !== undefined)
+    && (!guid(source.allocationPartyId) || !guid(source.allocationAccountId))) return FAIL
   const releasedBy = source.releasedBy === null ? null : text(source.releasedBy) ? source.releasedBy : undefined
   const releasedAtUtc = source.releasedAtUtc === null ? null : instant(source.releasedAtUtc) ? source.releasedAtUtc : undefined
   const releaseReason = source.releaseReason === null ? null : text(source.releaseReason) ? source.releaseReason : undefined
@@ -126,6 +133,7 @@ export function decodeFinanceAllocation(value: unknown, companyId: string): Deco
     currencyId: source.currencyId, amount: source.amount, status: source.status, version: source.version,
     reason: source.reason, createdBy: source.createdBy, createdAtUtc: source.createdAtUtc,
     releasedBy, releasedAtUtc, releaseReason,
+    ...(source.allocationPartyId === undefined ? {} : { allocationPartyId: source.allocationPartyId as string, allocationAccountId: source.allocationAccountId as string }),
   })
 }
 

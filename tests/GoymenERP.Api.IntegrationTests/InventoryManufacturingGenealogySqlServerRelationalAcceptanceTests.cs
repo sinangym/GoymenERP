@@ -165,7 +165,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
-    public async Task Manufacturing_v2_usable_remnant_and_process_loss_are_refused_with_nothing_written()
+    public async Task Manufacturing_v2_process_loss_and_a_scrap_remnant_classification_are_refused_with_nothing_written()
     {
         await using var run = await Run.StartAsync();
         var parent = await SeedManufacturingParentAsync(run, "SYN-MFG-GEN-REMNANT", 30m);
@@ -173,10 +173,18 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var issued = await CommitIssueAsync(run, IssueRequest(orderId, parent.Label.Id, "2", "12"),
             ManufacturingMetadata(run, "gen-remnant-issue"));
 
-        foreach (var outputClass in new[] { "UsableRemnant", "ProcessLoss" })
+        // STK-S9 (BS-14): a usable remnant may only be Standard or SecondQuality; ProcessLoss has no label (URT-D43).
+        foreach (var (outputClass, remnantClassification, code) in new (string, InventoryLabelClassificationV1?, string)[]
+                 {
+                     ("ProcessLoss", null, InventoryManufacturingRealizationCodesV2.OutputClassNotStockable),
+                     ("UsableRemnant", InventoryLabelClassificationV1.Scrap,
+                         InventoryManufacturingRealizationCodesV2.RemnantClassificationInvalid),
+                     ("GoodProduct", InventoryLabelClassificationV1.SecondQuality,
+                         InventoryManufacturingRealizationCodesV2.RemnantClassificationInvalid),
+                 })
         {
             var request = OutputRequestV2(orderId, parent.Label.Id, issued.ParentLabelVersion, parent.LocationId,
-                "2", outputClass);
+                "2", outputClass) with { RemnantClassification = remnantClassification };
             await using var connection = new SqlConnection(run.Factory.DatabaseConnectionString);
             await connection.OpenAsync();
             await using var transaction = (DbTransaction)await connection.BeginTransactionAsync();
@@ -185,8 +193,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             {
                 var error = await Assert.ThrowsAsync<InventoryManufacturingRealizationException>(() =>
                     participant.StageOutputAsync(request, ManufacturingMetadata(run, "gen-remnant-output")));
-                Assert.Equal((400, InventoryManufacturingRealizationCodesV2.OutputClassNotStockable),
-                    (error.Status, error.Code));
+                Assert.Equal((400, code), (error.Status, error.Code));
             }
 
             // Committing the host transaction proves the refusal staged nothing.
@@ -203,6 +210,92 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.LabelTransformations"));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.LabelTransformationInputs"));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE ProductionStatus IS NOT NULL"));
+    }
+
+    [SqlServerFact]
+    public async Task Manufacturing_v2_usable_remnant_output_defaults_to_second_quality_and_carries_the_usable_remnant_production_status()
+    {
+        await using var run = await Run.StartAsync();
+        var parent = await SeedManufacturingParentAsync(run, "SYN-MFG-GEN-REMNANT-DEFAULT", 30m);
+        var orderId = Guid.NewGuid();
+        var issued = await CommitIssueAsync(run, IssueRequest(orderId, parent.Label.Id, "2", "12"),
+            ManufacturingMetadata(run, "gen-remnant-default-issue"));
+        var request = OutputRequestV2(orderId, parent.Label.Id, issued.ParentLabelVersion, parent.LocationId,
+            "2.5", InventoryManufacturingOutputClassificationV2.UsableRemnant);
+        var metadata = ManufacturingMetadata(run, "gen-remnant-default-output");
+
+        var output = await CommitOutputV2Async(run, CompanyA, request, metadata);
+
+        Assert.Equal((InventoryManufacturingOutputClassificationV2.UsableRemnant,
+                InventoryLabelClassificationV1.SecondQuality, InventoryLabelProductionStatusV1.UsableRemnant, false),
+            (output.OutputClass, output.Classification, output.ProductionStatus, output.IsReplay));
+        Assert.Equal(((int)LabelClassification.SecondQuality, (int)LabelProductionStatus.UsableRemnant),
+            (await run.ScalarAsync<int>(
+                "SELECT Classification FROM inventory.Labels WHERE CompanyId = @company AND Id = @label",
+                ("@company", CompanyA), ("@label", request.LabelId)),
+            await run.ScalarAsync<int>(
+                "SELECT ProductionStatus FROM inventory.Labels WHERE CompanyId = @company AND Id = @label",
+                ("@company", CompanyA), ("@label", request.LabelId))));
+        Assert.Equal(2.5m, await run.ScalarAsync<decimal>(
+            "SELECT SUM(QuantityKg) FROM inventory.Balances WHERE LabelId = @label", ("@label", request.LabelId)));
+        Assert.Equal((parent.Label.Id, "12"),
+            (Assert.Single(output.GenealogyInputs).LabelId, output.GenealogyInputs[0].QuantityKg));
+
+        // The same key with an explicit SecondQuality is the same request and replays the stored result.
+        var replay = await CommitOutputV2Async(run, CompanyA,
+            request with { RemnantClassification = InventoryLabelClassificationV1.SecondQuality }, metadata);
+        Assert.Equal((true, InventoryLabelClassificationV1.SecondQuality,
+                (InventoryLabelProductionStatusV1?)InventoryLabelProductionStatusV1.UsableRemnant, output.LabelId),
+            (replay.IsReplay, replay.Classification, replay.ProductionStatus, replay.LabelId));
+
+        // The same key with another operator choice is a different request.
+        var conflict = await Assert.ThrowsAsync<InventoryManufacturingRealizationException>(() =>
+            CommitOutputV2Async(run, CompanyA,
+                request with { RemnantClassification = InventoryLabelClassificationV1.Standard }, metadata));
+        Assert.Equal((409, InventoryManufacturingRealizationCodesV1.IdempotencyConflict),
+            (conflict.Status, conflict.Code));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE ProductionStatus IS NOT NULL"));
+    }
+
+    [SqlServerFact]
+    public async Task Manufacturing_v2_usable_remnant_output_takes_the_operator_s_standard_choice()
+    {
+        await using var run = await Run.StartAsync();
+        var parent = await SeedManufacturingParentAsync(run, "SYN-MFG-GEN-REMNANT-STANDARD", 30m);
+        var orderId = Guid.NewGuid();
+        var issued = await CommitIssueAsync(run, IssueRequest(orderId, parent.Label.Id, "2", "12"),
+            ManufacturingMetadata(run, "gen-remnant-standard-issue"));
+        var request = OutputRequestV2(orderId, parent.Label.Id, issued.ParentLabelVersion, parent.LocationId,
+            "3", InventoryManufacturingOutputClassificationV2.UsableRemnant) with
+        {
+            RemnantClassification = InventoryLabelClassificationV1.Standard,
+        };
+
+        var output = await CommitOutputV2Async(run, CompanyA, request,
+            ManufacturingMetadata(run, "gen-remnant-standard-output"));
+
+        Assert.Equal((InventoryLabelClassificationV1.Standard, InventoryLabelProductionStatusV1.UsableRemnant),
+            (output.Classification, output.ProductionStatus));
+        Assert.Equal(((int)LabelClassification.Standard, (int)LabelProductionStatus.UsableRemnant),
+            (await run.ScalarAsync<int>(
+                "SELECT Classification FROM inventory.Labels WHERE CompanyId = @company AND Id = @label",
+                ("@company", CompanyA), ("@label", request.LabelId)),
+            await run.ScalarAsync<int>(
+                "SELECT ProductionStatus FROM inventory.Labels WHERE CompanyId = @company AND Id = @label",
+                ("@company", CompanyA), ("@label", request.LabelId))));
+
+        // A non-remnant V2 output still carries no production status.
+        var good = await CommitOutputV2Async(run, CompanyA,
+            OutputRequestV2(orderId, parent.Label.Id, output.ParentLabelVersion, parent.LocationId, "1",
+                InventoryManufacturingOutputClassificationV2.GoodProduct),
+            ManufacturingMetadata(run, "gen-remnant-standard-good"));
+        Assert.Null(good.ProductionStatus);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE CompanyId = @company AND Id = @label AND ProductionStatus IS NULL",
+            ("@company", CompanyA), ("@label", good.LabelId)));
     }
 
     [SqlServerFact]
@@ -290,6 +383,34 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var refused = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
         Assert.Equal(51262, refused.Number);
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.LabelTransformations WHERE Kind = 3"));
+    }
+
+    [SqlServerFact]
+    public async Task The_label_production_status_migration_Down_passes_with_only_unmarked_labels_and_refuses_while_a_usable_remnant_label_exists()
+    {
+        await using var run = await Run.StartAsync();
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+            new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryLabelProductionStatus().DownOperations[0]).Sql;
+
+        var parent = await SeedManufacturingParentAsync(run, "SYN-MFG-STATUS-DOWN", 20m);
+        await run.ExecuteAsync(guard);
+        var outOfRange = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE inventory.Labels SET ProductionStatus = 2 WHERE CompanyId = @company AND Id = @label",
+            ("@company", CompanyA), ("@label", parent.Label.Id)));
+        Assert.Equal(547, outOfRange.Number);
+
+        var orderId = Guid.NewGuid();
+        var issued = await CommitIssueAsync(run, IssueRequest(orderId, parent.Label.Id, "2", "10"),
+            ManufacturingMetadata(run, "status-down-issue"));
+        var request = OutputRequestV2(orderId, parent.Label.Id, issued.ParentLabelVersion, parent.LocationId,
+            "4", InventoryManufacturingOutputClassificationV2.UsableRemnant);
+        await CommitOutputV2Async(run, CompanyA, request, ManufacturingMetadata(run, "status-down-output"));
+
+        var refused = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
+        Assert.Equal(51291, refused.Number);
+        Assert.Equal((int)LabelProductionStatus.UsableRemnant, await run.ScalarAsync<int>(
+            "SELECT ProductionStatus FROM inventory.Labels WHERE CompanyId = @company AND Id = @label",
+            ("@company", CompanyA), ("@label", request.LabelId)));
     }
 
     private static InventoryManufacturingOutputRequestV2 OutputRequestV2(

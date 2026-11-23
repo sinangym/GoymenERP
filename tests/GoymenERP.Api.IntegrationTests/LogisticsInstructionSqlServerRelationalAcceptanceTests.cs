@@ -736,7 +736,8 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         HostedAllocationReads reads,
         string bootstrapSubject,
         ILogisticsRealizationStageObserver? observer = null,
-        Action<IServiceCollection>? configure = null) =>
+        Action<IServiceCollection>? configure = null,
+        HostedRiskGate? riskGate = null) =>
         run.Factory.WithWebHostBuilder(builder =>
         {
             builder.UseSetting("BootstrapIdentity:Users:7:UserId", bootstrapSubject);
@@ -751,6 +752,9 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
                 {
                     services.AddSingleton(observer);
                 }
+                // STK-S27: the Sales owner's customer risk gate; within the limit unless a test sets another answer.
+                services.RemoveAll<ISalesShipmentRiskGateReadPortV1>();
+                services.AddSingleton<ISalesShipmentRiskGateReadPortV1>(riskGate ?? new HostedRiskGate());
                 configure?.Invoke(services);
             });
         });
@@ -1079,7 +1083,8 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData, InterceptionResult<int> result,
             CancellationToken cancellationToken = default)
         {
-            barrier.SignalAndWait(TimeSpan.FromSeconds(30));
+            if (!barrier.SignalAndWait(TimeSpan.FromSeconds(30), cancellationToken))
+                throw new TimeoutException("Concurrent save barrier timed out before both writers arrived.");
             return ValueTask.FromResult(result);
         }
     }
@@ -1096,6 +1101,9 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         public ISalesOrderLoadingReadPortV1 Port { get; } = new LogisticsSalesOrderLoadingReadPort(dbContext, company);
 
         public ILogisticsOrderLineProgressReader Progress { get; } = new LogisticsOrderLineProgressReader(dbContext, company);
+
+        public ILogisticsSalesOrderPlannedQuantityReadPortV1 PlannedQuantity { get; } =
+            new LogisticsSalesOrderPlannedQuantityReadPort(dbContext, company);
 
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
     }

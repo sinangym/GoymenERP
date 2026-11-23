@@ -19,16 +19,20 @@ import {
   INVENTORY_STOCK_COUNT_RECORD_CAPABILITY,
   INVENTORY_STOCK_SCRAP_APPROVE_CAPABILITY,
   INVENTORY_STOCK_SCRAP_RECORD_CAPABILITY,
+  inventoryLabelTracePath,
   inventoryOpeningDetailPath,
   movementTimelineEntryState,
 } from './capabilities'
-import { MOVEMENT_TIMELINE_TEXT } from './movementTimelineText'
+import { ALLOCATION_PIECE_TEXT as PT } from './allocationPieceText'
+import { LABEL_TRACE_TEXT } from './labelTraceText'
+import { MOVEMENT_KIND_TEXT, MOVEMENT_TIMELINE_TEXT } from './movementTimelineText'
 import { fetchInventoryLabelDetail } from './labelDetailApi'
 import { LabelAllocationPanel } from './LabelAllocationPanel'
 import { LabelTransformationPanel } from './LabelTransformationPanel'
 import { LabelClassificationPanel } from './LabelClassificationPanel'
 import { StockCountPanel } from './StockCountPanel'
 import { StockScrapPanel } from './StockScrapPanel'
+import { LabelPrintPanel } from './LabelPrintPanel'
 import type { InventoryLabelDetailWithMovementTimeline } from './labelDetailContract'
 import { inventoryLabelDetailPath } from './labelDetailRoute'
 import {
@@ -39,18 +43,6 @@ import {
   type RowActionTarget,
 } from './stockRowActions'
 import styles from './inventory.module.css'
-
-const MOVEMENT_KIND_TEXT = {
-  Receipt: 'Giriş',
-  Issue: 'Çıkış',
-  Block: 'Blokaj',
-  Release: 'Serbest bırakma',
-  Return: 'İade',
-  CountAdjustment: 'Sayım farkı',
-  Scrap: 'Hurda çıkışı',
-  TransferDispatch: 'Transfer çıkışı',
-  TransferAccept: 'Transfer kabulü',
-} as const
 
 const DIRECTION_TEXT = { In: 'Giriş', Out: 'Çıkış' } as const
 
@@ -136,6 +128,8 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
   }
 
   const { labelVersion, identity, balances, genealogy, movementTimeline } = state.data
+  // KLN-D119: the piece column appears only when the server reported pieces at some position.
+  const showPositionPieces = balances.positions.some((position) => position.pieceCount !== undefined)
   const offered: Readonly<Record<RowActionTarget, boolean>> = {
     [ROW_ACTION_TARGET.genealogy]: true,
     [ROW_ACTION_TARGET.allocations]: canChangeAllocations,
@@ -156,6 +150,8 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
       <div><p className={styles.eyebrow}>ST-02</p><h1>{identity.code}</h1></div>
       <span>{identity.documentStatus}</span>
     </header>
+    {canReadLabel && actorId !== null ? <LabelPrintPanel labelId={identity.labelId} companyId={companyId}
+      actorId={actorId} namespace={namespace} /> : null}
     {target !== null && !offered[target]
       ? <p role="status">İstenen işlem bu etikette sizin için açık değil; etiket bilgileri gösteriliyor.</p>
       : null}
@@ -175,6 +171,12 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
         <div><dt>Fiziksel miktar</dt><dd>{balances.physicalKg} kg</dd></div>
         <div><dt>Serbest</dt><dd>{balances.freeKg} kg</dd></div>
         <div><dt>Bloklu</dt><dd>{balances.blockedKg} kg</dd></div>
+        {balances.physicalPieces === undefined ? null
+          : <div><dt>{PT.labelPhysicalPieces}</dt><dd data-testid="inventory-label-physical-pieces">{PT.pieces(balances.physicalPieces)}</dd></div>}
+        {balances.freePieces === undefined ? null
+          : <div><dt>{PT.labelFreePieces}</dt><dd data-testid="inventory-label-free-pieces">{PT.pieces(balances.freePieces)}</dd></div>}
+        {balances.blockedPieces === undefined ? null
+          : <div><dt>{PT.labelBlockedPieces}</dt><dd data-testid="inventory-label-blocked-pieces">{PT.pieces(balances.blockedPieces)}</dd></div>}
       </dl>
     </section>
 
@@ -183,13 +185,16 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
       {balances.positions.length === 0
         ? <p>Bu etiket için fiziksel stok konumu yok.</p>
         : <div className={styles.tableWrap}><table>
-          <thead><tr><th>Sahip</th><th>Gözeten</th><th>Lokasyon</th><th>Durum</th><th>Miktar</th></tr></thead>
+          <thead><tr><th>Sahip</th><th>Gözeten</th><th>Lokasyon</th><th>Durum</th><th>Miktar</th>{showPositionPieces ? <th scope="col">{PT.positionPieces}</th> : null}</tr></thead>
           <tbody>{balances.positions.map((position, index) => <tr key={`${position.locationId}:${position.ownerId}:${position.custodianId}:${position.block}:${index}`}>
             <td>{position.ownerKind}<br /><span className={styles.mono}>{position.ownerId}</span></td>
             <td>{position.custodianKind}<br /><span className={styles.mono}>{position.custodianId}</span></td>
             <td className={styles.mono}>{position.locationId}</td>
             <td>{position.block}</td>
             <td>{position.quantityKg} kg</td>
+            {showPositionPieces
+              ? <td>{position.pieceCount === undefined ? PT.positionNoPieces : PT.pieces(position.pieceCount)}</td>
+              : null}
           </tr>)}</tbody>
         </table></div>}
     </section>
@@ -220,6 +225,13 @@ function InventoryLabelDetailView({ namespace, labelId, target, stockSearch }: {
             {MOVEMENT_TIMELINE_TEXT.entryLink}
           </Link>{' '}
           <span>{MOVEMENT_TIMELINE_TEXT.entryNote}</span>
+        </p>
+        : null}
+      {canReadLabel
+        ? <p data-label-trace-entry="">
+          <Link to={inventoryLabelTracePath(identity.labelId, 'forward')}>{LABEL_TRACE_TEXT.entryForward}</Link>{' '}
+          <Link to={inventoryLabelTracePath(identity.labelId, 'backward')}>{LABEL_TRACE_TEXT.entryBackward}</Link>{' '}
+          <span>{LABEL_TRACE_TEXT.entryNote}</span>
         </p>
         : null}
     </section>

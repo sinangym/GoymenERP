@@ -68,6 +68,7 @@ export interface AccessUserSummary {
 }
 
 export interface AccessAssignment {
+  readonly version: string
   readonly assignmentId: string
   readonly roleId: string
   readonly roleCode: string
@@ -103,6 +104,7 @@ export interface AccessPermission {
 }
 
 export interface AccessRoleSummary {
+  readonly isCritical: boolean
   readonly roleId: string
   readonly code: string
   readonly name: string
@@ -208,7 +210,8 @@ function decodeAssignment(raw: unknown): AccessAssignment | null {
     createdAtUtc,
   } = raw
   if (
-    !isUuid(assignmentId) ||
+      !isUuid(assignmentId) ||
+      typeof raw.version !== 'string' || raw.version.length > 19 || !/^[1-9]\d*$/.test(raw.version) || BigInt(raw.version) > 9223372036854775807n ||
     !isUuid(roleId) ||
     !isNonEmptyString(roleCode) ||
     !isNonEmptyString(roleName) ||
@@ -225,6 +228,7 @@ function decodeAssignment(raw: unknown): AccessAssignment | null {
   }
   return {
     assignmentId,
+      version: raw.version,
     roleId,
     roleCode,
     roleName,
@@ -278,6 +282,7 @@ export function decodeRoleSummary(raw: unknown): AccessRoleSummary | null {
     !isNonEmptyString(name) ||
     typeof isSystem !== 'boolean' ||
     typeof isActive !== 'boolean' ||
+      typeof raw.isCritical !== 'boolean' ||
     !isCount(permissionCount) ||
     !isCount(holderCount) ||
     !isCount(effectiveHolderCount) ||
@@ -285,7 +290,7 @@ export function decodeRoleSummary(raw: unknown): AccessRoleSummary | null {
   ) {
     return null
   }
-  return { roleId, code, name, isSystem, isActive, permissionCount, holderCount, effectiveHolderCount }
+    return { roleId, code, name, isSystem, isActive, isCritical: raw.isCritical, permissionCount, holderCount, effectiveHolderCount }
 }
 
 export function decodeRoleSummaries(raw: unknown): readonly AccessRoleSummary[] | null {

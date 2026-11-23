@@ -256,7 +256,10 @@ const ISSUE_TEXT: Readonly<Record<string, string>> = {
   finance_reversal_has_allocations: 'Bu kaynağa dağıtım bağlı; ters kayıt onaylanamaz.',
   finance_allocation_rule_unavailable: 'Dağıtım durumu doğrulanamadı; ters kayıt onayı kapalı.',
   finance_period_rule_unavailable: 'Ters kayıt dönemi doğrulanamadı; onay kapalı.',
+  finance_treasury_balance_unavailable: 'Hesabın güncel bakiyesi doğrulanamadı; kayıt yapılmadı.',
+  finance_treasury_balance_insufficient: 'Hesabın güncel bakiyesi bu işlem için yeterli değil; kayıt yapılmadı.',
   finance_period_not_open: 'Ters kayıt işlem tarihi açık bir muhasebe dönemine ait değil.',
+  finance_reversal_before_receipt: 'Ters kayıt tarihi tahsilat tarihinden önce olamaz.',
   // API-23 (manual bank payment reversal)
   finance_payment_not_found: 'Ters kaydedilecek giden ödeme bu şirkette bulunamadı.',
   finance_payment_not_recorded: 'Yalnız kesin kayda alınmış bir giden ödeme için ters kayıt önerilebilir.',
@@ -268,6 +271,11 @@ const ISSUE_TEXT: Readonly<Record<string, string>> = {
   finance_permission_mapping_unavailable: 'Yetki eşlemesi doğrulanamadı; işlem kapalı.',
   concurrent_change: 'Bu kaynak başka bir işlemle değişti; güncel durumu yeniden okuyun.',
   idempotency_key_invalid: 'İşlem anahtarı geçersiz.',
+  settings_number_series_format_missing: 'Bu şirketin belge numara biçimi henüz tanımlanmamış. Ayarlar yetkilisi makbuz ve dekont serilerini açıkça kaydetmelidir.',
+  settings_number_series_unavailable: 'Belge numarası kaynağı okunamadı; kesin kayıt tamamlanmadı. Aynı anahtarla tekrar deneyin.',
+  settings_number_series_version_conflict: 'Belge numara biçimi değişti; kayıt tamamlanmadı. Güncel ayarla tekrar deneyin.',
+  settings_number_series_idempotency_conflict: 'Belge numarası işlem anahtarı başka bir kayıt için kullanılmış.',
+  settings_document_already_numbered: 'Bu gerçek kayıt zaten belge numarası taşıyor.',
   settings_money_profile_not_found: 'Seçilen para birimi için onaylı tutar profili yok.',
   // DEC-FIN-014
   pos_commission_invalid: 'POS komisyonu geçerli bir tutar değil (sıfır veya pozitif, yalnız rakam).',
@@ -291,3 +299,10 @@ export const RECEIPT_DRAFT_NEEDS_PARTY =
 export const RECEIPT_DETAIL_TITLE = 'Tahsilat taslağı'
 export const OPEN_SAVED_DRAFT = 'Kaydedilen taslağı aç'
 export const BACK_TO_RECEIPTS = 'Tahsilat taslaklarına dön'
+
+
+export const MANUAL_BANK_PAYMENT_SETTLEMENT_TEXT = {
+  unknown: 'Sonuç bilinmiyor. Aynı anahtar ve değişmeyen istekle yeniden deneyin.',
+  retry: 'Aynı isteği yeniden gönder',
+  busy: 'Gönderiliyor',
+} as const

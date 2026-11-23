@@ -25,6 +25,19 @@ public enum LabelClassification
     Scrap = 3,
 }
 
+/// <summary>
+/// BS-5 / BS-14 (owner decisions of 2026-11-11): the production status a Manufacturing output gives a label, carried
+/// apart from <see cref="LabelClassification"/>. The classification stays Standard/SecondQuality/Scrap; this field
+/// only says where the piece came from in production. Like the classification it is descriptive: it creates no stock
+/// movement, block/release, disposal, sellability or quantity effect (sellability is a separate decision,
+/// DEC-PRDCT-007). Null means the label has no production status.
+/// </summary>
+public enum LabelProductionStatus
+{
+    /// <summary>A usable remnant of a Manufacturing output (Manufacturing output class <c>UsableRemnant</c>).</summary>
+    UsableRemnant = 1,
+}
+
 /// <summary>One attached document: which kind, when and by whom it was attached.</summary>
 public sealed record LabelDocumentAttachment(string Kind, DateTimeOffset AttachedAtUtc, string AttachedBy);
 
@@ -154,6 +167,30 @@ public sealed class MaterialLabel
         Classification = classification;
     }
 
+    /// <summary>
+    /// BS-5: null for every label that production did not mark. It is set once, when the label is born from a
+    /// Manufacturing output or inherits it from its sources in a split/merge (KLN-D46,
+    /// <see cref="InventoryLabelTransformation.InheritedProductionStatus"/>), and never changes afterwards; it is not
+    /// reconstructed from the classification.
+    /// </summary>
+    public LabelProductionStatus? ProductionStatus { get; private set; }
+
+    /// <summary>Gives this label its production status once; a second, different status is refused.</summary>
+    public void MarkProductionStatus(LabelProductionStatus productionStatus)
+    {
+        if (!Enum.IsDefined(productionStatus))
+        {
+            throw Invalid("Etiket üretim durumu geçersizdir.");
+        }
+
+        if (ProductionStatus is { } current && current != productionStatus)
+        {
+            throw Invalid("Etiket üretim durumu bir kez belirlenir ve değiştirilmez.");
+        }
+
+        ProductionStatus = productionStatus;
+    }
+
     /// <summary>Record that a required (or extra) document is now attached, by whom and when.</summary>
     public LabelDocumentAttachment AttachDocument(string documentKind, DateTimeOffset attachedAtUtc, string attachedBy)
     {
@@ -239,7 +276,7 @@ public sealed class MaterialLabel
         string? productVersion,
         IEnumerable<string> requiredDocuments, string? heatNumber, string? coilNumber,
         IEnumerable<LabelPrint> prints, IEnumerable<LabelDocumentAttachment> attachments,
-        LabelClassification? classification = null)
+        LabelClassification? classification = null, LabelProductionStatus? productionStatus = null)
     {
         ArgumentNullException.ThrowIfNull(prints);
         ArgumentNullException.ThrowIfNull(attachments);
@@ -266,6 +303,11 @@ public sealed class MaterialLabel
         if (classification is { } storedClassification)
         {
             label.Classify(storedClassification);
+        }
+
+        if (productionStatus is { } storedProductionStatus)
+        {
+            label.MarkProductionStatus(storedProductionStatus);
         }
 
         return label;

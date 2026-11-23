@@ -12,12 +12,26 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Shell;
 public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "INVENTORY";
-    public const string OwnerContractVersion = "1.7";
+    public const string OwnerContractVersion = "1.13";
+    // STK-S8: actual Settings/departure owners are registered by the host; their unavailable/legacy fences still apply.
+    // 1.8 / STK-S18: future supply allocation read route and separately granted write control; no grant is added.
+    public const string FutureAllocationReadCapabilityId = InventoryPermissionManifestV1.FutureAllocationRead;
+    public const string FutureAllocationWriteCapabilityId = InventoryPermissionManifestV1.FutureAllocationWrite;
+    public const string FutureAllocationRoutePath = "/stok/satis-siparisleri/:salesOrderId/satirlar/:salesOrderLineId/gelecek-ayirmalar";
     public const string StockPositionsCapabilityId = "inventory.stock-positions.list";
     public const string StockPositionsRouteId = "inventory.stock-positions";
     public const string StockPositionsRoutePath = "/stok/pozisyonlar";
     public const string StockPositionsScreenId = "ST-01";
+    // 1.13 / STK-S3: explicit unused release is a standalone write-purpose route, no stock display grant.
+    public const string SubcontractReleaseCapabilityId = "inventory.subcontract-allocations.release-unused";
+    public const string SubcontractReleaseRoutePath = "/stok/fason-ayirma-birak";
     public const string PhysicalAllocationCapabilityId = ErpPermissions.InventoryPhysicalAllocationWrite;
+    public const string TransferCancelCapabilityId = ErpPermissions.InventoryStockTransferCancel;
+    public const string TransferPlanningCapabilityId = ErpPermissions.InventoryStockTransferWrite;
+    public const string TransferPlanningRoutePath = "/stok/transferler/planla";
+    public const string TransferOverageApprovalRoutePath = "/stok/transferler/fazla-kabul-onaylari";
+    public const string TransferLossRequestRoutePath = "/stok/transferler/kayip-talepleri";
+    public const string TransferLossApprovalRoutePath = "/stok/transferler/kayip-onaylari";
 
     /// <summary>
     /// R19 split/merge: a CONTROL of the label detail reached from ST-01 (no route of its own). It keeps the
@@ -68,9 +82,61 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
             ],
             ImplementationAvailable: true);
 
+        var futureAllocations = new ShellCapabilityDeclaration(FutureAllocationReadCapabilityId, FutureAllocationReadCapabilityId,
+            FutureAllocationRoutePath, "F017-D", ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
+            [InventoryPermissionManifestV1.FutureAllocationRead], ImplementationAvailable: true);
         return
         [
+        new ShellCapabilityDeclaration(SubcontractReleaseCapabilityId, SubcontractReleaseCapabilityId,
+            SubcontractReleaseRoutePath, "ST-SUBCONTRACT-UNUSED-RELEASE", ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
+            [ErpPermissions.InventoryPhysicalAllocationWrite], ImplementationAvailable: true),
+        futureAllocations,
+        futureAllocations with
+        {
+            CapabilityId = FutureAllocationWriteCapabilityId,
+            ParentCapabilityId = FutureAllocationReadCapabilityId,
+            RequiredPermissions = [InventoryPermissionManifestV1.FutureAllocationRead, InventoryPermissionManifestV1.FutureAllocationWrite],
+        },
         stockPositions,
+        stockPositions with { CapabilityId = ErpPermissions.LogisticsTransferOutgoingDocumentsRead,
+            ParentCapabilityId = StockPositionsCapabilityId,
+            RequiredPermissions = [.. stockPositions.RequiredPermissions, ErpPermissions.LogisticsTransferOutgoingDocumentsRead] },
+        stockPositions with { CapabilityId = ErpPermissions.LogisticsDispatchNotesCreate,
+            ParentCapabilityId = StockPositionsCapabilityId,
+            RequiredPermissions = [.. stockPositions.RequiredPermissions, ErpPermissions.LogisticsTransferOutgoingDocumentsRead, ErpPermissions.LogisticsDispatchNotesCreate] },
+        stockPositions with { CapabilityId = ErpPermissions.LogisticsDispatchNotesApprove,
+            ParentCapabilityId = StockPositionsCapabilityId,
+            RequiredPermissions = [.. stockPositions.RequiredPermissions, ErpPermissions.LogisticsTransferOutgoingDocumentsRead, ErpPermissions.LogisticsDispatchNotesApprove] },
+        stockPositions with { CapabilityId = ErpPermissions.LogisticsDispatchNotesCancel,
+            ParentCapabilityId = StockPositionsCapabilityId,
+            RequiredPermissions = [.. stockPositions.RequiredPermissions, ErpPermissions.LogisticsTransferOutgoingDocumentsRead, ErpPermissions.LogisticsDispatchNotesCancel] },
+        new(TransferPlanningCapabilityId, "inventory.transfer-planning", TransferPlanningRoutePath, "STK-S8-PLAN",
+            ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [ErpPermissions.InventoryStockTransferWrite], ImplementationAvailable: true),
+        new(ErpPermissions.InventoryStockTransferOverageApprove, "inventory.transfer-overage-approval", TransferOverageApprovalRoutePath, "STK-S8-OVERAGE",
+            ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [ErpPermissions.InventoryStockTransferOverageApprove], ImplementationAvailable: true),
+        new(ErpPermissions.InventoryStockTransferLossRecord, "inventory.transfer-loss-request", TransferLossRequestRoutePath, "STK-S8-LOSS-REQUEST",
+            ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [ErpPermissions.InventoryStockTransferLossRecord], ImplementationAvailable: true),
+        new(ErpPermissions.InventoryStockTransferLossApprove, "inventory.transfer-loss-approval", TransferLossApprovalRoutePath, "STK-S8-LOSS-APPROVE",
+            ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [ErpPermissions.InventoryStockTransferLossApprove], ImplementationAvailable: true),
+        stockPositions with
+        {
+            CapabilityId = TransferCancelCapabilityId,
+            ParentCapabilityId = StockPositionsCapabilityId,
+            RequiredPermissions =
+            [
+                ErpPermissions.InventoryLabelsRead,
+                ErpPermissions.InventoryBalancesRead,
+                ErpPermissions.ProductOperationalSelectionRead,
+                ErpPermissions.InventoryStockTransferCancel,
+            ],
+            ImplementationAvailable = true,
+        },
         stockPositions with
         {
             CapabilityId = PhysicalAllocationCapabilityId,

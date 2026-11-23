@@ -19,6 +19,11 @@ import { capabilityFailClosed, hasCapability, type ShellState } from './shellSta
 import { useShellDispatch, useShellState } from './shellContext'
 import { useShellOrchestrator } from './useShellOrchestrator'
 import { StateBlock } from './StateBlock'
+import { isLocalAccountMode } from './authMode'
+import { LoginPage } from '../identity/LoginPage'
+import { ChangePasswordPage } from '../identity/ChangePasswordPage'
+import { CompanySetupLink } from '../organization/CompanySetupPage'
+import { LogoutControl } from '../identity/LogoutControl'
 import { SwitchConfirmDialog } from './SwitchConfirmDialog'
 import { GlobalSearchBox } from '../search/GlobalSearchBox'
 import { AI_PANEL_ID, AiPanel } from '../ai/AiPanel'
@@ -30,6 +35,7 @@ import {
   CAPABILITY_NAV_LABEL,
   NAV_CAPABILITIES,
   NAV_GROUPS,
+  NAV_PURPOSE_CAPABILITIES,
   NAV_HOME,
   NAV_TEXT,
   type NavEntryId,
@@ -66,7 +72,8 @@ function grantedLeaves(group: NavGroup, state: ShellState): NavLeaf[] {
   for (const entry of group.entries) {
     const declared = group.subheadings?.[entry]
     if (declared !== undefined) pending = declared
-    if (!hasCapability(state, entry)) continue
+    const purposes = NAV_PURPOSE_CAPABILITIES[entry] ?? [entry]
+    if (!purposes.some((purpose) => hasCapability(state, purpose))) continue
     leaves.push({ ...leafOf(entry), subheading: pending })
     pending = undefined
   }
@@ -143,12 +150,24 @@ export function AppShell() {
     sessionInvalid,
     sessionMismatch,
     retry,
+    loginNotice,
+    completeLogin,
+    completeLogout,
   } = useShellOrchestrator()
+  const localAccount = isLocalAccountMode()
   // The states in which no shell is drawn, in order. Computed before the hooks below so the drawer
   // can never stay "open" (focus, inert page, scroll lock) behind one of them.
   const gate = (() => {
-    // 401 anywhere — session is dead. Terminal (no login flow yet).
+    // 401 anywhere — session is dead. Terminal until a real sign-in: in local-account mode (ID-1F) the sign-in screen
+    // is the way out; in any other mode there is no sign-in flow in this client and the state stays terminal.
     if (sessionInvalid || identityState.kind === 'unauthenticated') {
+      if (localAccount) {
+        return (
+          <main id="main-content" tabIndex={-1}>
+            <LoginPage notice={loginNotice} onSignedIn={completeLogin} />
+          </main>
+        )
+      }
       return <StateBlock state={{ kind: 'unauthenticated' }} subject="oturum" />
     }
 
@@ -164,15 +183,33 @@ export function AppShell() {
       return <StateBlock state={{ kind: 'initial-loading' }} subject="oturum" />
     }
 
+    // The forced-password flow precedes directory loading: those reads are forbidden for this session.
+    if (localAccount && identity?.mustChangePassword && identity.localCredentialVersion !== null) {
+      return (
+        <main id="main-content" tabIndex={-1}>
+          <ChangePasswordPage
+            key={`${identity.userId}:${identity.authenticationSessionBinding}:${identity.localCredentialVersion}`}
+            expectedVersion={identity.localCredentialVersion}
+            onChanged={completeLogin}
+            onSignedOut={completeLogout}
+          />
+        </main>
+      )
+    }
+
     // Directory / identity problems block the whole shell — fail closed.
-    if (identityState.kind === 'initial-loading' || directoryState.kind === 'initial-loading') {
+    if (identityState.kind === 'initial-loading') {
       return <StateBlock state={{ kind: 'initial-loading' }} subject="oturum" />
     }
     if (identityState.kind !== 'ready') {
       return <StateBlock state={identityState} subject="kimlik" onRetry={retry} />
     }
+    if (directoryState.kind === 'initial-loading') {
+      return <StateBlock state={{ kind: 'initial-loading' }} subject="oturum" />
+    }
     if (directoryState.kind === 'no-authorized-company' || directoryState.kind === 'empty-no-data') {
-      return <StateBlock state={{ kind: 'no-authorized-company' }} subject="şirket" />
+      return <><StateBlock state={{ kind: 'no-authorized-company' }} subject="şirket" />
+        {identity && <CompanySetupLink key={`${identity.userId}:${identity.authenticationSessionBinding}:${state.sessionEpoch}`} binding={`${identity.userId}:${identity.authenticationSessionBinding}:${state.sessionEpoch}`} />}</>
     }
     if (directoryState.kind !== 'ready') {
       return <StateBlock state={directoryState} subject="şirket dizini" onRetry={retry} />
@@ -488,6 +525,7 @@ export function AppShell() {
 
           {/* AT-002: the global search box; it renders only with a searchable owner list grant. */}
           <GlobalSearchBox />
+          {identity && <CompanySetupLink key={`${identity.userId}:${identity.authenticationSessionBinding}:${state.sessionEpoch}`} binding={`${identity.userId}:${identity.authenticationSessionBinding}:${state.sessionEpoch}`} />}
 
           {/* Plan AI-5: the AI panel toggle is on every page; the panel itself is honest about AI being off. */}
           <button
@@ -503,6 +541,7 @@ export function AppShell() {
           </button>
 
           <div className={styles.user}>{identity ? identity.displayName : '…'}</div>
+          {localAccount ? <LogoutControl onSignedOut={completeLogout} /> : null}
         </header>
 
         {switchFailure ? (

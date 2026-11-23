@@ -88,7 +88,7 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
 
         // SAT-D294: without the Finance reversal port the finalisation fails closed and writes nothing.
         var closed = await Assert.ThrowsAsync<SalesDraftServiceException>(() => run.Service(scope.Store, CompanyA, Finalizer, null)
-            .FinalizeCustomerReturnAsync(id, new SalesDraftStateCommandRequest("3"), Metadata("k-final-closed")));
+            .FinalizeCustomerReturnAsync(id, new FinalizeSalesCustomerReturnRequest("3"), Metadata("k-final-closed")));
         Assert.Equal((503, SalesCustomerReturnProblemCodesV1.FinancePortUnavailable), (closed.Status, closed.Code));
         Assert.Equal((3, 0), (
             await run.ScalarAsync<int>("SELECT [State] FROM [sales].[CustomerReturns] WHERE [Id] = @id", ("@id", id)),
@@ -96,10 +96,13 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
                 + SalesCustomerReturnCommands.FinalizeV1 + "'")));
 
         var finalizer = run.Service(scope.Store, CompanyA, Finalizer, finance);
-        var finalized = await finalizer.FinalizeCustomerReturnAsync(id, new SalesDraftStateCommandRequest("3"), Metadata("k-final"));
+        var finalized = await finalizer.FinalizeCustomerReturnAsync(id, new FinalizeSalesCustomerReturnRequest("3"), Metadata("k-final"));
         Assert.Equal(("Finalized", "4", Finalizer, 1), (finalized.CustomerReturn.State, finalized.CustomerReturn.Version,
             finalized.CustomerReturn.FinalizedBy, finance.Calls));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT [FinalizationSequence] FROM [sales].[CustomerReturns] WHERE [Id] = @id", ("@id", id)));
+        // SAT-S2: the finalisation writes exactly one sales.return-invoice.finalized.v1 outbox row for the return, in the same save.
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[OutboxMessages] WHERE [EventType] = N'"
+            + SalesStore.CustomerReturnFinalizedEventType + "' AND [AggregateId] = @id", ("@id", id)));
 
         // A second return takes the rest of the line: the finalised first return is its prior and it is the line's last return.
         var second = await preparer.CreateCustomerReturnAsync(new CreateSalesCustomerReturnRequest(invoice.Id, "IADE-SENTETIK-2", Day,
@@ -109,7 +112,7 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
         await preparer.SubmitCustomerReturnAsync(second.CustomerReturn.Id, new SalesDraftStateCommandRequest("1"), Metadata("k-submit-2"));
         await run.Service(scope.Store, CompanyA, Approver, null)
             .ApproveCustomerReturnAsync(second.CustomerReturn.Id, new SalesDraftStateCommandRequest("2"), Metadata("k-approve-2"));
-        await finalizer.FinalizeCustomerReturnAsync(second.CustomerReturn.Id, new SalesDraftStateCommandRequest("3"), Metadata("k-final-2"));
+        await finalizer.FinalizeCustomerReturnAsync(second.CustomerReturn.Id, new FinalizeSalesCustomerReturnRequest("3"), Metadata("k-final-2"));
         var over = await Assert.ThrowsAsync<SalesDraftServiceException>(() => preparer.CreateCustomerReturnAsync(
             new CreateSalesCustomerReturnRequest(invoice.Id, "IADE-SENTETIK-3", Day, [new CreateSalesCustomerReturnLineRequest(line.Id, "0.001")],
                 shipment), Metadata("k-create-3")));
@@ -203,6 +206,7 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
     public async Task The_customer_return_migrations_Down_passes_with_no_return_and_refuses_51257_while_one_exists()
     {
         await using var run = await Run.StartAsync();
+        await AssertEmptyMigrationRollbackAsync(run, "_AddCustomerReturns");
         var (invoice, shipment) = await run.FinalizedInvoiceAsync("m");
         var guard = Assert.IsType<SqlOperation>(new AddCustomerReturns().DownOperations[0]).Sql;
         await run.ScalarAsync<int>(guard + " SELECT 1");
@@ -220,10 +224,12 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
         var index = Array.FindIndex(applied, id => id.EndsWith("_AddCustomerReturns", StringComparison.Ordinal));
         Assert.True(index > 0);
         var migrator = context.GetService<IMigrator>();
-        await migrator.MigrateAsync(applied[index]);
         var rollback = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[index - 1]));
-        Assert.Equal(51257, rollback.Number);
-        Assert.Equal(applied[..(index + 1)], await context.Database.GetAppliedMigrationsAsync());
+        // The finalized invoice appends an outbox event. Its later cursor-retention barrier is reached first.
+        Assert.Equal(51983, rollback.Number);
+        var cursor = Array.FindIndex(applied, id => id.EndsWith("_AddSalesOutboxCommittedCursor", StringComparison.Ordinal));
+        Assert.True(cursor > index);
+        Assert.Equal(applied[..(cursor + 1)], await context.Database.GetAppliedMigrationsAsync());
         await context.Database.MigrateAsync();
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[CustomerReturns]"));
@@ -302,6 +308,7 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
     public async Task The_rejection_migrations_Down_passes_with_no_rejected_or_cancelled_return_and_refuses_51259_once_one_exists()
     {
         await using var run = await Run.StartAsync();
+        await AssertEmptyMigrationRollbackAsync(run, "_AddCustomerReturnRejectionAndCancellation");
         var (invoice, shipment) = await run.FinalizedInvoiceAsync("n");
         var guard = Assert.IsType<SqlOperation>(new AddCustomerReturnRejectionAndCancellation().DownOperations[0]).Sql;
         Guid id;
@@ -327,13 +334,28 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
         var index = Array.FindIndex(applied, migration => migration.EndsWith("_AddCustomerReturnRejectionAndCancellation", StringComparison.Ordinal));
         Assert.True(index > 0);
         var migrator = context.GetService<IMigrator>();
-        await migrator.MigrateAsync(applied[index]);
         var rollback = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[index - 1]));
-        Assert.Equal(51259, rollback.Number);
-        Assert.Equal(applied[..(index + 1)], await context.Database.GetAppliedMigrationsAsync());
+        // The finalized invoice appends an outbox event. Its later cursor-retention barrier is reached first.
+        Assert.Equal(51983, rollback.Number);
+        var cursor = Array.FindIndex(applied, id => id.EndsWith("_AddSalesOutboxCommittedCursor", StringComparison.Ordinal));
+        Assert.True(cursor > index);
+        Assert.Equal(applied[..(cursor + 1)], await context.Database.GetAppliedMigrationsAsync());
         await context.Database.MigrateAsync();
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(6, await run.ScalarAsync<int>("SELECT [State] FROM [sales].[CustomerReturns] WHERE [Id] = @id", ("@id", id)));
+    }
+
+    private static async Task AssertEmptyMigrationRollbackAsync(Run run, string suffix)
+    {
+        // Full historical DDL is exercised before unrelated newer invoice evidence is created.
+        await using var context = run.SalesContext(CompanyA);
+        var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+        var index = Array.FindIndex(applied, id => id.EndsWith(suffix, StringComparison.Ordinal));
+        Assert.True(index > 0);
+        await context.GetService<IMigrator>().MigrateAsync(applied[index - 1]);
+        Assert.Equal(applied[..index], await context.Database.GetAppliedMigrationsAsync());
+        await context.Database.MigrateAsync();
+        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
     }
 
     /// <summary>A raw copy of the stored draft return under another id with the given customer document (no attempt references it).</summary>
@@ -380,7 +402,10 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
                 : PermissionScope.Denied);
     }
 
-    /// <summary>A SYNTHETIC Finance reversal port that admits every offer (the real port is not bound yet, SAT-D294).</summary>
+    /// <summary>
+    /// A SYNTHETIC Finance reversal port that admits every offer and answers every installment read as a whole return (no
+    /// selection, FNS-D81); the host adapter onto Finance's v2 ports is covered by its own tests.
+    /// </summary>
     private sealed class FinancePort : ISalesCustomerReturnFinancePortV1
     {
         public int Calls { get; private set; }
@@ -390,6 +415,11 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
             Calls++;
             return Task.FromResult(new SalesCustomerReturnFinanceAnswerV1(offer.CustomerReturnId, SalesCustomerReturnFinanceOutcomeV1.Admitted, null));
         }
+
+        public Task<SalesCustomerReturnInstallmentAnswerV1> ReadInstallmentsAsync(SalesCustomerReturnInstallmentQueryV1 query,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new SalesCustomerReturnInstallmentAnswerV1(SalesCustomerReturnFinanceOutcomeV1.Admitted, null, false,
+                query.Amount, "0", []));
     }
 
     private sealed class FixedUser(string userId, Guid company) : ICurrentUser
@@ -467,7 +497,8 @@ public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
                 new SalesDraftStateAudit("sales.invoice.approved.v1", "Approve", "SENTETIK")))!.Invoice;
             var official = new SalesOfficialInvoiceFacts("GIB2026000000401", "4c5d6e7f-8a9b-4c0d-9e1f-2a3b4c5d6e7f", approved.Header.PartyId,
                 approved.Header.CurrencyId, approved.PayableFunctionalAmount, approved.PayableFunctionalAmount, approved.VatFunctionalAmount,
-                approved.WithholdingFunctionalAmount);
+                approved.WithholdingFunctionalAmount, new DateOnly(2026, 11, 14),
+            new(approved.CompanyId, Guid.NewGuid(), "manual", "2", DateTimeOffset.UnixEpoch, Guid.NewGuid(), 1, new string('a', 64), null, null, false));
             await invoices.MatchInvoiceAsync(Envelope(prefix + "-match", matcher, SalesPermissionManifestV1.InvoicesMatch), Hash('1'),
                 invoiceId, (invoice, now) => invoice.RecordMatch(3, matcher, official, 0.05m, false, null, now),
                 new SalesDraftStateAudit("sales.invoice.matched.v1", "Match", "SENTETIK"));

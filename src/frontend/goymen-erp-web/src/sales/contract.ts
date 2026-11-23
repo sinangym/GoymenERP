@@ -241,6 +241,9 @@ export interface DeliverySchedules {
  * AT-024: one line's quantities as exact decimal text in the line's order unit — `ordered` (the line), `shipped` and
  * `delivered` (the delivery owner's recorded totals), `remaining` (ordered − delivered, never below zero) and `excess`
  * (delivered above the order). Facts only: no completion or tolerance state exists (OPEN-004 is open).
+ * SAT-S11 (B-33): `shippedBy` — who recorded this line's shipments, as the delivery owner names them: distinct, trimmed
+ * and in ordinal order; `[]` exactly when nothing is shipped; `null` when something is shipped but not every shipment
+ * names its shipper (shown as unknown, never as a partial list).
  */
 export interface DeliveryProgressLine {
   readonly lineId: string
@@ -251,6 +254,12 @@ export interface DeliveryProgressLine {
   readonly delivered: string
   readonly remaining: string
   readonly excess: string
+  readonly shippedBy: readonly string[] | null
+  readonly invoiceProgress?: {
+    readonly invoiced: string
+    readonly deliveredNotInvoiced: string
+    readonly sourceVersion: string
+  }
 }
 
 export interface DeliveryProgress {
@@ -493,6 +502,44 @@ export interface DraftLine {
   readonly priceDisclosure: PriceDisclosure
   /** SAT-D167 (EK24, additive): "Rev.N" on a line a line revision added; absent for a line that came with the create. */
   readonly addedInRevision?: string
+  /** SAT-D437 (AK-4, additive): the theoretical kg per order unit pinned on a piece line at approval; absent otherwise. */
+  readonly theoreticalKilogramsPerUnit?: string
+  /** SAT-D474 / SAT-D477 (additive): the kg/m table conflict the pinned figure was resolved from; absent otherwise. */
+  readonly theoreticalKilogramsPerUnitConflict?: KilogramsPerUnitTableConflict
+}
+
+/** SAT-D477: the entered direction's figure was pinned; the reversed one and the signed difference (other − selected) warn. */
+export interface KilogramsPerUnitTableConflict {
+  readonly selection: 'weight-table:entered-orientation'
+  readonly selectedKilogramsPerUnit: string
+  readonly otherKilogramsPerUnit: string
+  readonly differenceKilogramsPerUnit: string
+  readonly selectedKgPerMetre: string
+  readonly otherKgPerMetre: string
+}
+
+const CONFLICT_KEYS = [
+  'selection', 'selectedKilogramsPerUnit', 'otherKilogramsPerUnit', 'differenceKilogramsPerUnit', 'selectedKgPerMetre', 'otherKgPerMetre',
+] as const
+const SIGNED_DECIMAL_RE = /^-?[0-9]+(?:\.[0-9]+)?$/
+
+/** Strict: exact keys, the one selection, positive figures, a signed non-zero difference; anything else is not this contract. */
+function decodeKilogramsPerUnitConflict(value: unknown, pinned: string | undefined): KilogramsPerUnitTableConflict | null {
+  const o = exactWithOptional(value, CONFLICT_KEYS, [])
+  if (o === null || o.selection !== 'weight-table:entered-orientation' || pinned === undefined) return null
+  if (!isDecimal(o.selectedKilogramsPerUnit, true) || !isDecimal(o.otherKilogramsPerUnit, true)
+    || !isDecimal(o.selectedKgPerMetre, true) || !isDecimal(o.otherKgPerMetre, true)
+    || typeof o.differenceKilogramsPerUnit !== 'string' || o.differenceKilogramsPerUnit.length > LIMITS.decimalText
+    || !SIGNED_DECIMAL_RE.test(o.differenceKilogramsPerUnit) || !/[1-9]/.test(o.differenceKilogramsPerUnit)
+    || o.selectedKilogramsPerUnit !== pinned || o.selectedKgPerMetre === o.otherKgPerMetre) return null
+  return {
+    selection: 'weight-table:entered-orientation',
+    selectedKilogramsPerUnit: o.selectedKilogramsPerUnit,
+    otherKilogramsPerUnit: o.otherKilogramsPerUnit,
+    differenceKilogramsPerUnit: o.differenceKilogramsPerUnit,
+    selectedKgPerMetre: o.selectedKgPerMetre,
+    otherKgPerMetre: o.otherKgPerMetre,
+  }
 }
 
 /** SAT-D167 (EK24, `SalesOrderDraftRemovedLineV1`): a passive line — out of the order's totals, risk and shipping; history only. */
@@ -636,6 +683,9 @@ export const SALES_PROBLEM_CODE = {
   // DEC-SAL-002 (contract delta): an owner links a record to the order (allocation, loading line) — the quantity revision is
   // refused fail-closed, like the cancellation; the errors name each blocking source.
   revisionBlocked: 'sales_revision_blocked',
+  // SAT-D373 (temporary, until the SAT-S8 transfer rule): an active future supply allocation refuses every header revision
+  // and the approval of a pending customer/currency change (409, not recorded; field `futureSupplyAllocations`).
+  revisionFutureAllocationPresent: 'sales_revision_future_allocation_present',
   // No 30 / SAT-D12: a blocking source (allocation, open loading, unreadable owner) refuses the force-close; the impact no
   // longer is the preview the command named.
   forceCloseBlocked: 'sales_force_close_blocked',
@@ -667,9 +717,12 @@ export const SALES_PROBLEM_CODE = {
   // recorded; no workaround), an instalment whose TL split the server refused (422) — and the API's request-context refusals.
   invoiceMatchRequired: 'sales_invoice_match_required',
   invoiceMatchDifferenceOpen: 'sales_invoice_match_difference_open',
+  invoiceMatchSourceProofRequired: 'sales_invoice_match_source_proof_required',
   invoiceInstalmentFunctionalInvalid: 'sales_invoice_instalment_functional_invalid',
   companyContextInvalid: 'company_context_invalid',
   correlationMetadataInvalid: 'correlation_metadata_invalid',
+  // SAT-D437 (AK-4): a piece line's approval without a theoretical kg/unit from the product card (409, not recorded).
+  kilogramsPerUnitUnavailable: 'sales_kg_per_unit_unavailable',
 } as const
 
 export type SalesProblemCode = (typeof SALES_PROBLEM_CODE)[keyof typeof SALES_PROBLEM_CODE]
@@ -904,8 +957,17 @@ const LINE_KEYS = [
 ] as const
 
 function decodeLine(value: unknown): DraftLine | null {
-  const o = exactWithOptional(value, LINE_KEYS, ['orderUnitCode', 'addedInRevision'])
+  const o = exactWithOptional(value, LINE_KEYS, ['orderUnitCode', 'addedInRevision', 'theoreticalKilogramsPerUnit',
+    'theoreticalKilogramsPerUnitConflict'])
   if (o === null) return null
+  // SAT-D437: absent before approval, on a kg line or an older order; otherwise a positive exact decimal.
+  if (o.theoreticalKilogramsPerUnit !== undefined && !isDecimal(o.theoreticalKilogramsPerUnit, true)) return null
+  // SAT-D477: the conflict names exactly the pinned figure as selected; a conflict without a pinned figure is malformed.
+  const conflict = o.theoreticalKilogramsPerUnitConflict === undefined
+    ? undefined
+    : decodeKilogramsPerUnitConflict(o.theoreticalKilogramsPerUnitConflict,
+      typeof o.theoreticalKilogramsPerUnit === 'string' ? o.theoreticalKilogramsPerUnit : undefined)
+  if (conflict === null) return null
   const slices = decodeSlices(o.requestedDeliverySlices)
   // SAT-D167: absent (or null) for a line of the create; otherwise the revision text the line was added in.
   if (o.addedInRevision !== undefined && o.addedInRevision !== null
@@ -959,6 +1021,8 @@ function decodeLine(value: unknown): DraftLine | null {
     discountPercent: o.discountPercent,
     priceDisclosure: o.priceDisclosure,
     ...(typeof o.addedInRevision === 'string' ? { addedInRevision: o.addedInRevision } : {}),
+    ...(typeof o.theoreticalKilogramsPerUnit === 'string' ? { theoreticalKilogramsPerUnit: o.theoreticalKilogramsPerUnit } : {}),
+    ...(conflict === undefined ? {} : { theoreticalKilogramsPerUnitConflict: conflict }),
   }
 }
 
@@ -1446,8 +1510,9 @@ export function decodeDeliverySchedules(value: unknown): DeliverySchedules | nul
 /**
  * AT-024: `SalesOrderDraftDeliveryProgressResponse`, read exactly — and only as the progress OF `detail`: the same
  * version, every line of the detail once in its order with its own order unit and quantity text. Decimal text stays
- * text (never parsed into a JS number); `ordered` is positive, the others may be zero. A body that does not fit is not
- * shown as quantities.
+ * text (never parsed into a JS number); `ordered` is positive, the others may be zero. `shippedBy` is `[]` exactly when
+ * `shipped` is zero and may be `null` only when it is not; a named list is non-blank, trimmed, distinct and ordinally
+ * sorted. A body that does not fit is not shown as quantities.
  */
 export function decodeDeliveryProgress(value: unknown, detail: DraftDetail): DeliveryProgress | null {
   const response = exact(value, ['draftVersion', 'lines'])
@@ -1457,21 +1522,41 @@ export function decodeDeliveryProgress(value: unknown, detail: DraftDetail): Del
   ) return null
   const lines: DeliveryProgressLine[] = []
   for (const [index, entry] of response.lines.entries()) {
-    const o = exact(entry, ['lineId', 'lineNo', 'orderUnitId', 'ordered', 'shipped', 'delivered', 'remaining', 'excess'])
+    const o = exactWithOptional(entry, ['lineId', 'lineNo', 'orderUnitId', 'ordered', 'shipped', 'delivered', 'remaining', 'excess', 'shippedBy'], ['invoiceProgress'])
     const line = detail.lines[index]
     if (
       o === null || !isRevisionId(o.lineId) || o.lineId.toLowerCase() !== line.lineId.toLowerCase() ||
       o.lineNo !== line.lineNo || !isRevisionId(o.orderUnitId) ||
       o.orderUnitId.toLowerCase() !== line.orderUnitId.toLowerCase() || o.ordered !== line.quantity ||
       !isRevisionDecimal(o.ordered, true) || !isRevisionDecimal(o.shipped, false) ||
-      !isRevisionDecimal(o.delivered, false) || !isRevisionDecimal(o.remaining, false) || !isRevisionDecimal(o.excess, false)
+      !isRevisionDecimal(o.delivered, false) || !isRevisionDecimal(o.remaining, false) || !isRevisionDecimal(o.excess, false) ||
+      !isShippedByOf(o.shippedBy, compareDecimalText(o.shipped, '0') === 0)
     ) return null
+    const invoice = Object.hasOwn(o, 'invoiceProgress')
+      ? exact(o.invoiceProgress, ['invoiced', 'deliveredNotInvoiced', 'sourceVersion']) : undefined
+    if (invoice !== undefined && (invoice === null || !isRevisionDecimal(invoice.invoiced, false)
+      || !isRevisionDecimal(invoice.deliveredNotInvoiced, false) || typeof invoice.sourceVersion !== 'string'
+      || !/^sales\.order-invoiced-quantities\.v1\/[a-f0-9]{64}$/.test(invoice.sourceVersion))) return null
     lines.push({
       lineId: o.lineId, lineNo: o.lineNo, orderUnitId: o.orderUnitId, ordered: o.ordered,
-      shipped: o.shipped, delivered: o.delivered, remaining: o.remaining, excess: o.excess,
+      shipped: o.shipped, delivered: o.delivered, remaining: o.remaining, excess: o.excess, shippedBy: o.shippedBy,
+      ...(invoice !== undefined && invoice !== null ? { invoiceProgress: {
+        invoiced: invoice.invoiced as string, deliveredNotInvoiced: invoice.deliveredNotInvoiced as string,
+        sourceVersion: invoice.sourceVersion as string } } : {}),
     })
   }
   return { draftVersion: response.draftVersion, lines }
+}
+
+/**
+ * SAT-S11: a line's shippers — `[]` exactly when nothing is shipped, `null` only when something is; otherwise every name
+ * a trimmed, non-blank actor, distinct and strictly ordinal (UTF-16 code unit order, as the server's ordinal sort).
+ */
+function isShippedByOf(v: unknown, nothingShipped: boolean): v is readonly string[] | null {
+  if (v === null) return !nothingShipped
+  if (!Array.isArray(v) || (v.length === 0) !== nothingShipped) return false
+  return v.every((name, index) => isRevisionActor(name) && name.trim() === name &&
+    (index === 0 || (v[index - 1] as string) < name))
 }
 
 /** Exact decimal text compared as text — never through a JS number. Both sides are already `isRevisionDecimal`. */
@@ -1612,8 +1697,8 @@ export interface CancellationImpactSource {
   readonly status: CancellationStatus
 }
 
-/** One line of the preview; a null member means its owner could not be read — never zero in its place. */
-export interface CancellationImpactLine {
+/** One line of an impact preview; a null member means its owner could not be read — never zero in its place. */
+export interface ImpactLineFacts {
   readonly lineId: string
   readonly lineNo: number
   readonly orderUnitId: string
@@ -1625,6 +1710,15 @@ export interface CancellationImpactLine {
   readonly loaded: string | null
   readonly shipped: string | null
   readonly delivered: string | null
+}
+
+/** One line of the cancellation preview. */
+export interface CancellationImpactLine extends ImpactLineFacts {
+  /**
+   * X1 / KLN-D28 (9): the line's active future supply allocations (the owner's count); the approved cancellation releases them
+   * in its own transaction. Null exactly when the allocation owner could not be read.
+   */
+  readonly futureSupplyAllocations: number | null
 }
 
 export interface CancellationImpact {
@@ -1695,16 +1789,16 @@ export function decodeCancellationImpact(value: unknown, detail: DraftDetail): C
   const lines: CancellationImpactLine[] = []
   for (const [index, entry] of o.lines.entries()) {
     const l = exact(entry, ['lineId', 'lineNo', 'orderUnitId', 'ordered', 'activeAllocations', 'allocatedKg',
-      'loadingInstructionLines', 'instructed', 'loaded', 'shipped', 'delivered'])
+      'loadingInstructionLines', 'instructed', 'loaded', 'shipped', 'delivered', 'futureSupplyAllocations'])
     const line = detail.lines[index]
     if (
       l === null || !isRevisionId(l.lineId) || l.lineId.toLowerCase() !== line.lineId.toLowerCase() || l.lineNo !== line.lineNo ||
       !isRevisionId(l.orderUnitId) || l.orderUnitId.toLowerCase() !== line.orderUnitId.toLowerCase() || l.ordered !== line.quantity
     ) return null
-    const allocation = [l.activeAllocations, l.allocatedKg]
+    const allocation = [l.activeAllocations, l.allocatedKg, l.futureSupplyAllocations]
     const loading = [l.loadingInstructionLines, l.instructed, l.loaded, l.shipped, l.delivered]
     const allocationOk = allocationsRead
-      ? isCount(l.activeAllocations) && isRevisionDecimal(l.allocatedKg, false)
+      ? isCount(l.activeAllocations) && isRevisionDecimal(l.allocatedKg, false) && isCount(l.futureSupplyAllocations)
       : allocation.every((member) => member === null)
     const loadingOk = loadingRead
       ? isCount(l.loadingInstructionLines) && [l.instructed, l.loaded, l.shipped, l.delivered].every((member) => isRevisionDecimal(member, false))
@@ -1715,6 +1809,7 @@ export function decodeCancellationImpact(value: unknown, detail: DraftDetail): C
       activeAllocations: l.activeAllocations as number | null, allocatedKg: l.allocatedKg as string | null,
       loadingInstructionLines: l.loadingInstructionLines as number | null, instructed: l.instructed as string | null,
       loaded: l.loaded as string | null, shipped: l.shipped as string | null, delivered: l.delivered as string | null,
+      futureSupplyAllocations: l.futureSupplyAllocations as number | null,
     })
   }
   return { draftVersion: o.draftVersion, revision: o.revision, cancellable: o.cancellable, impactToken: o.impactToken, sources, lines }
@@ -1752,7 +1847,7 @@ export interface ForceCloseImpactSource {
 }
 
 /** One line of the force-close preview: the cancellation's facts plus the remainder that would be closed. */
-export interface ForceCloseImpactLine extends CancellationImpactLine {
+export interface ForceCloseImpactLine extends ImpactLineFacts {
   /** Ordered − shipped (exact); null when the loading owner could not be read. */
   readonly closedRemainder: string | null
 }

@@ -43,4 +43,44 @@ export const GOODS_RECEIPT_TEXT = {
   detailInitial: 'İlk kayıt durumu',
   detailFree: 'Serbest',
   detailBlocked: 'Blokeli',
+  futureSupplyReleasedHeading: 'Gelecek tedarik ayrımı bırakıldı',
+  futureSupplyHeading: 'Bu alış satırındaki gelecek ayırma',
+  futureSupplyNone: 'Bu genel alış satırında aktif gelecek ayırma yok.',
+  futureSupplyAllocated: (quantity: string) => `Aktif ayrılmış miktar: ${quantity} (sipariş birimi).`,
+  futureSupplyAdvisory: 'Genel satırın anlık bilgisidir; teknik dilimlerin kabulü de bu satırdan karşılanır. Kesin çevrim mal kabul kaydında yeniden kontrol edilir.',
+  futureSupplyReleasedNote: 'Mal kabul kaydedildi ve geri alınmadı. Etiket bağı kurulamayan satış ayrımlarının kalan miktarının tamamı bırakıldı; satış satırı yeniden ayrılabilir. Bırakma denetime yazıldı.',
+  futureSupplyReleasedItem: (quantity: string, reason: string) => `Bırakılan kalan ayrım: ${quantity} (sipariş birimi) — ${reason}`,
+  futureSupplyReleaseReason: {
+    'label-blocked': 'etiket serbest stokta değil (blokeli kabul)',
+    'unit-conversion-unavailable': 'alış birimi kilograma merkezi kaynakla çevrilemedi',
+    'demand-not-approved': 'satış sipariş satırı artık onaylı değil',
+    'product-mismatch': 'satış sipariş satırının ürünü etiketle uyuşmuyor',
+    'insufficient-label-quantity': 'etiketin serbest miktarı yetmiyor',
+    'owner-not-company': 'etiket şirketin mülkiyetinde ve elinde değil',
+  },
+  // AK-3b (BS-16/BS-17): a piece receipt's theoretical vs weighed kilograms, exactly as the server recorded them.
+  pieceHeading: 'Teorik ve tartılan kg karşılaştırması (adetli satır)',
+  pieceCount: 'Kabul edilen adet',
+  pieceKilogramsPerUnit: 'Teorik kg/adet',
+  pieceTheoreticalKg: 'Teorik kg',
+  pieceMeasuredKg: 'Tartılan kg',
+  pieceDifferenceKg: 'Fark (tartılan − teorik)',
+  pieceTolerance: 'Tolerans (%)',
+  pieceToleranceNotSet: 'Tanımlı değil',
+  pieceOutcome: 'Değerlendirme',
+  pieceKg: (value: string) => `${value} kg`,
+  pieceOutcomeText: {
+    Exact: 'Fark yok',
+    WithinTolerance: 'Tolerans içinde',
+    OutsideTolerance: 'Tolerans dışında',
+    ToleranceNotSet: 'Tolerans tanımlı değil',
+  },
+  pieceOutsideTolerance: 'Uyarı: tartılan kg ile teorik kg arasındaki fark tolerans dışında. Mal kabul kaydedildi; maliyet tartılan kg üzerinden hesaplanır.',
+  pieceToleranceNotSetNote: 'Ayarlar\'da tolerans tanımlı değil; fark değerlendirilemedi. Mal kabul kaydedildi.',
 } as const
+
+/** AK-3b: the piece-line refusals of a goods receipt in user words; any other code keeps the generic refusal text. */
+export const GOODS_RECEIPT_PROBLEM_TEXT: Readonly<Record<string, string>> = {
+  purchasing_receipt_piece_count_invalid: 'Adetli satırda kabul miktarı tam ve pozitif bir adet olmalıdır. Mal kabul kaydedilmedi.',
+  purchasing_receipt_theoretical_kilograms_missing: 'Adetli satırda kayıtlı teorik kg/adet yok; mal kabul kaydedilemedi. Sipariş satırının kg/adet kaynağı tamamlanmalıdır.',
+}

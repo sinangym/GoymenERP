@@ -154,6 +154,53 @@ describe('Inventory label detail contract', () => {
       .toBeNull()
   })
 
+  it('decodes the manufacturing output reversal as one free Out line and rejects every other shape', () => {
+    const entry = movementTimeline().entries[0]
+    const out = { ...entry.lines[0], direction: 'Out' }
+    const reversal = (lines: unknown[]) => ({
+      ...movementTimeline(),
+      entries: [{ ...entry, kind: 'ManufacturingOutputReversal', sourceKind: 'manufacturing.output-reversal', lines }],
+    })
+
+    expect(decodeInventoryLabelMovementTimeline(reversal([out]), LABEL)?.entries[0].kind)
+      .toBe('ManufacturingOutputReversal')
+    expect(decodeInventoryLabelMovementTimeline(reversal([entry.lines[0]]), LABEL)).toBeNull()
+    expect(decodeInventoryLabelMovementTimeline(reversal([{ ...out, block: 'Blocked' }]), LABEL)).toBeNull()
+    expect(decodeInventoryLabelMovementTimeline(reversal([out, { ...out, sequence: 2 }]), LABEL)).toBeNull()
+  })
+
+  it('decodes the transfer dispatch cancellation as In lines only', () => {
+    const entry = movementTimeline().entries[0]
+    const cancellation = (direction: 'In' | 'Out') => ({
+      ...movementTimeline(),
+      entries: [{
+        ...entry, kind: 'TransferDispatchCancellation', sourceGrain: 'Whole', sourceLineId: null,
+        lines: [entry.lines[0], { ...entry.lines[0], sequence: 2, block: 'Blocked', direction }],
+      }],
+    })
+
+    expect(decodeInventoryLabelMovementTimeline(cancellation('In'), LABEL)?.entries[0].kind)
+      .toBe('TransferDispatchCancellation')
+    expect(decodeInventoryLabelMovementTimeline(cancellation('Out'), LABEL)).toBeNull()
+  })
+
+  it('decodes StockMovementKind 12–16 with their owner line shapes and refuses a wrong shape or an unknown kind', () => {
+    const base = movementTimeline().entries[0]
+    const out = { ...base.lines[0], direction: 'Out' }
+    const timeline = (kind: string, lines: unknown[]) => decodeInventoryLabelMovementTimeline({ ...movementTimeline(),
+      entries: [{ ...base, kind, lines }] }, LABEL)
+    for (const kind of ['TransferReceiptShortage', 'SupplierReturnExit', 'PurchaseAcceptanceReversal']) {
+      expect(timeline(kind, [out])?.entries[0].kind, kind).toBe(kind)
+      expect(timeline(kind, [base.lines[0]]), kind).toBeNull()
+    }
+    expect(timeline('TransferReceiptOverage', [base.lines[0]])).not.toBeNull()
+    expect(timeline('TransferReceiptOverage', [out])).toBeNull()
+    expect(timeline('TransferTransitLoss', [base.lines[0], { ...out, sequence: 2 }])).not.toBeNull()
+    expect(timeline('TransferTransitLoss', [base.lines[0], { ...out, sequence: 2, quantityKg: '1' }])).toBeNull()
+    expect(timeline('TransferTransitLoss', [base.lines[0]])).toBeNull()
+    expect(timeline('UnknownKind', [out])).toBeNull()
+  })
+
   it('fails closed for impossible or internally inconsistent transformation groups', () => {
     const [first, second] = genealogy().edges
     const decode = (edges: unknown[]) => decodeInventoryLabelGenealogy({ ...genealogy(), edges }, LABEL, 'LBL-100')
@@ -203,5 +250,41 @@ describe('Inventory label detail contract', () => {
       ...balances(), physicalKg: '1.0001', freeKg: '1.0001', blockedKg: '0',
       positions: [{ ...balances().positions[0], quantityKg: '1.0001' }],
     })).toBeNull()
+  })
+})
+
+describe('KLN-D119 label piece totals and position pieces', () => {
+  const withPieces = () => {
+    const base = balances()
+    return {
+      ...base, physicalPieces: 40, freePieces: 36, blockedPieces: 4,
+      positions: [{ ...base.positions[0], pieceCount: 36 }, { ...base.positions[1], pieceCount: 4 }],
+    }
+  }
+
+  it('reads the piece totals and each position’s pieces when present, and leaves them undefined when absent', () => {
+    const decoded = decodeInventoryLabelBalances(withPieces())
+    expect([decoded?.physicalPieces, decoded?.freePieces, decoded?.blockedPieces]).toEqual([40, 36, 4])
+    expect(decoded?.positions.map((position) => position.pieceCount)).toEqual([36, 4])
+    const kgOnly = decodeInventoryLabelBalances(balances())
+    expect(kgOnly).not.toBeNull()
+    expect([kgOnly?.physicalPieces, kgOnly?.freePieces, kgOnly?.blockedPieces]).toEqual([undefined, undefined, undefined])
+    expect(kgOnly?.positions.every((position) => position.pieceCount === undefined)).toBe(true)
+  })
+
+  it.each([null, '40', 4.5, -1, true])('fails closed on the piece value %j', (bad) => {
+    expect(decodeInventoryLabelBalances({ ...withPieces(), physicalPieces: bad })).toBeNull()
+    expect(decodeInventoryLabelBalances({ ...withPieces(), freePieces: bad })).toBeNull()
+    expect(decodeInventoryLabelBalances({ ...withPieces(), blockedPieces: bad })).toBeNull()
+    const base = withPieces()
+    expect(decodeInventoryLabelBalances({ ...base, positions: [{ ...base.positions[0], pieceCount: bad }, base.positions[1]] }))
+      .toBeNull()
+  })
+
+  it('still refuses an unknown member beside the piece members', () => {
+    expect(decodeInventoryLabelBalances({ ...withPieces(), reservedPieces: 1 })).toBeNull()
+    const base = withPieces()
+    expect(decodeInventoryLabelBalances({ ...base, positions: [{ ...base.positions[0], pieces: 1 }, base.positions[1]] }))
+      .toBeNull()
   })
 })

@@ -156,7 +156,7 @@ public sealed partial class SalesDraftServiceTests
         {
             var answer = original(query);
             var first = answer.Shares[0];
-            return answer with { Shares = [first, first with { ShipmentId = secondShipment, ShippedAtUtc = Shipped.AddDays(1) }] };
+            return answer with { Shares = [first, first with { DispatchNoteId = Guid.NewGuid(), ShipmentId = secondShipment, ShippedAtUtc = Shipped.AddDays(1) }] };
         };
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => invoicing.Service().CreateInvoiceAsync(

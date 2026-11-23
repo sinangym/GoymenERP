@@ -1,0 +1,38 @@
+# W8 SQL ön analizi — 19 Kasım 2026
+
+Kaynak: yayımlı b5373e67e00bc9445b32341213b323b14480eaad; hazırlanan takip a022623ad0b8f5e44786fb3509f45bf777359342. Sabit174 kaynak dilimi korunur, yeni dalga yok. Bu kaynak/korunmuş TRX analizidir; yeni native build veya test başlatılmadı.
+
+## Kesin bulgular ve sınırlar
+
+| Yüzey | Kanıt / neden | İşlem |
+|---|---|---|
+| Yerel A grain Fact'i | TRX line241: purchase.receipt/PURCHASE.RECEIPT aynı sayılmadı. Canlı SQL collation Turkish_CI_AS; DB eşitliği README'de otoritedir. | 1ead6b21f sentetik source.test/SOURCE.TEST/Source.Test kullanır. Whole/line, duplicate, FK ve unique beklentileri korunur; üretim sorgusu/collation/migration değişmez. Native NOT_RUN. |
+| Yerel B üç ProductPurchaseSelection Fact'i | Üç stack aynı DisposeAsync line234/237. Factory.DatabaseConnectionString yerel AttachDBFilename içerir; cleanup yalnız InitialCatalog=master yapar. SQL mevcut dosyayı master olarak attach etmeye çalışır. | Yeni ürün politikası gerekmez. Cleanup master bağlantısında AttachDBFilename temizlenmeli. ProductPriceList aynı onarımı zaten uygular. Kaynak taramasında factory bağlantısından master'a geçip bu alanı temizlemeyen tek doğrudan kullanım bu sınıfta bulundu. Cleanup hatası asıl test hatasını maskeleyebilir; testin iş kısmının PASS olduğu iddia edilmez. Henüz uygulanmadı/test edilmedi. |
+| GitHub B kasa yarışı |627 sonuçta1 FAIL. Onay treasury SERIALIZABLE, ret dışarıda; bariyer sonrası ret veya onay1205 kaybedeni olabilir. Ret save helper bu hata yolunu kapsamıyordu. | ada125245 ret de mevcut treasury rollback sınırına alındı. Aynı Fact iki test oturumu önceliğiyle her iki aktörü birer kez gerçek1205 kaybedeni yapacak; tek kazanan/typed Unavailable/version4/commands4/audit1 ve native1205 sayısı sıkıdır. Test oturumları pool'a dönmez. Native NOT_RUN; yeni politika veya retry yok. |
+| GitHub A transfer yarışı |639 sonuçta1 FAIL. Guard optimistic/ilk-insert çakışması InventoryStoreException.ConcurrentChange üretir; dispatch/accept doğrudan guard çağrıları staging'deki transfer hata eşlemesinin dışındaydı. | b0b9f07b6 yalnız bu kodu mevcut Transfer409.ConcurrentChange'e çevirir. Timeout/deadlock/diğer istisnalar geniş biçimde eşlenmez. Kaynak boşluğu kesindir; CI'deki failing alt adım olduğu özel TRX/yeniden üretim olmadan kesinleştirilemez. Native NOT_RUN. |
+| A süre sınırı |76 tamamlanmış batch/608 sonuç:607 PASS1 FAIL; global10800 saniyede durdu,31 sonuç kanıtı yok.76 native batch toplam10660,1s; test sonuçlarının zaman aralıklarının birleşimi10306,0s; dışarıda354,1s. | Süre artırılmaz. İşlem dışı overhead yaklaşık%3,3; batch birleştirmek tek başına yeterli bir çözüm olarak sunulmaz. Test içi DB hazırlığı/migration/seed/yürütme süreleri ayrılmadan snapshot/paylaşılan DB/paralellik/sunucu ayarı değiştirilmez. |
+| Süre hata metni | run_test_checked gerçek deadline=min(2400, kalan global bütçe), fakat hata metni daima2400 der. A sonuç kaydı10800,26s. | Yanlış teşhis riskidir. Sonraki dar runner düzeltmesi actual effective budget/global vs process deadline ayrımını göstermeli;40/180 kapıları korunmalı. Henüz uygulanmadı/test edilmedi. |
+
+## Test başlatmadan önce yapılacaklar
+
+1. Yeni native hedef kuyruğu HELD_BEFORE_NATIVE_START_FOR_SOURCE_ANALYSIS: yalnız bekleyen operatör durduruldu; hiçbir hedef testi başlamadı. Mevcut tam b537 SQL kendi kaynaklarıyla sürüyor; testi/kanıtı silmek, skip veya PASS üretmek yok.
+2. Mevcut üç hazırlanmış düzeltmenin farkını ve cleanup düzeltmesinin etki alanını incele. Gerçek karar/sözleşme korunur. Production/instance/global collation ve workflow değişmez.
+3. Her doğrulanmış kök neden için tek hedefli kabul seç: grain1, kasa1 içinde iki kontrollü1205, transfer1 ve ProductPurchaseSelection3. Fixture/durable state/CompanyId/audit/command count ve SDK/TRX exact kimlikleri şarttır.
+4. Kaynak/derleme temiz olduktan sonra ilk yeni koşum yalnız bu küçük hedef kümesi olmalı. Kaynak incelemesi SQL başarısı değildir. Yeni hedef koşumu bu analiz sırasında başlatılmadı.
+5. Hedefler geçince ilgili modül birimleri/mimari/contract kontrolleri ve eksik31 testin ayrı tanısı; sonra son güncel head'de tam CI. Eski head PASS'leri farklı head'de tek tam kabul gibi toplanmaz.
+6. Mevcut180 dakika sınırında tam yerel A'nın bitmesi garanti değil. Test içi maliyet azaltımı ölçülmeden kapsam küçültme/kapı gevşetme veya daha yüksek paralellik yapılmaz. GitHub SQL16 ve yerel SQL17 sonuçları ayrı kalır.
+7. Son fresh tam CI ve iki bağımsız tam exact-head K3 review olmadan #1201 ready/merge olmaz. OPEN/grant/rol/Critical/production/Finance STOP değişmez.
+
+## Düzeltme sonrası yazar kaynak incelemesi — teste geçilmedi
+
+İncelenen son kaynak4e8124799f6dc25ee7fd24cc61fc759f49c98d81. Bu kendi yazdığım kodun ön kontrolüdür; bağımsız K3 imzası veya çalışmış test kanıtı değildir.
+
+- Cleanup8f2949a99: master bağlantısında AttachDBFilename boşaltıldı. Diğer bağlantı/TLS/auth alanları aynı; hedef sentetik veritabanı adı32-hex GUID regex ile sınırlı ve değişmedi. Var olan ProductPriceList çözümüyle aynı davranış. Dosya attach hatası düzeltilmeden önceki üç Fact'in iş kısmı başarılı sayılmadı.
+- Finans252762651: ret gerekçesi canonical/uzunluk kontrolü treasury işlemine girmeden önce korunur. İki karar da aynı mevcut treasury owner sınırında; tam rollback/replay/yetki/expected version/audit yolları kaynak üzerinden okundu. Yeni retry/izin/bakiye kuralı yok. Yarış testinde actual transaction Serializable kontrolü yerel nullable-safe değişkene bağlandı; iki SQL1205 kaybedeninin strict sonucu, versiyon/komut/denetim sayısı ve test bağlantısının Pooling=false sınırı okundu. Host rollback ve sıradan stale-version kapsamı bu test tek başına kanıtlamaz.
+- Transferb0b9f07b6: catch yalnız InventoryStoreCodes.ConcurrentChange için; diğer hatalar yutulmuyor. İki guard girişinde mevcut transfer409 sözleşmesi, owner/borrowed rollback sahipliği ve fresh authority çağrıları kaynakta kontrol edildi. Bunun CI'deki failing alt adım olduğuna dair runtime iddiası yapılmıyor.
+- Grain1ead6b21f: genuine case varyantı, source bütün/satır reddi, duplicate ve rawSQL FK/unique kontrolleri aynı. Sentetik token dışında production kaynak karşılaştırması/DB collation değiştirilmedi.
+- Runner9077fdf4f: deadline=min(process2400,remaining global10800) ve native failure'ın korunması aynı. Sadece efektif süre/global-process ayrımı hata metninde gösterilir. Üç mocked-budget regression senaryosu yazıldı, çalıştırılmadı. Python AST yalnız sözdizimi olarak okundu; import/unittest/native çalıştırılmadı.
+- Kaynak parmak izleri ev helper'ı ile9077fdf4f committed snapshot'tan hesaplandı. Riskli1467 kaynak:de4f1012ba88aa29b39db812e116fee1598aa6e3be8dc80b46f54c5366d68bc5; FinanceCashAccountService:5fbfbf8b72c881fa3751dcc1b055da81052cb3dcf787d82e3f9cce164d276334.19 context/343 migration/audit42 aynı.4e8124799 yalnız ölçülen pinleri günceller; yeni allow-list/hamSQL/tenant bypass kaydı yok, SqlClient sayısı1 kalır, K3 review bekler. Tam recovery consumer ve mimari test NOT_RUN.
+- İnceleme farkı yalnız iki production backend dosyası ile test/runner/pin/devir dosyalarıdır. Public API/event/permission/migration/relational inventory/.github/settings değişmedi. git diff --check temiz; C# derleme yapılmadığından derlenebilirlik veya runtime başarı iddiası yok.
+
+Sonuç: kaynak düzeltmeleri ve kendi kaynak incelemem tamamlandı. Yeni derleme/test/CI başlatılmadı, test kuyruğu HELD; çalışan eski b537 koşumu ayrı kanıttır. GitHub train push/ready/merge yok. SQL içi sürenin180 dakikaya sığması henüz çözülmüş sayılmaz; tanı metni düzeltmesi bir performans düzeltmesi değildir. İlk sonraki gerçek doğrulama altı hedef ve dar runner regression olmalı; tam koşum sonradır.

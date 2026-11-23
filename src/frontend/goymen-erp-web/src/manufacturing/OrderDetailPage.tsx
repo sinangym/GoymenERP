@@ -34,15 +34,28 @@ import {
   fetchMassBalance,
   fetchOrder,
 } from './api'
-import { closeOrder, recordFact, type FactFailure, type FactUnknown } from './commandApi'
+import {
+  ORDER_DUE_DATE_CHANGED,
+  changeOrderDueDate,
+  closeOrder,
+  recordFact,
+  type FactFailure,
+  type FactUnknown,
+} from './commandApi'
 import { fetchInventoryLabelDetail } from '../inventory/labelDetailApi'
 import type { InventoryLabelDetailWithMovementTimeline } from '../inventory/labelDetailContract'
 import { INVENTORY_STOCK_POSITIONS_CAPABILITY } from '../inventory/capabilities'
 import {
+  DEFAULT_OUTPUT_CLASS,
+  DEFAULT_REMNANT_CLASSIFICATION,
   FACT_KINDS,
   INVENTORY_OUTPUT_CLASSES,
   OUTPUT_CLASSES,
+  REMNANT_CLASSIFICATIONS,
+  calendarDate,
   isKilogramText,
+  outputLineKey,
+  parsePieceCount,
   type CloseSnapshot,
   type EngineAnswer,
   type FactKind,
@@ -50,7 +63,9 @@ import {
   type MassBalanceView,
   type ManufacturingOutputLocationCandidate,
   type ManufacturingOutputProductCandidate,
+  type OrderDueDateSnapshot,
   type ProductionOrderView,
+  type RemnantClassification,
   type RollBalance,
 } from './contract'
 import {
@@ -61,6 +76,17 @@ import {
   type FactAttempt,
 } from './factAttempt'
 import { MANUFACTURING_CAPABILITY } from './capabilities'
+import { OrderCostTracePanel } from './OrderCostTracePanel'
+import { OutputPieceTable } from './OutputPieceTable'
+import { OUTPUT_PIECE_TEXT } from './outputPieceText'
+import { OrderCostPanel } from './OrderCostPanel'
+import { CostGenerationPanel } from './CostGenerationPanel'
+import { OrderUsdCostPanel } from './OrderUsdCostPanel'
+import { NonKgInputPanel } from './NonKgInputPanel'
+import { OrderLineagePanel } from './OrderLineagePanel'
+import { OutputCorrectionSection } from './OutputCorrectionSection'
+import { OrderCancelSection } from './OrderCancelSection'
+import { OrderReopenSection } from './OrderReopenSection'
 import {
   pendingFactKey,
   recallPendingFact,
@@ -72,6 +98,7 @@ import {
   APPLIED_DETAIL,
   APPLIED_TITLE,
   CLOSED_ORDER_TEXT,
+  CANCELLED_ORDER_TEXT,
   CLOSE_TEXT,
   COST_STATUS_TEXT,
   ENGINE_REFUSED,
@@ -90,6 +117,7 @@ import {
   OUTPUT_INVENTORY_TEXT,
   OUTPUT_CLASS_LABEL,
   REMAINING_UNAVAILABLE,
+  REMNANT_CLASSIFICATION_LABEL,
   REPLAYED_DETAIL,
   REPLAYED_TITLE,
   ROLL_REQUIRED,
@@ -102,6 +130,8 @@ import {
   failureText,
   unknownText,
 } from './manufacturingText'
+import { ORDER_DUE_DATE_TEXT, orderDueDateFailureText } from './orderDueDateText'
+import { INPUT_RETURN_SOURCE_TEXT } from './inputReturnSourceText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
@@ -137,6 +167,7 @@ export function OrderDetailPage() {
 }
 
 function OrderDetail({ namespace }: { readonly namespace: string | null }) {
+  const [reopenLocked, setReopenLocked] = useState(false)
   const shell = useShellState()
   const boundary = useAuthBoundary()
   const { orderId } = useParams()
@@ -151,6 +182,13 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
     shell,
     MANUFACTURING_CAPABILITY.orderCloseExceptionApprove,
   )
+  // URT-D66 (5): the order's termin is changed under the order edit grant, a control of its own.
+  const canChangeDueDate = hasCapability(shell, MANUFACTURING_CAPABILITY.orderDueDate)
+  // URT-S19 (API-42): the cost trace is read under the reports grant, a control of its own; no write follows from it.
+  const canReadCostTrace = hasCapability(shell, MANUFACTURING_CAPABILITY.orderCostTrace)
+  // F-009 D6: correcting a recorded output and cancelling the order are authorities of their own, each a control.
+  const canCorrectOutput = hasCapability(shell, MANUFACTURING_CAPABILITY.orderOutputCorrection)
+  const canCancel = hasCapability(shell, MANUFACTURING_CAPABILITY.orderCancel)
   const storeKey = pendingFactKey(
     shell.sessionEpoch,
     shell.activeContext?.userId ?? null,
@@ -207,6 +245,7 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
     <Frame>
       <OrderSummary order={order} />
       <RollTable rolls={order.rolls} />
+      <OutputPieceTable outputs={order.outputPieces} />
       <MassBalancePanel
         namespace={namespace ?? 'no-context'}
         routeEntryGeneration={shell.routeEntryGeneration}
@@ -214,7 +253,42 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
         orderId={order.orderId}
         orderVersion={order.version}
       />
-      {canRecord ? (
+      {canReadCostTrace ? (
+        <OrderCostTracePanel
+          namespace={namespace ?? 'no-context'}
+          routeEntryGeneration={shell.routeEntryGeneration}
+          companyId={activeCompanyId ?? ''}
+          orderId={order.orderId}
+          orderVersion={order.version}
+        />
+      ) : null}
+      {/* URT-S17 (SAT-D317): the recorded production cost, under the same control (order read + reports read). */}
+      {canReadCostTrace ? (
+        <OrderCostPanel
+          namespace={namespace ?? 'no-context'}
+          routeEntryGeneration={shell.routeEntryGeneration}
+          companyId={activeCompanyId ?? ''}
+          orderId={order.orderId}
+          orderVersion={order.version}
+        />
+      ) : null}
+      {canReadCostTrace && order.status === 'Closed' ? <OrderUsdCostPanel namespace={namespace ?? 'no-context'} routeEntryGeneration={shell.routeEntryGeneration}
+        companyId={activeCompanyId ?? ''} orderId={order.orderId} orderVersion={order.version} /> : null}
+      {canReadCostTrace && (order.status === 'Closed' || (order.reopenings?.length ?? 0) > 0) ? <CostGenerationPanel key={`${namespace}:${order.orderId}`} namespace={namespace ?? 'no-context'}
+        routeEntryGeneration={shell.routeEntryGeneration}
+        companyId={activeCompanyId ?? ''} orderId={order.orderId} orderVersion={order.version} closed={order.status === 'Closed'}
+        canRecognize={canClose && !reopenLocked} onRefresh={refresh} /> : null}
+      <OrderLineagePanel
+        namespace={namespace ?? 'no-context'}
+        routeEntryGeneration={shell.routeEntryGeneration}
+        companyId={activeCompanyId ?? ''}
+        orderId={order.orderId}
+        orderVersion={order.version}
+      />
+      <NonKgInputPanel key={`${namespace}:${order.orderId}:non-kg`} namespace={namespace ?? 'no-context'} routeEntryGeneration={shell.routeEntryGeneration}
+        companyId={activeCompanyId ?? ''} orderId={order.orderId} orderVersion={order.version}
+        canRecord={canRecord && !reopenLocked && order.status === 'Open'} onRefresh={refresh} />
+      {canRecord && !reopenLocked ? (
         <FactSection
           order={order}
           namespace={namespace ?? 'no-context'}
@@ -226,7 +300,26 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
           onRefresh={refresh}
         />
       ) : null}
-      {canClose ? (
+      {canCorrectOutput && !reopenLocked ? (
+        <OutputCorrectionSection
+          order={order}
+          namespace={namespace ?? 'no-context'}
+          routeEntryGeneration={shell.routeEntryGeneration}
+          companyId={activeCompanyId ?? ''}
+          canReadInventoryLabel={canReadInventoryLabel}
+          pendingKey={storeKey}
+          onRefresh={refresh}
+        />
+      ) : null}
+      {canChangeDueDate && !reopenLocked ? (
+        <OrderDueDateSection
+          key={`${order.orderId}:${order.dueDateRevision}`}
+          order={order}
+          companyId={activeCompanyId ?? ''}
+          onRefresh={refresh}
+        />
+      ) : null}
+      {canClose && !reopenLocked ? (
         <CloseSection
           order={order}
           companyId={activeCompanyId ?? ''}
@@ -234,6 +327,12 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
           onRefresh={refresh}
         />
       ) : null}
+      {canCancel && !reopenLocked ? (
+        <OrderCancelSection order={order} companyId={activeCompanyId ?? ''} onRefresh={refresh} />
+      ) : null}
+      <OrderReopenSection key={`${namespace}:${order.orderId}`} order={order} companyId={activeCompanyId ?? ''}
+        namespace={namespace ?? 'no-context'} allowed={hasCapability(shell, MANUFACTURING_CAPABILITY.orderReopen)}
+        blocked={query.isFetching || recallPendingFact(storeKey) !== null} onRefresh={refresh} onLocked={setReopenLocked} />
     </Frame>
   )
 }
@@ -404,9 +503,9 @@ function CloseSection({
     <section aria-labelledby="mfg-close-heading" className={styles.section} data-testid="order-close">
       <h2 id="mfg-close-heading">{CLOSE_TEXT.heading}</h2>
       <p className={styles.help}>{CLOSE_TEXT.help}</p>
-      {order.status === 'Closed' ? (
+      {order.status !== 'Open' ? (
         <p className={styles.help} data-testid="order-already-closed">
-          {CLOSED_ORDER_TEXT}
+          {order.status === 'Cancelled' ? CANCELLED_ORDER_TEXT : CLOSED_ORDER_TEXT}
           {order.closedAtUtc !== null ? ` ${CLOSE_TEXT.closedAt}: ${order.closedAtUtc}` : ''}
         </p>
       ) : attempt.phase === 'confirming' ? (
@@ -489,6 +588,151 @@ function CloseSection({
     </section>
   )
 }
+
+/**
+ * URT-D66 (3): the order's own termin, a control of this screen for a holder of `manufacturing.orders.write`.
+ *
+ *  - The day is typed by the user; nothing here computes or compares it against "today". The server refuses a day earlier
+ *    than the Europe/Istanbul business day (`manufacturing_due_date_in_past`), a closed order and a no-change request.
+ *  - The termin revision sent is the one this screen READ; the attempt is frozen once (key, revision and day together),
+ *    so a re-send of an unknown outcome is the same command. A new attempt is a new key.
+ *  - After an accepted (or replayed) change, or a moved termin, the order is re-read; the plan's termin is never touched.
+ *  - The section is keyed by the termin revision: a re-read with a new revision starts it afresh, and an outcome notice
+ *    that belongs to the earlier revision is kept above it by the parent's re-read only through the summary.
+ */
+function OrderDueDateSection({
+  order,
+  companyId,
+  onRefresh,
+}: {
+  readonly order: ProductionOrderView
+  readonly companyId: string
+  readonly onRefresh: () => Promise<void>
+}) {
+  const [attempt, setAttempt] = useState<OrderDueDateAttempt>({ phase: 'idle' })
+  const [value, setValue] = useState(order.dueDate ?? '')
+
+  const send = async (snapshot: OrderDueDateSnapshot) => {
+    setAttempt({ phase: 'sending', snapshot })
+    const outcome = await changeOrderDueDate(companyId, order.orderId, snapshot)
+    if (outcome.type === 'applied') {
+      setAttempt({ phase: 'applied', replayed: outcome.replayed })
+      await onRefresh()
+      return
+    }
+    if (outcome.type === 'failed') {
+      setAttempt({ phase: 'refused', failure: outcome.failure })
+      if (outcome.failure.kind === 'concurrent-change'
+        || (outcome.failure.kind === 'rule' && outcome.failure.code === ORDER_DUE_DATE_CHANGED)) {
+        await onRefresh()
+      }
+      return
+    }
+    setAttempt({ phase: 'unknown', snapshot, unknown: outcome.unknown })
+  }
+
+  const trimmed = value.trim()
+  const valid = calendarDate(trimmed)
+  const unchanged = valid && trimmed === order.dueDate
+  const sending = attempt.phase === 'sending'
+  const hintId = 'mfg-order-due-date-hint'
+
+  return (
+    <section aria-labelledby="mfg-order-due-date-heading" className={styles.section} data-testid="order-due-date">
+      <h2 id="mfg-order-due-date-heading">{ORDER_DUE_DATE_TEXT.heading}</h2>
+      <p className={styles.help}>{ORDER_DUE_DATE_TEXT.help}</p>
+      {order.status !== 'Open' ? (
+        <p className={styles.help} data-testid="order-due-date-closed">{ORDER_DUE_DATE_TEXT.closedReadOnly}</p>
+      ) : attempt.phase === 'unknown' ? (
+        <div className={styles.actions}>
+          <Button type="button" onClick={() => void send(attempt.snapshot)}>
+            {ORDER_DUE_DATE_TEXT.resend}
+          </Button>
+        </div>
+      ) : attempt.phase === 'editing' || sending ? (
+        <div className={styles.form}>
+          <div className={styles.control}>
+            <label htmlFor="mfg-order-due-date">{ORDER_DUE_DATE_TEXT.inputLabel}</label>
+            <input
+              id="mfg-order-due-date"
+              type="date"
+              value={value}
+              disabled={sending}
+              aria-invalid={!valid}
+              aria-describedby={hintId}
+              onChange={(event) => setValue(event.target.value)}
+            />
+          </div>
+          <p id={hintId} className={valid ? styles.help : styles.error}>
+            {!valid ? ORDER_DUE_DATE_TEXT.invalid : unchanged ? ORDER_DUE_DATE_TEXT.unchanged : ORDER_DUE_DATE_TEXT.inputHint}
+          </p>
+          <div className={styles.actions}>
+            <Button
+              type="button"
+              disabled={sending || !valid || unchanged}
+              aria-busy={sending}
+              onClick={() => {
+                if (!valid || unchanged) return
+                void send({
+                  idempotencyKey: newId(),
+                  expectedDueDateRevision: order.dueDateRevision,
+                  dueDate: trimmed,
+                })
+              }}
+            >
+              {sending ? ORDER_DUE_DATE_TEXT.saving : ORDER_DUE_DATE_TEXT.save}
+            </Button>
+            <Button type="button" disabled={sending} onClick={() => setAttempt({ phase: 'idle' })}>
+              {ORDER_DUE_DATE_TEXT.dismiss}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className={styles.actions}>
+          <Button
+            type="button"
+            onClick={() => {
+              setValue(order.dueDate ?? '')
+              setAttempt({ phase: 'editing' })
+            }}
+          >
+            {ORDER_DUE_DATE_TEXT.edit}
+          </Button>
+        </div>
+      )}
+      {attempt.phase === 'applied' ? (
+        <div className={styles.noticeOk} role="status" data-outcome={attempt.replayed ? 'replayed' : 'applied'}>
+          <p className={styles.noticeTitle}>
+            {attempt.replayed ? ORDER_DUE_DATE_TEXT.replayedTitle : ORDER_DUE_DATE_TEXT.appliedTitle}
+          </p>
+          <p>{attempt.replayed ? ORDER_DUE_DATE_TEXT.replayedDetail : ORDER_DUE_DATE_TEXT.appliedDetail}</p>
+        </div>
+      ) : null}
+      {attempt.phase === 'refused' ? (
+        <div className={styles.noticeError} role="alert" data-outcome="refused">
+          <p className={styles.noticeTitle}>{ORDER_DUE_DATE_TEXT.refusedTitle}</p>
+          <p data-testid="order-due-date-refusal">{orderDueDateFailureText(attempt.failure)}</p>
+        </div>
+      ) : null}
+      {attempt.phase === 'unknown' ? (
+        <div className={styles.noticeWarn} role="alert" data-outcome="unknown">
+          <p className={styles.noticeTitle}>{ORDER_DUE_DATE_TEXT.unknownTitle}</p>
+          <p>{unknownText(attempt.unknown)}</p>
+          <p>{ORDER_DUE_DATE_TEXT.unknownHelp}</p>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+/** One order termin change on this screen; the snapshot is kept exactly while its outcome is unknown. */
+type OrderDueDateAttempt =
+  | { readonly phase: 'idle' }
+  | { readonly phase: 'editing' }
+  | { readonly phase: 'sending'; readonly snapshot: OrderDueDateSnapshot }
+  | { readonly phase: 'applied'; readonly replayed: boolean }
+  | { readonly phase: 'refused'; readonly failure: FactFailure }
+  | { readonly phase: 'unknown'; readonly snapshot: OrderDueDateSnapshot; readonly unknown: FactUnknown }
 
 /** One close attempt on this screen; the snapshot is kept exactly while its outcome is unknown. */
 type CloseAttempt =
@@ -574,6 +818,33 @@ function OrderSummary({ order }: { readonly order: ProductionOrderView }) {
         </dd>
       </div>
       <div className={styles.field}>
+        <dt>{ORDER_DUE_DATE_TEXT.label}</dt>
+        <dd data-testid="order-due-date-value">
+          {order.dueDate === null ? (
+            ORDER_DUE_DATE_TEXT.none
+          ) : (
+            <>
+              <span className={styles.mono}>{order.dueDate}</span>
+              {` · ${ORDER_DUE_DATE_TEXT.revision} ${order.dueDateRevision}`}
+            </>
+          )}
+          {order.dueDateDiffersFromPlan ? (
+            <>
+              {' '}
+              <span className={styles.badgeDifference} data-testid="order-due-date-differs">
+                {ORDER_DUE_DATE_TEXT.differsFromPlan}
+              </span>
+            </>
+          ) : null}
+        </dd>
+      </div>
+      <div className={styles.field}>
+        <dt>{ORDER_DUE_DATE_TEXT.planLabel}</dt>
+        <dd data-testid="order-plan-due-date">
+          {order.planDueDate === null ? ORDER_DUE_DATE_TEXT.none : <span className={styles.mono}>{order.planDueDate}</span>}
+        </dd>
+      </div>
+      <div className={styles.field}>
         <dt>{ORDER_DETAIL_TEXT.cost}</dt>
         <dd data-testid="cost-status">{COST_STATUS_TEXT}</dd>
       </div>
@@ -642,13 +913,19 @@ function RollTable({ rolls }: { readonly rolls: readonly RollBalance[] }) {
 interface FormValues {
   readonly kind: FactKind
   readonly parentRollId: string
+  readonly sourceIssueMovementId: string
   readonly kg: string
   /** `datetime-local` value, read as the browser's local time and sent as UTC. */
   readonly occurredAt: string
   readonly outputClass: '' | (typeof INVENTORY_OUTPUT_CLASSES)[number]
+  readonly outputLine: string
+  /** URT-S16 (BS-14): sent only when the output class is UsableRemnant. */
+  readonly remnantClassification: RemnantClassification
   readonly productId: string
   readonly locationId: string
   readonly labelCode: string
+  /** AK-7 (URT-D112): the counted pieces; empty sends none (an uncounted product). */
+  readonly pieceCount: string
   readonly heatNumber: string
   readonly coilNumber: string
   readonly requiredDocuments: string
@@ -660,12 +937,17 @@ interface FormValues {
 const EMPTY_FORM: FormValues = {
   kind: 'input-issues',
   parentRollId: '',
+  sourceIssueMovementId: '',
   kg: '',
   occurredAt: '',
-  outputClass: '',
+  // URT-D43 (2): a new output starts as a good product; BS-14: a usable remnant starts as second quality.
+  outputClass: DEFAULT_OUTPUT_CLASS,
+  outputLine: '',
+  remnantClassification: DEFAULT_REMNANT_CLASSIFICATION,
   productId: '',
   locationId: '',
   labelCode: '',
+  pieceCount: '',
   heatNumber: '',
   coilNumber: '',
   requiredDocuments: '',
@@ -680,12 +962,18 @@ function formFromSnapshot(snapshot: FactSnapshot): FormValues {
   return {
     kind: snapshot.kind,
     parentRollId: snapshot.parentRollId,
+    sourceIssueMovementId: snapshot.kind === 'input-returns' ? (snapshot.sourceIssueMovementId ?? '') : '',
     kg: snapshot.kg,
     occurredAt: local,
-    outputClass: snapshot.kind === 'outputs' ? snapshot.outputClass : '',
+    outputClass: snapshot.kind === 'outputs' ? snapshot.outputClass : DEFAULT_OUTPUT_CLASS,
+    outputLine: snapshot.kind === 'outputs' && snapshot.outputLine != null ? outputLineKey(snapshot.outputLine) : '',
+    remnantClassification: snapshot.kind === 'outputs'
+      ? (snapshot.remnantClassification ?? DEFAULT_REMNANT_CLASSIFICATION)
+      : DEFAULT_REMNANT_CLASSIFICATION,
     productId: snapshot.kind === 'outputs' ? snapshot.productId : '',
     locationId: snapshot.kind === 'outputs' ? snapshot.locationId : '',
-    labelCode: snapshot.kind === 'outputs' ? snapshot.labelCode : '',
+    labelCode: snapshot.kind === 'outputs' ? (snapshot.labelCode ?? '') : '',
+    pieceCount: snapshot.kind === 'outputs' && snapshot.pieceCount != null ? String(snapshot.pieceCount) : '',
     heatNumber: snapshot.kind === 'outputs' ? (snapshot.heatNumber ?? '') : '',
     coilNumber: snapshot.kind === 'outputs' ? (snapshot.coilNumber ?? '') : '',
     requiredDocuments: snapshot.kind === 'outputs' ? snapshot.requiredDocuments.join('\n') : '',
@@ -850,6 +1138,10 @@ function FactSection({
   const unresolved = isUnresolved(attempt)
   const returnSelected = form.kind === 'input-returns'
   const outputSelected = form.kind === 'outputs'
+  const detailedOutputLines = (order.outputLines ?? []).filter((line) => line.kind !== 'ClassLine')
+  const selectableOutputLines = (order.outputLines ?? []).filter((line) =>
+    form.outputClass === 'GoodProduct' && detailedOutputLines.length > 0 ? line.kind !== 'ClassLine' : line.kind === 'ClassLine')
+  const selectedOutputLine = selectableOutputLines.find((line) => outputLineKey(line) === form.outputLine)
   const outputEnabled = canReadInventoryLabel
   const needsInventoryState = (returnSelected || outputSelected) && canReadInventoryLabel
   const timing = factTiming(form.occurredAt)
@@ -875,6 +1167,10 @@ function FactSection({
     ? issuedOutputOwnership(labelState.data, order.orderId)
     : null
   const outputOwnership = issuedOwnership?.kind === 'ready' ? issuedOwnership.snapshot : null
+  const returnSources = labelState?.kind === 'ready' ? labelState.data.movementTimeline.entries.filter(entry =>
+    entry.kind === 'Issue' && entry.sourceKind === 'manufacturing.input-issue'
+      && entry.sourceId.toLowerCase() === order.orderId.toLowerCase() && entry.sourceGrain === 'Line'
+      && entry.sourceLineId !== null && entry.lines.some(line => line.direction === 'Out')) : []
 
   const productQuery = useQuery({
     queryKey: [namespace, routeEntryGeneration, 'manufacturing-output-products', effectiveOn, form.productSearch],
@@ -910,9 +1206,12 @@ function FactSection({
   )
 
   const busy = attempt.phase === 'submitting'
-  const closed = order.status === 'Closed'
+  const closed = order.status !== 'Open'
 
-  const dirty = unresolved || Object.entries(form).some(([key, value]) => key !== 'kind' && value.length > 0)
+  // K3 P2-7: dirty means "differs from the empty form", not "any non-empty field" — the output class and remnant
+  // classification start with their decided defaults (URT-D43, BS-14) and are not user edits.
+  const dirty = unresolved || (Object.keys(form) as (keyof FormValues)[])
+    .some((key) => key !== 'kind' && form[key] !== EMPTY_FORM[key])
   useEffect(() => {
     shellDispatch({ type: dirty ? 'DIRTY_SET' : 'DIRTY_CLEAR', scope: DIRTY_SCOPE })
   }, [dirty, shellDispatch])
@@ -954,7 +1253,10 @@ function FactSection({
       }
       dispatch({ type: 'SETTLE', outcome, idempotencyKey: snapshot.idempotencyKey })
       if (outcome.type === 'applied') {
-        setForm((current) => ({ ...current, kg: '', labelCode: current.kind === 'outputs' ? '' : current.labelCode }))
+        setForm((current) => ({
+          ...current, kg: '', labelCode: current.kind === 'outputs' ? '' : current.labelCode,
+          pieceCount: current.kind === 'outputs' ? '' : current.pieceCount,
+        }))
         await refreshReads(snapshot)
       } else if (
         outcome.type === 'failed' &&
@@ -976,13 +1278,25 @@ function FactSection({
     if (!isKilogramText(form.kg)) return setError(KG_FORMAT_ERROR)
     if ((returnSelected || outputSelected) && !canReadInventoryLabel) return
     if (needsInventoryState && labelState?.kind !== 'ready') return setError(INPUT_INVENTORY_TEXT.loadingRequired)
+    if (returnSelected && form.sourceIssueMovementId !== ''
+      && !returnSources.some(source => source.movementId === form.sourceIssueMovementId))
+      return setError(INPUT_RETURN_SOURCE_TEXT.stale)
     if (outputSelected && outputOwnership === null) return setError(ownershipRefusal(issuedOwnership))
     if (timing === null) return setError(TIME_REQUIRED)
+    if (outputSelected && selectableOutputLines.length > 0 && selectedOutputLine === undefined)
+      return setError(OUTPUT_INVENTORY_TEXT.outputLineRequired)
     if (outputSelected && form.outputClass === '') return setError(OUTPUT_INVENTORY_TEXT.classRequired)
     if (outputSelected && selectedProduct === undefined) return setError(OUTPUT_INVENTORY_TEXT.productRequired)
     if (outputSelected && selectedLocation === undefined) return setError(OUTPUT_INVENTORY_TEXT.locationRequired)
-    if (outputSelected && form.labelCode.trim().length === 0) return setError(OUTPUT_INVENTORY_TEXT.labelRequired)
     if (outputSelected && form.initialBlock === '') return setError(OUTPUT_INVENTORY_TEXT.blockRequired)
+    // AK-7b (URT-D112): the selector said what the declaration will ask of this product. A product without a
+    // theoretical kg/piece source would be refused: nothing is sent. Only a counted product carries a piece count.
+    if (outputSelected && selectedProduct?.pieceCounting === 'SourceMissing')
+      return setError(OUTPUT_PIECE_TEXT.sourceMissingSubmit)
+    const counted = outputSelected && selectedProduct?.pieceCounting === 'Counted'
+    const pieceCount = counted ? parsePieceCount(form.pieceCount, 1) : null
+    if (pieceCount === undefined) return setError(OUTPUT_PIECE_TEXT.pieceCountFormat)
+    if (counted && pieceCount === null) return setError(OUTPUT_PIECE_TEXT.pieceCountRequired)
     setError(null)
     const common = {
       factId: newId(),
@@ -1000,6 +1314,7 @@ function FactSection({
             kind: form.kind,
             movementId: newId(),
             expectedParentLabelVersion: labelState?.kind === 'ready' ? labelState.data.labelVersion : '',
+            ...(form.sourceIssueMovementId === '' ? {} : { sourceIssueMovementId: form.sourceIssueMovementId }),
           }
         : form.kind === 'outputs'
           ? {
@@ -1008,11 +1323,14 @@ function FactSection({
               movementId: newId(),
               expectedParentLabelVersion: labelState?.kind === 'ready' ? labelState.data.labelVersion : '',
               outputClass: form.outputClass as (typeof INVENTORY_OUTPUT_CLASSES)[number],
+              ...(selectedOutputLine === undefined ? {} : { outputLine: selectedOutputLine }),
+              remnantClassification: form.outputClass === 'UsableRemnant' ? form.remnantClassification : null,
               productId: selectedProduct?.productId ?? '',
               expectedProductVersion: selectedProduct?.productVersion ?? '',
               lotId: newId(),
               labelId: newId(),
-              labelCode: form.labelCode.trim(),
+              // URT-S21 (URT-D62): empty sends null and the server numbers the output label from Ayarlar.
+              labelCode: cleanOptional(form.labelCode),
               heatNumber: cleanOptional(form.heatNumber),
               coilNumber: cleanOptional(form.coilNumber),
               requiredDocuments: documents(form.requiredDocuments),
@@ -1022,6 +1340,8 @@ function FactSection({
               custodianId: outputOwnership!.custodianId,
               locationId: selectedLocation?.locationId ?? '',
               initialBlock: form.initialBlock as 'Free' | 'Blocked',
+              // AK-7b (URT-D112): sent only for a counted product; never for an uncounted or unreadable one.
+              ...(pieceCount == null ? {} : { pieceCount }),
             }
           : { ...common, kind: form.kind, movementId: null, expectedParentLabelVersion: null }
     dispatch({ type: 'SUBMIT', snapshot })
@@ -1044,7 +1364,7 @@ function FactSection({
   return (
     <section aria-labelledby="mfg-facts-heading" className={styles.section}>
       <h2 id="mfg-facts-heading">{FACT_FORM_TEXT.heading}</h2>
-      {closed ? <p className={styles.help}>{CLOSED_ORDER_TEXT}</p> : null}
+      {closed ? <p className={styles.help}>{order.status === 'Cancelled' ? CANCELLED_ORDER_TEXT : CLOSED_ORDER_TEXT}</p> : null}
 
       <AttemptNotice
         attempt={attempt}
@@ -1081,7 +1401,7 @@ function FactSection({
               id="mfg-fact-roll"
               value={form.parentRollId}
               disabled={frozen}
-              onChange={(event) => update({ parentRollId: event.target.value })}
+              onChange={(event) => update({ parentRollId: event.target.value, sourceIssueMovementId: '' })}
             >
               <option value="">{FACT_FORM_TEXT.choose}</option>
               {order.rolls.map((roll) => (
@@ -1118,6 +1438,22 @@ function FactSection({
             />
           </div>
         </div>
+        {returnSelected ? <div className={styles.control}>
+          <label htmlFor="mfg-return-source-issue">{INPUT_RETURN_SOURCE_TEXT.label}</label>
+          <select id="mfg-return-source-issue" value={form.sourceIssueMovementId}
+            disabled={frozen || labelState?.kind !== 'ready'}
+            onChange={event => update({ sourceIssueMovementId: event.target.value })}>
+            <option value="">{INPUT_RETURN_SOURCE_TEXT.choose}</option>
+            {returnSources.map(source => <option key={source.movementId} value={source.movementId}>
+              {source.occurredAtUtc} · {source.movementId}
+            </option>)}
+            {unresolved && form.sourceIssueMovementId !== '' && !returnSources.some(source => source.movementId === form.sourceIssueMovementId)
+              ? <option value={form.sourceIssueMovementId}>{form.sourceIssueMovementId}</option> : null}
+          </select>
+          <p className={styles.help}>{INPUT_RETURN_SOURCE_TEXT.help}</p>
+          {labelState?.kind === 'ready' && returnSources.length === 0 ? <p role="status">{INPUT_RETURN_SOURCE_TEXT.unavailable}</p> : null}
+          {labelState?.kind === 'ready' && labelState.data.movementTimeline.windowFull ? <p role="status">{INPUT_RETURN_SOURCE_TEXT.truncated}</p> : null}
+        </div> : null}
         {outputSelected ? (
           <section aria-labelledby="mfg-output-heading" className={styles.section} data-testid="output-form">
             <h3 id="mfg-output-heading">{OUTPUT_INVENTORY_TEXT.heading}</h3>
@@ -1133,7 +1469,7 @@ function FactSection({
                   value={form.outputClass}
                   disabled={frozen}
                   onChange={(event) => update({
-                    outputClass: event.target.value as FormValues['outputClass'],
+                    outputClass: event.target.value as FormValues['outputClass'], outputLine: '',
                   })}
                 >
                   <option value="">{FACT_FORM_TEXT.choose}</option>
@@ -1142,13 +1478,50 @@ function FactSection({
                   ))}
                 </select>
               </div>
+              {selectableOutputLines.length > 0 ? (
+                <div className={styles.control}>
+                  <label htmlFor="mfg-output-line">{OUTPUT_INVENTORY_TEXT.outputLine}</label>
+                  <select id="mfg-output-line" value={form.outputLine} disabled={frozen}
+                    onChange={(event) => update({ outputLine: event.target.value })}>
+                    <option value="">{FACT_FORM_TEXT.choose}</option>
+                    {selectableOutputLines.map((line) => <option key={outputLineKey(line)} value={outputLineKey(line)}>
+                      {OUTPUT_INVENTORY_TEXT.outputLineLabel(line.kind, line.slitLineSequence, line.cutLineId)}
+                    </option>)}
+                  </select>
+                </div>
+              ) : null}
+              {form.outputClass === 'UsableRemnant' ? (
+                <div className={styles.control}>
+                  <label htmlFor="mfg-output-remnant-classification">
+                    {OUTPUT_INVENTORY_TEXT.remnantClassification}
+                  </label>
+                  <select
+                    id="mfg-output-remnant-classification"
+                    aria-describedby="mfg-output-remnant-classification-help"
+                    value={form.remnantClassification}
+                    disabled={frozen}
+                    onChange={(event) => update({
+                      remnantClassification: event.target.value as RemnantClassification,
+                    })}
+                  >
+                    {REMNANT_CLASSIFICATIONS.map((classification) => (
+                      <option key={classification} value={classification}>
+                        {REMNANT_CLASSIFICATION_LABEL[classification]}
+                      </option>
+                    ))}
+                  </select>
+                  <p id="mfg-output-remnant-classification-help" className={styles.help}>
+                    {OUTPUT_INVENTORY_TEXT.remnantClassificationHelp}
+                  </p>
+                </div>
+              ) : null}
               <div className={styles.control}>
                 <label htmlFor="mfg-output-product-search">{OUTPUT_INVENTORY_TEXT.productSearch}</label>
                 <input
                   id="mfg-output-product-search"
                   value={form.productSearch}
                   disabled={frozen}
-                  onChange={(event) => update({ productSearch: event.target.value, productId: '' })}
+                  onChange={(event) => update({ productSearch: event.target.value, productId: '', pieceCount: '' })}
                 />
               </div>
               <div className={styles.control}>
@@ -1157,7 +1530,7 @@ function FactSection({
                   id="mfg-output-product"
                   value={form.productId}
                   disabled={frozen || products === null}
-                  onChange={(event) => update({ productId: event.target.value })}
+                  onChange={(event) => update({ productId: event.target.value, pieceCount: '' })}
                 >
                   <option value="">{FACT_FORM_TEXT.choose}</option>
                   {products?.items.map((product) => (
@@ -1201,14 +1574,40 @@ function FactSection({
                   ? <span role="alert">{OUTPUT_INVENTORY_TEXT.locationUnavailable}</span> : null}
                 {locations?.searchWindowFull ? <span className={styles.help}>{OUTPUT_INVENTORY_TEXT.moreMatches}</span> : null}
               </div>
+              {selectedProduct?.pieceCounting === 'Counted' ? (
+                <div className={styles.control}>
+                  <label htmlFor="mfg-output-piece-count">{OUTPUT_PIECE_TEXT.pieceCount}</label>
+                  <input
+                    id="mfg-output-piece-count"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={form.pieceCount}
+                    disabled={frozen}
+                    required
+                    aria-required="true"
+                    aria-describedby="mfg-output-piece-count-help"
+                    onChange={(event) => update({ pieceCount: event.target.value })}
+                  />
+                  <span id="mfg-output-piece-count-help" className={styles.help}>{OUTPUT_PIECE_TEXT.pieceCountHelp}</span>
+                </div>
+              ) : null}
+              {selectedProduct?.pieceCounting === 'SourceMissing' ? (
+                <p role="alert" data-testid="mfg-output-piece-source-missing">{OUTPUT_PIECE_TEXT.sourceMissing}</p>
+              ) : null}
+              {selectedProduct?.pieceCounting === 'Unavailable' ? (
+                <p role="status" data-testid="mfg-output-piece-unavailable">{OUTPUT_PIECE_TEXT.unavailable}</p>
+              ) : null}
               <div className={styles.control}>
                 <label htmlFor="mfg-output-label-code">{OUTPUT_INVENTORY_TEXT.labelCode}</label>
                 <input
                   id="mfg-output-label-code"
                   value={form.labelCode}
                   disabled={frozen}
+                  aria-describedby="mfg-output-label-code-help"
                   onChange={(event) => update({ labelCode: event.target.value })}
                 />
+                <span id="mfg-output-label-code-help" className={styles.help}>{OUTPUT_INVENTORY_TEXT.labelCodeHelp}</span>
               </div>
               <div className={styles.control}>
                 <label htmlFor="mfg-output-heat">{OUTPUT_INVENTORY_TEXT.heatNumber}</label>

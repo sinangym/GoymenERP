@@ -5,11 +5,13 @@ using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Inventory.Application;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi;
@@ -18,6 +20,18 @@ namespace GoymenERP.Api.Endpoints;
 
 public static partial class SalesEndpoints
 {
+    // KLN-D105: the owner codes survive the accepted-revision participant unchanged.
+    private static readonly string[] FutureDemandConflictCodes =
+    [
+        InventoryFutureAllocationCodesV1.VersionConflict,
+        InventoryFutureAllocationCodesV1.StateConflict,
+        InventoryFutureAllocationCodesV1.PhysicalReleaseUnavailable,
+        InventoryFutureAllocationCodesV1.ConcurrentChange,
+        SalesOrderLineSerializationLockContractV1.BusyCode,
+        PurchaseLineSerializationLockContractV1.BusyCode,
+    ];
+    private static readonly string[] FutureDemandUnprocessableCodes =
+    [InventoryFutureAllocationCodesV1.ReleaseSelectionInvalid, InventoryFutureAllocationCodesV1.UnitConversionUnavailable];
     public const string AccountsPath = "/api/v1/sales/references/accounts";
     public const string CurrencyPath = "/api/v1/sales/references/currency";
     public const string ProductPath = "/api/v1/sales/references/product";
@@ -255,8 +269,13 @@ public static partial class SalesEndpoints
         MapDispatchEndpoints(endpoints);
         // S5 API-32 (Fatura çekirdeği 1): the sales invoice draft routes.
         MapInvoiceEndpoints(endpoints);
+        MapOfficialInvoiceCancellationEndpoints(endpoints);
+        // F2 (SAT-D309/D312, LOJ-D9): the subcontract service invoice draft from the delivery weighing's net kg.
+        MapSubcontractServiceInvoiceEndpoints(endpoints);
         // API-40 (SAT-D288…D294): the recorded customer return invoice — create, list, read, submission, approval, finalisation.
         MapCustomerReturnEndpoints(endpoints);
+        // S-11 (SAT-D28, NS-13, SAT-D346): the sales contract — create, list, read, discount approval and rejection.
+        MapContractEndpoints(endpoints);
         // API-37 (plan §3.3, Kontrol Merkezi): the read-only sales follow-up list.
         MapControlCenterEndpoints(endpoints);
         // API-41 / API-42 (plan §3.4, UI-80): the read-only Sales reports.
@@ -440,6 +459,7 @@ public static partial class SalesEndpoints
         // API-07 (SAT-D153…D162): the single-shipment risk exception — request, approval, rejection and the order's list.
         MapRiskExceptions(drafts);
         MapRiskCheck(drafts);
+        MapRiskWarnings(drafts);
         MapCancellationImpact(drafts);
         MapCancelCommand(drafts);
         MapCancellation(drafts);
@@ -468,12 +488,16 @@ public static partial class SalesEndpoints
             extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved, SalesDraftProblemCodesV1.RevisionBlocked]);
         MapStateCommand(drafts, "/{id:guid}/approval", "ApproveSalesOrderDraftV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.ApproveDraftAsync(id, body, metadata, cancellationToken),
-            unprocessableCodes: [],
-            // API-04: a pending customer/currency change is approved only while no owner record names the order (not recorded).
-            extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved, SalesDraftProblemCodesV1.RevisionBlocked]);
+            unprocessableCodes: FutureDemandUnprocessableCodes,
+            // API-04: a pending customer/currency change is approved only while no owner record names the order (not recorded);
+            // SAT-D373: an active future supply allocation is refused with its own code (not recorded).
+            extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved, SalesDraftProblemCodesV1.RevisionBlocked,
+                SalesDraftProblemCodesV1.RevisionFutureAllocationPresent, .. FutureDemandConflictCodes],
+            hasFutureDemandReduction: true);
         MapStateCommand(drafts, "/{id:guid}/customer-acceptance", "RecordSalesOrderDraftCustomerAcceptanceV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.RecordCustomerAcceptanceAsync(id, body, metadata, cancellationToken),
-            unprocessableCodes: []);
+            unprocessableCodes: FutureDemandUnprocessableCodes, extraConflictCodes: FutureDemandConflictCodes,
+            hasFutureDemandReduction: true);
         // SAT-D115 (EK14): the customer rejects the current approved revision (reason required); the order continues on the revision
         // the customer last accepted. Same authority as the acceptance; 422 validation_failed (reason) is not recorded.
         MapStateCommand(drafts, "/{id:guid}/customer-rejection", "RecordSalesOrderDraftCustomerRejectionV1", allowReason: true,
@@ -1127,6 +1151,36 @@ public static partial class SalesEndpoints
     }
 
     /// <summary>
+    /// F-018 / plan S1 (FNS-D27(3)): the limit warnings recorded on the order at submit / approve, under <c>sales.drafts.read</c>
+    /// (ASSUMPTION-SAT-RISK-3) — outcome and category only, never an amount. Another company's draft is 404; the read writes nothing.
+    /// </summary>
+    private static void MapRiskWarnings(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/risk-warnings", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetDraftRiskWarningsAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftRiskWarningsV1")
+            .Produces<SalesOrderDraftRiskWarningsResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
     /// DEC-SAL-005: the impact preview of cancelling an approved order, under <c>sales.orders.cancel</c> (the service measures
     /// it): every DEC-SAL-005 category read afresh from its owner's port, a category without an owner on main as "no source".
     /// Read-only; another company's draft is 404.
@@ -1740,6 +1794,31 @@ public static partial class SalesEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // SAT-D436 / SAT-D439 (AK-5): the order's kg prices and realization (draft read AND price read); FormulaGoldenPending until
+        // the formula golden is in main.
+        drafts.MapGet("/{id:guid}/kilogram-prices", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetDraftKilogramPricesAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftKilogramPricesV1")
+            .Produces<SalesOrderKilogramPricesResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         drafts.MapGet("/{id:guid}/lines/{lineId:guid}/price-references", async (
             Guid id,
             Guid lineId,
@@ -1926,7 +2005,7 @@ public static partial class SalesEndpoints
 
     private static void MapStateCommand(RouteGroupBuilder drafts, string pattern, string name, bool allowReason,
         Func<ISalesDraftService, Guid, SalesDraftStateCommandRequest, SalesCommandMetadata, CancellationToken, Task<SalesOrderDraftResponse>> command,
-        string[] unprocessableCodes, string[]? extraConflictCodes = null)
+        string[] unprocessableCodes, string[]? extraConflictCodes = null, bool hasFutureDemandReduction = false)
     {
         var route = drafts.MapPost(pattern, async (
             Guid id,
@@ -1981,8 +2060,10 @@ public static partial class SalesEndpoints
             }
         })
             .WithName(name)
-            // The replayable results: the draft after the transition (200) and the recorded terminal refusals (409, §7).
-            .WithIdempotencyContract(SalesDraftApiV1.StateCommandStatus, StatusCodes.Status409Conflict)
+            // Accepted-revision reduction also stores the Inventory owner's terminal 422 answers under this key.
+            .WithIdempotencyContract(hasFutureDemandReduction
+                ? [SalesDraftApiV1.StateCommandStatus, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity]
+                : [SalesDraftApiV1.StateCommandStatus, StatusCodes.Status409Conflict])
             .Accepts<SalesDraftStateCommandRequest>("application/json")
             .Produces<SalesOrderDraftResponse>(SalesDraftApiV1.StateCommandStatus)
             .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.CommandMetadataInvalid)

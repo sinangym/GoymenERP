@@ -10,10 +10,15 @@
  * release an allocation (the EXISTING Inventory release command, on ST-02; offered only on a row that holds active
  * allocation kg), stock count (ST-05 / AT-037), scrap write-off, split/merge (R19), and "Üretim planla" (the
  * Manufacturing plan-create screen with the row's roll preselected through Inventory's candidate read).
- * NOT offered — undecided row context, see the lane report (NEEDS-SINAN): "Satışa tahsis et" and "Yükleme talimatı
- * oluştur" (both start from a Sales line, not a label); transfer / external processing and quality block (no screens).
+ * KLN-D117 (Sinan 2026-11-21): "Satışa tahsis et" and "Yükleme talimatı oluştur" also start from a label row. They only
+ * navigate: the first to the approved sales orders with the label code carried into the chosen order's allocation search,
+ * the second to the new loading instruction narrowed to the label's product. The user still chooses the order line and the
+ * command is the same server command as from the order line (authority, quantity, ownership and company rules unchanged).
+ * NOT offered — transfer / external processing and quality block (no screens).
  */
+import { LOGISTICS_CAPABILITY, instructionCreateFromLabelPath } from '../logistics/capabilities'
 import { MANUFACTURING_CAPABILITY, planCreateFromLabelPath } from '../manufacturing/capabilities'
+import { SALES_CAPABILITY, salesAllocationFromLabelPath } from '../sales/capabilities'
 import {
   INVENTORY_LABEL_TRANSFORMATION_CAPABILITY,
   INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY,
@@ -50,12 +55,19 @@ const TARGETS: readonly RowActionTarget[] = Object.values(ROW_ACTION_TARGET)
 
 /** The row action that leaves Inventory for the Manufacturing plan-create screen. */
 export const PLAN_PRODUCTION_ACTION_ID = 'uretim-planla' as const
+/** KLN-D117: the row action that leaves Inventory for the approved sales orders (allocation from the label). */
+export const SALES_ALLOCATION_ACTION_ID = 'satisa-tahsis' as const
+/** KLN-D117: the row action that leaves Inventory for the new loading instruction (narrowed to the label's product). */
+export const LOADING_INSTRUCTION_ACTION_ID = 'yukleme-talimati' as const
 
 export interface StockRowAction {
-  readonly id: 'label' | RowActionTarget | typeof PLAN_PRODUCTION_ACTION_ID
+  readonly id: 'label' | RowActionTarget | typeof PLAN_PRODUCTION_ACTION_ID | typeof SALES_ALLOCATION_ACTION_ID
+    | typeof LOADING_INSTRUCTION_ACTION_ID
   readonly label: string
   /** Any ONE of these capabilities offers the action (e.g. a count reader may record OR approve). */
   readonly anyOf: readonly string[]
+  /** And EVERY one of these (the screens the action passes through must open for the user). */
+  readonly allOf?: readonly string[]
   /** The ST-02 panel it opens; null for the label itself or for a screen outside ST-02. */
   readonly target: RowActionTarget | null
   /** Offered only on a row that holds active allocation kg (nothing to release otherwise). */
@@ -66,6 +78,7 @@ export interface StockRowAction {
 export interface StockRowContext {
   readonly labelId: string
   readonly labelCode: string
+  readonly productId: string
   readonly activeAllocationKg: string
 }
 
@@ -83,6 +96,16 @@ export const STOCK_ROW_ACTIONS: readonly StockRowAction[] = [
   {
     id: PLAN_PRODUCTION_ACTION_ID, label: 'Üretim planla',
     anyOf: [MANUFACTURING_CAPABILITY.planCreate], target: null,
+  },
+  {
+    // The allocation panel of S-04 opens on the physical allocation write; the user reaches it through S-02 and S-04.
+    id: SALES_ALLOCATION_ACTION_ID, label: 'Satışa tahsis et',
+    anyOf: [INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY],
+    allOf: [SALES_CAPABILITY.draftsList, SALES_CAPABILITY.draftsDetail], target: null,
+  },
+  {
+    id: LOADING_INSTRUCTION_ACTION_ID, label: 'Yükleme talimatı oluştur',
+    anyOf: [LOGISTICS_CAPABILITY.instructionsCreate], target: null,
   },
   {
     id: ROW_ACTION_TARGET.count, label: 'Sayım / fark',
@@ -104,7 +127,7 @@ export const STOCK_ROW_ACTIONS: readonly StockRowAction[] = [
 
 /** The actions the server's capability snapshot permits, in menu order. */
 export function permittedStockRowActions(has: (capability: string) => boolean): readonly StockRowAction[] {
-  return STOCK_ROW_ACTIONS.filter((action) => action.anyOf.some(has))
+  return STOCK_ROW_ACTIONS.filter((action) => action.anyOf.some(has) && (action.allOf ?? []).every(has))
 }
 
 /** The permitted actions that apply to ONE row (release only where the row holds active allocation kg). */
@@ -115,9 +138,10 @@ export function stockRowActionsFor(actions: readonly StockRowAction[], row: Stoc
 
 /** Where a row action goes: the plan-create screen with the row's roll, or ST-02 (with its panel). */
 export function stockRowActionHref(action: StockRowAction, row: StockRowContext): string {
-  return action.id === PLAN_PRODUCTION_ACTION_ID
-    ? planCreateFromLabelPath(row.labelId, row.labelCode)
-    : stockRowActionPath(row.labelId, action.target)
+  if (action.id === PLAN_PRODUCTION_ACTION_ID) return planCreateFromLabelPath(row.labelId, row.labelCode)
+  if (action.id === SALES_ALLOCATION_ACTION_ID) return salesAllocationFromLabelPath(row.labelCode)
+  if (action.id === LOADING_INSTRUCTION_ACTION_ID) return instructionCreateFromLabelPath(row.labelCode, row.productId)
+  return stockRowActionPath(row.labelId, action.target)
 }
 
 /** The ST-02 path a row action opens: the row's label, and the panel when the action names one. */

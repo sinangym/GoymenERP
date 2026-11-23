@@ -87,6 +87,7 @@ internal static class C01E2eShellCapabilityActivation
         typeof(IdentityShellCapabilityProvider),
         typeof(ProductPriceListShellCapabilityProvider),
         typeof(SettingsShellCapabilityProvider),
+        typeof(ProductPaintMembershipShellCapabilityProvider),
     ];
 
     // The accepted normal-host authority for each set of optional module providers present (in the
@@ -185,6 +186,17 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(ProductPriceListShellCapabilityProvider), typeof(SettingsShellCapabilityProvider),
             },
                 ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsSalesReportsAndSettingsV11),
+        // STK-S13 is registered by the actual host in addition to the established Settings tuple.
+        (new[]
+            {
+                typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
+                typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
+                typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
+                typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
+                typeof(InventoryShellCapabilityProvider), typeof(IdentityShellCapabilityProvider),
+                typeof(ProductPriceListShellCapabilityProvider), typeof(SettingsShellCapabilityProvider),
+                typeof(ProductPaintMembershipShellCapabilityProvider),
+            }, ShellCapabilityRegistryAuthorities.FullNormalHostWithSettingsAndPaintMemberships),
     ];
 
     private static string NormalAuthority(IServiceCollection services)

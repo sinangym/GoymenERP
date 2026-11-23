@@ -75,10 +75,50 @@ public static class FinanceModuleExtensions
         services.AddScoped(CreateBankAccountService);
         services.AddScoped<IFinanceBankAccountReader>(provider => provider.GetRequiredService<FinanceBankAccountService>());
         services.AddScoped<IFinanceBankAccountMaster>(provider => provider.GetRequiredService<FinanceBankAccountService>());
+        // API-30: the cash account (kasa) master; a definition only, audited with the roles of its own permission.
+        services.AddScoped<IFinanceCashAccountMaster>(CreateCashAccountService);
+        // FNS-D102: the real internal ledger, including approved openings, protects passivation in the
+        // same serializable transaction. The historical fail-closed fallback types are never preferred.
+        services.TryAddScoped<IFinanceCashAccountBalanceReader, TreasuryMovementAwareCashAccountBalanceReader>();
+        services.TryAddScoped<IFinanceCashAccountBalanceReader, ExpensePaymentAwareCashAccountBalanceReader>();
+        services.TryAddScoped<IFinanceCashAccountBalanceReader, NoCashMovementBalanceReader>();
+        // API-85a (F018 §L1; FNS-D27/D27a): the party credit limit master. The Sales risk port below reads its
+        // effective record; it moves no money.
+        services.AddScoped<IFinancePartyCreditLimitMaster>(CreatePartyCreditLimitService);
+        // API-85b (F018 §L2; FNS-D57/D31/D58): the customer collateral master, one step. The type and its rate are
+        // Settings' (FNS-D31); until a Settings adapter registers its catalog the default answers Unavailable, so a
+        // record and the weighted collateral fail closed.
+        services.TryAddScoped<IFinanceCollateralTypeCatalogReader>(CreateCollateralTypeCatalogReader);
+        services.AddScoped(CreatePartyCollateralService);
+        services.AddScoped<IFinancePartyCollateralMaster>(provider => provider.GetRequiredService<FinancePartyCollateralService>());
+        services.AddScoped<IFinanceCollateralBankCandidatesV1>(provider => provider.GetRequiredService<FinancePartyCollateralService>());
+        // FIN-S9 (FNS-D23): the opening balances, proposed and approved by two people while the Settings opening period
+        // is open. Until a Settings adapter registers its reader the default answers Unavailable: every proposal and
+        // decision fails closed and the period is never assumed open. Approval records one opening ledger movement.
+        services.TryAddScoped<IFinanceOpeningPeriodReader, UnavailableFinanceOpeningPeriodReader>();
+        services.AddScoped<IFinanceOpeningBalanceService>(CreateOpeningBalanceService);
+        // FIN-SC47 (FNS-D87/FNS-D88/FNS-D93/FNS-D94): the credit account with its imported plan; no grant.
+        services.AddScoped<IFinanceCreditAccountService>(CreateCreditAccountService);
+        services.TryAddScoped<IFinanceCreditAccountingPeriodPortV1, UnavailableFinanceCreditAccountingPeriodPortV1>();
+        services.AddScoped<IFinanceCreditMovementServiceV1>(CreateCreditMovementService);
+        services.AddScoped<IFinanceCreditLimitServiceV1>(CreateCreditLimitService);
+        // F018 §L3 (FNS-D27 (2), FNS-D31 (4)): the Cari card's Finance panel read — the credit limit, open receivables,
+        // collateral, its utilization and the documentary risk from the calculators above. It writes nothing.
+        services.AddScoped<IFinancePartyCreditPanelReader>(CreatePartyCreditPanelService);
         services.AddScoped<IManualReceiptService>(CreateReceiptDraftService);
         services.TryAddScoped<IManualBankPaymentDocumentValidationPort,
             UnavailableManualBankPaymentDocumentValidationPort>();
         services.AddScoped<IManualBankPaymentService>(CreateManualBankPaymentService);
+        // FNS-D25 (API-25): one expense item. FNS-D102 uses the internal ledger, protected together with
+        // each outgoing record in a serializable Finance transaction; unavailable never means sufficient.
+        services.TryAddScoped<IFinanceExpenseItemCatalog, SingleExpenseItemCatalog>();
+        services.TryAddScoped<IFinanceTreasuryBalanceGuard, InternalLedgerTreasuryBalanceGuard>();
+        services.AddScoped<IExpensePaymentService>(CreateExpensePaymentService);
+        // FNS-D24 (API-32/34): the transfer between two treasury accounts, one record for both legs. The currency
+        // exchange is fail-closed until its rate rule is decided (NEEDS-SINAN); every commit needs the treasury
+        // balance guard above to answer Sufficient (FNS-D11).
+        services.TryAddScoped<IFinanceCurrencyExchangeRateRule, UnavailableCurrencyExchangeRateRule>();
+        services.AddScoped<ICashTransferService>(CreateCashTransferService);
         services.AddScoped(CreateReversalProposalService);
         services.AddScoped<IReversalProposalService>(provider =>
             provider.GetRequiredService<ReversalProposalService>());
@@ -91,13 +131,23 @@ public static class FinanceModuleExtensions
         services.AddScoped<IFinancePaymentAllocationService>(CreatePaymentAllocationService);
         services.AddScoped<IFinancePaymentAllocationReadService, FinancePaymentAllocationReadService>();
         services.AddScoped<IFinanceOpenItemReadServiceV1, FinanceOpenItemReadService>();
-        // MOD-01: the Sales-declared customer risk-input port, answered from Finance's own open items (credit limit and
-        // collateral have no master yet: NoSource). It carries no authority; the Sales risk read measures its own.
-        services.AddScoped<ISalesPartyRiskReadPortV1, FinanceSalesPartyRiskReadPortV1>();
+        // MOD-01: the Sales-declared customer risk-input port, answered from Finance's own open items, (API-85a) the
+        // effective credit limit record and (API-85b) the held received collaterals weighted by the Settings type rate
+        // at read time. It carries no authority; the Sales risk read measures its own.
+        services.AddScoped<ISalesPartyRiskReadPortV1>(CreateSalesPartyRiskReadPort);
+        // FIN-S6 (F-005 D3): the official sales invoice record read by official number + ETTN over Finance's own store,
+        // and the Sales-declared API-35 port answered from it (approved records only). Neither carries authority; the
+        // Sales match measures its own.
+        services.AddScoped<IFinanceOfficialSalesInvoiceReadPortV1>(CreateOfficialSalesInvoiceReadPort);
+        services.AddScoped<ISalesOfficialInvoiceReadPortV1>(provider => new FinanceSalesOfficialInvoiceReadPortV1(
+            provider.GetRequiredService<IFinanceOfficialSalesInvoiceReadPortV1>()));
         // DEC-FIN-016 first release: the customer cheque / note portfolio, on the same owners and period rule.
         services.AddScoped<ICustomerInstrumentService>(CreateCustomerInstrumentService);
         // The first-release party ledger (cari hesap ekstresi): a read over the recorded facts above, no writer.
         services.AddScoped<IPartyLedgerService>(CreatePartyLedgerService);
+        // B-05 / M-03 (FNS-D14, KLN-D3): the party-account read port (Cari Hesaplar list, one account's summary and open
+        // items) over the same sub-ledger and the same two ledger authorities; no writer, no new master.
+        services.AddScoped<IPartyLedgerReadServiceV1>(CreatePartyLedgerReadService);
         // FIN-T05: the Record's period gate. K1 (#66 5748258299) answered it — occurredOn decides — but the rule
         // that maps the date reads Accounting's period port, which this module cannot see. So the HOST registers
         // OccurredOnFinanceRecordPeriodRule before calling this method and the TryAdd below then does nothing;
@@ -108,6 +158,28 @@ public static class FinanceModuleExtensions
         services.TryAddSingleton(TimeProvider.System);
         return services;
     }
+
+    private static FinancePartyCreditPanelService CreatePartyCreditPanelService(IServiceProvider provider) =>
+        new FinancePartyCreditPanelService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            provider.GetRequiredService<FinancePermissionPort>(),
+            provider.GetRequiredService<IFinancePartyAccountPort>(),
+            provider.GetRequiredService<IFinanceCollateralTypeCatalogReader>(),
+            provider.GetRequiredService<TimeProvider>(), provider.GetService<IFinanceCollateralPolicyReaderV1>());
+
+    private static FinanceSalesPartyRiskReadPortV1 CreateSalesPartyRiskReadPort(IServiceProvider provider) =>
+        new FinanceSalesPartyRiskReadPortV1(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<IFinanceCollateralTypeCatalogReader>(),
+            provider.GetRequiredService<TimeProvider>(), provider.GetService<IFinanceCollateralPolicyReaderV1>());
+
+    private static FinanceOfficialSalesInvoiceReadPortV1 CreateOfficialSalesInvoiceReadPort(IServiceProvider provider) =>
+        new FinanceOfficialSalesInvoiceReadPortV1(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>());
 
     private static FinanceBankAccountService CreateBankAccountService(IServiceProvider provider)
     {
@@ -128,6 +200,146 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<TimeProvider>());
     }
 
+    private static FinanceCashAccountService CreateCashAccountService(IServiceProvider provider)
+    {
+        var companyContext = provider.GetRequiredService<ICompanyContext>();
+        var currentUser = provider.GetRequiredService<ICurrentUser>();
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new FinanceCashAccountService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            companyContext,
+            currentUser,
+            permissions,
+            provider.GetService<ISettingsMoneyCandidateReader>()
+                ?? new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new FinanceCashAccountEnvelopes(
+                Envelope(provider, ErpPermissions.FinanceCashAccountPropose, permissions, FinanceAction.ProposeCashAccount),
+                Envelope(provider, ErpPermissions.FinanceCashAccountApprove, permissions, FinanceAction.ApproveCashAccount),
+                Envelope(provider, ErpPermissions.FinanceCashAccountPassivationPropose, permissions,
+                    FinanceAction.ProposeCashAccountPassivation),
+                Envelope(provider, ErpPermissions.FinanceCashAccountPassivationApprove, permissions,
+                    FinanceAction.ApproveCashAccountPassivation),
+                Envelope(provider, ErpPermissions.FinanceCashAccountReactivationPropose, permissions,
+                    FinanceAction.ProposeCashAccountReactivation),
+                Envelope(provider, ErpPermissions.FinanceCashAccountReactivationApprove, permissions,
+                    FinanceAction.ApproveCashAccountReactivation)),
+            provider.GetRequiredService<IFinanceCashAccountBalanceReader>(),
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<IAuditTransactionWriterV1>());
+    }
+
+    private static FinancePartyCreditLimitService CreatePartyCreditLimitService(IServiceProvider provider)
+    {
+        var companyContext = provider.GetRequiredService<ICompanyContext>();
+        var currentUser = provider.GetRequiredService<ICurrentUser>();
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new FinancePartyCreditLimitService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            companyContext,
+            currentUser,
+            permissions,
+            provider.GetService<ISettingsMoneyCandidateReader>()
+                ?? new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser),
+            provider.GetRequiredService<IFinancePartyAccountPort>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new FinancePartyCreditLimitEnvelopes(
+                Envelope(provider, ErpPermissions.FinanceCreditLimitsPropose, permissions, FinanceAction.ProposeCreditLimit),
+                Envelope(provider, ErpPermissions.FinanceCreditLimitsApprove, permissions, FinanceAction.ApproveCreditLimit)),
+            provider.GetRequiredService<TimeProvider>());
+    }
+
+    private static FinancePartyCollateralService CreatePartyCollateralService(IServiceProvider provider)
+    {
+        var companyContext = provider.GetRequiredService<ICompanyContext>();
+        var currentUser = provider.GetRequiredService<ICurrentUser>();
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new FinancePartyCollateralService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            companyContext,
+            currentUser,
+            permissions,
+            provider.GetService<ISettingsMoneyCandidateReader>()
+                ?? new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser),
+            provider.GetRequiredService<IFinancePartyAccountPort>(),
+            provider.GetRequiredService<IFinanceCollateralTypeCatalogReader>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new FinancePartyCollateralEnvelopes(
+                Envelope(provider, ErpPermissions.FinanceCollateralsRecord, permissions, FinanceAction.RecordCollateral)),
+            provider.GetRequiredService<TimeProvider>(), provider.GetService<IFinanceCollateralPolicyReaderV1>(),
+            provider.GetService<IAuditTransactionWriterV1>());
+    }
+
+    private static FinanceOpeningBalanceService CreateOpeningBalanceService(IServiceProvider provider)
+    {
+        var companyContext = provider.GetRequiredService<ICompanyContext>();
+        var currentUser = provider.GetRequiredService<ICurrentUser>();
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new FinanceOpeningBalanceService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            companyContext,
+            currentUser,
+            permissions,
+            provider.GetService<ISettingsMoneyCandidateReader>()
+                ?? new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser),
+            provider.GetRequiredService<IFinancePartyAccountPort>(),
+            provider.GetRequiredService<IFinanceOpeningPeriodReader>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new FinanceOpeningBalanceEnvelopes(
+                Envelope(provider, ErpPermissions.FinanceOpeningBalancesPropose, permissions,
+                    FinanceAction.ProposeOpeningBalance),
+                Envelope(provider, ErpPermissions.FinanceOpeningBalancesApprove, permissions,
+                    FinanceAction.ApproveOpeningBalance)),
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<IFinanceTreasuryBalanceGuard>(),
+            provider.GetRequiredService<IAuditTransactionWriterV1>());
+    }
+
+    private static FinanceCreditAccountService CreateCreditAccountService(IServiceProvider provider)
+    {
+        var companyContext = provider.GetRequiredService<ICompanyContext>();
+        var currentUser = provider.GetRequiredService<ICurrentUser>();
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new FinanceCreditAccountService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            companyContext,
+            currentUser,
+            permissions,
+            provider.GetService<ISettingsMoneyCandidateReaderV2>()
+                ?? new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new FinanceCreditAccountEnvelopes(
+                Envelope(provider, ErpPermissions.FinanceCreditsPropose, permissions, FinanceAction.ProposeCredit),
+                Envelope(provider, ErpPermissions.FinanceCreditsApprove, permissions, FinanceAction.ApproveCredit)),
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetService<ISettingsPrerequisiteProvider>(),
+            provider.GetService<IFinanceCreditLenderPortV1>());
+    }
+
+    private static FinanceCreditMovementServiceV1 CreateCreditMovementService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new FinanceCreditMovementServiceV1(provider.GetRequiredService<FinanceDbContext>(), provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(), permissions, provider.GetRequiredService<ISettingsPrerequisiteProvider>(),
+            provider.GetRequiredService<IFinanceOpeningPeriodReader>(), provider.GetRequiredService<IFinanceCreditAccountingPeriodPortV1>(),
+            provider.GetRequiredService<IFinanceTreasuryBalanceGuard>(), provider.GetRequiredService<IAuditEventCollector>(),
+            new FinanceCreditAccountEnvelopes(Envelope(provider, ErpPermissions.FinanceCreditsPropose, permissions, FinanceAction.ProposeCredit),
+                Envelope(provider, ErpPermissions.FinanceCreditsApprove, permissions, FinanceAction.ApproveCredit)),
+            provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<IAuditTransactionWriterV1>(),
+            FinanceCreditGroupGateV1.NoneApproved);
+    }
+
+    private static FinanceCreditLimitServiceV1 CreateCreditLimitService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new FinanceCreditLimitServiceV1(provider.GetRequiredService<FinanceDbContext>(), provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(), permissions, provider.GetRequiredService<IFinanceCreditLenderPortV1>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            new FinanceCreditAccountEnvelopes(Envelope(provider, ErpPermissions.FinanceCreditsPropose, permissions, FinanceAction.ProposeCredit),
+                Envelope(provider, ErpPermissions.FinanceCreditsApprove, permissions, FinanceAction.ApproveCredit)),
+            provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<IAuditTransactionWriterV1>());
+    }
+
     private static ReceiptDraftService CreateReceiptDraftService(IServiceProvider provider)
     {
         var permissions = provider.GetRequiredService<FinancePermissionPort>();
@@ -144,7 +356,10 @@ public static class FinanceModuleExtensions
             Envelope(provider, FinancePermissionNames.DraftSave, permissions, FinanceAction.SaveDraft),
             provider.GetRequiredService<TimeProvider>(),
             Envelope(provider, FinancePermissionNames.Record, permissions, FinanceAction.Record),
-            provider.GetRequiredService<IFinanceRecordPeriodRule>());
+            provider.GetRequiredService<IFinanceRecordPeriodRule>(),
+            provider.GetService<IAuditTransactionWriterV1>(),
+            new SettingsFinanceDocumentNumberReservationV1(provider.GetRequiredService<FinanceDbContext>(),
+                provider.GetService<ISettingsDocumentNumberSeriesV1>()));
     }
 
     private static ReversalProposalService CreateReversalProposalService(IServiceProvider provider)
@@ -163,7 +378,9 @@ public static class FinanceModuleExtensions
                     FinanceAction.ProposeReversal),
                 Envelope(provider, FinancePermissionNames.ReverseApprove, permissions,
                     FinanceAction.ApproveReversal)),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<IFinanceTreasuryBalanceGuard>(),
+            provider.GetRequiredService<IAuditTransactionWriterV1>());
     }
 
     private static PaymentReversalProposalService CreatePaymentReversalProposalService(IServiceProvider provider)
@@ -181,7 +398,8 @@ public static class FinanceModuleExtensions
                     FinanceAction.ProposePaymentReversal),
                 Envelope(provider, FinancePermissionNames.PaymentReverseApprove, permissions,
                     FinanceAction.ApprovePaymentReversal)),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetService<IAuditTransactionWriterV1>());
     }
 
     private static ManualBankPaymentService CreateManualBankPaymentService(IServiceProvider provider)
@@ -205,7 +423,65 @@ public static class FinanceModuleExtensions
                     FinanceAction.ApproveManualBankPayment),
                 Envelope(provider, FinancePermissionNames.ManualBankPaymentRecord, permissions,
                     FinanceAction.RecordManualBankPayment)),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<IFinanceTreasuryBalanceGuard>(),
+            provider.GetRequiredService<IAuditTransactionWriterV1>(),
+            new SettingsFinanceDocumentNumberReservationV1(provider.GetRequiredService<FinanceDbContext>(),
+                provider.GetService<ISettingsDocumentNumberSeriesV1>()));
+    }
+
+    private static ExpensePaymentService CreateExpensePaymentService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new ExpensePaymentService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            permissions,
+            provider.GetRequiredService<IFinanceExpenseItemCatalog>(),
+            provider.GetRequiredService<IFinanceTreasuryBalanceGuard>(),
+            provider.GetRequiredService<ISettingsPrerequisiteProvider>(),
+            provider.GetRequiredService<IFinanceRecordPeriodRule>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            // FNS-D48/FNS-D55: the expense payment's own Settings money row (approved with the manual bank payment's
+            // values: TRY, scale 2, per seed company), never the manual bank payment's key.
+            new ExpensePaymentBinding(FinanceMoneyOperations.ExpensePaymentV1),
+            new ExpensePaymentAuditEnvelopes(
+                Envelope(provider, FinancePermissionNames.ExpensePaymentDraftSave, permissions,
+                    FinanceAction.SaveExpensePaymentDraft),
+                Envelope(provider, FinancePermissionNames.ExpensePaymentApprove, permissions,
+                    FinanceAction.ApproveExpensePayment),
+                Envelope(provider, FinancePermissionNames.ExpensePaymentRecord, permissions,
+                    FinanceAction.RecordExpensePayment)),
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<IAuditTransactionWriterV1>(),
+            new SettingsFinanceDocumentNumberReservationV1(provider.GetRequiredService<FinanceDbContext>(),
+                provider.GetService<ISettingsDocumentNumberSeriesV1>()));
+    }
+
+    private static CashTransferService CreateCashTransferService(IServiceProvider provider)
+    {
+        var permissions = provider.GetRequiredService<FinancePermissionPort>();
+        return new CashTransferService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            permissions,
+            provider.GetRequiredService<IFinanceTreasuryBalanceGuard>(),
+            provider.GetRequiredService<IFinanceCurrencyExchangeRateRule>(),
+            provider.GetRequiredService<ISettingsPrerequisiteProvider>(),
+            provider.GetRequiredService<IFinanceRecordPeriodRule>(),
+            provider.GetRequiredService<IAuditEventCollector>(),
+            // FNS-D62: only the independently published transfer profile governs each leg.
+            // A missing profile is unavailable; the manual bank payment profile is never a runtime fallback.
+            new CashTransferBinding(FinanceMoneyOperations.CashTransferV1),
+            new CashTransferAuditEnvelopes(
+                Envelope(provider, FinancePermissionNames.CashTransferCommit, permissions,
+                    FinanceAction.CommitCashTransfer)),
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<IAuditTransactionWriterV1>(),
+            new SettingsFinanceDocumentNumberReservationV1(provider.GetRequiredService<FinanceDbContext>(),
+                provider.GetService<ISettingsDocumentNumberSeriesV1>()));
     }
 
     private static FinanceAllocationService CreateAllocationService(IServiceProvider provider)
@@ -256,7 +532,10 @@ public static class FinanceModuleExtensions
                     FinanceAction.ChangeCustomerInstrumentStatus),
                 Envelope(provider, FinancePermissionNames.CustomerInstrumentCollect, permissions,
                     FinanceAction.CollectCustomerInstrument)),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetService<IAuditTransactionWriterV1>(),
+            new SettingsFinanceDocumentNumberReservationV1(provider.GetRequiredService<FinanceDbContext>(),
+                provider.GetService<ISettingsDocumentNumberSeriesV1>()));
     }
 
     private static PartyLedgerService CreatePartyLedgerService(IServiceProvider provider) =>
@@ -265,6 +544,20 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<ICompanyContext>(),
             provider.GetRequiredService<ICurrentUser>(),
             provider.GetRequiredService<FinancePermissionPort>());
+
+    private static IFinanceCollateralTypeCatalogReader CreateCollateralTypeCatalogReader(IServiceProvider provider) =>
+        provider.GetService<ISettingsCollateralTypeCatalogV1>() is { } catalog
+            ? new SettingsFinanceCollateralTypeCatalogReaderV1(provider.GetRequiredService<ICompanyContext>(),
+                provider.GetRequiredService<ICurrentUser>(), catalog, provider.GetRequiredService<TimeProvider>())
+            : new UnavailableFinanceCollateralTypeCatalogReader();
+
+    private static PartyLedgerReadService CreatePartyLedgerReadService(IServiceProvider provider) =>
+        new PartyLedgerReadService(
+            provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<ICompanyContext>(),
+            provider.GetRequiredService<ICurrentUser>(),
+            provider.GetRequiredService<FinancePermissionPort>(),
+            provider.GetRequiredService<IPartyLedgerService>());
 
     /// <summary>The ADR-009 envelope of the request: the permission that authorizes the write and its roles.</summary>
     private static FinanceAuditEnvelope Envelope(IServiceProvider provider, string permissionCode,

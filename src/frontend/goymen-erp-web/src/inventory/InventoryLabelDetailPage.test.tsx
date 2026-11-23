@@ -170,6 +170,26 @@ describe('InventoryLabelDetailPage', () => {
     expect(screen.getByText('Transfer çıkışı')).not.toBeNull()
     expect(screen.getByText('Transfer kabulü')).not.toBeNull()
   })
+  it('renders the manufacturing output reversal and the transfer dispatch cancellation with their own labels', async () => {
+    const base = fixture()
+    api.detail.mockResolvedValue({ type: 'ok-single', data: {
+      ...base,
+      movementTimeline: { ...base.movementTimeline, entries: [
+        { ...base.movementTimeline.entries[0], kind: 'ManufacturingOutputReversal',
+          sourceKind: 'manufacturing.output-reversal', lines: [
+            { ...base.movementTimeline.entries[0].lines[0], direction: 'Out' },
+          ] },
+        { ...base.movementTimeline.entries[0], movementId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+          kind: 'TransferDispatchCancellation', lines: base.movementTimeline.entries[0].lines },
+      ] },
+    } })
+
+    mount(); await ready()
+
+    expect(screen.getByText('Üretim çıktısı ters kaydı')).not.toBeNull()
+    expect(screen.getByText('Transfer çıkışı iptali')).not.toBeNull()
+    expect(screen.getByText('manufacturing.output-reversal')).not.toBeNull()
+  })
   it('renders a manufacturing genealogy edge as production in the existing genealogy table', async () => {
     const base = fixture()
     api.detail.mockResolvedValue({ type: 'ok-single', data: {
@@ -198,6 +218,15 @@ describe('InventoryLabelDetailPage', () => {
     scenario.canReadLabel = false
     mount(); await ready()
     expect(screen.queryByRole('link', { name: 'Şirket stok hareketlerini aç' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'İleri izi aç' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Geri izi aç' })).toBeNull()
+  })
+  it('opens the STK-S33 forward and backward trace of this label under the same label capability', async () => {
+    mount(); await ready()
+    expect(screen.getByRole('link', { name: 'İleri izi aç' }).getAttribute('href'))
+      .toBe(`/stok/etiket-izi?etiket=${LABEL}&yon=ileri`)
+    expect(screen.getByRole('link', { name: 'Geri izi aç' }).getAttribute('href'))
+      .toBe(`/stok/etiket-izi?etiket=${LABEL}&yon=geri`)
   })
   it('keeps a forbidden read in the shared terminal error state', async () => {
     api.detail.mockResolvedValueOnce({ type: 'http', status: 403, body: { status: 403 } }); mount()
@@ -312,5 +341,30 @@ describe('InventoryLabelDetailPage', () => {
   })
   it('does not read a record without a resolved context', () => {
     scenario.namespace = null; mount(); expect(api.detail).not.toHaveBeenCalled(); expect(productLink()).toBeNull()
+  })
+})
+
+describe('KLN-D119 pieces on the label detail', () => {
+  it('shows the label piece totals and each position’s pieces when the server reports them', async () => {
+    const base = fixture()
+    api.detail.mockResolvedValue({ type: 'ok-single', data: { ...base, balances: {
+      ...base.balances, physicalPieces: 40, freePieces: 36, blockedPieces: 4,
+      positions: [{ ...base.balances.positions[0], pieceCount: 36 }, base.balances.positions[1]],
+    } } })
+    mount(); await ready()
+    expect(screen.getByTestId('inventory-label-physical-pieces').textContent).toBe('40 adet')
+    expect(screen.getByTestId('inventory-label-free-pieces').textContent).toBe('36 adet')
+    expect(screen.getByTestId('inventory-label-blocked-pieces').textContent).toBe('4 adet')
+    expect(screen.getByRole('columnheader', { name: 'Adet' })).not.toBeNull()
+    expect(screen.getByText('36 adet', { selector: 'td' })).not.toBeNull()
+    // The position without a piece figure shows a dash, never a zero the server did not send.
+    expect(screen.getByText('—', { selector: 'td' })).not.toBeNull()
+  })
+  it('shows no piece total and no piece column for a label without pieces', async () => {
+    mount(); await ready()
+    expect(screen.queryByTestId('inventory-label-physical-pieces')).toBeNull()
+    expect(screen.queryByTestId('inventory-label-free-pieces')).toBeNull()
+    expect(screen.queryByTestId('inventory-label-blocked-pieces')).toBeNull()
+    expect(screen.queryByRole('columnheader', { name: 'Adet' })).toBeNull()
   })
 })

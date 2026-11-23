@@ -1,7 +1,11 @@
+using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
+using GoymenERP.Modules.Idempotency.Infrastructure.Retention;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace GoymenERP.Modules.Idempotency.Infrastructure;
 
@@ -32,7 +36,41 @@ public static class IdempotencyModuleExtensions
                 sql => sql.MigrationsHistoryTable(
                     "__EFMigrationsHistory",
                     "idempotency")));
+        AddIdempotencyRetentionPurge(services, configuration, connectionString);
         return services;
+    }
+
+    /// <summary>
+    /// OPEN-021 / NS-12: the retention settings are always validated (a malformed value refuses start-up); the purge
+    /// job is registered only when <c>Idempotency:Retention:Purge:Enabled</c> is true, and then every value it needs
+    /// must be configured. Off by default: production activation is a human gate.
+    /// </summary>
+    private static void AddIdempotencyRetentionPurge(
+        IServiceCollection services,
+        IConfiguration configuration,
+        string connectionString)
+    {
+        var retention = IdempotencyRetentionOptions.FromConfiguration(configuration);
+        services.TryAddSingleton(retention);
+        if (!retention.PurgeEnabled)
+        {
+            return;
+        }
+
+        var settings = retention.ResolvePurge();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton(settings);
+        services.TryAddSingleton<IIdempotencyRetentionPurgeStore>(
+            _ => new SqlIdempotencyRetentionPurgeStore(connectionString, settings.CommandTimeout));
+        services.TryAddSingleton(provider => new IdempotencyRetentionPurgeJob(
+            provider.GetRequiredService<IIdempotencyRetentionPurgeStore>(),
+            settings,
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<ILogger<IdempotencyRetentionPurgeJob>>()));
+        if (!OpenApiDocumentGenerationMode.IsActive)
+        {
+            services.AddHostedService<IdempotencyRetentionPurgeHostedService>();
+        }
     }
 
     public static async Task InitializeIdempotencyModuleAsync(

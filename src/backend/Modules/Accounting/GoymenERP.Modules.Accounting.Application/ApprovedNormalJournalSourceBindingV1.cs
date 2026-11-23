@@ -1,12 +1,27 @@
 namespace GoymenERP.Modules.Accounting.Application;
 
 /// <summary>
-/// Accounting-owned identifier for the only approved first source admission. This is a routing key,
+/// Accounting-owned identifiers for supported source admissions. These are routing keys,
 /// not a permission, account mapping, posting purpose or grant.
 /// </summary>
 public static class NormalJournalSourceKindsV1
 {
     public const string RecordedManualReceipt = "finance.manual-receipt.recorded.v1";
+    public const string RecordedExpensePayment = "finance.expense-payment.recorded.v1";
+    public const string RecordedCashTransfer = "finance.cash-transfer.recorded.v1";
+    public const string RecordedCashExchange = "finance.cash-exchange.recorded.v1";
+    public const string ApprovedCashExchangeBookValue = "finance.cash-exchange.book-value-approved.v1";
+    public const string RecordedCreditMovement = "finance.credit-movement.recorded.v1";
+
+    // Recording an FX movement alone does not prove its carrying value and is deliberately not postable.
+    public static bool IsSupported(string? value) => value is RecordedManualReceipt or RecordedExpensePayment or RecordedCashTransfer
+        or ApprovedCashExchangeBookValue or RecordedCreditMovement;
+}
+
+/// <summary>Routes a source identity only from its actual approved Accounting package; ambiguity is unavailable.</summary>
+public interface IApprovedNormalJournalSourceKindCatalogV1
+{
+    Task<string?> ResolveKindAsync(Guid companyId, Guid sourceId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -65,8 +80,7 @@ public sealed class ApprovedNormalJournalSourceBindingCatalogV1
             RequireText(binding.SourceVersion, nameof(binding.SourceVersion));
             RequireText(binding.OwnerProfileId, nameof(binding.OwnerProfileId));
             RequireText(binding.OwnerProfileVersion, nameof(binding.OwnerProfileVersion));
-            if (!string.Equals(binding.SourceKind, NormalJournalSourceKindsV1.RecordedManualReceipt,
-                    StringComparison.Ordinal)
+            if (!NormalJournalSourceKindsV1.IsSupported(binding.SourceKind)
                 || binding.Rule.Mirror.CompanyId != binding.CompanyId)
             {
                 throw new ArgumentException("Binding must target the exact approved source kind and company.",
@@ -96,8 +110,7 @@ public sealed class ApprovedNormalJournalSourceBindingCatalogV1
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (companyId == Guid.Empty || sourceId == Guid.Empty || currencyId == Guid.Empty
-            || !string.Equals(sourceKind, NormalJournalSourceKindsV1.RecordedManualReceipt,
-                StringComparison.Ordinal)
+            || !NormalJournalSourceKindsV1.IsSupported(sourceKind)
             || !IsCanonical(sourceVersion) || !IsCanonical(ownerProfileId)
             || !IsCanonical(ownerProfileVersion))
         {

@@ -1,3 +1,4 @@
+import { samePaintSelection } from './paintSelectionContract'
 /**
  * `POST /api/v1/manufacturing/plans` transport.
  *
@@ -16,6 +17,7 @@ import {
 } from './contract'
 import { MANUFACTURING_BASE, devHeaders } from './api'
 import type { CapturedPlanCommercialContext } from './planRevisionContract'
+import { decodePlanAllocationShortfall, type PlanAllocationShortfall } from './planAllocationShortfall'
 
 export type PlanTargetBasis = 'InputMass' | 'GoodOutputMass'
 
@@ -25,6 +27,7 @@ export interface SlittingSpecRequest {
     readonly count: number
   }[]
   readonly windingTargetKg: string | null
+  readonly netUsableWidthMm?: string | null
 }
 
 /**
@@ -53,6 +56,7 @@ export interface SavePlanRequest {
   readonly slittingSpec?: SlittingSpecRequest | null
   /** M01.3: the authored ordered cut lines; omitted when the plan has none (never an empty or implicit clear). */
   readonly cutToLengthSpec?: CutToLengthSpecRequest
+  readonly processSpec?: PlanProcessSpecView
 }
 
 export interface SavePlanContext {
@@ -140,6 +144,7 @@ function sameSlittingSpec(plan: ProductionPlanView, request: Pick<SavePlanReques
   const sent = request.slittingSpec ?? null
   if (sent === null) return plan.slittingSpec === null
   if (plan.slittingSpec === null || plan.slittingSpec.lines.length !== sent.lines.length) return false
+  if (plan.slittingSpec.netUsableWidthMm !== (sent.netUsableWidthMm == null ? null : canonicalKilograms(sent.netUsableWidthMm))) return false
   if ((plan.slittingSpec.windingTargetKg ?? null) !== (sent.windingTargetKg === null
     ? null
     : canonicalKilograms(sent.windingTargetKg))) return false
@@ -176,6 +181,7 @@ export function sameProcessSpec(stored: PlanProcessSpecView | null, sent: PlanPr
   if (sent === undefined || stored === null) return sent === undefined && stored === null
   return (
     PROCESS_SPEC_EXACT.every((key) => stored[key] === sent[key]) &&
+    samePaintSelection(stored.paintSelection, sent.paintSelection) &&
     PROCESS_SPEC_MEASURES.every((key) => {
       const left = stored[key]
       const right = sent[key]
@@ -202,7 +208,7 @@ function describesAttempt(plan: ProductionPlanView, request: SavePlanRequest, co
     sameTarget(plan, request) &&
     sameSlittingSpec(plan, request) &&
     // Exactly the sent cut lines (or none when none were sent): order, ids, sequences, canonical lengths and counts.
-    sameCutToLengthSpec(plan, request)
+    sameCutToLengthSpec(plan, request) && sameProcessSpec(plan.processSpec, request.processSpec)
   )
 }
 
@@ -343,6 +349,17 @@ export type PlanLifecycleSnapshot =
       readonly idempotencyKey: string
       readonly request: RevisePlanRequest
     }
+  /**
+   * F-010a (URT-D29): the hand-entered termin — a calendar day, or null to remove it. The plan version does not move; the
+   * termin revision read with it is sent back. Held in memory only, like the approval.
+   */
+  | {
+      readonly kind: 'due-date'
+      readonly idempotencyKey: string
+      readonly expectedVersion: number
+      readonly expectedDueDateRevision: number
+      readonly requestedDueDate: string | null
+    }
 
 export type PlanLifecycleOutcome<T> =
   | {
@@ -357,6 +374,7 @@ export type PlanLifecycleOutcome<T> =
       readonly code: string | null
       readonly field: string | null
       readonly replayed: boolean
+      readonly planAllocationShortfall?: PlanAllocationShortfall
     }
   | {
       readonly type: 'unknown'
@@ -746,7 +764,7 @@ async function lifecycleRequest(
   return { type: 'response', response, body: parsed }
 }
 
-function lifecycleFailure<T>(response: Response, body: unknown): PlanLifecycleOutcome<T> {
+function lifecycleFailure<T>(response: Response, body: unknown, allocationContext?: { companyId: string; planId: string }): PlanLifecycleOutcome<T> {
   const metadata = replayMetadata(response.headers)
   if (metadata === null) return { type: 'unknown', reason: 'undecodable' }
   const code = text(body, 'code')
@@ -756,12 +774,17 @@ function lifecycleFailure<T>(response: Response, body: unknown): PlanLifecycleOu
   if (![400, 401, 403, 404, 409, 415, 422].includes(response.status)) {
     return { type: 'unknown', reason: 'unexpected-status' }
   }
+  const allocation = allocationContext !== undefined && response.status === 409 && !metadata.replayed
+    && code === 'inventory_manufacturing_allocation_insufficient_free_stock'
+    ? decodePlanAllocationShortfall(typeof body === 'object' && body !== null
+      ? (body as Record<string, unknown>).planAllocationShortfall : null, allocationContext.companyId, allocationContext.planId) : null
   return {
     type: 'failed',
     status: response.status,
     code,
     field: text(body, 'field'),
     replayed: metadata.replayed,
+    ...(allocation === null ? {} : { planAllocationShortfall: allocation }),
   }
 }
 
@@ -781,7 +804,7 @@ export async function approvePlan(
     signal,
   )
   if (result.type === 'unknown') return result
-  if (result.response.status !== 200) return lifecycleFailure(result.response, result.body)
+  if (result.response.status !== 200) return lifecycleFailure(result.response, result.body, { companyId, planId })
   const metadata = replayMetadata(result.response.headers)
   const plan = decodePlan(result.body)
   if (
@@ -794,6 +817,27 @@ export async function approvePlan(
   ) {
     return { type: 'unknown', reason: 'undecodable' }
   }
+  return { type: 'applied', resource: plan, ...metadata }
+}
+
+export interface PlanReapprovalSnapshot {
+  readonly idempotencyKey: string
+  readonly expectedVersion: number
+  readonly selectedLabelIds: readonly string[]
+}
+
+export async function reapprovePlan(companyId: string, planId: string, snapshot: PlanReapprovalSnapshot,
+  signal?: AbortSignal): Promise<PlanLifecycleOutcome<ProductionPlanView>> {
+  const result = await lifecycleRequest(`${MANUFACTURING_BASE}/plans/${encodeURIComponent(planId)}/reapproval`,
+    companyId, snapshot.idempotencyKey,
+    { expectedVersion: snapshot.expectedVersion, selectedLabelIds: snapshot.selectedLabelIds }, 200, signal)
+  if (result.type === 'unknown') return result
+  if (result.response.status !== 200) return lifecycleFailure(result.response, result.body, { companyId, planId })
+  const metadata = replayMetadata(result.response.headers)
+  const plan = decodePlan(result.body)
+  if (metadata === null || plan === null || plan.planId !== planId || plan.companyId !== companyId
+    || plan.status !== 'Approved' || plan.requiresReapproval !== false
+    || plan.version !== snapshot.expectedVersion + 1) return { type: 'unknown', reason: 'undecodable' }
   return { type: 'applied', resource: plan, ...metadata }
 }
 
@@ -937,7 +981,7 @@ export async function revisePlan(
     plan === null ||
     plan.planId !== planId ||
     plan.companyId !== companyId ||
-    plan.status !== 'Draft' ||
+    (plan.status !== 'Draft' && !(plan.status === 'Approved' && plan.requiresReapproval === true)) ||
     plan.version !== request.expectedVersion + 1 ||
     plan.workCenterId !== request.workCenterId ||
     !sameInputs(plan, request) ||
@@ -945,6 +989,48 @@ export async function revisePlan(
     !sameCutToLengthSpec(plan, request) ||
     !sameLineSpeed(plan.lineSpeedMetresPerMinute, request.lineSpeedMetresPerMinute) ||
     !sameProcessSpec(plan.processSpec, request.processSpec)
+  ) {
+    return { type: 'unknown', reason: 'undecodable' }
+  }
+  return { type: 'applied', resource: plan, ...metadata }
+}
+
+/**
+ * F-010a (URT-D29): enters, changes or removes the plan's hand-entered termin (`POST /plans/{planId}/due-date`). Only an
+ * answer for exactly this plan, at the same version, one termin revision on and with exactly the sent day is applied;
+ * anything else is unknown and the same frozen attempt may be sent again.
+ */
+export async function changePlanDueDate(
+  companyId: string,
+  planId: string,
+  snapshot: Extract<PlanLifecycleSnapshot, { kind: 'due-date' }>,
+  signal?: AbortSignal,
+): Promise<PlanLifecycleOutcome<ProductionPlanView>> {
+  const result = await lifecycleRequest(
+    `${MANUFACTURING_BASE}/plans/${encodeURIComponent(planId)}/due-date`,
+    companyId,
+    snapshot.idempotencyKey,
+    {
+      expectedVersion: snapshot.expectedVersion,
+      expectedDueDateRevision: snapshot.expectedDueDateRevision,
+      requestedDueDate: snapshot.requestedDueDate,
+    },
+    200,
+    signal,
+  )
+  if (result.type === 'unknown') return result
+  if (result.response.status !== 200) return lifecycleFailure(result.response, result.body)
+  const metadata = replayMetadata(result.response.headers)
+  const plan = decodePlan(result.body)
+  if (
+    metadata === null ||
+    plan === null ||
+    plan.planId !== planId ||
+    plan.companyId !== companyId ||
+    plan.status === 'Cancelled' ||
+    plan.version !== snapshot.expectedVersion ||
+    plan.dueDateRevision !== snapshot.expectedDueDateRevision + 1 ||
+    plan.requestedDueDate !== snapshot.requestedDueDate
   ) {
     return { type: 'unknown', reason: 'undecodable' }
   }

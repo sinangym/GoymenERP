@@ -35,7 +35,10 @@ public sealed partial class InventoryStore
             request.TransformationId,
             kind = (int)request.Kind,
             sources = parsed.Sources.Select(source => new { source.LabelId, source.ExpectedVersion }),
-            outputs = parsed.Outputs.Select(output => new { output.LabelId, output.Code, quantityKg = output.Quantity.ToString() }),
+            // KLN-D119: a piece count joins the hash only when given, so piece-less requests keep their stored hashes.
+            outputs = parsed.Outputs.Select(output => output.Pieces is { } pieces
+                ? (object)new { output.LabelId, output.Code, quantityKg = output.Quantity.ToString(), pieceCount = pieces.Value }
+                : new { output.LabelId, output.Code, quantityKg = output.Quantity.ToString() }),
             request.OccurredAtUtc,
             reason = parsed.Reason,
         });
@@ -100,7 +103,8 @@ public sealed partial class InventoryStore
             var position = Position(balance.CompanyId, balance.OwnerKind, balance.OwnerId, balance.CustodianKind,
                 balance.CustodianId, balance.LocationId, label, balance.Block);
             return new InventoryLabelTransformationSource(
-                label, position, Kilograms.Positive(balance.QuantityKg), source.ExpectedVersion);
+                label, position, Kilograms.Positive(balance.QuantityKg), source.ExpectedVersion,
+                balance.PieceCount is { } pieces ? PieceCount.Of(pieces) : null);
         }).ToArray();
         var baseline = sourceRows.Single(row => row.Id == parsed.Sources[0].LabelId);
         if (baseline.ProductVersion is null || sourceRows.Any(row => row.ProductId != baseline.ProductId
@@ -112,14 +116,25 @@ public sealed partial class InventoryStore
         var baselineBalance = balances.Single(row => row.LabelId == baseline.Id);
         var requiredDocuments = JsonSerializer.Deserialize<string[]>(baseline.RequiredDocumentsJson, Json)
             ?? throw new InvalidOperationException("Kayıtlı etiketin belge gereksinimi okunamadı.");
+
+        // KLN-D46 (in force per KLN-D63): the outputs inherit the sources' production status (split: every child; merge: only when every
+        // source carries it; mixed sources: null). It is read from the stored source labels, never from the request,
+        // so it is not part of the payload hash. The classification is not inherited here (unchanged behaviour).
+        var inheritedProductionStatus = InventoryLabelTransformation.InheritedProductionStatus(
+            sourceModels.Select(source => source.Label));
         var outputModels = parsed.Outputs.Select(output =>
         {
             var label = new MaterialLabel(output.LabelId, companyId, output.Code, baseline.ProductId, baseline.LotId,
                 baseline.ProductVersion, requiredDocuments, baseline.HeatNumber, baseline.CoilNumber);
+            if (inheritedProductionStatus is { } productionStatus)
+            {
+                label.MarkProductionStatus(productionStatus);
+            }
+
             var position = Position(companyId, baselineBalance.OwnerKind, baselineBalance.OwnerId,
                 baselineBalance.CustodianKind, baselineBalance.CustodianId, baselineBalance.LocationId,
                 label, baselineBalance.Block);
-            return new InventoryLabelTransformationOutput(label, position, output.Quantity);
+            return new InventoryLabelTransformationOutput(label, position, output.Quantity, output.Pieces);
         }).ToArray();
 
         InventoryLabelTransformation transformation;
@@ -162,7 +177,9 @@ public sealed partial class InventoryStore
         foreach (var source in transformation.Sources)
         {
             var label = sourceRows.Single(row => row.Id == source.Label.Id);
-            balances.Single(row => row.LabelId == source.Label.Id).QuantityKg = 0m;
+            var consumed = balances.Single(row => row.LabelId == source.Label.Id);
+            consumed.QuantityKg = 0m;
+            consumed.PieceCount = source.Pieces is null ? null : 0;
             label.Version = checked(label.Version + 1);
             label.UpdatedAtUtc = now;
             dbContext.LabelTransformationInputs.Add(new LabelTransformationInputRow
@@ -173,6 +190,7 @@ public sealed partial class InventoryStore
                 LabelId = label.Id,
                 LabelVersion = source.ExpectedVersion,
                 QuantityKg = source.Quantity.Value,
+                PieceCount = source.Pieces?.Value,
             });
         }
 
@@ -190,6 +208,7 @@ public sealed partial class InventoryStore
                 HeatNumber = output.Label.HeatNumber,
                 CoilNumber = output.Label.CoilNumber,
                 RequiredDocumentsJson = JsonSerializer.Serialize(output.Label.RequiredDocuments.Order(StringComparer.Ordinal), Json),
+                ProductionStatus = output.Label.ProductionStatus is { } productionStatus ? (int)productionStatus : null,
                 Version = 1,
                 CreatedAtUtc = now,
                 UpdatedAtUtc = now,
@@ -207,6 +226,7 @@ public sealed partial class InventoryStore
                 ProductId = output.Label.ProductId,
                 Block = (int)output.Position.Block,
                 QuantityKg = output.Quantity.Value,
+                PieceCount = output.Pieces?.Value,
             });
             dbContext.LabelTransformationOutputs.Add(new LabelTransformationOutputRow
             {
@@ -216,6 +236,7 @@ public sealed partial class InventoryStore
                 LabelId = output.Label.Id,
                 LabelVersion = 1,
                 QuantityKg = output.Quantity.Value,
+                PieceCount = output.Pieces?.Value,
             });
         }
 
@@ -372,12 +393,13 @@ public sealed partial class InventoryStore
         {
             if (output is null || output.LabelId == Guid.Empty || string.IsNullOrWhiteSpace(output.Code)
                 || output.Code.Trim().Length > MaterialLabel.MaximumCodeLength
-                || !TryQuantity(output.QuantityKg, out var quantity))
+                || !TryQuantity(output.QuantityKg, out var quantity) || output.PieceCount is < 1)
             {
                 throw GenealogyError(400, InventoryLabelGenealogyCodesV1.ValidationFailed);
             }
 
-            return new ParsedOutput(output.LabelId, output.Code.Trim(), quantity);
+            return new ParsedOutput(output.LabelId, output.Code.Trim(), quantity,
+                output.PieceCount is { } pieces ? PieceCount.Positive(pieces) : null);
         }).ToArray();
         if (sources.Select(source => source.LabelId).Distinct().Count() != sources.Length
             || outputs.Select(output => output.LabelId).Distinct().Count() != outputs.Length
@@ -482,6 +504,11 @@ public sealed partial class InventoryStore
         if (row.Classification is { } classification)
         {
             label.Classify((LabelClassification)classification);
+        }
+
+        if (row.ProductionStatus is { } productionStatus)
+        {
+            label.MarkProductionStatus((LabelProductionStatus)productionStatus);
         }
 
         return label;
@@ -592,10 +619,10 @@ public sealed partial class InventoryStore
 
     internal sealed record ManufacturingGenealogyInput(Guid LabelId, long LabelVersion, Kilograms Quantity);
 
-    private static string GenealogyHash(string value) =>
+    internal static string GenealogyHash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 
-    private static string GenealogyPayloadHash<T>(T value) =>
+    internal static string GenealogyPayloadHash<T>(T value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value, Json))))
             .ToLowerInvariant();
 
@@ -604,6 +631,6 @@ public sealed partial class InventoryStore
 
     private sealed record ParsedTransformation(ParsedSource[] Sources, ParsedOutput[] Outputs, string Reason);
     private sealed record ParsedSource(Guid LabelId, long ExpectedVersion);
-    private sealed record ParsedOutput(Guid LabelId, string Code, Kilograms Quantity);
+    private sealed record ParsedOutput(Guid LabelId, string Code, Kilograms Quantity, PieceCount? Pieces);
     private sealed record GenealogyCommandResult(InventoryLabelTransformationViewV1 Transformation);
 }

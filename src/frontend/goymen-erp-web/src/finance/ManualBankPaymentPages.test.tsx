@@ -42,6 +42,28 @@ function provider(methods: Partial<FinanceReceiptPort>) {
 }
 
 describe('manual bank payment pages', () => {
+  it.each([
+    ['ValidationFailed', 'finance_treasury_balance_insufficient', 'Hesabın güncel bakiyesi bu işlem için yeterli değil; kayıt yapılmadı.'],
+    ['Unavailable', 'finance_treasury_balance_unavailable', 'Hesabın güncel bakiyesi doğrulanamadı; kayıt yapılmadı.'],
+  ])('keeps the approved payment and explains a %s treasury refusal', async (outcome, code, message) => {
+    const detail = vi.fn(async () => ({ kind: 'body' as const, body: { outcome: 'Found', resource: view('Approved') } }))
+    const record = vi.fn(async () => ({ kind: 'body' as const, body: {
+      outcome, resource: null, isReplay: false, originalCorrelationId: 'SENTETIK',
+      issues: [{ field: 'treasuryAccountId', code }],
+    } }))
+    render(<FinancePortProvider port={provider({ manualBankPaymentDetail: detail, recordManualBankPayment: record })}>
+      <ManualBankPaymentDetailPage companyId={COMPANY} actorId="checker" paymentId={PAYMENT}
+        canEdit={false} canApprove={false} canRecord onOpen={() => undefined} />
+    </FinancePortProvider>)
+    const button = await screen.findByRole('button', { name: 'Kesin kaydet' })
+    fireEvent.click(screen.getByLabelText('Banka sonucu gerçekleşti'))
+    fireEvent.click(button)
+    await screen.findByText(message)
+    expect(record).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: 'Kesin kaydı yeniden aç' })).toBeNull()
+    expect(screen.getByText('Approved')).toBeDefined()
+  })
+
   it('creates A-now draft without bank reference and opens the saved record', async () => {
     const save = vi.fn(async () => success(view('Draft')))
     const open = vi.fn()

@@ -79,6 +79,14 @@ public sealed class PurchasingDocumentOwnerLinkPortTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => port.CheckReadableAsync(Order, cancellation.Token));
     }
 
+    [Fact]
+    public void The_record_takes_an_existing_document_by_link_KLN_D50()
+    {
+        var (port, _, _) = Port((_, token) => Task.FromCanceled<PurchaseOrderDetailView>(token));
+
+        Assert.True(port.AcceptsExistingDocumentLinks);
+    }
+
     private static (PurchasingDocumentOwnerLinkPort Port, MutableUser User, CompanyContext Company) Port(
         Func<Guid, CancellationToken, Task<PurchaseOrderDetailView>> read)
     {
@@ -114,8 +122,28 @@ public sealed class PurchasingDocumentOwnerLinkPortTests
             throw new NotSupportedException();
         public Task<PurchaseOrderResponse> SetOrderLineScheduleAsync(Guid orderId, Guid lineId, SetPurchaseOrderLineScheduleRequest request,
             PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PurchaseOrderResponse> CloseOrderLineAsync(Guid orderId, Guid lineId, ClosePurchaseOrderLineRequest request,
+            PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PurchaseOrderResponse> ChangeOrderExchangeRateAsync(Guid orderId, ChangePurchaseOrderExchangeRateRequest request,
+            PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PurchaseOrderExchangeRateView> GetOrderExchangeRateAsync(Guid orderId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public Task<PurchaseOrderFutureAllocationLinksView> GetOrderFutureAllocationsAsync(Guid orderId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public Task<PurchaseFutureAllocationReleaseResponse> ReleaseOrderFutureAllocationAsync(Guid orderId, Guid allocationId,
+            ReleasePurchaseFutureAllocationRequest request, PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public Task<PurchaseOrderResponse> CancelOrderWithAllocationReleaseAsync(Guid orderId, CancelPurchaseOrderWithAllocationReleaseRequest request,
+            PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PurchaseOrderResponse> CloseOrderLineWithAllocationReleaseAsync(Guid orderId, Guid lineId,
+            ClosePurchaseOrderLineWithAllocationReleaseRequest request, PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public Task<PurchaseOrderResponse> ReopenOrderLineAsync(Guid orderId, Guid lineId, ReopenPurchaseOrderLineRequest request,
+            PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<PurchaseOrderTotalsView> GetOrderTotalsAsync(Guid orderId, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+        public Task<PurchaseOrderLineScheduleHistoryView> GetOrderLineScheduleHistoryAsync(Guid orderId, Guid lineId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<PurchasingCurrencyCandidatesResponseV1> GetCurrencyCandidatesAsync(CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
         public Task<PurchaseRequestDetailView> GetRequestDetailAsync(Guid requestId, CancellationToken cancellationToken = default) =>

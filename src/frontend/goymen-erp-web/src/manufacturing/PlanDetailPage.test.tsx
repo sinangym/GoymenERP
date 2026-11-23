@@ -47,7 +47,8 @@ afterEach(() => {
 
 /** The plan read itself; MFG-PLAN-EDIT's history read (`/plans/{id}/revisions`) is a separate request. */
 function planReadRequests(recorded: readonly RecordedRequest[]) {
-  return requestsFor(recorded, `/manufacturing/plans/${PLAN}`, 'GET').filter((request) => !request.url.endsWith('/revisions'))
+  return requestsFor(recorded, `/manufacturing/plans/${PLAN}`, 'GET').filter((request) =>
+    new URL(request.url, 'http://localhost').pathname === `/api/v1/manufacturing/plans/${PLAN}`)
 }
 
 describe('plan approval and order creation', () => {
@@ -552,7 +553,7 @@ describe('reload safety of the pending plan command slot', () => {
     ], planId)
     const recorded = installFetch({
       capabilities: EDITOR_CAPABILITIES,
-      identity: () => ({ ...IDENTITY, userId: actor(), authenticationSessionBinding: session() }),
+      identity: () => ({ ...IDENTITY, userId: actor(), mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: session() }),
       respond: (url, init) => {
         if (rejectReads() && url.includes('/manufacturing/plans/') && init?.method !== 'POST') return problem(401)
         for (const planId of [PLAN, OTHER_PLAN]) {

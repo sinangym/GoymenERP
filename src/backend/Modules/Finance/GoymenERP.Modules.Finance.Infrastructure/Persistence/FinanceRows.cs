@@ -12,8 +12,10 @@ internal interface IFinanceTenantRow
 /// is the optimistic concurrency token and the lossless version the contract shows. The amount is
 /// the exact text that passed the Settings profile's scale; no database decimal is a money scale.
 /// </summary>
-internal sealed class ReceiptDraftRow : IFinanceTenantRow
+internal sealed class ReceiptDraftRow : IFinanceNumberedSource
 {
+    public string? DocumentNumber { get; set; }
+    public string? DocumentNumberFormatVersion { get; set; }
     public Guid Id { get; set; }
     public Guid CompanyId { get; set; }
     public long Version { get; set; }
@@ -122,8 +124,10 @@ internal static class MoneyEventKinds
 }
 
 /// <summary>R47 manual outgoing bank payment, from preparation through a separately confirmed record.</summary>
-internal sealed class ManualBankPaymentRow : IFinanceTenantRow
+internal sealed class ManualBankPaymentRow : IFinanceNumberedSource
 {
+    public string? DocumentNumber { get; set; }
+    public string? DocumentNumberFormatVersion { get; set; }
     public Guid Id { get; set; }
     public Guid CompanyId { get; set; }
     public long Version { get; set; }
@@ -232,6 +236,172 @@ internal sealed class BankAccountRow : IFinanceTenantRow
 }
 
 /// <summary>
+/// API-30: a cash account (kasa) definition. No balance and no opening balance; it moves no money. Proposed
+/// by one actor and decided (approved or rejected) once by a different actor: the database refuses a
+/// decision by the proposer (<c>CK_CashAccounts_Decision</c>, binary collation). Status: 1 proposed,
+/// 2 approved (active), 3 rejected, 4 passive. Nothing is deleted.
+/// <para>
+/// Passivation and reactivation (user decision on Issue #66, 13 November 2026) are the same two-person
+/// flow: the <c>Change*</c> columns hold the LATEST state change of the account — its kind (1 passivation,
+/// 2 reactivation), its state (1 pending, 2 approved, 3 rejected), who proposed it and who decided it. The
+/// database refuses a change decided by its proposer and a passive account that no approved passivation
+/// produced (<c>CK_CashAccounts_StateChange</c>). Earlier changes live in the audit trail and the command
+/// records; the row keeps only the latest.
+/// </para>
+/// </summary>
+internal sealed class CashAccountRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid CurrencyId { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public int Status { get; set; }
+    public long Version { get; set; }
+    public string ProposedBy { get; set; } = string.Empty;
+    public DateTimeOffset ProposedAtUtc { get; set; }
+    public string? DecidedBy { get; set; }
+    public DateTimeOffset? DecidedAtUtc { get; set; }
+    public string? RejectionReason { get; set; }
+    public int? ChangeKind { get; set; }
+    public int? ChangeStatus { get; set; }
+    public string? ChangeProposedBy { get; set; }
+    public DateTimeOffset? ChangeProposedAtUtc { get; set; }
+    public string? ChangeDecidedBy { get; set; }
+    public DateTimeOffset? ChangeDecidedAtUtc { get; set; }
+    public string? ChangeRejectionReason { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// API-30: one accepted cash-account command attempt (ADR-011), kept beside the account rather than in
+/// <see cref="FinanceCommandRow"/>, so the shared command table and its target check stay untouched.
+/// (company, command, key hash) is its key; only the key's SHA-256 is kept. Append-only.
+/// </summary>
+internal sealed class CashAccountCommandRow : IFinanceTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public string CommandName { get; set; } = string.Empty;
+    public string IdempotencyKeyHash { get; set; } = string.Empty;
+    public string ActorId { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public Guid? CashAccountId { get; set; }
+    public string ResultJson { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
+/// <summary>
+/// API-85a (FNS-D27/D27a): one record of a company account's credit limit history. Kind: 1 Set (a currency
+/// and an exact decimal amount text &gt; 0), 2 Remove ("no limit"; neither). Status: 1 proposed, 2 approved (the
+/// account's effective record; at most one, <c>UX_PartyCreditLimits_Live</c>), 3 rejected, 4 superseded.
+/// <para>
+/// A direct record (<see cref="IsDirect"/>) is inserted approved by a holder of the approve authority in one
+/// step (FNS-D27, FNS-D56/FNS-D57(3); no amount threshold, no second approval): its decider IS its proposer. A proposal is approved or rejected by a DIFFERENT actor (binary
+/// collation, <c>CK_PartyCreditLimits_Decision</c>). An approved record takes the account's next revision
+/// (<see cref="AccountRevision"/>, unique per account); <see cref="BaseRevision"/> is the account revision
+/// the request named. Rows are never deleted; a newer approved record supersedes the previous one, and a
+/// direct change supersedes a pending proposal.
+/// </para>
+/// </summary>
+internal sealed class PartyCreditLimitRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid PartyId { get; set; }
+    public Guid CompanyAccountId { get; set; }
+    public int Kind { get; set; }
+    public Guid? CurrencyId { get; set; }
+    public string? AmountText { get; set; }
+    public int Status { get; set; }
+    public bool IsDirect { get; set; }
+    public long BaseRevision { get; set; }
+    public long? AccountRevision { get; set; }
+    public long Version { get; set; }
+    public string ProposedBy { get; set; } = string.Empty;
+    public DateTimeOffset ProposedAtUtc { get; set; }
+    public string? DecidedBy { get; set; }
+    public DateTimeOffset? DecidedAtUtc { get; set; }
+    public string? RejectionReason { get; set; }
+    public DateTimeOffset? SupersededAtUtc { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// API-85a: one accepted credit-limit command attempt (ADR-011), kept beside the limit records like
+/// <see cref="CashAccountCommandRow"/>. (company, command, key hash) is its key; only the key's SHA-256 is
+/// kept. Append-only.
+/// </summary>
+internal sealed class PartyCreditLimitCommandRow : IFinanceTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public string CommandName { get; set; } = string.Empty;
+    public string IdempotencyKeyHash { get; set; } = string.Empty;
+    public string ActorId { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public Guid? PartyCreditLimitId { get; set; }
+    public string ResultJson { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
+/// <summary>
+/// API-85b (FNS-D57/D31): one revision of a collateral held for (received) or given to (API-84, later) a company
+/// account. Direction: 1 received, 2 given. SourceKind: 1 Finance manual entry. Kind: 1 record, 2 change, 3 release
+/// (a reverse record that repeats the previous values). Status: 1 effective (at most one per collateral,
+/// <c>UX_PartyCollaterals_Live</c>), 2 superseded. <see cref="Revision"/> starts at 1 and grows by one per revision
+/// (unique per collateral). The type is a Settings collateral type id with the catalog version it was recorded
+/// against; the rate is never stored here (it is applied at read time). Rows are never deleted.
+/// </summary>
+internal sealed class PartyCollateralRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid CollateralId { get; set; }
+    public long Revision { get; set; }
+    public int Direction { get; set; }
+    public int SourceKind { get; set; }
+    public Guid PartyId { get; set; }
+    public Guid CompanyAccountId { get; set; }
+    public int Kind { get; set; }
+    public Guid CollateralTypeId { get; set; }
+    public string CollateralTypeVersion { get; set; } = string.Empty;
+    public Guid? BankInstitutionId { get; set; }
+    public string? BankSourceVersion { get; set; }
+    public string? BankProofJson { get; set; }
+    public Guid CurrencyId { get; set; }
+    public string AmountText { get; set; } = string.Empty;
+    public DateOnly ValidFrom { get; set; }
+    public DateOnly? ValidUntil { get; set; }
+    public string? DocumentReference { get; set; }
+    public string? ReleaseReason { get; set; }
+    public int Status { get; set; }
+    public long Version { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public DateTimeOffset? SupersededAtUtc { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// API-85b: one accepted collateral command attempt (ADR-011), kept beside the collateral revisions like
+/// <see cref="PartyCreditLimitCommandRow"/>. (company, command, key hash) is its key; only the key's SHA-256 is kept.
+/// <see cref="PartyCollateralRowId"/> is the revision the command wrote (null only for a recorded refusal).
+/// Append-only.
+/// </summary>
+internal sealed class PartyCollateralCommandRow : IFinanceTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public string CommandName { get; set; } = string.Empty;
+    public string IdempotencyKeyHash { get; set; } = string.Empty;
+    public string ActorId { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public Guid? PartyCollateralRowId { get; set; }
+    public string ResultJson { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
+/// <summary>
 /// One accepted command attempt (ADR-011): (company, command, key hash) is its key. The raw
 /// Idempotency-Key is never stored, only its upper-case SHA-256 (§2). The actor, the canonical
 /// payload hash, the answered result and the first correlation are kept, so the same key with the
@@ -320,6 +490,163 @@ internal sealed class CustomerInstrumentMovementRow : IFinanceTenantRow
     public string RecordedBy { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// FIN-S9 (FNS-D23): one cash, bank or party opening balance. A specialist proposes it (status 1) while the Settings opening
+/// period is open; a manager other than the proposer approves (2) or rejects (3) it, once. <see cref="TargetId"/> is the
+/// cash account, the bank account or the company account; <see cref="PartyId"/> and <see cref="Direction"/> (1 debit,
+/// 2 credit) exist only for a party opening. The amount is exact decimal text &gt; 0. <see cref="OpeningPeriodVersion"/> is
+/// the Settings period version the proposal was accepted under (the approval re-reads the period). It moves no money.
+/// </summary>
+internal sealed class OpeningBalanceRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public int TargetKind { get; set; }
+    public Guid TargetId { get; set; }
+    public Guid? PartyId { get; set; }
+    public Guid CurrencyId { get; set; }
+    public int? Direction { get; set; }
+    public string AmountText { get; set; } = string.Empty;
+    public DateOnly AsOfDate { get; set; }
+    public int Status { get; set; }
+    public string OpeningPeriodVersion { get; set; } = string.Empty;
+    public string ProposedBy { get; set; } = string.Empty;
+    public DateTimeOffset ProposedAtUtc { get; set; }
+    public string? DecidedBy { get; set; }
+    public DateTimeOffset? DecidedAtUtc { get; set; }
+    public string? RejectionReason { get; set; }
+    public long Version { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// FIN-S9 (FNS-D85): a reversal of an APPROVED opening balance: proposed by one person, approved or rejected by another
+/// (status 1 proposed, 2 approved, 3 rejected). At most one pending or approved reversal per opening. Its approval marks the
+/// opening reversed (status 4) and writes the reversal movement; a rejected one stays as history.
+/// </summary>
+internal sealed class OpeningBalanceReversalRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid OpeningBalanceId { get; set; }
+    public int Status { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string OpeningPeriodVersion { get; set; } = string.Empty;
+    public string ProposedBy { get; set; } = string.Empty;
+    public DateTimeOffset ProposedAtUtc { get; set; }
+    public string? DecidedBy { get; set; }
+    public DateTimeOffset? DecidedAtUtc { get; set; }
+    public string? RejectionReason { get; set; }
+    public long Version { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// FIN-S9 (FNS-D84, FNS-D85): the one recorded money fact of an opening balance — kind 1 the opening (written when the
+/// opening is approved), kind 2 its reversal (written when the reversal is approved; the reverse side). The opening's
+/// target, currency, direction and exact amount are copied; <see cref="OccurredOn"/> is the opening's AsOfDate (a
+/// Europe/Istanbul business date). (company, opening, kind) is unique: a movement is never produced twice. Append-only.
+/// </summary>
+internal sealed class OpeningBalanceMovementRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid OpeningBalanceId { get; set; }
+    public int Kind { get; set; }
+    public int TargetKind { get; set; }
+    public Guid TargetId { get; set; }
+    public Guid? PartyId { get; set; }
+    public Guid CurrencyId { get; set; }
+    public int? Direction { get; set; }
+    public string AmountText { get; set; } = string.Empty;
+    public DateOnly OccurredOn { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
+/// <summary>
+/// FIN-S9: one accepted opening balance command attempt (ADR-011), like <see cref="CashAccountCommandRow"/>. (company,
+/// command, key hash) is its key; only the key's SHA-256 is kept. <see cref="OpeningBalanceId"/> is the opening balance
+/// the command wrote or decided (null only for a recorded refusal whose target does not exist). Append-only.
+/// </summary>
+internal sealed class OpeningBalanceCommandRow : IFinanceTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public string CommandName { get; set; } = string.Empty;
+    public string IdempotencyKeyHash { get; set; } = string.Empty;
+    public string ActorId { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public Guid? OpeningBalanceId { get; set; }
+    public string ResultJson { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
+/// <summary>
+/// FIN-SC47 (FNS-D87, FNS-D88): a credit account of one of the four groups (1 cash, 2 non-cash, 3 instrument and
+/// factoring, 4 leasing). Proposed (1), then approved (2) or rejected (3) by another person; only the decision columns
+/// ever change. The amount is exact decimal text as given.
+/// </summary>
+internal sealed class CreditAccountRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public int CreditGroup { get; set; }
+    public string LenderName { get; set; } = string.Empty;
+    public string ContractReference { get; set; } = string.Empty;
+    public Guid CurrencyId { get; set; }
+    public string PrincipalAmountText { get; set; } = string.Empty;
+    public DateOnly StartDate { get; set; }
+    public Guid? LenderPartyId { get; set; }
+    public Guid? LenderCompanyPartyAccountId { get; set; }
+    public long? LenderPartyVersion { get; set; }
+    public long? LenderCompanyAccountVersion { get; set; }
+    public string? SourceProfileJson { get; set; }
+    public Guid? MoneyProfileId { get; set; }
+    public long? MoneyProfileVersion { get; set; }
+    public int? CurrencyScale { get; set; }
+    public int Status { get; set; }
+    public string ProposedBy { get; set; } = string.Empty;
+    public DateTimeOffset ProposedAtUtc { get; set; }
+    public string? DecidedBy { get; set; }
+    public DateTimeOffset? DecidedAtUtc { get; set; }
+    public string? RejectionReason { get; set; }
+    public long Version { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// FIN-SC47 (FNS-D93/FNS-D94): one line of a credit account's imported bank repayment plan, stored as given in the same
+/// save as the proposal and never changed afterwards (append-only).
+/// </summary>
+internal sealed class CreditAccountInstallmentRow : IFinanceTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid CreditAccountId { get; set; }
+    public int Sequence { get; set; }
+    public DateOnly DueDate { get; set; }
+    public string InstallmentText { get; set; } = string.Empty;
+    public string PrincipalText { get; set; } = string.Empty;
+    public string InterestText { get; set; } = string.Empty;
+    public string BsmvText { get; set; } = string.Empty;
+    public string KkdfText { get; set; } = string.Empty;
+    public string? ChargesJson { get; set; }
+}
+
+/// <summary>ADR-011: the idempotency record of a credit account command (a terminal refusal included).</summary>
+internal sealed class CreditAccountCommandRow : IFinanceTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public string CommandName { get; set; } = string.Empty;
+    public string IdempotencyKeyHash { get; set; } = string.Empty;
+    public string ActorId { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public Guid? CreditAccountId { get; set; }
+    public string ResultJson { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
 }
 
 /// <summary>Organization's company, referenced by identity only (the table is Organization's, not migrated here).</summary>

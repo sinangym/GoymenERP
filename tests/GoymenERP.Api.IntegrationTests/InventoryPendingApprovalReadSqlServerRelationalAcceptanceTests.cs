@@ -15,6 +15,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         var own = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-D05-COUNT-A", 100m);
         var foreign = await SeedFreePhysicalSourceAsync(run, CompanyB, "SYN-D05-COUNT-B", 100m);
+        // The later shortage approval needs a known TL cost. Use the actual submitted/different-checker-approved
+        // opening-cost flow for this unpriced stock; the synthetic positive price is not a ledger or zero-cost seed.
+        await ApproveCountOpeningCostAsync(run, own.ProductId, "8.5");
         var countId = Guid.NewGuid();
         var foreignCountId = Guid.NewGuid();
         await using (var scope = run.Store(CompanyA))
@@ -73,10 +76,12 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         await using (var decisionScope = run.Store(CompanyA))
         {
-            await decisionScope.Store.DecideStockCountAsync(countId,
+            var approved = await decisionScope.Store.DecideStockCountAsync(countId,
                 new(InventoryStockCountDecisionKindV1.Approve, "D05 onay"),
                 Metadata(run) with { ActorId = approver }, static _ => Task.CompletedTask);
+            Assert.Equal("Known", approved.Count.Decision!.CostStatus);
         }
+        Assert.Equal(97m, await LabelKgAsync(run, own.LabelId));
         var afterDecision = await PendingReadEffects(run);
         var closed = await service.ListAsync(new(CompanyA, approver), null, default);
         Assert.Empty(closed.Resource!.Items);

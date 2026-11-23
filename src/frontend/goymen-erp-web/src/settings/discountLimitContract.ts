@@ -243,6 +243,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/** Exact key sets of the SalesDiscountLimit*V1 OpenAPI schemas: an unknown or missing key fails closed. */
+const FIELDS = {
+  definition: ['limitVersion', 'kind', 'percent', 'linkedGroupId', 'extraPoints', 'effectiveFrom', 'recordedBy', 'recordedAtUtc', 'reason'],
+  effective: ['state', 'percent'],
+  scheduled: ['limit', 'effectiveLimit'],
+  group: ['id', 'code', 'name', 'isActive', 'version', 'limit', 'effectiveLimit', 'scheduled'],
+  groupList: ['companyId', 'businessDate', 'groups'],
+  created: ['id', 'version'],
+  person: ['userId', 'displayName'],
+  personList: ['items', 'hasMore'],
+  boundGroup: ['id', 'code', 'name', 'isActive'],
+  bindingCompany: ['companyId', 'version', 'groups', 'isMember'],
+  binding: ['userId', 'companies'],
+} as const
+
+function isExact(value: unknown, fields: readonly string[]): value is Record<string, unknown> {
+  return isRecord(value) && Object.keys(value).length === fields.length && fields.every((field) => Object.hasOwn(value, field))
+}
+
 function isNonEmpty(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
@@ -270,7 +289,7 @@ export function isValidCode(value: string): boolean {
 }
 
 function decodeDefinition(raw: unknown): LimitDefinition | null {
-  if (!isRecord(raw)) return null
+  if (!isExact(raw, FIELDS.definition)) return null
   const { limitVersion, kind, percent, linkedGroupId, extraPoints, effectiveFrom, recordedBy, recordedAtUtc, reason } = raw
   if (typeof limitVersion !== 'string' || !POSITIVE_VERSION.test(limitVersion)) return null
   if (typeof effectiveFrom !== 'string' || !DATE.test(effectiveFrom)) return null
@@ -287,7 +306,7 @@ function decodeDefinition(raw: unknown): LimitDefinition | null {
 }
 
 function decodeEffective(raw: unknown): EffectiveLimit | null {
-  if (!isRecord(raw)) return null
+  if (!isExact(raw, FIELDS.effective)) return null
   if (raw.state === 'Defined' && isPercentText(raw.percent)) return { state: 'Defined', percent: raw.percent }
   if (raw.state === 'None' && raw.percent === null) return { state: 'None', percent: null }
   if (raw.state === 'Invalid' && raw.percent === null) return { state: 'Invalid', percent: null }
@@ -295,7 +314,7 @@ function decodeEffective(raw: unknown): EffectiveLimit | null {
 }
 
 function decodeScheduled(raw: unknown, businessDate: string, previousDate: string | null): ScheduledLimit | null {
-  if (!isRecord(raw)) return null
+  if (!isExact(raw, FIELDS.scheduled)) return null
   const limit = decodeDefinition(raw.limit)
   const effective = decodeEffective(raw.effectiveLimit)
   if (limit === null || effective === null) return null
@@ -305,7 +324,7 @@ function decodeScheduled(raw: unknown, businessDate: string, previousDate: strin
 }
 
 function decodeGroup(raw: unknown, businessDate: string): LimitGroup | null {
-  if (!isRecord(raw)) return null
+  if (!isExact(raw, FIELDS.group)) return null
   const { id, code, name, isActive, version, limit, effectiveLimit, scheduled } = raw
   if (!isUuid(id) || typeof code !== 'string' || !isValidCode(code) || !isNonEmpty(name)) return null
   if (typeof isActive !== 'boolean' || typeof version !== 'string' || !POSITIVE_VERSION.test(version)) return null
@@ -325,7 +344,7 @@ function decodeGroup(raw: unknown, businessDate: string): LimitGroup | null {
 
 /** The group list of the company the request named; a list for another company is not this answer. */
 export function decodeGroupList(raw: unknown, companyId: string): LimitGroupList | null {
-  if (!isRecord(raw) || raw.companyId !== companyId) return null
+  if (!isExact(raw, FIELDS.groupList) || raw.companyId !== companyId) return null
   if (!isDateText(raw.businessDate) || !Array.isArray(raw.groups)) return null
   const groups: LimitGroup[] = []
   for (const entry of raw.groups) {
@@ -339,15 +358,15 @@ export function decodeGroupList(raw: unknown, companyId: string): LimitGroupList
 }
 
 export function decodeCreated(raw: unknown): LimitGroupCreated | null {
-  if (!isRecord(raw) || !isUuid(raw.id) || raw.version !== '1') return null
+  if (!isExact(raw, FIELDS.created) || !isUuid(raw.id) || raw.version !== '1') return null
   return { id: raw.id, version: raw.version }
 }
 
 export function decodePeople(raw: unknown): PersonList | null {
-  if (!isRecord(raw) || !Array.isArray(raw.items) || typeof raw.hasMore !== 'boolean') return null
+  if (!isExact(raw, FIELDS.personList) || !Array.isArray(raw.items) || typeof raw.hasMore !== 'boolean') return null
   const items: Person[] = []
   for (const entry of raw.items) {
-    if (!isRecord(entry) || !isUuid(entry.userId) || !isNonEmpty(entry.displayName)) return null
+    if (!isExact(entry, FIELDS.person) || !isUuid(entry.userId) || !isNonEmpty(entry.displayName)) return null
     items.push({ userId: entry.userId, displayName: entry.displayName })
   }
   return { items, hasMore: raw.hasMore }
@@ -355,16 +374,16 @@ export function decodePeople(raw: unknown): PersonList | null {
 
 /** The binding of the person the request named, in distinct companies. */
 export function decodeBinding(raw: unknown, userId: string): Binding | null {
-  if (!isRecord(raw) || raw.userId !== userId || !Array.isArray(raw.companies) || raw.companies.length === 0) return null
+  if (!isExact(raw, FIELDS.binding) || raw.userId !== userId || !Array.isArray(raw.companies) || raw.companies.length === 0) return null
   const companies: BindingCompany[] = []
   for (const entry of raw.companies) {
-    if (!isRecord(entry) || !isUuid(entry.companyId) || typeof entry.version !== 'string' || !VERSION.test(entry.version)) {
+    if (!isExact(entry, FIELDS.bindingCompany) || !isUuid(entry.companyId) || typeof entry.version !== 'string' || !VERSION.test(entry.version)) {
       return null
     }
     if (!Array.isArray(entry.groups)) return null
     const groups: BoundGroup[] = []
     for (const group of entry.groups) {
-      if (!isRecord(group) || !isUuid(group.id) || typeof group.code !== 'string' || !isValidCode(group.code)) return null
+      if (!isExact(group, FIELDS.boundGroup) || !isUuid(group.id) || typeof group.code !== 'string' || !isValidCode(group.code)) return null
       if (!isNonEmpty(group.name) || typeof group.isActive !== 'boolean') return null
       groups.push({ id: group.id, code: group.code, name: group.name, isActive: group.isActive })
     }

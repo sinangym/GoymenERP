@@ -246,9 +246,11 @@ function SourcesTable({ sources, testId }: { readonly sources: readonly Cancella
 
 function ImpactView({ impact }: { readonly impact: CancellationImpact }) {
   const orUnreadable = (value: string | number | null) => (value === null ? T.unreadable : String(value))
+  const holdsFutureSupply = impact.lines.some((line) => (line.futureSupplyAllocations ?? 0) > 0)
   return (
     <>
       <SourcesTable sources={impact.sources} testId="sales-cancellation-source" />
+      {holdsFutureSupply ? <p data-testid="sales-cancellation-future-supply-note">{T.futureSupplyNote}</p> : null}
       <div className={styles.tableWrap}>
         <table className={styles.table}>
           <caption className={styles.caption}>{T.linesCaption}</caption>
@@ -256,6 +258,7 @@ function ImpactView({ impact }: { readonly impact: CancellationImpact }) {
             <th scope="col">{T.lineNo}</th><th scope="col">{T.ordered}</th><th scope="col">{T.activeAllocations}</th>
             <th scope="col">{T.allocatedKg}</th><th scope="col">{T.loadingLines}</th><th scope="col">{T.instructed}</th>
             <th scope="col">{T.loaded}</th><th scope="col">{T.shipped}</th><th scope="col">{T.delivered}</th>
+            <th scope="col">{T.futureSupplyAllocations}</th>
           </tr></thead>
           <tbody>{impact.lines.map((line) => (
             <tr key={line.lineId} data-testid={`sales-cancellation-line-${line.lineNo}`}>
@@ -268,6 +271,7 @@ function ImpactView({ impact }: { readonly impact: CancellationImpact }) {
               <td>{orUnreadable(line.loaded)}</td>
               <td>{orUnreadable(line.shipped)}</td>
               <td>{orUnreadable(line.delivered)}</td>
+              <td data-testid={`sales-cancellation-line-${line.lineNo}-future-supply`}>{orUnreadable(line.futureSupplyAllocations)}</td>
             </tr>
           ))}</tbody>
         </table>

@@ -3,8 +3,9 @@ import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { decodeInstructionDetail, type LoadingShare } from './contract'
 import { decodeShipmentAllocations, REALIZATION_CAPABILITY as C, shipmentRemainder } from './realizationContract'
-import { INSTRUCTION_DETAIL_TEXT as D, REALIZATION_TEXT as T } from './logisticsText'
+import { INSTRUCTION_DETAIL_TEXT as D, PROBLEM_CODE_TEXT, REALIZATION_TEXT as T } from './logisticsText'
 import { resetPendingInstructionAttempts } from './pendingInstructionAttempts'
+import { PLAN_EXCESS_TEXT as P } from './planExcessText'
 import { ALL_LOGISTICS, COMPANY_A, COMPANY_B, DRAFT, DRAFT_LINE, INSTRUCTION, LINE, PRODUCT,
   installFetch, instructionDetail, instructionLine, json, mutation, renderLogisticsApp, type RecordedCall } from './testHarness'
 
@@ -13,9 +14,9 @@ const LABEL = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
 const SHIPMENT = '12345678-1234-1234-1234-123456789abc'
 const path = `/lojistik/yukleme-talimatlari/${INSTRUCTION}`
 const loadedShare = { shareId: '12345678-1234-1234-1234-123456789abd', lineId: LINE, kind: 'Loaded', quantity: '4',
-  measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-25T10:00:00Z' }
+  measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-25T10:00:00Z', recordedBy: 'SENTETIK-operator' }
 const shippedShare = { shareId: SHIPMENT, lineId: LINE, kind: 'Shipped', quantity: '2',
-  measurement: null, sourceShipmentId: null, recordedAtUtc: '2026-09-25T11:00:00Z' }
+  measurement: null, sourceShipmentId: null, recordedAtUtc: '2026-09-25T11:00:00Z', recordedBy: 'SENTETIK-operator' }
 const loaded = () => instructionDetail({ status: 'Issued', version: '4' },
   [instructionLine({ loaded: '4', remainingToLoad: '0.5', loadedNotShipped: '4' })], [loadedShare])
 const shipped = (share = shippedShare) => instructionDetail({ status: 'Issued', version: '5' },
@@ -88,6 +89,27 @@ describe('LOG5 owner UI, synthetic NOT_ENV', () => {
     expect(posts[1].idempotencyKey).toBe(posts[0].idempotencyKey)
   })
 
+  it.each([
+    'logistics_shipment_risk_over_limit',
+    'logistics_shipment_risk_credit_limit_not_set',
+    'logistics_shipment_risk_unavailable',
+    'logistics_shipment_risk_exception_used',
+  ])('a shipment the customer risk gate stops (%s) is explained as not saved and offers no retry', async (code) => {
+    installFetch({ capabilities: [...ALL_LOGISTICS, C.shipment, C.allocation], onDetail: () => json(loaded()),
+      onAllocations: () => json(allocations()),
+      onShipment: () => json({ status: 409, title: 'Conflict', code, correlationId: 'c',
+        errors: [{ field: 'riskException', code: 'pending' }] }, 409) })
+    renderLogisticsApp(path)
+    const form = await screen.findByTestId('shipment-1')
+    await screen.findByRole('option', { name: /Etiket ref/ })
+    await userEvent.selectOptions(within(form).getByLabelText(T.allocation), ALLOCATION)
+    await userEvent.type(within(form).getByLabelText(T.quantity), '2')
+    await userEvent.click(within(form).getByTestId('shipment-1-submit'))
+    await waitFor(() => expect(screen.getByTestId('shipment-1-notice').textContent).toBe(
+      `${D.command.conflict} ${PROBLEM_CODE_TEXT[code as keyof typeof PROBLEM_CODE_TEXT]}`))
+    expect(within(form).queryByRole('button', { name: D.command.retry })).toBeNull()
+  })
+
   it('delivery selects the exact source shipment without any Inventory capability/read/write', async () => {
     let current = shipped()
     const harness = installFetch({ capabilities: [...ALL_LOGISTICS, C.delivery], onDetail: () => json(current), onDelivery: (_, call: RecordedCall) => {
@@ -95,7 +117,7 @@ describe('LOG5 owner UI, synthetic NOT_ENV', () => {
       current = instructionDetail({ status: 'Issued', version: '6' },
         [instructionLine({ loaded: '4', shipped: '2', delivered: '1', remainingToLoad: '0.5', loadedNotShipped: '2', shippedNotDelivered: '1' })],
         [loadedShare, shippedShare, { shareId: body.deliveryId, lineId: LINE, kind: 'Delivered', quantity: '1', measurement: null,
-          sourceShipmentId: SHIPMENT, recordedAtUtc: body.occurredAtUtc }])
+          sourceShipmentId: SHIPMENT, recordedAtUtc: body.occurredAtUtc, recordedBy: 'SENTETIK-operator' }])
       return json(mutation(current))
     } })
     renderLogisticsApp(path)
@@ -119,5 +141,31 @@ describe('LOG5 owner UI, synthetic NOT_ENV', () => {
     const source = shippedShare as LoadingShare
     const delivery = { ...source, shareId: LINE, kind: 'Delivered' as const, sourceShipmentId: SHIPMENT, quantity: '0.9' }
     expect(shipmentRemainder(source, [source, delivery, { ...delivery, sourceShipmentId: ALLOCATION }])).toBe('1.1')
+  })
+
+  it('adds only an explicitly selected approved exception to the frozen actual allocation shipment', async () => {
+    const exceptionId = '71000000-0000-4000-8000-000000000001'
+    const source = () => instructionDetail({ status: 'Issued', version: '4' }, [instructionLine({ loaded: '6.5', loadedNotShipped: '6.5', remainingToLoad: '0', approvedPlanExcess: '2' })], [{ ...loadedShare, quantity: '6.5' }])
+    let current = source()
+    const harness = installFetch({ capabilities: [...ALL_LOGISTICS, C.shipment, C.allocation], onDetail: () => json(current), onAllocations: () => json(allocations({ remainingKg: '6.5', allocatedKg: '6.5' })),
+      onShipment: (_id, call) => {
+        const sent = JSON.parse(call.body!)
+        current = instructionDetail({ status: 'Issued', version: '5' }, [instructionLine({ loaded: '6.5', shipped: '6.5', remainingToLoad: '0', loadedNotShipped: '0', shippedNotDelivered: '6.5', approvedPlanExcess: '2' })],
+          [{ ...loadedShare, quantity: '6.5' }, { ...shippedShare, shareId: sent.shipmentId, quantity: sent.quantity, recordedAtUtc: sent.occurredAtUtc }])
+        return json(mutation(current))
+      } })
+    const original = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => String(input).includes('/logistics/plan-excess?') ? Promise.resolve(json({ items: [{
+      companyId: COMPANY_A, exceptionId, instructionId: INSTRUCTION, lineId: LINE, salesOrderId: DRAFT, salesOrderLineId: DRAFT_LINE, unitId: '44444444-4444-4444-4444-444444444444',
+      version: '2', instructionVersion: '4', status: 'Approved', instructed: '4.5', quantity: '2', loadedUsed: '2', shippedUsed: '0', availableToLoad: '0', availableToShip: '2',
+      reason: 'SENTETIK exception', proposedBy: 'SENTETIK', proposedAtUtc: '2026-11-18T09:00:00Z', approvedBy: 'SENTETIK', approvedAtUtc: '2026-11-18T09:01:00Z',
+    }], nextCursor: null })) : original(input, init)))
+    renderLogisticsApp(path); const form = await screen.findByTestId('shipment-1')
+    await within(form).findByRole('option', { name: /Etiket ref/ })
+    await userEvent.selectOptions(within(form).getByLabelText(T.allocation), ALLOCATION); await userEvent.type(within(form).getByLabelText(T.quantity), '6,5')
+    await userEvent.click(within(form).getByRole('button', { name: P.use })); await userEvent.click(await within(form).findByRole('checkbox', { name: `${P.exception} ${exceptionId}` }))
+    await userEvent.type(within(form).getByLabelText(P.useQuantity), '2'); await userEvent.click(within(form).getByTestId('shipment-1-submit'))
+    await within(form).findByText(D.command.completed)
+    expect(JSON.parse(harness.calls.find(call => call.method === 'POST')!.body!)).toMatchObject({ allocationId: ALLOCATION, quantity: '6.5', planExcessUses: [{ exceptionId, expectedVersion: '2', quantity: '2' }] })
   })
 })

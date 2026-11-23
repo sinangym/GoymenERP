@@ -17,7 +17,13 @@ public sealed class OrganizationShellCapabilityProvider : IShellCapabilityProvid
     // 1.2 -> 1.3 (master edit): five controls — site create/edit, location create, location edit, work-centre create,
     // work-centre edit — each on its screen's own parent and each adding its record kind's own write permission. The
     // same cascade: the accepted authority constants move with it in the central round.
-    public const string OwnerContractVersion = "1.3";
+    // 1.3 -> 1.4 (B-15): the work-centre calendar edit control on the work-centre card, adding the calendar's own write
+    // permission. The same cascade: the accepted authority constants move with it in the central round.
+    // 1.4 -> 1.5 (KIM-S23, KIM-D28): the company tax-id screen (ORG-05), a company-wide route on the organization context
+    // read. It carries no control: the screen's request/approve buttons follow the viewer flags the tax-id read returns,
+    // and the read itself answers 403 to a caller who holds neither tax-id permission. The same cascade: the accepted
+    // authority constants move with it in the central round.
+    public const string OwnerContractVersion = "1.5";
     public const string ListCapabilityId = "organization.sites.list";
     public const string DetailCapabilityId = "organization.locations.detail";
     public const string SitesReadCapabilityId = "organization.sites.read";
@@ -29,6 +35,8 @@ public sealed class OrganizationShellCapabilityProvider : IShellCapabilityProvid
     public const string LocationEditCapabilityId = "organization.locations.edit";
     public const string WorkCenterCreateCapabilityId = "organization.work-centers.create";
     public const string WorkCenterEditCapabilityId = "organization.work-centers.edit";
+    public const string WorkCenterCalendarEditCapabilityId = "organization.work-centers.calendar.edit";
+    public const string CompanyTaxIdCapabilityId = "organization.company.tax-id";
 
     public string Owner => OwnerId;
     public string ContractVersion => OwnerContractVersion;
@@ -74,12 +82,24 @@ public sealed class OrganizationShellCapabilityProvider : IShellCapabilityProvid
             ShellCapabilityScopeRequirement.AnyGrantedScope,
             [ErpPermissions.OrganizationWorkCentersRead], ImplementationAvailable: true);
 
+        // ORG-05 (KIM-S23) is company-wide: the company record has no narrower scope, and both tax-id permissions are
+        // company-wide only. The route stands on the context read; the VKN itself is released only by the tax-id read,
+        // which also requires one of the two tax-id grants (403 otherwise), so publishing the route reveals nothing.
+        var companyTaxId = new ShellCapabilityDeclaration(
+            CompanyTaxIdCapabilityId, "organization.company-tax-id",
+            "/ayarlar/organizasyon/sirket-vergi-no", "ORG-05",
+            ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [ErpPermissions.OrganizationContextRead], ImplementationAvailable: true);
+
         return
         [
             list,
             detail,
             workCenters,
             workCenterDetail,
+            companyTaxId,
             list with
             {
                 CapabilityId = SitesReadCapabilityId,
@@ -143,6 +163,16 @@ public sealed class OrganizationShellCapabilityProvider : IShellCapabilityProvid
                 ParentCapabilityId = WorkCenterDetailCapabilityId,
                 RequiredPermissions =
                     [ErpPermissions.OrganizationWorkCentersRead, OrganizationPermissionManifestV1.WorkCentersWrite],
+            },
+            workCenterDetail with
+            {
+                CapabilityId = WorkCenterCalendarEditCapabilityId,
+                ParentCapabilityId = WorkCenterDetailCapabilityId,
+                RequiredPermissions =
+                [
+                    ErpPermissions.OrganizationWorkCentersRead,
+                    OrganizationPermissionManifestV1.WorkCenterCalendarsWrite,
+                ],
             },
         ];
     }

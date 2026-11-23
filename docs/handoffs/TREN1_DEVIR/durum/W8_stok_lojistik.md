@@ -1,0 +1,799 @@
+# W8 Stok / Lojistik
+
+## STK-S11 — kaynak checkpoint, entegrasyon bekliyor
+
+- Kararlar: BS-9/13/16/17, URN-D8/D9, KLN-D66/D67/D88, DEC-PRD-006. Settings typed birim sahibi dar bağımlılık commit'i `15e06fcd9` ile alındı; kg/ton/metre/adet sınıfı kod veya addan tahmin edilmez.
+- Yeni `IProductPurchaseUnitConversionV1`: gerçek Ürün kartının birim referansları ve fiyat birimi, mevcut ebat satırı, şirketin ithal kg/m tablosu ve Settings'in gerçek tarihli yoğunluk/yuvarlama/tolerans politikasını okur. Formül ve ters yön mevcut deterministic calculator'dadır. Katsayı üretilirken bir kez yuvarlanır; kg→adet sonucu ve kalan kg ayrı taşınır. Kantar kontrolü teorik kg, mutlak fark ve kayıtlı sınır/taban ayarıyla aynı calculator'ı kullanır.
+- Boru/profilde şirket tablosu yoksa geometri tahmini yapılmaz. Boyut kaydı olmayan veya kaynak politikası/profili bulunmayan ürün açık NoSource'dur. Teknik bozuk/yabancı kaynak 503 anlamlı Unavailable'dır; kalıcı NoSource'a çevrilmez. Kart ve ebat kaynağı okuma sonunda yeniden ölçülür; her bekleme özgün actor/company üyelik çitini korur. Tüketici kendi komut iznini korur; ek Cari/Ürün operasyon izni getirilmez.
+- Inventory consumer/host adapter bu gerçek owner portunu kullanır. KLN-D67 gereğince ürün kimliği esas alınır; Sales/Purchasing satırlarının farklı tarihsel kart sürümleri aynı ürün kimliğini bozmaz. Host başka company veya ürün cevabını kabul etmez. Merkezi entegrasyon kayıtları: `AddProductPurchaseUnitConversion` mevcut Ürün runtime koşuluyla; `IInventoryProductUnitConversionSourceV1` → `ProductOwnerInventoryUnitConversionSource`.
+- Yeni company unit profile, seed, grant veya aktivasyon yoktur. Global typed unit semantiği company kullanım profili yerine geçmez; gerçek company profili yoksa NoSource korunur. Bu, insan veri/aktivasyon kapısıdır; sahte kullanılabilirlik değildir.
+- Birim ve V1 sözleşme test kaynakları; gerçek SQL Product kartı + ebat okuyucusu + gerçek typed unit kimlikleriyle source fact yazılmıştır. SQL fact'te company unit profile ve yoğunluk politikası açıkça sentetik owner cevaplarıdır; Settings SQL/izin kabulü yerine geçmez. Test/SQL/browser/Vitest/CI koşumları **NOT_RUN**. Product.UnitTests, Inventory.UnitTests ve Api.IntegrationTests (API dahil) final kaynak derlemeleri **exit 0, 0 uyarı/hata**. İlk Product test derlemesindeki iki `Version` ad belirsizliği açık kaynak adıyla düzeltildi; tekrar derlemesi yeşildir. Ham kayıtlar depodışındadır.
+
+
+## STK-S19 — PARTIAL
+
+- Kararlar/spec: STOK F017 §3.7, ALIS F017 §3.7–3.8; ALS-D86, ALS-D91, ALS-D92, ALS-D93; 7B kısmi yeniden açma kararı.
+- Inventory owner checkpoint commit'i: `67fad5246`.
+- Inventory owner kaynağı: orijinal kabul ve dönüşüm bağı korunur. Ayrı değişmez tersleme kaydı, yalnız orijinal miktar/kg oranıyla tam temsil edilebilir kısmı izler. Yeniden açılan + kapasite nedeniyle bırakılan + fiziksel/talep bağı artık bulunmayan pay = geri alınan paydır. Önceden Released pay canlanmaz; LinkFailed tüketilmiş sayılmaz.
+- Fiziksel tahsis geri alma, aynı kimlikli gelecek ayırmayı talep ve tedarik tavanına sığan miktar kadar açma, kalan uygun payı `acceptance-reversed-no-supply` ile bırakma; kapalı satış veya aktif olmayan fiziksel tahsiste gelecek ayırmaya dokunmama uygulanmıştır.
+- Participant açık host işlemini ödünç alır. Host bütün satış satırlarını, ardından alış satırı birleşimini kilitler; taze kümenin altküme kontrolü ve yalnız yazı öncesinde üç sınırlı tekrar vardır. Purchasing'in yazı sonrası kaynağı aynı bağlantı ve işlem üzerinden okunur. Factory'nin gerçek Purchasing owner implementoruna merkezi kaydı entegrasyonda tamamlanacaktır.
+- Migration: `20261116210057_AddInventoryGoodsReceiptReversals`, EF üretimi. Down ilk işlemde **THROW 51950** ile tersleme geçmişi veya kind-16 hareket varken reddeder. Şirket filtreleri ve aynı şirketli özgün kayıt FK'leri bulunur. Yeni ham SQL veya filtre bypass'ı yoktur; yeni context construction K3 incelemesinde değerlendirilmelidir.
+- Birim/model test kaynakları; gerçek SQL'de kısmi açma + önceki Released payın korunması + replay, rollback + aynı anahtarla başarı, yanlış güncel talep ürünü, stok bulunmayan bucket ve Down guard fact kaynakları yazılmıştır. SQL fact'lerindeki güncel Sales/Purchasing owner cevapları açıkça sentetiktir; birleşik gerçek host kanıtı yerine geçmez.
+- Dar bağımsız kaynak okumasında ham owner exception'ının 500'e kaçması ve güncel talep ürün kimliği çitinin eksikliği bulundu; ikisi de kapatıldı. Özgün dönüşüm sırası immutable command cevabından okunur; bugünkü terminle geçmiş yeniden sıralanmaz.
+- Runtime birim/SQL/CI: **NOT_RUN**. Yeni Inventory reversal participant denetimi Audit owner transaction portundadır: doğrudan Audit table yazısı/interceptor yok, aynı işlemde own Save + WritePending, hata halinde DiscardPending ve fresh-batch guard vardır. W7 ortak Audit writer kaynağı no-ff `8813c2f5e` ile çatışmasız alındı. Son tekli iade/host/UI kaynaklarında Purchasing.UnitTests, Inventory.UnitTests ve Api.IntegrationTests (API dahil) derlemeleri **exit 0, 0 uyarı/hata**, frontend `tsc -b` **exit 0**. İlk derlemelerde Audit BeforeJson nullability ve yeni SQL fact satır kimliği adı düzeltildi; yeniden derlemeler yeşildir. Ham kayıtlar depodışında tutulur. Test koşumu yapılmadı.
+- Tek kabul için undo/correction host ve API zinciri, çağıranların kilit/replay/authority uyumu ve yeni kabulde yeniden açılan kimliklerin önce tüketilmesi yazıldı. Gerçek Purchasing kabulü + gerçek Inventory receipt üzerinden birleşik host commit/immutable replay, callback fault rollback + aynı key, fresh authority rollback ve gerçek purchase applock busy/retry için dört SQL fact kaynağı eklendi; bu fact'lerde authorization callback açıkça sentetiktir, Sales dönüşümü seed edilmez. Dönüşüm tavanı ve eski Released korunması ayrı owner fact'lerindedir. Runtime **NOT_RUN**.
+- Kalan: ayrı Purchasing owner implementorunun entegrasyonu ve gerçek DI kaydı; çok kabulün aynı genel satırda tek net olarak işlenmesi. ALIS F017 §3.8 uyarınca birden çok satıra etki eden düzeltmede tüm satırlar önce hazırlanmalı ve teknik hata terminale baskın olmalıdır. Ardışık tekli Stage çağrıları batch yerine geçmez; bu nedenle STK-S19 halen **PARTIAL**.
+
+## ALC-S6 — PARTIAL
+
+- Paylaşım commit'i: `5343b1c45` — Purchasing'in tek kullanımlı aynı-işlem acceptance adjustment owner sözleşmesi; özgün kabul hedefi, replay-first, gerçek net açık miktar, post-write supply okuması, yeni kabul kimliği/miktarı.
+- Purchasing domain/persistence ayrı owner tarafından uygulanır; bu ekip o owner dosyalarına yazmaz. Fiziksel kg ile satın alma birimindeki geri alınan miktar ayrı gerçeklerdir; tartı toleransından dönüşüm katsayısı türetilmez.
+- Mevcut fatura maliyeti / elle maliyet istisnası onay kapıları korunur. Bekleyen veya reddedilen maliyet istisnası fiziksel hareket ve sipariş açılması üretmez.
+- API-44 route ve service/host kaynakları yazıldı: ayrı ölçülmüş kg ve satın alma miktarı, eski kabul kimliği, expected version, neden ve optional gerçek yeni kabul. Ters + yeni aynı işlemde işlenir; geçici yeniden açma bütçesi owner'ın gerçek `NewAcceptedQuantity` sonucudur. Yeni kabul önce ters kaydın yeniden açtığı kimlikleri tüketir, mevcut link-failure uyarı/sweep yolu korunur.
+- Immutable başarılı adjustment cevabı ve terminal ret aynı Purchasing.Attempts command/key tekilliğini paylaşmalıdır. Replay bugünkü siparişin restore edilmesine dayanmaz; owner Refused cevabı IsReplay ve özgün correlation ile döndürür. Terminal kayıt yarışı kazananı aynı immutable owner okuyucusundan çözülür. Bu ortak kayıt root owner implementorunun entegrasyon yükümlülüğüdür.
+- Sentetik service authority/company/actor, terminal replay/payload uyuşmazlığı, teknik hata sonrası aynı anahtar ve canonical wire testleri; host ön kilit sırası, tüm alış birleşimi, küme büyümesi ve cancellation test kaynakları yazıldı. Runtime **NOT_RUN**.
+- Supplier-return metadata paylaşımı: `9ca96d931` — create/view/draft sonunda açık alış birimi geri alma miktarı + beklenen sipariş sürümü. Null alanlar eski JSON/hash'e eklenmez. `0ac33be66` — onay isteğinde açık yeni expected order version ve immutable replay `Original` snapshot sözleşmesi. Create zamanı draft sürümü onayda sessizce güncellenmez; yalnız açık onay isteğiyle başka beklenen sürüm verilir. Purchasing owner row/model/store karşılığı ayrı ekiptedir.
+- Tekli gerçek iade girişi: metadata'lı doğrudan kayıt ve maliyet onayı, Purchasing kabul düzeltmesi + Inventory tersleme/çıkışından sonra iade Store callback'ini aynı ana işlemde bir kez çağırır. Bekleyen maliyet ve ret hiçbir stok/yeniden açma etkisi yaratmaz. Legacy metadata'sız sıradan iadeler eski yoldadır; metadata'sız replacement-expected 422 kalır. Grant, maker-checker veya Finance maliyet farkı kapıları gevşetilmedi.
+- İade create/approve mantıksal command/hash'i Purchasing adjustment denemesine taşınır. Inventory alt anahtarı ilgili mantıksal komuta göre adlandırılır; correlation/causation/actor korunur. Generic callback owner başarısı + iade kaydı atomiktir, hata rollback eder; önceki belirsiz anahtar yeni içerikle değiştirilmez.
+- Replay yeni immutable `Original` taşıyorsa bugünkü iade durumu okunmaz. Eski snapshot'sız denemeler açıkça legacy canlı-restore fallback kullanır; geçmiş cevap uydurulmaz. Terminal ret, company/actor/permission yenilemesi ve callback sayısı için sentetik servis test kaynakları eklendi. API44 replay header/correlation için ayrı HTTP stub kaynak testi vardır; gerçek owner SQL kanıtı diye sunulmaz.
+- Ekran kaynağı: sipariş ayrıntısında gerçek kaydedilmiş kabul/etiket üzerinden geri alma, ters+yeni kabul, tedarikçiye iade ve maliyet istisnası onay/ret formları; ayrı alış miktarı/ölçülmüş kg, gerçek konum kaynağı, server değerleri, kayıt sonrası yenileme ve bütün uzak hata durumları vardır. Ekran iş hesabı yapmaz. Belirsiz sonuç aynı içerik/anahtarla açık yeniden gönderim ister; oturum/actor/company bağından ve geç sonuçlardan ayrılmıştır. Vitest kaynakları bu yolları ve decoder/HTTP uyumunu kapsar; runtime **NOT_RUN**.
+- Kalan: ayrı owner implementorunun entegrasyonu, çok satırlı tek-net batch zinciri ve merkezi DI/pin üretimi. Bu checkpoint ALC-S6'yı **PARTIAL** bırakır; runtime **NOT_RUN**.
+
+## Merkezi entegrasyon listesi
+
+## STK-SC36 / URT-D67 maliyet kaynağı — PARTIAL, kaynak checkpoint
+
+- Ayrı değişmez hareket maliyet damgası: gerçek receipt fiyat/birim/kur kanıtı, TL ve bağımsız USD havuzu; üretim issue hareketi anının ortalaması ve para birimi izi. Geçmiş `NotCalculated` hareket ve hash değiştirilmez, bugünün ortalamasıyla geçmiş maliyet doldurulmaz. Eksik USD, okunabilir TL'yi bozmaz.
+- Üretim iadesi açık `SourceIssueMovementId` ile kendi emir/etiket/çıkış miktarı üzerinden bağlanır. Eski boş alan JSON/hash'e eklenmez. Tek gerçek issue varsa bağ kanıtlanabilir; çoklu ve eski bağsız iade halinde FIFO/ortalama seçilmez, maliyet okunamaz kalır. Fiziksel toplam iade sınırı korunur.
+- `InventoryManufacturingCostGenerationParticipant` host'un mevcut açık bağlantı/işlemini ödünç alır. Pending/Unreadable nesil fiziksel kapanışta tutarsız parasal rakam yaratmaz; sonra aynı nesil ve fiziksel set için bir kez gerçek tanıma, append-only geçmiş, maliyet etkisi ve Audit owner flush yazılır. Yeniden açma exact nesil/sürüm ile tersler. Label version çiti fiziksel yarışa katılır; yeni fiziksel hareket veya eski çıkış güncellemesi yoktur.
+- URT-D79/D80 gereği gerçek etiket TL tutarı, 4 ondalıklı kg maliyetinden bağımsız taşınır. Kalan+tüketilen=özgün tutar, JSON'da tam decimal hassasiyetiyle korunur; konumlar arasında tam kalan residual son sıralı konumda tutulur. Ortalamaya gerçek authoritative tutar girer, sonuç mevcut 4 ondalık kuralıyla kaydedilir. Gerçek havuz önce/sonra miktar/ortalama/değer etkisi ve authoritative tutardan farkı ayrıca immutable `PoolEffects` kaydıdır; ters kayıt gerçekten yazılan etkiyi geri alır. Bu fark otomatik fiş veya yeni finansal artık politikası değildir. USD yalnız üretim gösterimidir.
+- Ayrı SMM öneri olayı `inventory.manufacturing-cost-difference.proposed.v1`; gerçek net kesin sevkle kanıtlanmayan eksik bakiye tüketim sayılmaz. Yoldaki transfer/downstream dönüşüm izinin maliyet yayılımı henüz tamamlanmadığında tanıma typed unavailable'dır. Fiziksel kapanışın Pending kaydı korunur. Muhasebe tüketicisi, açık dönem/tarih ve farklı muhasebe yetkilisi onayı ayrı owner entegrasyonudur.
+- Çok satırlı hareket maliyet havuzu çalışma kopyasıyla sırayla hesaplanır; ikinci satır ilk satırdan önceki fiziksel toplamı tekrar kullanmaz. Kısmen fiyatlanmış özel havuz lokasyon portundan bütün stok maliyeti diye yayımlanmaz. Transfer dispatch damgası özgün fiyatı korur; accept/cancel/shortage aynı dispatch kaynağını okur; transit loss eşlenik In/Out ortalamayı değiştirmez.
+- Gerçek API `PurchasingOwnerInventoryReceiptCostSource` aynı ödünç işlemdeki Purchasing kanıtını, gerçek Product birim katsayısını ve girişin İstanbul iş günü Settings USD→TRY TCMB snapshot'ını birleştirir. Miktar/tartım oranından katsayı yaratılmaz; cari gün kuru kullanılmaz. TL girişin USD kaynağı okunamıyorsa TL korunur. Kaynak USD ise gerçek USD/kg korunur; başka dövizin eksik fatura çapraz USD kanıtı uydurulmaz. Foreign→TL BS-1 fatura yokken Pending'dir. İlk giriş kuru ayrı FNS-D103 yüzeyidir; bu maliyet alanına sipariş kuru fallback'i yapılmaz. Merkezi factory/DI ve iki borrowed owner'ın dispose sahipliği root entegrasyonundadır.
+- Maliyet migration'ı `20261116232813_AddInventoryMovementCostProvenance`, **EF üretimi exit 0**. Down ilk SQL'de altı yeni store'da veri varsa **THROW 51959** ile veri kaybını reddeder. Özgün movement'a fiyat backfill'i yoktur. Damga decimal değerleri canonical invariant metin+strict SQL check+EF converter ile 28 ondalık boyunca kayıpsız saklanır; owner DTO decimal, ortalama 4 ondalık kalır. Hash veya eski hareket miktarı değişmez.
+- Açık teknik işler: outbox committed-rowversion source/migration (51958); kalan customer/supplier return ve karma giriş/lineage maliyet yayılımı; eski muhasebe/maliyet okuma kabul kaynaklarının yeni fiziksel eşitlik çitine hizalanması. Ters kayıtta taşınmış/geri dönmüş payın eski location etkisi kanıtlanamıyorsa typed unreadable korunur; stok/para politikası seçilmez.
+- Model/contract/birim ve gerçek SQL movement/stamp, çok satırlı havuz, Pending→Recognized rollback/replay, 3kg / 1.01TL authoritative tutar + gerçek 4dp havuz etkisi + exact ters kayıt ve Down guard kaynakları yazıldı. Final Inventory.UnitTests ve Api.IntegrationTests (API dahil) derlemeleri **exit 0, 0 uyarı/hata**; bütün runtime test/SQL/browser/Vitest/CI **NOT_RUN**. Ham derleme kayıtları depodışındadır. Bu kayıt source DONE veya K3 kabulü değildir.
+
+## Ek merkezi maliyet entegrasyonu
+
+- Factory `InventoryManufacturingCostGenerationParticipant.EnlistAsync(connection, transaction, companyId, IAuditEventCollector, IAuditTransactionWriterV1, cancellationToken)`; sahibi yalnız Inventory tablosunu yazar. Host commit/rollback sahibidir.
+- Goods-receipt factory sonunda isteğe bağlı `IInventoryPurchaseReceiptCostSourceV1 costSource`; gerçek implementor yalnız aynı ödünç işlemin Purchasing kanıtını okur. İlk giriş FX'i ile fatura stok maliyeti FX'i karıştırılmaz; BS-1/SAT-D413 foreign→TL fatura olmadan provisional değer yaratmaz.
+- `InventoryOutboxContractV1.SourceName = inventory.outbox.v1`, maliyet öneri EventType `inventory.manufacturing-cost-difference.proposed.v1`, schema 1. JSON State sayı (Recognized=3, Reversed=4); payload CostDifferenceEventId outbox envelope EventId ile aynıdır. 51958 reader kaydı henüz beklemektedir; dispatcher aktivasyonu yoktur.
+- Yeni model, migration, SQL fact ve context construction merkez inventory/fingerprint/K3 listesine alınmalıdır. Bypass/ham SQL izin listesi genişletilmedi.
+
+- Yeni migration ve THROW 51950; recovery/release migration sayıları.
+- Yeni SQL fact tam adları; ilişkisel envanter ve test grupları.
+- InventoryDbContext ve değişen ilgili kaynak fingerprint'leri; yeni context construction için gerekçeli K3 değerlendirmesi.
+- `ReversePurchaseGoodsReceiptV1` OpenAPI route/kontrat üretimi; gerçek owner factory ve `IPurchaseReceiptReversalTransactionV1` DI kayıtları. Owner factory dört bağımsız handle/company/token girdisini aynı scope Audit collector/writer ile gerçek Purchasing participant'a bağlar.
+- Purchasing shell owner version **1.9**, yeni `purchasing.supplier-returns.record` child capability yalnız mevcut aynı adlı izin + orders.read ile kaydolur; grant yoktur. Normal-host authority pin'i üreticiyle yenilenmelidir. API44 mevcut goods-receipts.record yetkisini kullanır.
+- Hiçbir grant, rol ataması, production aktivasyonu, dış sevk/ETTN kapısı veya açık karar durumu değiştirilmedi.
+
+## Son kaynak checkpoint — kesirli maliyet, iadeler ve committed outbox
+
+- Sözleşme paylaşımı `933acf7e2774d73804d262f1713cc6b4f6052f31`; gerçek kaynak checkpoint'i `112d2e1eb40015921b8d14d392ca6c06903ea0e1`. İlk kontrolün ardından bulunan işaretli havuz etkisi ve bilinen sıfır iade düzeltmeleri bu ekle birlikte ayrı takip commit'indedir; bu takip için derleme henüz **NOT_RUN**.
+- `InventoryExactCostRatioV1` canonical, aralarında asal tam sayı pay/payda metni taşır. Sıradan 1 fiyat birimi / 3 kg çevrimi kalıcı hesaplanamaz değildir: ara birim fiyat yuvarlanmaz; gerçek fiyat + Product katsayısı + onaylı invoice/entry-day kur kaynağı kesir olarak korunur, yalnız mevcut stok ortalaması calculator'ının sonunda 4 ondalık AwayFromZero uygulanır. Görüntülenebilir tam decimal varsa eski scalar alanlar da korunur. USD gösterim maliyeti TL'den bağımsızdır. Kaynak veya şirket kimliği reddedilmiş owner payload'u başka şirketin immutable evidence JSON'una yazılmaz.
+- Müşteri ve üretim girdi iadesi kendi özgün issue damgasından maliyet alır. Tedarikçiye iade SAT-D411 gereği mevcut gerçek fatura / onaylanmış elle maliyet değerini kullanır; receipt veya güncel ortalama bu değerin yerine geçmez. SAT-D371 `CostDifferenceUnposted` ve maker-checker kapıları korunur. Özgün receipt undo, kaydedilmiş gerçek havuz değer etkisini tersler; ekonomik fiyat ile havuzun yuvarlama farkı ayrı izdir. Transfer shortage aynı özgün dispatch maliyetini çıkarır; generic Issue ortalaması uygulanmaz.
+- Kullanıcının W8 ek cevabı uygulanmıştır: 100,01 TL / 3 kg çıktıdan 1 kg önceden sevk edilmişse SMM önerisi 33,34 TL, stok bakiyesi 66,67 TL'dir. Sevk payı bir kez 2 ondalık AwayFromZero; stok = authoritative etiket tutarı − sevk payı. Accounting'e ikinci kez yuvarlanacak ara tutar gönderilmez. 0,01 TL / 100 kg, 99 kg sevkte kalan 1 kg'ın bilinen tutarı 0 olabilir; bu, bilinmeyen sıfır fiyatlı satın alma girişiyle karıştırılmaz.
+- İkinci kaynak okuması iki düzeltme gerektirdi: 10000 kg@1 üzerine 1 kg@0,01 tanınması avg4dp sonrası gerçek havuz etkisini −0,0001 yapabilir. Ters kayıt bu işaretli etkiyi negatif fiyat sanmadan çıkarmalıdır. Ayrıca bilinen 0 maliyetli issue'nin iadesi yeniden pending olmamalıdır. `ReverseRecordedPoolEffect` ve yalnız Known kaynaklı `RestoreKnownMovementValue` bunları korur; yeni sıfır fiyatlı purchase receipt halen bilinmeyendir. Birim ve gerçek SQL negatif etki / yeniden açma / bilinen sıfır iade fact kaynakları eklendi. İnceleme K3 imzası değildir; bu ek düzeltmelerin runtime ve derlemesi **NOT_RUN**.
+- `InventoryOutboxEventSource` yalnız ambient şirketin ilan edilmiş iki schema-1 türünü okur: future allocation released ve manufacturing cost difference proposed. Global rowversion Position + 20 ASCII haneli cursor + strict committed horizon, erken açık üretici varken sonraki committed kaydı geçmez; commit/rollback sonrası gerçek SQL pagination fact kaynakları vardır. Merkezi kayıt `AddWorkOutboxEventSource<InventoryOutboxEventSource>` root entegrasyonundadır; source adı `inventory.outbox.v1`. Dispatcher/aktivasyon açılmaz.
+- **Yeni ham SQL yüzeyi — K3 review bekliyor:** `InventoryOutboxEventSource` içindeki sabit `SELECT MIN_ACTIVE_ROWVERSION()` yalnız DB committed visibility watermark'ını okur; ERP tablosu, kullanıcı SQL'i veya tenant filtresi bypass'ı yoktur. Guard izin listesine eklenmedi. Root K3 inceleme listesine bu gerekçe taşınmalıdır.
+- Forward migration `20261116235649_AddInventoryOutboxCursorAndExactCostRatios` **dotnet ef üretimi exit 0**. Aynı snapshot'taki iki teknik ek için ilk iki Down işlemi ayrı korumadır: outbox kaydı varsa **THROW 51958**, exact cost ratio / gerçek havuz etkisi izi varsa **THROW 51964**; her ikisi bütün Drop'lardan önce gelir. Önceki 51959 migration'ı değiştirilmedi. Fiziksel hareket veya eski fiyat backfill'i yoktur.
+- Checkpoint `112d2e1eb` kapsamındaki API, Inventory.UnitTests ve Api.IntegrationTests kaynak derlemeleri **exit 0, 0 uyarı/hata**; EF üretimi **exit 0**. Bu sonuç yukarıdaki iki son düzeltme için derleme kanıtı değildir. Bütün birim/gerçek SQL/Vitest/browser/CI koşumları **NOT_RUN**; yerel ham kayıtlar depodışındadır.
+- Karma soy için `InventoryCostLineageShares` saf bounded DAG çözücüsü ve kaynak testleri hazırdır: 100 kg priced + 100 kg pending birleşiminde kalan 140 kg'ın pending payı 70 kg; 1/3 ve diamond payları exact kesir, Manufacturing yeni malzemeye kör miras yoktur. **Henüz gerçek owner okuma/havuz/remaining dağıtımına bağlanmadı.** Bu saf kaynak, karma soy maliyet akışını DONE yapmaz; gerçek descendant bakiye, sevk, transfer ve cohort yayılımı sıradaki iştir. STK-SC36 bu nedenle halen **PARTIAL**; merkezi kaynak planı root tarafından güncellenir.
+- Merkezi yeniden üretim: yeni migration/recovery/release yüzeyleri, SQL fact tam adları ve test grupları, context/guard fingerprint'leri, ek outbox raw-SQL inceleme gerekçesi; yeni optional ratio DTO alanları için sözleşme/OpenAPI ihtiyaçları. Bu ekip merkezi pin veya Program dosyasına yazmadı.
+
+## Kesin soy payı ve özel maliyet havuzu — STK-SC36 kaynak devamı
+
+- Dar sözleşme paylaşımı `08781f890202ac64b5ed0a4dd9b0de207b054c3a`: türetilmiş kalan/tüketilen kg ve havuz değer izleri nullable scalar + canonical exact ratio taşır. Scalar yalnız tam temsil edilebiliyorsa vardır; iki gösterim çelişirse veya ratio canonical değilse kabul edilmez. Eski scalar-only JSON geçmişi korunur. Fiziksel net kg, authoritative etiket TL tutarı ve nihai 2 ondalık SMM farkı değiştirilmedi.
+- `InventoryCostLineageReader` artık gerçek şirket filtreli split/merge component, bütün hareketler, descendant bakiyeler ve özgün kesin sevke bağlı iadeler üzerinden okur. Her etiket fiziksel hareket + repack mass ile uzlaştırılır; Manufacturing kenarı aynı kg'ı ikinci kez eklemez. Transit veya başka eksilen kg satılmış sayılmaz. Bounded graph, yabancı/bozuk kaynak ve gerçek boş sonuç ayrı tutulur.
+- `ExactCostPools` şirket/konum/ürün/para birimi anahtarlı özel owner pointer'ıdır. 3 kg karma etikette 2 kg priced + 1 kg pending varken 1 kg sevk, priced havuzdan **2/3 kg** düşürür; kalan **4/3 kg** yuvarlanmadan saklanır. Bu özel pay bütün pozisyonun ortalaması diye yayımlanmaz. Pending üretim payı sonradan 10 TL ile tanınırsa sevk **3,33 TL**, stok **6,67 TL**; 2/3 kg yeni priced pay eklenir ve mevcut 4 ondalık ortalama **10,0017** olur. Gerçek yazılmış havuz farkı **100051/15000** ayrı değişmez izdir ve ters kayıt aynı gerçek etkiyi geri alır.
+- Ordinary issue ve kısmi kaynaklı müşteri/üretim iadesi, transfer kabul/iptal yolları özgün exact priced share ve gerçek hareket etkisini korur; mevcut bilinmeyen cohort üzerine ikinci pending root açılmaz. Tam hareketin maliyeti bilinmiyorsa immutable damga Known yapılmaz. Kesin maliyet tanındıktan sonra eski kısmi bilinmeyen çıkışın iadesi, artık aktif olmayan bir fiyat payını canlandırmaz: fiziksel iade ve fresh pending kanıtı korunur, özel/genel defter açıkça `Return` nedeniyle Unreadable olur. Eski çıkışın maliyeti yeniden yazılmaz.
+- Dar ikinci göz iki kaynak hatası buldu ve düzeltildi: çelişen scalar/ratio veya unavailable-reason içeren receipt cevabı Known'a geçirilmez; recognition sonrası eski partial-return sırası köksüz Known havuz bırakmaz. Bu okuma K3 imzası değildir. Aynı Save içindeki receipt damgası gerçekten yazılmış havuz sürümünü taşır.
+- Forward migration **`20261117003341_AddInventoryExactCostPools`**, `dotnet ef` üretimi **exit 0**. Private exact pool veya recognition exact mass izi varken ilk Down işlemi **THROW 51968** ile bütün değişikliklerden önce reddeder; boş storage geri alınabilir. 51968 main ve 28 tren ref'i üzerinde çakışmasız doğrulandı. Önceki 51959 ve 51958/51964 migration'ları değiştirilmedi; eski fiyat/hareket backfill'i yoktur.
+- Yeni kaynaklar: 15 lineage model testi / 42 senaryo, 15 exact-pool testi / 18 senaryo; nullable/ratio replay, scalar/ratio admission ve persistence model testleri. Altı gerçek SQL fact kaynağı; gerçek Inventory allocation/kesin sevk ve müşteri iadesi, late recognition + exact reverse, aynı borrowed transaction'da descendant version fence/rollback, şirket ayrımı, recognition sonrası maliyeti bilinmeyen iade ve Down guard. Purchasing/Sales/calculator girdileri gereken yerlerde açıkça sentetiktir; gerçek SQL koşmuş veya concurrency race denenmiş iddiası yoktur.
+- Final kaynak **API, Inventory.UnitTests ve Api.IntegrationTests derlemeleri exit 0, sıfır uyarı/hata**; EF üretimi exit 0. İlk API denemesindeki iki sembol adı hatası düzeltilip yeniden derlendi. Bütün unit/SQL/Vitest/browser/CI runtime koşumları **NOT_RUN**. Ham kayıtlar depodışında tutulur; tek derleme slotu bırakıldı.
+- Kalan gerçek kaynaklar: ilk mal kabulde onaylı sipariş kuru / kabul günü TCMB snapshot'ı ve kg ağırlıklı birleşik ilk-giriş kuru (ayrı 51972); gerçek incoming invoice producer sonrası purchase pending cost recognition/difference zinciri; başka konuma taşınmış recognized generation için o konumdaki özgün cost-effect kanıtı. Sonuncu kaynak yokken typed 503 korunur; orijinal konum etkisi yeni konum için uydurulmaz. STK-SC36 halen **PARTIAL**; bu checkpoint tam kullanıcı akışı/SQL/K3 kabulü değildir.
+- Merkezi liste: yeni exact-pool durable store ve 51968 migration/recovery/release sayıları, 6 SQL fact tam adı/test grupları, InventoryDbContext/snapshot/readers/writers fingerprint'leri, optional exact result DTO sözleşmeleri. Program, merkez pinler ve plan durumları bu ekipçe değiştirilmedi.
+
+## İlk giriş kurunun gerçek kaydı ve exact birleşimi — STK-SC36-b, FNS-D103/D104
+
+- Dar App paylaşımı `a7ea0af05`, saf kg-ağırlıklı calculator paylaşımı `db3f54f1d`. Gerçek mal kabul adaptörü, Purchasing owner'ın aynı ödünç işlemde okuduğu onaylı sipariş kurunu kabul eder; şirket/sipariş ve gerçek fiyat cevabının gözlenen sipariş sürümü uyuşmalıdır. Yalnız `RateNotSpecified` kabul günü gerçek TCMB döviz satış cevabına geçer. Kaynak eksik/bozukken başka kura düşülmez. TRY için `NotRequired` vardır, kur 1 uydurulmaz. Fiyat henüz yokken de okunabilir ilk-giriş kuru bağımsız saklanır.
+- `FirstEntryRateJson`, özgün receipt hareket maliyet damgasına aynı işlemde eklenir; eski hareket ve fiyat değişmez. Bu ilk-giriş kuru, TL stok maliyetinin resmi fatura kurunu değiştirmez. Gerçek kaynak/evidence, company/acceptance/order/day, durum, tutar/ratio, currency yönü ve owner sürümü canonical kaynak hash'ine birlikte bağlanır. Çelişen veya sonradan değişmiş kanıt okunabilir sonuca çevrilmez.
+- `InventoryFirstReceiptExchangeRateReadPort` gerçek ilk receipt + immutable split/merge input kg üzerinden okur. Örnek 1 kg kur 1 + 2 kg kur 2, exact **5/3** kur taşır; scalar decimal uydurulmaz. Kaynak listesi özgün mal kabul hareketlerini ve toplamı 1 olan material share'leri içerir; diamond soyda aynı receipt ikinci kez yaratılmaz. Eksik tek kaynak veya farklı directed currency çifti hesaplanamaz. Manufacturing çıktısı yeni malzemedir; input kuru kör miras alınmaz.
+- Dar ikinci göz graph cache derinlik sınırında bir P2 buldu; memo yanında alt-graph yüksekliği tutulup her yeni yoldaki depth + height yeniden denetlenerek kapatıldı. Aynı kaynak okumasında yeni P1 bildirilmedi; bu K3 veya runtime kabulü değildir.
+- `InventoryIssueCostCurrencyV1.ExchangeRateRatio` ve immutable stamp ratio kolonu, scalar'ın tam temsil edemediği orijinal FX'yi korur. Converted proof'un hem foreign unit hem FX scalar/ratio uyumu okunurken doğrulanır. Eski alanları olmayan JSON ve scalar-only cevaplar korunur; geçmiş değer current average ile yeniden kurulmaz.
+- EF forward migration **`20261117010119_AddInventoryFirstEntryExchangeRateProof`** üretimi **exit 0**. Down'ın ilk işlemi yeni ilk-giriş veya exact FX kanıtı varsa **THROW 51972** ile bütün düşürmelerden önce reddeder. Boş/korunacak yeni kanıtsız storage geri alınabilir. Numara main/train ve yerel tren dalları dahil **29 ref** üzerinde çakışmasız tarandı. Önceki migration'lar değiştirilmedi, backfill yoktur.
+- Kaynak testler: kg-ağırlıklı calculator **16 yöntem / 23 vaka**; codec/contract **25 yöntem / 86 vaka**; FNS-D103 host helper **17 yöntem / 40 vaka**, model/snapshot ve **7 gerçek-SQL fact kaynağı**. SQL kaynakları gerçek Inventory receipt/store, merge/split/diamond ve derin DAG, kur/fatura ayrımı, şirket çiti, aynı işlem rollback ve iki Down korumasını kapsar; Purchasing/Settings fiyat-kur cevapları gereken yerde açıkça sentetiktir. Gerçek TCMB veya tam Purchasing host kabulü diye sunulmaz.
+- Son kaynak derlemeleri **Api, Inventory.UnitTests ve Api.IntegrationTests: exit 0, sıfır uyarı/hata**; EF üretimi exit 0. Ham native exit/log kanıtları depodışında korunur. Unit/SQL/Vitest/browser/CI runtime koşumları **NOT_RUN**; tek .NET/EF slotu bırakıldı.
+- Merkezi entegrasyon: Purchasing actual `ApprovedOrderRate` owner okuyucusu `1b5fb33c7` bu dalda yalnız App dependency olarak vardır; root owner implementasyonu birlikte alınmalıdır. Mevcut Inventory module DI zaten first-receipt portunu kaydeder. Manufacturing'in gerçek order/non-order rate priority tüketimi henüz bu owner portuna bağlı değildir; invoice FX'yi onun yerine kullanmak kaynak tamamlanması sayılmaz. Bu tüketici bağı, pending purchase late-cost zinciri ve taşınan recognized generation'ın yeni konum cost-effect izi tamamlanana kadar STK-SC36 **PARTIAL** kalır.
+- Merkezi yeniden üretim: yeni 51972 migration/recovery/release sayıları, 7 SQL fact tam adı/test grupları, değişen Inventory context/reader/writer fingerprint'leri ve nullable exact FX sözleşme alanları. Program, OpenAPI, merkez pinler, izin/grant veya plan durumu bu ekipçe değiştirilmedi.
+
+
+## STK-S13 — gerçek boya üyeliği Excel/import/ERP/üretim owner kaynağı
+
+- Kaynak: **BS-10, URT-D25**, B-08/B-14. Erken App sözleşme paylaşımı `dd8f1c039`; gerçek owner/UI/test/migration bu bölümü ekleyen STK-S13 dilim commit'indedir. Kaynak durumu **DONE adayı, merkezi bağlama bekliyor**; runtime veya K3 kabulü iddiası değildir.
+- Ürün adı, ItemType, çelik taxonomy, renk veya tedarikçi metninden boya sınıfı çıkarılmaz. Gerçek `.xlsx` ilk mantıksal sayfanın eşlenen metin ürün kodu sütununu okur (varsayılan `Ürün kodu`); baştaki sıfır ve harfler korunur. 2 MiB / 5000 satır sınırı, güvenli ZIP/XML, formül/makro/dış bağlantı/DTD ve yinelenen/bozuk header/kod retleri vardır. Gerçek Product kartı yoksa veya pasifse satır hatasıdır; bütün dosya reddedilir.
+- Ayrı doğrula/uygula akışı: doğrulama yazmaz. Uygulama aynı byte'ları yeniden okur; SHA-256, sütun eşlemesi, özgün aktör/şirket, gerçek Product sürümleri ve güncel tablo sürümü preview token'a bağlıdır. İçe aktarım yalnız dosyada açıkça geçen mevcut ürünleri ekler; dosyada olmayan üyeleri silmez. İlk gerçek importtan sonra ERP tek ürün ekleme/çıkarma vardır. Pasifleşen üyeler bakım listesinde kaldırılabilir; Manufacturing tüketici listesinde etkin ürün diye dönmez.
+- `IProductPaintMembershipReaderV1.GetAsync/ListAsync` gerçek ProductId/ProductVersion + MembershipVersion/SourceVersion döndürür. NoSource/NotFound/Inactive/Unavailable ayrıdır. Tüketici kendi operasyon yetkisini ölçer; yeni genel Product-read veya Cari-read zorunluluğu eklenmez. Gerçek Cari tedarikçi ve isteğe bağlı Settings PaintColor kimlik/sürümü bağının sahibi Manufacturing'dir; bu owner yeni renk/tedarikçi master'ı veya varsayılan kayıt üretmez.
+- ProductPriceListDbContext'te üç yeni append-only şirket tablosu: `PaintMembershipVersions`, `PaintMembershipLines`, `PaintMembershipAttempts`. Readonly Product.Version kanıtı vardır; Product tablosuna yazılmaz. Serializable işlem, güncel kart/sürüm ve tüm üyelik kümesini yazı bitene kadar tutar. Kalıcı original başarı/terminal ret aynı aktör/şirket/payload için replay edilir; no-op yeni sürüm/denetim üretmez. Son taze yetki/aktör/şirket kaybı veya Audit hatası üyelik+attempt+gerçek Audit owner ekini birlikte geri alır.
+- Yeni denetim doğrudan Audit tablosuna yazmaz: Product save'den sonra `IAuditTransactionWriterV1` aynı DbTransaction'ı ödünç alır. Kaynak etiketi/dosya adı/hash ve öncesi/sonrası sürüm denetim izindedir. Terminal ret yalnız `IRefusedAttemptRecorderV1` üzerinden; tekrar ret yeni denetim satırı değildir. Yeni dosya saklama veya ayrı onay politikası seçilmedi.
+- Yeni izin **`product.paint-memberships.manage`** yalnız ad kaydıdır (All + CompanyWideOnly + module manifest + Product/Identity registration kaynakları); grant, rol veya Critical sınıflandırma yapılmadı. Shell `ProductPaintMembershipShellCapabilityProvider`: owner `PRODUCT-PAINT-MEMBERSHIPS`, cap `paint-memberships.manage`, route `/boya-urunleri`, screen `STK-S13`. Disabled Product runtime gerçek 503/Unavailable döndürür, NoSource uydurmaz.
+- Gerçek HTTP: `MapProductPaintMembershipEndpoints()`; `/api/v1/product-paint-memberships/current`, `/imports/validate`, `/imports`, `/products/{productId}`. Strict request JSON; expected/table/card/membership sürümleri, anahtar, correlation/causation ve gerçek source-channel taşınır. Ön yüz gerçek dosyayı dondurur, önizleme/hatalar/açık uygula ve gerçek satırdan tek ekle/listeden çıkar akışını kullanır. Aynı anahtar belirsiz ağ sonucunda korunur; oturum/aktör/şirket/origin ayrımı ve loading/empty/NoSource/403/404/409/offline/503/bozuk yanıt durumları vardır. `productRoutes.tsx` dar mount dışında shell merkezine dokunulmadı.
+- EF üretimi **`20261117013540_AddProductPaintMemberships` exit 0**. Up yalnız üç yeni tablo/index/FK; Product alter/backfill yoktur. Down ilk SQL, herhangi bir üyelik/kaynak/attempt varken **THROW 51975** ile bütün drop'lardan önce reddeder; boş store geri alınabilir. Numara main/train ve aktif yerel tren dalları dahil 28 distinct ref'te çakışmasız tarandı. Önceki migration'lar değiştirilmedi. Model-only `ProductPriceListDesignTimeDbContextFactory` runtime/issuer/SQL bağlantısı açmaz; bu yeni context-construction kaynağı **K3 review bekliyor**, yalnız guard geçirmek için allowlist'e eklenmedi.
+- Test KODU: parser 23 yöntem/69 vaka; owner/model/authority/JSON/file/version 10 yöntem/33 vaka; Identity kayıt 2 fact; HTTP/provider 5 vaka; **7 gerçek-SQL fact kaynağı** (lifecycle, korunmuş absent üyeler, actual Product lifecycle/version, company/preview, original replay, real Audit rollback + sentetik final-authority fault, same-key winner bekleme ve Down). Gerçek SQL race kaynağı kontrollü authority beklemesi ve gerçek SQL winner kaydını ayırır; çalıştırılmış yarış kanıtı değildir. Eski Product migration sıra beklentileri yeni migration eklenerek hizalandı; test silinmedi/atlanmadı.
+- Ön yüz 14 yeni dosya, 6 Vitest dosyasında 55 test tanımı / 115 parametrik vaka kaynağı. Dar ikinci kaynak gözü yeni somut P1/P2 bildirmedi; bağımsız K3 imzası değildir.
+- Kaynak derlemeleri **Api, Product.UnitTests, Identity.UnitTests, Api.IntegrationTests ve `npx tsc -b`: exit 0**; .NET sıfır uyarı/hata. EF üretimi exit 0. Native exit/log kayıtları depodışında tutulur. Unit/SQL/Vitest/browser/CI runtime koşumları **NOT_RUN**; tek .NET/EF ve Node slotu bırakıldı.
+- Merkezi entegrasyon listesi: Program endpoint mapping + shell provider kaydı; registry/OpenAPI yeniden üretimi; yeni attempt durable-store/recovery/release ve 51975 migration sayıları; Product context/partial/design-factory/service/read fingerprint'leri; yeni izin ve API/event sözleşmeleri; 7 SQL fact tam adı/ilişkisel envanter + backend test grubu pinleri; Manufacturing gerçek üyelik/Cari/Settings tüketici checkpoint'i. Program, merkez pinler ve KALAN_PLAN bu ekipçe değiştirilmedi. Sonraki mevcut bağımlılık Product'ta açık ticari mal/mamul sınıfı owner kaynağıdır; boya sınıfından türetilmez.
+
+
+### URT-S8 / URT-D58,D67 — borrowed Inventory cost reads
+
+- SOURCE_READY: actual movement cost and immutable first-entry rate readers can borrow the physical host transaction through `InventoryManufacturingCostReadSession.EnlistAsync`. Both reads keep actual company checks and validate the active transaction before and after reads. Dispose never commits, rolls back or closes host handles.
+- Real-SQL fact source stages an actual uncommitted issue, reads that exact movement through the borrowed session, rejects another company, disposes the reader and rolls back the physical write. Runtime SQL and tests: NOT_RUN. Compilation pending the coordinated build checkpoint.
+- New context-construction surface: K3 review pending; no guard inventory bypass or SQL allowlist was added.
+
+
+### SAT-SC34 dependency / SAT-D419,D422 — explicit global Product COGS class
+
+- Source implementation: global Product-owned append-only class history, real HTTP GET/PUT administration, typed operational owner reader, actual global operation7 authority, canonical global Audit + existing global Idempotency same-transaction writer, real Product card panel. `TradeGoods`/`Manufactured` is chosen explicitly; there is no default, purchase/production inference or account calculation in Product/UI. Finance mapping and finalized invoice correction remain their owners' downstream surfaces.
+- Product extension version is independent of actual Product row version. Serializable expected-version reads protect both. Class audit snapshots advance their own revision while the actual Product audit version stays unchanged; typed history validates both chains, including kind/origin/time continuity. Owner reads reconstruct a bounded same-clock boundary before ordering/cutting the page.
+- No-op emits no artificial change/revision. Success and terminal stale/not-found results replay immutable original data; global keys still exclude actor/origin partitions, and both are checked as immutable binding evidence under fresh authority. Permission/company/actor/revision drift rolls back all owners. No uncertain commit is presented as success or retried automatically.
+- `product.cogs-classifications.manage`: name registration only, no role/grant/seed/Critical assignment. It is not a company permission authorizing the global card. The new exact global operation7 must be present as an actual Identity assignment; existing Read/Edit/lifecycle grants do not imply it.
+- Generated with dotnet-ef: Product `20261117082903_AddProductCogsClassifications` / THROW51978; Identity `20261117082918_AddProductCogsClassificationAuthority` / THROW51979; Idempotency `20261117082927_AddProductCogsClassificationTerminals` / THROW51981. Each guard is first in Down, protecting retained class decisions/terminals/history. Guard reservation checked against 724 committed main/train/team refs; no conflict. Up contains no seed/backfill/grant.
+- Test sources: 7 new Product workflow/Down/same-clock SQL facts and 4 Identity/Idempotency SQL facts, controlled source authority/invalid-input/replay-integrity checks, Product model/history and canonical Audit semantics, existing Product shell SQL fixture alignment, plus 55 frontend test declarations / 132 source cases. These counts are source declarations, not executed tests.
+- Initial source verification: API, Product.UnitTests, Identity.UnitTests, Idempotency.UnitTests, Audit.UnitTests and Api.IntegrationTests compilation exit0 with zero warnings/errors; all three EF generators exit0. Idempotency/Audit Unit missing local assets were restored only for those owner projects, then compiled. Runtime .NET/SQL/Vitest/browser/CI: NOT_RUN. Final tiny corruption-proof guards and mutable fault-fixture alignment require the final coordinated recompile; the coordinator accepted this final source into the combined build queue. TypeScript final `npx tsc -b` exit0 after removal of one unused synthetic fixture variable. No runtime test was executed.
+- Central integration list: `MapProductCogsClassificationEndpoints`; ProductRuntimeExtensions already registers the actual service and owner reader. PRODUCT provider version1.3 adds `product.items.set-cogs-classification` op7 under existing Product detail route. Coordinator owns central registry admission/authorities, endpoint map, generated OpenAPI, recovery/release, migration mutation fingerprints, relational and test-group inventories. Product/Identity/Idempotency snapshots are generated, not hand-written.
+- K3 review surfaces: new private Product enlisted writer/context construction, exact global op7/terminal/Audit envelope admission and canonical history ordering. No filter bypass, arbitrary raw SQL, guard allowlist, production activation or human assignment was added. Two independent final exact-head K3 reviews and actual runtime acceptance remain NOT_RUN.
+
+- Owner status: **DONE (source implementation and generated migrations)** for the explicit Product card dependency. The enclosing SAT-SC34 invoice/accounting workflow status remains with the integration coordinator; it is not inferred from this owner checkpoint. No plan or decision status was changed here.
+- Source review: a separate reader of the four newly written backend files found two corrupt-stored-proof P2 cases; both are fixed with source regressions (next revision origin, prior class kind/origin/time chain). Closure was reread from the changed source. This limited source review is not either final K3 review. A synthetic mutable company input replaces an impossible mutation of the production immutable company context in the SQL fault harness.
+- Final TypeScript compilation: exit0. Final C# guard delta: compilation queued in the coordinator's combined head build; preceding API/four Unit projects/Integration checkpoint was exit0. All runtime .NET/SQL/Vitest/browser/CI evidence remains NOT_RUN.
+
+
+### STK-S21 / SAT-D328,D336,D337,D338,D339 — negative physical stock refusal history
+
+- Status: **DONE (source implementation, generated migrations and source compilation)**. The following is implementation evidence; runtime .NET/SQL/Vitest/browser/CI acceptance is **NOT_RUN**. The source and this section are in the same STK-S21 slice commit; the integration report records that commit's SHA.
+- A real outbound StockLedger refusal carries the actual failing line ordinal, physical position, current/requested/missing kg, label code, original movement hash and immutable actor/key/correlation metadata. Reservation-only insufficiency carries no negative-physical proof. No refused movement or physical terminal is inserted and a label is not locked as a business state.
+- Confirmed physical owner rollback precedes independent refusal persistence. Inventory standalone movements/transfers use a real owner transaction; borrowed Manufacturing/Purchasing/Logistics hosts leave commit/rollback to their existing transaction owner. An uncertain rollback or failed recording is unavailable, never reported as a persisted attempt. New Inventory attempt rows and the Audit owner's same-transaction audit writer either commit together or roll back together.
+- Immutable attempts never disappear and have one identity per company/movement/actor/key with hash/source binding. Count resolutions append separately. Approved corrective counts resolve all open attempts for the actual company/product/location, across labels. Rejected, no-difference, unrelated and rolled-back counts do not manufacture a resolution. No Work task, retention deletion, new permission, grant, role or Critical classification is introduced.
+- The rollback-to-independent-insert race is closed using an actual pre-validation count boundary. A separate immutable product/location boundary names the approved count, decision time/actor and ordered version. Physical proof captures its observed version under the same Inventory validation guard before physical reads. A delayed attempt may be born resolved only by a real later approved matching count; a prior count cannot resolve a later refusal. Null legacy observations are preserved, never filled from timestamps/current stock.
+- K3 review: the technical guard serializes physical validation, count approval and attempt recording per company. It follows host Sales then Purchasing locks, then count-boundary/attempt/physical rows; one company resource avoids reverse multi-product acquisition. Its lifetime is the physical owner's transaction only, with no external effect dispatch. The small nested Inventory context borrows the open connection/transaction, flushes only its own technical guard row, owns neither connection nor outer commit, and cannot flush the caller's movements/allocations/audit drafts. No new raw SQL, filter bypass or context-construction allowlist entry was added. First-row uniqueness/optimistic lock races remain honest technical retry/failure.
+- SAT-D336 messages use actual physical proof or the strictly validated immutable original terminal detail: `Sistemde <kg> kg var, <kg> kg istendi.` Purchasing and Logistics preserve it through terminal replay; arbitrary exception/client strings are not used. Non-409/permission/unknown rollback responses do not leak this proof. Legacy terminal JSON without detail remains readable.
+- Read API: `GET /api/v1/inventory/negative-stock-attempts`, operation `GetInventoryNegativeStockAttemptsV1`, strict bounded product/location/open/limit query, company and existing label+balance report permissions, private no-store. Attempt and resolution are projected by one SQL statement. The stock positions report links to the read-only history page; filters, real kg text and all standard screen/failure/stale-authority states are covered in test sources. No frontend quantity/formula calculation is added.
+- Initial source verification before the count-boundary change: API, Inventory.UnitTests, Purchasing.UnitTests, Logistics.UnitTests and Api.IntegrationTests all compiled exit0 with zero warnings/errors. Logistics had only missing local assets; owner-local default restore then compilation succeeded. An initial Integration fixture compilation error was corrected; the retry compiled exit0. These results do not claim the later boundary change compiled.
+- Generated initial migration: `20261117091723_AddInventoryNegativeStockAttempts`, THROW51986 before both history table drops. This generated migration is retained unchanged. The separate boundary/guard/legacy nullable proof model was generated as `20261117095345_AddInventoryNegativeStockCountBoundaries` with THROW51988 first in Down. Its Up is pure DDL, no seed/backfill/grant; no generated model/snapshot was edited manually.
+- Test sources cover immutable proof/ordinal, model/tenant/append-only guards, strict API/query/HTTP problem detail, original terminal replay, independent Audit rollback/fresh authority failure, same-key SQL race, count-wide atomic resolution and original physical retry, delayed insert after count, prior count exclusion, rolled-back count exclusion, real SQL guard lock lifetime and Down guards. All runtime evidence remains NOT_RUN.
+- Central integration: endpoint is included through existing `MapInventoryEndpoints`; Inventory module registers its actual query/recorder. No Program/Shell central registry edit is needed for this endpoint. Coordinator owns OpenAPI, recovery/release, architecture/context construction review, migration fingerprints, relational and group inventories. New forward context construction must be reviewed explicitly, not silently admitted to a guard allowlist.
+
+- Limited second-eye source reading found one additional stale-context P2: an unchanged tracked balance from an earlier transaction could hide a subsequently approved count and create a false refusal before a save concurrency check. The new transaction's guard now refreshes only unchanged physical Label/Balance rows from company-filtered owner queries and updates their current/original values. Added/modified staged rows, pending movements and audit are preserved. A reused-context count150 then issue120 success30 SQL fact and a borrowed-guard-does-not-flush-staged80/actual100 SQL fact were added. The source was reread; execution is NOT_RUN. This limited check is not either independent final K3 review.
+- THROW51988 reservation was checked against 30 distinct committed main/train/team heads and 17 active train worktrees (34,707 backend source files); no collision was found before adding the new guard. No process, database or worktree was removed or reset.
+
+- Final S21 source compilation: API, Inventory.UnitTests, Purchasing.UnitTests and Api.IntegrationTests all exit0, zero warnings/errors; EF51988 generation exit0; TypeScript build exit0; `git diff --check` exit0. The final Integration recompile includes the first migration's actual Down-guard fact without letting the newer guard shadow its expected SQL error. No runtime unit/SQL/Vitest/browser/CI test or database update was run. The 15 new real-SQL facts are source declarations, not acceptance results. All initial and final raw compilation logs/exit gates remain outside the repository.
+- K3 final list includes the new private borrowed validation-guard context, company-wide lock order/lifetime, standalone physical transaction wrappers, null legacy count proof, independent refusal Audit atomicity, immutable cross-owner detail replay, and both forward-fix migrations/THROW51986+51988. Existing bypass/context exceptions were not silently enlarged. The coordinator must regenerate central pins/inventories and obtain two independent final exact-head reviews plus required runtime evidence.
+
+### STK-SC36-a / SAT-D419,D422 / FNS-D112 — immutable shipment TL source dependency
+
+- Status: **DONE (Inventory source dependency and source compilation)**. This is the Inventory read dependency, not completion of the enclosing invoice/SMM/accounting workflow. The first SMM trigger decision remains pending; no financial producer, posting, proposal creation or dispatcher activation is added here.
+- `IInventoryShipmentCostReadPortV1.GetAsync(companyId, shipmentId, movementId)` follows the actual definite-shipment Issue movement and its single Out line, immutable Product/label identity, original command result and exact recorded outbox envelope before projecting its own TL movement cost stamp. The real scoped module provider is registered. There is no HTTP endpoint, new capability, user permission or schema change.
+- `Available` means physical source provenance was read; `line.Tl.Status` independently states whether original TL cost is known. Legacy missing TL, unavailable TL or a USD-only stamp never becomes a known TL price. Current average, current classification/allocation status, invoice sales price and foreign-currency substitutes are not read. Exact rational cost evidence survives without an invented rounded scalar or amount. The consuming owner must bind the actual effective Logistics shipment, refresh user authority and perform its exact TL/accounting admission.
+- Every owner query retains the company filter, and authority-context changes discard the result. Unknown envelope/schema, malformed typed JSON and mismatched movement/command/outbox/stamp evidence produce an explicit empty `Unreadable` result. The source fingerprint contains immutable original command/result/envelope/stamp evidence and the factual line projection; a later receipt changing the moving average does not alter that historical source.
+- The pre-existing Manufacturing stamp projector was extracted without semantic changes into one shared owner projection. Its strict currency, positive recorded version, normalized ratio and exact scalar/amount checks are preserved. No current average fallback, new rounding/formula, migration, bypass, raw SQL or guard allowlist was added.
+- Test sources: five real-SQL facts cover actual receipt and shipment stamps followed by a real later differently priced receipt, explicit legacy missing TL with genuine USD still present, company/shipment/movement isolation, deliberate corrupt or unknown outbox evidence, and a synthetic company-context switch after actual SQL read. The legacy/corruption injections are isolated test SQL and are not runtime mutation APIs. Unit contract/projector sources cover 24 expanded cases, including finite/zero cost, exact one-third, contradictory amount/scalar, wrong currency, missing positive source version, cancellation and refusal before opening a connection. All runtime unit/SQL/Vitest/browser/CI evidence is **NOT_RUN**.
+- Limited second-eye source review found no concrete P1/P2; the reader also authored part of the unit source, so this is not an independent final K3 review. Integration coordinator owns central relational/group/fingerprint regeneration and the consuming host's actual user-permission/Logistics admission tests. No overall plan status was changed in this checkpoint.
+- Source verification: `dotnet build tests/GoymenERP.Inventory.UnitTests` and `dotnet build tests/GoymenERP.Api.IntegrationTests` with `--no-restore -m:1 -nr:false -p:UseSharedCompilation=false -p:OpenApiGenerateDocumentsOnBuild=false -v:q` both exit0, zero warnings/errors. Available RAM was checked above 2 GiB before each build; raw logs and immediate native exit records are kept outside the repository. No runtime .NET/SQL/Vitest/browser/CI, EF generation, database update or Node task was run for this dependency. The shared .NET lease was explicitly released after compilation. The source and this section are one commit; the coordinator's integration report records its SHA.
+
+### STK-S13 / BS-10 — ERP product search and membership re-add
+
+- Source workflow gap closed: after the first actual Excel source, an authorized membership maintainer can search actual active Product cards and add or re-add one through the existing versioned/idempotent `SetAsync`. A new file is not required. The original Excel validate/apply and remove paths remain the same owner workflows. Compilation is pending the shared lease; this source checkpoint alone is not final source DONE or runtime acceptance.
+- New bounded `GET /api/v1/product-paint-memberships/candidates?q=...&limit=25` admits only the existing membership-management permission, strict optional search text and canonical limit (1..50), and rejects duplicate/unknown query fields. It returns only actual Product identity/code/name/version, current membership version and membership state; it does not expose stock, money, classification or role flags. Neither operational-selection nor group-wide card-read authority is inferred from this maintenance permission.
+- The server rereads the bounded actual active Product window and current membership head under fresh actor/company/permission fences. No first source yields explicit NoSource/version0 and no candidates. The UI validates echoed company/query/limit/source/version, discards stale results, uses actual expected Product and membership versions, and preserves the existing frozen same-key retry and screen states. No formula or quantity is calculated in the browser.
+- The existing owner total membership bound is retained consistently on manual additions: `ApplyImportAsync` already bounds the total and the actual reader refuses a catalog above `MaximumRows`; the new picker cannot make that consumer unreadable. This does not introduce a new business limit or expand the Excel file bound into unrelated data.
+- Unit/HTTP/Vitest source deltas and four real-SQL fact sources cover import/remove/search/re-add and original replay, tenant isolation, active-only literal bounded search, changing Product version, late authority loss and the existing catalog bound. Runtime .NET/SQL/Vitest/browser/CI and source compilation/TSC of this delta are **NOT_RUN**. No model/migration, registration, global authority, grant, role, Critical classification or central shell/navigation change was made. The coordinator owns OpenAPI query declaration/schema generation, relational/group inventories and the final source build.
+
+### STK-SC36-a / SAT-S12 dependency — proven average-cost currency
+
+- The company-wide and physical-unit cost answers now carry nullable `CostCurrencyId`. The real owner sets TRY only when every included source has an actual matching TRY-specific exact pool. A legacy average ledger has no currency column; its existing `company-base-currency` description never becomes a fabricated TRY identity. Missing proof stays null, without changing the existing numerical read or backfilling any old row. Physical unit conversion forwards this same currency and performs no money conversion.
+- Null proof is omitted from legacy JSON; existing unproven wire shapes remain compatible. Consumers must separately admit the actual currency and their fresh authority; a Product accounting class is not inferred by this read. No schema, financial posting, price, rounding policy or permission is changed.
+- Two unit source tests and one genuine receipt/pool SQL fact source cover forwarding, legacy null, empty identity refusal and real TRY evidence disappearing in an isolated explicit legacy-data fault. Source compilation and runtime .NET/SQL/browser/CI are **NOT_RUN** for this delta; the coordinator owns combined compilation and central inventories. The enclosing margin/financial workflow remains its owner's responsibility.
+
+### STK-S8 — gerçek depo tartı ayarı, belge ve çıkış/iptal owner zinciri
+
+- Durum **PARTIAL**. Gerçek Settings/Logistics owner, host köprüsü, HTTP akışları ve belge→kesinleştirme→sevk paneli kaynakta tamamlandı. Transfer planlama ve mal kabul/fazla kabul/eksik-fazla düzeltme ekranları henüz bu checkpoint'te yoktur. Gerçek bağlı GİB kanıt sağlayıcısı yoktur; bu kol açıkça 503 kalır. Bu kayıt S8'in veya K3 kabulünün tamamlandığı anlamına gelmez.
+- Karar dayanakları: LOJ-D11 (`SINAN_KARARLARI_2026-11-12_LOJISTIK_EK3.md:48` default-Off metadata satırı) ve KLN-D25(7)/D27 (`SINAN_KARARLARI_2026-11-12_STOK_TRANSFER_IPTAL_VE_GELECEK_TEDARIK.md`). Koordinatör notu doğrudan kullanıcı alıntısı olarak gösterilmedi; numarasız belge gönderilmedi veya bağsız sayılmadı.
+- Settings yalnız gerçek şirketin aktif iç deposu için append-only seçim tutar. Geçerli depoda hiç kayıt yoksa NotConfigured/false/sürümsüz; ilk açık Off kaydı Configured/sürüm1; kaynak hatası Unavailable'dır. On kaydı gerçek Logistics yeteneği ister. Beklenen sürüm, özgün actor/hash bağlı replay, fresh authority ve aynı işlem Audit owner yazımı vardır; caller'ın borrowed işlemi, dirty state veya pending audit temizlenmez. Varsayılan/seed yoktur.
+- Yeni açık belge oluşturma gerçek Inventory Planned sürümü, kaynak konumu ve sıralı satır kimliklerini yeniden okur. Explicit NotLinked yalnız bu kanıtla kaydedilir; eski omitted alan Unknown kalır. Linked actual official owner gerektirir. Gerçek belge okuma/oluşturma/kesinleştirme/iptal HTTP yolları ve ayrı capability'leri korunur; sahte GUID formu veya sessiz approve yoktur.
+- Logistics gerçek ilk/ikinci tartı ve yön üzerinden mevcut backend calculator'ın netini, araç çıkışını, değişmez olay ve terminal yanıtını kaydeder. Fiziksel stok hareketi yaratmaz. Kaynak sürümü, şirket/actor/izin ve Audit aynı owner işleminde korunur. Çıkış ile kalıcı NoFurtherExit çiti tek SQL kazananı olan yarıştır. Dispatch öncesine tarihli iptal owner'a girmez. İptalin bağımsız güvenlik çiti sonraki Inventory ters kaydı rollback olsa da kalır; replay external callback'i tekrarlamaz.
+- Gerçek host `AddInventoryTransferPolicyHostPorts()` ile Organization depo, Settings seçim, Inventory transfer ve Logistics evidence portlarını bağlar. Inventory cancel V2 tam özgün request/metadata/fresh authority taşır; metadata'sız eski köprü onayı başarıya dönmez. GİB gönderimi, rol veya Cari/Organization yetkisi uydurulmadı.
+- Kayıt-only yeni adlar: `settings.warehouse-transfer-scale.manage`, `logistics.transfer-departures.record`, `logistics.transfer-outgoing-documents.read`. ErpPermissions/shell/global mount merkezi yazardadır. Belge eylemleri ayrıca mevcut `logistics.dispatch-notes.create`, `.approve`, `.cancel`; fiziksel sevk mevcut `inventory.stock-transfer.write` capability'sini ister. Grant, rol ataması veya Critical sınıfı yoktur.
+- İki forward migration `dotnet ef` ile üretildi: `20261117111242_AddWarehouseTransferScalePolicies` (**51990**) ve `20261117111253_AddTransferDepartures` (**51991**). Her Down'da ilk SQL koruması ilgili herhangi tarihçe varken bütün Drop'lardan önce THROW eder. Generated Designer/snapshot elle üretilmedi; Up yalnız DDL'dir. Main ve aktif owner kaynaklarında çakışma tarandı. Yeni raw SQL/bypass/context allowlist girdisi eklenmedi; yeni owner transaction/context yüzeyleri K3 inceleme listesindedir.
+- Test kaynakları: immutable/defaultOff/company/model/Down, gerçek owner replay/Audit rollback/authority fault, SQL exit-vs-fence yarışı ve fence-sonrası fiziksel rollback, legacy/linked-missing-provider, request/endpoint permission/no-store, strict JSON ve frontend frozen retry/state/capability ayrımı. Sentetik authority/provider arızaları açık sınır fault'larıdır; gerçek GİB kabulü olarak sunulmaz. Dar ikinci göz son üç backend owner dosyasında yeni kanıtlı P1/P2 bulmadı; bu K3 imzası değildir.
+- Kaynak derleme kanıtı: API, Settings.UnitTests, Logistics.UnitTests, Inventory.UnitTests, Product.UnitTests, Identity.UnitTests ve Api.IntegrationTests **exit0, sıfır uyarı/hata**; iki EF üretimi **exit0**. İlk API using ve Integration test-fixture tür/nullable hataları düzeltildikten sonra bu sonuçlar alındı. Settings test projesindeki eksik yerel assets yalnız owner-local restore ile tamamlandı. Unit/SQL/Vitest/browser/CI runtime ve database update **NOT_RUN**; ham derleme kayıtları depodışındadır. Final TypeScript sonucu ayrıca aşağıya kaydedilir.
+- Merkezi bağlama: `MapSettingsWarehouseTransferScaleEndpoints()`, `MapLogisticsTransferDepartureEndpoints()`, `MapLogisticsTransferOutgoingDocumentEndpoints()`; `AddInventoryTransferPolicyHostPorts()`; `WarehouseTransferScalePage` → `/ayarlar/depo-transfer-tartisi`, `TransferDeparturePage` → `/lojistik/transfer-cikislari`; InventoryTransferPage dispatch paneli için yukarıdaki beş ayrı action capability'si. Ortak Program/shell/nav/pin dosyaları bu ekipçe değiştirilmedi.
+- Merkezi üretim: iki yeni migration ve store/recovery/release sayıları, migration Down `Sql=1` mutation review girdileri, Settings/Logistics context fingerprint'leri ve yeni gerekçeli context construction K3 incelemesi, OpenAPI endpoint/schema, relational fact ve test group envanterleri. Eski kesin manifest sayıları yeni gerçek yüzeyle merkezi hizalanmalıdır; testler atlanmadı/silinmedi.
+- Final `npx tsc -b` **exit0**. İlk dispatch test mock-function tür hatası açık dönüş imzasıyla düzeltildi; sonra bütün frontend kaynakları derlendi. `git diff --check` exit0. Yukarıdaki S13 arama/ekleme ve maliyet para birimi kanıtı deltaları da bu API/Product/Inventory/Integration ve frontend derleme checkpoint'ine dahildir; eski NOT_RUN derleme satırlarının yerine bu kanıt geçer. Runtime NOT_RUN durumu değişmez.
+
+### STK-SC36-c — Cari gerçek müşteri rolü owner kanıtı
+
+- Dar kaynak boşluğu kapandı: paket standardı müşterisi artık display-name Found yanıtından türetilmiyor. Yeni `ICounterpartyProductPackageStandardCustomerSourceV1` yalnız istenen en fazla 100 Party kimliğini, gerçek aktif Party ve aynı şirketteki aktif CompanyPartyAccount + Customer rolü ile tek ilişkisel sorgudan okur. Her iki gerçek sürüm, şirket ve kaynak sürümü bağımsız doğrulanır. Missing/foreign/inactive/nonCustomer aynı omission'dır; rol veya fiyat genel listesi açılmaz.
+- Owner yalnız mevcut Product paket-standardı manage/approve işlevinin fresh company-wide yetkisini kullanır. Manufacturing izni veya yeni Cari-read şartı yoktur; grant/rol atanmaz. Product host strict source/schema/company/actor/requested-subset/revision/role admission yapar; display portuna fallback yapmaz. Mevcut Product uygulaması action-specific iznini ve kayıttan önce fresh fence'ini ayrıca korur.
+- Üç gerçek SQL fact ve unit/host sözleşme kaynakları; actual join/revision/role, dirty tracked state'i flush etmeden gerçek kayıt, tenant ve yetki değişimi, bozuk/eksik sağlayıcı senaryolarını kapsar. 18 test tanımı / 38 senaryo yalnız kaynak sayımıdır. Bu deltada kaynak derlemesi ve bütün runtime kabulü **NOT_RUN**; no migration/model/ham SQL/bypass eklenmedi. Yeni scoped owner DI module içindedir, mevcut host Program kaydı değişmez. OpenAPI/public Product DTO değişmez; merkezi relational/group envanteri güncellenmelidir.
+
+### STK-S8 — gerçek plan, hedef kabul belgesi ve kabul/düzeltme iş akışı
+
+- Durum **PARTIAL**; bu bölüm önceki checkpoint'teki plan ve kabul ekranı kaynak eksiklerini kapatır. Gerçek bağlı GİB gönderim durumu sağlayıcısı hâlâ yoktur ve o kol 503 kalır. Kaynak varlığı, derleme, gerçek SQL, browser, CI ve K3 kabulü ayrı tutulur. Karar dayanakları B-22, 14 Ekim transfer yaşam döngüsü ve KLN-D23/D24/D107/D108'dir; yeni işletme politikası veya grant seçilmedi.
+- Plan seçicisi gerçek Inventory etiket/sürüm/fiziksel pozisyon ve Organization aktif hedef depo/saha/sürüm okur; dış hedefte gerçek ExternalOperatorPartyId gerekir. Ürün, sahip, saklayıcı ve kaynak tuple'ı ekranda türetilmez. Elle GUID veya varsayılan dış işletmeci yoktur. Organization tarafında iki salt-okunur sözleşme/sağlayıcı ve module DI kaydı dışında model/context değişikliği yoktur.
+- Hedef kabul belgesinin Draft ve Effective sürümleri append-only Inventory owner kayıtlarıdır. Ayrı açık kesinleştirme, gerçek transfer/satır/etiket/sürüm, UTC kabul günü, kg ve fazla kabul açıklamasını dondurur. Fiziksel Receive aynı işlemde aynı şirketin gerçek Effective sürümünü ve belge satırını doğrular. Belge oluşturma/kesinleştirme ile Audit owner yazımı aynı işlemde atomiktir; aktör/şirket/hash bağlı özgün yanıt replay'i sonradan değişmez. Eski null optional alan hash/JSON'dan çıkarılır; eski anahtar sahipliği korunur.
+- Mevcut dispatch/receive/overage-decision/loss-request/loss-decision izinleri ile gerçek command-purpose aday listesi ve tek kayıt okunur. StockPositions read grant'i bu izinlerden türetilmez. Plan ve kabul adayı sayfaları gerçek backend bilgisi taşır; belge ve iş listesinde şirket/aktör/purpose/query/limit bağlı imzalı keyset continuation vardır. İlk 50 belgeden sonraki gerçek kayıtlar da seçilebilir; key yokken başarılı eksik liste uydurulmaz.
+- Ön yüz gerçek plan → belge taslağı → açık kesinleştirme → hedef kabul akışını; fazla kabul onayı/yenilenmesi, eksik kabul talebi/kararı/geri çekme ve gerçek tarihçeyi bağlar. Belirsiz ağ yanıtı aynı API/oturum/aktör/şirket bağlı frozen body/kimlik/zaman/anahtarı korur. Fiziksel veya mali miktar ekranda yeniden hesaplanmaz. InventoryTransferPage generic report okumaları yalnız gerçek stock-positions capability'siyle enabled olur; command-only kullanıcı plan ve kendi iş listesini rapor yetkisi olmadan kullanır.
+- EF forward migration **20261117122205_AddInventoryTransferReceiptDocuments**, üretim **exit0**. Up yalnız bir tablo, şirketli FK/index ve constraint'lerdir. Down ilk işlem, herhangi bir belge tarihçesi varken bütün Drop'lardan önce **THROW 51999** ile reddeder. Önceki migration'lar değiştirilmedi, backfill yoktur. Numara main/HEAD ve yedi aktif owner kaynak ağacında üretim öncesi çakışmasız tarandı; database update yapılmadı.
+- Test KODU: 23 C# tanımı / 38 genişletilmiş vaka, bunların içinde **8 gerçek-SQL fact kaynağı**; draft/effective binding, immutable replay, quantity/date/line mismatch, foreign company, gerçek Audit rollback + açık sentetik late authority fault, 51 belgeli cursor, yalnız action permission ile aday okuma, dış operator/version kanıtı ve Down guard kapsanır. Plan frontend'i 41 tanım / 103 vaka, kabul frontend'i 36 tanım / 77 vaka kaynağıdır. Bunlar koşum sayısı değildir.
+- Fiziksel transfer race kaynakları mevcut şirket-sayım mutex'iyle hizalandı: aynı mutex'i almış iki SaveChanges arasında yapay bariyer kurmak yerine komut başlangıç yarışı ve tek kazanan/tek fiziksel olay kanıtı korunur. İç callback sırasında ikinci gerçek yazıcı bağlantısının kilit beklemesi yalnız bağlantı-local timeout ile doğrulanır; servis/sunucu ayarı değiştirilmez. Runtime race sonucu iddia edilmez, test silinmez/atlanmaz.
+- Kaynak doğrulama: API, Inventory.UnitTests, Counterparty.UnitTests, Organization.UnitTests ve Api.IntegrationTests **exit0, sıfır uyarı/hata**; EF üretimi **exit0**. İlk API missing-using ve iki TypeScript narrowing/fixture bildirimi düzeltildi; eksik yerel assets yalnız Counterparty/Organization test projesi owner-local restore ile tamamlandı. Son .NET derlemeleri bu düzeltmeleri içerir; ham log ve native exit kayıtları depodışındadır. Birim/gerçek SQL/Vitest/browser/CI runtime ve database update **NOT_RUN**. Önceki SC36-c kaynakları bu Counterparty/Integration derleme kanıtına dahildir.
+- Merkezi mount: **MapInventoryTransferPlanCandidateEndpoints()** ve **MapInventoryTransferReceiptDocumentEndpoints()**. İkincisi receipt-work tek okuma ve candidate list yollarını da map eder. Frontend **InventoryTransferPage()** ve **TransferReceiptPanel({transferId,onChanged})**; mevcut inventory.stock-transfer.write standalone plan gateway ile kullanılır. Organization/Inventory owner DI module içinde kayıtlıdır. Ortak Program, shell provider, global nav/cap, izin kaydı ve KALAN_PLAN değiştirilmedi.
+- Merkezi yeniden üretim: yedi yeni HTTP operation + optional Receive belge sürümü şeması; bir migration/durable store/recovery/release; Down Sql=1 review; Inventory context/snapshot/store/cursor/Organization DI fingerprint'leri; sekiz SQL fact tam adı/ilişkisel envanter ve backend test grupları. Yeni bypass/ham SQL/context allowlist girdisi eklenmedi. Yeni owner transaction/context, signed purpose cursor, original replay, belge-fiziksel binding ve mutex-aware race kaynakları **K3 review bekliyor**. Bu kaynak ve rapor aynı dilim commit'inde tutulur; SHA merkezi entegrasyon kaydına yazılır.
+- Son dependency merge sonrası bütün frontend için **npx tsc -b exit0** ve **git diff --check exit0**. Bu sonuç kaynak derlemesidir; yukarıdaki bütün runtime NOT_RUN sınırları korunur. .NET/EF ve Node slotları açıkça koordinatöre bırakıldı.
+
+### STK-S3 — müşteri malı teslimi owner kaynağı, PARTIAL
+
+- Kaynak `93bfba4acccb406cbb7c7cb36d3c57c01d77a83e`: ayrı subcontract demand kind,
+  gerçek müşteri sahipliği/şirket saklayıcılığı kontrolü, immutable allocation source
+  ve borrowed reserve/ship participant vardır. Normal şirket malı satış sevki veya
+  SMM olayı bu participant'tan çıkmaz. Sales/Manufacturing gerçek kanıt birleştirmesi,
+  tamamlanma V2 okuyucusu, Logistics host ve tartı düzeltme bağlantısı henüz yoktur.
+- EF `20261117140912_AddInventorySubcontractDeliverySources`, Down **51934**;
+  önce kaynak veya yeni demand-kind satırı varken reddeder, sonra DDL geri alır.
+  Snapshot üreticiden geldi; DB uygulaması yok. Company/model/immutable source
+  unit ve SQL Down guard kaynakları yazıldı. Borrowed context construction ve
+  physical source binding **K3 review bekliyor**; guard allowlist'e eklenmedi.
+
+### STK-S29 — belge şablonu yayımlama owner kaynağı, PARTIAL
+
+- Kaynak `ba38bc6daad9ba6ac646c47968239acea0ef4978`: şirketli logo/antet sürümü,
+  üç kapalı modül şablonu, ayrı hazırlayan/yayımlayan ve immutable yayın kanıtı
+  oluşturuldu. Gerçek Documents Clean uploaded sürüm/hash kaynağı gerekir;
+  SystemGenerated belge uploaded Clean sayılmaz. Dış URL/HTML/script/layout yoktur.
+- EF `20261117140908_AddDocumentBrandingPublications`, Down **51936**; branding,
+  draft, yayın, attempt veya generated-version yayın kanıtı varken önce reddeder.
+  Snapshot üreticiden geldi; DB uygulaması yok. İlk iki type/using compile hatası,
+  test nullability ve yerel Documents test restore gereksinimi dar düzeltildi.
+- API, Documents.UnitTests, Inventory.UnitTests, Api.IntegrationTests ve TypeScript
+  final kaynak derlemeleri **exit 0, uyarı/hata 0**. İki yeni SQL fact adı doğru
+  Inventory/platform envanterine sıralı eklendi. Unit/SQL/HTTP/Vitest/browser/CI
+  **NOT_RUN**; guard numaraları 29 farklı committed tren/main head'inde çakışmadı.
+- Yedi izin adı yalnız owner sözleşmesinde aday olarak vardır; merkezi kayıt/grant
+  yapılmadı. Endpoint sınıfı henüz host'a map edilmedi. Gerçek asset renderer,
+  PDF producer binding, yönetim ekranı ve runtime/negative kabulü eksiktir;
+  unregistered/unavailable durumu başarı veya kullanıma hazır sayılmaz.
+- Dedicated Documents context construction, maker-checker, uploaded kaynak ispatı,
+  immutable publication/request hash ve iki Down guard **K3 review bekliyor**.
+  Kaynak checkpoint'leri tam dilim DONE değildir; merkezi pin ve tren FF bekler.
+
+### STK-S29 — gerçek renderer, producer ve yönetim ekranı checkpoint'i
+
+- KLN-D33 / KLN-D73 / KLN-D109 / DEC-DOC-010: mevcut PDFsharp **6.2.4** ile gerçek PNG/JPEG ve tek sayfalı PDF
+  logo/antet çizimi bağlandı. Yayımlanmış şirket/modül şablonunun sabit document/version/hash kanıtı PDF metadata'sına
+  taşınır; çok sayfalı iş belgelerinde her sayfada çizilir. Kapalı backend business-content vocabulary korunur; fiyat,
+  vergi, kg dağılımı ve tolerans yeniden hesaplanmaz. Yeni bağımlılık, HTML/script şablonu, URL/path girişi veya dış
+  e-belge gönderimi eklenmedi. Parser yokluğu/bozuk kanıt başarıya veya sessiz teknik fallback'e dönüşmez.
+- Sales order GET PDF gerçek güncel publication'a bağlandı; read-only GET olarak kaldı. Inventory label POST gerçek
+  Documents generated-store publication snapshot'ını kullanır. Yeni label-scope GET `pdf-template` seçimi gerçek owner'dan
+  alır; public komuttaki trailing nullable PublicationId/PublicationVersion UI attempt'iyle dondurulur. Owner exact
+  historical publication okur; yeni yayım sonrasında kayıp yanıtın tekrarında son yayımı yeniden seçmez. Eski null
+  istek teknik içerik/hash biçimini korur; yeni UI her yeni işlem öncesinde gerçek seçimi okur. Farklı payload aynı key
+  mevcut 409'dur. Üç producer özgün actor/company frame'ini bütün awaited owner çağrıları boyunca korur ve gerçek
+  record-scope okumalarını tazeler.
+- Logistics onaylı irsaliye için read-only GET PDF ve buton kaynağı eklendi. Cari owner gerçek müşteri adını; yeni dar
+  Product-owned Logistics-purpose known-id portu gerçek code/name/version'ı; Settings gerçek birim kodunu; Logistics
+  gerçek kayıtlı sevk miktarı ve varsa frozen kg snapshot'ını verir. Parasal tutar yoktur (SAT-D425). Ürün/fiyat/rol
+  kataloğu veya yeni Product grant'i açılmaz; mevcut Logistics read ve gerçek owner-record fence geçerlidir. Teknik PDF
+  resmî e-İrsaliye gönderim kanıtı sayılmaz. Eski kayıtta bulunmayan kg dağılımı üretilmez veya mevcut ortalamayla doldurulmaz.
+- `CompanyDocumentBrandingPage` ve modül bazlı `DocumentTemplatePage` gerçek upload → Clean fixed version seçimi →
+  company branding → module draft → farklı publisher akışını kullanır. Template sayfası prepare OR publish amaç
+  yetkisiyle çalışır; şirket branding-manage veya genel Documents-read grant'i eklemez. Mevcut upload izni olmadan upload
+  açılmaz. Loading/empty/401/403/404/409/offline/network/503/bozuk yanıt ayrıdır; belirsiz command/upload aynı key ve
+  payload/file ile actor/session/company/origin'e bağlı tutulur. İrsaliye 422 sayfa sınırı kesik belge başarısı sayılmaz.
+- Test kaynakları: gerçek renderer, per-page form/metadata/Türkçe içerik ve deterministik retry; bozuk hash/parser,
+  fixed publication/unknown outcome ve company/actor/permission kaybı; kapalı fiyat-sız irsaliye composer'ı; frontend
+  strict decoder/state/maker/retry kaynakları. Üç gerçek SQL fact kaynağı: (1) gerçek Clean upload, maker≠publisher,
+  pub1 → gerçek label/vault → pub2 sonrasında özgün immutable publication/PDF replay; (2) Audit append sonrası hata,
+  tüm revision/attempt/audit rollback ve aynı-key success/replay; (3) gerçek Product SQL identity'nin yalnız Logistics
+  amaç izni altında price-free okunması. Bu fact'ler **NOT_RUN**; sahte grant'ler yalnız disposable acceptance fixture'ıdır.
+- Kaynak derlemeleri: API, DocumentGeneration.Pdf.Tests, Documents.UnitTests, Product.UnitTests ve Api.IntegrationTests
+  final **exit0 / 0 uyarı / 0 hata**. İlk API 2:47, final incremental API 24,70sn; PDF test projesi 3,07sn, Documents
+  Unit 3,51sn, Product Unit 9,91sn; Integration yeni testteki tek CS0819 düzeltmesinden sonra 45,78sn exit0. Komutlar
+  `--no-restore -m:1 -nr:false -p:UseSharedCompilation=false -p:OpenApiGenerateDocumentsOnBuild=false -v:q` kullandı.
+  Her süreçten önce ≥2GiB RAM ölçüldü, native exit anında kaydedildi, ham loglar depodışında korundu. Runtime unit/SQL/
+  HTTP/Vitest/browser/CI **NOT_RUN**; bu checkpoint'te EF/DB apply yok. Önceki 51936 migration değiştirilmedi.
+  Frontend son `npx tsc -b` **exit0**; Vitest/browser çalıştırılmadı. İlk TS union-generic hatası dar düzeltildi.
+- Merkezi entegrasyon: `AddDocumentBrandingPdfRuntime()`, `MapDocumentBrandingEndpoints()`,
+  `MapLogisticsDispatchPdfEndpoints()`; mevcut Product runtime kapısı ile
+  `AddProductLogisticsDocumentDisplay(Func<IServiceProvider,bool>)`. Kapalı/unconfigured Product sonucu Unavailable/503'tür.
+  Yedi permission kaydı, Settings purpose gateway/nav, page mounts ve Approved note satırında
+  `DispatchNotePdfButton(instructionId,dispatchNoteId,companyId)` merkez sahibindedir. UI action cap kimlikleri owner'daki
+  yedi permission adıyla aynıdır. OpenAPI/registry/architecture/relational/grup pin'leri koordinatörde kalır.
+- **PARTIAL kalan dar kapsam:** KLN-D33 MIME allowlist şu an PDF/PNG/JPEG StandardKinds'tır; boyut gerçek
+  `Documents:MaximumUploadBytes` owner kaynağından gelir. Aynı kayıtlı S29 kapsamındaki konfigüre altküme reader ve
+  negatif test kaynağı ayrı takip checkpoint'inde tamamlanacaktır; config/env dosyası değiştirilmeyecektir. Merkezi
+  mount/pin/derleme birleşmeden tam dilim DONE denmez. Gerçek kurumsal asset'ler, izin ataması, UAT/production ayrı insan
+  kapısıdır; OPEN-019 kapanmadı. Yeni Product purpose projection ve fixed-publication/hash bağı **K3 review bekliyor**.
+
+### STK-S29 — KLN-D33 konfigüre dosya türü altkümesi
+
+- Yeni owner reader `Documents:Branding:AllowedContentTypes` üzerinden yalnız mevcut StandardKinds'ın boş olmayan
+  PDF/PNG/JPEG altkümesini okur. Hiç yapılandırılmamış değer eski üç türü korur; açık boş/null/scalar, yinelenen,
+  kesik/nested indeks, bilinmeyen veya genişletilmiş tür listesi **503** olur. Dosya boyutu mevcut
+  `Documents:MaximumUploadBytes` / DocumentsServiceBindings kaynağından kalır. Config/env dosyası veya production
+  aktivasyonu değiştirilmedi; reader kaydı kendiliğinden bir işletme ayarı üretmez.
+- Şirket branding GET ve upload limits gerçek altkümeyi gösterir. Yeni upload/version, şirket branding seçimi,
+  modül taslağı ve yayım güncel tür kabulünü owner'da kontrol eder. Geçerli daraltma daha önceki sabit publication'ı,
+  tarihsel asset byte/hash kanıtını veya kayıtlı upload/version/branding tekrar sonucunu yeniden yazmaz. Geçersiz
+  yapılandırma yeni başarıya veya sessiz StandardKinds fallback'ine dönüşmez; aynı actor/company/permission çitleri sürer.
+- Store'un hem normal kayıtlı hem unique-race winner tekrarında çalıştırdığı authority callback'i ile yalnız yeni
+  append'in admission callback'i ayrıldı. Böylece güncel liste, daha önce kaydedilmiş winner sonucuna yeni 422 uygulamaz.
+  Güncel altküme yeni metadata/attempt yazılmadan kontrol edilir; mevcut content-addressed object-first düzeninde
+  başarısız yeni admission en fazla başvurulmayan şirket içi nesne bırakabilir, belge başarısı/kalıcılık iddiası üretmez.
+  Eski generated-PDF/store overload'ları ve null publication hash biçimi korunur; yeni modül/tablo/ham SQL/bypass yoktur.
+- Test kaynakları: gerçek configuration-provider absent/empty/null/scalar ayrımı; default/subset/duplicate/unknown
+  kontrolleri; gerçek module DI ve aynı byte-limit; upload/version replay ile payload mismatch; store fence'de policy
+  değişimi ve hiç metadata/attempt oluşmaması; diğer owner türlerinin değişmemesi. SQL lifecycle kaynağı daraltma sonrası
+  eski upload ve historical publication/PDF replay'ini, yeni 422 ve bozuk policy 503'ünü kapsar. Ek gerçek SQL fact,
+  actual store upload/version replay dallarında authority callback'inin çalıştığını, admission'ın çalışmadığını ve yeni
+  append reddinde satır eklenmediğini doğrular. HTTP/SQL/unit/Vitest runtime **NOT_RUN**.
+- Frontend policy altkümesi ve boş/yinelenen/genişletilmiş bozuk liste decoder kaynakları, sunucunun 422 tür red metni
+  eklendi. Son `npx tsc -b` **exit0**; başlangıç ≥2GiB RAM kapısı geçti, native exit/log depodışında korundu.
+- C# kaynak derlemeleri **exit0 / 0 uyarı / 0 hata**: API 2:41,71; Documents.UnitTests 3,49sn; Api.IntegrationTests
+  46,24sn. İlk Integration derlemesindeki test-only CS1674 (`IConfigurationRoot` lifetime) dar düzeltildi. Aradaki
+  <2GiB RAM kapısında hiçbir yeni süreç başlatılmadı; koşul düzeldikten sonra Integration ≥2GiB ile yeniden derlendi.
+  Bütün native exit'ler anında ve ham loglar depodışında saklandı. Yeni migration/EF/DB apply yok.
+- **DONE — owner kaynak kapsamı**: ana S29 checkpoint'i ve bu takip, gerçek yönetim/renderer/üç producer ile dar MIME
+  kaynak eksiğini tamamlar. Merkezi mount/registry/pin ve birleşik baştaki doğrulama koordinatördedir. Kabul/SQL/browser/CI,
+  K3 exact-head review ve kurumsal gerçek asset/grant/UAT kapıları ayrıdır; runtime **NOT_RUN**, OPEN-019 açık kalır.
+
+### STK-S21 — fason sevk ret günlüğü ve özgün kg mesajı
+
+- SAT-D328/D336..D339: gerçek fason sevk host'u, Inventory owner'ın fiziksel çıkış doğrulamasında ürettiği
+  proof'u ancak doğrulanmış rollback sonrasında mevcut `InventoryNegativeStockAttemptRecording` yoluna verir.
+  Fresh şirket/aktör/komut yetkisi kayıt öncesinde ve sonuçtan önce tekrar ölçülür; kaydedici kendi fresh owner
+  transaction'ında aynı proof'un şirket/aktör/izin çitini ve immutable dedup'unu korur. Rezervasyon yetersizliği
+  bu proof'u üretmez; belirsiz rollback veya kaydedici arızası 503'tür ve terminal ret kaydı oluşturmaz.
+- Yalnız gerçek physical proof'tan üretilen eldeki/istenen kg metni Command dönüşümüne, mevcut terminal JSON'una
+  ve özgün replay'e taşınır. Fason terminal okuyucusu mevcut bounded detail sözleşmesini doğrular; eski null/missing
+  detail JSON'u geçerlidir. 401/403/404/503 yanıtlarında fiziksel ayrıntı gösterilmez; keyfî exception/body metni alınmaz.
+- Mevcut frontend canonical kg-text decoder'ı uygun 409 physical code için kullanılır. Bozuk detail/status/replay
+  metadata'sı belirsiz yanıttır; eski kg yeniden hesaplanmaz. Ekran özgün veya replay ret metnini yalnız aynı
+  şirket/aktör/oturum binding'inde ve mevcut komut capability'si altında gösterir. Türkçe replay açıklaması kaynaklıdır.
+- Beş gerçek SQL fact kaynağı: gerçek ShipAsync fiziksel ret + bir kez jurnal/audit + stok değişse de aynı kg ile replay;
+  kaydedici arızası; doğrulanamayan rollback; rollback anında şirket/aktör/komut yetkisi kaybı; yalnız rezervasyon
+  yetersizliğinde fiziksel jurnal oluşmaması. SQL fault'ları açıkça sentetiktir; gerçek owner/ledger/transaction/replay
+  kullanılır. HTTP kaynakları güvenli özgün/replay detail ve nondisclosable yanıtları; Vitest kaynakları strict decoder,
+  legacy null detail, malformed replay/status ve ekranın şirket/aktör/oturum/izin çitlerini kapsar.
+- Kaynak derlemeleri: API **exit0 / 0 uyarı / 0 hata** (2:37,72); Logistics.UnitTests **exit0 / 0 uyarı / 0 hata**
+  (6,26sn); Api.IntegrationTests **exit0 / 0 uyarı / 0 hata** (47,97sn). İlk Logistics.UnitTests denemesi yalnız eksik
+  owner assets nedeniyle NETSDK1004/exit1 verdi; mevcut projeye dar restore exit0 ve ardından final build exit0 alındı.
+  Frontend son `npx tsc -b` **exit0**; bu delta C# kaynağını değiştirmedi. Her native süreç başlangıcında >=2GiB
+  fiziksel RAM doğrulandı, exit'ler anında ve ham loglar depodışında korundu. `git diff --check` exit0.
+- **SOURCE_COMPLETE — dar S21 kapanış kaynağı.** HTTP/unit/SQL/Vitest/browser/CI runtime **NOT_RUN**.
+  Yeni model/migration/permission veya guard allowlist girdisi yok. Merkezi ilişkisel envanter/grup/pin üretimi ve
+  exact-head K3 kabulü koordinatörde; bu beş fact'in sınıfı `ManufacturingSqlServerRelationalAcceptanceTests`'tir.
+
+### ALC-S5 — gerçek ilgili fatura maliyeti owner sağlayıcısı
+
+- SAT-D306/D392/D393/D396: `PurchaseSupplierReturnInvoiceCostReadPort`, Purchasing'in değişmez kabulü, gerçek fatura
+  eşleme defteri, resmî belge kimliği ve en son doğrulanan immutable fatura sürümünü okur. Tek kesinleşmiş satırın
+  tamamı tek kabulün tamamını faturalamışsa yalnız satırın kayıtlı net TL tutarını gerçek Inventory ilk kabulünün
+  ölçülen kg miktarına böler. Vergi/tevkifat, sipariş fiyatı, bugünkü ortalama, miktar birimi veya geçici kur maliyet
+  yerine geçmez. Dövizli faturada kayıtlı satırın resmî fonksiyonel TL tutarı kullanılır; yeniden kur hesaplanmaz.
+- Hiç fatura yok, henüz kesinleşmemiş, kısmi faturalı, birden çok faturalı veya tek net tutarı başka kabulle paylaşan
+  kaynak tek kabul maliyetini kanıtlamaz. Bunlar SAT-D393'ün mevcut elle bedel + istisna onayı yolunda kalır; bu
+  sağlayıcı farklı fiyatları seçmez veya yeni ağırlıklı fiyat/bedel dağıtım politikası üretmez. Null maliyet başarı
+  değildir; ilgili mevcut akış onay gelmeden stok çıkarmaz. Geçerli fakat TL kaynağı olmayan fonksiyonel para birimi
+  de bu dar TL sözleşmesinin okunamayan kaynak sınırındadır.
+- Kanıtlı tam maliyetin pozitif/tam dört basamaklı sözleşmeye sığmaması (ör. 1 TL / 3 kg), bozuk snapshot, yetim
+  veya çelişen eşleme, eksik fiziksel owner proof'u **InvoiceCostInvalid/503** verir; bu durumlar manuel fiyat yoluna
+  çevrilmez ve sessiz yuvarlanmaz. Teknik tamlık kontrolü tamsayı pay/payda ile yapılır. Aktör/şirket/üyelik her await
+  sonrasında yeniden ölçülür; başka şirketin kabulü bilinmeyenle aynı null cevaptır. Consumer mevcut komut izin
+  çitini korur; yeni izin/grant yoktur. Sonradan değişmiş sipariş tedarikçisinden tarihsel fiyat türetilmez.
+- Fiziksel kg, `PurchaseGoodsReceiptHost` üzerinden gerçek Inventory immutable kabul kaynağından gelir; Purchasing
+  başka modül tablosunu okumaz. Mevcut iade servisi bu maliyet okumasını iade transaction'ından önce yapar. Aktif
+  Purchasing transaction'ı varken ayrı Inventory bağlantısına sessiz geçiş yasak olduğundan bu provider açık 503
+  verir; yeni borrowed-reader işi veya transaction sahipliği iddiası yoktur.
+- Altı gerçek SQL fact kaynağı gerçek Purchasing/Inventory participant kayıtlarını, gerçek invoice domain/store
+  geçmişini ve actual host reader'ını kullanır: net/payable/ölçülen kg ayrımı; resmî dövizli satır TL tutarı ve Finance
+  ack öncesi/sonrası; no/pending/partial/multiple/shared-line sınırı; tam dört basamak reddi; fatura/fiziksel kanıt
+  bozulması; await sonrası aktör/şirket/üyelik kaybı; aktif transaction'da 503 ve transaction'a sahip olmama. Test
+  aktörü ve önceden yetkilendirilmiş seed metadata'sı sentetiktir; fiziksel kg veya fatura maliyeti mock değildir.
+- Dar salt-okunur ikinci gözde bulunan tarihsel sürüm kanıtı eksiği kapatıldı: gerçek `InvoiceOrderBindings` aynı
+  source statement'inde company/invoice/line/order/orderLine anahtarıyla okunur; snapshot eşlemesinin tarihsel sipariş
+  sürümü ve tedarikçisi bununla doğrulanır. Tek snapshot alanını 999 sürümüne bozma SQL fact assertion'ı 503 bekler.
+  Güncel sipariş sürümü tarihsel eşlemenin yerine geçmez. Bu kaynak kontrolü bağımsız K3 exact-head imzası değildir.
+- Merkezi gerçek DI kaydı koordinatörde: `IPurchaseSupplierReturnInvoiceCostReadPortV1` →
+  `PurchaseSupplierReturnInvoiceCostReadPort` (scoped). `PurchasingModuleExtensions`, import/ItemType, model/migration,
+  Program, permission ve pin dosyalarına dokunulmadı. Runtime unit/SQL/HTTP/browser/Vitest/CI **NOT_RUN**.
+- Kaynak derlemeleri **exit0 / 0 uyarı / 0 hata**: API 2:41,86; Purchasing.UnitTests 6,37sn; Api.IntegrationTests
+  57,12sn. İlk Purchasing.UnitTests derlemesi NETSDK1004/exit1 verdi; yalnız o mevcut owner projesine dar restore
+  exit0 ardından aynı build tekrarlandı. Yeni paket/sürüm/lock değişimi yoktur; ilk başarısız deneme ve bütün native
+  exit/ham loglar depodışında korundu. Her süreç öncesi ≥2GiB RAM kapısı ölçüldü. EF/DB apply/test koşumu yoktur.
+- **PARTIAL — merkezi DI bekliyor**: bu dar provider ve test kaynakları derlenmiştir; gerçek DI + birleşik kaynak
+  derlemesi koordinatördedir. Eski raporun sağlayıcı yok notunu bu kaynak tamamlar; kabul veya K3 kanıtı yerine geçmez.
+
+### STK-SC36-a — ilk SMM tüketimi için sevk kimliğinden gerçek maliyet izi
+
+- SAT-D419/D422'nin ilk SMM tüketici bağımlılığı için mevcut `IInventoryShipmentCostReadPortV1` sözleşmesine yalnız
+  `GetByShipmentAsync(companyId, shipmentId, cancellationToken)` owner okuması eklendi. Eski üç kimlikli `GetAsync`,
+  sonuç DTO'su ve gerçek DI kaydı değişmedi; başka implementor/test double bulunmadı. Sahte hareket kimliği üretilmez.
+- Inventory'nin kendi şirket filtreli `Commands` kaydında gerçek shipment target + definite-shipment operation ve
+  kendi `Movements` kaynak kimliğinde aynı shipment aranır. Her aday kümesi sıralı `Take(2)` ile sınırlıdır; tam birer
+  kayıt ve immutable result'taki hareket kimliğiyle tam eşleşme şarttır. Sonra eski strict okuyucu gerçek komut,
+  hareket, outbox envelope/payload, LoadingInstructionId/LineId, MovementLineNumber ve orijinal TL damgasını doğrular.
+  Başarılı cevap aynı kaynak fingerprint'ini ve kayıtlı TL tutarını taşır; güncel ortalama/sipariş/fatura fiyatı,
+  USD veya kg oranlaması maliyetin yerine geçmez.
+- Tamamen bilinmeyen ve başka şirkete ait sevk aynı non-disclosing NotFound cevabıdır. Tek tarafı eksik kanonik
+  kaynak, bozuk/çelişkili result veya outbox, birden çok komut/hareket Unreadable'dır; consumer ikisini de mevcut
+  kaynak-hazır-değil/503 sınırına map eder. Başarısız çözümlemede hareket kimliği boş ve satırlar boştur; bu boş
+  kimlik başarıya dönüştürülmez. Her await sonrasında şirket scope'u tekrar ölçülür. Actor/permission ve muhasebe
+  admission çiti tüketicidedir; bu internal port yetki veya SMM tetikleyicisi sağlamaz. Available yalnız fiziksel
+  provenance kanıtıdır; legacy/missing TL damgası ayrıca Unavailable kalır ve finansal maliyet başarısı sayılmaz.
+- Üç yeni gerçek SQL fact kaynağı çift komut/çift gerçek hareket, eksik veya bozulmuş immutable komut bağı ve
+  çözümleme await'i sırasında şirket değişimini kapsar. Mevcut gerçek receipt/average/allocation/shipment/outbox
+  fact'leri yeni yöntemde aynı original TL/fingerprint, sonraki gerçek girişle değişen ortalamadan bağımsızlık,
+  legacy TL eksikliği, outbox bozma ve başka şirket/bilinmeyen ayrımını da doğrulayacak şekilde genişletildi.
+  Owner unit kaynakları iptal ve boş/uyuşmayan şirket/kimliklerde hiç bağlantı açılmamasını kapsar.
+- Yeni model/migration/ham SQL üretim yüzeyi, başka modül tablo erişimi, Program/permission/pin veya SMM producer
+  değişimi yoktur. SQL bozma yalnız test fixture'ındadır. Unit/SQL/HTTP/Vitest/browser/CI runtime **NOT_RUN**;
+  muhasebe/fatura tüketici bağını ve merkezi kapanış kanıtını koordinatör tamamlar.
+- Kaynak derlemeleri **exit0 / 0 uyarı / 0 hata**: API 2:42,02; Inventory.UnitTests 6,83sn; Api.IntegrationTests
+  48,00sn. İlk Inventory.UnitTests denemesi NETSDK1004/exit1 verdi; yalnız o mevcut projenin dar restore'u exit0 aldı.
+  Ardından yeni test assertion'ında parametre/yerel `resolved` adı çakışması exit1 verdi; yalnız testte dar ad düzeltmesi
+  sonrası final build exit0'dır. Üretim kaynağı değişmediğinden başarılı API derlemesi tekrar edilmedi. Yeni paket/sürüm/
+  lock değişimi yok; her süreç öncesi ≥2GiB kapısı ölçüldü, native exit/ilk hata/ham loglar depodışında korundu.
+  **DONE — bu dar owner read kaynak kapsamı**; ilk SMM finansal producer veya uçtan uca kabul iddiası değildir.
+
+### STK-SC36-a — üretim maliyet neslinde değişmez sevk tüketim izi
+
+- URT-D67, SAT-D419/D422 ve doğrudan kullanıcı cevabı #1189/6956807403 için dar teknik kaynak tamamlandı.
+  Mevcut generation transaction'ı ve `FenceLineageAsync` çiti altında gerçek çıkış hareketi/satırı, shipment kimliği,
+  loading-instruction-line, etiket/ürün/sürüm, owner/custodian/konum/blok, özgün kg, tam kök payı, net kök kg ve o çıkışa
+  gerçekten bağlı müşteri dönüş hareketleri/kimlikleri immutable generation history JSON'una kaydedilir. Tam iade edilmiş
+  sevk sıfır net payıyla geçmişte kalır; daha sonraki gerçek dönüş kaydedilmiş neslin geçmişini yeniden yazmaz.
+- Yeni `IInventoryManufacturingConsumedCostLineageReadPortV1.ReadAsync(companyId, generationId, generationVersion)`
+  gerçek scoped Inventory provider'ına bağlıdır. Tek canonical pozitif nesil sürümü okunur; şirket her await sonrasında
+  tekrar ölçülür. Kayıtlı history/başlık/output-set ve varsa gerçek event envelope/reference bütünlüğü doğrulanır.
+  `Available`, `NotFound`, `Unreadable` ve `UnreadableLegacy` ayrıdır. Eski JSON'da iz bulunmaması bugünkü material
+  graph'ı, sıfır liste veya güncel ortalama ile doldurulmaz. Consumer'ın aktör/şirket/izin ve gerçek Sales/Logistics/
+  Accounting admission çiti ayrıca zorunludur; bu internal port maliyet veya fiş yetkisi vermez.
+- Kaynak sürümü `inventory.manufacturing-consumed-cost-lineage.v1`'dir. Her output kanıtının hash'i gerçek şirket,
+  output/receipt/root kimlikleri ve tam fiziksel snapshot'ı bağlar. Outbox mevcut parasal alanları korur; büyük fiziksel
+  listeyi aynı transaction'da yazılan history JSON'unun generation/version/SHA-256 referansıyla taşır. Mevcut movement
+  bound'u genişletilmez; yeni fiziksel iş sınırı konmaz. 4096 gerçekçi kanıt satırının büyük history/küçük event referansı
+  sözleşme kaynağında kapsanır. Null ekler eski JSON'da yazılmaz; mevcut request hash'i ve replay biçimi korunur.
+- `RecordedAtUtc` doğrudan gerçek immutable hareketten gelir. Sonradan eklenmiş outbox rowversion'ı ilk oluşturulma
+  sırası diye sunulmaz; `CreationSequence` bu sürümde null'dır. Tam eşit kayıt zamanında önce kaydedilen sevk kanıtı
+  bulunmadığından o eşitlik çözümlenmemiş kalır; GUID sırası işletme kuralı değildir. Parasal pay/yuvarlama/artık,
+  ikinci SMM fişi, Accounting journal veya geçmiş orijinal TL damgası bu değişiklikte hesaplanmaz/değiştirilmez.
+- Yedi sözleşme test metodu (12 case), mevcut tam-pay/1÷3/dönüş model kaynakları ve altı gerçek SQL fact kaynağı
+  eklendi: aynı-TX rollback/commit+outbox bağı; sonraki gerçek dönüşte geçmişin korunması; önceki gerçek dönüşün
+  sıfır net izde kalması; bozuk/legacy history'de güncel graph fallback yasağı; başka şirket/SQL await sonrası scope
+  kaybı; immutable outbox update yasağı ve bozuk event bağı. SQL veri bozma ve scope kaybı fault'ları sentetiktir;
+  asıl hareket, generation participant, history/outbox ve transaction gerçektir. Bütün runtime unit/SQL/HTTP/Vitest/
+  browser/CI **NOT_RUN**; kaynak derlemesi test çalıştırması değildir.
+- Kaynak derlemeleri **exit0 / 0 uyarı / 0 hata**: API 2:38,67; Inventory.UnitTests 6,69sn; Api.IntegrationTests
+  44,77sn. İlk Integration denemesi test fixture'ında overload tür belirsizliği CS0121/exit1 verdi; yalnız açık
+  `InventoryCustomerReturnRequestV1` tipiyle düzeltilip tekrar derlendi. Başarılı üretim kaynakları gereksiz tekrar
+  derlenmedi. Her native süreç öncesi >=2GiB RAM ölçüldü; ilk hata, exit kodları ve ham loglar depodışında korundu.
+  Yeni paket/restore/model/migration/EF/DB apply, başka modül tablo okuması, ham SQL üretim yüzeyi veya allowlist yok.
+- **SOURCE_COMPLETE — yalnız bu dar immutable lineage owner kapsamı.** Finansal consumer eşlemesi ve canonical
+  generation discovery koordinatörde/Accounting owner'ındadır: gerçek event/proposal kimliğiyle okunan nesilden kendi
+  indexed attribution kaydını üretmek uygundur; shipment'tan sınırsız history JSON taraması bu portta yoktur. Merkezi
+  ilişkisel fact envanteri/grup/pin üretimi, birleşik exact-head doğrulama ve K3 kabulü koordinatörde kalır. Altı fact
+  `InventorySqlServerRelationalAcceptanceTests.ManufacturingConsumedLineage` partial kaynak dosyasındadır; enclosing
+  SC36-a veya uçtan uca SMM akışı bu dar tamamlamayla DONE sayılmaz.
+
+
+## SAT-SC34 — gerçek resmî fatura iptal producer kaynağı
+
+- **PARTIAL:** SAT-D96, SAT-D235/SAT-D249 ve doğrudan kullanıcı cevapları
+  #1189/6957924089 ile #1189/6951274771 uygulanır. Normal ve fason kesinleşmiş faturada eski onay,
+  resmî eşleştirme, tutar, taksit ve kesinleştirme kanıtı korunarak ayrı `OfficiallyCancelled` terminal
+  durumu kaydedilir. Eski taslak iptal komutu genişletilmedi. Mevcut `sales.invoices.finalize` dışında
+  yeni izin, grant, rol veya Critical sınıfı seçilmedi.
+- Ayrı fiyat içermeyen aday seçimi, kayıt ve Finans yeniden teslim ekranı/endpointleri vardır. Kullanıcı
+  GUID veya dış kanıt girmez. Mevcut detail ekranları aynı paneli kullanır; salt kesinleştirme yetkilisi
+  için bağımsız purpose sayfası `SalesOfficialInvoiceCancellationPage` export edilir. Merkezi rota/nav
+  bağlama koordinatördedir; önerilen yol `/satis/fatura-resmi-iptal`, mevcut finalize capability'si.
+- Dış resmî iptal durumu yalnız `ISalesOfficialCancellationEvidenceReadPortV1` actual owner cevabından
+  alınır. Q12'nin doğrudan cevabı #1189/6959047458 mevcut gerçek provider olmadığını doğrular;
+  gelecekteki AI/ePortal fikri bugün yeni entegrasyon veya aktivasyon yetkisi değildir. Kayıtlı default provider açık `Unavailable`
+  döndürür. Yetkili beyanı, fatura numarası veya yüklenmiş dosya gerçek iptal kanıtı sayılmaz. Bu yüzden
+  mevcut üretim bileşiminde kayıt komutu **503 ile kapalıdır**; doğrulanmamış başarı yoktur.
+- Gerçek proof yolu: CompanyId/actor/fresh finalize authority, expected version, değişmez request hash,
+  aynı anahtarın özgün cevabı/terminal reddi ve winner replay; ayrı immutable fact/attempt/delivery
+  tarihçeleri. Sales Serializable owner işlemi, fason claim-range önce header sırası, normal SQL share
+  release, özgün admission snapshot, outbox ve gerçek Audit owner yazıcısı aynı transaction'dadır.
+  Audit draftı Sales SaveChanges öncesi owner portundan boşaltılır; yeni draft legacy sidecar'a gitmez.
+- `sales.invoice.cancelled.v1` mevcut Accounting consumer sözleşmesini kullanır; envelope EventId ile
+  CancellationId aynıdır. Muhasebe açık dönem/tarih ve farklı onaylayan kapıları Accounting owner'da
+  kalır. Finans ayrı, açık kullanıcı retry'sidir: gerekiyorsa önce özgün immutable admission kimlik ve
+  tutarları teslim edilir; ardından aynı cancellation kimliğiyle gerçek Finance cancel portu çağrılır.
+  Aktif tahsis bırakma ayrı açık onaydır; varsayılan false. Yeni banka/kasa veya ikinci SMM etkisi yoktur.
+- Normal Sales reverse reader, gerçek değişmez iptal fact/event kanıtı bulunan State7'yi ve eski iptal
+  edilmiş faturanın yanında yeni aktif fatura bulunmasını doğrular; eski finalization uydurulmaz.
+- Altı gerçek-SQL kabul fact kaynağı: normal fact/header/share/audit/outbox atomikliği; gerçek Audit append sonrası
+  rollback; fresh authority kaybı; aynı anahtar yarışı; immutable guard'lar; fason actual weighing claim
+  bırakma ve yeni fatura seçimi; boş depoda gerçek Down SQL çalışması/rollback ve dolu geçmişte Down reddi.
+  Birim/model/HTTP strict contract, Finance gerçek adapter sözleşmesi ve Vitest/DOM kaynakları birlikte yazıldı.
+  Belirsiz sonuçta remount sonrasında görünen neden/ayırma onayı da frozen özgün payload'dan gelir.
+- **Kaynak derlemeleri exit0, sıfır uyarı/hata:** API 2:48,22; Sales.UnitTests 13,60sn;
+  Api.IntegrationTests 1:09,01. İlk Sales.Unit denemesi NETSDK1004 eksik assets ile exit1 oldu;
+  yalnız mevcut owner test projesinin dar restore'u exit0, sonra yeni testteki yanlış özellik adı
+  CS1061 gerçek `HoldsShares` ile düzeltildi. Son başarılı derleme yeni migration ve bütün test kaynaklarını içerir.
+  Frontend `npx tsc -b` ilk deneme exit2 (eksik signal argümanı), düzeltmeden sonra exit0;
+  son frozen payload/remount deltası dahil yeniden **exit0**. Her süreç öncesi >=2GiB RAM ölçüldü;
+  ilk hatalar, native exit ve ham loglar depodışında korundu. Her iki süreç lease'i açıkça bırakıldı.
+- Gerçek EF üretimi **exit0**: `20261117195343_AddSalesOfficialInvoiceCancellation`. Down51919 ve immutable
+  mutation guard'ları51916/51917/51918 aktif yedi owner kaynağı ve main/train union tekrar taramasında çakışmasızdır.
+  Up üç yeni şirketli tablo/FK/index ve terminal durum constraint'lerini üretir; yedi sabit SQL operation
+  üç append-only trigger ve mevcut lifecycle/finalization/share guard'larının dar geçişini kurar. Down ilk SQL,
+  herhangi bir yeni geçmiş veya State7 fatura varsa bütün Drop'lardan önce 51919 ile reddeder, aksi halde eski
+  trigger'ları geri kurar. Önceki migration'lar değiştirilmedi; Designer/snapshot üreticiden gelir, backfill yoktur.
+  Migration-only sabit guard SQL yeni owner yüzeyi olarak K3 review
+  bekler; runtime SQL/bypass/context allowlist genişletilmedi.
+- Runtime birim/SQL/Vitest/browser/CI **NOT_RUN**. Source/pin/OpenAPI/ilişkisel envanter/grup üretimi,
+  gerçek dış provider kabulü ve iki bağımsız exact-head K3 incelemesi ayrıca gereklidir.
+- Merkezi bağlama: `AddSalesFinanceCancellationHost()`; Sales module kendi service/store ve unavailable
+  evidence provider'ını kaydeder, `MapSalesEndpoints` kendi yeni endpointlerini bağlar. Yeni outbox
+  declaration/pin sayımı coordinator producer'ında yeniden üretilmelidir. Enclosing SAT-SC34 bu checkpoint
+  ve test kaynaklarının varlığıyla DONE sayılmaz.
+- STK-S8 kapsam ayrımı: mevcut e-İrsaliyesiz gerçek plan/sevk/iptal/kabul/fark akışının kaynakları önceki
+  checkpoint'lerde vardır. 14 Ekim yaşam döngüsü karar4 e-İrsaliye bağlantısını opsiyonel, sağlayıcı aktivasyonunu
+  ayrı tutar. Linked e-belge için gerçek GİB gönderim/iptal owner kanıtı yokluğu gelecekteki dış kaynak bağlantısıdır;
+  numaradan durum üretilmez, mevcut 503 korunur. Bu not mevcut planı sessiz DONE/DEFERRED yapmaz ve bugünkü
+  resmî fatura iptal provider eksikliğini kullanılabilir iş akışı diye sunmaz.
+
+## STK-S3 — kullanılmayan fason ayırmasını ayrı yetkili komutla bırakma
+
+- LOJ-D1/D3, DEC-STK-005 ve doğrudan kullanıcı cevabı #1189/6957941048 için ayrı komut kaynağı
+  hazırlandı. Sevk kendiliğinden bırakmaz. Mevcut `inventory.physical-allocation.write` şirket geneli
+  yetkisi, gerçek aktör/şirket üyeliği ve her asenkron sınırdaki fresh authority kullanılır; yeni izin,
+  grant, rol veya genel stok raporu okuma gereği yoktur.
+- Gerçek şirketli fason ayırma kaynağından en çok 50 kayıt ve keyset cursor ile seçim yapılır.
+  Etiket, müşteri sahipliği, şirket saklayıcılığı ve ilk ayırmanın değişmez Sales/Manufacturing kanıtı
+  doğrulanır. Kullanıcı GUID, bırakılacak kg, sahiplik veya dış modül kanıtı giremez.
+- Ayrı Serializable owner işlemi önce mevcut Sales satır kilidini, sonra Inventory fiziksel doğrulama
+  kilidini alır; allocation/label yeniden yüklenir. Beklenen sürüm, değişmez istek/aktör/şirket/anahtar
+  bağı, özgün başarı/terminal ret replay'i ve gerçek Audit owner yazımı aynı transaction içindedir.
+  Belirsiz commit veya doğrulanamayan rollback başarı sayılmaz. Başka modül tablosuna erişim yoktur.
+- Yalnız `RemainingKg` bırakılır; kullanılan pay ve özgün tahsis toplamı korunur. 100 kg ayırma ve
+  gerçek 80 kg sevk kaynağı için cevap 20 kg bırakılan / 80 kg önceden kullanılan şeklindedir.
+  Mevcut fiziksel 20 kg ile 80 kg eski hareket değişmez; yeni fiziksel, maliyet veya outbox olayı yoktur.
+- Bağımsız purpose ekranı `SubcontractAllocationReleasePage`, rota `/stok/fason-ayirma-birak`,
+  mevcut `inventory.physical-allocation.write` capability'sini kullanır. Gerçek aday seçimi, gerekçe,
+  donmuş payload ve aynı anahtarla belirsiz sonuç retry'si, yükleniyor/boş/401/403/404/409/çevrimdışı/
+  503/bozuk cevap kaynakları vardır. UI kg veya stok uygunluğu hesaplamaz.
+- Birim yetki/şirket/aktör/scope kaybı ve bozuk owner cevabı; iki HTTP strict contract; üç gerçek SQL
+  fact kaynağı (gerçek reserve→80 kg ship→20 kg release/replay, Audit append+late fence rollback,
+  eşzamanlı sürüm ve terminal replay/aktör/payload çitleri); codec ve DOM Vitest kaynakları yazıldı.
+  SQL fixture'ın Sales/Manufacturing kimlik kanıtı sentetiktir; Inventory hareketi, kilidi, Audit owner'ı
+  ve transaction gerçektir. Cross-module uçtan uca kabul diye sunulmaz.
+- Kaynak checkpoint'i `372e27303`, tek SQL fixture nullability düzeltmesi `7b4c5532f`.
+  **Kaynak derlemeleri exit0 / 0 uyarı / 0 hata:** API 2:48,32; Inventory.UnitTests 7,74sn;
+  Api.IntegrationTests 45,03sn. İlk Integration denemesi yeni fixture'ın nullable ProductVersion
+  alanında CS8604/exit1 verdi; gerçek sürüm `Assert.IsType<string>` ile kanıtlanarak düzeltildi.
+  Değişmeyen üretim kaynaklarının başarılı API/birim derlemeleri gereksiz tekrarlanmadı; başarılı
+  Integration bu test düzeltmesini içerir. Frontend `npx tsc -b` **exit0**. Her süreç öncesi >=2GiB RAM
+  ölçüldü; ilk hata, native exit ve ham loglar depodışında korundu. Her iki lease açıkça bırakıldı.
+- **SOURCE_COMPLETE — yalnız bu ayrı açık bırakma komutunun kaynak kapsamı.** Runtime birim/SQL/HTTP/
+  Vitest/browser/CI **NOT_RUN**. Yeni paket, model/migration/EF, InventoryStore/DbContext/first-cost
+  değişikliği veya allowlist genişletmesi yoktur. Merkezi bağlama koordinatördedir:
+  `AddInventorySubcontractAllocationRelease()` ve `MapInventorySubcontractAllocationReleaseEndpoints()`.
+  Purpose ekranının merkezi teknik capability'si `inventory.subcontract-allocations.release-unused`,
+  arkasındaki mevcut ERP izni `inventory.physical-allocation.write` olarak ayrı tutulur; yeni izin/grant
+  değildir. Bu merkezi cap/mount deltası owned kaynak derlemesinden ayrıca birleşik head'de doğrulanır.
+  Kaynak/pin/OpenAPI/ilişkisel envanter/grup üretimi ve exact-head kabul ayrıca gereklidir; enclosing
+  STK-S3 durumunu yalnız bu dar checkpoint ile yükseltme yetkisi alınmaz.
+
+## STK-SC36-a — ilk alış maliyetinde tam müşteri iadesinin sıfır kanıtı
+
+- BS-1 ve SAT-D303 kapsamındaki mevcut ilk maliyet tanıma kaynağına dar teknik tamamlamadır.
+  Güvenilen Inventory soy okuyucusu gerçek pozitif sevki ve ona bağlı gerçek müşteri iadesini
+  doğrulayıp net sevk kg değerini sıfır bulursa, aynı işlemde mevcut maliyet farkı outbox olayı
+  üretilir. Tamamen stokta kalan, hiç sevk edilmemiş mal için sıfır SMM kaynağı üretilmez.
+- Mevcut `PhysicalSourceJson` gerçek shipment, movement, satır, kök payı ve return kimliklerini
+  değişmez olarak taşır. Maliyet tutarı, para profili, exact oran, yuvarlama, fiziksel hareket ve
+  özgün movement stamp değiştirilmez. Yeni model, migration, EF, izin, hesap veya fiş yoktur.
+- Özgün uygulama replay'i önce okunur; önceki sonuç yeniden hesaplanmaz ve eski sıfır kaynaklara
+  geriye dönük olay eklenmez. Yeni sıfır olay, uygulama/pool/sürüm çiti/Audit ile aynı transaction'a
+  bağlıdır. Accounting kaynak kabulü ve sıfır approval witness kendi owner kapsamındadır;
+  bu producer düzeltmesi hayalî sıfır journal üretmez.
+- İki birim regresyon kaynağı: gerçek tam iade şartı ve üçte bir kök payında tam iade/bozuk kaynak.
+  Üç gerçek-SQL fact kaynağı: hiç sevk edilmemiş stokta olay yokluğu; tam gerçek iade sonrası tek
+  sıfır olay ve değişmeyen movement/stamp geçmişi/replay; başarısız save sonrası pool/sürüm/olay
+  rollback ve aynı özgün kaynakla sonraki kayıt. Gerçek SQL çalıştırılmadı.
+- **SOURCE_READY; kaynak derlemeleri QUEUED.** Bu delta için birim/SQL/runtime/CI **NOT_RUN**.
+  Merkezi Accounting host okuyucusunun sıfır gerçek sevk/iade bileşenini kabul bağı ayrı owner
+  düzeltmesidir; bu kayıt enclosing dilim için DONE veya kullanılabilirlik iddiası değildir.
+
+## SAT-SC34 — KLN-D100 gerçek müşteri iadesinin kalan miktara bağlanması
+
+- Canlı kaynak kapanış denetimi, `SalesDraftService.DeliveryProgress` okumasının onaylı fiziksel
+  müşteri iadesini sıfır varsayarak mevcut hesaplayıcıya geçirdiğini gösterdi. Kilitli KLN-D100 ve
+  KLN-D106 uyarınca 100 kg sipariş / 100 kg gerçek sevk / 20 kg onaylı iade için kalan 20 kg olmalıdır.
+- Aynı mevcut `ISalesOrderCustomerReturnReadPortV1` artık her progress okumasında çağrılır.
+  `CustomerReturns` doğrulaması şirket/sipariş/satır/birim/ondalık ve toplam sınırlarını korur;
+  mevcut `SalesOrderLineOpenQuantity` net sevkten kalan ve fazla miktarı hesaplar. Özgün gross
+  Shipped/Delivered alanları değişmez; frontend veya yeni owner formülü yoktur. Wire şekli değişmedi,
+  DTO açıklaması gerçek net sayaç anlamına hizalandı.
+- Her owner await'i mevcut `GuardedAsync` ile özgün actor/company ve güncel read authority'ye
+  bağlıdır. Eksik veya hata veren iade kaynağı 503, bozuk veya sevki aşan iade 503 verir; okunamayan
+  iade sıfıra çevrilmez. Okuma attempt, Audit, stok veya muhasebe kaydı oluşturmaz.
+- Odaklı birim kaynakları gerçek dönüş bağını, kalan/fazla miktarı, yeni okuma, eksik/bozuk
+  kaynak ve son await'te actor/company/permission kaybını kapsar. Eski teslim testleri ve iptal/
+  kapatma tarihçesinin iki test fixture'ı artık açık empty-return owner cevabı taşır; production
+  fallback yoktur. Mevcut iki gerçek-SQL customer-return fact kaynağı progress GET, pending/
+  rejected hariç tutma, approved miktar, tenant ve salt-okuma yan etkisizliğiyle genişletildi.
+- **SOURCE_READY; kaynak derlemeleri QUEUED.** Bu delta için runtime birim/SQL/HTTP/CI **NOT_RUN**.
+  Model, migration, izin veya DTO shape değişmedi. KLN-D100'de ayrıca istenen teslim edilmiş fakat
+  faturalanmamış miktar bu progress DTO'sunda henüz yoktur; bu düzeltme o sunum açığını kapatmış
+  sayılmaz. Enclosing SAT-SC34 dış resmî iptal sağlayıcısı sınırı da ayrıca korunur.
+
+## STK-S3 / STK-S8 / SAT-SC34 — sınırlı kaynak kapanış denetimi
+
+Denetim tabanı `2b281de7c53294e064201277c042f5859de0ea9e`; ilgili owner kaynakları okuma boyunca
+değişmedi. Merkezi Settings/Program WIP'i bu denetimin dışında bırakıldı; mevcut mount'lar committed
+Program kaynağında doğrulandı. Bu bir K3 incelemesi veya runtime kabulü değildir.
+
+| Mevcut kapsam | Gerçek kaynak zinciri | Kaynaktan ayrı kalan kapı |
+|---|---|---|
+| STK-S3 LOJ-D1..5 | `LogisticsSubcontractDeliveryHost` → Sales/Manufacturing V2 borrowed okuyucular → `InventorySubcontractDeliveryParticipant` müşteri mülkiyeti/şirket custody → Logistics store; üç `SubcontractDeliveryPages` ekranı, gerçek bounded seçiciler ve endpoint mount'ları vardır. Kaynak `b6774f25c`, fiziksel ret devamı `dfef53c6a`. | Logistics provider 1.5'teki sekiz özgün deklarasyon kendi kabul kanıtını beklediği için staged false kalır. |
+| STK-S3 LOJ-D12/D13/D14 | Gerçek teslim tartısı typed reader ve Sales kg paylaşımı; gerekçeli append-only tartı düzeltmesi/active invoice claim çiti; aynı Sales risk gate, bütün talimatta transient-dominance ve tek-use tüketimi vardır. Host, HTTP, SQL ve DOM test kaynakları mevcuttur. | SQL/browser/failure kabulü çalıştırılmadı; kaynak varlığı publish veya grant değildir. |
+| STK-S3 ayrı unused-release | `InventorySubcontractAllocationReleaseStoreV1` ve service → gerçek endpoint → bağımsız `SubcontractAllocationReleasePage`; `372e27303`/`7b4c5532f`, merkezi DI/route/cap mount'u vardır. | Yalnız kullanılmayan pay bırakılır; enclosing S3 kabul kapısı bundan ayrı kalır. |
+| STK-S8 plan/sevk/iptal/kabul/fark | `TransferPlanPanel`, `TransferDispatchPanel`, `TransferCancelPanel`, `TransferReceiptPanel`; gerçek purpose adayları/kabul belgesi, Settings kantar ve Logistics çıkış owner'ı/adapterları bağlıdır. Checkpoint `1127e5993`; API/Inventory/Counterparty/Organization/Integration ve TSC kaynak derlemeleri raporda exit0'dır. | E-İrsaliyesiz kaynak yolu vardır. Linked e-belgede gerçek GİB gönderim/iptal provider'ı yoktur; typed missing/unavailable 503 korunur, numaradan dış durum türetilmez. Runtime kabulü ayrıca eksiktir. |
+| SAT-SC34 özgün hesap/guard | Gerçek fason invoice service net tartı paylaşımını tüketir; HeaderRevision aktif future-allocation çiti vardır. Bu checkpoint onaylı iadenin progress Remaining bağı eksiğini kapatır. | Teslim edilmiş fakat faturalanmamış miktarın ayrı ekran alanı hâlâ gerçek kaynak/sunum eksiğidir; risk tutarı bu miktarın yerine geçmez. |
+| SAT-SC34 resmî iptal kaydı | `SalesOfficialInvoiceCancellationServiceV1` → immutable Sales store/event → `SalesFinanceCancellationHost` ve Accounting consumer; normal/fason ekran/API, gerçek terminal/replay test kaynakları ve EF checkpoint `5455cb849` vardır. | Q12'ye göre gerçek dış provider bugün yoktur. `UnavailableSalesOfficialCancellationEvidenceReadPortV1` başarı üretmez; bu dış kaynak açığı STK-S3'e taşınmaz. |
+
+STK-S3 eski owner ve merkezi kaynak derlemeleri `W8_uretim`/`W8_ENTEGRASYON` kayıtlarında exit0'dır;
+ayrı unused-release ve resmî iptal owner build/EF/TSC kanıtları yukarıdaki bölümlerdedir. Bu dar
+denetimde süreç başlatılmadı, sekiz false deklarasyon veya diğer publish/grant ayarı değiştirilmedi.
+
+## SAT-SC34 — KLN-D100 gerçek faturalanan ve faturalanmamış miktar kaynağı
+
+- Yukarıdaki kapanış denetiminde açık kalan miktar sunumu bu kaynak devamında tamamlandı.
+  Yeni `ISalesOrderInvoicedQuantityReadPortV1`, yalnız kendi şirketinin normal ve fason fatura
+  kayıtlarını keşfeder. Normal satır için mevcut gerçek `ISalesFinalizedShipmentClaimReadPortV1`
+  değişmez finalization/outbox/pay ve resmî iptal kanıtını doğrular; yalnız aktif kesinleşmiş claim
+  sayılır. Maliyet için ayrıca tutulan tarihsel kesinleşme aktif faturalanan miktar değildir.
+- Fason satır için mevcut gerçek lifecycle store, değişmez finalization/match/kaynak kimlikleri
+  ve özgün finalized outbox payload'u birlikte doğrulanır. Draft, bekleyen, onaylı fakat kesinleşmemiş,
+  reddedilmiş veya iptal edilmiş fatura sayılmaz. Gerçek kesinleşmiş satır miktarı ve kendi birimi
+  alınır; fiyat, vergi, risk tutarı, kg oranı veya bugünkü fiziksel stok kullanılmaz. Fiziksel iade,
+  önceki checkpoint'teki net teslim düzeltmesidir; kendiliğinden finansal fatura iptali sayılmaz.
+- Aynı mevcut sipariş read yetkisi ve özgün actor/company her owner/DB await'i çevresinde yeniden
+  ölçülür. Başlangıç/son discovery sürümleri uyuşmazsa, kanıt bozuk/eksik/legacy ise veya bounded
+  okuma tamamlanamazsa miktar bilinmiyor kalır. Teknik okuma sınırı yeni fatura yazım sınırı değildir.
+  Tam ve boş owner kaynağı sıfırı kanıtlar; eksik provider veya başarısız okuma sıfıra çevrilmez.
+- Mevcut `SalesOrderLineOpenQuantity` tek hesaplayıcısı gerçek faturalanan miktarı alır. Progress
+  DTO'suna null olduğunda yazılmayan `invoiceProgress` alanı eklenmiştir: `invoiced`,
+  `deliveredNotInvoiced`, `sourceVersion`. Eski cevap şekli korunur. Strict frontend decoder
+  bu ek kanıtı doğrular; ekran backend miktarlarını aynen, eksik kanıtta “Bilinmiyor” gösterir.
+  Remaining faturadan bağımsız net sevkten hesaplanmaya devam eder; UI hesap yapmaz.
+- Birim kaynakları gerçek miktar toplama/net fiziksel iade, known-zero ile unavailable ayrımı,
+  bozuk tenant/satır/birim/ölçek/duplicate/proof ve actor kaybını kapsar. Sentetik HTTP sözleşme
+  ve DOM/decoder kaynakları fiyat içermeyen additive alanı ve eski null-omit cevabı kapsar.
+  Gerçek SQL fact kaynakları normal kesinleşme/tenant/resmî iptal, company fence kaybı ve gerçek
+  owner iptalinin iki discovery arasına girmesinde Unavailable sonucunu kapsar; fason lifecycle
+  SQL kaynağı kesinleşmiş satırları ve iptalden sonraki Draft replacement'ın hariç tutulmasını doğrular.
+  Kontrollü interleaving hook SQL stres/race koşumu diye sunulmaz.
+- **SOURCE_READY; kaynak derlemeleri QUEUED.** Runtime birim/SQL/HTTP/Vitest/browser/CI **NOT_RUN**.
+  Yeni model, migration, EF, izin veya genel read grant yoktur. Sales module gerçek reader'ı
+  `SalesDraftService` bağına kaydeder; mevcut delivery-progress endpoint'i ve gerçekleşme ekranı
+  tüketir. Merkezi OpenAPI ve sözleşme pin'leri coordinator üretiminde yeniden üretilmelidir.
+  Resmî dış iptal provider'ının bugün yokluğu ayrı dış kaynak sınırı olarak korunur; bu checkpoint
+  sekiz özgün Logistics staged deklarasyonunu veya başka kabul/publish kapısını değiştirmez.
+
+
+### STK-S3 / SAT-D417 — ayrı plan üstü onay ve gerçek kullanım kaynağı
+
+- Kaynak dayanağı: SAT-D406(2), SAT-D417 ve doğrudan kullanıcı cevabının #1189/6963301286
+  aktarımı. Talimat 100 olarak kalır; ek 20 ayrı istisna olarak hazırlanır ve Satış Müdürü
+  anlamındaki ayrı izinle onaylanır. Literal rol kontrolü, grant veya Critical sınıfı yoktur.
+  Yeni bir hazırlayan/onaylayan ayrılığı seçilmemiştir.
+- **PARTIAL — SOURCE_CHECKPOINT, EF ve kaynak derlemeleri QUEUED.** Gerçek şirket/satır
+  kaynaklı öneri, tek forward onay, açık istisna seçimi, immutable load/ship kullanım satırları,
+  özgün idempotency cevapları ve aynı işlem audit kaynağı yazılmıştır. Onay stok ayırmaz.
+  Fason yolda açık ayrı reserve komutu mevcut Inventory allocation satırlarına yeni kimlikle
+  ayırır; orijinal ayırma/talimat değişmez. Tek fiziksel sevk hareketi gerçek ana ve ek
+  ayırma paylarını birlikte tüketir. Fiziksel stok, mevcut sipariş ve risk kapıları korunur.
+- Talimat detayı, Sales loading okuması ve operasyon özeti ayrı nullable approvedPlanExcess
+  kanıtını taşır; eski null şekli ek kapasite değildir. Açık plan her talimatta max(0,
+  instructed−shipped) olarak alınır; aşım başka talimatın plan payını eksiltmez. Fiyat/para
+  hesabı veya yeni miktar toleransı yoktur.
+- Yeni komutlar ve ek kullanım için ayrı Serializable host yolu, commit öncesi aynı
+  actor/company/izin çiti ve doğrulanmış rollback kullanılır. Eski komutların isolation
+  davranışı değiştirilmemiştir. Inventory model/snapshot değişikliği yoktur.
+- Birim, strict sözleşme, HTTP ve gerçek SQL fact kaynakları yazılmıştır. SQL kaynakları
+  ayrı onay/kullanım/özgün replay/tenant, rollback sonrası aynı anahtar, eşzamanlı tek cap
+  tüketimi ve fason gerçek reserve→load→tek movement ship zincirini kapsar. Frontend strict
+  decoder, bağımsız onay sayfası, hazırlama, açık kullanım ve ayrı rezervasyon formları;
+  frozen retry/remount ve hata durumları için Vitest kaynakları vardır.
+- Kaynak kontrolleri: git diff --check exit 0. Runtime birim/HTTP/SQL/Vitest/browser/CI
+  **NOT_RUN**; bu checkpoint kaynak kabulü, production veya K3 review değildir.
+- Logistics EF ileri migration beklenmektedir: 51817 Down, 51818 forward-only onay,
+  51819 immutable kullanım, 51820 immutable ek ayırma mapping guard rezervasyonları.
+  Üretici çalışmadan migration/snapshot elle yazılmaz. Merkezi Program/cap/izin/OpenAPI/
+  recovery/guard/test envanterleri coordinator bileşiminde tamamlanır. Sekiz özgün staged
+  Logistics deklarasyonu ve yeni staged hazırlama/onay kapıları değiştirilmemiştir.
+
+### STK-S3 / SAT-D417 — EF ve son kaynak derlemeleri
+
+- Kaynak checkpoint'leri `b60114d01` ve `2f34ab915`; merkezi mount/izin/cap bağımlılığı
+  `50dad3b18`, no-ff birleşim `1f84ee850`. Talimat değişmeden ayrı onay, açık ek ayırma,
+  gerçek yükleme ve tek fiziksel sevk kaynak zinciri tamamlandı. Kaynak durumu
+  **SOURCE_READY**; son metadata deltası merkezi birleşik API derlemesini bekler.
+  Bu kayıt runtime kullanılabilirlik, bağımsız review veya K3 kabulü değildir.
+- Gerçek EF üreticisi `AddLogisticsShipmentPlanExcess` komutunu exit 0 ile çalıştırdı.
+  Migration `20261117233641_AddLogisticsShipmentPlanExcess`, designer ve snapshot üretildi.
+  Yalnız yeni migration'ın kontrollü guard penceresinde Down `51817`, forward-only onay
+  `51818`, immutable kullanım `51819` ve immutable ek ayırma mapping `51820` eklendi.
+  Güncel yedi aktif çalışma alanı ve main/train/ilgili branch kaynakları üretimden önce
+  tekrar tarandı; bu numaralarda çakışma bulunmadı. Eski migration değiştirilmedi.
+- Same-key/different-payload unique yarışındaki recovery lookup başlangıç lookup'ıyla
+  aynı hata çevirisine ve son actor/company/izin çitine alındı: uygun terminal sonuç 409,
+  kaybolmuş yetki 403 kalır. Recovery exception'ı 503'e düşürmez; kaynak regresyonları
+  yazıldı. SQL decimal18,3 miktarları InvariantCulture `0.###` ile kanonik yazılır;
+  tr-TR/de-DE altında 20.000→20 ve 20.125→20.125 vektörlerinde ek yuvarlama yoktur.
+
+| Kaynak doğrulaması | Sonuç ve kapsam |
+|---|---|
+| API build | Exit 0, sıfır uyarı/hata (`api-final-pre-ef.log`). Son normal load/ship 409 metadata ekini kapsamaz; bu iki bildirim merkezi son API build'inde derlenecek. |
+| Gerçek EF add | Exit 0 (`ef-add.log`); DB apply yapılmadı. |
+| Logistics.UnitTests build | Exit 0, sıfır uyarı/hata (`logistics-unit-build-retry.log`). |
+| Inventory.UnitTests build | Exit 0, sıfır uyarı/hata (`inventory-unit-build.log`). |
+| Sales.UnitTests build | Son tüketici kaynakları dahil exit 0, sıfır uyarı/hata (`sales-unit-build-final.log`). |
+| Api.IntegrationTests build | Son SQL/HTTP kaynakları dahil exit 0, sıfır uyarı/hata (`integration-build-retry.log`). |
+| `npx --no-install tsc -b` | Son frontend düzeltmesi dahil exit 0 (`tsc-after-fix.log`). |
+| Runtime birim/HTTP/SQL/Vitest/browser/CI | **NOT_RUN**. |
+
+Build'ler seri, `--no-restore -m:1 -nr:false -p:UseSharedCompilation=false
+-p:OpenApiGenerateDocumentsOnBuild=false -v:q` ile ve her süreç öncesi en az 2 GiB boş
+fiziksel RAM doğrulanarak alındı. Eksik assets için yalnız mevcut pinli test projeleri
+dar restore edildi; paket/sürüm/lock/config değişmedi. Native exit ve ham loglar depodışı
+korundu. İlk CA2200 derleme hatası, NETSDK1004 assets hatası, Integration test kaynağı
+derleme hataları ve ilk iki TS2367 TSC sonucu silinmedi veya PASS sayılmadı. Yanlış yola
+uygulanamayan editin ardından aynı kaynakla gereksiz TSC tekrarı yapıldığı da yöntem
+eksiği olarak kaydedildi; gerçek dosya keşfi ve doğrulanmış dar patch sonrası son TSC 0'dır.
+.NET/EF ve Node lease'leri final rapor/commit beklenmeden açıkça bırakıldı.
+
+Yeni endpoint sözleşmeleri (`I` = instructionId, `L` = lineId, `E` = exceptionId):
+
+| OperationId | Method/path | Request → response | Durum/problem kodu |
+|---|---|---|---|
+| `ListLogisticsPlanExcessExceptionsV1` | GET `/api/v1/logistics/plan-excess` | purpose=approve/load/ship, optional instructionId/cursor → `LogisticsPlanExcessPageV1` | 200; 400 validation_failed/invalid_cursor; 401/403; 409 company context; 503 |
+| `ProposeLogisticsPlanExcessV1` | POST `/api/v1/logistics/loading-instructions/{I}/lines/{L}/plan-excess` | `ProposeLogisticsPlanExcessV1` → `LogisticsPlanExcessResultV1` | 200; 400 validation/metadata; 404; 409 logistics_plan_excess_conflict/same-key/concurrent; 422 validation_failed; 415; 401/403; 503 |
+| `ApproveLogisticsPlanExcessV1` | POST `/api/v1/logistics/plan-excess/{E}/approve` | `ApproveLogisticsPlanExcessV1` → `LogisticsPlanExcessResultV1` | 200; 400 validation/metadata; 404; 409 logistics_plan_excess_conflict/same-key/concurrent; 415; 401/403; 503 |
+| `ReserveLogisticsSubcontractPlanExcessV1` | POST `/api/v1/logistics/subcontract-deliveries/{I}/lines/{L}/plan-excess/{E}/reserve` | `ReserveLogisticsPlanExcessV1` → `LogisticsSubcontractInstructionV1` | 200; mevcut command 400/401/403/404/409/415/422/503; 409 logistics_plan_excess_approval_required/logistics_plan_excess_conflict ve gerçek owner/version/stock/risk kodları |
+
+Mevcut `RecordLoadingInstructionLoadV1` ve `RecordLoadingInstructionShipmentV1`
+request'lerine trailing null-omit `planExcessUses` eklendi; mevcut response şekilleri
+gerçek nullable `approvedPlanExcess` kanıtını taşır. Fason ship satırı ayrıca gerçek
+`additionalAllocations` seçimini alır. Legacy null eski hash ve kapasite davranışını korur.
+Son dar metadata patch'i bu iki normal endpoint'in `.ProducesErpConflict` bildirimine
+`logistics_plan_excess_approval_required` ve `logistics_plan_excess_conflict` ekler.
+Bağımsız seçici/onay sayfası, hazırlama/kullanım ve ayrı rezervasyon formları strict
+decoder, frozen belirsiz-cevap retry ve Türkçe durum metinleriyle bağlıdır; frontend
+miktar/fiyat hesabı veya otomatik istisna seçimi yapmaz.
+
+Yeni gerçek SQL fact kaynaklarının tam adları (hepsi **NOT_RUN**, test assembly'si derlendi):
+
+1. `GoymenERP.Api.IntegrationTests.LogisticsInstructionSqlServerRelationalAcceptanceTests.Approved_plan_excess_uses_are_separate_from_plan_and_immutable_original_approval_replay`
+2. `GoymenERP.Api.IntegrationTests.LogisticsInstructionSqlServerRelationalAcceptanceTests.Unapproved_or_wrong_exception_excess_load_writes_no_share_usage_attempt_or_audit`
+3. `GoymenERP.Api.IntegrationTests.LogisticsInstructionSqlServerRelationalAcceptanceTests.Plan_excess_approval_rollback_preserves_pending_fact_plan_cap_and_original_key_for_retry`
+4. `GoymenERP.Api.IntegrationTests.LogisticsInstructionSqlServerRelationalAcceptanceTests.Competing_plan_excess_loads_cannot_consume_one_approved_cap_twice`
+5. `GoymenERP.Api.IntegrationTests.LogisticsInstructionSqlServerRelationalAcceptanceTests.Plan_excess_Down_is_safe_when_empty_and_original_pending_and_usage_evidence_cannot_be_mutated`
+6. `GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.An_explicit_approved_subcontract_extra_reserves_separately_and_ships_one_actual_movement_without_rewriting_plan`
+7. `GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_failure_after_actual_extra_reservation_rolls_back_both_owners_and_retries_the_same_explicit_key`
+
+Merkezi OpenAPI, recovery/release, guard fingerprint, migration mutation, ilişkisel
+envanter ve test grubu üretimi coordinator'dadır. Yeni guard/Serializable borrowed owner
+yüzeyleri gerekçeli K3 incelemesi bekler; bypass/SQL izin listesi genişletilmedi. Sekiz
+özgün Logistics false deklarasyonu ile iki yeni staged control/route aynı kaldı. Grant,
+rol ataması veya production aktivasyonu yoktur. STK-S8 linked GİB ve SAT-SC34 dış resmî
+iptal provider'ının yokluğu bu plan istisnasına başarı kaynağı olarak bağlanmadı.

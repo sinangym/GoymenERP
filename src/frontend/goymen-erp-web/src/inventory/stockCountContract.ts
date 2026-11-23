@@ -16,6 +16,12 @@ export { REASON_MAX_LENGTH }
 
 export type StockCountStatus = 'NoDifference' | 'PendingApproval' | 'Approved' | 'Rejected'
 export type StockCountDecisionKind = 'Approve' | 'Reject'
+export type StockCountCostStatus = 'Known' | 'NotCalculated' | 'Unavailable'
+export const STOCK_COUNT_COST_TEXT: Readonly<Record<StockCountCostStatus, string>> = {
+  Known: 'Sayım farkının maliyet kaynağı kayıtlı.',
+  NotCalculated: 'Sayım fazlası kaydedildi; ortalama maliyet hesaplanamadı.',
+  Unavailable: 'Sayımın maliyet durumu okunamadı.',
+}
 
 export interface StockCountRequest {
   readonly countId: string
@@ -24,6 +30,8 @@ export interface StockCountRequest {
   readonly countedKg: string
   readonly countedAtUtc: string
   readonly reason: string
+  /** KLN-D119 (AK-2): the counted pieces — required for a label that tracks pieces, absent for a kg-only label. */
+  readonly countedPieceCount?: number
 }
 
 export interface StockCountDecisionRequest {
@@ -36,6 +44,7 @@ export interface StockCountDecisionView {
   readonly decidedAtUtc: string
   readonly reason: string
   readonly adjustmentMovementId: string | null
+  readonly costStatus?: StockCountCostStatus
 }
 
 export interface StockCountView {
@@ -58,6 +67,9 @@ export interface StockCountView {
   readonly recordedAtUtc: string
   readonly status: StockCountStatus
   readonly decision: StockCountDecisionView | null
+  /** KLN-D119: the book and counted pieces of a piece-tracking label (both or neither). */
+  readonly bookPieceCount?: number
+  readonly countedPieceCount?: number
 }
 
 export interface LabelStockCounts {
@@ -92,6 +104,24 @@ function isVersion(value: unknown): value is string {
   return typeof value === 'string' && value.length <= 19 && VERSION.test(value) && BigInt(value) <= 9223372036854775807n
 }
 
+/** KLN-D119: a piece count as the writer stores it (`int`, never text, null or a fraction). */
+export function isPieceCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 2147483647
+}
+
+/** What a person typed as a piece count: whole digits only, no sign, separator or fraction; null when it is not one. */
+export function parsePieceCount(raw: string): number | null {
+  const text = raw.trim()
+  if (!/^\d{1,10}$/.test(text)) return null
+  const value = Number(text)
+  return isPieceCount(value) ? value : null
+}
+
+/** The optional members present on `value` (`JsonIgnore(WhenWritingNull)` on the server: absent, never null). */
+function presentOptional(value: JsonObject, names: readonly string[]): string[] {
+  return names.filter((name) => Object.hasOwn(value, name))
+}
+
 function decimals(value: string): number {
   return value.split('.')[1]?.length ?? 0
 }
@@ -120,7 +150,10 @@ export function differenceKilograms(bookKg: string, countedKg: string): string {
 
 function decodeDecision(value: unknown): StockCountDecisionView | null {
   const decision = record(value)
-  if (decision === null || !exact(decision, ['decision', 'decidedAtUtc', 'reason', 'adjustmentMovementId'])) return null
+  if (decision === null || !exact(decision, ['decision', 'decidedAtUtc', 'reason', 'adjustmentMovementId',
+    ...('costStatus' in decision ? ['costStatus'] : [])])) return null
+  if ('costStatus' in decision && (decision.decision !== 'Approved' ||
+    !['Known', 'NotCalculated', 'Unavailable'].includes(decision.costStatus as string))) return null
   if ((decision.decision !== 'Approved' && decision.decision !== 'Rejected') || !isUtcInstant(decision.decidedAtUtc) ||
     typeof decision.reason !== 'string' || decision.reason.trim().length === 0) return null
   const movement = decision.adjustmentMovementId
@@ -130,6 +163,7 @@ function decodeDecision(value: unknown): StockCountDecisionView | null {
     decidedAtUtc: decision.decidedAtUtc,
     reason: decision.reason,
     adjustmentMovementId: movement as string | null,
+    ...('costStatus' in decision ? { costStatus: decision.costStatus as StockCountCostStatus } : {}),
   }
 }
 
@@ -142,7 +176,13 @@ const VIEW_FIELDS = [
 /** One count, only when it is internally consistent: difference = counted − book and the status matches it. */
 export function decodeStockCountView(value: unknown): StockCountView | null {
   const view = record(value)
-  if (view === null || !exact(view, VIEW_FIELDS)) return null
+  if (view === null) return null
+  const pieces = presentOptional(view, ['bookPieceCount', 'countedPieceCount'])
+  const hasPieces = pieces.length > 0
+  // KLN-D119: a piece-tracking count carries both piece figures; zero pieces go with zero kg and only with it.
+  if (!exact(view, [...VIEW_FIELDS, ...pieces]) || (hasPieces && pieces.length !== 2)) return null
+  if (hasPieces && (!isPieceCount(view.bookPieceCount) || !isPieceCount(view.countedPieceCount) ||
+    view.bookPieceCount === 0 || (view.countedPieceCount === 0) !== (view.countedKg === '0'))) return null
   if (!isGuid(view.countId) || !isGuid(view.companyId) || !isGuid(view.labelId) || !isVersion(view.labelVersion) ||
     typeof view.ownerKind !== 'string' || !isGuid(view.ownerId) || typeof view.custodianKind !== 'string' ||
     !isGuid(view.custodianId) || !isGuid(view.locationId) || !isGuid(view.productId) ||
@@ -154,6 +194,7 @@ export function decodeStockCountView(value: unknown): StockCountView | null {
   if (signedToGrams(view.differenceKg) !== kilogramsToGrams(view.countedKg) - kilogramsToGrams(view.bookKg)) return null
   const decision = view.decision === null ? null : decodeDecision(view.decision)
   if (view.decision !== null && decision === null) return null
+  if (decision?.costStatus === 'NotCalculated' && view.differenceKg.startsWith('-')) return null
   const hasDifference = view.differenceKg !== '0'
   const consistent = view.status === 'NoDifference' ? !hasDifference && decision === null
     : view.status === 'PendingApproval' ? hasDifference && decision === null
@@ -179,6 +220,7 @@ export function decodeStockCountView(value: unknown): StockCountView | null {
     recordedAtUtc: view.recordedAtUtc,
     status: view.status as StockCountStatus,
     decision,
+    ...(hasPieces ? { bookPieceCount: view.bookPieceCount as number, countedPieceCount: view.countedPieceCount as number } : {}),
   }
 }
 
@@ -196,7 +238,9 @@ export function decodeLabelStockCounts(value: unknown): LabelStockCounts | null 
 
 export function isStockCountRequest(value: unknown): value is StockCountRequest {
   const request = record(value)
-  return request !== null && exact(request, ['countId', 'labelId', 'expectedLabelVersion', 'countedKg', 'countedAtUtc', 'reason']) &&
+  const pieces = request === null ? [] : presentOptional(request, ['countedPieceCount'])
+  return request !== null && exact(request, ['countId', 'labelId', 'expectedLabelVersion', 'countedKg', 'countedAtUtc', 'reason', ...pieces]) &&
+    (pieces.length === 0 || isPieceCount(request.countedPieceCount)) &&
     isGuid(request.countId) && isGuid(request.labelId) && isVersion(request.expectedLabelVersion) &&
     isCountedKilogramText(request.countedKg) && isUtcInstant(request.countedAtUtc) && isReason(request.reason)
 }
@@ -208,6 +252,7 @@ export function describesRecordedCount(view: StockCountView, request: StockCount
     view.labelId.toLowerCase() === request.labelId.toLowerCase() &&
     view.labelVersion === request.expectedLabelVersion &&
     kilogramsToGrams(view.countedKg) === kilogramsToGrams(request.countedKg) &&
+    view.countedPieceCount === request.countedPieceCount &&
     view.reason === request.reason &&
     Date.parse(view.countedAtUtc) === Date.parse(request.countedAtUtc)
 }
@@ -232,6 +277,7 @@ export function describesDecision(
 export const STOCK_COUNT_DEFINITE_UNAVAILABLE_CODES: ReadonlySet<string> = new Set([
   'inventory_permission_unregistered',
   'inventory_stock_count_unavailable',
+  'inventory_stock_count_cost_not_calculated',
   'inventory_kg_profile_unusable',
   'settings_provider_unavailable',
   'settings_unit_profile_not_found',
@@ -248,6 +294,8 @@ const REFUSAL_TEXT: Readonly<Record<string, string>> = {
   inventory_stock_count_not_found: 'Sayım bu şirkette bulunamadı.',
   inventory_label_version_conflict: 'Etiket siz sayımı girerken değişti; defter miktarı artık farklı olabilir. Etiketi yeniden açıp tekrar sayın.',
   inventory_stock_count_position_conflict: 'Sayım için etiketin tek bir fiziksel pozisyonda stoğu olmalı.',
+  // SAT-D384: only the active last label is counted; a consumed label never enters a count difference.
+  inventory_stock_count_label_converted: 'Etiket dönüştürüldü → yeni etiket: bu etiket bölme, birleştirme veya üretimde tüketildi. Sayımı dönüşümden çıkan yeni etiket üzerinden yapın; bu etiket sayım farkına girmez, hiçbir şey kaydedilmedi.',
   inventory_stock_count_conflict: 'Bu sayım kimliği farklı bir içerikle kayıtlı.',
   inventory_stock_count_not_pending: 'Bu sayımda onaylanacak fark yok.',
   inventory_stock_count_already_decided: 'Bu sayım zaten başka bir kararla sonuçlandırılmış.',
@@ -259,6 +307,7 @@ const REFUSAL_TEXT: Readonly<Record<string, string>> = {
   forbidden: 'Bu şirkette bu sayım işlemi için yetkiniz yok.',
   inventory_permission_unregistered: 'Stok sayımı bu sunucuda henüz yayımlanmadı; hiçbir şey kaydedilmedi.',
   inventory_stock_count_unavailable: 'Sayımın kayıtlı durumu okunamadı; hiçbir şey kaydedilmedi.',
+  inventory_stock_count_cost_not_calculated: 'Ortalama maliyet hesaplanamadı; sayım eksiği uygulanmadı.',
   inventory_kg_profile_unusable: 'Şirketin onaylı kg profili bu tarih için kullanılamıyor; hiçbir şey kaydedilmedi.',
   unauthenticated: 'Oturum doğrulanamadı.',
 }

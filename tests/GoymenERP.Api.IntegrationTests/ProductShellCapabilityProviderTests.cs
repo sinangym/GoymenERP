@@ -40,6 +40,7 @@ public sealed class ProductShellCapabilityProviderTests
                 ("product.items.edit", "/urun/:productId/duzenle", GroupSharedMasterOperation.DraftBasicEdit),
                 ("product.items.list", "/urun", GroupSharedMasterOperation.Read),
                 ("product.items.reactivate", "/urun/:productId", GroupSharedMasterOperation.Reactivate),
+                ("product.items.set-cogs-classification", "/urun/:productId", GroupSharedMasterOperation.SetCogsClassification),
             ],
             registry.Registrations.Select(registration => (registration.Declaration.CapabilityId,
                 registration.Declaration.RoutePath, registration.Declaration.GlobalProductOperation!.Value)));
@@ -52,9 +53,9 @@ public sealed class ProductShellCapabilityProviderTests
         string[] controls =
         [
             ProductShellCapabilityProvider.ActivateCapabilityId, ProductShellCapabilityProvider.DeactivateCapabilityId,
-            ProductShellCapabilityProvider.ReactivateCapabilityId,
+            ProductShellCapabilityProvider.ReactivateCapabilityId, ProductShellCapabilityProvider.SetCogsClassificationCapabilityId,
         ];
-        Assert.Equal("1.2", provider.ContractVersion);
+        Assert.Equal("1.3", provider.ContractVersion);
         foreach (var control in controls)
         {
             var registration = Assert.Single(registry.Registrations,

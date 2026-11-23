@@ -25,7 +25,9 @@ internal sealed class ManufacturingPlanAllocationHost(
     ManufacturingStore plans,
     ICompanyContext companyContext,
     ISettingsPrerequisiteProvider settings,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IInventoryManufacturingPlanAllocationReadPortV1? allocationState = null,
+    ManufacturingCostGenerationHost? costGenerations = null)
     : IManufacturingPlanAllocationPortV1
 {
     public const string AllocationReason = "manufacturing.plan-approved";
@@ -35,7 +37,16 @@ internal sealed class ManufacturingPlanAllocationHost(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(labelVersions);
-        return RunAsync(planId, approve, metadata, async (companyId, plan, inventory, inventoryMetadata, token) =>
+        async Task<T> ApproveWithAllocationHistory(CancellationToken token)
+        {
+            var before = await plans.FindPlanAsync(planId, token);
+            if (before?.RequiresReapproval == true)
+            {
+                await RequireReleasedHistoryAsync(before, token);
+            }
+            return await approve(token);
+        }
+        return RunAsync(planId, ApproveWithAllocationHistory, metadata, async (companyId, plan, inventory, inventoryMetadata, token) =>
         {
             if (plan.Status != Modules.Manufacturing.Domain.Plans.PlanStatus.Approved || plan.Inputs.Count == 0)
             {
@@ -94,6 +105,43 @@ internal sealed class ManufacturingPlanAllocationHost(
         }, cancellationToken);
     }
 
+    public Task<T> WriteReleasedPlanAsync<T>(Guid planId, Func<CancellationToken, Task<T>> write,
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken) =>
+        RunAsync(planId, async token =>
+        {
+            var before = await plans.FindPlanAsync(planId, token);
+            if (before is null || !before.RequiresReapproval || allocationState is null)
+                throw new ManufacturingPlanAllocationHostException(ManufacturingPlanAllocationCodesV1.Incomplete);
+            await RequireReleasedHistoryAsync(before, token);
+            return await write(token);
+        }, metadata, (_, _, _, _, _) => Task.CompletedTask, cancellationToken);
+
+    private async Task RequireReleasedHistoryAsync(Modules.Manufacturing.Domain.Plans.ProductionPlan plan,
+        CancellationToken token)
+    {
+        // A revised plan may now name different labels. Provenance belongs to the last cancelled order's immutable
+        // inputs, not the new selection; a legacy order without that generation remains unavailable.
+        var release = plan.OrderReleases.LastOrDefault();
+        var order = release is null ? null : await plans.FindOrderAsync(release.OrderId, token);
+        if (order is null || order.PlanId != plan.Id || order.CompanyId != plan.CompanyId
+            || order.Status != Modules.Manufacturing.Domain.Orders.OrderStatus.Cancelled || allocationState is null)
+            throw new ManufacturingPlanAllocationHostException(ManufacturingPlanAllocationCodesV1.Incomplete);
+        var allocations = await allocationState.GetForPlanAsync(plan.Id, token);
+        if (allocations.Count == 0 || allocations.Any(allocation => allocation.PlanId != plan.Id
+                || !Enum.IsDefined(allocation.Status)))
+            throw new ManufacturingPlanAllocationHostException(ManufacturingPlanAllocationCodesV1.Incomplete);
+        foreach (var input in order.PlannedInputs)
+        {
+            var recorded = await plans.FindPlanInputAllocationAsync(plan.Id, input.ParentRollId, token);
+            if (recorded is null || !allocations.Any(allocation => allocation.AllocationId == recorded.AllocationId
+                    && allocation.LabelId == input.ParentRollId))
+                throw new ManufacturingPlanAllocationHostException(ManufacturingPlanAllocationCodesV1.Incomplete);
+        }
+        if (allocations.Any(allocation => allocation.Status == InventoryManufacturingPlanAllocationStatusV1.Active))
+            throw new ManufacturingInventoryRealizationPortException(ManufacturingApiStatus.Conflict,
+                InventoryManufacturingRealizationCodesV1.ConcurrentChange);
+    }
+
     public Task<T> WriteAndReleaseAsync<T>(Guid planId, ManufacturingPlanAllocationReleaseReasonV1 reason,
         Func<CancellationToken, Task<T>> write, ManufacturingCommandMetadata metadata,
         CancellationToken cancellationToken)
@@ -105,24 +153,50 @@ internal sealed class ManufacturingPlanAllocationHost(
 
         return RunAsync(planId, write, metadata, async (companyId, plan, inventory, inventoryMetadata, token) =>
         {
+            var closedOrder = reason == ManufacturingPlanAllocationReleaseReasonV1.OrderClosed && plan.OrderId is { } orderId
+                ? await plans.FindOrderAsync(orderId, token) : null;
+            if (reason == ManufacturingPlanAllocationReleaseReasonV1.OrderClosed && (closedOrder is null || costGenerations is null))
+                throw new ManufacturingPlanAllocationHostException(ManufacturingPlanAllocationCodesV1.Incomplete);
             var result = await InventoryFaultAsync(() => inventory.StagePlanRemainderReleaseAsync(
                 new InventoryManufacturingPlanReleaseRequestV1(companyId, plan.Id,
                     plan.Version.ToString(CultureInfo.InvariantCulture),
-                    reason == ManufacturingPlanAllocationReleaseReasonV1.PlanCancelled
-                        ? InventoryManufacturingPlanReleaseReasonV1.PlanCancelled
-                        : InventoryManufacturingPlanReleaseReasonV1.OrderClosed,
+                    reason switch
+                    {
+                        ManufacturingPlanAllocationReleaseReasonV1.PlanCancelled =>
+                            InventoryManufacturingPlanReleaseReasonV1.PlanCancelled,
+                        ManufacturingPlanAllocationReleaseReasonV1.OrderCancelled =>
+                            InventoryManufacturingPlanReleaseReasonV1.OrderCancelled,
+                        _ => InventoryManufacturingPlanReleaseReasonV1.OrderClosed,
+                    },
                     timeProvider.GetUtcNow().ToUniversalTime()),
                 inventoryMetadata with
                 {
-                    IdempotencyKey = $"manufacturing-plan-release:{companyId:N}:{plan.Id:N}:{(int)reason}",
+                    IdempotencyKey = ReleaseIdempotencyKey(companyId, plan, reason,
+                        closedOrder?.Reopenings.Count > 0 ? closedOrder.Version : null),
                 },
                 token));
             if (result.IsReplay || result.CompanyId != companyId || result.PlanId != plan.Id)
             {
                 throw new ManufacturingPlanAllocationHostException(ManufacturingPlanAllocationCodesV1.Incomplete);
             }
-        }, cancellationToken);
+            if (closedOrder is not null)
+                await costGenerations!.StageClosedAsync(closedOrder.Id, metadata, token);
+        }, cancellationToken, reason == ManufacturingPlanAllocationReleaseReasonV1.OrderClosed
+            ? IsolationLevel.Serializable : IsolationLevel.ReadCommitted);
     }
+
+    /// <summary>
+    /// The Inventory release key. The first close keeps its U3-a identity. URT-D56: another physical close following
+    /// reopening names its new closed-order version. F-009 D5: a plan may release one generation per cancelled order, so an
+    /// order cancel also names the plan version the release produced — every release bumps it, a retry replays it.
+    /// </summary>
+    internal static string ReleaseIdempotencyKey(Guid companyId, Modules.Manufacturing.Domain.Plans.ProductionPlan plan,
+        ManufacturingPlanAllocationReleaseReasonV1 reason, long? closedOrderVersion = null) =>
+        reason == ManufacturingPlanAllocationReleaseReasonV1.OrderCancelled
+            ? $"manufacturing-plan-release:{companyId:N}:{plan.Id:N}:{(int)reason}:{plan.Version.ToString(CultureInfo.InvariantCulture)}"
+            : reason == ManufacturingPlanAllocationReleaseReasonV1.OrderClosed && closedOrderVersion is { } version
+                ? $"manufacturing-plan-release:{companyId:N}:{plan.Id:N}:{(int)reason}:close:{version.ToString(CultureInfo.InvariantCulture)}"
+            : $"manufacturing-plan-release:{companyId:N}:{plan.Id:N}:{(int)reason}";
 
     /// <summary>
     /// TAKIP-U3a (#1004): an <see cref="ArgumentException"/> raised by an Inventory participant call is this host's
@@ -144,7 +218,7 @@ internal sealed class ManufacturingPlanAllocationHost(
         ManufacturingCommandMetadata metadata,
         Func<Guid, Modules.Manufacturing.Domain.Plans.ProductionPlan, IInventoryManufacturingPlanAllocationParticipantV1,
             InventoryCommandMetadata, CancellationToken, Task> stage,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, IsolationLevel isolation = IsolationLevel.ReadCommitted)
     {
         ArgumentNullException.ThrowIfNull(write);
         ArgumentNullException.ThrowIfNull(metadata);
@@ -159,7 +233,7 @@ internal sealed class ManufacturingPlanAllocationHost(
                 ManufacturingApiCodes.AuthorityDenied);
 
         await using var transaction = await manufacturing.Database.BeginTransactionAsync(
-            IsolationLevel.ReadCommitted, cancellationToken);
+            isolation, cancellationToken);
         var committed = false;
         try
         {
@@ -201,7 +275,7 @@ internal sealed class ManufacturingPlanAllocationHost(
                 _ => ManufacturingApiStatus.Unavailable,
             }, exception.Status == 404
                 ? ManufacturingPlanAllocationCodesV1.LabelNotFound
-                : exception.Code);
+                : exception.Code, planAllocationShortfall: MapPlanAllocationShortfall(companyId, planId, exception));
         }
         catch (ManufacturingPlanAllocationHostException exception)
         {
@@ -219,6 +293,14 @@ internal sealed class ManufacturingPlanAllocationHost(
             manufacturing.ChangeTracker.Clear();
         }
     }
+
+    internal static ManufacturingPlanAllocationShortfallV1? MapPlanAllocationShortfall(Guid companyId, Guid planId,
+        InventoryManufacturingRealizationException exception) =>
+        exception.Status == 409 && exception.Code == InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock
+            && exception.PlanAllocationShortfall is { } detail && detail.CompanyId == companyId && detail.PlanId == planId
+            ? new ManufacturingPlanAllocationShortfallV1(detail.CompanyId, detail.PlanId, detail.LabelId, detail.ProductId,
+                detail.LabelVersion, detail.RequestedKg, detail.AvailableKg, detail.MissingKg, detail.FreePositionCount)
+            : null;
 
     private async Task RollbackAsync(IDbContextTransaction transaction, bool committed, Exception attempt)
     {

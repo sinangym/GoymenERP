@@ -24,7 +24,9 @@ import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../shell/api'
 import { MANUFACTURING_CAPABILITY } from './capabilities'
 import { manufacturingRoutes } from './manufacturingRoutes'
 import { clearPendingFacts } from './pendingFactStore'
+import { clearPendingCorrections } from './pendingCorrectionStore'
 import { clearPendingPlanLifecycles } from './planCommandApi'
+import { clearPendingScrapPrices } from './scrapPriceApi'
 
 export const COMPANY_A = 'aaaaaaaa-0000-0000-0000-000000000001'
 export const COMPANY_B = 'bbbbbbbb-0000-0000-0000-000000000002'
@@ -53,7 +55,7 @@ export const IDENTITY = {
   displayName: 'SENTETIK Kullanıcı',
   email: null,
   allowedCompanyIds: [COMPANY_A, COMPANY_B],
-  authenticationSessionBinding: SESSION_1 as string | null,
+  mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: SESSION_1 as string | null,
 }
 
 /** What the stubbed `/identity/me` answers with; a record lets a case send a deliberately malformed body. */
@@ -176,6 +178,9 @@ export function plan(overrides: Record<string, unknown> = {}) {
     // U2-b / API-16 (SAT-D219): the approved sales order line the plan supplies, and the link's own revision.
     salesOrderLink: null,
     salesOrderLinkRevision: 0,
+    // F-010a (URT-D29): the hand-entered termin (a calendar day) and its own revision.
+    requestedDueDate: null,
+    dueDateRevision: 0,
     ...overrides,
   }
 }
@@ -351,6 +356,35 @@ export function planList(plans: unknown[] = [planSummary()], nextCursor: string 
   return { plans, nextCursor }
 }
 
+/** SENTETIK product and stored location named by a physical-stock refusal (SAT-D318). */
+export const SHORTFALL_PRODUCT = 'e0000000-0000-4000-8000-000000000030'
+export const SHORTFALL_LOCATION = 'e0000000-0000-4000-8000-000000000031'
+
+/**
+ * A synthetic `ManufacturingStockShortfallViewV1` (SAT-D318), in the server's JSON shape: the refused input issue
+ * `sourceLineId` of ROLL_1 on ORDER, asking for `requestedKg` where only `availableKg` were usable, both in the
+ * server's canonical text.
+ */
+export function stockShortfall(
+  sourceLineId: string,
+  requestedKg: string,
+  availableKg: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    movementKind: 'Issue',
+    sourceKind: 'manufacturing.input-issue',
+    sourceId: ORDER,
+    sourceLineId,
+    labelId: ROLL_1,
+    productId: SHORTFALL_PRODUCT,
+    locationId: SHORTFALL_LOCATION,
+    requestedKg,
+    availableKg,
+    ...overrides,
+  }
+}
+
 export function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -409,7 +443,9 @@ export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
   resetCompanyPreference()
   // Module state that deliberately outlives unmounts: never inherited across cases.
   clearPendingFacts()
+  clearPendingCorrections()
   clearPendingPlanLifecycles()
+  clearPendingScrapPrices()
   // The tab's sessionStorage (pending create/revise slots) starts empty in every case.
   sessionStorage.clear()
   const capabilities = options.capabilities ?? RECORDER_CAPABILITIES

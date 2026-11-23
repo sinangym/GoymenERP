@@ -246,6 +246,8 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
     'İptal etkisi siz gördükten sonra değişti; iptal yapılmadı. Güncel etkiyi yeniden okuyun.',
   [SALES_PROBLEM_CODE.revisionBlocked]:
     'Siparişe bağlı kayıtlar var (tahsis, yükleme, satın alma ya da üretim); işlem yapılmadı. Kayıtlar kendi ekranlarında kapatıldıktan sonra yeniden deneyin.',
+  [SALES_PROBLEM_CODE.revisionFutureAllocationPresent]:
+    'Siparişe bağlı aktif ileri tarihli tahsis (gelecek tedarik ayırması) var; başlık değiştirilmedi. Tahsis kendi ekranında kaldırıldıktan sonra yeniden deneyin.',
   [SALES_PROBLEM_CODE.forceCloseBlocked]:
     'Siparişte açık tahsis ya da sevk edilmemiş yükleme var; sipariş kapatılmadı. Bunlar kendi ekranlarında kapatıldıktan sonra etkiyi yeniden okuyun.',
   [SALES_PROBLEM_CODE.forceCloseImpactChanged]:
@@ -289,6 +291,7 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
     'Sipariş tarihi bugünden önce olamaz; bugünü ya da ileri bir tarihi seçin. Bugün, sunucunun İstanbul saatine göre iş günüdür.',
   [SALES_PROBLEM_CODE.invoiceMatchRequired]:
     'Resmî e-fatura eşleşmesi kaydedilmeden fatura kesinleştirilemez.',
+  [SALES_PROBLEM_CODE.invoiceMatchSourceProofRequired]: 'Resmî fatura tarihi ve onaylı kaynak kanıtı eksik; bu eşleşmeyle kesinleştirme yapılamaz.',
   [SALES_PROBLEM_CODE.invoiceMatchDifferenceOpen]:
     'Resmî e-fatura ile ERP tutarı arasında fark açıkken fatura kesinleştirilemez.',
   [SALES_PROBLEM_CODE.invoiceInstalmentFunctionalInvalid]:
@@ -297,6 +300,9 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
     'İstekteki şirket bağlamı geçerli değil; işlem yapılmadı. Şirket seçimini kontrol edip yeniden deneyin.',
   [SALES_PROBLEM_CODE.correlationMetadataInvalid]:
     'İstekteki izleme bilgisi geçerli değil; işlem yapılmadı.',
+  [SALES_PROBLEM_CODE.kilogramsPerUnitUnavailable]:
+    'Adetli satırın ürün kartında teorik kg/adet kaynağı yok (ölçü, ağırlık tablosu ya da yoğunluk eksik); sipariş onaylanmadı. '
+    + 'Kartı tamamlayıp yeniden onaylayın.',
 }
 
 export function problemCodeText(code: string | null): string | null {
@@ -360,6 +366,9 @@ export const ORDER_LIST_TEXT = {
   subcontract: 'Fason',
   heading: 'Satış siparişi taslakları',
   newDraft: 'Yeni taslak',
+  /** KLN-D117: the list was opened from a stock label row to allocate that label. */
+  allocationLabelContext: (labelCode: string) =>
+    `${labelCode} etiketini tahsis etmek için onaylı bir sipariş açın; siparişin tahsis bölümünde etiket kodu aranmaya hazır gelir.`,
   caption: 'Seçili şirketteki sipariş taslakları, en yeni önce',
   documentNo: 'Belge no',
   /** The record-bound Cari, as the Cari owner publishes it for this Sales record. */
@@ -775,6 +784,9 @@ export const ORDER_DETAIL_TEXT = {
     loaded: 'Yüklenen',
     shipped: 'Sevk edilen',
     delivered: 'Teslim edilen',
+    futureSupplyAllocations: 'Gelecek tedarik ayırması (iptalde bırakılır)',
+    futureSupplyNote:
+      'Satırlara bağlı gelecek tedarik ayırmaları fiziksel tahsis değildir; iptal onaylandığında aynı işlemde bırakılır.',
     unreadable: 'okunamadı',
     blocked: 'Bu sipariş şu anda iptal edilemez. Engelleyen kayıtları kendi ekranlarında kapatın, sonra etkiyi yeniden okuyun.',
     reasonLabel: 'İptal nedeni (zorunlu)',
@@ -808,15 +820,25 @@ export const ORDER_DETAIL_TEXT = {
     heading: 'Teslimat durumu',
     note:
       'Sevk ve teslim miktarları Lojistik modülünde kaydedilen kesin sevk ve teslimlerden okunur; sipariş her açıldığında yeniden okunur. ' +
-      'Kalan = sipariş − teslim edilen. Eksik/fazla teslim toleransı henüz karara bağlanmadığı için satır kapanışı ya da uyarı gösterilmez.',
+      'Onaylı fiziksel iadeler teslim edilen miktarı düzeltir. Faturalanan ve teslim edilmiş fakat faturalanmamış miktarlar kesinleşmiş fatura kaynağından okunur; kaynak okunamazsa sayı gösterilmez. ' +
+      'Kalan = sipariş − net teslim edilen. Eksik/fazla teslim toleransı henüz karara bağlanmadığı için satır kapanışı ya da uyarı gösterilmez.',
     subject: 'teslimat durumu',
-    caption: 'Satır bazında sipariş, sevk, teslim ve kalan miktar',
+    caption: 'Satır bazında sipariş, sevk, teslim ve kalan miktar ile sevk eden',
     lineNo: 'Satır',
     ordered: 'Sipariş',
     shipped: 'Sevk edilen',
     delivered: 'Teslim edilen',
     remaining: 'Kalan',
     excess: 'Fazla teslim',
+    invoiced: 'Faturalanan',
+    deliveredNotInvoiced: 'Teslim edilmiş, faturalanmamış',
+    invoiceUnknown: 'Bilinmiyor',
+    /** SAT-S11 (B-33): who recorded the line's shipments, as Logistics names them. */
+    shippedBy: 'Sevk eden',
+    /** Something is shipped but not every shipment names its shipper. */
+    shippedByUnknown: 'Bilinmiyor',
+    /** Nothing is shipped on the line yet. */
+    shippedByNone: '—',
   },
   /** AT-055: the dispatch-note drafts of this order's shipments (Logistics owns them; linked, never copied). */
   dispatchNotes: {
@@ -1228,6 +1250,7 @@ export const SOURCE_PLAN_TEXT = {
     NoPlan: 'Henüz plan kaydedilmedi.',
   },
   linkedHeading: 'Bağlı belgeler',
+  cancelledProductionOrder: 'İptal edilen üretim emri:',
   linkedKind: { Production: 'Üretim', Purchasing: 'Satın alma' },
   linkedStatus: { None: 'yok', Present: 'açık belge var', Unreadable: 'okunamadı' },
   linkedUnreadable: 'Bağlı üretim ya da satın alma belgeleri okunamıyor; okunana kadar plan kaydedilemez (SAT-D254).',
@@ -1916,6 +1939,9 @@ export const HEADER_REVISION_TEXT = {
     sales_due_terms_amount_not_splittable: 'Tutar bu kadar taksite bölünemez; daha az taksit girin.',
     sales_header_revision_priced_lines:
       'Satırlarında fiyat olan siparişte cari hesap ve para birimi değiştirilemez; yanlışsa sipariş iptal edilip yeni sipariş açılır.',
+    // SAT-D373 (temporary, until the SAT-S8 transfer rule): an active future supply allocation locks the whole header.
+    sales_revision_future_allocation_present:
+      'Siparişe bağlı aktif ileri tarihli tahsis (gelecek tedarik ayırması) varken sipariş başlığı değiştirilemez; önce tahsis kendi ekranında kaldırılır.',
     sales_due_terms_required: 'Vade girilmeden sipariş onaylanamaz.',
     sales_revision_no_change: 'Başlıkta hiçbir değer değişmedi; onay boşuna düşürülmez.',
     owner_reference_invalid: 'Seçilen kayıt geçerli değil (pasif, bu cariye ait değil veya satış sorumlusu olamaz).',
@@ -1935,4 +1961,44 @@ export const HEADER_REVISION_TEXT = {
           : error.kind === 'share' ? `${error.row}. taksitte pay 0’dan büyük bir sayı olmalıdır.`
             : error.kind === 'buyer-tax' ? 'Alıcı vergi durumunu seçin; belge numarası ve tarihi birlikte girilir.'
               : 'Başlıkta hiçbir değer değişmedi; onay boşuna düşürülmez.',
+} as const
+
+/** SAT-D436 / SAT-D439 / SAT-D437 (AK-4, AK-5): the kg price indicator and the piece line's kg facts. */
+export const KILOGRAM_PRICE_TEXT = {
+  heading: 'Kg fiyatı ve gerçekleşme',
+  subject: 'kg fiyatı',
+  note: 'Kg fiyatı bilgi göstergesidir; maliyet değildir ve tutarı değiştirmez. Belge para birimindedir, kur kullanılmaz.',
+  pending: 'Kg fiyatı göstergesi formül doğrulaması (golden) ana dala girene kadar kapalıdır.',
+  unreadable: 'Kg fiyatı okunamadı; sipariş bilgileri etkilenmez. Sayfayı yenileyerek yeniden deneyin.',
+  line: (lineNo: number) => `${lineNo}. satır`,
+  theoreticalKg: 'Teorik kg',
+  theoreticalPrice: 'Teorik kg fiyatı',
+  invoicedQuantity: 'Faturalanan miktar',
+  invoicedAmount: 'Faturalanan tutar',
+  actualKg: 'Gerçek (kantar) kg',
+  actualPrice: 'Gerçek kg fiyatı',
+  kgDifference: 'Teorik farkı (kg)',
+  deviationPercent: 'Teorik farkı (%)',
+  documentTheoretical: 'Belge teorik kg fiyatı',
+  documentActual: 'Belge gerçek kg fiyatı',
+  none: '—',
+  /** SAT-D436/SAT-D439: the document currency per kg (the response's currency; no rate). */
+  perKg: (value: string, currency: string) => `${value} ${currency}/kg`,
+  /** Shown in place of the currency code when the currencies reference is not held or not read — never the raw identity. */
+  currencyUnnamed: 'belge para birimi',
+  /** An invoice kg price line the invoice does not have: the block is not shown (fail-closed, never a made-up line number). */
+  unmatchedLine: 'Kg fiyatı satırları faturanın satırlarıyla eşleşmiyor; gösterge gösterilmiyor.',
+  percent: (value: string) => `%${value}`,
+  state: {
+    Shown: '',
+    TheoreticalKgUnavailable: 'Teorik kg yok (onaylı kg/adet kaydı bulunmuyor)',
+    WeighedKgUnavailable: 'Gerçek kg yok (faturalanmış ve tartılmış miktar bulunmuyor)',
+    ZeroKg: 'Kg sıfır; kg fiyatı hesaplanamaz',
+    AmountUnavailable: 'Tutar yok; kg fiyatı hesaplanamaz',
+    DocumentNotAllKilogramLines: 'Belge düzeyi gösterilmez: bütün satırlar kg’li mal satırı değil',
+    OutOfRange: 'Değer gösterilemiyor',
+  },
+  kilogramsPerUnit: 'Teorik kg/adet (onayda kaydedildi)',
+  invoiceTheoreticalKg: 'Teorik kg (bilgi)',
+  invoiceActualKg: 'Gerçek kg (bilgi)',
 } as const

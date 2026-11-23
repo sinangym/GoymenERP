@@ -419,11 +419,141 @@ public sealed class ProductStockDisplayReferenceTests
         Assert.Equal((503, "product_runtime_unconfigured"), (matchError.StatusCode, matchError.Code));
         Assert.Single(provider.GetServices<IProductStockTechnicalMatcherV1>());
 
+        var similarity = provider.GetRequiredService<IProductStockSimilarityFactsV1>();
+        var similarityError = await Assert.ThrowsAsync<ProductOperationException>(() =>
+            similarity.ReadSimilarityAsync(new([new(FirstId, "7")])));
+        Assert.Equal((503, "product_runtime_unconfigured"), (similarityError.StatusCode, similarityError.Code));
+        Assert.Single(provider.GetServices<IProductStockSimilarityFactsV1>());
+
         var families = provider.GetRequiredService<IProductStockFamilyOptionsV1>();
         var familyError = await Assert.ThrowsAsync<ProductOperationException>(() =>
             families.ReadFamilyOptionsAsync());
         Assert.Equal((503, "product_runtime_unconfigured"), (familyError.StatusCode, familyError.Code));
         Assert.Single(provider.GetServices<IProductStockFamilyOptionsV1>());
+    }
+
+    [Fact]
+    public async Task Similarity_facts_answer_one_item_per_exact_pair_with_a_shared_key_for_the_same_material_and_quality()
+    {
+        var thirdId = Guid.Parse("c6300000-0000-4000-8000-000000000303");
+        var world = new World([Record(FirstId, 7, "P-1", "Galvaniz bant", 1.25m, 1250m),
+            Record(SecondId, 3, "P-2", "Galvaniz bant geniş", 1.3m, 1300m),
+            Record(thirdId, 2, "P-3", "Başka kalite", 1.25m, 1250m, quality: "CANDIDATE")]);
+
+        var result = await world.Service().ReadSimilarityAsync(new([
+            new(FirstId, "7"), new(SecondId, "3"), new(thirdId, "2"), new(Guid.NewGuid(), "1"), new(FirstId, "6"),
+        ]));
+
+        Assert.Equal(5, result.Items.Count);
+        var (first, second, third, unknown, stale) =
+            (result.Items[0], result.Items[1], result.Items[2], result.Items[3], result.Items[4]);
+        Assert.Equal((FirstId, "7", "P-1", 1.25m, 1250m, (decimal?)null),
+            (first.ProductId, first.ExpectedProductVersion, first.Identity!.Code, first.ThicknessMm, first.WidthMm,
+                first.LengthMm));
+        Assert.NotNull(first.SimilarityKey);
+        Assert.Equal(first.SimilarityKey, second.SimilarityKey);
+        Assert.Equal(("none", "none"), (first.CoatingCode, second.CoatingCode));
+        Assert.Equal((1.3m, 1300m), (second.ThicknessMm, second.WidthMm));
+        Assert.NotNull(third.SimilarityKey);
+        Assert.NotEqual(first.SimilarityKey, third.SimilarityKey);
+        Assert.All([unknown, stale], item =>
+        {
+            Assert.Null(item.Identity);
+            Assert.Null(item.SimilarityKey);
+            Assert.Null(item.CoatingCode);
+            Assert.Equal(((decimal?)null, (decimal?)null, (decimal?)null), (item.ThicknessMm, item.WidthMm, item.LengthMm));
+        });
+        Assert.Equal((FirstId, "6"), (stale.ProductId, stale.ExpectedProductVersion));
+        Assert.Equal(1, world.Records.Reads);
+        Assert.Equal(1, world.Definitions.Reads);
+    }
+
+    [Fact]
+    public async Task Similarity_facts_withhold_the_key_and_measures_of_an_unaccepted_card_but_keep_its_identity()
+    {
+        var world = new World([Record(FirstId, 7, "P-1", "Galvaniz bant", 1.25m, 1250m, quality: "CANDIDATE")],
+            Definition(candidateQuality: true));
+
+        var item = Assert.Single((await world.Service().ReadSimilarityAsync(new([new(FirstId, "7")]))).Items);
+
+        Assert.Equal("P-1", item.Identity!.Code);
+        Assert.Null(item.SimilarityKey);
+        Assert.Null(item.CoatingCode);
+        Assert.Equal(((decimal?)null, (decimal?)null), (item.ThicknessMm, item.WidthMm));
+    }
+
+    [Fact]
+    public async Task Similarity_facts_of_a_cut_sheet_carry_the_nominal_length()
+    {
+        var world = new World([Record(FirstId, 7, "PL-1", "Boy kesilmiş levha", 1.25m, 1250m, length: 2500m)],
+            Definition(includeLength: true));
+
+        var item = Assert.Single((await world.Service().ReadSimilarityAsync(new([new(FirstId, "7")]))).Items);
+
+        Assert.Equal((1.25m, 1250m, 2500m), (item.ThicknessMm, item.WidthMm, item.LengthMm));
+    }
+
+    [Fact]
+    public async Task Similarity_facts_reject_an_invalid_batch_and_refuse_after_a_revoked_authority()
+    {
+        var world = new World([Record(FirstId, 7, "P-1", "Galvaniz bant", 1m, 10m)]);
+        var invalid = await Assert.ThrowsAsync<ProductOperationException>(() =>
+            world.Service().ReadSimilarityAsync(new([new(FirstId, "7"), new(FirstId, "7")])));
+        Assert.Equal((400, ProductStockDisplayCodesV1.InvalidRequest), (invalid.StatusCode, invalid.Code));
+        Assert.Equal(0, world.Records.Reads);
+
+        world.Records.During = () => world.Authorization.Granted = false;
+        var revoked = await Assert.ThrowsAsync<ProductOperationException>(() =>
+            world.Service().ReadSimilarityAsync(new([new(FirstId, "7")])));
+        Assert.Equal((403, ProductSalesEligibilityService.AccessDeniedCode), (revoked.StatusCode, revoked.Code));
+        Assert.Equal(0, world.Definitions.Reads);
+    }
+
+    [Fact]
+    public void The_similarity_key_is_length_prefixed_and_changes_with_any_controlled_value()
+    {
+        var definition = Definition();
+        var family = Assert.Single(definition.Families);
+        var template = Assert.Single(definition.Templates);
+        ProductReferences References(string quality, string coating) => new(TemplateId, "7",
+            new Dictionary<string, JsonElement>
+            {
+                ["quality"] = JsonSerializer.SerializeToElement(quality),
+                ["coating"] = JsonSerializer.SerializeToElement(coating),
+            });
+
+        var key = ProductStockDisplayReferenceService.SimilarityKey(family, template, References("DX51D", "none"));
+
+        Assert.Equal(key, ProductStockDisplayReferenceService.SimilarityKey(family, template, References("DX51D", "none")));
+        Assert.NotEqual(key, ProductStockDisplayReferenceService.SimilarityKey(family, template, References("DX52D", "none")));
+        Assert.NotEqual(key, ProductStockDisplayReferenceService.SimilarityKey(family, template, References("DX51D", "z")));
+        Assert.EndsWith("7:coating4:none7:quality5:DX51D", key, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_coating_code_is_read_from_the_template_coating_field_and_is_null_when_not_stated()
+    {
+        var template = Assert.Single(Definition().Templates);
+        ProductReferences References(JsonElement? coating)
+        {
+            var attributes = new Dictionary<string, JsonElement>
+            {
+                ["quality"] = JsonSerializer.SerializeToElement("DX51D"),
+            };
+            if (coating.HasValue) attributes["coating"] = coating.Value;
+            return new(TemplateId, "7", attributes);
+        }
+
+        Assert.Equal("z", ProductStockDisplayReferenceService.CoatingCode(
+            template, References(JsonSerializer.SerializeToElement("z"))));
+        Assert.Equal("none", ProductStockDisplayReferenceService.CoatingCode(
+            template, References(JsonSerializer.SerializeToElement("none"))));
+        Assert.Null(ProductStockDisplayReferenceService.CoatingCode(template, References(null)));
+        Assert.Null(ProductStockDisplayReferenceService.CoatingCode(
+            template, References(JsonSerializer.SerializeToElement(" "))));
+        Assert.Null(ProductStockDisplayReferenceService.CoatingCode(
+            template, References(JsonSerializer.SerializeToElement(7))));
+        Assert.Null(ProductStockDisplayReferenceService.CoatingCode(template, new ProductReferences(TemplateId, "7")));
     }
 
     private static void AssertResult(ProductStockDisplayResultV1 item, Guid id, string version,

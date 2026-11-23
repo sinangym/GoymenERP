@@ -1391,7 +1391,8 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
             var links = new NoOwnerLinks();
             return new SalesDraftService(companyContext, new FixedUser(actor, CompanyA), new GrantedAuthority(), new NoRoles(),
                 new FixedCorrelation(Correlation), owners, owners, owners, scope.Drafts, new SalesDraftServiceBindings(), Clock,
-                allocations: links, loadings: links, requests: scope.Requests, quotes: scope.Quotes, quotePolicies: new SyntheticQuotePolicies());
+                allocations: links, loadings: links, requests: scope.Requests, quotes: scope.Quotes, quotePolicies: new SyntheticQuotePolicies(),
+                allocationsV2: links);
         }
 
         public SalesDbContext Context(Guid company)
@@ -1593,10 +1594,15 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
     }
 
     /// <summary>SYNTHETIC allocation / loading owners that hold nothing for any order (a revision or a cancellation is unblocked).</summary>
-    private sealed class NoOwnerLinks : ISalesOrderAllocationReadPortV1, ISalesOrderLoadingReadPortV1
+    private sealed class NoOwnerLinks : ISalesOrderAllocationReadPortV1, ISalesOrderAllocationReadPortV2, ISalesOrderLoadingReadPortV1
     {
         public Task<SalesOrderAllocationReadAnswerV1> ReadOrderAllocationsAsync(Guid orderId, CancellationToken cancellationToken = default) =>
             Task.FromResult(new SalesOrderAllocationReadAnswerV1(CompanyA, orderId, []));
+
+        // F-017 STOK §5.1: the kind-aware read (Inventory registers it beside V1): no physical and no future supply allocation.
+        Task<SalesOrderAllocationReadAnswerV2> ISalesOrderAllocationReadPortV2.ReadOrderAllocationsAsync(Guid orderId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new SalesOrderAllocationReadAnswerV2(CompanyA, orderId, []));
 
         public Task<SalesOrderLoadingReadAnswerV1> ReadOrderLoadingAsync(Guid orderId, CancellationToken cancellationToken = default) =>
             Task.FromResult(new SalesOrderLoadingReadAnswerV1(CompanyA, orderId, []));
@@ -1608,7 +1614,8 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
         public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
             InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
-            barrier.SignalAndWait(TimeSpan.FromSeconds(30));
+            if (!barrier.SignalAndWait(TimeSpan.FromSeconds(30), cancellationToken))
+                throw new TimeoutException("Concurrent save barrier timed out before both writers arrived.");
             return ValueTask.FromResult(result);
         }
     }

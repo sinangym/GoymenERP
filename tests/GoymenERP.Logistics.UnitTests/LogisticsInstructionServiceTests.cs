@@ -230,10 +230,10 @@ public sealed partial class LogisticsInstructionServiceTests
         // §13: the loaded share is capped by the instructed remainder — terminal for this key (§7), replayed on retry.
         var over = new RecordLoadRequest("4", Guid.NewGuid(), "1.501", "AllocatedFromVehicleWeight");
         var refusal = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().RecordLoadAsync(id, lineId, over, Metadata("k-load-2")));
-        Assert.Equal((409, LogisticsProblemCodesV1.LoadExceedsInstructed, false), (refusal.Status, refusal.Code, refusal.IsReplay));
+        Assert.Equal((409, LogisticsPlanExcessV1.ApprovalRequired, false), (refusal.Status, refusal.Code, refusal.IsReplay));
         Assert.Single(world.Store.Refusals);
         var again = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().RecordLoadAsync(id, lineId, over, Metadata("k-load-2", correlation: "retry")));
-        Assert.Equal((409, LogisticsProblemCodesV1.LoadExceedsInstructed, true, "synthetic-correlation"), (again.Status, again.Code, again.IsReplay, again.OriginalCorrelationId));
+        Assert.Equal((409, LogisticsPlanExcessV1.ApprovalRequired, true, "synthetic-correlation"), (again.Status, again.Code, again.IsReplay, again.OriginalCorrelationId));
 
         // A stale version is terminal too; a Draft cannot take a load (state); both leave the instruction as it was.
         var stale = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
@@ -242,6 +242,31 @@ public sealed partial class LogisticsInstructionServiceTests
         var detail = await world.Service().GetInstructionDetailAsync(id);
         Assert.Equal(("4", "2.5"), (detail.Instruction.Version, detail.Lines[0].Loaded));
         Assert.Equal(2, world.Store.Transitions.Count);
+    }
+
+    [Fact]
+    public async Task Each_share_shows_the_server_side_actor_that_recorded_it_and_a_replay_returns_the_same_actor()
+    {
+        // F-020 ShippedBy column: the share view carries the stored actor of each share (never a client value).
+        var world = new World();
+        var created = await world.Service().CreateInstructionAsync(Request(quantity: "4"), Metadata("k-create-actor"));
+        var id = created.Detail.Instruction.Id;
+        var lineId = created.Detail.Lines[0].LineId;
+        Assert.Empty(created.Detail.Shares);
+        await world.Service().IssueInstructionAsync(id, new IssueLoadingInstructionRequest("2"), Metadata("k-issue-actor"));
+
+        var first = await world.Service().RecordLoadAsync(id, lineId, new RecordLoadRequest("3", Guid.NewGuid(), "1", "Measured"), Metadata("k-load-actor-1"));
+        Assert.Equal(Actor, Assert.Single(first.Detail.Shares).RecordedBy);
+
+        world.User.CurrentActor = "synthetic-other-actor";
+        var secondRequest = new RecordLoadRequest("4", Guid.NewGuid(), "1", "Measured");
+        var second = await world.Service().RecordLoadAsync(id, lineId, secondRequest, Metadata("k-load-actor-2"));
+        Assert.Equal(new string?[] { Actor, "synthetic-other-actor" }, second.Detail.Shares.Select(share => share.RecordedBy).ToArray());
+
+        var replay = await world.Service().RecordLoadAsync(id, lineId, secondRequest, Metadata("k-load-actor-2", correlation: "retry"));
+        Assert.Equal(new string?[] { Actor, "synthetic-other-actor" }, replay.Detail.Shares.Select(share => share.RecordedBy).ToArray());
+        var detail = await world.Service().GetInstructionDetailAsync(id);
+        Assert.Equal(new string?[] { Actor, "synthetic-other-actor" }, detail.Shares.Select(share => share.RecordedBy).ToArray());
     }
 
     [Fact]
@@ -540,12 +565,14 @@ public sealed partial class LogisticsInstructionServiceTests
         public FakeOrderLines OrderLines { get; init; } = new();
         public FakeSettings Settings { get; init; } = new();
         public FakeStore Store { get; init; } = new();
+        // STK-S27: the Sales risk gate answers within the limit unless a test says otherwise; null is an unregistered port.
+        public FakeRiskGate? RiskGate { get; set; } = new();
         public LogisticsInstructionServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, CreatePermission);
 
         public LogisticsInstructionService Service(ILogisticsRealizationTransactionRunnerV1? runner = null)
         {
             return new LogisticsInstructionService(Company, User, Authority, new FixedCorrelation(), Accounts, OrderLines,
-                new LoadingUnitVerifier(Settings), Store, Bindings, TimeProvider.System, runner);
+                new LoadingUnitVerifier(Settings), Store, Bindings, TimeProvider.System, runner, RiskGate);
         }
 
         public void ResetOwnerCalls()
@@ -645,6 +672,9 @@ public sealed partial class LogisticsInstructionServiceTests
         /// <summary>SAT-D111: when set, the loading read answers this owner-resolved limit (the current shipping cap).</summary>
         public string? ShippingCap { get; set; }
 
+        /// <summary>The approved line's order unit (kg unless a test orders in pieces).</summary>
+        public Guid OrderUnitId { get; set; } = KgUnit;
+
         public Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineForLoadingAsync(Guid orderId, Guid lineId, DateOnly effectiveOn,
             CancellationToken cancellationToken = default)
         {
@@ -711,7 +741,7 @@ public sealed partial class LogisticsInstructionServiceTests
                 "not-found" => Task.FromResult(new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.NotFound, null, null)),
                 _ => Task.FromResult(new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.Approved,
                     new SalesOrderLineReferenceV1(Fault == "other-company" ? Guid.NewGuid() : Company, orderId, lineId, 1,
-                        Fault == "other-customer" ? Guid.NewGuid() : Party, Account, Product, "7", KgUnit,
+                        Fault == "other-customer" ? Guid.NewGuid() : Party, Account, Product, "7", OrderUnitId,
                         // The generic approved line must cover the pre-existing weighbridge fixtures (up to 24,000 kg).
                         // The dedicated revised case remains deliberately capped at 2 kg.
                         Fault == "remainder-revised" ? "2" : "100000", Revision,
@@ -737,10 +767,14 @@ public sealed partial class LogisticsInstructionServiceTests
                 "unit-access-denied" => Task.FromException<UnitProfileV1>(new SettingsPrerequisiteException("settings_access_denied")),
                 "unit-unavailable" => Task.FromException<UnitProfileV1>(new SettingsPrerequisiteException("settings_provider_unavailable")),
                 _ => Task.FromResult(new UnitProfileV1(Fault == "unit-other-company" ? Guid.NewGuid() : Company, unitId,
-                    Fault == "unit-piece" ? "adet" : "kg", Fault == "unit-piece" ? "count" : "weight", Fault != "unit-piece",
+                    IsPiece(unitId) ? "adet" : "kg", IsPiece(unitId) ? "count" : "weight", !IsPiece(unitId),
                     new ProfileVersionV1(KgProfile, 4), 3, true, new DateOnly(2026, 9, 1), null)),
             };
         }
+
+        /// <summary>"unit-piece" answers every unit as a count unit; "piece-identity" only the approved piece identity (AK-4).</summary>
+        private bool IsPiece(Guid unitId) =>
+            Fault == "unit-piece" || Fault == "piece-identity" && unitId == SettingsUnitIdentitiesV1.Piece;
 
         public Task<MoneyProfileV1> GetMoneyProfileAsync(Guid currencyId, string operation, DateOnly effectiveOn, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
@@ -749,7 +783,7 @@ public sealed partial class LogisticsInstructionServiceTests
             throw new NotSupportedException();
     }
 
-    private sealed class FakeStore : ILogisticsInstructionStore, ILogisticsAggregateLoadStoreV1
+    private sealed partial class FakeStore : ILogisticsInstructionStore, ILogisticsAggregateLoadStoreV1
     {
         private readonly Dictionary<(string Command, string Key), (string Actor, string Hash, StoredLoadingInstruction? Stored, LogisticsTerminalRefusal? Refusal, string Correlation)> _attempts = [];
         private readonly List<StoredLoadingInstruction> _instructions = [];
@@ -758,6 +792,7 @@ public sealed partial class LogisticsInstructionServiceTests
         public List<LogisticsOrderLineAggregateLoadLimit> LoadLimits { get; } = [];
         public List<LogisticsTerminalRefusal> Refusals { get; } = [];
         public List<(string Command, Guid Id, long Before, long After)> Transitions { get; } = [];
+        public List<(string Command, LogisticsMutationAudit Audit)> Audits { get; } = [];
         public int Replays { get; private set; }
         private long _lastSequenceNo;
         public Exception? CreateFault { get; set; }
@@ -832,7 +867,19 @@ public sealed partial class LogisticsInstructionServiceTests
             // A store-level refusal (the real store's company-wide checks) raised before anything moves.
             if (MutateFault?.Invoke(commandName) is { } fault) throw fault;
             var before = stored.Instruction.Version;
+            var sharesBefore = stored.Instruction.Shares.Count;
             mutate(stored.Instruction, TimeProvider.System.GetUtcNow());
+            // F-020 parity with LogisticsStore: a share appended by this write keeps this write's actor beside the domain record.
+            if (stored.Instruction.Shares.Count == sharesBefore + 1)
+            {
+                var actors = new Dictionary<Guid, string>(stored.ShareRecordedBy ?? new Dictionary<Guid, string>())
+                {
+                    [stored.Instruction.Shares[^1].ShareId] = envelope.ActorId,
+                };
+                var index = _instructions.IndexOf(stored);
+                stored = stored with { ShareRecordedBy = actors };
+                _instructions[index] = stored;
+            }
             // AT-055: the store gives the note approved by this step the company's next number (gap-free, as the real series).
             foreach (var approved in stored.Instruction.DispatchNotes.Where(note => note is { Status: DispatchNoteStatus.Approved, Number: null }).ToArray())
             {
@@ -840,6 +887,7 @@ public sealed partial class LogisticsInstructionServiceTests
             }
             _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, stored, null, envelope.CorrelationId);
             Transitions.Add((commandName, instructionId, before, stored.Instruction.Version));
+            Audits.Add((commandName, audit));
             return Task.FromResult<LogisticsStoreResult?>(new LogisticsStoreResult(stored, LogisticsWriteOutcome.Recorded, envelope.CorrelationId));
         }
 
@@ -902,6 +950,8 @@ public sealed partial class LogisticsInstructionServiceTests
         public int SalesOrderReads { get; private set; }
 
         public int InvoiceSourceReads { get; private set; }
+        public Action? AfterInvoiceSourceRead { get; set; }
+        public Action? AfterInvoiceSourceSnapshot { get; set; }
         public int? InvoiceSourceRevisionOverride { get; set; }
         public string? InvoiceSourceIntegrityFault { get; set; }
 
@@ -909,6 +959,7 @@ public sealed partial class LogisticsInstructionServiceTests
             CancellationToken cancellationToken = default)
         {
             InvoiceSourceReads++;
+            AfterInvoiceSourceRead?.Invoke();
             if (InvoiceSourceIntegrityFault is not null)
             {
                 throw new LogisticsStoreException(LogisticsStoreCodes.InvoiceSourceInvalid, InvoiceSourceIntegrityFault);
@@ -921,7 +972,7 @@ public sealed partial class LogisticsInstructionServiceTests
                     continue;
                 }
 
-                return Task.FromResult<StoredApprovedDispatchInvoiceSource?>(new StoredApprovedDispatchInvoiceSource(
+                var sourceSnapshot = new StoredApprovedDispatchInvoiceSource(
                     stored.Instruction.CompanyId,
                     note.DispatchNoteId,
                     stored.Instruction.Id,
@@ -937,7 +988,9 @@ public sealed partial class LogisticsInstructionServiceTests
                         return new StoredApprovedDispatchInvoiceSourceLine(line.LineNo, source.Source.OrderId,
                             InvoiceSourceRevisionOverride ?? source.Source.Revision, source.Source.LineId,
                             line.ShipmentId, source.ProductId, source.UnitId, line.Quantity.Value);
-                    })]));
+                    })]);
+                AfterInvoiceSourceSnapshot?.Invoke();
+                return Task.FromResult<StoredApprovedDispatchInvoiceSource?>(sourceSnapshot);
             }
 
             return Task.FromResult<StoredApprovedDispatchInvoiceSource?>(null);

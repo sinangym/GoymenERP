@@ -21,7 +21,7 @@ import {
   type StockPositionFilters,
   type StockProductFamilyOption,
 } from './stockDisplayApi'
-import type { StockClassification, StockOwnerDisplay, StockOwnerDisplayRow as StockDisplayRow, StockPartyKind } from './stockDisplayContract'
+import type { StockClassification, StockLengthDisplayRow as StockDisplayRow, StockOwnerDisplay, StockPartyKind } from './stockDisplayContract'
 import { createRequestFence } from '../purchasing/requestFence'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { useShellState } from '../shell/shellContext'
@@ -35,7 +35,11 @@ import { DataTable, type DataTableColumn } from '../ui/DataTable'
 import { productDetailPath } from '../product/capabilities'
 import { locationDetailPath } from '../organization/capabilities'
 import { inventoryLabelDetailPath } from './labelDetailRoute'
+import { INVENTORY_SHORTAGE_WARNINGS_ROUTE, INVENTORY_TRANSFERS_ROUTE, inventoryNegativeStockAttemptPath } from './capabilities'
 import { PurchaseSupplySection } from './PurchaseSupplySection'
+import { SHORTAGE_WARNING_TEXT } from './shortageWarningText'
+import { TRANSFER_TEXT } from './transferText'
+import { NEGATIVE_STOCK_ATTEMPT_TEXT } from './NegativeStockAttemptText'
 import { StockRowActionMenu } from './StockRowActionMenu'
 import {
   normalizeStockSearch,
@@ -787,7 +791,12 @@ function InventoryStockPositionView({
   const restart = () => { setState({ type: 'loading' }); void load(filters) }
 
   return <main className={styles.page}>
-    <header className={styles.header}><h1>{STOCK_TEXT.heading}</h1></header>
+    <header className={styles.header}>
+      <h1>{STOCK_TEXT.heading}</h1>
+      <Link to={INVENTORY_SHORTAGE_WARNINGS_ROUTE}>{SHORTAGE_WARNING_TEXT.entryLink}</Link>
+      <Link to={INVENTORY_TRANSFERS_ROUTE}>{TRANSFER_TEXT.entryLink}</Link>
+      <Link to={inventoryNegativeStockAttemptPath(filters.productId, filters.locationId)}>{NEGATIVE_STOCK_ATTEMPT_TEXT.entryLink}</Link>
+    </header>
 
     <div className={styles.toolbar}>
       <form className={styles.search} onSubmit={submit} role="search">

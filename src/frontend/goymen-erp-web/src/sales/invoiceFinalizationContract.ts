@@ -10,6 +10,7 @@
  */
 import { LIMITS } from './contract'
 import { isDateOnly, isReferenceId, isVersionString } from './wirePrimitives'
+import { decodeInvoiceKilogramPrices, type InvoiceKilogramPrices } from './kilogramPriceContract'
 
 type Obj = Record<string, unknown>
 
@@ -22,6 +23,15 @@ function exact(value: unknown, fields: readonly string[]): Obj | null {
   if (object === null) return null
   const keys = Object.keys(object)
   if (keys.length !== fields.length) return null
+  return fields.every((field) => Object.hasOwn(object, field)) ? object : null
+}
+
+/** `fields` exactly, plus any of `optional` (the server's `WhenWritingNull` members, absent when null). */
+function exactPlus(value: unknown, fields: readonly string[], optional: readonly string[]): Obj | null {
+  const object = record(value)
+  if (object === null) return null
+  const allowed = new Set([...fields, ...optional])
+  if (Object.keys(object).some((key) => !allowed.has(key))) return null
   return fields.every((field) => Object.hasOwn(object, field)) ? object : null
 }
 
@@ -65,7 +75,7 @@ export const salesDraftInvoicesPath = (draftId: string) => `/sales/drafts/${segm
 
 /* ── Enumerations ─────────────────────────────────────────────────────────── */
 
-export const INVOICE_STATES = ['Draft', 'PendingApproval', 'Approved', 'Rejected', 'Cancelled', 'Finalized'] as const
+export const INVOICE_STATES = ['Draft', 'PendingApproval', 'Approved', 'Rejected', 'Cancelled', 'Finalized', 'OfficiallyCancelled'] as const
 export type InvoiceState = (typeof INVOICE_STATES)[number]
 const isInvoiceState = (value: unknown): value is InvoiceState =>
   typeof value === 'string' && (INVOICE_STATES as readonly string[]).includes(value)
@@ -116,7 +126,7 @@ export interface InvoiceAmounts {
 }
 const AMOUNTS_FIELDS = ['netAmount', 'vatAmount', 'withheldVatAmount', 'grossAmount', 'payableAmount'] as const
 
-function decodeAmounts(value: unknown): InvoiceAmounts | null {
+export function decodeAmounts(value: unknown): InvoiceAmounts | null {
   const o = exact(value, AMOUNTS_FIELDS)
   if (o === null || !AMOUNTS_FIELDS.every((field) => isAmount(o[field]))) return null
   return {
@@ -139,7 +149,7 @@ export interface InvoiceRate {
 }
 const RATE_FIELDS = ['rate', 'rateDay', 'bulletinDate', 'functionalCurrencyId', 'functionalScale'] as const
 
-function decodeRate(value: unknown): InvoiceRate | null {
+export function decodeRate(value: unknown): InvoiceRate | null {
   const o = exact(value, RATE_FIELDS)
   if (o === null || !isAmount(o.rate) || !isDateOnly(o.rateDay) || !isDateOnly(o.bulletinDate)
     || !isReferenceId(o.functionalCurrencyId) || !isCount(o.functionalScale)) return null
@@ -172,7 +182,7 @@ export interface InvoiceInstalment {
 }
 const INSTALMENT_FIELDS = ['sequenceNo', 'dueDate', 'sharePercent', 'amount'] as const
 
-function decodeInstalment(value: unknown): InvoiceInstalment | null {
+export function decodeInstalment(value: unknown): InvoiceInstalment | null {
   const o = exact(value, INSTALMENT_FIELDS)
   if (o === null || !isPositiveCount(o.sequenceNo) || !isDateOnly(o.dueDate) || !isAmount(o.sharePercent) || !isAmount(o.amount)) return null
   return { sequenceNo: o.sequenceNo, dueDate: o.dueDate, sharePercent: o.sharePercent, amount: o.amount }
@@ -190,6 +200,9 @@ export interface InvoiceLine {
   readonly netUnitPrice: string
   readonly vatPercent: string
   readonly amounts: InvoiceAmounts
+  /** SAT-D434 (AK-4, additive): a piece line's theoretical and scale kg, information only; absent on a kg line. */
+  readonly theoreticalKg?: string
+  readonly actualKg?: string
 }
 const LINE_FIELDS = [
   'lineId', 'lineNo', 'shipmentId', 'dispatchNoteId', 'dispatchNoteNumber', 'noteLineNo', 'shipmentDate', 'salesOrderId',
@@ -206,7 +219,10 @@ function decodeLineFunctional(value: unknown): true | null {
 }
 
 function decodeLine(value: unknown): InvoiceLine | null {
-  const o = exact(value, LINE_FIELDS)
+  const o = exactPlus(value, LINE_FIELDS, ['theoreticalKg', 'actualKg'])
+  // SAT-D434: the kg information is both values or neither, each an exact positive decimal.
+  if (o !== null && ((o.theoreticalKg === undefined) !== (o.actualKg === undefined)
+    || (o.theoreticalKg !== undefined && (!isAmount(o.theoreticalKg) || !isAmount(o.actualKg))))) return null
   if (
     o === null || !isReferenceId(o.lineId) || !isPositiveCount(o.lineNo) || !isReferenceId(o.shipmentId)
     || !isReferenceId(o.dispatchNoteId) || !isText(o.dispatchNoteNumber) || !isPositiveCount(o.noteLineNo)
@@ -227,6 +243,8 @@ function decodeLine(value: unknown): InvoiceLine | null {
     netUnitPrice: o.netUnitPrice,
     vatPercent: o.vatPercent,
     amounts,
+    ...(typeof o.theoreticalKg === 'string' && typeof o.actualKg === 'string'
+      ? { theoreticalKg: o.theoreticalKg, actualKg: o.actualKg } : {}),
   }
 }
 
@@ -253,7 +271,7 @@ export interface InvoiceDecision {
   readonly cancellationReason: string | null
 }
 
-function decodeDecision(value: unknown): InvoiceDecision | null {
+export function decodeDecision(value: unknown): InvoiceDecision | null {
   const o = exact(value, SALES_INVOICE_DECISION_FIELDS)
   if (
     o === null || !isNullableText(o.submittedBy) || !isNullableInstant(o.submittedAtUtc) || !isNullableText(o.decidedBy)
@@ -268,7 +286,43 @@ function decodeDecision(value: unknown): InvoiceDecision | null {
 }
 
 /** The recorded match of the official e-invoice (SAT-D14): the server's amounts and its tolerance, shown, never judged. */
+export interface OfficialInvoiceSourceProof {
+  readonly companyId: string
+  readonly invoiceId: string
+  readonly sourceKind: 'manual' | 'approved-import'
+  readonly version: string
+  readonly approvedAtUtc: string
+  readonly pdfDocumentId: string | null
+  readonly pdfDocumentVersionNo: number | null
+  readonly pdfSha256: string | null
+  readonly sourceBatchId: string | null
+  readonly sourceChecksum: string | null
+  readonly hasPendingManual: boolean
+}
+const SOURCE_PROOF_FIELDS = ['companyId', 'invoiceId', 'sourceKind', 'version', 'approvedAtUtc', 'pdfDocumentId',
+  'pdfDocumentVersionNo', 'pdfSha256', 'sourceBatchId', 'sourceChecksum', 'hasPendingManual'] as const
+const isHash = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value)
+function decodeSourceProof(value: unknown): OfficialInvoiceSourceProof | null {
+  const o = exact(value, SOURCE_PROOF_FIELDS)
+  if (o === null || !isReferenceId(o.companyId) || !isReferenceId(o.invoiceId) || !isText(o.version)
+    || o.version.length > 128 || !isInstant(o.approvedAtUtc) || typeof o.hasPendingManual !== 'boolean') return null
+  if (o.sourceKind === 'manual' && isReferenceId(o.pdfDocumentId) && isPositiveCount(o.pdfDocumentVersionNo)
+    && isHash(o.pdfSha256) && o.sourceBatchId === null && o.sourceChecksum === null && !o.hasPendingManual) {
+    return { companyId: o.companyId, invoiceId: o.invoiceId, sourceKind: o.sourceKind, version: o.version,
+      approvedAtUtc: o.approvedAtUtc, pdfDocumentId: o.pdfDocumentId, pdfDocumentVersionNo: o.pdfDocumentVersionNo,
+      pdfSha256: o.pdfSha256, sourceBatchId: null, sourceChecksum: null, hasPendingManual: false }
+  }
+  if (o.sourceKind === 'approved-import' && isReferenceId(o.sourceBatchId) && isHash(o.sourceChecksum)
+    && o.pdfDocumentId === null && o.pdfDocumentVersionNo === null && o.pdfSha256 === null) {
+    return { companyId: o.companyId, invoiceId: o.invoiceId, sourceKind: o.sourceKind, version: o.version,
+      approvedAtUtc: o.approvedAtUtc, pdfDocumentId: null, pdfDocumentVersionNo: null, pdfSha256: null,
+      sourceBatchId: o.sourceBatchId, sourceChecksum: o.sourceChecksum, hasPendingManual: o.hasPendingManual }
+  }
+  return null
+}
 export interface InvoiceMatch {
+  readonly invoiceDate: string | null
+  readonly sourceProof: OfficialInvoiceSourceProof | null
   readonly officialInvoiceNo: string
   readonly ettn: string
   readonly invoiceAmount: string
@@ -299,7 +353,7 @@ const MATCH_TAX_FIELDS = [
 ] as const
 const MATCH_FIELDS = [
   'officialInvoiceNo', 'ettn', 'invoiceAmount', 'officialAmount', 'difference', 'tolerance', 'matchedBy', 'matchedAtUtc',
-  'differenceApprovedBy', 'differenceReason', ...MATCH_TAX_FIELDS,
+  'differenceApprovedBy', 'differenceReason', 'invoiceDate', 'sourceProof', ...MATCH_TAX_FIELDS,
 ] as const
 
 /** All six present (non-negative; the differences are the server's absolute differences) or all six null; a mix is not this contract (`undefined`). */
@@ -316,7 +370,7 @@ function decodeMatchTaxes(o: Obj): InvoiceMatchTaxes | null | undefined {
   }
 }
 
-function decodeMatch(value: unknown): InvoiceMatch | null {
+export function decodeMatch(value: unknown): InvoiceMatch | null {
   const o = exact(value, MATCH_FIELDS)
   if (
     o === null || !isText(o.officialInvoiceNo) || !isText(o.ettn) || !isAmount(o.invoiceAmount) || !isAmount(o.officialAmount)
@@ -324,11 +378,15 @@ function decodeMatch(value: unknown): InvoiceMatch | null {
     || !isNullableText(o.differenceApprovedBy) || !isNullableText(o.differenceReason)
   ) return null
   const taxes = decodeMatchTaxes(o)
-  if (taxes === undefined) return null
+  const sourceProof = o.sourceProof === null ? null : decodeSourceProof(o.sourceProof)
+  if (taxes === undefined || (o.sourceProof !== null && sourceProof === null)
+    || !(o.invoiceDate === null || isDateOnly(o.invoiceDate))
+    || ((o.invoiceDate === null) !== (sourceProof === null))) return null
   return {
     officialInvoiceNo: o.officialInvoiceNo, ettn: o.ettn, invoiceAmount: o.invoiceAmount, officialAmount: o.officialAmount,
     difference: o.difference, tolerance: o.tolerance, matchedBy: o.matchedBy, matchedAtUtc: o.matchedAtUtc,
     differenceApprovedBy: o.differenceApprovedBy, differenceReason: o.differenceReason, taxes,
+    invoiceDate: o.invoiceDate, sourceProof,
   }
 }
 
@@ -375,7 +433,7 @@ const FINALIZATION_FIELDS = [
   'lastAttemptAtUtc', 'lastOutcome', 'accountingStatus', 'instalments',
 ] as const
 
-function decodeFinalization(value: unknown): InvoiceFinalization | null {
+export function decodeFinalization(value: unknown): InvoiceFinalization | null {
   const o = exact(value, FINALIZATION_FIELDS)
   if (
     o === null || !isReferenceId(o.admissionId) || !isVersionString(o.finalizedVersion) || !isText(o.finalizedBy)
@@ -422,6 +480,8 @@ export interface SalesInvoiceDetail {
   readonly isReplay: boolean
   readonly match: InvoiceMatch | null
   readonly finalization: InvoiceFinalization | null
+  /** SAT-D436 (AK-5, additive): the kg prices of an invoice with a piece line; absent on a kg-only invoice. */
+  readonly kilogramPrices?: InvoiceKilogramPrices
 }
 export const SALES_INVOICE_DETAIL_FIELDS = [
   'id', 'documentNo', 'state', 'version', 'businessDate', 'partyId', 'companyAccountId', 'currencyId', 'amountScale',
@@ -434,7 +494,9 @@ export const SALES_INVOICE_MATCH_FIELDS = MATCH_FIELDS
 
 /** The detail of exactly `invoiceId`; anything else (another id, a broken invariant, a stray member) is `null`. */
 export function decodeSalesInvoiceDetail(value: unknown, invoiceId: string): SalesInvoiceDetail | null {
-  const o = exact(value, SALES_INVOICE_DETAIL_FIELDS)
+  const o = exactPlus(value, SALES_INVOICE_DETAIL_FIELDS, ['kilogramPrices'])
+  const kilogramPrices = o === null || o.kilogramPrices === undefined ? undefined : decodeInvoiceKilogramPrices(o.kilogramPrices)
+  if (kilogramPrices === null) return null
   if (
     o === null || !isReferenceId(o.id) || o.id.toLowerCase() !== invoiceId.toLowerCase() || !isText(o.documentNo)
     || !isInvoiceState(o.state) || !isVersionString(o.version) || !isDateOnly(o.businessDate) || !isReferenceId(o.partyId)
@@ -456,12 +518,13 @@ export function decodeSalesInvoiceDetail(value: unknown, invoiceId: string): Sal
     || (o.match !== null && match === null) || (o.finalization !== null && finalization === null)
   ) return null
   // A finalization exists exactly on a finalized invoice.
-  if ((o.state === 'Finalized') !== (finalization !== null)) return null
+  if ((o.state === 'Finalized' || o.state === 'OfficiallyCancelled') !== (finalization !== null)) return null
   return {
     id: o.id, documentNo: o.documentNo, state: o.state, version: o.version, businessDate: o.businessDate, partyId: o.partyId,
     companyAccountId: o.companyAccountId, currencyId: o.currencyId, amountScale: o.amountScale, exchangeRate, totals,
     functionalTotals, vatGroups, instalments, lines, createdBy: o.createdBy, createdAtUtc: o.createdAtUtc, decision,
     paymentAllocationWarning: o.paymentAllocationWarning, isReplay: o.isReplay, match, finalization,
+    ...(kilogramPrices === undefined ? {} : { kilogramPrices }),
   }
 }
 

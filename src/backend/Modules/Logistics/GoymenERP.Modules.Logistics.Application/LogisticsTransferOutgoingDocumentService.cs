@@ -25,13 +25,22 @@ public sealed class LogisticsTransferOutgoingDocumentService(
         var envelope = Envelope(scope, bindings.CreatePermission, metadata);
         try
         {
+            if (request.EDispatchAssociation is { } associationValue
+                && (associationValue is not (LogisticsTransferEDispatchAssociationV1.NotLinked or LogisticsTransferEDispatchAssociationV1.Linked)
+                    || associationValue == LogisticsTransferEDispatchAssociationV1.NotLinked && !string.IsNullOrWhiteSpace(request.EDispatchNumber)))
+                throw new LogisticsTransferOutgoingDocumentServiceException(422, "validation_failed");
             var document = TransferOutgoingDocument.Create(scope.CompanyId, request.DocumentId,
                 request.TransferId, request.OrderedTransferLineIds, request.EDispatchNumber,
                 scope.ActorId, timeProvider.GetUtcNow());
             var hash = LogisticsRequestHash.Compute(LogisticsTransferOutgoingDocumentCommandsV1.CreateDraft,
                 request.DocumentId, request);
-            var result = await store.StoreDraftAsync(envelope, hash, document,
-                token => scopes.RequireStillAsync(scope, bindings.CreatePermission, token), cancellationToken);
+            var result = request.EDispatchAssociation is { } association
+                ? store is ILogisticsTransferOutgoingDocumentStoreV2 owner
+                    ? await owner.StoreDraftWithAssociationAsync(envelope, hash, document, association,
+                        token => scopes.RequireStillAsync(scope, bindings.CreatePermission, token), cancellationToken)
+                    : throw new LogisticsTransferOutgoingDocumentServiceException(503, "logistics_transfer_outgoing_document_unavailable")
+                : await store.StoreDraftAsync(envelope, hash, document,
+                    token => scopes.RequireStillAsync(scope, bindings.CreatePermission, token), cancellationToken);
             return Response(result);
         }
         catch (TransferOutgoingDocumentRuleException exception)

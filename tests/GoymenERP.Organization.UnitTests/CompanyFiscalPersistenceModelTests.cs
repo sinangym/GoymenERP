@@ -37,9 +37,12 @@ public sealed class CompanyFiscalPersistenceModelTests
             "[InvoiceCapable] = 0 OR ([IsPlaceholder] = 0 AND [Vkn] IS NOT NULL)",
             constraints["CK_Companies_Placeholder_InvoiceDisabled"]);
 
-        Assert.DoesNotContain(
-            company.GetIndexes(),
-            index => index.Properties.Any(property => property.Name == nameof(Company.Vkn)));
+        // KIM-D28/DEC-ORG-005: every entered VKN identifies one company, while a placeholder may remain null.
+        Assert.Equal(OrganizationDbContext.CompanyVknRequiredCheck, constraints["CK_Companies_Vkn_RequiredUnlessPlaceholder"]);
+        var uniqueVkn = Assert.Single(company.GetIndexes(), index => index.GetDatabaseName() == OrganizationDbContext.CompanyVknUniqueIndexName);
+        Assert.True(uniqueVkn.IsUnique);
+        Assert.Equal([nameof(Company.Vkn)], uniqueVkn.Properties.Select(property => property.Name));
+        Assert.Equal(OrganizationDbContext.CompanyVknUniqueFilter, uniqueVkn.GetFilter());
     }
 
     private static OrganizationDbContext CreateDbContext()

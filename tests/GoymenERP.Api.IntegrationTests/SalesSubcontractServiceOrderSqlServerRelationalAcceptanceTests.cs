@@ -37,7 +37,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// price here is a policy. SENTETIK / NOT_ENV.
 /// </para>
 /// </summary>
-public sealed class SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTests
+public sealed partial class SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;

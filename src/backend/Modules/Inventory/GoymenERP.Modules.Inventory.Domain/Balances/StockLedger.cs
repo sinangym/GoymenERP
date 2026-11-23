@@ -4,8 +4,11 @@ using GoymenERP.Modules.Inventory.Domain.Stock;
 
 namespace GoymenERP.Modules.Inventory.Domain.Balances;
 
-/// <summary>One bucket's current physical quantity.</summary>
-public sealed record StockBalance(StockPosition Position, Kilograms Quantity);
+/// <summary>
+/// One bucket's current physical quantity. <paramref name="Pieces"/> (KLN-D119, AK-2) is the bucket's piece count on a
+/// piece-tracking label and null on a label without one.
+/// </summary>
+public sealed record StockBalance(StockPosition Position, Kilograms Quantity, PieceCount? Pieces = null);
 
 /// <summary>
 /// Stock balances kept together with the movements that produced them (§7.1: the movement
@@ -29,6 +32,10 @@ public sealed record StockBalance(StockPosition Position, Kilograms Quantity);
 /// only through movements, so a store can apply the next movement against them.</item>
 /// <item><see cref="Reconcile"/> compares stored balances with the movements, bucket by
 /// bucket.</item>
+/// <item>KLN-D119 (AK-2): a label either tracks pieces in every stocked bucket or in none. A movement line on a
+/// piece-tracking label must carry its pieces, a piece-less label holding stock never receives one (no backfill), a
+/// piece count never goes below zero, and a piece-tracking bucket's pieces and kilograms are both zero or both
+/// positive. An empty label may be stocked again with or without pieces.</item>
 /// </list>
 /// This is the in-memory domain rule. The persistent race guard is the store's (INV-2: a
 /// concurrency token on every touched label, and SQL unique indexes).
@@ -36,6 +43,7 @@ public sealed record StockBalance(StockPosition Position, Kilograms Quantity);
 public sealed class StockLedger
 {
     private readonly Dictionary<StockPosition, decimal> balances = [];
+    private readonly Dictionary<StockPosition, int> pieces = [];
     private readonly List<StockMovement> applied = [];
     private readonly HashSet<Guid> appliedIds = [];
 
@@ -58,6 +66,27 @@ public sealed class StockLedger
                 throw new InventoryRuleException(
                     InventoryRuleCodes.InvalidMovement, "Aynı pozisyon için iki kayıtlı bakiye olamaz.");
             }
+
+            if (balance.Pieces is { } count)
+            {
+                ledger.pieces[balance.Position] = count.Value;
+            }
+        }
+
+        foreach (var label in ledger.balances.Where(entry => entry.Value != 0m).GroupBy(entry => entry.Key.LabelId))
+        {
+            var tracked = label.Count(entry => ledger.pieces.ContainsKey(entry.Key));
+            if (tracked != 0 && tracked != label.Count())
+            {
+                throw new InventoryRuleException(InventoryRuleCodes.InvalidPieceCount,
+                    "Kayıtlı bakiyelerde bir etiket bazı kovalarda adet taşıyor, bazılarında taşımıyor.");
+            }
+        }
+
+        if (ledger.pieces.Any(entry => (entry.Value == 0) != (ledger.balances[entry.Key] == 0m)))
+        {
+            throw new InventoryRuleException(InventoryRuleCodes.InvalidPieceCount,
+                "Kayıtlı bakiyede adet ile kilogram birlikte sıfır ya da birlikte pozitif olmalıdır.");
         }
 
         var split = ledger.balances.Where(entry => entry.Value != 0m)
@@ -74,10 +103,19 @@ public sealed class StockLedger
 
     /// <summary>Every non-zero bucket.</summary>
     public IReadOnlyList<StockBalance> Balances =>
-        [.. balances.Where(entry => entry.Value != 0m).Select(entry => new StockBalance(entry.Key, Kilograms.Of(entry.Value)))];
+        [.. balances.Where(entry => entry.Value != 0m)
+            .Select(entry => new StockBalance(entry.Key, Kilograms.Of(entry.Value), PiecesAt(entry.Key)))];
 
     public Kilograms QuantityAt(StockPosition position) =>
         balances.TryGetValue(position, out var quantity) ? Kilograms.Of(quantity) : Kilograms.Zero;
+
+    /// <summary>KLN-D119: the bucket's piece count, or null when its label does not track pieces.</summary>
+    public PieceCount? PiecesAt(StockPosition position) =>
+        pieces.TryGetValue(position, out var count) ? PieceCount.Of(count) : null;
+
+    /// <summary>KLN-D119: whether the label holds stock with a piece count.</summary>
+    public bool TracksPieces(Guid labelId) =>
+        balances.Any(entry => entry.Key.LabelId == labelId && entry.Value != 0m && pieces.ContainsKey(entry.Key));
 
     /// <summary>
     /// All physical stock of a product in a company for ONE owner, blocked or not. The owner
@@ -110,8 +148,9 @@ public sealed class StockLedger
         // Check every line against the resulting balance BEFORE changing anything: a movement
         // either applies whole or not at all.
         var next = new Dictionary<StockPosition, decimal>();
-        foreach (var line in movement.Lines)
+        for (var lineIndex = 0; lineIndex < movement.Lines.Count; lineIndex++)
         {
+            var line = movement.Lines[lineIndex];
             var current = next.TryGetValue(line.Position, out var pending)
                 ? pending
                 : balances.GetValueOrDefault(line.Position);
@@ -119,8 +158,10 @@ public sealed class StockLedger
             var result = current + delta;
             if (result < 0m)
             {
+                // SAT-D318: the refusal names the failing line and what its bucket held just before it.
                 throw new InventoryRuleException(
-                    InventoryRuleCodes.NegativePhysicalStock,
+                    new StockShortfall(movement.Kind, movement.Source, line.Position, line.Quantity,
+                        Kilograms.Of(current), lineIndex + 1),
                     "Hareket fiziksel stoğu sıfırın altına düşürür; negatif stok yoktur.");
             }
 
@@ -133,9 +174,21 @@ public sealed class StockLedger
             RequireNoStockBeforeReceipt(movement);
         }
 
+        var (nextPieces, untracked) = NextPieces(movement, next);
+
         foreach (var (position, quantity) in next)
         {
             balances[position] = quantity;
+        }
+
+        foreach (var position in untracked)
+        {
+            pieces.Remove(position);
+        }
+
+        foreach (var (position, count) in nextPieces)
+        {
+            pieces[position] = count;
         }
 
         appliedIds.Add(movement.Id);
@@ -164,6 +217,80 @@ public sealed class StockLedger
                     InventoryRuleCodes.DuplicateSource, "Bu kaynak bu türde zaten bir hareket doğurdu.");
             }
         }
+    }
+
+    /// <summary>
+    /// KLN-D119: the piece counts after the movement, checked before anything changes. Returns the new count of every touched
+    /// bucket of a piece-tracking label and the buckets whose stale count is dropped (an empty label stocked again without
+    /// pieces).
+    /// </summary>
+    private (Dictionary<StockPosition, int> Next, List<StockPosition> Untracked) NextPieces(StockMovement movement,
+        IReadOnlyDictionary<StockPosition, decimal> nextKilograms)
+    {
+        var next = new Dictionary<StockPosition, int>();
+        var untracked = new List<StockPosition>();
+        foreach (var label in movement.Lines.GroupBy(line => line.Position.LabelId))
+        {
+            var withPieces = label.Count(line => line.Pieces is not null);
+            if (withPieces != 0 && withPieces != label.Count())
+            {
+                throw new InventoryRuleException(InventoryRuleCodes.InvalidPieceCount,
+                    "Bir hareketteki aynı etiketin satırları adedi birlikte taşır ya da hiçbiri taşımaz.");
+            }
+
+            var holdsStock = balances.Any(entry => entry.Key.LabelId == label.Key && entry.Value != 0m);
+            var tracked = TracksPieces(label.Key);
+            if (tracked && withPieces == 0)
+            {
+                throw new InventoryRuleException(InventoryRuleCodes.PieceCountRequired,
+                    "Etiket adet taşıyor; hareketin adedi bilinmeden kayıt yapılmaz.");
+            }
+
+            if (holdsStock && !tracked && withPieces != 0)
+            {
+                throw new InventoryRuleException(InventoryRuleCodes.PieceCountNotTracked,
+                    "Adetsiz kayıtlı etikete sonradan adet eklenmez.");
+            }
+
+            if (withPieces == 0)
+            {
+                untracked.AddRange(pieces.Keys.Where(position => position.LabelId == label.Key));
+                continue;
+            }
+
+            foreach (var line in label)
+            {
+                var current = next.TryGetValue(line.Position, out var pending)
+                    ? pending
+                    : holdsStock ? pieces.GetValueOrDefault(line.Position) : 0;
+                var delta = line.Direction == StockDirection.In ? line.Pieces!.Value.Value : -line.Pieces!.Value.Value;
+                var result = checked(current + delta);
+                if (result < 0)
+                {
+                    throw new InventoryRuleException(InventoryRuleCodes.NegativePieceCount,
+                        "Hareket etiketin adedini sıfırın altına düşürür; negatif adet yoktur.");
+                }
+
+                next[line.Position] = result;
+            }
+
+            if (!holdsStock)
+            {
+                // A stale count of an emptied label never mixes into its new stock.
+                untracked.AddRange(pieces.Keys.Where(position => position.LabelId == label.Key && !next.ContainsKey(position)));
+            }
+        }
+
+        foreach (var (position, count) in next)
+        {
+            if ((count == 0) != (nextKilograms[position] == 0m))
+            {
+                throw new InventoryRuleException(InventoryRuleCodes.InvalidPieceCount,
+                    "Adetli etikette adet ile kilogram birlikte sıfıra iner ya da birlikte pozitif kalır.");
+            }
+        }
+
+        return (next, untracked);
     }
 
     /// <summary>A received label must hold no stock before the receipt, in any bucket.</summary>

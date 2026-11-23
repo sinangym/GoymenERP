@@ -14,7 +14,13 @@ public sealed record SalesOfficialInvoiceFacts(
     decimal PayableAmount,
     decimal PayableFunctionalAmount,
     decimal VatFunctionalAmount,
-    decimal WithholdingFunctionalAmount);
+    decimal WithholdingFunctionalAmount,
+    DateOnly? InvoiceDate = null,
+    SalesOfficialInvoiceSourceProofV1? SourceProof = null)
+{
+    public bool HasCompleteSourceProof(Guid companyId) => InvoiceDate is { } date && date != default
+        && SourceProof?.IsValidFor(companyId) == true;
+}
 
 /// <summary>
 /// SAT-D241: the VAT and the withholding TL equivalents of the invoice and the official document and their absolute differences, each
@@ -75,8 +81,13 @@ public sealed record SalesInvoiceMatchFacts(
     DateTimeOffset MatchedAtUtc,
     string? DifferenceApprovedBy,
     string? DifferenceReason,
-    SalesInvoiceTaxMatchFacts? Taxes)
+    SalesInvoiceTaxMatchFacts? Taxes,
+    DateOnly? InvoiceDate = null,
+    SalesOfficialInvoiceSourceProofV1? SourceProof = null)
 {
+    public bool HasCompleteSourceProof(Guid companyId) => InvoiceDate is { } date && date != default
+        && SourceProof?.IsValidFor(companyId) == true;
+
     public bool DifferenceWasApproved => DifferenceApprovedBy is not null;
 
     /// <summary>The largest of the recorded payable, VAT and withholding differences.</summary>
@@ -109,7 +120,7 @@ public sealed partial class SalesInvoice
     public void RestoreMatch(SalesInvoiceMatchFacts facts)
     {
         ArgumentNullException.ThrowIfNull(facts);
-        if (State is not (SalesInvoiceState.Approved or SalesInvoiceState.Finalized) || Match is not null || !MatchIsConsistent(facts))
+        if (State is not (SalesInvoiceState.Approved or SalesInvoiceState.Finalized or SalesInvoiceState.OfficiallyCancelled) || Match is not null || !MatchIsConsistent(facts))
         {
             throw new InvalidOperationException("Kayıtlı resmî fatura eşleşmesi okunamadı.");
         }
@@ -174,7 +185,25 @@ public sealed partial class SalesInvoice
             throw StateConflict("Fatura zaten resmî belgeyle eşleştirildi.");
         }
 
-        var evaluation = EvaluateMatch(official);
+        var facts = BuildMatchFacts(CompanyId, official, EvaluateMatch(official), actor, tolerance,
+            approveDifference, differenceReason, () => RequireNotPreparer(actor), now);
+        Match = facts;
+        return facts;
+    }
+
+    // One matching policy for dispatch and subcontract invoices. Source/date/amount rules are identical;
+    // the caller supplies its own already-checked lifecycle and its immutable functional amounts.
+    internal static SalesInvoiceMatchFacts BuildMatchFacts(Guid companyId, SalesOfficialInvoiceFacts official,
+        SalesInvoiceMatchEvaluation evaluation, string actor, decimal tolerance, bool approveDifference,
+        string? differenceReason, Action requireNotPreparer, DateTimeOffset now)
+    {
+        if (tolerance < 0m) throw new ArgumentOutOfRangeException(nameof(tolerance));
+        if (!official.HasCompleteSourceProof(companyId))
+        {
+            throw new SalesRuleException(SalesRuleCodes.InvoiceMatchSourceProofRequired,
+                "Resmî fatura tarihi ve onaylı kaynak kanıtı olmadan eşleştirme kaydedilemez.");
+        }
+
         if (!evaluation.ExactFieldsMatch)
         {
             throw new SalesRuleException(SalesRuleCodes.InvoiceMatchMismatch,
@@ -192,7 +221,7 @@ public sealed partial class SalesInvoice
                     "Ödenecek tutar, KDV ya da tevkifat farkı toleransı aşıyor; ayrı ve açık onay gerekir.");
             }
 
-            RequireNotPreparer(actor);
+            requireNotPreparer();
             reason = RequireReason(differenceReason) ?? throw new SalesRuleException(SalesRuleCodes.InvoiceMatchDifferenceReasonRequired,
                 "Tutar farkı onayı için neden yazılır.");
             approver = actor;
@@ -205,18 +234,18 @@ public sealed partial class SalesInvoice
 
         var facts = new SalesInvoiceMatchFacts(official.OfficialNo, official.Ettn, evaluation.InvoiceFunctionalAmount,
             evaluation.OfficialFunctionalAmount, evaluation.Difference, tolerance, actor, now.ToUniversalTime(), approver, reason,
-            evaluation.Taxes);
-        Match = facts;
+            evaluation.Taxes, official.InvoiceDate, official.SourceProof);
         return facts;
     }
 
-    private static bool MatchIsConsistent(SalesInvoiceMatchFacts facts)
+    private bool MatchIsConsistent(SalesInvoiceMatchFacts facts)
     {
         var within = !facts.Exceeded;
         var approvalShape = within
             ? facts.DifferenceApprovedBy is null && facts.DifferenceReason is null
             : facts.DifferenceApprovedBy is not null && facts.DifferenceReason is not null;
         return facts.Difference >= 0m && facts.Tolerance >= 0m && approvalShape && facts.Taxes is not { IsConsistent: false }
-            && !string.IsNullOrWhiteSpace(facts.OfficialNo) && facts.Ettn.Length == EttnLength;
+            && !string.IsNullOrWhiteSpace(facts.OfficialNo) && facts.Ettn.Length == EttnLength
+            && ((facts.InvoiceDate is null && facts.SourceProof is null) || facts.HasCompleteSourceProof(CompanyId));
     }
 }

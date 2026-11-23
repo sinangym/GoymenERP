@@ -28,7 +28,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// </summary>
 public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShipmentParticipantV1
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private readonly InventoryDbContext context;
     private readonly InventoryStore store;
     private readonly DbConnection connection;
@@ -83,7 +83,7 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
             await context.Database.UseTransactionAsync(transaction, cancellationToken);
             var effectiveClock = clock ?? TimeProvider.System;
             var store = new InventoryStore(context, company, audit, new InventoryKilogramScale(settings), effectiveClock);
-            return new(context, store, connection, transaction, companyId, effectiveClock, onStaged);
+            return new InventoryDefiniteShipmentParticipant(context, store, connection, transaction, companyId, effectiveClock, onStaged);
         }
         catch
         {
@@ -122,6 +122,7 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
             return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
         }
 
+        await AcquirePhysicalValidationAsync(store.LockPhysicalValidationAsync, cancellationToken);
         var allocationRow = await context.Allocations.SingleOrDefaultAsync(row => row.Id == request.AllocationId,
             cancellationToken) ?? throw Refused(404, InventoryDefiniteShipmentCodesV1.InvalidReference);
         // B-01: a definite shipment consumes only a Sales order line's allocation (or a legacy row without demand); a
@@ -154,7 +155,9 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
             allocation = StockAllocation.Restore(allocationRow.Id, position,
                 Kilograms.Positive(allocationRow.AllocatedKg),
                 Kilograms.Of(allocationRow.RemainingKg), allocationRow.Version,
-                (StockAllocationStatus)allocationRow.Status);
+                (StockAllocationStatus)allocationRow.Status,
+                allocationRow.AllocatedPieces is { } allocatedPieces ? PieceCount.Of(allocatedPieces) : null,
+                allocationRow.RemainingPieces is { } remainingPieces ? PieceCount.Of(remainingPieces) : null);
         }
         catch (Exception exception) when (exception is InventoryRuleException or ArgumentException)
         {
@@ -174,9 +177,20 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
         {
             throw Refused(409, InventoryDefiniteShipmentCodesV1.LabelNotReleasable);
         }
+        PieceCount? pieces;
         try
         {
-            allocation.Consume(expectedAllocationVersion, request.LabelId, quantity);
+            pieces = request.PieceCount is { } count ? PieceCount.Positive(count) : null;
+        }
+        catch (InventoryRuleException)
+        {
+            throw Refused(400, InventoryDefiniteShipmentCodesV1.InvalidQuantity);
+        }
+
+        try
+        {
+            // KLN-D119 / SAT-D434 (AK-4b): an allocation that holds pieces gives them up with its kilograms.
+            allocation.Consume(expectedAllocationVersion, request.LabelId, quantity, pieces);
         }
         catch (StockAllocationException exception)
         {
@@ -185,26 +199,20 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
                 StockAllocationFailure.VersionConflict => Refused(409, InventoryDefiniteShipmentCodesV1.AllocationVersionConflict),
                 StockAllocationFailure.StateConflict => Refused(409, InventoryDefiniteShipmentCodesV1.AllocationState),
                 StockAllocationFailure.LabelMismatch => Refused(409, InventoryDefiniteShipmentCodesV1.AllocationLabelMismatch),
-                StockAllocationFailure.Insufficient => Refused(409, InventoryDefiniteShipmentCodesV1.AllocationInsufficient),
+                StockAllocationFailure.Insufficient or StockAllocationFailure.PiecesInsufficient =>
+                    Refused(409, InventoryDefiniteShipmentCodesV1.AllocationInsufficient),
+                // The allocation holds pieces and the shipment names none, or pieces and kilograms do not run out together.
+                StockAllocationFailure.PiecesRequired or StockAllocationFailure.PiecesInvalid =>
+                    Refused(400, InventoryDefiniteShipmentCodesV1.InvalidQuantity),
                 _ => Refused(503, InventoryDefiniteShipmentCodesV1.Unavailable),
             };
-        }
-
-        var balance = await context.Balances.SingleOrDefaultAsync(row =>
-            row.LabelId == position.LabelId && row.OwnerKind == (int)position.Owner.Kind
-            && row.OwnerId == position.Owner.Id && row.CustodianKind == (int)position.Custodian.Kind
-            && row.CustodianId == position.Custodian.Id && row.LocationId == position.LocationId
-            && row.ProductId == position.ProductId && row.Block == (int)BlockState.Free, cancellationToken);
-        if (balance is null || balance.QuantityKg < quantity.Value)
-        {
-            throw Refused(409, InventoryDefiniteShipmentCodesV1.PhysicalStockInsufficient);
         }
 
         var movement = new StockMovement(request.MovementId, companyId, StockMovementKind.Issue,
             request.OccurredAtUtc,
             new StockSourceReference("logistics.definite-shipment", request.ShipmentId,
                 request.LoadingInstructionLineId),
-            [new StockMovementLine(position, StockDirection.Out, quantity)], CostResult.NotCalculated);
+            [new StockMovementLine(position, StockDirection.Out, quantity, pieces)], CostResult.NotCalculated);
         InventoryWriteOutcome movementOutcome;
         try
         {
@@ -212,7 +220,14 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
         }
         catch (InventoryRuleException exception) when (exception.Code == InventoryRuleCodes.NegativePhysicalStock)
         {
-            throw Refused(409, InventoryDefiniteShipmentCodesV1.PhysicalStockInsufficient);
+            throw Refused(409, InventoryDefiniteShipmentCodesV1.PhysicalStockInsufficient, exception);
+        }
+        catch (InventoryRuleException exception) when (exception.Code is InventoryRuleCodes.PieceCountRequired
+            or InventoryRuleCodes.PieceCountNotTracked or InventoryRuleCodes.NegativePieceCount
+            or InventoryRuleCodes.InvalidPieceCount)
+        {
+            // KLN-D119: an unknown, extra or impossible piece count for this label is the request's quantity fault.
+            throw Refused(400, InventoryDefiniteShipmentCodesV1.InvalidQuantity, exception);
         }
         catch (InventoryStoreException exception) when (exception.Code is
             InventoryStoreCodes.MovementIdConflict or InventoryStoreCodes.DuplicateSource)
@@ -236,6 +251,7 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
         var versionBefore = allocationRow.Version;
         var remainingBefore = allocationRow.RemainingKg;
         allocationRow.RemainingKg = allocation.Remaining.Value;
+        allocationRow.RemainingPieces = allocation.RemainingPieces?.Value;
         allocationRow.Status = (int)allocation.Status;
         allocationRow.Version = allocation.Version;
         allocationRow.UpdatedAtUtc = clock.GetUtcNow();
@@ -338,8 +354,16 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
         }
     }
 
-    private static string RequestHash(InventoryDefiniteShipmentRequestV1 request) => Hash(
-        JsonSerializer.Serialize(new
+    /// <summary>KLN-D119: the piece count joins the hash only when given, so every piece-less request keeps its stored hash.</summary>
+    private static string RequestHash(InventoryDefiniteShipmentRequestV1 request)
+    {
+        var core = KilogramRequestContent(request);
+        return Hash(request.PieceCount is { } pieces
+            ? JsonSerializer.Serialize(new { core, pieceCount = pieces }, Json)
+            : JsonSerializer.Serialize(core, Json));
+    }
+
+    private static object KilogramRequestContent(InventoryDefiniteShipmentRequestV1 request) => new
         {
             request.CompanyId,
             request.ShipmentId,
@@ -352,13 +376,22 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
             request.MovementId,
             request.QuantityKg,
             request.OccurredAtUtc,
-        }, Json));
+        };
 
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToUpperInvariant();
 
-    private static InventoryDefiniteShipmentException Refused(int status, string code) =>
-        InventoryDefiniteShipmentException.Refused(status, code);
+    internal static async Task AcquirePhysicalValidationAsync(Func<CancellationToken, Task> acquire, CancellationToken token)
+    {
+        try { await acquire(token); }
+        catch (InventoryStoreException exception) when (exception.Code == InventoryStoreCodes.ConcurrentChange)
+        {
+            throw Refused(409, InventoryDefiniteShipmentCodesV1.ConcurrentChange, exception);
+        }
+    }
+
+    private static InventoryDefiniteShipmentException Refused(int status, string code, Exception? inner = null) =>
+        InventoryDefiniteShipmentException.Refused(status, code, inner);
 
     public async ValueTask DisposeAsync()
     {

@@ -3,7 +3,8 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 /// <summary>
 /// AT-025 ("Satış ve satın alma belgeleri operasyon listelerinde karışmaz"): the Purchasing-owned read port behind the
 /// PURCHASE section of the operations work list (Logistics L-09, "Beklenen Alış / Kapı Kabulü"). It answers the context
-/// company's APPROVED purchase order lines that still wait for goods receipt — remaining = committed − accepted above
+/// company's APPROVED purchase order lines that still wait for goods receipt — remaining = committed − accepted − cancelled
+/// − closed − definitive returned above
 /// zero, the Purchasing owner's own remaining (the <see cref="IPurchaseSupplyReferencePortV1"/> rule, never recomputed by
 /// the consumer) — as a LINE page, newest order first, then by line number.
 /// <para>

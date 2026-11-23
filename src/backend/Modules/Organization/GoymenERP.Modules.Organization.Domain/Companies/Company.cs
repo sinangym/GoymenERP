@@ -2,6 +2,9 @@ namespace GoymenERP.Modules.Organization.Domain.Companies;
 
 public sealed class Company
 {
+    /// <summary>A Turkish tax identity number (VKN) is exactly this many ASCII digits.</summary>
+    public const int VknLength = 10;
+
     public Company(
         Guid id,
         string code,
@@ -19,6 +22,14 @@ public sealed class Company
         Code = RequireText(code, nameof(code), 64);
         LegalName = RequireText(legalName, nameof(legalName), 250);
         Vkn = RequireVkn(vkn);
+        if (!isPlaceholder && Vkn is null)
+        {
+            // KIM-D28: a real (non-placeholder) company always carries its VKN.
+            throw new ArgumentException(
+                "Placeholder olmayan şirket geçerli VKN taşımalıdır.",
+                nameof(vkn));
+        }
+
         if (invoiceCapable && (isPlaceholder || Vkn is null))
         {
             throw new ArgumentException(
@@ -48,6 +59,33 @@ public sealed class Company
 
     public bool IsActive { get; private set; } = true;
 
+    /// <summary>KIM-D20. Existing bootstrap companies retain Active; a later opened company starts pending.</summary>
+    public string LifecycleState { get; private set; } = "Active";
+    public Guid? OpenedByUserId { get; private set; }
+
+    public static Company OpenPending(Guid id, string code, string legalName, string vkn,
+        Guid openedByUserId, DateTimeOffset now)
+    {
+        if (openedByUserId == Guid.Empty || now.Offset != TimeSpan.Zero)
+            throw new ArgumentException("Company opening requires its server actor and UTC instant.");
+        return new Company(id, code, legalName, vkn, isPlaceholder: false, invoiceCapable: false)
+        {
+            LifecycleState = "SetupPending", OpenedByUserId = openedByUserId,
+            CreatedAtUtc = now, UpdatedAtUtc = now,
+        };
+    }
+
+    public bool CompleteSetup(DateTimeOffset now)
+    {
+        if (now.Offset != TimeSpan.Zero) throw new ArgumentException("UTC instant required.", nameof(now));
+        if (LifecycleState == "Active") return false;
+        if (LifecycleState != "SetupPending") throw new InvalidOperationException("Unknown company lifecycle.");
+        LifecycleState = "Active";
+        Version++;
+        UpdatedAtUtc = now;
+        return true;
+    }
+
     public long Version { get; private set; } = 1;
 
     public byte[] RowVersion { get; private set; } = [];
@@ -55,6 +93,67 @@ public sealed class Company
     public DateTimeOffset CreatedAtUtc { get; private set; } = DateTimeOffset.UtcNow;
 
     public DateTimeOffset UpdatedAtUtc { get; private set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>True when <paramref name="value"/> is already in the stored canonical VKN shape (no trimming).</summary>
+    public static bool IsCanonicalVkn(string? value) =>
+        value is { Length: VknLength } && value.All(character => character is >= '0' and <= '9');
+
+    /// <summary>
+    /// Applies a VKN that passed the maker-checker change flow (KIM-D28). Only the approval of a
+    /// <see cref="CompanyTaxIdChangeRequest"/> calls this; the proposed value is never written directly.
+    /// </summary>
+    public void ApplyApprovedVkn(string vkn, DateTimeOffset utcNow)
+    {
+        var normalized = RequireVkn(vkn)
+            ?? throw new ArgumentException("Onaylanan VKN boş olamaz.", nameof(vkn));
+        if (string.Equals(normalized, Vkn, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Onaylanan VKN şirketin mevcut VKN'si ile aynı olamaz.");
+        }
+
+        Vkn = normalized;
+        Version++;
+        UpdatedAtUtc = utcNow;
+    }
+
+    /// <summary>
+    /// KIM-D41/KIM-D48: applies an approved staged correction (<see cref="CompanyTaxIdCorrection"/>). The company must
+    /// still carry <paramref name="stagedVkn"/>. A null <paramref name="correctedVkn"/> clears the VKN and is allowed only
+    /// on a placeholder company that issues no invoice (the schema's CK_Companies_Vkn_RequiredUnlessPlaceholder and
+    /// CK_Companies_Placeholder_InvoiceDisabled say the same).
+    /// </summary>
+    public void ApplyTaxIdCorrection(string stagedVkn, string? correctedVkn, DateTimeOffset utcNow)
+    {
+        if (!string.Equals(Vkn, stagedVkn, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Şirketin VKN'si düzeltilecek değerle eşleşmiyor.");
+        }
+
+        if (correctedVkn is null)
+        {
+            if (!IsPlaceholder || InvoiceCapable)
+            {
+                throw new InvalidOperationException(
+                    "VKN yalnız fatura üretmeyen placeholder şirkette boşaltılabilir.");
+            }
+
+            Vkn = null;
+        }
+        else
+        {
+            var normalized = RequireVkn(correctedVkn)
+                ?? throw new ArgumentException("Düzeltilmiş VKN boş olamaz.", nameof(correctedVkn));
+            if (string.Equals(normalized, Vkn, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Düzeltilmiş VKN şirketin mevcut VKN'si ile aynı olamaz.");
+            }
+
+            Vkn = normalized;
+        }
+
+        Version++;
+        UpdatedAtUtc = utcNow;
+    }
 
     private static string RequireText(string value, string parameterName, int maximumLength)
     {
@@ -77,8 +176,7 @@ public sealed class Company
             return null;
         }
 
-        if (normalized.Length != 10
-            || normalized.Any(character => character is < '0' or > '9'))
+        if (!IsCanonicalVkn(normalized))
         {
             throw new ArgumentException(
                 "VKN tam olarak 10 ASCII rakamdan oluşmalıdır.",

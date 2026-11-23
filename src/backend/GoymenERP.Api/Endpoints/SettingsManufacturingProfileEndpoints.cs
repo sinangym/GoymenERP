@@ -15,15 +15,17 @@ namespace GoymenERP.Api.Endpoints;
 /// <item><c>GET /api/v1/settings/manufacturing-parameter-profiles</c> — the reviewed version-0 catalog and every Settings
 /// version (all statuses) with the declared keys; <c>GET …/{profileId}</c> one profile (another company's id is the same
 /// code-less 404 as an unknown one).</item>
-/// <item><c>POST …</c> prepare a draft (200 with the receipt) · <c>POST …/{profileId}/approval</c> ·
-/// <c>POST …/{profileId}/publication</c>; the approver and the publisher are not the preparer.</item>
+/// <item><c>POST …</c> prepare a draft (200 with the receipt) · <c>POST …/{profileId}/publication</c> publishes a draft
+/// (URN-D6 single prepare → publish flow; the preparer may publish) or a version approved before URN-D6 ·
+/// <c>POST …/{profileId}/approval</c> stays routed for old clients and answers the stored refusal
+/// <c>settings_manufacturing_profile_approval_retired</c> (409).</item>
 /// <item>The same five routes under <c>/api/v1/settings/manufacturing-tolerance-profiles</c>; publication writes the immutable
 /// registry row the close path reads.</item>
 /// </list>
 /// Commands: one Idempotency-Key (stored terminal answers replay with <c>Idempotency-Replayed</c>), the expected version as
 /// decimal text, a mandatory reason (≤ 500). Responses are private, no-store.
 /// </summary>
-public static class SettingsManufacturingProfileEndpoints
+public static partial class SettingsManufacturingProfileEndpoints
 {
     public const string ParameterProfilesPath = "/api/v1/settings/manufacturing-parameter-profiles";
     public const string ToleranceProfilesPath = "/api/v1/settings/manufacturing-tolerance-profiles";
@@ -181,6 +183,7 @@ public static class SettingsManufacturingProfileEndpoints
             ManufacturingToleranceProfileActionsV1.Publish, "PublishSettingsManufacturingToleranceProfileV1", publish: true,
             windowOverlap: true);
 
+        MapBaselineTransfers(endpoints);
         return endpoints;
     }
 
@@ -205,6 +208,11 @@ public static class SettingsManufacturingProfileEndpoints
     private static RouteHandlerBuilder Transition(RouteHandlerBuilder builder, string permission, string name, bool publish,
         bool windowOverlap = false)
     {
+        if (!publish)
+        {
+            return RetiredApproval(builder, permission, name);
+        }
+
         string[] conflicts = windowOverlap
             ?
             [
@@ -219,9 +227,6 @@ public static class SettingsManufacturingProfileEndpoints
                 ManufacturingProfileProblemCodesV1.VersionConflict,
                 ManufacturingProfileProblemCodesV1.TransitionInvalid,
             ];
-        string[] unprocessable = publish
-            ? [ManufacturingProfileProblemCodesV1.MakerSeparationRequired, ManufacturingProfileProblemCodesV1.EffectiveFromPast]
-            : [ManufacturingProfileProblemCodesV1.MakerSeparationRequired];
         return builder
             .RequireCompanyContext()
             .RequireAuthorization(permission)
@@ -236,10 +241,40 @@ public static class SettingsManufacturingProfileEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(conflicts)
-            .ProducesErpUnprocessableEntity(unprocessable)
+            // MakerSeparationRequired is no longer answered (URN-D6) but a key stored before it still replays it.
+            .ProducesErpUnprocessableEntity(ManufacturingProfileProblemCodesV1.MakerSeparationRequired,
+                ManufacturingProfileProblemCodesV1.EffectiveFromPast)
             .ProducesErpServiceUnavailable(ManufacturingProfileProblemCodesV1.ProviderUnavailable)
             .ProducesErpAuthenticatedProblems();
     }
+
+    /// <summary>
+    /// URN-D6: the approval route reads no profile; after the permission fence and request shape it stores and answers the
+    /// retired refusal. A key used before URN-D6 still replays its stored answer, so the old 404 / 409 / 422 answers stay
+    /// declared.
+    /// </summary>
+    private static RouteHandlerBuilder RetiredApproval(RouteHandlerBuilder builder, string permission, string name) =>
+        builder
+            .RequireCompanyContext()
+            .RequireAuthorization(permission)
+            .RequiresNonEmptyGuidPathParameter("profileId")
+            .WithName(name)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<ManufacturingProfileLifecycleRequestV1>("application/json")
+            .Produces<ManufacturingProfileCommandReceiptV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(CommandBadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(
+                ManufacturingProfileProblemCodesV1.IdempotencyConflict,
+                ManufacturingProfileProblemCodesV1.VersionConflict,
+                ManufacturingProfileProblemCodesV1.TransitionInvalid,
+                ManufacturingProfileProblemCodesV1.ApprovalRetired)
+            .ProducesErpUnprocessableEntity(ManufacturingProfileProblemCodesV1.MakerSeparationRequired)
+            .ProducesErpServiceUnavailable(ManufacturingProfileProblemCodesV1.ProviderUnavailable)
+            .ProducesErpAuthenticatedProblems();
 
     private static async Task<IResult> ReadAsync<T>(HttpContext httpContext, Func<Task<T>> read)
     {

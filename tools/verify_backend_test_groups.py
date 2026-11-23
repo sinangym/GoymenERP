@@ -44,21 +44,26 @@ GROUP_PROJECTS = {
         "tests/GoymenERP.Product.UnitTests/GoymenERP.Product.UnitTests.csproj",
         "tests/GoymenERP.Purchasing.UnitTests/GoymenERP.Purchasing.UnitTests.csproj",
         "tests/GoymenERP.Sales.UnitTests/GoymenERP.Sales.UnitTests.csproj",
+        "tests/GoymenERP.SecurityEvents.UnitTests/GoymenERP.SecurityEvents.UnitTests.csproj",
         "tests/GoymenERP.Settings.UnitTests/GoymenERP.Settings.UnitTests.csproj",
         "tests/GoymenERP.SqlServerRcsiReadiness.Tests/GoymenERP.SqlServerRcsiReadiness.Tests.csproj",
         "tests/GoymenERP.Work.UnitTests/GoymenERP.Work.UnitTests.csproj",
     ),
 }
-SOLUTION_PROJECT_COUNT = 72
-TEST_PROJECT_COUNT = 21
+SOLUTION_PROJECT_COUNT = 75
+TEST_PROJECT_COUNT = 22
 PROOF_SCHEMA = 5
 # The api project is the CI critical path; its classes are split over this many
 # parallel jobs. The partition is recomputed from the union of the shard proofs.
 API_SHARD_COUNT = 3
-MAX_PROOF_BYTES = 2 * 1024 * 1024
+# CI 4889's complete 20-project modules proof is 2,665,705 bytes. Keep a
+# bounded transport budget at both ends without dropping native identities.
+MAX_PROOF_BYTES = 4 * 1024 * 1024
 # Release per-process memory between API batches on the bounded local runner.
 # Keep complete classes together; a large class remains one indivisible batch.
 API_BATCH_METHOD_BUDGET = 32
+# CreateProcessW includes the final NUL in its UTF-16 command-line limit.
+WINDOWS_COMMAND_LINE_LIMIT = 32767
 HEAD_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
 HASH_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 FQN_PATTERN = re.compile(r"GoymenERP\.[A-Za-z0-9_.+`]+\Z")
@@ -66,242 +71,10 @@ EXECUTION_ID_PATTERN = re.compile(
     r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z"
 )
 
-# Only these two reviewed nonserializable MemberData methods defer their rows
-# until execution. Exact display identities and source bytes are reviewed together.
+# No production theories currently defer their rows until execution.
+# Any future exception must bind exact display identities to reviewed source bytes.
 # An unknown deferred theory must fail closed, rather than permit a lower bound.
-DEFERRED_THEORIES: dict[str, tuple[str, str, tuple[str, ...]]] = {'GoymenERP.Manufacturing.UnitTests.ManufacturingCommercialContextSnapshotTests.One_plan_refuses_a_different_identity_or_version': ('tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommercialContextSnapshotTests.cs',
-                                                                                                                                    'd0a327ac6a0daadccf2a421d80354acc461a1806b2bda57677b18ec836bec450',
-                                                                                                                                    ('GoymenERP.Manufacturing.UnitTests.ManufacturingCommercialContextSnapshotTests.One_plan_refuses_a_different_identity_or_version(differentContext: '
-                                                                                                                                     'PlanCommercialContextSnapshotV1 '
-                                                                                                                                     '{ '
-                                                                                                                                     'PartyId '
-                                                                                                                                     '= '
-                                                                                                                                     '30000000-0000-0000-0000-000000000003, '
-                                                                                                                                     'CompanyPartyAccountId '
-                                                                                                                                     '= '
-                                                                                                                                     '40000000-0000-0000-0000-000000000004, '
-                                                                                                                                     'PartyVersion '
-                                                                                                                                     '= '
-                                                                                                                                     'party-v1, '
-                                                                                                                                     'AccountVersion '
-                                                                                                                                     '= '
-                                                                                                                                     'account-v2 '
-                                                                                                                                     '})',
-                                                                                                                                     'GoymenERP.Manufacturing.UnitTests.ManufacturingCommercialContextSnapshotTests.One_plan_refuses_a_different_identity_or_version(differentContext: '
-                                                                                                                                     'PlanCommercialContextSnapshotV1 '
-                                                                                                                                     '{ '
-                                                                                                                                     'PartyId '
-                                                                                                                                     '= '
-                                                                                                                                     '30000000-0000-0000-0000-000000000003, '
-                                                                                                                                     'CompanyPartyAccountId '
-                                                                                                                                     '= '
-                                                                                                                                     '40000000-0000-0000-0000-000000000004, '
-                                                                                                                                     'PartyVersion '
-                                                                                                                                     '= '
-                                                                                                                                     'party-v2, '
-                                                                                                                                     'AccountVersion '
-                                                                                                                                     '= '
-                                                                                                                                     'account-v1 '
-                                                                                                                                     '})',
-                                                                                                                                     'GoymenERP.Manufacturing.UnitTests.ManufacturingCommercialContextSnapshotTests.One_plan_refuses_a_different_identity_or_version(differentContext: '
-                                                                                                                                     'PlanCommercialContextSnapshotV1 '
-                                                                                                                                     '{ '
-                                                                                                                                     'PartyId '
-                                                                                                                                     '= '
-                                                                                                                                     '30000000-0000-0000-0000-000000000003, '
-                                                                                                                                     'CompanyPartyAccountId '
-                                                                                                                                     '= '
-                                                                                                                                     '40000000-0000-0000-0000-000000000099, '
-                                                                                                                                     'PartyVersion '
-                                                                                                                                     '= '
-                                                                                                                                     'party-v1, '
-                                                                                                                                     'AccountVersion '
-                                                                                                                                     '= '
-                                                                                                                                     'account-v1 '
-                                                                                                                                     '})',
-                                                                                                                                     'GoymenERP.Manufacturing.UnitTests.ManufacturingCommercialContextSnapshotTests.One_plan_refuses_a_different_identity_or_version(differentContext: '
-                                                                                                                                     'PlanCommercialContextSnapshotV1 '
-                                                                                                                                     '{ '
-                                                                                                                                     'PartyId '
-                                                                                                                                     '= '
-                                                                                                                                     '30000000-0000-0000-0000-000000000099, '
-                                                                                                                                     'CompanyPartyAccountId '
-                                                                                                                                     '= '
-                                                                                                                                     '40000000-0000-0000-0000-000000000004, '
-                                                                                                                                     'PartyVersion '
-                                                                                                                                     '= '
-                                                                                                                                     'party-v1, '
-                                                                                                                                     'AccountVersion '
-                                                                                                                                     '= '
-                                                                                                                                     'account-v1 '
-                                                                                                                                     '})')),
- 'GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping': ('tests/GoymenERP.Organization.UnitTests/WorkCenterWorkingTimeAvailabilityContractTests.cs',
-                                                                                                                                                       'd122f06addfda39be9892bbfc787eb0b5785b712659b5311a50d307bb5c6ce5e',
-                                                                                                                                                       ('GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping(intervals: '
-                                                                                                                                                        '[WorkCenterWorkingTimeIntervalV1 '
-                                                                                                                                                        '{ '
-                                                                                                                                                        'StartsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/05/2026 '
-                                                                                                                                                        '23:59:59 '
-                                                                                                                                                        '+00:00, '
-                                                                                                                                                        'EndsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '01:00:00 '
-                                                                                                                                                        '+00:00 '
-                                                                                                                                                        '}])',
-                                                                                                                                                        'GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping(intervals: '
-                                                                                                                                                        '[WorkCenterWorkingTimeIntervalV1 '
-                                                                                                                                                        '{ '
-                                                                                                                                                        'StartsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '00:00:00 '
-                                                                                                                                                        '+00:00, '
-                                                                                                                                                        'EndsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/07/2026 '
-                                                                                                                                                        '03:00:00 '
-                                                                                                                                                        '+03:00 '
-                                                                                                                                                        '}])',
-                                                                                                                                                        'GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping(intervals: '
-                                                                                                                                                        '[WorkCenterWorkingTimeIntervalV1 '
-                                                                                                                                                        '{ '
-                                                                                                                                                        'StartsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '01:00:00 '
-                                                                                                                                                        '+00:00, '
-                                                                                                                                                        'EndsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/07/2026 '
-                                                                                                                                                        '00:00:00 '
-                                                                                                                                                        '+00:00 '
-                                                                                                                                                        '}])',
-                                                                                                                                                        'GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping(intervals: '
-                                                                                                                                                        '[WorkCenterWorkingTimeIntervalV1 '
-                                                                                                                                                        '{ '
-                                                                                                                                                        'StartsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '02:00:00 '
-                                                                                                                                                        '+00:00, '
-                                                                                                                                                        'EndsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '02:00:00 '
-                                                                                                                                                        '+00:00 '
-                                                                                                                                                        '}])',
-                                                                                                                                                        'GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping(intervals: '
-                                                                                                                                                        '[WorkCenterWorkingTimeIntervalV1 '
-                                                                                                                                                        '{ '
-                                                                                                                                                        'StartsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '03:00:00 '
-                                                                                                                                                        '+00:00, '
-                                                                                                                                                        'EndsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '02:00:00 '
-                                                                                                                                                        '+00:00 '
-                                                                                                                                                        '}])',
-                                                                                                                                                        'GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping(intervals: '
-                                                                                                                                                        '[WorkCenterWorkingTimeIntervalV1 '
-                                                                                                                                                        '{ '
-                                                                                                                                                        'StartsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '03:00:00 '
-                                                                                                                                                        '+03:00, '
-                                                                                                                                                        'EndsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '01:00:00 '
-                                                                                                                                                        '+00:00 '
-                                                                                                                                                        '}])',
-                                                                                                                                                        'GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping(intervals: '
-                                                                                                                                                        '[WorkCenterWorkingTimeIntervalV1 '
-                                                                                                                                                        '{ '
-                                                                                                                                                        'StartsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '06:00:00 '
-                                                                                                                                                        '+00:00, '
-                                                                                                                                                        'EndsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '10:00:00 '
-                                                                                                                                                        '+00:00 '
-                                                                                                                                                        '}, '
-                                                                                                                                                        'WorkCenterWorkingTimeIntervalV1 '
-                                                                                                                                                        '{ '
-                                                                                                                                                        'StartsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '06:00:00 '
-                                                                                                                                                        '+00:00, '
-                                                                                                                                                        'EndsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '10:00:00 '
-                                                                                                                                                        '+00:00 '
-                                                                                                                                                        '}])',
-                                                                                                                                                        'GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping(intervals: '
-                                                                                                                                                        '[WorkCenterWorkingTimeIntervalV1 '
-                                                                                                                                                        '{ '
-                                                                                                                                                        'StartsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '06:00:00 '
-                                                                                                                                                        '+00:00, '
-                                                                                                                                                        'EndsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '10:00:00 '
-                                                                                                                                                        '+00:00 '
-                                                                                                                                                        '}, '
-                                                                                                                                                        'WorkCenterWorkingTimeIntervalV1 '
-                                                                                                                                                        '{ '
-                                                                                                                                                        'StartsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '09:00:00 '
-                                                                                                                                                        '+00:00, '
-                                                                                                                                                        'EndsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '12:00:00 '
-                                                                                                                                                        '+00:00 '
-                                                                                                                                                        '}])',
-                                                                                                                                                        'GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping(intervals: '
-                                                                                                                                                        '[WorkCenterWorkingTimeIntervalV1 '
-                                                                                                                                                        '{ '
-                                                                                                                                                        'StartsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '12:00:00 '
-                                                                                                                                                        '+00:00, '
-                                                                                                                                                        'EndsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '14:00:00 '
-                                                                                                                                                        '+00:00 '
-                                                                                                                                                        '}, '
-                                                                                                                                                        'WorkCenterWorkingTimeIntervalV1 '
-                                                                                                                                                        '{ '
-                                                                                                                                                        'StartsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '06:00:00 '
-                                                                                                                                                        '+00:00, '
-                                                                                                                                                        'EndsAtUtc '
-                                                                                                                                                        '= '
-                                                                                                                                                        '10/06/2026 '
-                                                                                                                                                        '10:00:00 '
-                                                                                                                                                        '+00:00 '
-                                                                                                                                                        '}])'))}
+DEFERRED_THEORIES: dict[str, tuple[str, str, tuple[str, ...]]] = {}
 
 
 def relational_verifier(root: Path) -> ModuleType:
@@ -380,8 +153,8 @@ def catalog() -> dict[str, tuple[str, ...]]:
     if (len(projects) != TEST_PROJECT_COUNT or len(set(projects)) != TEST_PROJECT_COUNT
             or sorted(GROUP_PROJECTS) != ["api", "architecture", "modules"]
             or [len(GROUP_PROJECTS[group]) for group in ("architecture", "api", "modules")]
-            != [1, 1, 19]):
-        raise RuntimeError("Backend groups must partition exactly twenty-one TestSDK projects.")
+            != [1, 1, 20]):
+        raise RuntimeError("Backend groups must partition exactly twenty-two TestSDK projects.")
     return GROUP_PROJECTS
 
 
@@ -395,7 +168,7 @@ def source_inventory(root: Path) -> tuple[str, str]:
     except (OSError, ET.ParseError, KeyError) as exception:
         raise RuntimeError("Backend solution inventory is unreadable.") from exception
     if len(paths) != SOLUTION_PROJECT_COUNT or len(set(paths)) != SOLUTION_PROJECT_COUNT:
-        raise RuntimeError("Backend solution must retain exactly seventy-two unique projects.")
+        raise RuntimeError("Backend solution must retain exactly seventy-five unique projects.")
     test_projects = []
     for value in paths:
         if value.startswith("/") or ".." in Path(value).parts or not value.endswith(".csproj"):
@@ -745,6 +518,39 @@ def api_test_batches(discovered: Counter[str]) -> list[Counter[str]]:
     return batches
 
 
+def api_batch_filter(
+    arguments: list[str], batch: Counter[str], full_discovery: Counter[str], *,
+    windows: bool | None = None,
+) -> str:
+    """Compact only an oversized Windows command, without changing its cases."""
+    exact = "|".join(f"FullyQualifiedName={name}" for name in sorted(batch))
+    if windows is None:
+        windows = os.name == "nt"
+
+    def command_units(value: str) -> int:
+        command = subprocess.list2cmdline([*arguments, "--filter", value])
+        return len(command.encode("utf-16-le")) // 2 + 1
+
+    if not windows or command_units(exact) <= WINDOWS_COMMAND_LINE_LIMIT:
+        return exact
+    classes = _api_classes(batch)
+    _api_classes(full_discovery)
+    tokens = [name + "." for name in sorted(classes)]
+    # VSTest's ~ is case-insensitive contains, not a prefix operator. Validate
+    # against ALL project discovery, including classes assigned to other shards.
+    # FQN_PATTERN permits ASCII only, so lower() preserves that comparison.
+    selected = Counter({
+        name: count for name, count in full_discovery.items()
+        if any(token in name.lower() for token in tokens)
+    })
+    if selected != batch:
+        raise RuntimeError("API compact class filter differs from complete project discovery.")
+    compact = "|".join(f"FullyQualifiedName~{token}" for token in tokens)
+    if command_units(compact) > WINDOWS_COMMAND_LINE_LIMIT:
+        raise RuntimeError("API whole-class filter still exceeds the Windows command-line limit.")
+    return compact
+
+
 def api_shard_partition(
     discovered: Counter[str], count: int, skipped_facts: set[str],
 ) -> list[Counter[str]]:
@@ -922,6 +728,14 @@ def _valid_proof(proof: object, expected: dict[str, object], group: str, root: P
         raise RuntimeError("Backend group proof full discovery hash differs from its projects.")
 
 
+def _check_proof_size(size: int, unit: str) -> None:
+    if size > MAX_PROOF_BYTES:
+        raise RuntimeError(
+            f"Backend group proof {unit} is oversized "
+            f"({size} bytes; limit {MAX_PROOF_BYTES} bytes)."
+        )
+
+
 def verify_aggregate(
     root: Path, directory: Path, source_head: str, tested_commit: str,
     build_result: str, worker_result: str,
@@ -952,10 +766,15 @@ def verify_aggregate(
         } != {f"proof-{name}.json"}:
             raise RuntimeError("Backend group artifact contents are missing or extra.")
         path = artifact / f"proof-{name}.json"
-        if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_PROOF_BYTES:
-            raise RuntimeError("Backend group proof is missing or oversized.")
+        if path.is_symlink() or not path.is_file():
+            raise RuntimeError("Backend group proof is missing or linked.")
+        _check_proof_size(path.stat().st_size, name)
         try:
-            proof = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_object)
+            # Bound the actual read too: the file can grow after the stat check.
+            with path.open("rb") as source:
+                payload = source.read(MAX_PROOF_BYTES + 1)
+            _check_proof_size(len(payload), name)
+            proof = json.loads(payload.decode("utf-8"), object_pairs_hook=_unique_object)
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exception:
             raise RuntimeError("Backend group proof is unreadable or malformed.") from exception
         _valid_proof(proof, expected_proof(group, source_head, tested_commit, root, index, count),
@@ -1044,6 +863,7 @@ def run_group(
         ], root))
         discovered_ids = structured_discovery(diagnostic, root, project)
         discovered = Counter({name: len(cases) for name, cases in discovered_ids.items()})
+        full_discovery = discovered.copy()
         full_hashes.append(digest(sorted(discovered.items())))
         if shard_count > 1:
             discovered = api_shard_partition(
@@ -1074,9 +894,7 @@ def run_group(
                 "--logger", "console;verbosity=quiet",
             ]
             if group == "api":
-                arguments += ["--filter", "|".join(
-                    f"FullyQualifiedName={method}" for method in sorted(batch)
-                )]
+                arguments += ["--filter", api_batch_filter(arguments, batch, full_discovery)]
                 print(f"BACKEND_API_BATCH: START batch={index}/{len(batches)} "
                       f"methods={len(batch)} discoveredCases={sum(batch.values())}", flush=True)
             measure(Stage.BOOTSTRAP_PREFLIGHT, lambda: run_bootstrap_preflight(root))
@@ -1127,10 +945,12 @@ def run_group(
     )
     _valid_proof(proof, expected_proof(group, source_head, tested_commit, root, shard_index, shard_count),
                  group, root)
+    payload = json.dumps(proof, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    _check_proof_size(len(payload), unit_name(group, shard_index, shard_count))
     proof_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = proof_path.with_suffix(".tmp")
-    with temporary.open("x", encoding="utf-8") as output:
-        json.dump(proof, output, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    with temporary.open("xb") as output:
+        output.write(payload)
     temporary.replace(proof_path)
     return sum(row["executionCount"] for row in proof["projects"])
 

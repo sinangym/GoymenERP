@@ -73,6 +73,7 @@ internal sealed class PlanRow : IManufacturingTenantRow, IPlanProcessSpecColumns
     public decimal? TargetThicknessMm { get; set; }
     public string? PaintDescription { get; set; }
     public string? PaintColorCode { get; set; }
+    public string? PaintSelectionJson { get; set; }
 
     public Guid? ApprovedByUserId { get; set; }
     public DateTimeOffset? ApprovedAtUtc { get; set; }
@@ -95,6 +96,13 @@ internal sealed class PlanRow : IManufacturingTenantRow, IPlanProcessSpecColumns
     public string? SalesOrderLinkedBy { get; set; }
     public DateTimeOffset? SalesOrderLinkedAtUtc { get; set; }
     public long SalesOrderLinkRevision { get; set; }
+
+    /// <summary>
+    /// Üretim F-010a (URT-D29): the termin a user entered by hand (a calendar day, no time), or null, and how many times it
+    /// was set, changed or removed. Not plan content: the version does not move.
+    /// </summary>
+    public DateOnly? RequestedDueDate { get; set; }
+    public long DueDateRevision { get; set; }
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];
     public string PayloadHash { get; set; } = string.Empty;
@@ -222,6 +230,7 @@ internal sealed class PlanRevisionRow : IManufacturingTenantRow, IPlanProcessSpe
     public decimal? TargetThicknessMm { get; set; }
     public string? PaintDescription { get; set; }
     public string? PaintColorCode { get; set; }
+    public string? PaintSelectionJson { get; set; }
 
     public string Reason { get; set; } = string.Empty;
     public long PlanVersion { get; set; }
@@ -244,6 +253,21 @@ internal sealed class PlanRejectionRow : IManufacturingTenantRow
     public long PlanVersion { get; set; }
     public Guid RejectedByUserId { get; set; }
     public DateTimeOffset RejectedAtUtc { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// F-009 D5 (URT-D35/D39): a minimal re-approval of a plan released by a cancelled order, numbered 1..n per plan; each
+/// names the plan version it produced. Append-only: the write guard admits no column of the table.
+/// </summary>
+internal sealed class PlanReapprovalRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid PlanId { get; set; }
+    public int ReapprovalNo { get; set; }
+    public long PlanVersion { get; set; }
+    public Guid ReapprovedByUserId { get; set; }
+    public DateTimeOffset ReapprovedAtUtc { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
 }
 
@@ -332,6 +356,25 @@ internal sealed class OrderRow : IManufacturingTenantRow
     public Guid? ClosedByUserId { get; set; }
     public DateTimeOffset? ClosedAtUtc { get; set; }
     public long Version { get; set; }
+
+    /// <summary>URT-D66 (3): the order's termin — the plan's, copied when the order opens; null on an older order.</summary>
+    public DateOnly? DueDate { get; set; }
+
+    /// <summary>URT-D66 (3): how many times the order's termin was changed on the order (0 = as copied).</summary>
+    public long DueDateRevision { get; set; }
+
+    /// <summary>F-009 D5 (URT-D33): who cancelled the order; set only with <c>Status = Cancelled</c>.</summary>
+    public Guid? CancelledByUserId { get; set; }
+
+    /// <summary>F-009 D5 (URT-D33): when the order was cancelled.</summary>
+    public DateTimeOffset? CancelledAtUtc { get; set; }
+
+    /// <summary>F-009 D5 (URT-D33): the cancel reason.</summary>
+    public string? CancellationReason { get; set; }
+
+    /// <summary>F-009 D5 (URT-D34): the plan version the cancel's release produced on the order's plan.</summary>
+    public long? PlanVersionAfterCancel { get; set; }
+
     public byte[] RowVersion { get; set; } = [];
     public DateTimeOffset CreatedAtUtc { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }
@@ -413,9 +456,148 @@ internal sealed class FactRow : IManufacturingTenantRow
     public DateTimeOffset OccurredAtUtc { get; set; }
     public int? OutputClass { get; set; }
     public int? CostStatus { get; set; }
+
+    /// <summary>
+    /// F-009 D2 (URT-D30): the plan output line kind of an output (1 slit line, 2 cut line, 3 class line); null for an
+    /// output stored before D2 ("satırsız") and for every other kind of fact.
+    /// </summary>
+    public int? OutputLineKind { get; set; }
+
+    /// <summary>F-009 D2: the slit line's 1-based position, set only with <see cref="OutputLineKind"/> 1.</summary>
+    public int? OutputLineSequence { get; set; }
+
+    /// <summary>F-009 D2: the cut line's id, set only with <see cref="OutputLineKind"/> 2.</summary>
+    public Guid? OutputLineId { get; set; }
+
+    /// <summary>
+    /// AK-7 (URT-D112): the declared piece count of a counted output (at least one); null for an uncounted output, every
+    /// output stored before AK-7 and every other kind of fact. Set together with the two theoretical columns below.
+    /// </summary>
+    public int? OutputPieceCount { get; set; }
+
+    /// <summary>AK-7: the Product owner's theoretical kg per piece captured with <see cref="OutputPieceCount"/>.</summary>
+    public decimal? OutputTheoreticalKgPerPiece { get; set; }
+
+    /// <summary>AK-7: the source evidence (card, formula, policy and unit-profile versions) of the theoretical figure.</summary>
+    public string? OutputTheoreticalKgPerPieceSource { get; set; }
+
     public string PayloadHash { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
     public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// F-009 D2 (URT-D28, analysis §4.3): one output reversal — its own id, its order, the output declaration it takes
+/// mass back from (with that declaration's parent roll), the mass, the reason, when it happened and who recorded it.
+/// Append-only (R6): the declaration row is never changed. <see cref="PayloadHash"/> tells a replay from a different
+/// reversal offered under the same id.
+/// </summary>
+internal sealed class OutputReversalRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid Id { get; set; }
+    public Guid OrderId { get; set; }
+
+    /// <summary>Always <see cref="FactKind.OutputDeclaration"/>: with <see cref="OutputId"/> it names the reversed fact.</summary>
+    public int OutputKind { get; set; }
+
+    public Guid OutputId { get; set; }
+    public Guid ParentRollId { get; set; }
+    public decimal MassKg { get; set; }
+
+    /// <summary>
+    /// AK-7 (URT-D112): the pieces taken back from a counted declaration (zero when only the kg is corrected); null for a
+    /// reversal of an uncounted declaration and every reversal stored before AK-7.
+    /// </summary>
+    public int? PieceCount { get; set; }
+
+    public string Reason { get; set; } = string.Empty;
+    public DateTimeOffset OccurredAtUtc { get; set; }
+    public string PayloadHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// URT-S20 (URT-D62, URT-D63): one lineage edge of a declared output — an input label the output's order consumed and
+/// the kg consumed of it, as Inventory staged them for the output's genealogy in the same transaction. One row per
+/// (company, output, input label); append-only: the edge is a snapshot taken when the output is declared and is never
+/// changed or deleted here. The share is not stored: it is <c>ProductionLineageShareCalculatorV1</c>'s answer over the
+/// output's rows, so every reader takes it from the one calculator.
+/// </summary>
+internal sealed class OutputLineageEdgeRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid OrderId { get; set; }
+
+    /// <summary>Always <see cref="FactKind.OutputDeclaration"/>: with <see cref="OutputId"/> it names the output fact.</summary>
+    public int OutputKind { get; set; }
+
+    public Guid OutputId { get; set; }
+    public Guid InputLabelId { get; set; }
+
+    /// <summary>The output's own label in Inventory (URT-D62: an independent number; the edge is the link).</summary>
+    public Guid OutputLabelId { get; set; }
+
+    /// <summary>Inventory's manufacturing genealogy transformation the edge was read from.</summary>
+    public Guid GenealogyTransformationId { get; set; }
+
+    public decimal ConsumedKg { get; set; }
+
+    /// <summary>The share calculator version the edges were checked with when they were recorded.</summary>
+    public int CalculatorVersion { get; set; }
+
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// URT-S21 (URT-D62): the output label's own code, one row per (company, output). <see cref="Source"/> is 1 (entered) or 2
+/// (generated from the Ayarlar format); a generated code carries its number and the format it was made with, an entered
+/// code neither. The number is the company's running output label number: a generated number is never given twice and
+/// never reused. The input labels the output came from are its lineage edges, never part of this code. Append-only.
+/// </summary>
+internal sealed class OutputLabelCodeRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid OrderId { get; set; }
+
+    /// <summary>Always <see cref="FactKind.OutputDeclaration"/>: with <see cref="OutputId"/> it names the output fact.</summary>
+    public int OutputKind { get; set; }
+
+    public Guid OutputId { get; set; }
+
+    /// <summary>The output's label in Inventory the code was given to.</summary>
+    public Guid LabelId { get; set; }
+
+    public string LabelCode { get; set; } = string.Empty;
+    public int Source { get; set; }
+    public long? GeneratedNumber { get; set; }
+    public string? Format { get; set; }
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// URT-S13 (URT-D47, URT-D65), URT-D72: one version of the company's scrap price of one calendar month, in TL per kg.
+/// One row per (company, year, month, version); append-only: a version is never changed or deleted, a correction adds
+/// the next version with its reason and the latest version is the month's effective price.
+/// </summary>
+internal sealed class MonthlyScrapPriceRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid Id { get; set; }
+    public int Year { get; set; }
+    public int Month { get; set; }
+    public decimal TlPerKg { get; set; }
+    public int Version { get; set; }
+    public string? Reason { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
 }
 
@@ -463,4 +645,5 @@ internal interface IPlanProcessSpecColumns
     decimal? TargetThicknessMm { get; set; }
     string? PaintDescription { get; set; }
     string? PaintColorCode { get; set; }
+    string? PaintSelectionJson { get; set; }
 }

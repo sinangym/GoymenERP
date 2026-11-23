@@ -19,7 +19,11 @@ public interface IInventoryCustomerReturnParticipantV1 : IAsyncDisposable
 
 /// <summary>
 /// Inventory resolves every physical fact from the immutable definite-shipment movement. A caller
-/// cannot choose a label, product, owner, custodian, location, block state or disposition.
+/// cannot choose a label, product, owner, custodian, location, block state or disposition. <c>PieceCount</c> (KLN-D119,
+/// AK-2b) is the number of returned pieces: required exactly when the original shipment line carried pieces and refused
+/// otherwise (400 <see cref="InventoryCustomerReturnCodesV1.InvalidQuantity"/>); all returns of one shipment line never take
+/// more pieces than it shipped (409 <see cref="InventoryCustomerReturnCodesV1.ReturnExceedsShipment"/>), and the last
+/// kilograms bring back the last pieces. Sales before AK-4 omits it and kg-only shipments return exactly as before.
 /// </summary>
 public sealed record InventoryCustomerReturnRequestV1(
     Guid CompanyId,
@@ -28,7 +32,8 @@ public sealed record InventoryCustomerReturnRequestV1(
     Guid LoadingInstructionLineId,
     Guid InventoryMovementId,
     string QuantityKg,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? PieceCount = null);
 
 /// <summary>The exact Inventory identities staged by one approved customer return.</summary>
 public sealed record InventoryCustomerReturnResultV1(
@@ -42,7 +47,8 @@ public sealed record InventoryCustomerReturnResultV1(
     string QuantityKg,
     Guid OutboxMessageId,
     bool IsReplay,
-    string OriginalCorrelationId);
+    string OriginalCorrelationId,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] int? PieceCount = null);
 
 public static class InventoryCustomerReturnCodesV1
 {
@@ -79,7 +85,7 @@ public static class InventoryCustomerReturnCodesV1
 
 public sealed class InventoryCustomerReturnException : Exception
 {
-    private InventoryCustomerReturnException(int status, string code) : base(code)
+    private InventoryCustomerReturnException(int status, string code, Exception? innerException = null) : base(code, innerException)
     {
         Status = status;
         Code = code;
@@ -88,9 +94,9 @@ public sealed class InventoryCustomerReturnException : Exception
     public int Status { get; }
     public string Code { get; }
 
-    public static InventoryCustomerReturnException Refused(int status, string code) =>
+    public static InventoryCustomerReturnException Refused(int status, string code, Exception? innerException = null) =>
         InventoryCustomerReturnCodesV1.IsDefined(status, code)
-            ? new(status, code)
+            ? new(status, code, innerException)
             : throw new InvalidOperationException("Inventory customer-return refusal is outside its closed contract.");
 }
 
@@ -128,6 +134,11 @@ public static class InventoryCustomerReturnContractV1
                 CultureInfo.InvariantCulture, out var parsed)
             || !string.Equals(parsed.ToString("0.###", CultureInfo.InvariantCulture), request.QuantityKg,
                 StringComparison.Ordinal))
+        {
+            throw Refused(400, InventoryCustomerReturnCodesV1.InvalidQuantity);
+        }
+
+        if (request.PieceCount is < 0)
         {
             throw Refused(400, InventoryCustomerReturnCodesV1.InvalidQuantity);
         }

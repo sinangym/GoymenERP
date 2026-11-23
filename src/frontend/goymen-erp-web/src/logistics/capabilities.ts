@@ -14,6 +14,10 @@
  */
 
 export const LOGISTICS_CAPABILITY = {
+  /** Staged child control; deliberately absent from the global route catalogue. */
+  planExcessPrepare: 'logistics.shipments.plan-excess.prepare',
+  planExcessApprove: 'logistics.shipments.plan-excess.approve',
+  transferDepartures: 'logistics.transfer-departures.record',
   /** L-02 Yükleme Talimatları — the company's instructions, newest first. */
   instructionsList: 'logistics.instructions.list',
   /** L-03 Yeni Yükleme Talimatı — a Draft with lines on APPROVED sales lines. A SEPARATE grant from reading. */
@@ -35,6 +39,8 @@ export const LOGISTICS_CAPABILITY = {
 export type LogisticsCapabilityId = (typeof LOGISTICS_CAPABILITY)[keyof typeof LOGISTICS_CAPABILITY]
 
 export const LOGISTICS_ROUTE = {
+  planExcessApprove: '/lojistik/plan-ustu-sevk-onay',
+  transferDepartures: '/lojistik/transfer-cikislari',
   list: '/lojistik/yukleme-talimatlari',
   // Static before the parameter route: `yeni` must never be read as an instruction id.
   create: '/lojistik/yukleme-talimatlari/yeni',
@@ -45,6 +51,9 @@ export const LOGISTICS_ROUTE = {
 
 /** Master v3 §27.8 screen ids, one per route, as the backend provider declares them. */
 export const LOGISTICS_SCREEN_ID = {
+  [LOGISTICS_CAPABILITY.planExcessPrepare]: 'L-02-DETAIL',
+  [LOGISTICS_CAPABILITY.planExcessApprove]: 'L-PLAN-EXCESS-APPROVE',
+  [LOGISTICS_CAPABILITY.transferDepartures]: 'STK-S8-DEPARTURE',
   [LOGISTICS_CAPABILITY.instructionsList]: 'L-02',
   [LOGISTICS_CAPABILITY.instructionsCreate]: 'L-03',
   [LOGISTICS_CAPABILITY.instructionsDetail]: 'L-02-DETAIL',
@@ -53,6 +62,9 @@ export const LOGISTICS_SCREEN_ID = {
 } as const
 
 export const LOGISTICS_NAV_LABEL = {
+  [LOGISTICS_CAPABILITY.planExcessPrepare]: '',
+  [LOGISTICS_CAPABILITY.planExcessApprove]: 'Plan üstü sevk onayı',
+  [LOGISTICS_CAPABILITY.transferDepartures]: 'Transfer çıkışları',
   [LOGISTICS_CAPABILITY.instructionsList]: 'Yükleme Talimatları',
   // No nav entry: one entry point per creation route (coordinator, 19 September 2026) — the L-02 list carries
   // its own primary link to L-03, as Finance and Accounting do; a second sidebar link with the same accessible
@@ -67,3 +79,14 @@ export const LOGISTICS_NAV_LABEL = {
 
 export const instructionDetailRoute = (instructionId: string) =>
   `/lojistik/yukleme-talimatlari/${encodeURIComponent(instructionId)}`
+
+/**
+ * KLN-D117 (Sinan 2026-11-21): "Yükleme talimatı oluştur" started from a stock label row. The L-03 create screen keeps the
+ * label code (`?etiket=`) as context and narrows its approved-line picker to the label's product (`?urun=`); the user still
+ * chooses the customer and the order lines, and the Draft is the same server command as from the list.
+ */
+export const INSTRUCTION_LABEL_PARAM = 'etiket' as const
+export const INSTRUCTION_PRODUCT_PARAM = 'urun' as const
+
+export const instructionCreateFromLabelPath = (labelCode: string, productId: string) =>
+  `${LOGISTICS_ROUTE.create}?${new URLSearchParams({ [INSTRUCTION_LABEL_PARAM]: labelCode, [INSTRUCTION_PRODUCT_PARAM]: productId }).toString()}`

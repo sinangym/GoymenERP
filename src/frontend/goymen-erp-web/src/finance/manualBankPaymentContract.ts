@@ -1,3 +1,4 @@
+import { decodeFinanceDocumentNumber, type FinanceDocumentNumber } from './documentNumber'
 import { isDateOnly } from './dateOnly'
 import { isPositiveDecimalText } from './decimalText'
 import {
@@ -53,6 +54,7 @@ export interface RecordManualBankPaymentRequest extends ApproveManualBankPayment
 }
 
 export interface ManualBankPaymentView {
+  readonly documentNumber?: FinanceDocumentNumber
   readonly id: string
   readonly companyId: string
   readonly status: ManualBankPaymentStatus
@@ -191,7 +193,9 @@ const VIEW_KEYS = [
 ] as const
 
 export function decodeManualBankPaymentView(value: unknown, companyId: string): Decoded<ManualBankPaymentView> {
-  if (!isRecord(value) || !hasExactKeys(value, VIEW_KEYS)) return FAIL
+  if (!isRecord(value) || !hasExactKeys(value, Object.hasOwn(value, 'documentNumber') ? [...VIEW_KEYS, 'documentNumber'] : VIEW_KEYS)) return FAIL
+  const documentNumber = decodeFinanceDocumentNumber(value.documentNumber)
+  if (documentNumber === null || documentNumber !== undefined && value.status !== 'Recorded') return FAIL
   const preparation = decodePreparation(value.preparation)
   const linkedDocument = decodeLinkedDocument(value.linkedDocument)
   if (
@@ -237,6 +241,7 @@ export function decodeManualBankPaymentView(value: unknown, companyId: string): 
     recordedAtUtc: value.recordedAtUtc,
     bankResultConfirmed: value.bankResultConfirmed,
     version: value.version,
+    ...(documentNumber === undefined ? {} : { documentNumber }),
   })
 }
 

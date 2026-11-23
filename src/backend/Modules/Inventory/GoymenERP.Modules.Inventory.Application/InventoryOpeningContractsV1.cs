@@ -16,6 +16,12 @@ public static class InventoryPermissionManifestV1
     /// <summary>Create and explicitly release a physical stock allocation. Company-wide.</summary>
     public const string PhysicalAllocationWrite = "inventory.physical-allocation.write";
 
+    /// <summary>F017-b2 / STK-S17 spec §6: read future supply allocations; registered only, company-wide.</summary>
+    public const string FutureAllocationRead = "inventory.future-allocation.read";
+
+    /// <summary>F017-b2 / KLN-D26: create or release future allocations; registered only, company-wide.</summary>
+    public const string FutureAllocationWrite = "inventory.future-allocation.write";
+
     /// <summary>
     /// Record one same-company label split or merge (R19, DEC-LBL-002/003). Company-wide. The literal is the
     /// owner's technical mapping, confirmed by the coordinator (technical names are not Sinan's to pick,
@@ -63,6 +69,48 @@ public static class InventoryPermissionManifestV1
     /// transfer aggregate; registration/classification and every grant remain central/user-owned.
     /// </summary>
     public const string StockTransferWrite = "inventory.stock-transfer.write";
+
+    /// <summary>
+    /// KLN-D20 (B-22b): cancel a not-yet-accepted transfer dispatch with a reverse movement. A separate name from
+    /// <see cref="StockTransferWrite"/>; registration/classification and every grant remain central/user-owned.
+    /// </summary>
+    public const string StockTransferCancel = "inventory.stock-transfer.cancel";
+
+    /// <summary>
+    /// KLN-D24 (B-22c): approve or reject a recorded receipt excess. A separate name from <see cref="StockTransferWrite"/>
+    /// so the receiver and the approver can be different people (the service also refuses self-approval).
+    /// Registration/classification and every grant remain central/user-owned. KLN-D92 persona (grant-time human gate,
+    /// not a grant): Stok/Depo Müdürü and Genel Müdür.
+    /// </summary>
+    public const string StockTransferOverageApprove = "inventory.stock-transfer.overage-approve";
+
+    /// <summary>
+    /// KLN-D23 (c) (B-22c): record a loss request with an explanation for one pending transfer label. Moves no stock.
+    /// Registration/classification and every grant remain central/user-owned. KLN-D92 persona (grant-time human gate,
+    /// not a grant): Depo Sorumlusu. KLN-D97: the same name renews a rejected request.
+    /// </summary>
+    public const string StockTransferLossRecord = "inventory.stock-transfer.loss-record";
+
+    /// <summary>
+    /// KLN-D23 (c) (B-22c): approve (write off as a transit loss) or reject one recorded loss request. A separate name
+    /// from <see cref="StockTransferLossRecord"/> (the service also refuses the requester's own decision).
+    /// Registration/classification and every grant remain central/user-owned. KLN-D92 persona (grant-time human gate,
+    /// not a grant): Stok/Depo Müdürü and Genel Müdür.
+    /// </summary>
+    public const string StockTransferLossApprove = "inventory.stock-transfer.loss-approve";
+
+    /// <summary>
+    /// SAT-D304 (1) / SAT-D372: submit the manually entered unit cost of one location's uncosted opening stock of one
+    /// product. Changes no cost ledger. Registration/classification and every grant remain central/user-owned.
+    /// </summary>
+    public const string OpeningCostSubmit = "inventory.opening-cost.submit";
+
+    /// <summary>
+    /// SAT-D304 (1) / SAT-D372: approve (open the average-cost position) or reject one submitted opening cost. A
+    /// separate name from <see cref="OpeningCostSubmit"/> (the service also refuses the submitter's own decision).
+    /// Registration/classification and every grant remain central/user-owned.
+    /// </summary>
+    public const string OpeningCostApprove = "inventory.opening-cost.approve";
 }
 
 /// <summary>The opening count as the client sends it: one physical count sheet of one location.</summary>

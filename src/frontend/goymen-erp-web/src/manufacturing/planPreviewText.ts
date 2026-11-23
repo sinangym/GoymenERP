@@ -1,8 +1,11 @@
+import { paintSelectionFailureText } from './paintSelectionText'
 /**
  * Display names for the plan preview. Labels only: every name is the server's own parameter or value name, shown with
  * its Turkish label; an unknown name is shown as it came, never dropped. Nothing here is a value, a default or a
  * formula.
  */
+
+import { PLAN_PHYSICAL_MASS_REFUSAL } from './planText'
 
 const PARAMETER_LABELS: Readonly<Record<string, string>> = {
   densityKgPerCubicMetre: 'Yoğunluk (kg/m³)',
@@ -126,10 +129,13 @@ export function previewFailure(reason: 'offline' | 'network-error' | 'service-un
 }
 
 export function previewRefusal(status: number, code: string | null, field: string | null): string {
+  const paintFailure = paintSelectionFailureText(code)
+  if (status !== 401 && status !== 403 && paintFailure !== null) return paintFailure
   const where = field === null ? '' : ` Alan: ${field}.`
   if (status === 401 || status === 403) return 'Önizleme için plan yazma yetkiniz artık geçerli değil.'
   if (status === 404) return 'Önizlenen ana rulo bu şirket bağlamında bulunamadı.'
   if (status === 409) return `Seçilen etiketin sürümü değişti; ana ruloyu yeniden seçin (${code ?? 'conflict'}).${where}`
+  if (status === 422 && code === 'manufacturing_plan_label_not_usable') return `${PLAN_PHYSICAL_MASS_REFUSAL}${where}`
   if (status === 400) return `Girdi okunamadı (${code ?? 'request_invalid'}).${where}`
   return `Girdi kabul edilmedi (${code ?? status}).${where}`
 }

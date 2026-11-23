@@ -4,6 +4,7 @@ using GoymenERP.Modules.Purchasing.Domain;
 using GoymenERP.Modules.Purchasing.Domain.Orders;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Quantity = GoymenERP.BuildingBlocks.Quantities.Quantity<GoymenERP.Modules.Purchasing.Domain.Quantities.PurchasingQuantityRefusals>;
 
@@ -13,7 +14,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// A3 API-30 (ALS-D33, ALS-D21, master §7.3) on real SQL Server: a general line's delivery schedule (termin dilimleri) is stored as an
 /// append-only revision at the order version it produced, in ONE save with the header version, the attempt and the audit; the same
 /// key replays; a later revision after an acceptance keeps the earlier one as history and the order is rebuilt revision by revision
-/// between the acceptance shares; two concurrent schedules of one line yield one revision; a domain refusal writes nothing; the checks and the foreign keys hold the slices on a direct write;
+/// between the acceptance shares; a schedule holding the owner line lock excludes a second writer without a second revision;
+/// a domain refusal writes nothing; the checks and the foreign keys hold the slices on a direct write;
 /// company B neither sees nor schedules company A's order; the migration's Down refuses while a slice exists. SENTETIK owners.
 /// </summary>
 public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
@@ -149,21 +151,25 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
-    public async Task Two_schedules_of_one_line_saved_concurrently_yield_one_revision_and_the_loser_is_a_concurrent_change()
+    public async Task Two_schedules_of_one_line_with_the_owner_lock_held_yield_one_revision_and_the_loser_is_line_busy()
     {
         await using Run run = await Run.StartAsync();
         var (orderId, lineId, approvedVersion) = await ApprovedAcceptanceOrderAsync(run, 100m);
         var setA = new[] { KgSlice(60m, ScheduleD1), KgSlice(40m, ScheduleD2) };
         var setB = new[] { KgSlice(100m, ScheduleD2) };
 
-        Barrier barrier = new Barrier(2);
-        async Task<object> ScheduleAsync(string key, PurchaseOrderDeliverySliceInput[] slices)
+        var pause = new LineScheduleSavePause();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+        await using StoreScope first = run.Store(CompanyA, pause);
+        await using StoreScope second = run.Store(CompanyA);
+        string loserCorrelation = run.Correlation + "-blocked";
+        async Task<object> ScheduleAsync(StoreScope writer, string key, string correlation, PurchaseOrderDeliverySliceInput[] slices)
         {
-            await using StoreScope writer = run.Store(CompanyA, new BarrierInterceptor(barrier));
             try
             {
-                var result = await writer.Store.MutateOrderAsync(run.Envelope(key), Hash(key), PurchasingCommands.OrderLineScheduleV1, orderId,
-                    (order, now) => order.SetLineDeliverySchedule(approvedVersion, lineId, slices, run.Actor, now), LineScheduleSet);
+                var result = await writer.Store.MutateOrderAsync(run.Envelope(key, correlation), Hash(key), PurchasingCommands.OrderLineScheduleV1, orderId,
+                    (order, now) => order.SetLineDeliverySchedule(approvedVersion, lineId, slices, run.Actor, now), LineScheduleSet,
+                    deadline.Token);
                 return result!.Outcome;
             }
             catch (PurchasingStoreException exception)
@@ -172,9 +178,23 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             }
         }
 
-        var results = await Task.WhenAll(Task.Run(() => ScheduleAsync("k-race-a", setA)), Task.Run(() => ScheduleAsync("k-race-b", setB)));
-        Assert.Single(results, result => result is PurchasingWriteOutcome.Recorded);
-        Assert.Single(results, result => result is string code && code == PurchasingStoreCodes.ConcurrentChange);
+        // KLN-D105 / F-017 §3.4: schedule writes hold the canonical owner line lock through SaveChanges.
+        // The second real writer must time out at that lock, before an attempt or audit is staged.
+        var results = new object[2];
+        Task<object> firstWrite = ScheduleAsync(first, "k-race-a", run.Correlation, setA);
+        try
+        {
+            await pause.Entered.Task.WaitAsync(TimeSpan.FromSeconds(20), deadline.Token);
+            results[1] = await ScheduleAsync(second, "k-race-b", loserCorrelation, setB)
+                .WaitAsync(TimeSpan.FromSeconds(15), deadline.Token);
+        }
+        finally
+        {
+            pause.Resume.TrySetResult();
+            results[0] = await firstWrite.WaitAsync(TimeSpan.FromSeconds(20), deadline.Token);
+        }
+        Assert.Equal(PurchasingWriteOutcome.Recorded, Assert.IsType<PurchasingWriteOutcome>(results[0]));
+        Assert.Equal(PurchasingStoreCodes.LineBusy, Assert.IsType<string>(results[1]));
 
         // One revision only, at the next version, and exactly one header bump and one audit record.
         Assert.Equal(approvedVersion + 1, await run.ScalarAsync<long>("SELECT Version FROM purchasing.PurchaseOrders WHERE Id = @id", ("@id", orderId)));
@@ -185,12 +205,34 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'purchasing.purchase-order.line-schedule-set.v1' AND EntityId = @id",
             ("@id", orderId.ToString("D"))));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM purchasing.PurchaseAttempts WHERE CompanyId = @company AND OrderId = @id AND CommandName = @command",
+            ("@company", CompanyA), ("@id", orderId), ("@command", PurchasingCommands.OrderLineScheduleV1)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM purchasing.PurchaseAttempts WHERE CompanyId = @company AND CorrelationId = @correlation",
+            ("@company", CompanyA), ("@correlation", loserCorrelation)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CompanyId = @company AND CorrelationId = @correlation",
+            ("@company", CompanyA), ("@correlation", loserCorrelation)));
 
         await using (StoreScope a = run.Store(CompanyA))
         {
             var rebuilt = (await a.Store.FindOrderAsync(orderId))!.Order;
-            var winner = results[0] is PurchasingWriteOutcome.Recorded ? setA : setB;
-            Assert.Equal(winner.Select(slice => slice.SliceId).ToArray(), rebuilt.Lines[0].DeliverySchedule.Select(slice => slice.SliceId).ToArray());
+            Assert.Equal(setA.Select(slice => slice.SliceId).ToArray(), rebuilt.Lines[0].DeliverySchedule.Select(slice => slice.SliceId).ToArray());
+        }
+    }
+
+    private sealed class LineScheduleSavePause : SaveChangesInterceptor
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Resume { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            Entered.TrySetResult();
+            await Resume.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
+            return result;
         }
     }
 

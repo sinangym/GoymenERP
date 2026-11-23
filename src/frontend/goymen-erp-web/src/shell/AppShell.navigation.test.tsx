@@ -42,7 +42,7 @@ function installFetch(granted: readonly string[]) {
         displayName: 'Kullanici A',
         email: null,
         allowedCompanyIds: [COMPANY],
-        authenticationSessionBinding: null,
+        mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: null,
       })
     }
     if (url.includes('/organization/companies')) {
@@ -687,7 +687,8 @@ describe('NAV-OPENING-01: Açılış stokları under Ayarlar', () => {
     const owners = NAV_GROUPS.filter((group) => group.entries.includes(OPENING))
     expect(owners.map((group) => group.label)).toEqual(['Ayarlar'])
     expect(owners[0].entries.at(-1)).toBe(OPENING)
-    expect(NAV_GROUPS.find((group) => group.id === 'product')?.entries).toEqual([CAPABILITY.productItemsList])
+    expect(NAV_GROUPS.find((group) => group.id === 'product')?.entries)
+      .toEqual([CAPABILITY.productItemsList, CAPABILITY.productPaintMemberships])
     expect(NAV_GROUPS.find((group) => group.id === 'stock-logistics')?.entries)
       .toContain(CAPABILITY.inventoryStockPositionsList)
     expect(NAV_GROUPS.find((group) => group.id === 'stock-logistics')?.entries).not.toContain(OPENING)
@@ -741,8 +742,8 @@ describe('NAV-OPENING-01: Açılış stokları under Ayarlar', () => {
   const POSITIONS = CAPABILITY.inventoryStockPositionsList
   const activeGroups = (scope: HTMLElement) =>
     within(scope).queryAllByRole('button', { name: new RegExp(ACTIVE_HINT) }).map((button) => button.textContent)
-  /** Stock pages under no sidebar entry: a label card, its sub-page, the company movement timeline. */
-  const STOCK_DETAIL_PAGES = ['/stok/etiket/LBL-1', '/stok/etiket/LBL-1/hareketler', '/stok/hareketler']
+  /** Stock pages under no sidebar entry: a label card, its sub-page, the company movement timeline, the shortage warning. */
+  const STOCK_DETAIL_PAGES = ['/stok/etiket/LBL-1', '/stok/etiket/LBL-1/hareketler', '/stok/hareketler', '/stok/eksik-uyarilari']
 
   it('gives every non-opening stock page to Stok & Lojistik through the authorised stock entry, for both-capability and positions-only actors', async () => {
     for (const granted of [[OPENING, POSITIONS], [POSITIONS], [OPENING, POSITIONS, CAPABILITY.organizationSitesList]]) {
@@ -819,7 +820,7 @@ describe('NAV-OPENING-01: Açılış stokları under Ayarlar', () => {
   it('draws each Ayarlar section label (KLN-D2) above the first granted entry of its section, and only then', async () => {
     const listOf = (scope: HTMLElement) =>
       [...groupButton(scope, 'Ayarlar').parentElement!.querySelector('ul')!.children].map((item) => item.textContent)
-    // Tax master is the last Ana Veriler entry: without Organizasyon the label moves down to it.
+    // Tax master sits inside Ana Veriler: without Organizasyon the label moves down to it.
     const taxOnly = await renderShell('/', [CAPABILITY.settingsTaxMaster])
     expect(listOf(taxOnly)).toEqual(['Ana Veriler', CAPABILITY_NAV_LABEL[CAPABILITY.settingsTaxMaster]])
     cleanup()

@@ -1,13 +1,55 @@
 /**
- * AI Merkezi — sağ AI paneli Türkçe metinleri (plan AI-5). Kullanıcı metinleri yalnız bu dosyadadır.
+ * AI Merkezi — sağ AI paneli Türkçe metinleri (plan AI-5 + AI-3 salt-okuma). Kullanıcı metinleri yalnız bu dosyadadır.
  */
 export const AI_TEXT = {
   toggle: 'AI asistan',
   panelLabel: 'AI asistan',
   heading: 'AI asistan',
   close: 'AI panelini kapat',
+  stateSubject: 'AI asistan',
   unavailableTitle: 'AI asistan şu an kullanılamıyor',
   unavailableBody:
     'Bu şirket bağlamında AI yeteneği açık değil. ERP\'nin bütün ekranları ve işlemleri normal çalışır; AI yalnız yardımcıdır.',
   unavailableHint: 'AI açıldığında burada ekranı, kuralı ve kaydı açıklayan, taslak ve özet hazırlayan asistan görünür. Yazma işlemleri her zaman önizleme ve sizin onayınızla yapılır.',
+  runtimeUnavailableTitle: 'AI çalışma ortamı hazır değil',
+  runtimeUnavailableBody:
+    'AI yapılandırması bu ortamda kullanıma uygun değil. ERP\'nin bütün ekranları ve işlemleri normal çalışır.',
+  panelForbiddenTitle: 'AI asistanı kullanma yetkiniz yok',
+  panelForbiddenBody: 'Bu şirket bağlamında AI asistanını kullanma yetkiniz bulunmuyor. Yetki için sistem yöneticinize başvurun.',
+  noToolsTitle: 'AI\'ın okuyabileceği araç yok',
+  noToolsBody:
+    'AI asistanı açık, ancak bu şirkette size açık bir salt-okuma aracı henüz yok. Araçlar modüller tarafından eklendikçe burada görünür.',
+  readOnlyNotice: 'AI yalnız okur: kayıt oluşturmaz, değiştirmez. Cevaplar kaynak kayıtla birlikte gösterilir.',
+  questionLabel: 'Sorunuz',
+  questionHint: 'Kısa ve açık bir soru yazın.',
+  questionSensitiveReminder: 'Soruya fiyat, bakiye, tutar, IBAN, telefon veya e-posta gibi hassas değer yazmayın; böyle bir soru gönderilmez.',
+  questionInvalid: 'Soru boş olamaz veya izin verilen uzunluğu aşamaz.',
+  toolLabel: 'Okunacak kaynak',
+  toolNone: 'Kaynak seçin',
+  toolInvalid: 'Seçilen kaynak bu soru için kullanılamıyor.',
+  argumentsLabel: 'Kaynak bilgileri (JSON, isteğe bağlı)',
+  argumentsHint: 'Şirket bilgisi yazılmaz; şirket oturumdaki bağlamdan alınır.',
+  argumentsInvalid: 'Kaynak bilgileri geçerli bir JSON nesnesi olmalı ve yalnız izin verilen alanları içermeli.',
+  submit: 'Sor',
+  submitting: 'Soruluyor…',
+  answerHeading: 'Cevap',
+  answerEmpty: 'AI bu soru için hiçbir kaynağı okumadı.',
+  resultNotFound: 'Kaynakta istenen kayıt bulunamadı.',
+  sourceLabel: 'Kaynak',
+  sourceAsOf: 'Okunma zamanı',
+  sourceVersion: 'Sürüm',
+  sourceDataClass: 'Veri sınıfı',
+  askDisabledTitle: 'AI kapatıldı',
+  askDisabledBody: 'AI bu arada kapatıldı; soru işlenmedi. ERP\'nin bütün işlemleri normal çalışır.',
+  askToolUnavailableTitle: 'Kaynak şu an okunamadı',
+  askToolUnavailableBody: 'Kaynak modül yanıt veremedi; hiçbir veri gösterilmedi. Kısa süre sonra tekrar deneyin.',
+  askRefusedTitle: 'Soru reddedildi',
+  askRefusedBody: 'Bu soru yetki veya politika nedeniyle işlenmedi; hiçbir veri gösterilmedi.',
 } as const
+
+export const AI_DATA_CLASS_LABEL: Readonly<Record<string, string>> = {
+  Public: 'Genel',
+  Internal: 'Şirket içi',
+  Confidential: 'Gizli',
+  StrictlyConfidential: 'Çok gizli',
+}

@@ -32,7 +32,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// HTTP case goes through the real host and the real permission port (which needs the two
 /// <c>finance.party-ledger.*</c> names registered centrally) with synthetic roles in this test's own database.
 /// </summary>
-public sealed class FinancePartyLedgerSqlServerRelationalAcceptanceTests
+public sealed partial class FinancePartyLedgerSqlServerRelationalAcceptanceTests
 {
     private const string Operation = "SENTETIK-operation";
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
@@ -341,6 +341,21 @@ public sealed class FinancePartyLedgerSqlServerRelationalAcceptanceTests
             health.EnsureSuccessStatusCode();
             await using var context = run.Context(CompanyA, null);
             await context.Database.MigrateAsync();
+            // The receipt port below is synthetic, but reversal reads the real treasury owner.
+            // Seed the actual account/currency identities; the recorded receipt facts supply its balance.
+            foreach (var (bank, currency) in new[] { (LiraBank, Lira), (DollarBank, Dollar) })
+            {
+                context.BankAccounts.Add(new BankAccountRow
+                {
+                    Id = bank, CompanyId = CompanyA, CurrencyId = currency,
+                    DisplayName = "SENTETIK ekstre bankası", BankName = "SENTETIK", AccountType = "Vadesiz",
+                    Iban = "TR330006100519786457841326", MoneyMovementEligible = true, Status = 2, Version = 2,
+                    ProposedBy = "SENTETIK-bank-maker", ProposedAtUtc = DateTimeOffset.UtcNow,
+                    ApprovedBy = "SENTETIK-bank-checker", ApprovedAtUtc = DateTimeOffset.UtcNow,
+                    UpdatedAtUtc = DateTimeOffset.UtcNow,
+                });
+            }
+            await context.SaveChangesAsync();
             return run;
         }
 
@@ -580,7 +595,7 @@ public sealed class FinancePartyLedgerSqlServerRelationalAcceptanceTests
             var service = new ReceiptDraftService(dbContext, companyContext, new FixedCurrentUser(actor, company),
                 new SyntheticPermissions(), new SyntheticBanks(company), new SyntheticParty(company, party, account),
                 new SyntheticSettings(company), collector, new FinanceReceiptDraftBinding(Operation), Envelope("save"),
-                TimeProvider.System, Envelope("record"), new SyntheticOpenPeriodRule());
+                TimeProvider.System, Envelope("record"), new SyntheticOpenPeriodRule(), documentNumbers: new SyntheticFinanceRecordNumbers());
             return new Scope<IManualReceiptService>(dbContext, service,
                 new FinanceContext(company, actor, $"ledger-receipt-{Guid.NewGuid():N}", null));
         }
@@ -592,7 +607,7 @@ public sealed class FinancePartyLedgerSqlServerRelationalAcceptanceTests
             var service = new ReversalProposalService(dbContext, companyContext, user, new SyntheticPermissions(),
                 new SyntheticOpenPeriodRule(), new FinanceAllocationReversalGate(dbContext, companyContext, user), collector,
                 new FinanceReversalEnvelopes(Envelope(ReversalProposalService.ProposeCommand),
-                    Envelope(ReversalProposalService.ApproveCommand)), TimeProvider.System);
+                    Envelope(ReversalProposalService.ApproveCommand)), TimeProvider.System, new InternalLedgerTreasuryBalanceGuard(dbContext, companyContext));
             return new Scope<IReversalProposalService>(dbContext, service,
                 new FinanceContext(CompanyA, actor, $"ledger-reversal-{Guid.NewGuid():N}", null));
         }
@@ -607,7 +622,7 @@ public sealed class FinancePartyLedgerSqlServerRelationalAcceptanceTests
                 new CustomerInstrumentAuditEnvelopes(Envelope(FinancePermissionNames.CustomerInstrumentReceive),
                     Envelope(FinancePermissionNames.CustomerInstrumentStatusChange),
                     Envelope(FinancePermissionNames.CustomerInstrumentCollect)),
-                TimeProvider.System);
+                TimeProvider.System, documentNumbers: new SyntheticFinanceRecordNumbers());
             return new Scope<ICustomerInstrumentService>(dbContext, service,
                 new FinanceContext(CompanyA, actor, $"ledger-instrument-{Guid.NewGuid():N}", null));
         }

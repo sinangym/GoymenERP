@@ -103,7 +103,8 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         // "no money was moved" by itself — the table now exists whether or not anything is in it. The inventory
         // is kept (a new Finance table must be a deliberate edit here) and the claim it used to carry is stated
         // directly underneath: approving a bank account writes NO money event.
-        Assert.Equal("Allocations,BankAccounts,Commands,CustomerInstrumentMovements,CustomerInstruments,InvoiceCancellationItems,InvoiceCancellations,ManualBankPayments,MoneyEvents,OfficialInvoiceImportApprovals,OfficialInvoiceImportBatches,OfficialInvoiceImportCommands,OfficialInvoiceImportWorkDeliveries,OpenItemSourceBatches,OpenItems,OutgoingMoneyEventReversals,OutgoingMoneyEvents,PaymentAllocationStates,PaymentAllocations,PaymentReversalProposals,ReceiptDrafts,ReversalProposals,SourceAllocationStates,__EFMigrationsHistory", await run.ScalarAsync<string>(
+        // Explicit 60-table owner snapshot inventory; retain the separate zero-money-effect assertion.
+        Assert.Equal("Allocations,BankAccounts,CashAccountCommands,CashAccounts,CashExchangeBookValueCommands,CashExchangeBookValueDecisions,CashExchangeBookValueProposals,CashTransferCommands,CashTransfers,Commands,CreditAccountCommands,CreditAccountInstallments,CreditAccounts,CreditLimits,CreditMovementCommands,CreditMovements,CustomerInstrumentMovements,CustomerInstruments,CustomerReturnCreditItems,CustomerReturnCredits,CustomerReturnInvoiceStates,ExpensePaymentCommands,ExpensePayments,InvoiceCancellationItems,InvoiceCancellations,ManualBankPayments,MoneyEvents,OfficialInvoiceIdentityClaims,OfficialInvoiceImportApprovals,OfficialInvoiceImportBatches,OfficialInvoiceImportCommands,OfficialInvoiceImportWorkDeliveries,OfficialSalesInvoiceCommands,OfficialSalesInvoiceReservations,OfficialSalesInvoices,OpenItemSourceBatches,OpenItems,OpeningBalanceCommands,OpeningBalanceMovements,OpeningBalanceReversals,OpeningBalances,OutboxMessages,OutgoingMoneyEventReversals,OutgoingMoneyEvents,PartyBalanceAssignments,PartyBalanceTransferCommands,PartyBalanceTransfers,PartyCollateralCommands,PartyCollaterals,PartyCreditLimitCommands,PartyCreditLimits,PaymentAllocationStates,PaymentAllocations,PaymentReversalProposals,PeriodCarryReversals,PeriodCarryVouchers,ReceiptDrafts,ReversalProposals,SourceAllocationStates,__EFMigrationsHistory", await run.ScalarAsync<string>(
             "SELECT STRING_AGG(name, ',') WITHIN GROUP (ORDER BY name COLLATE Latin1_General_BIN2) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'finance')"));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.MoneyEvents"));
     }
@@ -678,7 +679,7 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
             // The draft service reads bank accounts through the REAL persisted reader above.
             var drafts = new ReceiptDraftService(dbContext, companyContext, currentUser, permissions, accounts,
                 new SyntheticParty(company), new SyntheticSettings(company), collector, new FinanceReceiptDraftBinding(Operation),
-                new FinanceAuditEnvelope(ReceiptDraftService.SaveDraftCommand, ["SENTETIK-FINANCE"], "Web"), TimeProvider.System);
+                new FinanceAuditEnvelope(ReceiptDraftService.SaveDraftCommand, ["SENTETIK-FINANCE"], "Web"), TimeProvider.System, documentNumbers: new SyntheticFinanceRecordNumbers());
             return new Scope(dbContext, accounts, drafts, new FinanceContext(company, actor, Correlation, null));
         }
 
@@ -822,7 +823,8 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
             Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
             Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
-            barrier.SignalAndWait(TimeSpan.FromSeconds(30));
+            if (!barrier.SignalAndWait(TimeSpan.FromSeconds(30), cancellationToken))
+                throw new TimeoutException("Concurrent save barrier timed out before both writers arrived.");
             return ValueTask.FromResult(result);
         }
     }

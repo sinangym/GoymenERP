@@ -21,6 +21,14 @@ namespace GoymenERP.Api.Endpoints;
 /// actor may upload now.</item>
 /// <item><c>GET /api/v1/documents/{id}/content</c> — the verified bytes of a clean version as an attachment, never
 /// rendered inline (nosniff, sandbox CSP, no-store). A NotScanned version is 409 <c>document_not_scanned</c>.</item>
+/// <item><c>POST /api/v1/documents/{id}/links</c> — B-26: links the EXISTING document to one more owner record (a JSON body
+/// of exactly <c>ownerKind</c>, <c>ownerId</c> and <c>expectedCurrentVersion</c>; one canonical <c>Idempotency-Key</c>).
+/// 201 with the document as the new owner shows it; the same key answers the same 201 with the replay headers. No
+/// second document, version or blob is written (DEC-DOC-002).</item>
+/// <item><c>GET /api/v1/documents/link-candidates?ownerKind&amp;ownerId&amp;sha256</c> — KLN-D50: the earlier documents of the
+/// company whose current version has that content, which the record may link instead of uploading the same file again
+/// (the link name; the record's kind opted in; only documents with a record the actor may read; never one already on
+/// the record). A read: nothing is written.</item>
 /// </list>
 /// No delete, rename or overwrite route exists: retention/deletion is undecided (OPEN-018/021) and a document is never
 /// overwritten (DEC-DOC-003). Problems carry <c>code</c>, <c>correlationId</c> and field <c>errors</c>; platform
@@ -32,14 +40,21 @@ public static class DocumentEndpoints
     private const int MaximumIdempotencyKeyLength = 128;
     private const int MaximumOwnerKindLength = 64;
 
+    /// <summary>The link body is three small members; anything larger is not a link request.</summary>
+    private const long MaximumLinkBodyBytes = 4 * 1024;
+
     /// <summary>The multipart framing allowed on top of the file bound (boundaries, headers and the two small fields).</summary>
     private const long MultipartOverheadBytes = 64 * 1024;
 
     private static readonly HashSet<string> ListQueryNames = new(["ownerKind", "ownerId"], StringComparer.Ordinal);
+    private static readonly HashSet<string> LinkCandidateQueryNames = new([DocumentsApiV1.OwnerKindField, DocumentsApiV1.OwnerIdField,
+        DocumentsApiV1.Sha256Query], StringComparer.Ordinal);
     private static readonly HashSet<string> FormFieldNames = new([DocumentsApiV1.OwnerKindField, DocumentsApiV1.OwnerIdField],
         StringComparer.Ordinal);
     private static readonly HashSet<string> VersionFormFieldNames = new([DocumentsApiV1.ExpectedCurrentVersionField], StringComparer.Ordinal);
     private static readonly HashSet<string> VersionListQueryNames = new(["pageSize", "cursor"], StringComparer.Ordinal);
+    private static readonly HashSet<string> LinkBodyNames = new([DocumentsApiV1.OwnerKindField, DocumentsApiV1.OwnerIdField,
+        DocumentsApiV1.ExpectedCurrentVersionField], StringComparer.Ordinal);
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public static IEndpointRouteBuilder MapDocumentEndpoints(this IEndpointRouteBuilder endpoints)
@@ -90,6 +105,37 @@ public static class DocumentEndpoints
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(DocumentProblemCodesV1.ConcurrentChange)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapGet($"/{DocumentsApiV1.LinkCandidatesSegment}", async ([FromQuery] string? ownerKind, [FromQuery] Guid? ownerId,
+            [FromQuery] string? sha256, HttpContext httpContext, [FromServices] IDocumentService service, ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!httpContext.Request.Query.All(pair => LinkCandidateQueryNames.Contains(pair.Key) && pair.Value.Count == 1)
+                || string.IsNullOrWhiteSpace(ownerKind) || ownerKind.Length > MaximumOwnerKindLength || ownerId is null
+                || string.IsNullOrEmpty(sha256))
+            {
+                return Problem(StatusCodes.Status400BadRequest, DocumentProblemCodesV1.ValidationFailed, correlation);
+            }
+
+            try
+            {
+                return Results.Json(await service.ListLinkCandidatesAsync(ownerKind, ownerId.Value, sha256, cancellationToken), Json);
+            }
+            catch (DocumentServiceException exception)
+            {
+                return Problem(exception, correlation);
+            }
+        })
+            .WithName("GetDocumentLinkCandidatesV1")
+            .Produces<DocumentLinkCandidatesResponse>()
+            .ProducesErpBadRequest(DocumentProblemCodesV1.ValidationFailed)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(DocumentProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity(DocumentProblemCodesV1.LinkNotAccepted)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
@@ -206,7 +252,139 @@ public static class DocumentEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        group.MapPost("/{id:guid}/" + DocumentsApiV1.LinksSegment, LinkAsync)
+            .WithName("LinkDocumentV1")
+            .WithIdempotencyContract(DocumentsApiV1.CreatedStatus)
+            .Accepts<LinkDocumentRequest>("application/json")
+            .Produces<DocumentLinkWriteResponse>(DocumentsApiV1.CreatedStatus)
+            .ProducesErpBadRequest(DocumentProblemCodesV1.ValidationFailed, DocumentProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .Produces(StatusCodes.Status413PayloadTooLarge)
+            .ProducesErpConflict(DocumentProblemCodesV1.SameKeyPayloadMismatch, DocumentProblemCodesV1.ConcurrentChange,
+                DocumentProblemCodesV1.AlreadyLinked)
+            .ProducesErpUnprocessableEntity(DocumentProblemCodesV1.LinkNotAccepted)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         return endpoints;
+    }
+
+    private static async Task<IResult> LinkAsync(Guid id, HttpContext httpContext, [FromServices] IDocumentService service,
+        ICorrelationContext correlation, CancellationToken cancellationToken)
+    {
+        SetPrivateNoStore(httpContext.Response);
+        if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var idempotencyKey) || !correlation.IsResolved)
+        {
+            return Problem(StatusCodes.Status400BadRequest, DocumentProblemCodesV1.CommandMetadataInvalid, correlation);
+        }
+
+        if (httpContext.Request.Query.Count > 0)
+        {
+            return Problem(StatusCodes.Status400BadRequest, DocumentProblemCodesV1.ValidationFailed, correlation);
+        }
+
+        if (!httpContext.Request.HasJsonContentType())
+        {
+            return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+        }
+
+        var sizeFeature = httpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
+        if (sizeFeature is { IsReadOnly: false })
+        {
+            sizeFeature.MaxRequestBodySize = MaximumLinkBodyBytes;
+        }
+
+        if (httpContext.Request.ContentLength is { } declaredLength && declaredLength > MaximumLinkBodyBytes)
+        {
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+        }
+
+        LinkDocumentRequest request;
+        try
+        {
+            using var body = await JsonDocument.ParseAsync(httpContext.Request.Body, cancellationToken: cancellationToken);
+            if (!TryReadLinkBody(body.RootElement, out request))
+            {
+                return Problem(StatusCodes.Status400BadRequest, DocumentProblemCodesV1.ValidationFailed, correlation);
+            }
+        }
+        catch (BadHttpRequestException exception) when (exception.StatusCode == StatusCodes.Status413PayloadTooLarge)
+        {
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+        }
+        catch (Exception exception) when (exception is JsonException or BadHttpRequestException or IOException)
+        {
+            return Problem(StatusCodes.Status400BadRequest, DocumentProblemCodesV1.ValidationFailed, correlation);
+        }
+
+        try
+        {
+            var response = await service.LinkAsync(id, request,
+                new DocumentCommandMetadata(idempotencyKey, correlation.CorrelationId, correlation.CausationId), cancellationToken);
+            if (response.IsReplay)
+            {
+                ApplyReplayHeaders(httpContext, response.OriginalCorrelationId);
+            }
+
+            return Results.Json(response, Json, statusCode: DocumentsApiV1.CreatedStatus);
+        }
+        catch (DocumentServiceException exception)
+        {
+            return Problem(exception, correlation);
+        }
+    }
+
+    /// <summary>
+    /// Exactly <c>ownerKind</c> (a non-blank string of the kind's length), <c>ownerId</c> (a GUID string) and
+    /// <c>expectedCurrentVersion</c> (a positive 32-bit integer), each once; nothing else.
+    /// </summary>
+    private static bool TryReadLinkBody(JsonElement root, out LinkDocumentRequest request)
+    {
+        request = null!;
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        string? ownerKind = null;
+        Guid? ownerId = null;
+        int? expectedCurrentVersion = null;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var member in root.EnumerateObject())
+        {
+            if (!LinkBodyNames.Contains(member.Name) || !seen.Add(member.Name))
+            {
+                return false;
+            }
+
+            switch (member.Name)
+            {
+                case DocumentsApiV1.OwnerKindField when member.Value.ValueKind == JsonValueKind.String:
+                    ownerKind = member.Value.GetString();
+                    break;
+                case DocumentsApiV1.OwnerIdField when member.Value.ValueKind == JsonValueKind.String
+                    && Guid.TryParseExact(member.Value.GetString(), "D", out var parsedOwnerId):
+                    ownerId = parsedOwnerId;
+                    break;
+                case DocumentsApiV1.ExpectedCurrentVersionField when member.Value.ValueKind == JsonValueKind.Number
+                    && member.Value.TryGetInt32(out var parsedVersion):
+                    expectedCurrentVersion = parsedVersion;
+                    break;
+                default:
+                    return false;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(ownerKind) || ownerKind.Length > MaximumOwnerKindLength || ownerId is not { } owner
+            || owner == Guid.Empty || expectedCurrentVersion is not { } expected || expected < 1)
+        {
+            return false;
+        }
+
+        request = new LinkDocumentRequest(ownerKind, owner, expected);
+        return true;
     }
 
     private static async Task<IResult> AppendVersionAsync(Guid id, HttpContext httpContext, [FromServices] IDocumentService service,

@@ -40,6 +40,20 @@ public sealed class ErpClaimsTransformation(IExternalIdentityResolver identityRe
             : principal.FindFirstValue("sub");
 
         var transformed = SanitizeUntrustedErpClaims(principal);
+        if (!isDevelopmentBootstrap
+            && string.Equals(issuer, LocalAccountSession.Issuer, StringComparison.Ordinal)
+            && !principal.Identities.Any(identity =>
+                identity.IsAuthenticated
+                && string.Equals(
+                    identity.AuthenticationType,
+                    LocalAccountSession.SchemeName,
+                    StringComparison.Ordinal)))
+        {
+            // ID-6: the local issuer is honored only from the local session identity; a bearer token (or any other
+            // scheme) that claims it is never resolved to a local user.
+            return transformed;
+        }
+
         var resolved = await identityResolver.ResolveAsync(
             issuer ?? string.Empty,
             subject ?? string.Empty);

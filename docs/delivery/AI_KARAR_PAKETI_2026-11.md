@@ -19,9 +19,9 @@ Kaynaklar: `SINAN_KARARLARI_2026-11-03_AI.md` (AI-D1…D6), `KARAR_SICILI.md` (D
 | B. Yerel AI / OCR / GPU | AI-8 yerel adaptör, AI-9 OCR | Yalnız sahte (fake) sağlayıcı ile test |
 | C. AI rolleri (F-001 ile birlikte) | AI-3/AI-5 kullanıcıya görünürlük, AI-4b politika ekranı | Aday ad (`ai.panel.use`) yalnız frontend sabiti; katalogda kayıtlı değil, kimseye verilmez; panel açılır ama "kullanılamıyor" der |
 | D. Eşlenmemiş "Gizli" kalemler | AI-6 READ araçlarının dış AI'a çıkışı | Bu alanlar her durumda reddedilir (bugünkü kod davranışı) |
-| E. Güvenlik olayı kanalı (ADR-SEC-001 1–9) | AI-2, dolayısıyla AI-3 runtime | AI-2 ve AI-3 başlamaz (ERP-000J §18) — **ana blokaj** |
+| E. Güvenlik olayı kanalı (ADR-SEC-001 1–9) | AI-2, dolayısıyla AI-3 runtime | **Cevaplandı (2026-11-11, BS-11/BS-15).** Blokaj kalktı; yalnız E8 (hash anahtarı, secret) insan kapısında |
 
-En kısa yol: **E** cevaplanırsa AI-2 ve AI-3 (yalnız READ, sahte sağlayıcı, kimseye açık değil) yazılabilir.
+**E** 2026-11-11'de cevaplandı. Bu yüzden AI-2 ve ardından AI-3 (yalnız READ, sahte sağlayıcı, kimseye açık değil) yazılabilir.
 A ve B canlı açılış içindir; geliştirmeyi durdurmaz.
 
 ---
@@ -93,7 +93,7 @@ Soru: `AI_VERI_GUVENLIK`'te "Gizli" olup Sinan'ın AI-D4 listesinde (fiyat, baki
 
 **Cevapsızken:** D1 uygulanır; değişiklik gerekmez.
 
-## E. Güvenlik olayı kanalı (ADR-SEC-001, "Öneri")
+## E. Güvenlik olayı kanalı (ADR-SEC-001; 2026-11-11 karara bağlandı, E8 insan kapısında)
 
 > **Durum (2026-11-11):** Sinan Grup E önerilerini kabul etti (`SINAN_KARARLARI_2026-11-11_BEKLEYEN_SORULAR.md` BS-11, #66 6806619303 madde 11). E7 BS-15 ile toplulaştırma olarak karara bağlandı (#66 6806860620 madde 15; pencere ve eşik Ayarlar'dan, ilk değer ölçümden sonra önerilir, hız sınırı yok). E8 (hash anahtarı, secret) ve harici AI'nin canlıya alınması insan kapısında kalır; E8 cevaplanana kadar kullanıcı adı hash'i yazılmaz. Aşağıdaki tablo karar öncesi metindir.
 

@@ -35,14 +35,14 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 /// <item><b>Audit:</b> ADR-009 envelope from <see cref="ManufacturingCommandMetadata"/>, in the same save.</item>
 /// </list>
 /// </summary>
-public sealed class ManufacturingStore(
+public sealed partial class ManufacturingStore(
     ManufacturingDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
     TimeProvider timeProvider)
     : IManufacturingPlanStore, IManufacturingPlanListStore, IManufacturingPlanRevisionStore, IManufacturingOrderStore,
-        IManufacturingCommandLog, IManufacturingPlanLifecycleStore, IManufacturingPlanSalesOrderLinkStore,
-        IManufacturingClosedOrderListStore
+        IManufacturingCommandLog, IManufacturingPlanLifecycleStore, IManufacturingPlanSalesOrderLinkStore, IManufacturingPlanDueDateStore,
+        IManufacturingClosedOrderListStore, IManufacturingOrderDueDateStore
 {
     private const string PlanEntityType = "Manufacturing.ProductionPlan";
     private const string OrderEntityType = "Manufacturing.ProductionOrder";
@@ -487,7 +487,8 @@ public sealed class ManufacturingStore(
         // U2-d (URT-D2): the reviser prepared the plan's new version; the approval and the rejection refuse that user.
         plan.RecordPreparer(revisedBy);
 
-        if (await dbContext.Orders.AsNoTracking().AnyAsync(order => order.PlanId == planId, cancellationToken))
+        if (await dbContext.Orders.AsNoTracking().AnyAsync(order => order.PlanId == planId
+                && order.Status != (int)OrderStatus.Cancelled, cancellationToken))
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanNotDraft,
                 "Emir açmış plan düzenlenmez; aşağı akış etkisi vardır.");
@@ -673,6 +674,92 @@ public sealed class ManufacturingStore(
         return plan;
     }
 
+    /// <summary>
+    /// Üretim F-010a (URT-D29): enters, changes or removes the plan's hand-entered termin in one save — the plan row's termin
+    /// column, termin revision and update time, the audit event (<c>manufacturing.plan.due-date-changed.v1</c>) and the
+    /// command record — or nothing. The plan's version does not move; a concurrent write to the row is refused by its row
+    /// version. The plan's order status is read here so the domain refuses a change under a closed order. URT-D66: the
+    /// caller's <paramref name="businessToday"/> (the Istanbul business day of the server's clock) refuses a past day.
+    /// </summary>
+    public async Task<ProductionPlan> ChangeDueDateAsync(Guid planId, long expectedVersion, long expectedDueDateRevision,
+        DateOnly? dueDate, DateOnly businessToday, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        RequireMetadata(metadata);
+        var companyId = RequireResolvedCompany();
+        var row = await dbContext.Plans.SingleOrDefaultAsync(candidate => candidate.Id == planId, cancellationToken)
+            ?? throw Refused(ManufacturingStoreCodes.PlanNotFound, "Bu şirketin böyle bir planı yok.");
+        var plan = await RestorePlanAsync(row, cancellationToken);
+        var orderClosed = plan.OrderId is { } orderId
+            && await dbContext.Orders.AsNoTracking()
+                .AnyAsync(order => order.Id == orderId && order.Status == (int)OrderStatus.Closed, cancellationToken);
+        var before = DueDateAudit(plan);
+        var revisionBefore = plan.DueDateRevision;
+
+        // The domain decides: the version fence, not cancelled, the termin revision, the order, a change, not removed from
+        // an approved plan, not before the business day.
+        plan.ChangeDueDate(expectedVersion, expectedDueDateRevision, dueDate, orderClosed, businessToday);
+
+        row.RequestedDueDate = plan.RequestedDueDate;
+        row.DueDateRevision = plan.DueDateRevision;
+        row.UpdatedAtUtc = timeProvider.GetUtcNow();
+        Audit(metadata, companyId, PlanEntityType, plan.Id, "manufacturing.plan.due-date-changed.v1",
+            plan.RequestedDueDate is null ? "ClearDueDate" : "SetDueDate", revisionBefore, plan.DueDateRevision, before,
+            DueDateAudit(plan), plan.RequestedDueDate is null ? "Termin kaldırıldı" : "Termin elle girildi");
+        Complete(metadata, companyId, plan);
+        await SaveAsync(cancellationToken);
+        return plan;
+    }
+
+    /// <summary>
+    /// URT-D66 (3): changes the order's termin on the order alone in one save — the order row's termin column, termin
+    /// revision and update time, the audit event (<c>manufacturing.order.due-date-changed.v1</c>) and the command record —
+    /// or nothing. The plan's termin never moves with it (URT-D66 (4)); the plan's termin is read only for the answer's
+    /// "differs from the plan" flag. The order's version does not move; a concurrent write to the row (a fact, a close or
+    /// another termin change) is refused by its row version.
+    /// </summary>
+    public async Task<ProductionOrder> ChangeOrderDueDateAsync(Guid orderId, long expectedDueDateRevision, DateOnly dueDate,
+        DateOnly businessToday, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        RequireMetadata(metadata);
+        var companyId = RequireResolvedCompany();
+        var row = await dbContext.Orders.SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken)
+            ?? throw Refused(ManufacturingStoreCodes.OrderNotFound, "Bu şirketin böyle bir emri yok.");
+        var order = await RestoreOrderAsync(row, cancellationToken);
+        var before = OrderDueDateAudit(order);
+        var revisionBefore = order.DueDateRevision;
+
+        // The domain decides: the termin revision, an open order, a change, not before the business day.
+        order.ChangeDueDate(expectedDueDateRevision, dueDate, businessToday);
+
+        row.DueDate = order.DueDate;
+        row.DueDateRevision = order.DueDateRevision;
+        row.UpdatedAtUtc = timeProvider.GetUtcNow();
+        Audit(metadata, companyId, OrderEntityType, order.Id, "manufacturing.order.due-date-changed.v1", "SetDueDate",
+            revisionBefore, order.DueDateRevision, before, OrderDueDateAudit(order), "Emir termini değiştirildi");
+        Complete(metadata, companyId, order);
+        await SaveAsync(cancellationToken);
+        return order;
+    }
+
+    private static string OrderDueDateAudit(ProductionOrder order) => JsonSerializer.Serialize(new
+    {
+        order.Id,
+        order.PlanId,
+        order.Version,
+        dueDateRevision = order.DueDateRevision,
+        dueDate = order.DueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        planDueDate = order.PlanDueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+    }, Json);
+
+    private static string DueDateAudit(ProductionPlan plan) => JsonSerializer.Serialize(new
+    {
+        plan.Id,
+        plan.Version,
+        dueDateRevision = plan.DueDateRevision,
+        requestedDueDate = plan.RequestedDueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+    }, Json);
+
     private static string SalesOrderLinkAudit(ProductionPlan plan) => JsonSerializer.Serialize(new
     {
         plan.Id,
@@ -745,12 +832,16 @@ public sealed class ManufacturingStore(
 
         // The domain decides: only an approved plan becomes an order, and (U2-a, URT-D1) only one order per plan — the
         // rebuilt plan carries the order it already opened. Racing writers meet the unique (company, plan) index.
-        var order = ProductionOrder.FromApprovedPlan(orderId, plan);
+        // URT-D70: and a plan whose termin is before the server's Istanbul business day opens no order (the user moves the
+        // termin forward first). The command service answered 503 already when the host cannot resolve the zone.
+        var order = ProductionOrder.FromApprovedPlan(orderId, plan,
+            ManufacturingBusinessDay.DateOf(timeProvider.GetUtcNow()));
 
         // U3-a (URT-D21, B-01): an input allocated at the plan's approval enters the order at the label version Inventory
         // returned with the allocation, so the order's first input issue revalidates the label Inventory last moved.
-        var allocatedVersions = await dbContext.PlanInputAllocations.AsNoTracking()
-            .Where(allocation => allocation.PlanId == planId)
+        // F-009 D5: a plan re-approved after an order cancel holds one allocation generation per approval; only the latest
+        // (the highest plan version) is the one the new order uses.
+        var allocatedVersions = await LatestPlanAllocations(planId)
             .ToDictionaryAsync(allocation => allocation.ParentRollId, allocation => allocation.LabelVersionAfter,
                 cancellationToken);
         if (allocatedVersions.Count > 0)
@@ -762,7 +853,9 @@ public sealed class ManufacturingStore(
                         ? allocated
                         : input.ExpectedLabelVersion,
                     input.TechnicalSnapshot, input.CommercialContext)),
-                [], [], [], [], null, null, order.Version, null, null);
+                [], [], [], [], null, null, order.Version, null, null,
+                plannedOutputLines: order.PlannedOutputLines,
+                dueDate: order.DueDate, dueDateRevision: order.DueDateRevision, planDueDate: order.PlanDueDate);
         }
 
         var now = timeProvider.GetUtcNow();
@@ -778,6 +871,9 @@ public sealed class ManufacturingStore(
             TargetBasis = order.Target is null ? null : (int)order.Target.Basis,
             TargetKg = order.Target?.Mass.Value,
             Version = order.Version,
+            // URT-D66 (3): the plan's termin, copied once when the order opens.
+            DueDate = order.DueDate,
+            DueDateRevision = order.DueDateRevision,
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
         });
@@ -805,6 +901,7 @@ public sealed class ManufacturingStore(
                 order.PlanId,
                 order.WorkCenterId,
                 rolls = order.PlannedInputs.Count,
+                dueDate = order.DueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 inputs = order.PlannedInputs.Select(input => new
                 {
                     input.ParentRollId,
@@ -857,13 +954,24 @@ public sealed class ManufacturingStore(
         await SaveAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// F-009 D5 (URT-D34/D35): the plan's latest allocation generation — the rows written with the plan's highest
+    /// approval or re-approval version. A plan approved once has one generation, as before.
+    /// </summary>
+    private IQueryable<PlanInputAllocationRow> LatestPlanAllocations(Guid planId) =>
+        dbContext.PlanInputAllocations.AsNoTracking()
+            .Where(allocation => allocation.PlanId == planId
+                && allocation.PlanVersion == dbContext.PlanInputAllocations
+                    .Where(candidate => candidate.PlanId == planId)
+                    .Max(candidate => candidate.PlanVersion));
+
     /// <summary>Üretim U3-a: the allocation Manufacturing recorded for one plan input, or null when none was written.</summary>
     public async Task<ManufacturingPlanInputAllocationV1?> FindPlanInputAllocationAsync(Guid planId, Guid parentRollId,
         CancellationToken cancellationToken = default)
     {
         RequireResolvedCompany();
-        var row = await dbContext.PlanInputAllocations.AsNoTracking().SingleOrDefaultAsync(
-            allocation => allocation.PlanId == planId && allocation.ParentRollId == parentRollId, cancellationToken);
+        var row = await LatestPlanAllocations(planId).SingleOrDefaultAsync(
+            allocation => allocation.ParentRollId == parentRollId, cancellationToken);
         return row is null
             ? null
             : new ManufacturingPlanInputAllocationV1(row.ParentRollId, row.AllocationId, row.LabelVersionAfter,
@@ -895,13 +1003,135 @@ public sealed class ManufacturingStore(
     public Task<ManufacturingWriteOutcome> DeclareOutputAsync(Guid orderId, long expectedVersion, Guid outputId,
         Guid parentRollId, OutputClass outputClass, Kilograms mass, DateTimeOffset declaredAt,
         ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        DeclareOutputAsync(orderId, expectedVersion, outputId, parentRollId, outputClass, mass, declaredAt,
+            outputLine: null, metadata, cancellationToken);
+
+    /// <summary>
+    /// F-009 D2 (URT-D30): an output declaration bound to <paramref name="outputLine"/>, one of the order's plan output
+    /// lines (or the class line). The domain refuses a line outside the plan; a null line stores the declaration
+    /// without a line, as before D2, and keeps the stored payload hash of such a declaration unchanged.
+    /// </summary>
+    public Task<ManufacturingWriteOutcome> DeclareOutputAsync(Guid orderId, long expectedVersion, Guid outputId,
+        Guid parentRollId, OutputClass outputClass, Kilograms mass, DateTimeOffset declaredAt,
+        PlanOutputLineReference? outputLine, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default) =>
+        DeclareOutputAsync(orderId, expectedVersion, outputId, parentRollId, outputClass, mass, declaredAt, outputLine,
+            pieces: null, metadata, cancellationToken);
+
+    /// <summary>
+    /// AK-7 (URT-D112): an output declaration with the piece count and the captured theoretical kg per piece of a counted
+    /// output. A null <paramref name="pieces"/> stores an uncounted declaration exactly as before AK-7 (same payload hash).
+    /// </summary>
+    public Task<ManufacturingWriteOutcome> DeclareOutputAsync(Guid orderId, long expectedVersion, Guid outputId,
+        Guid parentRollId, OutputClass outputClass, Kilograms mass, DateTimeOffset declaredAt,
+        PlanOutputLineReference? outputLine, OutputPieces? pieces, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default) =>
         RecordFactAsync(orderId, FactKind.OutputDeclaration, outputId, parentRollId, mass, declaredAt, outputClass, metadata,
             order =>
             {
-                var fact = order.DeclareOutput(expectedVersion, outputId, parentRollId, outputClass, mass, declaredAt);
+                var fact = order.DeclareOutput(expectedVersion, outputId, parentRollId, outputClass, mass, declaredAt,
+                    outputLine, pieces);
                 return (fact.DeclaredAtUtc, (CostStatus?)fact.Cost.Status);
             },
-            "manufacturing.output.declared.v1", cancellationToken);
+            "manufacturing.output.declared.v1", cancellationToken, outputLine, pieces);
+
+    /// <summary>
+    /// F-009 D2 (URT-D28, R6): records an output reversal — a new fact linked to the output declaration, which itself
+    /// never changes. The same reversal id with the same content again is a replay (answered before the version fence,
+    /// version unchanged); the same id with other content is <see cref="ManufacturingStoreCodes.FactIdConflict"/>. The
+    /// domain decides the rest (closed order, unknown output, a declaration without a plan output line, the declared
+    /// mass bound). The order row's version moves with the reversal, so racing corrections of one order meet its
+    /// concurrency token. F-009 D3 (URT-S2): the correction endpoint calls this through the return/output host, in
+    /// the same transaction as Inventory's output reversal movement; the stock movement of a correction is Inventory's.
+    /// </summary>
+    public Task<ManufacturingWriteOutcome> ReverseOutputAsync(Guid orderId, long expectedVersion, Guid reversalId,
+        Guid outputId, Kilograms mass, string reason, DateTimeOffset reversedAt, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default) =>
+        ReverseOutputAsync(orderId, expectedVersion, reversalId, outputId, mass, pieces: null, reason, reversedAt, metadata,
+            cancellationToken);
+
+    /// <summary>
+    /// AK-7 (URT-D112): a reversal that also names the pieces taken back from a counted declaration (zero allowed). A null
+    /// <paramref name="pieces"/> is a reversal of an uncounted declaration, stored and hashed exactly as before AK-7.
+    /// </summary>
+    public async Task<ManufacturingWriteOutcome> ReverseOutputAsync(Guid orderId, long expectedVersion, Guid reversalId,
+        Guid outputId, Kilograms mass, PieceCount? pieces, string reason, DateTimeOffset reversedAt,
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(reason);
+        RequireMetadata(metadata);
+        var companyId = RequireResolvedCompany();
+        RequireFits([mass]);
+
+        var payloadHash = OutputReversalHash(orderId, outputId, mass, reversedAt, reason, pieces);
+        var existing = await dbContext.OutputReversals.AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.Id == reversalId, cancellationToken);
+        if (existing is not null)
+        {
+            return string.Equals(existing.PayloadHash, payloadHash, StringComparison.Ordinal)
+                ? ManufacturingWriteOutcome.Replayed
+                : throw Refused(ManufacturingStoreCodes.FactIdConflict, "Aynı olgu kimliği farklı içerikle verildi.");
+        }
+
+        var row = await dbContext.Orders.SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken)
+            ?? throw Refused(ManufacturingStoreCodes.OrderNotFound, "Bu şirketin böyle bir emri yok.");
+        var order = await RestoreOrderAsync(row, cancellationToken);
+        var versionBefore = order.Version;
+
+        // The domain decides; nothing below runs for a refused reversal.
+        var reversal = order.ReverseOutput(expectedVersion, reversalId, outputId, mass, reason, reversedAt, pieces);
+        var declaration = order.Outputs.Single(output => output.OutputId == outputId);
+
+        var now = timeProvider.GetUtcNow();
+        dbContext.OutputReversals.Add(new OutputReversalRow
+        {
+            CompanyId = companyId,
+            Id = reversal.ReversalId,
+            OrderId = orderId,
+            OutputKind = (int)FactKind.OutputDeclaration,
+            OutputId = outputId,
+            ParentRollId = declaration.ParentRollId,
+            MassKg = reversal.Mass.Value,
+            PieceCount = reversal.Pieces?.Value,
+            Reason = reversal.Reason,
+            OccurredAtUtc = reversal.ReversedAtUtc,
+            PayloadHash = payloadHash,
+            RecordedAtUtc = now,
+            RecordedBy = metadata.ActorId.Trim(),
+            CorrelationId = metadata.CorrelationId.Trim(),
+        });
+        row.Version = order.Version;
+        row.UpdatedAtUtc = now;
+        Audit(metadata, companyId, OrderEntityType, orderId, "manufacturing.output.reversed.v1", "Reverse",
+            versionBefore, order.Version,
+            before: reversal.Pieces is { } takenPieces
+                ? JsonSerializer.Serialize(new
+                {
+                    outputId,
+                    netMassKg = (order.NetMassOf(outputId) + reversal.Mass).Value,
+                    netPieceCount = order.NetPiecesOf(outputId)!.Value.Value + takenPieces.Value,
+                }, Json)
+                : JsonSerializer.Serialize(new { outputId, netMassKg = (order.NetMassOf(outputId) + reversal.Mass).Value },
+                    Json),
+            after: JsonSerializer.Serialize(new
+            {
+                reversalId,
+                outputId,
+                parentRollId = declaration.ParentRollId,
+                outputClass = declaration.Class.ToString(),
+                massKg = reversal.Mass.Value,
+                netMassKg = order.NetMassOf(outputId).Value,
+                pieceCount = reversal.Pieces?.Value,
+                netPieceCount = order.NetPiecesOf(outputId)?.Value,
+                occurredAtUtc = reversal.ReversedAtUtc,
+                reason = reversal.Reason,
+                payloadHash,
+            }, Json),
+            "Üretim çıktı düzeltmesi (ters olgu)");
+        Complete(metadata, companyId, order);
+        await SaveAsync(cancellationToken);
+        return ManufacturingWriteOutcome.Recorded;
+    }
 
     public Task<ManufacturingWriteOutcome> RecordWorkInProgressAsync(Guid orderId, long expectedVersion,
         Guid measurementId, Guid parentRollId, Kilograms mass, DateTimeOffset measuredAt,
@@ -1182,6 +1412,16 @@ public sealed class ManufacturingStore(
         var decisions = await dbContext.OrderClosureDecisions.AsNoTracking()
             .Where(decision => ids.Contains(decision.OrderId))
             .ToListAsync(cancellationToken);
+        var reopenings = await dbContext.OrderReopenings.AsNoTracking()
+            .Where(reopening => ids.Contains(reopening.OrderId)).ToListAsync(cancellationToken);
+        // F-009 D2: the reversals recorded before each close and the plan output lines their declarations bind to.
+        var reversals = await dbContext.OutputReversals.AsNoTracking()
+            .Where(reversal => ids.Contains(reversal.OrderId))
+            .ToListAsync(cancellationToken);
+        var outputLines = await ReadPlanOutputLinesAsync(page.Select(row => row.PlanId).Distinct().ToArray(),
+            cancellationToken);
+        var planDueDates = await ReadPlanDueDatesAsync(page.Select(row => row.PlanId).Distinct().ToArray(),
+            cancellationToken);
 
         var orders = new List<ProductionOrder>(page.Count);
         foreach (var row in page)
@@ -1189,7 +1429,10 @@ public sealed class ManufacturingStore(
             var orderInputs = inputs.Where(input => input.OrderId == row.Id).OrderBy(input => input.Sequence).ToList();
             var orderFacts = facts.Where(fact => fact.OrderId == row.Id).ToList();
             orders.Add(RestoreOrder(row, orderInputs, kind => orderFacts.Where(fact => fact.Kind == (int)kind),
-                decisions.SingleOrDefault(decision => decision.OrderId == row.Id)));
+                decisions.SingleOrDefault(decision => decision.OrderId == row.Id && decision.OrderVersion == row.Version - 1),
+                reversals.Where(reversal => reversal.OrderId == row.Id).ToList(),
+                outputLines.TryGetValue(row.PlanId, out var lines) ? lines : [],
+                planDueDates.GetValueOrDefault(row.PlanId), reopenings.Where(reopening => reopening.OrderId == row.Id).ToArray()));
         }
 
         var last = page[^1];
@@ -1226,7 +1469,8 @@ public sealed class ManufacturingStore(
     private async Task<ManufacturingWriteOutcome> RecordFactAsync(Guid orderId, FactKind kind, Guid factId,
         Guid parentRollId, Kilograms mass, DateTimeOffset occurredAt, OutputClass? outputClass,
         ManufacturingCommandMetadata metadata, Func<ProductionOrder, (DateTimeOffset OccurredAtUtc, CostStatus? Cost)> apply,
-        string eventType, CancellationToken cancellationToken)
+        string eventType, CancellationToken cancellationToken, PlanOutputLineReference? outputLine = null,
+        OutputPieces? pieces = null)
     {
         RequireMetadata(metadata);
         var companyId = RequireResolvedCompany();
@@ -1235,7 +1479,7 @@ public sealed class ManufacturingStore(
         // A replay is recognised before the version fence: the same fact again is answered even
         // after the order has moved on, and never changes the version.
         var kindValue = (int)kind;
-        var payloadHash = FactHash(kind, orderId, parentRollId, mass, occurredAt, outputClass);
+        var payloadHash = FactHash(kind, orderId, parentRollId, mass, occurredAt, outputClass, outputLine, pieces);
         var existing = await dbContext.Facts.AsNoTracking()
             .SingleOrDefaultAsync(row => row.Kind == kindValue && row.Id == factId, cancellationToken);
         if (existing is not null)
@@ -1265,6 +1509,12 @@ public sealed class ManufacturingStore(
             OccurredAtUtc = occurredAtUtc,
             OutputClass = outputClass is null ? null : (int)outputClass.Value,
             CostStatus = cost is null ? null : (int)cost.Value,
+            OutputLineKind = outputLine is null ? null : (int)outputLine.Kind,
+            OutputLineSequence = outputLine?.SlitLineSequence,
+            OutputLineId = outputLine?.CutLineId,
+            OutputPieceCount = pieces?.Count.Value,
+            OutputTheoreticalKgPerPiece = pieces?.Theoretical.KilogramsPerPiece,
+            OutputTheoreticalKgPerPieceSource = pieces?.Theoretical.SourceVersion,
             PayloadHash = payloadHash,
             RecordedAtUtc = now,
             RecordedBy = metadata.ActorId.Trim(),
@@ -1283,6 +1533,17 @@ public sealed class ManufacturingStore(
                 occurredAtUtc,
                 outputClass = outputClass?.ToString(),
                 cost = cost?.ToString(),
+                outputLine = outputLine is null
+                    ? null
+                    : new { kind = outputLine.Kind.ToString(), outputLine.SlitLineSequence, outputLine.CutLineId },
+                pieces = pieces is null
+                    ? null
+                    : new
+                    {
+                        pieceCount = pieces.Count.Value,
+                        theoreticalKgPerPiece = pieces.Theoretical.KilogramsPerPiece,
+                        theoreticalSource = pieces.Theoretical.SourceVersion,
+                    },
                 payloadHash,
             }, Json),
             "Üretim gerçekleşme olgusu");
@@ -1317,6 +1578,7 @@ public sealed class ManufacturingStore(
     /// </summary>
     private void Complete(ManufacturingCommandMetadata metadata, Guid companyId, object result)
     {
+        queueMutationMetadata = metadata;
         if (metadata.Completion is { } completion)
         {
             AddCommand(companyId, completion(result));
@@ -1358,10 +1620,21 @@ public sealed class ManufacturingStore(
             .Where(rejection => rejection.PlanId == row.Id && rejection.PlanVersion <= row.Version)
             .OrderBy(rejection => rejection.RejectionNo)
             .ToListAsync(cancellationToken);
+        // F-009 D5: a cancelled order no longer belongs to the plan; it released the plan at the version it names.
+        const int cancelledOrder = (int)OrderStatus.Cancelled;
         var orderIds = await dbContext.Orders.AsNoTracking()
-            .Where(order => order.PlanId == row.Id)
+            .Where(order => order.PlanId == row.Id && order.Status != cancelledOrder)
             .Select(order => order.Id)
             .Take(2)
+            .ToListAsync(cancellationToken);
+        var releases = await dbContext.Orders.AsNoTracking()
+            .Where(order => order.PlanId == row.Id && order.Status == cancelledOrder
+                && order.PlanVersionAfterCancel <= row.Version)
+            .Select(order => new { order.Id, order.PlanVersionAfterCancel })
+            .ToListAsync(cancellationToken);
+        var reapprovals = await dbContext.PlanReapprovals.AsNoTracking()
+            .Where(reapproval => reapproval.PlanId == row.Id && reapproval.PlanVersion <= row.Version)
+            .OrderBy(reapproval => reapproval.ReapprovalNo)
             .ToListAsync(cancellationToken);
         if (orderIds.Count > 1)
         {
@@ -1404,7 +1677,12 @@ public sealed class ManufacturingStore(
             // U2-d (URT-D2): the current version's preparer is its last reviser, else the actor who saved the plan.
             headers.Count > 0 ? headers.MaxBy(header => header.RevisionNo)!.RevisedBy : row.CreatedBy,
             RestoreSalesOrderLink(row),
-            row.SalesOrderLinkRevision);
+            row.SalesOrderLinkRevision,
+            row.RequestedDueDate,
+            row.DueDateRevision,
+            releases.Select(release => new PlanOrderRelease(release.Id, release.PlanVersionAfterCancel ?? 0)),
+            reapprovals.Select(reapproval => new PlanReapproval(reapproval.ReapprovalNo, reapproval.ReapprovedByUserId,
+                reapproval.ReapprovedAtUtc, reapproval.PlanVersion)));
         if ((PlanStatus)row.Status != plan.Status)
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
@@ -1522,12 +1800,22 @@ public sealed class ManufacturingStore(
             .Where(fact => fact.OrderId == row.Id)
             .ToListAsync(cancellationToken);
         var closureDecision = await dbContext.OrderClosureDecisions.AsNoTracking()
-            .SingleOrDefaultAsync(decision => decision.OrderId == row.Id, cancellationToken);
+            .SingleOrDefaultAsync(decision => decision.OrderId == row.Id && row.Status == (int)OrderStatus.Closed
+                && decision.OrderVersion == row.Version - 1, cancellationToken);
+        var reopenings = await dbContext.OrderReopenings.AsNoTracking()
+            .Where(reopening => reopening.OrderId == row.Id).ToListAsync(cancellationToken);
+        var reversals = await dbContext.OutputReversals.AsNoTracking()
+            .Where(reversal => reversal.OrderId == row.Id)
+            .ToListAsync(cancellationToken);
+        var outputLines = await ReadPlanOutputLinesAsync([row.PlanId], cancellationToken);
+        var planDueDates = await ReadPlanDueDatesAsync([row.PlanId], cancellationToken);
         IEnumerable<FactRow> Of(FactKind kind) => facts.Where(fact => fact.Kind == (int)kind);
 
         try
         {
-            return RestoreOrder(row, inputs, Of, closureDecision);
+            return RestoreOrder(row, inputs, Of, closureDecision, reversals,
+                outputLines.TryGetValue(row.PlanId, out var lines) ? lines : [],
+                planDueDates.GetValueOrDefault(row.PlanId), reopenings);
         }
         catch (ManufacturingRuleException exception) when (exception.Code == ManufacturingRuleCodes.StoredRecordInvalid)
         {
@@ -1549,10 +1837,29 @@ public sealed class ManufacturingStore(
         }
     }
 
+    /// <summary>
+    /// URT-D66 (4): the plans' termins, read only as the reference of an order's "differs from the plan" flag. A plan
+    /// without a termin is absent from the answer.
+    /// </summary>
+    private async Task<Dictionary<Guid, DateOnly?>> ReadPlanDueDatesAsync(Guid[] planIds,
+        CancellationToken cancellationToken) =>
+        await dbContext.Plans.AsNoTracking()
+            .Where(plan => planIds.Contains(plan.Id) && plan.RequestedDueDate != null)
+            .Select(plan => new { plan.Id, plan.RequestedDueDate })
+            .ToDictionaryAsync(plan => plan.Id, plan => plan.RequestedDueDate, cancellationToken);
+
     private static ProductionOrder RestoreOrder(OrderRow row, IReadOnlyList<OrderInputRow> inputs,
-        Func<FactKind, IEnumerable<FactRow>> Of, OrderClosureDecisionRow? closureDecision)
+        Func<FactKind, IEnumerable<FactRow>> Of, OrderClosureDecisionRow? closureDecision,
+        IReadOnlyList<OutputReversalRow> reversals, IReadOnlyList<PlanOutputLineReference> plannedOutputLines,
+        DateOnly? planDueDate, IReadOnlyList<OrderReopeningRow>? reopenings = null)
     {
         var (policy, approval) = RestoreClosureDecision(closureDecision);
+        if (reversals.Any(reversal => reversal.OutputKind != (int)FactKind.OutputDeclaration))
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı çıktı düzeltmesi bir çıktı beyanına bağlı değil.");
+        }
+
         return
         ProductionOrder.Restore(
             row.Id, row.PlanId, row.CompanyId, row.WorkCenterId, (ManufacturingProcess)row.Process,
@@ -1565,10 +1872,134 @@ public sealed class ManufacturingStore(
             Of(FactKind.InputReturn).Select(fact => new InputReturn(fact.Id, fact.ParentRollId, new Kilograms(fact.MassKg),
                 fact.OccurredAtUtc)),
             Of(FactKind.OutputDeclaration).Select(fact => new OutputDeclaration(fact.Id, fact.ParentRollId,
-                (OutputClass)(fact.OutputClass ?? 0), new Kilograms(fact.MassKg), fact.OccurredAtUtc, Cost(fact.CostStatus))),
+                (OutputClass)(fact.OutputClass ?? 0), new Kilograms(fact.MassKg), fact.OccurredAtUtc, Cost(fact.CostStatus),
+                OutputLine(fact), StoredPieces(fact))),
             Of(FactKind.WipMeasurement).Select(fact => new WipMeasurement(fact.Id, fact.ParentRollId, new Kilograms(fact.MassKg),
                 fact.OccurredAtUtc)),
-            row.ClosedByUserId, row.ClosedAtUtc, row.Version, policy, approval);
+            row.ClosedByUserId, row.ClosedAtUtc, row.Version, policy, approval,
+            plannedOutputLines,
+            reversals.Select(reversal => new OutputReversal(reversal.Id, reversal.OutputId, new Kilograms(reversal.MassKg),
+                reversal.Reason, reversal.OccurredAtUtc, StoredPieceCount(reversal.PieceCount))),
+            row.DueDate, row.DueDateRevision, planDueDate,
+            row.CancelledByUserId, row.CancelledAtUtc, row.CancellationReason,
+            reopenings?.Select(reopening => new ProductionOrderReopeningV1(reopening.ClosedOrderVersion,
+                reopening.ClosedByUserId, reopening.ClosedAtUtc, reopening.ReopenedOrderVersion,
+                reopening.ReopenedByUserId, reopening.ReopenedAtUtc, reopening.Reason)));
+    }
+
+    /// <summary>
+    /// F-009 D2: the plan output line a stored fact is bound to, or null for a fact stored without one (every fact
+    /// before D2, and every fact that is not an output). A column combination no reference produces is a stored-record
+    /// refusal, never repaired.
+    /// </summary>
+    /// <summary>
+    /// AK-7 (URT-D112): the pieces of a stored counted output, or null for an uncounted one. Columns that do not come
+    /// together, or a value the domain refuses, are a stored-record refusal, never repaired.
+    /// </summary>
+    private static OutputPieces? StoredPieces(FactRow fact)
+    {
+        if (fact.OutputPieceCount is null && fact.OutputTheoreticalKgPerPiece is null
+            && fact.OutputTheoreticalKgPerPieceSource is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            if (fact.OutputPieceCount is not { } count || fact.OutputTheoreticalKgPerPiece is not { } kilogramsPerPiece
+                || fact.OutputTheoreticalKgPerPieceSource is not { } source)
+            {
+                throw new ArgumentException("Adet, teorik kg/adet ve kaynağı birlikte kaydedilir.");
+            }
+
+            return new OutputPieces(new PieceCount(count), new OutputTheoreticalKilogramsPerPiece(kilogramsPerPiece, source));
+        }
+        catch (ArgumentException exception)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı çıktının adet bilgisi geçerli değil: " + exception.Message);
+        }
+    }
+
+    private static PieceCount? StoredPieceCount(int? value)
+    {
+        try
+        {
+            return value is { } count ? new PieceCount(count) : null;
+        }
+        catch (ArgumentException exception)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı çıktı düzeltmesinin adedi geçerli değil: " + exception.Message);
+        }
+    }
+
+    private static PlanOutputLineReference? OutputLine(FactRow fact)
+    {
+        if (fact.OutputLineKind is not { } kind)
+        {
+            return fact.OutputLineSequence is null && fact.OutputLineId is null
+                ? null
+                : throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                    "Kayıtlı çıktının plan çıktı satırı referansı eksik.");
+        }
+
+        try
+        {
+            return PlanOutputLineReference.FromStored((PlanOutputLineKind)kind, fact.OutputLineSequence, fact.OutputLineId);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı çıktının plan çıktı satırı referansı geçerli değil: " + exception.Message);
+        }
+    }
+
+    /// <summary>
+    /// F-009 D2 (URT-D30): each plan's output lines as the order sees them — its slit lines by 1-based position, then
+    /// its cut lines by id, taken from the latest revision when the plan was revised (a plan is revised only as a
+    /// draft, so every revision precedes its order) and from the plan as created otherwise. A plan with neither spec
+    /// has no line; its outputs bind to their class line.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, IReadOnlyList<PlanOutputLineReference>>> ReadPlanOutputLinesAsync(
+        Guid[] planIds, CancellationToken cancellationToken)
+    {
+        var slitLines = await dbContext.PlanSlitLines.AsNoTracking()
+            .Where(line => planIds.Contains(line.PlanId))
+            .Select(line => new { line.PlanId, line.Sequence })
+            .ToListAsync(cancellationToken);
+        var createdCutLines = await dbContext.PlanCutLines.AsNoTracking()
+            .Where(line => planIds.Contains(line.PlanId))
+            .Select(line => new { line.PlanId, line.LineId, line.Ordinal })
+            .ToListAsync(cancellationToken);
+        var revisions = await dbContext.PlanRevisions.AsNoTracking()
+            .Where(revision => planIds.Contains(revision.PlanId))
+            .Select(revision => new { revision.PlanId, revision.RevisionNo })
+            .ToListAsync(cancellationToken);
+        var revisionCutLines = await dbContext.PlanRevisionCutLines.AsNoTracking()
+            .Where(line => planIds.Contains(line.PlanId))
+            .Select(line => new { line.PlanId, line.RevisionNo, line.LineId, line.Ordinal })
+            .ToListAsync(cancellationToken);
+
+        var result = new Dictionary<Guid, IReadOnlyList<PlanOutputLineReference>>();
+        foreach (var planId in planIds)
+        {
+            var lines = new List<PlanOutputLineReference>();
+            var slitCount = slitLines.Count(line => line.PlanId == planId);
+            lines.AddRange(Enumerable.Range(1, slitCount).Select(PlanOutputLineReference.ForSlitLine));
+            var latestRevision = revisions.Where(revision => revision.PlanId == planId)
+                .Select(revision => (int?)revision.RevisionNo)
+                .Max();
+            var cutLineIds = latestRevision is { } revisionNo
+                ? revisionCutLines.Where(line => line.PlanId == planId && line.RevisionNo == revisionNo)
+                    .OrderBy(line => line.Ordinal).Select(line => line.LineId)
+                : createdCutLines.Where(line => line.PlanId == planId)
+                    .OrderBy(line => line.Ordinal).Select(line => line.LineId);
+            lines.AddRange(cutLineIds.Select(PlanOutputLineReference.ForCutLine));
+            result[planId] = lines.AsReadOnly();
+        }
+
+        return result;
     }
 
     private static (ClosureTolerancePolicySnapshotV1? Policy, ClosureExceptionApprovalV1? Approval)
@@ -1774,23 +2205,73 @@ public sealed class ManufacturingStore(
                 .Append(processSpec.PaintColorCode is { } color ? Convert.ToBase64String(Encoding.UTF8.GetBytes(color)) : null);
         }
 
+        if (plan.ProcessSpec?.PaintSelection is { } paintSelection)
+            builder.Append("|paint-selection.v1|").Append(JsonSerializer.Serialize(paintSelection, Json));
+
         return Hash(builder.ToString());
     }
 
     /// <summary>
     /// The canonical content of a fact: kind, order, parent roll, normalised mass, the instant in
-    /// UTC and, for an output, its class.
+    /// UTC and, for an output, its class. F-009 D2: an output bound to a plan output line appends the line; a fact
+    /// without a line keeps exactly the content (and so the stored hash and its replay) it had before D2.
     /// </summary>
     internal static string FactHash(FactKind kind, Guid orderId, Guid parentRollId, Kilograms mass, DateTimeOffset occurredAt,
-        OutputClass? outputClass) =>
-        Hash(string.Join('|',
+        OutputClass? outputClass, PlanOutputLineReference? outputLine = null, OutputPieces? pieces = null)
+    {
+        var parts = new List<string>
+        {
             "manufacturing.fact.v1",
             ((int)kind).ToString(CultureInfo.InvariantCulture),
             orderId.ToString("D"),
             parentRollId.ToString("D"),
             Canonical(mass.Value),
             occurredAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
-            outputClass is null ? "-" : ((int)outputClass.Value).ToString(CultureInfo.InvariantCulture)));
+            outputClass is null ? "-" : ((int)outputClass.Value).ToString(CultureInfo.InvariantCulture),
+        };
+        if (outputLine is not null)
+        {
+            parts.Add("line");
+            parts.Add(((int)outputLine.Kind).ToString(CultureInfo.InvariantCulture));
+            parts.Add(outputLine.SlitLineSequence is { } sequence ? sequence.ToString(CultureInfo.InvariantCulture) : "-");
+            parts.Add(outputLine.CutLineId is { } lineId ? lineId.ToString("D") : "-");
+        }
+
+        // AK-7: an uncounted output keeps the hash it had before pieces existed.
+        if (pieces is not null)
+        {
+            parts.Add("pieces");
+            parts.Add(pieces.Count.Value.ToString(CultureInfo.InvariantCulture));
+            parts.Add(Canonical(pieces.Theoretical.KilogramsPerPiece));
+            parts.Add(pieces.Theoretical.SourceVersion);
+        }
+
+        return Hash(string.Join('|', parts));
+    }
+
+    /// <summary>
+    /// F-009 D2: the canonical content of an output reversal: order, reversed output, normalised mass, the instant in
+    /// UTC and the trimmed reason (length-prefixed, so no reason text can shift another field).
+    /// </summary>
+    internal static string OutputReversalHash(Guid orderId, Guid outputId, Kilograms mass, DateTimeOffset reversedAt,
+        string reason, PieceCount? pieces = null)
+    {
+        var builder = new StringBuilder();
+        AppendToken(builder, "manufacturing.output-reversal.v1");
+        AppendToken(builder, orderId.ToString("D"));
+        AppendToken(builder, outputId.ToString("D"));
+        AppendToken(builder, Canonical(mass.Value));
+        AppendToken(builder, reversedAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture));
+        AppendToken(builder, reason.Trim());
+        // AK-7: a reversal of an uncounted output keeps the hash it had before pieces existed.
+        if (pieces is { } count)
+        {
+            AppendToken(builder, "pieces");
+            AppendToken(builder, count.Value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        return Hash(builder.ToString());
+    }
 
     private static string Canonical(decimal value) =>
         (value / 1.0000000000000000000000000000m).ToString(CultureInfo.InvariantCulture);
@@ -2059,7 +2540,9 @@ public sealed class ManufacturingStore(
         plan.ApprovedAtUtc,
     }, Json);
 
-    private async Task SaveAsync(CancellationToken cancellationToken)
+    private Task SaveAsync(CancellationToken cancellationToken) => SaveWithManualQueuesAsync(cancellationToken);
+
+    private async Task PersistChangesAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -2082,9 +2565,26 @@ public sealed class ManufacturingStore(
                     "Onaylı plan emrini zaten açtı; bir plandan tek emir açılır.");
             }
 
+            // URT-S13: the unique (company, year, month) scrap price index lost to another writer is the month's own rule.
+            if (sql.Number is 2601 or 2627
+                && sql.Message.Contains(ManufacturingDbContext.MonthlyScrapPriceVersionIndex, StringComparison.Ordinal))
+            {
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.ScrapPriceAlreadyRecorded,
+                    "Bu ayın hurda fiyatı zaten girildi; girilmiş ay değiştirilmez.");
+            }
+
+            // URT-S21 (URT-D62): an output label code another writer took first is the code's own conflict; it is never
+            // renamed. A generated number another writer took first stays the concurrent change below (read and retry).
+            if (sql.Number is 2601 or 2627
+                && sql.Message.Contains(ManufacturingDbContext.OutputLabelCodeCodeIndex, StringComparison.Ordinal))
+            {
+                throw Refused(ManufacturingStoreCodes.OutputLabelCodeConflict,
+                    "Bu çıktı etiket kodu şirkette başka bir çıktıya verildi; hiçbir şey kaydedilmedi.", exception);
+            }
+
             var code = sql.Number switch
             {
-                2601 or 2627 => ManufacturingStoreCodes.ConcurrentChange,
+                1205 or 1222 or 2601 or 2627 => ManufacturingStoreCodes.ConcurrentChange,
                 547 when sql.Message.Contains("FK_Plans_WorkCenters_CompanyId_WorkCenterId", StringComparison.Ordinal)
                     || sql.Message.Contains("FK_PlanRevisions_WorkCenters_CompanyId_WorkCenterId", StringComparison.Ordinal)
                     => ManufacturingStoreCodes.WorkCenterNotFound,
@@ -2227,6 +2727,7 @@ public sealed class ManufacturingStore(
         row.TargetThicknessMm = spec?.TargetThicknessMm;
         row.PaintDescription = spec?.PaintDescription;
         row.PaintColorCode = spec?.PaintColorCode;
+        row.PaintSelectionJson = spec?.PaintSelection is { } selection ? JsonSerializer.Serialize(selection, Json) : null;
         return row;
     }
 
@@ -2235,7 +2736,7 @@ public sealed class ManufacturingStore(
     {
         if (row.PackageCount is null && row.PiecesPerPackage is null && row.PieceLengthMm is null && row.UnitKg is null
             && row.PerimeterMm is null && row.TargetThicknessMm is null && row.PaintDescription is null
-            && row.PaintColorCode is null)
+            && row.PaintColorCode is null && row.PaintSelectionJson is null)
         {
             return null;
         }
@@ -2243,9 +2744,11 @@ public sealed class ManufacturingStore(
         try
         {
             return new PlanProcessSpec(row.PackageCount, row.PiecesPerPackage, row.PieceLengthMm, row.UnitKg,
-                row.PerimeterMm, row.TargetThicknessMm, row.PaintDescription, row.PaintColorCode);
+                row.PerimeterMm, row.TargetThicknessMm, row.PaintDescription, row.PaintColorCode,
+                row.PaintSelectionJson is { } paintJson ? JsonSerializer.Deserialize<PlanPaintSelectionV1>(paintJson, Json)
+                    ?? throw new ArgumentException("Boya kaynak kanıtı okunamadı.") : null);
         }
-        catch (ArgumentException)
+        catch (Exception exception) when (exception is ArgumentException or JsonException)
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
                 "Kayıtlı süreç ayrıntısı planın kurallarını karşılamıyor.");

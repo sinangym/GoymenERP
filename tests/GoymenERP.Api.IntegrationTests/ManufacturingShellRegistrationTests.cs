@@ -58,18 +58,24 @@ public sealed class ManufacturingShellRegistrationTests
         // route's service measures its own Manufacturing permission afresh, and the close measures its own name on
         // top of the read. MFG-PLAN-EDIT (1.4) adds the plan-detail edit control (plans.read + plans.write).
         // TAKIP-URT-02 (1.6) adds the plan-detail cancel control (plans.read + plans.cancel).
-        Assert.Equal(12, manufacturing.Length);
+        // URT-S13 (1.7) adds the scrap price route (scrap-prices.read) and its record control (+ scrap-prices.write).
+        // URT-S23 (1.8) adds the order-detail termin control (orders.read + orders.write).
+        // URT-S19 (1.9) adds the order-detail cost trace control (orders.read + reports.read).
+        Assert.Equal(20, manufacturing.Length);
         string[] expected =
         [
-            "manufacturing.orders.close", "manufacturing.orders.close-exception-approve",
-            "manufacturing.orders.detail", "manufacturing.orders.facts",
-            "manufacturing.orders.list",
+            "manufacturing.orders.cancel", "manufacturing.orders.close", "manufacturing.orders.close-exception-approve",
+            "manufacturing.orders.cost-trace", "manufacturing.orders.detail", "manufacturing.orders.due-date", "manufacturing.orders.facts",
+            "manufacturing.orders.list", "manufacturing.orders.output-correction", "manufacturing.orders.reopen",
             "manufacturing.plans.approve", "manufacturing.plans.cancel", "manufacturing.plans.create", "manufacturing.plans.detail",
-            "manufacturing.plans.edit", "manufacturing.plans.list", "manufacturing.plans.order-create",
+            "manufacturing.plans.edit", "manufacturing.plans.list", "manufacturing.plans.order-create", "manufacturing.plans.reorder",
+            "manufacturing.scrap-prices.list", "manufacturing.scrap-prices.record",
         ];
         Assert.Equal(expected,
             manufacturing.Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
-        Assert.All(manufacturing, item => Assert.True(item.Declaration.ImplementationAvailable));
+        Assert.All(manufacturing, item => Assert.Equal(
+            item.Declaration.CapabilityId != ManufacturingShellCapabilityProvider.ReopenCapabilityId,
+            item.Declaration.ImplementationAvailable));
     }
 
     // Since Finance is host-wired (#325) the host always registers it: the earlier set without Finance

@@ -634,7 +634,7 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         await run.GrantAsync(Preparer, CompanyA, PreparerGrants);
-        await run.GrantAsync(Approver, CompanyA, ApproverGrants);
+        var approverActor = await run.GrantAsync(Approver, CompanyA, ApproverGrants);
         using var preparer = run.Client(Preparer, CompanyA);
         using var approver = run.Client(Approver, CompanyA);
         var periodId = Guid.NewGuid();
@@ -749,7 +749,9 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
             Assert.Equal("accounting_period_not_proposed", Code(await Json(twice)));
         }
 
-        // Ö5: one authorised close.
+        // FNS-D42: a close and its real carry require the next period to be open first.
+        await AccountingPeriodCarrySqlFixture.PrepareAsync(run.Factory, CompanyA, periodId, approverActor);
+        // Ö5: one authorised close, with both owners in the same transaction.
         using (var closed = await approver.SendAsync(Close(periodId, "SENTETIK-c-1", 2)))
         {
             Assert.Equal(HttpStatusCode.OK, closed.StatusCode);
@@ -776,7 +778,7 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
             ("@id", periodId.ToString("D"))));
         // Records: propose, approve and close succeeded; the stale approval and the unknown period are terminal.
         Assert.Equal(5, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Commands"));
-        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Periods"));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Periods"));
     }
 
     /// <summary>
@@ -1270,7 +1272,7 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
                 new AccountingAmountScaleVerifier(settings)));
         }
 
-        public async Task GrantAsync(string developmentUser, Guid company, params string[] permissions)
+        public async Task<Guid> GrantAsync(string developmentUser, Guid company, params string[] permissions)
         {
             await using var scope = Factory.Services.CreateAsyncScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
@@ -1302,6 +1304,7 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
             dbContext.Roles.Add(role);
             dbContext.RoleAssignments.Add(assignment);
             await dbContext.SaveChangesAsync();
+            return actor;
         }
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)

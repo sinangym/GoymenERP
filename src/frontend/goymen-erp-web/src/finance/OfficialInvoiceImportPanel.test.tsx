@@ -27,7 +27,8 @@ const otherSource = {
   displayName: 'Ekim onaylı fatura taksitleri',
 }
 
-function preview(issues: OfficialInvoiceImportPreview['issues'] = []): OfficialInvoiceImportPreview {
+function preview(issues: OfficialInvoiceImportPreview['issues'] = [],
+  taxWarnings: OfficialInvoiceImportPreview['taxWarnings'] = []): OfficialInvoiceImportPreview {
   return {
     templateVersion: 'finance-official-invoice-v1',
     sourceSha256: checksum,
@@ -35,6 +36,7 @@ function preview(issues: OfficialInvoiceImportPreview['issues'] = []): OfficialI
     batchVersion: source.batchVersion,
     rowCount: 1,
     issues,
+    taxWarnings,
   }
 }
 
@@ -99,6 +101,24 @@ beforeEach(() => {
 })
 
 describe('official invoice import panel', () => {
+  it('shows missing TL as unknown and a pending manual record as a nonblocking source note', async () => {
+    const user = userEvent.setup()
+    const result = batch('1250.50', '1', { officialDocuments: [{
+      sourceDocumentId: '33333333-3333-4333-8333-333333333333', officialNo: 'SENTETIK1',
+      ettn: '44444444-4444-4444-8444-444444444444', invoiceDate: '2026-11-16', payableFunctionalAmount: null,
+      hasPendingManual: true, approvedManualInvoiceId: null, effectivePayableFunctionalAmount: null, differentFields: [],
+    }] })
+    const api = client({ apply: vi.fn().mockResolvedValue({ kind: 'succeeded', replayed: false, batch: result }) })
+    render(<OfficialInvoiceImportPanel source={source} client={api} attemptContext={attemptContext} />)
+    await upload(user)
+    await user.click(screen.getByRole('button', { name: /^önizle$/i }))
+    await screen.findByText(`SHA-256: ${checksum}`)
+    await user.click(screen.getByRole('button', { name: /yetkili uygula/i }))
+    expect(await screen.findByText(/Onay bekleyen elle kayıt var/)).toBeTruthy()
+    expect(screen.getAllByText(/Hesaplanamadı; kaynak TL karşılığı yok/)).toHaveLength(2)
+    expect(screen.getByText(/Resmî fatura tarihi: 2026-11-16/)).toBeTruthy()
+  })
+
   it('previews, applies, closes and reopens the same persisted Finance batch', async () => {
     const user = userEvent.setup()
     const api = client()
@@ -122,6 +142,33 @@ describe('official invoice import panel', () => {
     expect(api.reopen).toHaveBeenCalledWith(source.batchId, expect.any(AbortSignal))
   })
 
+  it('shows the server tax warnings of the preview without blocking apply', async () => {
+    const user = userEvent.setup()
+    const api = client({ preview: vi.fn().mockResolvedValue(preview([], [{ code: 'finance_official_invoice_tax_inconsistent',
+      sourceDocumentId: '33333333-3333-4333-8333-333333333333', expectedPayableFunctionalAmount: '1200',
+      payableFunctionalAmount: '1200.01', differenceFunctionalAmount: '0.01' }])) })
+    render(<OfficialInvoiceImportPanel source={source} client={api} attemptContext={attemptContext} />)
+    await upload(user)
+    await user.click(screen.getByRole('button', { name: /^önizle$/i }))
+
+    const note = await screen.findByRole('note')
+    expect(note.textContent).toContain('matrah + KDV − tevkifat')
+    expect(note.textContent).toContain('Belge: 33333333-3333-4333-8333-333333333333')
+    expect(note.textContent).toContain('Beklenen ödenecek tutar (TL): 1200')
+    expect(note.textContent).toContain('Dosyadaki ödenecek tutar (TL): 1200.01')
+    expect(note.textContent).toContain('Fark (TL): 0.01')
+    expect((screen.getByRole('button', { name: /yetkili uygula/i }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('shows no tax warning note when the preview has none', async () => {
+    const user = userEvent.setup()
+    render(<OfficialInvoiceImportPanel source={source} client={client()} attemptContext={attemptContext} />)
+    await upload(user)
+    await user.click(screen.getByRole('button', { name: /^önizle$/i }))
+    await screen.findByText(`SHA-256: ${checksum}`)
+    expect(screen.queryByRole('note')).toBeNull()
+  })
+
   it('shows strict preview issues and never enables apply', async () => {
     const user = userEvent.setup()
     const api = client({
@@ -135,6 +182,27 @@ describe('official invoice import panel', () => {
     expect(await screen.findByText(/satır 2, amount: decimal_invalid/i)).toBeTruthy()
     expect((screen.getByRole('button', { name: /yetkili uygula/i }) as HTMLButtonElement).disabled).toBe(true)
     expect(api.apply).not.toHaveBeenCalled()
+  })
+
+  it('names an official identity refusal in Turkish and keeps the stable code visible', async () => {
+    const user = userEvent.setup()
+    const api = client({
+      apply: vi.fn().mockResolvedValue({
+        kind: 'refused',
+        issues: [{ rowNumber: 1, field: 'rows[0].ettn', code: 'finance_ettn_already_open' }],
+      } satisfies OfficialInvoiceApplyReply),
+    })
+    render(<OfficialInvoiceImportPanel source={source} client={api} attemptContext={attemptContext} />)
+    await upload(user)
+
+    await user.click(screen.getByRole('button', { name: /^önizle$/i }))
+    expect(await screen.findByText(`SHA-256: ${checksum}`)).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: /yetkili uygula/i }))
+
+    expect(await screen.findByText(
+      /satır 1, rows\[0\]\.ettn: finance_ettn_already_open — bu ettn ile iptal edilmemiş bir alacak zaten kayıtlı/i,
+    )).toBeTruthy()
+    expect(screen.queryByText(/açık kalem finans'tan yeniden okundu/i)).toBeNull()
   })
 
   it('retries an unknown result with the same file, body identity and idempotency key', async () => {

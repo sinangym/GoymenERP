@@ -229,7 +229,13 @@ public sealed class ProductPurchaseSelectionSqlServerRelationalAcceptanceTests
             var name = factory.DatabaseName;
             if (!Regex.IsMatch(name, "\\Agoymen_erp_ci_[0-9a-f]{32}\\z", RegexOptions.CultureInvariant))
                 throw new InvalidOperationException("Refusing cleanup outside this test database.");
-            var builder = new SqlConnectionStringBuilder(factory.DatabaseConnectionString) { InitialCatalog = "master" };
+            // The local fixture may attach its unique .mdf. A master cleanup connection must
+            // retain authentication/TLS options but must never try to attach that file as master.
+            var builder = new SqlConnectionStringBuilder(factory.DatabaseConnectionString)
+            {
+                InitialCatalog = "master",
+                AttachDBFilename = string.Empty,
+            };
             await using var connection = new SqlConnection(builder.ConnectionString);
             await connection.OpenAsync();
             await using var command = connection.CreateCommand();

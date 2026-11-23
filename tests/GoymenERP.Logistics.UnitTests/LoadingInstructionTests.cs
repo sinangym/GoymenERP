@@ -371,7 +371,8 @@ public sealed class LoadingInstructionTests
         var pieces = instruction.AddLine(1, Guid.NewGuid(), new SourceOrderLineRef(Guid.NewGuid(), Guid.NewGuid(), 0), Guid.NewGuid(), Guid.NewGuid(), null, Quantity.Of(20m, QuantityUnit.Piece), T0);
         var kilograms = Line(instruction, 2, 500m, Allocation);
         instruction.Issue(3, T0);
-        instruction.RecordLoad(4, Guid.NewGuid(), pieces.Id, Quantity.Of(20m, QuantityUnit.Piece), MeasurementKind.Measured, T0);
+        // AK-4 (KLN-D119): a piece load names its physical kg beside the pieces.
+        instruction.RecordLoad(4, Guid.NewGuid(), pieces.Id, Quantity.Of(20m, QuantityUnit.Piece), MeasurementKind.Measured, T0, Kg(246.9m));
         Assert.True(pieces.RemainingToLoad.IsZero);
         Assert.Equal(Kg(500m), kilograms.RemainingToLoad);
         Assert.Equal(2, instruction.Lines.Count);

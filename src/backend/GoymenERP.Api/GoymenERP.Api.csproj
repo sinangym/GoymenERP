@@ -24,6 +24,7 @@
     <ProjectReference Include="..\Modules\Product\GoymenERP.Modules.Product.Infrastructure\GoymenERP.Modules.Product.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Sales\GoymenERP.Modules.Sales.Application\GoymenERP.Modules.Sales.Application.csproj" />
     <ProjectReference Include="..\Modules\Sales\GoymenERP.Modules.Sales.Infrastructure\GoymenERP.Modules.Sales.Infrastructure.csproj" />
+    <ProjectReference Include="..\Modules\SecurityEvents\GoymenERP.Modules.SecurityEvents.Infrastructure\GoymenERP.Modules.SecurityEvents.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Settings\GoymenERP.Modules.Settings.Application\GoymenERP.Modules.Settings.Application.csproj" />
     <ProjectReference Include="..\Modules\Settings\GoymenERP.Modules.Settings.Infrastructure\GoymenERP.Modules.Settings.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Work\GoymenERP.Modules.Work.Infrastructure\GoymenERP.Modules.Work.Infrastructure.csproj" />
@@ -37,6 +38,8 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.8" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.20.1" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.20.1" />
     <PackageReference Include="Microsoft.Extensions.ApiDescription.Server" Version="10.0.11">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>

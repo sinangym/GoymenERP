@@ -28,7 +28,7 @@ public sealed class StockScrap
     public const int MaximumReasonLength = 1000;
 
     public StockScrap(Guid id, Guid companyId, StockPosition position, Kilograms book, Kilograms scrap,
-        DateTimeOffset scrappedAtUtc, string reason)
+        DateTimeOffset scrappedAtUtc, string reason, PieceCount? bookPieces = null, PieceCount? scrapPieces = null)
     {
         Id = id == Guid.Empty
             ? throw new InventoryRuleException(InventoryRuleCodes.MissingReference, "Hurda kimliği zorunludur.")
@@ -62,9 +62,12 @@ public sealed class StockScrap
             throw Invalid("Hurda miktarı sıfırdan büyük ve parçanın defter miktarından fazla olmamalıdır.");
         }
 
+        RequirePieces(book, scrap, bookPieces, scrapPieces);
         Position = position;
         Book = book;
         Scrap = scrap;
+        BookPieces = bookPieces;
+        ScrapPieces = scrapPieces;
         ScrappedAtUtc = scrappedAtUtc;
         Reason = reason.Trim();
     }
@@ -80,6 +83,12 @@ public sealed class StockScrap
 
     public Kilograms Scrap { get; }
 
+    /// <summary>KLN-D119 (AK-2b): the stored pieces the recorder saw on a piece-tracking label; null on a kg-only label.</summary>
+    public PieceCount? BookPieces { get; }
+
+    /// <summary>KLN-D119 (AK-2b): the scrapped pieces; given exactly when the label tracks pieces.</summary>
+    public PieceCount? ScrapPieces { get; }
+
     public DateTimeOffset ScrappedAtUtc { get; }
 
     public string Reason { get; }
@@ -87,11 +96,43 @@ public sealed class StockScrap
     /// <summary><c>book − scrap</c>: what stays on the piece; zero when the whole piece is scrapped.</summary>
     public Kilograms Remaining => Kilograms.Of(Book.Value - Scrap.Value);
 
+    /// <summary>KLN-D119: the pieces left at the position after the scrap; null when the position does not count pieces.</summary>
+    public PieceCount? RemainingPieces => BookPieces is { } book && ScrapPieces is { } scrap
+        ? PieceCount.Of(book.Value - scrap.Value)
+        : null;
+
     /// <summary>The one movement that posts this scrap: a single Out line on the scrapped position, exactly the scrap.</summary>
     public StockMovement WriteOff(Guid movementId, DateTimeOffset occurredAtUtc) =>
         new(movementId, CompanyId, StockMovementKind.Scrap, occurredAtUtc,
             new StockSourceReference(SourceKind, Id),
-            [new StockMovementLine(Position, StockDirection.Out, Scrap)]);
+            [new StockMovementLine(Position, StockDirection.Out, Scrap, ScrapPieces)]);
+
+    /// <summary>
+    /// KLN-D119 (AK-2b): a piece-tracking label is scrapped with its pieces, a kg-only label never is (no backfill). The
+    /// scrapped pieces never exceed the book pieces; the whole kilograms take every piece, and a partial scrap leaves at
+    /// least one piece on the label (pieces and kilograms stay both positive). Zero scrapped pieces is a kg-only fire on a
+    /// piece-tracking label (part of a piece's weight lost).
+    /// </summary>
+    private static void RequirePieces(Kilograms book, Kilograms scrap, PieceCount? bookPieces, PieceCount? scrapPieces)
+    {
+        if ((bookPieces is null) != (scrapPieces is null))
+        {
+            throw new InventoryRuleException(bookPieces is null ? InventoryRuleCodes.PieceCountNotTracked
+                : InventoryRuleCodes.PieceCountRequired, "Adetli etiket adetle, adetsiz etiket adetsiz hurdaya ayrılır.");
+        }
+
+        if (bookPieces is not { } bookCount || scrapPieces is not { } scrapCount)
+        {
+            return;
+        }
+
+        var remainingPieces = bookCount.Value - scrapCount.Value;
+        if (remainingPieces < 0 || (remainingPieces == 0) != (scrap == book))
+        {
+            throw new InventoryRuleException(InventoryRuleCodes.InvalidPieceCount,
+                "Hurdada kalan adet ile kalan kilogram birlikte sıfır ya da birlikte pozitif olmalıdır.");
+        }
+    }
 
     private static InventoryRuleException Invalid(string message) =>
         new(InventoryRuleCodes.InvalidStockScrap, message);

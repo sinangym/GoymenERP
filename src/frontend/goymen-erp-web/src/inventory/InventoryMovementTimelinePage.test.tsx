@@ -131,6 +131,26 @@ describe('InventoryMovementTimelinePage', () => {
     expect(screen.queryByRole('button', { name: 'Daha eski hareketleri yükle' })).toBeNull()
   })
 
+  it('labels the manufacturing output reversal and the transfer dispatch cancellation as their own kinds', async () => {
+    const reversal = movement('cccccccc-cccc-4ccc-8ccc-cccccccccccc', '2026-10-08T10:00:00+00:00', {
+      kind: 'ManufacturingOutputReversal', sourceKind: 'manufacturing.output-reversal', sourceLineId: null,
+      sourceGrain: 'Whole', lines: [{ ...NEWEST.lines[0], direction: 'Out' }],
+    })
+    const cancellation = movement('dddddddd-dddd-4ddd-8ddd-dddddddddddd', '2026-10-08T09:30:00+00:00', {
+      kind: 'TransferDispatchCancellation', sourceKind: 'inventory.stock-transfer', sourceLineId: null,
+      sourceGrain: 'Whole',
+    })
+    api.timeline.mockResolvedValue(ok([reversal, cancellation, NEWEST]))
+    mount()
+
+    await waitFor(() => expect(rows()).toHaveLength(3))
+    const [first, second] = rows()
+    expect(within(first).getAllByRole('cell')[1].textContent).toContain('Üretim çıktısı ters kaydı')
+    expect(within(first).getAllByRole('cell')[4].textContent).toBe('Çıkış')
+    expect(within(second).getAllByRole('cell')[1].textContent).toContain('Transfer çıkışı iptali')
+    expect(within(second).getAllByRole('cell')[4].textContent).toBe('Giriş')
+  })
+
   it('returns to the label it came from with the carried ST-01 filter', async () => {
     const user = userEvent.setup()
     mount()

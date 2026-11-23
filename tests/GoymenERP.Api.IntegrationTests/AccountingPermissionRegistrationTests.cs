@@ -13,6 +13,7 @@ public sealed class AccountingPermissionRegistrationTests
     [InlineData(AccountingPermissionManifestV1.PeriodsRead, ErpPermissions.AccountingPeriodsRead)]
     [InlineData(AccountingPermissionManifestV1.PeriodsPropose, ErpPermissions.AccountingPeriodsPropose)]
     [InlineData(AccountingPermissionManifestV1.PeriodsApprove, ErpPermissions.AccountingPeriodsApprove)]
+    [InlineData(AccountingPermissionManifestV1.PeriodsReopen, ErpPermissions.AccountingPeriodsReopen)]
     [InlineData(AccountingPermissionManifestV1.PeriodsClose, ErpPermissions.AccountingPeriodsClose)]
     [InlineData(AccountingPermissionManifestV1.JournalsRead, ErpPermissions.AccountingJournalsRead)]
     [InlineData(AccountingPermissionManifestV1.PostingQueuesRead, ErpPermissions.AccountingPostingQueuesRead)]
@@ -25,6 +26,7 @@ public sealed class AccountingPermissionRegistrationTests
     [InlineData(AccountingPostingAccountMappingPermissionNamesV1.Read, ErpPermissions.AccountingPostingMappingsRead)]
     [InlineData(AccountingPostingAccountMappingPermissionNamesV1.Prepare, ErpPermissions.AccountingPostingMappingsPrepare)]
     [InlineData(AccountingPostingAccountMappingPermissionNamesV1.Activate, ErpPermissions.AccountingPostingMappingsActivate)]
+    [InlineData(AccountPlanPermissionNamesV1.Read, ErpPermissions.AccountingAccountPlanRead)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);
@@ -46,6 +48,7 @@ public sealed class AccountingPermissionRegistrationTests
                     ApprovedAccountingSourceCatalogPermissionNamesV1.Activate,
                 ])
                 .Concat(AccountingPostingAccountMappingPermissionNamesV1.All)
+                .Concat(AccountPlanPermissionNamesV1.All)
                 .Order(StringComparer.Ordinal),
             ErpPermissions.All.Where(name => name.StartsWith("accounting.", StringComparison.Ordinal)).Order(StringComparer.Ordinal));
     }

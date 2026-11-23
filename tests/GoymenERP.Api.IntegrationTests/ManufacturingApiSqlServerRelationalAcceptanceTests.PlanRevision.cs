@@ -96,6 +96,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal((ManufacturingRuleCodes.VersionConflict, "1", "2"), await Problem(stale));
 
         // The next step reads the edited plan: the approval names version 2 and the order snapshots the edit.
+        await run.EnterTerminAsync(created.PlanId);
         var approval = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{created.PlanId}/approval", new ApprovePlanRequestV1(2));
         Assert.Equal(HttpStatusCode.OK, approval.StatusCode);
         var approved = (await approval.Content.ReadFromJsonAsync<PlanViewV1>())!;

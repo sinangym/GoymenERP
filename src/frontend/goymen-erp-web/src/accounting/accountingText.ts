@@ -26,11 +26,11 @@ export const APPROVE_CONFIRM_TEXT =
   'Onaydan sonra dönem açılır ve kayıt alır. Onay tektir; dönemi öneren kişi onaylayamaz.'
 export const APPROVE_CONFIRM = 'Evet, onayla'
 export const CLOSE = 'Kapat'
-export const CLOSE_CONFIRM_TEXT = 'Kapanan döneme yeni kayıt girmez. Kapanış geri alınamaz; düzeltme açık bir dönemde yeni kayıtla yapılır.'
+export const CLOSE_CONFIRM_TEXT = 'Kapanış ve sonraki açık döneme bakiye devri birlikte kaydedilir. Sonraki dönem açık değilse ikisi de reddedilir. Yeniden açma farklı yetkilinin onayını gerektirir.'
 export const CLOSE_CONFIRM = 'Evet, kapat'
 export const CANCEL = 'Vazgeç'
 export const APPROVED_NOTICE = 'Dönem açıldı. Liste sunucudan yeniden okundu.'
-export const CLOSED_NOTICE = 'Dönem kapandı. Liste sunucudan yeniden okundu.'
+export const CLOSED_NOTICE = 'Dönem kapandı ve devir fişi kaydedildi. Liste sunucudan yeniden okundu.'
 export const REPLAYED_NOTICE = 'Bu işlem daha önce kaydedilmişti; sunucunun ilk cevabı gösterildi. Liste yeniden okundu.'
 export const JOURNALS_OF_PERIOD = 'Fişleri'
 
@@ -93,6 +93,7 @@ const CODE_TEXT: Readonly<Record<string, string>> = {
   accounting_period_preparer_conflict: 'Aynı dönem kimliğini başka bir kişi önerdi.',
   accounting_period_not_proposed: 'Dönem artık öneri değil; liste yeniden okundu.',
   accounting_period_not_open: 'Yalnız açık bir dönem kapatılır.',
+  accounting_period_carry_target_not_open: 'Kapanış ve devir için önce sonraki dönemi açın; bu işlemde kapanış veya devir kaydedilmedi.',
   accounting_period_already_closed: 'Dönem zaten kapalı.',
   accounting_period_invalid: 'Dönem tarihleri geçerli değil.',
 }
@@ -237,11 +238,26 @@ export const NORMAL_JOURNAL_TEXT = {
   approvalUnknown: 'Onay sonucu bilinmiyor.',
   resend: 'Aynı isteği yeniden gönder',
   source: 'Onaylı finans kaynağı',
+  sourceMode: 'Kaynak grubu',
+  manualSources: 'Kaydedilmiş manuel tahsilatlar',
+  financialSources: 'Muhasebeye ulaşan masraf ve virmanlar',
+  creditSources: 'Onaylanmış gerçek kredi hareketleri',
+  expenseSource: 'Masraf ödemesi',
+  transferSource: 'Aynı para biriminde virman',
+  exchangeSource: 'Döviz bozdurma — defter değeri onayı bekliyor',
+  approvedExchangeSource: 'Döviz bozdurma — onaylı defter değeri',
+  targetBookValueUnavailable: 'Hedef dövizin gerçek TL defter değeri kaydedilmemiş; muhasebe fişi hazırlanamaz.',
+  sourceExactAmounts: 'Gerçek kaynak ve onaylı hesap eşlemesinin fiş satırlarını kullan',
+  sourceExactHelp: 'Bu satırlar gerçek işlem, belgeli kaynak defter değeri ve onaylı hedef TL değerinden gelir. TCMB karşılaştırması muhasebe tutarı değildir.',
+  sourceAmount: 'Kaynak tutarı',
+  receivedSourceHelp: 'Bu listeye alınmış kaynaklar henüz muhasebe fişi değildir. Taslak hazırlama ve farklı yetkilinin onayı ayrıca gerekir.',
+  bindingUnavailable: 'Bu kaynak için onaylı hesap eşlemesi yok. Eşleme tamamlanmadan fiş taslağı hazırlanamaz.',
   chooseSource: 'Kaynak seçin',
   transactionDate: 'İşlem tarihi',
   accountingDate: 'Muhasebe tarihi',
   valueDate: 'Valör tarihi',
   sourcesSubject: 'yetkili finans kaynakları',
+  sourcesEmpty: 'Bu kaynak grubunda fiş hazırlığı için seçilebilecek kayıt yok.',
   preparationSubject: 'onaylı hesap hazırlığı',
   preparationUnreadable: 'Kaynağın onaylı hesap hazırlığı okunamadı.',
   account: 'Onaylı hesap',
@@ -352,8 +368,33 @@ function normalJournalFailureDetail(failure: NormalJournalFailure): string {
     case 'preparation-version-conflict':
       return 'Onaylı hesap hazırlığı değişti.'
     case 'rule':
+      if (failure.code === 'accounting_normal_journal_source_amount_mismatch') return 'Borç ve alacak toplamları kaynaktaki tutara ayrı ayrı eşit olmalıdır. Kaynak para birimi ve tutarı değiştirilemez.'
       return NORMAL_JOURNAL_CODE_TEXT[failure.code] ?? `Kural reddetti (${failure.code}).`
     case 'unsupported-media':
       return 'İstek biçimi desteklenmiyor.'
   }
 }
+
+// FIN-S16 — M-05 Hesap Planı (read-only). The plan is the ACTIVE approved source package exactly as approved; this
+// screen creates, renames or classifies no account. Dimensions (cost centre / project) have no decision yet.
+export const ACCOUNT_PLAN_TITLE = 'Hesap Planı'
+export const ACCOUNT_PLAN_INTRO =
+  'Şirketin etkin onaylı hesap planı onaylı kaynaktaki hâliyle, hesap koduna göre sıralı gösterilir. Bu ekran hesap açmaz, adlandırmaz veya sınıflandırmaz.'
+export const ACCOUNT_PLAN_SUBJECT = 'hesap planı'
+export const ACCOUNT_PLAN_COMPANY_SUBJECT = 'hesap planı için tek şirket bağlamı'
+export const ACCOUNT_PLAN_NO_ACTIVE_TITLE = 'Etkin hesap planı yok'
+export const ACCOUNT_PLAN_NO_ACTIVE_DETAIL =
+  'Bu şirket için henüz etkinleştirilmiş onaylı bir hesap planı kaynağı yok. Hesaplar tahminle üretilmez.'
+export const ACCOUNT_PLAN_SEARCH_LABEL = 'Kod veya ad ara'
+export const ACCOUNT_PLAN_SEARCH_PLACEHOLDER = 'Örn. 100 veya Kasa'
+export const ACCOUNT_PLAN_FILTERED_SUBJECT = 'hesap'
+export const ACCOUNT_PLAN_CODE = 'Hesap kodu'
+export const ACCOUNT_PLAN_NAME = 'Hesap adı'
+export const ACCOUNT_PLAN_SOURCE_TITLE = 'Kaynak'
+export const ACCOUNT_PLAN_SOURCE_VERSION = 'Hesap planı kaynak sürümü'
+export const ACCOUNT_PLAN_CATALOG_VERSION = 'Katalog sürümü'
+export const ACCOUNT_PLAN_SHA256 = 'Kaynak SHA-256'
+export const ACCOUNT_PLAN_ACTIVATED_AT = 'Etkinleşme zamanı'
+export const ACCOUNT_PLAN_ACCOUNT_COUNT = 'Hesap sayısı'
+export const ACCOUNT_PLAN_UNKNOWN = 'Belirtilmemiş'
+export const ACCOUNT_PLAN_SHOWING = (shown: number, total: number) => `${total} hesaptan ${shown} tanesi gösteriliyor.`

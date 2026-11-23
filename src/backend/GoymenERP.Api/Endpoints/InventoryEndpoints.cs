@@ -7,6 +7,7 @@ using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Organization.Application.Contracts;
 
@@ -84,6 +85,10 @@ public static partial class InventoryEndpoints
         MapParentRollCandidateEndpoint(endpoints);
         MapStockPositionEndpoint(endpoints);
         MapMovementTimelineEndpoint(endpoints);
+        endpoints.MapInventoryNegativeStockAttemptEndpoints();
+        MapShortageWarningEndpoint(endpoints);
+        MapLabelTraceEndpoints(endpoints);
+        MapInventoryLabelPdfEndpoint(endpoints);
         endpoints.MapInventoryReferenceEndpoints();
         MapPhysicalAllocationEndpoints(group);
         MapOpeningCountEndpoints(group);
@@ -91,6 +96,11 @@ public static partial class InventoryEndpoints
         MapLabelClassificationEndpoint(endpoints);
         endpoints.MapInventoryStockCountEndpoints();
         endpoints.MapInventoryStockScrapEndpoints();
+        endpoints.MapInventoryOpeningCostEndpoints();
+        MapInventoryTransferEndpoints(endpoints);
+        MapInventoryTransferListEndpoint(endpoints);
+        MapInventoryFutureAllocationEndpoints(endpoints);
+        MapInventoryFutureSupplyOptionsEndpoint(endpoints);
         return endpoints;
     }
 
@@ -1112,6 +1122,65 @@ public static partial class InventoryEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // KLN-D34/D39/D40 (STK-S30): label suggestions for one approved Sales line; read-only, the user confirms each
+        // suggestion through the create command, which re-checks every rule.
+        group.MapGet(PhysicalAllocationSuggestionsPath, async (
+                HttpContext httpContext,
+                InventoryPhysicalAllocationHostService service,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                if (!TryReadAllocationSuggestionQuery(httpContext.Request.Query, out var salesOrderId,
+                        out var salesOrderLineId, out var requestedKg))
+                {
+                    return AllocationProblem(StatusCodes.Status400BadRequest,
+                        InventoryAllocationCodesV1.ValidationFailed, correlation);
+                }
+
+                try
+                {
+                    return Results.Ok(await service.SuggestAsync(
+                        salesOrderId, salesOrderLineId, requestedKg, cancellationToken));
+                }
+                catch (InventoryPhysicalAllocationHostException exception)
+                {
+                    return AllocationProblem(exception.Status, exception.Code, correlation);
+                }
+                catch (InventoryAllocationException exception)
+                {
+                    var accepted = exception.Status switch
+                    {
+                        StatusCodes.Status400BadRequest =>
+                            exception.Code == InventoryAllocationCodesV1.ValidationFailed,
+                        StatusCodes.Status403Forbidden =>
+                            exception.Code == InventoryAllocationSuggestionCodesV1.ProductFactsForbidden,
+                        _ => false,
+                    };
+                    return accepted
+                        ? AllocationProblem(exception.Status, exception.Code, correlation)
+                        : Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
+                }
+            })
+            .WithName("GetInventoryPhysicalAllocationSuggestionsV1")
+            .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.InventoryPhysicalAllocationWrite)
+            .Produces<InventoryAllocationSuggestionsV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(InventoryAllocationCodesV1.ValidationFailed)
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpUnprocessableEntity(InventoryAllocationCodesV1.InvalidReference)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         group.MapPost(PhysicalAllocationsPath, async (
                 HttpContext httpContext,
                 InventoryPhysicalAllocationHostService service,
@@ -1434,6 +1503,46 @@ public static partial class InventoryEndpoints
         return true;
     }
 
+    /// <summary>
+    /// The suggestion query: exactly one order id and one line id, plus an optional single <c>requestedKg</c> (KLN-D99),
+    /// the kilograms the user typed, which only orders the line's own labels closest first. Unknown keys, repeated
+    /// keys and a malformed or non-positive quantity are refused.
+    /// </summary>
+    private static bool TryReadAllocationSuggestionQuery(
+        IQueryCollection query,
+        out Guid salesOrderId,
+        out Guid salesOrderLineId,
+        out Kilograms? requestedKg)
+    {
+        salesOrderId = Guid.Empty;
+        salesOrderLineId = Guid.Empty;
+        requestedKg = null;
+        if (query.Keys.Any(name => name is not "salesOrderId" and not "salesOrderLineId" and not "requestedKg")
+            || !query.All(parameter => parameter.Value.Count == 1)
+            || !query.TryGetValue("salesOrderId", out var salesOrderValues)
+            || !Guid.TryParseExact(salesOrderValues[0], "D", out salesOrderId)
+            || salesOrderId == Guid.Empty
+            || !query.TryGetValue("salesOrderLineId", out var salesOrderLineValues)
+            || !Guid.TryParseExact(salesOrderLineValues[0], "D", out salesOrderLineId)
+            || salesOrderLineId == Guid.Empty)
+        {
+            return false;
+        }
+
+        if (!query.TryGetValue("requestedKg", out var requestedValues))
+        {
+            return true;
+        }
+
+        if (!InventoryLabelQuantityProximityV1.TryParseRequestedKg(requestedValues[0], out var parsed))
+        {
+            return false;
+        }
+
+        requestedKg = parsed;
+        return true;
+    }
+
     private static IResult PhysicalAllocationReadProblem(int statusCode, string? code = null) => code is null
         ? Results.Problem(statusCode: statusCode)
         : Results.Problem(statusCode: statusCode,
@@ -1462,6 +1571,9 @@ public static partial class InventoryEndpoints
         {
             StatusCodes.Status400BadRequest =>
                 InventoryPhysicalAllocationHttpCodesV1.Status400Codes.Contains(exception.Code),
+            // STK-S30: the Product owner refusing the substitute check's facts read for this actor is a code-less 403.
+            StatusCodes.Status403Forbidden =>
+                create && exception.Code == InventoryAllocationSuggestionCodesV1.ProductFactsForbidden,
             StatusCodes.Status404NotFound => exception.Code == InventoryAllocationCodesV1.InvalidReference,
             StatusCodes.Status409Conflict => (create
                 ? InventoryPhysicalAllocationHttpCodesV1.CreateStatus409Codes
@@ -1693,6 +1805,7 @@ public static partial class InventoryEndpoints
 
     private const string OpeningCountsPath = "/opening-counts";
     private const string PhysicalAllocationsPath = "/physical-allocations";
+    private const string PhysicalAllocationSuggestionsPath = "/physical-allocations/suggestions";
     private const string LabelPhysicalAllocationsPath = "/labels/{labelId:guid}/physical-allocations";
     private const string IdempotencyHeaderName = "Idempotency-Key";
     private const int MaximumIdempotencyKeyLength = 128;

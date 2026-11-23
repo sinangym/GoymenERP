@@ -5,7 +5,7 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 
 /// <summary>
 /// Publishes the Manufacturing order and plan screens to the shell (MFG-UI card, coordinator-approved) —
-/// PUBLISHED: every declaration is <c>ImplementationAvailable: true</c>, after the corresponding
+/// Published screens declare <c>ImplementationAvailable: true</c>, after the corresponding
 /// browser suite accepted the staged screen (the S03-c / FIN-UI-1c pattern). The screen opens to whoever
 /// holds the permission in the context company; publishing grants nothing (every grant is a human gate).
 /// <list type="bullet">
@@ -29,6 +29,19 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 /// <item><c>manufacturing.plans.list</c> → <c>/uretim/planlar</c> on
 /// <see cref="ErpPermissions.ManufacturingPlansRead"/> (MFG-PLAN-LIST, contract 1.3): the company's saved plans,
 /// so a plan whose screen was closed is found and reopened. The plan read's own grant; no new permission.</item>
+/// <item><c>manufacturing.scrap-prices.list</c> → <c>/uretim/hurda-fiyatlari</c> on
+/// <see cref="ErpPermissions.ManufacturingScrapPricesRead"/> (URT-S13, contract 1.7): the company's monthly scrap prices
+/// of a year (URT-D47, URT-D65).</item>
+/// <item><c>manufacturing.scrap-prices.record</c> (URT-S13, contract 1.7): a control on that route adding
+/// <see cref="ErpPermissions.ManufacturingScrapPricesWrite"/> — the month's price entry. Both names are registered and
+/// granted to no role: who enters the scrap price is not decided.</item>
+/// <item><c>manufacturing.orders.due-date</c> (URT-S23, contract 1.8): a control on the order detail route adding
+/// <see cref="ErpPermissions.ManufacturingOrdersWrite"/> — the order's own termin (URT-D66 (3)). The name is registered
+/// and granted to no role: who edits an order is not decided.</item>
+/// <item><c>manufacturing.orders.cost-trace</c> (URT-S19, contract 1.9): a control on the order detail route adding
+/// <see cref="ErpPermissions.ManufacturingReportsRead"/> — the order's cost trace (B-27, DEC-PRDCT-009, API-42). The name
+/// is registered and granted to no role: URT-D90 declares its personas (Üretim Müdürü, Üretim Planlama, Genel Müdür), and
+/// the grant itself stays a human gate.</item>
 /// </list>
 /// Company-wide scope only, as the API requires (K-1): the routes do not filter by work center.
 /// <c>MFG-01</c> is a technical sub-view id, like ORG-01/02; the canonical production screens
@@ -42,14 +55,21 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     public const string OwnerId = "MANUFACTURING";
     // 1.2 -> 1.3 (MFG-PLAN-LIST): the plan list route. 1.3 -> 1.4 (MFG-PLAN-EDIT): the plan edit control. The owner
     // contract version enters the canonical form of every declaration, so the accepted authority revisions move with it
-    // in the central writer's round. 1.5 -> 1.6 (TAKIP-URT-02): the plan cancel control.
-    public const string OwnerContractVersion = "1.6";
+    // in the central writer's round. 1.5 -> 1.6 (TAKIP-URT-02): the plan cancel control. 1.6 -> 1.7 (URT-S13): the
+    // monthly scrap price route and its record control. 1.7 -> 1.8 (URT-S23): the order termin control. 1.8 -> 1.9
+    // (URT-S19): the order cost trace control. 1.10 adds correction/cancel; 1.11 stages reorder (URT-D106).
+    public const string OwnerContractVersion = "1.13";
 
     public const string DetailCapabilityId = "manufacturing.orders.detail";
+    public const string OutputCorrectionCapabilityId = "manufacturing.orders.output-correction";
+    public const string CancelCapabilityId = "manufacturing.orders.cancel";
+    public const string ReopenCapabilityId = "manufacturing.orders.reopen";
     public const string FactsCapabilityId = "manufacturing.orders.facts";
     public const string ListCapabilityId = "manufacturing.orders.list";
     public const string CloseCapabilityId = "manufacturing.orders.close";
     public const string CloseExceptionApproveCapabilityId = "manufacturing.orders.close-exception-approve";
+    public const string DueDateCapabilityId = "manufacturing.orders.due-date";
+    public const string CostTraceCapabilityId = "manufacturing.orders.cost-trace";
     public const string DetailRouteId = "manufacturing.order-detail";
     public const string DetailRoutePath = "/uretim/emir/:orderId";
     public const string DetailScreenId = "MFG-01";
@@ -67,11 +87,17 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     public const string PlanApproveCapabilityId = "manufacturing.plans.approve";
     public const string PlanOrderCreateCapabilityId = "manufacturing.plans.order-create";
     public const string PlanEditCapabilityId = "manufacturing.plans.edit";
+    public const string PlanReorderCapabilityId = "manufacturing.plans.reorder";
     public const string PlanCancelCapabilityId = "manufacturing.plans.cancel";
     public const string PlanListCapabilityId = "manufacturing.plans.list";
     public const string PlanListRouteId = "manufacturing.plan-list";
     public const string PlanListRoutePath = "/uretim/planlar";
     public const string PlanListScreenId = "MFG-PLAN-LIST";
+    public const string ScrapPriceListCapabilityId = "manufacturing.scrap-prices.list";
+    public const string ScrapPriceRecordCapabilityId = "manufacturing.scrap-prices.record";
+    public const string ScrapPriceListRouteId = "manufacturing.scrap-price-list";
+    public const string ScrapPriceListRoutePath = "/uretim/hurda-fiyatlari";
+    public const string ScrapPriceListScreenId = "MFG-SCRAP-PRICES";
 
     public string Owner => OwnerId;
 
@@ -134,6 +160,17 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
             [ErpPermissions.ManufacturingPlansRead],
             ImplementationAvailable: true);
 
+        var scrapPriceList = new ShellCapabilityDeclaration(
+            ScrapPriceListCapabilityId,
+            ScrapPriceListRouteId,
+            ScrapPriceListRoutePath,
+            ScrapPriceListScreenId,
+            ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [ErpPermissions.ManufacturingScrapPricesRead],
+            ImplementationAvailable: true);
+
         return
         [
             detail,
@@ -160,6 +197,41 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
                     ErpPermissions.ManufacturingOrdersRead,
                     ErpPermissions.ManufacturingOrdersCloseExceptionApprove,
                 ],
+            },
+            // URT-S23 (URT-D66 (3)/(5)): the order's own termin is a control of the order screen, on the order edit
+            // permission.
+            detail with
+            {
+                CapabilityId = DueDateCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                RequiredPermissions = [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersWrite],
+            },
+            // URT-S19 (B-27, API-42): the order's cost trace is a control of the order screen, on its own report grant.
+            detail with
+            {
+                CapabilityId = CostTraceCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                RequiredPermissions = [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingReportsRead],
+            },
+            detail with
+            {
+                CapabilityId = OutputCorrectionCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                RequiredPermissions = [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingFactsCorrect],
+            },
+            detail with
+            {
+                CapabilityId = CancelCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                RequiredPermissions = [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersCancel],
+            },
+            detail with
+            {
+                CapabilityId = ReopenCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                RequiredPermissions = [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersReopen, ErpPermissions.AccountingPeriodsRead],
+                // Enabled in the integrated source only after the real Inventory generation participant is registered.
+                ImplementationAvailable = false,
             },
             list,
             planCreate,
@@ -193,7 +265,27 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
                 ParentCapabilityId = PlanDetailCapabilityId,
                 RequiredPermissions = [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansCancel],
             },
+            // URT-D106/D110: queue mutation on its own registered permission; no grant is made here.
+            planDetail with
+            {
+                CapabilityId = PlanReorderCapabilityId,
+                ParentCapabilityId = PlanDetailCapabilityId,
+                RequiredPermissions = [ErpPermissions.ManufacturingPlansRead, ErpPermissions.ManufacturingPlansReorder],
+                ImplementationAvailable = true,
+            },
             planList,
+            scrapPriceList,
+            // URT-S13: the month's price entry is a control of the scrap price screen, on its own write permission.
+            scrapPriceList with
+            {
+                CapabilityId = ScrapPriceRecordCapabilityId,
+                ParentCapabilityId = ScrapPriceListCapabilityId,
+                RequiredPermissions =
+                [
+                    ErpPermissions.ManufacturingScrapPricesRead,
+                    ErpPermissions.ManufacturingScrapPricesWrite,
+                ],
+            },
         ];
     }
 }

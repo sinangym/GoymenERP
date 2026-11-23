@@ -33,4 +33,27 @@ public sealed class TaxRateListCatalogTests
         Assert.Equal(5, ApprovedTaxRateListCatalog.InForce(versions, TaxRateListKindsV1.WithholdingRatio, day)!.ListVersion);
         Assert.Null(ApprovedTaxRateListCatalog.InForce(versions, TaxRateListKindsV1.WithholdingRatio, day.AddDays(-1)));
     }
+
+    [Fact]
+    public void The_scheduled_versions_are_the_later_dates_of_their_kind_one_highest_version_per_date_in_date_order()
+    {
+        var day = new DateOnly(2026, 11, 15);
+        IReadOnlyList<TaxRateListVersionDataV1> versions =
+        [
+            new(TaxRateListKindsV1.VatRate, 1, day, [new("20", "SENTETIK", 20m)]),
+            new(TaxRateListKindsV1.VatRate, 2, day.AddDays(7), [new("10", "SENTETIK", 10m)]),
+            new(TaxRateListKindsV1.VatRate, 3, day.AddDays(2), [new("1", "SENTETIK", 1m)]),
+            new(TaxRateListKindsV1.VatRate, 4, day.AddDays(2), [new("18", "SENTETIK", 18m)]),
+            new(TaxRateListKindsV1.VatRate, 5, day.AddDays(2), [new("8", "SENTETIK", 8m)], IsWithdrawn: true),
+            new(TaxRateListKindsV1.WithholdingRatio, 6, day.AddDays(3), [new("5/10", "SENTETIK", 50m)]),
+        ];
+
+        Assert.Equal([4L, 2L], ApprovedTaxRateListCatalog.Scheduled(versions, TaxRateListKindsV1.VatRate, day)
+            .Select(version => version.ListVersion));
+        Assert.Equal([6L], ApprovedTaxRateListCatalog.Scheduled(versions, TaxRateListKindsV1.WithholdingRatio, day)
+            .Select(version => version.ListVersion));
+        Assert.Empty(ApprovedTaxRateListCatalog.Scheduled(versions, TaxRateListKindsV1.VatRate, day.AddDays(7)));
+        Assert.Empty(ApprovedTaxRateListCatalog.Scheduled(ApprovedTaxRateListCatalog.For(ApprovedUnitProfileCatalog.GdcCompanyId),
+            TaxRateListKindsV1.WithholdingRatio, day));
+    }
 }

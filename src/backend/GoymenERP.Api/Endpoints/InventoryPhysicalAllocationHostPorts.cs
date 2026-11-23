@@ -1,7 +1,9 @@
 using System.Text.Json.Serialization;
+using GoymenERP.BuildingBlocks.Concurrency;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Sales.Application.Contracts;
 
 namespace GoymenERP.Api.Endpoints;
@@ -9,6 +11,10 @@ namespace GoymenERP.Api.Endpoints;
 /// <summary>
 /// The public create shape. Product identity and version are intentionally absent: the host obtains
 /// both from the approved Sales line and never accepts those authoritative facts from the caller.
+/// <see cref="IsSubstitute"/> (KLN-D39, STK-S30) confirms a suggested label of another, similar product ("muadil");
+/// the server re-verifies the similarity within the Settings tolerance and refuses it otherwise. Absent means false.
+/// <see cref="PieceCount"/> (KLN-D119, SAT-D434; AK-4b) is the number of pieces reserved with the kilograms: required when
+/// the label's free stock tracks pieces and refused on a kg-only label; the stock owner decides, never the caller.
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CreateInventoryPhysicalAllocationRequestV1(
@@ -19,13 +25,17 @@ public sealed record CreateInventoryPhysicalAllocationRequestV1(
     [property: JsonRequired] string ExpectedLabelVersion,
     [property: JsonRequired] string QuantityKg,
     [property: JsonRequired] string Reason,
-    DateTimeOffset? ReservedUntilUtc);
+    DateTimeOffset? ReservedUntilUtc,
+    bool? IsSubstitute = null,
+    int? PieceCount = null);
 
 /// <summary>
 /// INV-AL-1 change request. The Sales order/line name the demand the allocation already serves; the host re-reads
 /// that line through the Sales owner port (it must still be approved) and supplies its product identity and version.
 /// <see cref="TargetLabelId"/> equal to the allocation's own label changes the kilograms in place (no
 /// <see cref="NewAllocationId"/>); another label of the same product moves the reservation (a new allocation id).
+/// <see cref="PieceCount"/> (KLN-D119, AK-4b) is the pieces the allocation holds afterwards: required when the allocation
+/// (in place) or the target label's free stock (move) tracks pieces, refused otherwise.
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ChangeInventoryPhysicalAllocationRequestV1(
@@ -36,7 +46,8 @@ public sealed record ChangeInventoryPhysicalAllocationRequestV1(
     [property: JsonRequired] string ExpectedTargetLabelVersion,
     [property: JsonRequired] string QuantityKg,
     [property: JsonRequired] string Reason,
-    Guid? NewAllocationId);
+    Guid? NewAllocationId,
+    int? PieceCount = null);
 
 /// <summary>
 /// Central host boundary for the Inventory-owned writer. It performs no Inventory or Sales table read:
@@ -49,7 +60,8 @@ public sealed class InventoryPhysicalAllocationHostService(
     ICurrentUser currentUser,
     IErpAuthorityRevalidationService authority,
     ISalesOrderLineReferencePortV1 orderLines,
-    IInventoryPhysicalAllocationWriterV1 writer)
+    IInventoryPhysicalAllocationWriterV1 writer,
+    IInventoryAllocationSuggestionReaderV1 suggestions)
 {
     public async Task<InventoryPhysicalAllocationResultV1> CreateAsync(
         CreateInventoryPhysicalAllocationRequestV1 request,
@@ -61,7 +73,8 @@ public sealed class InventoryPhysicalAllocationHostService(
         if (request.AllocationId == Guid.Empty || request.SalesOrderId == Guid.Empty
             || request.SalesOrderLineId == Guid.Empty || request.LabelId == Guid.Empty
             || string.IsNullOrWhiteSpace(request.ExpectedLabelVersion)
-            || string.IsNullOrWhiteSpace(request.QuantityKg) || string.IsNullOrWhiteSpace(request.Reason))
+            || string.IsNullOrWhiteSpace(request.QuantityKg) || string.IsNullOrWhiteSpace(request.Reason)
+            || request.PieceCount is <= 0)
         {
             throw new InventoryPhysicalAllocationHostException(
                 StatusCodes.Status400BadRequest, InventoryAllocationCodesV1.ValidationFailed);
@@ -79,8 +92,47 @@ public sealed class InventoryPhysicalAllocationHostService(
             request.ExpectedLabelVersion,
             request.QuantityKg,
             request.Reason,
-            request.ReservedUntilUtc);
+            request.ReservedUntilUtc,
+            request.IsSubstitute == true,
+            request.PieceCount);
         return await writer.CreateAsync(command, Metadata(finalScope, transport), cancellationToken);
+    }
+
+    /// <summary>
+    /// KLN-D34/D39 (STK-S30): the label suggestions for one approved Sales line. The same fences as a create (fresh
+    /// authority before and after the Sales owner read; the line must still be approved), then the Inventory reader
+    /// answers for the line's own product and version, never for caller-supplied product facts. Authority is measured
+    /// once more after the read so a revocation in flight never sees the answer. <paramref name="requestedKg"/> is the
+    /// kilograms the user typed (KLN-D99): it only orders the line's own labels closest first and must be echoed back.
+    /// </summary>
+    public async Task<InventoryAllocationSuggestionsV1> SuggestAsync(
+        Guid salesOrderId,
+        Guid salesOrderLineId,
+        Kilograms? requestedKg,
+        CancellationToken cancellationToken)
+    {
+        var scope = await RequireAsync(cancellationToken);
+        if (salesOrderId == Guid.Empty || salesOrderLineId == Guid.Empty)
+        {
+            throw new InventoryPhysicalAllocationHostException(
+                StatusCodes.Status400BadRequest, InventoryAllocationCodesV1.ValidationFailed);
+        }
+
+        var (line, finalScope) = await ApprovedLineAsync(scope, salesOrderId, salesOrderLineId, cancellationToken);
+        var answer = await suggestions.ReadAsync(
+            new InventoryAllocationSuggestionQueryV1(
+                salesOrderId, salesOrderLineId, line.ProductId, line.ProductVersion, requestedKg),
+            cancellationToken);
+        await RequireStillAsync(finalScope, cancellationToken);
+        if (answer.CompanyId != finalScope.CompanyId || answer.SalesOrderId != salesOrderId
+            || answer.SalesOrderLineId != salesOrderLineId || answer.ProductId != line.ProductId
+            || !string.Equals(answer.ProductVersion, line.ProductVersion, StringComparison.Ordinal)
+            || !string.Equals(answer.RequestedKg, requestedKg?.ToString(), StringComparison.Ordinal))
+        {
+            throw new InventoryPhysicalAllocationHostException(StatusCodes.Status503ServiceUnavailable);
+        }
+
+        return answer;
     }
 
     public async Task<InventoryPhysicalAllocationResultV1> ReleaseAsync(
@@ -112,7 +164,8 @@ public sealed class InventoryPhysicalAllocationHostService(
             || request.TargetLabelId == Guid.Empty || request.NewAllocationId == Guid.Empty
             || string.IsNullOrWhiteSpace(request.ExpectedAllocationVersion)
             || string.IsNullOrWhiteSpace(request.ExpectedTargetLabelVersion)
-            || string.IsNullOrWhiteSpace(request.QuantityKg) || string.IsNullOrWhiteSpace(request.Reason))
+            || string.IsNullOrWhiteSpace(request.QuantityKg) || string.IsNullOrWhiteSpace(request.Reason)
+            || request.PieceCount is <= 0)
         {
             throw new InventoryPhysicalAllocationHostException(
                 StatusCodes.Status400BadRequest, InventoryAllocationCodesV1.ValidationFailed);
@@ -130,7 +183,8 @@ public sealed class InventoryPhysicalAllocationHostService(
             request.ExpectedTargetLabelVersion,
             request.QuantityKg,
             request.Reason,
-            request.NewAllocationId);
+            request.NewAllocationId,
+            request.PieceCount);
         return await writer.ChangeAsync(allocationId, command, Metadata(finalScope, transport), cancellationToken);
     }
 
@@ -257,11 +311,15 @@ public static class InventoryPhysicalAllocationHttpCodesV1
 {
     public static IReadOnlySet<string> Status400Codes { get; } = Set(InventoryAllocationCodesV1.ValidationFailed);
 
+    // KLN-D65: a new reservation over the Sales line's open quantity, or the Sales line lock held by the other path.
     public static IReadOnlySet<string> CreateStatus409Codes { get; } = Set(
         InventoryAllocationCodesV1.IdempotencyConflict,
         InventoryAllocationCodesV1.LabelVersionConflict,
         InventoryAllocationCodesV1.InsufficientFreeStock,
-        InventoryAllocationCodesV1.ConcurrentChange);
+        InventoryAllocationCodesV1.InsufficientFreePieces,
+        InventoryAllocationCodesV1.ConcurrentChange,
+        InventoryAllocationCodesV1.ExceedsDemandOpenQuantity,
+        SalesOrderLineSerializationLockContractV1.BusyCode);
 
     public static IReadOnlySet<string> ReleaseStatus409Codes { get; } = Set(
         InventoryAllocationCodesV1.IdempotencyConflict,
@@ -270,27 +328,43 @@ public static class InventoryPhysicalAllocationHttpCodesV1
         InventoryAllocationCodesV1.ConcurrentChange);
 
     // The Sales ownership gate (InventorySalesOwnershipGuardV1) refuses only a NEW reservation, so only create
-    // declares inventory_allocation_owner_not_company; release keeps its single invalid-reference 422.
+    // declares inventory_allocation_owner_not_company; release keeps its single invalid-reference 422. KLN-D66 (3): a
+    // kilogram comparison with the Sales order unit that has no conversion source is refused, never guessed.
+    // KLN-D39 (STK-S30): a confirmed substitute that the server does not find similar is refused with its own code.
     public static IReadOnlySet<string> CreateStatus422Codes { get; } = Set(
         InventoryAllocationCodesV1.InvalidReference,
-        InventoryAllocationCodesV1.OwnerNotCompany);
+        InventoryAllocationCodesV1.OwnerNotCompany,
+        InventoryAllocationCodesV1.UnitConversionUnavailable,
+        InventoryAllocationCodesV1.SubstituteNotSimilar,
+        // KLN-D119 (AK-4b): the piece side of a reservation on a piece-tracking (or kg-only) label.
+        InventoryAllocationCodesV1.PieceCountRequired,
+        InventoryAllocationCodesV1.PieceCountNotTracked,
+        InventoryAllocationCodesV1.PieceCountInvalid);
 
     public static IReadOnlySet<string> ReleaseStatus422Codes { get; } = Set(InventoryAllocationCodesV1.InvalidReference);
 
-    // INV-AL-1 change: stale allocation or label version, a non-active allocation, too little free stock, a race.
+    // INV-AL-1 change: stale allocation or label version, a non-active allocation, too little free stock, a race; KLN-D65
+    // growing past the Sales line's open quantity, or the Sales line lock held by the other path.
     public static IReadOnlySet<string> ChangeStatus409Codes { get; } = Set(
         InventoryAllocationCodesV1.IdempotencyConflict,
         InventoryAllocationCodesV1.AllocationVersionConflict,
         InventoryAllocationCodesV1.AllocationStateConflict,
         InventoryAllocationCodesV1.LabelVersionConflict,
         InventoryAllocationCodesV1.InsufficientFreeStock,
-        InventoryAllocationCodesV1.ConcurrentChange);
+        InventoryAllocationCodesV1.InsufficientFreePieces,
+        InventoryAllocationCodesV1.ConcurrentChange,
+        InventoryAllocationCodesV1.ExceedsDemandOpenQuantity,
+        SalesOrderLineSerializationLockContractV1.BusyCode);
 
     // A change adds a reservation part, so the Sales ownership gate applies as on create; the same label and kg is no change.
     public static IReadOnlySet<string> ChangeStatus422Codes { get; } = Set(
         InventoryAllocationCodesV1.InvalidReference,
         InventoryAllocationCodesV1.OwnerNotCompany,
-        InventoryAllocationCodesV1.ChangeUnchanged);
+        InventoryAllocationCodesV1.ChangeUnchanged,
+        InventoryAllocationCodesV1.UnitConversionUnavailable,
+        InventoryAllocationCodesV1.PieceCountRequired,
+        InventoryAllocationCodesV1.PieceCountNotTracked,
+        InventoryAllocationCodesV1.PieceCountInvalid);
 
     private static IReadOnlySet<string> Set(params string[] codes) => codes.ToHashSet(StringComparer.Ordinal);
 }

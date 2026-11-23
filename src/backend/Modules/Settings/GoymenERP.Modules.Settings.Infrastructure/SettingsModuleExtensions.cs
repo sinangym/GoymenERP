@@ -1,3 +1,4 @@
+using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Settings.Infrastructure.ExchangeRates;
 using GoymenERP.Modules.Settings.Infrastructure.Persistence;
@@ -31,6 +32,10 @@ public static class SettingsModuleExtensions
         services.Replace(ServiceDescriptor.Scoped<ISettingsManufacturingToleranceProviderV1,
             SettingsManufacturingToleranceProviderV1>());
         services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<SettingsDocumentNumberSeriesV1>();
+        services.AddScoped<ISettingsDocumentNumberSeriesV1>(sp => sp.GetRequiredService<SettingsDocumentNumberSeriesV1>());
+        services.AddScoped<ISettingsDocumentNumberSeriesAdministrationV1>(sp => sp.GetRequiredService<SettingsDocumentNumberSeriesV1>());
+        services.TryAddSingleton<ISettingsPhysicalUnitSemanticsV1, ApprovedSettingsPhysicalUnitSemanticsV1>();
         // SAT-D61…D64: the Sales policy port keeps the approved catalog for every read and adds the company's limit-group
         // store for the discount limit (SettingsSalesPolicyProviderV1 states the precedence; a contradiction fails closed).
         services.Replace(ServiceDescriptor.Scoped<ISettingsSalesPolicyProviderV1, SettingsSalesPolicyProviderV1>());
@@ -40,6 +45,17 @@ public static class SettingsModuleExtensions
         // SAT-D65…D70: the limit administration. The person directory is the host's Identity adapter; until it is
         // composed the people search and the binding write answer 503.
         services.AddScoped<ISettingsSalesDiscountLimitAdministrationV1, SettingsSalesDiscountLimitAdministration>();
+        // F-029 S4b (SAT-D5/SAT-D6): the persistent delivery tolerance and approval amount threshold administration; the
+        // policy port above reads the table once a family's compiled baseline is transferred (the catalog until then).
+        services.AddScoped<ISettingsSalesPolicyAdministrationV1, SettingsSalesPolicyAdministration>();
+        // F-029 S5/S6 (SAT-D25/D39, SAT-D102/D120): the persistent quote policy and e-Fatura scenario administration on the
+        // same administration class, and the two read ports over the table; each port keeps answering from the reviewed
+        // catalog until its family's compiled baseline is transferred (byte-identical answers, spec §4).
+        services.AddScoped<ISettingsSalesQuotePolicyAdministrationV1, SettingsSalesPolicyAdministration>();
+        services.AddScoped<ISettingsEInvoiceScenarioPolicyAdministrationV1, SettingsSalesPolicyAdministration>();
+        services.Replace(ServiceDescriptor.Scoped<ISettingsSalesQuotePolicyProviderV1, SettingsSalesQuotePolicyProviderV1>());
+        services.Replace(ServiceDescriptor.Scoped<ISettingsEInvoiceScenarioPolicyProviderV1,
+            SettingsEInvoiceScenarioPolicyProviderV1>());
         // MOD-03 tax master (SAT-D83/D133/D135/D139/D140): the administration and the line tax port Sales consumes. The product's
         // item type comes from the host's Product adapter (ISettingsProductItemTypeSourceV1); until it is composed the
         // product-based read answers 503.
@@ -48,6 +64,68 @@ public static class SettingsModuleExtensions
         // SAT-D181 (EK26): the VAT rate / withholding ratio lists a Sales line's reasoned tax change picks from (read-only; empty
         // until entered, SAT-D148; maintenance is the SAT-D146 slice).
         services.AddScoped<ISettingsTaxRateListReaderV1, SettingsTaxRateListReader>();
+        services.AddScoped<ISettingsSubcontractTaxCatalogV1, SettingsSubcontractTaxCatalogV1>();
+        // F-004 (BS-9/BS-13/BS-16/BS-17, URN-D7…D9): the unit conversion policy record, its administration and the read port
+        // Product / stock-logistics consume. No compiled value: the port refuses until a person records the first version.
+        services.AddScoped<ISettingsUnitConversionPolicyAdministrationV1, SettingsUnitConversionPolicyAdministration>();
+        services.AddScoped<ISettingsUnitConversionPolicyProviderV1, SettingsUnitConversionPolicyProviderV1>();
+        // F-029 S1/S2 (URN-D2…D5): the persistent unit profile and its administration. The prerequisite port keeps its
+        // signature (spec P2) and answers from the reviewed catalog, byte-identical, until the company's one-time baseline
+        // transfer; from then on the Settings table is its only unit profile source. F029-S3 adds money profile timelines;
+        // its provider delegates unit and period reads to the same existing provider.
+        services.Replace(ServiceDescriptor.Scoped<ISettingsPrerequisiteProvider, SettingsMoneyProfilePrerequisiteProvider>());
+        services.Replace(ServiceDescriptor.Scoped<ISettingsMoneyCandidateReaderV2, SettingsMoneyCandidateReaderV2>());
+        services.AddScoped<ISettingsUnitProfileAdministrationV1, SettingsUnitProfileAdministration>();
+        services.AddScoped<ISettingsMoneyProfileAdministrationV1, SettingsMoneyProfileAdministration>();
+        // ALS-D8/D15/D63, API-97: actual explicit publication only; no compiled or automatically seeded active tolerance.
+        services.AddScoped<SettingsPurchaseInvoiceVariancePolicy>();
+        services.AddScoped<ISettingsPurchaseInvoiceVariancePolicyProviderV1>(sp => sp.GetRequiredService<SettingsPurchaseInvoiceVariancePolicy>());
+        services.AddScoped<ISettingsPurchaseInvoiceVariancePolicyAdministrationV1>(sp => sp.GetRequiredService<SettingsPurchaseInvoiceVariancePolicy>());
+        services.AddScoped<SettingsWarehouseTransferScalePolicy>();
+        services.AddScoped<ISettingsWarehouseTransferScaleProviderV1>(sp => sp.GetRequiredService<SettingsWarehouseTransferScalePolicy>());
+        services.AddScoped<ISettingsWarehouseTransferScaleAdministrationV1>(sp => sp.GetRequiredService<SettingsWarehouseTransferScalePolicy>());
+        // F-024 (NS-01): the segregation of duties setting (may the preparer also approve?), its administration and the read
+        // port approving modules consume. No row answers the decided default: the preparer may not approve.
+        services.AddScoped<ISettingsSegregationOfDutiesPolicyAdministrationV1, SettingsSegregationOfDutiesPolicyAdministration>();
+        services.AddScoped<ISettingsSegregationOfDutiesPolicyProviderV1, SettingsSegregationOfDutiesPolicyProviderV1>();
+        // KIM-D34: the group-wide login attempt limit record, its administration and the read port the host's login rate
+        // limiter refreshes from. Nothing is seeded: until the first version the host keeps its configured starting value.
+        services.AddScoped<ISettingsLoginRateLimitAdministrationV1, SettingsLoginRateLimitAdministration>();
+        services.AddScoped<ISettingsLoginRateLimitProviderV1, SettingsLoginRateLimitProviderV1>();
+        // URT-D89 (URT-D87 the unit, URT-D91/URT-D92 the buffer): the per-work-center capacity record, its administration and
+        // the read port the Manufacturing due-date suggestion consumes. Nothing is seeded: no version is no capacity. The work
+        // center reference port is composed by the API host over the Organization owner's read (none composed: fail closed).
+        services.AddScoped<ISettingsWorkCenterCapacityAdministrationV1, SettingsWorkCenterCapacityAdministration>();
+        services.AddScoped<ISettingsWorkCenterCapacityProviderV1, SettingsWorkCenterCapacityProviderV1>();
+        // API-98/B-14 (KIM-D49, KIM-D51): the company's reference lists (expense/service types, paint colors, scrap kinds),
+        // their administration and the read port the purchasing, stock/logistics, production and finance modules consume.
+        // Nothing is seeded: every list starts empty; the operation type list is not opened.
+        services.AddScoped<ISettingsReferenceListAdministrationV1, SettingsReferenceListAdministration>();
+        services.AddScoped<ISettingsReferenceListReaderV1, SettingsReferenceListReaderV1>();
+        services.AddScoped<ISettingsCollateralTypeAdministrationV1, SettingsCollateralTypeAdministration>();
+        services.AddScoped<ISettingsCollateralTypeCatalogV1, SettingsCollateralTypeCatalogV1>();
+        // B-13 (ADR-SET-002): the company policy registry. One provider answers every read port of the registry; the number
+        // N-12 typed document numbering above joins the document owner transaction (KIM-D53/D55).
+        services.AddScoped<SettingsCompanyPolicyAdministration>();
+        services.AddScoped<ISettingsCompanyPolicyAdministrationV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyAdministration>());
+        services.AddScoped<ISettingsSalesContractDiscountLimitAdministrationV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyAdministration>());
+        services.AddScoped<ISettingsOperationalPolicyAdministrationV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyAdministration>());
+        services.AddScoped<SettingsCompanyPolicyProviderV1>();
+        services.AddScoped<ISettingsManufacturingScrapCostPolicyProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
+        services.AddScoped<ISettingsNotificationRetentionPolicyProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
+        services.AddScoped<ISettingsNotificationRetentionAutomationV1, SettingsNotificationRetentionAutomationV1>();
+        services.AddScoped<ISettingsInventoryCostProfileReaderV1, SettingsInventoryCostProfileReaderV1>();
+        services.AddScoped<ISettingsFinancePolicyProviderV1>(provider =>
+            provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
+        services.AddScoped<ISettingsManufacturingDueDateBufferProviderV1>(provider =>
+            provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
+        services.AddScoped<ISettingsSubcontractTaxDefaultProviderV1>(provider =>
+            provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
+        services.AddScoped<ISettingsFinanceCreditAccountMappingProviderV1>(provider =>
+            provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
+        services.AddScoped<ISettingsSalesContractDiscountLimitProviderV1>(provider => provider.GetRequiredService<SettingsCompanyPolicyProviderV1>());
+        services.AddScoped<ISettingsBankCsvMappingAdministrationV1, SettingsBankCsvMappingAdministration>();
+        services.AddScoped<ISettingsBankCsvMappingProviderV1, SettingsBankCsvMappingProviderV1>();
         // DEC-FIN-010 / SAT-D54/D55/D169…D172: the exchange-rate record, its administration and the rate-day read port. Both
         // official sources stay disabled unless configuration enables them explicitly (an https base address is required);
         // enabling the outbound connection in an environment is a human gate.

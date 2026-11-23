@@ -2,6 +2,7 @@ using GoymenERP.Api.Endpoints;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using Microsoft.AspNetCore.Http;
 
@@ -269,6 +270,145 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
         Assert.Null(fixture.Writer.Change);
     }
 
+    [Fact]
+    public async Task Suggestions_are_read_for_the_approved_line_product_under_fresh_authority()
+    {
+        var fixture = Fixture(Granted(), Granted(), Granted());
+
+        var answer = await fixture.Service.SuggestAsync(OrderId, LineId, null, CancellationToken.None);
+
+        Assert.Equal(new InventoryAllocationSuggestionQueryV1(OrderId, LineId, ProductId, "7"),
+            fixture.Suggestions.Query);
+        Assert.Same(fixture.Suggestions.Answer, answer);
+        Assert.Equal(3, fixture.Authority.Calls.Count);
+        Assert.All(fixture.Authority.Calls, call => Assert.Equal(
+            (ErpPermissions.InventoryPhysicalAllocationWrite, CompanyA), call));
+    }
+
+    [Fact]
+    public async Task Suggestions_with_an_empty_line_are_400_before_the_sales_read()
+    {
+        var fixture = Fixture();
+
+        var exception = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() =>
+            fixture.Service.SuggestAsync(OrderId, Guid.Empty, null, CancellationToken.None));
+
+        Assert.Equal((StatusCodes.Status400BadRequest, InventoryAllocationCodesV1.ValidationFailed),
+            (exception.Status, exception.Code));
+        Assert.Equal(0, fixture.OrderLines.Calls);
+        Assert.Null(fixture.Suggestions.Query);
+    }
+
+    [Fact]
+    public async Task Suggestions_are_withheld_when_authority_is_revoked_during_the_read()
+    {
+        var fixture = Fixture(Granted(), Granted(), PermissionScope.Denied);
+
+        var exception = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() =>
+            fixture.Service.SuggestAsync(OrderId, LineId, null, CancellationToken.None));
+
+        Assert.Equal(StatusCodes.Status403Forbidden, exception.Status);
+        Assert.NotNull(fixture.Suggestions.Query);
+    }
+
+    [Fact]
+    public async Task Suggestions_for_another_line_or_company_are_never_returned()
+    {
+        var fixture = Fixture(Granted(), Granted(), Granted());
+        fixture.Suggestions.Answer = fixture.Suggestions.Answer with { CompanyId = CompanyB };
+
+        var exception = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() =>
+            fixture.Service.SuggestAsync(OrderId, LineId, null, CancellationToken.None));
+
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, exception.Status);
+    }
+
+    [Fact]
+    public async Task The_requested_kilograms_reach_the_reader_and_must_be_echoed_back()
+    {
+        var fixture = Fixture(Granted(), Granted(), Granted());
+        var requested = Kilograms.Positive(12.5m);
+        fixture.Suggestions.Answer = fixture.Suggestions.Answer with { RequestedKg = "12.5" };
+
+        var answer = await fixture.Service.SuggestAsync(OrderId, LineId, requested, CancellationToken.None);
+
+        Assert.Equal(new InventoryAllocationSuggestionQueryV1(OrderId, LineId, ProductId, "7", requested),
+            fixture.Suggestions.Query);
+        Assert.Equal("12.5", answer.RequestedKg);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("12.4")]
+    public async Task A_suggestion_answer_for_another_requested_quantity_is_never_returned(string? echoed)
+    {
+        var fixture = Fixture(Granted(), Granted(), Granted());
+        fixture.Suggestions.Answer = fixture.Suggestions.Answer with { RequestedKg = echoed };
+
+        var exception = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() =>
+            fixture.Service.SuggestAsync(OrderId, LineId, Kilograms.Positive(12.5m), CancellationToken.None));
+
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, exception.Status);
+    }
+
+    [Fact]
+    public async Task An_answer_echoing_a_quantity_that_was_never_requested_is_never_returned()
+    {
+        var fixture = Fixture(Granted(), Granted(), Granted());
+        fixture.Suggestions.Answer = fixture.Suggestions.Answer with { RequestedKg = "1" };
+
+        var exception = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() =>
+            fixture.Service.SuggestAsync(OrderId, LineId, null, CancellationToken.None));
+
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, exception.Status);
+    }
+
+    [Fact]
+    public async Task A_confirmed_substitute_create_passes_the_flag_and_an_absent_flag_stays_false()
+    {
+        var fixture = Fixture(Granted(), Granted(), Granted(), Granted());
+
+        await fixture.Service.CreateAsync(CreateRequest() with { IsSubstitute = true }, Metadata(), CancellationToken.None);
+        Assert.True(fixture.Writer.CreateRequest!.IsSubstitute);
+        await fixture.Service.CreateAsync(CreateRequest(), Metadata(), CancellationToken.None);
+        Assert.False(fixture.Writer.CreateRequest!.IsSubstitute);
+    }
+
+    [Fact]
+    public async Task The_piece_count_of_a_create_and_a_change_reaches_the_writer_and_an_absent_one_stays_absent()
+    {
+        // KLN-D119 / SAT-D434 (AK-4b): the host only forwards the count; the stock owner decides whether the label needs it.
+        var (countedCreate, countedChange, plainCreate, plainChange) = (Fixture(), Fixture(), Fixture(), Fixture());
+        await countedCreate.Service.CreateAsync(CreateRequest() with { PieceCount = 4 }, Metadata(), CancellationToken.None);
+        await countedChange.Service.ChangeAsync(Guid.NewGuid(), ChangeRequest() with { PieceCount = 2 }, Metadata(), CancellationToken.None);
+        await plainCreate.Service.CreateAsync(CreateRequest(), Metadata(), CancellationToken.None);
+        await plainChange.Service.ChangeAsync(Guid.NewGuid(), ChangeRequest(), Metadata(), CancellationToken.None);
+
+        Assert.Equal(((int?)4, (int?)2),
+            (countedCreate.Writer.CreateRequest!.PieceCount, countedChange.Writer.Change!.Value.Request.PieceCount));
+        Assert.Equal(((int?)null, (int?)null),
+            (plainCreate.Writer.CreateRequest!.PieceCount, plainChange.Writer.Change!.Value.Request.PieceCount));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task A_piece_count_below_one_is_400_before_the_sales_read(int pieceCount)
+    {
+        var fixture = Fixture();
+
+        var create = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() =>
+            fixture.Service.CreateAsync(CreateRequest() with { PieceCount = pieceCount }, Metadata(), CancellationToken.None));
+        var change = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() => fixture.Service.ChangeAsync(
+            Guid.NewGuid(), ChangeRequest() with { PieceCount = pieceCount }, Metadata(), CancellationToken.None));
+
+        Assert.Equal((StatusCodes.Status400BadRequest, InventoryAllocationCodesV1.ValidationFailed), (create.Status, create.Code));
+        Assert.Equal((StatusCodes.Status400BadRequest, InventoryAllocationCodesV1.ValidationFailed), (change.Status, change.Code));
+        Assert.Equal(0, fixture.OrderLines.Calls);
+        Assert.Null(fixture.Writer.CreateRequest);
+        Assert.Null(fixture.Writer.Change);
+    }
+
     private static ChangeInventoryPhysicalAllocationRequestV1 ChangeRequest() => new(
         "1", OrderId, LineId, Guid.NewGuid(), "2", "3", "SENTETIK change", null);
 
@@ -284,7 +424,9 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
                     ProductId, "7", Guid.NewGuid(), "10", 0, 4), null),
         };
         var writer = new FakeWriter();
-        return new(new(company, user, authority, orderLines, writer), company, user, authority, orderLines, writer);
+        var suggestions = new FakeSuggestions();
+        return new(new(company, user, authority, orderLines, writer, suggestions), company, user, authority, orderLines,
+            writer, suggestions);
     }
 
     private static PermissionScope Granted(params string[] roles) => new(true, true,
@@ -304,7 +446,8 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
         MutableCurrentUser User,
         FakeAuthority Authority,
         FakeOrderLines OrderLines,
-        FakeWriter Writer);
+        FakeWriter Writer,
+        FakeSuggestions Suggestions);
 
     private sealed class MutableCompanyContext(Guid companyId) : ICompanyContext
     {
@@ -362,6 +505,23 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
             int pageSize,
             string? cursor,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class FakeSuggestions : IInventoryAllocationSuggestionReaderV1
+    {
+        public InventoryAllocationSuggestionQueryV1? Query { get; private set; }
+
+        public InventoryAllocationSuggestionsV1 Answer { get; set; } = new(
+            CompanyA, OrderId, LineId, ProductId, "7", InventorySimilarProductModesV1.SameProductOnly,
+            InventoryAllocationAiSuggestionStatesV1.Disabled, false, [], null);
+
+        public Task<InventoryAllocationSuggestionsV1> ReadAsync(
+            InventoryAllocationSuggestionQueryV1 query,
+            CancellationToken cancellationToken = default)
+        {
+            Query = query;
+            return Task.FromResult(Answer);
+        }
     }
 
     private sealed class FakeWriter : IInventoryPhysicalAllocationWriterV1

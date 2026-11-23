@@ -5,10 +5,12 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { decideStockCount, fetchLabelStockCounts, recordStockCount, type StockCountCommandOutcome } from './stockCountApi'
 import {
   differenceKilograms,
+  parsePieceCount,
   isCountedKilogramText,
   isReason,
   REASON_MAX_LENGTH,
   STOCK_COUNT_STATUS_TEXT,
+  STOCK_COUNT_COST_TEXT,
   stockCountRefusalText,
   type StockCountDecisionKind,
   type StockCountDecisionRequest,
@@ -22,7 +24,8 @@ import styles from './inventory.module.css'
 export interface CountableLabel {
   readonly labelId: string
   readonly labelVersion: string
-  readonly positions: readonly { readonly block: string; readonly locationId: string; readonly quantityKg: string }[]
+  /** `pieceCount` (KLN-D119): the book pieces at a position of a piece-tracking label; absent for a kg-only label. */
+  readonly positions: readonly { readonly block: string; readonly locationId: string; readonly quantityKg: string; readonly pieceCount?: number }[]
 }
 
 /** One command whose outcome is not known yet: resent only with the same key and payload. */
@@ -76,6 +79,7 @@ export function StockCountPanel({ label, companyId, namespace, routeEntry, actor
   const boundary = useAuthBoundary()
   const [attempt, setAttempt] = useState<Attempt>({ phase: 'idle' })
   const [countedKg, setCountedKg] = useState('')
+  const [countedPieces, setCountedPieces] = useState('')
   const [reason, setReason] = useState('')
   const [notes, setNotes] = useState<Readonly<Record<string, string>>>({})
   const [formError, setFormError] = useState<string | null>(null)
@@ -156,6 +160,12 @@ export function StockCountPanel({ label, companyId, namespace, routeEntry, actor
       setFormError('Sayılan miktar zorunludur: 0 veya en fazla 3 ondalıklı kg. Ondalık için virgül kullanın (örn. 97,5 veya 1,250).')
       return
     }
+    // KLN-D119 (AK-2): a piece-tracking label's count names the counted pieces; a kg-only label's never does (the writer refuses it).
+    const pieces = position.pieceCount === undefined ? undefined : parsePieceCount(countedPieces)
+    if (pieces === null) {
+      setFormError('Sayılan adet zorunludur: 0 veya pozitif tam sayı.')
+      return
+    }
     if (!isReason(cleanReason)) {
       setFormError(`Fark gerekçesi zorunludur (en fazla ${REASON_MAX_LENGTH} karakter).`)
       return
@@ -171,6 +181,7 @@ export function StockCountPanel({ label, companyId, namespace, routeEntry, actor
         countedKg: counted,
         countedAtUtc: new Date().toISOString(),
         reason: cleanReason,
+        ...(pieces === undefined ? {} : { countedPieceCount: pieces }),
       },
     })
   }
@@ -214,10 +225,15 @@ export function StockCountPanel({ label, companyId, namespace, routeEntry, actor
         : <form className={styles.form} onSubmit={submitCount} noValidate>
           <fieldset disabled={frozen}>
             <legend>Yeni sayım</legend>
-            <p>Defter: {position.quantityKg} kg · {position.block} · lokasyon <span className={styles.mono}>…{position.locationId.slice(-8)}</span></p>
+            <p>Defter: {position.quantityKg} kg{position.pieceCount === undefined ? '' : ` · ${position.pieceCount} adet`} · {position.block} · lokasyon <span className={styles.mono}>…{position.locationId.slice(-8)}</span></p>
             <div className={styles.grid}>
               <label htmlFor="stock-count-kg">Sayılan kg</label>
               <input id="stock-count-kg" inputMode="decimal" value={countedKg} onChange={(event) => setCountedKg(event.target.value)} />
+              {position.pieceCount === undefined ? null : <>
+                <label htmlFor="stock-count-pieces">Sayılan adet</label>
+                <input id="stock-count-pieces" inputMode="numeric" required aria-required="true" value={countedPieces}
+                  onChange={(event) => setCountedPieces(event.target.value)} />
+              </>}
               <label htmlFor="stock-count-reason">Fark gerekçesi</label>
               <textarea id="stock-count-reason" value={reason} maxLength={REASON_MAX_LENGTH} onChange={(event) => setReason(event.target.value)} />
             </div>
@@ -240,13 +256,14 @@ export function StockCountPanel({ label, companyId, namespace, routeEntry, actor
         <thead><tr><th>Sayım</th><th>Defter</th><th>Sayılan</th><th>Fark</th><th>Gerekçe</th><th>Durum</th></tr></thead>
         <tbody>{data.items.map((item) => <tr key={item.countId}>
           <td>{item.countedAtUtc}<br /><span className={styles.mono}>…{item.countId.slice(-8)}</span></td>
-          <td>{item.bookKg} kg<br />sürüm {item.labelVersion}</td>
-          <td>{item.countedKg} kg</td>
+          <td>{item.bookKg} kg{item.bookPieceCount === undefined ? '' : ` · ${item.bookPieceCount} adet`}<br />sürüm {item.labelVersion}</td>
+          <td>{item.countedKg} kg{item.countedPieceCount === undefined ? '' : ` · ${item.countedPieceCount} adet`}</td>
           <td>{item.differenceKg} kg</td>
           <td>{item.reason}</td>
           <td>
             <strong>{STOCK_COUNT_STATUS_TEXT[item.status]}</strong>
             {item.decision === null ? null : <><br />{item.decision.decidedAtUtc}: {item.decision.reason}</>}
+            {item.decision?.costStatus === undefined ? null : <p>{STOCK_COUNT_COST_TEXT[item.decision.costStatus]}</p>}
             {canApprove && item.status === 'PendingApproval' && mine.has(item.countId)
               ? <p>Bu sayımı siz kaydettiniz; farkı başka bir yetkili onaylar veya reddeder.</p>
               : null}

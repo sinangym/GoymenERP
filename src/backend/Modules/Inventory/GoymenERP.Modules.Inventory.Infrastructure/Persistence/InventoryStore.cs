@@ -55,7 +55,9 @@ public sealed partial class InventoryStore(
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
     InventoryKilogramScale kilogramScale,
-    TimeProvider timeProvider) : IInventoryLotStore, IInventoryLabelStore, IInventoryMovementStore, IInventoryOpeningStore,
+    TimeProvider timeProvider,
+    IInventorySubstituteProductVerifierV1? substituteVerifier = null,
+    IInventoryNegativeStockAttemptRecorderV1? negativeStockAttempts = null) : IInventoryLotStore, IInventoryLabelStore, IInventoryMovementStore, IInventoryOpeningStore,
     IInventoryPhysicalAllocationWriterV1, IInventoryLabelGenealogyWriterV1, IInventoryLabelGenealogyReaderV1,
     IInventoryLabelClassificationWriterV1
 {
@@ -195,6 +197,8 @@ public sealed partial class InventoryStore(
                 RequiredDocumentsJson = JsonSerializer.Serialize(label.RequiredDocuments.Order(StringComparer.Ordinal), Json),
                 // B-03: a Manufacturing output label is born classified; every other new label stays null (unknown).
                 Classification = label.Classification is { } classification ? (int)classification : null,
+                // STK-S9 (BS-5): only a Manufacturing usable-remnant output label is born with a production status.
+                ProductionStatus = label.ProductionStatus is { } productionStatus ? (int)productionStatus : null,
                 Version = 1,
                 CreatedAtUtc = now,
                 UpdatedAtUtc = now,
@@ -254,17 +258,13 @@ public sealed partial class InventoryStore(
         return rows.Count == 0 ? null : (await RestoreLabelsAsync(rows, cancellationToken))[labelId];
     }
 
-    public async Task<InventoryWriteOutcome> RecordMovementAsync(StockMovement movement, InventoryCommandMetadata metadata,
-        CancellationToken cancellationToken = default)
+    public Task<InventoryWriteOutcome> RecordMovementAsync(StockMovement movement, InventoryCommandMetadata metadata,
+        CancellationToken cancellationToken = default) => WithinPhysicalValidationTransactionAsync(async () =>
     {
         var outcome = await StageMovementAsync(movement, metadata, recordAudit: true, cancellationToken);
-        if (outcome == InventoryWriteOutcome.Recorded)
-        {
-            await SaveAsync(cancellationToken);
-        }
-
+        if (outcome == InventoryWriteOutcome.Recorded) await SaveAsync(cancellationToken);
         return outcome;
-    }
+    }, cancellationToken);
 
     /// <summary>
     /// Stages one movement into this context without saving it. Only an enlisted owner participant
@@ -308,6 +308,11 @@ public sealed partial class InventoryStore(
             throw Refused(scale.Code!, "Miktar şirketin onaylı kilogram profiline uymuyor.");
         }
 
+        await LockPhysicalValidationAsync(cancellationToken);
+        foreach (var position in movement.Lines.Select(line => line.Position)
+            .DistinctBy(position => (position.ProductId, position.LocationId)))
+            await ObservePhysicalCountBoundaryAsync(position.ProductId, position.LocationId, cancellationToken);
+
         var labelIds = movement.Lines.Select(line => line.Position.LabelId).Distinct().ToArray();
         var labels = await dbContext.Labels.Where(row => labelIds.Contains(row.Id)).ToListAsync(cancellationToken);
         foreach (var line in movement.Lines)
@@ -321,17 +326,33 @@ public sealed partial class InventoryStore(
         }
 
         var balanceRows = await dbContext.Balances.Where(row => labelIds.Contains(row.LabelId)).ToListAsync(cancellationToken);
+        // A second movement staged in the same unit of work (B-22c: acceptance then receipt shortage) must see the
+        // balance rows the first one added but has not saved yet; the query above only returns stored rows.
+        balanceRows.AddRange(dbContext.Balances.Local
+            .Where(row => labelIds.Contains(row.LabelId) && row.CompanyId == movement.CompanyId
+                && dbContext.Entry(row).State == EntityState.Added && !balanceRows.Contains(row))
+            .ToList());
         var labelObjects = labels.ToDictionary(row => row.Id, IdentityOnly);
         var ledger = StockLedger.FromStoredBalances(balanceRows.Select(row =>
             new StockBalance(Position(row.CompanyId, row.OwnerKind, row.OwnerId, row.CustodianKind, row.CustodianId,
-                row.LocationId, labelObjects[row.LabelId], row.Block), Kilograms.Of(row.QuantityKg))));
+                row.LocationId, labelObjects[row.LabelId], row.Block), Kilograms.Of(row.QuantityKg),
+                row.PieceCount is { } pieces ? PieceCount.Of(pieces) : null)));
 
         // The domain decides; nothing below runs for a refused movement.
-        ledger.Apply(movement);
+        try { ledger.Apply(movement); }
+        catch (InventoryRuleException exception) when (exception.Shortfall is { LineNumber: { } lineNumber }
+            && movement.Lines[lineNumber - 1].Direction == StockDirection.Out)
+        {
+            var label = labels.Single(row => row.Id == exception.Shortfall.Position.LabelId);
+            throw PhysicalStockRefusal(movement, exception.Shortfall, metadata, label.Code, exception);
+        }
+
+        await StageMovementCostsAsync(movement, metadata, cancellationToken);
 
         foreach (var position in movement.Lines.Select(line => line.Position).Distinct())
         {
             var quantity = ledger.QuantityAt(position).Value;
+            var pieceCount = ledger.PiecesAt(position)?.Value;
             var row = balanceRows.SingleOrDefault(candidate => Matches(candidate, position));
             if (row is null)
             {
@@ -348,11 +369,13 @@ public sealed partial class InventoryStore(
                     ProductId = position.ProductId,
                     Block = (int)position.Block,
                     QuantityKg = quantity,
+                    PieceCount = pieceCount,
                 });
             }
             else
             {
                 row.QuantityKg = quantity;
+                row.PieceCount = pieceCount;
             }
         }
 
@@ -412,6 +435,7 @@ public sealed partial class InventoryStore(
                 ProductId = position.ProductId,
                 Block = (int)position.Block,
                 QuantityKg = line.Quantity.Value,
+                PieceCount = line.Pieces?.Value,
             });
         }
 
@@ -897,7 +921,8 @@ public sealed partial class InventoryStore(
             row.HeatNumber, row.CoilNumber,
             prints.Where(print => print.LabelId == row.Id).OrderBy(print => print.Sequence).Select(ToPrint),
             documents.Where(document => document.LabelId == row.Id).OrderBy(document => document.Sequence).Select(ToAttachment),
-            row.Classification is null ? null : (LabelClassification)row.Classification.Value));
+            row.Classification is null ? null : (LabelClassification)row.Classification.Value,
+            row.ProductionStatus is null ? null : (LabelProductionStatus)row.ProductionStatus.Value));
     }
 
     private void AddPrints(MaterialLabel label, int fromSequence)
@@ -1094,6 +1119,11 @@ public sealed partial class InventoryStore(
             label.Classify((LabelClassification)classification);
         }
 
+        if (row.ProductionStatus is { } productionStatus)
+        {
+            label.MarkProductionStatus((LabelProductionStatus)productionStatus);
+        }
+
         return label;
     }
 
@@ -1139,21 +1169,38 @@ public sealed partial class InventoryStore(
                     : null,
                 currencyId = movement.Cost.CurrencyId,
             },
-            lines = movement.Lines.Select(line => new
-            {
-                direction = (int)line.Direction,
-                ownerKind = (int)line.Position.Owner.Kind,
-                ownerId = line.Position.Owner.Id,
-                custodianKind = (int)line.Position.Custodian.Kind,
-                custodianId = line.Position.Custodian.Id,
-                locationId = line.Position.LocationId,
-                labelId = line.Position.LabelId,
-                productId = line.Position.ProductId,
-                block = (int)line.Position.Block,
-                quantityKg = line.Quantity.ToString(),
-            }),
+            lines = movement.Lines.Select(PayloadLine),
         }, Json);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// One line of the canonical movement content. KLN-D119: the piece count joins the content only when the line carries
+    /// one, so every piece-less movement keeps exactly the hash it had before AK-2 (stored replays stay valid).
+    /// </summary>
+    private static object PayloadLine(StockMovementLine line)
+    {
+        var kilogramsOnly = new
+        {
+            direction = (int)line.Direction,
+            ownerKind = (int)line.Position.Owner.Kind,
+            ownerId = line.Position.Owner.Id,
+            custodianKind = (int)line.Position.Custodian.Kind,
+            custodianId = line.Position.Custodian.Id,
+            locationId = line.Position.LocationId,
+            labelId = line.Position.LabelId,
+            productId = line.Position.ProductId,
+            block = (int)line.Position.Block,
+            quantityKg = line.Quantity.ToString(),
+        };
+        return line.Pieces is { } pieces
+            ? new
+            {
+                kilogramsOnly.direction, kilogramsOnly.ownerKind, kilogramsOnly.ownerId, kilogramsOnly.custodianKind,
+                kilogramsOnly.custodianId, kilogramsOnly.locationId, kilogramsOnly.labelId, kilogramsOnly.productId,
+                kilogramsOnly.block, kilogramsOnly.quantityKg, pieceCount = pieces.Value,
+            }
+            : kilogramsOnly;
     }
 
     /// <summary>
@@ -1284,6 +1331,7 @@ public sealed partial class InventoryStore(
         label.ProductVersion,
         label.LotId,
         classification = label.Classification?.ToString(),
+        productionStatus = label.ProductionStatus?.ToString(),
         requiredDocuments = label.RequiredDocuments.Order(StringComparer.Ordinal),
         documentStatus = label.DocumentStatus.ToString(),
         prints = label.Prints.Count,

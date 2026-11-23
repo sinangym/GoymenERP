@@ -1,3 +1,4 @@
+using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 
@@ -52,8 +53,19 @@ public sealed record ManufacturingInventoryInputReturnPortCommandV1(
     long ExpectedParentLabelVersion,
     Guid MovementId,
     Kilograms Quantity,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    Guid? SourceIssueMovementId = null);
 
+/// <summary>
+/// URT-S16 (BS-14, URT-D43): <see cref="RemnantClassification"/> is the label classification the operator chose for a
+/// <c>UsableRemnant</c> output (Standard or SecondQuality); null means the default of
+/// <see cref="ManufacturingOutputClassMappingV1"/>. Every other output class leaves it null.
+/// URT-S21 (URT-D62): <see cref="LabelCode"/> is the output label's own code as the operator entered it (trimmed), or
+/// null when the host gives the next number of the company's Ayarlar output label format. It never carries an input
+/// label's number.
+/// AK-7 (URT-D112): <see cref="Pieces"/> is the counted output's piece count with the captured theoretical kg per piece,
+/// recorded on the Manufacturing fact; null for an uncounted output.
+/// </summary>
 public sealed record ManufacturingInventoryOutputPortCommandV1(
     Guid OrderId,
     long ExpectedOrderVersion,
@@ -65,7 +77,7 @@ public sealed record ManufacturingInventoryOutputPortCommandV1(
     string ExpectedProductVersion,
     Guid LotId,
     Guid LabelId,
-    string LabelCode,
+    string? LabelCode,
     string? HeatNumber,
     string? CoilNumber,
     IReadOnlyList<string> RequiredDocuments,
@@ -77,7 +89,10 @@ public sealed record ManufacturingInventoryOutputPortCommandV1(
     string InitialBlock,
     Guid MovementId,
     Kilograms Quantity,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    InventoryLabelClassificationV1? RemnantClassification = null,
+    PlanOutputLineReference? OutputLine = null,
+    OutputPieces? Pieces = null);
 
 public sealed record ManufacturingInventoryInputIssuePortResultV1(
     long OrderVersion,
@@ -116,7 +131,9 @@ public sealed class ManufacturingInventoryRealizationPortException(
     string code,
     string? field = null,
     long? expectedVersion = null,
-    long? currentVersion = null)
+    long? currentVersion = null,
+    ManufacturingInventoryStockShortfallV1? stockShortfall = null,
+    ManufacturingPlanAllocationShortfallV1? planAllocationShortfall = null)
     : Exception(code)
 {
     public ManufacturingApiStatus Status { get; } = status;
@@ -124,6 +141,115 @@ public sealed class ManufacturingInventoryRealizationPortException(
     public string? Field { get; } = field;
     public long? ExpectedVersion { get; } = expectedVersion;
     public long? CurrentVersion { get; } = currentVersion;
+
+    /// <summary>
+    /// SAT-D318: the refused operation and its place, present only on Inventory's physical-stock conflict and only
+    /// when Inventory named the refused input issue. Its absence changes nothing: status and code stay the reason.
+    /// </summary>
+    public ManufacturingInventoryStockShortfallV1? StockShortfall { get; } =
+        RequirePhysicalStockConflict(status, code, stockShortfall);
+
+    public ManufacturingPlanAllocationShortfallV1? PlanAllocationShortfall { get; } = planAllocationShortfall is null
+        || status == ManufacturingApiStatus.Conflict && code == InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock
+        ? planAllocationShortfall : throw new ArgumentException("Plan allocation detail belongs only to its exact conflict.", nameof(planAllocationShortfall));
+
+    private static ManufacturingInventoryStockShortfallV1? RequirePhysicalStockConflict(ManufacturingApiStatus status,
+        string code, ManufacturingInventoryStockShortfallV1? stockShortfall) =>
+        stockShortfall is null
+        || (status == ManufacturingApiStatus.Conflict
+            && string.Equals(code, InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient,
+                StringComparison.Ordinal))
+            ? stockShortfall
+            : throw new ArgumentException("A stock shortfall rides only on Inventory's physical-stock conflict.",
+                nameof(stockShortfall));
+}
+
+/// <summary>
+/// SAT-D318 (owner decision of 2026-11-13): no operation takes physical stock below zero, and a refusal says which
+/// operation it stopped and where. Inventory owns every value; Manufacturing carries the opaque kind names and the
+/// identities without interpreting them, as it does for <see cref="ManufacturingInventoryPositionSnapshotV1"/>.
+/// <para>
+/// Version 1 of this shape: a changed shape is a new type, never an edited one, and a refusal without it stays exactly
+/// as it was. <see cref="AvailableKg"/> is disclosed with the requested kg (owner answer of 2026-11-13 on Issue #66,
+/// SINAN-CEVAP (8) question 5: the message shows the kg on hand and the kg asked for together).
+/// <see cref="FreePhysicalKg"/> and <see cref="ReservedKg"/> stay in process for the later refused-attempt record; the
+/// public API does not disclose them.
+/// </para>
+/// </summary>
+public sealed record ManufacturingInventoryStockShortfallV1
+{
+    public ManufacturingInventoryStockShortfallV1(string movementKind, string sourceKind, Guid sourceId,
+        Guid? sourceLineId, Guid labelId, Guid productId, Guid? locationId, Kilograms requestedKg,
+        Kilograms availableKg, Kilograms freePhysicalKg, Kilograms? reservedKg)
+    {
+        MovementKind = RequireName(movementKind, nameof(movementKind));
+        SourceKind = RequireName(sourceKind, nameof(sourceKind));
+        SourceId = RequireIdentity(sourceId, nameof(sourceId));
+        SourceLineId = sourceLineId is { } line ? RequireIdentity(line, nameof(sourceLineId)) : null;
+        LabelId = RequireIdentity(labelId, nameof(labelId));
+        ProductId = RequireIdentity(productId, nameof(productId));
+        LocationId = locationId is { } location ? RequireIdentity(location, nameof(locationId)) : null;
+        if (requestedKg.Value <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(requestedKg), "A refused operation always asks for a positive mass.");
+        }
+
+        // Inventory computes the usable kg; Manufacturing only refuses a figure that could not be a shortfall's.
+        if (availableKg.Value >= requestedKg.Value || availableKg.Value > freePhysicalKg.Value)
+        {
+            throw new ArgumentOutOfRangeException(nameof(availableKg),
+                "The usable kg of a shortfall are less than the requested kg and never more than the free physical kg.");
+        }
+
+        RequestedKg = requestedKg;
+        AvailableKg = availableKg;
+        FreePhysicalKg = freePhysicalKg;
+        ReservedKg = reservedKg;
+    }
+
+    /// <summary>Inventory's name of the refused movement kind (for an input issue, <c>Issue</c>).</summary>
+    public string MovementKind { get; }
+
+    /// <summary>Inventory's source kind of the refused movement (for an input issue, its stable source name).</summary>
+    public string SourceKind { get; }
+
+    /// <summary>The source the refused movement answered (for an input issue, the order).</summary>
+    public Guid SourceId { get; }
+
+    /// <summary>The source line, when the movement answers one line (for an input issue, the issue fact).</summary>
+    public Guid? SourceLineId { get; }
+
+    /// <summary>The label the refused line would have taken below zero.</summary>
+    public Guid LabelId { get; }
+
+    /// <summary>The label's product.</summary>
+    public Guid ProductId { get; }
+
+    /// <summary>The stored location of that stock; absent when the label holds no stock anywhere.</summary>
+    public Guid? LocationId { get; }
+
+    /// <summary>What the refused line asked for.</summary>
+    public Kilograms RequestedKg { get; }
+
+    /// <summary>
+    /// Disclosed: the usable kg the refused line could have taken there, after other demands' active reservations;
+    /// always less than <see cref="RequestedKg"/>.
+    /// </summary>
+    public Kilograms AvailableKg { get; }
+
+    /// <summary>In process only: what the location held before the refused line.</summary>
+    public Kilograms FreePhysicalKg { get; }
+
+    /// <summary>In process only: what other demands held there, when a reservation decided the refusal.</summary>
+    public Kilograms? ReservedKg { get; }
+
+    private static string RequireName(string value, string parameterName) =>
+        !string.IsNullOrWhiteSpace(value) && value.Trim().Length == value.Length
+            ? value
+            : throw new ArgumentException("A kind name is non-blank and trimmed.", parameterName);
+
+    private static Guid RequireIdentity(Guid value, string parameterName) =>
+        value != Guid.Empty ? value : throw new ArgumentException("An identity is never empty.", parameterName);
 }
 
 /// <summary>
@@ -150,6 +276,12 @@ public interface IManufacturingPlanAllocationPortV1
     Task<T> WriteAndReleaseAsync<T>(Guid planId, ManufacturingPlanAllocationReleaseReasonV1 reason,
         Func<CancellationToken, Task<T>> write, ManufacturingCommandMetadata metadata,
         CancellationToken cancellationToken);
+
+    /// <summary>URT-D37: records changed input content only after the old generation is proven released.</summary>
+    Task<T> WriteReleasedPlanAsync<T>(Guid planId, Func<CancellationToken, Task<T>> write,
+        ManufacturingCommandMetadata metadata, CancellationToken cancellationToken) =>
+        Task.FromException<T>(new ManufacturingInventoryRealizationPortException(ManufacturingApiStatus.Unavailable,
+            ManufacturingPlanAllocationCodesV1.Incomplete));
 }
 
 /// <summary>Why a plan's remaining allocation is released.</summary>
@@ -157,6 +289,9 @@ public enum ManufacturingPlanAllocationReleaseReasonV1
 {
     PlanCancelled = 1,
     OrderClosed = 2,
+
+    /// <summary>F-009 D5 (URT-D34): the plan's order was cancelled; its allocation generation is released.</summary>
+    OrderCancelled = 3,
 }
 
 /// <summary>One allocation Inventory wrote for a plan input (Manufacturing's own copy of the identity).</summary>
@@ -180,4 +315,58 @@ public static class ManufacturingPlanAllocationCodesV1
 
     /// <summary>The planned parent label now carries another product than the plan's technical snapshot (URT-D3).</summary>
     public const string LabelIdentityChanged = "manufacturing_plan_allocation_label_identity_changed";
+}
+
+/// <summary>
+/// F-009 D3 (API-25, URT-S2): Manufacturing-owned bridge for one output correction. The implementation records the
+/// append-only output reversal and Inventory's <c>manufacturing.output-reversal</c> movement in one transaction under
+/// the order's expected version and the output label's expected version. Inventory decides, under that label fence,
+/// whether the declared mass can still leave the stock; no caller-side read is the decision source.
+/// </summary>
+public interface IManufacturingInventoryOutputCorrectionPortV1
+{
+    Task<ManufacturingInventoryOutputCorrectionPortResultV1> CorrectOutputAsync(
+        ManufacturingInventoryOutputCorrectionPortCommandV1 command,
+        ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken);
+}
+
+public sealed record ManufacturingInventoryOutputCorrectionPortCommandV1(
+    Guid OrderId,
+    long ExpectedOrderVersion,
+    Guid OutputId,
+    Guid ReversalId,
+    Guid LabelId,
+    long ExpectedLabelVersion,
+    Guid MovementId,
+    Kilograms Quantity,
+    string Reason,
+    DateTimeOffset OccurredAtUtc,
+    PieceCount? Pieces = null);
+
+public sealed record ManufacturingInventoryOutputCorrectionPortResultV1(
+    long OrderVersion,
+    long LabelVersion,
+    bool IsReplay);
+
+/// <summary>
+/// Stable Manufacturing codes of an output correction that Inventory refused under its label fence. Each one names
+/// the physical reason the declared mass can no longer be taken back; the host maps Inventory's closed reversal code
+/// set onto these and never invents a reason Inventory did not give.
+/// </summary>
+public static class ManufacturingOutputCorrectionCodesV1
+{
+    public const string ExceedsProduced = "manufacturing_output_correction_exceeds_produced";
+    public const string Shipped = "manufacturing_output_correction_shipped";
+    public const string IssuedToManufacturing = "manufacturing_output_correction_issued_to_manufacturing";
+    public const string Transferred = "manufacturing_output_correction_transferred";
+    public const string Allocated = "manufacturing_output_correction_allocated";
+    public const string Blocked = "manufacturing_output_correction_blocked";
+    public const string NotFree = "manufacturing_output_correction_not_free";
+    public const string LabelUnreadable = "manufacturing_output_correction_label_unreadable";
+
+    public static IReadOnlyList<string> All { get; } =
+    [
+        ExceedsProduced, Shipped, IssuedToManufacturing, Transferred, Allocated, Blocked, NotFree, LabelUnreadable,
+    ];
 }

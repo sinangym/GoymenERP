@@ -5,6 +5,7 @@ from collections import Counter
 import json
 import copy
 import hashlib
+import io
 import uuid
 import os
 from pathlib import Path
@@ -33,12 +34,8 @@ def make_repository(root: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source_root / relative, destination)
     shutil.copytree(source_root / "tools/relational_inventory", root / "tools/relational_inventory")
-    for relative, _, _ in VERIFIER.DEFERRED_THEORIES.values():
-        destination = root / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source_root / relative, destination)
     projects = [path for group in VERIFIER.GROUP_PROJECTS.values() for path in group]
-    projects += [f"src/backend/Other{i:02d}/Other{i:02d}.csproj" for i in range(51)]
+    projects += [f"src/backend/Other{i:02d}/Other{i:02d}.csproj" for i in range(53)]
     solution = ["<Solution>", '  <Folder Name="/tests/">']
     for path in projects:
         project = root / path
@@ -247,16 +244,16 @@ class BackendGroupVerifierTests(unittest.TestCase):
             resultHash=VERIFIER.digest([(record[0], record[2], record[3]) for record in tests]),
         )
 
-    def test_exact_seventy_two_project_solution_has_twenty_one_disjoint_testsdk_projects(self) -> None:
+    def test_exact_seventy_five_project_solution_has_twenty_two_disjoint_testsdk_projects(self) -> None:
         solution_hash, catalog_hash = VERIFIER.source_inventory(self.root)
         self.assertEqual(len(solution_hash), 64)
         self.assertEqual(len(catalog_hash), 64)
         self.assertEqual(
             [len(VERIFIER.GROUP_PROJECTS[key]) for key in ("architecture", "api", "modules")],
-            [1, 1, 19],
+            [1, 1, 20],
         )
         self.assertEqual(
-            len({p for paths in VERIFIER.GROUP_PROJECTS.values() for p in paths}), 21
+            len({p for paths in VERIFIER.GROUP_PROJECTS.values() for p in paths}), 22
         )
 
     def test_missing_extra_duplicate_and_unclassified_project_fail_closed(self) -> None:
@@ -396,11 +393,11 @@ class BackendGroupVerifierTests(unittest.TestCase):
             (artifact / f"proof-{group}.json").write_text(json.dumps(proof), encoding="utf-8")
         return directory
 
-    def test_aggregate_requires_all_workers_source_and_exact_twenty_one_project_union(self) -> None:
+    def test_aggregate_requires_all_workers_source_and_exact_twenty_two_project_union(self) -> None:
         directory = self.proof_directory()
         self.assertEqual(
             self.aggregate(directory),
-            21,
+            22,
         )
         for build, workers in (("failure", "success"), ("success", "skipped")):
             with self.subTest(build=build, workers=workers):
@@ -408,6 +405,75 @@ class BackendGroupVerifierTests(unittest.TestCase):
                     self.aggregate(directory, build=build, workers=workers)
         with self.assertRaisesRegex(RuntimeError, "does not match"):
             self.aggregate(directory, head="f" * 40)
+
+    def test_complete_large_modules_proof_survives_producer_and_consumer_without_losing_cases(self) -> None:
+        directory = self.proof_directory()
+        path = directory / "ci-backend-test-group-proof-modules" / "proof-modules.json"
+        path.unlink()
+        project = VERIFIER.GROUP_PROJECTS["modules"][0]
+        names = [f"{Path(project).stem}.VolumeTests.Case_{index:05d}_{'x' * 100}"
+                 for index in range(7000)]
+        path = self.produce_group("modules", directory, project, names, names)
+        self.assertGreater(path.stat().st_size, 2 * 1024 * 1024)
+        self.assertLessEqual(path.stat().st_size, VERIFIER.MAX_PROOF_BYTES)
+        self.assertEqual(self.aggregate(directory), len(names) + 21)
+        proof = json.loads(path.read_bytes())
+        self.assertEqual(len(proof["projects"][0]["testCases"]), len(names))
+        # A large proof still has to satisfy the same exact head and count gates.
+        with self.assertRaisesRegex(RuntimeError, "does not match"):
+            self.aggregate(directory, head="f" * 40)
+        proof["projects"][0]["testCases"].pop()
+        path.write_text(json.dumps(proof), encoding="utf-8")
+        with self.assertRaises(RuntimeError):
+            self.aggregate(directory)
+
+    def test_producer_checks_inclusive_byte_budget_before_publishing_any_proof(self) -> None:
+        project = VERIFIER.GROUP_PROJECTS["api"][0]
+        name = Path(project).stem + ".ExampleTests.Runs"
+        with mock.patch.object(VERIFIER.time, "monotonic_ns", return_value=0):
+            path = self.produce_group("api", self.root / "measured", project, [name], [name])
+            expected = path.read_bytes()
+            size = len(expected)
+            with mock.patch.object(VERIFIER, "MAX_PROOF_BYTES", size):
+                boundary = self.produce_group("api", self.root / "boundary", project, [name], [name])
+                self.assertEqual(boundary.read_bytes(), expected)
+            directory = self.root / "oversized"
+            rejected = directory / "ci-backend-test-group-proof-api" / "proof-api.json"
+            with mock.patch.object(VERIFIER, "MAX_PROOF_BYTES", size - 1):
+                with self.assertRaisesRegex(RuntimeError, rf"api is oversized.*{size} bytes; limit {size - 1}"):
+                    self.produce_group("api", directory, project, [name], [name])
+            self.assertFalse(rejected.exists())
+            self.assertFalse(rejected.with_suffix(".tmp").exists())
+
+    def test_consumer_checks_byte_boundary_and_bounds_a_file_that_grows_after_stat(self) -> None:
+        directory = self.proof_directory()
+        path = directory / "ci-backend-test-group-proof-modules" / "proof-modules.json"
+        original = path.read_bytes()
+        limit = VERIFIER.MAX_PROOF_BYTES
+        path.write_bytes(original + b" " * (limit - len(original)))
+        self.assertEqual(self.aggregate(directory), 22)
+        with path.open("ab") as output:
+            output.write(b" ")
+        with self.assertRaisesRegex(RuntimeError, rf"modules is oversized.*{limit + 1} bytes; limit {limit}"):
+            self.aggregate(directory)
+        path.write_bytes(original)
+        real_open = Path.open
+        read_sizes = []
+
+        class GrowingProof(io.BytesIO):
+            def read(self, size: int = -1) -> bytes:
+                read_sizes.append(size)
+                return super().read(size)
+
+        def open_file(current: Path, *args, **kwargs):
+            if current == path and args == ("rb",):
+                return GrowingProof(original + b" " * limit)
+            return real_open(current, *args, **kwargs)
+
+        with mock.patch.object(Path, "open", new=open_file):
+            with self.assertRaisesRegex(RuntimeError, rf"modules is oversized.*limit {limit}"):
+                self.aggregate(directory)
+        self.assertEqual(read_sizes, [limit + 1])
 
     def test_aggregate_rejects_missing_unknown_duplicate_json_and_bad_count(self) -> None:
         directory = self.proof_directory()
@@ -699,7 +765,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         path = directory / "ci-backend-test-group-proof-api" / "proof-api.json"
         path.unlink()
         path = self.produce_group("api", directory, project, [name], [name])
-        self.assertEqual(self.aggregate(directory), 21)
+        self.assertEqual(self.aggregate(directory), 22)
         proof = json.loads(path.read_text(encoding="utf-8"))
         row = proof["projects"][0]
         row["testCases"][0][2:4] = [0, 1]
@@ -715,7 +781,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         path = directory / "ci-backend-test-group-proof-api" / "proof-api.json"
         path.unlink()
         path = self.produce_group("api", directory, project, [name], [name], skipped=True)
-        self.assertEqual(self.aggregate(directory), 21)
+        self.assertEqual(self.aggregate(directory), 22)
         original = path.read_text(encoding="utf-8")
         for foreign in (name + "Unknown", "GoymenERP.Api.IntegrationTests.OrdinaryTests.Required"):
             with self.subTest(foreign=foreign):
@@ -767,7 +833,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         path = directory / "ci-backend-test-group-proof-modules" / "proof-modules.json"
         path.unlink()
         path = self.produce_group("modules", directory, project, expected, expected)
-        self.assertEqual(self.aggregate(directory), 24)
+        self.assertEqual(self.aggregate(directory), 25)
         original = path.read_text(encoding="utf-8")
         for count in (3, 5):
             with self.subTest(aggregate_count=count):
@@ -802,7 +868,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
                 directory = self.proof_directory(f"exact-{number}")
                 (directory / "ci-backend-test-group-proof-architecture/proof-architecture.json").unlink()
                 self.produce_group("architecture", directory, project, expected, expected)
-                self.assertEqual(self.aggregate(directory), 21)
+                self.assertEqual(self.aggregate(directory), 22)
 
     def test_structured_discovery_requires_one_complete_native_stream(self) -> None:
         project = VERIFIER.GROUP_PROJECTS["architecture"][0]
@@ -955,7 +1021,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         path = directory / "ci-backend-test-group-proof-architecture/proof-architecture.json"
         path.unlink()
         self.produce_group("architecture", directory, project, [name], [name])
-        self.assertEqual(self.aggregate(directory), 21)
+        self.assertEqual(self.aggregate(directory), 22)
         original = json.loads(path.read_text())
         for field in ("assemblyPath", "executorUri"):
             for replacement in (None, "/foreign/Other.dll"):
@@ -992,11 +1058,34 @@ class BackendGroupVerifierTests(unittest.TestCase):
                                             expected_case_ids={name: [identity]})
 
     def test_reviewed_deferred_case_identities_and_source_are_exact_at_both_gates(self) -> None:
-        self.assertEqual(len(VERIFIER.DEFERRED_THEORIES), 2)
-        for number, (name, (relative, _, cases)) in enumerate(VERIFIER.DEFERRED_THEORIES.items()):
-            project = next(path for path in VERIFIER.GROUP_PROJECTS["modules"]
-                           if name.startswith(Path(path).stem + "."))
-            expected = list(cases)
+        self.assertEqual(VERIFIER.DEFERRED_THEORIES, {})
+        project = next(path for path in VERIFIER.GROUP_PROJECTS["modules"]
+                       if Path(path).stem == "GoymenERP.Manufacturing.UnitTests")
+        name = Path(project).stem + ".DeferredFixtureTests.Four_reviewed_cases"
+        relative = (Path(project).parent / "DeferredFixtureTests.cs").as_posix()
+        source = self.root / relative
+        source.write_bytes(b"""using Xunit;
+namespace GoymenERP.Manufacturing.UnitTests;
+public sealed class DeferredFixtureTests
+{
+    public static object[][] Cases =>
+        [[new DeferredValue(1)], [new DeferredValue(2)], [new DeferredValue(3)], [new DeferredValue(4)]];
+    [Theory]
+    [MemberData(nameof(Cases))]
+    public void Four_reviewed_cases(DeferredValue value) => Assert.InRange(value.Number, 1, 4);
+    public sealed record DeferredValue(int Number);
+}
+""")
+        fingerprint = hashlib.sha256(source.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+        cases = (
+            name + "(value: DeferredValue { Number = 1 })",
+            name + "(value: DeferredValue { Number = 2 })",
+            name + "(value: DeferredValue { Number = 3 })",
+            name + "(value: DeferredValue { Number = 4 })",
+        )
+        expected = list(cases)
+        # Only this synthetic fixture needs the deferred path; production has no exception.
+        with mock.patch.object(VERIFIER, "DEFERRED_THEORIES", {name: (relative, fingerprint, cases)}):
             mutations = {
                 "missing": expected[:-1], "surplus": expected + [expected[0]],
                 "duplicate": expected[:-1] + [expected[0]],
@@ -1004,13 +1093,13 @@ class BackendGroupVerifierTests(unittest.TestCase):
             }
             for label, rows in mutations.items():
                 with self.subTest(theory=name, producer=label), self.assertRaises(RuntimeError):
-                    self.produce_group("modules", self.root / f"deferred-{number}-{label}",
+                    self.produce_group("modules", self.root / f"deferred-{label}",
                                        project, [name], rows)
-            directory = self.proof_directory(f"deferred-{number}")
+            directory = self.proof_directory("deferred")
             path = directory / "ci-backend-test-group-proof-modules" / "proof-modules.json"
             path.unlink()
             path = self.produce_group("modules", directory, project, [name], expected)
-            self.assertEqual(self.aggregate(directory), 20 + len(expected))
+            self.assertEqual(self.aggregate(directory), 21 + len(expected))
             original = path.read_text(encoding="utf-8")
             for label, rows in mutations.items():
                 with self.subTest(theory=name, aggregate=label):
@@ -1023,14 +1112,21 @@ class BackendGroupVerifierTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, "multiplicity or identity"):
                         self.aggregate(directory)
             path.write_text(original, encoding="utf-8")
-            source = self.root / relative
             original_source = source.read_bytes()
             try:
                 source.write_bytes(original_source + b"\n// unreviewed test data change\n")
                 with self.assertRaisesRegex(RuntimeError, "Deferred theory source differs"):
+                    self.produce_group("modules", self.root / "deferred-source-change",
+                                       project, [name], expected)
+                with self.assertRaisesRegex(RuntimeError, "Deferred theory source differs"):
                     self.aggregate(directory)
             finally:
                 source.write_bytes(original_source)
+        self.assertEqual(VERIFIER.DEFERRED_THEORIES, {})
+        with self.assertRaises(RuntimeError):
+            self.produce_group("modules", self.root / "unreviewed-deferred", project, [name], expected)
+        with self.assertRaisesRegex(RuntimeError, "multiplicity or identity"):
+            self.aggregate(directory)
 
     def test_group_refuses_real_sql_connection_before_dispatch(self) -> None:
         with mock.patch.dict(

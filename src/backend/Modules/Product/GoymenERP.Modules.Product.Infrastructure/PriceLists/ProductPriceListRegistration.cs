@@ -54,6 +54,31 @@ public static class ProductPriceListRegistration
             serviceProvider.GetRequiredService<ProductItemTypeService>());
         services.AddScoped<IProductItemTypeReaderV1>(serviceProvider =>
             serviceProvider.GetRequiredService<ProductItemTypeService>());
+        // BS-9: the shared card's "Ebat/kalınlık" row and its read port for the U-08 conversion (same context).
+        services.AddScoped(CreateDimensionService);
+        services.AddScoped<IProductDimensionServiceV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<ProductDimensionService>());
+        services.AddScoped<IProductDimensionReaderV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<ProductDimensionService>());
+        // URN-D13…D16 (STK-S37R): the company's imported kg/m table (same context). The file goes to the document vault through
+        // the Product-owned port; a host adapter registered before this call wins, otherwise the fail-closed default answers
+        // "vault unavailable" and nothing is imported.
+        services.TryAddScoped<IProductProfileWeightFileVaultV1, UnavailableProductProfileWeightFileVault>();
+        services.AddScoped<IProductProfileWeightTableServiceV1>(CreateProfileWeightTableService);
+        // B-08 / BS-10 (STK-S12): the company's package standard table and its read port for Sales and Production (same context).
+        services.AddScoped(CreatePackageStandardService);
+        services.AddScoped<IProductPackageStandardServiceV2>(serviceProvider =>
+            serviceProvider.GetRequiredService<ProductPackageStandardService>());
+        services.AddScoped<IProductPackageStandardReaderV2>(serviceProvider =>
+            serviceProvider.GetRequiredService<ProductPackageStandardService>());
+        // SAT-D382 / SAT-D383 (STK-SC36-c): the approval, the customer override, the kept files and the dated read port.
+        services.AddScoped<IProductPackageStandardServiceV3>(serviceProvider =>
+            serviceProvider.GetRequiredService<ProductPackageStandardService>());
+        services.AddScoped<IProductPackageStandardReaderV3>(serviceProvider =>
+            serviceProvider.GetRequiredService<ProductPackageStandardService>());
+        services.AddScoped(CreatePaintMembershipReader);
+        services.AddScoped<IProductPaintMembershipReaderV1>(serviceProvider => serviceProvider.GetRequiredService<ProductPaintMembershipReader>());
+        services.AddScoped<IProductPaintMembershipServiceV1>(CreatePaintMembershipService);
         return services;
     }
 
@@ -99,7 +124,50 @@ public static class ProductPriceListRegistration
         serviceProvider.GetRequiredService<IAuditEventCollector>(),
         serviceProvider.GetRequiredService<TimeProvider>());
 
+    private static ProductDimensionService CreateDimensionService(IServiceProvider serviceProvider) => new(
+        serviceProvider.GetRequiredService<ProductPriceListDbContext>(),
+        serviceProvider.GetRequiredService<ICompanyContext>(),
+        serviceProvider.GetRequiredService<ICurrentUser>(),
+        serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+        serviceProvider.GetRequiredService<IAuditEventCollector>(),
+        serviceProvider.GetRequiredService<TimeProvider>());
+
+    private static ProductProfileWeightTableService CreateProfileWeightTableService(IServiceProvider serviceProvider) => new(
+        serviceProvider.GetRequiredService<ProductPriceListDbContext>(),
+        serviceProvider.GetRequiredService<ICompanyContext>(),
+        serviceProvider.GetRequiredService<ICurrentUser>(),
+        serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+        serviceProvider.GetRequiredService<IAuditEventCollector>(),
+        serviceProvider.GetRequiredService<IProductProfileWeightFileVaultV1>(),
+        serviceProvider.GetRequiredService<TimeProvider>(),
+        // URN-D21: the Settings group-level file size record; absent → the decided 5 MB starting value.
+        serviceProvider.GetService<IProductProfileWeightImportLimitSourceV1>(),
+        // URN-D23: the platform's general upload bound is the ceiling of that record.
+        serviceProvider.GetService<IProductProfileWeightUploadCeilingSourceV1>());
+
+    private static ProductPackageStandardService CreatePackageStandardService(IServiceProvider serviceProvider) => new(
+        serviceProvider.GetRequiredService<ProductPriceListDbContext>(),
+        serviceProvider.GetRequiredService<ICompanyContext>(),
+        serviceProvider.GetRequiredService<ICurrentUser>(),
+        serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+        serviceProvider.GetRequiredService<IAuditEventCollector>(),
+        serviceProvider.GetRequiredService<TimeProvider>(),
+        // The Cari owner's port (a host adapter); absent → no override is stored and no customer name is shown.
+        serviceProvider.GetService<IProductPackageStandardCustomerPortV3>(),
+        // Whether the preparer may decide (NEEDS-SINAN); absent → closed.
+        serviceProvider.GetService<ProductPackageStandardApprovalOptionsV3>());
+
     private static ProductPriceReferenceReader CreateReader(IServiceProvider serviceProvider) => new(
         serviceProvider.GetRequiredService<ProductPriceListStore>(),
         serviceProvider.GetRequiredService<ICompanyContext>());
+    private static ProductPaintMembershipReader CreatePaintMembershipReader(IServiceProvider services) => new(
+        services.GetRequiredService<ProductPriceListDbContext>(), services.GetRequiredService<ICompanyContext>(),
+        services.GetRequiredService<ICurrentUser>());
+    private static ProductPaintMembershipService CreatePaintMembershipService(IServiceProvider services) => new(
+        services.GetRequiredService<ProductPriceListDbContext>(), services.GetRequiredService<ICompanyContext>(),
+        services.GetRequiredService<ICurrentUser>(), services.GetRequiredService<IErpAuthorityRevalidationService>(),
+        services.GetRequiredService<IAuditEventCollector>(), services.GetRequiredService<IAuditTransactionWriterV1>(),
+        services.GetRequiredService<IRefusedAttemptRecorderV1>(), services.GetRequiredService<TimeProvider>(),
+        services.GetRequiredService<ProductPaintMembershipReader>());
+
 }

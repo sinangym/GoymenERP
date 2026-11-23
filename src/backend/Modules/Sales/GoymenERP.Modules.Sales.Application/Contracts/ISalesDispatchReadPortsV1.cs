@@ -128,14 +128,49 @@ public interface ISalesInvoiceableShipmentReadPortV1
     /// <summary>
     /// The context company's posted shares, oldest approval first (approval time, note id, line number), at most
     /// <see cref="SalesInvoiceableShipmentQueryV1.Limit"/>; <see cref="SalesInvoiceableShipmentAnswerV1.HasMore"/> says more exist.
-    /// An optional company account narrows the read to one customer's notes.
+    /// An optional company account narrows the read to one customer's notes; optional order ids narrow it to the shares of those
+    /// Sales orders (<see cref="SalesInvoiceableShipmentQueryV1.OrderIds"/>).
     /// </summary>
     Task<SalesInvoiceableShipmentAnswerV1> ReadInvoiceableShipmentsAsync(SalesInvoiceableShipmentQueryV1 query,
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>The read's bounds: an optional customer company account and the number of shares (1 or more).</summary>
-public sealed record SalesInvoiceableShipmentQueryV1(Guid? CompanyAccountId, int Limit);
+/// <summary>
+/// The read's bounds: an optional customer company account, the number of shares (1 or more) and, optionally, the Sales orders
+/// whose shares are read.
+/// <para>
+/// <see cref="SalesInvoiceableShipmentQueryV1.OrderIds"/> (SAT-S3; an optional trailing member, so every existing caller and owner
+/// keeps compiling; the Logistics owner applies it in STK-S38): when set, the owner returns only shares whose
+/// <see cref="SalesInvoiceableShipmentV1.SalesOrderId"/> is in the list, and <see cref="SalesInvoiceableShipmentQueryV1.Limit"/>
+/// and <see cref="SalesInvoiceableShipmentAnswerV1.HasMore"/> apply to that narrowed set — so the risk read of one customer's
+/// open orders is bounded by those orders, not by the account's whole shipment history. Null reads every order (the V1
+/// behaviour). It is a pure filter on shipment facts: whether a share is invoiced is never the owner's
+/// (<see cref="SalesInvoicedStateSourceV1"/>), and a definite shipment whose note is not approved is still not a share here
+/// (SAT-D352: Sales counts it from the delivery owner's shipped total, once).
+/// </para>
+/// <para>
+/// A list holds 1 to <see cref="SalesInvoiceableShipmentQueryV1.MaximumOrderIds"/> distinct, non-empty ids
+/// (<see cref="SalesInvoiceableShipmentQueryV1.IsValidOrderIds"/>). An owner that predates the filter answers unfiltered, so the
+/// consumer always keeps only the shares of the orders it asked for and never reads an answer as narrower than its shares show.
+/// </para>
+/// </summary>
+public sealed record SalesInvoiceableShipmentQueryV1(Guid? CompanyAccountId, int Limit, IReadOnlyList<Guid>? OrderIds = null)
+{
+    /// <summary>
+    /// The most order ids one read names — the risk read's open-order bound (a technical response bound, not a business policy).
+    /// </summary>
+    public const int MaximumOrderIds = 200;
+
+    /// <summary>
+    /// Whether <paramref name="orderIds"/> is an acceptable filter: null, or 1 to <see cref="MaximumOrderIds"/> distinct,
+    /// non-empty ids.
+    /// </summary>
+    public static bool IsValidOrderIds(IReadOnlyList<Guid>? orderIds) =>
+        orderIds is null
+        || (orderIds.Count is > 0 and <= MaximumOrderIds
+            && orderIds.All(id => id != Guid.Empty)
+            && orderIds.Distinct().Count() == orderIds.Count);
+}
 
 /// <summary>The owner's answer: its outcome, the company it read under, the shares, whether more exist, and the invoiced-state source.</summary>
 public sealed record SalesInvoiceableShipmentAnswerV1(
@@ -163,4 +198,7 @@ public sealed record SalesInvoiceableShipmentV1(
     Guid SalesOrderLineId,
     Guid ProductId,
     Guid UnitId,
-    decimal Quantity);
+    decimal Quantity,
+    // AK-4 (KLN-D119, SAT-D434): a piece line's shipped physical kg — Quantity is then whole pieces (the commercial quantity);
+    // null on a kg line, whose Quantity already is kg.
+    decimal? Kilograms = null);

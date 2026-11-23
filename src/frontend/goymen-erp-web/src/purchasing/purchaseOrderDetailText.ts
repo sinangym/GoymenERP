@@ -1,3 +1,17 @@
+/**
+ * AK-5 / AK-3b (SAT-D436): why a kg price or a realization figure is not shown, in user words — one text per server code
+ * (`PURCHASE_KG_PRICE_UNAVAILABLE_CODES`). Shared by the order detail and the incoming invoice screen.
+ */
+export const PURCHASE_KG_PRICE_UNAVAILABLE_TEXT: Readonly<Record<string, string>> = {
+  TheoreticalKgUnavailable: 'Teorik kg yok',
+  WeighedKgUnavailable: 'Tartı kaydı yok',
+  ZeroKg: 'Kg sıfır',
+  AmountUnavailable: 'Tutar bilinmiyor',
+  NotAllLinesHaveKg: 'Belge düzeyi gösterilemiyor',
+  RealizationNotAvailable: 'Gerçekleşme okunamadı',
+  NotInvoiced: 'Henüz faturalanmadı',
+}
+
 export const PURCHASE_ORDER_DETAIL_TEXT = {
   eyebrow: 'P-05 · Satınalma Sipariş 360',
   heading: 'Satın alma siparişi',
@@ -7,6 +21,8 @@ export const PURCHASE_ORDER_DETAIL_TEXT = {
   draft: 'Taslak',
   cancelledStatus: 'Kalanı iptal edildi',
   orderId: 'Sipariş ID',
+  documentNumber: 'Sipariş numarası',
+  documentNumberUnavailable: 'Numara kaydı yok (eski sipariş)',
   version: 'Sürüm',
   businessDate: 'İş tarihi',
   supplierHeading: 'Tedarikçi kayıtları',
@@ -43,6 +59,27 @@ export const PURCHASE_ORDER_DETAIL_TEXT = {
   money: (amount: string, currencyCode: string) => `${amount} ${currencyCode}`,
   pricePending: 'Fiyat bekliyor: fiyatı girilmemiş satır var. Sipariş onaylanır ve mal kabulü yapılır; fiyat girilene kadar faturayla eşleşmez.',
   pricesWithheld: 'Fiyatlar bu yetkiyle gösterilmez (fiyat okuma yetkisi yok).',
+  // AK-5 (SAT-D436, SAT-D439): kg price indicator — information only, not a cost; in the order's currency per kg.
+  theoreticalKgPrice: 'Teorik kg fiyatı',
+  realKgPrice: 'Gerçek kg fiyatı',
+  kgPricePerKg: (amount: string, currencyCode: string) => `${amount} ${currencyCode}/kg`,
+  kgPriceHeading: 'Sipariş kg fiyatı (bilgi; maliyet değildir)',
+  kgPriceUnavailable: PURCHASE_KG_PRICE_UNAVAILABLE_TEXT,
+  // AK-3b (SAT-D436 TK6, TK8): the realization table — what the finalised invoices invoiced and the kg weighed for it; server texts only.
+  realizationHeading: 'Fatura gerçekleşmesi (bilgi; maliyet değildir)',
+  realizationCaption: 'Sipariş kalemlerinin fatura gerçekleşmesi',
+  realizationHint: 'Yalnız kesinleşmiş faturalar sayılır.',
+  realizationRow: 'Satır',
+  realizationDocumentRow: 'Belge toplamı',
+  invoicedQuantity: 'Faturalanan miktar',
+  invoicedAmount: 'Faturalanan tutar',
+  weighedKg: 'Tartılan kg',
+  theoreticalKg: 'Teorik kg',
+  realizationDifferenceKg: 'Fark (kg)',
+  deviationPercent: 'Sapma (%)',
+  kgValue: (value: string) => `${value} kg`,
+  percentValue: (value: string) => `%${value}`,
+  realizationPerLine: 'Satır bazında',
   linkedDocumentsHeading: 'Bağlı belgeler',
   approvalHeading: 'Sipariş onayı',
   approvalNote: 'Onay, sunucunun güncel sürüm ve yetki denetimleriyle tamamlanır.',
@@ -69,4 +106,6 @@ export const PURCHASE_ORDER_DETAIL_TEXT = {
 export const ORDER_APPROVAL_PROBLEM_TEXT: Readonly<Record<string, string>> = {
   purchasing_order_same_actor: 'Siparişi hazırlayan kişi aynı siparişi onaylayamaz; onayı başka bir yetkili vermelidir.',
   purchasing_order_maker_unknown: 'Siparişi hazırlayan bilinmiyor; görev ayrılığı doğrulanamadığından onay verilemez.',
+  // AK-3 (SAT-D437): a piece line's product has no theoretical kg per piece on its card; fail-closed until the card has one.
+  purchasing_theoretical_kilograms_missing: 'Adetli satırın ürün kartında teorik kg/adet kaynağı yok; kart tamamlanmadan sipariş onaylanamaz.',
 }

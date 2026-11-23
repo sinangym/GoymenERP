@@ -9,6 +9,7 @@ using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 
@@ -44,7 +45,9 @@ public sealed partial class SalesStore(
     SalesDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
-    TimeProvider timeProvider) : ISalesOrderDraftStore, ISalesRequestStore, ISalesQuoteStore
+    TimeProvider timeProvider,
+    ISalesSubcontractWeighingCommitReadPortV1? subcontractWeighingCommitRead = null,
+    IAuditTransactionWriterV1? officialCancellationAuditWriter = null) : ISalesOrderDraftStore, ISalesRequestStore, ISalesQuoteStore
 {
     private const string DraftEntityType = "Sales.OrderDraft";
     private const int ActorMaximumLength = 128;
@@ -213,8 +216,28 @@ public sealed partial class SalesStore(
         await SaveAsync(cancellationToken);
     }
 
-    public async Task<SalesDraftStateResult?> UpdateDraftStateAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
-        Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit, CancellationToken cancellationToken = default)
+    public Task<SalesDraftStateResult?> UpdateDraftStateAsync(SalesDraftWriteEnvelope envelope, string requestHash,
+        string commandName, Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
+        CancellationToken cancellationToken = default, SalesOrderRiskAssessment? riskWarning = null) =>
+        UpdateDraftStateCoreAsync(envelope, requestHash, commandName, draftId, mutate, audit, null, cancellationToken, riskWarning);
+
+    public Task<SalesDraftStateResult?> UpdateDraftStateWithTransactionAsync(SalesDraftWriteEnvelope envelope,
+        string requestHash, string commandName, Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate,
+        SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, int?, System.Data.IDbTransaction, CancellationToken, Task> withinTransaction,
+        CancellationToken cancellationToken = default, SalesOrderRiskAssessment? riskWarning = null)
+    {
+        ArgumentNullException.ThrowIfNull(withinTransaction);
+        if (commandName is not (SalesDraftCommands.ApproveV1 or SalesDraftCommands.RecordCustomerAcceptanceV1))
+            throw new ArgumentException("Talep bırakma yalnız revizyonun son onay/kabul adımına katılır.", nameof(commandName));
+        return UpdateDraftStateCoreAsync(envelope, requestHash, commandName, draftId, mutate, audit, withinTransaction,
+            cancellationToken, riskWarning);
+    }
+
+    private async Task<SalesDraftStateResult?> UpdateDraftStateCoreAsync(SalesDraftWriteEnvelope envelope, string requestHash,
+        string commandName, Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, int?, System.Data.IDbTransaction, CancellationToken, Task>? withinTransaction,
+        CancellationToken cancellationToken, SalesOrderRiskAssessment? riskWarning)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
@@ -224,6 +247,11 @@ public sealed partial class SalesStore(
         if (!SalesDraftCommands.IsStateCommand(commandName))
         {
             throw new ArgumentException("Yalnız onay ekseni komutları bir taslağın durumunu değiştirir.", nameof(commandName));
+        }
+
+        if (riskWarning is not null)
+        {
+            RequireRiskWarning(commandName, riskWarning);
         }
 
         if (string.IsNullOrWhiteSpace(audit.EventType) || string.IsNullOrWhiteSpace(audit.Operation) || string.IsNullOrWhiteSpace(audit.Reason))
@@ -272,8 +300,12 @@ public sealed partial class SalesStore(
         var before = new { state = draft.ApprovalState.ToString(), version = draft.Version, approval = draft.Approval, customerAcceptance = draft.CustomerAcceptance,
             customerRejection = draft.CurrentRevisionCustomerRejection };
         var rejectionsBefore = draft.CustomerRejections.Count;
+        var marginCostsBefore = draft.MarginCosts.Count;
+        var kilogramsPerUnitBefore = draft.KilogramsPerUnitSnapshots.Count;
         var versionBefore = draft.Version;
         var linesBefore = LineRevisionStates(draft);
+        var previouslyAcceptedRevision = draft.CustomerAcceptance?.Revision;
+        await using var transaction = withinTransaction is null ? null : await BeginCancellationTransactionAsync(cancellationToken);
         var now = timeProvider.GetUtcNow();
         // The domain decides: the expected version, the allowed transition and the reason bound. A
         // refusal leaves the tracked row untouched (nothing below has run) and is the caller's to answer.
@@ -290,6 +322,9 @@ public sealed partial class SalesStore(
             throw new InvalidOperationException("Onay geçişi tam olarak bir sürüm ilerletir ve taslağı değiştirmez.");
         }
 
+        if (transaction is not null)
+            await withinTransaction!(draft, previouslyAcceptedRevision, transaction.GetDbTransaction(), cancellationToken);
+
         // SAT-D211 (EK36): only an internal rejection moves lines — it reverts the rejected revision's removals.
         var reverted = RequireLineRevisionChanges(draft, linesBefore, lineRevision: null,
             revertedRevision: commandName == SalesDraftCommands.RejectV1 ? draft.Revision : null);
@@ -299,6 +334,8 @@ public sealed partial class SalesStore(
             WriteLineRevisionColumns(draft, revertedRows);
         }
 
+        AppendMarginCosts(draft, marginCostsBefore);
+        AppendKilogramsPerUnit(draft, kilogramsPerUnitBefore);
         row.ApprovalState = (int)draft.ApprovalState;
         row.SubmittedBy = draft.Approval.SubmittedBy;
         row.SubmittedAtUtc = draft.Approval.SubmittedAtUtc;
@@ -361,7 +398,9 @@ public sealed partial class SalesStore(
             JsonSerializer.Serialize(new { state = draft.ApprovalState.ToString(), version = draft.Version, approval = draft.Approval, customerAcceptance = draft.CustomerAcceptance,
                 customerRejection = draft.CurrentRevisionCustomerRejection,
                 // SAT-D211: the lines the rejection brought back / took out (omitted when none).
-                revertedLines = reverted.Count == 0 ? null : reverted }, Json),
+                revertedLines = reverted.Count == 0 ? null : reverted,
+                marginCosts = draft.MarginCosts.Skip(marginCostsBefore).ToArray(),
+                kilogramsPerUnit = draft.KilogramsPerUnitSnapshots.Skip(kilogramsPerUnitBefore).ToArray() }, Json),
             audit.Reason,
             ApprovalContextJson: null,
             AuditAiInvolvement.None,
@@ -372,7 +411,15 @@ public sealed partial class SalesStore(
             envelope.CorrelationId,
             envelope.CausationId,
             envelope.IdempotencyKey));
+        if (riskWarning is not null)
+        {
+            // F-018 / plan S1 (FNS-D27(3)): the order's limit warning, appended in the same save as the transition it warned.
+            AppendRiskWarning(envelope, companyId, commandName, draft, riskWarning, now);
+        }
+
         await SaveAsync(cancellationToken);
+        if (transaction is not null)
+            await transaction.CommitAsync(cancellationToken);
         return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
@@ -390,7 +437,7 @@ public sealed partial class SalesStore(
     {
         ArgumentNullException.ThrowIfNull(beforeWrite);
         RequireCommand(commandName);
-        if (commandName is not (SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.ApprovePriceFloorExceptionsV1
+        if (commandName is not (SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.ReviseSubcontractTaxV1 or SalesDraftCommands.ApprovePriceFloorExceptionsV1
             or SalesDraftCommands.ApproveDiscountExceptionsV1))
         {
             throw new ArgumentException("Yalnız fiyat revizyonu komutu satırların ticari alanlarını değiştirir.", nameof(commandName));
@@ -1044,10 +1091,17 @@ public sealed partial class SalesStore(
     /// on the draft as read and answers the impact to keep; the domain decides (version, state, reason) and returns the facts.
     /// The cancellation row is APPENDED beside the header's lifecycle state and version, the attempt record and the audit event
     /// (the facts and the impact) — or nothing at all. No line, revision, schedule or approval column changes (checked).
+    /// X1 (KLN-D28): with <paramref name="withinTransaction"/> the store opens one ReadCommitted transaction on its own
+    /// connection after <paramref name="beforeWrite"/>; the owners' work (the future allocations' release) runs in it, then the
+    /// mutation and the single save, then the commit. A refusal anywhere disposes the transaction (rollback): no release stays
+    /// without its cancellation and no cancellation without its release. A non-relational provider or an already open
+    /// transaction refuses before anything runs (fail-closed).
     /// </summary>
     public async Task<SalesDraftStateResult?> CancelDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         Guid draftId, Func<SalesOrderDraft, CancellationImpactSnapshot, DateTimeOffset, CancellationFacts> mutate, SalesDraftStateAudit audit,
-        Func<SalesOrderDraft, CancellationToken, Task<CancellationImpactSnapshot>> beforeWrite, CancellationToken cancellationToken = default)
+        Func<SalesOrderDraft, CancellationToken, Task<CancellationImpactSnapshot>> beforeWrite,
+        Func<SalesOrderDraft, System.Data.IDbTransaction, CancellationToken, Task>? withinTransaction = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
@@ -1103,6 +1157,12 @@ public sealed partial class SalesStore(
         var draft = (await RestoreAsync([row], cancellationToken)).Single();
         var impact = await beforeWrite(draft, cancellationToken)
             ?? throw new InvalidOperationException("İptal, kullanıcının gördüğü etki önizlemesi olmadan kaydedilmez.");
+        await using var transaction = withinTransaction is null ? null : await BeginCancellationTransactionAsync(cancellationToken);
+        if (transaction is not null)
+        {
+            await withinTransaction!(draft, transaction.GetDbTransaction(), cancellationToken);
+        }
+
         var before = new { state = draft.State.ToString(), approvalState = draft.ApprovalState.ToString(), revision = draft.Revision, version = draft.Version };
         var versionBefore = draft.Version;
         var revisionBefore = draft.Revision;
@@ -1190,7 +1250,26 @@ public sealed partial class SalesStore(
             envelope.CausationId,
             envelope.IdempotencyKey));
         await SaveAsync(cancellationToken);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
+
         return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+    }
+
+    /// <summary>
+    /// X1: the cancellation's own transaction on this context's connection — only on a relational provider and only when no
+    /// transaction is already open (the cancellation never joins a transaction it does not own).
+    /// </summary>
+    private async Task<IDbContextTransaction> BeginCancellationTransactionAsync(CancellationToken cancellationToken)
+    {
+        if (!dbContext.Database.IsRelational() || dbContext.Database.CurrentTransaction is not null)
+        {
+            throw new InvalidOperationException("İptal, sahibin aynı işlemdeki işi için kendi SQL işlemini açamıyor; hiçbir şey kaydedilmedi.");
+        }
+
+        return await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, cancellationToken);
     }
 
     /// <summary>
@@ -1981,6 +2060,8 @@ public sealed partial class SalesStore(
         }
 
         var ids = rows.Select(row => row.Id).ToArray();
+        var marginCostRows = await dbContext.DraftMarginCosts.AsNoTracking().Where(cost => ids.Contains(cost.DraftId)).ToListAsync(cancellationToken);
+        var kilogramsPerUnitRows = await dbContext.DraftLineKilogramsPerUnit.AsNoTracking().Where(item => ids.Contains(item.DraftId)).ToListAsync(cancellationToken);
         var lines = await dbContext.DraftLines.AsNoTracking().Where(line => ids.Contains(line.DraftId)).ToListAsync(cancellationToken);
         var slices = await dbContext.DraftDeliverySlices.AsNoTracking().Where(slice => ids.Contains(slice.DraftId)).ToListAsync(cancellationToken);
         var revisions = await dbContext.DraftRevisions.AsNoTracking().Where(revision => ids.Contains(revision.DraftId)).ToListAsync(cancellationToken);
@@ -2205,6 +2286,15 @@ public sealed partial class SalesStore(
                 throw new InvalidOperationException("Kayıtlı taslağın sürümü satırlarından yeniden kurulan sürümle uyuşmuyor.");
             }
 
+            foreach (var cost in marginCostRows.Where(item => item.DraftId == draft.Id).OrderBy(item => item.Revision))
+                draft.RestoreMarginCost(new SalesMarginCostSnapshot(cost.LineId, cost.Revision, cost.ProductId, cost.UnitId, cost.Quantity,
+                    cost.CurrencyId, cost.CostPerUnit, cost.UnavailableReason is { } reason ? (SalesLineMarginUnavailableReason)reason : null,
+                    cost.SourceProof, cost.RecordedAtUtc,
+                    cost.SaleRateCurrencyId is { } saleCurrency && cost.SaleExchangeRate is { } saleRate && cost.SaleRateDay is { } saleDay
+                        ? new SalesMarginSaleRate(saleCurrency, saleRate, saleDay)
+                        : null));
+            RestoreKilogramsPerUnit(draft, kilogramsPerUnitRows);
+
             drafts.Add(draft);
         }
 
@@ -2372,7 +2462,7 @@ public sealed partial class SalesStore(
     private static void RequireCommand(string commandName)
     {
         if (commandName is not (SalesDraftCommands.CreateV1 or SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1
-            or SalesDraftCommands.RejectV1 or SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.WithdrawV1
+            or SalesDraftCommands.RejectV1 or SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.ReviseSubcontractTaxV1 or SalesDraftCommands.WithdrawV1
             or SalesDraftCommands.RescheduleDeliveryV1 or SalesDraftCommands.CancelV1 or SalesDraftCommands.ForceCloseV1
             or SalesDraftCommands.CloseV1
             or SalesDraftCommands.ApproveOverDeliveryV1 or SalesDraftCommands.CloseLineV1 or SalesDraftCommands.RecordSourcePlanV1

@@ -110,6 +110,7 @@ vi.mock('@tanstack/react-query', () => ({
   }),
 }))
 
+vi.mock('./AllocationLinkPanel', () => ({ AllocationLinkPanel: () => null }))
 vi.mock('./api', () => ({ fetchPurchaseOrder: vi.fn() }))
 
 vi.mock('./approvalApi', () => ({
@@ -691,6 +692,40 @@ describe('PurchaseOrderDetailPage remainder cancellation (A1-3, plan API-10/UI-0
     expect(screen.getByTestId('purchase-order-status-facts').textContent).toContain('TRY')
   })
 
+  it('AK-5: draws the server’s theoretical and real kg price per kg in the order currency, with the reasons in words', () => {
+    // Golden K10: 9 000,00 TL over 500,000 kg theoretical → 18,00 TL/kg; the real price is not wired yet.
+    const kgPrice = { theoreticalKgPrice: '18.00', theoreticalUnavailable: null, realKgPrice: null, realUnavailable: 'RealizationNotAvailable' } as const
+    scenario.status = 'Approved'
+    scenario.cancellation = null
+    scenario.lines = [
+      { ...serverLine(), cancelled: '0', price: { unitPrice: '45', priceUnitId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', discountPercent: null, discountAmount: null, netUnitPrice: '45', lineAmount: '9000.00' }, kgPrice },
+      { ...serverLine(), lineId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', lineNo: 8, cancelled: '0', price: null,
+        kgPrice: { theoreticalKgPrice: null, theoreticalUnavailable: 'AmountUnavailable', realKgPrice: null, realUnavailable: 'RealizationNotAvailable' } as const },
+    ]
+    scenario.pricing = {
+      priceDisclosure: 'Visible', currency: { currencyId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', currencyCode: 'TRY', scale: 2 }, pricePending: true,
+      kgPrice: { theoreticalKgPrice: null, theoreticalUnavailable: 'AmountUnavailable', realKgPrice: null, realUnavailable: 'RealizationNotAvailable' },
+    }
+    renderDetail()
+    const header = within(screen.getByRole('table', { name: T.linesCaption })).getAllByRole('columnheader').map((cell) => cell.textContent)
+    expect(header.slice(-2)).toEqual([T.theoreticalKgPrice, T.realKgPrice])
+    expect(within(screen.getByTestId('purchase-order-line-7')).getAllByRole('cell').slice(-2).map((cell) => cell.textContent))
+      .toEqual(['18.00 TRY/kg', T.kgPriceUnavailable.RealizationNotAvailable])
+    expect(within(screen.getByTestId('purchase-order-line-8')).getAllByRole('cell').slice(-2).map((cell) => cell.textContent))
+      .toEqual([T.kgPriceUnavailable.AmountUnavailable, T.kgPriceUnavailable.RealizationNotAvailable])
+    expect(screen.getByTestId('purchase-order-kg-price').textContent).toContain(T.kgPriceUnavailable.AmountUnavailable)
+  })
+
+  it('AK-5: without the indicator (switch off) no kg price column or fact is drawn', () => {
+    scenario.status = 'Approved'
+    scenario.cancellation = null
+    scenario.lines = [{ ...serverLine(), cancelled: '0', price: null }]
+    scenario.pricing = { priceDisclosure: 'Visible', currency: { currencyId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', currencyCode: 'TRY', scale: 2 }, pricePending: true }
+    renderDetail()
+    expect(screen.queryByRole('columnheader', { name: T.theoreticalKgPrice })).toBeNull()
+    expect(screen.queryByTestId('purchase-order-kg-price')).toBeNull()
+  })
+
   it('A2a-1 (PRS-02): with the prices withheld no price column or amount is drawn, only the notice', () => {
     scenario.status = 'Approved'
     scenario.cancellation = null
@@ -719,5 +754,99 @@ describe('PurchaseOrderDetailPage remainder cancellation (A1-3, plan API-10/UI-0
     renderDetail()
     expect(screen.queryByTestId('purchase-order-cancellation-facts')).toBeNull()
     expect(screen.getByText(T.approved)).toBeTruthy()
+  })
+})
+
+describe('PurchaseOrderDetailPage realization table (AK-3b; SAT-D436 TK6, TK8)', () => {
+  const currency = { currencyId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', currencyCode: 'TRY', scale: 2 }
+  const price = { unitPrice: '250', priceUnitId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', discountPercent: null, discountAmount: null, netUnitPrice: '250', lineAmount: '10000.00' }
+  // Golden K02 (SENTETIK): 40 pieces, 10 000,00 invoiced; 500,16 kg weighed vs 493,8 kg theoretical.
+  const k02 = { invoicedQuantity: '40', invoicedAmount: '10000.00', weighedKg: '500.16', theoreticalKg: '493.8', differenceKg: '6.36',
+    deviationPercent: '1.29', realKgPrice: '19.99', realUnavailable: null } as const
+  const k02KgPrice = { theoreticalKgPrice: '20.25', theoreticalUnavailable: null, realKgPrice: '19.99', realUnavailable: null } as const
+  const notInvoiced = { invoicedQuantity: '0', invoicedAmount: '0.00', weighedKg: null, theoreticalKg: null, differenceKg: null,
+    deviationPercent: null, realKgPrice: null, realUnavailable: 'NotInvoiced' } as const
+  const cells = (testId: string) => within(screen.getByTestId(testId)).getAllByRole('cell').map((cell) => cell.textContent)
+
+  it('draws the K02 line and document rows with the server’s figures, the order currency and the finalised-invoice hint', () => {
+    scenario.status = 'Approved'
+    scenario.cancellation = null
+    scenario.lines = [{ ...serverLine(), cancelled: '0', price, kgPrice: k02KgPrice, realization: k02 }]
+    scenario.pricing = { priceDisclosure: 'Visible', currency, pricePending: false, kgPrice: k02KgPrice, realization: { ...k02, invoicedQuantity: null } }
+    renderDetail()
+    const block = screen.getByTestId('purchase-order-realization')
+    expect(block.textContent).toContain(T.realizationHint)
+    expect(T.realizationHint).toBe('Yalnız kesinleşmiş faturalar sayılır.')
+    const table = within(block).getByRole('table', { name: T.realizationCaption })
+    expect(within(table).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([T.realizationRow, T.invoicedQuantity,
+      T.invoicedAmount, T.weighedKg, T.theoreticalKg, T.realizationDifferenceKg, T.deviationPercent, T.realKgPrice, T.theoreticalKgPrice])
+    expect(cells('purchase-order-realization-line-7'))
+      .toEqual(['7', '40', '10000.00 TRY', '500.16 kg', '493.8 kg', '+6.36 kg', '+%1.29', '19.99 TRY/kg', '20.25 TRY/kg'])
+    expect(cells('purchase-order-realization-document'))
+      .toEqual([T.realizationDocumentRow, T.realizationPerLine, '10000.00 TRY', '500.16 kg', '493.8 kg', '+6.36 kg', '+%1.29', '19.99 TRY/kg', '20.25 TRY/kg'])
+  })
+
+  it('names "Henüz faturalanmadı" for every figure nothing-invoiced leaves empty, keeping the true zeros', () => {
+    const kgPrice = { ...k02KgPrice, realKgPrice: null, realUnavailable: 'NotInvoiced' } as const
+    scenario.status = 'Approved'
+    scenario.cancellation = null
+    scenario.lines = [{ ...serverLine(), cancelled: '0', price, kgPrice, realization: notInvoiced }]
+    scenario.pricing = { priceDisclosure: 'Visible', currency, pricePending: false, kgPrice, realization: { ...notInvoiced, invoicedQuantity: null } }
+    renderDetail()
+    const none = T.kgPriceUnavailable.NotInvoiced
+    expect(none).toBe('Henüz faturalanmadı')
+    expect(cells('purchase-order-realization-line-7')).toEqual(['7', '0', '0.00 TRY', none, none, none, none, none, '20.25 TRY/kg'])
+    expect(cells('purchase-order-realization-document').slice(1)).toEqual([T.realizationPerLine, '0.00 TRY', none, none, none, none, none, '20.25 TRY/kg'])
+    // The lines table shows the same reason for the real kg price.
+    expect(within(screen.getByTestId('purchase-order-line-7')).getAllByRole('cell').slice(-1)[0].textContent).toBe(none)
+  })
+
+  it('shows each missing figure’s own reason and a negative difference as sent', () => {
+    scenario.status = 'Approved'
+    scenario.cancellation = null
+    scenario.lines = [
+      { ...serverLine(), cancelled: '0', price, kgPrice: { ...k02KgPrice, realKgPrice: null, realUnavailable: 'WeighedKgUnavailable' },
+        realization: { ...k02, weighedKg: null, differenceKg: null, deviationPercent: null, realKgPrice: null, realUnavailable: 'WeighedKgUnavailable' } },
+      { ...serverLine(), lineId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', lineNo: 8, cancelled: '0', price,
+        kgPrice: { theoreticalKgPrice: null, theoreticalUnavailable: 'TheoreticalKgUnavailable', realKgPrice: '21.32', realUnavailable: null },
+        realization: { ...k02, invoicedAmount: null, weighedKg: '469.11', theoreticalKg: null, differenceKg: '-24.69', deviationPercent: '-5.00', realKgPrice: '21.32' } },
+    ]
+    scenario.pricing = { priceDisclosure: 'Visible', currency, pricePending: false,
+      realization: { ...k02, invoicedQuantity: null, realKgPrice: null, realUnavailable: 'NotAllLinesHaveKg' } }
+    renderDetail()
+    expect(cells('purchase-order-realization-line-7')).toEqual(['7', '40', '10000.00 TRY', T.kgPriceUnavailable.WeighedKgUnavailable, '493.8 kg',
+      T.noDiscount, T.noDiscount, T.kgPriceUnavailable.WeighedKgUnavailable, '20.25 TRY/kg'])
+    expect(cells('purchase-order-realization-line-8')).toEqual(['8', '40', T.kgPriceUnavailable.AmountUnavailable, '469.11 kg',
+      T.kgPriceUnavailable.TheoreticalKgUnavailable, '-24.69 kg', '-%5.00', '21.32 TRY/kg', T.kgPriceUnavailable.TheoreticalKgUnavailable])
+    // The document row has no kg price indicator in this answer: a dash, never a figure.
+    expect(cells('purchase-order-realization-document').slice(-2)).toEqual([T.kgPriceUnavailable.NotAllLinesHaveKg, T.noDiscount])
+    expect([T.kgPriceUnavailable.WeighedKgUnavailable, T.kgPriceUnavailable.NotAllLinesHaveKg, T.kgPriceUnavailable.RealizationNotAvailable,
+      T.kgPriceUnavailable.AmountUnavailable, T.kgPriceUnavailable.ZeroKg, T.kgPriceUnavailable.TheoreticalKgUnavailable])
+      .toEqual(['Tartı kaydı yok', 'Belge düzeyi gösterilemiyor', 'Gerçekleşme okunamadı', 'Tutar bilinmiyor', 'Kg sıfır', 'Teorik kg yok'])
+  })
+
+  it('renders nothing for an absent realization — no heading, no hint, no empty table', () => {
+    scenario.status = 'Approved'
+    scenario.cancellation = null
+    scenario.lines = [{ ...serverLine(), cancelled: '0', price, kgPrice: k02KgPrice }]
+    scenario.pricing = { priceDisclosure: 'Visible', currency, pricePending: false, kgPrice: k02KgPrice }
+    renderDetail()
+    expect(screen.queryByTestId('purchase-order-realization')).toBeNull()
+    expect(screen.queryByRole('table', { name: T.realizationCaption })).toBeNull()
+    expect(screen.queryByText(T.realizationHint)).toBeNull()
+  })
+
+  it('draws only the rows the server sent: a technical slice has none', () => {
+    scenario.status = 'Approved'
+    scenario.cancellation = null
+    scenario.lines = [
+      { ...serverLine(), cancelled: '0', price, realization: k02 },
+      { ...serverLine(), lineId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', lineNo: 8, kind: 'Technical', parentLineId: LINE, cancelled: '0', price: null },
+    ]
+    scenario.pricing = { priceDisclosure: 'Visible', currency, pricePending: false }
+    renderDetail()
+    expect(screen.getByTestId('purchase-order-realization-line-7')).toBeTruthy()
+    expect(screen.queryByTestId('purchase-order-realization-line-8')).toBeNull()
+    expect(screen.queryByTestId('purchase-order-realization-document')).toBeNull()
   })
 })

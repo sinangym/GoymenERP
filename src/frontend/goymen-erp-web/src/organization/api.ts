@@ -30,6 +30,13 @@ import {
   type WorkCenterSummary,
 } from './contract'
 import type { ViewOutcome } from '../shell/uiState'
+import { decodeWorkCenterCalendar, type WorkCenterCalendar } from './workCenterCalendarContract'
+import {
+  decodeCompanyTaxId,
+  decodeCompanyTaxIdCorrections,
+  type CompanyTaxId,
+  type CompanyTaxIdCorrections,
+} from './companyTaxIdContract'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
@@ -150,6 +157,28 @@ export async function fetchWorkCenter(
   return { type: 'ok-single', data: workCenter }
 }
 
+/**
+ * `GET /api/v1/organization/work-centers/{id}/calendar` — B-15. The work centre's current calendar, or the URT-D11
+ * default (`source: Default`, `version: 0`) while none is saved. Read on the card's own grant; a 404 is the same
+ * non-disclosing answer as the card's. An answer that is not the requested work centre's is malformed.
+ */
+export async function fetchWorkCenterCalendar(
+  companyId: string,
+  workCenterId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<WorkCenterCalendar>> {
+  const result = await read(
+    `/organization/work-centers/${encodeURIComponent(workCenterId)}/calendar`,
+    companyId,
+    signal,
+  )
+  if (typeof result === 'string') return transportOutcome(result)
+  if (!result.isOk200) return { type: 'http', status: result.status, body: result.body }
+  const calendar = decodeWorkCenterCalendar(result.body, workCenterId)
+  if (calendar === null) return { type: 'malformed' }
+  return { type: 'ok-single', data: calendar }
+}
+
 export interface LocationPageQuery {
   readonly page: number
   readonly pageSize: number
@@ -202,4 +231,38 @@ export async function fetchLocation(
   const location = decodeLocation(result.body)
   if (location === null) return { type: 'malformed' }
   return { type: 'ok-single', data: location }
+}
+
+/**
+ * `GET /api/v1/organization/company/tax-id` — ORG-05 (KIM-S23). The ACTIVE company's VKN, its version, the pending
+ * change and the last decided one. The server answers 403 unless the caller holds one of the two tax-id names; that
+ * status is passed through, never turned into an empty card. An answer about another company is malformed.
+ */
+export async function fetchCompanyTaxId(
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<CompanyTaxId>> {
+  const result = await read('/organization/company/tax-id', companyId, signal)
+  if (typeof result === 'string') return transportOutcome(result)
+  if (!result.isOk200) return { type: 'http', status: result.status, body: result.body }
+  const view = decodeCompanyTaxId(result.body, companyId)
+  if (view === null) return { type: 'malformed' }
+  return { type: 'ok-single', data: view }
+}
+
+/**
+ * `GET /api/v1/organization/company/tax-id/corrections` — KIM-D41/KIM-D48. The staged VKN corrections of the ACTIVE
+ * company (pending first). Same visibility as the VKN card: 403 is passed through. Another company's answer is
+ * malformed.
+ */
+export async function fetchCompanyTaxIdCorrections(
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<CompanyTaxIdCorrections>> {
+  const result = await read('/organization/company/tax-id/corrections', companyId, signal)
+  if (typeof result === 'string') return transportOutcome(result)
+  if (!result.isOk200) return { type: 'http', status: result.status, body: result.body }
+  const view = decodeCompanyTaxIdCorrections(result.body, companyId)
+  if (view === null) return { type: 'malformed' }
+  return { type: 'ok-single', data: view }
 }

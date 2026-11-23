@@ -23,19 +23,20 @@ namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// Üretim U1-a (API-01/02; URT-D6, D7, D9, D10) against a REAL SQL Server through the REAL host: the Manufacturing parameter
-/// profiles (the reviewed version-0 catalog as the base, prepare → approve → publish with maker ≠ approver/publisher, a work
+/// profiles (the reviewed version-0 catalog as the base, the URN-D6 prepare → publish flow with the retired approval route, a work
 /// center's own profile, effective-date selection, replay/idempotency/version conflicts, company isolation, audit, guard
 /// triggers, the rollback refusal 51183) and the tolerance registry write path (publication writes the immutable registry row
 /// the tolerance provider reads, with URT-D6's mass-balance tolerance; the window overlap refusal). Every grant is a fresh
 /// synthetic role; reasons are SENTETIK.
 /// </summary>
-public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTests
+public sealed partial class SettingsManufacturingProfileSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
     private const string Parameters = SettingsManufacturingProfileEndpoints.ParameterProfilesPath;
     private const string Tolerances = SettingsManufacturingProfileEndpoints.ToleranceProfilesPath;
     private const string MigrationName = "_AddManufacturingParameterProfiles";
+    private const string SingleFlowMigrationName = "_AdoptManufacturingProfileSingleFlow";
     private const string Paint = SettingsManufacturingProcessesV1.Paint;
 
     [SqlServerFact]
@@ -50,7 +51,7 @@ public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTes
             ManufacturingParameterProfileActionsV1.Publish);
         var outsider = await run.GrantAsync(TestUsers.NoAssignment, CompanyA, "sales.drafts.read");
         var makerB = await run.GrantAsync(TestUsers.CompanyB, CompanyB,
-            ManufacturingParameterProfileActionsV1.Read, ManufacturingParameterProfileActionsV1.Approve);
+            ManufacturingParameterProfileActionsV1.Read, ManufacturingParameterProfileActionsV1.Publish);
         using var makerClient = run.Client(maker, CompanyA);
         using var checkerClient = run.Client(checker, CompanyA);
         using var outsiderClient = run.Client(outsider, CompanyA);
@@ -131,35 +132,35 @@ public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTes
             Assert.Equal("0", (await port.Value.GetManufacturingParametersAsync(Paint, null, today)).ProfileVersion);
         }
 
-        // Maker ≠ approver; the expected state version fences; then approve and publish by the checker.
+        // URN-D6: one prepare → publish flow. The approval route answers the stored retired refusal and changes nothing;
+        // the expected state version fences; the preparer publishes the draft directly.
         var approval = $"{Parameters}/{v1.ProfileId}/approval";
         var publication = $"{Parameters}/{v1.ProfileId}/publication";
-        await run.ProblemAsync(makerClient, approval, "p-self-approve", Step("1"), HttpStatusCode.UnprocessableEntity,
-            ManufacturingProfileProblemCodesV1.MakerSeparationRequired);
-        await run.ProblemAsync(checkerClient, publication, "p-early-publish", Step("1"), HttpStatusCode.Conflict,
-            ManufacturingProfileProblemCodesV1.TransitionInvalid);
-        await run.ProblemAsync(checkerClient, approval, "p-stale-approve", Step("2"), HttpStatusCode.Conflict,
+        await run.ProblemAsync(checkerClient, approval, "p-approve-retired", Step("1"), HttpStatusCode.Conflict,
+            ManufacturingProfileProblemCodesV1.ApprovalRetired);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [settings].[ManufacturingParameterProfiles] WHERE [ProfileId] = @p AND [Status] = 'Draft' "
+            + "AND [StateVersion] = 1", ("@p", v1.ProfileId)));
+        await run.ProblemAsync(makerClient, publication, "p-stale-publish", Step("2"), HttpStatusCode.Conflict,
             ManufacturingProfileProblemCodesV1.VersionConflict);
-        Assert.Equal(("2", "Approved"), Pair(await run.ReceiptAsync(checkerClient, approval, "p-approve", Step("1"))));
-        await run.ProblemAsync(makerClient, publication, "p-self-publish", Step("2"), HttpStatusCode.UnprocessableEntity,
-            ManufacturingProfileProblemCodesV1.MakerSeparationRequired);
-        Assert.Equal(("3", "Published"), Pair(await run.ReceiptAsync(checkerClient, publication, "p-publish", Step("2"))));
-        await run.ProblemAsync(checkerClient, approval, "p-approve-again", Step("3"), HttpStatusCode.Conflict,
+        Assert.Equal(("2", "Published"), Pair(await run.ReceiptAsync(makerClient, publication, "p-publish", Step("1"))));
+        await run.ProblemAsync(checkerClient, publication, "p-publish-again", Step("2"), HttpStatusCode.Conflict,
             ManufacturingProfileProblemCodesV1.TransitionInvalid);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [settings].[ManufacturingParameterProfiles] WHERE [ProfileId] = @p AND [ApprovedBy] IS NULL "
+            + "AND [ApprovedAtUtc] IS NULL AND [ApprovalReason] IS NULL AND [PublishedBy] = [PreparedBy]", ("@p", v1.ProfileId)));
 
         // A work center's own profile wins for that line; another line keeps the process profile.
         var line = Guid.NewGuid();
         var lineDraft = await run.ReceiptAsync(makerClient, Parameters, "p-line",
             Prepare("0", Paint, line, ("lineSpeedMetresPerMinute", "18")));
         Assert.Equal("1", lineDraft.ProfileVersion);
-        await run.ReceiptAsync(checkerClient, $"{Parameters}/{lineDraft.ProfileId}/approval", "p-line-approve", Step("1"));
-        await run.ReceiptAsync(checkerClient, $"{Parameters}/{lineDraft.ProfileId}/publication", "p-line-publish", Step("2"));
+        await run.ReceiptAsync(checkerClient, $"{Parameters}/{lineDraft.ProfileId}/publication", "p-line-publish", Step("1"));
 
         // A later process version replaces v1 from its own date.
         var v2 = await run.ReceiptAsync(makerClient, Parameters, "p-v2",
             v1Body with { ExpectedVersion = "1", EffectiveFrom = today.AddDays(10), Values = [new("filmMicrons", "100")] });
-        await run.ReceiptAsync(checkerClient, $"{Parameters}/{v2.ProfileId}/approval", "p-v2-approve", Step("1"));
-        await run.ReceiptAsync(checkerClient, $"{Parameters}/{v2.ProfileId}/publication", "p-v2-publish", Step("2"));
+        await run.ReceiptAsync(checkerClient, $"{Parameters}/{v2.ProfileId}/publication", "p-v2-publish", Step("1"));
 
         await using (var port = run.ParameterPort(CompanyA))
         {
@@ -181,14 +182,14 @@ public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTes
         Assert.All(listB.GetProperty("profiles").EnumerateArray(), profile =>
             Assert.Equal("Catalog", profile.GetProperty("source").GetString()));
         Assert.Equal(HttpStatusCode.NotFound, (await clientB.GetAsync($"{Parameters}/{v1.ProfileId}")).StatusCode);
-        using (var foreign = await clientB.SendAsync(Json(HttpMethod.Post, $"{Parameters}/{v2.ProfileId}/approval", "p-foreign",
-                   Step("3"))))
+        using (var foreign = await clientB.SendAsync(Json(HttpMethod.Post, $"{Parameters}/{v2.ProfileId}/publication", "p-foreign",
+                   Step("2"))))
         {
             Assert.Equal(HttpStatusCode.NotFound, foreign.StatusCode);
         }
 
         var detail = await run.JsonAsync(makerClient, $"{Parameters}/{v1.ProfileId}");
-        Assert.Equal(("Published", "3", "90"), (detail.GetProperty("status").GetString(), detail.GetProperty("stateVersion").GetString(),
+        Assert.Equal(("Published", "2", "90"), (detail.GetProperty("status").GetString(), detail.GetProperty("stateVersion").GetString(),
             detail.GetProperty("values").EnumerateArray().Single(value => value.GetProperty("key").GetString() == "filmMicrons")
                 .GetProperty("value").GetString()));
 
@@ -249,12 +250,18 @@ public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTes
         await run.ProblemAsync(makerClient, Tolerances, "t-bad", ToleranceBody("0", slitting, "101", "2", today, null),
             HttpStatusCode.BadRequest, ManufacturingProfileProblemCodesV1.RequestInvalid);
         var v1 = await run.ReceiptAsync(makerClient, Tolerances, "t-v1", ToleranceBody("0", slitting, "5", "2", today, today.AddDays(30)));
-        await run.ProblemAsync(makerClient, $"{Tolerances}/{v1.ProfileId}/approval", "t-self", Step("1"),
+        // The permission fence comes first (no publish name: 403); the retired approval route stores its refusal.
+        await run.ProblemAsync(makerClient, $"{Tolerances}/{v1.ProfileId}/publication", "t-self", Step("1"),
             HttpStatusCode.Forbidden, null);
-        await run.ReceiptAsync(checkerClient, $"{Tolerances}/{v1.ProfileId}/approval", "t-v1-approve", Step("1"));
-        Assert.Equal(("3", "Published"),
-            Pair(await run.ReceiptAsync(checkerClient, $"{Tolerances}/{v1.ProfileId}/publication", "t-v1-publish", Step("2"))));
-        await run.ReceiptAsync(checkerClient, $"{Tolerances}/{v1.ProfileId}/publication", "t-v1-publish", Step("2"), replayed: true);
+        await run.ProblemAsync(checkerClient, $"{Tolerances}/{v1.ProfileId}/approval", "t-v1-approve", Step("1"),
+            HttpStatusCode.Conflict, ManufacturingProfileProblemCodesV1.ApprovalRetired);
+        Assert.Equal(("2", "Published"),
+            Pair(await run.ReceiptAsync(checkerClient, $"{Tolerances}/{v1.ProfileId}/publication", "t-v1-publish", Step("1"))));
+        await run.ReceiptAsync(checkerClient, $"{Tolerances}/{v1.ProfileId}/publication", "t-v1-publish", Step("1"), replayed: true);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [settings].[ManufacturingTolerancePolicies] WHERE [ProfileId] = @p "
+            + "AND [ApprovalStatus] = 'Published' AND [ApprovedBy] = (SELECT [PublishedBy] FROM "
+            + "[settings].[ManufacturingToleranceProfileVersions] WHERE [ProfileId] = @p)", ("@p", v1.ProfileId)));
 
         await using (var port = run.TolerancePort(CompanyA))
         {
@@ -264,20 +271,18 @@ public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTes
                     profile.MassBalanceDifferenceTolerancePercent, profile.IsActive, profile.EffectiveFrom, profile.EffectiveThrough));
         }
 
-        // An overlapping successor is prepared and approved but cannot be published (the registry never changes).
+        // An overlapping successor is prepared but cannot be published (the registry never changes).
         var overlap = await run.ReceiptAsync(makerClient, Tolerances, "t-v2",
             ToleranceBody("1", slitting, "4", "1.5", today.AddDays(10), null));
-        await run.ReceiptAsync(checkerClient, $"{Tolerances}/{overlap.ProfileId}/approval", "t-v2-approve", Step("1"));
-        await run.ProblemAsync(checkerClient, $"{Tolerances}/{overlap.ProfileId}/publication", "t-v2-publish", Step("2"),
+        await run.ProblemAsync(checkerClient, $"{Tolerances}/{overlap.ProfileId}/publication", "t-v2-publish", Step("1"),
             HttpStatusCode.Conflict, ManufacturingProfileProblemCodesV1.WindowOverlap);
         var successor = await run.ReceiptAsync(makerClient, Tolerances, "t-v3",
             ToleranceBody("2", slitting, "4", "1.5", today.AddDays(31), null));
         Assert.Equal("3", successor.ProfileVersion);
-        await run.ReceiptAsync(checkerClient, $"{Tolerances}/{successor.ProfileId}/approval", "t-v3-approve", Step("1"));
-        await run.ReceiptAsync(checkerClient, $"{Tolerances}/{successor.ProfileId}/publication", "t-v3-publish", Step("2"));
+        await run.ReceiptAsync(checkerClient, $"{Tolerances}/{successor.ProfileId}/publication", "t-v3-publish", Step("1"));
         Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [settings].[ManufacturingTolerancePolicies] WHERE [CompanyId] = @c AND [Process] = 'Slitting' "
-            + "AND [ApprovalStatus] = 'Approved' AND [MassBalanceDifferenceTolerancePercent] IS NOT NULL", ("@c", CompanyA)));
+            + "AND [ApprovalStatus] = 'Published' AND [MassBalanceDifferenceTolerancePercent] IS NOT NULL", ("@c", CompanyA)));
         await using (var port = run.TolerancePort(CompanyA))
         {
             var later = await port.Value.GetManufacturingToleranceAsync(slitting, today.AddDays(40));
@@ -356,8 +361,7 @@ public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTes
         {
             var prepared = await run.ReceiptAsync(makerClient, Tolerances, $"{key}-prepare",
                 ToleranceBody(expected, slitting, fire, massBalance, from, null) with { WorkCenterId = workCenter });
-            await run.ReceiptAsync(checkerClient, $"{Tolerances}/{prepared.ProfileId}/approval", $"{key}-approve", Step("1"));
-            await run.ReceiptAsync(checkerClient, $"{Tolerances}/{prepared.ProfileId}/publication", $"{key}-publish", Step("2"));
+            await run.ReceiptAsync(checkerClient, $"{Tolerances}/{prepared.ProfileId}/publication", $"{key}-publish", Step("1"));
             return prepared;
         }
 
@@ -399,9 +403,8 @@ public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTes
         // An earlier-starting successor still overlaps (nothing is superseded backwards).
         var backwards = await run.ReceiptAsync(makerClient, Tolerances, "ls-backwards",
             ToleranceBody("3", slitting, "6", "2", today.AddDays(5), null));
-        await run.ReceiptAsync(checkerClient, $"{Tolerances}/{backwards.ProfileId}/approval", "ls-backwards-approve", Step("1"));
         await run.ProblemAsync(checkerClient, $"{Tolerances}/{backwards.ProfileId}/publication", "ls-backwards-publish",
-            Step("2"), HttpStatusCode.Conflict, ManufacturingProfileProblemCodesV1.WindowOverlap);
+            Step("1"), HttpStatusCode.Conflict, ManufacturingProfileProblemCodesV1.WindowOverlap);
 
         // The trigger admits only the window close: any other change, a second close or a reversed window is refused.
         foreach (var sql in new[]
@@ -445,6 +448,34 @@ public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTes
             "SELECT COUNT(*) FROM sys.triggers WHERE [name] IN (N'TR_ManufacturingParameterProfiles_Guard', "
             + "N'TR_ManufacturingParameterProfileValues_InsertOnly', N'TR_ManufacturingToleranceProfileVersions_Guard', "
             + "N'TR_ManufacturingTolerancePolicies_NoOverlap')"));
+    }
+
+    /// <summary>
+    /// URN-D6 forward fix: on an empty profile store the single-flow migration rolls back to the D-MFG-PROFILE-AUTH-01=A checks
+    /// (no 'Published' registry authorization, no approval-less publication) and reapplies; with a direct publication its Down
+    /// refuses first (51345, asserted by every lifecycle scenario's rollback check).
+    /// </summary>
+    [SqlServerFact]
+    public async Task Single_flow_migration_rolls_back_to_the_approval_checks_and_reapplies_on_an_empty_store_on_real_sql()
+    {
+        await using var run = await HostRun.StartAsync();
+        await using var context = run.SettingsContext(CompanyA);
+        var migrations = context.Database.GetMigrations().ToArray();
+        var index = Array.FindIndex(migrations, name => name.EndsWith(SingleFlowMigrationName, StringComparison.Ordinal));
+        Assert.True(index > 0);
+        const string registryCheck = "SELECT COUNT(*) FROM sys.check_constraints WHERE [name] = N'CK_SettingsMfgTolerance_Approval' "
+            + "AND [definition] LIKE N'%''Published''%'";
+        // The approval-era lifecycle checks keep the publisher apart from the preparer; the single-flow checks do not.
+        const string separatedPublisher = "SELECT COUNT(*) FROM sys.check_constraints WHERE [name] IN "
+            + "(N'CK_SettingsMfgParameterProfiles_Lifecycle', N'CK_SettingsMfgToleranceVersions_Lifecycle') "
+            + "AND REPLACE([definition], N' ', N'') LIKE N'%[[]PublishedBy]<>[[]PreparedBy]%'";
+        Assert.Equal((1, 0), (await run.ScalarAsync<int>(registryCheck), await run.ScalarAsync<int>(separatedPublisher)));
+
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync(migrations[index - 1]);
+        Assert.Equal((0, 2), (await run.ScalarAsync<int>(registryCheck), await run.ScalarAsync<int>(separatedPublisher)));
+        await migrator.MigrateAsync();
+        Assert.Equal((1, 0), (await run.ScalarAsync<int>(registryCheck), await run.ScalarAsync<int>(separatedPublisher)));
     }
 
     private static PrepareManufacturingParameterProfileRequestV1 Prepare(string expected, string process, Guid? workCenter,
@@ -515,7 +546,7 @@ public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTes
         /// </summary>
         public DateOnly Today { get; }
 
-        public static async Task<HostRun> StartAsync()
+        public static async Task<HostRun> StartAsync(Action<IServiceCollection>? configure = null)
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
@@ -524,8 +555,11 @@ public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTes
             // system clock, so the synthetic grants stay in force.
             TimeProvider clock = new FixedClock(DateTimeOffset.UtcNow);
             var factory = new SqlServerRelationalApiFactory(baseConnectionString, services =>
+            {
                 services.Replace(ServiceDescriptor.Scoped(provider =>
-                    ActivatorUtilities.CreateInstance<SettingsManufacturingProfileAdministration>(provider, clock))));
+                    ActivatorUtilities.CreateInstance<SettingsManufacturingProfileAdministration>(provider, clock)));
+                configure?.Invoke(services);
+            });
             var run = new HostRun(baseConnectionString, factory, clock);
             using var client = run.Factory.CreateClient();
             using var health = await client.GetAsync("/health/live");
@@ -594,10 +628,12 @@ public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTes
             Assert.True(index > 0);
             var rollback = await Assert.ThrowsAsync<SqlException>(() =>
                 context.GetService<IMigrator>().MigrateAsync(applied[index - 1]));
-            Assert.Equal(51185, rollback.Number); // U1-b: the newest profile migration refuses first (forward fix)
-            // EF reverts the later migrations first, each in its own transaction: an empty later Settings store (the exchange-rate
-            // record, AddExchangeRateRecords) rolls back freely; the refusing migration and everything before it stay applied.
-            var refusing = Array.FindIndex(applied, name => name.EndsWith("_AddManufacturingToleranceLineScope", StringComparison.Ordinal));
+            // URN-D6: the newest profile migration (the single-flow forward fix) refuses first while a version published
+            // without an approval, by its preparer, or a 'Published' registry row exists — every scenario here publishes one.
+            Assert.Equal(51345, rollback.Number);
+            // EF reverts the later migrations first, each in its own transaction: an empty later Settings store rolls back
+            // freely; the refusing migration and everything before it stay applied.
+            var refusing = Array.FindIndex(applied, name => name.EndsWith(SingleFlowMigrationName, StringComparison.Ordinal));
             Assert.True(refusing >= index);
             Assert.Equal(applied.Take(refusing + 1), await context.Database.GetAppliedMigrationsAsync());
         }

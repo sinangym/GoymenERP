@@ -8,7 +8,14 @@ public sealed class PurchaseAcceptanceParticipantContractTests
     public void Contract_is_single_use_host_transaction_participant_shape()
     {
         Assert.Contains(typeof(IAsyncDisposable), typeof(IPurchaseAcceptanceParticipantV1).GetInterfaces());
-        var stage = Assert.Single(typeof(IPurchaseAcceptanceParticipantV1).GetMethods());
+        var methods = typeof(IPurchaseAcceptanceParticipantV1).GetMethods();
+        Assert.Equal([nameof(IPurchaseAcceptanceParticipantV1.ResolveReceiptTargetAsync), nameof(IPurchaseAcceptanceParticipantV1.StageAsync)],
+            methods.Select(method => method.Name).Order(StringComparer.Ordinal));
+        var resolve = Assert.Single(methods, method => method.Name == nameof(IPurchaseAcceptanceParticipantV1.ResolveReceiptTargetAsync));
+        Assert.Equal(typeof(Task<PurchaseAcceptanceReceiptTargetV1>), resolve.ReturnType);
+        Assert.Equal([typeof(Guid), typeof(Guid), typeof(CancellationToken)],
+            resolve.GetParameters().Select(parameter => parameter.ParameterType).ToArray());
+        var stage = Assert.Single(methods, method => method.Name == nameof(IPurchaseAcceptanceParticipantV1.StageAsync));
         Assert.Equal(nameof(IPurchaseAcceptanceParticipantV1.StageAsync), stage.Name);
         Assert.Equal(typeof(Task<PurchaseAcceptanceStageResultV1>), stage.ReturnType);
         Assert.Equal(
@@ -23,6 +30,26 @@ public sealed class PurchaseAcceptanceParticipantContractTests
             Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "5", "2", "4", false, "correlation");
 
         Assert.Equal("5", result.PurchaseOrderVersion);
+    }
+
+    [Fact]
+    public void Validator_reads_a_piece_lines_weighed_kilograms_and_keeps_a_kilogram_lines_absent()
+    {
+        Assert.Null(PurchaseAcceptanceParticipantContractV1.Validate(ValidRequest()).MeasuredQuantityKg);
+        Assert.Equal(1250.4m, PurchaseAcceptanceParticipantContractV1.Validate(ValidRequest() with { MeasuredQuantityKg = "1250.4" }).MeasuredQuantityKg);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("1.0001")]
+    [InlineData("1.50")]
+    [InlineData(" 1")]
+    public void Validator_refuses_weighed_kilograms_that_are_not_canonical_positive_three_decimal_values(string measured)
+    {
+        var refusal = Assert.Throws<PurchaseAcceptanceParticipantException>(() =>
+            PurchaseAcceptanceParticipantContractV1.Validate(ValidRequest() with { MeasuredQuantityKg = measured }));
+        Assert.Equal((PurchaseAcceptanceParticipantCodes.InvalidQuantity, 400), (refusal.Code, refusal.StatusCode));
     }
 
     [Fact]

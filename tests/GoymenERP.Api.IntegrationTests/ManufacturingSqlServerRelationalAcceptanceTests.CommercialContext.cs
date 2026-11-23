@@ -31,6 +31,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             await store.Revisions.RevisePlanAsync(plan.Id, 1, workCenter, ManufacturingProcess.Slitting,
                 [new PlannedInput(RollA, Kg(9_000m), 8, commercialContext: context)], null,
                 "ticari bağlam aynı kayıt", Metadata(run));
+            await store.DueDates.ChangeDueDateAsync(plan.Id, 2, 0, TerminDay, TerminToday, Metadata(run));
             await store.Plans.ApprovePlanAsync(plan.Id, 2, run.Approver, At, Metadata(run));
             await store.Orders.CreateOrderAsync(orderId, plan.Id, Metadata(run));
         }
@@ -77,6 +78,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             await store.Revisions.RevisePlanAsync(plan.Id, 1, workCenter, ManufacturingProcess.Slitting,
                 [new PlannedInput(RollA, Kg(9_000m), 8, commercialContext: context)], null,
                 "constraint", Metadata(run));
+            await store.DueDates.ChangeDueDateAsync(plan.Id, 2, 0, TerminDay, TerminToday, Metadata(run));
             await store.Plans.ApprovePlanAsync(plan.Id, 2, run.Approver, At, Metadata(run));
             await store.Orders.CreateOrderAsync(orderId, plan.Id, Metadata(run));
         }
@@ -113,6 +115,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using var context = run.Context(CompanyA);
         var migrator = context.GetService<IMigrator>();
 
+        await run.ForgetTerminsBeforeRollbackAsync();
         await migrator.MigrateAsync(BeforeCommercialContexts);
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.columns WHERE object_id IN "
@@ -141,11 +144,13 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             await store.Revisions.RevisePlanAsync(plan.Id, 1, workCenter, ManufacturingProcess.Slitting,
                 [new PlannedInput(RollA, Kg(9_000m), 8, commercialContext: snapshot)], null,
                 "downgrade refusal", Metadata(run));
+            await store.DueDates.ChangeDueDateAsync(plan.Id, 2, 0, TerminDay, TerminToday, Metadata(run));
             await store.Plans.ApprovePlanAsync(plan.Id, 2, run.Approver, At, Metadata(run));
             await store.Orders.CreateOrderAsync(orderId, plan.Id, Metadata(run));
         }
 
         await using var context = run.Context(CompanyA);
+        await run.ForgetTerminsBeforeRollbackAsync();
         var error = await Assert.ThrowsAsync<SqlException>(
             () => context.GetService<IMigrator>().MigrateAsync(BeforeCommercialContexts));
 

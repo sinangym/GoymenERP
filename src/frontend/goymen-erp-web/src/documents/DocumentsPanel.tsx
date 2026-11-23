@@ -1,7 +1,8 @@
 /**
  * AT-065 document panel of an owner record (first owner: the Cari card, C-03).
  *
- * The user's job: on a record, add a document (PDF, PNG or JPEG), see the record's documents after closing and reopening
+ * The user's job: on a record, add a document (PDF, PNG or JPEG; a record whose owner opted in to bank-statement import
+ * also takes XLSX, MT940 or CSV — the list's limits say which), see the record's documents after closing and reopening
  * the card, download one, and be told when the same file was already uploaded in this company (AT-057). Nothing here
  * deletes, renames or overwrites a document — retention/deletion is undecided (OPEN-018/021) and a document is never
  * overwritten (DEC-DOC-003).
@@ -20,6 +21,12 @@
  * expected current version, file, key) repeated unchanged until its outcome is known. The history is bound to the
  * company, owner, entry generation and document it was opened under: a change of any of them discards it, and an answer
  * that arrives afterwards is dropped.
+ *
+ * Existing documents (KLN-D49/D50): when the list says `canLink`, a chosen file's SHA-256 is computed in the browser and
+ * the server is asked for this company's earlier documents with that content that the actor may read and this record
+ * does not hold yet. Each can be linked to this record instead of uploading the same file again; the upload stays
+ * available. A link is one frozen attempt (company, document, record, expected current version, key) repeated unchanged
+ * until its outcome is known. The probe only reads; the server re-checks everything on the link itself.
  */
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
@@ -27,11 +34,15 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   appendDocumentVersion,
   documentsQueryKey,
+  fetchLinkCandidates,
+  linkDocument,
+  sha256Hex,
   downloadDocument,
   downloadDocumentVersion,
   fetchDocumentVersions,
   fetchDocuments,
   uploadDocument,
+  type LinkAttempt,
   type UploadAttempt,
   type VersionAttempt,
   type VersionHistoryOutcome,
@@ -40,13 +51,23 @@ import {
   DOCUMENT_PROBLEM,
   type DocumentBinding,
   type DocumentLimits,
+  type DocumentLinkCandidate,
+  type DocumentLinkWrite,
   type DocumentList,
   type DocumentRow,
   type DocumentUpload,
   type DocumentVersionWrite,
   type OwnerKind,
 } from './contract'
-import { DOCUMENTS_TEXT as TEXT, formatInstant, formatSize, refusalText, typeLabel, versionRefusalText } from './documentsText'
+import {
+  DOCUMENTS_TEXT as TEXT,
+  formatInstant,
+  formatSize,
+  linkRefusalText,
+  refusalText,
+  typeLabel,
+  versionRefusalText,
+} from './documentsText'
 import { DocumentPreview } from './DocumentPreview'
 import styles from './DocumentsPanel.module.css'
 
@@ -57,6 +78,10 @@ type UploadState =
   | { readonly phase: 'unknown'; readonly attempt: UploadAttempt }
   | { readonly phase: 'stored'; readonly upload: DocumentUpload; readonly replayed: boolean }
   | { readonly phase: 'refused'; readonly message: string }
+  /** KLN-D50: the chosen file's earlier document is being linked to this record instead of a second upload. */
+  | { readonly phase: 'linking'; readonly attempt: UploadAttempt; readonly link: LinkAttempt }
+  | { readonly phase: 'link-unknown'; readonly attempt: UploadAttempt; readonly link: LinkAttempt }
+  | { readonly phase: 'linked'; readonly write: DocumentLinkWrite; readonly replayed: boolean }
 
 function newKey(): string {
   return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -71,6 +96,12 @@ function localRefusal(file: File, limits: DocumentLimits): string | null {
   if (!limits.extensions.includes(extension)) return TEXT.typeLocal
   if (file.size > limits.maximumBytes) return TEXT.tooLargeLocal(limits.maximumBytes)
   return null
+}
+
+// KLN-D60: a system-generated PDF is served without a scan, so it carries its own marker instead of "Tarandı".
+function scanLabel(version: Pick<DocumentRow, 'scanState' | 'downloadable'>): string {
+  if (version.scanState === 'SystemGenerated') return TEXT.scanSystemGenerated
+  return version.downloadable ? TEXT.scanClean : TEXT.scanPending
 }
 
 /** Saved as a file under its own name; never opened as a page of this application. */
@@ -192,9 +223,13 @@ function UploadForm({
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [state, setState] = useState<UploadState>({ phase: 'idle' })
   const [localError, setLocalError] = useState<string | null>(null)
+  const [linkError, setLinkError] = useState<string | null>(null)
+  // Bumped when a link refusal means the candidates changed (a new version, a link made meanwhile): the probe reads again.
+  const [probeGeneration, setProbeGeneration] = useState(0)
 
   const choose = (file: File | undefined) => {
     setLocalError(null)
+    setLinkError(null)
     if (file === undefined) {
       setState({ phase: 'idle' })
       return
@@ -231,13 +266,50 @@ function UploadForm({
     }
   }
 
+  const link = async (attempt: UploadAttempt, linkAttempt: LinkAttempt) => {
+    setLinkError(null)
+    setState({ phase: 'linking', attempt, link: linkAttempt })
+    const outcome = await linkDocument(linkAttempt)
+    switch (outcome.type) {
+      case 'linked':
+        setState({ phase: 'linked', write: outcome.write, replayed: outcome.replayed })
+        if (inputRef.current !== null) inputRef.current.value = ''
+        onStored()
+        return
+      case 'refused':
+        // Nothing was linked under this key; the chosen file stays, so it can still be uploaded or another candidate linked.
+        setLinkError(linkRefusalText(outcome.status, outcome.code))
+        setState({ phase: 'selected', attempt })
+        setProbeGeneration((generation) => generation + 1)
+        if (outcome.code === DOCUMENT_PROBLEM.alreadyLinked) onStored()
+        return
+      case 'unknown':
+        setState({ phase: 'link-unknown', attempt, link: linkAttempt })
+        return
+    }
+  }
+
+  const chooseCandidate = (attempt: UploadAttempt, candidate: DocumentLinkCandidate) => {
+    // One frozen attempt per chosen candidate: a retry after a lost answer sends exactly this, with the same key.
+    void link(attempt, {
+      idempotencyKey: newKey(),
+      companyId: attempt.companyId,
+      ownerKind: attempt.ownerKind,
+      ownerId: attempt.ownerId,
+      documentId: candidate.documentId,
+      expectedCurrentVersion: candidate.versionNo,
+    })
+  }
+
   const onSubmit = (event: FormEvent) => {
     event.preventDefault()
     if (state.phase === 'selected') void send(state.attempt)
   }
 
-  const busy = state.phase === 'sending'
-  const pending = state.phase === 'unknown'
+  const busy = state.phase === 'sending' || state.phase === 'linking'
+  const pending = state.phase === 'unknown' || state.phase === 'link-unknown'
+  const probing =
+    list.canLink && (state.phase === 'selected' || state.phase === 'linking' || state.phase === 'link-unknown') ? state.attempt : null
 
   return (
     <form className={styles.upload} onSubmit={onSubmit} aria-label={TEXT.uploadLegend} data-documents-upload="form">
@@ -259,8 +331,55 @@ function UploadForm({
         {TEXT.allowed(list.limits.extensions, list.limits.maximumBytes)}
       </p>
       <button type="submit" className={styles.primary} disabled={state.phase !== 'selected'}>
-        {busy ? TEXT.uploading : TEXT.upload}
+        {state.phase === 'sending' ? TEXT.uploading : TEXT.upload}
       </button>
+
+      {probing !== null ? (
+        <LinkCandidates
+          key={probing.idempotencyKey}
+          attempt={probing}
+          generation={probeGeneration}
+          linking={state.phase === 'linking' || state.phase === 'link-unknown' ? state.link.documentId : null}
+          onLink={(candidate) => chooseCandidate(probing, candidate)}
+        />
+      ) : null}
+
+      {linkError !== null ? (
+        <p role="alert" className={styles.problem} data-documents-state="link-refused">
+          {linkError}
+        </p>
+      ) : null}
+
+      {state.phase === 'link-unknown' ? (
+        <div role="alert" className={styles.problem} data-documents-state="link-unknown">
+          <p>
+            <strong>{TEXT.linkUnknownTitle}</strong>
+          </p>
+          <p>{TEXT.linkUnknownDetail}</p>
+          <p className={styles.actions}>
+            <button type="button" className={styles.action} onClick={() => void link(state.attempt, state.link)}>
+              {TEXT.linkRetry}
+            </button>
+            <button
+              type="button"
+              className={styles.action}
+              onClick={() => {
+                setState({ phase: 'idle' })
+                if (inputRef.current !== null) inputRef.current.value = ''
+              }}
+            >
+              {TEXT.abandon}
+            </button>
+          </p>
+        </div>
+      ) : null}
+
+      {state.phase === 'linked' ? (
+        <div role="status" className={styles.saved} data-documents-state="linked">
+          <p>{TEXT.linked(state.write.document.fileName)}</p>
+          {state.replayed ? <p data-documents-state="link-replayed">{TEXT.linkReplayed}</p> : null}
+        </div>
+      ) : null}
 
       {localError !== null ? (
         <p role="alert" className={styles.problem} data-documents-state="local-refusal">
@@ -323,6 +442,105 @@ function UploadForm({
   )
 }
 
+type ProbeState =
+  | { readonly phase: 'loading' }
+  | { readonly phase: 'ready'; readonly candidates: readonly DocumentLinkCandidate[] }
+  /** The browser could not hash the file, or the server gave no usable answer: the upload stays the only way. */
+  | { readonly phase: 'unavailable' }
+
+/**
+ * KLN-D50: the chosen file's earlier documents in this company that this record may link instead of a second upload.
+ * Bound to one chosen file (the parent keys it by the attempt); an answer that arrives after the file changed is dropped.
+ */
+function LinkCandidates({
+  attempt,
+  generation,
+  linking,
+  onLink,
+}: {
+  readonly attempt: UploadAttempt
+  readonly generation: number
+  /** The document whose link is in flight or unknown; every link button waits for it. */
+  readonly linking: string | null
+  readonly onLink: (candidate: DocumentLinkCandidate) => void
+}) {
+  const titleId = useId()
+  const [probe, setProbe] = useState<ProbeState>({ phase: 'loading' })
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setProbe({ phase: 'loading' })
+    void (async () => {
+      const sha256 = await sha256Hex(attempt.file)
+      if (controller.signal.aborted) return
+      if (sha256 === null) {
+        setProbe({ phase: 'unavailable' })
+        return
+      }
+      const outcome = await fetchLinkCandidates(
+        {
+          companyId: attempt.companyId,
+          ownerKind: attempt.ownerKind,
+          ownerId: attempt.ownerId,
+          sha256,
+          sizeBytes: attempt.file.size,
+        },
+        controller.signal,
+      )
+      if (controller.signal.aborted || outcome.type === 'aborted') return
+      setProbe(outcome.type === 'ok' ? { phase: 'ready', candidates: outcome.candidates.items } : { phase: 'unavailable' })
+    })()
+    return () => controller.abort()
+  }, [attempt, generation])
+
+  if (probe.phase === 'loading') {
+    return (
+      <p role="status" className={styles.note} data-documents-link="loading">
+        {TEXT.linkProbeLoading}
+      </p>
+    )
+  }
+  if (probe.phase === 'unavailable') {
+    return (
+      <p className={styles.note} data-documents-link="unavailable">
+        {TEXT.linkProbeUnavailable}
+      </p>
+    )
+  }
+  if (probe.candidates.length === 0) {
+    return (
+      <p className={styles.note} data-documents-link="none">
+        {TEXT.linkProbeNone}
+      </p>
+    )
+  }
+  return (
+    <div className={styles.warning} role="group" aria-labelledby={titleId} data-documents-link="candidates">
+      <p id={titleId}>
+        <strong>{TEXT.linkTitle}</strong>
+      </p>
+      <p>{TEXT.linkDetail}</p>
+      <ul>
+        {probe.candidates.map((candidate) => (
+          <li key={candidate.documentId} data-candidate-id={candidate.documentId}>
+            <span>{TEXT.linkRow(candidate.fileName, candidate.versionNo, formatInstant(candidate.uploadedAtUtc))}</span>{' '}
+            <button
+              type="button"
+              className={styles.action}
+              aria-label={TEXT.linkAction(candidate.fileName)}
+              disabled={linking !== null}
+              onClick={() => onLink(candidate)}
+            >
+              {linking === candidate.documentId ? TEXT.linking : TEXT.linkLabel}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p>{TEXT.uploadAnyway}</p>
+    </div>
+  )
+}
+
 function DocumentTable({
   list,
   companyId,
@@ -381,7 +599,7 @@ function DocumentTable({
                 <td>{typeLabel(row.contentType)}</td>
                 <td>{formatSize(row.sizeBytes)}</td>
                 <td>{formatInstant(row.uploadedAtUtc)}</td>
-                <td data-scan-state={row.scanState}>{row.downloadable ? TEXT.scanClean : TEXT.scanPending}</td>
+                <td data-scan-state={row.scanState}>{scanLabel(row)}</td>
                 <td>
                   <div className={styles.rowActions}>
                     {row.downloadable ? (
@@ -646,7 +864,7 @@ function DocumentVersions({
                     <td data-label={TEXT.columnSize}>{formatSize(version.sizeBytes)}</td>
                     <td data-label={TEXT.columnUploaded}>{formatInstant(version.uploadedAtUtc)}</td>
                     <td data-label={TEXT.columnState} data-scan-state={version.scanState}>
-                      {version.downloadable ? TEXT.scanClean : TEXT.scanPending}
+                      {scanLabel(version)}
                     </td>
                     <td data-label={TEXT.columnAction}>
                       {version.downloadable ? (

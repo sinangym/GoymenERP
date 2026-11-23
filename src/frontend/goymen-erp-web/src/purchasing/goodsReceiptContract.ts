@@ -1,4 +1,5 @@
 import type { PurchaseOrderDetail, PurchaseOrderLine } from './contract'
+import { decodePieceKilograms, type PieceKilograms } from './pieceKilogramsContract'
 
 /** Exact server-published capability id used only to fail-closed the receipt control mount. */
 export const PURCHASE_GOODS_RECEIPT_CAPABILITY = 'purchasing.goods-receipts.record'
@@ -49,11 +50,42 @@ export interface GoodsReceiptOptions {
     readonly purchaseOrderVersion: string; readonly productId: string; readonly productVersion: string; readonly unitId: string; readonly effectiveOn: string }
   readonly locations: readonly ReceiptLocation[]
   readonly searchWindowFull: boolean
+  readonly futureSupply: { readonly companyId: string; readonly purchaseOrderId: string; readonly purchaseOrderGeneralLineId: string;
+    readonly unitId: string; readonly activeAllocatedQuantity: string }
 }
-export interface GoodsReceiptResponse { readonly receipt: GoodsReceipt; readonly isReplay: boolean; readonly originalCorrelationId: string }
+/** KLN-D94 link failure codes Inventory reports for a released future supply allocation (F-017 STOK §3.5). */
+export const FUTURE_SUPPLY_RELEASE_CODES = ['label-blocked', 'unit-conversion-unavailable', 'demand-not-approved',
+  'product-mismatch', 'insufficient-label-quantity', 'owner-not-company'] as const
+export type FutureSupplyReleaseCode = typeof FUTURE_SUPPLY_RELEASE_CODES[number]
+
+/** KLN-D94: a future supply allocation released in full because this receipt could not link it to the label. */
+export interface FutureSupplyRelease {
+  readonly futureAllocationId: string
+  /** The whole remainder released, in the purchase unit (not only this receipt's share). */
+  readonly releasedQuantity: string
+  readonly failureCode: FutureSupplyReleaseCode
+}
+
+export interface GoodsReceiptResponse {
+  readonly receipt: GoodsReceipt
+  readonly isReplay: boolean
+  readonly originalCorrelationId: string
+  readonly futureSupplyReleases: readonly FutureSupplyRelease[]
+  /**
+   * AK-3b: on a piece-unit line, the theoretical vs weighed kilograms as the server recorded them at the first attempt (a replay
+   * answers that record; it is absent on a kilogram line and on a replay of a receipt older than AK-3b). Never recomputed here.
+   */
+  readonly pieceKilograms?: PieceKilograms
+}
 
 const record = (value: unknown): Record<string, unknown> | null => typeof value === 'object' && value !== null && !Array.isArray(value)
   ? value as Record<string, unknown> : null
+/** Exactly the required keys plus, at most, the optional ones: an unknown or a missing key fails the decoder closed. */
+const exact = (value: Record<string, unknown>, required: readonly string[], optional: readonly string[] = []) =>
+  required.every((key) => Object.hasOwn(value, key)) && Object.keys(value).every((key) => required.includes(key) || optional.includes(key))
+const SOURCE_FIELDS = ['companyId', 'purchaseOrderId', 'purchaseOrderLineId', 'purchaseOrderVersion', 'productId', 'productVersion',
+  'unitId', 'effectiveOn'] as const
+const LOCATION_FIELDS = ['locationId', 'locationCode', 'locationName', 'siteName'] as const
 const text = (value: unknown): value is string => typeof value === 'string' && value.trim() === value && value.length > 0
 const guid = (value: unknown): value is string => text(value) && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
   && value !== '00000000-0000-0000-0000-000000000000'
@@ -87,7 +119,7 @@ export function decodeGoodsReceipt(value: unknown, detail: PurchaseOrderDetail):
 
 export function decodeGoodsReceiptPage(value: unknown, detail: PurchaseOrderDetail): GoodsReceiptPage | null {
   const body = record(value)
-  if (body === null || !Array.isArray(body.items) || body.items.length > 100 || typeof body.searchWindowFull !== 'boolean') return null
+  if (body === null || !exact(body, ['items', 'searchWindowFull']) || !Array.isArray(body.items) || body.items.length > 100 || typeof body.searchWindowFull !== 'boolean') return null
   const items: GoodsReceipt[] = []
   for (const raw of body.items) {
     const item = decodeGoodsReceipt(raw, detail)
@@ -111,26 +143,34 @@ export function decodeGoodsReceiptDetail(value: unknown, detail: PurchaseOrderDe
 export function decodeGoodsReceiptOptions(value: unknown, detail: PurchaseOrderDetail, line: PurchaseOrderLine): GoodsReceiptOptions | null {
   const body = record(value)
   const source = record(body?.source)
-  if (body === null || source === null || source.companyId !== detail.order.companyId || source.purchaseOrderId !== detail.order.id
+  const futureSupply = record(body?.futureSupply)
+  const generalLineId = line.kind === 'General' ? line.lineId : line.parentLineId
+  if (body === null || !exact(body, ['source', 'locations', 'searchWindowFull', 'futureSupply']) || source === null || !exact(source, SOURCE_FIELDS)
+    || source.companyId !== detail.order.companyId || source.purchaseOrderId !== detail.order.id
     || source.purchaseOrderLineId !== line.lineId || source.purchaseOrderVersion !== detail.order.version
     || source.productId !== line.productId || source.productVersion !== line.productVersion || source.unitId !== line.unitId
     || source.effectiveOn !== detail.order.effectiveOn || !Array.isArray(body.locations) || body.locations.length > 100
-    || typeof body.searchWindowFull !== 'boolean') return null
+    || typeof body.searchWindowFull !== 'boolean' || futureSupply === null || Object.keys(futureSupply).length !== 5
+    || !guid(generalLineId) || futureSupply.companyId !== detail.order.companyId || futureSupply.purchaseOrderId !== detail.order.id
+    || futureSupply.purchaseOrderGeneralLineId !== generalLineId || futureSupply.unitId !== line.unitId
+    || !quantity(futureSupply.activeAllocatedQuantity)) return null
   const locations: ReceiptLocation[] = []
   for (const raw of body.locations) {
     const location = record(raw)
-    if (location === null || !guid(location.locationId) || !text(location.locationCode) || !text(location.locationName)
+    if (location === null || !exact(location, LOCATION_FIELDS) || !guid(location.locationId) || !text(location.locationCode) || !text(location.locationName)
       || !text(location.siteName) || locations.some((item) => item.locationId === location.locationId)) return null
     locations.push(location as unknown as ReceiptLocation)
   }
-  return { source: source as unknown as GoodsReceiptOptions['source'], locations, searchWindowFull: body.searchWindowFull }
+  return { source: source as unknown as GoodsReceiptOptions['source'], locations, searchWindowFull: body.searchWindowFull,
+    futureSupply: futureSupply as unknown as GoodsReceiptOptions['futureSupply'] }
 }
 
 export function decodeGoodsReceiptResponse(value: unknown, detail: PurchaseOrderDetail, lineId: string,
   sent: GoodsReceiptRequest, replayHeader: boolean): GoodsReceiptResponse | null {
   const body = record(value)
   const receipt = body === null ? null : decodeGoodsReceipt(body.receipt, detail)
-  if (body === null || receipt === null || body.isReplay !== replayHeader || !text(body.originalCorrelationId)
+  if (body === null || !exact(body, ['receipt', 'isReplay', 'originalCorrelationId'], ['futureSupplyReleases', 'pieceKilograms'])
+    || receipt === null || body.isReplay !== replayHeader || !text(body.originalCorrelationId)
     || (!replayHeader && receipt.initialBlock !== 'Free')
     || receipt.purchaseOrderLineId !== lineId || receipt.acceptanceId !== sent.acceptanceId
     || receipt.productVersion !== sent.expectedProductVersion || receipt.acceptedQuantity !== sent.acceptedQuantity
@@ -139,5 +179,34 @@ export function decodeGoodsReceiptResponse(value: unknown, detail: PurchaseOrder
     || !version(sent.expectedPurchaseOrderVersion)
     || BigInt(receipt.purchaseOrderVersion) !== BigInt(sent.expectedPurchaseOrderVersion) + 1n
     || Date.parse(receipt.occurredAtUtc) !== Date.parse(sent.occurredAtUtc)) return null
-  return { receipt, isReplay: replayHeader, originalCorrelationId: body.originalCorrelationId }
+  const futureSupplyReleases = decodeFutureSupplyReleases(body.futureSupplyReleases)
+  if (futureSupplyReleases === null) return null
+  // AK-3b: absent = no comparison (kilogram line / older receipt). Present = exact, and about THIS receipt: its piece count is
+  // the accepted quantity and its weighed kg the receipt's. A malformed comparison refuses the whole answer, never a partial one.
+  if (!Object.hasOwn(body, 'pieceKilograms')) {
+    return { receipt, isReplay: replayHeader, originalCorrelationId: body.originalCorrelationId, futureSupplyReleases }
+  }
+  const pieceKilograms = decodePieceKilograms(body.pieceKilograms)
+  if (pieceKilograms === null || String(pieceKilograms.pieceCount) !== receipt.acceptedQuantity
+    || pieceKilograms.measuredQuantityKg !== receipt.measuredQuantityKg) return null
+  return { receipt, isReplay: replayHeader, originalCorrelationId: body.originalCorrelationId, futureSupplyReleases, pieceKilograms }
+}
+
+/**
+ * KLN-D94: an absent list means nothing was released (older answers); a present list must be exact. A malformed list is not
+ * shown as a partial warning: the whole answer is refused so a dropped Sales reservation is never hidden.
+ */
+export function decodeFutureSupplyReleases(value: unknown): readonly FutureSupplyRelease[] | null {
+  if (value === undefined) return []
+  if (!Array.isArray(value) || value.length > 100) return null
+  const releases: FutureSupplyRelease[] = []
+  for (const raw of value) {
+    const item = record(raw)
+    if (item === null || Object.keys(item).length !== 3 || !guid(item.futureAllocationId)
+      || !quantity(item.releasedQuantity) || item.releasedQuantity === '0'
+      || !FUTURE_SUPPLY_RELEASE_CODES.some((code) => code === item.failureCode)
+      || releases.some((current) => current.futureAllocationId === item.futureAllocationId)) return null
+    releases.push(item as unknown as FutureSupplyRelease)
+  }
+  return releases
 }

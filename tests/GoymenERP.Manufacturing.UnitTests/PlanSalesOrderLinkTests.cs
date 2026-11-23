@@ -51,7 +51,7 @@ public sealed class PlanSalesOrderLinkTests
     public void An_approved_plan_may_be_linked_while_its_order_is_open()
     {
         var plan = Draft();
-        plan.Approve(1, Guid.NewGuid(), At);
+        plan.WithDueDate().Approve(1, Guid.NewGuid(), At);
 
         plan.ChangeSalesOrderLink(2, 0, Link(LineA), orderClosed: false);
 

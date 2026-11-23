@@ -17,6 +17,7 @@ public sealed class InventoryDocumentOwnerLinkPortTests
         var (port, _, _) = Port((id, _) => Task.FromResult(Detail(id, Company)));
 
         Assert.Equal(DocumentOwnerLinkKindsV1.InventoryMaterialLabel, port.Kind);
+        Assert.True(port.AcceptsGeneratedDocuments);
         Assert.Equal(DocumentOwnerAccessV1.Readable, await port.CheckReadableAsync(Label));
     }
 
@@ -69,6 +70,14 @@ public sealed class InventoryDocumentOwnerLinkPortTests
         cancellation.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => port.CheckReadableAsync(Label, cancellation.Token));
+    }
+
+    [Fact]
+    public void The_record_takes_an_existing_document_by_link_KLN_D50()
+    {
+        var (port, _, _) = Port((_, token) => Task.FromCanceled<InventoryLabelDetailV1>(token));
+
+        Assert.True(port.AcceptsExistingDocumentLinks);
     }
 
     private static (InventoryDocumentOwnerLinkPort Port, MutableUser User, CompanyContext Company) Port(

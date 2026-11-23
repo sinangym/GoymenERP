@@ -24,7 +24,9 @@ public sealed record ManualBankPaymentAuditEnvelopes(
 /// R47 A-now manual outgoing bank payment. Draft and approval have no money effect. Only a successful,
 /// explicitly confirmed final Record appends one outgoing event. Missing bank reference is allowed;
 /// an unconfirmed result is not. The approver must differ from the preparer, while the separately
-/// authorized final actor may be the approver or another authorized person.
+/// authorized final actor may be the approver or another authorized person. FNS-D87: a bank account never goes below
+/// zero; the final Record asks <see cref="IFinanceTreasuryBalanceGuard"/> whether the account's current balance covers the
+/// payment and refuses an insufficient or unknown answer (fail-closed) before anything is written.
 /// </summary>
 public sealed class ManualBankPaymentService(
     FinanceDbContext dbContext,
@@ -38,7 +40,10 @@ public sealed class ManualBankPaymentService(
     IAuditEventCollector auditEvents,
     ManualBankPaymentBinding binding,
     ManualBankPaymentAuditEnvelopes envelopes,
-    TimeProvider timeProvider) : IManualBankPaymentService
+    TimeProvider timeProvider,
+    IFinanceTreasuryBalanceGuard balanceGuard,
+    IAuditTransactionWriterV1? auditOwner = null,
+    IFinanceDocumentNumberReservationV1? documentNumbers = null) : IManualBankPaymentService
 {
     public const string DraftCommand = "finance.manual-bank-payment.draft.save";
     public const string ApproveCommand = "finance.manual-bank-payment.approve";
@@ -183,6 +188,12 @@ public sealed class ManualBankPaymentService(
                     Issue("expectedVersion", "version_conflict")), cancellationToken);
         if (!ManualBankPaymentValidator.CanApprove(ToStatus(row.Status), row.PreparedBy, context.ActorId, request))
             return Refused(context, CommandOutcome.ValidationFailed, Issue("paymentId", "payment_approval_invalid"));
+        // FNS-D118: a reviser of the draft is a preparer and cannot approve it.
+        var revisedByApprover = await RevisedByAsync(row.Id, context.ActorId, cancellationToken);
+        if (await FenceAsync(context, FinanceAction.ApproveManualBankPayment, row.Id, cancellationToken)
+            is { } afterRevisers) return afterRevisers;
+        if (revisedByApprover)
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("paymentId", "payment_approval_invalid"));
 
         var before = AuditJson(row);
         var versionBefore = row.Version;
@@ -202,6 +213,28 @@ public sealed class ManualBankPaymentService(
     }
 
     public async Task<ManualBankPaymentCommandResult> RecordAsync(
+        FinanceContext context,
+        CommandMetadata metadata,
+        RecordManualBankPaymentRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
+        if (!SameContext(context)) return Refused(context, CommandOutcome.Denied);
+        if (await FenceAsync(context, FinanceAction.RecordManualBankPayment, request.PaymentId, cancellationToken)
+            is { } denied) return denied;
+        return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
+            async () =>
+            {
+                var result = await RecordTreasuryCoreAsync(context, metadata, request, cancellationToken);
+                return result.Outcome == CommandOutcome.Succeeded
+                    ? await FenceAsync(context, FinanceAction.RecordManualBankPayment, request.PaymentId, cancellationToken) ?? result : result;
+            },
+            async () => await FenceAsync(context, FinanceAction.RecordManualBankPayment, request.PaymentId, cancellationToken)
+                ?? Refused(context, CommandOutcome.Unavailable, Issue("treasuryAccountId", TreasuryBalanceAnswer.UnavailableCode)), auditOwner, cancellationToken, result => result.Outcome == CommandOutcome.Succeeded);
+    }
+
+    private async Task<ManualBankPaymentCommandResult> RecordTreasuryCoreAsync(
         FinanceContext context,
         CommandMetadata metadata,
         RecordManualBankPaymentRequest request,
@@ -259,7 +292,39 @@ public sealed class ManualBankPaymentService(
                 Issue("occurredOn", period.Code ?? (period.Outcome == RecordPeriodOutcome.Unavailable
                     ? RecordPeriodAnswer.RuleUnavailableCode : RecordPeriodAnswer.PeriodNotOpenCode)));
 
+        // FNS-D87 (with FNS-D11 / FNS-D22): the bank account's CURRENT balance at record time must cover the payment; a
+        // payment that would take the account below zero is refused, never clipped. Credit use is not a negative bank
+        // balance (it lives in separate credit accounts), so no overdraft exception applies here.
+        TreasuryBalanceAnswer? balance;
+        try
+        {
+            balance = await balanceGuard.CheckOutgoingAsync(context, ExpensePaymentSourceKind.Bank, row.TreasuryAccountId,
+                new MoneyText(row.AmountText, row.CurrencyId), cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            balance = null;
+        }
+
+        if (await FenceAsync(context, FinanceAction.RecordManualBankPayment, row.Id, cancellationToken)
+            is { } afterBalance) return afterBalance;
+        if (balance is null || balance.Outcome == TreasuryBalanceOutcome.Unavailable)
+            return Refused(context, CommandOutcome.Unavailable,
+                Issue("treasuryAccountId", TreasuryBalanceAnswer.UnavailableCode));
+        if (balance.Outcome != TreasuryBalanceOutcome.Sufficient)
+            return Refused(context, CommandOutcome.ValidationFailed,
+                Issue("money.amount", TreasuryBalanceAnswer.InsufficientCode));
+
         var before = AuditJson(row);
+        var numbering = await FinanceDocumentNumbering.ReserveAsync(dbContext, documentNumbers, context, metadata,
+            envelopes.Record, SettingsFinanceDocumentPurposeV1.ManualBankPaymentRecord, row.Id, row.OccurredOn, cancellationToken);
+        if (await FenceAsync(context, FinanceAction.RecordManualBankPayment, row.Id, cancellationToken) is { } afterNumber) return afterNumber;
+        if (numbering.Number is not { } number) return Refused(context,
+            numbering.Denied ? CommandOutcome.Denied : CommandOutcome.Unavailable,
+            Issue("documentNumber", numbering.Code ?? SettingsDocumentNumberSeriesProblemCodesV1.Unavailable));
+        row.DocumentNumber = number.Number;
+        row.DocumentNumberFormatVersion = number.FormatVersion;
+
         var versionBefore = row.Version;
         row.Status = ManualBankPaymentStatuses.Recorded;
         row.RecordedBy = context.ActorId;
@@ -485,6 +550,7 @@ public sealed class ManualBankPaymentService(
         catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
             || exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
+            if (FinanceTreasuryTransaction.RequiresFullRollback(dbContext)) throw;
             dbContext.ChangeTracker.Clear();
             return await PriorAsync(context, command, action, keyHash, payloadHash, cancellationToken)
                 ?? Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
@@ -520,6 +586,26 @@ public sealed class ManualBankPaymentService(
                 : Refused(context, CommandOutcome.Unavailable,
                     Issue("permission", "finance_permission_mapping_unavailable"));
         return SameContext(context) ? null : Refused(context, CommandOutcome.Denied);
+    }
+
+    /// <summary>
+    /// FNS-D118 (SINAN_KARARLARI_2026-11-22_EK_SORULAR.md, E-55; YOL-D23), on P6 (maker != approver, SINAN_KARARLARI_2026-10-21)
+    /// with No 103: as on orders, the preparer may revise the draft and an approver holding the approval permission decides.
+    /// There is no separate "send for approval" step, so everyone who prepared or revised the draft is on the preparer's
+    /// side: a successful draft save by the actor for this payment bars that actor from approving it. No other exclusion.
+    /// The successful saves are the module's own command rows (one per accepted create/update, written with the row).
+    /// </summary>
+    private async Task<bool> RevisedByAsync(Guid paymentId, string actorId, CancellationToken cancellationToken)
+    {
+        var results = await dbContext.Commands.AsNoTracking()
+            .Where(command => command.CommandName == DraftCommand && command.ManualBankPaymentId == paymentId
+                && command.ActorId == actorId)
+            .Select(command => command.ResultJson)
+            .ToListAsync(cancellationToken);
+        return results.Any(json =>
+            (JsonSerializer.Deserialize<ManualBankPaymentCommandResult>(json, Json)
+                ?? throw new InvalidOperationException("Kayitli manuel banka odemesi komut sonucu okunamadi.")).Outcome
+            == CommandOutcome.Succeeded);
     }
 
     private void AddCommand(
@@ -626,7 +712,7 @@ public sealed class ManualBankPaymentService(
             : null,
         row.PreparedBy, row.PreparedAtUtc,
         row.ApprovedBy, row.ApprovedAtUtc, row.RecordedBy, row.RecordedAtUtc, row.BankResultConfirmed,
-        VersionText(row.Version));
+        VersionText(row.Version), FinanceDocumentNumbering.View(row));
 
     private static ManualBankPaymentCommandResult Succeeded(FinanceContext context, ManualBankPaymentRow row) =>
         new ManualBankPaymentCommandResult(
@@ -661,6 +747,7 @@ public sealed class ManualBankPaymentService(
     private static string AuditJson(ManualBankPaymentRow row) => JsonSerializer.Serialize(new
     {
         row.Id,
+        documentNumber = FinanceDocumentNumbering.View(row),
         version = VersionText(row.Version),
         status = ToStatus(row.Status).ToString(),
         row.PartyId,

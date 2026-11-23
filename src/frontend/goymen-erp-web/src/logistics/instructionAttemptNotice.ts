@@ -8,7 +8,7 @@
  * replay; a stable code refines the message, never the verdict.
  */
 
-import { LOGISTICS_PROBLEM_CODE } from './contract'
+import { decodePhysicalStockRefusalDetail, LOGISTICS_PROBLEM_CODE } from './contract'
 import type { AttemptFailure, AttemptState } from './instructionAttempt'
 import { INSTRUCTION_CREATE_TEXT, INSTRUCTION_DETAIL_TEXT, problemCodeText } from './logisticsText'
 
@@ -60,12 +60,15 @@ function failureMessage(words: NoticeWords, failure: AttemptFailure): string {
  * Both are shown — a code never replaces the verdict. Every 409 the routes answer has its own text:
  * `version_conflict` (the record moved; the detail is re-read), `logistics_instruction_state`,
  * `logistics_load_exceeds_instructed`, `logistics_line_blocked`, `logistics_duplicate_share_id`,
- * `account_state`, `order_line_state`, `same_key_payload_mismatch`, `concurrent_change`.
+ * `account_state`, `order_line_state`, `same_key_payload_mismatch`, `concurrent_change`, and the definite shipment's
+ * customer risk gate stops (`logistics_shipment_risk_*`, STK-S27), which leave the instruction unchanged.
  */
-function refusalNotice(words: NoticeWords, failure: AttemptFailure, code: string | null, unresolved: boolean): AttemptNotice {
+function refusalNotice(words: NoticeWords, failure: AttemptFailure, code: string | null, unresolved: boolean,
+  detail: string | null): AttemptNotice {
   const reason = problemCodeText(code)
   const base = failureMessage(words, failure)
-  const text = reason === null ? base : `${base} ${reason}`
+  const reasonText = reason === null ? base : `${base} ${reason}`
+  const text = detail === null ? reasonText : `${reasonText} ${detail}`
   return {
     tone: unresolved ? 'unknown' : 'error',
     live: 'assertive',
@@ -98,7 +101,8 @@ function notice<P, R extends { readonly isReplay: boolean }>(
       if (state.unresolvedSince !== undefined && blockedChange && words.unknownChangedBlocked !== undefined) {
         return { tone: 'unknown', live: 'assertive', message: words.unknownChangedBlocked, actions: ['retry', 'abandon'] }
       }
-      return refusalNotice(words, state.failure, state.problem?.code ?? null, state.unresolvedSince !== undefined)
+      return refusalNotice(words, state.failure, state.problem?.code ?? null, state.unresolvedSince !== undefined,
+        decodePhysicalStockRefusalDetail(state.problem?.detail, state.problem?.status ?? 0))
     case 'completed':
       return {
         tone: 'success',
@@ -132,11 +136,13 @@ export function refusalMovesRecord(state: AttemptState<unknown, unknown>): boole
     state.failure === 'conflict' &&
     (code === LOGISTICS_PROBLEM_CODE.versionConflict ||
       code === LOGISTICS_PROBLEM_CODE.instructionState ||
+      code === LOGISTICS_PROBLEM_CODE.instructionShipped ||
       code === LOGISTICS_PROBLEM_CODE.concurrentChange ||
       code === LOGISTICS_PROBLEM_CODE.duplicateShare ||
       code === LOGISTICS_PROBLEM_CODE.loadExceedsInstructed ||
       code === LOGISTICS_PROBLEM_CODE.lineBlocked ||
       code === LOGISTICS_PROBLEM_CODE.weighingAlreadyRecorded ||
+      code === LOGISTICS_PROBLEM_CODE.unloadWeighingAlreadyRecorded ||
       code === LOGISTICS_PROBLEM_CODE.shipmentAlreadyDispatched ||
       code === LOGISTICS_PROBLEM_CODE.duplicateDispatchNote ||
       code === LOGISTICS_PROBLEM_CODE.dispatchNoteState ||

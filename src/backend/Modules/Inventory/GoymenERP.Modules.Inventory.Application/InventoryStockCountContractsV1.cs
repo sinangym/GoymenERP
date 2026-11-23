@@ -32,7 +32,11 @@ public static class InventoryStockCountApiV1
     public const int LabelCountsLimit = 50;
 }
 
-/// <summary>One physical count of one stocked label, as the client sends it.</summary>
+/// <summary>
+/// One physical count of one stocked label, as the client sends it. <c>CountedPieceCount</c> (KLN-D119, AK-2) is required
+/// for a label that tracks pieces and refused for a kg-only label (400 validation); a piece difference is posted together
+/// with a kilogram difference in the same direction.
+/// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record RecordInventoryStockCountV1(
     [property: JsonRequired] Guid CountId,
@@ -40,7 +44,8 @@ public sealed record RecordInventoryStockCountV1(
     [property: JsonRequired] string ExpectedLabelVersion,
     [property: JsonRequired] string CountedKg,
     [property: JsonRequired] DateTimeOffset CountedAtUtc,
-    [property: JsonRequired] string Reason);
+    [property: JsonRequired] string Reason,
+    int? CountedPieceCount = null);
 
 /// <summary>The wire form is the name ("Approve" / "Reject").</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<InventoryStockCountDecisionKindV1>))]
@@ -64,12 +69,15 @@ public sealed record InventoryStockCountDecisionViewV1(
     string Decision,
     DateTimeOffset DecidedAtUtc,
     string Reason,
-    Guid? AdjustmentMovementId);
+    Guid? AdjustmentMovementId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? CostStatus = null);
 
 /// <summary>
 /// One count: the counted position as stored when counted, the book kg the counter saw at that label version,
 /// the counted kg, the signed difference (canonical text, e.g. <c>-2.5</c>), the reason and the status —
 /// <c>NoDifference</c> (closed, nothing to post), <c>PendingApproval</c>, <c>Approved</c> or <c>Rejected</c>.
+/// <c>BookPieceCount</c> / <c>CountedPieceCount</c> appear only for a piece-tracking label (KLN-D119); a kg-only count answers
+/// exactly as before.
 /// </summary>
 public sealed record InventoryStockCountViewV1(
     Guid CountId,
@@ -90,7 +98,9 @@ public sealed record InventoryStockCountViewV1(
     string Reason,
     DateTimeOffset RecordedAtUtc,
     string Status,
-    InventoryStockCountDecisionViewV1? Decision);
+    InventoryStockCountDecisionViewV1? Decision,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? BookPieceCount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? CountedPieceCount = null);
 
 public sealed record InventoryStockCountResultV1(
     InventoryStockCountViewV1 Count,
@@ -184,6 +194,12 @@ public static class InventoryStockCountCodesV1
     /// <summary>The label does not hold stock in exactly one stored position (none, or free and blocked parts).</summary>
     public const string PositionConflict = "inventory_stock_count_position_conflict";
 
+    /// <summary>
+    /// SAT-D384: the label was consumed by a split, merge or manufacturing transformation ("dönüştürüldü → yeni
+    /// etiket"). Only the active last label is counted; the consumed one never enters a count difference.
+    /// </summary>
+    public const string LabelConverted = "inventory_stock_count_label_converted";
+
     /// <summary>The count id is already stored with other content.</summary>
     public const string CountConflict = "inventory_stock_count_conflict";
 
@@ -204,6 +220,7 @@ public static class InventoryStockCountCodesV1
 
     public const string ConcurrentChange = "inventory_concurrent_change";
     public const string Unavailable = "inventory_stock_count_unavailable";
+    public const string CostNotCalculated = "inventory_stock_count_cost_not_calculated";
 }
 
 /// <summary>
@@ -226,6 +243,7 @@ public static class InventoryStockCountHttpCodesV1
         InventoryStockCountCodesV1.IdempotencyConflict,
         InventoryStockCountCodesV1.LabelVersionConflict,
         InventoryStockCountCodesV1.PositionConflict,
+        InventoryStockCountCodesV1.LabelConverted,
         InventoryStockCountCodesV1.CountConflict,
         InventoryStockCountCodesV1.ConcurrentChange);
 
@@ -245,6 +263,7 @@ public static class InventoryStockCountHttpCodesV1
     public static IReadOnlySet<string> Status503Codes { get; } = Set(
         InventoryStockCountCodesV1.PermissionUnregistered,
         InventoryStockCountCodesV1.Unavailable,
+        InventoryStockCountCodesV1.CostNotCalculated,
         InventoryScaleCodes.ProfileUnusable,
         "settings_provider_unavailable",
         SettingsPrerequisiteCodesV1.UnitProfileNotFound,

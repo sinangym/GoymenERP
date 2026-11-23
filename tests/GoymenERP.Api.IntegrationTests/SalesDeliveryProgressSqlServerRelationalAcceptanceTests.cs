@@ -79,8 +79,11 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
         var progressPath = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/delivery-progress";
         var loadingPath = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/loading-progress";
 
-        // Shipped but nothing delivered yet: the whole order line remains.
-        Assert.Equal(("4", "0", "6", "0"), Line(await run.ProgressAsync(client, progressPath), orderLine.Id));
+        // KLN-D106: delivered counts at the stock-out approval, so the shipped 4 already leaves 2 open (no POD awaited).
+        var shippedOnly = await run.ProgressAsync(client, progressPath);
+        Assert.Equal(("4", "0", "2", "0"), Line(shippedOnly, orderLine.Id));
+        // SAT-S11 (F-006, B-33): the real Logistics owner names who recorded the shipment, and the order shows it on the wire.
+        Assert.Equal(new[] { run.Actor }, ShippedBy(shippedOnly));
         // The same real Logistics instruction is readable as loading facts: no Sales copy and no dispatch-note fiction.
         Assert.Equal((1, "6", "6", "4", "0"), Loading(await run.ProgressAsync(client, loadingPath), orderLine.Id));
 
@@ -89,7 +92,7 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
         await run.ProgressAsync(client, progressPath);
         Assert.Equal(before, await run.EffectsAsync(draft.Id, instructionId));
 
-        // A partial delivery through the REAL Logistics route; the order, opened again, shows it and keeps the exact remainder.
+        // A partial delivery through the REAL Logistics route; the order, opened again, shows it; the remainder stays the shipped one.
         var deliveryId = Guid.NewGuid();
         using (var delivered = await client.SendAsync(Delivery(instructionId, lineId, "SENTETIK-delivery-1", version, deliveryId, shipmentId, "2.5")))
         {
@@ -97,7 +100,7 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
             Assert.False(delivered.Headers.Contains("Idempotency-Replayed"));
         }
 
-        Assert.Equal(("4", "2.5", "3.5", "0"), Line(await run.ProgressAsync(client, progressPath), orderLine.Id));
+        Assert.Equal(("4", "2.5", "2", "0"), Line(await run.ProgressAsync(client, progressPath), orderLine.Id));
         Assert.Equal((1, "6", "6", "4", "2.5"), Loading(await run.ProgressAsync(client, loadingPath), orderLine.Id));
 
         // The same delivery again under its key: the stored answer, replayed — no second share, nothing counted twice.
@@ -107,7 +110,7 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
             Assert.Equal("true", Assert.Single(replayed.Headers.GetValues("Idempotency-Replayed")));
         }
 
-        Assert.Equal(("4", "2.5", "3.5", "0"), Line(await run.ProgressAsync(client, progressPath), orderLine.Id));
+        Assert.Equal(("4", "2.5", "2", "0"), Line(await run.ProgressAsync(client, progressPath), orderLine.Id));
         Assert.Equal((1, "6", "6", "4", "2.5"), Loading(await run.ProgressAsync(client, loadingPath), orderLine.Id));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [logistics].[LoadingShares] WHERE [InstructionId] = @id AND [SourceShipmentId] = @s",
@@ -169,9 +172,14 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
         await using (var a = run.SalesStore(CompanyA))
         await using (var logistics = run.LogisticsContext(CompanyA))
         {
-            var service = run.SalesService(a.Store, CompanyA, new LogisticsSalesOrderDeliveryReadPort(logistics.Context, logistics.Company));
+            var service = run.SalesService(a.Store, CompanyA, new LogisticsSalesOrderDeliveryReadPort(logistics.Context, logistics.Company),
+                new LogisticsSalesOrderCustomerReturnReadPort(logistics.Context, logistics.Company));
             var progress = await service.GetDraftDeliveryProgressAsync(draft.Id);
-            Assert.Equal(new SalesDraftLineDeliveryProgressV1(orderLine.Id, 1, KgUnit, "6", "0", "0", "6", "0"), Assert.Single(progress.Lines));
+            var line = Assert.Single(progress.Lines);
+            Assert.Equal((orderLine.Id, 1, KgUnit, "6", "0", "0", "6", "0"), (line.LineId, line.LineNo, line.OrderUnitId, line.Ordered,
+                line.Shipped, line.Delivered, line.Remaining, line.Excess));
+            // Nothing of company A shipped: no shipper is named (B's actor never leaks into A's order).
+            Assert.Empty(line.ShippedBy!);
         }
 
         var path = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/delivery-progress";
@@ -194,7 +202,9 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
         var readerOfA = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead);
         using (var clientOfA = run.Client(readerOfA, CompanyA))
         {
-            Assert.Equal(("0", "0", "6", "0"), Line(await run.ProgressAsync(clientOfA, path), orderLine.Id));
+            var progressOfA = await run.ProgressAsync(clientOfA, path);
+            Assert.Equal(("0", "0", "6", "0"), Line(progressOfA, orderLine.Id));
+            Assert.Equal(Array.Empty<string>(), ShippedBy(progressOfA));
             Assert.Equal((0, "0", "0", "0", "0"), Loading(await run.ProgressAsync(clientOfA, loadingPath), orderLine.Id));
         }
     }
@@ -229,6 +239,9 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
             Assert.Equal(expected, line.ShippedBy);
         }
 
+        // SAT-S11: the Sales delivery progress over the same real port shows exactly those shippers, by the approval's own rule.
+        Assert.Equal(expected, await run.ShippedByOnProgressAsync(CompanyA, draft.Id));
+
         // One shipment of the line without a recorded actor (a share from before the column existed, never back-filled): the owner
         // no longer names the line's shippers at all, instead of naming only the known ones (fail-closed, SAT-D222).
         Assert.Equal(1, await run.ScalarAsync<int>(
@@ -240,6 +253,9 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
             Assert.Equal(5m, line.ShippedQuantity);
             Assert.Null(line.ShippedBy);
         }
+
+        // The order shows the line's shippers as unknown — never only the two still named (SAT-D222, fail-closed).
+        Assert.Null(await run.ShippedByOnProgressAsync(CompanyA, draft.Id));
 
         // A line with no shipment share at all (an instruction line never shipped): it still totals 0 shipped, and names nobody.
         var idleDraft = await run.ApprovedDraftAsync(CompanyA, "idle", "6");
@@ -261,6 +277,9 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
             Assert.Equal((idleOrderLine.Id, 0m, 0m), (line.OrderLineId, line.ShippedQuantity, line.DeliveredQuantity));
             Assert.Null(line.ShippedBy);
         }
+
+        // Nothing shipped on the order: the progress names nobody (an empty list), which is not the "unknown" null above.
+        Assert.Equal(Array.Empty<string>(), await run.ShippedByOnProgressAsync(CompanyA, idleDraft.Id));
     }
 
     // ---- helpers --------------------------------------------------------------------------------
@@ -271,6 +290,15 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
         Assert.Equal(lineId.ToString("D"), line.GetProperty("lineId").GetString());
         return (line.GetProperty("shipped").GetString()!, line.GetProperty("delivered").GetString()!,
             line.GetProperty("remaining").GetString()!, line.GetProperty("excess").GetString()!);
+    }
+
+    /// <summary>SAT-S11: the single line's <c>shippedBy</c> on the wire — <c>null</c> stays null, a list keeps its order.</summary>
+    private static string[]? ShippedBy(JsonElement progress)
+    {
+        var shippedBy = Assert.Single(progress.GetProperty("lines").EnumerateArray()).GetProperty("shippedBy");
+        return shippedBy.ValueKind == JsonValueKind.Null
+            ? null
+            : [.. shippedBy.EnumerateArray().Select(actor => actor.GetString()!)];
     }
 
     private static (int Count, string Instructed, string Loaded, string Shipped, string Delivered) Loading(
@@ -481,15 +509,30 @@ public sealed class SalesDeliveryProgressSqlServerRelationalAcceptanceTests
         public LogisticsWriteEnvelope LogisticsEnvelope(string key) =>
             new(Actor, "SENTETIK-logistics-permission", ["SENTETIK-LOGISTICS"], Correlation, null, key, "Web", "127.0.0.1", "SENTETIK-agent");
 
+        /// <summary>
+        /// SAT-S11: the single line's <c>ShippedBy</c> on the REAL Sales delivery progress of <paramref name="draftId"/>, read through
+        /// the REAL Logistics port of <paramref name="company"/>.
+        /// </summary>
+        public async Task<IReadOnlyList<string>?> ShippedByOnProgressAsync(Guid company, Guid draftId)
+        {
+            await using var sales = SalesStore(company);
+            await using var logistics = LogisticsContext(company);
+            var progress = await SalesService(sales.Store, company, new LogisticsSalesOrderDeliveryReadPort(logistics.Context, logistics.Company),
+                    new LogisticsSalesOrderCustomerReturnReadPort(logistics.Context, logistics.Company))
+                .GetDraftDeliveryProgressAsync(draftId);
+            return Assert.Single(progress.Lines).ShippedBy;
+        }
+
         /// <summary>The REAL draft service over a real store and the given delivery owner, the draft read granted and nothing else.</summary>
-        public SalesDraftService SalesService(ISalesOrderDraftStore store, Guid company, ISalesOrderDeliveryReadPortV1 deliveries)
+        public SalesDraftService SalesService(ISalesOrderDraftStore store, Guid company, ISalesOrderDeliveryReadPortV1 deliveries,
+            ISalesOrderCustomerReturnReadPortV1 customerReturns)
         {
             var companyContext = new CompanyContext();
             companyContext.Set(company);
             var owners = new NoOwners();
             return new SalesDraftService(companyContext, new FixedUser("SENTETIK-reader", company), new ReadAuthority(), new NoActiveRoles(),
                 new FixedCorrelation(Correlation), owners, owners, null, store, new SalesDraftServiceBindings(), TimeProvider.System,
-                deliveries: deliveries);
+                deliveries: deliveries, customerReturns: customerReturns);
         }
 
         public SalesScope SalesStore(Guid company)

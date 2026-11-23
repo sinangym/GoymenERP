@@ -82,6 +82,7 @@ vi.mock('./api', async (importOriginal) => {
   }
 })
 
+vi.mock('./AllocationLinkPanel', () => ({ AllocationLinkPanel: () => null }))
 vi.mock('./approvalApi', () => ({
   approvePurchaseOrder: vi.fn(() => state.approval),
 }))

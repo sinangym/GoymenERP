@@ -111,7 +111,7 @@ public sealed class PlanParameterSnapshotAndToleranceCloseTests
                 pair => pair.Value with { NetUsableWidthMm = 1_230m }),
         };
         SlittingApprovalGate.Require(plan, withWidth);
-        plan.Approve(plan.Version, Planner, CloseAt, withWidth, profile);
+        plan.WithDueDate().Approve(plan.Version, Planner, CloseAt, withWidth, profile);
         Assert.Equal((PlanStatus.Approved, profile), (plan.Status, plan.ParameterSnapshot));
     }
 
@@ -121,7 +121,7 @@ public sealed class PlanParameterSnapshotAndToleranceCloseTests
         var inputs = new[] { Input(1_000m) };
         var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Paint, inputs);
         var captured = Snapshot(ManufacturingProcess.Paint, values: [("filmMicrons", "um", 80m)]);
-        plan.Approve(plan.Version, Planner, CloseAt, null, captured);
+        plan.WithDueDate().Approve(plan.Version, Planner, CloseAt, null, captured);
         var newer = Snapshot(ManufacturingProcess.Paint, "1", PlanParameterSnapshotV1.SettingsSource,
             values: [("filmMicrons", "um", 120m)]);
 
@@ -162,7 +162,7 @@ public sealed class PlanParameterSnapshotAndToleranceCloseTests
     {
         var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
             [new PlannedInput(Roll, Kg(10_000m))]);
-        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
+        plan.WithDueDate().Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         return ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
     }
 

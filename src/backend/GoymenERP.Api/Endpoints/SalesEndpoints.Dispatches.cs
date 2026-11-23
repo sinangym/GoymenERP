@@ -19,6 +19,8 @@ public static partial class SalesEndpoints
     private const int MaximumDispatchStateLength = 16;
     private static readonly HashSet<string> DispatchListQueryNames = new(["pageSize", "cursor", "state"], StringComparer.Ordinal);
     private static readonly HashSet<string> InvoiceCandidateQueryNames = new(["companyAccountId"], StringComparer.Ordinal);
+    public const string DispatchWeighingDifferencePath = SalesDispatchWeighingDifferenceApiV1.Path;
+    private static readonly HashSet<string> NoQueryNames = new(StringComparer.Ordinal);
 
     private static void MapDispatchEndpoints(IEndpointRouteBuilder endpoints)
     {
@@ -89,6 +91,41 @@ public static partial class SalesEndpoints
             .RequireCompanyContext()
             .WithName("GetSalesInvoiceCandidatesV1")
             .Produces<SalesInvoiceCandidatesResponse>()
+            .ProducesErpBadRequest("validation_failed")
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // SAT-S13 (SAT-D343, SAT-D319 (6), SAT-D389): one sales dispatch note's weighing-difference summary from the Logistics owner
+        // (STK-S24) under the API-30 read name; no query, nothing written. A note without a record is 200 NotRecorded (the invoice
+        // waits); an owner that cannot answer consistently is 503, never a zero.
+        endpoints.MapGet(DispatchWeighingDifferencePath, async (
+            Guid dispatchNoteId,
+            HttpContext httpContext,
+            [FromServices] ISalesDispatchWeighingDifferenceReadService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!HasOnlySingleQuery(httpContext.Request.Query, NoQueryNames, Array.Empty<string>()) || dispatchNoteId == Guid.Empty)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                return Results.Json(await service.GetWeighingDifferenceAsync(dispatchNoteId, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithTags("Sales")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithName("GetSalesDispatchWeighingDifferenceV1")
+            .Produces<SalesDispatchWeighingDifferenceView>()
             .ProducesErpBadRequest("validation_failed")
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpServiceUnavailable()

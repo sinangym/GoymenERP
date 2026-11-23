@@ -13,18 +13,16 @@
  * failed, forbidden or foreign answer shows neither a result nor an amount.
  */
 import { useContext, useId } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { fetchDraftRiskCheck } from './api'
 import { SALES_CAPABILITY } from './capabilities'
 import { decodeProblem, type DraftDetail } from './contract'
 import { SalesCurrencySourceContext } from './referenceSource'
 import type { RiskAmount, RiskCheck, RiskFigure, RiskResult, RiskTotals } from './riskCheck'
 import { RISK_CHECK_TEXT as T, riskReasonText } from './riskText'
+import { useDraftRiskCheck } from './useDraftRiskCheck'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome, type ViewOutcome } from '../shell/uiState'
-import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StatusIndicator, type StatusTone } from '../ui/StatusIndicator'
 import pages from './SalesPages.module.css'
 
@@ -41,25 +39,13 @@ export function SalesOrderRiskCard({ detail }: { readonly detail: DraftDetail })
   // API measures it afresh on every call and decides the amount disclosure itself.
   const canRead = namespace !== null && companyId !== null && companyId === detail.draft.companyId
     && hasCapability(shell, SALES_CAPABILITY.draftsDetail)
-  const boundary = useAuthBoundary()
   // The currencies reference is the create form's read (sales.drafts.create): without it a currency's identity is shown.
   const useCurrencies = useContext(SalesCurrencySourceContext)
   const currencies = useCurrencies(
     canRead && companyId !== null && hasCapability(shell, SALES_CAPABILITY.draftsCreate) ? companyId : '', detail.draft.businessDate)
-  const query = useQuery({
-    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'sales-draft-risk-check', detail.draft.id, detail.draft.version],
-    enabled: canRead,
-    gcTime: 0,
-    staleTime: 0,
-    retry: false,
-    refetchOnWindowFocus: false,
-    placeholderData: () => undefined,
-    queryFn: async ({ signal }) => {
-      const snapshot = boundary.capture()
-      const outcome = await fetchDraftRiskCheck(detail, companyId as string, signal)
-      if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
-      return signal.aborted ? { type: 'fence-stale' as const } : outcome
-    },
+  // Shared with the risk exception section (same key): one open reads the risk once.
+  const query = useDraftRiskCheck({
+    detail, namespace, routeEntryGeneration: shell.routeEntryGeneration, companyId, enabled: canRead,
   })
   if (!canRead) return null
   const currencyName: CurrencyName = (currencyId) => (currencies.status === 'ready'
@@ -231,6 +217,13 @@ function RiskBody({ check, currencyName, showAmounts }: {
         </table>
       </div>
       <p className={pages.muted}>{T.collateralNote}</p>
+      {showAmounts && check.collateral.policyProofs !== undefined && check.collateral.policyProofs.length > 0
+        ? <details><summary>{T.collateralPolicyHeading}</summary><ul>
+            {check.collateral.policyProofs.map(proof => <li key={proof.collateralId}>
+              {T.collateralPolicy(proof.collateralRevision, proof.ratePercent, proof.sourceVersion, proof.businessDate)}
+              {proof.bankInstitutionId === null ? <p>{T.noBankPolicy}</p> : <p>{proof.bankSourceVersion}</p>}
+            </li>)}
+          </ul></details> : null}
 
       {check.reasons.length === 0 ? null : (
         <>

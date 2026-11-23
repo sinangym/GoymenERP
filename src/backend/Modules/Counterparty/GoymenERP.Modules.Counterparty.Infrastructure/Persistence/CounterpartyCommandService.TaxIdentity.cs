@@ -149,7 +149,13 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
         }
 
         var beforeVersion = party.Version;
-        party.EnterTaxIdentityNumber(number, DateTimeOffset.UtcNow);
+        var enteredAt = DateTimeOffset.UtcNow;
+        party.EnterTaxIdentityNumber(number, enteredAt);
+        // KLN-D38: the first entry is the party's number "since always" (undated); later corrections are dated.
+        await AppendIdentityRevisionAsync(
+            party, PartyIdentityAttribute.TaxIdentityNumber, valueBefore: null, beforeVersion,
+            PartyIdentityRevisionKind.InitialEntry, reason: null, sourceChangeRequestId: null, metadata, enteredAt,
+            cancellationToken);
         auditEventCollector.Enqueue(new AuditEventDraft(
             metadata.CompanyId,
             "counterparty.party.tax-identity.entered.v1",
@@ -355,6 +361,11 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
                 request.CurrentTaxIdentityNumber,
                 TaxIdentityNumber.Parse(request.ProposedTaxIdentityNumber),
                 now);
+            // KLN-D38 (1): a wrong entry stays on the same cari; the approved, reasoned correction is kept as a dated
+            // revision (effective from the approval's business day), with the number before it as the baseline.
+            await AppendIdentityRevisionAsync(
+                party, PartyIdentityAttribute.TaxIdentityNumber, numberBefore, partyVersionBefore,
+                PartyIdentityRevisionKind.Correction, request.Reason, request.Id, metadata, now, cancellationToken);
             request.Approve(metadata.ActorId, note, now);
             auditEventCollector.Enqueue(new AuditEventDraft(
                 metadata.CompanyId,

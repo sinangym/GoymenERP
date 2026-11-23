@@ -391,13 +391,24 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         await CommitReturnAsync(run, ReturnRequest(orderId, parent.Label.Id, issued.ParentLabelVersion, "4"),
             ManufacturingMetadata(run, "down-return"));
 
-        await RemoveSyntheticProductVersionsForHistoricalMigrationAsync(
-            run, "SYN-MFG-PARENT-DOWN", expectedLabels: 1);
-
         await using var context = run.Context(CompanyA);
-        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>()
-            .MigrateAsync("20260924013338_AddInventoryPhysicalAllocationLifecycle"));
+        var appliedBefore = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+        const string guardProofSql = "SELECT CompanyId, Version FROM inventory.NegativeStockValidationGuards ORDER BY CompanyId FOR JSON PATH";
+        const string movementProofSql = "SELECT * FROM inventory.Movements ORDER BY Id FOR JSON PATH";
+        const string labelProofSql = "SELECT * FROM inventory.Labels ORDER BY Id FOR JSON PATH";
+        var guardProof = await run.ScalarAsync<string>(guardProofSql);
+        var movementProof = await run.ScalarAsync<string>(movementProofSql);
+        var labelProof = await run.ScalarAsync<string>(labelProofSql);
+        Assert.True(await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.NegativeStockValidationGuards") > 0);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+            new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryManufacturingReturn().DownOperations[0]).Sql;
+        // Test this historical guard directly; retain the newer immutable physical-validation proof.
+        var error = await Assert.ThrowsAsync<SqlException>(() => ExecuteAsync(run, guard));
         Assert.Equal(51053, error.Number);
+        Assert.Equal(appliedBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+        Assert.Equal(guardProof, await run.ScalarAsync<string>(guardProofSql));
+        Assert.Equal(movementProof, await run.ScalarAsync<string>(movementProofSql));
+        Assert.Equal(labelProof, await run.ScalarAsync<string>(labelProofSql));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM inventory.Movements WHERE Kind = 5 AND SourceId = @order", ("@order", orderId)));
         Assert.Equal(1, await run.ScalarAsync<int>(

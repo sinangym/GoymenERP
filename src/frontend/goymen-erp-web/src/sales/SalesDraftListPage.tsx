@@ -18,10 +18,17 @@
 
 import { useCallback, useRef, useState, useSyncExternalStore } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { fetchDraftPage } from './api'
 import { APPROVAL_STATE, CANCELLED_STATE, CLOSED_STATE, isTerminalState, type ApprovalState, type DraftSummaryWithParty, type PartyDisplay } from './contract'
-import { SALES_CAPABILITY, SALES_ROUTE, salesDetailPath } from './capabilities'
+import {
+  ALLOCATION_LABEL_PARAM,
+  SALES_CAPABILITY,
+  SALES_ROUTE,
+  carriedLabelCode,
+  salesAllocationDetailPath,
+  salesDetailPath,
+} from './capabilities'
 import { SALES_APPROVALS_TEXT } from './approvalsText'
 import { APPROVAL_STATE_TEXT, COMMERCIAL_STAGE_TEXT, ORDER_DETAIL_TEXT, ORDER_LIST_TEXT, partyDisplayText } from './salesText'
 import { CAPABILITY, CAPABILITY_ROUTE } from '../shell/capabilities'
@@ -98,8 +105,12 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
   const canOpenApprovals = hasCapability(shell, SALES_CAPABILITY.ordersApprove)
   const canOpenParty = hasCapability(shell, CAPABILITY.cariPartiesDetail)
   const cards = useSyncExternalStore(subscribeCards, readCards, () => false)
-  // SALES-A1: the internal approval filter is the server's (`approvalState`); changing it restarts the list.
-  const [approvalFilter, setApprovalFilter] = useState<ApprovalState | null>(null)
+  // KLN-D117: opened from a stock label row ("Satışa tahsis et"), the list carries the label code to the chosen order.
+  const [searchParams] = useSearchParams()
+  const allocationLabel = carriedLabelCode(searchParams.get(ALLOCATION_LABEL_PARAM))
+  // SALES-A1: the internal approval filter is the server's (`approvalState`); changing it restarts the list. Only an
+  // approved order takes an allocation, so a carried label starts the list on the approved orders (the user may change it).
+  const [approvalFilter, setApprovalFilter] = useState<ApprovalState | null>(allocationLabel === null ? null : APPROVAL_STATE.approved)
 
   const first = useQuery({
     queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'sales-drafts', 'first', approvalFilter ?? 'all'],
@@ -159,6 +170,11 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
           </Link>
         ) : null}
       </div>
+      {allocationLabel === null ? null : (
+        <p className={styles.notice} role="status" data-testid="sales-allocation-label-context">
+          {ORDER_LIST_TEXT.allocationLabelContext(allocationLabel)}
+        </p>
+      )}
       <div className={styles.toolbar}>
         <Field id="sales-approval-filter" label={ORDER_LIST_TEXT.filter} className={styles.filter}>
           {(control) => (
@@ -210,7 +226,12 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
 
   // The cells the table and the cards share, so both say exactly the same thing.
   const documentCell = (row: DraftSummaryWithParty) =>
-    canOpen ? <Link className={styles.documentLink} to={salesDetailPath(row.id)}>{row.documentNo}</Link> : row.documentNo
+    canOpen ? (
+      <Link className={styles.documentLink}
+        to={allocationLabel === null ? salesDetailPath(row.id) : salesAllocationDetailPath(row.id, allocationLabel)}>
+        {row.documentNo}
+      </Link>
+    ) : row.documentNo
   const partyCell = (row: DraftSummaryWithParty) => (
     <span className={styles.party} data-testid={`sales-row-party-${row.id}`}>
       <SalesPartyDisplay party={row.partyDisplay} canOpen={canOpenParty} />

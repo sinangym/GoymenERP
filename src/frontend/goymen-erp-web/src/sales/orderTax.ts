@@ -147,8 +147,10 @@ function exact(value: unknown, keys: readonly string[]): Obj | null {
 
 const text = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 4000
 const textOrNull = (v: unknown): v is string | null => v === null || text(v)
-const DECIMAL = /^(0|[1-9][0-9]*)(?:\.[0-9]+)?$/
-const percentOrNull = (v: unknown): v is string | null => v === null || (typeof v === 'string' && v.length <= 32 && DECIMAL.test(v))
+// Settings TaxMasterCalculatorV1 / CK_SettingsTaxRateListEntries_Percent: exact 0..100, at most four decimals.
+// This validates the owner's wire value; the browser does not calculate a tax rate or amount.
+const PERCENT = /^(?:(?:0|[1-9][0-9]?)(?:\.[0-9]{1,4})?|100(?:\.0{1,4})?)$/
+const percentOrNull = (v: unknown): v is string | null => v === null || (typeof v === 'string' && PERCENT.test(v))
 const VERSION = /^[1-9][0-9]*$/
 const versionOrNull = (v: unknown) => v === null || (typeof v === 'number' && Number.isInteger(v) && v >= 0)
 const resolution = (v: unknown): v is 'Resolved' | 'Unresolved' => v === 'Resolved' || v === 'Unresolved'

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -346,9 +347,18 @@ class WorkflowPathFilterTests(unittest.TestCase):
                 The block is run at the root and in two subfolders: the answer must not depend
                 on the working folder (a relative pathspec would see only that folder).
                 """
+                # Windows resolves an unqualified bash through System32 before PATH.
+                # Use Git's shell for this Git fixture; Linux keeps its existing bash.
+                bash = "bash"
+                if os.name == "nt":
+                    git_binary = shutil.which("git")
+                    self.assertIsNotNone(git_binary)
+                    git_bash = Path(git_binary).resolve().parent.parent / "bin" / "bash.exe"
+                    self.assertTrue(git_bash.is_file(), "Git Bash is required for the Git fixture")
+                    bash = str(git_bash)
                 codes = {
                     subprocess.run(
-                        ["bash", "-c", script.replace("<expected-head>", head)],
+                        [bash, "-c", script.replace("<expected-head>", head)],
                         cwd=repository / folder, env=environment, capture_output=True, text=True,
                     ).returncode
                     for folder in (".", *WORKING_FOLDERS)

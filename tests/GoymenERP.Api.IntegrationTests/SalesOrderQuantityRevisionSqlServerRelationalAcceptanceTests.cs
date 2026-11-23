@@ -237,7 +237,8 @@ public sealed class SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task A_rejected_decrease_resubmitted_after_loading_up_to_the_restored_cap_is_refused_and_passes_once_it_respects_the_loaded_total_on_real_sql()
     {
-        await using var run = await Run.StartAsync();
+        var diagnostic = new SalesFutureDemandReductionSqlDiagnostic();
+        await using var run = await Run.StartAsync(diagnostic.Register);
         var draft = await run.ApprovedDraftAsync(CompanyA, "k", "6");
         var orderLine = Assert.Single(draft.Lines);
         var subject = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.DraftsCreate,
@@ -295,7 +296,27 @@ public sealed class SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests
 
         using (var approved = await client.SendAsync(State($"{draftPath}/approval", "SENTETIK-p1-approve", "9")))
         {
-            Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+            var problemCode = "unknown";
+            if (approved.StatusCode != HttpStatusCode.OK)
+            {
+                try
+                {
+                    await using var body = await approved.Content.ReadAsStreamAsync();
+                    var buffer = new byte[16 * 1024 + 1];
+                    var count = await body.ReadAtLeastAsync(buffer, buffer.Length, throwOnEndOfStream: false);
+                    if (count <= 16 * 1024)
+                    {
+                        using var document = JsonDocument.Parse(buffer.AsMemory(0, count));
+                        if (document.RootElement.ValueKind == JsonValueKind.Object
+                            && document.RootElement.TryGetProperty("code", out var code)
+                            && code.ValueKind == JsonValueKind.String)
+                            problemCode = SafeApprovalProblemCode(code.GetString());
+                    }
+                }
+                catch (JsonException) { } // Malformed diagnostic input remains unknown; success is still required.
+            }
+            Assert.True(approved.StatusCode == HttpStatusCode.OK,
+                $"Expected HTTP 200; actual HTTP {(int)approved.StatusCode}; public problem code: {problemCode}. participant: {diagnostic.Summary}.");
         }
 
         var answer = await run.LineAsync(CompanyA, draft.Id, orderLine.Id);
@@ -435,6 +456,17 @@ public sealed class SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests
 
     // ---- helpers --------------------------------------------------------------------------------
 
+    // Diagnostic only: never emit an arbitrary response value or change the required successful status.
+    private static string SafeApprovalProblemCode(string? code) => code switch
+    {
+        "service_unavailable" => "service_unavailable",
+        "revision_impact_unavailable" => "revision_impact_unavailable",
+        "sales_revision_blocked" => "sales_revision_blocked",
+        "validation_failed" => "validation_failed",
+        "forbidden" => "forbidden",
+        _ => "unknown",
+    };
+
     private static HttpRequestMessage Revise(string path, string key, string expectedVersion, string reason, Guid lineId, string quantity)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, path)
@@ -520,10 +552,10 @@ public sealed class SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests
         public string Actor { get; } = "SENTETIK-preparer-" + Guid.NewGuid().ToString("N");
         public string Correlation { get; } = $"sales-dec-sal-002-{Guid.NewGuid():N}";
 
-        public static async Task<Run> StartAsync()
+        public static async Task<Run> StartAsync(Action<IServiceCollection>? configureServices = null)
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
-            var factory = new SqlServerRelationalApiFactory(baseConnectionString);
+            var factory = new SqlServerRelationalApiFactory(baseConnectionString, configureServices);
             var run = new Run(baseConnectionString, factory);
             using var client = factory.CreateClient();
             using var health = await client.GetAsync("/health/live");

@@ -104,8 +104,9 @@ public sealed class FinanceAllocationReadService(
         && companyContext.IsResolved && companyContext.CompanyId != Guid.Empty
         && companyContext.CompanyId == context.CompanyId && currentUser.CanAccessCompany(context.CompanyId);
 
-    private static FinanceAllocationView View(FinanceAllocationRow row) => new(
+    private static FinanceAllocationView View(FinanceAllocationRow row) => new FinanceAllocationView(
         row.Id, row.CompanyId, row.SourceId, row.OpenItemId, row.CurrencyId, row.AmountText,
         (FinanceAllocationStatus)row.Status, row.Version.ToString(CultureInfo.InvariantCulture),
-        row.Reason, row.CreatedBy, row.CreatedAtUtc, row.ReleasedBy, row.ReleasedAtUtc, row.ReleaseReason);
+        row.Reason, row.CreatedBy, row.CreatedAtUtc, row.ReleasedBy, row.ReleasedAtUtc, row.ReleaseReason,
+        row.AllocationPartyId, row.AllocationAccountId);
 }

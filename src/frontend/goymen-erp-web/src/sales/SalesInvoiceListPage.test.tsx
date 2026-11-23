@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { SALES_CAPABILITY } from './capabilities'
+import { SALES_CAPABILITY, SALES_INVOICE_FINALIZE_CAPABILITY } from './capabilities'
 import { INVOICE_LIST_TEXT } from './invoiceListText'
 import { INVOICE_ID, INVOICE_NO, OTHER_INVOICE_ID, invoiceDetail } from './invoiceTestData'
 import { ACCOUNT, COMPANY_A, CURRENCY, PARTY, installPoolFetch, json, type PoolCall } from './poolFixtures'
@@ -210,6 +210,23 @@ describe('UI-63 S-09 Satış faturaları', () => {
     await user.click(screen.getByRole('button', { name: T.close }))
     await waitFor(() => expect(screen.queryByTestId('sales-invoices-detail')).toBeNull())
     expect(router.state.location.search).toBe('')
+  })
+
+  it('shows the finalize control in the opened detail only with the published sales.invoices.finalize control (Sales shell 1.27)', async () => {
+    const user = userEvent.setup()
+    const fetch = installPoolFetch((call) => {
+      if (isList(call)) return json(page([summary()]))
+      if (call.url.endsWith(`/sales/invoices/${INVOICE_ID}`)) return json(invoiceDetail())
+      return notFound(call)
+    }, [...GRANTED, SALES_INVOICE_FINALIZE_CAPABILITY])
+    renderPool(ROUTE)
+    await screen.findByRole('table', { name: T.caption })
+    await user.click(screen.getByRole('button', { name: T.openLabel(INVOICE_NO) }))
+    const panel = await screen.findByTestId('sales-invoice-finalization')
+    expect(within(panel).getByTestId('sales-invoice-finalize')).toBeTruthy()
+    expect(within(panel).queryByTestId('sales-invoice-controls-unavailable')).toBeNull()
+    // Showing the control sends nothing: the command is the user's click, re-measured by the server.
+    expect(fetch.posts()).toHaveLength(0)
   })
 
   it('opens no detail for a withheld row: the document number is plain text and a deep link shows the hint (SAT-D238)', async () => {

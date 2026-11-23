@@ -21,22 +21,40 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// <see cref="SalesPartyRiskFigureStateV1.Unavailable"/> — never a partial sum. No open item is a recorded zero (an empty list).
 /// Customer instruments not yet collected are NOT added: the debt closes at collection (DEC-FIN-016), so the open item still
 /// carries it — adding the instrument too would count it twice.</item>
-/// <item><b>Credit limit</b> and <b>collateral</b>: Finance owns them (SAT-D51; Cari only shows them), but no master exists on
-/// main yet (W4-RISK; the collateral haircut is OPEN-010, still open). Both are <see cref="SalesPartyRiskFigureStateV1.NoSource"/>
-/// — never zero, never unlimited.</item>
+/// <item><b>Credit limit</b> (API-85a, F018 §L1; Finance owns it, SAT-D51; Cari only shows it): the account's ONE approved
+/// record of the credit limit master (<see cref="FinancePartyCreditLimitService"/>). An approved Set answers its exact amount in
+/// its one currency (<c>IncludesTax</c> null: the notion does not apply to a limit). No approved record, or an approved Remove,
+/// is <see cref="SalesPartyRiskFigureStateV1.NoSource"/> (<see cref="CreditLimitNotSet"/>) — never zero, never unlimited. A
+/// stored record Finance cannot read exactly (or one naming another party) is <see cref="SalesPartyRiskFigureStateV1.Unavailable"/>.
+/// A pending proposal never counts.</item>
+/// <item><b>Collateral</b> (API-85b, F018 §L2; FNS-D31, FNS-D57): the account's held received collaterals of the collateral
+/// master (<see cref="FinancePartyCollateralService"/>) in force on the read date (the company business day, FNS-D75),
+/// each weighted by the Settings rate of its type at READ time (amount x rate / 100, exact), summed per currency
+/// (<see cref="FinancePartyCollateralFigures"/>; <c>IncludesTax</c> null). No collateral in force is a recorded zero (an
+/// empty list). A Settings catalog that cannot answer (the default until Settings registers one), an unknown type, a rate
+/// outside 0–100, a stored row Finance cannot read, or a sum System.Decimal cannot hold exactly is
+/// <see cref="SalesPartyRiskFigureStateV1.Unavailable"/> — never a partial sum and never an assumed rate. The collateral
+/// haircut is OPEN-010 (still open): none is applied. The documentary risk (FNS-D58) is not part of this contract.</item>
 /// </list>
 /// </summary>
-internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext, ICompanyContext companyContext)
+internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext, ICompanyContext companyContext,
+    IFinanceCollateralTypeCatalogReader collateralTypes, TimeProvider timeProvider, IFinanceCollateralPolicyReaderV1? collateralPolicies = null)
     : ISalesPartyRiskReadPortV1
 {
+    /// <summary>Without a Settings collateral type catalog: the collateral figure fails closed when any collateral is held.</summary>
+    public FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext, ICompanyContext companyContext)
+        : this(dbContext, companyContext, new UnavailableFinanceCollateralTypeCatalogReader(), TimeProvider.System)
+    {
+    }
+
     /// <summary>The stable source names this owner answers under.</summary>
     public const string OpenItemsSource = "finance.open-items";
     public const string CreditLimitSource = "finance.party-credit-limit";
     public const string CollateralSource = "finance.party-collateral";
 
     /// <summary>The stable reason codes of this owner's figures.</summary>
-    public const string CreditLimitOwnerMissing = "finance_credit_limit_owner_missing";
-    public const string CollateralOwnerMissing = "finance_collateral_owner_missing";
+    public const string CreditLimitNotSet = "finance_credit_limit_not_set";
+    public const string CreditLimitUnreadable = "finance_credit_limit_unreadable";
     public const string OpenItemUnreadable = "finance_open_item_unreadable";
     public const string CustomerUnidentified = "finance_customer_unidentified";
 
@@ -55,30 +73,140 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
         var receivables = partyId == Guid.Empty || companyAccountId == Guid.Empty
             ? Unavailable(CustomerUnidentified)
             : await OpenReceivablesAsync(companyId, partyId, companyAccountId, cancellationToken);
-        return new SalesPartyRiskReadAnswerV1(companyId, partyId, companyAccountId, receivables,
-            new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.NoSource, CreditLimitSource, [], null, CreditLimitOwnerMissing),
-            new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.NoSource, CollateralSource, [], null, CollateralOwnerMissing));
+        var creditLimit = partyId == Guid.Empty || companyAccountId == Guid.Empty
+            ? new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Unavailable, CreditLimitSource, [], null, CustomerUnidentified)
+            : await CreditLimitAsync(companyId, partyId, companyAccountId, cancellationToken);
+        var collateral = partyId == Guid.Empty || companyAccountId == Guid.Empty
+            ? new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Unavailable, CollateralSource, [], null, CustomerUnidentified)
+            : await CollateralAsync(companyId, partyId, companyAccountId, cancellationToken);
+        return new SalesPartyRiskReadAnswerV1(companyId, partyId, companyAccountId, receivables, creditLimit, collateral);
     }
 
-    private async Task<SalesPartyRiskFigureV1> OpenReceivablesAsync(Guid companyId, Guid partyId, Guid companyAccountId,
+    /// <summary>
+    /// API-85b: the weighted collateral of the account — its held received collaterals (effective, not released) in force on
+    /// the read date, at the Settings rate of their type read now.
+    /// </summary>
+    private async Task<SalesPartyRiskFigureV1> CollateralAsync(Guid companyId, Guid partyId, Guid companyAccountId,
+        CancellationToken cancellationToken)
+    {
+        var held = await FinancePartyCollateralService.HeldReceivedAsync(dbContext, companyId, companyAccountId,
+            cancellationToken);
+        if (held.Any(row => row.PartyId != partyId))
+        {
+            // A collateral of another party on this account: never a guess.
+            return new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Unavailable, CollateralSource, [], null,
+                FinancePartyCollateralFigures.CollateralUnreadable);
+        }
+
+        var inputs = held.Select(FinancePartyCollateralService.HeldInput).ToList();
+        if (FinancePartyCollateralService.ReadDate(timeProvider) is not { } asOf)
+        {
+            // FNS-D75: no collateral is dated in force by a UTC guess; with none held the figure is still a recorded zero.
+            return inputs.Count == 0
+                ? new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Available, CollateralSource, [], null, null)
+                : new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Unavailable, CollateralSource, [], null,
+                    FinanceBusinessDay.BusinessDayUnavailable);
+        }
+
+        var catalog = inputs.Any(input => FinancePartyCollateralFigures.IsInForce(input.ValidFrom, input.ValidUntil, asOf))
+            ? await collateralTypes.ListAsync(companyId, asOf, cancellationToken)
+            : null;
+        var figure = await FinanceCollateralPolicyFigures.WeighAsync(companyId, inputs, catalog, collateralPolicies, asOf, cancellationToken);
+        if (!figure.IsAvailable)
+        {
+            return new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Unavailable, CollateralSource, [], null,
+                figure.ReasonCode);
+        }
+
+        var amounts = new List<SalesPartyRiskAmountV1>(figure.Amounts.Count);
+        foreach (var amount in figure.Amounts)
+        {
+            if (!FinancePartyCollateralFigures.TryExactDecimal(amount.Amount, out var value))
+            {
+                // A weighted sum System.Decimal cannot hold exactly is never rounded to fit.
+                return new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Unavailable, CollateralSource, [], null,
+                    FinancePartyCollateralFigures.CollateralUnreadable);
+            }
+
+            amounts.Add(new SalesPartyRiskAmountV1(amount.CurrencyId, value));
+        }
+
+        return new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Available, CollateralSource, amounts,
+            IncludesTax: null, null, figure.PolicyProofs?.Select(x => new SalesPartyRiskPolicyProofV1(x.CompanyId, x.CollateralId,
+                x.CollateralRevision, x.CollateralTypeId, x.TypeVersion, x.BankInstitutionId, x.BankSourceVersion,
+                x.RatePercent, x.SourceVersion, x.Scope, x.BusinessDate)).ToArray());
+    }
+
+    /// <summary>
+    /// API-85a: the account's effective credit limit — its one approved record. A proposal (pending, rejected or superseded)
+    /// and a superseded approved record never count.
+    /// </summary>
+    internal async Task<SalesPartyRiskFigureV1> CreditLimitAsync(Guid companyId, Guid partyId, Guid companyAccountId,
+        CancellationToken cancellationToken)
+    {
+        const int approved = FinancePartyCreditLimitService.Approved;
+        var rows = await dbContext.PartyCreditLimits.AsNoTracking()
+            .Where(row => row.CompanyId == companyId && row.CompanyAccountId == companyAccountId && row.Status == approved)
+            .Select(row => new { row.PartyId, row.Kind, row.CurrencyId, row.AmountText })
+            .Take(2)
+            .ToListAsync(cancellationToken);
+        if (rows.Count == 0)
+        {
+            return new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.NoSource, CreditLimitSource, [], null, CreditLimitNotSet);
+        }
+
+        var unreadable = new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Unavailable, CreditLimitSource, [], null,
+            CreditLimitUnreadable);
+        var effective = rows[0];
+        if (rows.Count > 1 || effective.PartyId != partyId)
+        {
+            // More than one effective record, or a record of another party on this account: never a guess.
+            return unreadable;
+        }
+
+        if (effective.Kind == FinancePartyCreditLimitService.RemoveKind)
+        {
+            // An approved Remove: "no limit" — not zero and not unlimited.
+            return effective.CurrencyId is null && effective.AmountText is null
+                ? new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.NoSource, CreditLimitSource, [], null, CreditLimitNotSet)
+                : unreadable;
+        }
+
+        if (effective.Kind != FinancePartyCreditLimitService.SetKind || effective.CurrencyId is not { } currencyId
+            || currencyId == Guid.Empty || !FinancePartyCreditLimitService.IsExactAmount(effective.AmountText))
+        {
+            return unreadable;
+        }
+
+        var amount = decimal.Parse(effective.AmountText!, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
+        return new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Available, CreditLimitSource,
+            [new SalesPartyRiskAmountV1(currencyId, amount)], IncludesTax: null, null);
+    }
+
+    internal async Task<SalesPartyRiskFigureV1> OpenReceivablesAsync(Guid companyId, Guid partyId, Guid companyAccountId,
         CancellationToken cancellationToken)
     {
         var open = FinanceOpenItemStatuses.Open;
         // MOD-15 / ALS-D42: only RECEIVABLE items are the customer's risk. A payable to the same party (it may also be a
         // supplier, DEC-CAR-001) is the company's own debt: it is neither added nor netted off here.
         var receivable = FinanceOpenItemDirectionCodes.Receivable;
-        var rows = await dbContext.OpenItems.AsNoTracking()
-            .Where(row => row.CompanyId == companyId && row.PartyId == partyId && row.CompanyAccountId == companyAccountId
-                && row.Status == open && row.Direction == receivable)
-            .Select(row => new { row.CurrencyId, row.SourceKind, row.OutstandingAmountText })
+        // FNS cari devir (PartyBalanceAssignments): an item transferred to this account counts with its transferred amount;
+        // an item of this account transferred away counts only with what stays here. Historical rows are never rewritten.
+        var rows = await FinancePartyBalanceAssignment.OpenItemsOf(dbContext, partyId, companyAccountId).AsNoTracking()
+            .Where(row => row.CompanyId == companyId && row.Status == open && row.Direction == receivable)
+            .Select(row => new { row.Id, row.PartyId, row.CompanyAccountId, row.CurrencyId, row.SourceKind, row.OutstandingAmountText })
             .ToListAsync(cancellationToken);
+        var itemAssignments = await AssignmentsAsync(companyId, FinanceBalanceAssignmentKinds.OpenItem,
+            rows.Select(row => row.Id).ToList(), cancellationToken);
 
         var sums = new SortedDictionary<Guid, FinanceExactDecimalText>();
         foreach (var row in rows)
         {
             if (row.CurrencyId == Guid.Empty
                 || !string.Equals(row.SourceKind, FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment, StringComparison.Ordinal)
-                || !FinanceExactDecimalText.TryParseNonNegative(row.OutstandingAmountText, out var outstanding))
+                || !FinanceExactDecimalText.TryParseNonNegative(row.OutstandingAmountText, out _)
+                || Share(row.PartyId, row.CompanyAccountId, row.CurrencyId, row.OutstandingAmountText,
+                    itemAssignments[row.Id].ToArray(), partyId, companyAccountId) is not { } outstanding)
             {
                 // A stored row Finance cannot read (or an open-item source whose tax basis is not known here): no partial sum.
                 return Unavailable();
@@ -135,10 +263,14 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
     {
         var receipt = MoneyEventKinds.ManualBankReceiptRecorded;
         var collected = MoneyEventKinds.CustomerInstrumentCollected;
+        const int receiptAssignment = FinanceBalanceAssignmentKinds.Receipt;
         var payments = await dbContext.MoneyEvents.AsNoTracking()
-            .Where(row => row.CompanyId == companyId && row.PartyId == partyId && row.CompanyAccountId == companyAccountId
-                && (row.Kind == receipt || row.Kind == collected))
-            .Select(row => new { row.SourceId, row.CurrencyId, row.AmountText })
+            .Where(row => row.CompanyId == companyId && (row.Kind == receipt || row.Kind == collected)
+                && (row.PartyId == partyId && row.CompanyAccountId == companyAccountId
+                    || row.Kind == receipt && dbContext.PartyBalanceAssignments.Any(a => a.CompanyId == companyId
+                        && a.Kind == receiptAssignment && a.SourceId == row.SourceId
+                        && a.CurrentPartyId == partyId && a.CurrentAccountId == companyAccountId)))
+            .Select(row => new { row.SourceId, row.Kind, row.PartyId, row.CompanyAccountId, row.CurrencyId, row.AmountText })
             .ToListAsync(cancellationToken);
         var sourceIds = payments.Select(row => row.SourceId).ToList();
         var approved = ReversalProposalStatuses.Approved;
@@ -155,6 +287,8 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
                 .Select(row => new { row.SourceId, row.CurrencyId, row.OriginalAmountText, row.UnallocatedAmountText })
                 .ToListAsync(cancellationToken);
         var stateBySource = states.ToDictionary(row => row.SourceId);
+        var receiptAssignments = await AssignmentsAsync(companyId, receiptAssignment,
+            payments.Where(row => row.Kind == receipt).Select(row => row.SourceId).ToList(), cancellationToken);
 
         var sums = new SortedDictionary<Guid, FinanceExactDecimalText>();
         foreach (var payment in payments)
@@ -183,7 +317,15 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
                 }
             }
 
-            sums[payment.CurrencyId] = sums.TryGetValue(payment.CurrencyId, out var sum) ? sum.Add(unallocated) : unallocated;
+            // A transferred receipt: only the unallocated amount explicitly assigned to an account counts there.
+            var assigned = payment.Kind == receipt ? receiptAssignments[payment.SourceId].ToArray() : [];
+            if (Share(payment.PartyId, payment.CompanyAccountId, payment.CurrencyId, unallocated.Text, assigned,
+                    partyId, companyAccountId) is not { } share)
+            {
+                return null;
+            }
+
+            sums[payment.CurrencyId] = sums.TryGetValue(payment.CurrencyId, out var sum) ? sum.Add(share) : share;
         }
 
         // Review A P2-1: a recorded R47 outgoing payment to the same customer account (e.g. an advance refunded) gives that money
@@ -191,15 +333,23 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
         // in fact a supplier payment (a party that is both) can only make the deduction smaller — the receivable larger — never
         // the other way. Any outgoing row Finance cannot read → null (Unavailable), never a partial netting. API-23: an
         // outgoing payment with an approved reversal gave nothing back, so it is not netted.
+        const int paymentAssignment = FinanceBalanceAssignmentKinds.Payment;
         var outgoing = await dbContext.OutgoingMoneyEvents.AsNoTracking()
-            .Where(row => row.CompanyId == companyId && row.PartyId == partyId && row.CompanyAccountId == companyAccountId
+            .Where(row => row.CompanyId == companyId
+                && (row.PartyId == partyId && row.CompanyAccountId == companyAccountId
+                    || dbContext.PartyBalanceAssignments.Any(a => a.CompanyId == companyId && a.Kind == paymentAssignment
+                        && a.SourceId == row.PaymentId && a.CurrentPartyId == partyId && a.CurrentAccountId == companyAccountId))
                 && !dbContext.OutgoingMoneyEventReversals.Any(reversal =>
                     reversal.CompanyId == companyId && reversal.OriginalEventId == row.Id))
-            .Select(row => new { row.CurrencyId, row.AmountText })
+            .Select(row => new { row.PaymentId, row.PartyId, row.CompanyAccountId, row.CurrencyId, row.AmountText })
             .ToListAsync(cancellationToken);
+        var paymentAssignments = await AssignmentsAsync(companyId, paymentAssignment,
+            outgoing.Select(row => row.PaymentId).ToList(), cancellationToken);
         foreach (var refund in outgoing)
         {
-            if (refund.CurrencyId == Guid.Empty || !FinanceExactDecimalText.TryParsePositive(refund.AmountText, out var paidOut))
+            if (refund.CurrencyId == Guid.Empty || !FinanceExactDecimalText.TryParsePositive(refund.AmountText, out _)
+                || Share(refund.PartyId, refund.CompanyAccountId, refund.CurrencyId, refund.AmountText,
+                    paymentAssignments[refund.PaymentId].ToArray(), partyId, companyAccountId) is not { } paidOut)
             {
                 return null;
             }
@@ -211,6 +361,34 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
         }
 
         return sums;
+    }
+
+    private async Task<ILookup<Guid, FinancePartyBalanceAssignmentRow>> AssignmentsAsync(Guid companyId, int kind,
+        IReadOnlyList<Guid> sourceIds, CancellationToken cancellationToken) => sourceIds.Count == 0
+        ? Array.Empty<FinancePartyBalanceAssignmentRow>().ToLookup(row => row.SourceId)
+        : (await dbContext.PartyBalanceAssignments.AsNoTracking()
+            .Where(row => row.CompanyId == companyId && row.Kind == kind && sourceIds.Contains(row.SourceId))
+            .ToListAsync(cancellationToken)).ToLookup(row => row.SourceId);
+
+    /// <summary>
+    /// The part of one source's amount that belongs to the read account under the explicit balance transfers
+    /// (<see cref="FinanceAllocationPositions"/>): the original account keeps what was not transferred, a successor holds
+    /// its assigned amount. An assignment Finance cannot reconcile with its source → null (Unavailable, never a guess).
+    /// </summary>
+    private static FinanceExactDecimalText? Share(Guid originalPartyId, Guid originalAccountId, Guid currencyId,
+        string basis, IReadOnlyList<FinancePartyBalanceAssignmentRow> assignments, Guid partyId, Guid companyAccountId)
+    {
+        try
+        {
+            var position = new FinanceAllocationPositions(originalPartyId, originalAccountId, currencyId, basis, assignments)
+                .All().SingleOrDefault(x => x.PartyId == partyId && x.CompanyAccountId == companyAccountId);
+            var zero = new FinanceExactDecimalText(0, 0);
+            return position is null ? zero : FinanceAllocationPositions.Amount(position.AvailableAmount);
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     private static SalesPartyRiskFigureV1 Available(IReadOnlyList<SalesPartyRiskAmountV1> amounts) =>

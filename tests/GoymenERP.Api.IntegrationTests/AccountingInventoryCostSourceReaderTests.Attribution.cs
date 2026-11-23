@@ -1,0 +1,154 @@
+using System.Text.Json;
+using GoymenERP.Api.AccountingRuntime;
+using GoymenERP.BuildingBlocks.Messaging;
+using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.Accounting.Application.Inbox;
+using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
+
+namespace GoymenERP.Api.IntegrationTests;
+
+public sealed partial class AccountingInventoryCostSourceReaderTests
+{
+    [Fact]
+    public async Task Mixed_original_and_posted_physical_cost_keeps_total_separate_from_the_only_unposted_amount()
+    {
+        var f = new Fixture(); var known = f.Inventory.Value.Lines[0];
+        var unknown = known with { Tl = known.Tl with { Status = InventoryMovementCostStampStatusV1.Unavailable,
+            Amount = null, UnitCostRatio = null, Reason = "unknown-at-shipment" } };
+        f.Inventory.Value = f.Inventory.Value with { Lines = [unknown, known with { MovementLineNumber = 2 }] };
+        var envelope = f.Envelope(); var posted = new PostedPort(f); var claims = new FinalizedClaims(f, envelope);
+        var reader = new AccountingInventoryCostSourceReaderV1(f.Company, f.Logistics, f.Inventory, posted, claims);
+        var source = await reader.ReadAsync(envelope); var component = Assert.Single(source.Components);
+        Assert.Equal(new("10001", "50"), component.SignedTlAmount);
+        Assert.Equal(new("10001", "100"), component.UnpostedTlAmount);
+        Assert.Equal(2, component.SalesPhysicalClaims!.Count);
+        Assert.Single(component.AlreadyPostedComponents!);
+        Assert.True(AccountingInventoryCostRoundingV1Rules.TryResolve(component, SettingsCurrencyIdentitiesV1.TurkishLira,
+            Guid.NewGuid(), 1, 2, out var amount, out var rounding));
+        Assert.Equal(100.01m, amount); Assert.Equal(component.UnpostedTlAmount, rounding!.ExactSignedAmount);
+        foreach (var invalid in new[] { component with { UnpostedTlAmount = null },
+            component with { UnpostedTlAmount = new("-1", "1") }, component with { UnpostedTlAmount = new("0", "1") },
+            component with { AlreadyPostedComponents = null },
+            component with { SalesPhysicalClaims = [component.SalesPhysicalClaims[0]] } })
+            Assert.Throws<OutboxPermanentFailureException>(() => AccountingInventoryCostSourceValidationV1.Require(envelope,
+                source with { Components = [invalid] }, source.CompanyId));
+    }
+
+    [Fact]
+    public async Task A_proven_zero_original_stamp_in_a_mixed_line_does_not_invent_another_journal_amount()
+    {
+        var f = new Fixture(); var known = f.Inventory.Value.Lines[0];
+        f.Inventory.Value = f.Inventory.Value with { Lines = [known with { Tl = known.Tl with {
+            Status = InventoryMovementCostStampStatusV1.Unavailable, Amount = null, UnitCostRatio = null, Reason = "pending" } },
+            known with { MovementLineNumber = 2, Tl = known.Tl with { Amount = 0m, UnitCostRatio = new("0", "1") } }] };
+        var envelope = f.Envelope(); var posted = new PostedPort(f);
+        var reader = new AccountingInventoryCostSourceReaderV1(f.Company, f.Logistics, f.Inventory, posted, new FinalizedClaims(f, envelope));
+        var component = Assert.Single((await reader.ReadAsync(envelope)).Components);
+        Assert.Equal(new("10001", "100"), component.SignedTlAmount);
+        Assert.Equal(new("0", "1"), component.UnpostedTlAmount);
+    }
+
+    [Fact]
+    public async Task Original_unknown_cost_links_actual_posted_money_only_when_the_same_finalized_sales_owner_claim_is_proven()
+    {
+        var f = new Fixture(); var original = f.Inventory.Value.Lines[0];
+        f.Inventory.Value = f.Inventory.Value with { Lines = [original with { Tl = original.Tl with {
+            Status = InventoryMovementCostStampStatusV1.Unavailable, Amount = null, UnitCostRatio = null, Reason = "unknown-at-shipment" } }] };
+        var envelope = f.Envelope(); var posted = new PostedPort(f); var claims = new FinalizedClaims(f, envelope);
+        var reader = new AccountingInventoryCostSourceReaderV1(f.Company, f.Logistics, f.Inventory, posted, claims);
+        var component = Assert.Single((await reader.ReadAsync(envelope)).Components);
+        Assert.Equal(new("10001", "100"), component.SignedTlAmount);
+        Assert.Equal(posted.Share, Assert.Single(component.AlreadyPostedComponents!));
+        Assert.Single(component.SalesPhysicalClaims!);
+        Assert.Equal(1, claims.Calls);
+        claims.Cancelled = true;
+        Assert.Equal("sales_cost_owner_claim_unavailable", (await Assert.ThrowsAsync<AccountingInvoiceJournalRetryException>(
+            () => reader.ReadAsync(envelope))).Reason);
+    }
+
+    [Fact]
+    public async Task A_changed_source_event_or_company_during_attribution_lookup_never_becomes_initial_cogs()
+    {
+        var f = new Fixture(); var original = f.Inventory.Value.Lines[0];
+        f.Inventory.Value = f.Inventory.Value with { Lines = [original with { Tl = original.Tl with {
+            Status = InventoryMovementCostStampStatusV1.Unavailable, Amount = null, UnitCostRatio = null, Reason = "unknown-at-shipment" } }] };
+        var envelope = f.Envelope(); var posted = new PostedPort(f); var claims = new FinalizedClaims(f, envelope) { WrongEvent = true };
+        var reader = new AccountingInventoryCostSourceReaderV1(f.Company, f.Logistics, f.Inventory, posted, claims);
+        Assert.Equal("sales_cost_owner_claim_unavailable", (await Assert.ThrowsAsync<AccountingInvoiceJournalRetryException>(
+            () => reader.ReadAsync(envelope))).Reason);
+        claims.WrongEvent = false; posted.AfterRead = () => f.Company.CompanyId = Guid.NewGuid();
+        Assert.Equal("company_context_mismatch", (await Assert.ThrowsAsync<AccountingInvoiceJournalRetryException>(
+            () => reader.ReadAsync(envelope))).Reason);
+    }
+
+    private sealed class PostedPort : IPostedManufacturingShipmentCostReaderV1
+    {
+        public Task<PostedManufacturingShipmentCostV1?> ReadPostedDeltasAsync(Guid companyId, Guid shipmentId, Guid movementId,
+            int movementLineNumber, Guid productId, decimal quantityKg, Func<CancellationToken, Task> freshConsumerFence,
+            CancellationToken cancellationToken = default) => throw new InvalidOperationException("Synthetic original-source fixture has no later-delta owner.");
+        public PostedManufacturingCostShareV1 Share { get; }
+        public Action? AfterRead { get; set; }
+        public PostedPort(Fixture f)
+        {
+            var actual = f.Inventory.Value; var line = actual.Lines[0];
+            var physical = new ManufacturingAttributionShipmentV1(actual.ShipmentId, actual.MovementId, line.MovementLineNumber,
+                line.LoadingInstructionLineId, line.ProductId, line.LabelId, line.QuantityKg, new("1", "1"), new("3", "1"),
+                DateTimeOffset.Parse("2026-11-17T09:00:00Z"), null, false, "{\"synthetic\":true}");
+            var value = new PostedManufacturingCostShareV1(f.Company.CompanyId, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "1",
+                Guid.NewGuid(), Guid.NewGuid(), SettingsCurrencyIdentitiesV1.TurkishLira, Guid.NewGuid(), Guid.NewGuid(), "100.01", "100.01",
+                new("10001", "100"), "0", Guid.NewGuid(), 1, 2, new(2026, 11, 17), physical,
+                new string('A', 64), new string('b', 64), new string('c', 64), "");
+            Share = value with { Fingerprint = AccountingInventoryCostSourceValidationV1.Sha256(JsonSerializer.Serialize(value, new JsonSerializerOptions(JsonSerializerDefaults.Web))) };
+        }
+        public async Task<PostedManufacturingShipmentCostV1?> ReadAsync(Guid companyId, Guid shipmentId, Guid movementId,
+            int movementLineNumber, Guid productId, decimal quantityKg, Func<CancellationToken, Task> freshConsumerFence,
+            CancellationToken cancellationToken = default)
+        {
+            await freshConsumerFence(cancellationToken); AfterRead?.Invoke(); await freshConsumerFence(cancellationToken);
+            return new(companyId, shipmentId, movementId, movementLineNumber, productId, quantityKg, [Share]);
+        }
+    }
+    private sealed class FinalizedClaims(Fixture f, WorkInboxEventV1 envelope) : ISalesFinalizedShipmentClaimReadPortV1
+    {
+        public bool Cancelled { get; set; }
+        public bool Historical { get; set; }
+        public bool DuplicateHistory { get; set; }
+        public Guid CancellationId { get; } = Guid.NewGuid();
+        public Guid CancelledBy { get; } = Guid.NewGuid();
+        public bool WrongEvent { get; set; }
+        public int Calls { get; private set; }
+        public async Task<SalesShipmentClaimBatchV1> ReadAsync(Guid companyId, IReadOnlyCollection<Guid> shipmentIds,
+            Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken = default)
+        {
+            Calls++; await freshConsumerFence(cancellationToken);
+            var source = JsonSerializer.Deserialize<AccountingSalesInvoiceFinalizedEventV1>(envelope.PayloadJson,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+            Assert.Equal(f.Company.CompanyId, companyId);
+            // This synthetic owner represents the first real claim; duplicate input lines remain the adapter's own rejection case.
+            var line = source.Lines!.First(x => x?.ShipmentSource?.ShipmentId == shipmentIds.Single())!;
+            var ship = line.ShipmentSource!;
+            var lifecycle = new SalesShipmentInvoiceLifecycleV1(source.InvoiceId, source.Version, "Finalized",
+                Cancelled ? envelope.OccurredAtUtc : null, Cancelled ? "SENTETIK" : null, Cancelled ? envelope.OccurredAtUtc : null);
+            var claim = new SalesFinalizedShipmentClaimV1(companyId, source.InvoiceId, line.LineId, line.LineNo,
+                source.AdmissionId, source.Version, new(ship.ShipmentId, ship.DispatchNoteId, ship.DispatchNoteLineNo,
+                    ship.SalesOrderId, ship.SalesOrderLineId, ship.PriceBasisRevision, ship.ProductId, ship.UnitId, ship.InvoicedQuantity),
+                WrongEvent ? Guid.NewGuid() : envelope.EventId, AccountingInventoryCostSourceValidationV1.Sha256(envelope.PayloadJson),
+                envelope.OccurredAtUtc, lifecycle);
+            await freshConsumerFence(cancellationToken);
+            if (Historical)
+            {
+                var at = envelope.OccurredAtUtc.AddMinutes(1);
+                lifecycle = new(source.InvoiceId, source.Version + 1, "OfficiallyCancelled", at, CancelledBy.ToString("D"), at);
+                var historical = new SalesHistoricalFinalizedShipmentClaimV1(claim with { Lifecycle = lifecycle },
+                    CancellationId, CancellationId, new string('A', 64), CancelledBy, at, "SENTETIK official cancellation");
+                return new(companyId, SalesShipmentClaimReadOutcomeV1.Available,
+                    [new(ship.ShipmentId, SalesShipmentClaimReadOutcomeV1.NotInvoiced, null, [lifecycle], "SENTETIK-history",
+                        HistoricalFinalizedClaims: DuplicateHistory ? [historical, historical] : [historical])], "SENTETIK-history-batch");
+            }
+            return new(companyId, SalesShipmentClaimReadOutcomeV1.Available,
+                [new(ship.ShipmentId, SalesShipmentClaimReadOutcomeV1.Available, claim, [lifecycle], "SENTETIK-1")], "SENTETIK-batch-1");
+        }
+    }
+}

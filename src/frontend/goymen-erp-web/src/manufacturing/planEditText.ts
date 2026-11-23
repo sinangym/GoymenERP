@@ -1,3 +1,5 @@
+import { paintSelectionFailureText } from './paintSelectionText'
+import { samePaintSelection } from './paintSelectionContract'
 /**
  * MFG-PLAN-EDIT screen text: the Draft edit form, its refusals and the plan history.
  *
@@ -8,10 +10,13 @@
 
 import type { PlanRevision } from './planRevisionContract'
 import { TARGET_BASIS_LABEL } from './manufacturingText'
+import { PLAN_PHYSICAL_MASS_REFUSAL } from './planText'
 
 export const PLAN_EDIT_TEXT = {
   editButton: 'Planı düzenle',
   formHeading: 'Taslak planı düzenle',
+  recalculateHeading: 'Planı yeniden hesapla',
+  recalculateNote: 'Emri iptal edilen planın ana rulolarını seçin. İlk onayın Ayarlar profili, iş merkezi ve hedefi korunur. Yeni etiketler aynı sahipliğe ait olmalıdır; kayıttan sonra yeniden onay gerekir.',
   save: 'Değişikliği kaydet',
   saving: 'Kaydediliyor…',
   cancel: 'Vazgeç',
@@ -32,7 +37,7 @@ export const PLAN_EDIT_TEXT = {
   legacyLabel: 'Etiket sürümü yok — ruloyu kaldırıp adaylardan yeniden ekleyin.',
   approvedNote:
     'Onaylı plan düzenlenmez: onay bir karar kaydetti ve plandan üretim emri açılmış olabilir. Onay sonrası revizyon ayrı bir karardır.',
-  specNote: 'Dilme ayrıntısı taşıyan plan düzenlenmez; ana ruloyla dengesi iş kararı bekliyor (AT-044).',
+  specNote: 'Dilme satırları korunur; yeni ana rulo ve kg değerleri sunucuda yeniden hesaplanır.',
   historyNotReady: 'Plan geçmişi okunamadığı için düzenleme şu an açılamıyor.',
   historyStale: 'Plan geçmişi planın güncel sürümünü göstermiyor; güncel planı yeniden okuyun.',
   reasonRequired: 'Düzenleme gerekçesi zorunludur (en fazla 256 karakter).',
@@ -76,6 +81,8 @@ export const CUT_LINE_TEXT = {
 
 /** The server's refusal, in the user's terms. */
 export function revisionFailureText(status: number, code: string | null, field: string | null, process: string): string {
+  const paintFailure = paintSelectionFailureText(code)
+  if (status !== 401 && status !== 403 && paintFailure !== null) return paintFailure
   if (status === 401 || status === 403) return 'Plan düzenleme yetkiniz artık geçerli değil.'
   if (status === 404) return 'Plan bu şirket bağlamında bulunamadı.'
   switch (code) {
@@ -84,7 +91,11 @@ export function revisionFailureText(status: number, code: string | null, field: 
     case 'inventory_label_version_conflict':
       return 'Bir ana rulonun etiketi bu arada değişti. Ruloyu kaldırıp adaylardan yeniden ekleyin.'
     case 'manufacturing_plan_not_draft':
-      return 'Plan artık taslak değil (onaylandı ya da emir açtı); onaylı plan düzenlenmez.'
+      return 'Plan bu durumda düzenlenemez. Taslak veya emri iptal edildikten sonra yeniden onay bekleyen bir plan açın.'
+    case 'manufacturing_plan_reapproval_settings_changed':
+      return 'İlk onayın Ayarlar profili veya sabit plan içeriği değişti. Yeni plan hazırlayın.'
+    case 'manufacturing_plan_label_not_usable':
+      return PLAN_PHYSICAL_MASS_REFUSAL
     case 'manufacturing_plan_process_fixed':
       return `Seçilen iş merkezi planın sürecini (${process}) yürütmüyor; planın süreci değişmez.`
     case 'manufacturing_plan_slitting_spec_fixed':
@@ -157,6 +168,10 @@ export function describeRevisionChanges(previous: PlanRevision, next: PlanRevisi
   ) {
     changes.push('Boy kesme ayrıntısı: aynı değerli satırların kimliği değişti.')
   }
+  if (!samePaintSelection(previous.processSpec?.paintSelection, next.processSpec?.paintSelection))
+    changes.push('Boya seçimi: ürün, üyelik, tedarikçi veya renk kaynak sürümü değişti.')
+  if (previous.processSpec?.paintColorCode !== next.processSpec?.paintColorCode)
+    changes.push(`Renk notu: ${previous.processSpec?.paintColorCode ?? '—'} → ${next.processSpec?.paintColorCode ?? '—'}`)
   if (changes.length === 0) changes.push('Ana rulo sırası değişti.')
   return changes
 }

@@ -14,12 +14,34 @@ import {
   decodeInstructionMutation,
   decodeInstructionPage,
   decodeProblem,
+  decodePhysicalStockRefusalDetail,
+  decodeUnloadWeighing,
   parseQuantityInput,
 } from './contract'
 import approvedLinesRaw from './examples/approved-order-lines-response.json?raw'
-import { approvedOrderLine, CANCELLED_INSTRUCTION, INSTRUCTION, weighingRecord } from './testHarness'
+import { approvedOrderLine, CANCELLED_INSTRUCTION, INSTRUCTION, unloadWeighingRecord, weighingRecord } from './testHarness'
 
 type Body = Record<string, any>
+
+describe('Physical stock refusal detail, authoritative text only', () => {
+  it.each(['Sistemde 0 kg var, 1 kg istendi.', 'Sistemde -0.001 kg var, 2.125 kg istendi.',
+    'Sistemde 999999999999999.999 kg var, 999999999999999.999 kg istendi.'])
+  ('preserves canonical 409 text without computing new kg: %s', (detail) => {
+    expect(decodeProblem({ status: 409, detail }, 409)?.detail).toBe(detail)
+  })
+  it.each(['Sistemde -0 kg var, 1 kg istendi.', 'Sistemde 1 kg var, 0 kg istendi.',
+    'Sistemde 1.0001 kg var, 2 kg istendi.', 'Sistemde 01 kg var, 2 kg istendi.',
+    'Sistemde 1.00 kg var, 2 kg istendi.', 'Sistemde 1,5 kg var, 2 kg istendi.',
+    'Sistemde 1 kg var, 2 kg istendi.\n', 'Sistemde 1\u0000 kg var, 2 kg istendi.',
+    'Sistemde 1000000000000000 kg var, 2 kg istendi.', '<script>unsafe</script>'])
+  ('drops noncanonical or unrelated detail: %s', (detail) => {
+    expect(decodePhysicalStockRefusalDetail(detail, 409)).toBeNull()
+    expect(decodeProblem({ status: 409, detail }, 409)).not.toHaveProperty('detail')
+  })
+  it.each([400, 401, 403, 404, 422, 503])('never takes detail from HTTP %s', (status) => {
+    expect(decodeProblem({ status, detail: 'Sistemde 1 kg var, 2 kg istendi.' }, status)).not.toHaveProperty('detail')
+  })
+})
 const parse = (raw: string): Body => JSON.parse(raw) as Body
 const tweak = (raw: string, change: (body: Body) => void): Body => {
   const body = parse(raw)
@@ -57,11 +79,11 @@ describe('instruction decoders', () => {
     ['a line count that does not match', (b: Body) => (b.instruction.lineCount = 2)],
     ['a share of a line the instruction does not have', (b: Body) => b.shares.push({
       shareId: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', lineId: 'ffffffff-ffff-ffff-ffff-ffffffffffff', kind: 'Loaded',
-      quantity: '1', measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z',
+      quantity: '1', measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z', recordedBy: 'SENTETIK-operator',
     })],
     ['a load without its measurement', (b: Body) => b.shares.push({
       shareId: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', lineId: b.lines[0].lineId, kind: 'Loaded',
-      quantity: '1', measurement: null, sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z',
+      quantity: '1', measurement: null, sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z', recordedBy: 'SENTETIK-operator',
     })],
     ['a zero instructed quantity', (b: Body) => (b.lines[0].instructed = '0')],
     ['an all-zero id', (b: Body) => (b.instruction.customerPartyId = '00000000-0000-0000-0000-000000000000')],
@@ -111,7 +133,7 @@ describe('instruction decoders', () => {
 
     const load = (b: Body): Body => ({
       shareId: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee1', lineId: b.lines[0].lineId, kind: 'Loaded',
-      quantity: '1', measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z',
+      quantity: '1', measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z', recordedBy: 'SENTETIK-operator',
     })
     expect(decodeInstructionDetail(cancelledWith(), INSTRUCTION)?.instruction.status).toBe('Cancelled')
     // LOJ-D7: the weighbridge record and the loads of an instruction cancelled after issue stay on it.
@@ -126,6 +148,25 @@ describe('instruction decoders', () => {
     expect(decodeInstructionDetail(cancelledWith((b) => {
       b.shares.push({ ...load(b), kind: 'Shipped', measurement: null })
     }), INSTRUCTION)).toBeNull()
+  })
+
+  it('F-020: every share carries who recorded it as the server stored it, null for an older share, and nothing else', () => {
+    const withShare = (change: (share: Body) => void): Body => tweak(loadResponseRaw, (b) => change(b.detail.shares[0]))
+    expect(decodeInstructionMutation(parse(loadResponseRaw))?.detail.shares[0].recordedBy).toBe('SENTETIK-operator')
+    expect(decodeInstructionMutation(withShare((share) => (share.recordedBy = null)))?.detail.shares[0].recordedBy).toBeNull()
+    const refused: [string, (share: Body) => void][] = [
+      ['a share without the member', (share) => delete share.recordedBy],
+      ['a number for the actor', (share) => (share.recordedBy = 7)],
+      ['an empty actor', (share) => (share.recordedBy = '')],
+      ['an actor longer than the stored column', (share) => (share.recordedBy = 'a'.repeat(129))],
+      ['a wrong-case member', (share) => {
+        share.RecordedBy = share.recordedBy
+        delete share.recordedBy
+      }],
+    ]
+    for (const [name, change] of refused) {
+      expect(decodeInstructionMutation(withShare(change)), name).toBeNull()
+    }
   })
 
   it('F-020 (LOJ-D6…D8): a Cancelled summary carries who cancelled it, when and why, as stored; any other status carries none', () => {
@@ -177,6 +218,80 @@ describe('instruction decoders', () => {
     expect(decodeInstructionDetail(body, INSTRUCTION)).toBeNull()
     expect(decodeInstructionMutation({ detail: body, isReplay: false, originalCorrelationId: 'corr-1' })).toBeNull()
     expect(decodeInstructionPage({ items: [body.instruction], nextCursor: null })).toBeNull()
+  })
+
+  it('LOJ-D17: reads the unload weighing as the backend wrote it, sign and warning kept, and refuses one it cannot vouch for', () => {
+    const record = decodeUnloadWeighing(unloadWeighingRecord())
+    expect(record).toMatchObject({ netKg: '4', loadedKgAtCancel: '4.5', differenceKg: '-0.5', differenceWarning: true })
+    expect(decodeUnloadWeighing(unloadWeighingRecord({ differenceKg: '0.25', netKg: '4.75', grossKg: '15004.75', firstWeighingKg: '15004.75' }))
+      ?.differenceKg).toBe('0.25')
+    // No difference, no warning (no threshold is configured, so ANY difference warns and only a zero one does not).
+    expect(decodeUnloadWeighing(unloadWeighingRecord({ differenceKg: '0', differenceWarning: false }))?.differenceWarning).toBe(false)
+    for (const [label, overrides] of [
+      ['a warning without a difference', { differenceKg: '0', differenceWarning: true }],
+      ['a difference without its warning', { differenceKg: '-0.5', differenceWarning: false }],
+      ['a negative zero difference with a warning', { differenceKg: '-0.000', differenceWarning: true }],
+      ['a warning that is not a boolean', { differenceWarning: 'true' }],
+      ['a number for the difference', { differenceKg: -0.5 }],
+      ['a tare that is not the direction\'s', { tareKg: '15004' }],
+      ['a gross that is not the direction\'s', { direction: 'TareFirst' }],
+      ['a zero net', { netKg: '0' }],
+      ['nothing loaded at the cancel', { loadedKgAtCancel: '0' }],
+      ['an unknown direction', { direction: 'Sideways' }],
+      ['a weighing id that is not an id', { weighingId: 'x' }],
+      ['a time without its offset', { recordedAtUtc: '2026-09-19T12:00:00' }],
+      ['an extra member', { thresholdKg: '1' }],
+    ] as const) {
+      expect(decodeUnloadWeighing(unloadWeighingRecord(overrides as Record<string, unknown>)), label).toBeNull()
+    }
+    const { netKg: _net, ...withoutNet } = unloadWeighingRecord()
+    expect(decodeUnloadWeighing(withoutNet)).toBeNull()
+  })
+
+  it('LOJ-D17: the unload mark is NotApplicable on a live instruction, and on a cancelled one says whether loaded goods were weighed off', () => {
+    const loadedLine = (b: Body) => Object.assign(b.lines[0], { loaded: '4.5', remainingToLoad: '0', loadedNotShipped: '4.5' })
+    // Loaded and cancelled with no unload weighing: "indirme kaydı yok", still a valid cancel.
+    const missing = decodeInstructionDetail(cancelledWith((b) => {
+      loadedLine(b)
+      b.instruction.unloadRecord = 'Missing'
+    }), INSTRUCTION)
+    expect(missing?.instruction.unloadRecord).toBe('Missing')
+    expect(missing?.unloadWeighing).toBeNull()
+    const recorded = decodeInstructionDetail(cancelledWith((b) => {
+      loadedLine(b)
+      b.instruction.unloadRecord = 'Recorded'
+      b.unloadWeighing = unloadWeighingRecord()
+    }), INSTRUCTION)
+    expect(recorded?.unloadWeighing?.differenceKg).toBe('-0.5')
+    // Cancelled before anything was loaded: nothing to unload.
+    expect(decodeInstructionDetail(cancelledWith(), INSTRUCTION)?.instruction.unloadRecord).toBe('NotApplicable')
+    expect(decodeInstructionPage(tweak(listResponseRaw, (b) => Object.assign(b.items[0], CANCELLED_INSTRUCTION, { unloadRecord: 'Missing' })))
+      ?.items[0].unloadRecord).toBe('Missing')
+
+    for (const [label, change] of [
+      ['a loaded cancelled instruction marked NotApplicable', (b: Body) => loadedLine(b)],
+      ['a cancelled instruction with nothing loaded marked Missing', (b: Body) => (b.instruction.unloadRecord = 'Missing')],
+      ['Recorded without its weighing', (b: Body) => {
+        loadedLine(b)
+        b.instruction.unloadRecord = 'Recorded'
+      }],
+      ['a weighing while still Missing', (b: Body) => {
+        loadedLine(b)
+        b.instruction.unloadRecord = 'Missing'
+        b.unloadWeighing = unloadWeighingRecord()
+      }],
+      ['an unknown mark', (b: Body) => (b.instruction.unloadRecord = 'Unknown')],
+      ['no mark', (b: Body) => delete b.instruction.unloadRecord],
+      ['no unload weighing member', (b: Body) => delete b.unloadWeighing],
+    ] as const) {
+      expect(decodeInstructionDetail(cancelledWith(change), INSTRUCTION), label).toBeNull()
+    }
+    // A Draft or Issued instruction is never marked: the unload weighing exists only after a cancel.
+    for (const unloadRecord of ['Missing', 'Recorded']) {
+      expect(decodeInstructionDetail(tweak(detailResponseRaw, (b) => (b.instruction.unloadRecord = unloadRecord)), INSTRUCTION), unloadRecord)
+        .toBeNull()
+      expect(decodeInstructionPage(tweak(listResponseRaw, (b) => (b.items[0].unloadRecord = unloadRecord))), unloadRecord).toBeNull()
+    }
   })
 
   it('F-020: a status outside Draft / Issued / Cancelled still fails closed, alone or among good rows', () => {

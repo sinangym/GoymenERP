@@ -11,6 +11,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
+using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
@@ -37,7 +38,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// endpoints. Until the central API/DI/permission packet is carried, this file is integration-pending
 /// source and must not be described as executed acceptance or real Mikro/UAT evidence.
 /// </summary>
-public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptanceTests(ITestOutputHelper output)
+public sealed partial class AccountingApprovedSourceCatalogSqlServerRelationalAcceptanceTests(ITestOutputHelper output)
 {
     private const string StartupBankSeedPhase = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_startup_bankseed";
     private const string ReceiptPreparePhase = "CI_SAFE_DIAGNOSTIC:acc_nj_sql_receipt_prepare";
@@ -382,6 +383,7 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         try
         {
             run = await Run.StartAsync(useRealFinanceSource: true);
+            await FinanceDocumentNumbersSqlFixture.PrepareAsync(run.Factory.Services, CompanyA);
         }
         catch
         {
@@ -1040,6 +1042,51 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         }
     }
 
+    [SqlServerFact]
+    public async Task Recorded_movement_kind_is_read_only_from_the_active_company_package_and_ambiguous_kinds_are_unavailable()
+    {
+        await using var run = await Run.StartAsync();
+        await run.GrantAsync(Preparer, CompanyA, PreparePermission, ActivatePermission);
+        using var client = run.Client(Preparer, CompanyA);
+        var company = new CompanyContext();
+        company.Set(CompanyA);
+        await using var db = run.Context(company);
+        var catalog = new ApprovedAccountingSourceCatalogStoreV1(db, company, new AuditEventCollector(), TimeProvider.System);
+        long activeVersion = 0;
+        foreach (var kind in new[] { NormalJournalSourceKindsV1.RecordedExpensePayment, NormalJournalSourceKindsV1.RecordedCashTransfer })
+        {
+            var package = Package(Guid.NewGuid(), $"SENTETIK-movement-{activeVersion}",
+                binding: new(SourceId, ReceiptVersion, ProfileId, ProfileVersion, CurrencyId, kind));
+            using (var prepared = await PrepareAsync(client, package, Key("movement-prepare")))
+                Assert.Equal(HttpStatusCode.Created, prepared.StatusCode);
+            Assert.NotEqual(kind, await catalog.ResolveKindAsync(CompanyA, SourceId));
+            using (var activated = await ActivateAsync(client, package.Id, 1, activeVersion, Key("movement-activate")))
+                Assert.Equal(HttpStatusCode.OK, activated.StatusCode);
+            activeVersion++;
+            Assert.Equal(kind, await catalog.ResolveKindAsync(CompanyA, SourceId));
+            Assert.Null(await catalog.ResolveKindAsync(CompanyB, SourceId));
+            Assert.Null(await catalog.ResolveKindAsync(CompanyA, Guid.NewGuid()));
+            Assert.NotNull(await catalog.ResolveAsync(CompanyA, SourceId, kind, ReceiptVersion, ProfileId, ProfileVersion, CurrencyId));
+            Assert.Null(await catalog.ResolveAsync(CompanyA, SourceId, kind, "stale-version", ProfileId, ProfileVersion, CurrencyId));
+        }
+        var foreignCompany = new CompanyContext();
+        foreignCompany.Set(CompanyB);
+        await using var foreignDb = run.Context(foreignCompany);
+        var foreign = new ApprovedAccountingSourceCatalogStoreV1(foreignDb, foreignCompany, new AuditEventCollector(), TimeProvider.System);
+        Assert.Null(await foreign.ResolveKindAsync(CompanyB, SourceId));
+        Assert.Null(await foreign.ResolveKindAsync(CompanyA, SourceId));
+
+        var ambiguous = Package(Guid.NewGuid(), "SENTETIK-ambiguous-kind");
+        var extra = new FinanceSourceBinding(SourceId, ReceiptVersion, ProfileId, ProfileVersion, CurrencyId,
+            NormalJournalSourceKindsV1.RecordedExpensePayment);
+        var mappings = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(ambiguous.Mappings)
+            + Mapping(extra, "debit", "Debit", DebitAccountId) + "\n"
+            + Mapping(extra, "credit", "Credit", CreditAccountId) + "\n");
+        ambiguous = ambiguous with { Mappings = mappings, MappingsSha256 = Sha(mappings) };
+        await PrepareAndActivateAsync(client, ambiguous, activeVersion, "ambiguous-kind");
+        Assert.Null(await catalog.ResolveKindAsync(CompanyA, SourceId));
+    }
+
     private static async Task PrepareAndActivateAsync(
         HttpClient client, PackageData package, long expectedActiveVersion, string keyPrefix)
     {
@@ -1117,7 +1164,7 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
     }
 
     private static string Mapping(FinanceSourceBinding binding, string key, string side, Guid accountId) =>
-        $"{binding.SourceId:D},{NormalJournalSourceKindsV1.RecordedManualReceipt},{binding.SourceVersion},"
+        $"{binding.SourceId:D},{binding.SourceKind},{binding.SourceVersion},"
         + $"{binding.ProfileId},{binding.ProfileVersion},{binding.CurrencyId:D},receipt,rule-v1,{key},{side},{accountId:D}";
 
     private static string PackagePath(Guid packageId) => $"{PackagesPath}/{packageId:D}";
@@ -1159,7 +1206,8 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
         string SourceVersion,
         string ProfileId,
         string ProfileVersion,
-        Guid CurrencyId);
+        Guid CurrencyId,
+        string SourceKind = NormalJournalSourceKindsV1.RecordedManualReceipt);
 
     private sealed record Counts(int Catalogs, int Commands, int Audits);
 

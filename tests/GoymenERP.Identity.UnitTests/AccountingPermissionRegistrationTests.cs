@@ -27,12 +27,14 @@ public sealed class AccountingPermissionRegistrationTests
         ErpPermissions.AccountingPeriodsPropose,
         ErpPermissions.AccountingPeriodsApprove,
         ErpPermissions.AccountingPeriodsClose,
+        ErpPermissions.AccountingPeriodsReopen,
         ErpPermissions.AccountingJournalsRead,
         ErpPermissions.AccountingPostingQueuesRead,
         ErpPermissions.AccountingNormalJournalDraftCreate,
         ErpPermissions.AccountingNormalJournalDraftApprove,
         ErpPermissions.AccountingJournalReversePropose,
         ErpPermissions.AccountingJournalReverseApprove,
+        ErpPermissions.AccountingAccountPlanRead,
     };
 
     [Fact]
@@ -42,12 +44,14 @@ public sealed class AccountingPermissionRegistrationTests
         Assert.Equal("accounting.periods.propose", ErpPermissions.AccountingPeriodsPropose);
         Assert.Equal("accounting.periods.approve", ErpPermissions.AccountingPeriodsApprove);
         Assert.Equal("accounting.periods.close", ErpPermissions.AccountingPeriodsClose);
+        Assert.Equal("accounting.periods.reopen", ErpPermissions.AccountingPeriodsReopen);
         Assert.Equal("accounting.journals.read", ErpPermissions.AccountingJournalsRead);
         Assert.Equal("accounting.posting-queues.read", ErpPermissions.AccountingPostingQueuesRead);
         Assert.Equal("accounting.normal-journal.draft.create", ErpPermissions.AccountingNormalJournalDraftCreate);
         Assert.Equal("accounting.normal-journal.draft.approve", ErpPermissions.AccountingNormalJournalDraftApprove);
         Assert.Equal("accounting.journal.reverse.propose", ErpPermissions.AccountingJournalReversePropose);
         Assert.Equal("accounting.journal.reverse.approve", ErpPermissions.AccountingJournalReverseApprove);
+        Assert.Equal("accounting.account-plan.read", ErpPermissions.AccountingAccountPlanRead);
     }
 
     [Theory]

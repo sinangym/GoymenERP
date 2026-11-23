@@ -50,7 +50,7 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
         var (expectedVersion, scrapKg, reason) = ParseStockScrap(request);
         var companyId = companyContext.CompanyId;
         var keyHash = GenealogyHash(metadata.IdempotencyKey.Trim());
-        var payloadHash = GenealogyPayloadHash(new
+        var kilogramHash = GenealogyPayloadHash(new
         {
             request.ScrapId,
             request.LabelId,
@@ -59,6 +59,10 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
             scrappedAtUtc = request.ScrappedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
             reason,
         });
+        // KLN-D119: the scrapped pieces join the hash only when given, so every kg-only scrap keeps its stored hash.
+        var payloadHash = request.ScrapPieceCount is { } piecesForHash
+            ? GenealogyPayloadHash(new { kilogramHash, scrapPieceCount = piecesForHash })
+            : kilogramHash;
         if (await FindStockScrapKeyReplayAsync(RecordStockScrapCommand, keyHash, payloadHash, metadata.ActorId,
                 freshAuthorityFence, cancellationToken) is { } replay)
         {
@@ -117,14 +121,16 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
             scrap = new StockScrap(request.ScrapId, companyId,
                 Position(balance.CompanyId, balance.OwnerKind, balance.OwnerId, balance.CustodianKind,
                     balance.CustodianId, balance.LocationId, IdentityOnly(label), balance.Block),
-                Kilograms.Positive(balance.QuantityKg), scrapKg, request.ScrappedAtUtc, reason);
+                Kilograms.Positive(balance.QuantityKg), scrapKg, request.ScrappedAtUtc, reason,
+                balance.PieceCount is { } bookPieces ? PieceCount.Of(bookPieces) : null,
+                request.ScrapPieceCount is { } scrapPieces ? PieceCount.Of(scrapPieces) : null);
         }
         catch (InventoryRuleException exception)
         {
             throw StockScrapError(400, InventoryStockScrapCodesV1.ValidationFailed, exception);
         }
 
-        await RequireScrapLeavesAllocationsAsync(label.Id, scrap.Remaining.Value, freshAuthorityFence,
+        await RequireScrapLeavesAllocationsAsync(label.Id, scrap.Remaining.Value, scrap.RemainingPieces, freshAuthorityFence,
             cancellationToken);
 
         var scale = await kilogramScale.CheckAsync(companyId,
@@ -155,6 +161,8 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
                     Block = balance.Block,
                     BookKg = scrap.Book.Value,
                     ScrapKg = scrap.Scrap.Value,
+                    BookPieceCount = scrap.BookPieces?.Value,
+                    ScrapPieceCount = scrap.ScrapPieces?.Value,
                     ScrappedAtUtc = scrap.ScrappedAtUtc,
                     Reason = scrap.Reason,
                     PayloadHash = payloadHash,
@@ -181,10 +189,11 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
                 dbContext.ChangeTracker.Clear();
                 concurrentChange = exception;
             }
-            catch
+            catch (Exception exception)
             {
                 await transaction.RollbackAsync(CancellationToken.None);
                 dbContext.ChangeTracker.Clear();
+                await RecordPhysicalRefusalAfterRollbackAsync(exception);
                 throw;
             }
         }
@@ -265,6 +274,15 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
                 Guid? movementId = null;
                 if (decisionCode == DecisionApproved)
                 {
+                    try
+                    {
+                        await LockPhysicalValidationAsync(cancellationToken);
+                    }
+                    catch (InventoryStoreException exception) when (exception.Code == InventoryStoreCodes.ConcurrentChange)
+                    {
+                        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                        throw StockScrapError(409, InventoryStockScrapCodesV1.ConcurrentChange, exception);
+                    }
                     var label = await dbContext.Labels
                         .SingleOrDefaultAsync(row => row.Id == scrapRow.LabelId, cancellationToken);
                     await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
@@ -280,7 +298,7 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
 
                     var scrap = RestoreStockScrap(scrapRow, label);
                     await RequireScrapLeavesAllocationsAsync(scrapRow.LabelId, scrap.Remaining.Value,
-                        freshAuthorityFence, cancellationToken);
+                        scrap.RemainingPieces, freshAuthorityFence, cancellationToken);
 
                     var movement = scrap.WriteOff(Guid.NewGuid(), now);
                     try
@@ -360,10 +378,11 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
                 dbContext.ChangeTracker.Clear();
                 concurrentChange = exception;
             }
-            catch
+            catch (Exception exception)
             {
                 await transaction.RollbackAsync(CancellationToken.None);
                 dbContext.ChangeTracker.Clear();
+                await RecordPhysicalRefusalAfterRollbackAsync(exception);
                 throw;
             }
         }
@@ -432,18 +451,24 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
         return (version, scrap, request.Reason.Trim());
     }
 
-    /// <summary>A reservation is never silently broken: what stays on the label must cover its active allocations.</summary>
+    /// <summary>
+    /// A reservation is never silently broken: what stays on the label must cover its active allocations — their
+    /// kilograms and, when they hold pieces (KLN-D119), their pieces.
+    /// </summary>
     private async Task RequireScrapLeavesAllocationsAsync(
         Guid labelId,
         decimal remainingKg,
+        PieceCount? remainingPieces,
         Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken)
     {
         var reserved = await dbContext.Allocations.AsNoTracking()
             .Where(row => row.LabelId == labelId && row.Status == (int)StockAllocationStatus.Active)
-            .SumAsync(row => (decimal?)row.RemainingKg, cancellationToken) ?? 0m;
+            .Select(row => new { row.RemainingKg, row.RemainingPieces })
+            .ToListAsync(cancellationToken);
         await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
-        if (reserved > remainingKg)
+        if (!StockAllocation.ExitLeavesActiveAllocations(remainingKg, remainingPieces?.Value,
+                reserved.Sum(row => row.RemainingKg), reserved.Sum(row => row.RemainingPieces ?? 0)))
         {
             throw StockScrapError(409, InventoryStockScrapCodesV1.AllocationConflict);
         }
@@ -570,7 +595,9 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
             return new StockScrap(row.Id, row.CompanyId,
                 Position(row.CompanyId, row.OwnerKind, row.OwnerId, row.CustodianKind, row.CustodianId, row.LocationId,
                     IdentityOnly(label), row.Block),
-                Kilograms.Positive(row.BookKg), Kilograms.Positive(row.ScrapKg), row.ScrappedAtUtc, row.Reason);
+                Kilograms.Positive(row.BookKg), Kilograms.Positive(row.ScrapKg), row.ScrappedAtUtc, row.Reason,
+                row.BookPieceCount is { } bookPieces ? PieceCount.Of(bookPieces) : null,
+                row.ScrapPieceCount is { } scrapPieces ? PieceCount.Of(scrapPieces) : null);
         }
         catch (InventoryRuleException exception)
         {
@@ -612,7 +639,9 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
                     decision.Decision == DecisionApproved ? InventoryStockScrapStatusesV1.Approved : InventoryStockScrapStatusesV1.Rejected,
                     decision.DecidedAtUtc,
                     decision.Reason,
-                    decision.MovementId));
+                    decision.MovementId),
+            row.BookPieceCount,
+            row.ScrapPieceCount);
     }
 
     private static void RequireStockScrapMetadata(InventoryCommandMetadata metadata)

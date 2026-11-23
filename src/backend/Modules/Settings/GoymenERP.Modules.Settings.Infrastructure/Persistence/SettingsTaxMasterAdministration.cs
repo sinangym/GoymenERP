@@ -6,6 +6,7 @@ using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -14,7 +15,8 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 /// <summary>
 /// MOD-03 tax master (SAT-D83, EK12; SAT-D93, EK13; SAT-D133…D139, EK19; SAT-D158, EK21): the company's per-item-type default
 /// tax (the reviewed SAT-D139 catalog as the base, Settings records over it), the UBL-TR exemption / withholding code lists, the
-/// VUK 232 withholding amount threshold and the buyer situation list (the reviewed SAT-D158 catalog as the base).
+/// VUK 232 withholding amount threshold, the buyer situation list (the reviewed SAT-D158 catalog as the base) and the VAT rate /
+/// withholding ratio lists (SAT-D181, EK26; empty until entered).
 /// <list type="bullet">
 /// <item><b>Nothing is seeded</b>: the only shipped values are Sinan's SAT-D139 defaults and the SAT-D158 buyer situations, as
 /// reviewed source catalogs; every
@@ -164,10 +166,21 @@ internal sealed partial class SettingsTaxMasterAdministration(
         }
     }
 
-    private Task<CommandExecution?> FindExecutionAsync(string commandName, string keyHash, CancellationToken cancellationToken) =>
-        database.CommandExecutions.AsNoTracking()
-            .SingleOrDefaultAsync(execution => execution.CommandName == commandName && execution.IdempotencyKeyHash == keyHash,
-                cancellationToken);
+    private async Task<CommandExecution?> FindExecutionAsync(string commandName, string keyHash, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await database.CommandExecutions.AsNoTracking()
+                .SingleOrDefaultAsync(execution => execution.CommandName == commandName && execution.IdempotencyKeyHash == keyHash,
+                    cancellationToken);
+        }
+        catch (Exception exception) when (exception is SqlException
+            or InvalidOperationException { InnerException: SqlException })
+        {
+            // Covers direct and EF-wrapped receipt reads, including reads inside a save-race catch.
+            throw new SettingsPrerequisiteException(TaxMasterProblemCodesV1.ProviderUnavailable);
+        }
+    }
 
     private static TaxMasterCommandResultV1 Replay(CommandExecution execution, string requestHash, SettingsCommandMetadataV1 metadata)
     {
@@ -216,16 +229,24 @@ internal sealed partial class SettingsTaxMasterAdministration(
             await database.SaveChangesAsync(cancellationToken);
             return new TaxMasterCommandResultV1(answer, false, metadata.CorrelationId);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+            || exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
         {
             database.ChangeTracker.Clear();
             var winner = await FindExecutionAsync(commandName, keyHash, cancellationToken);
             if (winner is null)
             {
-                throw;
+                throw new SettingsPrerequisiteException(TaxMasterProblemCodesV1.ProviderUnavailable);
             }
 
             return Replay(winner, requestHash, metadata);
+        }
+        catch (Exception exception) when (exception is DbUpdateException or SqlException
+            or InvalidOperationException { InnerException: DbUpdateException or SqlException })
+        {
+            // A provider failure is not a terminal business refusal and never consumes the retry key.
+            database.ChangeTracker.Clear();
+            throw new SettingsPrerequisiteException(TaxMasterProblemCodesV1.ProviderUnavailable);
         }
     }
 
@@ -243,7 +264,8 @@ internal sealed partial class SettingsTaxMasterAdministration(
             await database.SaveChangesAsync(cancellationToken);
             return new TaxMasterCommandResultV1(answer, false, metadata.CorrelationId);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+            || exception.GetBaseException() is SqlException { Number: 2601 or 2627 })
         {
             database.ChangeTracker.Clear();
             var winner = await FindExecutionAsync(commandName, keyHash, cancellationToken);
@@ -254,6 +276,13 @@ internal sealed partial class SettingsTaxMasterAdministration(
 
             var refusal = await onConflict(cancellationToken);
             return await StoreRefusalAsync(commandName, refusal, keyHash, requestHash, metadata, cancellationToken);
+        }
+        catch (Exception exception) when (exception is DbUpdateException or SqlException
+            or InvalidOperationException { InnerException: DbUpdateException or SqlException })
+        {
+            // A provider failure is not a terminal business refusal and never consumes the retry key.
+            database.ChangeTracker.Clear();
+            throw new SettingsPrerequisiteException(TaxMasterProblemCodesV1.ProviderUnavailable);
         }
     }
 
@@ -324,6 +353,11 @@ internal sealed partial class SettingsTaxMasterAdministration(
             "Yürürlüğe girmemiş alıcı vergi durumu listesi sürümü düzeltildi; gerekçe kayıt içeriğindedir",
         "settings.tax-buyer-situation-list.withdrawn.v1" =>
             "Yürürlüğe girmemiş alıcı vergi durumu listesi sürümü geri çekildi; gerekçe kayıt içeriğindedir",
+        "settings.tax-rate-list.published.v1" => "Vergi oranı listesi sürümü yayımlandı; gerekçe kayıt içeriğindedir",
+        "settings.tax-rate-list.corrected.v1" =>
+            "Yürürlüğe girmemiş vergi oranı listesi sürümü düzeltildi; gerekçe kayıt içeriğindedir",
+        "settings.tax-rate-list.withdrawn.v1" =>
+            "Yürürlüğe girmemiş vergi oranı listesi sürümü geri çekildi; gerekçe kayıt içeriğindedir",
         _ => throw new InvalidOperationException("Tanımsız Ayarlar audit olayı."),
     };
 

@@ -63,22 +63,37 @@ public sealed class DocumentsInfrastructureTests : IDisposable
         var design = context.GetService<IDesignTimeModel>().Model;
         var versions = design.FindEntityType(typeof(DocumentVersionRow))!;
         Assert.Contains(versions.GetCheckConstraints(), check => check.Name == "CK_DocumentVersions_Scan"
-            && check.Sql == "([ScanState] = 2 AND [ScannerId] IS NOT NULL AND LEN([ScannerId]) > 0) OR ([ScanState] = 1 AND [ScannerId] IS NULL)");
+            && check.Sql == DocumentsDbContext.ScanCheck);
+        // KLN-D60: a system-generated (3) version names no scanner, like a not-scanned (1) one; a clean (2) one names its scanner.
+        Assert.Equal("([ScanState] = 2 AND [ScannerId] IS NOT NULL AND LEN([ScannerId]) > 0) OR ([ScanState] = 1 AND [ScannerId] IS NULL) "
+            + "OR ([ScanState] = 3 AND [ScannerId] IS NULL)", DocumentsDbContext.ScanCheck);
         Assert.Equal(["CompanyId", "Sha256", "UploadedAtUtc"],
             versions.GetIndexes().Single(index => index.GetDatabaseName() == "IX_DocumentVersions_CompanyId_Sha256_UploadedAtUtc").Properties
                 .Select(property => property.Name));
         Assert.Equal(DocumentsDbContext.IdentityCollation, versions.FindProperty(nameof(DocumentVersionRow.Sha256))!.GetCollation());
         var links = design.FindEntityType(typeof(DocumentLinkRow))!;
         Assert.Equal(["CompanyId", "OwnerKind", "OwnerId", "LinkedAtUtc"],
-            links.GetIndexes().Single().Properties.Select(property => property.Name));
+            links.GetIndexes().Single(index => index.GetDatabaseName() == "IX_DocumentLinks_CompanyId_OwnerKind_OwnerId_LinkedAtUtc")
+                .Properties.Select(property => property.Name));
+        // KLN-D49 (4): one primary link per document, kept by a filtered unique index.
+        var primary = links.GetIndexes().Single(index => index.GetDatabaseName() == DocumentsDbContext.PrimaryLinkIndex);
+        Assert.True(primary.IsUnique);
+        Assert.Equal(["CompanyId", "DocumentId"], primary.Properties.Select(property => property.Name));
+        Assert.Equal(DocumentsDbContext.PrimaryLinkFilter, primary.GetFilter());
+        Assert.False(links.FindProperty(nameof(DocumentLinkRow.IsPrimary))!.IsNullable);
+        Assert.Equal(2, links.GetIndexes().Count());
         var attempts = design.FindEntityType(typeof(DocumentAttemptRow))!;
         var perDocument = attempts.GetIndexes().Single(index => index.GetDatabaseName() == "UX_DocumentAttempts_DocumentId");
         Assert.True(perDocument.IsUnique);
         Assert.Equal("[CommandName] = N'documents.upload.v1'", perDocument.GetFilter());
         Assert.False(attempts.FindProperty(nameof(DocumentAttemptRow.DocumentId))!.IsNullable);
         Assert.Contains(design.FindEntityType(typeof(ContentBlobRow))!.GetCheckConstraints(), check => check.Name == "CK_ContentBlobs_Kind"
-            && check.Sql == "[ContentKind] IN (1, 2, 3)");
-        Assert.Equal(["20260930120000_InitialDocuments"], context.Database.GetMigrations());
+            && check.Sql == DocumentsDbContext.ContentKindCheck);
+        Assert.Equal("[ContentKind] IN (1, 2, 3, 4, 5, 6, 7)", DocumentsDbContext.ContentKindCheck);
+        Assert.Equal(["20260930120000_InitialDocuments", "20261115132357_AddDocumentLinkPrimaryMarker", "20261115134058_WidenDocumentContentKinds",
+                "20261115165534_AddSystemGeneratedDocumentScanState", "20261117112418_AddPurchaseInvoiceXmlContentKind",
+                "20261117140908_AddDocumentBrandingPublications"],
+            context.Database.GetMigrations());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -91,6 +106,72 @@ public sealed class DocumentsInfrastructureTests : IDisposable
         Assert.Contains("THROW 51058,", guard.Sql, StringComparison.Ordinal);
         Assert.Equal(["DocumentAttempts", "DocumentLinks", "DocumentVersions", "ContentBlobs", "Documents"],
             down.Skip(1).Select(operation => Assert.IsType<DropTableOperation>(operation).Name));
+    }
+
+    [Fact]
+    public void The_primary_link_migration_backfills_the_earliest_link_and_its_down_refuses_with_51447_before_it_drops_anything()
+    {
+        var migration = new AddDocumentLinkPrimaryMarker();
+        var up = migration.UpOperations;
+        var column = Assert.IsType<AddColumnOperation>(up[0]);
+        Assert.Equal(("DocumentLinks", "IsPrimary", false), (column.Table, column.Name, column.IsNullable));
+        var backfill = Assert.IsType<SqlOperation>(Assert.Single(up, operation => operation is SqlOperation));
+        Assert.Contains("ORDER BY [LinkedAtUtc], [OwnerKind], [OwnerId]", backfill.Sql, StringComparison.Ordinal);
+        Assert.Contains("SET [IsPrimary] = 1 WHERE [Position] = 1", backfill.Sql, StringComparison.Ordinal);
+        // The index is created only after the backfill, so the backfilled rows are checked by it.
+        var index = Assert.IsType<CreateIndexOperation>(up[^1]);
+        Assert.Equal((DocumentsDbContext.PrimaryLinkIndex, true, DocumentsDbContext.PrimaryLinkFilter), (index.Name, index.IsUnique, index.Filter));
+        Assert.Equal(3, up.Count);
+
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<SqlOperation>(down[0]);
+        Assert.Contains("THROW 51447,", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("([Position] = 1 AND [IsPrimary] = 0) OR ([Position] > 1 AND [IsPrimary] = 1)", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down, operation => operation is SqlOperation);
+        Assert.Equal(DocumentsDbContext.PrimaryLinkIndex, Assert.IsType<DropIndexOperation>(down[1]).Name);
+        Assert.Equal("IsPrimary", Assert.IsType<DropColumnOperation>(down[2]).Name);
+        Assert.Equal(3, down.Count);
+    }
+
+    [Fact]
+    public void The_content_kind_migration_widens_the_check_and_its_down_refuses_with_51517_while_a_statement_kind_exists()
+    {
+        var migration = new WidenDocumentContentKinds();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        Assert.Equal("CK_ContentBlobs_Kind", Assert.IsType<DropCheckConstraintOperation>(migration.UpOperations[0]).Name);
+        var widened = Assert.IsType<AddCheckConstraintOperation>(migration.UpOperations[1]);
+        Assert.Equal(("CK_ContentBlobs_Kind", "[ContentKind] IN (1, 2, 3, 4, 5, 6)"), (widened.Name, widened.Sql));
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<SqlOperation>(down[0]);
+        Assert.Contains("IF EXISTS (SELECT 1 FROM [documents].[ContentBlobs] WHERE [ContentKind] IN (4, 5, 6))", guard.Sql,
+            StringComparison.Ordinal);
+        Assert.Contains("THROW 51517,", guard.Sql, StringComparison.Ordinal);
+        Assert.Equal("CK_ContentBlobs_Kind", Assert.IsType<DropCheckConstraintOperation>(down[1]).Name);
+        var narrowed = Assert.IsType<AddCheckConstraintOperation>(down[2]);
+        Assert.Equal(("CK_ContentBlobs_Kind", "[ContentKind] IN (1, 2, 3)"), (narrowed.Name, narrowed.Sql));
+        Assert.Equal(3, down.Count);
+    }
+
+    [Fact]
+    public void The_system_generated_scan_state_migration_widens_the_check_and_its_down_refuses_with_51592_while_such_a_version_exists()
+    {
+        var migration = new AddSystemGeneratedDocumentScanState();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        Assert.Equal("CK_DocumentVersions_Scan", Assert.IsType<DropCheckConstraintOperation>(migration.UpOperations[0]).Name);
+        var widened = Assert.IsType<AddCheckConstraintOperation>(migration.UpOperations[1]);
+        Assert.Equal(("CK_DocumentVersions_Scan", DocumentsDbContext.ScanCheck), (widened.Name, widened.Sql));
+        Assert.Equal(2, migration.UpOperations.Count);
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<SqlOperation>(down[0]);
+        Assert.Contains("IF EXISTS (SELECT 1 FROM [documents].[DocumentVersions] WHERE [ScanState] = 3)", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51592,", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down, operation => operation is SqlOperation);
+        Assert.Equal("CK_DocumentVersions_Scan", Assert.IsType<DropCheckConstraintOperation>(down[1]).Name);
+        var narrowed = Assert.IsType<AddCheckConstraintOperation>(down[2]);
+        Assert.Equal(("CK_DocumentVersions_Scan",
+                "([ScanState] = 2 AND [ScannerId] IS NOT NULL AND LEN([ScannerId]) > 0) OR ([ScanState] = 1 AND [ScannerId] IS NULL)"),
+            (narrowed.Name, narrowed.Sql));
+        Assert.Equal(3, down.Count);
     }
 
     [Fact]
@@ -196,6 +277,19 @@ public sealed class DocumentsInfrastructureTests : IDisposable
         var noScanner = Services(allowDevelopment: true, (DocumentsModuleExtensions.ScannerModeKey, DocumentsModuleExtensions.NoScannerMode));
         Assert.Null(noScanner.GetService<IDocumentContentScannerV1>());
         Assert.NotNull(noScanner.GetService<IDocumentObjectStoreV1>());
+    }
+
+    [Fact]
+    public void Branding_subset_uses_the_modules_actual_configuration_and_keeps_the_existing_byte_limit_source()
+    {
+        using var provider = Services(allowDevelopment: true,
+            (DocumentBrandingFilePolicy.AllowedContentTypesKey + ":0", "image/png"),
+            (DocumentsModuleExtensions.MaximumUploadBytesKey, "1048576"));
+        var actual = provider.GetRequiredService<DocumentBrandingFilePolicy>().Read();
+        Assert.True(actual.Available); Assert.Equal([DocumentFileKind.Png], actual.Kinds);
+        Assert.Equal(1048576, provider.GetRequiredService<DocumentsServiceBindings>().MaximumUploadBytes);
+        using var invalid = Services(allowDevelopment: true, (DocumentBrandingFilePolicy.AllowedContentTypesKey + ":0", "application/xml"));
+        Assert.False(invalid.GetRequiredService<DocumentBrandingFilePolicy>().Read().Available);
     }
 
     private static ServiceProvider Services(bool allowDevelopment, params (string Key, string Value)[] settings)

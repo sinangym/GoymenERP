@@ -89,6 +89,7 @@ olarak yazılır. Örnek: `Authentication:Oidc:Authority` → `Authentication__O
 | `DB_CONNECTION_STRING` (veya `ConnectionStrings:GoymenErp`) | 🔒 | SQL Server bağlantı dizesi. Canlıda `Encrypt=True` ve geçerli sertifika önerilir; `TrustServerCertificate=True` yalnız geliştirme içindir. | Tüm modül `*ModuleExtensions.cs` dosyaları (`configuration["DB_CONNECTION_STRING"] ?? GetConnectionString("GoymenErp")`) |
 | `DB_PROVIDER` | Hayır | Yalnız `SqlServer` desteklenir; boşsa `SqlServer` varsayılır. | `DocumentsModuleExtensions.cs` ve diğer modüller |
 | `Authentication:Mode` | Hayır | Canlıda `OidcJwtBearer` (boşsa da bu). `DevelopmentBootstrap` canlıda başlangıçta **reddedilir**. | `src/backend/GoymenERP.Api/Security/ErpAuthenticationExtensions.cs` |
+| `Authentication:Providers` (isteğe bağlı liste) | Hayır | ID-6: birden çok giriş şemasını açar; liste doluysa `Authentication:Mode` yerine geçer. Öğeler yalnız `LocalAccount` ve `OidcJwtBearer`; OIDC yalnız listede adı geçerse açıktır (varsayılan kapalı). Liste dizin anahtarlarıyla verilir (`Authentication:Providers:0`, `Authentication:Providers:1`; ortam değişkeninde `Authentication__Providers__0`); virgüllü tek değer, boş/yinelenen öğe ve `DevelopmentBootstrap` başlangıçta **reddedilir**. Production kimlik sağlayıcısı seçimi `OPEN-013` insan kapısıdır. | Aynı dosya |
 | `Authentication:Oidc:Authority` | Hayır | Kimlik sağlayıcının HTTPS adresi (kullanıcı bilgisi, sorgu, `#` içermez). | Aynı dosya |
 | `Authentication:Oidc:Audience` | Hayır | Token'ın bu API için verildiğini gösteren hedef adı. | Aynı dosya |
 | `Authentication:Oidc:RequireHttpsMetadata` | Hayır | Canlıda `true` olmak **zorunda**; `false` başlangıçta reddedilir. | Aynı dosya |
@@ -291,11 +292,15 @@ bekler; ilk rol dağılımının başka bir yolla verilmesi ayrıca Sinan karar�
 
 ## 5. Yedekleme ve geri yükleme
 
-Bu konuda repoda ayrıntılı bir hazırlık belgesi var; burada tekrar edilmez:
+Bu konuda repoda ayrıntılı belgeler var; burada tekrar edilmez:
 
-- `docs/architecture/DEPLOY_BACKUP_RPO_RTO.md` — geçici hedefler ve production kapısı.
+- `docs/operations/YEDEK_GERI_YUKLEME_RUNBOOK_v1.md` — yedek, izleme, aylık geri yükleme
+  denemesi ve gerçek geri yükleme adımları; betikler `infra/backup/`, doğrulayıcı
+  `tools/verify_backup_restore.py` (yalnız dosya okur; SQL Server'a bağlanmaz).
+- `docs/architecture/DEPLOY_BACKUP_RPO_RTO.md` — hedefler ve production kapısı.
 - `docs/features/ERP-000N_BACKUP_RESTORE_READINESS.md` — yedek/geri yükleme hazırlık
-  analizi; bugün **NO-GO** (backup/restore betiği ve ortak geri dönüş noktası henüz yok).
+  analizi (2026-08-29). Betik ve doğrulayıcı artık runbook'tadır; production kapısı
+  (gerçek geri yükleme tatbikatı, saklama, tesis dışı kopya) hâlâ açıktır.
 - `contracts/recovery/recovery-surface-inventory-v1.schema.json` ve
   `tools/generate_recovery_surface_inventory.py` — hangi tablo/şemaların geri yüklemede
   kapsanması gerektiğinin kaynak envanteri (yalnız kaynak; yedek almaz).
@@ -306,8 +311,9 @@ Asgari uygulama (BT için sade özet):
    (`Documents:ObjectStore:RootPath`), (c) yapılandırma ve gizli anahtarlar (ayrı ve
    şifreli; imza anahtarları kaybolursa sayfalama imleçleri geçersiz olur).
 2. **Veritabanı:** tam yedek + işlem günlüğü (log) yedeği ile nokta-zamana dönüş.
-   Geçici hedef RPO 15 dk / RTO 4 saat **yalnız varsayımdır** (`OPEN-017`); yedek sıklığı
-   ve saklama süresi **Sinan/BT seçer**.
+   Hedef RPO 15 dk / RTO 4 saat: günlük tam yedek + 15 dakikada bir günlük yedeği, ayda
+   bir geri yükleme denemesi (`KLN-D36`). Bu bir hedeftir; ölçümle kilitlenmesi açıktır
+   (`OPEN-017`). Saklama süresi ve tesis dışı hedef **Sinan/BT seçer**.
 3. **Veritabanı ve belge klasörü birlikte** geri yüklenmeli ve sayı/özet (checksum)
    mutabakatı yapılmalıdır (`DEPLOY_BACKUP_RPO_RTO.md` "Production kapısı").
 4. Kopyalardan biri **tesis dışında ve şifreli** tutulur.
@@ -400,7 +406,7 @@ Her madde işaretlenmeden production aktivasyonu istenmez. Aktivasyon kararı Si
 | S7 | Belge Kasası ilk gün açılsın mı; klasör konumu; Windows sunucu | DEC-DOC-009 | Sinan/BT |
 | S8 | Alan adı, TLS sertifika kaynağı, ters vekil (nginx/IIS), yalnız VPN mi dış erişim mi | `OPEN-014` | Sinan/BT |
 | S9 | Gizli kasa ürünü ve anahtar üretme/yenileme yöntemi | — | Sinan/BT |
-| S10 | Yedek sıklığı, saklama süresi, tesis dışı hedef; RPO/RTO'nun kesinleşmesi | `OPEN-017` | Sinan/BT |
+| S10 | Saklama süresi, tesis dışı hedef, yerel yedek şifrelemesi; yedekleme işinin kurulup etkinleştirilmesi; RPO/RTO'nun ölçümle kesinleşmesi (sıklık hedefi `KLN-D36`; adımlar `YEDEK_GERI_YUKLEME_RUNBOOK_v1.md`) | `OPEN-017`, `OPEN-014` | Sinan/BT |
 | S11 | Log toplama ve izleme aracı; alarm alıcıları | DEC-TEC-009 | Sinan/BT |
 | S12 | Sağlık uçlarının dışarıya açık olup olmayacağı | — | BT |
 | S13 | TCMB kur kaynağının açılması | `Settings:ExchangeRates`, insan kapısı | Sinan |

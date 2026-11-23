@@ -10,7 +10,8 @@
  */
 
 import type { FactFailure, FactUnknown } from './commandApi'
-import type { FactKind, OrderStatus, OutputClass } from './contract'
+import type { FactKind, OrderStatus, OutputClass, RemnantClassification, StockShortfallView } from './contract'
+import { OUTPUT_PIECE_RULE_TEXT } from './outputPieceText'
 
 export const OUTPUT_CLASS_LABEL: Record<OutputClass, string> = {
   GoodProduct: 'İyi ürün',
@@ -20,9 +21,16 @@ export const OUTPUT_CLASS_LABEL: Record<OutputClass, string> = {
   ProcessLoss: 'Proses kaybı',
 }
 
+/** URT-S16 (BS-14): the label classifications a usable remnant may take. */
+export const REMNANT_CLASSIFICATION_LABEL: Record<RemnantClassification, string> = {
+  Standard: 'Standart',
+  SecondQuality: 'İkinci kalite',
+}
+
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
   Open: 'Açık',
   Closed: 'Kapalı',
+  Cancelled: 'İptal',
 }
 
 export const TARGET_BASIS_LABEL: Record<string, string> = {
@@ -87,13 +95,17 @@ export const KG_FORMAT_HELP = 'Nokta ile ondalık, işaretsiz (ör. 1250.5). Ond
 export const KG_FORMAT_ERROR = 'Kilogram biçimi geçersiz: işaretsiz, nokta ile ondalık bir sayı girin.'
 export const ROLL_REQUIRED = 'Bir ana rulo seçin.'
 export const TIME_REQUIRED = 'Olgunun zamanını girin.'
+export const CANCELLED_ORDER_TEXT = 'Emir iptal edildi; yeni gerçekleşme kaydedilmez.'
 export const CLOSED_ORDER_TEXT = 'Emir kapalı; yeni gerçekleşme kaydedilmez.'
 
 export const OUTPUT_INVENTORY_TEXT = {
   productRequired: 'Sunucunun doğruladığı bir stok ürünü seçin.',
   locationRequired: 'Sunucunun doğruladığı aktif bir lokasyon seçin.',
   classRequired: 'Çıktı sınıfını seçin.',
-  labelRequired: 'Yeni çıktı etiket kodunu girin.',
+  outputLine: 'Plan çıktı satırı',
+  outputLineRequired: 'Beyanın bağlı olduğu plan çıktı satırını seçin.',
+  outputLineLabel: (kind: string, sequence: number | null, lineId: string | null) =>
+    kind === 'SlitLine' ? `Dilme satırı ${sequence}` : kind === 'CutLine' ? `Kesim satırı ${lineId}` : 'Çıktı sınıfı satırı',
   blockRequired: 'İlk stok durumunu açıkça seçin; ekran varsayılan seçmez.',
   productLoading: 'Ürün seçenekleri yükleniyor…',
   locationLoading: 'Lokasyon seçenekleri yükleniyor…',
@@ -114,13 +126,20 @@ export const OUTPUT_INVENTORY_TEXT = {
   partyCounterparty: 'Cari',
   heading: 'Üretim çıktısı etiketi',
   outputClass: 'Çıktı sınıfı',
+  remnantClassification: 'Artık etiket sınıfı',
+  remnantClassificationHelp:
+    'Geri kazanılabilir artık, seçilen sınıfla etiketlenir ve ayrıca "geri kazanılabilir artık" üretim durumunu taşır. ' +
+    'Varsayılan ikinci kalitedir.',
   productSearch: 'Ürün ara',
   product: 'Ürün',
   effectiveOnRequired: 'Önce geçerli çıktı zamanını girin.',
   moreMatches: 'Daha fazla eşleşme var; aramayı daraltın.',
   locationSearch: 'Lokasyon ara',
   location: 'Lokasyon',
-  labelCode: 'Yeni etiket kodu',
+  labelCode: 'Yeni etiket kodu (opsiyonel)',
+  labelCodeHelp:
+    "Boş bırakılırsa çıktı etiketinin numarası Ayarlar'daki çıktı etiket biçiminden verilir. Girdi rulosunun " +
+    'numarası çıktı etiketine yazılmaz; girdi yalnız soy bağı olarak kalır.',
   heatNumber: 'Döküm no (opsiyonel)',
   coilNumber: 'Rulo no (opsiyonel)',
   documents: 'Belge referansları (satır başına)',
@@ -213,6 +232,7 @@ export const ORDER_LIST_TEXT = {
   end: 'Liste sonu.',
   labelNote: 'Rulo ve emir etiketleri ürün/etiket okumasıyla gelecek; burada teknik kimlik gösterilir.',
   plans: 'Üretim planları',
+  scrapPrices: 'Aylık hurda fiyatları',
   newPlan: 'Yeni üretim planı',
   subject: 'üretim emirleri',
   contextSubject: 'üretim emirleri için tek şirket bağlamı',
@@ -253,6 +273,79 @@ export const CLOSE_TEXT = {
   closedAt: 'Kapanış zamanı',
 } as const
 
+/**
+ * F-009 D6 (UI-14, API-25): the output correction form. A correction is an append-only reversal of one recorded output
+ * declaration: the declaration is never deleted, and Inventory records its own reversal movement in the same
+ * transaction. The text never promises a stock figure; the server decides under the label's fence.
+ */
+export const OUTPUT_CORRECTION_TEXT = {
+  heading: 'Çıktı düzeltme',
+  help:
+    'Kaydedilmiş bir çıktı beyanından kütle geri alınır. Beyan silinmez; ters kayıt beyana bağlı yeni bir olgu olarak ' +
+    'yazılır ve stok aynı işlemde düzeltilir. Sevk edilmiş, aktarılmış, ayrılmış veya başka üretime verilmiş kütle ' +
+    'geri alınamaz.',
+  outputsLoading: 'Emrin çıktıları okunuyor…',
+  outputsSubject: 'emrin çıktıları',
+  noOutputs: 'Bu emirde düzeltilecek bir çıktı beyanı yok.',
+  truncated: 'Çıktı listesi sunucunun okuma sınırına ulaştı; aradığınız çıktı listede olmayabilir.',
+  output: 'Düzeltilecek çıktı',
+  outputPlaceholder: 'Bir çıktı seçin',
+  outputOption: (outputId: string, labelId: string) => `Çıktı ${outputId} · etiket ${labelId}`,
+  outputRequired: 'Düzeltilecek çıktıyı seçin.',
+  labelSubject: 'çıktı etiketi',
+  labelLoading: 'Çıktı etiketi okunuyor…',
+  labelVersion: 'Etiket sürümü',
+  labelNotReady: 'Çıktı etiketi okunmadan düzeltme gönderilemez.',
+  labelPermission: 'Çıktı etiketini okuma yetkiniz yok; etiket sürümü olmadan düzeltme gönderilemez.',
+  kg: 'Geri alınacak kg',
+  reason: 'Düzeltme gerekçesi',
+  reasonRequired: 'Düzeltme gerekçesi zorunludur.',
+  occurredAt: 'Düzeltme zamanı',
+  closedOrder: 'Emir açık değil; kapalı emirde çıktı düzeltmesi yapılmaz.',
+  submit: 'Düzeltmeyi gönder',
+  confirmQuestion: 'Seçilen çıktıdan bu kütle geri alınsın mı? Ters kayıt silinemez; yalnız yeni bir olguyla dengelenir.',
+  confirm: 'Evet, düzeltmeyi kaydet',
+  cancel: 'Vazgeç',
+  sending: 'Gönderiliyor…',
+  resend: 'Aynı işlem anahtarıyla yeniden gönder',
+  appliedTitle: 'Düzeltme kaydedildi',
+  appliedDetail: 'Ters kayıt yazıldı; yukarıdaki değerler emrin yeniden okunmuş hâlidir.',
+  replayedTitle: 'Düzeltme zaten kayıtlıydı',
+  replayedDetail: 'Bu düzeltme sunucuda zaten kayıtlıydı; ikinci bir ters kayıt oluşmadı.',
+  refusedTitle: 'Düzeltme kaydedilmedi',
+  unknownTitle: 'Düzeltmenin sonucu bilinmiyor',
+  unknownHelp:
+    'Aynı düzeltmeyi aynı işlem anahtarıyla yeniden gönderin: kaydedildiyse ikinci bir ters kayıt oluşmaz. Yeni bir ' +
+    'düzeltme, bu çözülene kadar gönderilemez.',
+} as const
+
+/**
+ * F-009 D5/D6 (URT-D33): the order cancel. The order and its facts are not deleted; a cancelled order is a status, and
+ * the plan returns to Approved on the server. The text names the server's preconditions; it never checks them itself.
+ */
+export const ORDER_CANCEL_TEXT = {
+  heading: 'Emri iptal et',
+  help:
+    'İptal, yalnız emirde hiçbir şey kalmadığında yapılır: net çıktı ve net girdi çıkışı sıfır, yarı mamul yok, ' +
+    'kilitli kütle yok. Emir ve olguları silinmez; plan yeniden onaylı duruma döner. Koşulları sunucu denetler.',
+  action: 'Emri iptal et',
+  reason: 'İptal gerekçesi',
+  reasonRequired: 'İptal gerekçesi zorunludur.',
+  confirmQuestion: 'Emir iptal edilsin mi? İptal edilen emre yeni gerçekleşme yazılamaz.',
+  confirm: 'Evet, emri iptal et',
+  cancel: 'Vazgeç',
+  notOpen: 'Emir açık değil; iptal edilemez.',
+  sending: 'Gönderiliyor…',
+  resend: 'Aynı işlem anahtarıyla yeniden gönder',
+  appliedTitle: 'Emir iptal edildi',
+  appliedDetail: 'Emir iptal edildi; yukarıdaki değerler emrin yeniden okunmuş hâlidir.',
+  replayedTitle: 'Emir zaten iptal edilmişti',
+  replayedDetail: 'Bu iptal sunucuda zaten kayıtlıydı; ikinci bir iptal oluşmadı.',
+  refusedTitle: 'Emir iptal edilmedi',
+  unknownTitle: 'İptalin sonucu bilinmiyor',
+  unknownHelp: 'Aynı iptali aynı işlem anahtarıyla yeniden gönderin: iptal edildiyse ikinci bir iptal oluşmaz.',
+} as const
+
 export const APPLIED_TITLE = 'Kaydedildi'
 export const APPLIED_DETAIL = 'Olgu kaydedildi. Tablodaki değerler emrin yeniden okunmuş hâlidir.'
 export const REPLAYED_TITLE = 'Daha önce kaydedilmiş'
@@ -261,6 +354,8 @@ export const REPLAYED_DETAIL =
 
 const RULE_TEXT: Record<string, string> = {
   manufacturing_order_closed: CLOSED_ORDER_TEXT,
+  manufacturing_output_label_code_conflict:
+    'Bu çıktı etiket kodu şirkette zaten kullanılıyor; kod kendiliğinden değiştirilmez. Başka bir etiket kodu girin.',
   manufacturing_unexplained_difference:
     'Emir kapanmadı: en az bir ana ruloda açıklanamayan kütle farkı var. Fark tolerans ile geçilmez ve bir sınıfa ' +
     'yazılmaz; eksik kalan çıktı, iade ya da WIP kaydı tamamlandığında kapanış yeniden denenebilir.',
@@ -287,7 +382,41 @@ const RULE_TEXT: Record<string, string> = {
   manufacturing_input_already_issued: 'Bu olgu kimliğiyle bir girdi çıkışı zaten var.',
   manufacturing_return_already_recorded: 'Bu olgu kimliğiyle bir iade zaten var.',
   manufacturing_return_exceeds_issued: 'İade, bu rulodan çıkan kütleyi aşamaz.',
+  // F-009 D4: the return is bounded by the input still unconsumed (issued − returned − net output − WIP).
+  manufacturing_return_exceeds_unconsumed:
+    'İade, net çıktı ve yarı mamul düşüldükten sonra kalan girdi kütlesini aşamaz. Önce çıktıyı düzeltin veya ' +
+    'yarı mamulü yeniden ölçün.',
   manufacturing_output_already_declared: 'Bu olgu kimliğiyle bir çıktı zaten bildirildi.',
+  // F-009 D2/D6 (URT-D28, URT-D30): the output reversal's own domain refusals. Nothing is deleted; a reversal is a new
+  // fact linked to the declaration, and its sum never exceeds the declared mass.
+  manufacturing_output_not_declared: 'Düzeltilmek istenen çıktı bu emirde beyan edilmedi.',
+  manufacturing_output_line_missing:
+    'Bu çıktı beyanı bir plan çıktı satırına bağlı değil (satır referansı gelmeden kaydedilmiş). Satır sınırı ' +
+    'hesaplanamadığı için düzeltilemez; emir bugünkü kapanış kurallarıyla kapatılır.',
+  manufacturing_output_line_not_in_plan:
+    'Çıktının bağlandığı satır bu emrin plan çıktı satırlarından biri değil ya da çıktı sınıfına uymuyor.',
+  manufacturing_output_reversal_already_recorded: 'Bu kimlikle bir çıktı düzeltmesi zaten kaydedildi.',
+  manufacturing_output_reversal_exceeds_declared:
+    'Düzeltme, bu çıktı beyanının kalan net kütlesini aşıyor; bir beyanın ters kayıtlarının toplamı beyan edilen ' +
+    'kütleyi geçemez.',
+  // AK-7 (URT-D112): the piece side of an output declaration and its correction.
+  ...OUTPUT_PIECE_RULE_TEXT,
+  // F-009 D3/D6 (API-25): the physical reason Inventory gave, under its label fence, for not taking the mass back.
+  manufacturing_output_correction_exceeds_produced:
+    'Düzeltme, bu çıktı etiketine üretimden giren kütleyi aşıyor; etiketteki üretim kaydından fazlası geri alınamaz.',
+  manufacturing_output_correction_shipped:
+    'Bu çıktı etiketinden sevkiyat yapılmış; sevk edilmiş kütle üretim düzeltmesiyle geri alınamaz.',
+  manufacturing_output_correction_issued_to_manufacturing:
+    'Bu çıktı etiketi başka bir üretime girdi olarak verilmiş; önce o çıkış iade edilmelidir.',
+  manufacturing_output_correction_transferred:
+    'Bu çıktı etiketinin stoğu başka bir konuma veya gözetime aktarılmış; düzeltme yapılamaz.',
+  manufacturing_output_correction_allocated:
+    'Bu çıktı etiketinde ayrılmış (rezerve) kütle var; ayırma kaldırılmadan düzeltme yapılamaz.',
+  manufacturing_output_correction_blocked: 'Bu çıktı etiketi blokeli; bloke kaldırılmadan düzeltme yapılamaz.',
+  manufacturing_output_correction_not_free:
+    'Bu çıktı etiketinde düzeltme kadar serbest stok yok; kütle başka bir işlemde kullanılıyor.',
+  manufacturing_output_correction_label_unreadable:
+    'Çıktı etiketinin durumu okunamadı; düzeltme kaydedilmedi. Biraz sonra yeniden deneyin.',
   manufacturing_wip_already_measured: 'Bu olgu kimliğiyle bir WIP ölçümü zaten var.',
   manufacturing_wip_measurement_not_latest: 'WIP ölçümü, rulonun son ölçümünden sonra olmalı.',
   manufacturing_mass_scale_exceeded: 'Kütle, şirketin kg profilinin izin verdiğinden fazla ondalık içeriyor; yuvarlanmadı.',
@@ -304,6 +433,27 @@ const RULE_TEXT: Record<string, string> = {
   inventory_manufacturing_physical_stock_insufficient: 'Ana ruloda istenen kütle kadar serbest fiziksel stok yok.',
   inventory_manufacturing_parent_input_not_issued: 'Bu ana rulo için önce bir girdi çıkışı kaydedilmelidir.',
   inventory_manufacturing_input_return_exceeds_issued: 'İade, bu rulodan net çıkan kütleyi aşamaz.',
+}
+
+/**
+ * SAT-D318 (owner decision of 2026-11-13): the input issue's physical-stock refusal, told with what the server named —
+ * the refused issue, its parent label, the place of the label's stock, and, by SINAN-CEVAP (8) question 5 on Issue
+ * #66, the usable and the requested kilograms together. The usable kilograms are the server's figure, shown as sent;
+ * reserved kilograms are not part of the refusal, so the sentence never states or guesses one. The ids are shown as
+ * the server sent them.
+ */
+export function stockShortfallText(shortfall: StockShortfallView): string {
+  const place =
+    shortfall.locationId === null
+      ? 'Konum: yok; etiketin şu an hiçbir konumda stoğu bulunmuyor.'
+      : `Konum: ${shortfall.locationId}.`
+  return [
+    'Girdi çıkışı kaydedilmedi: fiziksel stok sıfırın altına düşürülemez.',
+    `İşlem: girdi çıkışı (olgu ${shortfall.sourceLineId}).`,
+    `Ana rulo etiketi: ${shortfall.labelId}.`,
+    place,
+    `Etikette kullanılabilir ${shortfall.availableKg} kg var, ${shortfall.requestedKg} kg istendi.`,
+  ].join(' ')
 }
 
 export function failureText(failure: FactFailure): string {
@@ -329,6 +479,7 @@ export function failureText(failure: FactFailure): string {
     case 'id-conflict':
       return `Bu olgu kimliği başka bir içerikle kayıtlı (${failure.code}). Yeni bir gönderim olarak yeniden deneyin.`
     case 'rule':
+      if (failure.stockShortfall !== undefined) return stockShortfallText(failure.stockShortfall)
       return RULE_TEXT[failure.code] ?? `İşlem reddedildi (${failure.code}).`
     case 'unsupported-media':
       return 'İstek biçimi sunucu tarafından kabul edilmedi.'
@@ -347,6 +498,40 @@ export function closeFailureText(failure: FactFailure): string {
       return 'Emir siz bakarken değişti. Güncel hâli yeniden okundu; kapanışı yeniden değerlendirin.'
     case 'concurrent-change':
       return 'Aynı anda başka bir kayıt işlendi; emir kapatılmadı. Emir yeniden okundu; yeniden deneyin.'
+    default:
+      return failureText(failure)
+  }
+}
+
+/** The same refusals, told as an OUTPUT CORRECTION; every rule code still comes from {@link failureText}. */
+export function correctionFailureText(failure: FactFailure): string {
+  switch (failure.kind) {
+    case 'forbidden':
+      return 'Bu emirde çıktı düzeltme yetkiniz yok.'
+    case 'not-found':
+      return 'Emir, çıktı beyanı veya çıktı etiketi bulunamadı.'
+    case 'version-conflict':
+      return 'Emir siz formu doldururken değişti. Güncel hâli yeniden okundu; çıktıyı ve kütleyi kontrol edip yeniden gönderin.'
+    case 'concurrent-change':
+      return 'Aynı anda başka bir kayıt işlendi; düzeltme kaydedilmedi. Emir yeniden okundu; yeniden gönderin.'
+    case 'label-version-conflict':
+      return 'Çıktı etiketi siz formu doldururken değişti. Etiket yeniden okundu; değerleri kontrol edip yeniden gönderin.'
+    case 'id-conflict':
+      return `Bu düzeltme kimliği başka bir içerikle kayıtlı (${failure.code}). Yeni bir gönderim olarak yeniden deneyin.`
+    default:
+      return failureText(failure)
+  }
+}
+
+/** The same refusals, told as an ORDER CANCEL; every rule code still comes from {@link failureText}. */
+export function cancelFailureText(failure: FactFailure): string {
+  switch (failure.kind) {
+    case 'forbidden':
+      return 'Bu emri iptal etme yetkiniz yok.'
+    case 'version-conflict':
+      return 'Emir siz bakarken değişti. Güncel hâli yeniden okundu; iptali yeniden değerlendirin.'
+    case 'concurrent-change':
+      return 'Aynı anda başka bir kayıt işlendi; emir iptal edilmedi. Emir yeniden okundu; yeniden deneyin.'
     default:
       return failureText(failure)
   }
@@ -371,3 +556,46 @@ export function unknownText(unknown: FactUnknown): string {
 
 export const UNKNOWN_ACTION_HELP =
   'Aynı olguyu aynı işlem anahtarıyla yeniden gönderin: kaydedildiyse ikinci bir kayıt oluşmaz. Yeni bir olgu, bu çözülene kadar gönderilemez.'
+
+
+export const PLAN_REAPPROVAL_TEXT = {
+  heading: 'İptal sonrası planı yeniden onayla',
+  help: 'Ayrılacak her etiketi açıkça seçin. Bu adım aynı girdilerle yeniden ayırır; farklı etiket için plan yeniden hesaplanmalıdır.',
+  chooseAll: 'Her plan girdisinin etiketi açıkça seçilmelidir.',
+  submit: 'Seçilen etiketlerle yeniden onayla',
+  resend: 'Aynı isteği tekrar gönder',
+  pending: 'Yeniden onay sonucu bilinmiyor. Aynı istek ve anahtarla tekrar deneyin.',
+  applied: 'Plan yeniden onaylandı; güncel plan okunuyor.',
+  refused: 'Yeniden onay reddedildi.',
+  changedSettings: 'Ayarlar ilk onaydan bu yana değişti; plan iptal edilip yeni plan hazırlanmalıdır.',
+  changedLabels: 'Bu yeniden onay adımı yalnız plandaki etiketleri kabul eder; farklı etiket planın yeniden hesabını gerektirir.',
+  history: 'Yeniden onay geçmişi',
+  historyLine: (number: number, at: string, version: number) => `${number}. yeniden onay: ${at}, plan sürümü ${version}`,
+} as const
+
+export const PLAN_INPUT_AVAILABILITY_TEXT = {
+  heading: 'Girdi miktarları ve iptal geçmişi', subject: 'Plan girdilerinin güncel miktarları',
+  help: 'Bu okuma stok ayırmaz. Serbest miktar başka işlemlerle değişebilir; yeniden onayda bütün girdiler birlikte tekrar kontrol edilir. Fiziksel bakiye serbest miktar değildir.',
+  caption: 'Stok kaynağından okunan miktarlar (kg)', label: 'Etiket', product: 'Ürün', version: 'Güncel etiket sürümü',
+  requested: 'Planlanan', physical: 'Fiziksel', blocked: 'Blokeli', allocated: 'Ayrılmış', free: 'Serbest', missing: 'Eksik',
+  positions: 'Serbest pozisyon sayısı', positionRefusal: 'Ayırma için tek serbest pozisyon gerekir',
+  readAt: 'Okuma zamanı', refresh: 'Miktarları yeniden oku', cancelledHistory: 'İptal edilen emir geçmişi',
+  cancelledLine: (orderId: string, version: number) => `İptal edilen emir ${orderId}; iptal sonrası plan sürümü ${version}`,
+} as const
+export const PLAN_QUEUE_TEXT = {
+  heading: 'İş merkezi kuyruğu ve plan önceliği', subject: 'İş merkezi kuyruğu',
+  help: 'Sıra: önce termin, sonra yüksek öncelik puanı, sonra oluşturulma zamanı. Taslak satırı yalnız önizlemedir. Kalan miktar ve plan aşımı sunucudan gelir.',
+  caption: 'İş merkezinin kayıtlı kuyruğu', plan: 'Plan', due: 'Termin', priority: 'Öncelik', planned: 'Planlanan kg',
+  processed: 'İşlenen kg', remaining: 'Kalan kg', status: 'Durum', target: 'Bu plan', noDueDate: 'Termin yok',
+  queued: 'Kuyrukta', preview: 'Önizleme', overPlanned: 'Planı aştı', currentPriority: 'Güncel öncelik puanı', revision: 'Revizyon',
+  score: 'Yeni öncelik puanı', reason: 'Değişiklik gerekçesi', save: 'Önceliği kaydet', resend: 'Aynı denemenin sonucunu sor', refresh: 'Kuyruğu yenile',
+  invalid: 'Tam sayı öncelik puanı ve gerekçe girin.', unknown: 'Kaydın sonucu bilinmiyor. Yeni deneme açmadan aynı anahtarla sonucunu sorun.',
+  conflict: 'Plan veya öncelik değişti. Güncel kaydı okuyup yeni bir deneme hazırlayın.', refused: 'Öncelik kaydedilemedi.',
+  applied: 'Öncelik kaydedildi; güncel kuyruk yeniden okunuyor.',
+} as const
+
+export const PLAN_ALLOCATION_SHORTFALL_TEXT = {
+  heading: 'Stok ayırma reddedildi',
+  help: 'Bu miktarlar reddedilen işlemin anına aittir. Ayrılabilir ve eksik miktarı stok kaynağı bildirdi; güncel girdi okuması bu red anının yerine geçmez.',
+  product: 'Ürün', label: 'Etiket', version: 'Red anındaki etiket sürümü', requested: 'İstenen kg', available: 'Ayrılabilir kg', missing: 'Eksik kg',
+} as const

@@ -226,3 +226,11 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* KLN-D117: the carried stock label context. */
+.notice {
+  margin: 0;
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  border: 1px solid #9aa5b1;
+}

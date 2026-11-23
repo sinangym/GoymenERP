@@ -76,7 +76,48 @@ public static class PurchasingPermissionManifestV1
     /// </summary>
     public const string OrdersRevise = "purchasing.orders.revise";
 
+    /// <summary>
+    /// API-11 (ALIS_F017 v1 §3.6, ALS-D10/D12/D87; the plan's API-11 name): close an APPROVED order's general line's unaccepted
+    /// remainder (eksik teslim kapanışı) and reopen a closed line. Apart from entering, approving, receiving, cancelling and revising;
+    /// none confers another. Company-wide, not critical. Registered only: the grant is a human gate (only SENTETIK browser-suite
+    /// personas in disposable stacks hold it).
+    /// </summary>
+    public const string OrdersClose = "purchasing.orders.close";
+
+    /// <summary>
+    /// ALC-S16 (F-027, KLN-D45): approve or reject a bulk goods receipt whose total kg differs from the order line outside the Ayarlar
+    /// tolerance, or with no tolerance set. Apart from recording a receipt; neither confers the other, and the batch's preparer never
+    /// decides it (hazırlayan ≠ onaylayan). Company-wide, not critical. Registered only: the grant is a human gate.
+    /// </summary>
+    public const string GoodsReceiptsApproveVariance = "purchasing.goods-receipts.approve-variance";
+
+    /// <summary>
+    /// ALS-D116, W5-5.1: the separate overdelivery decision permission; neither OrdersApprove
+    /// nor GoodsReceiptsApproveVariance confers it. Company-wide, not Critical. Registration only.
+    /// </summary>
+    public const string GoodsReceiptsApproveOverdelivery = "purchasing.goods-receipts.approve-overdelivery";
+
+    /// <summary>
+    /// ALC-S3 (F-017 F17-4, ALS-D83/D85): drop a sales line's future supply allocation (bağ) on one of this company's purchase lines
+    /// from the Purchasing screen, without changing any purchase quantity; and, beside <see cref="OrdersCancel"/> or
+    /// <see cref="OrdersClose"/>, release the linked allocations while the remainder is cancelled or the line is closed (both names
+    /// are measured; either missing is 403). Apart from every other name; none confers another. Company-wide, not critical.
+    /// Registered only: the grant is a human gate.
+    /// </summary>
+    public const string FutureAllocationRelease = "purchasing.future-allocation.release";
+
+    /// <summary>
+    /// ALC-S5 (B-19, SAT-D306): record a return to the supplier of a received label — the stock leaves at the original purchase
+    /// line's unit cost. Apart from recording a receipt; neither confers the other. The cost exception of a return whose invoice
+    /// cost cannot be read is decided under <see cref="OrdersApprove"/> (SAT-D396). Company-wide, not critical. Registered only:
+    /// the grant is a human gate.
+    /// </summary>
+    public const string SupplierReturnsRecord = "purchasing.supplier-returns.record";
+
     public static readonly IReadOnlyList<string> Names =
         [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord, RequestsApprove, RequestsWithdraw, OrdersCancel, OrdersPriceRead,
-            OrdersRevise];
+            OrdersRevise, OrdersClose, GoodsReceiptsApproveVariance, GoodsReceiptsApproveOverdelivery, FutureAllocationRelease,
+            SupplierReturnsRecord, PurchaseIncomingInvoicePermissionNamesV1.Read, PurchaseIncomingInvoicePermissionNamesV1.Import,
+            PurchaseIncomingInvoicePermissionNamesV1.Match, PurchaseIncomingInvoicePermissionNamesV1.ApproveVariance,
+            PurchaseIncomingInvoicePermissionNamesV1.Finalize];
 }

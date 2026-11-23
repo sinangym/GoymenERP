@@ -310,6 +310,25 @@ public static class SalesDraftProblemCodesV1
     public const string RevisionImpactUnavailable = "revision_impact_unavailable";
 
     /// <summary>
+    /// 409 (SAT-D437, AK-4): an internal approval needs the theoretical kilograms per unit of a non-kilogram (piece) line from the
+    /// Product owner, and the owner gives none — the card has no kilogram source for the unit, its sources conflict, it is not
+    /// found or the read is unavailable. Fail-closed: the approval is refused whole, nothing is recorded under the key (the card
+    /// can be completed and the same key retried) and kilogram lines are not affected. Each field <c>lines[i].orderUnitId</c>
+    /// carries the owner's reason (<c>product_kg_per_unit_*</c>, or <see cref="KilogramsPerUnitUnavailable"/> itself).
+    /// </summary>
+    public const string KilogramsPerUnitUnavailable = "sales_kg_per_unit_unavailable";
+
+    /// <summary>
+    /// 409 (SAT-D373, SINAN-CEVAP 34.20; STK-S16): the allocation owner holds at least one ACTIVE future supply allocation
+    /// ("ileri tarihli tahsis") against a line of the order, so no header revision of it is accepted — customer, currency, due
+    /// terms, sales owner or delivery references alike. The field <c>futureSupplyAllocations</c> carries the same code. Not
+    /// recorded (the owner moves): after the allocation is released in its own screen the user revises again. Temporary: it is
+    /// removed in a separate change once the SAT-S8 transfer rule is merged. An owner that cannot answer stays
+    /// <see cref="RevisionImpactUnavailable"/> (503, fail-closed).
+    /// </summary>
+    public const string RevisionFutureAllocationPresent = "sales_revision_future_allocation_present";
+
+    /// <summary>
     /// 503 (API-04): the Identity user directory (the sales owner's display and eligibility, SAT-D27) is not composed, cannot
     /// answer, or cannot confirm the person within one bounded search. The sales owner is not changed on an unverified person.
     /// </summary>

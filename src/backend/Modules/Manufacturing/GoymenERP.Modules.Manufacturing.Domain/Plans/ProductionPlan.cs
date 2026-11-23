@@ -22,6 +22,18 @@ public sealed record PlanRejection(int Number, string Reason, Guid RejectedByUse
 public sealed record PlanCancellation(string Reason, Guid CancelledByUserId, DateTimeOffset CancelledAtUtc);
 
 /// <summary>
+/// F-009 D5 (URT-D34): the plan was released by the cancel of its order <paramref name="OrderId"/>;
+/// <paramref name="PlanVersion"/> is the plan version the release produced.
+/// </summary>
+public sealed record PlanOrderRelease(Guid OrderId, long PlanVersion);
+
+/// <summary>
+/// F-009 D5 (URT-D35/D39): a minimal Approved→Approved re-approval after an order cancel — the approval's own fields and
+/// its parameter snapshot stay as they are; <paramref name="PlanVersion"/> is the plan version the re-approval produced.
+/// </summary>
+public sealed record PlanReapproval(int Number, Guid ReapprovedByUserId, DateTimeOffset ReapprovedAtUtc, long PlanVersion);
+
+/// <summary>
 /// What is intended to be produced, from which parent rolls, on which work center (plan v2
 /// §7.3). A plan is not an order and not a realization: approving it records a decision and
 /// nothing else — it issues no input, moves no stock and consumes nothing.
@@ -42,6 +54,8 @@ public sealed class ProductionPlan
 
     private readonly List<PlannedInput> _inputs;
     private readonly List<PlanRejection> _rejections = [];
+    private readonly List<PlanOrderRelease> _orderReleases = [];
+    private readonly List<PlanReapproval> _reapprovals = [];
 
     public ProductionPlan(
         Guid id,
@@ -174,6 +188,18 @@ public sealed class ProductionPlan
     /// <summary>Üretim U2-a: the cancellation, or null while the plan is not cancelled.</summary>
     public PlanCancellation? Cancellation { get; private set; }
 
+    /// <summary>F-009 D5 (URT-D34): every release by a cancelled order, oldest first.</summary>
+    public IReadOnlyList<PlanOrderRelease> OrderReleases => _orderReleases.AsReadOnly();
+
+    /// <summary>F-009 D5 (URT-D35): every minimal re-approval, oldest first.</summary>
+    public IReadOnlyList<PlanReapproval> Reapprovals => _reapprovals.AsReadOnly();
+
+    /// <summary>
+    /// F-009 D5 (URT-D35): a plan released by a cancelled order opens no new order until it is re-approved
+    /// (<see cref="Reapprove"/>).
+    /// </summary>
+    public bool RequiresReapproval => _orderReleases.Count > _reapprovals.Count;
+
     /// <summary>
     /// Üretim U2-a (URT-D1): the one order this approved plan opened, or null. Not a change of the plan (its version does
     /// not move): the order is its own record; the store supplies it when the plan is rebuilt.
@@ -189,6 +215,17 @@ public sealed class ProductionPlan
 
     /// <summary>Üretim U2-b / API-16: how many times the sales order link was set or removed (0 = never linked).</summary>
     public long SalesOrderLinkRevision { get; private set; }
+
+    /// <summary>
+    /// Üretim F-010a (URT-D29): the due date (termin) a user entered by hand, a calendar day without a time, or null. The
+    /// system never computes it from line speed, a calendar or capacity. Not part of the plan's content and not a change
+    /// of the plan (its version does not move): the termin has its own revision (<see cref="DueDateRevision"/>), which
+    /// every set, change or removal advances.
+    /// </summary>
+    public DateOnly? RequestedDueDate { get; private set; }
+
+    /// <summary>Üretim F-010a (URT-D29): how many times the termin was set, changed or removed (0 = never entered).</summary>
+    public long DueDateRevision { get; private set; }
 
     /// <summary>The longest preparer identity the store keeps (the actor id column's length).</summary>
     public const int PreparedByMaximumLength = 128;
@@ -265,7 +302,11 @@ public sealed class ProductionPlan
         PlanProcessSpec? processSpec = null,
         string? preparedBy = null,
         PlanSalesOrderLink? salesOrderLink = null,
-        long salesOrderLinkRevision = 0)
+        long salesOrderLinkRevision = 0,
+        DateOnly? requestedDueDate = null,
+        long dueDateRevision = 0,
+        IEnumerable<PlanOrderRelease>? orderReleases = null,
+        IEnumerable<PlanReapproval>? reapprovals = null)
     {
         if (process != ManufacturingProcess.Slitting && spec is not null)
         {
@@ -321,7 +362,11 @@ public sealed class ProductionPlan
             }
         }
 
-        foreach (var revision in revisions ?? [])
+        var revisionSteps = (revisions ?? []).ToArray();
+        var releases = (orderReleases ?? []).ToArray();
+        var firstReleaseVersion = releases.Length == 0 ? long.MaxValue : releases.Min(release => release.PlanVersion);
+        var releasedRevisions = revisionSteps.Where(revision => revision.PlanVersion >= firstReleaseVersion).ToArray();
+        foreach (var revision in revisionSteps.Where(revision => revision.PlanVersion is null || revision.PlanVersion < firstReleaseVersion))
         {
             ArgumentNullException.ThrowIfNull(revision);
             ReplayRejectionsUpTo(revision.PlanVersion);
@@ -380,9 +425,12 @@ public sealed class ProductionPlan
             plan.ParameterSnapshot = parameterSnapshot;
         }
 
+        plan.ReplayReleasesAndReapprovals(releases, reapprovals, releasedRevisions);
+
         if (orderId is { } order)
         {
-            if (order == Guid.Empty || plan.Status != PlanStatus.Approved)
+            if (order == Guid.Empty || plan.Status != PlanStatus.Approved || plan.RequiresReapproval
+                || plan._orderReleases.Any(release => release.OrderId == order))
             {
                 throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
                     "Kayıtlı emir yalnız onaylı plana bağlı olabilir.");
@@ -444,6 +492,17 @@ public sealed class ProductionPlan
         }
 
         plan.SalesOrderLinkRevision = salesOrderLinkRevision;
+
+        // F-010a (URT-D29): the termin is not a step of the plan either; it is set after the replay, and every stored termin
+        // was counted by its revision.
+        if (dueDateRevision < 0 || (requestedDueDate is not null && dueDateRevision < 1))
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı terminin revizyonu geçersiz.");
+        }
+
+        plan.RequestedDueDate = requestedDueDate;
+        plan.DueDateRevision = dueDateRevision;
         return plan;
     }
 
@@ -480,9 +539,34 @@ public sealed class ProductionPlan
         }
 
         SlittingApprovalGate.Require(this, parameters);
+        // URT-D66 (2): a plan without a termin is not approved — the last refusal, so every earlier rule keeps its answer.
+        if (RequestedDueDate is null)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanDueDateRequired,
+                "Termini girilmemiş plan onaylanmaz; önce planın terminini girin.");
+        }
+
+        // URT-D70: a termin before the Europe/Istanbul business day of the approval instant is refused; the user moves the
+        // termin forward (ChangeDueDate) and approves again. Still after every earlier rule, so each keeps its answer.
+        RequireDueDateNotPast(ManufacturingBusinessDay.DateOf(approvedAtUtc));
+
         ApplyApproval(expectedVersion, approvedByUserId, approvedAtUtc);
         // U2-a (URT-D9): the plan-entered line speed replaces the profile's value in the captured snapshot.
         ParameterSnapshot = parameterSnapshot is null ? null : CaptureWithPlanValues(parameterSnapshot);
+    }
+
+    /// <summary>
+    /// URT-D70: the plan's termin is not before <paramref name="businessToday"/> (the Europe/Istanbul business day of the
+    /// approval or of the order's opening); otherwise <see cref="ManufacturingRuleCodes.DueDateInPast"/>. A plan without a
+    /// termin is left to <see cref="ManufacturingRuleCodes.PlanDueDateRequired"/>.
+    /// </summary>
+    internal void RequireDueDateNotPast(DateOnly businessToday)
+    {
+        if (RequestedDueDate is { } dueDate && dueDate < businessToday)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.DueDateInPast,
+                "Planın termini bugünkü iş gününden önce; terminini güncelleyip yeniden deneyin.");
+        }
     }
 
     /// <summary>
@@ -559,7 +643,175 @@ public sealed class ProductionPlan
                 "Onaylı plan emrini zaten açtı; bir plandan tek emir açılır.");
         }
 
+        RequireNoPendingReapproval();
         OrderId = RequireId(orderId, nameof(orderId));
+    }
+
+    /// <summary>
+    /// F-009 D5 (URT-D35): the plan opens no order while a cancelled order's release waits for its re-approval
+    /// (<see cref="ManufacturingRuleCodes.PlanReapprovalRequired"/>).
+    /// </summary>
+    internal void RequireNoPendingReapproval()
+    {
+        if (RequiresReapproval)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanReapprovalRequired,
+                "Emri iptal edilen plan yeniden onaylanmadan yeni emir açılamaz.");
+        }
+    }
+
+    /// <summary>
+    /// F-009 D5 (URT-D34): the cancel of <paramref name="orderId"/> releases this approved plan — the plan forgets the
+    /// order, its version advances by one and the release is recorded. Only the order cancel calls it, in the same unit
+    /// of work as <see cref="ProductionOrder.Cancel"/>.
+    /// </summary>
+    public void ReleaseCancelledOrder(Guid orderId)
+    {
+        RequireId(orderId, nameof(orderId));
+        if (Status != PlanStatus.Approved || OrderId != orderId)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanNotApproved,
+                "Yalnız bu emri açmış onaylı plan emrin iptaliyle serbest bırakılır.");
+        }
+
+        OrderId = null;
+        Version++;
+        _orderReleases.Add(new PlanOrderRelease(orderId, Version));
+    }
+
+    /// <summary>
+    /// F-009 D5 (URT-D35/D39): the minimal Approved→Approved re-approval of a plan whose order was cancelled. The first
+    /// approval (approver, moment, parameter snapshot) is not changed; a re-approval is recorded and the version advances
+    /// by one. In order, and nothing is applied on a refusal:
+    /// <list type="number">
+    /// <item>the version fence;</item>
+    /// <item>cancelled (<see cref="ManufacturingRuleCodes.PlanCancelled"/>), not approved
+    /// (<see cref="ManufacturingRuleCodes.PlanNotApproved"/>), an order still open on the plan
+    /// (<see cref="ManufacturingRuleCodes.PlanOrderExists"/>), no release waiting
+    /// (<see cref="ManufacturingRuleCodes.PlanReapprovalNotRequired"/>);</item>
+    /// <item>the preparer does not re-approve (<see cref="ManufacturingRuleCodes.PlanSelfApproval"/>);</item>
+    /// <item>URT-D39: the current Settings profile must be the one the first approval captured — same profile, version,
+    /// scope and validity, same non-plan values; anything else (or no snapshot on either side) is
+    /// <see cref="ManufacturingRuleCodes.PlanReapprovalSettingsChanged"/>: the plan is revised through a new plan;</item>
+    /// <item>the MFG-6 slitting approval gate on <paramref name="parameters"/>.</item>
+    /// </list>
+    /// </summary>
+    public void Reapprove(long expectedVersion, Guid reapprovedByUserId, DateTimeOffset reapprovedAtUtc,
+        PlanParameterSnapshotV1? currentSettings, SlittingPlanParameters? parameters)
+    {
+        RequireFence(expectedVersion);
+        RequireReapprovable();
+        RequireId(reapprovedByUserId, nameof(reapprovedByUserId));
+        RequireDeciderIsNotPreparer(reapprovedByUserId);
+        if (!PlanParameterSnapshotV1.SameSettingsAs(ParameterSnapshot, currentSettings))
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanReapprovalSettingsChanged,
+                "Ayarlar profili ilk onaydan bu yana değişti; plan yeniden onaylanamaz, yeni plan hazırlanmalı.");
+        }
+
+        SlittingApprovalGate.Require(this, parameters);
+        ApplyReapproval(reapprovedByUserId, reapprovedAtUtc);
+    }
+
+    /// <summary>F-009 D5: the status rules of <see cref="Reapprove"/>, without the version fence; nothing is changed.</summary>
+    public void RequireReapprovable()
+    {
+        if (Status == PlanStatus.Cancelled)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanCancelled, "İptal edilmiş plan yeniden onaylanamaz.");
+        }
+
+        if (Status != PlanStatus.Approved)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanNotApproved,
+                "Yalnız onaylı plan yeniden onaylanabilir.");
+        }
+
+        if (OrderId is not null)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanOrderExists,
+                "Planın açık emri var; yeniden onay gerekmez.");
+        }
+
+        if (!RequiresReapproval)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanReapprovalNotRequired,
+                "Planın yeniden onay bekleyen bir emir iptali yok.");
+        }
+    }
+
+    private void ApplyReapproval(Guid reapprovedByUserId, DateTimeOffset reapprovedAtUtc)
+    {
+        Version++;
+        _reapprovals.Add(new PlanReapproval(_reapprovals.Count + 1, reapprovedByUserId, reapprovedAtUtc.ToUniversalTime(),
+            Version));
+    }
+
+    /// <summary>
+    /// F-009 D5: replays stored releases and re-approvals in plan-version order; each must produce exactly its stored
+    /// version, a release must follow an approval and alternate with re-approvals.
+    /// </summary>
+    private void ReplayReleasesAndReapprovals(IEnumerable<PlanOrderRelease>? orderReleases,
+        IEnumerable<PlanReapproval>? reapprovals, IEnumerable<PlanRevisionContent>? releasedRevisions = null)
+    {
+        var steps = (orderReleases ?? Enumerable.Empty<PlanOrderRelease>()).Select(release => (Version: release?.PlanVersion ?? 0, Release: release,
+                Reapproval: (PlanReapproval?)null, Revision: (PlanRevisionContent?)null))
+            .Concat((reapprovals ?? Enumerable.Empty<PlanReapproval>()).Select(reapproval => (Version: reapproval?.PlanVersion ?? 0,
+                Release: (PlanOrderRelease?)null, Reapproval: reapproval, Revision: (PlanRevisionContent?)null)))
+            .Concat((releasedRevisions ?? []).Select(revision => (Version: revision.PlanVersion ?? 0,
+                Release: (PlanOrderRelease?)null, Reapproval: (PlanReapproval?)null, Revision: (PlanRevisionContent?)revision)))
+            .OrderBy(step => step.Version)
+            .ToList();
+        foreach (var step in steps)
+        {
+            var valid = Status == PlanStatus.Approved && OrderId is null && step.Version == Version + 1;
+            if (valid && step.Release is { } release)
+            {
+                valid = !RequiresReapproval && release.OrderId != Guid.Empty
+                    && _orderReleases.All(existing => existing.OrderId != release.OrderId);
+                if (valid)
+                {
+                    OrderId = release.OrderId;
+                    ReleaseCancelledOrder(release.OrderId);
+                }
+            }
+            else if (valid && step.Reapproval is { } reapproval)
+            {
+                valid = RequiresReapproval && reapproval.Number == _reapprovals.Count + 1
+                    && reapproval.ReapprovedByUserId != Guid.Empty;
+                if (valid)
+                {
+                    ApplyReapproval(reapproval.ReapprovedByUserId, reapproval.ReapprovedAtUtc);
+                }
+            }
+            else if (valid && step.Revision is { } revision)
+            {
+                valid = RequiresReapproval;
+                if (valid)
+                {
+                    try
+                    {
+                        Revise(Version, revision.WorkCenterId, Process, revision.Inputs, revision.Target,
+                            revision.CutToLengthSpec, revision.LineSpeedMetresPerMinute, revision.ProcessSpec);
+                    }
+                    catch (Exception exception) when (exception is ManufacturingRuleException or ArgumentException)
+                    {
+                        throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                            "Kayıtlı yeniden hesaplama planın kurallarını karşılamıyor.");
+                    }
+                }
+            }
+            else
+            {
+                valid = false;
+            }
+
+            if (!valid || Version != step.Version)
+            {
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                    "Kayıtlı emir iptali veya yeniden onay planın adımlarıyla uyuşmuyor.");
+            }
+        }
     }
 
     /// <summary>
@@ -615,6 +867,62 @@ public sealed class ProductionPlan
     }
 
     /// <summary>
+    /// Üretim F-010a (URT-D29): enters, changes or removes (<paramref name="dueDate"/> null) the termin by hand. The plan's
+    /// version does not move; the termin revision advances by one. No date is computed. URT-D66: a day earlier than
+    /// <paramref name="businessToday"/> (the company's Europe/Istanbul business day, from the server's clock) is refused,
+    /// and an approved plan's termin is changed but never removed (an approved plan always has one). In order, and nothing
+    /// is applied on a refusal: the version fence; cancelled (<see cref="ManufacturingRuleCodes.PlanCancelled"/>); the
+    /// termin revision the caller read (<see cref="ManufacturingRuleCodes.PlanDueDateChanged"/>); the plan's order is
+    /// closed (<see cref="ManufacturingRuleCodes.PlanDueDateOrderClosed"/>); no change
+    /// (<see cref="ManufacturingRuleCodes.PlanDueDateNoChange"/>); removal on an approved plan
+    /// (<see cref="ManufacturingRuleCodes.PlanDueDateRequired"/>); a past day
+    /// (<see cref="ManufacturingRuleCodes.DueDateInPast"/>).
+    /// </summary>
+    public void ChangeDueDate(long expectedVersion, long expectedDueDateRevision, DateOnly? dueDate, bool orderClosed,
+        DateOnly businessToday)
+    {
+        RequireFence(expectedVersion);
+        if (Status == PlanStatus.Cancelled)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanCancelled,
+                "İptal edilmiş planın termini değişmez.");
+        }
+
+        if (expectedDueDateRevision != DueDateRevision)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanDueDateChanged,
+                "Planın termini siz okuduktan sonra değişti; planı yeniden okuyun.");
+        }
+
+        if (orderClosed)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanDueDateOrderClosed,
+                "Planın emri kapanmış; termin artık değişmez.");
+        }
+
+        if (dueDate == RequestedDueDate)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanDueDateNoChange,
+                "İstek planın termininde hiçbir şeyi değiştirmiyor.");
+        }
+
+        if (dueDate is null && Status == PlanStatus.Approved)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanDueDateRequired,
+                "Onaylı planın termini kaldırılmaz; yalnız değiştirilebilir.");
+        }
+
+        if (dueDate is { } day && day < businessToday)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.DueDateInPast,
+                "Termin şirketin bugünkü iş gününden önce olamaz.");
+        }
+
+        RequestedDueDate = dueDate;
+        DueDateRevision++;
+    }
+
+    /// <summary>
     /// U2-b / API-16: true when no customer-owned input names another party than <paramref name="partyId"/>. Inputs
     /// without commercial provenance (company-owned or legacy) never conflict.
     /// </summary>
@@ -665,17 +973,13 @@ public sealed class ProductionPlan
     }
 
     /// <summary>
-    /// MFG-PLAN-EDIT: the edit of a plan that has no downstream effect yet. Only a Draft is revised: an approved plan
-    /// has recorded a decision and may have opened its order (one plan opens one order, URT-D1), and an order carries its
-    /// own snapshot from which inputs are issued — so an approved plan is never edited here; a post-approval revision
-    /// with snapshot and difference (PR-09) is a separate flow. A cancelled plan is not a Draft either.
-    /// A revision replaces the work center, the planned inputs, the target and (U2-a) the plan-entered line speed AS A
-    /// WHOLE and advances the version by one. In order, and nothing is applied on a refusal:
+    /// MFG-PLAN-EDIT / URT-D37/D38: revise a Draft, or recalculate a plan released by cancellation of its order.
+    /// A released plan keeps its original work center, process spec, target and first approval; only its input selection
+    /// changes, within the same commercial ownership. The cancelled order retains its own immutable input snapshot.
+    /// Every revision advances the version and is appended to history. Refusals apply nothing.
     /// <list type="number">
     /// <item>the version fence (<see cref="ManufacturingVersionConflictException"/>);</item>
-    /// <item>only a Draft (<see cref="ManufacturingRuleCodes.PlanNotDraft"/>);</item>
-    /// <item>a plan with a slitting spec is not revised (<see cref="ManufacturingRuleCodes.PlanSlittingSpecFixed"/>):
-    /// how its spec balances against the parent coil is open (AT-044, #66 NEEDS-BUSINESS 5741547443);</item>
+    /// <item>a Draft or a released plan waiting for re-approval (<see cref="ManufacturingRuleCodes.PlanNotDraft"/>);</item>
     /// <item>the process is fixed (<see cref="ManufacturingRuleCodes.PlanProcessFixed"/>): the new work center must run
     /// the plan's own process — no plan changes its process while process chains are open;</item>
     /// <item>the plan's own input rules (at least one roll, no roll twice);</item>
@@ -726,6 +1030,20 @@ public sealed class ProductionPlan
         }
 
         RequireConsistentCommercialContext(newInputs, nameof(inputs));
+        RequireNetWidthWithinParents(Spec, newInputs);
+        if (Status == PlanStatus.Approved)
+        {
+            if (newWorkCenter != WorkCenterId || !Equals(target, Target)
+                || !CutSpecsEqual(cutToLengthSpec, CutToLengthSpec)
+                || lineSpeedMetresPerMinute != LineSpeedMetresPerMinute || !Equals(processSpec, ProcessSpec))
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanReapprovalSettingsChanged,
+                    "Yeniden hesapta yalnız girdi etiketleri değişir; planın ilk onay içeriği korunur.");
+            var owner = _inputs[0].CommercialContext;
+            if (newInputs.Any(input => input.CommercialContext?.PartyId != owner?.PartyId
+                || input.CommercialContext?.CompanyPartyAccountId != owner?.CompanyPartyAccountId))
+                throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanSalesOrderPartyMismatch,
+                    "Yeni etiketler ilk planla aynı sahipliğe ait olmalıdır.");
+        }
         RequireLineSpeed(Process, lineSpeedMetresPerMinute, nameof(lineSpeedMetresPerMinute));
         processSpec?.RequireAllowedFor(Process, nameof(processSpec));
         if (SalesOrderLink is { } salesLink && !InputsMatchParty(newInputs, salesLink.CustomerPartyId))
@@ -755,22 +1073,16 @@ public sealed class ProductionPlan
     }
 
     /// <summary>
-    /// The revision's preconditions on the plan as it stands — the version fence, only a Draft, no slitting spec —
+    /// The revision's preconditions: the version fence, a Draft or a released plan awaiting re-approval —
     /// without a new content: a caller may ask before it reads anything else, and <see cref="Revise"/> asks again.
     /// </summary>
     public void RequireRevisable(long expectedVersion)
     {
         RequireFence(expectedVersion);
-        if (Status != PlanStatus.Draft)
+        if (Status != PlanStatus.Draft && !(Status == PlanStatus.Approved && RequiresReapproval && OrderId is null))
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanNotDraft,
-                "Yalnız taslak plan düzenlenebilir; onaylı plan bir karar kaydetmiştir ve emir açmış olabilir.");
-        }
-
-        if (Spec is not null)
-        {
-            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanSlittingSpecFixed,
-                "Dilme ayrıntısı taşıyan plan düzenlenmez; ana ruloyla dengesi iş kararı bekliyor (AT-044).");
+                "Yalnız taslak veya iptal edilmiş emrinden sonra yeniden onay bekleyen plan düzenlenebilir.");
         }
     }
 

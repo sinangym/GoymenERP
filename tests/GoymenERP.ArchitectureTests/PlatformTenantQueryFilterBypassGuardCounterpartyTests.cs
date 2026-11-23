@@ -16,7 +16,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // SAT-D119 review B-P3-3: + the write guard refuses a newly written checking company other than the active one
     // (9090f0a5… -> 181bd248…); no filter, set or model change.
     private const string ReviewedCounterpartyDbContextFingerprint =
-        "181bd2486c67c20c14670392988f1d8367836509bb4495ec231ff9129e80ab25";
+        // Re-fingerprinted for tren-1 wave 1: the seven team slices combined; reviewed tokens unchanged.
+        // Re-fingerprinted for tren-1 wave 2 (trial integration): + the Counterparty outbox set (alis_cari wave 2);
+        // CommandExecution tenant filter unchanged.
+        // Re-fingerprinted for tren-1 wave 3 (integration): the Counterparty outbox and the deactivation/merge slices combined; token counts checked by the guard (f8ae21fd… -> 55069c28…).
+        // Re-fingerprinted for tren-1 W5 (integration): ALC-SC47 legal-name change requests; values from the guard output (55069c28… -> 6d51033c…).
+        // W8 SQL repair: nvarchar revision digits use two-byte length; tenant/group scopes unchanged. K3 review pending.
+        "2337ec79630718f11fbc6e2d90ea3a8a8380da073df34eb021b5527d5c38999f";
     private const string ReviewedCounterpartyPurchasingRecordPartyDisplaySourcePath =
         "src/backend/Modules/Counterparty/"
         + "GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"

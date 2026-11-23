@@ -39,6 +39,17 @@ public sealed record ApprovedMoneyProfileEntry(
 /// literals to the owners' constants.
 /// </para>
 /// <para>
+/// <b>Expense payment (FNS-D48, FNS-D55).</b> The Finance expense payment has its own key, <c>finance.expense-payment.v1</c>,
+/// whose limits and rules are managed apart from <c>finance.manual-bank-payment.v1</c>. FNS-D55
+/// (SINAN_KARARLARI_2026-11-15_DALGA2_SORULARI.md) chose its values: "ayrı satır; değerleri manuel banka ödemesiyle aynıdır
+/// (GDC/GSP/GIN şirket profilleri ayrı, TRY 2 ondalık)". So each seed company's own TRY entry lists the key with the
+/// manual bank payment's values (TRY, scale 2, no unit-price scale); stored rows keep the profile identity and version they
+/// were written with. The key is never answered from another key's listing, and a later separately managed value is a
+/// human-authored version of the authoring target (<c>MoneyProfileAuthoringCatalogV1.ExpensePaymentOperation</c>). Listing
+/// it on GSP/GIN does not make their profiles unrestricted for the operation-less candidate read (they still lack the other
+/// keys), and it opens no other Finance operation for them.
+/// </para>
+/// <para>
 /// A malformed catalog is refused as a whole with <c>settings_profile_invalid</c>: an empty
 /// identity, a blank currency code or source, no operation or a blank one, a negative scale, a
 /// non-positive version, a window that ends before it starts, a unit-price scale for an operation the
@@ -48,6 +59,9 @@ public sealed record ApprovedMoneyProfileEntry(
 /// </summary>
 public sealed class ApprovedMoneyProfileCatalog
 {
+    // FNS-D62: finance.cash-transfer.v1 is an independent empty human authoring target (see
+    // MoneyProfileAuthoringCatalogV1). No entry is silently copied into this approved baseline; an actual separate
+    // profile must be prepared/published before the Finance transfer owner can read monetary values for that key.
     /// <summary>A2a-1b: the bound of an approved unit-price scale (decimal's own maximum scale).</summary>
     public const int MaximumUnitPriceScale = 28;
 
@@ -86,6 +100,8 @@ public sealed class ApprovedMoneyProfileCatalog
         Operations: new HashSet<string>(StringComparer.Ordinal)
         {
             "accounting.journal-amount.v1",
+            // FNS-D55: the expense payment's own row, with the manual bank payment's values (TRY, scale 2).
+            "finance.expense-payment.v1",
             "finance.manual-bank-payment.v1",
             "finance.manual-bank-receipt.v1",
             "purchasing.order.v1",
@@ -112,10 +128,13 @@ public sealed class ApprovedMoneyProfileCatalog
     public static readonly ApprovedMoneyProfileEntry GspTurkishLiraV1 = GdcTurkishLiraV1 with
     {
         CompanyId = ApprovedUnitProfileCatalog.GspCompanyId,
-        Operations = new HashSet<string>(StringComparer.Ordinal) { "purchasing.order.v1", "sales.order-draft.v1" },
+        // FNS-D55: GSP's own expense payment row (TRY, scale 2); no other Finance key (SAT-D18).
+        Operations = new HashSet<string>(StringComparer.Ordinal)
+            { "finance.expense-payment.v1", "purchasing.order.v1", "sales.order-draft.v1" },
         ProfileId = Guid.Parse("5b863ed2-e21a-5c43-b219-fa113dcc50b3"),
         EffectiveFrom = new DateOnly(2026, 10, 26),
-        Source = "SAT-D18 (SINAN_KARARLARI_2026-10-26_SATIS_EK.md); scale Sinan Ö2 2026-09-18; operation key: Sales owner; " + PurchasingSource,
+        Source = "SAT-D18 (SINAN_KARARLARI_2026-10-26_SATIS_EK.md); scale Sinan Ö2 2026-09-18; operation key: Sales owner; " + PurchasingSource
+           ,
     };
 
     /// <summary>
@@ -126,10 +145,13 @@ public sealed class ApprovedMoneyProfileCatalog
     public static readonly ApprovedMoneyProfileEntry GinTurkishLiraV1 = GdcTurkishLiraV1 with
     {
         CompanyId = ApprovedUnitProfileCatalog.GinCompanyId,
-        Operations = new HashSet<string>(StringComparer.Ordinal) { "purchasing.order.v1", "sales.order-draft.v1" },
+        // FNS-D55: GIN's own expense payment row (TRY, scale 2); no other Finance key (SAT-D18).
+        Operations = new HashSet<string>(StringComparer.Ordinal)
+            { "finance.expense-payment.v1", "purchasing.order.v1", "sales.order-draft.v1" },
         ProfileId = Guid.Parse("d78eee0d-4940-52e3-bd80-3b5ebdb6d760"),
         EffectiveFrom = new DateOnly(2026, 10, 26),
-        Source = "SAT-D18 (SINAN_KARARLARI_2026-10-26_SATIS_EK.md); scale Sinan Ö2 2026-09-18; operation key: Sales owner; " + PurchasingSource,
+        Source = "SAT-D18 (SINAN_KARARLARI_2026-10-26_SATIS_EK.md); scale Sinan Ö2 2026-09-18; operation key: Sales owner; " + PurchasingSource
+           ,
     };
 
     public static ApprovedMoneyProfileCatalog Approved { get; } = new([GdcTurkishLiraV1, GspTurkishLiraV1, GinTurkishLiraV1]);

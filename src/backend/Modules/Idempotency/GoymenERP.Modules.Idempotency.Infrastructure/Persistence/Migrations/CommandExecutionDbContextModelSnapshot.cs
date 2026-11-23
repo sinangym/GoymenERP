@@ -96,6 +96,59 @@ namespace GoymenERP.Modules.Idempotency.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_CommandExecutions_SchemaVersion_Positive", "[SchemaVersion] > 0");
                         });
                 });
+
+            modelBuilder.Entity("GoymenERP.Modules.Idempotency.Domain.Retention.IdempotencyRetentionPurgeRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CutoffUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("DeletedCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PolicyRef")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RetentionPeriod")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId");
+
+                    b.HasIndex("CompanyId", "RecordedAtUtc", "Id");
+
+                    b.ToTable("RetentionPurgeRecords", "idempotency", t =>
+                        {
+                            t.HasCheckConstraint("CK_RetentionPurgeRecords_CompanyId_NotEmpty", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_RetentionPurgeRecords_DeletedCount_Positive", "[DeletedCount] > 0");
+
+                            t.HasCheckConstraint("CK_RetentionPurgeRecords_Identifiers_NotEmpty", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [RunId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_RetentionPurgeRecords_PolicyRef_NotBlank", "LEN(LTRIM(RTRIM([PolicyRef]))) > 0");
+
+                            t.HasCheckConstraint("CK_RetentionPurgeRecords_RetentionPeriod_Format", "[RetentionPeriod] LIKE 'P%' AND LEN([RetentionPeriod]) > 1 AND [RetentionPeriod] NOT LIKE '%[^0-9PYMD]%'");
+
+                            t.HasCheckConstraint("CK_RetentionPurgeRecords_Utc_Instants", "DATEPART(TZOFFSET, [CutoffUtc]) = 0 AND DATEPART(TZOFFSET, [RecordedAtUtc]) = 0 AND [CutoffUtc] < [RecordedAtUtc]");
+                        });
+                });
 #pragma warning restore 612, 618
         }
     }

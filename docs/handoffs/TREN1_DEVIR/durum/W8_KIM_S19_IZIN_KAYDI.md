@@ -1,0 +1,8 @@
+# W8 — KIM-S19 / No133 yalnız izin kaydı
+
+- Bağlayıcı kaynak `SINAN_KARARLARI_2026-10-21.md` No133/K16: `settings.policies.prepare`, `settings.policies.approve`, `settings.policies.publish`, `settings.policies.publish-critical`. Dört ad merkezi `All` ve şirket kapsamı kataloğuna eklendi; grant, rol, seed ve Critical sınıflandırma kümesi değiştirilmedi. İsminde critical olması yeni sınıflandırma veya atama yetkisi değildir.
+- Yeni aile lifecycle'ını güncel URN-D3/D4 belirler; yalnız approve adının kaydı yeni approve komutu/aşaması oluşturmaz. Settings aile sözleşmesi sahibi bu dört adı ayrı manifestte korur. Owner read amaçları ve actual actor/company/member izin çitleri ayrı kaynak incelemesindedir.
+- Identity kayıt testi dört tam adın tek kez varlığını, şirket kapsamını, Critical kümesinin ve shipped seed'in değişmemesini kapsar. Kaynak derlemesi QUEUED; ağır süreç Finance kaynak zincirindedir. Runtime test/SQL/CI, shell otorite veya pin üretimi yapılmadı. K3 permission review son trende gereklidir.
+- Bu kayıt KIM-S19'u DONE yapmaz; matris ve kasa farkı aileleri owner dalında sürer. K6 gerçek banka kurumu kimliği yokluğu [6961108461](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6961108461) dar NEEDS-SINAN sorusudur. Başka ERP gözlemi yeni banka master yetkisi sayılmaz; banka hesabı/ad/IBAN'dan kimlik türetilmez.
+
+Sonraki yanıt [6961276925](https://github.com/sinangym/GoymenERP/issues/1189#issuecomment-6961276925): kullanıcı banka listesinden açık seçimi seçti; yukarıdaki soru artık açık değildir. Settings gerçek ad/EFT kodlu banka kataloğu ve K6 kapsamı bu mevcut dilimde yazılır; Finance modelinin tek yazarı ve EF sırası korunur. Eski kayıtta otomatik banka eşlemesi yoktur. Sayısal eşik/oran veya kullanıcı grant'ı seçilmez.

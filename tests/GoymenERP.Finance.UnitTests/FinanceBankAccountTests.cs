@@ -77,9 +77,61 @@ public sealed class FinanceBankAccountTests
         Assert.True(Array.IndexOf(migrations, invoiceCancellations) < Array.IndexOf(migrations, paymentAllocations));
         const string paymentReversals = "20261111184316_AddPaymentReversals";
         Assert.True(Array.IndexOf(migrations, paymentAllocations) < Array.IndexOf(migrations, paymentReversals));
-        // The NEWEST migration is pinned by name on purpose: the payment reversals (API-23) are the reviewed append
-        // after the payment allocations, never an unreviewed migration that silently becomes authoritative.
-        Assert.Equal(paymentReversals, migrations.Last());
+        const string officialSalesInvoices = "20261111233047_AddOfficialSalesInvoices";
+        Assert.True(Array.IndexOf(migrations, paymentReversals) < Array.IndexOf(migrations, officialSalesInvoices));
+        const string cashAccounts = "20261112070144_AddCashAccounts";
+        Assert.True(Array.IndexOf(migrations, officialSalesInvoices) < Array.IndexOf(migrations, cashAccounts));
+        const string cashAccountStateChanges = "20261113161917_AddCashAccountStateChanges";
+        Assert.True(Array.IndexOf(migrations, cashAccounts) < Array.IndexOf(migrations, cashAccountStateChanges));
+        const string officialSalesInvoiceDecisions = "20261114073527_AddOfficialSalesInvoiceRejectionAndWithdrawal";
+        Assert.True(Array.IndexOf(migrations, cashAccountStateChanges)
+            < Array.IndexOf(migrations, officialSalesInvoiceDecisions));
+        const string partyCreditLimits = "20261114200445_AddPartyCreditLimits";
+        Assert.True(Array.IndexOf(migrations, officialSalesInvoiceDecisions) < Array.IndexOf(migrations, partyCreditLimits));
+        const string customerReturnCredits = "20261114231451_AddCustomerReturnCredits";
+        Assert.True(Array.IndexOf(migrations, partyCreditLimits) < Array.IndexOf(migrations, customerReturnCredits));
+        const string expensePayments = "20261115000505_AddExpensePayments";
+        Assert.True(Array.IndexOf(migrations, customerReturnCredits) < Array.IndexOf(migrations, expensePayments));
+        const string partyCreditLimitSecondPerson = "20261115121907_RequirePartyCreditLimitSecondPerson";
+        Assert.True(Array.IndexOf(migrations, expensePayments) < Array.IndexOf(migrations, partyCreditLimitSecondPerson));
+        const string officialInvoiceIdentityClaims = "20261115122126_AddOfficialInvoiceIdentityClaims";
+        Assert.True(Array.IndexOf(migrations, partyCreditLimitSecondPerson)
+            < Array.IndexOf(migrations, officialInvoiceIdentityClaims));
+        const string cashTransfers = "20261115145712_AddCashTransfers";
+        Assert.True(Array.IndexOf(migrations, officialInvoiceIdentityClaims) < Array.IndexOf(migrations, cashTransfers));
+        const string partyCreditLimitOneStep = "20261115163811_RestorePartyCreditLimitOneStep";
+        Assert.True(Array.IndexOf(migrations, cashTransfers) < Array.IndexOf(migrations, partyCreditLimitOneStep));
+        const string partyCollaterals = "20261115184536_AddPartyCollaterals";
+        Assert.True(Array.IndexOf(migrations, partyCreditLimitOneStep) < Array.IndexOf(migrations, partyCollaterals));
+        // The NEWEST migration is pinned by name on purpose: the customer collateral master (API-85b, FNS-D57/D31) is
+        // the reviewed append, never an unreviewed migration that silently becomes authoritative. By
+        // migration id the official sales invoice record itself (F-005 D1, FNS-D17…D21) sits between the payment
+        // reversals (API-23) and the cash accounts (API-30), whose passivation and reactivation precede the
+        // rejection and withdrawal of a pending official sales invoice record (FNS-D39), which the credit limit
+        // master (API-85a L1, FNS-D27/D27a) follows; the customer return credits (F-019), the expense payments
+        // (FNS-D25), the second-person credit limit check (FNS-D45, kept in the chain), the official invoice
+        // identity claims (FIN-S5) and the transfer and currency exchange record (FNS-D24) follow it, and the
+        // restored one-step credit limit check follows them; the customer collateral master follows it.
+        // W5 then adds approved openings, their immutable reversals/movements and the credit master.
+        const string openingBalances = "20261116080924_AddOpeningBalances";
+        const string openingReversals = "20261116104128_AddOpeningBalanceReversalsAndMovements";
+        const string creditAccounts = "20261116111738_AddCreditAccounts";
+        Assert.Contains(openingBalances, migrations);
+        Assert.Contains(openingReversals, migrations);
+        Assert.Contains(creditAccounts, migrations);
+        Assert.True(Array.IndexOf(migrations, partyCollaterals) < Array.IndexOf(migrations, openingBalances));
+        Assert.True(Array.IndexOf(migrations, openingBalances) < Array.IndexOf(migrations, openingReversals));
+        Assert.True(Array.IndexOf(migrations, openingReversals) < Array.IndexOf(migrations, creditAccounts));
+        const string creditSourceProfiles = "20261116233417_AddCreditSourceProfiles";
+        Assert.Contains(creditSourceProfiles, migrations);
+        Assert.True(Array.IndexOf(migrations, creditAccounts) < Array.IndexOf(migrations, creditSourceProfiles));
+        const string sourceDates = "20261117000542_AddOfficialSalesInvoiceSourceDate";
+        Assert.Contains(sourceDates, migrations);
+        Assert.True(Array.IndexOf(migrations, creditSourceProfiles) < Array.IndexOf(migrations, sourceDates));
+        const string collateralBankProof = "20261117220054_AddCollateralBankProof";
+        Assert.Contains(collateralBankProof, migrations);
+        Assert.True(Array.IndexOf(migrations, sourceDates) < Array.IndexOf(migrations, collateralBankProof));
+        Assert.Equal(collateralBankProof, migrations.Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

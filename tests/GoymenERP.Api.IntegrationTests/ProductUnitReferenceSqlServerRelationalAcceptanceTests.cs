@@ -40,7 +40,10 @@ public sealed class ProductUnitReferenceSqlServerRelationalAcceptanceTests
             using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
             var options = (await client.GetFromJsonAsync<ProductReferenceOptions>(
                 $"/api/v1/products/reference-options?groupId={GroupId:D}"))!;
-            var kilogram = Assert.Single(options.Units);
+            // Standard identities are company-independent; no company unit profile is activated by this catalog.
+            Assert.Equal(SettingsUnitIdentitiesV1.Standard.Select(unit => unit.UnitId).Order(),
+                options.Units.Select(unit => unit.Id).Order());
+            var kilogram = Assert.Single(options.Units, unit => unit.Id == SettingsUnitIdentitiesV1.Kilogram);
             Assert.Equal((SettingsUnitIdentitiesV1.Kilogram, "kg", "kg", true),
                 (kilogram.Id, kilogram.DisplayName, kilogram.Symbol, kilogram.IsKilogram));
             Assert.DoesNotContain("units", options.UnavailableCatalogs);

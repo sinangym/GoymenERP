@@ -4,6 +4,20 @@ import { PURCHASING_CAPABILITY, PURCHASING_NAV_LABEL, PURCHASING_ROUTE, purchase
 describe('purchasing capability contract', () => {
   it('pins the owner ids and paths without publishing a create navigation entry', () => {
     expect(PURCHASING_CAPABILITY).toEqual({
+      additionalCostRead: 'purchasing.additional-costs.read',
+      additionalCostRecord: 'purchasing.additional-costs.record',
+      serviceOrderList: 'purchasing.service-orders.list',
+      serviceOrderCreate: 'purchasing.service-orders.create',
+      serviceOrderDetail: 'purchasing.service-orders.detail',
+      serviceOrderApprove: 'purchasing.service-orders.approve',
+      serviceOrderAccept: 'purchasing.service-orders.accept',
+      serviceOrderRevisePrices: 'purchasing.service-orders.prices-revise',
+      invoiceList: 'purchasing.invoices.list',
+      invoiceImport: 'purchasing.invoices.import',
+      invoiceDetail: 'purchasing.invoices.detail',
+      invoiceMatch: 'purchasing.invoices.match',
+      invoiceApproveVariance: 'purchasing.invoices.approve-variance',
+      invoiceFinalize: 'purchasing.invoices.finalize',
       requestList: 'purchasing.requests.list',
       requestCreate: 'purchasing.requests.create',
       requestDetail: 'purchasing.requests.detail',
@@ -14,9 +28,13 @@ describe('purchasing capability contract', () => {
       orderCreate: 'purchasing.orders.create',
       orderDetail: 'purchasing.orders.detail',
       orderApprove: 'purchasing.orders.approve',
+      supplierReturnRecord: 'purchasing.supplier-returns.record',
       orderCancel: 'purchasing.orders.cancel',
+      orderLineScheduleWrite: 'purchasing.orders.line-schedule.write',
+      orderSupplierRevise: 'purchasing.orders.supplier-revise',
     })
     expect(PURCHASING_ROUTE[PURCHASING_CAPABILITY.requestList]).toBe('/satinalma/talepler')
+    expect(PURCHASING_ROUTE[PURCHASING_CAPABILITY.additionalCostRead]).toBe('/satinalma/ek-masraflar/:sourceKind/:orderId')
     expect(PURCHASING_ROUTE[PURCHASING_CAPABILITY.requestCreate]).toBe('/satinalma/talepler/yeni')
     expect(PURCHASING_ROUTE[PURCHASING_CAPABILITY.requestDetail]).toBe('/satinalma/talepler/:requestId')
     expect(PURCHASING_NAV_LABEL[PURCHASING_CAPABILITY.requestList]).toBe('Satın alma talepleri')

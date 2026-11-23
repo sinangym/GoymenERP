@@ -48,8 +48,24 @@ public sealed partial class PurchasingService(
     ISettingsPrerequisiteProvider? moneyProfiles = null,
     ISettingsMoneyCandidateReaderV2? currencyCandidates = null,
     ISettingsLineTaxResolverV1? lineTaxes = null,
-    IPurchaseRequestSalesSourcePortV1? salesSources = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
-    IPurchaseGoodsReceiptServiceV1, IPurchaseGoodsReceiptQuantityComparisonServiceV1
+    IPurchaseRequestSalesSourcePortV1? salesSources = null,
+    IPurchaseGoodsReceiptBatchStore? batchStore = null,
+    IPurchaseGoodsReceiptBatchTransactionV1? batchTransactions = null,
+    IPurchaseGoodsReceiptPolicyReadPortV1? receiptPolicy = null,
+    IPurchaseLabelCodeRegisterReadPortV1? labelRegister = null,
+    ISettingsExchangeRateResolverV1? exchangeRates = null,
+    IPurchaseFutureAllocationLinkParticipantV1? allocationLinks = null,
+    IPurchaseSupplierReturnStore? returnStore = null,
+    IPurchaseSupplierReturnTransactionV1? returnTransactions = null,
+    IPurchaseSupplierReturnInvoiceCostReadPortV1? returnInvoiceCosts = null,
+    PurchaseSupplierReturnPolicyV1? returnPolicy = null,
+    IPurchaseReceiptReversalTransactionV1? receiptReversals = null,
+    IPurchaseReceiptReversalBatchTransactionV1? receiptReversalBatches = null,
+    IPurchaseSupplierReturnCostSourceReadPortV1? returnCostSources = null,
+    IPurchaseTheoreticalKilogramsPerUnitPortV1? theoreticalKilograms = null,
+    IPurchaseSupplierReturnLineageReadPortV1? returnLineage = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
+    IPurchaseGoodsReceiptServiceV1, IPurchaseGoodsReceiptQuantityComparisonServiceV1, IPurchaseGoodsReceiptBatchServiceV1,
+    IPurchaseSupplierReturnServiceV1, IPurchaseReceiptReversalServiceV1, IPurchaseReceiptReversalBatchServiceV1
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -295,8 +311,13 @@ public sealed partial class PurchasingService(
             return ReplayedOrder(winner.Replay, disclosure);
         }
 
-        await RequireStillAsync(scope, bindings.CreatePermission, cancellationToken);
+        // ALC-SC33 (FNS-D79): a foreign-currency order opens with the automatic default rate of its creation business day — the
+        // Settings resolver's answer (SAT-D54/D170); without an answer the order opens without a rate and waits for one before approval.
         var now = timeProvider.GetUtcNow();
+        var defaultRate = money is { } orderMoney && orderMoney.CurrencyId != SettingsCurrencyIdentitiesV1.TurkishLira
+            ? await ReadDefaultExchangeRateAsync(scope, bindings.CreatePermission, orderMoney.CurrencyId, BusinessDateOf(now), cancellationToken)
+            : null;
+        await RequireStillAsync(scope, bindings.CreatePermission, cancellationToken);
         var versions = lines.ToDictionary(item => item.Line.LineId, item => item.ProductVersion);
         PurchasingOrderStoreResult stored;
         try
@@ -306,6 +327,11 @@ public sealed partial class PurchasingService(
                 var order = source is { } sourced
                     ? PurchaseOrder.CreateForRequest(Guid.NewGuid(), scope.CompanyId, request.SupplierPartyId, sourced.Request.Id, money, now, scope.ActorId.Trim())
                     : PurchaseOrder.Create(Guid.NewGuid(), scope.CompanyId, request.SupplierPartyId, money, now, scope.ActorId.Trim());
+                if (defaultRate is not null)
+                {
+                    order.AssignDefaultExchangeRate(defaultRate, scope.ActorId.Trim(), now);
+                }
+
                 for (var index = 0; index < lines.Count; index++)
                 {
                     var (line, _, quantity, price) = lines[index];
@@ -365,13 +391,14 @@ public sealed partial class PurchasingService(
             throw new PurchasingServiceException(404, "not_found");
         }
 
+        var kilograms = await ReadTheoreticalKilogramsAsync(scope, orderId, expectedVersion, cancellationToken);
         await RequireStillAsync(scope, bindings.ApprovePermission, cancellationToken);
         var actor = scope.ActorId.Trim();
         PurchasingOrderStoreResult? result;
         try
         {
             result = await store.MutateOrderAsync(envelope, requestHash, PurchasingCommands.OrderApproveV1, orderId,
-                (order, now) => order.Approve(expectedVersion, actor, now),
+                (order, now) => order.Approve(expectedVersion, actor, now, SettingsCurrencyIdentitiesV1.TurkishLira, kilograms),
                 new PurchasingMutationAudit("purchasing.purchase-order.approved.v1", "Approve", "Satınalma siparişi onaylandı"), cancellationToken);
         }
         catch (PurchasingVersionConflictException)
@@ -384,6 +411,13 @@ public sealed partial class PurchasingService(
             return await TerminalAsync(scope, bindings.ApprovePermission, envelope, requestHash, PurchasingCommands.OrderApproveV1,
                 new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.OrderState, [new("status", exception.Code)]), replayed => ReplayedOrder(replayed, disclosure), cancellationToken);
         }
+        catch (PurchasingRuleException exception) when (exception.Code == PurchasingRuleCodes.OrderExchangeRateRequired)
+        {
+            // ALC-SC33 (FNS-D80): a foreign-currency order is approved only with its rate; terminal for this key (§7).
+            return await TerminalAsync(scope, bindings.ApprovePermission, envelope, requestHash, PurchasingCommands.OrderApproveV1,
+                new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.OrderExchangeRateRequired, [new("exchangeRate", exception.Code)]),
+                replayed => ReplayedOrder(replayed, disclosure), cancellationToken);
+        }
         catch (PurchasingRuleException exception) when (exception.Code is PurchasingRuleCodes.OrderSameActor or PurchasingRuleCodes.OrderMakerUnknown)
         {
             // A2a-5a (ALS-D3): hazırlayan ≠ onaylayan; terminal for this key, as the request decisions are.
@@ -392,6 +426,12 @@ public sealed partial class PurchasingService(
                 : PurchasingProblemCodesV1.OrderMakerUnknown;
             return await TerminalAsync(scope, bindings.ApprovePermission, envelope, requestHash, PurchasingCommands.OrderApproveV1,
                 new PurchasingTerminalRefusal(409, code, [new("actor", exception.Code)]), replayed => ReplayedOrder(replayed, disclosure), cancellationToken);
+        }
+        catch (PurchasingRuleException exception) when (exception.Code == PurchasingRuleCodes.TheoreticalKilogramsMissing)
+        {
+            // AK-3 (SAT-D437, fail-closed): not terminal — the card can get a kilogram source and the same key retried.
+            throw new PurchasingServiceException(422, PurchasingProblemCodesV1.TheoreticalKilogramsMissing,
+                [new("lines", PurchasingRuleCodes.TheoreticalKilogramsMissing)]);
         }
         catch (PurchasingRuleException exception)
         {
@@ -450,7 +490,9 @@ public sealed partial class PurchasingService(
             throw Store(exception);
         }
 
-        return stored is null ? throw new PurchasingServiceException(404, "not_found") : OrderDetail(stored, disclosure);
+        if (stored is null) throw new PurchasingServiceException(404, "not_found");
+        var visible = string.Equals(disclosure, PurchasingPriceDisclosureV1.Visible, StringComparison.Ordinal);
+        return OrderDetail(await WithInvoiceSharesAsync(scope, stored, visible, cancellationToken), disclosure);
     }
 
     public async Task<PurchaseOrderListResponse> GetOrderListAsync(PurchaseOrderListQuery query, CancellationToken cancellationToken = default)
@@ -742,7 +784,7 @@ public sealed partial class PurchasingService(
     {
         if (replay.Refusal is { } refusal)
         {
-            throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true, originalCorrelationId: replay.OriginalCorrelationId);
+            throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true, originalCorrelationId: replay.OriginalCorrelationId, detail: refusal.Detail);
         }
     }
 
@@ -781,7 +823,7 @@ public sealed partial class PurchasingService(
             throw Store(exception);
         }
 
-        throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors);
+        throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, detail: refusal.Detail);
     }
 
     /// <summary>A create's stale-product-version refusal lost the key to a winner that stored the record (§8): the create answers that record as a replay.</summary>
@@ -794,6 +836,7 @@ public sealed partial class PurchasingService(
     {
         PurchasingStoreCodes.SameKeyPayloadMismatch => new PurchasingServiceException(409, PurchasingProblemCodesV1.SameKeyPayloadMismatch),
         PurchasingStoreCodes.ConcurrentChange => new PurchasingServiceException(409, PurchasingProblemCodesV1.ConcurrentChange),
+        PurchasingStoreCodes.LineBusy => new PurchasingServiceException(409, PurchasingProblemCodesV1.LineBusy),
         PurchasingStoreCodes.RequestLineOverSourced => new PurchasingServiceException(409, PurchasingProblemCodesV1.RequestLineOverSourced, exception.Errors),
         PurchasingStoreCodes.SourceRequestNotApproved => new PurchasingServiceException(409, PurchasingProblemCodesV1.RequestState, exception.Errors),
         PurchasingStoreCodes.InvalidCursor => new PurchasingServiceException(400, PurchasingProblemCodesV1.InvalidCursor),
@@ -1027,7 +1070,7 @@ public sealed partial class PurchasingService(
     {
         var order = stored.Order;
         return new PurchaseOrderSummaryView(order.Id, order.CompanyId, order.Status.ToString(), order.Version.ToString(CultureInfo.InvariantCulture),
-            order.SupplierPartyId, stored.CompanyAccountId, order.SourceRequestId, stored.EffectiveOn, order.CreatedAtUtc, order.UpdatedAtUtc, order.Lines.Count);
+            order.SupplierPartyId, stored.CompanyAccountId, order.SourceRequestId, stored.EffectiveOn, order.CreatedAtUtc, order.UpdatedAtUtc, order.Lines.Count) { DocumentNumber = stored.DocumentNumber };
     }
 
     /// <summary>
@@ -1043,7 +1086,14 @@ public sealed partial class PurchasingService(
                 Text(line.TechnicalQuantity), Text(line.CommittedQuantity), Text(line.AcceptedQuantity), Text(line.RemainingQuantity))
             {
                 Cancelled = Text(line.CancelledQuantity),
+                Closed = Text(line.ClosedQuantity),
+                Closure = line.Closure is { } closure
+                    ? new PurchaseOrderLineClosureView(closure.ClosedBy, closure.ClosedAtUtc, closure.Reason)
+                    : null,
                 Price = visible ? PriceView(line, stored.Order.Money) : null,
+                KgPrice = visible && PurchaseKgPriceGoldenAccepted ? LineKgPriceView(stored, line) : null,
+                Realization = visible && PurchaseKgPriceGoldenAccepted
+                    ? PurchaseOrderKgPriceViews.LineRealization(stored.Order, line, stored.InvoiceShares) : null,
                 DeliverySchedule = [.. line.DeliverySchedule.Select(slice =>
                     new PurchaseOrderDeliverySliceView(slice.SliceId, slice.SliceNo, Text(slice.Quantity), slice.DeliveryDate))],
             })])
@@ -1051,6 +1101,9 @@ public sealed partial class PurchasingService(
             PriceDisclosure = visible ? PurchasingPriceDisclosureV1.Visible : PurchasingPriceDisclosureV1.Withheld,
             Currency = CurrencyView(stored.Order.Money),
             PricePending = visible ? HasUnpricedGeneralLine(stored.Order) : null,
+            KgPrice = visible && PurchaseKgPriceGoldenAccepted ? DocumentKgPriceView(stored) : null,
+            Realization = visible && PurchaseKgPriceGoldenAccepted
+                ? PurchaseOrderKgPriceViews.DocumentRealization(stored.Order, stored.InvoiceShares) : null,
             Acceptances = [.. stored.Order.Acceptances.Select(acceptance => new PurchaseOrderAcceptanceHistoryView(
                 acceptance.AcceptanceId, acceptance.LineId, Text(acceptance.Quantity), acceptance.RecordedAtUtc))],
             Cancellation = stored.Order.Cancellation is { } cancellation

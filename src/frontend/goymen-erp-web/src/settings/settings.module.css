@@ -120,3 +120,13 @@
   align-items: center;
   gap: var(--goy-ds-space-2);
 }
+
+/* Keep an unresolved command editable only after its owner result is known. */
+.commandFields {
+  display: grid;
+  gap: var(--goy-ds-space-3);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}

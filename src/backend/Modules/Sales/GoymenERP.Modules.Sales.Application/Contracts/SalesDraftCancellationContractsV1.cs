@@ -75,12 +75,17 @@ public sealed record SalesOrderLoadingReadAnswerV1(
 /// owner chain is delivered ≤ shipped ≤ loaded ≤ instructed ≤ the Sales-owned approved order quantity.
 /// </summary>
 public sealed record SalesOrderLineLoadingV1(Guid OrderLineId, Guid UnitId, int InstructionLineCount, decimal Instructed,
-    decimal Loaded, decimal Shipped, decimal Delivered);
+    decimal Loaded, decimal Shipped, decimal Delivered,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] decimal? ApprovedPlanExcess = null);
 
 /// <summary>The six DEC-SAL-005 impact categories, one stable name each (the wire's <c>source</c>).</summary>
 public static class SalesCancellationImpactSourcesV1
 {
-    /// <summary>"aktif tahsis" — Inventory's active physical allocations (owner port <see cref="ISalesOrderAllocationReadPortV1"/>).</summary>
+    /// <summary>
+    /// "aktif tahsis" — Inventory's active physical allocations (owner port <see cref="ISalesOrderAllocationReadPortV1"/>) and,
+    /// since F-017 STOK §5.1 (STK-S16), its active future supply allocations (<see cref="ISalesOrderAllocationReadPortV2"/>): either
+    /// kind present is Present, either read failing is Unreadable. The line members stay the physical kilograms only.
+    /// </summary>
     public const string ActiveAllocations = "inventory.active-allocations";
 
     /// <summary>
@@ -139,7 +144,9 @@ public sealed record SalesDraftCancellationImpactSourceV1(string Source, string 
 /// One order line in the preview. The allocation members come from Inventory (<c>activeAllocations</c>, <c>allocatedKg</c>:
 /// the kilograms the active allocations still hold), the loading members from Logistics (the number of instruction lines and
 /// their instructed / loaded / shipped / delivered totals in the line's order unit). A member is NULL when its owner could
-/// not be read — never zero in its place.
+/// not be read — never zero in its place. X1 / KLN-D28 (9): <c>futureSupplyAllocations</c> is the number of the line's ACTIVE
+/// future supply allocations (Inventory, F-017; never added to the physical kilograms) — the ones the approved cancellation
+/// releases in its own transaction when the release participant is composed (otherwise they block, fail-closed).
 /// </summary>
 public sealed record SalesDraftCancellationImpactLineV1(
     Guid LineId,
@@ -152,7 +159,8 @@ public sealed record SalesDraftCancellationImpactLineV1(
     string? Instructed,
     string? Loaded,
     string? Shipped,
-    string? Delivered);
+    string? Delivered,
+    int? FutureSupplyAllocations);
 
 /// <summary>
 /// DEC-SAL-005: GET …/{id}/cancellation-impact — the impact preview under the cancel permission, read afresh from the owners on

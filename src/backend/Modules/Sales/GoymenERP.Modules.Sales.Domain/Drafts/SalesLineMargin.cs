@@ -39,8 +39,9 @@ public enum SalesLineMarginUnavailableReason
     UnitConversionUndecided = 7,
 
     /// <summary>
-    /// The sale or the cost is not in the functional currency (TL); converting either is not decided (EK52 "Sınırlar"
-    /// <c>NEEDS-SINAN</c> for foreign-currency cost; the margin is a TL amount, SAT-D259 (2)).
+    /// The sale or the cost is not in the functional currency (TL) and cannot be converted: a foreign sale has no rate the order
+    /// recorded at its internal approval (SAT-D426: preview, or an order approved before rates were recorded), or the cost is
+    /// foreign (BS-1: the cost source answers TL or Unavailable). The margin is a TL amount, SAT-D259 (2).
     /// </summary>
     CurrencyConversionUndecided = 8,
 
@@ -55,6 +56,12 @@ public enum SalesLineMarginUnavailableReason
 
     /// <summary>Only the percent: the net sale is zero or negative, so there is no ratio (SAT-D259 detail; no division by zero).</summary>
     NetSaleNotPositive = 12,
+
+    /// <summary>A reinstatement or out-of-revision quantity change needs an explicit cost-pin decision.</summary>
+    CostRepinPolicyPending = 13,
+
+    /// <summary>SAT-D265(5): independent formula golden acceptance is not yet in main.</summary>
+    FormulaGoldenPending = 14,
 }
 
 /// <summary>Why no cost value is available for a line — the cost side's own fail-closed states (SAT-D258, SAT-D262; no warehouse state — SAT-D272).</summary>
@@ -144,8 +151,21 @@ public sealed record SalesLineMarginCost
 /// <param name="Quantity">The line quantity in the order unit (positive).</param>
 /// <param name="FunctionalCurrencyId">The company's functional currency (TL): the margin is a TL amount (SAT-D259 (2)). Data, not a code constant.</param>
 /// <param name="Cost">The line's purchase-only cost (SAT-D263) or the reason there is none.</param>
+/// <param name="SaleRate">
+/// SAT-D426: the rate the order froze at its internal approval from the sale currency into the functional currency (the Settings
+/// rate of the approval day). Used only when <paramref name="NetSale"/> is foreign; a missing rate, or one for another pair, leaves
+/// the margin unavailable. Never a rate read at display time.
+/// </param>
+/// <param name="PieceConversion">
+/// SAT-D438 (AK-6): for a line whose order unit is not the cost unit (kg), the kg cost unit and the theoretical kg per order unit
+/// pinned on the document at approval (SAT-D437). Given, a kg cost is converted to the order unit as cost/kg × kg/unit, exact
+/// (golden TM1: never rounded in between); absent, a cost in another unit stays <c>UnitConversionUndecided</c> (golden M11).
+/// </param>
 public sealed record SalesLineMarginInput(Money? NetSale, Guid OrderUnitId, decimal Quantity, Guid FunctionalCurrencyId,
-    SalesLineMarginCost Cost);
+    SalesLineMarginCost Cost, ExchangeRate? SaleRate = null, SalesLinePieceConversion? PieceConversion = null);
+
+/// <summary>SAT-D438: the kg cost unit and the pinned theoretical kg per order unit (positive) a piece line's margin converts with.</summary>
+public sealed record SalesLinePieceConversion(Guid KilogramUnitId, decimal KilogramsPerUnit);
 
 /// <summary>
 /// One line's margin. <see cref="Amount"/> is in the functional currency at <see cref="SalesLineMarginCalculator.AmountScale"/>;
@@ -180,7 +200,9 @@ public sealed record SalesLineMargin(
 /// <item><b>Display</b>: the amount to 0,01 TL and the percent to 0,01 (SAT-D261 (1), SAT-D265 (3)), half away from zero — the
 /// existing <see cref="Money.Round"/> rule (SAT-D261 (2), SAT-D265 (4)); negative margins use the same rule.</item>
 /// </list>
-/// Fail-closed (SAT-D247, SAT-D262 (5)): any missing cost state, a sale or cost outside the functional currency, a cost unit other
+/// SAT-D426: a sale in another currency is first converted into the functional currency at the rate the order froze at its
+/// internal approval (net sale × rate, exact); the margin amount and percent then follow the same steps in TL.
+/// Fail-closed (SAT-D247, SAT-D262 (5)): any missing cost state, a foreign sale without its frozen rate, a foreign cost, a cost unit other
 /// than the order unit (EK52 <c>NEEDS-SINAN</c> conversions) or a value System.Decimal cannot hold exactly is "kullanılamıyor",
 /// never zero. Checks run in a fixed order: sale, sale currency, cost state, cost currency, cost unit, cost validity, range.
 /// SAT-D265 (5): the formula is not activated until its golden is in main; until the Inventory port exists the line-pricing read
@@ -218,7 +240,11 @@ public static class SalesLineMarginCalculator
             return SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.SalesAmountUnavailable);
         }
 
-        if (netSale.CurrencyId != input.FunctionalCurrencyId)
+        // SAT-D426: a foreign sale is converted at the rate the order froze at approval, exactly (SAT-D265 (1): no intermediate
+        // rounding); without that very rate the margin is unavailable, never estimated.
+        if (netSale.CurrencyId != input.FunctionalCurrencyId
+            && (input.SaleRate is not { } saleRate || saleRate.SourceCurrencyId != netSale.CurrencyId
+                || saleRate.TargetCurrencyId != input.FunctionalCurrencyId))
         {
             return SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CurrencyConversionUndecided);
         }
@@ -234,19 +260,28 @@ public static class SalesLineMarginCalculator
             return SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CurrencyConversionUndecided);
         }
 
-        if (cost.UnitId != input.OrderUnitId)
+        // SAT-D438: a kg cost of a piece line is converted with the pinned kg/unit; any other unit pair stays undecided.
+        var converted = cost.UnitId != input.OrderUnitId;
+        if (converted && (input.PieceConversion is not { } conversion || conversion.KilogramUnitId != cost.UnitId
+            || conversion.KilogramsPerUnit <= 0m))
         {
             return SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.UnitConversionUndecided);
         }
 
         var unitCost = cost.UnitCost!.Value;
+        // G16 applies to the port's cost (per kg for a converted line); cost × kg/unit may exceed 4 decimals (golden TM1).
         if (unitCost < 0m || Money.SignificantDecimals(unitCost) > CostScale)
         {
             return SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CostInvalid);
         }
 
-        var net = Exact.Of(netSale.Amount);
-        var margin = net.Subtract(Exact.Of(unitCost).Multiply(Exact.Of(input.Quantity)));
+        var net = netSale.CurrencyId == input.FunctionalCurrencyId
+            ? Exact.Of(netSale.Amount)
+            : Exact.Of(netSale.Amount).Multiply(Exact.Of(input.SaleRate!.Value.Rate));
+        var costPerOrderUnit = converted
+            ? Exact.Of(unitCost).Multiply(Exact.Of(input.PieceConversion!.KilogramsPerUnit))
+            : Exact.Of(unitCost);
+        var margin = net.Subtract(costPerOrderUnit.Multiply(Exact.Of(input.Quantity)));
         if (!margin.RoundAwayFromZero(AmountScale).TryToDecimal(out var amount))
         {
             return SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.AmountOutOfRange);

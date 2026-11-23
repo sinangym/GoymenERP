@@ -196,7 +196,8 @@ internal sealed class SqlInventoryPhysicalAllocationReader(InventoryDbContext db
             || !Enum.IsDefined((StockAllocationStatus)row.Status)
             || !labels.TryGetValue(row.LabelId, out var label)
             || label.Version <= 0
-            || label.ProductId != productId)
+            // KLN-D39: a substitute ("muadil") allocation holds a label of another, similar product by design.
+            || label.ProductId != productId && !row.IsSubstitute)
         {
             throw Error(503, InventoryPhysicalAllocationReadCodesV1.Unavailable);
         }
@@ -217,7 +218,10 @@ internal sealed class SqlInventoryPhysicalAllocationReader(InventoryDbContext db
                 row.Reason!,
             row.ReservedUntilUtc,
             row.CreatedAtUtc,
-            row.UpdatedAtUtc);
+            row.UpdatedAtUtc,
+            row.IsSubstitute,
+            row.AllocatedPieces,
+            row.RemainingPieces);
         return new InventoryPhysicalAllocationReadRecord(allocation, label.Version);
     }
 

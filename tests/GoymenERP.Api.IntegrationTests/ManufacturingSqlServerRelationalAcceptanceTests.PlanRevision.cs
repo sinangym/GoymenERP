@@ -42,6 +42,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             Assert.Equal(2, history[0].Inputs.Count);
 
             // Approval counts the revision's step; the order snapshots the revised content.
+            await store.DueDates.ChangeDueDateAsync(plan.Id, 2, 0, TerminDay, TerminToday, Metadata(run));
             var approved = await store.Plans.ApprovePlanAsync(plan.Id, 2, run.Approver, At, Metadata(run));
             Assert.Equal(3L, approved.Version);
             var orderId = Guid.NewGuid();
@@ -142,6 +143,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using (var context = run.Context(CompanyA))
         {
             var migrator = context.GetService<IMigrator>();
+            await run.ForgetTerminsBeforeRollbackAsync();
             await migrator.MigrateAsync(beforeRevisions);
             Assert.Equal(0, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM sys.tables WHERE [name] = N'PlanRevisions' AND [schema_id] = SCHEMA_ID(N'manufacturing')"));
@@ -160,6 +162,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         // With a revision: refused with Manufacturing's module number, nothing dropped.
         await using (var context = run.Context(CompanyA))
         {
+            await run.ForgetTerminsBeforeRollbackAsync();
             var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(beforeRevisions));
             Assert.Equal(51047, error.Number);
             Assert.EndsWith("_AddManufacturingPlanRevisions", (await context.Database.GetAppliedMigrationsAsync()).Last(),

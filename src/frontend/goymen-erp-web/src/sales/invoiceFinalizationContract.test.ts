@@ -94,13 +94,16 @@ describe('API-36 client ↔ canonical OpenAPI', () => {
   })
 
   it('pins every decoded member list to the schema exactly', () => {
-    expect([...SALES_INVOICE_DETAIL_FIELDS].sort()).toEqual([...declared('SalesInvoiceDetailView')].sort())
+    // SAT-D436 (AK-5): `kilogramPrices` is the one additive member the server omits when null (decoded separately).
+    expect(declared('SalesInvoiceDetailView')).toContain('kilogramPrices')
+    const detailMembers = declared('SalesInvoiceDetailView').filter((name) => name !== 'kilogramPrices')
+    expect([...SALES_INVOICE_DETAIL_FIELDS].sort()).toEqual([...detailMembers].sort())
     expect([...SALES_INVOICE_FINALIZATION_FIELDS].sort()).toEqual([...declared('SalesInvoiceFinalizationView')].sort())
     expect([...SALES_INVOICE_FINAL_INSTALMENT_FIELDS].sort()).toEqual([...declared('SalesInvoiceFinalInstalmentView')].sort())
     expect([...SALES_INVOICE_MATCH_FIELDS].sort()).toEqual([...declared('SalesInvoiceMatchView')].sort())
     expect([...SALES_DRAFT_INVOICES_FIELDS].sort()).toEqual([...declared('SalesDraftInvoicesResponse')].sort())
     expect([...SALES_DRAFT_INVOICE_ITEM_FIELDS].sort()).toEqual([...declared('SalesDraftInvoiceItemView')].sort())
-    expect(Object.keys(invoiceDetail()).sort()).toEqual([...declared('SalesInvoiceDetailView')].sort())
+    expect(Object.keys(invoiceDetail()).sort()).toEqual([...detailMembers].sort())
     expect(Object.keys(finalizationOf()).sort()).toEqual([...declared('SalesInvoiceFinalizationView')].sort())
     expect(Object.keys(matchOf()).sort()).toEqual([...declared('SalesInvoiceMatchView')].sort())
   })
@@ -295,5 +298,30 @@ describe('API-33 decision record on the invoice detail', () => {
     expect(detailOf(invoiceDetail({ decision: decision({ decisionReason: '   ' }) }))).toBeNull()
     expect(detailOf(invoiceDetail({ decision: { ...decision(), extra: null } }))).toBeNull()
     expect(detailOf(invoiceDetail({ decision: decision({ submittedAtUtc: 'yesterday' }) }))).toBeNull()
+  })
+})
+
+
+describe('official invoice source proof', () => {
+  it('keeps the source date, batch checksum and pending manual notice without amount calculation', () => {
+    const match = matchOf({ invoiceDate: '2026-11-01', sourceProof: {
+      companyId: '11111111-1111-4111-8111-111111111111', invoiceId: '22222222-2222-4222-8222-222222222222',
+      sourceKind: 'approved-import', version: 'batch-v3', approvedAtUtc: '2026-11-02T09:00:00Z',
+      pdfDocumentId: null, pdfDocumentVersionNo: null, pdfSha256: null,
+      sourceBatchId: '33333333-3333-4333-8333-333333333333', sourceChecksum: 'b'.repeat(64), hasPendingManual: true,
+    } })
+    const result = detailOf(invoiceDetail({ match }))
+    expect(result?.match?.invoiceDate).toBe('2026-11-01')
+    expect(result?.match?.sourceProof?.hasPendingManual).toBe(true)
+    expect(result?.match?.sourceProof?.sourceChecksum).toBe('b'.repeat(64))
+  })
+  it('accepts legacy absence explicitly and rejects partial or malformed source evidence', () => {
+    expect(detailOf(invoiceDetail({ match: matchOf({ invoiceDate: null, sourceProof: null }) }))?.match?.sourceProof).toBeNull()
+    expect(detailOf(invoiceDetail({ match: matchOf({ invoiceDate: null }) }))).toBeNull()
+    const proof = matchOf().sourceProof as Record<string, unknown>
+    for (const sourceProof of [{ ...proof, pdfSha256: 'bad' }, { ...proof, sourceKind: 'unknown' },
+      { ...proof, sourceBatchId: '33333333-3333-4333-8333-333333333333' }, { ...proof, hasPendingManual: true }]) {
+      expect(detailOf(invoiceDetail({ match: matchOf({ sourceProof }) }))).toBeNull()
+    }
   })
 })

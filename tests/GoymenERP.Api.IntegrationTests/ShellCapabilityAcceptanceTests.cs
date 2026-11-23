@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Shell;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
@@ -361,6 +362,8 @@ public sealed class ShellCapabilityAcceptanceTests(
 
         await using (var scope = isolatedFactory.Services.CreateAsyncScope())
         {
+            // KIM-S23: the organization context only lets the resolved active company's own row change.
+            scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyB);
             var dbContext = scope.ServiceProvider.GetRequiredService<OrganizationDbContext>();
             var company = await dbContext.Companies
                 .IgnoreQueryFilters()
@@ -396,6 +399,8 @@ public sealed class ShellCapabilityAcceptanceTests(
     // rather than slotted in beside the other list.
     private static string[] OrganizationCapabilities() =>
     [
+        // KIM-S23 (ORG-05): `organization.company.tax-id` sorts before `organization.locations.*`.
+        OrganizationShellCapabilityProvider.CompanyTaxIdCapabilityId,
         OrganizationShellCapabilityProvider.DetailCapabilityId,
         OrganizationShellCapabilityProvider.StatusCapabilityId,
         OrganizationShellCapabilityProvider.ListCapabilityId,

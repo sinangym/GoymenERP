@@ -1,4 +1,5 @@
 using GoymenERP.Api.Shell;
+using GoymenERP.Api.FinanceRuntime;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,6 +31,30 @@ public sealed class FinanceRecordPeriodRuleCompositionTests
     private static List<ServiceDescriptor> RuleDescriptors(IServiceCollection services) =>
         [.. services.Where(descriptor => descriptor.ServiceType == typeof(IFinanceRecordPeriodRule))];
 
+    [Fact]
+    public async Task Transactional_rule_passes_the_actual_transaction_date_to_the_borrowed_period_owner()
+    {
+        var periods = new BorrowedPeriodProbe();
+        var context = new FinanceContext(Guid.NewGuid(), "SENTETIK-actor", "SENTETIK-correlation", null);
+        var occurredOn = new DateOnly(2026, 11, 30);
+        var answer = await new TransactionalOccurredOnFinanceRecordPeriodRule(periods).CheckAsync(context,
+            occurredOn, new DateOnly(2026, 12, 2), DateTimeOffset.Parse("2026-12-03T09:00:00Z"), CancellationToken.None);
+        Assert.Equal(RecordPeriodAnswer.Unavailable, answer);
+        Assert.Same(context, periods.Context);
+        Assert.Equal(occurredOn, periods.Date);
+    }
+
+    private sealed class BorrowedPeriodProbe : IFinanceCreditAccountingPeriodPortV1
+    {
+        public FinanceContext? Context { get; private set; }
+        public DateOnly Date { get; private set; }
+        public Task<RecordPeriodAnswer> ReadAsync(FinanceContext context, DateOnly accountingDate, CancellationToken cancellationToken)
+        {
+            Context = context; Date = accountingDate;
+            return Task.FromResult(RecordPeriodAnswer.Unavailable);
+        }
+    }
+
     /// <summary>
     /// The host's registration BEFORE <see cref="FinanceModuleExtensions.AddFinanceServices"/>: the module's
     /// TryAdd finds the service type already present and does nothing, so the undecided fallback never enters
@@ -39,13 +64,13 @@ public sealed class FinanceRecordPeriodRuleCompositionTests
     public void The_host_rule_registered_first_leaves_the_undecided_fallback_out_of_the_container()
     {
         var services = new ServiceCollection();
-        services.AddScoped<IFinanceRecordPeriodRule, OccurredOnFinanceRecordPeriodRule>();
+        services.AddScoped<IFinanceRecordPeriodRule, TransactionalOccurredOnFinanceRecordPeriodRule>();
 
         services.AddFinanceServices();
 
         var descriptors = RuleDescriptors(services);
         var only = Assert.Single(descriptors);
-        Assert.Equal(typeof(OccurredOnFinanceRecordPeriodRule), only.ImplementationType);
+        Assert.Equal(typeof(TransactionalOccurredOnFinanceRecordPeriodRule), only.ImplementationType);
         Assert.Equal(ServiceLifetime.Scoped, only.Lifetime);
     }
 

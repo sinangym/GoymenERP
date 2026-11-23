@@ -103,6 +103,7 @@ public static partial class SalesEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
                 SalesDraftProblemCodesV1.AccountState, SalesDraftProblemCodesV1.RevisionBlocked,
+                SalesDraftProblemCodesV1.RevisionFutureAllocationPresent,
                 SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed", SalesDraftProblemCodesV1.OwnerReferenceInvalid,
                 SalesDraftProblemCodesV1.UnsupportedCurrency)

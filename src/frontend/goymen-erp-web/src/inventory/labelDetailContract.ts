@@ -1,3 +1,5 @@
+import { MOVEMENT_KINDS, movementLinesFitKind, type InventoryMovementKind } from './movementTimelineContract'
+
 export interface InventoryLabelDocument {
   readonly kind: string
   readonly attachedAtUtc: string
@@ -40,6 +42,8 @@ export interface InventoryLabelPosition {
   readonly productId: string
   readonly block: string
   readonly quantityKg: string
+  /** KLN-D119: the pieces at this position; absent when the label tracks no pieces. */
+  readonly pieceCount?: number
 }
 
 export interface InventoryLabelBalances {
@@ -48,6 +52,10 @@ export interface InventoryLabelBalances {
   readonly freeKg: string
   readonly blockedKg: string
   readonly positions: readonly InventoryLabelPosition[]
+  /** KLN-D119: the label's piece totals; each absent for a label without pieces. */
+  readonly physicalPieces?: number
+  readonly freePieces?: number
+  readonly blockedPieces?: number
 }
 
 export interface InventoryLabelGenealogyEdge {
@@ -86,8 +94,7 @@ export interface InventoryLabelMovementLine {
 
 export interface InventoryLabelMovement {
   readonly movementId: string
-  readonly kind: 'Receipt' | 'Issue' | 'Block' | 'Release' | 'Return' | 'CountAdjustment' | 'Scrap' |
-    'TransferDispatch' | 'TransferAccept'
+  readonly kind: InventoryMovementKind
   readonly occurredAtUtc: string
   readonly sourceKind: string
   readonly sourceId: string
@@ -130,6 +137,17 @@ function exact(value: JsonObject, names: readonly string[]): boolean {
   const actual = Object.keys(value).sort()
   const expected = [...names].sort()
   return actual.length === expected.length && actual.every((name, index) => name === expected[index])
+}
+
+function exactWithOptional(value: JsonObject, names: readonly string[], optional: readonly string[]): boolean {
+  return exact(Object.fromEntries(Object.entries(value).filter(([name]) => !optional.includes(name))), names)
+}
+
+const INT32_MAX = 2147483647
+
+/** An optional piece member: absent is "no pieces"; present must be a whole number (never null, text or a fraction). */
+function optionalPieces(value: unknown): value is number | undefined {
+  return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= INT32_MAX)
 }
 
 function text(value: unknown): value is string {
@@ -199,9 +217,9 @@ function lot(value: unknown): InventoryLabelLot | null {
 
 function position(value: unknown): InventoryLabelPosition | null {
   const source = record(value)
-  if (source === null || !exact(source, [
+  if (source === null || !exactWithOptional(source, [
     'ownerKind', 'ownerId', 'custodianKind', 'custodianId', 'locationId', 'productId', 'block', 'quantityKg',
-  ]) || !text(source.ownerKind) || !guid(source.ownerId) || !text(source.custodianKind) ||
+  ], ['pieceCount']) || !optionalPieces(source.pieceCount) || !text(source.ownerKind) || !guid(source.ownerId) || !text(source.custodianKind) ||
     !guid(source.custodianId) || !guid(source.locationId) || !guid(source.productId) ||
     (source.block !== 'Free' && source.block !== 'Blocked') || !positiveQuantity(source.quantityKg)) return null
   return source as unknown as InventoryLabelPosition
@@ -239,8 +257,7 @@ function movement(value: unknown): InventoryLabelMovement | null {
   if (source === null || !exact(source, [
     'movementId', 'kind', 'occurredAtUtc', 'sourceKind', 'sourceId', 'sourceLineId', 'sourceGrain', 'lines',
   ]) || !guid(source.movementId) ||
-    !['Receipt', 'Issue', 'Block', 'Release', 'Return', 'CountAdjustment', 'Scrap',
-      'TransferDispatch', 'TransferAccept'].includes(source.kind as string) ||
+    !(MOVEMENT_KINDS as readonly unknown[]).includes(source.kind) ||
     !instant(source.occurredAtUtc) || !text(source.sourceKind) || source.sourceKind !== source.sourceKind.trim() ||
     source.sourceKind.length > 64 || !guid(source.sourceId) ||
     (source.sourceLineId !== null && !guid(source.sourceLineId)) ||
@@ -251,26 +268,8 @@ function movement(value: unknown): InventoryLabelMovement | null {
   const decoded = lines as InventoryLabelMovementLine[]
   if (new Set(decoded.map((line) => line.sequence)).size !== decoded.length ||
     decoded.some((line, index) => index > 0 && decoded[index - 1].sequence >= line.sequence) ||
-    ((source.kind === 'Receipt' || source.kind === 'Return' || source.kind === 'TransferAccept') &&
-      decoded.some((line) => line.direction !== 'In')) ||
-    source.kind === 'Issue' && decoded.some((line) => line.direction !== 'Out' || line.block === 'Blocked') ||
-    source.kind === 'TransferDispatch' && decoded.some((line) => line.direction !== 'Out') ||
-    source.kind === 'Scrap' && (decoded.length !== 1 || decoded[0].direction !== 'Out') ||
-    (source.kind === 'Block' || source.kind === 'Release') && !validBlockChange(source.kind, decoded)) return null
+    !movementLinesFitKind(source.kind as InventoryMovementKind, decoded)) return null
   return { ...(source as unknown as InventoryLabelMovement), lines: decoded }
-}
-
-function validBlockChange(kind: 'Block' | 'Release', lines: readonly InventoryLabelMovementLine[]): boolean {
-  if (lines.length !== 2) return false
-  const from = lines.filter((line) => line.direction === 'Out')
-  const to = lines.filter((line) => line.direction === 'In')
-  if (from.length !== 1 || to.length !== 1) return false
-  return from[0].block === (kind === 'Block' ? 'Free' : 'Blocked') &&
-    to[0].block === (kind === 'Block' ? 'Blocked' : 'Free') &&
-    from[0].ownerKind === to[0].ownerKind && from[0].ownerId === to[0].ownerId &&
-    from[0].custodianKind === to[0].custodianKind && from[0].custodianId === to[0].custodianId &&
-    from[0].locationId === to[0].locationId && from[0].productId === to[0].productId &&
-    from[0].quantityKg === to[0].quantityKg
 }
 
 interface GenealogyLabelFacts {
@@ -360,7 +359,9 @@ export function decodeInventoryLabelIdentity(value: unknown): InventoryLabelIden
 
 export function decodeInventoryLabelBalances(value: unknown): InventoryLabelBalances | null {
   const source = record(value)
-  if (source === null || !exact(source, ['labelId', 'physicalKg', 'freeKg', 'blockedKg', 'positions']) ||
+  if (source === null || !exactWithOptional(source, ['labelId', 'physicalKg', 'freeKg', 'blockedKg', 'positions'],
+    ['physicalPieces', 'freePieces', 'blockedPieces']) || !optionalPieces(source.physicalPieces) ||
+    !optionalPieces(source.freePieces) || !optionalPieces(source.blockedPieces) ||
     !guid(source.labelId) || !quantity(source.physicalKg) || !quantity(source.freeKg) ||
     !quantity(source.blockedKg) || !Array.isArray(source.positions)) return null
   const positions = source.positions.map(position)

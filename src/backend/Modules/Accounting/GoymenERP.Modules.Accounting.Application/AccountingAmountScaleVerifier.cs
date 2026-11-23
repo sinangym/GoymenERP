@@ -58,6 +58,15 @@ public sealed class AccountingAmountScaleVerifier(ISettingsPrerequisiteProvider 
             return;
         }
 
+        var profile = await ReadProfileAsync(companyId, currencyId, accountingDate, cancellationToken);
+        if (values.Any(value => SignificantDecimals(value) > profile.Scale))
+            throw new AccountingAmountScaleException(AccountingAmountScaleCodes.ScaleExceeded);
+    }
+
+    /// <summary>Validated owner profile for an immutable preparation snapshot; callers must re-read it before approval.</summary>
+    public async Task<MoneyProfileV1> ReadProfileAsync(Guid companyId, Guid currencyId, DateOnly accountingDate,
+        CancellationToken cancellationToken = default)
+    {
         MoneyProfileV1 profile;
         try
         {
@@ -70,7 +79,7 @@ public sealed class AccountingAmountScaleVerifier(ISettingsPrerequisiteProvider 
         }
 
         if (profile is null || profile.Profile is null || profile.Profile.ProfileId == Guid.Empty || profile.Profile.Version <= 0
-            || profile.Scale < 0 || profile.CurrencyId != currencyId
+            || profile.Scale is < 0 or > GoymenERP.BuildingBlocks.Monetary.Money.MaximumScale || profile.CurrencyId != currencyId
             || !string.Equals(profile.Operation, AccountingMoneyOperations.JournalAmountV1, StringComparison.Ordinal))
         {
             throw new AccountingAmountScaleException(AccountingAmountScaleCodes.ProfileInvalid);
@@ -87,10 +96,7 @@ public sealed class AccountingAmountScaleVerifier(ISettingsPrerequisiteProvider 
             throw new AccountingAmountScaleException(AccountingAmountScaleCodes.ProfileNotInEffect);
         }
 
-        if (values.Any(value => SignificantDecimals(value) > profile.Scale))
-        {
-            throw new AccountingAmountScaleException(AccountingAmountScaleCodes.ScaleExceeded);
-        }
+        return profile;
     }
 
     /// <summary>The number of decimals that carry a non-zero digit: 12.5000 → 1, 12.5001 → 4, 1000 → 0.</summary>

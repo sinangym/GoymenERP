@@ -1,12 +1,17 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace GoymenERP.Modules.Logistics.Application.Contracts;
 
 // The browser supplies identities/version preconditions, never stock position, company, approval or product facts.
 public sealed record RecordShipmentRequest(
     string ExpectedVersion, Guid ShipmentId, Guid AllocationId, string ExpectedAllocationVersion,
-    string ExpectedLabelVersion, Guid MovementId, string Quantity, DateTimeOffset OccurredAtUtc);
+    string ExpectedLabelVersion, Guid MovementId, string Quantity, DateTimeOffset OccurredAtUtc,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<LogisticsPlanExcessUseV1>? PlanExcessUses = null,
+    // AK-4 (KLN-D119): on a piece line <c>Quantity</c> is whole pieces and this is their physical kg (the label kg leaving);
+    // required there, refused on a kg line.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? QuantityKg = null);
 
 public sealed record RecordDeliveryRequest(
     string ExpectedVersion, Guid DeliveryId, Guid SourceShipmentId, string Quantity, DateTimeOffset OccurredAtUtc);
@@ -77,6 +82,15 @@ public interface ILogisticsRealizationTransactionRunnerV1
 
     Task<T> ExecuteDeliveryAsync<T>(Guid companyId, Func<CancellationToken, Task<T>> operation,
         Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default);
+
+    /// <summary>SAT-D417: new approval/capacity usage must hold the same Serializable owner snapshot through final authority and commit.
+    /// Legacy adapters fail closed; this never upgrades their capabilities by default.</summary>
+    Task<T> ExecutePlanExcessAsync<T>(Guid companyId, Func<CancellationToken, Task<T>> operation,
+        Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default) =>
+        throw new LogisticsInstructionServiceException(503, LogisticsPlanExcessV1.Unavailable);
+    Task<T> ExecutePlanExcessShipmentAsync<T>(Guid companyId, Func<ILogisticsShipmentStockV1, CancellationToken, Task<T>> operation,
+        Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default) =>
+        throw new LogisticsInstructionServiceException(503, LogisticsPlanExcessV1.Unavailable);
 }
 
 /// <summary>
@@ -102,7 +116,7 @@ public sealed record LogisticsShipmentAllocationV1(
 public sealed record LogisticsShipmentStockRequestV1(
     Guid CompanyId, Guid ShipmentId, Guid LoadingInstructionId, Guid LoadingInstructionLineId,
     Guid AllocationId, string ExpectedAllocationVersion, Guid LabelId, string ExpectedLabelVersion,
-    Guid MovementId, string QuantityKg, DateTimeOffset OccurredAtUtc);
+    Guid MovementId, string QuantityKg, DateTimeOffset OccurredAtUtc, int? PieceCount = null);
 
 public sealed record LogisticsShipmentStockResultV1(
     Guid CompanyId, Guid ShipmentId, Guid AllocationId, Guid LabelId, Guid MovementId, Guid OutboxMessageId,
@@ -137,6 +151,7 @@ public static class LogisticsRealizationJson
         }
 
         RequireQuantityAndTime(request.Quantity, request.OccurredAtUtc);
+        if (request.QuantityKg is not null) RequireQuantityAndTime(request.QuantityKg, request.OccurredAtUtc);
     }
 
     public static void Validate(RecordDeliveryRequest request)

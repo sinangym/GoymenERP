@@ -1,0 +1,5 @@
+export const RELEASE_COMPANY='11111111-1111-4111-8111-111111111111'
+export const RELEASE_ALLOCATION='22222222-2222-4222-8222-222222222222'
+const id='33333333-3333-4333-8333-333333333333'
+export const releaseCandidateFixture=()=>({items:[{allocation:{allocationId:RELEASE_ALLOCATION,companyId:RELEASE_COMPANY,version:'2',status:'Active',labelId:id,productId:id,demandKind:'sales.subcontract-service-order-line',demandId:id,demandLineId:id,demandProductVersion:'SENTETIK1',allocatedKg:'100',remainingKg:'20',reason:'SENTETIK original',reservedUntilUtc:null,createdAtUtc:'2026-11-17T10:00:00Z',updatedAtUtc:'2026-11-17T11:00:00Z',isSubstitute:false},labelCode:'SENTETIK-FASON-1',labelVersion:'3',customerPartyId:id,customerAccountId:id,manufacturingOrderId:id,outputFactId:id}],nextCursor:null})
+export const releaseResultFixture=()=>({allocation:{...releaseCandidateFixture().items[0].allocation,status:'Released',version:'3',remainingKg:'0',updatedAtUtc:'2026-11-17T12:00:00Z'},labelVersion:'4',releasedKg:'20',previouslyConsumedKg:'80',releaseReason:'SENTETIK explicit',releasedAtUtc:'2026-11-17T12:00:00Z'})

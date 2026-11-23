@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
@@ -88,6 +89,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal((3L, "25", 1), (reopened.Version, reopened.LineSpeedMetresPerMinute, reopened.Rejections!.Count));
 
         // URT-D1: one approved plan opens exactly one order.
+        await run.EnterTerminAsync(planId);
         var approved = await PlanAsync(await run.ApproverAsync(CompanyA), HttpStatusCode.OK, $"{Base}/plans/{planId}/approval",
             new ApprovePlanRequestV1(3));
         Assert.Equal(("Approved", 4L), (approved.Status, approved.Version));
@@ -157,6 +159,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                 (again.StatusCode, (await Problem(again)).Code));
         }
 
+        await run.EnterTerminAsync(draftId);
         using (var approveCancelled = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{draftId}/approval",
                    new ApprovePlanRequestV1(2)))
         {
@@ -173,6 +176,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
 
         var approvedId = Guid.NewGuid();
         await PlanAsync(client, HttpStatusCode.Created, $"{Base}/plans", new SavePlanRequestV1(approvedId, tube, inputs, null));
+        await run.EnterTerminAsync(approvedId);
         await PlanAsync(await run.ApproverAsync(CompanyA), HttpStatusCode.OK, $"{Base}/plans/{approvedId}/approval", new ApprovePlanRequestV1(1));
         var cancelledApproved = await PlanAsync(client, HttpStatusCode.OK, $"{Base}/plans/{approvedId}/cancellation",
             new CancelPlanRequestV1(2, "Hat arızası"));
@@ -236,6 +240,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             new SavePlanRequestV1(planId, slitting, Inputs("1000"), null, Spec("980.000"), null, "50"));
         Assert.Equal(("980", "50"), (created.SlittingSpec!.NetUsableWidthMm, created.LineSpeedMetresPerMinute));
 
+        await run.EnterTerminAsync(planId);
         var approved = await PlanAsync(await run.ApproverAsync(CompanyA), HttpStatusCode.OK, $"{Base}/plans/{planId}/approval",
             new ApprovePlanRequestV1(1));
         Assert.Equal("Approved", approved.Status);
@@ -248,15 +253,17 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             "SELECT NetUsableWidthMm FROM manufacturing.Plans WHERE CompanyId = @c AND Id = @p",
             ("@c", CompanyA), ("@p", planId)));
 
-        // A roll whose free stock does not cover the planned kg is not usable: the approval is refused, nothing changes.
-        // U3-a: the approval above allocated the roll and moved its label version; the next plan names the current one.
+        // The first approval reserves 1000 kg of the physical 1000.125 kg. A new 1 kg draft is within
+        // the decided physical-total draft cap but exceeds the remaining 0.125 kg: approval must refuse it.
+        // U3-a: the next plan names the label's actual version after the first allocation.
         rollVersion = await run.CurrentLabelVersionAsync(roll.Id);
         var shortId = Guid.NewGuid();
         await PlanAsync(client, HttpStatusCode.Created, $"{Base}/plans",
-            new SavePlanRequestV1(shortId, slitting, Inputs("1500"), null, Spec("980"), null, "50"));
+            new SavePlanRequestV1(shortId, slitting, Inputs("1"), null, Spec("980"), null, "50"));
+        await run.EnterTerminAsync(shortId);
         using (var refused = await (await run.ApproverAsync(CompanyA)).PostWithKeyAsync($"{Base}/plans/{shortId}/approval", new ApprovePlanRequestV1(1)))
         {
-            Assert.Equal((HttpStatusCode.UnprocessableEntity, ManufacturingRuleCodes.PlanLabelNotUsable),
+            Assert.Equal((HttpStatusCode.Conflict, InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock),
                 (refused.StatusCode, (await Problem(refused)).Code));
         }
 

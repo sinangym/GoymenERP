@@ -76,6 +76,12 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
             companyB.DefaultRequestHeaders.Remove("Idempotency-Key");
             requestApprover.DefaultRequestHeaders.Remove("Idempotency-Key");
 
+            using (var numberFormat = await SendCommandAsync(companyA, HttpMethod.Post,
+                "/api/v1/settings/company-policies/document-number-series/versions",
+                new RecordSettingsDocumentNumberFormatV1(SettingsDocumentSeriesV1.PurchaseOrder, "0", "ALI", 6, "SENTETIK alış siparişi numarası"),
+                "purchase-genuine-number-format"))
+                Assert.Equal(HttpStatusCode.NoContent, numberFormat.StatusCode);
+
             var (supplierPartyId, supplierAccountId) = await CreateSupplierAsync(companyA);
             var genuine = GenuineSacDraft();
 
@@ -187,6 +193,8 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
                     SettingsUnitIdentitiesV1.Kilogram),
                 (options.Source.ProductId, options.Source.ProductVersion, options.Source.UnitId));
             Assert.NotEmpty(options.Locations);
+            Assert.Equal(new PurchaseReceiptFutureSupplySummaryV1(CompanyA, approved.Detail.Order.Id, approvedLine.LineId,
+                SettingsUnitIdentitiesV1.Kilogram, "0"), options.FutureSupply);
             var location = options.Locations[0];
 
             var receipt = new RecordPurchaseGoodsReceiptV1(
@@ -313,6 +321,7 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
             "Disposable genuine Product, Purchasing and Inventory SQL journey actor", true);
         role.AddPermission(ProductPermissionManifestV1.OperationalSelectionRead);
         role.AddPermission(PurchasingPermissionManifestV1.OrdersCreate);
+        role.AddPermission(SettingsDocumentNumberSeriesPermissionsV1.Manage);
         role.AddPermission(PurchasingPermissionManifestV1.OrdersRead);
         role.AddPermission(PurchasingPermissionManifestV1.OrdersApprove);
         role.AddPermission(PurchasingPermissionManifestV1.GoodsReceiptsRecord);

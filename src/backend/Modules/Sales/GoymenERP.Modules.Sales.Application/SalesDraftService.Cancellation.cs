@@ -21,7 +21,11 @@ namespace GoymenERP.Modules.Sales.Application;
 /// owner that cannot answer is <see cref="SalesCancellationImpactStatusesV1.Unreadable"/> and its numbers are null.</item>
 /// <item><b>Fail-closed</b> (what blocks is not decided): an order is cancelled only when it is Approved, not cancelled, and no
 /// category is Present or Unreadable. Nothing of another module is released or reversed: the user resolves the owner's record
-/// in its own screen first (an allocation is released in Inventory), then cancels.</item>
+/// in its own screen first (a physical allocation is released in Inventory), then cancels. The one exception is X1 / KLN-D28
+/// (9): when <see cref="ISalesOrderFutureAllocationReleaseParticipantV1"/> is composed, the order's ACTIVE FUTURE supply
+/// allocations do not block — the preview shows them per line and the approved cancellation releases them through the owner's
+/// release port inside its own SQL transaction (the cancellation and the release commit together or not at all). Without the
+/// participant they block as before.</item>
 /// <item><b>The preview is the command's precondition:</b> the command carries the preview's token; the impact is read again
 /// inside the single save's last step and must still be exactly that preview, else 409 (the user reads it again).</item>
 /// <item><b>Ordering</b> (the delivery schedule's): fence → version shape → the key's replay (§4/§7; a replay asks no owner) →
@@ -29,9 +33,11 @@ namespace GoymenERP.Modules.Sales.Application;
 /// for a stale or wrong-state command) → each owner (fence after each) → token → blockers → last fence → ONE save. A stale
 /// version, a wrong state, a changed impact and a blocked cancellation are the key's TERMINAL 409s (recorded, replayed); an
 /// unreadable owner is 503 (not recorded — the retry reads again). Nothing is measured after the commit (S03).</item>
-/// <item><b>Residual race (declared, not closed):</b> no transaction spans Sales and the owners. An allocation or instruction
-/// committed by its owner between the last owner read and this save is not seen; after the commit the Sales line port answers
-/// the order's lines as not approved, so no owner creates a NEW link to a cancelled order.</item>
+/// <item><b>Residual race (declared, not closed):</b> no transaction spans Sales and the owners' reads. An allocation or
+/// instruction committed by its owner between the last owner read and this save is not seen; after the commit the Sales line
+/// port answers the order's lines as not approved, so no owner creates a NEW link to a cancelled order. X1 closes it for the
+/// future allocations: the participant takes every sales line's serialization lock (the lock the future allocation's own create
+/// takes) inside the cancellation's transaction and releases what is active THEN, not what the preview saw.</item>
 /// </list>
 /// </summary>
 public sealed partial class SalesDraftService
@@ -65,8 +71,11 @@ public sealed partial class SalesDraftService
             throw new SalesDraftServiceException(404, "not_found");
         }
 
-        return (await ReadImpactAsync(scope, permission, draft, cancellationToken)).Response;
+        return (await ReadImpactAsync(scope, permission, draft, cancellationToken, FutureSupplyBlocks)).Response;
     }
+
+    /// <summary>X1: future supply allocations block the cancellation only while no release participant is composed.</summary>
+    private bool FutureSupplyBlocks => futureAllocationRelease is null;
 
     public async Task<SalesOrderDraftResponse> CancelDraftAsync(Guid draftId, SalesDraftCancelRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default)
@@ -110,7 +119,7 @@ public sealed partial class SalesDraftService
                     scope = await RequireStillAsync(scope, permission, writeCancellationToken);
                     // The domain's own preconditions first: a stale, cancelled or unapproved order asks no owner.
                     draft.RequireCancellable(expectedVersion, request.Reason);
-                    var impact = await ReadImpactAsync(scope, permission, draft, writeCancellationToken);
+                    var impact = await ReadImpactAsync(scope, permission, draft, writeCancellationToken, FutureSupplyBlocks);
                     if (impact.Unreadable)
                     {
                         throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CancellationImpactUnavailable);
@@ -129,7 +138,36 @@ public sealed partial class SalesDraftService
                     // The last fence that can still prevent the write; none after the commit (ORG #321 P3-1).
                     scope = await RequireStillAsync(scope, permission, writeCancellationToken);
                     return impact.Snapshot;
-                }, cancellationToken);
+                },
+                futureAllocationRelease is null
+                    ? null
+                    : async (draft, transaction, writeCancellationToken) =>
+                    {
+                        // X1 / KLN-D28 (9): every future supply allocation of the order's lines (passive lines too, SAT-D167) is
+                        // released by its owner inside this transaction, under this command's envelope (actor, permission,
+                        // correlation, causation, Idempotency-Key) — the cancellation commits only together with the release.
+                        await futureAllocationRelease.ReleaseForCancelledOrderAsync(transaction,
+                            new SalesOrderFutureAllocationReleaseRequestV1(draft.Id, [.. draft.AllLines.Select(line => line.Id).Order()],
+                                SalesOrderFutureAllocationReleaseTextsV1.CancelledOrder, envelope),
+                            writeCancellationToken);
+                        // The owner's release is the slow step; the authority is fenced again before the single save.
+                        scope = await RequireStillAsync(scope, permission, writeCancellationToken);
+                    },
+                cancellationToken);
+        }
+        catch (SalesFutureAllocationReleaseException exception) when (exception.Terminal)
+        {
+            // The owner's version, state or selection conflict: the key's terminal answer (recorded, replayed without asking
+            // the owner again); the owner's code is carried unchanged. Nothing was cancelled (the transaction rolled back).
+            throw await TerminalAsync(scope, permission, envelope, requestHash, new SalesDraftTerminalRefusal(
+                exception.Status is 409 or 422 ? exception.Status : 409, exception.Code,
+                [new(FutureSupplyAllocationsField, exception.Code)]), cancellationToken, commandName, draftId);
+        }
+        catch (SalesFutureAllocationReleaseException exception)
+        {
+            // A busy line, the owner's concurrent change or an unreadable owner: not recorded — the retry asks again.
+            throw new SalesDraftServiceException(exception.Status is 409 or 503 ? exception.Status : 503, exception.Code,
+                [new(FutureSupplyAllocationsField, exception.Code)]);
         }
         catch (SalesVersionConflictException exception)
         {
@@ -221,6 +259,9 @@ public sealed partial class SalesDraftService
 
     // ---- the impact ---------------------------------------------------------------------------------------------------
 
+    /// <summary>X1: the field a future allocation release refusal names.</summary>
+    private const string FutureSupplyAllocationsField = "futureSupplyAllocations";
+
     private sealed record Impact(SalesOrderDraftCancellationImpactResponse Response, CancellationImpactSnapshot Snapshot,
         IReadOnlyList<string> Blockers, bool Unreadable);
 
@@ -243,16 +284,29 @@ public sealed partial class SalesDraftService
     /// Reads every DEC-SAL-005 category of <paramref name="draft"/> from its owner, each read released only under the
     /// operation's name (measured after it). An owner that is not composed, throws or answers a malformed value is
     /// Unreadable — its numbers are null, never zero; a lost authority is the caller's 403 (it propagates).
+    /// <paramref name="futureSupplyBlocks"/> (X1): false only for the cancellation with a composed release participant — its
+    /// future supply allocations are shown per line but are released, not blocking; every other caller keeps them blocking.
     /// </summary>
-    private async Task<Impact> ReadImpactAsync(Scope scope, string? permission, SalesOrderDraft draft, CancellationToken cancellationToken)
+    private async Task<Impact> ReadImpactAsync(Scope scope, string? permission, SalesOrderDraft draft, CancellationToken cancellationToken,
+        bool futureSupplyBlocks = true)
     {
-        var allocationsByLine = await ReadAllocationsAsync(scope, permission, draft, cancellationToken);
+        var physicalByLine = await ReadAllocationsAsync(scope, permission, draft, cancellationToken);
+        // F-017 STOK §5.1 b (STK-S16): the preview also shows the line's ACTIVE FUTURE SUPPLY allocations, read through the
+        // kind-aware V2 port; an owner that cannot answer them makes the whole "aktif tahsis" category unreadable (fail-closed).
+        var futureByLine = await ReadFutureAllocationCountsAsync(scope, permission, draft, cancellationToken);
+        var allocationsByLine = futureByLine is null ? null : physicalByLine;
         var loadingImpact = await ReadLoadingImpactAsync(scope, permission, draft, cancellationToken);
         var loadingByLine = loadingImpact?.Lines;
 
+        // A physical allocation blocks as before. A future one blocks too unless the release participant is composed: then the
+        // approved cancellation releases it in its own transaction (X1, KLN-D28(9)) — never a cancelled line holding an active
+        // future allocation (KLN-D28(7)).
+        // The line members below stay PHYSICAL kilograms only: a future quantity is in a purchase unit and is never added to them.
         var allocationStatus = allocationsByLine is null
             ? SalesCancellationImpactStatusesV1.Unreadable
-            : allocationsByLine.Values.Any(line => line.Count > 0) ? SalesCancellationImpactStatusesV1.Present : SalesCancellationImpactStatusesV1.None;
+            : allocationsByLine.Values.Any(line => line.Count > 0) || (futureSupplyBlocks && futureByLine!.Values.Any(count => count > 0))
+                ? SalesCancellationImpactStatusesV1.Present
+                : SalesCancellationImpactStatusesV1.None;
         var loadingStatus = loadingByLine is null
             ? SalesCancellationImpactStatusesV1.Unreadable
             : loadingByLine.Values.Any(line => line.Count > 0 || line.Instructed > 0m) ? SalesCancellationImpactStatusesV1.Present : SalesCancellationImpactStatusesV1.None;
@@ -286,7 +340,9 @@ public sealed partial class SalesDraftService
                 loading is null ? null : Text(loading.Instructed, line.Quantity.Unit),
                 loading is null ? null : Text(loading.Loaded, line.Quantity.Unit),
                 loading is null ? null : Text(loading.Shipped, line.Quantity.Unit),
-                loading is null ? null : Text(loading.Delivered, line.Quantity.Unit));
+                loading is null ? null : Text(loading.Delivered, line.Quantity.Unit),
+                // Unreadable "aktif tahsis" (either read failed) shows no future number either — null, never zero.
+                allocationsByLine is null ? null : futureByLine!.GetValueOrDefault(line.Id));
         }).ToArray();
 
         var blockers = sources.Where(source => source.Status == SalesCancellationImpactStatusesV1.Present).Select(source => source.Source).ToArray();
@@ -347,6 +403,83 @@ public sealed partial class SalesDraftService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// F-017 STOK §5.1 (STK-S16): the number of ACTIVE future supply allocations the allocation owner holds against each of the
+    /// order's lines (X1: per line, a line without any is absent; a count beyond <see cref="int.MaxValue"/> is malformed), read
+    /// through <see cref="ISalesOrderAllocationReadPortV2"/> under the operation's name (fenced before and after), or
+    /// null when the port is not composed, fails or answers a malformed value: another company or order, an entry or a line
+    /// unknown to the order, an unknown kind, a count below zero, a negative quantity, a zero count with a non-zero quantity, a
+    /// physical entry naming a unit or with an over-scale kilogram, a future entry without its purchase unit or with more
+    /// decimals than its owner keeps, or the same (line, kind, unit) twice. The physical figure of the preview stays the V1
+    /// read (<see cref="ReadAllocationsAsync"/>, unchanged for every caller); the V2 physical entries are checked for shape only.
+    /// A future quantity is never converted to kilograms nor added to the physical figure (§5.1 a).
+    /// </summary>
+    private async Task<Dictionary<Guid, int>?> ReadFutureAllocationCountsAsync(Scope scope, string? permission, SalesOrderDraft draft,
+        CancellationToken cancellationToken)
+    {
+        if (allocationsV2 is null)
+        {
+            return null;
+        }
+
+        SalesOrderAllocationReadAnswerV2? answer;
+        try
+        {
+            answer = await GuardedAsync(scope, permission, () => allocationsV2.ReadOrderAllocationsAsync(draft.Id, cancellationToken),
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
+        {
+            return null;
+        }
+
+        if (answer is null || answer.Lines is null || answer.CompanyId != scope.CompanyId || answer.OrderId != draft.Id)
+        {
+            return null;
+        }
+
+        // SAT-D167: an allocation may name a passive line of the order; it is still the order's line (fail-closed).
+        var lineIds = draft.AllLines.Select(line => line.Id).ToHashSet();
+        var seen = new HashSet<(Guid Line, string Kind, Guid? Unit)>();
+        var futureByLine = new Dictionary<Guid, int>();
+        foreach (var entry in answer.Lines)
+        {
+            if (entry is null || !lineIds.Contains(entry.OrderLineId) || !SalesOrderAllocationKindsV2.IsKnown(entry.Kind)
+                || entry.ActiveCount < 0 || entry.ActiveQuantity < 0m || (entry.ActiveCount == 0 && entry.ActiveQuantity != 0m)
+                || !seen.Add((entry.OrderLineId, entry.Kind, entry.UnitId)))
+            {
+                return null;
+            }
+
+            if (entry.Kind == SalesOrderAllocationKindsV2.Physical)
+            {
+                if (entry.UnitId is not null || !FitsScale(entry.ActiveQuantity, QuantityUnit.Kilogram))
+                {
+                    return null;
+                }
+
+                continue;
+            }
+
+            if (entry.UnitId is not { } unitId || unitId == Guid.Empty
+                || decimal.Round(entry.ActiveQuantity, SalesOrderAllocationKindsV2.FutureSupplyQuantityMaximumDecimals,
+                    MidpointRounding.ToZero) != entry.ActiveQuantity)
+            {
+                return null;
+            }
+
+            var lineCount = (long)futureByLine.GetValueOrDefault(entry.OrderLineId) + entry.ActiveCount;
+            if (lineCount > int.MaxValue)
+            {
+                return null;
+            }
+
+            futureByLine[entry.OrderLineId] = (int)lineCount;
+        }
+
+        return futureByLine;
     }
 
     /// <summary>
@@ -415,7 +548,7 @@ public sealed partial class SalesDraftService
 
         var lineIds = draft.AllLines.Select(line => line.Id).ToHashSet();
         var seen = new HashSet<(Guid, Guid?)>();
-        foreach (var item in answer.OpenItems)
+        foreach (var item in answer.OpenItems.Concat(answer.HistoricalItems ?? []))
         {
             var typeFits = kind == SalesLinkedSupplyKindsV1.Production
                 ? item?.DocumentType is SalesLinkedSupplyDocumentTypesV1.ProductionPlan or SalesLinkedSupplyDocumentTypesV1.ProductionOrder
@@ -431,11 +564,20 @@ public sealed partial class SalesDraftService
             }
         }
 
-        return new(answer.Status, answer.OpenItems);
+        var history = answer.HistoricalItems ?? [];
+        if (history.Any(item => kind != SalesLinkedSupplyKindsV1.Production
+                || item.DocumentType != SalesLinkedSupplyDocumentTypesV1.ProductionOrder || item.Status != "Cancelled")
+            || answer.OpenItems.Any(item => item.Status == "Cancelled"))
+        {
+            return new(SalesCancellationImpactStatusesV1.Unreadable, noItems);
+        }
+
+        return new(answer.Status, answer.OpenItems, [.. history.Select(item => item.SupplyId)]);
     }
 
     /// <summary>One supply kind's validated answer: its status and (for Present) the owner's open items.</summary>
-    private sealed record LinkedSupplyRead(string Status, IReadOnlyList<SalesOrderLinkedSupplyItemV1> OpenItems);
+    private sealed record LinkedSupplyRead(string Status, IReadOnlyList<SalesOrderLinkedSupplyItemV1> OpenItems,
+        IReadOnlyList<Guid>? CancelledOrderIds = null);
 
     /// <summary>
     /// SAT-D219 (EK38): a line with an OPEN linked purchase order or production order is neither removed nor given another
@@ -533,7 +675,9 @@ public sealed partial class SalesDraftService
         {
             if (entry is null || !lines.TryGetValue(entry.OrderLineId, out var line) || entry.UnitId != line.OrderUnit.UnitId
                 || entry.InstructionLineCount < 0 || entry.Delivered < 0m || entry.Delivered > entry.Shipped
-                || entry.Shipped > entry.Loaded || entry.Loaded > entry.Instructed
+                || entry.Shipped > entry.Loaded || entry.Instructed < 0m || entry.ApprovedPlanExcess is < 0m
+                || !FitsScale(entry.ApprovedPlanExcess ?? 0m, line.Quantity.Unit)
+                || entry.Loaded > entry.Instructed && entry.Loaded - entry.Instructed > (entry.ApprovedPlanExcess ?? 0m)
                 || !FitsScale(entry.Instructed, line.Quantity.Unit) || !FitsScale(entry.Loaded, line.Quantity.Unit)
                 || !FitsScale(entry.Shipped, line.Quantity.Unit) || !FitsScale(entry.Delivered, line.Quantity.Unit)
                 || ((entry.InstructionLineCount == 0) != (entry.Instructed == 0m)))

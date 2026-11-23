@@ -9,6 +9,8 @@
 
 import { createBrowserRouter, type RouteObject } from 'react-router'
 import { AppShell } from './AppShell'
+import { CompanySetupPage } from '../organization/CompanySetupPage'
+import { COMPANY_SETUP_PATH } from '../organization/companySetupContract'
 import { ShellHome } from './ShellHome'
 import { CapabilityRoute } from './CapabilityRoute'
 import { CAPABILITY, CAPABILITY_ROUTE } from './capabilities'
@@ -24,11 +26,13 @@ import { manufacturingRoutes } from '../manufacturing/manufacturingRoutes'
 import { financeRoutes } from '../finance/financeRoutes'
 import { accountingRoutes } from '../accounting/accountingRoutes'
 import { logisticsRoutes } from '../logistics/logisticsRoutes'
+import { logisticsSubcontractRoutes } from './logisticsSubcontractRoutes'
 import { purchasingRoutes } from '../purchasing/purchasingRoutes'
 import { inventoryRoutes } from '../inventory/inventoryRoutes'
 import { identityRoutes } from '../identity/identityRoutes'
 import { auditRoutes } from '../audit/auditRoutes'
 import { settingsRoutes } from '../settings/settingsRoutes'
+import { documentBrandingRoutes } from './documentBrandingRoutes'
 import { searchRoutes } from '../search/searchRoutes'
 import { workRoutes } from '../work/workRoutes'
 import { StateBlock } from './StateBlock'
@@ -197,6 +201,7 @@ export const shellRoutes: RouteObject[] = [
        * suite), every Logistics route closes onto the neutral not-found block and reads nothing.
       */
       ...logisticsRoutes,
+          ...logisticsSubcontractRoutes,
       /**
        * Purchasing owns the P-03 list/detail and P-04 create route table. Its static `yeni` entry
        * precedes `:orderId` inside the owner table, and every entry keeps its own capability gate.
@@ -208,6 +213,7 @@ export const shellRoutes: RouteObject[] = [
       // UI-K02: the read-only audit log (`/ayarlar/denetim-kaydi`), behind its own capability gate.
       ...auditRoutes,
       ...settingsRoutes,
+      ...documentBrandingRoutes,
       /**
        * AT-002: the global search results (`/arama`), declared in `src/search/searchRoutes.tsx` behind the shared entry
        * gate on the first searchable owner list the actor holds; it has no capability of its own.
@@ -239,6 +245,8 @@ export const shellRoutes: RouteObject[] = [
       },
     ],
   },
+  // KIM-D56: the server's group setup gate works before a company membership exists.
+  { path: COMPANY_SETUP_PATH, element: <CompanySetupPage /> },
 ]
 
 export const shellRouter = createBrowserRouter(shellRoutes)

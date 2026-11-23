@@ -3,6 +3,7 @@ export type PurchaseOrderStatus = 'Draft' | 'Approved' | 'Cancelled'
 export type PurchaseOrderLineKind = 'General' | 'Technical'
 
 export interface PurchaseOrderSummary {
+  readonly documentNumber?: string
   readonly id: string
   readonly companyId: string
   readonly status: PurchaseOrderStatus
@@ -60,6 +61,99 @@ export interface PurchaseOrderLine {
    * before A3 API-30.
    */
   readonly deliverySchedule?: readonly PurchaseOrderDeliverySlice[]
+  /**
+   * AK-5 (SAT-D436, SAT-D439): the line's kg price indicator in the order's currency; absent while the indicator is off, the
+   * prices are withheld or the line is a technical slice. Information only — never a cost and never recomputed here.
+   */
+  readonly kgPrice?: PurchaseKgPrice
+  /**
+   * AK-3b (SAT-D436 TK6): the general line's realization from its finalised supplier invoices; only on the order READ while the
+   * prices are visible — absent on a command response, a technical slice and a withheld price. Information only.
+   */
+  readonly realization?: PurchaseOrderRealization
+}
+
+/**
+ * AK-5 / AK-3b: why a kg price is not shown (golden K01, K13–K18); the server's code, the text is the screen's. A closed set: an
+ * unknown code fails the decoder closed.
+ */
+export const PURCHASE_KG_PRICE_UNAVAILABLE_CODES = [
+  'TheoreticalKgUnavailable', 'WeighedKgUnavailable', 'ZeroKg', 'AmountUnavailable', 'NotAllLinesHaveKg', 'RealizationNotAvailable',
+  'NotInvoiced',
+] as const
+export type PurchaseKgPriceUnavailableCode = typeof PURCHASE_KG_PRICE_UNAVAILABLE_CODES[number]
+
+/**
+ * AK-5 (SAT-D436): a theoretical (amount ÷ theoretical kg) and a real (invoiced amount ÷ weighed kg) kg price, each either a
+ * 2-decimal text of the document currency or null with its reason code — exactly one of the two.
+ */
+export interface PurchaseKgPrice {
+  readonly theoreticalKgPrice: string | null
+  readonly theoreticalUnavailable: PurchaseKgPriceUnavailableCode | null
+  readonly realKgPrice: string | null
+  readonly realUnavailable: PurchaseKgPriceUnavailableCode | null
+}
+
+const KG_PRICE = /^-?(?:0|[1-9][0-9]*)\.[0-9]{2}$/
+
+function kgPricePair(value: unknown, code: unknown): boolean {
+  return value === null
+    ? typeof code === 'string' && (PURCHASE_KG_PRICE_UNAVAILABLE_CODES as readonly string[]).includes(code)
+    : typeof value === 'string' && KG_PRICE.test(value) && code === null
+}
+
+/** AK-5: exactly the four fields, each price paired with no code or a known code with no price; anything else fails closed. */
+export function decodePurchaseKgPrice(value: unknown): PurchaseKgPrice | null {
+  const source = record(value)
+  return source !== null && exact(source, ['theoreticalKgPrice', 'theoreticalUnavailable', 'realKgPrice', 'realUnavailable']) &&
+    kgPricePair(source.theoreticalKgPrice, source.theoreticalUnavailable) && kgPricePair(source.realKgPrice, source.realUnavailable)
+    ? source as unknown as PurchaseKgPrice
+    : null
+}
+
+/**
+ * AK-3b (SAT-D436 TK6, TK8; `PurchaseOrderRealizationView`): what has been invoiced on an order line (or the whole order) by its
+ * FINALISED supplier invoices and the kilograms weighed for it. Every figure is the server's exact text rounded once; an unknown
+ * figure is null (never zero or an estimate). `invoicedQuantity` is in the line's unit and always null on the document.
+ * `differenceKg` = weighed − theoretical and `deviationPercent` are signed. Information only — never a cost, never recomputed.
+ */
+export interface PurchaseOrderRealization {
+  readonly invoicedQuantity: string | null
+  readonly invoicedAmount: string | null
+  readonly weighedKg: string | null
+  readonly theoreticalKg: string | null
+  readonly differenceKg: string | null
+  readonly deviationPercent: string | null
+  readonly realKgPrice: string | null
+  readonly realUnavailable: PurchaseKgPriceUnavailableCode | null
+}
+
+const REALIZATION_FIELDS = ['invoicedQuantity', 'invoicedAmount', 'weighedKg', 'theoreticalKg', 'differenceKg', 'deviationPercent',
+  'realKgPrice', 'realUnavailable'] as const
+const REALIZATION_QUANTITY = /^(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$/
+const REALIZATION_SIGNED_QUANTITY = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$/
+const REALIZATION_AMOUNT = /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/
+const REALIZATION_PERCENT = /^-?(?:0|[1-9][0-9]*)\.[0-9]{2}$/
+
+function nullableMatch(value: unknown, pattern: RegExp): boolean {
+  return value === null || (typeof value === 'string' && pattern.test(value))
+}
+
+/**
+ * AK-3b: exactly the eight members; each figure null or its exact text (canonical quantities and kg, a signed canonical
+ * difference, a fixed-scale amount, a signed 2-decimal percent — never a number, never "-0"); the real kg price paired with no
+ * code or a known code with no price. Anything else — an unknown code included — fails closed.
+ */
+export function decodePurchaseOrderRealization(value: unknown): PurchaseOrderRealization | null {
+  const source = record(value)
+  return source !== null && exact(source, REALIZATION_FIELDS) &&
+    nullableMatch(source.invoicedQuantity, REALIZATION_QUANTITY) && nullableMatch(source.invoicedAmount, REALIZATION_AMOUNT) &&
+    nullableMatch(source.weighedKg, REALIZATION_QUANTITY) && nullableMatch(source.theoreticalKg, REALIZATION_QUANTITY) &&
+    nullableMatch(source.differenceKg, REALIZATION_SIGNED_QUANTITY) && source.differenceKg !== '-0' &&
+    nullableMatch(source.deviationPercent, REALIZATION_PERCENT) &&
+    kgPricePair(source.realKgPrice, source.realUnavailable)
+    ? source as unknown as PurchaseOrderRealization
+    : null
 }
 
 /** A3 API-30: one delivery slice of a line's current schedule, its quantity as exact text in the line's unit. */
@@ -143,6 +237,10 @@ export interface PurchaseOrderDetail {
   readonly currency?: PurchaseOrderCurrency | null
   /** A2a-1 (ALS-D18): a general line has no price yet; null when the prices are withheld. */
   readonly pricePending?: boolean | null
+  /** AK-5 (SAT-D436): the document-level kg price indicator; absent while it is off or the prices are withheld. */
+  readonly kgPrice?: PurchaseKgPrice
+  /** AK-3b (SAT-D436 TK6): the order's realization over every line; order READ only, `invoicedQuantity` always null. */
+  readonly realization?: PurchaseOrderRealization
 }
 
 export interface PurchaseOrderList {
@@ -441,8 +539,9 @@ export function supplierDisplayOf(order: PurchaseOrderSummary): PurchasingSuppli
  */
 function decodeReadSummary(value: unknown): PurchaseOrderReadSummary | null {
   const source = record(value)
-  const listed = source !== null && exact(source, [...SUMMARY_FIELDS, 'supplierDisplay', 'pricePending'])
-  if (source === null || (!listed && !exact(source, [...SUMMARY_FIELDS, 'supplierDisplay']))) return null
+  const fields = source !== null && Object.hasOwn(source, 'documentNumber') ? [...SUMMARY_FIELDS, 'documentNumber'] : SUMMARY_FIELDS
+  const listed = source !== null && exact(source, [...fields, 'supplierDisplay', 'pricePending'])
+  if (source === null || (!listed && !exact(source, [...fields, 'supplierDisplay']))) return null
   if (listed && typeof source.pricePending !== 'boolean') return null
   const { supplierDisplay, pricePending, ...legacy } = source
   const summary = decodeSummary(legacy)
@@ -457,7 +556,9 @@ function decodeSummary(value: unknown): PurchaseOrderSummary | null {
   const source = record(value)
   if (
     source === null ||
-    !exact(source, SUMMARY_FIELDS) ||
+    !exact(source, Object.hasOwn(source, 'documentNumber') ? [...SUMMARY_FIELDS, 'documentNumber'] : SUMMARY_FIELDS) ||
+    (Object.hasOwn(source, 'documentNumber') && (typeof source.documentNumber !== 'string' || source.documentNumber.length > 64
+      || !/^[A-Z0-9]+-\d{4}-\d+$/.test(source.documentNumber) || /[\u0000-\u001f\u007f]/.test(source.documentNumber))) ||
     !guid(source.id) || !guid(source.companyId) || !status(source.status) || !canonicalVersion(source.version) ||
     !guid(source.supplierPartyId) || !guid(source.companyAccountId) || !nullableGuid(source.sourceRequestId) ||
     !dateOnly(source.effectiveOn) || !instant(source.createdAtUtc) || !instant(source.updatedAtUtc) ||
@@ -531,6 +632,15 @@ function deliverySchedule(value: unknown): value is readonly PurchaseOrderDelive
 }
 
 /**
+ * F-027 (ALS-D94): the line schedule history decoder (`lineScheduleContract.ts`) measures identities, versions, instants and each
+ * revision's slices with exactly these rules, so a history slice is never accepted under a looser rule than the detail's.
+ */
+export const isPurchasingGuid = guid
+export const isPurchasingVersion = canonicalVersion
+export const isPurchasingInstant = instant
+export const isPurchaseOrderDeliverySchedule = deliverySchedule
+
+/**
  * A line before A1-3 (no `cancelled`), after it (`cancelled` a canonical decimal), after A2a-1 (`cancelled` and `price`, null or
  * a valid price) or after A3 API-30 (either of the last two plus `deliverySchedule`, a valid slice list); nothing else.
  */
@@ -539,8 +649,15 @@ function decodeLine(value: unknown): PurchaseOrderLine | null {
   if (source === null) return null
   const scheduled = Object.prototype.hasOwnProperty.call(source, 'deliverySchedule')
   if (scheduled && !deliverySchedule(source.deliverySchedule)) return null
-  const extra = scheduled ? ['deliverySchedule'] : []
+  // AK-5: a priced line may carry its kg price indicator; it is never on an unpriced body.
+  const kgPriced = Object.prototype.hasOwnProperty.call(source, 'kgPrice')
+  if (kgPriced && decodePurchaseKgPrice(source.kgPrice) === null) return null
+  // AK-3b: a general line of a priced body may carry its realization; never a technical slice, never an unpriced body.
+  const realized = Object.prototype.hasOwnProperty.call(source, 'realization')
+  if (realized && (decodePurchaseOrderRealization(source.realization) === null || source.kind !== 'General')) return null
+  const extra = [...(scheduled ? ['deliverySchedule'] : []), ...(kgPriced ? ['kgPrice'] : []), ...(realized ? ['realization'] : [])]
   const priced = exact(source, [...LINE_FIELDS, 'cancelled', 'price', ...extra])
+  if ((kgPriced || realized) && !priced) return null
   const current = priced || exact(source, [...LINE_FIELDS, 'cancelled', ...extra])
   if (current && (!text(source.cancelled) || !DECIMAL.test(source.cancelled as string))) return null
   if (priced && source.price !== null && decodeLinePrice(source.price) === null) return null
@@ -682,14 +799,24 @@ function decodeDetailWith<Summary extends PurchaseOrderSummary>(
   readonly priceDisclosure?: PurchaseOrderPriceDisclosure
   readonly currency?: PurchaseOrderCurrency | null
   readonly pricePending?: boolean | null
+  readonly kgPrice?: PurchaseKgPrice
+  readonly realization?: PurchaseOrderRealization
 } | null {
   const source = record(value)
   if (source === null || !Array.isArray(source.lines)) return null
+  // AK-5: the document-level kg price indicator only rides on a priced body whose prices are visible.
+  const kgPriced = Object.prototype.hasOwnProperty.call(source, 'kgPrice')
+  const kgPrice = kgPriced ? decodePurchaseKgPrice(source.kgPrice) : undefined
+  if (kgPrice === null) return null
+  // AK-3b: the order's realization rides on the same priced, visible body; the document never carries an invoiced quantity.
+  const realized = Object.prototype.hasOwnProperty.call(source, 'realization')
+  const realization = realized ? decodePurchaseOrderRealization(source.realization) : undefined
+  if (realization === null || (realization !== undefined && realization.invoicedQuantity !== null)) return null
   const legacy = exact(source, ['order', 'lines'])
   const withHistory = exact(source, ['order', 'lines', 'acceptances']) && Array.isArray(source.acceptances)
   // A2a-1: the priced body adds the disclosure, the currency and "fiyat bekliyor"; every line then carries its price.
-  const priced = exact(source, ['order', 'lines', 'acceptances', 'cancellation', 'priceDisclosure', 'currency', 'pricePending'])
-    && Array.isArray(source.acceptances)
+  const priced = exact(source, ['order', 'lines', 'acceptances', 'cancellation', 'priceDisclosure', 'currency', 'pricePending',
+    ...(kgPriced ? ['kgPrice'] : []), ...(realized ? ['realization'] : [])]) && Array.isArray(source.acceptances)
   // A1-3: the current body always carries the cancellation (null unless Cancelled) and every line its cancelled share.
   const current = priced || (exact(source, ['order', 'lines', 'acceptances', 'cancellation']) && Array.isArray(source.acceptances))
   if (!legacy && !withHistory && !current) return null
@@ -715,7 +842,13 @@ function decodeDetailWith<Summary extends PurchaseOrderSummary>(
   if (priced) {
     const pricing = decodePricing(source, acceptedLines)
     if (pricing === null) return null
-    return { order, lines: acceptedLines, acceptances: acceptances as PurchaseOrderAcceptanceHistory[], cancellation, ...pricing }
+    if (pricing.priceDisclosure !== 'Visible' && (kgPrice !== undefined || realization !== undefined
+      || acceptedLines.some((line) => line.kgPrice !== undefined || line.realization !== undefined))) return null
+    return {
+      order, lines: acceptedLines, acceptances: acceptances as PurchaseOrderAcceptanceHistory[], cancellation, ...pricing,
+      ...(kgPrice === undefined ? {} : { kgPrice }),
+      ...(realization === undefined ? {} : { realization }),
+    }
   }
   if (acceptedLines.some((line) => line.price !== undefined)) return null
   return current

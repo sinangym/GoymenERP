@@ -1,14 +1,18 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using GoymenERP.BuildingBlocks.Messaging;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
+using GoymenERP.Modules.Logistics.Application.Outbox;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
+using GoymenERP.Modules.Sales.Domain.RiskExceptions;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -17,6 +21,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -28,7 +33,9 @@ namespace GoymenERP.Api.IntegrationTests;
 /// then Lapsed the next day). The database itself refuses a self-decision (CK maker-checker), a second pending exception of the
 /// same shipment (filtered unique index), a change of the request facts or a second decision (TR 51252) and any change of an
 /// attempt (TR 51253). Another company neither sees nor decides an exception; the migration refuses to roll back over a recorded
-/// exception (THROW 51251, forward fix). SENTETIK / NOT_ENV.
+/// exception (THROW 51251, forward fix). LOJ-D19 (SINAN-CEVAP 33): a mirrored Logistics usage is stored once, a dropped exception
+/// answers lapsed, the mirror is append-only (TR 51487) and its migration refuses to roll back over a usage (THROW 51488).
+/// SENTETIK / NOT_ENV.
 /// </summary>
 public sealed class SalesShipmentRiskExceptionSqlServerRelationalAcceptanceTests
 {
@@ -314,6 +321,147 @@ public sealed class SalesShipmentRiskExceptionSqlServerRelationalAcceptanceTests
         await context.Database.MigrateAsync();
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(4, await run.ScalarAsync<int>("SELECT [State] FROM [sales].[ShipmentRiskExceptions] WHERE [OrderId] = @id", ("@id", draft.Id)));
+    }
+
+    [SqlServerFact]
+    public async Task LOJ_D19_the_usage_mirror_drops_the_exception_once_is_append_only_and_its_Down_refuses_51488_while_a_usage_exists()
+    {
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k");
+        var guard = Assert.IsType<SqlOperation>(new AddShipmentRiskExceptionUsages().DownOperations[0]).Sql;
+        var clock = new Clock(T0);
+        await using (var scope = run.SalesStore(CompanyA, clock))
+        {
+            await run.Service(scope.Store, CompanyA, Shipper, clock).RequestRiskExceptionAsync(draft.Id,
+                new RequestSalesRiskExceptionRequest(Shipment, "SENTETIK"), Metadata("k-request"));
+            await run.Service(scope.Store, CompanyA, Manager, clock).ApproveRiskExceptionAsync(draft.Id, 1,
+                new SalesDraftStateCommandRequest("1"), Metadata("k-approve"));
+        }
+
+        // No usage is mirrored yet: the Down guard passes.
+        await run.ScalarAsync<int>(guard + " SELECT 1");
+        var definiteShipment = Guid.NewGuid();
+        SalesRiskExceptionUsageV1 Usage(SalesRiskExceptionUsageKind kind, Guid eventId) => new(kind, definiteShipment, draft.Id, Shipment, 1,
+            null, SalesLogisticsShipmentInboxV1.SourceName, eventId, T0, "SENTETIK-logistics-correlation", null);
+
+        // SAT-D285: the shipment used the exception, then it was cancelled; each is stored once (a redelivery changes nothing).
+        await using (var scope = run.SalesStore(CompanyA, clock))
+        {
+            Assert.Equal(SalesRiskExceptionUsageOutcome.Recorded,
+                await scope.Store.RecordRiskExceptionUsageAsync(Usage(SalesRiskExceptionUsageKind.Consumed, Guid.NewGuid())));
+            var dropped = Guid.NewGuid();
+            Assert.Equal(SalesRiskExceptionUsageOutcome.Recorded,
+                await scope.Store.RecordRiskExceptionUsageAsync(Usage(SalesRiskExceptionUsageKind.Dropped, dropped)));
+        }
+
+        await using (var scope = run.SalesStore(CompanyA, clock))
+        {
+            Assert.Equal(SalesRiskExceptionUsageOutcome.AlreadyRecorded,
+                await scope.Store.RecordRiskExceptionUsageAsync(Usage(SalesRiskExceptionUsageKind.Dropped, Guid.NewGuid())));
+            // The dropped exception answers lapsed on its own valid day, so the Logistics gate holds the shipment again.
+            var port = new SalesShipmentRiskExceptionReadPort(scope.Store, run.Company(CompanyA), clock);
+            Assert.Equal((SalesShipmentRiskExceptionStatusV1.Lapsed, (int?)1), Answer(await port.GetAsync(draft.Id, Shipment)));
+        }
+
+        // Another company sees no exception and its mirror refuses the reference (the tenant filter stands in front).
+        await using (var other = run.SalesStore(CompanyB, clock))
+        {
+            Assert.Equal(SalesRiskExceptionUsageOutcome.ExceptionNotFound,
+                await other.Store.RecordRiskExceptionUsageAsync(Usage(SalesRiskExceptionUsageKind.Consumed, Guid.NewGuid())));
+        }
+
+        Assert.Equal((2, 1, 1, 2), (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[ShipmentRiskExceptionUsages] WHERE [CompanyId] = @company", ("@company", CompanyA)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = @type",
+                ("@type", SalesLogisticsShipmentInboxV1.ConsumedAuditEventType)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = @type",
+                ("@type", SalesLogisticsShipmentInboxV1.DroppedAuditEventType)),
+            await run.ScalarAsync<int>("SELECT [State] FROM [sales].[ShipmentRiskExceptions] WHERE [OrderId] = @id", ("@id", draft.Id))));
+
+        // TR_ShipmentRiskExceptionUsages_Guard: a mirrored usage is never changed or removed.
+        Assert.Equal(51487, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+            "UPDATE [sales].[ShipmentRiskExceptionUsages] SET [CorrelationId] = N'SENTETIK-other' WHERE [ShipmentId] = @shipment; SELECT 1",
+            ("@shipment", definiteShipment)))).Number);
+        Assert.Equal(51487, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+            "DELETE FROM [sales].[ShipmentRiskExceptionUsages] WHERE [ShipmentId] = @shipment; SELECT 1", ("@shipment", definiteShipment)))).Number);
+
+        // Forward fix: the Down guard refuses while a usage exists, and the migrator stops at the migration.
+        Assert.Equal(51488, (await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(guard + " SELECT 1"))).Number);
+        await using var context = run.SalesContext(CompanyA);
+        var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+        var index = Array.FindIndex(applied, id => id.EndsWith("_AddShipmentRiskExceptionUsages", StringComparison.Ordinal));
+        Assert.True(index > 0);
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync(applied[index]);
+        var rollback = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[index - 1]));
+        Assert.Equal(51488, rollback.Number);
+        Assert.Equal(applied[..(index + 1)], await context.Database.GetAppliedMigrationsAsync());
+        await context.Database.MigrateAsync();
+        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[ShipmentRiskExceptionUsages]"));
+    }
+
+    [SqlServerFact]
+    public async Task SAT_S10_the_host_inbox_consumer_mirrors_the_logistics_payload_once_and_ignores_a_shipment_without_an_exception_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k");
+        var clock = new Clock(T0);
+        await using (var scope = run.SalesStore(CompanyA, clock))
+        {
+            await run.Service(scope.Store, CompanyA, Shipper, clock).RequestRiskExceptionAsync(draft.Id,
+                new RequestSalesRiskExceptionRequest(Shipment, "SENTETIK"), Metadata("k-request"));
+            await run.Service(scope.Store, CompanyA, Manager, clock).ApproveRiskExceptionAsync(draft.Id, 1,
+                new SalesDraftStateCommandRequest("1"), Metadata("k-approve"));
+        }
+
+        var definiteShipment = Guid.NewGuid();
+        var web = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        OutboxMessageEnvelopeV1 Envelope(string eventType, Guid shipmentId, int? exceptionNo) => new(
+            LogisticsDefiniteShipmentOutboxV1.SourceName, Guid.NewGuid(), CompanyA, eventType, LogisticsDefiniteShipmentOutboxV1.Version,
+            JsonSerializer.Serialize(new LogisticsDefiniteShipmentEventV1(CompanyA, shipmentId, draft.Id, Shipment, exceptionNo, null), web),
+            T0, "SENTETIK-logistics-correlation", null, "SENTETIK-position");
+
+        // The host-composed consumer in a dispatcher-like scope (the dispatcher sets the company per scope; it stays disabled here).
+        async Task DeliverAsync(OutboxMessageEnvelopeV1 message)
+        {
+            await using var scope = run.Factory.Services.CreateAsyncScope();
+            scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
+            var consumer = Assert.Single(scope.ServiceProvider.GetServices<IOutboxConsumerV1>(),
+                candidate => candidate.ConsumerName == SalesLogisticsShipmentInboxV1.ConsumerName);
+            await consumer.HandleAsync(message, CancellationToken.None);
+        }
+
+        // The Logistics payload (number only, no exception id) is mirrored once; a redelivery under another event id is quiet.
+        await DeliverAsync(Envelope(LogisticsDefiniteShipmentOutboxV1.RecordedEventType, definiteShipment, 1));
+        await DeliverAsync(Envelope(LogisticsDefiniteShipmentOutboxV1.RecordedEventType, definiteShipment, 1));
+        // A shipment within the limit names no exception: nothing of Sales is stored.
+        await DeliverAsync(Envelope(LogisticsDefiniteShipmentOutboxV1.RecordedEventType, Guid.NewGuid(), null));
+        // Another shipment cannot claim the consumed exception: the contract is broken, never retried.
+        var conflict = await Assert.ThrowsAsync<OutboxPermanentFailureException>(
+            () => DeliverAsync(Envelope(LogisticsDefiniteShipmentOutboxV1.RecordedEventType, Guid.NewGuid(), 1)));
+        Assert.Equal("risk_exception_shipment_conflict", conflict.Code);
+
+        Assert.Equal((1, 1, 0), (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[ShipmentRiskExceptionUsages] WHERE [CompanyId] = @company AND [ShipmentId] = @shipment",
+                ("@company", CompanyA), ("@shipment", definiteShipment)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = @type",
+                ("@type", SalesLogisticsShipmentInboxV1.ConsumedAuditEventType)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[ShipmentRiskExceptionUsages] WHERE [ShipmentId] <> @shipment",
+                ("@shipment", definiteShipment))));
+
+        // SAT-D285: the cancellation drops the exception (it is not reopened); the gate then answers lapsed.
+        await DeliverAsync(Envelope(LogisticsDefiniteShipmentOutboxV1.CancelledEventType, definiteShipment, 1));
+        await using (var scope = run.SalesStore(CompanyA, clock))
+        {
+            var port = new SalesShipmentRiskExceptionReadPort(scope.Store, run.Company(CompanyA), clock);
+            Assert.Equal((SalesShipmentRiskExceptionStatusV1.Lapsed, (int?)1), Answer(await port.GetAsync(draft.Id, Shipment)));
+        }
+
+        Assert.Equal((2, 1), (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[ShipmentRiskExceptionUsages] WHERE [CompanyId] = @company", ("@company", CompanyA)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = @type",
+                ("@type", SalesLogisticsShipmentInboxV1.DroppedAuditEventType))));
     }
 
     private static (SalesShipmentRiskExceptionStatusV1, int?) Answer(SalesShipmentRiskExceptionReadV1 read) => (read.Status, read.ExceptionNo);

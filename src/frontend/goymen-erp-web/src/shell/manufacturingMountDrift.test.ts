@@ -21,6 +21,7 @@ import {
   MANUFACTURING_NAV_LABEL,
   orderDetailPath,
   planDetailPath,
+  scrapPriceListPath,
 } from '../manufacturing/capabilities'
 
 describe('shell ↔ Manufacturing lane capability ids', () => {
@@ -30,6 +31,7 @@ describe('shell ↔ Manufacturing lane capability ids', () => {
     expect(CAPABILITY.manufacturingPlansCreate).toBe(MANUFACTURING_CAPABILITY.planCreate)
     expect(CAPABILITY.manufacturingPlansDetail).toBe(MANUFACTURING_CAPABILITY.planDetail)
     expect(CAPABILITY.manufacturingPlansList).toBe(MANUFACTURING_CAPABILITY.planList)
+    expect(CAPABILITY.manufacturingScrapPricesList).toBe(MANUFACTURING_CAPABILITY.scrapPriceList)
   })
 
   it('mounts every ROUTE the lane declares, and neither control', () => {
@@ -44,6 +46,8 @@ describe('shell ↔ Manufacturing lane capability ids', () => {
       MANUFACTURING_CAPABILITY.orderFacts,
       MANUFACTURING_CAPABILITY.orderClose,
       MANUFACTURING_CAPABILITY.orderCloseExceptionApprove,
+      // URT-S13: entering a month's scrap price is a control of the scrap price screen.
+      MANUFACTURING_CAPABILITY.scrapPriceRecord,
     ]) {
       expect(shellManufacturingIds.has(control)).toBe(false)
       expect(MANUFACTURING_ROUTE[control]).toBeUndefined()
@@ -85,6 +89,15 @@ describe('shell ↔ Manufacturing lane capability ids', () => {
       MANUFACTURING_NAV_LABEL[MANUFACTURING_CAPABILITY.planList],
     )
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.manufacturingPlansList]).toBe('')
+    // URT-S13: its own static route and no sidebar entry (reached from the order list).
+    expect(CAPABILITY_ROUTE[CAPABILITY.manufacturingScrapPricesList]).toBe(
+      MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.scrapPriceList],
+    )
+    expect(CAPABILITY_ROUTE[CAPABILITY.manufacturingScrapPricesList]).toBe(scrapPriceListPath())
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.manufacturingScrapPricesList]).toBe(
+      MANUFACTURING_NAV_LABEL[MANUFACTURING_CAPABILITY.scrapPriceList],
+    )
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.manufacturingScrapPricesList]).toBe('')
   })
 
   it('never reads the static plan-list path as a plan id, nor a plan path as the list', () => {

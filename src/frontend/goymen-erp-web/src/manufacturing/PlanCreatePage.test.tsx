@@ -14,10 +14,13 @@ import {
   installFetch,
   json,
   plan,
+  planRevision,
+  planRevisions,
   problem,
   reloadDocument,
   renderAt,
   requestsFor,
+  revisionInput,
   sessionBinding,
   type RecordedRequest,
 } from './testHarness'
@@ -84,6 +87,7 @@ function installPlanApi(options: {
   readonly failFirstSave?: boolean
   readonly commitThenLoseFirstSave?: boolean
   readonly refuseFirstSave?: boolean
+  readonly physicalCapRefusal?: boolean
   readonly candidates?: () => unknown
   readonly preview?: (body: Record<string, unknown>) => Response | Promise<Response>
   readonly capabilities?: readonly string[]
@@ -93,11 +97,12 @@ function installPlanApi(options: {
 } = {}) {
   let saves = 0
   let stored: Record<string, unknown> | null = null
+  let storedRevision: ReturnType<typeof planRevision> | null = null
   const actor = options.actor ?? (() => IDENTITY.userId)
   const session = options.session ?? (() => SESSION_1)
   const recorded = installFetch({
     capabilities: options.capabilities ?? [MANUFACTURING_CAPABILITY.planCreate, MANUFACTURING_CAPABILITY.planDetail],
-    identity: () => ({ ...IDENTITY, userId: actor(), authenticationSessionBinding: session() }),
+    identity: () => ({ ...IDENTITY, userId: actor(), mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: session() }),
     respond: (url, init) => {
       if (url.includes('/organization/work-centers')) return json([workCenter(), cutWorkCenter()])
       if (url.includes('/inventory/references/parent-rolls')) {
@@ -123,10 +128,13 @@ function installPlanApi(options: {
         if (options.refuseFirstSave && saves === 1) {
           return problem(409, { code: 'inventory_label_version_conflict' })
         }
+        if (options.physicalCapRefusal && saves === 1) {
+          return problem(422, { code: 'manufacturing_plan_label_not_usable', field: 'inputs[0].plannedKg' })
+        }
         const request = JSON.parse(init.body as string) as {
           planId: string
           workCenterId: string
-          inputs: Array<{ parentRollId: string; plannedKg: string }>
+          inputs: Array<{ parentRollId: string; plannedKg: string; expectedLabelVersion: string }>
           target: { basis: string; kg: string } | null
           slittingSpec?: {
             lines: Array<{ bandWidthMm: string; count: number }>
@@ -160,6 +168,17 @@ function installPlanApi(options: {
                   : canonicalDecimal(request.slittingSpec.windingTargetKg),
               },
         })
+        storedRevision = planRevision({
+          planVersion: stored.version,
+          workCenterId: request.workCenterId,
+          inputs: request.inputs.map(input => revisionInput(
+            input.parentRollId, canonicalDecimal(input.plannedKg), input.expectedLabelVersion,
+          )),
+          target: request.target,
+          cutToLengthSpec: stored.cutToLengthSpec,
+          lineSpeedMetresPerMinute: stored.lineSpeedMetresPerMinute,
+          processSpec: stored.processSpec,
+        })
         if (options.commitThenLoseFirstSave && saves === 1) throw new TypeError('response lost after commit')
         return json(stored, 201, {
           Location: `/api/v1/manufacturing/plans/${request.planId}`,
@@ -167,6 +186,10 @@ function installPlanApi(options: {
             ? { 'Idempotency-Replayed': 'true', 'Idempotency-Original-Correlation-Id': 'corr-slitting-1' }
             : {}),
         })
+      }
+      if (stored !== null && storedRevision !== null
+        && url.endsWith(`/manufacturing/plans/${stored.planId}/revisions`)) {
+        return json(planRevisions([storedRevision], stored.planId as string))
       }
       if (url.includes('/manufacturing/plans/') && init?.method !== 'POST' && stored !== null) return json(stored)
       return undefined
@@ -192,6 +215,28 @@ afterEach(() => {
 })
 
 describe('plan create and reopen', () => {
+  it('shows the server physical-total refusal, keeps the mass editable, and sends a corrected plan with a new key', async () => {
+    const user = userEvent.setup()
+    const recorded = installPlanApi({ physicalCapRefusal: true })
+    renderAt('/uretim/plan/yeni')
+    await fillPlan(user)
+    const mass = screen.getByLabelText('LBL-0007 planlanan kg')
+    await user.clear(mass)
+    await user.type(mass, '1200.501')
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+
+    expect(await screen.findByText(/etiketin tüm pozisyonlarındaki güncel fiziksel toplamını aşıyor/)).toBeTruthy()
+    expect(mass.hasAttribute('disabled')).toBe(false)
+    expect(saveRequests(recorded)[0].body).toMatchObject({ inputs: [{ plannedKg: '1200.501', expectedLabelVersion: '7' }] })
+    await user.clear(mass)
+    await user.type(mass, '1000')
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+    await screen.findByText('Taslak plan kaydedildi')
+    const [first, second] = saveRequests(recorded)
+    expect(second.headers['Idempotency-Key']).not.toBe(first.headers['Idempotency-Key'])
+    expect(second.body).toMatchObject({ inputs: [{ plannedKg: '1000', expectedLabelVersion: '7' }] })
+  })
+
   it('selects real work-center and Inventory facts, saves frozen label version, then reopens with GET', async () => {
     const user = userEvent.setup()
     const recorded = installPlanApi()
@@ -219,7 +264,8 @@ describe('plan create and reopen', () => {
     expect(await screen.findByRole('heading', { name: 'Plan yeniden açıldı' })).toBeTruthy()
     expect(screen.getByText('900.5')).toBeTruthy()
     // MFG-PLAN-EDIT: the reopened detail also reads the plan history; the plan read itself is once.
-    expect(requestsFor(recorded, '/manufacturing/plans/', 'GET').filter((request) => !request.url.endsWith('/revisions')))
+    expect(requestsFor(recorded, '/manufacturing/plans/', 'GET').filter((request) =>
+      new URL(request.url, 'http://localhost').pathname === `/api/v1/manufacturing/plans/${(save.body as { planId: string }).planId}`))
       .toHaveLength(1)
   })
 
@@ -239,7 +285,7 @@ describe('plan create and reopen', () => {
     expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
   })
 
-  it('previews, saves and reopens the exact ordered slitting draft content while keeping revision unavailable', async () => {
+  it('previews, saves and reopens the exact ordered slitting draft content and offers draft revision', async () => {
     const user = userEvent.setup()
     const recorded = installPlanApi({
       preview: (body) => json(previewAnswer(body)),
@@ -286,8 +332,10 @@ describe('plan create and reopen', () => {
     expect(rows[1].textContent).toContain('150 mm')
     expect(rows[2].textContent).toContain('240.5 mm')
     expect(within(section).getByText('Sarım hedefi: 2000 kg')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Planı düzenle' })).toBeNull()
-    expect(screen.getByText(/Dilme ayrıntısı taşıyan plan düzenlenmez/)).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Planı düzenle' }))
+    expect(await screen.findByRole('button', { name: 'Değişikliği kaydet' })).toBeTruthy()
+    expect(requestsFor(recorded, `/manufacturing/plans/${(saved.body as { planId: string }).planId}/revision`, 'POST'))
+      .toHaveLength(0)
   })
 
   it('allows a new attempt with a new key after a definitive refusal', async () => {

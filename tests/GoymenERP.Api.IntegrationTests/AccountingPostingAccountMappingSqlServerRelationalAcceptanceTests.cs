@@ -25,7 +25,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// plan and grant is SENTETIK. The active approved account plan is prepared and activated through the existing
 /// catalog routes; the mapping is prepared by one SENTETIK actor and activated by another.
 /// </summary>
-public sealed class AccountingPostingAccountMappingSqlServerRelationalAcceptanceTests
+public sealed partial class AccountingPostingAccountMappingSqlServerRelationalAcceptanceTests
 {
     private const string MappingsPath = "/api/v1/accounting/posting-account-mappings";
     private const string PackagesPath = "/api/v1/accounting/approved-source-catalog/packages";
@@ -475,7 +475,9 @@ public sealed class AccountingPostingAccountMappingSqlServerRelationalAcceptance
                 ApprovedAccountingSourcePackageTemplateV1.AccountsHeader + "\n"
                 + $"{Receivable120:D},120.01,SENTETIK alicilar\n"
                 + $"{Revenue600:D},600.01,SENTETIK yurt ici satislar\n"
-                + $"{Export601:D},601.01,SENTETIK yurt disi satislar\n");
+                + $"{Export601:D},601.01,SENTETIK yurt disi satislar\n"
+                + $"{CogsManufactured620:D},620,SENTETIK mamul maliyeti\n"
+                + $"{CogsTrade621:D},621,SENTETIK ticari mal maliyeti\n");
             var mappings = Encoding.UTF8.GetBytes(
                 ApprovedAccountingSourcePackageTemplateV1.MappingsHeader + "\n"
                 + $"30000000-0000-4000-8000-000000000001,{NormalJournalSourceKindsV1.RecordedManualReceipt},v1,profile,"

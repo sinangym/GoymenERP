@@ -1,10 +1,10 @@
 /**
  * ST-01's read of the #597 stock positions in the OPT-IN shape (contract pin d821e6b8, handoff STOK-UX r7).
  *
- * - STOCK-OWNER-DISPLAY-3: sends `X-ERP-Inventory-Stock-Display: 3.0` exactly once (#664: Product + Location + Owner
- *   display) and decodes only with the `3.0` decoder of `./stockDisplayContract`. The `1.0` and `2.0` decoders stay
- *   for their readers; a `3.0` answer is never decoded as `2.0`, `1.0` or legacy, and a failed `3.0` read is never
- *   retried as any of them.
+ * - P03.2: sends `X-ERP-Inventory-Stock-Display: 4.0` exactly once (#738: the #664 Product + Location + Owner display
+ *   with the Product card's nominal length) and decodes only with the `4.0` decoder of `./stockDisplayContract`. The
+ *   `1.0`–`3.0` decoders stay for their readers; a `4.0` answer is never decoded as an older shape, and a failed `4.0`
+ *   read is never retried as any of them.
  * - Sends only the published query keys, each at most once: `q`, `limit`, `cursor`, `productId`, `locationId`,
  *   `classification`, `ownerKind` + `ownerId` together or not at all, and the typed filters of #690:
  *   `productFamilyId`, `thicknessMm` or `thicknessMinMm`/`thicknessMaxMm`, `widthMm` or `widthMinMm`/`widthMaxMm`.
@@ -19,11 +19,11 @@
 import type { ViewOutcome } from '../shell/uiState'
 import { API_BASE, INVENTORY_STOCK_POSITIONS_PATH, inventoryHeaders } from './api'
 import {
-  decodeStockOwnerDisplayPage,
+  decodeStockLengthDisplayPage,
   STOCK_CLASSIFICATIONS,
   STOCK_PARTY_KINDS,
   type StockClassification,
-  type StockOwnerDisplayPage,
+  type StockLengthDisplayPage,
   type StockPartyKind,
 } from './stockDisplayContract'
 
@@ -32,8 +32,10 @@ export const STOCK_DISPLAY_HEADER = 'X-ERP-Inventory-Stock-Display'
 export const STOCK_DISPLAY_VERSION_PRODUCT = '1.0'
 /** The Product + Location shape (#607); its decoder is kept for its readers. */
 export const STOCK_DISPLAY_VERSION_LOCATION = '2.0'
-/** The Product + Location + Owner shape (#664) this screen selects. */
-export const STOCK_DISPLAY_VERSION = '3.0'
+/** The Product + Location + Owner shape (#664); its decoder is kept for its readers. */
+export const STOCK_DISPLAY_VERSION_OWNER = '3.0'
+/** The same shape with the Product card's nominal length (#738) — the one this screen selects. */
+export const STOCK_DISPLAY_VERSION = '4.0'
 /** The server's default page size; changing it would only reset the cursor. */
 export const STOCK_PAGE_LIMIT = 25
 /** The Inventory owner's label-code limit after trimming (`MaterialLabel.MaximumCodeLength`). */
@@ -47,7 +49,10 @@ export interface StockOwnerFilter {
   readonly id: string
 }
 
-/** The two nominal measures the server filters on (#690). Length has no published source and is not offered. */
+/**
+ * The two nominal measures the server filters on (#690). The nominal length is read and shown (`4.0`), but the server
+ * publishes no length filter, so none is offered or sent.
+ */
 export const STOCK_MEASURES = ['thickness', 'width'] as const
 export type StockMeasure = (typeof STOCK_MEASURES)[number]
 
@@ -216,7 +221,7 @@ export async function fetchStockDisplayPage(
   filters: StockPositionFilters,
   cursor: string | null,
   signal?: AbortSignal,
-): Promise<ViewOutcome<StockOwnerDisplayPage>> {
+): Promise<ViewOutcome<StockLengthDisplayPage>> {
   const query = stockPositionQuery(filters, cursor)
   if (query === null) return { type: 'malformed' }
   try {
@@ -227,7 +232,7 @@ export async function fetchStockDisplayPage(
     })
     const body = await bodyOf(response)
     if (response.status !== 200) return { type: 'http', status: response.status, body }
-    const decoded = decodeStockOwnerDisplayPage(body)
+    const decoded = decodeStockLengthDisplayPage(body)
     if (decoded === null || decoded.items.some((item) => item.companyId !== companyId)) return { type: 'malformed' }
     return { type: 'ok-single', data: decoded }
   } catch {

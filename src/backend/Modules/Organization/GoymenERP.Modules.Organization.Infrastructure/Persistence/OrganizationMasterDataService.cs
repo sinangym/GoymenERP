@@ -21,7 +21,7 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence;
 /// context fences every read and write (tenant query filter plus the DbContext write guard), and each record kind is
 /// scope-checked on its own write permission with the module's shared predicates.
 /// </summary>
-internal sealed class OrganizationMasterDataService(
+internal sealed partial class OrganizationMasterDataService(
     OrganizationDbContext dbContext,
     ICurrentUser currentUser,
     ICompanyContext companyContext,
@@ -30,7 +30,7 @@ internal sealed class OrganizationMasterDataService(
     IOrganizationLocationOperatorEligibilityPortV1 locationOperatorEligibility,
     IAuditEventCollector auditEventCollector,
     ILogger<OrganizationMasterDataService> logger)
-    : IOrganizationMasterDataService
+    : IOrganizationMasterDataService, IOrganizationWorkCenterCalendarService, IOrganizationCompanyTaxIdService
 {
     private const int CommandExecutionSchemaVersion = 1;
     internal const string CreateSiteCommandName = "organization.site.create.v1";

@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchShipmentAllocations, recordDelivery, recordShipment } from './api'
-import { parseQuantityInput, type InstructionDetail, type InstructionLine, type InstructionMutation } from './contract'
+import { isPieceLine, parseQuantityInput, type InstructionDetail, type InstructionLine, type InstructionMutation } from './contract'
 import { REALIZATION_CAPABILITY, shipmentRemainder, type RecordDeliveryRequest, type RecordShipmentRequest } from './realizationContract'
 import { abandon, applyOutcome, attemptBinding, beginSend, decideSubmit, generateAttemptKey, generateClientId,
   isOutcomeStillUnknown, liveSnapshot, type AttemptSnapshot, type AttemptState, type CommandOutcome } from './instructionAttempt'
@@ -14,6 +14,8 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { classifyOutcome } from '../shell/uiState'
 import { StateBlock } from '../shell/StateBlock'
 import styles from './LogisticsPages.module.css'
+import { PlanExcessUseEditor, planExcessUsePayload } from './PlanExcessUseEditor'
+import type { PlanExcessUse } from './planExcessApi'
 
 interface Props {
   readonly shell: ShellState
@@ -128,6 +130,9 @@ function ShipmentForm(props: LineProps) {
       instructionId: detail.instruction.id, idempotencyKey: snapshot.key }))
   const [allocationId, setAllocationId] = useState(attempt.initialPayload?.allocationId ?? '')
   const [quantity, setQuantity] = useState(attempt.initialPayload?.quantity ?? '')
+  const [quantityKg, setQuantityKg] = useState(attempt.initialPayload?.quantityKg ?? '')
+  const piece = isPieceLine(line)
+  const [planExcessUses, setPlanExcessUses] = useState<readonly PlanExcessUse[]>(attempt.initialPayload?.planExcessUses ?? [])
   const [error, setError] = useState(false)
   const allocations = query.data?.type === 'ok-single' ? query.data.data.items.filter((item) => item.status === 'Active') : []
   const chosen = allocations.find((item) => item.allocationId === allocationId)
@@ -136,13 +141,20 @@ function ShipmentForm(props: LineProps) {
   function submit(event: React.FormEvent) {
     event.preventDefault()
     const parsed = parseQuantityInput(quantity)
-    if (!active || chosen === undefined || !parsed.ok) { setError(true); return }
+    // AK-4 (KLN-D119): a piece line's shipment sends the physical kg of the pieces leaving; a kg line's never does.
+    const parsedKg = piece ? parseQuantityInput(quantityKg) : null
+    const exceptionSelection = planExcessUsePayload(planExcessUses)
+    if (!active || chosen === undefined || !parsed.ok || (parsedKg !== null && !parsedKg.ok) || exceptionSelection === null) { setError(true); return }
     setError(false)
+    const kg = parsedKg?.ok ? parsedKg.value : undefined
     const live = attempt.live?.payload
-    const payload = live !== undefined && live.allocationId === allocationId && live.quantity === parsed.value ? live : {
+    const payload = live !== undefined && live.allocationId === allocationId && live.quantity === parsed.value && live.quantityKg === kg
+      && JSON.stringify(live.planExcessUses ?? []) === JSON.stringify(exceptionSelection.planExcessUses ?? []) ? live : {
       expectedVersion: detail.instruction.version, shipmentId: generateClientId(), allocationId,
       expectedAllocationVersion: chosen.allocationVersion, expectedLabelVersion: chosen.labelVersion,
       movementId: generateClientId(), quantity: parsed.value, occurredAtUtc: new Date().toISOString(),
+      ...exceptionSelection,
+      ...(kg === undefined ? {} : { quantityKg: kg }),
     }
     attempt.submit(payload)
   }
@@ -163,13 +175,19 @@ function ShipmentForm(props: LineProps) {
           <select id={`${id}-allocation`} value={allocationId} onChange={(event) => setAllocationId(event.target.value)}>
             <option value="">{T.choose}</option>
             {allocations.map((item) => <option key={item.allocationId} value={item.allocationId}>
-              {T.labelReference} {item.labelId.slice(-8)} / {T.allocationReference} {item.allocationId.slice(-8)} ({T.remaining}: {item.remainingKg} kg)
+              {T.labelReference} {item.labelId.slice(-8)} / {T.allocationReference} {item.allocationId.slice(-8)} ({T.remaining}: {item.remainingKg} kg{item.remainingPieces === undefined ? '' : T.remainingPieces(item.remainingPieces)})
             </option>)}
           </select>
-          <label htmlFor={`${id}-quantity`}>{T.quantity}</label>
+          <label htmlFor={`${id}-quantity`}>{piece ? T.quantityPieces : T.quantity}</label>
           <input id={`${id}-quantity`} inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} aria-invalid={error || undefined} />
+          {piece ? <>
+            <label htmlFor={`${id}-quantity-kg`}>{T.quantityKg}</label>
+            <input id={`${id}-quantity-kg`} inputMode="decimal" required aria-required="true" value={quantityKg}
+              onChange={(event) => setQuantityKg(event.target.value)} aria-invalid={error || undefined} />
+          </> : null}
         </div>
-        {error ? <p role="alert">{T.invalid}</p> : null}
+        {error ? <p role="alert">{piece ? T.invalidPieces : T.invalid}</p> : null}
+        <PlanExcessUseEditor instructionId={detail.instruction.id} lineId={line.lineId} purpose="ship" value={planExcessUses} onChange={setPlanExcessUses} disabled={!active || attempt.frozen} />
         <button className={styles.primaryButton} type="submit" disabled={chosen === undefined} data-testid={`${id}-submit`}>{T.shipment}</button>
       </fieldset>
     </form>
@@ -214,10 +232,10 @@ function DeliveryForm(props: LineProps) {
           <select id={`${id}-source`} value={sourceShipmentId} onChange={(event) => setSourceShipmentId(event.target.value)}>
             <option value="">{T.choose}</option>
             {shipments.map((share) => <option key={share.shareId} value={share.shareId}>
-              {T.shipmentReference} {share.shareId.slice(-8)} / {formatInstant(share.recordedAtUtc)} ({T.remaining}: {shipmentRemainder(share, detail.shares)} kg)
+              {T.shipmentReference} {share.shareId.slice(-8)} / {formatInstant(share.recordedAtUtc)} ({T.remaining}: {shipmentRemainder(share, detail.shares)} {isPieceLine(line) ? T.pieceUnit : T.kgUnit})
             </option>)}
           </select>
-          <label htmlFor={`${id}-quantity`}>{T.quantity}</label>
+          <label htmlFor={`${id}-quantity`}>{isPieceLine(line) ? T.quantityPieces : T.quantity}</label>
           <input id={`${id}-quantity`} inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} aria-invalid={error || undefined} />
         </div>
         {error ? <p role="alert">{T.invalid}</p> : null}

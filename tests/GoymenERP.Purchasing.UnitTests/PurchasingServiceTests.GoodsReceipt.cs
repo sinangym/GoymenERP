@@ -8,6 +8,41 @@ namespace GoymenERP.Purchasing.UnitTests;
 public sealed partial class PurchasingServiceTests
 {
     [Fact]
+    public async Task Receipt_options_carry_the_purchasing_general_target_and_the_owner_allocation_measurement()
+    {
+        var (world, reader, orderId, lineId, _) = await ReceiptDetailWorldAsync();
+        var options = await world.Service(reads: reader).GetGoodsReceiptOptionsAsync(orderId, lineId);
+        Assert.Equal(lineId, options.Source.PurchaseOrderGeneralLineId);
+        Assert.Equal(new PurchaseReceiptFutureSupplySummaryV1(Company, orderId, lineId, options.Source.UnitId, "2.125"), options.FutureSupply);
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("company")]
+    [InlineData("order")]
+    [InlineData("general")]
+    [InlineData("unit")]
+    [InlineData("quantity")]
+    public async Task Receipt_options_do_not_hide_an_inconsistent_allocation_summary(string fault)
+    {
+        var (world, reader, orderId, lineId, _) = await ReceiptDetailWorldAsync();
+        reader.OptionsFault = fault;
+        var refused = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service(reads: reader).GetGoodsReceiptOptionsAsync(orderId, lineId));
+        Assert.Equal((503, PurchaseGoodsReceiptCodesV1.SourceInvalid), (refused.Status, refused.Code));
+    }
+
+    [Fact]
+    public async Task Receipt_options_revalidate_the_receipt_command_permission_after_the_advisory_owner_read()
+    {
+        var (world, reader, orderId, lineId, _) = await ReceiptDetailWorldAsync();
+        reader.BeforeReturn = () => world.Authority.Granted = false;
+        var refused = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service(reads: reader).GetGoodsReceiptOptionsAsync(orderId, lineId));
+        Assert.Equal(403, refused.Status);
+    }
+
+    [Fact]
     public async Task Receipt_detail_reopens_the_exact_owner_source_without_mutating_the_order()
     {
         var (world, reader, orderId, _, receipt) = await ReceiptDetailWorldAsync();
@@ -106,6 +141,8 @@ public sealed partial class PurchasingServiceTests
         var (world, runner, orderId, lineId) = await ReceiptWorldAsync();
         var request = ReceiptRequest();
         var result = await world.Service(runner).RecordGoodsReceiptAsync(orderId, lineId, request, Metadata("receipt-1"));
+        Assert.Equal(new PurchaseGoodsReceiptTargetV1(orderId, lineId, request.ExpectedPurchaseOrderVersion), runner.Target);
+        Assert.Equal(request.AcceptanceId, runner.AcceptanceId);
         Assert.Equal(("4", "2", "1.9", "Free"), (result.Receipt.PurchaseOrderVersion, result.Receipt.AcceptedQuantity,
             result.Receipt.MeasuredQuantityKg, result.Receipt.InitialBlock));
         Assert.Equal("4", runner.Stock!.PurchaseOrderVersionAfter);
@@ -199,6 +236,24 @@ public sealed partial class PurchasingServiceTests
         Assert.Empty(runner.Events);
     }
 
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("company")]
+    public async Task Preflight_failure_rechecks_the_original_receipt_authority_before_disclosing_a_lock_or_owner_refusal(string fault)
+    {
+        var (world, runner, orderId, lineId) = await ReceiptWorldAsync();
+        runner.BeforePreparationFailure = () =>
+        {
+            if (fault == "permission") world.Authority.Granted = false;
+            else world.Company.CurrentCompanyId = Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+        };
+        var refused = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service(runner)
+            .RecordGoodsReceiptAsync(orderId, lineId, ReceiptRequest(), Metadata("receipt-preflight-denied")));
+        Assert.Equal((403, "forbidden"), (refused.Status, refused.Code));
+        Assert.Empty(runner.Events);
+        Assert.Null(runner.Stock);
+    }
+
     [Fact]
     public async Task Final_authority_loss_refuses_commit_after_both_stages()
     {
@@ -271,9 +326,29 @@ public sealed partial class PurchasingServiceTests
         public PurchaseGoodsReceiptViewV1? Receipt { get; set; } = receipt;
         public Action? BeforeReturn { get; set; }
         public int Calls { get; private set; }
+        public string? OptionsFault { get; set; }
 
         public Task<PurchaseGoodsReceiptOptionsV1> GetOptionsAsync(PurchaseReceiptSourceV1 source,
-            CancellationToken cancellationToken) => throw new NotSupportedException();
+            CancellationToken cancellationToken)
+        {
+            Calls++;
+            var future = new PurchaseReceiptFutureSupplySummaryV1(source.CompanyId, source.PurchaseOrderId,
+                source.PurchaseOrderGeneralLineId, source.UnitId, "2.125");
+            BeforeReturn?.Invoke();
+            return Task.FromResult(new PurchaseGoodsReceiptOptionsV1(source, [], false)
+            {
+                FutureSupply = OptionsFault switch
+                {
+                    "missing" => null,
+                    "company" => future with { CompanyId = Guid.NewGuid() },
+                    "order" => future with { PurchaseOrderId = Guid.NewGuid() },
+                    "general" => future with { PurchaseOrderGeneralLineId = Guid.NewGuid() },
+                    "unit" => future with { UnitId = Guid.NewGuid() },
+                    "quantity" => future with { ActiveAllocatedQuantity = "2.1250" },
+                    _ => future,
+                },
+            });
+        }
 
         public Task<PurchaseGoodsReceiptViewV1?> GetReceiptAsync(Guid orderId, Guid acceptanceId,
             CancellationToken cancellationToken)
@@ -288,15 +363,30 @@ public sealed partial class PurchasingServiceTests
     {
         public List<string> Events { get; } = [];
         public PurchaseReceiptStockRequestV1? Stock { get; private set; }
+        public PurchaseAcceptanceStageRequestV1? Purchase { get; private set; }
+        public PurchaseGoodsReceiptTargetV1? Target { get; private set; }
+        public Guid AcceptanceId { get; private set; }
         public PurchaseReceiptStockRequestV1? Original { get; set; }
         public bool PositionSourceUnavailable { get; set; }
         public IReadOnlyList<string>? RequiredDocuments { get; set; }
         public Action? BeforeFence { get; set; }
+        public Action? BeforePreparationFailure { get; set; }
 
-        public async Task<T> ExecuteAsync<T>(Guid companyId, Func<IPurchaseGoodsReceiptParticipantsV1, CancellationToken, Task<T>> operation,
+        public async Task<T> ExecuteAsync<T>(Guid companyId, PurchaseGoodsReceiptTargetV1 target, Guid acceptanceId,
+            PurchasingWriteEnvelope envelope, Func<IPurchaseGoodsReceiptParticipantsV1, CancellationToken, Task<T>> operation,
             Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default)
         {
             Assert.Equal(Company, companyId);
+            Target = target;
+            AcceptanceId = acceptanceId;
+            Assert.NotEqual(Guid.Empty, target.PurchaseOrderId);
+            Assert.NotEqual(Guid.Empty, target.PurchaseOrderLineId);
+            Assert.NotEqual(Guid.Empty, acceptanceId);
+            if (BeforePreparationFailure is { } fail)
+            {
+                fail();
+                throw new PurchasingServiceException(409, PurchaseAcceptanceParticipantCodes.LineBusy);
+            }
             var result = await operation(this, cancellationToken);
             BeforeFence?.Invoke();
             Events.Add("fence");
@@ -323,9 +413,17 @@ public sealed partial class PurchasingServiceTests
             CancellationToken cancellationToken)
         {
             Events.Add("purchase");
+            Purchase = request;
             return Task.FromResult(new PurchaseAcceptanceStageResultV1(Company, request.AcceptanceId, request.PurchaseOrderId,
-                request.PurchaseOrderLineId, "4", request.AcceptedQuantity, "8", Original is not null, "synthetic-correlation"));
+                request.PurchaseOrderLineId, "4", request.AcceptedQuantity, "8", Original is not null, "synthetic-correlation")
+            {
+                // AK-3b: a first attempt records the comparison it is given; a replay answers what was recorded with the acceptance.
+                PieceKilograms = Original is null ? request.PieceKilograms : RecordedPieceKilograms,
+            });
         }
+
+        /// <summary>AK-3b: the piece comparison stored with the original acceptance (what a replay answers); null = none recorded.</summary>
+        public PurchaseGoodsReceiptPieceKilogramsV1? RecordedPieceKilograms { get; set; }
 
         public Task<PurchaseReceiptStockResultV1> StageInventoryAsync(PurchaseReceiptStockRequestV1 request, PurchasingWriteEnvelope envelope,
             CancellationToken cancellationToken)
@@ -335,7 +433,10 @@ public sealed partial class PurchasingServiceTests
             return Task.FromResult(new PurchaseReceiptStockResultV1(Company, request.AcceptanceId, request.PurchaseOrderId,
                 request.PurchaseOrderLineId, request.PurchaseOrderVersionAfter, request.ProductId, request.ExpectedProductVersion,
                 request.PurchaseUnitId, request.LotId, request.LabelId, "1", request.MovementId, request.QuantityKg,
-                Original is not null, "synthetic-correlation"));
+                Original is not null, "synthetic-correlation") { FutureSupplyReleases = FutureSupplyReleases! });
         }
+
+        /// <summary>KLN-D94: what the host reports as released future allocations (null simulates a broken adapter).</summary>
+        public IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1>? FutureSupplyReleases { get; set; } = [];
     }
 }

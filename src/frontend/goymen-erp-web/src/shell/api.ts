@@ -13,6 +13,7 @@
  */
 
 import type { ViewOutcome } from './uiState'
+import { developmentIdentityHeaderEnabled } from './authMode'
 
 export interface IdentitySummary {
   readonly userId: string
@@ -29,6 +30,9 @@ export interface IdentitySummary {
    * client never derives, trims, reshapes or substitutes a value for it.
    */
   readonly authenticationSessionBinding: string | null
+  readonly mustChangePassword: boolean
+  /** Required-nullable decimal version of the local credential (ID-2). */
+  readonly localCredentialVersion: string | null
 }
 
 export interface CompanySummary {
@@ -54,11 +58,10 @@ export const SHELL_CAPABILITY_CONTRACT_VERSION = 'SHELL-CAPABILITY-V1'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
-const DEV_IDENTITY_ENABLED =
-  import.meta.env.DEV || import.meta.env.VITE_BOOTSTRAP_IDENTITY_ENABLED === 'true'
 
+/** ID-1F: never sent in local-account mode (see the shell authMode module). */
 function devHeaders(): Record<string, string> {
-  return DEV_IDENTITY_ENABLED ? { 'X-Development-User': DEV_USER } : {}
+  return developmentIdentityHeaderEnabled() ? { 'X-Development-User': DEV_USER } : {}
 }
 
 interface RawResult {
@@ -111,7 +114,12 @@ function isIdentitySummary(value: unknown): value is IdentitySummary {
     (identity.email === null || typeof identity.email === 'string') &&
     Array.isArray(identity.allowedCompanyIds) &&
     identity.allowedCompanyIds.every((id) => typeof id === 'string') &&
-    isSessionBinding(identity)
+    isSessionBinding(identity) &&
+    typeof identity.mustChangePassword === 'boolean' &&
+    (identity.localCredentialVersion === null ||
+      (typeof identity.localCredentialVersion === 'string' && identity.localCredentialVersion.length <= 19 && /^[1-9]\d*$/.test(identity.localCredentialVersion) &&
+        BigInt(identity.localCredentialVersion) <= 9223372036854775807n)) &&
+    (!identity.mustChangePassword || identity.localCredentialVersion !== null)
   )
 }
 

@@ -4,10 +4,11 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Organization.Application.Contracts;
+using GoymenERP.Modules.Organization.Domain.WorkCenters;
 
 namespace GoymenERP.Api.Endpoints;
 
-public static class OrganizationEndpoints
+public static partial class OrganizationEndpoints
 {
     private const string IdempotencyHeaderName = "Idempotency-Key";
 
@@ -461,7 +462,125 @@ public static class OrganizationEndpoints
             .RequireCompanyContext()
             .RequireAuthorization(OrganizationPermissionManifestV1.WorkCentersWrite)
             .WithMasterDataUpdateContract<UpdateWorkCenter>("UpdateOrganizationWorkCenterV1");
+
+        MapWorkCenterCalendar(group);
+        MapCompanyTaxId(group);
+        MapCompanyOpening(group);
     }
+
+    /// <summary>
+    /// B-15 (URT-D11 "hat bazında değiştirilebilir"; URT-D29 keeps capacity computation out of v1): one work centre's
+    /// shift and closed-date calendar. The read is the work-centre read's grant and scope and answers the URT-D11
+    /// default at version 0 while none is saved; the write is its own permission, replaces the whole calendar as a new
+    /// revision under <c>expectedVersion</c>, and follows the master edit's protocol (Idempotency-Key, code-less 404 for
+    /// another company's / out-of-scope / unknown, code-less 409 carrying <c>conflict</c>).
+    /// </summary>
+    private static void MapWorkCenterCalendar(RouteGroupBuilder group)
+    {
+        group.MapGet("/work-centers/{id:guid}/calendar", async (
+                Guid id,
+                IOrganizationWorkCenterCalendarService service,
+                CancellationToken cancellationToken) =>
+        {
+            var calendar = await service.GetAsync(id, cancellationToken);
+            return calendar is null
+                ? NotFound()
+                : Results.Ok(calendar);
+        }).RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.OrganizationWorkCentersRead)
+            .WithName("GetOrganizationWorkCenterCalendarV1")
+            .Produces<WorkCenterCalendarDetail>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapPut("/work-centers/{id:guid}/calendar", async (
+                Guid id,
+                SetWorkCenterCalendar command,
+                IOrganizationWorkCenterCalendarService service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+        {
+            if (!OrganizationWorkCenterCalendarRules.TryParse(command, out _, out var error))
+            {
+                return InvalidMasterData(WorkCenterCalendarErrorDetail(error));
+            }
+
+            if (command.ExpectedVersion < OrganizationWorkCenterCalendarRules.DefaultVersion)
+            {
+                return Results.Problem(
+                    title: "Beklenen sürüm gerekli.",
+                    detail: "Takvim için sıfır veya daha büyük beklenen sürüm zorunludur.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (!OrganizationMasterDataRules.IsValidReason(command.Reason))
+            {
+                return Results.Problem(
+                    title: "Gerekçe gerekli.",
+                    detail: "Kritik değişiklik için 1-1000 karakter arasında bir gerekçe girin.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (!TryReadCommandMetadata(
+                    httpContext,
+                    currentUser,
+                    companyContext,
+                    correlationContext,
+                    out var metadata))
+            {
+                return Results.Problem(
+                    title: "Command bilgisi eksik.",
+                    detail: "İşlem için geçerli Idempotency-Key ve correlation bilgisi gerekir.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var execution = await service.SetAsync(id, command, metadata, cancellationToken);
+            if (execution.IsReplay)
+            {
+                httpContext.Response.Headers["Idempotency-Replayed"] = "true";
+                httpContext.Response.Headers["Idempotency-Original-Correlation-Id"] =
+                    execution.OriginalCorrelationId;
+            }
+
+            return ToHttpResult(execution.Response);
+        }).RequireCompanyContext()
+            .RequireAuthorization(OrganizationPermissionManifestV1.WorkCenterCalendarsWrite)
+            .WithIdempotencyContract(
+                StatusCodes.Status204NoContent,
+                StatusCodes.Status404NotFound,
+                StatusCodes.Status409Conflict)
+            .WithName("SetOrganizationWorkCenterCalendarV1")
+            .Accepts<SetWorkCenterCalendar>("application/json")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesErpBadRequest()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpCodeLessConflict()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    private static string WorkCenterCalendarErrorDetail(WorkCenterCalendarDefinitionError error) => error switch
+    {
+        WorkCenterCalendarDefinitionError.NoShift => "Takvimde en az bir vardiya olmalıdır.",
+        WorkCenterCalendarDefinitionError.TooManyShifts =>
+            $"Bir güne en fazla {WorkCenterCalendarDefinition.MaximumShiftsPerDay} vardiya tanımlanabilir.",
+        WorkCenterCalendarDefinitionError.ShiftNotOnWholeMinute => "Vardiya saatleri tam dakika olmalıdır.",
+        WorkCenterCalendarDefinitionError.ShiftNotPositive =>
+            "Vardiya başlangıcı ile bitişi aynı olamaz; bitiş başlangıçtan önceyse vardiya ertesi güne taşar.",
+        WorkCenterCalendarDefinitionError.ShiftsOverlap =>
+            "Vardiyalar çakışmamalıdır; ertesi güne taşan vardiya o günün vardiyalarıyla da çakışmamalıdır.",
+        WorkCenterCalendarDefinitionError.TooManyClosedDates =>
+            $"En fazla {WorkCenterCalendarDefinition.MaximumClosedDateCount} kapalı gün tanımlanabilir.",
+        WorkCenterCalendarDefinitionError.DuplicateClosedDate => "Aynı kapalı gün iki kez girilemez.",
+        _ => $"Vardiyalar gün ({string.Join(", ", OrganizationWorkCenterCalendarRules.DayTokens)}) ve "
+            + $"{OrganizationWorkCenterCalendarRules.TimeFormat} saatleriyle, kapalı günler "
+            + $"{OrganizationWorkCenterCalendarRules.DateFormat} biçiminde girilmelidir.",
+    };
 
     private static RouteHandlerBuilder WithMasterDataCreateContract<TCommand>(
         this RouteHandlerBuilder builder,

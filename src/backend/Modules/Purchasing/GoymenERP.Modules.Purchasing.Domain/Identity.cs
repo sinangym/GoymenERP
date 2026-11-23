@@ -27,6 +27,20 @@ public sealed class PurchasingRuleException(string code, string message) : Inval
 /// <summary>The stable refusal codes of the Purchasing domain.</summary>
 public static class PurchasingRuleCodes
 {
+    /// <summary>AK-3 (SAT-D437): a theoretical kg/piece snapshot is not positive, too fine or without its source version.</summary>
+    public const string TheoreticalKilogramsInvalid = "purchasing_theoretical_kilograms_invalid";
+
+    /// <summary>AK-3 (SAT-D437, fail-closed): a piece line has no theoretical kg source, so the order is not approved.</summary>
+    public const string TheoreticalKilogramsMissing = "purchasing_theoretical_kilograms_missing";
+
+    /// <summary>AK-3 (SAT-D437): a snapshot is only recorded on a Draft piece general line that has none yet.</summary>
+    public const string TheoreticalKilogramsNotApplicable = "purchasing_theoretical_kilograms_not_applicable";
+
+    public const string ReceiptAdjustmentReasonInvalid = "purchasing_receipt_adjustment_reason_invalid";
+    public const string ReceiptAdjustmentDuplicate = "purchasing_receipt_adjustment_duplicate";
+    public const string ReceiptAdjustmentInvalid = "purchasing_receipt_adjustment_invalid";
+    public const string ReceiptAdjustmentExceedsAcceptance = "purchasing_receipt_adjustment_exceeds_acceptance";
+    public const string ReceiptAdjustmentAcceptanceNotFound = "purchasing_receipt_adjustment_acceptance_not_found";
     public const string RequestNotDraft = "purchasing_request_not_draft";
     public const string RequestNotSubmitted = "purchasing_request_not_submitted";
     public const string RequestWithoutLines = "purchasing_request_without_lines";
@@ -95,8 +109,50 @@ public static class PurchasingRuleCodes
     /// <summary>A1-3: the order's remainder was cancelled; no acceptance share or breakdown is added to it.</summary>
     public const string OrderCancelled = "purchasing_order_cancelled";
 
+    /// <summary>ALC-SC33 (FNS-D79): an order exchange rate is a positive number within the Settings rate bounds; a wider one is refused, never rounded.</summary>
+    public const string OrderExchangeRateInvalid = "purchasing_order_exchange_rate_invalid";
+
+    /// <summary>ALC-SC33 (FNS-D79): an order without a currency, or one in the functional currency, carries no exchange rate.</summary>
+    public const string OrderExchangeRateNotApplicable = "purchasing_order_exchange_rate_not_applicable";
+
+    /// <summary>ALC-SC33 (FNS-D80): the rate is locked at approval; a later change needs a revision with re-approval, which is not built.</summary>
+    public const string OrderExchangeRateLocked = "purchasing_order_exchange_rate_locked";
+
+    /// <summary>ALC-SC33 (FNS-D80): a foreign-currency order without a rate in the functional currency is not approved.</summary>
+    public const string OrderExchangeRateRequired = "purchasing_order_exchange_rate_required";
+
+    /// <summary>ALC-SC33 (FNS-D91): a rate-change reason longer than the stored bound is refused, never cut.</summary>
+    public const string OrderExchangeRateReasonTooLong = "purchasing_order_exchange_rate_reason_too_long";
+
     /// <summary>A3 API-30 (ALS-D33): a delivery schedule is recorded on a general line; a technical line's quantity is counted in its general line's schedule.</summary>
     public const string ScheduleOnTechnicalLine = "purchasing_schedule_on_technical_line";
+
+    /// <summary>API-11 (ALS-D10/D12): only an APPROVED order's line is closed or reopened (a Draft order's is not).</summary>
+    public const string LineNotClosable = "purchasing_line_not_closable";
+
+    /// <summary>API-11: a technical slice is closed or reopened with its general line, never alone.</summary>
+    public const string LineClosureOnTechnicalLine = "purchasing_line_closure_on_technical_line";
+
+    /// <summary>API-11 (fail-closed): the line is fully accepted; a closure that would close nothing is not recorded.</summary>
+    public const string LineNothingToClose = "purchasing_line_nothing_to_close";
+
+    /// <summary>API-11: the line is already closed; a second closure is refused.</summary>
+    public const string LineAlreadyClosed = "purchasing_line_already_closed";
+
+    /// <summary>API-11 (ALS-D12): a closure needs a reason.</summary>
+    public const string LineClosureReasonRequired = "purchasing_line_closure_reason_required";
+
+    /// <summary>API-11: a closure reason longer than the stored bound is refused, never cut.</summary>
+    public const string LineClosureReasonTooLong = "purchasing_line_closure_reason_too_long";
+
+    /// <summary>API-11 reopening (ALS-D10): only a closed line is reopened.</summary>
+    public const string LineNotClosed = "purchasing_line_not_closed";
+
+    /// <summary>API-11 reopening: a reopening needs a reason.</summary>
+    public const string LineReopenReasonRequired = "purchasing_line_reopen_reason_required";
+
+    /// <summary>API-11 reopening: a reopening reason longer than the stored bound is refused, never cut.</summary>
+    public const string LineReopenReasonTooLong = "purchasing_line_reopen_reason_too_long";
 
     /// <summary>A3 API-30: a delivery schedule has at least one slice (a schedule is replaced as a whole, never emptied).</summary>
     public const string ScheduleEmpty = "purchasing_schedule_empty";

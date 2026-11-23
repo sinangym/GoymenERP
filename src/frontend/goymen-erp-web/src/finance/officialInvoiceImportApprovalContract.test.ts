@@ -24,6 +24,20 @@ describe('official invoice pending approval contract', () => {
     expect(decodePendingDetail(detail)).toEqual({ ok: true, value: detail })
   })
 
+  it('decodes the FNS-D64 tax warnings of a pending preview and refuses a malformed warning', () => {
+    const warning = { code: 'finance_official_invoice_tax_inconsistent', sourceDocumentId: row.sourceDocumentId,
+      expectedPayableFunctionalAmount: '1200', payableFunctionalAmount: '1200.01', differenceFunctionalAmount: '0.01' }
+    const withWarnings = (taxWarnings: unknown) => ({ ...detail, preview: { ...detail.preview, taxWarnings } })
+    expect(decodePendingDetail(withWarnings([warning]))).toEqual({ ok: true, value: withWarnings([warning]) })
+    expect(decodePendingDetail(withWarnings(null)).ok).toBe(true)
+    const { sourceDocumentId: _omitted, ...missingKey } = warning
+    expect(decodePendingDetail(withWarnings([{ ...warning, hidden: true }]))).toEqual({ ok: false })
+    expect(decodePendingDetail(withWarnings([missingKey]))).toEqual({ ok: false })
+    expect(decodePendingDetail(withWarnings([{ ...warning, differenceFunctionalAmount: 0.01 }]))).toEqual({ ok: false })
+    expect(decodePendingDetail(withWarnings(warning))).toEqual({ ok: false })
+    expect(decodePendingDetail({ ...detail, preview: { ...detail.preview, hidden: true } })).toEqual({ ok: false })
+  })
+
   it('refuses unknown members, foreign company items and tuple drift', () => {
     expect(decodePendingPage({ companyId: batch.companyId, items: [{ ...batch, hidden: true }], nextCursor: null })).toEqual({ ok: false })
     expect(decodePendingPage({ companyId: '99999999-9999-4999-8999-999999999999', items: [batch], nextCursor: null })).toEqual({ ok: false })

@@ -124,17 +124,20 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             };
         }
 
+        await AcquirePhysicalValidationAsync(store.LockPhysicalValidationAsync, cancellationToken);
         var parent = await LoadParentAsync(request.ParentLabelId, request.ExpectedParentLabelVersion,
             requireReleasable: true, cancellationToken);
+        // One source for the movement and for any refusal that names it (SAT-D318).
+        var source = new StockSourceReference(InventoryManufacturingRealizationContractV1.InputIssueSourceKind,
+            request.ManufacturingOrderId, request.IssueId);
         var position = request.AllocationId is { } allocationId
-            ? await ConsumePlanAllocationAsync(allocationId, request.PlanId!.Value, parent, quantity, metadata,
-                cancellationToken)
-            : await CurrentFreePositionAsync(parent.Label, quantity, cancellationToken);
+            ? await ConsumePlanAllocationAsync(allocationId, request.PlanId!.Value, parent, quantity, source,
+                metadata, cancellationToken)
+            : await CurrentFreePositionAsync(parent.Label, quantity, source, cancellationToken);
         var movement = new StockMovement(request.MovementId, companyId, StockMovementKind.Issue,
-            request.OccurredAtUtc,
-            new StockSourceReference(InventoryManufacturingRealizationContractV1.InputIssueSourceKind,
-                request.ManufacturingOrderId, request.IssueId),
-            [new StockMovementLine(position, StockDirection.Out, quantity)], CostResult.NotCalculated);
+            request.OccurredAtUtc, source,
+            [new StockMovementLine(position, StockDirection.Out, quantity,
+                request.PieceCount is { } pieces ? PieceCount.Of(pieces) : null)], CostResult.NotCalculated);
         await RecordMovementAsync(movement, metadata, InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient,
             cancellationToken);
 
@@ -165,6 +168,7 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
         }
 
+        await AcquirePhysicalValidationAsync(store.LockPhysicalValidationAsync, cancellationToken);
         var parent = await LoadParentAsync(request.ParentLabelId, request.ExpectedParentLabelVersion,
             requireReleasable: false, cancellationToken);
         var trace = await InputTraceAsync(request.ManufacturingOrderId, parent.Label,
@@ -174,11 +178,29 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             throw Refused(409, InventoryManufacturingRealizationCodesV1.ReturnExceedsIssued);
         }
 
+        PieceCount? returnedPieces;
+        try
+        {
+            // KLN-D119 (AK-2b): an input issued with pieces comes back with pieces, never more than were issued, and the
+            // last kilograms bring back the last pieces.
+            returnedPieces = PieceCountReturnRule.Returned(Kilograms.Of(trace.IssuedKg), trace.IssuedPieces,
+                Kilograms.Of(trace.ReturnedKg), trace.ReturnedPieces, quantity, request.PieceCount);
+        }
+        catch (InventoryRuleException exception) when (exception.Code == InventoryRuleCodes.NegativePieceCount)
+        {
+            throw Refused(409, InventoryManufacturingRealizationCodesV1.ReturnExceedsIssued);
+        }
+        catch (InventoryRuleException)
+        {
+            throw Refused(400, InventoryManufacturingRealizationCodesV1.InvalidQuantity);
+        }
+
         var movement = new StockMovement(request.MovementId, companyId, StockMovementKind.Return,
             request.OccurredAtUtc,
             new StockSourceReference(InventoryManufacturingRealizationContractV1.InputReturnSourceKind,
                 request.ManufacturingOrderId, request.ReturnId),
-            [new StockMovementLine(trace.Position, StockDirection.In, quantity)], CostResult.NotCalculated);
+            [new StockMovementLine(trace.Position, StockDirection.In, quantity, returnedPieces)], CostResult.NotCalculated);
+        store.UseReturnIssueCost(movement.Id, await ReturnIssueCostSourceAsync(request, quantity.Value, cancellationToken));
         await RecordMovementAsync(movement, metadata, InventoryManufacturingRealizationCodesV1.Unavailable,
             cancellationToken);
 
@@ -189,6 +211,39 @@ public sealed partial class InventoryManufacturingRealizationParticipant
         await SaveCommandAsync(InventoryManufacturingRealizationContractV1.InputReturnCommandName,
             keyHash, payloadHash, request.ReturnId, result, metadata, cancellationToken);
         return result;
+    }
+
+    private async Task<Guid?> ReturnIssueCostSourceAsync(InventoryManufacturingInputReturnRequestV1 request,
+        decimal quantity, CancellationToken token)
+    {
+        var issues = await (from movement in context.Movements.AsNoTracking()
+            join line in context.MovementLines.AsNoTracking() on movement.Id equals line.MovementId
+            where movement.SourceKind == InventoryManufacturingRealizationContractV1.InputIssueSourceKind
+                && movement.SourceId == request.ManufacturingOrderId && movement.Kind == (int)StockMovementKind.Issue
+                && line.LabelId == request.ParentLabelId && line.Direction == (int)StockDirection.Out
+            select new { movement.Id, line.LineNumber, line.QuantityKg }).ToListAsync(token);
+        var selected = request.SourceIssueMovementId is { } explicitId
+            ? issues.SingleOrDefault(row => row.Id == explicitId && row.LineNumber == 1)
+            : issues.Count == 1 && issues[0].LineNumber == 1 ? issues[0] : null;
+        if (request.SourceIssueMovementId is not null && selected is null)
+            throw Refused(409, InventoryManufacturingRealizationCodesV1.ReturnExceedsIssued);
+        if (selected is null) return null; // Legacy multiple issues have no inferred FIFO/average binding.
+        var prior = await (from movement in context.Movements.AsNoTracking()
+            join line in context.MovementLines.AsNoTracking() on movement.Id equals line.MovementId
+            where movement.SourceKind == InventoryManufacturingRealizationContractV1.InputReturnSourceKind
+                && movement.SourceId == request.ManufacturingOrderId && line.LabelId == request.ParentLabelId
+            select new { movement.Id, line.LineNumber, line.QuantityKg }).ToListAsync(token);
+        var ids = prior.Select(row => row.Id).ToArray();
+        var stamps = await context.MovementCostStamps.AsNoTracking().Where(row => ids.Contains(row.MovementId)
+            && row.CurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira).ToListAsync(token);
+        var boundReturned = prior.Where(row => stamps.Any(stamp => stamp.MovementId == row.Id
+                && stamp.LineNumber == row.LineNumber && stamp.SourceIssueMovementId == selected.Id)).Sum(row => row.QuantityKg);
+        if (quantity + boundReturned > selected.QuantityKg)
+            throw Refused(409, InventoryManufacturingRealizationCodesV1.ReturnExceedsIssued);
+        if (issues.Count != 1 && prior.Any(row => !stamps.Any(stamp => stamp.MovementId == row.Id
+                && stamp.LineNumber == row.LineNumber && stamp.SourceIssueMovementId is not null)))
+            return null; // Prior unbound returns make per-issue remaining cost unprovable.
+        return selected.Id;
     }
 
     public async Task<InventoryManufacturingOutputResultV1> StageOutputAsync(
@@ -209,7 +264,8 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
         }
 
-        var staged = await StageOutputCoreAsync(request, quantity, classification: null, metadata, cancellationToken);
+        var staged = await StageOutputCoreAsync(request, quantity, classification: null, productionStatus: null,
+            metadata, cancellationToken);
         var result = new InventoryManufacturingOutputResultV1(companyId, request.ManufacturingOrderId,
             request.OutputId, request.ManufacturingOrderVersionAfter, staged.ParentLabelId,
             staged.ParentLabelVersion, request.OutputClass, request.ProductId,
@@ -224,6 +280,8 @@ public sealed partial class InventoryManufacturingRealizationParticipant
     /// B-03 (API-22/27): the V2 output declaration. The output class is mapped to a label classification before any
     /// read or write (an unstockable class is refused with no label, movement or genealogy written); the output label
     /// is born with that classification, and the result echoes both together with the recorded genealogy.
+    /// STK-S9 (BS-5/BS-14): a <c>UsableRemnant</c> output is born with the classification the operator chose
+    /// (Standard or SecondQuality, SecondQuality by default) and the separate <c>UsableRemnant</c> production status.
     /// </summary>
     public async Task<InventoryManufacturingOutputResultV2> StageOutputAsync(
         InventoryManufacturingOutputRequestV2 request,
@@ -231,11 +289,11 @@ public sealed partial class InventoryManufacturingRealizationParticipant
         CancellationToken cancellationToken = default)
     {
         Begin();
-        var (quantity, classification) = InventoryManufacturingRealizationContractV2.Validate(request, metadata,
-            companyId);
+        var (quantity, classification, productionStatus) = InventoryManufacturingRealizationContractV2.Validate(
+            request, metadata, companyId);
         var core = request.ToV1();
         var keyHash = Hash(metadata.IdempotencyKey);
-        var payloadHash = RequestHash(core);
+        var payloadHash = OutputRequestHash(core, classification, productionStatus);
         if (await FindCommandAsync(InventoryManufacturingRealizationContractV2.OutputCommandName,
                 keyHash, cancellationToken) is { } existing)
         {
@@ -245,10 +303,11 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
         }
 
-        var staged = await StageOutputCoreAsync(core, quantity, classification, metadata, cancellationToken);
+        var staged = await StageOutputCoreAsync(core, quantity, classification, productionStatus, metadata,
+            cancellationToken);
         var result = new InventoryManufacturingOutputResultV2(companyId, request.ManufacturingOrderId,
             request.OutputId, request.ManufacturingOrderVersionAfter, staged.ParentLabelId,
-            staged.ParentLabelVersion, request.OutputClass, classification, request.ProductId,
+            staged.ParentLabelVersion, request.OutputClass, classification, productionStatus, request.ProductId,
             request.ExpectedProductVersion, staged.LotId, staged.LabelId, staged.LabelVersion,
             staged.MovementId, quantity.ToString(), staged.GenealogyTransformationId, staged.GenealogyInputs,
             IsReplay: false, OriginalCorrelationId: metadata.CorrelationId);
@@ -258,9 +317,11 @@ public sealed partial class InventoryManufacturingRealizationParticipant
     }
 
     private async Task<StagedOutput> StageOutputCoreAsync(InventoryManufacturingOutputRequestV1 request,
-        Kilograms quantity, InventoryLabelClassificationV1? classification, InventoryCommandMetadata metadata,
+        Kilograms quantity, InventoryLabelClassificationV1? classification,
+        InventoryLabelProductionStatusV1? productionStatus, InventoryCommandMetadata metadata,
         CancellationToken cancellationToken)
     {
+        await AcquirePhysicalValidationAsync(store.LockPhysicalValidationAsync, cancellationToken);
         var parent = await LoadParentAsync(request.ParentLabelId, request.ExpectedParentLabelVersion,
             requireReleasable: false, cancellationToken);
         // Manufacturing itself permits an output only for an issued planned roll. Inventory keeps
@@ -303,6 +364,11 @@ public sealed partial class InventoryManufacturingRealizationParticipant
                 label.Classify(LabelClassificationOf(stockable));
             }
 
+            if (productionStatus is { } status)
+            {
+                label.MarkProductionStatus(LabelProductionStatusOf(status));
+            }
+
             var position = new StockPosition(companyId,
                 new StockOwner(request.OwnerKind, request.OwnerId),
                 new StockCustodian(request.CustodianKind, request.CustodianId),
@@ -311,7 +377,8 @@ public sealed partial class InventoryManufacturingRealizationParticipant
                 request.OccurredAtUtc,
                 new StockSourceReference(InventoryManufacturingRealizationContractV1.OutputSourceKind,
                     request.ManufacturingOrderId, request.OutputId),
-                [new StockMovementLine(position, StockDirection.In, quantity)], CostResult.NotCalculated);
+                [new StockMovementLine(position, StockDirection.In, quantity,
+                    request.PieceCount is { } pieces ? PieceCount.Positive(pieces) : null)], CostResult.NotCalculated);
         }
         catch (Exception exception) when (exception is InventoryRuleException or ArgumentException)
         {
@@ -464,15 +531,29 @@ public sealed partial class InventoryManufacturingRealizationParticipant
     }
 
     private async Task<StockPosition> CurrentFreePositionAsync(MaterialLabel label, Kilograms quantity,
-        CancellationToken cancellationToken)
+        StockSourceReference source, CancellationToken cancellationToken)
     {
         var rows = await context.Balances.Where(row => row.LabelId == label.Id).ToListAsync(cancellationToken);
         ValidateStoredPositions(label, rows);
         var free = rows.Where(row => row.Block == (int)BlockState.Free && row.QuantityKg > 0m).ToArray();
         if (free.Length != 1)
         {
+            // No Free kg at all: the label's stock, if any, is blocked in its one physical place (the validated
+            // stored positions keep a label's non-zero buckets in one place), so that place is where it was refused.
+            var places = rows.Where(row => row.QuantityKg > 0m).ToArray();
+            if (places.Length == 0) places = rows.ToArray();
+            if (free.Length == 0 && places.Select(row => (row.OwnerKind, row.OwnerId, row.CustodianKind,
+                    row.CustodianId, row.LocationId)).Distinct().Count() == 1)
+            {
+                var stored = places[0];
+                return new StockPosition(companyId, new StockOwner((StockPartyKind)stored.OwnerKind, stored.OwnerId),
+                    new StockCustodian((StockPartyKind)stored.CustodianKind, stored.CustodianId), stored.LocationId,
+                    label, BlockState.Free);
+            }
             throw free.Length == 0
-                ? Refused(409, InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient)
+                ? InputIssueShortfall(source, label,
+                    rows.Where(row => row.QuantityKg > 0m).Select(row => (Guid?)row.LocationId).FirstOrDefault(),
+                    quantity, freePhysicalKg: 0m, reservedKg: null)
                 : Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
         }
 
@@ -498,12 +579,62 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             throw Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
         }
 
-        if (unreserved < quantity)
+        if (row.QuantityKg >= quantity.Value && unreserved < quantity)
         {
-            throw Refused(409, InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient);
+            throw InputIssueShortfall(source, label, row.LocationId, quantity, row.QuantityKg, reservedKg);
         }
 
         return Position(row, label);
+    }
+
+    /// <summary>
+    /// SAT-D318: the input issue's physical-stock refusal names the refused issue line, the label with its product, the
+    /// place and the kg its check saw. A detail that cannot be built from the stored figures leaves the refusal
+    /// without it; the refusal itself never changes.
+    /// </summary>
+    private static InventoryManufacturingRealizationException InputIssueShortfall(StockSourceReference source,
+        MaterialLabel label, Guid? locationId, Kilograms requested, decimal freePhysicalKg, decimal? reservedKg)
+    {
+        try
+        {
+            return InventoryManufacturingRealizationException.Refused(409,
+                InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient,
+                new InventoryManufacturingStockShortfallV1(StockMovementKind.Issue, source.Kind, source.Id,
+                    source.LineId, label.Id, label.ProductId, locationId, requested, Kilograms.Of(freePhysicalKg),
+                    reservedKg is { } reserved ? Kilograms.Of(reserved) : null));
+        }
+        catch (Exception exception) when (exception is InventoryRuleException or ArgumentException)
+        {
+            return Refused(409, InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient);
+        }
+    }
+
+    /// <summary>
+    /// The stock ledger's own negative-stock refusal, the store's last check behind the participant's pre-check. Only
+    /// the input issue's physical-stock refusal carries the ledger's shortfall; the ledger counts no reservation. Every
+    /// other movement keeps its plain refusal.
+    /// </summary>
+    internal static InventoryManufacturingRealizationException NegativeStockRefusal(StockShortfall? shortfall,
+        string negativeStockCode, Exception? original = null)
+    {
+        if (shortfall is null
+            || negativeStockCode != InventoryManufacturingRealizationCodesV1.PhysicalStockInsufficient)
+        {
+            return InventoryManufacturingRealizationException.Refused(409, negativeStockCode, original);
+        }
+
+        try
+        {
+            return InventoryManufacturingRealizationException.Refused(409, negativeStockCode,
+                new InventoryManufacturingStockShortfallV1(shortfall.MovementKind, shortfall.Source.Kind,
+                    shortfall.Source.Id, shortfall.Source.LineId, shortfall.Position.LabelId,
+                    shortfall.Position.ProductId, shortfall.Position.LocationId, shortfall.Requested,
+                    shortfall.Available, reservedKg: null), original);
+        }
+        catch (ArgumentException)
+        {
+            return InventoryManufacturingRealizationException.Refused(409, negativeStockCode, original);
+        }
     }
 
     private async Task<InputTrace> InputTraceAsync(Guid orderId, MaterialLabel label, string missingIssueCode,
@@ -538,7 +669,25 @@ public sealed partial class InventoryManufacturingRealizationParticipant
                     && line.Direction == (int)StockDirection.In
                 select line.QuantityKg)
             .SumAsync(cancellationToken);
-        return new InputTrace(positions[0], issueRows.Sum(row => row.QuantityKg), returned);
+        // KLN-D119: the issued pieces count only when every issue line of the label carried them; a mix is not trustworthy.
+        var issuedWithPieces = issueRows.Count(row => row.PieceCount is not null);
+        if (issuedWithPieces != 0 && issuedWithPieces != issueRows.Count)
+        {
+            throw Refused(503, InventoryManufacturingRealizationCodesV1.Unavailable);
+        }
+
+        var returnedPieces = await (from movement in context.Movements
+                join line in context.MovementLines on movement.Id equals line.MovementId
+                where movement.Kind == (int)StockMovementKind.Return
+                    && movement.SourceKind == InventoryManufacturingRealizationContractV1.InputReturnSourceKind
+                    && movement.SourceId == orderId && movement.SourceLineId != null
+                    && movement.SourceGrain == (int)StockSourceGrain.Line && line.LabelId == label.Id
+                    && line.Direction == (int)StockDirection.In
+                select line.PieceCount)
+            .SumAsync(cancellationToken) ?? 0;
+        return new InputTrace(positions[0], issueRows.Sum(row => row.QuantityKg), returned,
+            issuedWithPieces == 0 ? null : PieceCount.Of(issueRows.Sum(row => row.PieceCount!.Value)),
+            PieceCount.Of(returnedPieces));
     }
 
     private async Task<InventoryManufacturingPositionSnapshotV1> RecoverInputIssuePositionAsync(
@@ -679,11 +828,18 @@ public sealed partial class InventoryManufacturingRealizationParticipant
         }
         catch (InventoryRuleException exception) when (exception.Code == InventoryRuleCodes.NegativePhysicalStock)
         {
-            throw Refused(409, negativeStockCode);
+            throw NegativeStockRefusal(exception.Shortfall, negativeStockCode, exception);
         }
         catch (InventoryStoreException exception)
         {
             throw StoreRefusal(exception.Code, negativeStockCode);
+        }
+        catch (InventoryRuleException exception) when (exception.Code is InventoryRuleCodes.PieceCountRequired
+            or InventoryRuleCodes.PieceCountNotTracked or InventoryRuleCodes.NegativePieceCount
+            or InventoryRuleCodes.InvalidPieceCount)
+        {
+            // KLN-D119: an unknown, extra or impossible piece count for this label is the request's quantity fault.
+            throw Refused(400, InventoryManufacturingRealizationCodesV1.InvalidQuantity);
         }
         catch (InventoryRuleException)
         {
@@ -791,7 +947,18 @@ public sealed partial class InventoryManufacturingRealizationParticipant
     /// An issue without an allocation hashes exactly as it did before B-01 added <c>AllocationId</c>, so a replay of an
     /// issue recorded earlier still matches its stored payload hash.
     /// </summary>
-    private static string RequestHash(InventoryManufacturingInputIssueRequestV1 request) => request.AllocationId is null
+    private static string RequestHash(InventoryManufacturingInputIssueRequestV1 request) => WithPieces(
+        KilogramRequestHash(request with { PieceCount = null }), request.PieceCount);
+
+    /// <summary>
+    /// KLN-D119 (AK-2b): the piece count joins a stored hash only when given, so every piece-less request keeps exactly the
+    /// hash it had before.
+    /// </summary>
+    private static string WithPieces(string kilogramHash, int? pieces) => pieces is { } count
+        ? Hash(JsonSerializer.Serialize(new { Core = kilogramHash, PieceCount = count }, Json))
+        : kilogramHash;
+
+    private static string KilogramRequestHash(InventoryManufacturingInputIssueRequestV1 request) => request.AllocationId is null
         ? Hash(JsonSerializer.Serialize(new
         {
             request.CompanyId,
@@ -806,7 +973,7 @@ public sealed partial class InventoryManufacturingRealizationParticipant
         }, Json))
         : Hash(JsonSerializer.Serialize(request, Json));
 
-    private static string RequestHash(InventoryManufacturingOutputRequestV1 request) => Hash(
+    private static string RequestHash(InventoryManufacturingOutputRequestV1 request) => WithPieces(Hash(
         JsonSerializer.Serialize(new
         {
             request.CompanyId,
@@ -833,10 +1000,44 @@ public sealed partial class InventoryManufacturingRealizationParticipant
             request.MovementId,
             request.QuantityKg,
             request.OccurredAtUtc,
-        }, Json));
+        }, Json)), request.PieceCount);
+
+    /// <summary>
+    /// STK-S9: an output without a production status hashes exactly as before (the V1 core alone), so a replay of an
+    /// output recorded earlier still matches its stored payload hash. A usable-remnant output (always refused before
+    /// STK-S9, so no stored key exists) also binds the effective classification and the production status: an omitted
+    /// choice and an explicit SecondQuality are the same request, an explicit Standard is a different one.
+    /// </summary>
+    private static string OutputRequestHash(InventoryManufacturingOutputRequestV1 core,
+        InventoryLabelClassificationV1 classification, InventoryLabelProductionStatusV1? productionStatus) =>
+        productionStatus is null
+            ? RequestHash(core)
+            : Hash(JsonSerializer.Serialize(new
+            {
+                Core = RequestHash(core),
+                Classification = classification.ToString(),
+                ProductionStatus = productionStatus.Value.ToString(),
+            }, Json));
+
+    private static LabelProductionStatus LabelProductionStatusOf(InventoryLabelProductionStatusV1 status) =>
+        status switch
+        {
+            InventoryLabelProductionStatusV1.UsableRemnant => LabelProductionStatus.UsableRemnant,
+            _ => throw Refused(400, InventoryManufacturingRealizationCodesV1.InvalidRequest),
+        };
 
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToUpperInvariant();
+
+    internal static async Task AcquirePhysicalValidationAsync(Func<CancellationToken, Task> acquire, CancellationToken token)
+    {
+        try { await acquire(token); }
+        catch (InventoryStoreException exception) when (exception.Code == InventoryStoreCodes.ConcurrentChange)
+        {
+            throw InventoryManufacturingRealizationException.Refused(409,
+                InventoryManufacturingRealizationCodesV1.ConcurrentChange, exception);
+        }
+    }
 
     private static InventoryManufacturingRealizationException Refused(int status, string code) =>
         InventoryManufacturingRealizationException.Refused(status, code);
@@ -852,5 +1053,6 @@ public sealed partial class InventoryManufacturingRealizationParticipant
     private sealed record StagedOutput(Guid ParentLabelId, string ParentLabelVersion, Guid LotId, Guid LabelId,
         string LabelVersion, Guid MovementId, Guid GenealogyTransformationId,
         IReadOnlyList<InventoryManufacturingGenealogyInputV2> GenealogyInputs);
-    private sealed record InputTrace(StockPosition Position, decimal IssuedKg, decimal ReturnedKg);
+    private sealed record InputTrace(StockPosition Position, decimal IssuedKg, decimal ReturnedKg,
+        PieceCount? IssuedPieces = null, PieceCount ReturnedPieces = default);
 }

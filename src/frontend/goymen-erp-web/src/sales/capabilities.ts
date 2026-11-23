@@ -30,6 +30,7 @@ export const SALES_CAPABILITY = {
    * required — without it the amounts come withheld; Sales shell contract 1.20). No control: a row opens the invoice detail read-only.
    */
   invoicesList: 'sales.invoices.list',
+  officialCancellation: 'sales.invoices.official-cancellation',
   /** UI-80 Satış raporları — API-41 / API-42 under their own `sales.reports.read` (Sales shell contract 1.11). */
   reportsView: 'sales.reports.view',
   /**
@@ -150,14 +151,19 @@ export type SalesCapabilityId =
   | typeof SALES_CUSTOMER_RETURN_FINALIZE_CAPABILITY
 
 /**
- * API-32 / API-33 (SAT-D202): the invoice-draft CONTROLS — "Fatura taslağı hazırla" on S-08, and submit / cancel on the draft —
- * follow `sales.invoices.write`; approve / reject follow `sales.invoices.approve` (never the preparer, SAT-D88 / SAT-D204, which
- * the server decides). Non-routed control ids named after the backend permissions. The Sales shell provider does not publish
- * them yet, so `hasCapability` fails closed and the controls stay hidden behind a neutral note (NEEDS-SINAN); the API
- * re-measures every call either way.
+ * API-32 / API-33 / API-36 (SAT-D202, SAT-D204, SAT-D230, SAT-D249): the invoice CONTROLS, non-routed control ids named after the
+ * backend permissions and published by the Sales shell provider 1.27 as controls of the S-09 list (each on the invoice read, the
+ * price read and its own name):
+ *  - `sales.invoices.write`: "Fatura taslağı hazırla" on S-08, and submit / cancel on the draft;
+ *  - `sales.invoices.approve`: approve / reject (never the preparer, SAT-D88 / SAT-D204, which the server decides);
+ *  - `sales.invoices.match`: the official e-invoice match form (an excess also needs `sales.invoices.approve`, SAT-D106);
+ *  - `sales.invoices.finalize`: finalize a matched invoice and re-send it to Finance (normal permission, SAT-D249).
+ * Without the capability `hasCapability` fails closed and the control stays hidden; the API re-measures every call either way.
  */
 export const SALES_INVOICE_WRITE_CAPABILITY = 'sales.invoices.write' as const
 export const SALES_INVOICE_APPROVE_CAPABILITY = 'sales.invoices.approve' as const
+export const SALES_INVOICE_MATCH_CAPABILITY = 'sales.invoices.match' as const
+export const SALES_INVOICE_FINALIZE_CAPABILITY = 'sales.invoices.finalize' as const
 
 export const SALES_ROUTE = {
   list: '/satis/siparisler',
@@ -170,6 +176,7 @@ export const SALES_ROUTE = {
   invoiceCandidates: '/satis/faturaya-hazir',
   /** UI-63 S-09: static, never a draft id. */
   invoices: '/satis/faturalar',
+  officialCancellation: '/satis/fatura-resmi-iptal',
   /** UI-80: static, never a draft id. */
   reports: '/satis/raporlar',
   /** UI-50 S-05 Fiyat–İskonto–Marj–Risk Kontrolü: a read-only view of one draft, under the detail's own id. */
@@ -191,6 +198,30 @@ export const SALES_ROUTE = {
 export const salesCustomerReturnPath = (returnId: string) => `/satis/iadeler/${encodeURIComponent(returnId)}`
 
 export const salesDetailPath = (draftId: string) => `/satis/siparisler/${encodeURIComponent(draftId)}`
+
+/**
+ * KLN-D117 (Sinan 2026-11-21): "Satışa tahsis et" started from a stock label row. The S-02 list carries the label code in
+ * `?tahsisEtiketi=`; the user chooses the approved order, whose S-04 allocation tab opens with the code in the label search
+ * (`?sekme=tahsis&etiket=`). The allocation itself is the same server command as from the order line.
+ */
+export const ALLOCATION_LABEL_PARAM = 'tahsisEtiketi' as const
+export const ORDER_LABEL_PARAM = 'etiket' as const
+/** A carried label code longer than this is ignored (the picker's own code bound). */
+export const CARRIED_LABEL_CODE_MAX_LENGTH = 64
+
+/** A carried label code: trimmed, bounded, printable; anything else is no code. */
+export function carriedLabelCode(value: string | null): string | null {
+  if (value === null) return null
+  const trimmed = value.trim()
+  const printable = [...trimmed].every((character) => character.charCodeAt(0) >= 0x20 && character.charCodeAt(0) !== 0x7f)
+  return trimmed !== '' && trimmed.length <= CARRIED_LABEL_CODE_MAX_LENGTH && printable ? trimmed : null
+}
+
+export const salesAllocationFromLabelPath = (labelCode: string) =>
+  `${SALES_ROUTE.list}?${new URLSearchParams({ [ALLOCATION_LABEL_PARAM]: labelCode }).toString()}`
+
+export const salesAllocationDetailPath = (draftId: string, labelCode: string) =>
+  `${salesDetailPath(draftId)}?${new URLSearchParams({ sekme: 'tahsis', [ORDER_LABEL_PARAM]: labelCode }).toString()}`
 export const salesPriceControlPath = (draftId: string) => `${salesDetailPath(draftId)}/kontrol`
 /** S-06 query member naming the approval row to bring into view (SAT-D243: the Work inbox links each Sales row here). */
 export const SALES_APPROVAL_PARAM = 'onay'

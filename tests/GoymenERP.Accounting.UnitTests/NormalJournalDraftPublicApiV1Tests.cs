@@ -111,6 +111,73 @@ public sealed class NormalJournalDraftPublicApiV1Tests
         Assert.Equal(0, provider.Calls);
     }
 
+    [Theory]
+    [InlineData("200")]
+    [InlineData("99.99")]
+    [InlineData("100.01")]
+    [InlineData("100.00000000000000000000000000001")]
+    public async Task Balanced_draft_cannot_change_the_exact_recorded_expense_or_transfer_amount(string amount)
+    {
+        var source = ServerSource() with { ExactSourceAmount = "100.00" };
+        var lifecycle = new CapturingLifecycle();
+        var request = Request(source) with { Lines = [new(Debit, "Debit", amount), new(Credit, "Credit", amount)] };
+        var result = await Service(lifecycle, new FixedSource(source)).CreateAsync(request, "exact-source-mismatch");
+        Assert.Equal(AccountingApiStatus.Unprocessable, result.Status);
+        Assert.Equal("accounting_normal_journal_source_amount_mismatch", result.Code);
+        Assert.Null(lifecycle.Created);
+    }
+
+    [Fact]
+    public async Task Exact_owner_amount_is_accepted_without_conversion_or_rounding()
+    {
+        var source = ServerSource() with { ExactSourceAmount = "100.00" };
+        var lifecycle = new CapturingLifecycle();
+        var request = Request(source) with { Lines = [new(Debit, "Debit", "100.00"), new(Credit, "Credit", "100")] };
+        var result = await Service(lifecycle, new FixedSource(source)).CreateAsync(request, "exact-source-match");
+        Assert.Equal(AccountingApiStatus.Created, result.Status);
+        Assert.Equal((100m, 100m), (lifecycle.Created!.TotalDebit, lifecycle.Created.TotalCredit));
+        Assert.Equal(Currency, lifecycle.Created.Request.CurrencyId);
+    }
+
+    [Fact]
+    public async Task Re_read_source_amount_change_invalidates_preparation_before_any_write()
+    {
+        var shown = ServerSource() with { ExactSourceAmount = "100.00" };
+        var current = shown with { ExactSourceAmount = "101.00" };
+        var lifecycle = new CapturingLifecycle();
+        var result = await Service(lifecycle, new FixedSource(current)).CreateAsync(Request(shown), "exact-source-changed");
+        Assert.Equal(AccountingApiStatus.Conflict, result.Status);
+        Assert.Equal(NormalJournalDraftPreparationCodesV1.VersionConflict, result.Code);
+        Assert.Null(lifecycle.Created);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Approved_exchange_cannot_shift_a_balanced_amount_between_carrying_and_gain(bool shift)
+    {
+        var gain = Guid.NewGuid(); var at = DateTimeOffset.Parse("2026-09-24T12:00:00Z");
+        var debit = new AccountRef(Company, Debit); var credit = new AccountRef(Company, Credit); var gainAccount = new AccountRef(Company, gain);
+        var mirror = new AccountPlanMirrorV1(Company, "SENTETIK-exchange-plan", new string('a', 64), Actor, at,
+            [new(debit, "SENTETIK-1", "Target"), new(credit, "SENTETIK-2", "Source"), new(gainAccount, "SENTETIK-3", "Gain")]);
+        var rule = new NormalJournalPostingRuleV1(mirror, "SENTETIK-approved-exchange", "1", Actor, at,
+            [new(CashExchangeJournalAmountsV1.TargetReceipt, PostingSide.Debit, debit),
+             new(CashExchangeJournalAmountsV1.SourceCarrying, PostingSide.Credit, credit),
+             new(CashExchangeJournalAmountsV1.RealizedGain, PostingSide.Credit, gainAccount)]);
+        var source = new NormalJournalDraftServerSourceV1(rule, Currency, "2", "SENTETIK-owner-profile", "1", "3300",
+            CashExchangeJournalAmountsV1.TryCreate("3100", "3300"));
+        var lifecycle = new CapturingLifecycle();
+        var request = Request(source) with { Lines = [new(Debit, "Debit", "3300"),
+            new(Credit, "Credit", shift ? "3200" : "3100"), new(gain, "Credit", shift ? "100" : "200")] };
+        var result = await Service(lifecycle, new FixedSource(source)).CreateAsync(request, "exchange-exact-components");
+        Assert.Equal(shift ? AccountingApiStatus.Unprocessable : AccountingApiStatus.Created, result.Status);
+        if (shift) { Assert.Equal(NormalJournalDraftPreparationCodesV1.SourceAmountMismatch, result.Code); Assert.Null(lifecycle.Created); }
+        else { Assert.NotNull(lifecycle.Created); Assert.Equal(3300m, lifecycle.Created.TotalDebit); }
+        var changed = source with { ExactSourceLines = CashExchangeJournalAmountsV1.TryCreate("3200", "3300") };
+        var stale = await Service(new CapturingLifecycle(), new FixedSource(changed)).CreateAsync(request, "exchange-changed-source");
+        Assert.Equal(AccountingApiStatus.Conflict, stale.Status);
+    }
+
     private static NormalJournalDraftPublicServiceV1 Service(
         INormalJournalDraftLifecycleV1 lifecycle,
         INormalJournalDraftServerSourceProviderV1 provider)

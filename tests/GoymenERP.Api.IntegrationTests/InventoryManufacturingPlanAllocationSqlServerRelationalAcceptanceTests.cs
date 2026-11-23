@@ -4,6 +4,7 @@ using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
@@ -95,6 +96,46 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM inventory.Commands WHERE TargetId = @plan", ("@plan", planId)));
         Assert.Equal(2L, await run.ScalarAsync<long>(
             "SELECT Version FROM inventory.Labels WHERE Id = @label", ("@label", fits.Label.Id)));
+    }
+
+    [SqlServerFact]
+    public async Task Plan_allocation_refusal_reports_the_verified_position_and_all_demands_reserved_kg_and_rolls_back_prior_inputs()
+    {
+        await using var run = await Run.StartAsync();
+        var fits = await SeedManufacturingParentAsync(run, "SYN-PLAN-SHORTFALL-FITS", 40m);
+        var held = await SeedManufacturingParentAsync(run, "SYN-PLAN-SHORTFALL-HELD", 10m);
+        await CommitPlanAllocationAsync(run, PlanRequest(Guid.NewGuid(), CompanyLine(held.Label.Id, "2", "7.125")),
+            ManufacturingMetadata(run, "plan-shortfall-held"));
+        var plan = Guid.NewGuid();
+        var refused = await Assert.ThrowsAsync<InventoryManufacturingRealizationException>(() => CommitPlanAllocationAsync(run,
+            PlanRequest(plan, CompanyLine(fits.Label.Id, "2", "1"), CompanyLine(held.Label.Id, "3", "3")),
+            ManufacturingMetadata(run, "plan-shortfall-rejected")));
+        Assert.Equal((409, InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock), (refused.Status, refused.Code));
+        var detail = Assert.IsType<InventoryManufacturingPlanAllocationShortfallV1>(refused.PlanAllocationShortfall);
+        Assert.Equal((CompanyA, plan, held.Label.Id, held.Label.ProductId, "3", 1),
+            (detail.CompanyId, detail.PlanId, detail.LabelId, detail.ProductId, detail.LabelVersion, detail.FreePositionCount));
+        Assert.Equal(("3", "10", "7.125", "2.875", "0.125"),
+            (detail.RequestedKg, detail.FreePhysicalKg, detail.ReservedKg, detail.AvailableKg, detail.MissingKg));
+        Assert.Null(refused.StockShortfall);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Allocations WHERE DemandId=@plan", ("@plan", plan)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands WHERE TargetId=@plan", ("@plan", plan)));
+        Assert.Equal(2L, await LabelVersionAsync(run, fits.Label.Id));
+        Assert.Equal(3L, await LabelVersionAsync(run, held.Label.Id));
+    }
+
+    [SqlServerFact]
+    public async Task Plan_allocation_without_a_verified_free_position_preserves_its_refusal_without_fabricated_kg_detail()
+    {
+        await using var run = await Run.StartAsync();
+        var blocked = await SeedManufacturingParentAsync(run, "SYN-PLAN-SHORTFALL-NO-POSITION", 10m);
+        await BlockManufacturingParentAsync(run, blocked, 10m);
+        var version = await LabelVersionAsync(run, blocked.Label.Id);
+        var refused = await Assert.ThrowsAsync<InventoryManufacturingRealizationException>(() => CommitPlanAllocationAsync(run,
+            PlanRequest(Guid.NewGuid(), CompanyLine(blocked.Label.Id, version.ToString(System.Globalization.CultureInfo.InvariantCulture), "1")),
+            ManufacturingMetadata(run, "plan-shortfall-no-position")));
+        Assert.Equal((409, InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock), (refused.Status, refused.Code));
+        Assert.Null(refused.PlanAllocationShortfall);
+        Assert.Null(refused.StockShortfall);
     }
 
     [SqlServerFact]
@@ -232,9 +273,22 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             ManufacturingMetadata(run, "rollback"));
 
         await using var context = run.Context(CompanyA);
-        var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>()
-            .MigrateAsync("20261002110000_AddInventoryLabelClassification"));
+        var appliedBefore = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+        const string guardProofSql = "SELECT CompanyId, Version FROM inventory.NegativeStockValidationGuards ORDER BY CompanyId FOR JSON PATH";
+        const string allocationProofSql = "SELECT * FROM inventory.Allocations ORDER BY Id FOR JSON PATH";
+        const string labelProofSql = "SELECT * FROM inventory.Labels ORDER BY Id FOR JSON PATH";
+        var guardProof = await run.ScalarAsync<string>(guardProofSql);
+        var allocationProof = await run.ScalarAsync<string>(allocationProofSql);
+        var labelProof = await run.ScalarAsync<string>(labelProofSql);
+        Assert.True(await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.NegativeStockValidationGuards") > 0);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+            new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddManufacturingPlanInputAllocations().DownOperations[0]).Sql;
+        var error = await Assert.ThrowsAsync<SqlException>(() => ExecuteAsync(run, guard));
         Assert.Equal(51211, error.Number);
+        Assert.Equal(appliedBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+        Assert.Equal(guardProof, await run.ScalarAsync<string>(guardProofSql));
+        Assert.Equal(allocationProof, await run.ScalarAsync<string>(allocationProofSql));
+        Assert.Equal(labelProof, await run.ScalarAsync<string>(labelProofSql));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM inventory.__EFMigrationsHistory "
             + "WHERE MigrationId LIKE N'%_AddManufacturingPlanInputAllocations'"));
@@ -336,6 +390,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var error = await Assert.ThrowsAsync<InventoryManufacturingRealizationException>(() =>
             participant.StagePlanInputAllocationAsync(request, metadata));
         Assert.Equal((status, code), (error.Status, error.Code));
+        if (code != InventoryManufacturingRealizationCodesV1.AllocationInsufficientFreeStock)
+            Assert.Null(error.PlanAllocationShortfall);
         await transaction.RollbackAsync();
     }
 }

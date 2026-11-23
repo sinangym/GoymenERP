@@ -37,11 +37,31 @@ MODULE_SPEC.loader.exec_module(generator)
 
 
 EXPECTED_STORES = {
+    ('sales', 'OfficialInvoiceCancellationDeliveries'): ('OfficialInvoiceCancellationDeliveryRow', 'delivery', 'SalesDbContext'),
+    ('work', 'NotificationInbox'): ('WorkNotificationInboxRow', 'inbox', 'WorkDbContext'),
+    ('documents', 'DocumentBrandingAttempts'): ('DocumentBrandingAttemptRow', 'idempotency', 'DocumentsDbContext'),
+    ('logistics', 'TransferDepartureAttempts'): ('TransferDepartureAttemptRow', 'idempotency', 'LogisticsDbContext'),
+    ('organization', 'CompanyOpeningExecutions'): ('CompanyOpeningExecution', 'idempotency', 'OrganizationDbContext'),
+    ('product', 'PaintMembershipAttempts'): ('ProductPaintMembershipAttemptRow', 'idempotency', 'ProductPriceListDbContext'),
+    ('purchasing', 'IncomingInvoiceAttempts'): ('PurchaseIncomingInvoiceAttemptRow', 'idempotency', 'PurchasingDbContext'),
+    ('purchasing', 'InvoiceImportReservations'): ('PurchaseInvoiceImportReservationRow', 'idempotency', 'PurchasingDbContext'),
+    ('sales', 'SubcontractInvoiceCommandAttempts'): ('SubcontractInvoiceCommandAttemptRow', 'idempotency', 'SalesDbContext'),
+    ("finance", "OutboxMessages"): ("FinanceOutboxRow", "outbox", "FinanceDbContext"),
     ("accounting", "Commands"): ("AccountingCommandRow", "idempotency", "AccountingDbContext"),
     ("accounting", "SourceDocumentAdmissions"): (
         "AccountingSourceDocumentAdmissionRow", "idempotency", "AccountingDbContext"),
     ("accounting", "Deliveries"): ("DeliveryRow", "inbox", "AccountingDbContext"),
     ("documents", "DocumentAttempts"): ("DocumentAttemptRow", "idempotency", "DocumentsDbContext"),
+    ("finance", "CashAccountCommands"): ("CashAccountCommandRow", "idempotency", "FinanceDbContext"),
+    ("finance", "CashTransferCommands"): ("CashTransferCommandRow", "idempotency", "FinanceDbContext"),
+    ("finance", "PartyCollateralCommands"): ("PartyCollateralCommandRow", "idempotency", "FinanceDbContext"),
+    ("counterparty", "OutboxMessages"): ("CounterpartyOutboxRow", "outbox", "CounterpartyDbContext"),
+    ("identity", "OutboxMessages"): ("IdentityOutboxMessage", "outbox", "IdentityDbContext"),
+    ("identity", "CompanySetupInboxReceipts"): ("CompanySetupInboxReceipt", "inbox", "IdentityDbContext"),
+    ("organization", "CompanySetupInboxReceipts"): ("CompanySetupInboxReceipt", "inbox", "OrganizationDbContext"),
+    ("organization", "CompanySetupOutboxMessages"): (
+        "OrganizationCompanySetupOutboxMessage", "outbox", "OrganizationDbContext"
+    ),
     ("finance", "Commands"): ("FinanceCommandRow", "idempotency", "FinanceDbContext"),
     ("finance", "InvoiceCancellations"): (
         "FinanceInvoiceCancellationRow", "idempotency", "FinanceDbContext"
@@ -49,12 +69,18 @@ EXPECTED_STORES = {
     ("finance", "OfficialInvoiceImportCommands"): (
         "FinanceOfficialInvoiceImportCommandRow", "idempotency", "FinanceDbContext"
     ),
+    ("finance", "OfficialSalesInvoiceCommands"): (
+        "FinanceOfficialSalesInvoiceCommandRow", "idempotency", "FinanceDbContext"
+    ),
     ("finance", "OfficialInvoiceImportWorkDeliveries"): (
         "FinanceOfficialInvoiceImportWorkDeliveryRow", "delivery", "FinanceDbContext"
     ),
     ("finance", "OpenItemSourceBatches"): (
         "FinanceOpenItemSourceBatchRow", "idempotency", "FinanceDbContext"
     ),
+    ("finance", "CustomerReturnCredits"): ("FinanceCustomerReturnCreditRow", "idempotency", "FinanceDbContext"),
+    ("finance", "ExpensePaymentCommands"): ("ExpensePaymentCommandRow", "idempotency", "FinanceDbContext"),
+    ("finance", "PartyCreditLimitCommands"): ("PartyCreditLimitCommandRow", "idempotency", "FinanceDbContext"),
     ("idempotency", "CommandExecutions"): (
         "CommandExecution", "idempotency", "CommandExecutionDbContext"
     ),
@@ -79,12 +105,23 @@ EXPECTED_STORES = {
     ("product", "ProductItemTypeAttempts"): (
         "ProductItemTypeAttemptRow", "idempotency", "ProductPriceListDbContext"
     ),
+    ("product", "ProductDimensionAttempts"): (
+        "ProductDimensionAttemptRow", "idempotency", "ProductPriceListDbContext"
+    ),
+    ("product", "ProductProfileWeightAttempts"): (
+        "ProductProfileWeightAttemptRow", "idempotency", "ProductPriceListDbContext"
+    ),
     ("purchasing", "PurchaseAcceptanceShares"): (
         "PurchaseAcceptanceRow", "idempotency", "PurchasingDbContext"
     ),
     ("purchasing", "PurchaseAttempts"): (
         "PurchaseAttemptRow", "idempotency", "PurchasingDbContext"
     ),
+    ("purchasing", "PurchaseGoodsReceiptBatchAttempts"): (
+        "PurchaseGoodsReceiptBatchAttemptRow", "idempotency", "PurchasingDbContext"
+    ),
+    ("purchasing", "OutboxMessages"): ("PurchasingOutboxRow", "outbox", "PurchasingDbContext"),
+    ("sales", "ContractAttempts"): ("ContractAttemptRow", "idempotency", "SalesDbContext"),
     ("sales", "DraftAttempts"): ("DraftAttemptRow", "idempotency", "SalesDbContext"),
     ("sales", "InvoiceAttempts"): ("InvoiceAttemptRow", "idempotency", "SalesDbContext"),
     ("sales", "OutboxMessages"): ("SalesOutboxRow", "outbox", "SalesDbContext"),
@@ -95,6 +132,22 @@ EXPECTED_STORES = {
     ),
     ("sales", "ShipmentRiskExceptionAttempts"): (
         "ShipmentRiskExceptionAttemptRow", "idempotency", "SalesDbContext"
+    ),
+    # tren-1 wave 5 integration: K3 review pending (owning team).
+    ("finance", "CreditAccountCommands"): ("CreditAccountCommandRow", "idempotency", "FinanceDbContext"),
+    ("finance", "OpeningBalanceCommands"): ("OpeningBalanceCommandRow", "idempotency", "FinanceDbContext"),
+    ("logistics", "OutboxMessages"): ("LogisticsOutboxMessageRow", "outbox", "LogisticsDbContext"),
+    ("logistics", "WeighingDifferenceAttempts"): (
+        "WeighingDifferenceAttemptRow", "idempotency", "LogisticsDbContext"
+    ),
+    ("product", "ProductPackageStandardAttempts"): (
+        "ProductPackageStandardAttemptRow", "idempotency", "ProductPriceListDbContext"
+    ),
+    ("purchasing", "PurchaseSupplierReturnAttempts"): (
+        "PurchaseSupplierReturnAttemptRow", "idempotency", "PurchasingDbContext"
+    ),
+    ("sales", "SubcontractServiceInvoiceAttempts"): (
+        "SubcontractServiceInvoiceAttemptRow", "idempotency", "SalesDbContext"
     ),
     ("work", "ObservationInbox"): ("WorkObservationInboxRow", "inbox", "WorkDbContext"),
     ("work", "OutboxDeliveries"): ("WorkOutboxDeliveryRow", "inbox", "WorkDbContext"),
@@ -450,7 +503,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 18, "migrations": 163, "durableStores": 32},
+            {"dbContexts": 19, "migrations": 360, "durableStores": 66},
             self.inventory["counts"],
         )
         actual = {
@@ -460,13 +513,19 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
             for store in self.inventory["durableStores"]
         }
         self.assertEqual(EXPECTED_STORES, actual)
-        self.assertEqual(32, len(actual))
+        self.assertEqual(66, len(actual))
         self.assertEqual(self.inventory, generator.build_inventory(REPOSITORY_ROOT, SOURCE_COMMIT))
         generator.validate_inventory(REPOSITORY_ROOT, self.inventory)
 
-    def test_every_store_has_mapping_migration_and_live_writer_evidence(self) -> None:
+    def test_store_evidence_binds_the_actual_company_setup_producers(self) -> None:
         specs_by_id = {spec.identifier: spec for spec in generator.DURABLE_STORE_SPECS}
-        self.assertEqual(32, len(specs_by_id))
+        self.assertEqual(66, len(specs_by_id))
+        # W8 OpenAsync now actually enqueues the existing company-opened outbox in its owner transaction.
+        # Every inventoried durable store must retain real operative writer evidence; none is inferred.
+        self.assertEqual(
+            set(),
+            {spec.identifier for spec in specs_by_id.values() if not any(item.live_code for item in spec.evidence)},
+        )
         for record in self.inventory["durableStores"]:
             spec = specs_by_id[record["id"]]
             tokens = [token for evidence in spec.evidence for token in evidence.required_tokens]
@@ -479,17 +538,27 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
                     token == f'Schema = "{record["schema"]}"'
                     or token == f'ToTable("{record["table"]}", "{record["schema"]}"'
                     or (
-                        record["id"] == "idempotency.command-executions"
+                        # Both contexts split ToTable(name, schema, ...) over several lines.
+                        record["id"] in ("idempotency.command-executions", "identity.outbox")
                         and token == f'"{record["schema"]}",'
                     )
                     for token in tokens
                 ),
                 record["id"],
             )
-            self.assertTrue(
-                any(".Add" in token or "InsertAsync" in token for token in tokens),
-                record["id"],
-            )
+            if record["id"] == "organization.company-setup-outbox":
+                self.assertTrue(any(item.live_code for item in spec.evidence))
+                self.assertEqual("OpenAsync", generator.WRITER_METHOD_SCOPES[(spec.identifier,
+                    "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationCompanyOpeningV1.cs")])
+                self.assertIn("database.CompanySetupOutboxMessages.Add(new OrganizationCompanySetupOutboxMessage(", tokens)
+                self.assertIn("database.CompanySetupOutboxMessages.AsNoTracking()", tokens)
+                self.assertEqual(("organization", "CompanySetupOutboxMessages"), (record["schema"], record["table"]))
+            else:
+                self.assertTrue(
+                    any(re.search(r"\.(?:Add|AddAsync|AddRange|AddRangeAsync|InsertAsync)\s*\(", token)
+                        for evidence in spec.evidence if evidence.live_code for token in evidence.required_tokens),
+                    record["id"],
+                )
 
     def test_transfer_outgoing_document_attempts_are_the_reviewed_replay_store(self) -> None:
         store = next(
@@ -517,14 +586,14 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
     def test_snapshot_discovery_is_exact_and_excludes_only_audit_metadata(self) -> None:
         discovered = generator._discover_idempotency_key_tables(self.snapshot)
         self.assertEqual(generator.EXPECTED_IDEMPOTENCY_KEY_TABLES, discovered)
-        self.assertEqual(25, len(discovered))
+        self.assertEqual(49, len(discovered))
         replay_tables = set(generator._discover_replay_enforcement_tables(self.snapshot))
         specified = {
             (spec.schema, spec.table)
             for spec in generator.DURABLE_STORE_SPECS
             if spec.kind == "idempotency"
         }
-        self.assertEqual(24, len(replay_tables))
+        self.assertEqual(48, len(replay_tables))
         self.assertEqual(specified, replay_tables)
         self.assertEqual((("audit", "AuditEvents"),), generator.METADATA_ONLY_IDEMPOTENCY_KEY_TABLES)
 
@@ -740,7 +809,10 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
         # S5 API-36: + sales.OutboxMessages (the Sales transactional outbox, a message-delivery table).
         # B-24: + work.OutboxDeliveries / work.OutboxSourceCursors (Work outbox dispatcher).
         # A3 API-30: + purchasing.PurchaseOrderLineDeliverySlices, a business table whose name matches "deliver".
-        self.assertEqual(13, len(discovered))
+        # F-029 S4b: + settings.SalesDeliveryToleranceVersions, a business table whose name matches "deliver".
+        # tren-1 W7: two setup inboxes and the physical Organization setup outbox are message surfaces.
+        # W8: Finance outbox, official cancellation delivery history and Work notification inbox are actual message surfaces.
+        self.assertEqual(24, len(discovered))
         self.assertEqual(expected_message | expected_business, discovered)
 
         live_snippets = (
@@ -1938,8 +2010,8 @@ internal {{declaration}} : IDocumentObjectStoreV1
     def test_context_and_migration_declaration_sets_fail_closed(self) -> None:
         contexts = generator._discover_csharp_subclasses(self.snapshot, "DbContext")
         migrations = generator._discover_csharp_subclasses(self.snapshot, "Migration")
-        self.assertEqual(18, len(contexts))
-        self.assertEqual(163, len(migrations))
+        self.assertEqual(19, len(contexts))
+        self.assertEqual(360, len(migrations))
         accepted_main_migrations = {
             "20261014120000_AddManufacturingPlanCutLines.cs",
             "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition.cs",
@@ -3171,12 +3243,16 @@ internal {{declaration}} : IDocumentObjectStoreV1
         with self.assertRaisesRegex(generator.InventoryError, "extra fields"):
             generator._validate_inventory_for_snapshot(self.snapshot, inventory_with_value)
 
-    def test_inventory_lists_both_inventory_outbox_contracts(self) -> None:
+    def test_inventory_lists_every_inventory_outbox_contract(self) -> None:
         outbox = next(
             store for store in self.inventory["durableStores"] if store["id"] == "inventory.outbox"
         )
         self.assertEqual(
-            ["InventoryCustomerReturnOutboxV1", "InventoryDefiniteShipmentOutboxV1"],
+            [
+                "InventoryCustomerReturnOutboxV1",
+                "InventoryDefiniteShipmentOutboxV1",
+                "InventorySupplierReturnExitOutboxV1",
+            ],
             outbox["contracts"],
         )
 

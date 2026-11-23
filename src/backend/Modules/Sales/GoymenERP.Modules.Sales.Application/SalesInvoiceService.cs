@@ -27,6 +27,9 @@ namespace GoymenERP.Modules.Sales.Application;
 /// <item><b>Waits, never guesses</b> — a tax blocker (SAT-D135/D147), an exemption document dated after the shipment (SAT-D186),
 /// a withholding line (the VUK 232 comparison is not decided), a missing price, rate or due date: 409 <c>invoice_not_ready</c>
 /// with every reason; nothing is recorded under the key, so the same key asks again once the cause is gone.</item>
+/// <item><b>Weighing difference</b> (SAT-S13) — each share's dispatch note must carry the Logistics weighing-difference record
+/// (SAT-D389), not pending approval (SAT-D319 (6)), and pass at the scale kilograms (SAT-D322 (1)); see
+/// <see cref="SalesDispatchWeighingInvoiceRule"/>.</item>
 /// </list>
 /// Amounts are <see cref="SalesInvoiceCalculator"/>'s only (SAT-D11/D75/D76, EK42 SAT-D223…D226).
 /// </summary>
@@ -44,7 +47,12 @@ public sealed partial class SalesInvoiceService(
     ISalesOfficialInvoiceReadPortV1? officialInvoices = null,
     SalesInvoiceMatchTolerancePolicy? matchTolerance = null,
     ISalesFinanceAdmissionPortV1? financeAdmission = null,
-    ISalesInvoiceDiagnosticsV1? diagnostics = null) : ISalesInvoiceService
+    ISalesInvoiceDiagnosticsV1? diagnostics = null,
+    ISalesSubcontractServiceInvoiceStore? subcontractInvoices = null,
+    ISalesSubcontractDeliveryWeighingReadPortV1? subcontractWeighings = null,
+    ISalesDispatchWeighingDifferenceReadPortV1? weighingDifferences = null,
+    ISalesSubcontractInvoiceLifecycleStoreV1? subcontractLifecycle = null,
+    ISalesSubcontractInvoiceListStoreV1? subcontractInvoiceList = null) : ISalesInvoiceService
 {
     private const string WritePermission = SalesPermissionManifestV1.InvoicesWrite;
     private const string ReadPermission = SalesPermissionManifestV1.InvoicesRead;
@@ -101,6 +109,9 @@ public sealed partial class SalesInvoiceService(
             }
         }
 
+        // SAT-S13 (SAT-D389 / SAT-D405, SAT-D319 (6), SAT-D322 (1)): every note of a ready share waits on its weighing difference.
+        var invoiceKilograms = await AddWeighingDifferenceWaitsAsync(scope, prepared, reasons, cancellationToken);
+
         if (reasons.Count == 0)
         {
             RequireOneInvoiceKey(prepared, reasons);
@@ -121,10 +132,8 @@ public sealed partial class SalesInvoiceService(
 
         var header = new SalesInvoiceHeader(first.Share.CustomerPartyId, first.Share.CompanyAccountId, first.Basis.CurrencyId,
             first.Basis.MoneyProfileId, first.Basis.MoneyProfileVersion, first.Basis.MoneyScale, businessDate, rate);
-        var inputs = prepared.Select(item => new SalesInvoiceShareInput(Guid.NewGuid(), item.Share.ShipmentId, item.Share.DispatchNoteId,
-            item.Share.SystemNumber, item.Share.NoteLineNo, item.ShipmentDate, item.Share.SalesOrderId, item.Share.SalesOrderLineId,
-            item.Basis.Revision, item.Share.ProductId, item.Share.UnitId, item.Share.Quantity,
-            item.Share.Quantity.ToString(CultureInfo.InvariantCulture), item.Line.Commercial, item.Line.Tax!)).ToList();
+        var inputs = prepared.Select(item => ShareInput(item, invoiceKilograms[item.Share.ShipmentId],
+            basisByOrder[item.Share.SalesOrderId])).ToList();
         var invoiceId = Guid.NewGuid();
 
         await RequireStillAsync(scope, WritePermission, cancellationToken);
@@ -566,12 +575,45 @@ public sealed partial class SalesInvoiceService(
         return reasons.Count == before ? new PreparedShare(field, share, shipmentDate, basis, line, dueDates) : null;
     }
 
+    /// <summary>
+    /// SAT-D322 (1) / SAT-D434 / SAT-D435: a kg line is invoiced at the scale kilograms the weighing difference carried to its share
+    /// (unchanged); a piece line at its shipped whole pieces × the piece price, the scale kg and the theoretical kg (pieces × the
+    /// kg/unit pinned at approval, SAT-D437, 3 decimals away from zero per URN-D9) travelling as information only.
+    /// </summary>
+    private static SalesInvoiceShareInput ShareInput(PreparedShare item, decimal scaleKilograms, SalesOrderDraft order)
+    {
+        var share = item.Share;
+        if (item.Line.IsKilogram)
+            return new SalesInvoiceShareInput(Guid.NewGuid(), share.ShipmentId, share.DispatchNoteId, share.SystemNumber, share.NoteLineNo,
+                item.ShipmentDate, share.SalesOrderId, share.SalesOrderLineId, item.Basis.Revision, share.ProductId, share.UnitId,
+                scaleKilograms, scaleKilograms.ToString(CultureInfo.InvariantCulture), item.Line.Commercial, item.Line.Tax!);
+
+        // SAT-D473: an order line approved without a kg/unit (the card gave none) is still invoiced as pieces × piece price with its
+        // scale kg; its theoretical kg stays empty (never zero), so its theoretical kg price reads unavailable.
+        var perUnit = order.KilogramsPerUnitOf(share.SalesOrderLineId)?.KilogramsPerUnit;
+        var pieces = share.Quantity / 1.000000000000000000000000000m;
+        decimal? theoretical = perUnit is { } figure
+            ? decimal.Round(pieces * figure, SalesInvoice.KilogramInformationScale, MidpointRounding.AwayFromZero)
+            : null;
+        return new SalesInvoiceShareInput(Guid.NewGuid(), share.ShipmentId, share.DispatchNoteId, share.SystemNumber, share.NoteLineNo,
+            item.ShipmentDate, share.SalesOrderId, share.SalesOrderLineId, item.Basis.Revision, share.ProductId, share.UnitId,
+            pieces, pieces.ToString(CultureInfo.InvariantCulture), item.Line.Commercial, item.Line.Tax!, theoretical, scaleKilograms);
+    }
+
     /// <summary>SAT-D101: one currency and money profile, one due plan (the same terms giving the same dates) for every share.</summary>
     private static void RequireOneInvoiceKey(IReadOnlyList<PreparedShare> prepared, List<SalesDraftFieldError> reasons)
     {
         var first = prepared[0];
         foreach (var item in prepared.Skip(1))
         {
+            // 2026-11-17 user answer, #1189 6943483644 (GOV-D16) (agent relay): USD shipments on different
+            // business days are invoiced separately even if both days resolve to an equal bulletin/rate.
+            if (first.Basis.CurrencyId == SettingsCurrencyIdentitiesV1.UnitedStatesDollar
+                && item.Basis.CurrencyId == first.Basis.CurrencyId && item.ShipmentDate != first.ShipmentDate)
+            {
+                reasons.Add(new(item.Field, SalesInvoiceReasonCodesV1.UsdShipmentDayMismatch));
+            }
+
             if (item.Basis.CurrencyId != first.Basis.CurrencyId)
             {
                 reasons.Add(new(item.Field, SalesInvoiceReasonCodesV1.CurrencyMismatch));
@@ -687,14 +729,16 @@ public sealed partial class SalesInvoiceService(
         {
             return new InvoiceBasis(order.Revision, order.Header.PartyId, order.Header.CompanyAccountId, order.Header.CurrencyId,
                 order.Money.ProfileId, order.Money.ProfileVersion, order.Money.Scale, order.Header.DueTerms, order.Header.BuyerTax,
-                order.Lines.ToDictionary(line => line.Id, line => new BasisLine(line.OrderUnit.UnitId, line.Commercial, line.Tax)));
+                order.Lines.ToDictionary(line => line.Id, line => new BasisLine(line.OrderUnit.UnitId, line.Commercial, line.Tax,
+                    line.OrderUnit.IsKilogram)));
         }
 
         var header = archived.Header
             ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
         return new InvoiceBasis(archived.Revision, header.PartyId, header.CompanyAccountId, header.CurrencyId, archived.MoneyProfileId,
             archived.MoneyProfileVersion, archived.MoneyScale, header.DueTerms, header.BuyerTax,
-            archived.Lines.ToDictionary(line => line.LineId, line => new BasisLine(line.OrderUnitId, line.Commercial, line.Tax)));
+            archived.Lines.ToDictionary(line => line.LineId, line => new BasisLine(line.OrderUnitId, line.Commercial, line.Tax,
+                IsKilogramUnit(order, line.LineId, line.OrderUnitId))));
     }
 
     // ---- mapping ------------------------------------------------------------------------------------------------------------
@@ -732,10 +776,49 @@ public sealed partial class SalesInvoiceService(
                 line.Functional is { } f
                     ? new SalesInvoiceLineFunctionalView(Amounts(f.Amounts, functionalScale), [.. f.Adjusted.Select(type => type.ToString())],
                         f.NeedsReview)
-                    : null))],
+                    : null,
+                line.Share.TheoreticalKilograms is { } theoretical ? KilogramText(theoretical) : null,
+                line.Share.ActualKilograms is { } actual ? KilogramText(actual) : null))],
             invoice.CreatedBy, invoice.CreatedAtUtc, DecisionView(invoice.Decision), PaymentAllocationWarning: null, IsReplay: isReplay,
-            Match: MatchView(invoice.Match), Finalization: FinalizationView(invoice));
+            Match: MatchView(invoice.Match), Finalization: FinalizationView(invoice), KilogramPrices: KilogramPrices(invoice));
     }
+
+    /// <summary>
+    /// SAT-D436 / SAT-D439 (AK-5): an invoice with a piece line shows each line's theoretical and actual kg price and the document's
+    /// (the shared calculator; document figures only while every line has that kg). Closed until the formula golden is in main.
+    /// </summary>
+    internal static SalesInvoiceKilogramPricesV1? KilogramPrices(SalesInvoice invoice) =>
+        KilogramPrices(invoice, SalesDraftService.KilogramPriceGoldenAccepted);
+
+    /// <summary>The same block with the AK-5 switch named, so the closed and the open path are both measured by tests.</summary>
+    internal static SalesInvoiceKilogramPricesV1? KilogramPrices(SalesInvoice invoice, bool kilogramPriceOpen)
+    {
+        if (!invoice.Lines.Any(line => line.Share.CarriesKilogramInformation)) return null;
+        if (!kilogramPriceOpen)
+            return new SalesInvoiceKilogramPricesV1(SalesKilogramPriceStatesV1.FormulaGoldenPending);
+        var lines = invoice.Lines.OrderBy(line => line.LineNo).Select(line =>
+        {
+            // A kg line's invoiced quantity is its scale kg, so its theoretical and actual kg are that quantity (TK4).
+            var theoretical = line.Share.CarriesKilogramInformation ? line.Share.TheoreticalKilograms : line.Share.Quantity;
+            var actual = line.Share.CarriesKilogramInformation ? line.Share.ActualKilograms : line.Share.Quantity;
+            // A maturity surcharge is inside the invoice net and no pre-surcharge net is kept: such a line fails closed on its
+            // kg figures and so does the document (K18 / N2), the same rule as the order read (SAT-D465 slice pending).
+            var surcharged = HasMaturitySurcharge(line.Share.Commercial);
+            return (line, amount: surcharged ? null : (decimal?)line.Amounts.Net.Amount, theoretical, actual);
+        }).ToList();
+        return new SalesInvoiceKilogramPricesV1(SalesKilogramPriceStatesV1.Computed,
+            [.. lines.Select(item => new SalesInvoiceLineKilogramPricesV1(item.line.Id,
+                SalesDraftService.View(SalesKilogramPriceCalculator.Line(item.amount, item.theoretical, SalesKilogramPriceState.TheoreticalKgUnavailable)),
+                SalesDraftService.View(SalesKilogramPriceCalculator.Line(item.amount, item.actual, SalesKilogramPriceState.WeighedKgUnavailable))))],
+            SalesDraftService.View(SalesKilogramPriceCalculator.Document([.. lines.Select(item => new SalesKilogramPriceLine(item.amount, item.theoretical))])),
+            SalesDraftService.View(SalesKilogramPriceCalculator.Document([.. lines.Select(item => new SalesKilogramPriceLine(item.amount, item.actual))])));
+    }
+
+    private static bool HasMaturitySurcharge(CommercialDraftFields commercial) =>
+        IsNonZero(commercial.SurchargePercent) || IsNonZero(commercial.SurchargeAmount);
+
+    private static bool IsNonZero(string? text) =>
+        text is not null && (!decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var value) || value != 0m);
 
     private static SalesInvoiceDecisionView? DecisionView(SalesInvoiceDecisionFacts facts) => facts == SalesInvoiceDecisionFacts.None
         ? null
@@ -765,6 +848,9 @@ public sealed partial class SalesInvoiceService(
         amount.ToString("F" + scale.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
 
     private static string Decimal(decimal value) => SalesLinePriceCalculator.Format(value);
+
+    /// <summary>AK-4: kilogram information as normalised invariant text (trailing zeros dropped: 493.800 → 493.8).</summary>
+    private static string KilogramText(decimal value) => (value / 1.000000000000000000000000000m).ToString(CultureInfo.InvariantCulture);
 
     /// <summary>SAT-D10: the Europe/Istanbul day; without the zone nothing is guessed (503, never UTC).</summary>
     private static DateOnly Day(DateTimeOffset instant)
@@ -884,7 +970,25 @@ public sealed partial class SalesInvoiceService(
 
     private sealed record Scope(Guid CompanyId, string ActorId, IReadOnlyCollection<string> RoleCodes);
 
-    private sealed record BasisLine(Guid OrderUnitId, CommercialDraftFields Commercial, SalesLineTaxSnapshot? Tax);
+    private sealed record BasisLine(Guid OrderUnitId, CommercialDraftFields Commercial, SalesLineTaxSnapshot? Tax, bool IsKilogram);
+
+    /// <summary>
+    /// AK-4: whether an archived basis line's unit is the kilogram — the order line's own Settings answer for that unit, else
+    /// (the line's unit changed in a later revision) the Settings answer another line of the order holds for the SAME unit
+    /// identity (the kind is the unit's, SalesOrderDraft refuses a profile whose kind and dimension disagree). K3 review: a unit
+    /// no line of the order still answers is not guessed to be a piece unit (the invoice would bill pieces × price instead of the
+    /// scale kg); the basis is unreadable and nothing is invoiced (fail-closed).
+    /// </summary>
+    internal static bool IsKilogramUnit(SalesOrderDraft order, Guid lineId, Guid unitId)
+    {
+        var known = order.Lines.Concat(order.RemovedLines).ToArray();
+        if (known.FirstOrDefault(line => line.Id == lineId && line.OrderUnit.UnitId == unitId) is { } same)
+            return same.OrderUnit.IsKilogram;
+        var answers = known.Where(line => line.OrderUnit.UnitId == unitId).Select(line => line.OrderUnit.IsKilogram).Distinct().ToArray();
+        return answers.Length == 1
+            ? answers[0]
+            : throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
+    }
 
     private sealed record InvoiceBasis(int Revision, Guid PartyId, Guid CompanyAccountId, Guid CurrencyId, Guid MoneyProfileId,
         string MoneyProfileVersion, int MoneyScale, SalesDueTerms? DueTerms, SalesBuyerTax? BuyerTax,

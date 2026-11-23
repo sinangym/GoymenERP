@@ -46,6 +46,7 @@ public static class LogisticsModuleExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<LogisticsStore>();
         services.AddScoped<ILogisticsInstructionStore>(serviceProvider => serviceProvider.GetRequiredService<LogisticsStore>());
+        services.AddScoped<ILogisticsInvoicedShipmentProofReadPortV1, LogisticsInvoicedShipmentProofReadPortV1>();
         services.AddScoped<LoadingUnitVerifier>();
         services.TryAddSingleton(new LogisticsInstructionServiceBindings());
         services.AddScoped(CreateInstructionService);
@@ -53,6 +54,7 @@ public static class LogisticsModuleExtensions
             serviceProvider.GetRequiredService<LogisticsInstructionService>());
         services.AddScoped<ILogisticsRealizationServiceV1>(serviceProvider =>
             serviceProvider.GetRequiredService<LogisticsInstructionService>());
+        services.AddScoped<ILogisticsPlanExcessServiceV1>(serviceProvider => serviceProvider.GetRequiredService<LogisticsInstructionService>());
         services.AddScoped<IApprovedDispatchInvoiceSourceV1>(serviceProvider =>
             serviceProvider.GetRequiredService<LogisticsInstructionService>());
         // AT-024: Logistics answers the Sales-declared delivery read over its own company-filtered lines. Registered here,
@@ -61,6 +63,9 @@ public static class LogisticsModuleExtensions
         // DEC-SAL-005: Logistics answers the Sales-declared loading read (every instruction line of an order, instructed or
         // loaded included) for the cancellation preview; the owner's module registers it, as the delivery read above.
         services.AddScoped<ISalesOrderLoadingReadPortV1, LogisticsSalesOrderLoadingReadPort>();
+        // SAT-D367: the open (issued, not yet shipped) instruction quantity per Sales order line; the Sales consumer reaches it
+        // through its own declared port and a host adapter, as for the net-weight read below.
+        services.AddScoped<ILogisticsSalesOrderPlannedQuantityReadPortV1, LogisticsSalesOrderPlannedQuantityReadPort>();
         // AT-025: the operations work list — two separate sections over the Sales and Purchasing owners' read ports (registered by
         // those modules) and Logistics's own recorded totals; each section measures its own name.
         services.AddScoped<ILogisticsOrderLineProgressReader, LogisticsOrderLineProgressReader>();
@@ -77,6 +82,9 @@ public static class LogisticsModuleExtensions
         services.AddScoped<ISalesDispatchNoteReadPortV1>(provider => provider.GetRequiredService<LogisticsSalesDispatchReadPorts>());
         services.AddScoped<ISalesInvoiceableShipmentReadPortV1>(provider =>
             provider.GetRequiredService<LogisticsSalesDispatchReadPorts>());
+        // F1 (STK-S4, LOJ-D9): the delivery weighing's net kilograms by (instruction, weighing), over the store's company-filtered
+        // rebuild; read-only, no authority. The Sales consumer reaches it through its own declared port and a host adapter.
+        services.AddScoped<ILogisticsSubcontractDeliveryNetWeightReadPortV1, LogisticsSubcontractDeliveryNetWeightReadPort>();
         services.TryAddSingleton(new LogisticsCustomerReturnBindingsV1(
             LogisticsPermissionManifestV1.CustomerReturnsRequest,
             LogisticsPermissionManifestV1.CustomerReturnsDecision,
@@ -84,6 +92,11 @@ public static class LogisticsModuleExtensions
             ErpPermissions.InventoryPhysicalAllocationWrite));
         services.AddScoped<ILogisticsCustomerReturnServiceV1, LogisticsCustomerReturnService>();
         services.AddScoped<LogisticsTransferOutgoingDocumentStore>();
+        services.AddScoped<ILogisticsTransferDepartureOwnerV1, LogisticsTransferDepartureOwner>();
+        services.AddScoped<ILogisticsTransferOutgoingDocumentStoreV2>(provider =>
+            provider.GetRequiredService<LogisticsTransferOutgoingDocumentStore>());
+        services.AddScoped<ILogisticsTransferOutgoingDocumentReaderV1>(provider =>
+            provider.GetRequiredService<LogisticsTransferOutgoingDocumentStore>());
         services.AddScoped<ILogisticsTransferOutgoingDocumentStoreV1>(provider =>
             provider.GetRequiredService<LogisticsTransferOutgoingDocumentStore>());
         services.AddScoped<ILogisticsTransferOutgoingDocumentProofSourceV1>(provider =>
@@ -93,6 +106,20 @@ public static class LogisticsModuleExtensions
             LogisticsPermissionManifestV1.DispatchNotesApprove,
             LogisticsPermissionManifestV1.DispatchNotesCancel));
         services.AddScoped<ILogisticsTransferOutgoingDocumentServiceV1, LogisticsTransferOutgoingDocumentService>();
+        // STK-S24: the sales weighing-difference record. The Settings rate/band port and the Inventory free-stock port are
+        // consumer-defined; until the host registers their adapters the fail-closed defaults answer "unreadable".
+        services.AddScoped<LogisticsWeighingDifferenceStore>();
+        services.AddScoped<ILogisticsWeighingDifferenceStoreV1>(provider =>
+            provider.GetRequiredService<LogisticsWeighingDifferenceStore>());
+        services.AddScoped<ILogisticsWeighingDifferenceReadPortV1>(provider =>
+            provider.GetRequiredService<LogisticsWeighingDifferenceStore>());
+        services.TryAddScoped<ILogisticsWeighingDifferencePolicyReadPortV1, UnavailableLogisticsWeighingDifferencePolicyReadPort>();
+        services.TryAddScoped<ILogisticsWeighingDifferenceStockReadPortV1, UnavailableLogisticsWeighingDifferenceStockReadPort>();
+        services.TryAddSingleton(new LogisticsWeighingDifferenceBindingsV1(
+            LogisticsPermissionManifestV1.WeighingDifferencesRecord,
+            LogisticsPermissionManifestV1.WeighingDifferencesApprove,
+            LogisticsPermissionManifestV1.WeighingDifferencesRead));
+        services.AddScoped<ILogisticsWeighingDifferenceServiceV1, LogisticsWeighingDifferenceService>();
         return services;
     }
 
@@ -108,7 +135,9 @@ public static class LogisticsModuleExtensions
         serviceProvider.GetRequiredService<ILogisticsInstructionStore>(),
         serviceProvider.GetRequiredService<LogisticsInstructionServiceBindings>(),
         serviceProvider.GetRequiredService<TimeProvider>(),
-        serviceProvider.GetService<ILogisticsRealizationTransactionRunnerV1>());
+        serviceProvider.GetService<ILogisticsRealizationTransactionRunnerV1>(),
+        // STK-S27: Sales registers the shipment risk gate; without it a definite shipment answers 503 (L-7, fail-closed).
+        serviceProvider.GetService<ISalesShipmentRiskGateReadPortV1>());
 
     /// <summary>Applies Logistics's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeLogisticsModuleAsync(this IServiceProvider services, CancellationToken cancellationToken = default)

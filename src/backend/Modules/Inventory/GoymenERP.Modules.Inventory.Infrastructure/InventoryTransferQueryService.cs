@@ -10,6 +10,25 @@ public sealed class InventoryTransferQueryService(
     IErpAuthorityRevalidationService authority,
     IInventoryTransferReaderV1 reader) : IInventoryTransferQueryV1
 {
+    public async Task<InventoryTransferListV1> ListAsync(int limit, CancellationToken cancellationToken = default)
+    {
+        var scope = await RequireAsync(cancellationToken);
+        if (limit is < 1 or > 50) throw new InventoryTransferException(400, InventoryTransferCodesV1.ValidationFailed);
+        InventoryTransferListV1 result;
+        try { result = await reader.ListAsync(limit, cancellationToken); }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            await RequireStillAsync(scope, cancellationToken);
+            throw exception is InventoryTransferException owner ? owner
+                : new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable, exception);
+        }
+        await RequireStillAsync(scope, cancellationToken);
+        if (result.CompanyId != scope.CompanyId || result.Items.Any(item => item.CompanyId != scope.CompanyId)
+            || result.Items.Count > limit || result.Items.Select(item => item.TransferId).Distinct().Count() != result.Items.Count)
+            throw new InventoryTransferException(503, InventoryTransferCodesV1.Unavailable);
+        return result;
+    }
+
     public async Task<InventoryTransferViewV1> GetAsync(Guid transferId, CancellationToken cancellationToken = default)
     {
         var scope = await RequireAsync(cancellationToken);

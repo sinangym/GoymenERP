@@ -8,6 +8,13 @@ namespace GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 public sealed class GroupSharedCommandDbContext(DbContextOptions<GroupSharedCommandDbContext> options)
     : DbContext(options)
 {
+    internal const string ProductCommandsCheck =
+        "[Subject] = 'Product' AND [CommandName] IN ('product.draft.create.v1', 'product.draft.basic-edit.v1', "
+        + "'product.card.activate.v1', 'product.card.deactivate.v1', 'product.card.reactivate.v1', "
+        + "'product.card.cogs-classification.set.v1') "
+        + "AND ([CommandName] <> 'product.card.cogs-classification.set.v1' "
+        + "OR DATALENGTH([CommandName]) = DATALENGTH('product.card.cogs-classification.set.v1'))";
+
     internal DbSet<GroupSharedCommandTerminalRecord> Terminals => Set<GroupSharedCommandTerminalRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -16,8 +23,7 @@ public sealed class GroupSharedCommandDbContext(DbContextOptions<GroupSharedComm
         entity.ToTable("GroupSharedCommandTerminals", "idempotency", table =>
         {
             table.HasCheckConstraint("CK_GroupSharedTerminals_ProductCommands",
-                "[Subject] = 'Product' AND [CommandName] IN ('product.draft.create.v1', 'product.draft.basic-edit.v1', "
-                + "'product.card.activate.v1', 'product.card.deactivate.v1', 'product.card.reactivate.v1')");
+                ProductCommandsCheck);
             table.HasCheckConstraint("CK_GroupSharedTerminals_ActorOrigin",
                 "[LocalActorId] <> '00000000-0000-0000-0000-000000000000' AND "
                 + "[OriginCompanyId] <> '00000000-0000-0000-0000-000000000000'");

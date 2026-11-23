@@ -2,6 +2,8 @@ using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.SqlServer;
 using GoymenERP.Modules.Identity.Application.Contracts;
+using GoymenERP.Modules.Identity.Infrastructure.Bootstrap;
+using GoymenERP.Modules.Identity.Infrastructure.LocalAccount;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Seeding;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
@@ -19,7 +21,8 @@ public static class IdentityModuleExtensions
     public static IServiceCollection AddIdentityModule(
         this IServiceCollection services,
         IConfiguration configuration,
-        bool enableAuthorizationSnapshotDatabaseReadiness = true)
+        bool enableAuthorizationSnapshotDatabaseReadiness = true,
+        Action<IServiceProvider, DbContextOptionsBuilder>? configureDbContext = null)
     {
         var provider = configuration["DB_PROVIDER"] ?? "SqlServer";
         if (!string.Equals(provider, "SqlServer", StringComparison.OrdinalIgnoreCase))
@@ -48,10 +51,15 @@ public static class IdentityModuleExtensions
 
         services.Configure<IdentitySeedOptions>(
             configuration.GetSection(IdentitySeedOptions.SectionName));
-        services.AddDbContext<IdentityDbContext>(options =>
+        // ID-3: Identity owns its state; canonical audit writes use the Audit owner's
+        // transaction port. This context never maps or writes another module's Audit table.
+        services.AddDbContext<IdentityDbContext>((serviceProvider, options) =>
+        {
             options.UseSqlServer(
                 connectionString,
-                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "identity")));
+                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "identity"));
+            configureDbContext?.Invoke(serviceProvider, options);
+        });
         services.AddScoped<IExternalIdentityResolver, ExternalIdentityResolver>();
         // One instance per scope behind all three ports: a revalidation has to refresh the very
         // cache the cached path reads, while active-role reads deliberately bypass permission
@@ -68,12 +76,51 @@ public static class IdentityModuleExtensions
         services.TryAddSingleton<IPermissionScopeReadObserver,
             NullPermissionScopeReadObserver>();
         services.AddScoped<IIdentityProfileService, IdentityProfileService>();
-        // AT-004 read-only access view. A read port only: no grant or revocation service exists behind it.
+        // AT-004 read-only access view.
         services.AddScoped<IIdentityAccessReadService, IdentityAccessReadService>();
+        // ID-3 role assignment, revocation and the Critical role request (KIM-D1/D5/D15/D17). It grants nothing by
+        // itself: who holds identity.roles.manage and identity.access.approve stays a human gate.
+        services.AddScoped<IdentityAccessAssignmentService>();
+        services.AddScoped<IIdentityAccessAssignmentService>(sp => sp.GetRequiredService<IdentityAccessAssignmentService>());
+        services.AddScoped<IIdentityUserManagementServiceV1>(sp => sp.GetRequiredService<IdentityAccessAssignmentService>());
+        services.AddScoped<ICompanySetupGroupAuthorityV1, SqlCompanySetupGroupAuthorityV1>();
+        services.AddScoped<IdentityCompanySetupService>();
+        services.AddScoped<IIdentityCompanySetupServiceV1>(sp => sp.GetRequiredService<IdentityCompanySetupService>());
+        services.AddScoped<IIdentityFirstAdminCandidatesV1>(sp => sp.GetRequiredService<IdentityCompanySetupService>());
         // MOD-08 user directory: a company-fenced, read-only display-name port for another module's central adapter.
         services.AddScoped<IUserDirectoryReadPortV1, UserDirectoryReadPortV1>();
         // SAT-D66: the same directory answers in which companies a person is an active member (multi-company binding).
         services.AddScoped<IUserCompanyMembershipReadPortV1, UserDirectoryReadPortV1>();
+        services.AddScoped<ICompanySingleActiveMemberReadPortV1, UserDirectoryReadPortV1>();
+        // ID-1 local account login. The settings are validated (fail-closed) by the host only when the
+        // LocalAccount authentication mode is on; the password hasher is supplied by the host.
+        services.AddOptions<LocalAccountOptions>()
+            .Bind(configuration.GetSection(LocalAccountOptions.SectionName));
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<ILocalCredentialStore, SqlLocalCredentialStore>();
+        services.AddScoped<ILocalAccountLoginService, LocalAccountLoginService>();
+        services.AddScoped<ILocalTwoFactorLoginV1, SqlLocalTwoFactorLoginV1>();
+        services.AddScoped<ILocalTwoFactorServiceV1, LocalTwoFactorServiceV1>();
+        services.AddScoped<ILocalTwoFactorOperatorRecoveryServiceV1, LocalTwoFactorOperatorRecoveryServiceV1>();
+        services.AddScoped<ILocalAccountSessionValidator, LocalAccountSessionValidator>();
+        // KIM-D30: logout renews the security stamp; every open session then fails the per-request check.
+        services.AddScoped<ILocalAccountLogoutService, LocalAccountLogoutService>();
+        // ID-2: the session's own password change (KIM-D12 policy) and its idempotency record.
+        services.AddScoped<ILocalCredentialCommandStore, SqlLocalCredentialCommandStore>();
+        services.AddScoped<ILocalPasswordContextTermSource, SqlLocalPasswordContextTermSource>();
+        services.AddScoped<ILocalAccountPasswordChangeService, LocalAccountPasswordChangeService>();
+        // ID-2 one-shot founder bootstrap (KIM-D5/KIM-D18); the Admin role code has no default.
+        services.AddOptions<IdentityBootstrapOptions>()
+            .Bind(configuration.GetSection(IdentityBootstrapOptions.SectionName));
+        services.AddScoped<IFounderBootstrapService, FounderBootstrapService>();
+        // ID-2r founder recovery (KIM-D22/D23/D43): KIM-D16 evaluator, company lock seam and the CLI service.
+        services.AddOptions<FounderRecoveryOptions>()
+            .Bind(configuration.GetSection(FounderRecoveryOptions.SectionName));
+        services.AddScoped<IdentityUserManagementEvaluator>();
+        services.AddScoped<IFounderRecoveryCompanyLock, SqlFounderRecoveryCompanyLock>();
+        services.AddScoped<IFounderRecoveryAuditParticipant, FounderRecoveryAuditParticipant>();
+        services.AddScoped<IFounderBootstrapAuditParticipant, FounderBootstrapAuditParticipant>();
+        services.AddScoped<IFounderRecoveryService, FounderRecoveryService>();
         services.AddScoped<ISystemRolePermissionReconciler, SystemRolePermissionReconciler>();
         services.AddScoped<IdentityDataSeeder>();
         services.AddSingleton(rcsiBinding);
@@ -88,6 +135,16 @@ public static class IdentityModuleExtensions
             }
         }
 
+        return services;
+    }
+
+    /// <summary>Host composition of the Organization lifecycle boundary; one wrapper for all three authority ports.</summary>
+    public static IServiceCollection AddCompanyLifecycleAuthorizationGate(this IServiceCollection services)
+    {
+        services.AddScoped<CompanyLifecycleAuthorizationGate>();
+        services.AddScoped<IErpAuthorizationService>(sp => sp.GetRequiredService<CompanyLifecycleAuthorizationGate>());
+        services.AddScoped<IErpAuthorityRevalidationService>(sp => sp.GetRequiredService<CompanyLifecycleAuthorizationGate>());
+        services.AddScoped<IActiveRoleCodeReader>(sp => sp.GetRequiredService<CompanyLifecycleAuthorizationGate>());
         return services;
     }
 

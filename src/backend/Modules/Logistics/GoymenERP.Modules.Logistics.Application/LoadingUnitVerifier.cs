@@ -45,8 +45,8 @@ public static class LoadingUnitCodes
 /// <see cref="SettingsPrerequisiteCodesV1.UnitProfileNotFound"/>, <c>settings_profile_invalid</c>).</item>
 /// <item>The profile must belong to the SERVER-resolved company the caller passes, name the
 /// requested unit, be internally valid, and be active on the effective date.</item>
-/// <item>Only kilogram profiles are approved today (Settings README, Ö1); another dimension is
-/// refused as unsupported rather than mapped to a guessed count unit.</item>
+/// <item>Kilogram profiles and (AK-4, KLN-D119) the approved piece identity are accepted; another dimension (metre,
+/// SAT-D443) is refused as unsupported rather than mapped to a guessed unit. A piece quantity is whole.</item>
 /// <item>Precision comes from the profile's scale, capped by Ö2's kilogram rule (at most 3):
 /// more decimals are refused, never rounded or cut.</item>
 /// </list>
@@ -99,13 +99,15 @@ public sealed class LoadingUnitVerifier(ISettingsPrerequisiteProvider settings)
             return LoadingUnitVerification.Refused(LoadingUnitCodes.UnitUnsupported);
         }
 
-        if (!profile.IsKilogram)
+        // AK-4 (KLN-D119, SAT-D434): the approved piece (adet) identity is the one count unit a loading line may be in; its
+        // quantity is whole pieces. Any other non-kilogram dimension (metre: SAT-D443) stays refused, never mapped.
+        var isPiece = !profile.IsKilogram && unitId == SettingsUnitIdentitiesV1.Piece;
+        if (!profile.IsKilogram && !isPiece)
         {
-            // No count dimension is approved in Settings yet; refusing never invents a unit.
             return LoadingUnitVerification.Refused(LoadingUnitCodes.UnitUnsupported);
         }
 
-        var appliedScale = Math.Min(profile.Scale, Quantity.KilogramScale);
+        var appliedScale = Math.Min(profile.Scale, isPiece ? 0 : Quantity.KilogramScale);
         if (Quantity.SignificantDecimals(quantity) > appliedScale)
         {
             return LoadingUnitVerification.Refused(LoadingUnitCodes.QuantityScaleExceeded);
@@ -113,6 +115,6 @@ public sealed class LoadingUnitVerifier(ISettingsPrerequisiteProvider settings)
 
         return LoadingUnitVerification.Verified(new VerifiedLoadingUnit(unitId, profile.UnitCode,
             profile.Profile.ProfileId, profile.Profile.Version.ToString(CultureInfo.InvariantCulture), profile.Scale,
-            appliedScale, Quantity.Positive(quantity, QuantityUnit.Kilogram)));
+            appliedScale, Quantity.Positive(quantity, isPiece ? QuantityUnit.Piece : QuantityUnit.Kilogram)));
     }
 }

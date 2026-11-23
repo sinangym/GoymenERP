@@ -16,6 +16,14 @@ import { SALES_CAPABILITY, SALES_POOL_CAPABILITY_ID, SALES_POOL_ROUTE, SALES_ROU
 import { CAPABILITY_NAV_LABEL, NAV_CAPABILITIES, NAV_GROUPS } from './navigation'
 
 describe('shell ↔ Sales lane capability ids', () => {
+  it('mounts the standalone official cancellation route without the invoice list or price capability', () => {
+    expect(CAPABILITY.salesOfficialInvoiceCancellation).toBe(SALES_CAPABILITY.officialCancellation)
+    expect(CAPABILITY_ROUTE[CAPABILITY.salesOfficialInvoiceCancellation]).toBe(SALES_ROUTE.officialCancellation)
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesOfficialInvoiceCancellation]).toBe('Resmî fatura iptal kaydı')
+    expect(NAV_CAPABILITIES).toContain(CAPABILITY.salesOfficialInvoiceCancellation)
+    expect(NAV_GROUPS.find((group) => group.id === 'sales')?.entries).toContain(CAPABILITY.salesOfficialInvoiceCancellation)
+  })
+
   it('declares the same three ids the lane does', () => {
     expect(CAPABILITY.salesDraftsList).toBe(SALES_CAPABILITY.draftsList)
     expect(CAPABILITY.salesDraftsDetail).toBe(SALES_CAPABILITY.draftsDetail)

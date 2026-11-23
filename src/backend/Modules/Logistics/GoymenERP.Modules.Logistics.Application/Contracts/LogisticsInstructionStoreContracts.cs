@@ -36,6 +36,7 @@ public static class LogisticsCommands
     public const string RecordShipmentV1 = "logistics.loading-instruction.record-shipment.v1";
     public const string RecordDeliveryV1 = "logistics.loading-instruction.record-delivery.v1";
     public const string RecordWeighingV1 = "logistics.loading-instruction.record-weighing.v1";
+    public const string CorrectWeighingV1 = "logistics.loading-instruction.correct-weighing.v1";
 
     /// <summary>AT-055: a dispatch-note draft from the instruction's definite shipments (one version step, no share).</summary>
     public const string CreateDispatchNoteV1 = "logistics.loading-instruction.create-dispatch-note.v1";
@@ -48,11 +49,16 @@ public static class LogisticsCommands
     /// <summary>F-020: cancel an instruction with no recorded shipment (one version step, no share).</summary>
     public const string CancelInstructionV1 = "logistics.loading-instruction.cancel.v1";
 
-    public static bool IsMutation(string commandName) =>
-        commandName is IssueV1 or RecordLoadV1 or RecordShipmentV1 or RecordDeliveryV1 or RecordWeighingV1 or CreateDispatchNoteV1
-            or ApproveDispatchNoteV1 or CancelDispatchNoteV1 or SetEDispatchNumberV1 or CancelInstructionV1;
+    /// <summary>LOJ-D17: the unload weighing of a cancelled instruction (one version step, no share, no stock movement).</summary>
+    public const string RecordUnloadWeighingV1 = "logistics.loading-instruction.record-unload-weighing.v1";
 
-    public static bool IsKnown(string commandName) => commandName == CreateV1 || IsMutation(commandName);
+    public static bool IsMutation(string commandName) =>
+        commandName is IssueV1 or RecordLoadV1 or RecordShipmentV1 or RecordDeliveryV1 or RecordWeighingV1 or CorrectWeighingV1 or CreateDispatchNoteV1
+            or ApproveDispatchNoteV1 or CancelDispatchNoteV1 or SetEDispatchNumberV1 or CancelInstructionV1 or RecordUnloadWeighingV1
+            or LogisticsSubcontractDeliveryV1.ShipCommand;
+
+    public static bool IsKnown(string commandName) => commandName == CreateV1 || IsMutation(commandName)
+        || commandName is LogisticsPlanExcessV1.ProposeCommand or LogisticsPlanExcessV1.ApproveCommand or LogisticsPlanExcessV1.ReserveCommand;
 }
 
 /// <summary>The stable refusal codes of the store, beside the domain's rule codes.</summary>
@@ -73,8 +79,12 @@ public sealed class LogisticsStoreException(string code, string message, Excepti
     public string Code { get; } = code;
 }
 
-/// <summary>A stored instruction with the business date its unit profiles were read for (kept beside the domain record, not in it).</summary>
-public sealed record StoredLoadingInstruction(LoadingInstruction Instruction, DateOnly EffectiveOn);
+/// <summary>
+/// A stored instruction with the business date its unit profiles were read for (kept beside the domain record, not in it),
+/// plus the stored actor of each share by share id (F-020 ShippedBy column; a share stored without an actor is absent).
+/// </summary>
+public sealed record StoredLoadingInstruction(
+    LoadingInstruction Instruction, DateOnly EffectiveOn, IReadOnlyDictionary<Guid, string>? ShareRecordedBy = null);
 
 public sealed record LogisticsStoreResult(StoredLoadingInstruction Instruction, LogisticsWriteOutcome Outcome, string OriginalCorrelationId);
 
@@ -118,15 +128,19 @@ public sealed record LogisticsOrderLineAggregateLoadLimit(
     DateOnly EffectiveOn);
 
 /// <summary>ADR-011 §7: a terminal refusal recorded under the attempt key (stale version, cap, block, state), answered again on the same key.</summary>
-public sealed record LogisticsTerminalRefusal(int Status, string Code, IReadOnlyList<LogisticsFieldError> Errors);
+public sealed record LogisticsTerminalRefusal(int Status, string Code, IReadOnlyList<LogisticsFieldError> Errors, string? Detail = null);
 
 /// <summary>What the key holds: the stored instruction or the recorded refusal, never both.</summary>
 public sealed record LogisticsReplay(StoredLoadingInstruction? Instruction, LogisticsTerminalRefusal? Refusal, string OriginalCorrelationId);
 
 public sealed record LogisticsInstructionPage(IReadOnlyList<StoredLoadingInstruction> Items, string? NextCursor);
 
-/// <summary>The audit facts of one mutation (issue / record-load): the versioned event type, the operation and the reason.</summary>
-public sealed record LogisticsMutationAudit(string EventType, string Operation, string Reason);
+/// <summary>
+/// The audit facts of one mutation (issue / record-load): the versioned event type, the operation and the reason.
+/// <paramref name="WarningReason"/> (LOJ-D17) is the reason the store writes instead when the unload weighing this mutation added
+/// carries a difference warning; the warning never refuses the save.
+/// </summary>
+public sealed record LogisticsMutationAudit(string EventType, string Operation, string Reason, string? WarningReason = null);
 
 /// <summary>
 /// The persistent instruction store of the server-resolved company (LOG-4a). One call is one save:

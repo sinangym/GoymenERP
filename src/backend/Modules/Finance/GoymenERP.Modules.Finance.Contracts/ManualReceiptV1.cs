@@ -22,6 +22,9 @@ public sealed record FinanceContext(Guid CompanyId, string ActorId, string Corre
 public sealed record CommandMetadata(string IdempotencyKey);
 public sealed record MoneyText(string Amount, Guid CurrencyId);
 public sealed record ProfileReference(string ProfileId, string Version);
+/// <summary>KIM-D53 / Q7. Actual committed record number and its frozen company format version.
+/// Missing on legacy sources; neither an external bank reference nor a draft number.</summary>
+public sealed record FinanceDocumentNumberV1(string Number, string FormatVersion);
 
 // DEC-FIN-014: Pos is present only for a customer POS collection (Money is then its GROSS amount). It is omitted from
 // the JSON when null, so a bank-transfer preparation keeps the exact #258 shape and the same ADR-011 payload hash.
@@ -104,6 +107,27 @@ public enum FinanceAction
     ReadOpenItems, ReadOpenItemAmount,
     // API-23: maker-checker reversal of a recorded outgoing payment; its own names, not the receipt reversal's.
     ProposePaymentReversal, ApprovePaymentReversal,
+    // API-30: the cash account (kasa) master; its own names, aligned with the bank-account master's.
+    ReadCashAccounts, ProposeCashAccount, ApproveCashAccount,
+    // API-30 passivation/reactivation: each its own propose/approve pair, so who may do which stays a separate grant.
+    ProposeCashAccountPassivation, ApproveCashAccountPassivation,
+    ProposeCashAccountReactivation, ApproveCashAccountReactivation,
+    // API-85a: the party credit limit master (F018 §L1).
+    ReadCreditLimits, ProposeCreditLimit, ApproveCreditLimit,
+    // FNS-D25 (API-25): the payment not tied to a party (single expense item, mandatory description); its own
+    // names, so preparing, approving and recording an expense payment stay separate grants from R47's.
+    SaveExpensePaymentDraft, ReadExpensePayments, ApproveExpensePayment, RecordExpensePayment,
+    // FNS-D24 (API-32/34): the transfer between two treasury accounts (same currency or currency exchange); its own
+    // names, so reading transfers and committing one stay separate grants.
+    ReadCashTransfers, CommitCashTransfer,
+    // API-85b (FNS-D57): the customer collateral; read and a one-step record/change/release, its own names.
+    ReadCollaterals, RecordCollateral,
+    // FIN-S9 (FNS-D23): the cash/bank/party opening balance; read, a specialist's proposal and a manager's decision.
+    ReadOpeningBalances, ProposeOpeningBalance, ApproveOpeningBalance,
+    // FIN-SC47 (FNS-D88): the credit account (kredi) with its imported repayment plan; read, proposal and decision.
+    ReadCredits, ProposeCredit, ApproveCredit,
+    // KLN-D72/76: one-step full balance transfer to the recorded legal successor; registration grants nothing.
+    RecordPartyBalanceTransfer,
 }
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 
@@ -131,7 +155,12 @@ public sealed record SourceSummary(Guid Id, Guid CompanyId, string SourceNumber,
 public sealed record SourceDetail(SourceSummary Source, ProfileReference Profile, string? BankReference,
     string? Description, DateTimeOffset? RecordedAtUtc, Guid? ReversalSourceId, Guid? ReversesSourceId,
     UnallocatedView Unallocated,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PosCollectionView? Pos = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PosCollectionView? Pos = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<FinanceAllocationPositionV1>? AllocationPositions = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] FinanceDocumentNumberV1? DocumentNumber = null);
+/// <summary>Exact available amount held by the original account or by an explicit, bounded balance transfer.</summary>
+public sealed record FinanceAllocationPositionV1(Guid PartyId, Guid CompanyAccountId, string AvailableAmount,
+    string AssignmentVersion, Guid? TransferId);
 public sealed record SourcePage(Guid CompanyId, IReadOnlyList<SourceSummary> Items, string? NextCursor);
 public sealed record BankAccountPage(Guid CompanyId, IReadOnlyList<BankAccountView> Items);
 public sealed record ReadResult<T>(ReadOutcome Outcome, T? Resource) where T : class;

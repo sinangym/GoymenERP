@@ -6,14 +6,17 @@ using GoymenERP.Modules.Inventory.Domain.Allocations;
 using GoymenERP.Modules.Inventory.Domain.Counts;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Inventory.Domain.Stock;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 
 /// <summary>
-/// ST-05 / AT-037 (DEC-STK-007): record a count of one stocked label, and decide its difference once.
+/// ST-05 / AT-037 (DEC-STK-007): record a count of one label, and decide its difference once.
 /// <list type="bullet">
-/// <item><b>Record:</b> the label at the version the counter saw, holding stock in exactly one stored position.
+/// <item><b>Record:</b> the label at the version the counter saw, holding stock in exactly one stored position, or
+/// (SAT-D330, STK-S22) shown at 0 at the one position it was last emptied at; a label a transformation consumed is
+/// not counted.
 /// The book kg, the position and the counted kg are kept with the mandatory reason. No stock changes, no label
 /// version is bumped: a count is evidence, not an effect. A zero difference closes at once
 /// (<c>NoDifference</c>).</item>
@@ -50,10 +53,10 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
         RequireResolvedCompany();
         cancellationToken.ThrowIfCancellationRequested();
 
-        var (expectedVersion, counted, reason) = ParseStockCount(request);
+        var (expectedVersion, counted, reason, countedPieces) = ParseStockCount(request);
         var companyId = companyContext.CompanyId;
         var keyHash = GenealogyHash(metadata.IdempotencyKey.Trim());
-        var payloadHash = GenealogyPayloadHash(new
+        var kilogramContent = new
         {
             request.CountId,
             request.LabelId,
@@ -61,7 +64,15 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
             countedKg = counted.ToString(),
             countedAtUtc = request.CountedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
             reason,
-        });
+        };
+        // KLN-D119: the counted pieces join the hash only when given, so every kg-only count keeps its stored hash.
+        var payloadHash = countedPieces is { } piecesForHash
+            ? GenealogyPayloadHash(new
+            {
+                kilogramContent.CountId, kilogramContent.LabelId, kilogramContent.expectedVersion, kilogramContent.countedKg,
+                kilogramContent.countedAtUtc, kilogramContent.reason, countedPieceCount = piecesForHash.Value,
+            })
+            : GenealogyPayloadHash(kilogramContent);
         if (await FindStockCountKeyReplayAsync(RecordStockCountCommand, keyHash, payloadHash, metadata.ActorId,
                 freshAuthorityFence, cancellationToken) is { } replay)
         {
@@ -86,16 +97,20 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
             throw StockCountError(409, InventoryStockCountCodesV1.LabelVersionConflict);
         }
 
-        var balances = await dbContext.Balances.AsNoTracking()
-            .Where(row => row.LabelId == label.Id && row.QuantityKg > 0m)
-            .ToListAsync(cancellationToken);
+        var balance = await CountedPositionAsync(label.Id, cancellationToken);
         await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
-        if (balances.Count != 1)
+        if (balance is null)
         {
-            throw StockCountError(409, InventoryStockCountCodesV1.PositionConflict);
+            // SAT-D384: only the active last label is counted. A label a split, merge or manufacturing transformation
+            // consumed answers its own warning ("dönüştürüldü → yeni etiket") and never enters a count difference;
+            // the counter is sent to the output labels (genealogy read), nothing is written.
+            var converted = await IsConvertedLabelAsync(label.Id, cancellationToken);
+            await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+            throw StockCountError(409, converted
+                ? InventoryStockCountCodesV1.LabelConverted
+                : InventoryStockCountCodesV1.PositionConflict);
         }
 
-        var balance = balances[0];
         if (balance.ProductId != label.ProductId)
         {
             throw StockCountError(503, InventoryStockCountCodesV1.Unavailable);
@@ -107,7 +122,8 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
             count = new StockCount(request.CountId, companyId,
                 Position(balance.CompanyId, balance.OwnerKind, balance.OwnerId, balance.CustodianKind,
                     balance.CustodianId, balance.LocationId, IdentityOnly(label), balance.Block),
-                Kilograms.Positive(balance.QuantityKg), counted, request.CountedAtUtc, reason);
+                Kilograms.Of(balance.QuantityKg), counted, request.CountedAtUtc, reason,
+                balance.PieceCount is { } bookPieces ? PieceCount.Of(bookPieces) : null, countedPieces);
         }
         catch (InventoryRuleException exception)
         {
@@ -147,6 +163,8 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
                     Block = balance.Block,
                     BookKg = count.Book.Value,
                     CountedKg = count.Counted.Value,
+                    BookPieceCount = count.BookPieces?.Value,
+                    CountedPieceCount = count.CountedPieces?.Value,
                     CountedAtUtc = count.CountedAtUtc,
                     Reason = count.Reason,
                     PayloadHash = payloadHash,
@@ -173,10 +191,11 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
                 dbContext.ChangeTracker.Clear();
                 concurrentChange = exception;
             }
-            catch
+            catch (Exception exception)
             {
                 await transaction.RollbackAsync(CancellationToken.None);
                 dbContext.ChangeTracker.Clear();
+                await RecordPhysicalRefusalAfterRollbackAsync(exception);
                 throw;
             }
         }
@@ -253,7 +272,7 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
         }
 
         DbUpdateException? concurrentChange = null;
-        await using (var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken))
+        await using (var transaction = await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken))
         {
             try
             {
@@ -261,6 +280,16 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
                 Guid? movementId = null;
                 if (decisionCode == DecisionApproved)
                 {
+                    try
+                    {
+                        await LockPhysicalValidationAsync(cancellationToken);
+                    }
+                    catch (InventoryStoreException exception) when (exception.Code == InventoryStoreCodes.ConcurrentChange)
+                    {
+                        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+                        throw StockCountError(409, InventoryStockCountCodesV1.ConcurrentChange, exception);
+                    }
+                    await ObservePhysicalCountBoundaryAsync(countRow.ProductId, countRow.LocationId, cancellationToken);
                     var label = await dbContext.Labels
                         .SingleOrDefaultAsync(row => row.Id == countRow.LabelId, cancellationToken);
                     await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
@@ -342,8 +371,11 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
                     CorrelationId = metadata.CorrelationId.Trim(),
                 };
                 dbContext.StockCountDecisions.Add(decision);
+                if (decisionCode == DecisionApproved)
+                    await ResolveNegativeStockAttemptsAsync(countRow, now, metadata, cancellationToken);
                 var before = StockCountView(countRow, decision: null);
-                var view = StockCountView(countRow, decision);
+                var costStatus = movementId is { } adjusted ? RecordedCountCostStatus(adjusted, companyId) : null;
+                var view = StockCountView(countRow, decision, costStatus);
                 dbContext.Commands.Add(StockCountCommandRow(DecideStockCountCommand, companyId, keyHash, payloadHash,
                     metadata, countRow.Id, view));
                 Audit(metadata, companyId, StockCountEntityType, countRow.Id,
@@ -366,10 +398,11 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
                 dbContext.ChangeTracker.Clear();
                 concurrentChange = exception;
             }
-            catch
+            catch (Exception exception)
             {
                 await transaction.RollbackAsync(CancellationToken.None);
                 dbContext.ChangeTracker.Clear();
+                await RecordPhysicalRefusalAfterRollbackAsync(exception);
                 throw;
             }
         }
@@ -420,22 +453,29 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
         var decisions = await dbContext.StockCountDecisions.AsNoTracking()
             .Where(row => ids.Contains(row.CountId))
             .ToDictionaryAsync(row => row.CountId, cancellationToken);
+        var commands = await dbContext.Commands.AsNoTracking()
+            .Where(row => row.CommandName == DecideStockCountCommand && row.TargetId != null && ids.Contains(row.TargetId.Value))
+            .ToDictionaryAsync(row => row.TargetId!.Value, cancellationToken);
         return new InventoryLabelStockCountsV1(labelId,
-            [.. counts.Select(row => StockCountView(row, decisions.GetValueOrDefault(row.Id)))], windowFull);
+            [.. counts.Select(row => StockCountView(row, decisions.GetValueOrDefault(row.Id),
+                StoredCountCostStatus(commands.GetValueOrDefault(row.Id), row, decisions.GetValueOrDefault(row.Id))))], windowFull);
     }
 
-    private static (long ExpectedVersion, Kilograms Counted, string Reason) ParseStockCount(RecordInventoryStockCountV1 request)
+    private static (long ExpectedVersion, Kilograms Counted, string Reason, PieceCount? CountedPieces) ParseStockCount(
+        RecordInventoryStockCountV1 request)
     {
         if (request.CountId == Guid.Empty || request.LabelId == Guid.Empty
             || !TryVersion(request.ExpectedLabelVersion, out var version)
             || !TryCountedQuantity(request.CountedKg, out var counted)
+            || request.CountedPieceCount is < 0
             || request.CountedAtUtc.Offset != TimeSpan.Zero
             || string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Trim().Length > StockCount.MaximumReasonLength)
         {
             throw StockCountError(400, InventoryStockCountCodesV1.ValidationFailed);
         }
 
-        return (version, counted, request.Reason.Trim());
+        return (version, counted, request.Reason.Trim(),
+            request.CountedPieceCount is { } pieces ? PieceCount.Of(pieces) : null);
     }
 
     /// <summary>A counted amount: canonical non-negative kg text with at most 3 decimals ("0" = the piece is gone).</summary>
@@ -540,7 +580,10 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
             throw StockCountError(409, refusal);
         }
 
-        return new(StockCountView(count, decision), true, decision.CorrelationId);
+        var command = await dbContext.Commands.AsNoTracking().SingleOrDefaultAsync(row =>
+            row.CommandName == DecideStockCountCommand && row.TargetId == countId, cancellationToken);
+        await RequireFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
+        return new(StockCountView(count, decision, StoredCountCostStatus(command, count, decision)), true, decision.CorrelationId);
     }
 
     /// <summary>
@@ -597,7 +640,9 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
             return new StockCount(row.Id, row.CompanyId,
                 Position(row.CompanyId, row.OwnerKind, row.OwnerId, row.CustodianKind, row.CustodianId, row.LocationId,
                     IdentityOnly(label), row.Block),
-                Kilograms.Positive(row.BookKg), Kilograms.Of(row.CountedKg), row.CountedAtUtc, row.Reason);
+                Kilograms.Of(row.BookKg), Kilograms.Of(row.CountedKg), row.CountedAtUtc, row.Reason,
+                row.BookPieceCount is { } bookPieces ? PieceCount.Of(bookPieces) : null,
+                row.CountedPieceCount is { } countedPieces ? PieceCount.Of(countedPieces) : null);
         }
         catch (InventoryRuleException exception)
         {
@@ -605,7 +650,85 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
         }
     }
 
-    private static InventoryStockCountViewV1 StockCountView(StockCountRow row, StockCountDecisionRow? decision)
+    /// <summary>
+    /// The one stored position a count of the label is taken at, or null when there is none to name.
+    /// <list type="bullet">
+    /// <item>A label holding stock in exactly one position is counted there; stock in several positions is a conflict.</item>
+    /// <item>SAT-D330 (STK-S22): a label the system shows at 0 may be counted at the position it was last emptied at
+    /// (its zero balance row): its only stored position, or, when it was moved before, the zero position named by the
+    /// last movement that touched the label. No other position is guessed: several candidates are a conflict.</item>
+    /// <item>A label that a split, merge or manufacturing transformation consumed is not counted again: its kilograms
+    /// live on in its output labels, so a surplus on it would count the same steel twice (SAT-D384: the caller answers
+    /// <see cref="InventoryStockCountCodesV1.LabelConverted"/>).</item>
+    /// </list>
+    /// </summary>
+    private async Task<BalanceRow?> CountedPositionAsync(Guid labelId, CancellationToken cancellationToken)
+    {
+        var balances = await dbContext.Balances.AsNoTracking()
+            .Where(row => row.LabelId == labelId)
+            .ToListAsync(cancellationToken);
+        var stocked = balances.Where(row => row.QuantityKg > 0m).ToList();
+        if (stocked.Count > 0)
+        {
+            return stocked.Count == 1 ? stocked[0] : null;
+        }
+
+        if (balances.Count == 0
+            || await dbContext.LabelTransformationInputs.AsNoTracking()
+                .AnyAsync(row => row.LabelId == labelId, cancellationToken))
+        {
+            return null;
+        }
+
+        if (balances.Count == 1)
+        {
+            return balances[0];
+        }
+
+        var lastLines = await (
+                from line in dbContext.MovementLines.AsNoTracking()
+                join movement in dbContext.Movements.AsNoTracking() on line.MovementId equals movement.Id
+                where line.LabelId == labelId
+                select new { movement.RecordedAtUtc, Line = line })
+            .ToListAsync(cancellationToken);
+        if (lastLines.Count == 0)
+        {
+            return null;
+        }
+
+        var lastRecordedAt = lastLines.Max(candidate => candidate.RecordedAtUtc);
+        var named = balances
+            .Where(balance => lastLines.Any(candidate => candidate.RecordedAtUtc == lastRecordedAt
+                && SamePosition(balance, candidate.Line)))
+            .ToList();
+        return named.Count == 1 ? named[0] : null;
+    }
+
+    /// <summary>
+    /// SAT-D384: a label holding no stock that a split, merge or manufacturing transformation consumed as an input.
+    /// Its kilograms live on in the output labels; it is not a countable position.
+    /// </summary>
+    private async Task<bool> IsConvertedLabelAsync(Guid labelId, CancellationToken cancellationToken)
+    {
+        var holdsStock = await dbContext.Balances.AsNoTracking()
+            .AnyAsync(row => row.LabelId == labelId && row.QuantityKg > 0m, cancellationToken);
+        return !holdsStock && await dbContext.LabelTransformationInputs.AsNoTracking()
+            .AnyAsync(row => row.LabelId == labelId, cancellationToken);
+    }
+
+    private static bool SamePosition(BalanceRow balance, MovementLineRow line) =>
+        balance.CompanyId == line.CompanyId
+        && balance.OwnerKind == line.OwnerKind
+        && balance.OwnerId == line.OwnerId
+        && balance.CustodianKind == line.CustodianKind
+        && balance.CustodianId == line.CustodianId
+        && balance.LocationId == line.LocationId
+        && balance.LabelId == line.LabelId
+        && balance.ProductId == line.ProductId
+        && balance.Block == line.Block;
+
+    private static InventoryStockCountViewV1 StockCountView(StockCountRow row, StockCountDecisionRow? decision,
+        string? costStatus = null)
     {
         var difference = row.CountedKg - row.BookKg;
         var status = decision?.Decision switch
@@ -641,7 +764,38 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
                     decision.Decision == DecisionApproved ? InventoryStockCountStatusesV1.Approved : InventoryStockCountStatusesV1.Rejected,
                     decision.DecidedAtUtc,
                     decision.Reason,
-                    decision.MovementId));
+                    decision.MovementId, costStatus),
+            row.BookPieceCount,
+            row.CountedPieceCount);
+    }
+
+    // The first decision freezes only the actual immutable TL movement stamp's status, never its price.
+    private string? RecordedCountCostStatus(Guid movementId, Guid companyId)
+    {
+        var stamp = dbContext.MovementCostStamps.Local.SingleOrDefault(row => row.CompanyId == companyId
+            && row.MovementId == movementId && row.LineNumber == 1 && row.CurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira);
+        if (stamp?.Reason == "stock_outside_company_cost_pool") return null;
+        return stamp?.Status == (int)InventoryMovementCostStampStatusV1.Known ? "Known"
+            : stamp?.Reason == "stock_count_average_unreadable" ? "NotCalculated" : "Unavailable";
+    }
+
+    // Lists and a new transport key replay the original decision's frozen status. Old replies keep null;
+    // a later opening cost/recognition must not silently rewrite the original approval response.
+    private static string? StoredCountCostStatus(InventoryCommandRow? command, StockCountRow count, StockCountDecisionRow? decision)
+    {
+        if (decision?.Decision != DecisionApproved || command is null) return null;
+        var stored = JsonSerializer.Deserialize<StockCountCommandResult>(command.ResultJson, Json)?.Count;
+        if (stored is null || stored.CompanyId != count.CompanyId || stored.CountId != count.Id
+            || stored.Decision?.AdjustmentMovementId != decision.MovementId)
+            throw StockCountError(503, InventoryStockCountCodesV1.Unavailable);
+        return stored.Decision?.CostStatus switch
+        {
+            null => null,
+            "Known" => "Known",
+            "NotCalculated" => "NotCalculated",
+            "Unavailable" => "Unavailable",
+            _ => throw StockCountError(503, InventoryStockCountCodesV1.Unavailable),
+        };
     }
 
     /// <summary>A signed difference as canonical kg text: no trailing zeros, a leading minus for a shortage.</summary>

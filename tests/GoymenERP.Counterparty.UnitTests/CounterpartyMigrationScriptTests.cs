@@ -60,6 +60,29 @@ public sealed class CounterpartyMigrationScriptTests
         // The e-belge profile table has no CompanyId column (group-wide, SAT-D119).
         Assert.DoesNotContain("[CustomerEDocumentProfiles] ([CompanyId]", script, StringComparison.Ordinal);
         Assert.DoesNotContain("INSERT INTO [counterparty].[CustomerEDocumentProfiles]", script, StringComparison.OrdinalIgnoreCase);
+        // F-027: the module's own append-only outbox (company-scoped, unique per aggregate sequence); nothing seeded.
+        Assert.Contains("_AddCounterpartyOutbox", script, StringComparison.Ordinal);
+        Assert.Contains("CREATE TABLE [counterparty].[OutboxMessages]", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "CREATE UNIQUE INDEX [UX_OutboxMessages_AggregateSequence] ON [counterparty].[OutboxMessages] ([CompanyId], [EventType], [AggregateId], [Sequence])",
+            script, StringComparison.Ordinal);
+        Assert.Contains("CK_OutboxMessages_Envelope", script, StringComparison.Ordinal);
+        Assert.Contains("CK_OutboxMessages_Identity", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("INSERT INTO [counterparty].[OutboxMessages]", script, StringComparison.OrdinalIgnoreCase);
+        // KLN-D38: dated identity history (group-level, append-only) and the company's succession links; nothing backfilled.
+        Assert.Contains("20261115160755_AddCounterpartyIdentityHistoryAndSuccession", script, StringComparison.Ordinal);
+        Assert.Contains("CREATE TABLE [counterparty].[PartyIdentityRevisions]", script, StringComparison.Ordinal);
+        Assert.Contains("CREATE TABLE [counterparty].[CustomerEDocumentStatusRevisions]", script, StringComparison.Ordinal);
+        Assert.Contains("CREATE TABLE [counterparty].[PartySuccessions]", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "CREATE UNIQUE INDEX [UX_PartySuccessions_Predecessor] ON [counterparty].[PartySuccessions] ([CompanyId], [PredecessorPartyId])",
+            script, StringComparison.Ordinal);
+        Assert.Contains("CK_PartyIdentityRevisions_Correction", script, StringComparison.Ordinal);
+        Assert.Contains("CK_PartySuccessions_Parties", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("[PartyIdentityRevisions] ([CompanyId]", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("INSERT INTO [counterparty].[PartyIdentityRevisions]", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("INSERT INTO [counterparty].[CustomerEDocumentStatusRevisions]", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("INSERT INTO [counterparty].[PartySuccessions]", script, StringComparison.OrdinalIgnoreCase);
 
         Assert.DoesNotContain("CREATE TABLE [audit].[AuditEvents]", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(

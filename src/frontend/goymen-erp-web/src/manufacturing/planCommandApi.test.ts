@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { savePlan, type SavePlanRequest } from './planCommandApi'
+import { changePlanDueDate, savePlan, type SavePlanRequest } from './planCommandApi'
 import {
   COMPANY_A,
   PLAN,
@@ -558,5 +558,85 @@ describe('pending revise across a module re-creation (reload boundary)', () => {
     expect(api.readPendingPlanLifecycle(key)).toEqual({ state: 'absent' })
     api.reservePendingPlanLifecycle(key, approve())
     expect((await reloaded()).readPendingPlanLifecycle(key)).toEqual({ state: 'absent' })
+  })
+})
+
+describe('changePlanDueDate (F-010a, URT-D29)', () => {
+  const snapshot = {
+    kind: 'due-date' as const,
+    idempotencyKey: '30000000-0000-4000-8000-0000000000d1',
+    expectedVersion: 2,
+    expectedDueDateRevision: 0,
+    requestedDueDate: '2026-12-31',
+  }
+
+  it('posts the version, termin revision and calendar day it read, and applies only the exact answer', async () => {
+    const fetchMock = answer(json(plan({ version: 2, requestedDueDate: '2026-12-31', dueDateRevision: 1 })))
+
+    const outcome = await changePlanDueDate(COMPANY_A, PLAN, snapshot)
+
+    expect(outcome).toMatchObject({ type: 'applied', replayed: false, originalCorrelationId: null })
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe(`/api/v1/manufacturing/plans/${PLAN}/due-date`)
+    expect(init).toMatchObject({ method: 'POST' })
+    expect(init.headers).toMatchObject({ 'X-Company-Id': COMPANY_A, 'Idempotency-Key': snapshot.idempotencyKey })
+    expect(JSON.parse(init.body as string)).toEqual({
+      expectedVersion: 2,
+      expectedDueDateRevision: 0,
+      requestedDueDate: '2026-12-31',
+    })
+  })
+
+  it('sends null to remove the termin and accepts the stored replay with agreeing headers', async () => {
+    const fetchMock = answer(json(plan({ version: 2, requestedDueDate: null, dueDateRevision: 2 }), 200, {
+      'Idempotency-Replayed': 'true',
+      'Idempotency-Original-Correlation-Id': 'corr-due-1',
+    }))
+
+    const outcome = await changePlanDueDate(COMPANY_A, PLAN, {
+      ...snapshot,
+      expectedDueDateRevision: 1,
+      requestedDueDate: null,
+    })
+
+    expect(outcome).toMatchObject({ type: 'applied', replayed: true, originalCorrelationId: 'corr-due-1' })
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(init.body as string)).toEqual({ expectedVersion: 2, expectedDueDateRevision: 1, requestedDueDate: null })
+  })
+
+  it.each([
+    ['a moved plan version', { version: 3, requestedDueDate: '2026-12-31', dueDateRevision: 1 }],
+    ['an unmoved termin revision', { version: 2, requestedDueDate: '2026-12-31', dueDateRevision: 0 }],
+    ['a termin revision two on', { version: 2, requestedDueDate: '2026-12-31', dueDateRevision: 2 }],
+    ['another day', { version: 2, requestedDueDate: '2026-12-30', dueDateRevision: 1 }],
+    ['another plan', { planId: '30000000-0000-4000-8000-0000000000ff', version: 2, requestedDueDate: '2026-12-31', dueDateRevision: 1 }],
+  ])('treats an answer with %s as unknown, never applied', async (_case, overrides) => {
+    answer(json(plan(overrides)))
+
+    expect(await changePlanDueDate(COMPANY_A, PLAN, snapshot)).toEqual({ type: 'unknown', reason: 'undecodable' })
+  })
+
+  it('maps the termin conflict and rule refusals to failures and keeps 5xx and transport loss unknown', async () => {
+    answer(problem(409, { code: 'manufacturing_plan_due_date_changed' }))
+    expect(await changePlanDueDate(COMPANY_A, PLAN, snapshot)).toMatchObject({
+      type: 'failed',
+      status: 409,
+      code: 'manufacturing_plan_due_date_changed',
+    })
+
+    answer(problem(422, { code: 'manufacturing_plan_due_date_order_closed' }))
+    expect(await changePlanDueDate(COMPANY_A, PLAN, snapshot)).toMatchObject({
+      type: 'failed',
+      status: 422,
+      code: 'manufacturing_plan_due_date_order_closed',
+    })
+
+    answer(problem(503))
+    expect(await changePlanDueDate(COMPANY_A, PLAN, snapshot)).toEqual({ type: 'unknown', reason: 'service-unavailable' })
+
+    answer(() => {
+      throw new TypeError('network down')
+    })
+    expect((await changePlanDueDate(COMPANY_A, PLAN, snapshot)).type).toBe('unknown')
   })
 })

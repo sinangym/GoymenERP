@@ -1,12 +1,38 @@
+using GoymenERP.Modules.Inventory.Domain.Balances;
+
 namespace GoymenERP.Modules.Inventory.Domain;
 
 /// <summary>
 /// A stock rule refused the operation. <see cref="Code"/> is the stable, machine-readable
 /// reason; the message is for people. Nothing is partly applied when this is thrown.
 /// </summary>
-public sealed class InventoryRuleException(string code, string message) : Exception(message)
+public sealed class InventoryRuleException : Exception
 {
-    public string Code { get; } = code;
+    public InventoryRuleException(string code, string message)
+        : base(message)
+    {
+        Code = code;
+    }
+
+    /// <summary>
+    /// A negative-stock refusal that names the line it stopped (SAT-D318). The code is always
+    /// <see cref="InventoryRuleCodes.NegativePhysicalStock"/>; the shortfall only adds which line and which bucket.
+    /// </summary>
+    public InventoryRuleException(StockShortfall shortfall, string message, Exception? innerException = null)
+        : base(message, innerException)
+    {
+        ArgumentNullException.ThrowIfNull(shortfall);
+        Code = InventoryRuleCodes.NegativePhysicalStock;
+        Shortfall = shortfall;
+    }
+
+    public string Code { get; }
+
+    /// <summary>
+    /// Set only on a <see cref="InventoryRuleCodes.NegativePhysicalStock"/> refusal raised by the ledger: the refused
+    /// movement line and the bucket it would have taken below zero. Null for every other refusal.
+    /// </summary>
+    public StockShortfall? Shortfall { get; }
 }
 
 /// <summary>The stable refusal codes. A consumer maps these, never the message text.</summary>
@@ -91,4 +117,20 @@ public static class InventoryRuleCodes
     /// A two-leg transfer contradicts its same-company, whole-label, source-context, version or lifecycle rules.
     /// </summary>
     public const string InvalidTransfer = "inventory_invalid_transfer";
+
+    /// <summary>
+    /// KLN-D119: a piece count is not valid — negative or fractional, lines of one label in one movement that disagree
+    /// about carrying it, a piece-tracking bucket whose pieces and kilograms are not both zero or both positive, or a
+    /// split/merge whose output pieces do not add up to its source pieces.
+    /// </summary>
+    public const string InvalidPieceCount = "inventory_invalid_piece_count";
+
+    /// <summary>KLN-D119: the label tracks pieces and the movement does not say how many; refused, never guessed (fail-closed).</summary>
+    public const string PieceCountRequired = "inventory_piece_count_required";
+
+    /// <summary>KLN-D119: the label holds stock without a piece count (stocked before AK-2); a count is not backfilled onto it.</summary>
+    public const string PieceCountNotTracked = "inventory_piece_count_not_tracked";
+
+    /// <summary>KLN-D119: the movement would take a label's piece count below zero.</summary>
+    public const string NegativePieceCount = "inventory_negative_piece_count";
 }

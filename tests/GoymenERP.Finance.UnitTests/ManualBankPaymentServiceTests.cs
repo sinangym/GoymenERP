@@ -83,6 +83,46 @@ public sealed class ManualBankPaymentServiceTests
         Assert.Equal("TR120006100519786457841327", bank.PendingIban);
     }
 
+    /// <summary>FNS-D118: with no separate send step, every reviser of the draft is on the preparer's side and cannot
+    /// approve it; an approver who never saved the draft can.</summary>
+    [Fact]
+    public async Task Fns_d118_reviser_of_the_draft_is_a_preparer_and_cannot_approve_it_and_a_third_actor_can()
+    {
+        await using var run = await Run.StartAsync();
+        ManualBankPaymentCommandResult draft;
+        await using (var maker = run.Scope("maker", new AllowAll()))
+        {
+            draft = await maker.Service.DraftSaveAsync(maker.Context, Key("draft-1"), Draft(), CancellationToken.None);
+        }
+
+        ManualBankPaymentCommandResult revised;
+        await using (var reviser = run.Scope("reviser", new AllowAll()))
+        {
+            var replacement = Draft();
+            revised = await reviser.Service.DraftSaveAsync(reviser.Context, Key("draft-2"),
+                new ManualBankPaymentDraftSaveRequest(draft.Resource!.Id, draft.Resource.Version,
+                    replacement.Preparation with { Description = "SENTETIK revize odeme" },
+                    replacement.LinkedDocument), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, revised.Outcome);
+            var reviserApproval = await reviser.Service.ApproveAsync(reviser.Context, Key("approve-reviser"),
+                new ApproveManualBankPaymentRequest(revised.Resource!.Id, revised.Resource.Version),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.ValidationFailed, reviserApproval.Outcome);
+            Assert.Equal("payment_approval_invalid", Assert.Single(reviserApproval.Issues).Code);
+        }
+
+        await using (var verify = run.Context())
+        {
+            Assert.Equal(ManualBankPaymentStatuses.Draft, (await verify.ManualBankPayments.SingleAsync()).Status);
+        }
+
+        await using var checker = run.Scope("checker", new AllowAll());
+        var approved = await checker.Service.ApproveAsync(checker.Context, Key("approve-checker"),
+            new ApproveManualBankPaymentRequest(revised.Resource.Id, revised.Resource.Version), CancellationToken.None);
+        Assert.Equal((CommandOutcome.Succeeded, ManualBankPaymentStatus.Approved),
+            (approved.Outcome, approved.Resource!.Status));
+    }
+
     [Fact]
     public async Task Maker_cannot_approve_and_unknown_bank_result_writes_nothing()
     {
@@ -131,7 +171,8 @@ public sealed class ManualBankPaymentServiceTests
                 new ApproveManualBankPaymentRequest(draft.Resource!.Id, draft.Resource.Version), CancellationToken.None);
         }
 
-        var permission = new DenyAtRecordCheck(8);
+        // The final fence before the save is the ninth Record check (the FNS-D87 balance answer adds one).
+        var permission = new DenyAtRecordCheck(9);
         await using (var recorder = run.Scope("recorder", permission))
         {
             var refused = await recorder.Service.RecordAsync(recorder.Context, Key("record-1"),
@@ -139,7 +180,7 @@ public sealed class ManualBankPaymentServiceTests
                 CancellationToken.None);
             Assert.Equal(CommandOutcome.Denied, refused.Outcome);
         }
-        Assert.Equal(8, permission.RecordChecks);
+        Assert.Equal(9, permission.RecordChecks);
 
         await using var verify = run.Context();
         Assert.Empty(await verify.OutgoingMoneyEvents.ToListAsync());
@@ -148,6 +189,54 @@ public sealed class ManualBankPaymentServiceTests
         var payment = await verify.ManualBankPayments.SingleAsync();
         Assert.Equal((ManualBankPaymentStatuses.Approved, 2L, false),
             (payment.Status, payment.Version, payment.BankResultConfirmed));
+    }
+
+    [Theory]
+    [InlineData(TreasuryBalanceOutcome.Insufficient, false, CommandOutcome.ValidationFailed, "money.amount",
+        TreasuryBalanceAnswer.InsufficientCode)]
+    [InlineData(TreasuryBalanceOutcome.Unavailable, false, CommandOutcome.Unavailable, "treasuryAccountId",
+        TreasuryBalanceAnswer.UnavailableCode)]
+    [InlineData(TreasuryBalanceOutcome.Sufficient, true, CommandOutcome.Unavailable, "treasuryAccountId",
+        TreasuryBalanceAnswer.UnavailableCode)]
+    public async Task A_record_that_would_take_the_bank_account_below_zero_or_cannot_be_checked_writes_nothing(
+        TreasuryBalanceOutcome answer, bool fault, CommandOutcome expected, string field, string code)
+    {
+        await using var run = await Run.StartAsync();
+        ManualBankPaymentCommandResult draft;
+        await using (var maker = run.Scope("maker", new AllowAll()))
+        {
+            draft = await maker.Service.DraftSaveAsync(maker.Context, Key("draft-1"), Draft(), CancellationToken.None);
+        }
+        ManualBankPaymentCommandResult approved;
+        await using (var checker = run.Scope("checker", new AllowAll()))
+        {
+            approved = await checker.Service.ApproveAsync(checker.Context, Key("approve-1"),
+                new ApproveManualBankPaymentRequest(draft.Resource!.Id, draft.Resource.Version), CancellationToken.None);
+        }
+
+        // FNS-D87: a bank account never goes below zero; an unknown balance is refused too (fail-closed).
+        var balance = new Balance(answer, fault);
+        await using (var recorder = run.Scope("checker", new AllowAll(), balanceGuard: balance))
+        {
+            var refused = await recorder.Service.RecordAsync(recorder.Context, Key("record-1"),
+                new RecordManualBankPaymentRequest(approved.Resource!.Id, approved.Resource.Version, true),
+                CancellationToken.None);
+            Assert.Equal(expected, refused.Outcome);
+            var issue = Assert.Single(refused.Issues);
+            Assert.Equal((field, code), (issue.Field, issue.Code));
+        }
+        var asked = Assert.Single(balance.Asked);
+        Assert.Equal((ExpensePaymentSourceKind.Bank, Bank, Currency),
+            (asked.Kind, asked.AccountId, asked.Money.CurrencyId));
+        Assert.Equal(approved.Resource!.Preparation.Money.Amount, asked.Money.Amount);
+
+        await using var verify = run.Context();
+        Assert.Empty(await verify.OutgoingMoneyEvents.ToListAsync());
+        Assert.DoesNotContain(await verify.Commands.ToListAsync(),
+            row => row.CommandName == ManualBankPaymentService.RecordCommand);
+        Assert.Equal(2, await verify.Set<AuditEvent>().CountAsync());
+        var payment = await verify.ManualBankPayments.SingleAsync();
+        Assert.Equal((ManualBankPaymentStatuses.Approved, 2L), (payment.Status, payment.Version));
     }
 
     [Fact]
@@ -502,7 +591,8 @@ public sealed class ManualBankPaymentServiceTests
 
         public Scope Scope(string actor, IFinancePermissionPort permission,
             IManualBankPaymentDocumentValidationPort? documentPort = null,
-            ICompanyContext? companyContext = null)
+            ICompanyContext? companyContext = null,
+            IFinanceTreasuryBalanceGuard? balanceGuard = null)
         {
             var company = companyContext ?? new CompanyContext();
             if (!company.IsResolved) company.Set(Company);
@@ -518,7 +608,8 @@ public sealed class ManualBankPaymentServiceTests
                     Envelope(FinancePermissionNames.ManualBankPaymentDraftSave),
                     Envelope(FinancePermissionNames.ManualBankPaymentApprove),
                     Envelope(FinancePermissionNames.ManualBankPaymentRecord)),
-                TimeProvider.System);
+                TimeProvider.System,
+                balanceGuard ?? new Balance(TreasuryBalanceOutcome.Sufficient), documentNumbers: new SyntheticFinanceRecordNumbers());
             return new Scope(context, service, new FinanceContext(Company, actor, $"r47-{Guid.NewGuid():N}", null),
                 company);
         }
@@ -579,6 +670,25 @@ public sealed class ManualBankPaymentServiceTests
     {
         public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
             CancellationToken cancellationToken) => Task.FromResult(decision);
+    }
+
+    /// <summary>A synthetic balance answer (FNS-D87); it records what it was asked.</summary>
+    private sealed class Balance(TreasuryBalanceOutcome outcome, bool fault = false) : IFinanceTreasuryBalanceGuard
+    {
+        public List<(ExpensePaymentSourceKind Kind, Guid AccountId, MoneyText Money)> Asked { get; } = [];
+
+        public Task<TreasuryBalanceAnswer> CheckOutgoingAsync(FinanceContext context, ExpensePaymentSourceKind sourceKind,
+            Guid treasuryAccountId, MoneyText money, CancellationToken cancellationToken)
+        {
+            Asked.Add((sourceKind, treasuryAccountId, money));
+            if (fault) throw new InvalidOperationException("SENTETIK balance source fault");
+            return Task.FromResult(new TreasuryBalanceAnswer(outcome, outcome switch
+            {
+                TreasuryBalanceOutcome.Insufficient => TreasuryBalanceAnswer.InsufficientCode,
+                TreasuryBalanceOutcome.Unavailable => TreasuryBalanceAnswer.UnavailableCode,
+                _ => null,
+            }));
+        }
     }
 
     private sealed class DenyAtRecordCheck(int denyAt) : IFinancePermissionPort

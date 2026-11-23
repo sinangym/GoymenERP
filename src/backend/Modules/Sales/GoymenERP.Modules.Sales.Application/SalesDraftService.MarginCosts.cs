@@ -1,0 +1,241 @@
+using System.Text.Json;
+using GoymenERP.BuildingBlocks.Monetary;
+using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain.Drafts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
+
+namespace GoymenERP.Modules.Sales.Application;
+
+public sealed partial class SalesDraftService
+{
+    // SAT-D265(5): the independent golden is in main via PR1200, merge 3c1b47878447570210b933b83d874646f9c52e4b.
+    // This separate implementation change still requires the train's final exact-head K3 acceptance.
+    // It neither grants margin disclosure nor supplies missing costs, currencies or historical snapshots.
+    private static bool MarginGoldenAccepted => true;
+
+    // SAT-D426 / SAT-D265(5) / SAT-D431: the independent SAT-D426 golden (rows D01-D23, which replace G20's sale-currency
+    // part) is in main via PR1203, merge d8331e35cede70bae6fbc107ee487e116995bf63, after two independent DOCS reviews. This
+    // implementation change still requires the train's final exact-head K3 acceptance.
+    private static bool ForeignSaleMarginGoldenAccepted => true;
+
+    // SAT-D438 / SAT-D265(5) (AK-6): a piece line's margin converts the kg cost with the theoretical kg/unit pinned at approval
+    // (SAT-D437). OPEN: its independent golden (ADET_KG_FORMUL_GOLDEN_V1 §3, rows M01-M15) travels in this train (PR #1201) with
+    // the decision file it cites and the rows are pinned by row id in SalesPieceMarginGoldenTests. The train's exact-head K3
+    // acceptance still decides the merge. It neither grants margin disclosure nor supplies a missing kg cost or kg/unit
+    // (M11-M14 stay unavailable); the closed path is measured through the named parameter of CalculateMarginInTurkishLira.
+    internal static bool PieceMarginGoldenAccepted => true;
+
+    /// <summary>SAT-D438: the unit a line's margin cost is read and pinned in — the kg for a piece line once AK-6 is open.</summary>
+    private static Guid CostUnitOf(SalesOrderDraftLine line) => CostUnitOf(line, PieceMarginGoldenAccepted);
+
+    /// <summary>The same choice with the AK-6 switch named (closed: the order unit, exactly as before AK-6).</summary>
+    internal static Guid CostUnitOf(SalesOrderDraftLine line, bool pieceMarginOpen) =>
+        pieceMarginOpen && !line.OrderUnit.IsKilogram ? SettingsUnitIdentitiesV1.Kilogram : line.OrderUnit.UnitId;
+
+    private static SalesMarginCostSnapshot? LastMarginCost(SalesOrderDraft draft, Guid lineId) =>
+        draft.MarginCosts.Where(cost => cost.LineId == lineId && cost.Revision <= draft.Revision)
+            .OrderByDescending(cost => cost.Revision).FirstOrDefault();
+
+    private static bool SameCostBasis(SalesOrderDraft draft, SalesOrderDraftLine line, SalesMarginCostSnapshot cost) =>
+        cost.ProductId == line.Product.ProductId && cost.UnitId == CostUnitOf(line)
+        // SAT-D269 follow-up 6951607190 (GOV-D16): a quantity edit inside the same revision preserves the pinned unit cost.
+        // A genuine quantity revision still observes its own approval cost; no stock/accounting amount is rewritten.
+        && (cost.Quantity == line.Quantity.Value || cost.Revision == draft.Revision);
+
+    private static bool LegacyApprovedCost(SalesOrderDraft draft, SalesOrderDraftLine line)
+    {
+        var prior = draft.ArchivedRevisions.OrderByDescending(item => item.Revision).FirstOrDefault()
+            ?.Lines.SingleOrDefault(item => item.LineId == line.Id);
+        return prior is not null && prior.ProductId == line.Product.ProductId && prior.OrderUnitId == line.OrderUnit.UnitId
+            && decimal.TryParse(prior.QuantityText, System.Globalization.NumberStyles.Number,
+                System.Globalization.CultureInfo.InvariantCulture, out var quantity) && quantity == line.Quantity.Value;
+    }
+
+    private async Task<IReadOnlyList<SalesMarginCostSnapshot>> PrepareMarginCostsAsync(Scope scope, string? permission,
+        SalesOrderDraft draft, CancellationToken cancellationToken)
+    {
+        var costs = new List<SalesMarginCostSnapshot>();
+        // SAT-D426 / SAT-D430 / golden T4 ("kur tektir"): the rate is the ORDER's. It is frozen once, at the first approval that
+        // resolves it, and never changes. A revision approval reuses it; an order whose earlier approvals found no rate reads it at
+        // this approval (golden D15), and from then on every line of the order is converted at it, the lines pinned before
+        // included (the margin read applies the order rate, OrderSaleRate). A rate frozen for another currency is never replaced.
+        var frozen = FrozenSaleRateOf(draft);
+        SalesMarginSaleRate? saleRate = frozen is { } existing && existing.CurrencyId == draft.Header.CurrencyId ? existing : null;
+        var saleRateRead = frozen is not null;
+        (SalesOrderDraftLine Line, SalesMarginCostSnapshot Cost)? carrier = null;
+        foreach (var line in draft.Lines.OrderBy(item => item.LineNo))
+        {
+            var previous = LastMarginCost(draft, line.Id);
+            // The same product/quantity reinstated after customer rejection keeps its original immutable cost.
+            if (previous is not null && SameCostBasis(draft, line, previous))
+            {
+                if (carrier is null && previous.Revision < draft.Revision) carrier = (line, previous);
+                continue;
+            }
+            if (previous is null && LegacyApprovedCost(draft, line)) continue; // SAT-D273: no backfill.
+            if (!saleRateRead)
+            {
+                saleRate = await ReadSaleRateAsync(scope, permission, draft, cancellationToken);
+                saleRateRead = true;
+            }
+            costs.Add(await ReadMarginCostAsync(scope, permission, draft, line, cancellationToken) with { SaleRate = saleRate });
+        }
+
+        // Golden D15: a revision approval that re-pins no line still freezes the order rate it resolves. The rate is stored with a
+        // line's approval snapshot, so it travels on this revision's copy of an unchanged line's pinned cost: the cost, its unit,
+        // its source proof and its unavailability stay exactly as pinned (SAT-D269, no re-read); only the order rate is added.
+        if (!saleRateRead && costs.Count == 0 && carrier is { } unchanged)
+        {
+            saleRate = await ReadSaleRateAsync(scope, permission, draft, cancellationToken);
+            if (saleRate is not null)
+                costs.Add(unchanged.Cost with { Revision = draft.Revision, Quantity = unchanged.Line.Quantity.Value, SaleRate = saleRate });
+        }
+        return costs;
+    }
+
+    // SAT-D426 / SAT-D430 / SAT-D432 (golden T4): the one rate a margin of this order converts at — the order's frozen rate when it
+    // is for the order's currency; before the first freeze, none (golden D17/D19: CurrencyConversionUndecided).
+    private static SalesMarginSaleRate? OrderSaleRate(SalesOrderDraft draft) =>
+        FrozenSaleRateOf(draft) is { } rate && rate.CurrencyId == draft.Header.CurrencyId ? rate : null;
+
+    private static SalesMarginSaleRate? FrozenSaleRateOf(SalesOrderDraft draft) =>
+        draft.MarginCosts.OrderBy(cost => cost.Revision).Select(cost => cost.SaleRate).FirstOrDefault(rate => rate is not null);
+
+    /// <summary>
+    /// SAT-D426: a foreign-currency order freezes, at its internal approval, the Settings rate of the approval day (the server's
+    /// Europe/Istanbul business day) from its currency into TL. A TL order needs none. A rate the port cannot resolve, an absent
+    /// or failing port leaves no rate: the approval is not refused (it is a display figure) and the margin stays unavailable. A
+    /// lost authority stays a 403, as in the risk check.
+    /// </summary>
+    private async Task<SalesMarginSaleRate?> ReadSaleRateAsync(Scope scope, string? permission, SalesOrderDraft draft,
+        CancellationToken cancellationToken)
+    {
+        var local = SettingsCurrencyIdentitiesV1.TurkishLira;
+        var currency = draft.Header.CurrencyId;
+        if (currency == local || currency == Guid.Empty || exchangeRates is null) return null;
+        var day = ServerBusinessDay();
+        ExchangeRateResolutionV1 resolution;
+        try
+        {
+            resolution = await GuardedAsync(scope, permission,
+                () => exchangeRates.ResolveAsync(day, currency, local, cancellationToken), cancellationToken);
+        }
+        catch (SettingsPrerequisiteException exception) when (exception.Code == ExchangeRateProblemCodesV1.AccessDenied)
+        {
+            throw new SalesDraftServiceException(403, "forbidden");
+        }
+        catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
+        {
+            return null;
+        }
+
+        if (resolution.State != ExchangeRateResolutionStatesV1.Resolved || resolution.SourceCurrencyId != currency
+            || resolution.TargetCurrencyId != local || resolution.RateDay != day
+            || !decimal.TryParse(resolution.SellingRate, System.Globalization.NumberStyles.AllowDecimalPoint,
+                System.Globalization.CultureInfo.InvariantCulture, out var value))
+            return null;
+        var rate = new SalesMarginSaleRate(currency, value, day);
+        return rate.IsValid ? rate : null;
+    }
+
+    private async Task<SalesMarginCostSnapshot> ReadMarginCostAsync(Scope scope, string? permission,
+        SalesOrderDraft draft, SalesOrderDraftLine line, CancellationToken cancellationToken)
+    {
+        if (marginCosts is null) return UnavailableCost(draft, line, SalesLineMarginUnavailableReason.CostSourceMissing);
+        scope = await RequireStillAsync(scope, permission, cancellationToken);
+        SalesMarginCostReadAnswerV1? answer;
+        try
+        {
+            answer = await marginCosts.ReadAsync(scope.CompanyId, line.Product.ProductId, CostUnitOf(line),
+                draft.Header.BusinessDate, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            await RequireStillAsync(scope, permission, cancellationToken);
+            return UnavailableCost(draft, line, SalesLineMarginUnavailableReason.CostUnreadable);
+        }
+        await RequireStillAsync(scope, permission, cancellationToken);
+        if (answer is null || answer.ContractVersion != 1 || answer.CompanyId != scope.CompanyId
+            || answer.ProductId != line.Product.ProductId || answer.UnitId != CostUnitOf(line))
+            return UnavailableCost(draft, line, SalesLineMarginUnavailableReason.CostUnreadable);
+        var result = new SalesMarginCostSnapshot(line.Id, draft.Revision, line.Product.ProductId, CostUnitOf(line),
+            line.Quantity.Value, answer.CurrencyId, answer.CostPerUnit, answer.UnavailableReason,
+            answer.SourceProof, timeProvider.GetUtcNow());
+        try
+        {
+            result.Validate();
+            using var proof = JsonDocument.Parse(result.SourceProof);
+            if (proof.RootElement.ValueKind != JsonValueKind.Object) throw new JsonException();
+            // Direct user answer 6960913297 (GOV-D16): an unreadable zero cost never becomes a 100% margin.
+            // Approval still pins an unavailable observation; it is not blocked by this display-only cost source.
+            if (result.UnavailableReason is null && result.CostPerUnit == 0m)
+                return UnavailableCost(draft, line, SalesLineMarginUnavailableReason.CostUnreadable);
+            return result;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or JsonException or ArgumentException)
+        {
+            return UnavailableCost(draft, line, SalesLineMarginUnavailableReason.CostUnreadable);
+        }
+    }
+
+    private SalesMarginCostSnapshot UnavailableCost(SalesOrderDraft draft, SalesOrderDraftLine line,
+        SalesLineMarginUnavailableReason reason) => new(line.Id, draft.Revision, line.Product.ProductId, CostUnitOf(line),
+            line.Quantity.Value, null, null, reason, JsonSerializer.Serialize(new { unavailable = reason.ToString() }), timeProvider.GetUtcNow());
+
+    private async Task<SalesDraftMarginV1> ReadMarginsAsync(Scope scope, SalesOrderDraft draft, CancellationToken cancellationToken)
+    {
+        var totals = SalesOrderTotalsCalculator.CalculateWithLineTax(draft);
+        var lines = new List<SalesDraftLineMarginV1>();
+        foreach (var line in draft.Lines.OrderBy(item => item.LineNo))
+        {
+            var cost = LastMarginCost(draft, line.Id);
+            if (cost is not null && !SameCostBasis(draft, line, cost)
+                && draft.ApprovalState == InternalApprovalState.Approved)
+                cost = UnavailableCost(draft, line, SalesLineMarginUnavailableReason.CostRepinPolicyPending);
+            else if (cost is null || !SameCostBasis(draft, line, cost))
+                cost = draft.ApprovalState == InternalApprovalState.Approved || LegacyApprovedCost(draft, line)
+                    ? UnavailableCost(draft, line, SalesLineMarginUnavailableReason.CostSourceMissing)
+                    : await ReadMarginCostAsync(scope, bindings.ReadPermission, draft, line, cancellationToken);
+            // Golden T4 / D15: the rate is the order's, never a line's. Every line — a pinned snapshot, the copy of an unchanged line,
+            // or a revision preview (SAT-D432) — converts at the order's frozen rate; before the first freeze at none.
+            cost = cost with { SaleRate = OrderSaleRate(draft) };
+            var margin = cost.UnavailableReason is { } reason ? SalesLineMargin.Unavailable(reason)
+                : cost.CostPerUnit == 0m ? SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CostUnreadable)
+                : !MarginGoldenAccepted ? SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.FormulaGoldenPending)
+                : CalculateMarginInTurkishLira(
+                    totals.Lines.Single(item => item.LineId == line.Id).NetAmountBeforeSurcharge,
+                    line.OrderUnit.UnitId, line.Quantity.Value, cost,
+                    // SAT-D438: the kg/unit pinned at approval (none before it: golden M11, UnitConversionUndecided).
+                    draft.KilogramsPerUnitOf(line.Id)?.KilogramsPerUnit);
+            lines.Add(LineMargin(line.Id, line.LineNo, margin));
+        }
+        // Every slow owner read can revoke both disclosure names. Nothing is returned on a stale disclosure.
+        await RequireStillAsync(scope, bindings.ReadPermission, cancellationToken);
+        if (await DiscloseAsync(scope, cancellationToken) != SalesPriceDisclosure.Visible)
+            throw new SalesDraftServiceException(403, "forbidden");
+        if (await DiscloseMarginAsync(scope, cancellationToken) != SalesMarginDisclosure.Visible)
+            return new(SalesMarginDisclosure.Withheld, null, null, null);
+        return new(SalesMarginDisclosure.Visible, SalesDraftMarginTextsV1.PurchaseCostOnly,
+            draft.ApprovalState == InternalApprovalState.Approved ? SalesDraftMarginTextsV1.Snapshot : SalesDraftMarginTextsV1.Preview, lines);
+    }
+
+    // SAT-D259 / BS-1: a restored snapshot is data, never the TL currency authority; the actual owner supplies TL cost or
+    // Unavailable. SAT-D426: a foreign sale is converted only at the rate the order froze (golden D01-D23).
+    internal static SalesLineMargin CalculateMarginInTurkishLira(Money? netSale, Guid orderUnitId,
+        decimal quantity, SalesMarginCostSnapshot cost, decimal? kilogramsPerUnit = null) =>
+        CalculateMarginInTurkishLira(netSale, orderUnitId, quantity, cost, kilogramsPerUnit, PieceMarginGoldenAccepted);
+
+    /// <summary>The same calculation with the AK-6 switch named, so the closed and the open path are both measured by tests.</summary>
+    internal static SalesLineMargin CalculateMarginInTurkishLira(Money? netSale, Guid orderUnitId,
+        decimal quantity, SalesMarginCostSnapshot cost, decimal? kilogramsPerUnit, bool pieceMarginOpen) => cost.CostPerUnit == 0m
+        ? SalesLineMargin.Unavailable(SalesLineMarginUnavailableReason.CostUnreadable)
+        : SalesLineMarginCalculator.Calculate(new SalesLineMarginInput(
+            netSale, orderUnitId, quantity, SettingsCurrencyIdentitiesV1.TurkishLira,
+            SalesLineMarginCost.Of(cost.CostPerUnit!.Value, cost.CurrencyId!.Value, cost.UnitId),
+            ForeignSaleMarginGoldenAccepted && cost.SaleRate is { } rate
+                ? ExchangeRate.Of(rate.CurrencyId, SettingsCurrencyIdentitiesV1.TurkishLira, rate.Rate)
+                : null,
+            pieceMarginOpen && kilogramsPerUnit is { } perUnit && cost.UnitId == SettingsUnitIdentitiesV1.Kilogram
+                ? new SalesLinePieceConversion(SettingsUnitIdentitiesV1.Kilogram, perUnit)
+                : null));
+}

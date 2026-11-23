@@ -27,6 +27,7 @@ import {
   json,
   mutation,
   renderLogisticsApp,
+  unloadWeighingRecord,
   weighingRecord,
   type RecordedCall,
 } from './testHarness'
@@ -44,7 +45,7 @@ const issued = (lines = [instructionLine()], shares: Record<string, unknown>[] =
 
 function loadAnswer(call: RecordedCall, isReplay = false): Response {
   const body = JSON.parse(call.body ?? '{}') as { loadId: string; quantity: string; measurement: string }
-  const share = { shareId: body.loadId, lineId: LINE, kind: 'Loaded', quantity: body.quantity, measurement: body.measurement, sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z' }
+  const share = { shareId: body.loadId, lineId: LINE, kind: 'Loaded', quantity: body.quantity, measurement: body.measurement, sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z', recordedBy: 'SENTETIK-operator' }
   const line = instructionLine({ loaded: body.quantity, remainingToLoad: '2', loadedNotShipped: body.quantity })
   return json(mutation(issued([line], [share], '4'), isReplay), 200, isReplay ? { 'Idempotency-Replayed': 'true' } : {})
 }
@@ -76,6 +77,7 @@ function installCustomerReturnScreen(capabilities: readonly string[], handlers: 
     measurement: null,
     sourceShipmentId: '00000000-0000-4000-8000-000000000052',
     recordedAtUtc: '2026-10-04T08:00:00Z',
+    recordedBy: 'SENTETIK-operator',
   }
   const detail = instructionDetail({ id: instructionId, companyId, status: 'Issued', version: '3' }, [line], [delivery])
   installFetch({ capabilities, onDetail: () => json(detail) })
@@ -113,7 +115,7 @@ function installCustomerReturnScreen(capabilities: readonly string[], handlers: 
         displayName: 'Müşteri iadesi kullanıcısı',
         email: null,
         allowedCompanyIds: [companyId],
-        authenticationSessionBinding: null,
+        mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: null,
       })
     }
     if (url.pathname.endsWith('/organization/companies')) {
@@ -259,10 +261,11 @@ describe('L-02-DETAIL', () => {
   })
 
   it('F-020: a cancelled instruction is shown as "İptal edildi" with its kept records, who cancelled it, when and why, and offers no command', async () => {
-    const load = { shareId: '00000000-0000-4000-8000-000000000061', lineId: LINE, kind: 'Loaded', quantity: '4.5', measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z' }
+    // LOJ-D17: its unload weighing is recorded too, so not even the unload form is offered.
+    const load = { shareId: '00000000-0000-4000-8000-000000000061', lineId: LINE, kind: 'Loaded', quantity: '4.5', measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z', recordedBy: 'SENTETIK-operator' }
     const harness = installFetch({
       onDetail: () => json(instructionDetail({ ...CANCELLED_INSTRUCTION, version: '4' },
-        [instructionLine({ loaded: '4.5', remainingToLoad: '0', loadedNotShipped: '4.5' })], [load], weighingRecord())),
+        [instructionLine({ loaded: '4.5', remainingToLoad: '0', loadedNotShipped: '4.5' })], [load], weighingRecord(), [], unloadWeighingRecord())),
     })
     renderLogisticsApp(path)
     await screen.findByTestId('logistics-instruction-id')
@@ -280,6 +283,10 @@ describe('L-02-DETAIL', () => {
     // #1152 review P3-1: the kept share row (keyed by the fixture's share id) and the weighbridge record (its netKg) stay readable.
     expect(screen.getByTestId('logistics-share-00000000-0000-4000-8000-000000000061')).toBeTruthy()
     expect(screen.getByTestId('logistics-weighing-net').textContent).toBe('4.3')
+    // LOJ-D17: the recorded unload weighing, exactly as the backend calculated it; no "İndirme kaydı yok" mark, no form.
+    expect(screen.getByTestId('logistics-unload-weighing-net').textContent).toBe('4')
+    expect(screen.queryByTestId('logistics-unload-missing')).toBeNull()
+    expect(screen.queryByTestId('logistics-unload-weighing-form')).toBeNull()
     expect(screen.queryByTestId('logistics-shares-empty')).toBeNull()
     expect(screen.queryByTestId('logistics-issue-button')).toBeNull()
     expect(screen.queryByTestId('logistics-load')).toBeNull()
@@ -290,6 +297,21 @@ describe('L-02-DETAIL', () => {
     expect(record.querySelectorAll('button, form, input, select, textarea')).toHaveLength(0)
     expect(harness.logisticsCalls().every((call) => call.method === 'GET')).toBe(true)
     for (const word of FORBIDDEN_MONEY_WORDS) expect(document.body.textContent).not.toContain(word)
+  })
+
+  it('F-020: the shares table shows who recorded each share as stored (for a shipment, who shipped it) and an older share as unknown', async () => {
+    const olderLoad = { shareId: '00000000-0000-4000-8000-000000000081', lineId: LINE, kind: 'Loaded', quantity: '4.5', measurement: 'Measured', sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:10:00Z', recordedBy: null }
+    const shipment = { shareId: '00000000-0000-4000-8000-000000000082', lineId: LINE, kind: 'Shipped', quantity: '2', measurement: null, sourceShipmentId: null, recordedAtUtc: '2026-09-19T09:30:00Z', recordedBy: 'SENTETIK-sevk-eden' }
+    installFetch({
+      onDetail: () => json(issued([instructionLine({ loaded: '4.5', remainingToLoad: '0', shipped: '2', loadedNotShipped: '2.5', shippedNotDelivered: '2' })],
+        [olderLoad, shipment], '5')),
+    })
+    renderLogisticsApp(path)
+    await screen.findByTestId('logistics-instruction-id')
+    expect(screen.getByRole('columnheader', { name: T.shareRecordedBy })).toBeTruthy()
+    // The stored user id verbatim (no name lookup); a share stored before the actor was kept says so instead of guessing.
+    expect(screen.getByTestId(`logistics-share-recorded-by-${shipment.shareId}`).textContent).toBe('SENTETIK-sevk-eden')
+    expect(screen.getByTestId(`logistics-share-recorded-by-${olderLoad.shareId}`).textContent).toBe(T.unknown)
   })
 
   it('F-020: a detail with an unknown status is refused, not shown', async () => {

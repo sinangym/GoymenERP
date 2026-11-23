@@ -63,7 +63,8 @@ public sealed record ManufacturingToleranceProfileListViewV1(
     Guid CompanyId,
     DateOnly BusinessDate,
     IReadOnlyList<ManufacturingToleranceProfileViewV1> Profiles,
-    IReadOnlyList<ManufacturingToleranceProfileViewV1> StartingValues);
+    IReadOnlyList<ManufacturingToleranceProfileViewV1> StartingValues,
+    string StartingValuesTransferVersion = "0");
 
 /// <summary>
 /// The write path of the Settings Manufacturing tolerance registry (D-MFG-PROFILE-AUTH-01=A lifecycle): prepare, approve
@@ -72,6 +73,9 @@ public sealed record ManufacturingToleranceProfileListViewV1(
 /// </summary>
 public interface ISettingsManufacturingToleranceProfileAdministrationV1
 {
+    Task<ManufacturingProfileCommandResultV1> TransferStartingValuesAsync(ManufacturingProfileBaselineTransferRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+
     Task<ManufacturingToleranceProfileListViewV1> ListAsync(CancellationToken cancellationToken = default);
 
     Task<ManufacturingToleranceProfileViewV1?> GetAsync(Guid profileId, CancellationToken cancellationToken = default);

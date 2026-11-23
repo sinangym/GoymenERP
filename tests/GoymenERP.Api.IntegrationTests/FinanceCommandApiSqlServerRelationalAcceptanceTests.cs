@@ -7,6 +7,7 @@ using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
+using GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
@@ -17,6 +18,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -434,8 +436,24 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
                    Guid.NewGuid().ToString("N"), new RecordRequest(sourceId, sourceVersion))))
         {
             Assert.Equal(HttpStatusCode.OK, recorded.StatusCode);
-            sourceVersion = (await Json(recorded)).GetProperty("resource").GetProperty("source")
-                .GetProperty("version").GetString()!;
+            var resource = (await Json(recorded)).GetProperty("resource");
+            sourceVersion = resource.GetProperty("source").GetProperty("version").GetString()!;
+            var number = resource.GetProperty("documentNumber");
+            Assert.StartsWith("MAK-2026-", number.GetProperty("number").GetString());
+            Assert.Equal("1", number.GetProperty("formatVersion").GetString());
+            Assert.Equal(number.GetProperty("number").GetString(), resource.GetProperty("source").GetProperty("sourceNumber").GetString());
+        }
+
+        // #66 round 20 (the API-23 date rule applied to FIN-T06): the reversal may not precede the receipt
+        // (2026-09-18); the refusal stores no proposal.
+        using (var beforeReceipt = await maker.SendAsync(Post(
+                   $"{FinanceEndpoints.ManualReceiptsPath}/{sourceId:D}/reversal-proposals",
+                   "SENTETIK-reversal-before-receipt", Guid.NewGuid().ToString("N"),
+                   new ProposeReversalRequest(sourceId, sourceVersion, new DateOnly(2026, 9, 17),
+                       "SENTETIK-yanlis-tahsilat"))))
+        {
+            Assert.Equal((HttpStatusCode)422, beforeReceipt.StatusCode);
+            Assert.Equal("finance_reversal_before_receipt", Issue(await Json(beforeReceipt)));
         }
 
         var reversalOccurredOn = new DateOnly(2026, 9, 19);
@@ -831,6 +849,8 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             services.AddScoped<IFinancePartyAccountPort, SyntheticParties>();
             services.RemoveAll<IFinanceRecordPeriodRule>();
             services.AddScoped<IFinanceRecordPeriodRule, SyntheticOpenPeriodRule>();
+            services.RemoveAll<IFinanceTreasuryBalanceGuard>();
+            services.AddScoped<IFinanceTreasuryBalanceGuard, SyntheticSufficientBankBalance>();
         });
         const string beforeManualBankPayments = "20260921120000_AddReversalProposals";
         await using (var context = run.Context(CompanyA))
@@ -852,21 +872,47 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             Assert.Equal(1, await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'finance.Commands') "
                 + "AND name = N'ManualBankPaymentId'"));
-            // The newest Finance migration adds the payment reversals (API-23), after the payment allocations
-            // (F3a / API-20), the invoice cancellations (F2b), the invoice exchange columns (MOD-04), the open-item
-            // direction (MOD-15) and the Work delivery for the official-invoice approval source. The source migration
-            // still follows DEC-FIN-016's customer instruments, DEC-FIN-014's POS facts and F-03's allocations.
-            var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.EndsWith("_AddPaymentReversals", applied[^1], StringComparison.Ordinal);
-            Assert.EndsWith("_AddPaymentAllocations", applied[^2], StringComparison.Ordinal);
-            Assert.EndsWith("_AddInvoiceCancellations", applied[^3], StringComparison.Ordinal);
-            Assert.EndsWith("_AddOpenItemInvoiceExchange", applied[^4], StringComparison.Ordinal);
-            Assert.EndsWith("_AddOpenItemDirection", applied[^5], StringComparison.Ordinal);
-            Assert.EndsWith("_AddOfficialInvoiceImportWorkDeliveryV1", applied[^6], StringComparison.Ordinal);
-            Assert.EndsWith("_AddOfficialInvoiceImportApprovalV1", applied[^7], StringComparison.Ordinal);
-            Assert.EndsWith("_AddCustomerInstruments", applied[^8], StringComparison.Ordinal);
-            Assert.EndsWith("_AddPosCollectionFacts", applied[^9], StringComparison.Ordinal);
-            Assert.EndsWith("_AddFinanceAllocations", applied[^10], StringComparison.Ordinal);
+            // The historical customer collateral migration (API-85b, FNS-D57/D31) follows the
+            // restored one-step credit limit decision check (FNS-D56/FNS-D57(3)), which follows the transfer and
+            // currency exchange record (FNS-D24), which follows the
+            // official invoice identity claims (FIN-S5, FNS-D19 D5), which follow the second-person credit limit
+            // check (FNS-D45), which follows the expense payments (FNS-D25). Those follow the customer return
+            // credits (F-019) and the party credit limit master (API-85a L1, FNS-D27/D27a), which follow the rejection
+            // and withdrawal of a pending official sales invoice record (FNS-D39), which follows the
+            // cash account passivation and reactivation and the cash accounts themselves (API-30), the official sales invoice record (F-005 D1), the payment reversals (API-23), the
+            // payment allocations (F3a / API-20), the invoice cancellations (F2b), the invoice exchange columns
+            // (MOD-04), the open-item direction (MOD-15) and the Work delivery for the official-invoice approval
+            // source. The source migration still follows DEC-FIN-016's customer instruments, DEC-FIN-014's POS facts
+            // and F-03's allocations.
+            var applied = (await context.Database.GetAppliedMigrationsAsync()).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+            var expected = context.Database.GetMigrations().OrderBy(id => id, StringComparer.Ordinal).ToArray();
+            Assert.Equal(expected, applied);
+            // Preserve all 22 historical relative-order assertions even as later owner migrations are added.
+            var collateral = Assert.Single(applied, id => id.EndsWith("_AddPartyCollaterals", StringComparison.Ordinal));
+            var historical = applied.Take(Array.IndexOf(applied, collateral) + 1).ToArray();
+            Assert.True(historical.Length >= 22);
+            Assert.EndsWith("_AddPartyCollaterals", historical[^1], StringComparison.Ordinal);
+            Assert.EndsWith("_RestorePartyCreditLimitOneStep", historical[^2], StringComparison.Ordinal);
+            Assert.EndsWith("_AddCashTransfers", historical[^3], StringComparison.Ordinal);
+            Assert.EndsWith("_AddOfficialInvoiceIdentityClaims", historical[^4], StringComparison.Ordinal);
+            Assert.EndsWith("_RequirePartyCreditLimitSecondPerson", historical[^5], StringComparison.Ordinal);
+            Assert.EndsWith("_AddExpensePayments", historical[^6], StringComparison.Ordinal);
+            Assert.EndsWith("_AddCustomerReturnCredits", historical[^7], StringComparison.Ordinal);
+            Assert.EndsWith("_AddPartyCreditLimits", historical[^8], StringComparison.Ordinal);
+            Assert.EndsWith("_AddOfficialSalesInvoiceRejectionAndWithdrawal", historical[^9], StringComparison.Ordinal);
+            Assert.EndsWith("_AddCashAccountStateChanges", historical[^10], StringComparison.Ordinal);
+            Assert.EndsWith("_AddCashAccounts", historical[^11], StringComparison.Ordinal);
+            Assert.EndsWith("_AddOfficialSalesInvoices", historical[^12], StringComparison.Ordinal);
+            Assert.EndsWith("_AddPaymentReversals", historical[^13], StringComparison.Ordinal);
+            Assert.EndsWith("_AddPaymentAllocations", historical[^14], StringComparison.Ordinal);
+            Assert.EndsWith("_AddInvoiceCancellations", historical[^15], StringComparison.Ordinal);
+            Assert.EndsWith("_AddOpenItemInvoiceExchange", historical[^16], StringComparison.Ordinal);
+            Assert.EndsWith("_AddOpenItemDirection", historical[^17], StringComparison.Ordinal);
+            Assert.EndsWith("_AddOfficialInvoiceImportWorkDeliveryV1", historical[^18], StringComparison.Ordinal);
+            Assert.EndsWith("_AddOfficialInvoiceImportApprovalV1", historical[^19], StringComparison.Ordinal);
+            Assert.EndsWith("_AddCustomerInstruments", historical[^20], StringComparison.Ordinal);
+            Assert.EndsWith("_AddPosCollectionFacts", historical[^21], StringComparison.Ordinal);
+            Assert.EndsWith("_AddFinanceAllocations", historical[^22], StringComparison.Ordinal);
         }
         var account = await run.ApprovedBankAccountAsync(CompanyA);
         await run.GrantAsync(Proposer, CompanyA, ManualPaymentPreparerGrants);
@@ -1001,6 +1047,8 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             Assert.Equal("Recorded", resource.GetProperty("status").GetString());
             Assert.Equal("3", resource.GetProperty("version").GetString());
             Assert.True(resource.GetProperty("bankResultConfirmed").GetBoolean());
+            Assert.StartsWith("DEK-2026-", resource.GetProperty("documentNumber").GetProperty("number").GetString());
+            Assert.Equal("1", resource.GetProperty("documentNumber").GetProperty("formatVersion").GetString());
         }
         using (var replayed = await decider.SendAsync(Post(
                    $"{FinanceEndpoints.ManualBankPaymentsPath}/{paymentId:D}/record",
@@ -1036,11 +1084,13 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
 
         await using (var context = run.Context(CompanyA))
         {
-            var error = await Assert.ThrowsAsync<SqlException>(() =>
-                context.GetService<IMigrator>().MigrateAsync(beforeManualBankPayments));
+            // The empty full Down/up is proved above. A real recorded payment also retains its newer
+            // document-number proof, whose own guard must not be erased to reach this historical guard.
+            var appliedBefore = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            var guard = Assert.IsType<SqlOperation>(new AddManualBankPayments().DownOperations[0]).Sql;
+            var error = await Assert.ThrowsAsync<SqlException>(() => context.Database.ExecuteSqlRawAsync(guard));
             Assert.Equal(51053, error.Number);
-            Assert.EndsWith("_AddManualBankPayments",
-                (await context.Database.GetAppliedMigrationsAsync()).Last(), StringComparison.Ordinal);
+            Assert.Equal(appliedBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
         }
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ManualBankPayments"));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutgoingMoneyEvents"));
@@ -1087,6 +1137,8 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             services.AddScoped<IFinancePartyAccountPort, SyntheticParties>();
             services.RemoveAll<IFinanceRecordPeriodRule>();
             services.AddScoped<IFinanceRecordPeriodRule, SyntheticOpenPeriodRule>();
+            services.RemoveAll<IFinanceTreasuryBalanceGuard>();
+            services.AddScoped<IFinanceTreasuryBalanceGuard, SyntheticSufficientBankBalance>();
         });
         var account = await run.ApprovedBankAccountAsync(CompanyA);
         await run.GrantAsync(Proposer, CompanyA, [.. ManualPaymentPreparerGrants,
@@ -1386,6 +1438,15 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
         }
     }
 
+    /// <summary>Explicit HTTP-mapping test input; FNS-D87 has no real bank balance source yet, so the default guard refuses.</summary>
+    private sealed class SyntheticSufficientBankBalance : IFinanceTreasuryBalanceGuard
+    {
+        public Task<TreasuryBalanceAnswer> CheckOutgoingAsync(FinanceContext context,
+            ExpensePaymentSourceKind sourceKind, Guid treasuryAccountId, MoneyText money,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new TreasuryBalanceAnswer(TreasuryBalanceOutcome.Sufficient, null));
+    }
+
     /// <summary>Explicit HTTP-mapping test input; real period policy is covered by the relational FIN-T05/T06 cases.</summary>
     private sealed class SyntheticOpenPeriodRule : IFinanceRecordPeriodRule
     {
@@ -1412,18 +1473,38 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
             var factory = new SqlServerRelationalApiFactory(baseConnectionString, configureServices);
             var run = new Run(baseConnectionString, factory);
-            using var client = factory.CreateClient();
-            using var health = await client.GetAsync("/health/live");
-            health.EnsureSuccessStatusCode();
-            // Idempotent if the host already applied Finance's migrations.
-            var companyContext = new CompanyContext();
-            companyContext.Set(CompanyA);
-            await using var context = new FinanceDbContext(new DbContextOptionsBuilder<FinanceDbContext>()
-                .UseSqlServer(factory.DatabaseConnectionString,
-                    sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema))
-                .Options, companyContext);
-            await context.Database.MigrateAsync();
-            return run;
+            var phase = "finance_command_startup_health";
+            try
+            {
+                using var client = factory.CreateClient();
+                using var health = await client.GetAsync("/health/live");
+                health.EnsureSuccessStatusCode();
+                phase = "finance_command_startup_migrate";
+                // Idempotent if the host already applied Finance's migrations.
+                var companyContext = new CompanyContext();
+                companyContext.Set(CompanyA);
+                await using var context = new FinanceDbContext(new DbContextOptionsBuilder<FinanceDbContext>()
+                    .UseSqlServer(factory.DatabaseConnectionString,
+                        sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema))
+                    .Options, companyContext);
+                await context.Database.MigrateAsync();
+                phase = "finance_command_startup_document_numbers";
+                await FinanceDocumentNumbersSqlFixture.PrepareAsync(factory.Services, CompanyA, CompanyB);
+                return run;
+            }
+            catch (Exception exception)
+            {
+                try
+                {
+                    await run.DisposeAsync();
+                }
+                catch (Exception)
+                {
+                    // Cleanup must not replace the original failed setup or its closed phase.
+                }
+
+                throw new InvalidOperationException($"CI_SAFE_DIAGNOSTIC:{phase}", exception);
+            }
         }
 
         /// <summary>A client whose key and correlation are set per request, never by default.</summary>

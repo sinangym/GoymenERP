@@ -79,7 +79,8 @@ public static partial class ErpOpenApiContract
                 document.Info.Title = "Göymen ERP API";
                 document.Info.Version = "v1";
                 document.Servers = [];
-                var components = document.Components ??= new OpenApiComponents();
+                var components = new ErpCanonicalOpenApiComponents(document.Components);
+                document.Components = components;
                 components.SecuritySchemes ??=
                     new Dictionary<string, IOpenApiSecurityScheme>(StringComparer.Ordinal);
                 components.SecuritySchemes[BearerSecuritySchemeName] =
@@ -108,6 +109,7 @@ public static partial class ErpOpenApiContract
             options.AddOperationTransformer(TransformOperationAsync);
             options.AddOperationTransformer(TransformProductOperationAsync);
             options.AddSchemaTransformer(TransformProductSchemaAsync);
+            options.AddSchemaTransformer(TransformManufacturingStockShortfallSchemaAsync);
             options.AddSchemaTransformer((schema, context, _) =>
             {
                 ApplyContactInformationSchema(schema, context.JsonTypeInfo.Type);
@@ -166,6 +168,36 @@ public static partial class ErpOpenApiContract
                         "reason",
                         minimumLength: 1,
                         maximumLength: 1000);
+                    // ALS-D99: optional, false when omitted (older clients keep their body shape).
+                    schema.Required?.Remove("exposureWarningAcknowledged");
+                }
+
+                if (context.JsonTypeInfo.Type == typeof(GroupDeactivateCounterparty))
+                {
+                    // ALS-D100: the group command carries the same reason contract; the acknowledgement is optional.
+                    AddCanonicalLengthContract(
+                        schema,
+                        "reason",
+                        minimumLength: 1,
+                        maximumLength: 1000);
+                    schema.Required?.Remove("exposureWarningAcknowledged");
+                }
+
+                if (context.JsonTypeInfo.Type == typeof(RecordCounterpartyPartySuccession))
+                {
+                    // ALS-D99: the succession's deactivation acknowledgement is optional, false when omitted.
+                    schema.Required?.Remove("exposureWarningAcknowledged");
+                }
+
+                if (context.JsonTypeInfo.Type == typeof(CounterpartyGroupDeactivationTarget))
+                {
+                    SetPositiveInteger(schema, "expectedVersion");
+                }
+
+                if (context.JsonTypeInfo.Type == typeof(CounterpartyDeactivationExposureView))
+                {
+                    // ALS-D99: the account version is a lossless decimal string like every Cari view version.
+                    SetPositiveIntegerStringProperty(schema, "accountVersion");
                 }
 
                 if (context.JsonTypeInfo.Type == typeof(SetLocationActiveState)
@@ -408,6 +440,40 @@ public static partial class ErpOpenApiContract
         return builder.ProducesErpInternalError();
     }
 
+    /// <summary>
+    /// The anonymous login refusal: the same platform <c>authentication_required</c> 401 as an authenticated
+    /// route, without a 403 (an anonymous operation has no permission check).
+    /// </summary>
+    public static RouteHandlerBuilder ProducesErpLoginRefused(
+        this RouteHandlerBuilder builder)
+    {
+        builder.Produces<ErpProblemDetailsContract>(
+            StatusCodes.Status401Unauthorized,
+            "application/problem+json");
+        AddProblemCodeMetadata(
+            builder,
+            StatusCodes.Status401Unauthorized,
+            [ErpProblemCodes.AuthenticationRequired]);
+        return builder;
+    }
+
+    public static RouteHandlerBuilder ProducesErpTooManyRequests(
+        this RouteHandlerBuilder builder,
+        params string[] stableCodes)
+    {
+        if (stableCodes.Length == 0)
+        {
+            throw new InvalidOperationException(
+                "Coded 429 OpenAPI responses require at least one stable code.");
+        }
+
+        builder.Produces<ErpProblemDetailsContract>(
+            StatusCodes.Status429TooManyRequests,
+            "application/problem+json");
+        AddProblemCodeMetadata(builder, StatusCodes.Status429TooManyRequests, stableCodes);
+        return builder;
+    }
+
     public static RouteHandlerBuilder ProducesErpInternalError(
         this RouteHandlerBuilder builder)
     {
@@ -512,6 +578,8 @@ public static partial class ErpOpenApiContract
     public static RouteHandlerBuilder ProducesErpCodeLessConflict(
         this RouteHandlerBuilder builder)
     {
+        // A company-context middleware refusal may carry the setup_pending code before the handler's code-less 409.
+        builder.Add(endpointBuilder => endpointBuilder.Metadata.Add(new CodeLessProblemDetailsResponseMetadata(StatusCodes.Status409Conflict)));
         return builder.Produces<ErpCodeLessProblemDetailsContract>(
             StatusCodes.Status409Conflict,
             "application/problem+json");
@@ -582,7 +650,9 @@ public static partial class ErpOpenApiContract
         var isManufacturingInventoryRealizationOperation = operation.OperationId is
             "IssueManufacturingInputV1"
             or "ReturnManufacturingInputV1"
-            or "DeclareManufacturingOutputV1";
+            or "DeclareManufacturingOutputV1"
+            // F-009 D3 (URT-S2): the output correction stages Inventory's output reversal in the same transaction.
+            or "CorrectManufacturingOutputV1";
         if (!isManufacturingInventoryRealizationOperation
             && problemCodesByStatus.TryGetValue(
                 StatusCodes.Status400BadRequest,
@@ -625,8 +695,37 @@ public static partial class ErpOpenApiContract
             maximumLength: 128,
             pattern: "^[A-Za-z0-9._:-]+$");
 
+        // KIM-D31: in the LocalAccount mode the login and every write the session cookie authenticates must carry
+        // the antiforgery header; a missing or invalid one is a 400 before the handler. Bearer requests are exempt.
+        if (GoymenERP.Api.Security.LocalAccountAntiforgery.IsWrite(context.Description.HttpMethod ?? string.Empty))
+        {
+            problemCodesByStatus[StatusCodes.Status400BadRequest] =
+                problemCodesByStatus
+                    .GetValueOrDefault(StatusCodes.Status400BadRequest, [])
+                    .Append(GoymenERP.Modules.Identity.Application.Contracts.IdentitySessionProblemCodesV1.AntiforgeryTokenInvalid)
+                    .Distinct(StringComparer.Ordinal)
+                    .Order(StringComparer.Ordinal)
+                    .ToArray();
+            AddHeaderParameter(
+                operation,
+                GoymenERP.Api.Security.LocalAccountAntiforgery.HeaderName,
+                required: false,
+                "Antiforgery request token from GetLocalAccountAntiforgeryTokenV1. Required in the LocalAccount "
+                    + "mode on the login and on every write the session cookie authenticates; bearer requests "
+                    + "omit it. Ask for a new token after login and logout.",
+                minimumLength: 1);
+        }
+
         if (endpointMetadata.OfType<RequiresCompanyContextAttribute>().Any())
         {
+            // The platform problem writer normalizes a lifecycle-read failure before the handler.
+            problemCodesByStatus[StatusCodes.Status503ServiceUnavailable] = problemCodesByStatus
+                .GetValueOrDefault(StatusCodes.Status503ServiceUnavailable, [])
+                .Append(ErpProblemCodes.ServiceUnavailable).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+            if (!endpointMetadata.OfType<FirstCompanyAdminEndpointMetadata>().Any())
+                problemCodesByStatus[StatusCodes.Status409Conflict] = problemCodesByStatus
+                    .GetValueOrDefault(StatusCodes.Status409Conflict, [])
+                    .Append("organization.company.setup_pending").Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
             problemCodesByStatus[StatusCodes.Status400BadRequest] =
                 problemCodesByStatus
                     .GetValueOrDefault(StatusCodes.Status400BadRequest, [])
@@ -741,6 +840,15 @@ public static partial class ErpOpenApiContract
                 maximumLength: 128);
         }
 
+        // AI-2b (ADR-SEC-001 section 5): the security event read clamps the page size and trims its filters.
+        if (string.Equals(operation.OperationId, "GetSecurityEventsV1", StringComparison.Ordinal))
+        {
+            SetNormalizedIntegerParameter(operation, ParameterLocation.Query, "pageSize", minimum: 1, maximum: 100);
+            SetCanonicalStringParameter(operation, ParameterLocation.Query, "cursor", maximumLength: 128);
+            SetCanonicalStringParameter(operation, ParameterLocation.Query, "eventType", maximumLength: 64);
+            SetCanonicalStringParameter(operation, ParameterLocation.Query, "correlationId", maximumLength: 128);
+        }
+
         if (string.Equals(operation.OperationId, "GetSalesAccountReferencesV1", StringComparison.Ordinal))
         {
             SetNormalizedIntegerParameter(operation, ParameterLocation.Query, "pageSize", 1, 100);
@@ -819,6 +927,12 @@ public static partial class ErpOpenApiContract
             AddInventoryPhysicalAllocationReadParameters(operation);
         }
 
+        // KLN-D34/D99: the suggestion route reads its query by hand; requestedKg only orders labels closest first.
+        if (string.Equals(operation.OperationId, "GetInventoryPhysicalAllocationSuggestionsV1", StringComparison.Ordinal))
+        {
+            AddInventoryPhysicalAllocationSuggestionParameters(operation);
+        }
+
         // AT-055 (#518 P2): the Sales order's dispatch notes are read for exactly one REQUIRED uuid; the route reads it by hand.
         if (string.Equals(operation.OperationId, "GetSalesOrderDispatchNotesV1", StringComparison.Ordinal))
         {
@@ -879,6 +993,22 @@ public static partial class ErpOpenApiContract
         }
 
         operation.Responses ??= new OpenApiResponses();
+        // The company boundary can refuse before a handler returning a JSON command result.
+        // Preserve that handler media type and add the boundary's problem response alongside it.
+        if (endpointMetadata.OfType<RequiresCompanyContextAttribute>().Any())
+        {
+            foreach (var boundaryStatus in new[] { "409", "503" })
+            {
+                if (boundaryStatus == "409" && endpointMetadata.OfType<FirstCompanyAdminEndpointMetadata>().Any()) continue;
+                if (!operation.Responses.TryGetValue(boundaryStatus, out var boundaryResponse)
+                    || boundaryResponse is not OpenApiResponse concreteBoundaryResponse) continue;
+                concreteBoundaryResponse.Content ??= new Dictionary<string, OpenApiMediaType>();
+                concreteBoundaryResponse.Content.TryAdd("application/problem+json", new OpenApiMediaType
+                {
+                    Schema = new OpenApiSchemaReference(nameof(ErpProblemDetailsContract), context.Document, externalResource: null),
+                });
+            }
+        }
         foreach (var (statusCode, response) in operation.Responses)
         {
             if (response is not OpenApiResponse concreteResponse)
@@ -1572,6 +1702,34 @@ public static partial class ErpOpenApiContract
                 Maximum = "100",
             },
             "Maximum allocation rows; default 100, range 1..100.");
+    }
+
+    private static void AddInventoryPhysicalAllocationSuggestionParameters(OpenApiOperation operation)
+    {
+        AddQueryParameter(
+            operation,
+            "salesOrderId",
+            new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+            "Required Sales order identifier.",
+            required: true);
+        AddQueryParameter(
+            operation,
+            "salesOrderLineId",
+            new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+            "Required Sales order line identifier.",
+            required: true);
+        AddQueryParameter(
+            operation,
+            "requestedKg",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.String,
+                Pattern = "^[0-9]+(\\.[0-9]{1,3})?$",
+                MaxLength = GoymenERP.Modules.Inventory.Application.InventoryLabelQuantityProximityV1
+                    .MaximumRequestedKgTextLength,
+            },
+            "Optional positive kilograms the user typed (KLN-D99); the line's own labels are listed closest to it "
+            + "first, ties by label code. Nothing is selected automatically.");
     }
 
     private static void AddInventoryProductCandidateParameters(OpenApiOperation operation)

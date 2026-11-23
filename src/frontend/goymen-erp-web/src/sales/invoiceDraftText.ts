@@ -49,6 +49,7 @@ export const INVOICE_NOT_READY_REASON_TEXT: Readonly<Record<string, string>> = {
   money_profile_mismatch: 'Para biriminin ondalık ayarı diğer paylarla aynı değil.',
   rate_unresolved: 'Kur kaydı henüz yok.',
   rate_mismatch: 'Kur diğer paylarla aynı değil.',
+  usd_shipment_day_mismatch: 'Farklı günlerde sevk edilen USD fiyatlı mallar ayrı faturalandırılmalıdır.',
   due_terms_missing: 'Siparişte vade bilgisi yok.',
   due_date_pending: 'Vade tarihi henüz belirlenemedi.',
   due_date_mismatch: 'Vade tarihi diğer paylarla aynı değil.',
@@ -57,6 +58,11 @@ export const INVOICE_NOT_READY_REASON_TEXT: Readonly<Record<string, string>> = {
   exemption_document_after_shipment: 'Alıcının istisna belgesi sevkten sonra tarihli.',
   amount_out_of_range: 'Tutar izin verilen aralığın dışında.',
   due_amount_not_splittable: 'Ödenecek tutar vade planının taksitlerine bölünemiyor.',
+  weighing_difference_not_recorded: 'İrsaliyenin kantar farkı kaydı yok; kayıt olmadan faturalanamaz.',
+  weighing_difference_pending_approval: 'İrsaliyenin kantar farkı oranı aştı ve onay bekliyor.',
+  weighing_kg_transfer_pending: 'Kantar kg değeri fatura satırlarına henüz aktarılamıyor; satır bazında kantar kg bilgisi bekleniyor.',
+  kg_per_unit_missing: 'Adetli satırın onayda kaydedilen teorik kg/adet değeri yok; fatura hazırlanmaz.',
+  weighing_difference_unavailable: 'İrsaliyenin kantar farkı kaydı okunamadı.',
 }
 
 export const invoiceNotReadyReasonText = (code: string): string =>

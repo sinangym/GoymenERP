@@ -24,7 +24,7 @@ export function inventoryLabelStockScrapsPath(labelId: string): string {
 
 export type StockScrapCommandOutcome =
   | { readonly type: 'applied'; readonly response: StockScrapView; readonly replayed: boolean }
-  | { readonly type: 'failed'; readonly status: number; readonly code: string | null }
+  | { readonly type: 'failed'; readonly status: number; readonly code: string | null; readonly detail?: string }
   | { readonly type: 'unknown'; readonly reason: 'offline' | 'network-error' | 'service-unavailable' | 'undecodable' | 'unexpected-status' }
 
 async function bodyOf(response: Response): Promise<unknown> {
@@ -35,6 +35,15 @@ function problemCode(body: unknown): string | null {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) return null
   const code = (body as Record<string, unknown>).code
   return typeof code === 'string' && code.length > 0 ? code : null
+}
+
+function physicalStockRefusalDetail(body: unknown, status: number): string | null {
+  if (status !== 409 || typeof body !== 'object' || body === null || Array.isArray(body)
+    || 'status' in body && body.status !== status || !('detail' in body)
+    || typeof body.detail !== 'string' || body.detail.length > 128) return null
+  const value = body.detail
+  const match = /^Sistemde (-?(?:0|[1-9][0-9]{0,14})(?:\.[0-9]{0,2}[1-9])?) kg var, ((?:0|[1-9][0-9]{0,14})(?:\.[0-9]{0,2}[1-9])?) kg istendi\.$/u.exec(value)
+  return match !== null && match[0] === value && match[1] !== '-0' && match[2] !== '0' ? value : null
 }
 
 /**
@@ -77,7 +86,8 @@ async function send(
       : { type: 'applied', response: decoded, replayed }
   }
   if ([400, 401, 403, 404, 409, 415, 422].includes(response.status)) {
-    return { type: 'failed', status: response.status, code: problemCode(body) }
+    const detail = physicalStockRefusalDetail(body, response.status)
+    return { type: 'failed', status: response.status, code: problemCode(body), ...(detail === null ? {} : { detail }) }
   }
   const unavailableCode = problemCode(body)
   if (response.status === 503 && unavailableCode !== null && STOCK_SCRAP_DEFINITE_UNAVAILABLE_CODES.has(unavailableCode)) {

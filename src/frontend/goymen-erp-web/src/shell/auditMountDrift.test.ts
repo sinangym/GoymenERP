@@ -15,13 +15,15 @@ describe('shell ↔ audit log contract (UI-K02, KLN-D2)', () => {
     expect(NAV_CAPABILITIES.filter((item) => item === CAPABILITY.identityAuditList)).toHaveLength(1)
   })
 
-  it('is drawn in Ayarlar right after the access list, inside the Sistem Yönetimi section', () => {
+  it('is drawn in Ayarlar after the access and user management lists, inside Sistem Yönetimi', () => {
     const owners = NAV_GROUPS.filter((group) => group.entries.includes(CAPABILITY.identityAuditList))
     expect(owners.map((group) => group.id)).toEqual(['settings'])
     const entries = owners[0].entries
     const access = entries.indexOf(CAPABILITY.identityAssignmentsList)
-    expect(entries[access + 1]).toBe(CAPABILITY.identityAuditList)
-    expect(entries[access + 2]).toBe(CAPABILITY.inventoryOpeningStockRecord)
+    expect(entries.slice(access, access + 5)).toEqual([
+      CAPABILITY.identityAssignmentsList, CAPABILITY.identityUsersManage, CAPABILITY.identityAuditList,
+      CAPABILITY.settingsLoginRateLimit, CAPABILITY.inventoryOpeningStockRecord,
+    ])
     expect(owners[0].subheadings?.[CAPABILITY.identityAssignmentsList]).toBe('Sistem Yönetimi')
     expect(owners[0].subheadings?.[CAPABILITY.identityAuditList]).toBeUndefined()
   })

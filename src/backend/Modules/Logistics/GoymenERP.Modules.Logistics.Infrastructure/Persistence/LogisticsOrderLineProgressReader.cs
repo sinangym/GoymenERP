@@ -57,11 +57,12 @@ internal sealed class LogisticsOrderLineProgressReader(LogisticsDbContext dbCont
                 Loaded = group.Sum(line => line.Loaded),
                 Shipped = group.Sum(line => line.Shipped),
                 Delivered = group.Sum(line => line.Delivered),
+                ApprovedPlanExcess = group.Sum(line => line.ApprovedPlanExcess),
             })
             .ToListAsync(cancellationToken);
 
         return [.. totals.OrderBy(total => total.SourceOrderLineId).ThenBy(total => total.UnitId)
             .Select(total => new LogisticsOrderLineProgress(total.SourceOrderLineId, total.UnitId, total.Instructed, total.Loaded,
-                total.Shipped, total.Delivered))];
+                total.Shipped, total.Delivered, total.ApprovedPlanExcess == 0m ? null : total.ApprovedPlanExcess))];
     }
 }

@@ -46,6 +46,8 @@ import { contextKey, contextKeyString, hasCapability } from '../shell/shellState
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StateBlock } from '../shell/StateBlock'
 import styles from './Accounting.module.css'
+import { PeriodLifecyclePanel, pendingReopeningPeriod } from './PeriodLifecyclePanel'
+import { PERIOD_LIFECYCLE_TEXT } from './periodLifecycleText'
 
 const DIRTY_SCOPE = 'accounting.periods.command'
 
@@ -85,6 +87,8 @@ function Periods({ namespace }: { readonly namespace: string | null }) {
   const [more, setMore] = useState<readonly PeriodView[]>([])
   const [nextCursor, setNextCursor] = useState<string | null | undefined>(undefined)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [selectedPeriod, setSelectedPeriod] = useState<string | null>(() => pendingReopeningPeriod(namespace)?.periodId ?? null)
+  const [lifecycleFrozen, setLifecycleFrozen] = useState(() => pendingReopeningPeriod(namespace) !== null)
 
   const refetch = query.refetch
   const refresh = useCallback(async () => {
@@ -120,8 +124,9 @@ function Periods({ namespace }: { readonly namespace: string | null }) {
   }
 
   const rows = [...state.data.items, ...more]
+  const selectedRow = rows.find(row => row.periodId === selectedPeriod) ?? pendingReopeningPeriod(namespace)
   const cursor = nextCursor === undefined ? state.data.nextCursor : nextCursor
-  const frozen = command.unresolved
+  const frozen = command.unresolved || lifecycleFrozen
 
   const loadMore = async () => {
     if (cursor === null || loadingMore) return
@@ -179,6 +184,7 @@ function Periods({ namespace }: { readonly namespace: string | null }) {
                     </td>
                     <td>
                       <div className={styles.actions}>
+                        <button type="button" disabled={frozen} onClick={() => setSelectedPeriod(row.periodId)}>{PERIOD_LIFECYCLE_TEXT.show}</button>
                         {approvable && asking === null ? (
                           <button
                             type="button"
@@ -222,6 +228,11 @@ function Periods({ namespace }: { readonly namespace: string | null }) {
           </table>
         </div>
       )}
+      {selectedPeriod !== null && namespace !== null && selectedRow !== null ? <>
+        <PeriodLifecyclePanel key={selectedPeriod} row={selectedRow} rows={rows}
+          namespace={namespace} disabled={command.unresolved} onFrozenChange={setLifecycleFrozen} onChanged={refresh} />
+        <button type="button" disabled={frozen} onClick={() => setSelectedPeriod(null)}>{PERIOD_LIFECYCLE_TEXT.hide}</button>
+      </> : null}
       {cursor !== null ? (
         <div className={styles.actions}>
           <button type="button" disabled={loadingMore} onClick={() => void loadMore()}>

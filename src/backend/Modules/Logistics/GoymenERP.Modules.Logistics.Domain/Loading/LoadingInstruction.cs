@@ -11,6 +11,22 @@ public enum LoadingInstructionStatus
     Cancelled = 3,
 }
 
+/// <summary>
+/// LOJ-D1: what kind of shipment an instruction carries. Set once at creation, for the whole instruction, so a single
+/// instruction never mixes a sale with a subcontract (fason) delivery. A <see cref="ContractProcessingDelivery"/> returns
+/// the counterparty's own processed goods to it (LOJ-D2/D5): no sales allocation, revenue or cost is created (LOJ-D3), the
+/// vehicle is weighed before the definite shipment (LOJ-D12) and the net kilograms are a fact only — the split to the
+/// lines belongs to Sales' invoice calculator, never to Logistics.
+/// </summary>
+public enum LoadingInstructionShipmentKind
+{
+    /// <summary>A sale of the company's own goods (every instruction created before LOJ-D1).</summary>
+    Sale = 1,
+
+    /// <summary>LOJ-D1: a subcontract ("fason teslim") delivery of the counterparty's own goods.</summary>
+    ContractProcessingDelivery = 2,
+}
+
 /// <summary>How a loaded quantity was established (§7.4): read per package, or a vehicle total spread over packages.</summary>
 public enum MeasurementKind
 {
@@ -47,6 +63,7 @@ public sealed class LoadingInstruction
     private readonly List<LoadingInstructionLine> lines = [];
     private readonly List<LoadingShare> shares = [];
     private readonly List<DispatchNoteDraft> dispatchNotes = [];
+    private readonly List<VehicleWeighingCorrection> weighingCorrections = [];
 
     private LoadingInstruction(Guid id, Guid companyId, Guid customerPartyId, Guid companyAccountId, DateTimeOffset now)
     {
@@ -64,6 +81,9 @@ public sealed class LoadingInstruction
 
     /// <summary>The customer's CompanyPartyAccount in this company (Cari identity only).</summary>
     public Guid CompanyAccountId { get; }
+
+    /// <summary>LOJ-D1: the instruction's shipment kind, fixed at creation.</summary>
+    public LoadingInstructionShipmentKind ShipmentKind { get; private set; } = LoadingInstructionShipmentKind.Sale;
 
     public LoadingInstructionStatus Status { get; private set; } = LoadingInstructionStatus.Draft;
     public long Version { get; private set; } = 1;
@@ -85,6 +105,31 @@ public sealed class LoadingInstruction
     /// <summary>The instruction's manual weighbridge record (AT-053), or null while none is recorded.</summary>
     public VehicleWeighing? Weighing { get; private set; }
 
+    /// <summary>
+    /// LOJ-D13: the reasoned corrections of <see cref="Weighing"/>, in order. Append-only: the original record and every
+    /// earlier correction stay as they were (audit trail); the last one states the current weighing.
+    /// </summary>
+    public IReadOnlyList<VehicleWeighingCorrection> WeighingCorrections => weighingCorrections.AsReadOnly();
+
+    /// <summary>
+    /// LOJ-D13: the revision of the weighing record — 0 with no weighing, 1 for the original, +1 per correction.
+    /// </summary>
+    public int WeighingRevision => Weighing is null ? 0 : VehicleWeighingCorrection.OriginalRevision + weighingCorrections.Count;
+
+    /// <summary>LOJ-D17: the unload weighing recorded after the cancel, or null while none is recorded.</summary>
+    public UnloadWeighing? UnloadWeighing { get; private set; }
+
+    /// <summary>
+    /// LOJ-D17 (3): <see cref="UnloadRecordState.Missing"/> ("indirme kaydı yok") while a cancelled instruction with loaded goods has
+    /// no unload weighing; <see cref="UnloadRecordState.Recorded"/> once it has one; otherwise nothing is to be unloaded.
+    /// </summary>
+    public UnloadRecordState UnloadRecord =>
+        UnloadWeighing is not null ? UnloadRecordState.Recorded
+        : Status == LoadingInstructionStatus.Cancelled && HasLoadedGoods ? UnloadRecordState.Missing
+        : UnloadRecordState.NotApplicable;
+
+    private bool HasLoadedGoods => lines.Any(line => !line.LoadedQuantity.IsZero);
+
     /// <summary>The dispatch notes prepared from this instruction's shipments (AT-055), in creation order; a read-only view.</summary>
     public IReadOnlyList<DispatchNoteDraft> DispatchNotes => dispatchNotes.AsReadOnly();
 
@@ -94,8 +139,19 @@ public sealed class LoadingInstruction
     /// </summary>
     public int DispatchSteps { get; private set; }
 
-    public static LoadingInstruction Create(Guid id, Guid companyId, Guid customerPartyId, Guid companyAccountId, DateTimeOffset now) =>
-        new(id, companyId, customerPartyId, companyAccountId, now);
+    public static LoadingInstruction Create(Guid id, Guid companyId, Guid customerPartyId, Guid companyAccountId, DateTimeOffset now,
+        LoadingInstructionShipmentKind shipmentKind = LoadingInstructionShipmentKind.Sale)
+    {
+        if (!Enum.IsDefined(shipmentKind))
+        {
+            throw new LogisticsRuleException(LogisticsRuleCodes.ShipmentKindRequired, "Sevk türü (satış / fason teslim) belirtilmelidir.");
+        }
+
+        return new LoadingInstruction(id, companyId, customerPartyId, companyAccountId, now) { ShipmentKind = shipmentKind };
+    }
+
+    /// <summary>LOJ-D1: true for a subcontract ("fason teslim") delivery instruction.</summary>
+    public bool IsContractProcessingDelivery => ShipmentKind == LoadingInstructionShipmentKind.ContractProcessingDelivery;
 
     /// <summary>
     /// What should be loaded for one product, from the sales order line it serves (its identity
@@ -151,8 +207,13 @@ public sealed class LoadingInstruction
     /// <summary>
     /// F-020 (LOJ-D6..D8): cancels a Draft or Issued instruction with a reason while no shipment is recorded. Nothing is deleted: the
     /// lines, shares, weighing and dispatch notes stay as they are and the cancel marks (who, when, why) are kept on the instruction.
-    /// Loaded-but-not-shipped quantity is released by the status itself (no shipment, so no stock movement); a recorded shipment
-    /// share refuses the cancel. A cancelled instruction cannot be cancelled again or changed.
+    /// Loaded-but-not-shipped quantity leaves the instruction's plan by the status itself (no shipment, so no stock movement); a
+    /// recorded shipment share refuses the cancel. A cancelled instruction cannot be cancelled again or changed.
+    /// <para>
+    /// LOJ-D18: the cancel does not release the physical allocation the lines name (<see cref="LoadingInstructionLine.AllocationId"/>).
+    /// The allocation stays with the Sales order and a new instruction may name the same goods (the same allocation id) again;
+    /// releasing it is a separate, audited Inventory operation (DEC-STK-005), never a side effect of this cancel.
+    /// </para>
     /// </summary>
     public void CancelInstruction(long expectedVersion, string cancelledBy, string reason, DateTimeOffset now)
     {
@@ -206,7 +267,7 @@ public sealed class LoadingInstruction
     /// what remains to load; a blocked line loads nothing; the same load id is one load.
     /// </summary>
     public LoadingShare RecordLoad(long expectedVersion, Guid loadId, Guid lineId, Quantity loaded,
-        MeasurementKind measurement, DateTimeOffset now)
+        MeasurementKind measurement, DateTimeOffset now, Quantity? kilograms = null)
     {
         RequireVersion(expectedVersion);
         RequireStatus(LoadingInstructionStatus.Issued, LogisticsRuleCodes.InstructionNotIssued, "Yükleme yalnız yayımlanmış talimata kaydedilir.");
@@ -215,12 +276,21 @@ public sealed class LoadingInstruction
             throw new LogisticsRuleException(LogisticsRuleCodes.MeasurementRequired, "Ölçüm niteliği belirtilmelidir.");
         }
 
+        if (IsContractProcessingDelivery && Weighing is not null)
+        {
+            // LOJ-D12: the weighed net is the delivery's kilograms; a load after the weighing would leave it out of the net.
+            throw new LogisticsRuleException(LogisticsRuleCodes.ContractProcessingLoadAfterWeighing,
+                "Fason teslimde araç tartıldıktan sonra yükleme kaydedilemez.");
+        }
+
         var line = FindLine(lineId);
         RequireNotBlocked(line, "Bloklu satıra yükleme kaydedilemez.");
         RequirePositiveShare(loadId, loaded, line.RemainingToLoad, LogisticsRuleCodes.LoadExceedsInstructed,
             "Yüklenen pay talimatın yüklenmemiş kalanını aşamaz.");
+        RequirePhysicalKilograms(line, kilograms);
         line.AddLoaded(loaded);
-        return Add(new LoadingShare(loadId, line.Id, LoadingShareKind.Loaded, loaded, measurement, null, now.ToUniversalTime()), now);
+        return Add(new LoadingShare(loadId, line.Id, LoadingShareKind.Loaded, loaded, measurement, null, now.ToUniversalTime(),
+            kilograms), now);
     }
 
     /// <summary>
@@ -230,16 +300,33 @@ public sealed class LoadingInstruction
     /// "sevk serbestliği yok"). The stock exit and the allocation consumption that go with a
     /// definite shipment are Inventory's (T11/T12) and belong in the same transaction as this share.
     /// </summary>
-    public LoadingShare MarkShipped(long expectedVersion, Guid shipmentId, Guid lineId, Quantity shipped, DateTimeOffset now)
+    public LoadingShare MarkShipped(long expectedVersion, Guid shipmentId, Guid lineId, Quantity shipped, DateTimeOffset now,
+        Quantity? kilograms = null)
     {
         RequireVersion(expectedVersion);
         RequireStatus(LoadingInstructionStatus.Issued, LogisticsRuleCodes.InstructionNotIssued, "Sevk yalnız yayımlanmış talimatta kaydedilir.");
+        if (IsContractProcessingDelivery && Weighing is null)
+        {
+            // LOJ-D12: a subcontract delivery's net kilograms come from the weighbridge; no weighing, no definite shipment.
+            throw new LogisticsRuleException(LogisticsRuleCodes.ContractProcessingShipmentWithoutWeighing,
+                "Tartısız fason teslim kaydedilemez; önce kantar tartımı girilmelidir.");
+        }
+
         var line = FindLine(lineId);
         RequireNotBlocked(line, "Bloklu satırdan sevk kaydedilemez.");
         RequirePositiveShare(shipmentId, shipped, line.LoadedNotShipped, LogisticsRuleCodes.ShipmentExceedsLoaded,
             "Sevk edilen pay yüklenmiş ama sevk edilmemiş payı aşamaz.");
+        RequirePhysicalKilograms(line, kilograms);
+        if (kilograms is { } shippedKg && shippedKg.IsGreaterThan(PhysicalKilograms(line.Id, LoadingShareKind.Loaded)
+                .Subtract(PhysicalKilograms(line.Id, LoadingShareKind.Shipped))))
+        {
+            throw new LogisticsRuleException(LogisticsRuleCodes.ShipmentExceedsLoaded,
+                "Adetli satırda sevk edilen kg yüklenmiş ama sevk edilmemiş kg'yi aşamaz.");
+        }
+
         line.AddShipped(shipped);
-        return Add(new LoadingShare(shipmentId, line.Id, LoadingShareKind.Shipped, shipped, null, null, now.ToUniversalTime()), now);
+        return Add(new LoadingShare(shipmentId, line.Id, LoadingShareKind.Shipped, shipped, null, null, now.ToUniversalTime(),
+            kilograms), now);
     }
 
     /// <summary>
@@ -304,22 +391,103 @@ public sealed class LoadingInstruction
         if (Weighing is not null)
         {
             throw new LogisticsRuleException(LogisticsRuleCodes.WeighingAlreadyRecorded,
-                "Bu talimatın kantar tartımı zaten kayıtlı; düzeltme kuralı karara bağlanmadığı için ikinci tartım kaydedilmez.");
-        }
-
-        if (lines.Any(line => line.InstructedQuantity.Unit != QuantityUnit.Kilogram))
-        {
-            throw new LogisticsRuleException(LogisticsRuleCodes.WeighingUnitUnsupported, "Kantar farkı yalnız kilogram satırlarıyla karşılaştırılır.");
+                "Bu talimatın kantar tartımı zaten kayıtlı; ikinci tartım kaydedilmez, yanlış giriş gerekçeli düzeltmeyle düzeltilir.");
         }
 
         var net = WeighbridgeCalculator.Net(direction, firstWeighing, secondWeighing);
-        // Re-read through Of so equal kilograms print equally (3.0 → 3), as every entered quantity does.
-        var loaded = Quantity.Of(lines.Aggregate(Quantity.Zero(QuantityUnit.Kilogram), (sum, line) => sum.Add(line.LoadedQuantity)).Value,
-            QuantityUnit.Kilogram);
+        // AK-4 (KLN-D119): a piece line weighs in with its loads' physical kilograms; a kg line with its loaded quantity.
+        var loaded = LoadedPhysicalKilograms();
         Weighing = new VehicleWeighing(weighingId, direction, firstWeighing, secondWeighing, net, loaded,
             WeighbridgeCalculator.Difference(net, loaded), shares.Count, recordedBy.Trim(), now.ToUniversalTime());
         Touch(now);
         return Weighing;
+    }
+
+    /// <summary>
+    /// LOJ-D13: a reasoned correction of the weighing after the vehicle left — the weighing was found to be entered wrongly once a
+    /// definite shipment was recorded. The authorized actor (the permission is the Application's) enters the two weighings again
+    /// with a reason; the backend recalculates the net with the same calculator (WGT-001) and the signed difference against the
+    /// loaded snapshot of the original record (WGT-002, no tolerance verdict: OPEN-004). Nothing is overwritten: the original
+    /// record and earlier corrections stay for the audit trail and the revision rises by one. Logistics books no invoice: a
+    /// difference on an invoiced delivery is closed by a Sales difference invoice (SAT-D312 (3)). Before any shipment the
+    /// record is not "after exit" and its correction rule is not decided, so it is refused (fail closed). Nothing physical is
+    /// written; Inventory is not touched.
+    /// </summary>
+    public VehicleWeighingCorrection CorrectWeighing(long expectedVersion, Guid correctionId, WeighingDirection direction,
+        Quantity firstWeighing, Quantity secondWeighing, string reason, string correctedBy, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        RequireNotCancelled();
+        Identity.Require(correctionId, nameof(correctionId));
+        RequireActor(correctedBy, "Düzeltmeyi kaydeden kullanıcı belirtilmelidir.", nameof(correctedBy));
+        if (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length > WeighingCorrectionReasonMaximumLength)
+        {
+            throw new LogisticsRuleException(LogisticsRuleCodes.WeighingCorrectionReasonRequired,
+                "Tartı düzeltmesinin gerekçesi girilmeli ve en çok 500 karakter olmalıdır.");
+        }
+
+        var original = Weighing ?? throw new LogisticsRuleException(LogisticsRuleCodes.WeighingNotRecorded,
+            "Düzeltilecek kantar tartımı kayıtlı değil.");
+        if (shares.All(share => share.Kind != LoadingShareKind.Shipped))
+        {
+            throw new LogisticsRuleException(LogisticsRuleCodes.WeighingCorrectionBeforeShipment,
+                "Tartı düzeltmesi yalnız araç çıktıktan (kesin sevk kaydedildikten) sonra girilir.");
+        }
+
+        if (correctionId == original.WeighingId || weighingCorrections.Any(correction => correction.CorrectionId == correctionId))
+        {
+            throw new LogisticsRuleException(LogisticsRuleCodes.DuplicateWeighingCorrectionId, "Bu düzeltme kimliği zaten kullanıldı.");
+        }
+
+        var net = WeighbridgeCalculator.Net(direction, firstWeighing, secondWeighing);
+        var previousNet = weighingCorrections.Count == 0 ? original.Net : weighingCorrections[^1].Net;
+        var correction = new VehicleWeighingCorrection(correctionId, WeighingRevision + 1, direction, firstWeighing, secondWeighing,
+            net, previousNet, WeighbridgeCalculator.Difference(net, original.LoadedAtWeighing), reason.Trim(), shares.Count,
+            correctedBy.Trim(), now.ToUniversalTime());
+        weighingCorrections.Add(correction);
+        Touch(now);
+        return correction;
+    }
+
+    /// <summary>LOJ-D13: the longest reason a weighing correction takes (the same bound as a dispatch-note cancel reason).</summary>
+    public const int WeighingCorrectionReasonMaximumLength = DispatchNoteCancelReasonMaximumLength;
+
+    /// <summary>
+    /// LOJ-D17: records the unload weighing (indirme tartısı) of a cancelled instruction's vehicle — a manual record, no weighbridge
+    /// hardware. The backend calculates the net with the loading weighing's calculator (WGT-001, refused when the weighings
+    /// contradict the direction) and keeps, as facts, the kilograms loaded on the instruction when it was cancelled and the signed
+    /// difference net − loaded (WGT-002). A difference is a warning (<see cref="UnloadWeighing.DifferenceWarning"/>), never a
+    /// refusal: the cancel stays as it is (LOJ-D17 (2)). Without this record the cancel is still valid and the instruction reads
+    /// "indirme kaydı yok" (LOJ-D17 (3)). Only a cancelled instruction with loaded goods takes it, once — how a wrong entry is
+    /// corrected is not decided, so a second record is refused (fail closed) rather than replacing the first. Nothing physical is
+    /// written: the goods never left the warehouse, so no stock movement exists and Inventory is not touched (LOJ-D17 (4)); the
+    /// order line's physical allocation is not this record's either (LOJ-D16).
+    /// </summary>
+    public UnloadWeighing RecordUnloadWeighing(long expectedVersion, Guid weighingId, WeighingDirection direction, Quantity firstWeighing,
+        Quantity secondWeighing, string recordedBy, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        RequireStatus(LoadingInstructionStatus.Cancelled, LogisticsRuleCodes.InstructionNotCancelled,
+            "İndirme tartısı yalnız iptal edilmiş talimata kaydedilir.");
+        Identity.Require(weighingId, nameof(weighingId));
+        RequireActor(recordedBy, "İndirme tartısını kaydeden kullanıcı belirtilmelidir.", nameof(recordedBy));
+        if (UnloadWeighing is not null)
+        {
+            throw new LogisticsRuleException(LogisticsRuleCodes.UnloadWeighingAlreadyRecorded,
+                "Bu talimatın indirme tartısı zaten kayıtlı; düzeltme kuralı karara bağlanmadığı için ikinci tartı kaydedilmez.");
+        }
+
+        if (!HasLoadedGoods)
+        {
+            throw new LogisticsRuleException(LogisticsRuleCodes.UnloadNothingLoaded, "Talimatta araca yüklenmiş mal yok; indirme tartısı kaydedilmez.");
+        }
+
+        var net = WeighbridgeCalculator.Net(direction, firstWeighing, secondWeighing);
+        var loaded = LoadedPhysicalKilograms();
+        UnloadWeighing = new UnloadWeighing(weighingId, direction, firstWeighing, secondWeighing, net, loaded,
+            WeighbridgeCalculator.Difference(net, loaded), recordedBy.Trim(), now.ToUniversalTime());
+        Touch(now);
+        return UnloadWeighing;
     }
 
     /// <summary>
@@ -364,7 +532,8 @@ public sealed class LoadingInstruction
         }
 
         var lines = chosen.OrderBy(shipment => IndexOfShare(shipment.ShareId))
-            .Select((shipment, index) => new DispatchNoteLine(index + 1, shipment.ShareId, shipment.LineId, shipment.Quantity))
+            .Select((shipment, index) => new DispatchNoteLine(index + 1, shipment.ShareId, shipment.LineId, shipment.Quantity,
+                shipment.Kilograms))
             .ToArray();
         var draft = new DispatchNoteDraft(dispatchNoteId, DispatchNoteStatus.Draft, Array.AsReadOnly(lines), shares.Count, createdBy.Trim(),
             now.ToUniversalTime(), DispatchSteps + 1);
@@ -548,6 +717,39 @@ public sealed class LoadingInstruction
         shares.Where(share => share.Kind == LoadingShareKind.Delivered && share.SourceShipmentId == shipment.ShareId)
             .Aggregate(shipment.Quantity, (left, delivery) => left.Subtract(delivery.Quantity));
 
+    /// <summary>
+    /// AK-4 (KLN-D119): a piece (non-kilogram) line's load and shipment carry the physical kilograms of the pieces (the label kg
+    /// leaving with them) beside the piece count — required there and refused on a kg line, whose quantity already is kg.
+    /// </summary>
+    private static void RequirePhysicalKilograms(LoadingInstructionLine line, Quantity? kilograms)
+    {
+        if (line.InstructedQuantity.Unit == QuantityUnit.Kilogram)
+        {
+            if (kilograms is not null)
+                throw new LogisticsRuleException(LogisticsRuleCodes.PhysicalKilogramsOnKilogramLine,
+                    "Kilogram satırında ayrıca fiziksel kg girilmez; miktar zaten kg'dir.");
+            return;
+        }
+
+        if (kilograms is not { } value || value.Unit != QuantityUnit.Kilogram || value.IsZero)
+            throw new LogisticsRuleException(LogisticsRuleCodes.PhysicalKilogramsRequired,
+                "Adetli satırda yüklenen ve sevk edilen adedin fiziksel kg'si girilmelidir.");
+    }
+
+    /// <summary>AK-4: the physical kilograms of one line's shares of a kind (zero for a kg line, whose shares carry none).</summary>
+    public Quantity PhysicalKilograms(Guid lineId, LoadingShareKind kind) =>
+        Quantity.Of(shares.Where(share => share.LineId == lineId && share.Kind == kind && share.Kilograms is not null)
+            .Aggregate(Quantity.Zero(QuantityUnit.Kilogram), (sum, share) => sum.Add(share.Kilograms!.Value)).Value, QuantityUnit.Kilogram);
+
+    /// <summary>
+    /// AK-4: the kilograms on the vehicle — a kg line's loaded quantity plus a piece line's loads' physical kilograms. Re-read
+    /// through Of so equal kilograms print equally (3.0 → 3), as every entered quantity does.
+    /// </summary>
+    private Quantity LoadedPhysicalKilograms() =>
+        Quantity.Of(lines.Aggregate(Quantity.Zero(QuantityUnit.Kilogram), (sum, line) => sum.Add(
+            line.InstructedQuantity.Unit == QuantityUnit.Kilogram ? line.LoadedQuantity : PhysicalKilograms(line.Id, LoadingShareKind.Loaded))).Value,
+            QuantityUnit.Kilogram);
+
     private LoadingShare FindShipment(Guid shipmentId) =>
         shares.FirstOrDefault(share => share.ShareId == shipmentId && share.Kind == LoadingShareKind.Shipped)
         ?? throw new LogisticsRuleException(LogisticsRuleCodes.ShipmentNotFound, "Kaynak sevk kaydı bulunamadı.");
@@ -626,4 +828,4 @@ public enum LoadingShareKind
 /// document, not a stock movement.
 /// </summary>
 public sealed record LoadingShare(Guid ShareId, Guid LineId, LoadingShareKind Kind, Quantity Quantity,
-    MeasurementKind? Measurement, Guid? SourceShipmentId, DateTimeOffset RecordedAtUtc);
+    MeasurementKind? Measurement, Guid? SourceShipmentId, DateTimeOffset RecordedAtUtc, Quantity? Kilograms = null);

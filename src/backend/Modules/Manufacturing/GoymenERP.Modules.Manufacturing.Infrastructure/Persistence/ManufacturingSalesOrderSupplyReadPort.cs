@@ -12,7 +12,8 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 /// linked to the sales order that is a Draft or Approved and has no order, or whose order is Open; a cancelled plan and a
 /// closed order are not open. Reads under the caller's resolved company only (the tenant filter) and creates nothing.
 /// The planned kg is the plan's CURRENT content (MFG-PLAN-EDIT): the newest revision its row's version covers, else the
-/// inputs it was created with — the same rule as the plan list.
+/// inputs it was created with — the same rule as the plan list. F-009 D5 (URT-D34): a cancelled order released its plan back
+/// to Approved with no order, so the open read ignores cancelled orders and answers that plan as open (no order) supply.
 /// </summary>
 internal sealed class ManufacturingSalesOrderSupplyReadPort(ManufacturingDbContext dbContext, ICompanyContext companyContext)
     : IManufacturingSalesOrderSupplyReadPortV1
@@ -21,8 +22,16 @@ internal sealed class ManufacturingSalesOrderSupplyReadPort(ManufacturingDbConte
     private const int ApprovedStatus = (int)PlanStatus.Approved;
     private const int OpenOrderStatus = (int)OrderStatus.Open;
 
-    public async Task<IReadOnlyList<ManufacturingSalesOrderSupplyItemV1>> ListOpenForSalesOrderAsync(Guid companyId,
-        Guid salesOrderId, IReadOnlyList<Guid>? salesOrderLineIds, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<ManufacturingSalesOrderSupplyItemV1>> ListOpenForSalesOrderAsync(Guid companyId,
+        Guid salesOrderId, IReadOnlyList<Guid>? salesOrderLineIds, CancellationToken cancellationToken = default) =>
+        ReadAsync(companyId, salesOrderId, salesOrderLineIds, includeCancelled: false, cancellationToken);
+
+    public Task<IReadOnlyList<ManufacturingSalesOrderSupplyItemV1>> ListLinkedForSalesOrderAsync(Guid companyId,
+        Guid salesOrderId, IReadOnlyList<Guid>? salesOrderLineIds, CancellationToken cancellationToken = default) =>
+        ReadAsync(companyId, salesOrderId, salesOrderLineIds, includeCancelled: true, cancellationToken);
+
+    private async Task<IReadOnlyList<ManufacturingSalesOrderSupplyItemV1>> ReadAsync(Guid companyId,
+        Guid salesOrderId, IReadOnlyList<Guid>? salesOrderLineIds, bool includeCancelled, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!companyContext.IsResolved || companyContext.CompanyId == Guid.Empty || companyContext.CompanyId != companyId)
@@ -47,12 +56,17 @@ internal sealed class ManufacturingSalesOrderSupplyReadPort(ManufacturingDbConte
             plans = plans.Where(plan => lineFilter.Contains(plan.SalesOrderLineId!.Value));
         }
 
+        // URT-D34: a cancelled order is history, not the plan's order; only the linked read (history) answers it.
+        var planOrders = includeCancelled
+            ? dbContext.Orders.AsNoTracking()
+            : dbContext.Orders.AsNoTracking().Where(order => order.Status != (int)OrderStatus.Cancelled);
         var rows = await (
             from plan in plans
-            join order in dbContext.Orders.AsNoTracking() on new { plan.CompanyId, PlanId = plan.Id }
+            join order in planOrders on new { plan.CompanyId, PlanId = plan.Id }
                 equals new { order.CompanyId, order.PlanId } into orders
             from order in orders.DefaultIfEmpty()
             where order == null || order.Status == OpenOrderStatus
+                || (includeCancelled && order.Status == (int)OrderStatus.Cancelled)
             select new
             {
                 plan.CompanyId,
@@ -77,7 +91,7 @@ internal sealed class ManufacturingSalesOrderSupplyReadPort(ManufacturingDbConte
             .Where(revision => ids.Contains(revision.PlanId))
             .Select(revision => new { revision.PlanId, revision.RevisionNo, revision.PlanVersion })
             .ToListAsync(cancellationToken);
-        var currentRevision = rows.ToDictionary(row => row.Id, row => revisions
+        var currentRevision = rows.DistinctBy(row => row.Id).ToDictionary(row => row.Id, row => revisions
             .Where(revision => revision.PlanId == row.Id && revision.PlanVersion <= row.Version)
             .Select(revision => revision.RevisionNo).DefaultIfEmpty(0).Max());
         var revised = currentRevision.Where(pair => pair.Value > 0).Select(pair => pair.Key).ToArray();

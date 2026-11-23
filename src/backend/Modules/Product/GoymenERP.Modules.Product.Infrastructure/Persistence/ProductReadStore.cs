@@ -91,6 +91,24 @@ public sealed class ProductReadStore(ProductDbContext context, ILogger<ProductRe
         return rows.Select(row => row.ToRecord()).ToArray();
     }
 
+    /// <summary>
+    /// URN-D25: the ACTIVE cards of one family except <paramref name="excludeProductId"/>, in code order (binary collation)
+    /// then UUID. The technical comparison itself is the caller's (exact values from each card's template fields).
+    /// </summary>
+    // URN-D25: the technical values live in the card's references, so the family is streamed in code order instead of loaded;
+    // the caller stops reading as soon as it holds one candidate more than it may show.
+    public async IAsyncEnumerable<ProductStoredRecord> ReadActiveFamilyMembersAsync(GroupSharedMasterReadContext authority,
+        Guid familyId, Guid excludeProductId, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(authority);
+        var active = (int)Domain.Products.ProductLifecycle.Active;
+        var rows = context.Products.AsNoTracking()
+            .Where(row => row.FamilyId == familyId && row.Id != excludeProductId && row.Lifecycle == active)
+            .OrderBy(row => row.Code).ThenBy(row => row.Id)
+            .AsAsyncEnumerable().WithCancellation(cancellationToken);
+        await foreach (var row in rows) yield return row.ToRecord();
+    }
+
     public IQueryable<ProductRow> BuildExactNameQuery(string name, Guid? excludeProductId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);

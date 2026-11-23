@@ -8,11 +8,22 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 /// </summary>
 public interface IPurchaseAcceptanceParticipantV1 : IAsyncDisposable
 {
+    /// <summary>
+    /// Read-only receipt lock target on the borrowed connection, before any stage. No order-state or expected-version
+    /// decision is made here: immutable receipt replays remain valid after a later order revision or cancellation.
+    /// </summary>
+    Task<PurchaseAcceptanceReceiptTargetV1?> ResolveReceiptTargetAsync(Guid purchaseOrderId, Guid purchaseOrderLineId,
+        CancellationToken cancellationToken = default);
+
     Task<PurchaseAcceptanceStageResultV1> StageAsync(
         PurchaseAcceptanceStageRequestV1 request,
         PurchasingWriteEnvelope envelope,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>Purchasing-owned identities and current version; a technical receipt names its owning general line.</summary>
+public sealed record PurchaseAcceptanceReceiptTargetV1(Guid CompanyId, Guid PurchaseOrderId,
+    Guid PurchaseOrderLineId, Guid PurchaseOrderGeneralLineId, string ObservedOrderVersion);
 
 public sealed record PurchaseAcceptanceStageRequestV1(
     Guid CompanyId,
@@ -24,8 +35,24 @@ public sealed record PurchaseAcceptanceStageRequestV1(
     string ExpectedProductVersion,
     Guid UnitId,
     string AcceptedQuantity,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    string? MeasuredQuantityKg = null)
+{
+    /// <summary>
+    /// AK-3b (BS-16/BS-17): the theoretical/weighed comparison of a piece-line receipt as the service evaluated it on the FIRST
+    /// attempt (the Ayarlar tolerance in force then). The participant records it with the acceptance and answers the recorded
+    /// value on a replay; it is a derived server fact, so it is not part of the request hash. Null on a kilogram line and for a
+    /// bulk-receipt label (the batch keeps its own comparison).
+    /// </summary>
+    public PurchaseGoodsReceiptPieceKilogramsV1? PieceKilograms { get; init; }
+}
 
+/// <summary>
+/// The staged acceptance share. F-017 F17-1 (ALIS_F017 v1 §3.4/§5): <see cref="PurchaseOrderGeneralLineId"/> is the purchase GENERAL
+/// line whose serialization lock the participant took — the accepted line itself, or its general line when a technical slice was
+/// accepted — so the host's Inventory side converts the future allocations of that general line in the same transaction. The field
+/// is additive and trailing (a result recorded before F17-1 deserializes it as null and the participant resolves it from the line).
+/// </summary>
 public sealed record PurchaseAcceptanceStageResultV1(
     Guid CompanyId,
     Guid AcceptanceId,
@@ -35,15 +62,33 @@ public sealed record PurchaseAcceptanceStageResultV1(
     string AcceptedQuantity,
     string RemainingQuantity,
     bool IsReplay,
-    string OriginalCorrelationId);
+    string OriginalCorrelationId,
+    Guid? PurchaseOrderGeneralLineId = null)
+{
+    /// <summary>
+    /// AK-3b: the piece-line comparison recorded with the acceptance on its first attempt (see
+    /// <see cref="PurchaseAcceptanceStageRequestV1.PieceKilograms"/>). A replay answers this stored value, never a comparison
+    /// recomputed with today's Ayarlar tolerance; null on a kilogram line and for an acceptance recorded before AK-3b.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public PurchaseGoodsReceiptPieceKilogramsV1? PieceKilograms { get; init; }
+}
 
+/// <summary>
+/// AK-3 (ALS-D119/ALS-D121): <see cref="MeasuredQuantityKg"/> is the weighed kilograms of a piece-line acceptance (required there,
+/// refused on a kilogram line); null for every kilogram line, so their request hash is unchanged.
+/// </summary>
 public sealed record ValidatedPurchaseAcceptanceV1(
     long ExpectedPurchaseOrderVersion,
-    decimal AcceptedQuantity);
+    decimal AcceptedQuantity,
+    decimal? MeasuredQuantityKg = null);
 
 public static class PurchaseAcceptanceParticipantContractV1
 {
     public const int ProductVersionMaximumLength = 64;
+
+    /// <summary>AK-3: weighed kilograms keep three decimals (Ö2, BS-13).</summary>
+    public const int MeasuredKilogramScale = 3;
 
     public static ValidatedPurchaseAcceptanceV1 Validate(PurchaseAcceptanceStageRequestV1 request)
     {
@@ -95,7 +140,23 @@ public static class PurchaseAcceptanceParticipantContractV1
                 "Kabul zamanı UTC olmalıdır.");
         }
 
-        return new ValidatedPurchaseAcceptanceV1(expectedVersion, accepted);
+        decimal? measured = null;
+        if (request.MeasuredQuantityKg is { } measuredText)
+        {
+            if (!decimal.TryParse(measuredText, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var kilograms)
+                || kilograms <= 0m || decimal.Round(kilograms, MeasuredKilogramScale) != kilograms
+                || !string.Equals(FormatQuantity(kilograms), measuredText, StringComparison.Ordinal))
+            {
+                throw new PurchaseAcceptanceParticipantException(
+                    PurchaseAcceptanceParticipantCodes.InvalidQuantity,
+                    400,
+                    "Tartılan kg kanonik, pozitif ve en fazla üç ondalıklı olmalıdır.");
+            }
+
+            measured = kilograms;
+        }
+
+        return new ValidatedPurchaseAcceptanceV1(expectedVersion, accepted, measured);
     }
 
     public static string FormatQuantity(decimal value) =>
@@ -116,6 +177,15 @@ public static class PurchaseAcceptanceParticipantCodes
     public const string IdempotencyConflict = "purchasing_acceptance_idempotency_conflict";
     public const string ConcurrentChange = "purchasing_acceptance_concurrent_change";
     public const string Unavailable = "purchasing_acceptance_unavailable";
+
+    /// <summary>AK-3 (ALS-D119): a piece-line acceptance needs its weighed kilograms; a kilogram line takes none (400).</summary>
+    public const string MeasuredKilogramsMismatch = "purchasing_acceptance_measured_kg_mismatch";
+
+    /// <summary>
+    /// F-017 §3.4: the purchase general line's serialization lock was not granted in time; nothing was staged (409). The same
+    /// code as <c>PurchaseLineSerializationLockContractV1.BusyCode</c>.
+    /// </summary>
+    public const string LineBusy = "purchasing_line_busy";
 }
 
 public sealed class PurchaseAcceptanceParticipantException(

@@ -352,12 +352,21 @@ public static partial class CounterpartyEndpoints
                 CounterpartyProblemCodesV1.IdempotencyConflict,
                 CounterpartyClientContract.RequiredCode,
                 CounterpartyClientContract.UnsupportedCode)
+            // ALS-D99: not stored, so it is not in the idempotency contract; the next attempt re-reads the warning.
+            .ProducesErpUnprocessableEntity(
+                CounterpartyProblemCodesV1.DeactivationWarningAcknowledgementRequired)
             .ProducesErpAuthenticatedProblems();
+
+        MapDeactivationEndpoints(group);
 
         MapContactInformationEndpoints(group);
         MapTaxIdentityEndpoints(group);
+        MapTradeNameEndpoints(group);
+        MapLegalNameEndpoints(group);
+        MapPartyMergeEndpoints(group);
         MapCustomerGroupEndpoints(group);
         MapEDocumentProfileEndpoints(group);
+        MapIdentityHistoryEndpoints(group);
         return endpoints;
     }
 
@@ -608,6 +617,9 @@ public static partial class CounterpartyEndpoints
             CounterpartyCommandResult.IdempotencyConflict
                 or CounterpartyCommandResult.AlreadyLinked =>
                 response.StatusCode == StatusCodes.Status409Conflict
+                && response.Conflict is null,
+            CounterpartyCommandResult.DeactivationWarningAcknowledgementRequired =>
+                response.StatusCode == StatusCodes.Status422UnprocessableEntity
                 && response.Conflict is null,
             _ => false,
         };

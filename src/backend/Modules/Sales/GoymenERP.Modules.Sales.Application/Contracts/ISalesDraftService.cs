@@ -48,6 +48,8 @@ public interface ISalesDraftService
         CancellationToken cancellationToken = default);
     /// <summary>AT-018 / AT-021: every line's reference, adjustments and net (price read).</summary>
     Task<SalesOrderDraftLinePricingResponse> GetDraftLinePricingAsync(Guid draftId, CancellationToken cancellationToken = default);
+    /// <summary>SAT-D436 (AK-5): the order's kg prices and realization (draft read and price read); closed until its golden.</summary>
+    Task<SalesOrderKilogramPricesResponse> GetDraftKilogramPricesAsync(Guid draftId, CancellationToken cancellationToken = default);
 
     /// <summary>API-03 / SAT-D11: the order's line and document totals from the one backend calculator (draft read + price read).</summary>
     Task<SalesOrderDraftTotalsResponse> GetDraftTotalsAsync(Guid draftId, CancellationToken cancellationToken = default);
@@ -114,6 +116,10 @@ public interface ISalesDraftService
     // customer-finance owner + shipped-not-invoiced "NoSource" until S5 + the approved-unshipped remainder of the customer's open
     // orders) against the credit limit; any part whose owner cannot answer makes the result "Unavailable" (fail-closed).
     Task<SalesOrderDraftRiskCheckResponse> GetDraftRiskCheckAsync(Guid draftId, CancellationToken cancellationToken = default);
+
+    // F-018 / plan S1 (FNS-D27(3)) — the limit warnings recorded on the order at submit / approve, under the draft read
+    // (ASSUMPTION-SAT-RISK-3); outcome and category only, never an amount. Read-only.
+    Task<SalesOrderDraftRiskWarningsResponse> GetDraftRiskWarningsAsync(Guid draftId, CancellationToken cancellationToken = default);
 
     // DEC-SAL-005 / AT-007 — the impact preview and the cancellation of an approved order under `sales.orders.cancel`
     // (owners read through their ports; fail-closed: any recorded effect or an unreadable owner refuses), and the read of the

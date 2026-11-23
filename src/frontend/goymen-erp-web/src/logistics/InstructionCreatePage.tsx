@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { createInstruction, fetchApprovedOrderLines } from './api'
 import {
   LIMITS,
@@ -46,7 +46,14 @@ import {
 } from './instructionAttempt'
 import { createNotice } from './instructionAttemptNotice'
 import { recallInstructionAttempt, rememberInstructionAttempt } from './pendingInstructionAttempts'
-import { LOGISTICS_CAPABILITY, LOGISTICS_ROUTE, instructionDetailRoute } from './capabilities'
+import {
+  INSTRUCTION_LABEL_PARAM,
+  INSTRUCTION_PRODUCT_PARAM,
+  LOGISTICS_CAPABILITY,
+  LOGISTICS_ROUTE,
+  instructionDetailRoute,
+} from './capabilities'
+import { carriedLabelCode } from '../sales/capabilities'
 import { INSTRUCTION_CREATE_TEXT as T, problemCodeText } from './logisticsText'
 import { formatBusinessDate, todayDateOnly } from './format'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -55,6 +62,8 @@ import { hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { useCompanyDirectory } from '../shell/useShellOrchestrator'
 import styles from './LogisticsPages.module.css'
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** The shell's dirty scope: a company switch ASKS while this form holds work. */
 export const LOGISTICS_CREATE_DIRTY_SCOPE = 'logistics.instruction.create'
@@ -165,6 +174,12 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
   const dispatch = useShellDispatch()
   const boundary = useAuthBoundary()
   const navigate = useNavigate()
+  // KLN-D117: opened from a stock label row, the picker lists only the approved lines of the label's product; the user
+  // still chooses the customer and the lines, and can lift the narrowing.
+  const [searchParams] = useSearchParams()
+  const carriedLabel = carriedLabelCode(searchParams.get(INSTRUCTION_LABEL_PARAM))
+  const carriedProduct = searchParams.get(INSTRUCTION_PRODUCT_PARAM)
+  const productFilter = carriedLabel !== null && carriedProduct !== null && UUID_PATTERN.test(carriedProduct) ? carriedProduct : null
   const directory = useCompanyDirectory()
   const company = directory.find((entry) => entry.id === companyId)
 
@@ -220,7 +235,10 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
   const loadingMoreRef = useRef(false)
   const firstPage = first.data?.type === 'ok-single' ? first.data.data : null
   const nextCursor = cursor === undefined ? (firstPage?.nextCursor ?? null) : cursor
-  const allLines = useMemo(() => [...(firstPage?.items ?? []), ...moreLines], [firstPage, moreLines])
+  const allLines = useMemo(
+    () => [...(firstPage?.items ?? []), ...moreLines].filter((line) => productFilter === null || line.productId === productFilter),
+    [firstPage, moreLines, productFilter],
+  )
   const options = useMemo(() => customerOptions(allLines), [allLines])
   const customer = options.find((option) => option.key === customerKey) ?? null
   const customerLines = useMemo(
@@ -405,9 +423,15 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
       </p>
     ) : sourceState.type === 'ok-single' ? (
       options.length === 0 ? (
-        <p role="status" className={styles.notice} data-tone="unknown" data-testid="logistics-no-approved">
-          {T.noApprovedDrafts}
-        </p>
+        productFilter !== null ? (
+          <p role="status" className={styles.notice} data-tone="unknown" data-testid="logistics-no-label-lines">
+            {nextCursor === null ? T.noLabelProductLines : T.noLabelProductLinesLoaded}
+          </p>
+        ) : (
+          <p role="status" className={styles.notice} data-tone="unknown" data-testid="logistics-no-approved">
+            {T.noApprovedDrafts}
+          </p>
+        )
       ) : null
     ) : (
       <p role="alert" className={styles.notice} data-tone="error" data-testid="logistics-sources-failed">
@@ -427,6 +451,13 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
           </Link>
         ) : null}
       </header>
+
+      {productFilter === null || carriedLabel === null ? null : (
+        <p role="status" className={styles.notice} data-testid="logistics-label-context">
+          {T.labelContext(carriedLabel)}{' '}
+          <Link to={LOGISTICS_ROUTE.create}>{T.labelContextClear}</Link>
+        </p>
+      )}
 
       {notice === null ? null : (
         <div className={styles.notice} data-tone={notice.tone} role={notice.live === 'assertive' ? 'alert' : 'status'} aria-live={notice.live}>

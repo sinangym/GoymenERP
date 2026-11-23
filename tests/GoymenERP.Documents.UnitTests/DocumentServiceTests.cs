@@ -188,17 +188,38 @@ public sealed class DocumentServiceTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Without_a_scanner_answer_the_version_is_stored_not_scanned_and_is_never_served(bool scannerUnavailable)
+    public async Task Without_a_scanner_answer_the_upload_is_refused_fail_closed_and_nothing_is_stored(bool scannerUnavailable)
     {
         var world = World();
         var a = new Harness(CompanyA, scannerUnavailable ? new FixedScanner(DocumentScanVerdictV1.Unavailable) : null, world: world).Grant(Read, Upload);
 
-        var document = (await a.Service.UploadAsync(Harness.Upload(Party, Pdf), Meta())).Document;
+        // KLN-D60 (3): a user upload is always scanned; without a scanner answer it is refused, never stored as NotScanned.
+        var refusal = await Refused(503, a.Service.UploadAsync(Harness.Upload(Party, Pdf), Meta()));
 
-        Assert.Equal(("NotScanned", false), (document.ScanState, document.Downloadable));
-        Assert.Null(Assert.Single(world.Documents).ScannerId);
-        var refusal = await Refused(409, new Harness(CompanyA, world: world).Grant(Read).Service.GetContentAsync(document.Id));
-        Assert.Equal(DocumentProblemCodesV1.NotScanned, refusal.Code);
+        Assert.Equal("service_unavailable", refusal.Code);
+        Assert.Empty(world.Objects.Objects);
+        Assert.Empty(world.Documents);
+        Assert.Empty(world.Attempts);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Without_a_scanner_answer_a_new_version_is_refused_fail_closed_and_the_document_keeps_its_version(bool scannerUnavailable)
+    {
+        var world = World();
+        var original = (await new Harness(CompanyA, new FixedScanner(DocumentScanVerdictV1.Clean), world: world).Grant(Read, Upload)
+            .Service.UploadAsync(Harness.Upload(Party, Pdf), Meta())).Document;
+        var objects = world.Objects.Objects.Count;
+        var attempts = world.Attempts.Count;
+        var a = new Harness(CompanyA, scannerUnavailable ? new FixedScanner(DocumentScanVerdictV1.Unavailable) : null, world: world).Grant(Read, Upload);
+
+        var refusal = await Refused(503, a.Service.AppendVersionAsync(original.Id,
+            new AppendDocumentVersionRequest(1, "surum.pdf", "application/pdf", Pdf), Meta()));
+
+        Assert.Equal("service_unavailable", refusal.Code);
+        Assert.Equal(DocumentScanState.Clean, Assert.Single(world.Documents).ScanState);
+        Assert.Equal((objects, attempts), (world.Objects.Objects.Count, world.Attempts.Count));
     }
 
     [Fact]

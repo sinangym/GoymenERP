@@ -107,6 +107,87 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Split_and_merge_inherit_the_usable_remnant_production_status_and_a_mixed_merge_leaves_it_null()
+    {
+        // KLN-D46 (in force per KLN-D63): a split gives every child the source's UsableRemnant production status; a merge result keeps it only
+        // when every source carries it; a merge of mixed sources stores NULL. The status is read from the stored
+        // source rows, never from the request.
+        await using var run = await Run.StartAsync();
+        var remnant = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-REMNANT-SOURCE", 100m);
+        var plain = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-REMNANT-PLAIN", 50m);
+        await run.ExecuteAsync("UPDATE inventory.Labels SET ProductionStatus = 1 WHERE Id = @id",
+            ("@id", remnant.LabelId));
+
+        var childA = Guid.NewGuid();
+        var childB = Guid.NewGuid();
+        var split = new TransformInventoryLabelsV1(Guid.NewGuid(), InventoryLabelTransformationKindV1.Split,
+            [new(remnant.LabelId, remnant.LabelVersion.ToString())],
+            [new(childA, "SYN-REMNANT-A", "40"), new(childB, "SYN-REMNANT-B", "60")],
+            At, "Sentetik kullanilabilir artik etiket bolme kabul testi.");
+        await using (var scope = run.Store(CompanyA))
+        {
+            Assert.False((await scope.Store.TransformAsync(split, Metadata(run) with
+            {
+                IdempotencyKey = $"remnant-split-{Guid.NewGuid():N}",
+                CorrelationId = $"remnant-split-{Guid.NewGuid():N}",
+            })).IsReplay);
+        }
+
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Id IN (@a, @b) AND ProductionStatus = 1",
+            ("@a", childA), ("@b", childB)));
+
+        var remnantMerged = Guid.NewGuid();
+        var remnantMerge = new TransformInventoryLabelsV1(Guid.NewGuid(), InventoryLabelTransformationKindV1.Merge,
+            [new(childA, "1"), new(childB, "1")],
+            [new(remnantMerged, "SYN-REMNANT-MERGED", "100")],
+            At.AddMinutes(1), "Sentetik kullanilabilir artik etiket birlestirme kabul testi.");
+        await using (var scope = run.Store(CompanyA))
+        {
+            Assert.False((await scope.Store.TransformAsync(remnantMerge, Metadata(run) with
+            {
+                IdempotencyKey = $"remnant-merge-{Guid.NewGuid():N}",
+                CorrelationId = $"remnant-merge-{Guid.NewGuid():N}",
+            })).IsReplay);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Id = @id AND ProductionStatus = 1",
+            ("@id", remnantMerged)));
+
+        var mixedMerged = Guid.NewGuid();
+        var mixedMerge = new TransformInventoryLabelsV1(Guid.NewGuid(), InventoryLabelTransformationKindV1.Merge,
+            [new(remnantMerged, "1"), new(plain.LabelId, plain.LabelVersion.ToString())],
+            [new(mixedMerged, "SYN-REMNANT-MIXED", "150")],
+            At.AddMinutes(2), "Sentetik karisik kaynakli etiket birlestirme kabul testi.");
+        await using (var scope = run.Store(CompanyA))
+        {
+            Assert.False((await scope.Store.TransformAsync(mixedMerge, Metadata(run) with
+            {
+                IdempotencyKey = $"remnant-mixed-{Guid.NewGuid():N}",
+                CorrelationId = $"remnant-mixed-{Guid.NewGuid():N}",
+            })).IsReplay);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Id = @id AND ProductionStatus IS NULL",
+            ("@id", mixedMerged)));
+
+        // The sources keep their own status: a repack never rewrites a consumed label's production status.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Id = @id AND ProductionStatus = 1",
+            ("@id", remnant.LabelId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Id = @id AND ProductionStatus IS NULL",
+            ("@id", plain.LabelId)));
+        Assert.Equal(150m, await run.ScalarAsync<decimal>(
+            "SELECT SUM(QuantityKg) FROM inventory.Balances WHERE QuantityKg > 0"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Balances WHERE LabelId = @id AND QuantityKg = 150",
+            ("@id", mixedMerged)));
+    }
+
+    [SqlServerFact]
     public async Task Split_and_merge_refuse_missing_or_mixed_product_version_provenance()
     {
         await using var run = await Run.StartAsync();
@@ -211,15 +292,20 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 Metadata(run));
         }
 
-        await RemoveSyntheticProductVersionsForHistoricalMigrationAsync(
-            run, "SYN-GENEALOGY-DOWN", expectedLabels: 3);
+        const string negativeProofSql = "SELECT CompanyId, Version FROM inventory.NegativeStockValidationGuards ORDER BY CompanyId FOR JSON PATH";
+        var negativeProof = await run.ScalarAsync<string>(negativeProofSql);
+        Assert.True(await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.NegativeStockValidationGuards") > 0);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
+            new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryLabelGenealogy().DownOperations[0]).Sql;
 
         await using (var context = run.Context(CompanyA))
         {
-            var rejected = await Assert.ThrowsAsync<SqlException>(
-                () => context.GetService<IMigrator>().MigrateAsync(previousMigration));
+            var appliedBefore = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+            // The empty full Down/Up path above remains; actual transformation proofs now retain newer guards too.
+            var rejected = await Assert.ThrowsAsync<SqlException>(() => ExecuteAsync(run, guard));
             Assert.Equal(51053, rejected.Number);
-            Assert.Equal(currentMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
+            Assert.Equal(appliedBefore, (await context.Database.GetAppliedMigrationsAsync()).ToArray());
+            Assert.Equal(negativeProof, await run.ScalarAsync<string>(negativeProofSql));
         }
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.LabelTransformations"));
         Assert.Equal(3, await run.ScalarAsync<int>(

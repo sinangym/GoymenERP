@@ -56,17 +56,31 @@ public sealed class CounterpartyAuditEventTenantGuardSqlServerRelationalAcceptan
                     factory.DatabaseConnectionString,
                     companyACorrelation,
                     companyBCorrelation));
-            Assert.Equal(
-                7,
-                await ScalarAsync<int>(
-                    factory.DatabaseConnectionString,
-                    "SELECT COUNT(*) FROM [counterparty].[__EFMigrationsHistory];"));
+            await AssertOwnerMigrationHistoryAsync(factory);
         }
         finally
         {
             await factory.DisposeAsync();
             await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
         }
+    }
+
+    private static async Task AssertOwnerMigrationHistoryAsync(
+        SqlServerRelationalApiFactory factory)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var companyContext = scope.ServiceProvider.GetRequiredService<ICompanyContext>();
+        companyContext.Set(TestCompanyIds.CompanyA);
+        var dbContext = scope.ServiceProvider.GetRequiredService<CounterpartyDbContext>();
+        // Compare owner migration identities against its real SQL history, not a stale count.
+        var expected = dbContext.Database.GetMigrations()
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        Assert.NotEmpty(expected);
+        var applied = (await dbContext.Database.GetAppliedMigrationsAsync())
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(expected, applied);
     }
 
     private static async Task SaveCollectorEventAsync(

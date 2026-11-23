@@ -57,6 +57,50 @@ public enum StockMovementKind
     /// with the same owner, product, label, block and kilograms and the new stored location/custodian.
     /// </summary>
     TransferAccept = 9,
+
+    /// <summary>
+    /// F-009 D1 (URT-D28/URT-D31): Manufacturing's output reversal (çıktı ters hareketi). Exactly one Out line from
+    /// the Free bucket of the position the reversed output receipt first stocked, never more than that position's
+    /// free unallocated kg. The original <see cref="Receipt"/> stays as the history; this is the new, linked
+    /// movement that corrects it (T13), with the source kind <c>manufacturing.output-reversal</c>. Blocked kg
+    /// cannot be reversed while blocked: the block is lifted by Inventory's own command first.
+    /// </summary>
+    ManufacturingOutputReversal = 10,
+
+    /// <summary>
+    /// KLN-D20 (B-22b): the reverse of a whole <see cref="TransferDispatch"/> before any acceptance. Every line is an
+    /// In line that restores one dispatched bucket at its exact source position; the dispatch movement stays as history.
+    /// </summary>
+    TransferDispatchCancellation = 11,
+
+    /// <summary>
+    /// KLN-D21 (B-22c): the automatic fire of a transfer receipt shortage. Exactly one Out line, free or blocked alike,
+    /// on the destination bucket the same receipt's <see cref="TransferAccept"/> just stocked; the missing kilograms
+    /// are the dispatched kilograms minus the receiver's entered kilograms. It is not the two-step <see cref="Scrap"/>.
+    /// </summary>
+    TransferReceiptShortage = 12,
+
+    /// <summary>
+    /// KLN-D24 (B-22c): the approved excess of a transfer receipt. Exactly one In line on the received destination
+    /// bucket, written only after a person other than the receiver approved it.
+    /// </summary>
+    TransferReceiptOverage = 13,
+
+    /// <summary>
+    /// KLN-D23 (c) (B-22c): the approved transit loss of one pending transfer label. Its kilograms already left the
+    /// source at dispatch, so every line pair is an In and then an Out of the same kilograms on the same source
+    /// position: the loss is recorded as a movement fact without changing any balance.
+    /// </summary>
+    TransferTransitLoss = 14,
+
+    /// <summary>
+    /// B-19 / SAT-D306: the exit of a supplier return. Exactly one Out line, free or blocked alike, on the position the
+    /// original goods receipt stocked; it is traced to that receipt line and never exceeds its received kilograms.
+    /// </summary>
+    SupplierReturnExit = 15,
+
+    /// <summary>ALS-D86: a linked physical undo of one original Purchasing acceptance; the original receipt remains immutable.</summary>
+    PurchaseAcceptanceReversal = 16,
 }
 
 public enum StockDirection
@@ -128,7 +172,13 @@ public sealed record StockSourceReference
 }
 
 /// <summary>One line: a positive kilogram amount into or out of one physical position.</summary>
-public sealed record StockMovementLine(StockPosition Position, StockDirection Direction, Kilograms Quantity);
+/// <summary>
+/// One movement line. <paramref name="Pieces"/> (KLN-D119, AK-2) is the piece count that moves with the kilograms on a
+/// piece-tracking label; null on a label without a piece count. The ledger refuses a null on a piece-tracking label and a
+/// value on a piece-less label that holds stock.
+/// </summary>
+public sealed record StockMovementLine(StockPosition Position, StockDirection Direction, Kilograms Quantity,
+    PieceCount? Pieces = null);
 
 /// <summary>
 /// An immutable physical trace (§7.1). Once built it cannot change: there are no setters,
@@ -254,6 +304,46 @@ public sealed class StockMovement
             case StockMovementKind.TransferAccept:
                 RequireAll(StockDirection.In, "Transfer kabulünün bütün satırları giriş olmalıdır.");
                 break;
+            case StockMovementKind.TransferDispatchCancellation:
+                RequireAll(StockDirection.In, "Transfer çıkış iptalinin bütün satırları giriş olmalıdır.");
+                break;
+            case StockMovementKind.TransferReceiptShortage:
+                if (lines.Length != 1 || lines[0].Direction != StockDirection.Out)
+                {
+                    throw Invalid("Transfer eksik teslim firesi tek satırdır: teslim alınan pozisyondan çıkış.");
+                }
+
+                break;
+            case StockMovementKind.TransferReceiptOverage:
+                if (lines.Length != 1 || lines[0].Direction != StockDirection.In)
+                {
+                    throw Invalid("Transfer fazla teslim hareketi tek satırdır: teslim alınan pozisyona giriş.");
+                }
+
+                break;
+            case StockMovementKind.TransferTransitLoss:
+                RequireNetZeroPairs();
+                break;
+            case StockMovementKind.PurchaseAcceptanceReversal:
+            case StockMovementKind.SupplierReturnExit:
+                if (lines.Length != 1 || lines[0].Direction != StockDirection.Out)
+                {
+                    throw Invalid("Tedarikçi iadesi çıkışı tek satırdır: iade edilen pozisyondan çıkış.");
+                }
+
+                break;
+            case StockMovementKind.ManufacturingOutputReversal:
+                if (lines.Length != 1 || lines[0].Direction != StockDirection.Out)
+                {
+                    throw Invalid("Üretim çıktısı ters hareketi tek satırdır: çıktının pozisyonundan çıkış.");
+                }
+
+                if (lines[0].Position.Block == BlockState.Blocked)
+                {
+                    throw Invalid("Bloklu stok üretim çıktısı ters hareketiyle çıkamaz; önce blokaj kaldırılmalıdır.");
+                }
+
+                break;
         }
     }
 
@@ -262,6 +352,29 @@ public sealed class StockMovement
         if (lines.Any(line => line.Direction != direction))
         {
             throw Invalid(message);
+        }
+    }
+
+    /// <summary>
+    /// A transit loss is In/Out pairs, each pair an In immediately followed by an Out of the same kilograms on the
+    /// same position, so it records kilograms without creating, losing or relocating any balance.
+    /// </summary>
+    private void RequireNetZeroPairs()
+    {
+        if (lines.Length % 2 != 0)
+        {
+            throw Invalid("Transfer yolda kayıp hareketi aynı pozisyonda giriş-çıkış çiftleridir.");
+        }
+
+        for (var index = 0; index < lines.Length; index += 2)
+        {
+            var into = lines[index];
+            var outOf = lines[index + 1];
+            if (into.Direction != StockDirection.In || outOf.Direction != StockDirection.Out
+                || into.Position != outOf.Position || into.Quantity != outOf.Quantity || into.Pieces != outOf.Pieces)
+            {
+                throw Invalid("Transfer yolda kayıp hareketi aynı pozisyonda giriş-çıkış çiftleridir.");
+            }
         }
     }
 
@@ -283,7 +396,7 @@ public sealed class StockMovement
         var inLine = ins[0];
         if (outLine.Position.Block != from || inLine.Position.Block != to
             || outLine.Position.WithBlock(to) != inLine.Position
-            || outLine.Quantity != inLine.Quantity)
+            || outLine.Quantity != inLine.Quantity || outLine.Pieces != inLine.Pieces)
         {
             throw Invalid("Blokaj değişikliği aynı fiziksel pozisyonda, aynı miktarla yalnız blokaj durumunu değiştirir.");
         }

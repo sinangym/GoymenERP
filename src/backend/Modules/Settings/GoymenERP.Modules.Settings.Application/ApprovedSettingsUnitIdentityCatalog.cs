@@ -5,8 +5,8 @@ namespace GoymenERP.Modules.Settings.Application;
 /// <summary>
 /// The unit identities of the approved unit-profile catalog (PRD-UNIT-1): one identity per unit that
 /// has an approved profile, with the code, dimension and kilogram flag that catalog carries. Today that
-/// is exactly kg / weight / kilogram (<see cref="ApprovedUnitProfileCatalog.GdcKilogramV1"/>). Nothing
-/// is added here that the reviewed source data does not hold.
+/// includes kg plus the explicit standard identities tonne/metre/piece (Master §28.1, ALS-D43/D51).
+/// Adding an identity does not create or activate any company unit profile.
 /// <para>
 /// Identities are company-independent, so every profile of one unit must agree on its code, dimension
 /// and kilogram flag, and two units may not share a code. Otherwise the whole source is refused with
@@ -21,6 +21,12 @@ public sealed class ApprovedSettingsUnitIdentityCatalog : ISettingsUnitIdentityC
     public ApprovedSettingsUnitIdentityCatalog()
         : this(ApprovedUnitProfileCatalog.Approved)
     {
+        var identities = _ordered.Concat(SettingsUnitIdentitiesV1.Standard.Where(standard => !_byUnit.ContainsKey(standard.UnitId)))
+            .OrderBy(identity => identity.Code, StringComparer.Ordinal).ToArray();
+        if (identities.Select(identity => identity.Code).Distinct(StringComparer.Ordinal).Count() != identities.Length)
+            throw Invalid();
+        _ordered = identities;
+        _byUnit = identities.ToDictionary(identity => identity.UnitId);
     }
 
     internal ApprovedSettingsUnitIdentityCatalog(ApprovedUnitProfileCatalog profiles)

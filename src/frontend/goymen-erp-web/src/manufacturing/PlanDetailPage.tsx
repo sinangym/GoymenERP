@@ -1,3 +1,4 @@
+import { PlanPaintSelectionSummary } from './PlanPaintSelectionSummary'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router'
@@ -6,6 +7,7 @@ import { MANUFACTURING_CAPABILITY, orderDetailPath, orderListPath, planListPath 
 import {
   approvePlan,
   cancelPlan,
+  changePlanDueDate,
   createOrder,
   decisionReason,
   rejectPlan,
@@ -22,12 +24,18 @@ import {
 } from './planCommandApi'
 import type { ProductionPlanView } from './contract'
 import { TARGET_BASIS_LABEL } from './manufacturingText'
+import { DUE_DATE_TEXT, dueDateFailureText } from './dueDateText'
+import { DueDateEditor, DueDateFacts } from './DueDateEditor'
 import { CUT_LINE_TEXT, PLAN_EDIT_TEXT, revisionFailureText } from './planEditText'
 import { PLAN_STATUS_LABEL } from './planListText'
 import { lifecycleFailureText, lifecycleUnknownText, PLAN_DETAIL_TEXT, PLAN_FORM_TEXT } from './planText'
 import { currentRevision } from './planRevisionContract'
 import { PlanEditForm } from './PlanEditForm'
 import { PlanHistory } from './PlanHistory'
+import { PlanReapprovalSection } from './PlanReapprovalSection'
+import { PlanQueuePanel } from './PlanQueuePanel'
+import { PlanAllocationShortfallPanel } from './PlanAllocationShortfallPanel'
+import type { PlanAllocationShortfall } from './planAllocationShortfall'
 import { PlanCalculationDetails } from './PlanPreviewPanel'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { StateBlock } from '../shell/StateBlock'
@@ -52,6 +60,8 @@ type RefreshExpectation =
   | { readonly kind: 'revised'; readonly revised: ProductionPlanView }
   | { readonly kind: 'rejected'; readonly rejected: ProductionPlanView }
   | { readonly kind: 'cancelled'; readonly cancelled: ProductionPlanView }
+  /** F-010a: the termin changed; the plan's version did not move, its termin revision did. */
+  | { readonly kind: 'due-dated'; readonly dueDated: ProductionPlanView }
   | { readonly kind: 'conflict'; readonly failure: string }
 
 function newId(): string {
@@ -69,11 +79,13 @@ function failureText(
   process: string,
 ): string {
   if (kind === 'revise') return revisionFailureText(outcome.status, outcome.code, outcome.field, process)
+  if (kind === 'due-date') return dueDateFailureText(outcome.status, outcome.code)
   return lifecycleFailureText(kind, outcome.status, outcome.code)
 }
 
 function unknownText(kind: PlanLifecycleSnapshot['kind']): string {
   if (kind === 'revise') return PLAN_EDIT_TEXT.unknown
+  if (kind === 'due-date') return DUE_DATE_TEXT.unknown
   return lifecycleUnknownText(kind)
 }
 
@@ -126,6 +138,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   const [editing, setEditing] = useState(false)
   const [decision, setDecision] = useState<'reject' | 'cancel' | null>(null)
   const [reasonText, setReasonText] = useState('')
+  const [allocationShortfall, setAllocationShortfall] = useState<PlanAllocationShortfall | null>(null)
   const generation = useRef(0)
   const inFlight = useRef(false)
   const queryKey = useMemo(
@@ -172,7 +185,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   const allowed = useCallback((kind: PlanLifecycleSnapshot['kind']) =>
     kind === 'approve' || kind === 'reject' ? canApprove
       : kind === 'cancel' ? canCancel
-        : kind === 'revise' ? canEdit : canCreateOrder,
+        : kind === 'revise' || kind === 'due-date' ? canEdit : canCreateOrder,
   [canApprove, canCancel, canCreateOrder, canEdit])
 
   const refreshPlan = useCallback(async (expectation: RefreshExpectation) => {
@@ -188,7 +201,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
       setAttempt({ phase: 'applied', message: PLAN_DETAIL_TEXT.approvedRefreshed })
       return
     }
-    if (isCurrent && expectation.kind === 'revised' && fresh.status === 'Draft' && fresh.version === expectation.revised.version) {
+    if (isCurrent && expectation.kind === 'revised' && fresh.status === expectation.revised.status && fresh.requiresReapproval === expectation.revised.requiresReapproval && fresh.version === expectation.revised.version) {
       // The history is read again too: the reopened plan shows the change and where it came from.
       queryClient.setQueryData(queryKey, refreshed)
       await queryClient.invalidateQueries({ queryKey: historyKey })
@@ -205,6 +218,16 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
       queryClient.setQueryData(queryKey, refreshed)
       await queryClient.invalidateQueries({ queryKey: historyKey })
       setAttempt({ phase: 'applied', message: PLAN_DETAIL_TEXT.cancelledRefreshed })
+      return
+    }
+    if (isCurrent && expectation.kind === 'due-dated' && fresh.version === expectation.dueDated.version
+      && fresh.dueDateRevision === expectation.dueDated.dueDateRevision
+      && fresh.requestedDueDate === expectation.dueDated.requestedDueDate) {
+      queryClient.setQueryData(queryKey, refreshed)
+      setAttempt({
+        phase: 'applied',
+        message: fresh.requestedDueDate === null ? DUE_DATE_TEXT.clearedRefreshed : DUE_DATE_TEXT.setRefreshed,
+      })
       return
     }
     if (isCurrent && expectation.kind === 'conflict') {
@@ -224,7 +247,9 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
             ? PLAN_DETAIL_TEXT.rejectedRefreshPending
             : expectation.kind === 'cancelled'
               ? PLAN_DETAIL_TEXT.cancelledRefreshPending
-              : PLAN_DETAIL_TEXT.conflictRefreshPending(expectation.failure),
+              : expectation.kind === 'due-dated'
+                ? DUE_DATE_TEXT.refreshPending
+                : PLAN_DETAIL_TEXT.conflictRefreshPending(expectation.failure),
     })
   }, [boundary, companyId, historyKey, planId, queryClient, queryKey])
 
@@ -247,6 +272,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
       return
     }
     inFlight.current = true
+    setAllocationShortfall(null)
     const commandGeneration = ++generation.current
     setAttempt({ phase: 'sending', pending })
     const security = boundary.capture()
@@ -258,7 +284,9 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
           ? await cancelPlan(companyId, planId, pending.snapshot)
           : pending.snapshot.kind === 'revise'
             ? await revisePlan(companyId, planId, pending.snapshot)
-            : await createOrder(companyId, planId, pending.snapshot)
+            : pending.snapshot.kind === 'due-date'
+              ? await changePlanDueDate(companyId, planId, pending.snapshot)
+              : await createOrder(companyId, planId, pending.snapshot)
     if (commandGeneration !== generation.current) return
     inFlight.current = false
     if (outcome.type === 'failed' && (outcome.status === 401 || outcome.status === 403)) {
@@ -270,6 +298,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
     }
     releasePendingPlanLifecycle(storeKey, pending.snapshot.idempotencyKey)
     if (outcome.type === 'failed') {
+      setAllocationShortfall(outcome.planAllocationShortfall ?? null)
       const message = failureText(pending.snapshot.kind, outcome, planProcess)
       if (outcome.status === 409) {
         // A stale edit is not continued on stale content: the form closes and reopens from the re-read plan.
@@ -290,6 +319,10 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
       await refreshPlan(pending.snapshot.kind === 'reject'
         ? { kind: 'rejected', rejected: outcome.resource as ProductionPlanView }
         : { kind: 'cancelled', cancelled: outcome.resource as ProductionPlanView })
+      return
+    }
+    if (pending.snapshot.kind === 'due-date') {
+      await refreshPlan({ kind: 'due-dated', dueDated: outcome.resource as ProductionPlanView })
       return
     }
     if (pending.snapshot.kind === 'revise') {
@@ -340,8 +373,8 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   const unresolved = attempt.phase === 'unknown' && allowed(attempt.pending.snapshot.kind)
   // The edit starts from the plan's current content: the last history entry, of exactly the version shown.
   const current = history === null ? null : currentRevision(history)
-  const editable = plan.status === 'Draft' && canEdit && plan.slittingSpec === null
-  const editReady = current !== null && current.planVersion === plan.version
+  const editable = canEdit && (plan.status === 'Draft' || (plan.status === 'Approved' && plan.requiresReapproval === true))
+  const editReady = current !== null && (current.planVersion === plan.version || plan.requiresReapproval === true)
   // U2-d (URT-D2): the preparer of the current version may not approve or reject it. A null preparer is unknown, so
   // the controls stay and the server decides (422 manufacturing_plan_self_approval).
   const selfPrepared = plan.preparedBy !== null && actorId !== null
@@ -363,6 +396,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
           <Link to={orderListPath()}>{PLAN_FORM_TEXT.backToOrders}</Link>
         </div>
       </header>
+      <PlanPaintSelectionSummary value={plan.processSpec} />
       <dl className={styles.facts}>
         <div><dt>{PLAN_DETAIL_TEXT.plan}</dt><dd className={styles.mono}>{plan.planId}</dd></div>
         <div><dt>{PLAN_DETAIL_TEXT.status}</dt><dd>{PLAN_STATUS_LABEL[plan.status]}</dd></div>
@@ -385,6 +419,8 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
             )}
           </dd>
         </div>
+        {/* F-010a (URT-D29): the termin a user entered by hand; never computed from line speed or a calendar. */}
+        <DueDateFacts plan={plan} />
         <div>
           <dt>{PLAN_DETAIL_TEXT.target}</dt>
           <dd>
@@ -493,6 +529,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
 
       <section className={styles.commandCard} aria-labelledby="manufacturing-plan-next-heading">
         <h2 id="manufacturing-plan-next-heading">{PLAN_DETAIL_TEXT.nextHeading}</h2>
+        {allocationShortfall !== null ? <PlanAllocationShortfallPanel value={allocationShortfall} /> : null}
         {blocked ? (
           <p role="alert" className={styles.error}>{attempt.message}</p>
         ) : unresolved ? (
@@ -521,6 +558,25 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
                 {attempt.message}{attempt.orderId === undefined ? '' : PLAN_DETAIL_TEXT.orderSuffix(attempt.orderId)}
               </p>
             ) : null}
+            {!editing ? (
+              <DueDateEditor
+                key={`${plan.version}:${plan.dueDateRevision}`}
+                namespace={namespace}
+                routeEntryGeneration={shell.routeEntryGeneration}
+                companyId={companyId}
+                plan={plan}
+                canChange={canEdit}
+                busy={busy}
+                sending={busy && attempt.phase === 'sending' && attempt.pending.snapshot.kind === 'due-date'}
+                onSubmit={(requestedDueDate) => start({
+                  kind: 'due-date',
+                  idempotencyKey: newId(),
+                  expectedVersion: plan.version,
+                  expectedDueDateRevision: plan.dueDateRevision,
+                  requestedDueDate,
+                })}
+              />
+            ) : null}
             {editable && !editing ? (
               editReady ? (
                 <div className={styles.actions}>
@@ -535,9 +591,13 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
               )
             ) : null}
             {plan.status === 'Approved' && canEdit ? <p className={styles.note}>{PLAN_EDIT_TEXT.approvedNote}</p> : null}
-            {plan.status === 'Draft' && canEdit && plan.slittingSpec !== null ? <p className={styles.note}>{PLAN_EDIT_TEXT.specNote}</p> : null}
+
             {plan.status === 'Draft' && canApprove && selfPrepared ? (
               <p className={styles.note}>{PLAN_DETAIL_TEXT.selfApprovalNote}</p>
+            ) : null}
+            {/* URT-D66 (2): the server refuses an approval without a termin; the note only says so beforehand. */}
+            {plan.status === 'Draft' && canApprove && !selfPrepared && !editing && plan.requestedDueDate === null ? (
+              <p className={styles.note}>{DUE_DATE_TEXT.approvalNeedsTermin}</p>
             ) : null}
             {plan.status === 'Draft' && canApprove && !selfPrepared && !editing ? (
               <div className={styles.actions}>
@@ -615,7 +675,18 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
                 </ul>
               </div>
             )}
-            {plan.status === 'Approved' && canCreateOrder ? (
+            {companyId !== null && namespace !== null ? <PlanQueuePanel
+              key={`${namespace}:${companyId}:${plan.planId}:${plan.version}`} companyId={companyId} planId={plan.planId}
+              planVersion={plan.version} namespace={namespace} canApprove={canApprove && !busy && plan.status !== 'Cancelled'}
+              canReorder={hasCapability(shell, MANUFACTURING_CAPABILITY.planReorder) && !busy}
+              onChanged={() => { void queryClient.invalidateQueries({ queryKey: [namespace, shell.routeEntryGeneration,
+                'manufacturing-plan-due-date-suggestion', plan.planId] }) }} /> : null}
+            {plan.status === 'Approved' && companyId !== null && namespace !== null ? (
+              <PlanReapprovalSection plan={plan} companyId={companyId} namespace={namespace}
+                canApprove={canApprove && !selfPrepared && !busy}
+                onApplied={(approved) => refreshPlan({ kind: 'approved', approved })} />
+            ) : null}
+            {plan.status === 'Approved' && !plan.requiresReapproval && canCreateOrder ? (
               <div className={styles.actions}>
                 <Button
                   type="button"

@@ -9,12 +9,13 @@ namespace GoymenERP.Modules.Product.Application.Contracts;
 /// <item>a name or technical similarity only WARNS and lets the person compare; it never merges or blocks a save or
 /// an approval (README: "Same name is not a duplicate hard block").</item>
 /// </list>
-/// This read answers ONE decided rule and nothing else: <see cref="ProductDuplicateRules.ExactName"/>, the cards
+/// This read answers the decided rules and nothing else. <see cref="ProductDuplicateRules.ExactName"/>: the cards
 /// whose name equals the given one after the write path's own normalisation (<c>Product.NormalizeName</c>: trim),
 /// compared by the name column's own collation (<c>Turkish_100_CI_AS</c>: Turkish case-insensitive, accent
-/// sensitive) — the same equality the store already applies to every name. No similarity score, threshold,
-/// token or technical-attribute match is computed: which attributes define "the same product" and any fuzzy rule
-/// are open (NEEDS-SINAN), and inventing one would be a policy this read does not own.
+/// sensitive) — the same equality the store already applies to every name. <see cref="ProductDuplicateRules.SameTechnical"/>
+/// (URN-D25, Sinan 2026-11-21): for a saved card (<c>ExcludeProductId</c>), the ACTIVE cards of the same family whose
+/// template's thickness, width, quality and coating values are exactly equal to the card's. No similarity score,
+/// threshold or fuzzy rule is computed, and neither list blocks a save or an approval.
 /// </summary>
 public sealed record ProductDuplicateQuery(string? Name = null, Guid? ExcludeProductId = null);
 
@@ -23,13 +24,20 @@ public sealed record ProductDuplicateQuery(string? Name = null, Guid? ExcludePro
 /// <param name="ExactName">Every lifecycle (Draft, Active, Inactive), in code order; at most
 /// <see cref="ProductDuplicateRules.MaximumCandidates"/>. The excluded card (the one being edited) is never listed.</param>
 /// <param name="HasMore">More cards share the name than are listed; the list search shows them all.</param>
+/// <param name="SameTechnical">URN-D25: the other ACTIVE cards of the saved card's family with exactly its thickness, width,
+/// quality and coating, in code order; at most <see cref="ProductDuplicateRules.MaximumCandidates"/>. Empty for an unsaved card
+/// or a card without all five values.</param>
+/// <param name="SameTechnicalHasMore">More active cards share the technical values than are listed.</param>
 public sealed record ProductDuplicateCandidates(string Rule, string Name, IReadOnlyList<ProductDraftView> ExactName,
-    bool HasMore);
+    bool HasMore, IReadOnlyList<ProductDraftView> SameTechnical, bool SameTechnicalHasMore);
 
 public static class ProductDuplicateRules
 {
     public const string Path = "/api/v1/products/duplicate-candidates";
     public const string ExactName = "exactName";
+
+    /// <summary>URN-D25: family + thickness + width + quality + coating exactly equal, active cards only.</summary>
+    public const string SameTechnical = "sameTechnical";
 
     /// <summary>A display bound for one warning panel, not a matching threshold.</summary>
     public const int MaximumCandidates = 20;

@@ -41,6 +41,8 @@ public sealed class PurchasingOrderReadServiceV1(
             PriceDisclosure = detail.PriceDisclosure,
             Currency = detail.Currency,
             PricePending = detail.PricePending,
+            KgPrice = detail.KgPrice,
+            Realization = detail.Realization,
         };
     }
 
@@ -235,6 +237,7 @@ public sealed class PurchasingOrderReadServiceV1(
         {
             // A2a-2: the owner's list "fiyat bekliyor" (null on a detail or when withheld) is carried as answered.
             PricePending = order.PricePending,
+            DocumentNumber = order.DocumentNumber,
         };
 
     private static PurchasingServiceException Unavailable() =>

@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\backend\Modules\Idempotency\GoymenERP.Modules.Idempotency.Domain\GoymenERP.Modules.Idempotency.Domain.csproj" />
+    <ProjectReference Include="..\..\src\backend\Modules\Idempotency\GoymenERP.Modules.Idempotency.Infrastructure\GoymenERP.Modules.Idempotency.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

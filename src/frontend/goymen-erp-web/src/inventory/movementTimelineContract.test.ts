@@ -133,6 +133,14 @@ describe('decodeInventoryMovementTimelinePage', () => {
       TransferDispatch: { ok: [out, line({ sequence: 2, direction: 'Out', block: 'Blocked' })], bad: [line()] },
       Scrap: { ok: [line({ direction: 'Out', block: 'Blocked' })], bad: [out, line({ sequence: 2, direction: 'Out' })] },
       CountAdjustment: { ok: [out], bad: [line(), line({ sequence: 2 })] },
+      ManufacturingOutputReversal: {
+        ok: [out],
+        bad: [line({ direction: 'Out', block: 'Blocked' }), line({ sequence: 2, direction: 'Out' })],
+      },
+      TransferDispatchCancellation: {
+        ok: [line(), line({ sequence: 2, block: 'Blocked' })],
+        bad: [line(), line({ sequence: 2, direction: 'Out' })],
+      },
       Block: {
         ok: [line({ direction: 'Out' }), line({ sequence: 2, block: 'Blocked' })],
         bad: [line({ direction: 'Out' }), line({ sequence: 2, block: 'Blocked', quantityKg: '1' })],
@@ -141,12 +149,52 @@ describe('decodeInventoryMovementTimelinePage', () => {
         ok: [line({ direction: 'Out', block: 'Blocked' }), line({ sequence: 2 })],
         bad: [line({ direction: 'Out', block: 'Blocked' }), line({ sequence: 2, labelCode: 'OTHER' })],
       },
+      // StockMovementKind 12–16 (B-22c, B-19, ALS-D86).
+      TransferReceiptShortage: { ok: [line({ direction: 'Out', block: 'Blocked' })], bad: [line()] },
+      TransferReceiptOverage: { ok: [line()], bad: [out, line({ sequence: 2 })] },
+      TransferTransitLoss: {
+        ok: [line(), line({ sequence: 2, direction: 'Out' })],
+        bad: [line(), line({ sequence: 2, direction: 'Out', quantityKg: '1' })],
+      },
+      SupplierReturnExit: { ok: [line({ direction: 'Out', block: 'Blocked' })], bad: [line()] },
+      PurchaseAcceptanceReversal: { ok: [out], bad: [out, line({ sequence: 2, direction: 'Out' })] },
     }
     expect(Object.keys(shapes).sort()).toEqual([...MOVEMENT_KINDS].sort())
     for (const [kind, { ok, bad }] of Object.entries(shapes)) {
       expect(decodeInventoryMovementTimelinePage(page([movement({ kind, lines: ok })]), 25), kind).not.toBeNull()
       expect(decodeInventoryMovementTimelinePage(page([movement({ kind, lines: bad })]), 25), kind).toBeNull()
     }
+  })
+
+  it('decodes the manufacturing output reversal and the transfer dispatch cancellation as their own kinds', () => {
+    const reversal = decodeInventoryMovementTimelinePage(page([movement({
+      kind: 'ManufacturingOutputReversal', sourceKind: 'manufacturing.output-reversal', sourceGrain: 'Whole',
+      sourceLineId: null, lines: [line({ direction: 'Out' })],
+    })]), 25)
+    expect(reversal?.items[0].kind).toBe('ManufacturingOutputReversal')
+    const cancellation = decodeInventoryMovementTimelinePage(page([movement({
+      kind: 'TransferDispatchCancellation', sourceGrain: 'Whole', sourceLineId: null,
+      lines: [line(), line({ sequence: 2, block: 'Blocked' })],
+    })]), 25)
+    expect(cancellation?.items[0].kind).toBe('TransferDispatchCancellation')
+    expect(cancellation?.items[0].lines.map((item) => item.direction)).toEqual(['In', 'In'])
+  })
+
+  it('reverses only a free output and never accepts an empty reversal or an Out cancellation', () => {
+    expect(decodeInventoryMovementTimelinePage(page([movement({ kind: 'ManufacturingOutputReversal', lines: [] })]), 25))
+      .toBeNull()
+    expect(decodeInventoryMovementTimelinePage(page([movement({
+      kind: 'ManufacturingOutputReversal', lines: [line()],
+    })]), 25)).toBeNull()
+    expect(decodeInventoryMovementTimelinePage(page([movement({
+      kind: 'TransferDispatchCancellation', lines: [line({ direction: 'Out' })],
+    })]), 25)).toBeNull()
+  })
+
+  it('still fails closed for a kind the owner does not define', () => {
+    expect(decodeInventoryMovementTimelinePage(page([movement({ kind: 'TransferDispatchReversal' })]), 25)).toBeNull()
+    expect(decodeInventoryMovementTimelinePage(page([movement({ kind: 10 })]), 25)).toBeNull()
+    expect(decodeInventoryMovementTimelinePage(page([movement({ kind: 11 })]), 25)).toBeNull()
   })
 })
 

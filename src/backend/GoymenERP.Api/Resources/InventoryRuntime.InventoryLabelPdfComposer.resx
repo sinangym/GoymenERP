@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <data name="Title" xml:space="preserve"><value>Malzeme etiketi</value></data>
+  <data name="Code" xml:space="preserve"><value>Etiket kodu</value></data>
+  <data name="Heat" xml:space="preserve"><value>Döküm numarası</value></data>
+  <data name="Coil" xml:space="preserve"><value>Rulo numarası</value></data>
+  <data name="LotHeat" xml:space="preserve"><value>Lot döküm numarası</value></data>
+  <data name="LotCoil" xml:space="preserve"><value>Lot rulo numarası</value></data>
+  <data name="Unknown" xml:space="preserve"><value>Kaydedilmemiş</value></data>
+  <data name="FilePrefix" xml:space="preserve"><value>Etiket</value></data>
+</root>

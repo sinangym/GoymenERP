@@ -234,9 +234,15 @@ public sealed partial class SalesDraftService
             return;
         }
 
-        var due = commandName == SalesDraftCommands.SubmitV1
-            ? current.ApprovalState is InternalApprovalState.Preparing or InternalApprovalState.Rejected
-            : current.ApprovalState == InternalApprovalState.PendingApproval;
+        var due = commandName switch
+        {
+            SalesDraftCommands.SubmitV1 => current.ApprovalState is InternalApprovalState.Preparing or InternalApprovalState.Rejected,
+            SalesDraftCommands.ApproveV1 => current.ApprovalState == InternalApprovalState.PendingApproval,
+            SalesDraftCommands.RecordCustomerAcceptanceV1 => current.CustomerAcceptanceRequired
+                && current.ApprovalState == InternalApprovalState.Approved && !current.IsCustomerAccepted
+                && current.CurrentRevisionCustomerRejection is null,
+            _ => false,
+        };
         if (!due)
         {
             return;

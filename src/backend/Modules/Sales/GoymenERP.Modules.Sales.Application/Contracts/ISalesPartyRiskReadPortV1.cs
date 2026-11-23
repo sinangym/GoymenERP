@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Sales.Application.Contracts;
 
 /// <summary>
@@ -53,7 +55,14 @@ public sealed record SalesPartyRiskFigureV1(
     string Source,
     IReadOnlyList<SalesPartyRiskAmountV1> Amounts,
     bool? IncludesTax,
-    string? ReasonCode);
+    string? ReasonCode,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<SalesPartyRiskPolicyProofV1>? PolicyProofs = null);
+
+/// <summary>K6 evidence only: the real collateral revision and actual type/bank policy rate used by its owner.
+/// These facts do not enter the gross-risk formula and are withheld with the figure's amounts.</summary>
+public sealed record SalesPartyRiskPolicyProofV1(Guid CompanyId, Guid CollateralId, string CollateralRevision,
+    Guid CollateralTypeId, string TypeVersion, Guid? BankInstitutionId, string? BankSourceVersion,
+    string RatePercent, string SourceVersion, string Scope, DateOnly BusinessDate);
 
 /// <summary>One exact amount of a figure in one currency (the Settings currency identity).</summary>
 public sealed record SalesPartyRiskAmountV1(Guid CurrencyId, decimal Amount);

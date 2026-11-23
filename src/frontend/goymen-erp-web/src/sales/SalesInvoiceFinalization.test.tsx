@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import detailResponseRaw from './examples/detail-response.json?raw'
-import { SALES_CAPABILITY } from './capabilities'
+import { SALES_CAPABILITY, SALES_INVOICE_FINALIZE_CAPABILITY } from './capabilities'
 import { FINANCE_STAGE_TEXT, INVOICE_FINALIZATION_TEXT as T, INVOICE_STATE_TEXT, ORDER_INVOICES_TEXT as L } from './invoiceText'
 import { ALL_SALES, COMPANY_A, installFetch, json, renderSalesApp, type RecordedCall } from './testHarness'
 import {
@@ -194,7 +194,21 @@ describe('API-36 finalization panel in the tab', () => {
     expect(within(panel).getByTestId('sales-invoice-controls-unavailable')).toBeTruthy()
   })
 
-  it('says Finance refused on authority grounds without offering a way out, and shows an accepted invoice without notes', async () => {
+  it('offers the re-send of the same invoice after an authority refusal to a user holding the finalize control (SAT-D427)', async () => {
+    installFetch({
+      capabilities: [...WITH_INVOICE_READ, SALES_INVOICE_FINALIZE_CAPABILITY],
+      onDetail: () => json(RAW),
+      onDraftInvoices: () => json({ items: [draftInvoiceItem({ state: 'Finalized' })], hasMore: false }),
+      onInvoice: () => json(finalizedDetail(sentWaiting('refused:denied'))),
+    })
+    renderSalesApp(PATH)
+    const panel = await openPanel()
+    expect(within(panel).getByTestId('sales-invoice-denied-note').textContent).toBe(T.deniedNote)
+    expect(within(panel).getByTestId('sales-invoice-resend')).toBeTruthy()
+    expect(within(panel).queryByTestId('sales-invoice-controls-unavailable')).toBeNull()
+  })
+
+  it('says Finance refused on authority grounds, offers no re-send without the finalize control, and shows an accepted invoice without notes', async () => {
     let body = finalizedDetail(sentWaiting('refused:denied'))
     installFetch({
       capabilities: WITH_INVOICE_READ,

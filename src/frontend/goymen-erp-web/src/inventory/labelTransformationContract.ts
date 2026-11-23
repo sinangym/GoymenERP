@@ -19,6 +19,11 @@ export interface LabelTransformationOutput {
   readonly labelId: string
   readonly code: string
   readonly quantityKg: string
+  /**
+   * KLN-D119 (AK-2): the output's pieces — required when the source labels track pieces, omitted otherwise; at least one
+   * per output, and the outputs' pieces add up to the sources' (the writer checks both).
+   */
+  readonly pieceCount?: number
 }
 
 export interface LabelTransformationRequest {
@@ -149,8 +154,10 @@ function source(value: unknown): value is LabelTransformationSource {
 
 function output(value: unknown): value is LabelTransformationOutput {
   const item = record(value)
-  return item !== null && exact(item, ['labelId', 'code', 'quantityKg']) &&
-    isGuid(item.labelId) && isLabelCode(item.code) && isKilogramText(item.quantityKg)
+  const pieces = item !== null && Object.hasOwn(item, 'pieceCount')
+  return item !== null && exact(item, ['labelId', 'code', 'quantityKg', ...(pieces ? ['pieceCount'] : [])]) &&
+    isGuid(item.labelId) && isLabelCode(item.code) && isKilogramText(item.quantityKg) &&
+    (!pieces || (typeof item.pieceCount === 'number' && Number.isInteger(item.pieceCount) && item.pieceCount >= 1 && item.pieceCount <= 2147483647))
 }
 
 /**
@@ -166,6 +173,8 @@ export function isLabelTransformationRequest(value: unknown): value is LabelTran
   const sources = request.sources as unknown[]
   const outputs = request.outputs as unknown[]
   if (!sources.every(source) || !outputs.every(output)) return false
+  // KLN-D119: either every output names its pieces (piece-tracking sources) or none does.
+  if (new Set(outputs.map((item) => Object.hasOwn(item as object, 'pieceCount'))).size > 1) return false
   const typedSources = sources as LabelTransformationSource[]
   const typedOutputs = outputs as LabelTransformationOutput[]
   if (request.kind === 'Split' && (typedSources.length !== 1 || typedOutputs.length < 2)) return false

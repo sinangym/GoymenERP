@@ -239,8 +239,20 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
             + "AND EventType = N'inventory.movement.recorded.v1' "
             + "AND EntityType = N'Inventory.StockMovement'",
             ("@correlation", returnMetadata.CorrelationId)));
-        Assert.Equal(5, await run.ScalarAsync<int>(
+        // URT-S20: the output's lineage edges add their own audit event in the same transaction; URT-S21: so does the
+        // output label's own code.
+        Assert.Equal(7, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation",
+            ("@correlation", outputMetadata.CorrelationId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
+            + "AND EventType = N'manufacturing.output.label-code.recorded.v1' "
+            + "AND EntityType = N'Manufacturing.ProductionOrder'",
+            ("@correlation", outputMetadata.CorrelationId)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
+            + "AND EventType = N'manufacturing.output.lineage.recorded.v1' "
+            + "AND EntityType = N'Manufacturing.ProductionOrder'",
             ("@correlation", outputMetadata.CorrelationId)));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @correlation "
@@ -444,22 +456,26 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
         new Kilograms(quantity),
         seed.OccurredAtUtc.AddMinutes(2));
 
-    private static async Task<InventoryManufacturingOutputResultV1> CommitOutputOrphanAsync(
+    private static async Task<InventoryManufacturingOutputResultV2> CommitOutputOrphanAsync(
         Run run, ManufacturingInventoryOutputCommand command, ManufacturingCommandMetadata metadata)
     {
-        var request = new InventoryManufacturingOutputRequestV1(
+        // The orphan is staged exactly as the host stages it (URT-S16: the V2 request with the remnant
+        // classification resolved by the fixed mapping), so only the missing Manufacturing fact differs.
+        Assert.True(ManufacturingOutputClassMappingV1.TryMap(command.OutputClass, command.RemnantClassification,
+            out var label));
+        var request = new InventoryManufacturingOutputRequestV2(
             CompanyA,
             command.OrderId,
             command.OutputId,
             checked(command.ExpectedOrderVersion + 1).ToString(CultureInfo.InvariantCulture),
             command.ParentLabelId,
             command.ExpectedParentLabelVersion.ToString(CultureInfo.InvariantCulture),
-            command.OutputClass.ToString(),
+            label.InventoryOutputClass,
             command.ProductId,
             command.ExpectedProductVersion,
             command.LotId,
             command.LabelId,
-            command.LabelCode,
+            command.LabelCode ?? throw new InvalidOperationException("The orphan output carries an entered label code."),
             command.HeatNumber,
             command.CoilNumber,
             command.RequiredDocuments,
@@ -471,7 +487,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
             command.InitialBlock,
             command.MovementId,
             command.Quantity.Value.ToString("0.###", CultureInfo.InvariantCulture),
-            command.OccurredAtUtc);
+            command.OccurredAtUtc,
+            label.ProductionStatus is null ? null : (InventoryLabelClassificationV1?)label.Classification);
         var inventoryMetadata = new InventoryCommandMetadata(
             metadata.ActorId,
             metadata.PermissionCode,
@@ -518,6 +535,9 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
     {
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM manufacturing.Facts WHERE Id = @id", ("@id", command.OutputId)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.OutputLineageEdges WHERE OutputId = @id OR OutputLabelId = @label",
+            ("@id", command.OutputId), ("@label", command.LabelId)));
         Assert.Equal(seed.OrderVersion, await run.ScalarAsync<long>(
             "SELECT Version FROM manufacturing.Orders WHERE Id = @id", ("@id", seed.OrderId)));
         Assert.Equal(0, await run.ScalarAsync<int>(
@@ -545,7 +565,9 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
             Run run,
             IErpAuthorityRevalidationService authority,
             IManufacturingInventoryOutputAdmission admission,
-            Func<ManufacturingInventoryReturnOutputStage, CancellationToken, Task>? observer = null)
+            Func<ManufacturingInventoryReturnOutputStage, CancellationToken, Task>? observer = null,
+            IManufacturingOutputLabelCodePolicyReadPortV1? labelCodePolicy = null,
+            IInventoryLabelDispositionReadPortV1? labelDispositions = null)
         {
             var company = new CompanyContext();
             company.Set(CompanyA);
@@ -558,7 +580,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests(ITes
             var context = new ManufacturingDbContext(options, company);
             var store = new ManufacturingStore(context, company, audit, TimeProvider.System);
             var host = new ManufacturingInventoryReturnOutputHost(
-                context, store, company, authority, ManufacturingSettings(run), admission, observer);
+                context, store, company, authority, ManufacturingSettings(run), admission, observer, labelCodePolicy, labelDispositions: labelDispositions);
             return new ReturnOutputHostScope(context, store, host);
         }
 

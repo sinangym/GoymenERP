@@ -13,12 +13,16 @@ namespace GoymenERP.Finance.UnitTests;
 public sealed class FinanceShellCapabilityProviderTests
 {
     [Fact]
-    public void Every_declaration_is_published_after_the_flip()
+    public void Existing_declarations_remain_published_and_credit_source_work_stays_staged()
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(25, declarations.Count);
-        Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
+        Assert.Equal(48, declarations.Count);
+        Assert.All(declarations, declaration => Assert.Equal(
+            !declaration.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)
+            && !declaration.CapabilityId.StartsWith("finance.official-sales-invoices.", StringComparison.Ordinal)
+            && declaration.CapabilityId != FinanceShellCapabilityProvider.PartyBalanceTransferCapabilityId
+            && !declaration.CapabilityId.StartsWith("finance.cash-exchange-book-values.", StringComparison.Ordinal), declaration.ImplementationAvailable));
     }
 
     [Fact]
@@ -28,9 +32,28 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.8", provider.ContractVersion);
+        Assert.Equal("1.17", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
+            ("finance.cash-exchange-book-values.prepare", "finance.cash-exchange-book-values.prepare", "/finans/doviz-defter-degeri-hazirla", "F-32-EXCHANGE-BOOK-PREPARE",
+                ShellCapabilityRoutePrecedence.Static, [ErpPermissions.AccountingNormalJournalDraftCreate]),
+            ("finance.cash-exchange-book-values.approve", "finance.cash-exchange-book-values.approve", "/finans/doviz-defter-degeri-onaylari", "F-32-EXCHANGE-BOOK-APPROVE",
+                ShellCapabilityRoutePrecedence.Static, [ErpPermissions.AccountingNormalJournalDraftApprove]),
+            ("finance.party-balance-transfers.record", "finance.party-balance-transfers.record", "/finans/cari-bakiye-devri", "F-32-PARTY-BALANCE-TRANSFER",
+                ShellCapabilityRoutePrecedence.Static, [FinancePartyBalanceTransferPermissionsV1.Record, FinancePermissionNames.PartyLedgerRead,
+                    FinancePermissionNames.PartyLedgerAmountRead]),
+            ("finance.official-sales-invoices.record", "finance.official-sales-invoices.record", "/finans/resmi-satis-faturalari", "F-005-OFFICIAL",
+                ShellCapabilityRoutePrecedence.Static, [FinanceOfficialSalesInvoicePermissionNamesV1.Record]),
+            ("finance.official-sales-invoices.approve", "finance.official-sales-invoices.approve", "/finans/resmi-satis-faturasi-onaylari", "F-005-OFFICIAL-APPROVAL",
+                ShellCapabilityRoutePrecedence.Static, [FinanceOfficialSalesInvoicePermissionNamesV1.Approve]),
+            ("finance.official-sales-invoices.withdraw", "finance.official-sales-invoices.record", "/finans/resmi-satis-faturalari", "F-005-OFFICIAL",
+                ShellCapabilityRoutePrecedence.Static, [FinanceOfficialSalesInvoicePermissionNamesV1.Record, FinanceOfficialSalesInvoicePermissionNamesV1.Withdraw]),
+            ("finance.credits.workspace", "finance.credits.workspace", "/finans/krediler", "F-47-CREDITS",
+                ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCreditsRead]),
+            ("finance.credits.propose", "finance.credits.workspace", "/finans/krediler", "F-47-CREDITS",
+                ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCreditsRead, ErpPermissions.FinanceCreditsPropose]),
+            ("finance.credits.approve", "finance.credits.workspace", "/finans/krediler", "F-47-CREDITS",
+                ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCreditsRead, ErpPermissions.FinanceCreditsApprove]),
             ("finance.receipts.list", "finance.receipts", "/finans/tahsilatlar", "F-02", ShellCapabilityRoutePrecedence.Static,
                 [FinancePermissionNames.DraftRead]),
             ("finance.receipts.draft", "finance.receipts.new", "/finans/tahsilatlar/yeni", "F-02-NEW", ShellCapabilityRoutePrecedence.Static,
@@ -86,6 +109,20 @@ public sealed class FinanceShellCapabilityProviderTests
                 "/finans/odemeler/:paymentId", "F-02-PAYMENT-DETAIL", ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
                 [FinancePermissionNames.ManualBankPaymentDraftRead, FinancePermissionNames.PaymentReverseApprove,
                     ErpPermissions.AccountingPeriodsRead]),
+            // 1.9 (FNS-D25): the payment not tied to a party; each command is a control of its workspace.
+            ("finance.expense-payments.workspace", "finance.expense-payments.workspace", "/finans/masraf-odemeleri",
+                "F-25-EXPENSE-PAYMENTS", ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.ExpensePaymentDraftRead]),
+            ("finance.expense-payments.draft", "finance.expense-payments.workspace", "/finans/masraf-odemeleri",
+                "F-25-EXPENSE-PAYMENTS", ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.ExpensePaymentDraftRead, FinancePermissionNames.ExpensePaymentDraftSave]),
+            ("finance.expense-payments.approve", "finance.expense-payments.workspace", "/finans/masraf-odemeleri",
+                "F-25-EXPENSE-PAYMENTS", ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.ExpensePaymentDraftRead, FinancePermissionNames.ExpensePaymentApprove]),
+            ("finance.expense-payments.record", "finance.expense-payments.workspace", "/finans/masraf-odemeleri",
+                "F-25-EXPENSE-PAYMENTS", ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.ExpensePaymentDraftRead, FinancePermissionNames.ExpensePaymentRecord,
+                    ErpPermissions.AccountingPeriodsRead]),
             ("finance.allocations.list", "finance.allocations.list", "/finans/dagitimlar", "F-03",
                 ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.AllocationRead]),
             ("finance.allocations.write", "finance.allocations.list", "/finans/dagitimlar", "F-03",
@@ -100,6 +137,37 @@ public sealed class FinanceShellCapabilityProviderTests
                 ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.PartyLedgerRead]),
             ("finance.party-ledger.cari", "finance.party-ledger.cari", "/cari/hesap-takibi", "C-04",
                 ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.PartyLedgerRead]),
+            // 1.10 (FNS-D27 / FNS-D46; one step, FNS-D57(3)): credit limits; propose and approve are controls of the one route.
+            ("finance.credit-limits.list", "finance.credit-limits.list", "/finans/kredi-limitleri", "F-18-CREDIT-LIMITS",
+                ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCreditLimitsRead]),
+            ("finance.credit-limits.propose", "finance.credit-limits.list", "/finans/kredi-limitleri", "F-18-CREDIT-LIMITS",
+                ShellCapabilityRoutePrecedence.Static,
+                [ErpPermissions.FinanceCreditLimitsRead, ErpPermissions.FinanceCreditLimitsPropose]),
+            ("finance.credit-limits.approve", "finance.credit-limits.list", "/finans/kredi-limitleri", "F-18-CREDIT-LIMITS",
+                ShellCapabilityRoutePrecedence.Static,
+                [ErpPermissions.FinanceCreditLimitsRead, ErpPermissions.FinanceCreditLimitsApprove]),
+            // 1.12 (FNS-D57 / FNS-D31 / FNS-D58): customer collaterals; the one-step record is a control of the route.
+            ("finance.collaterals.list", "finance.collaterals.list", "/finans/teminatlar", "F-18-COLLATERALS",
+                ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceCollateralsRead]),
+            ("finance.collaterals.record", "finance.collaterals.list", "/finans/teminatlar", "F-18-COLLATERALS",
+                ShellCapabilityRoutePrecedence.Static,
+                [ErpPermissions.FinanceCollateralsRead, ErpPermissions.FinanceCollateralsRecord]),
+            // 1.13 (FIN-S9, FNS-D23): opening balances; propose and approve are controls of the route.
+            ("finance.opening-balances.list", "finance.opening-balances.list", "/finans/acilis-bakiyeleri",
+                "F-23-OPENING-BALANCES", ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceOpeningBalancesRead]),
+            ("finance.opening-balances.propose", "finance.opening-balances.list", "/finans/acilis-bakiyeleri",
+                "F-23-OPENING-BALANCES", ShellCapabilityRoutePrecedence.Static,
+                [ErpPermissions.FinanceOpeningBalancesRead, ErpPermissions.FinanceOpeningBalancesPropose]),
+            ("finance.opening-balances.approve", "finance.opening-balances.list", "/finans/acilis-bakiyeleri",
+                "F-23-OPENING-BALANCES", ShellCapabilityRoutePrecedence.Static,
+                [ErpPermissions.FinanceOpeningBalancesRead, ErpPermissions.FinanceOpeningBalancesApprove]),
+            // 1.11 (FNS-D24): one workspace; the commit is its control and also needs the Accounting period read.
+            ("finance.cash-transfers.workspace", "finance.cash-transfers.workspace", "/finans/virman",
+                "F-32-CASH-TRANSFERS", ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.CashTransferRead]),
+            ("finance.cash-transfers.commit", "finance.cash-transfers.workspace", "/finans/virman",
+                "F-32-CASH-TRANSFERS", ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.CashTransferRead, FinancePermissionNames.CashTransferCommit,
+                    ErpPermissions.AccountingPeriodsRead]),
         ];
 
         Assert.Equal(expected.Select(item => item.Capability).Order(StringComparer.Ordinal), byId.Keys.Order(StringComparer.Ordinal));
@@ -162,7 +230,61 @@ public sealed class FinanceShellCapabilityProviderTests
             Assert.Superset(paymentDetail.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
                 control.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
         }
-        Assert.Equal(8, declarations.Count(item => item.ParentCapabilityId is not null));
+        var expenseWorkspace = Assert.Single(declarations,
+            item => item.CapabilityId == FinanceShellCapabilityProvider.ExpensePaymentWorkspaceCapabilityId);
+        foreach (var id in new[]
+                 {
+                     FinanceShellCapabilityProvider.ExpensePaymentDraftCapabilityId,
+                     FinanceShellCapabilityProvider.ExpensePaymentApproveCapabilityId,
+                     FinanceShellCapabilityProvider.ExpensePaymentRecordCapabilityId,
+                 })
+        {
+            var control = Assert.Single(declarations, item => item.CapabilityId == id);
+            Assert.Equal(expenseWorkspace.CapabilityId, control.ParentCapabilityId);
+            Assert.Superset(expenseWorkspace.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
+                control.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
+        }
+        var creditLimits = Assert.Single(declarations,
+            item => item.CapabilityId == FinanceShellCapabilityProvider.CreditLimitListCapabilityId);
+        foreach (var id in new[]
+                 {
+                     FinanceShellCapabilityProvider.CreditLimitProposeCapabilityId,
+                     FinanceShellCapabilityProvider.CreditLimitApproveCapabilityId,
+                 })
+        {
+            var control = Assert.Single(declarations, item => item.CapabilityId == id);
+            Assert.Equal(creditLimits.CapabilityId, control.ParentCapabilityId);
+            Assert.Superset(creditLimits.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
+                control.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
+        }
+        var cashTransfers = Assert.Single(declarations,
+            item => item.CapabilityId == FinanceShellCapabilityProvider.CashTransferWorkspaceCapabilityId);
+        var cashTransferCommit = Assert.Single(declarations,
+            item => item.CapabilityId == FinanceShellCapabilityProvider.CashTransferCommitCapabilityId);
+        Assert.Equal(cashTransfers.CapabilityId, cashTransferCommit.ParentCapabilityId);
+        Assert.Superset(cashTransfers.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
+            cashTransferCommit.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
+        foreach (var (parentId, controlIds) in new (string, string[])[]
+                 {
+                     (FinanceShellCapabilityProvider.OfficialInvoiceRecordCapabilityId,
+                         [FinanceShellCapabilityProvider.OfficialInvoiceWithdrawCapabilityId]),
+                     (FinanceShellCapabilityProvider.CollateralListCapabilityId,
+                         [FinanceShellCapabilityProvider.CollateralRecordCapabilityId]),
+                     (FinanceShellCapabilityProvider.OpeningBalanceListCapabilityId,
+                         [FinanceShellCapabilityProvider.OpeningBalanceProposeCapabilityId,
+                             FinanceShellCapabilityProvider.OpeningBalanceApproveCapabilityId]),
+                 })
+        {
+            var parent = Assert.Single(declarations, item => item.CapabilityId == parentId);
+            foreach (var id in controlIds)
+            {
+                var control = Assert.Single(declarations, item => item.CapabilityId == id);
+                Assert.Equal(parent.CapabilityId, control.ParentCapabilityId);
+                Assert.Superset(parent.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
+                    control.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
+            }
+        }
+        Assert.Equal(20, declarations.Count(item => item.ParentCapabilityId is not null));
     }
 
     [Fact]
@@ -197,11 +319,13 @@ public sealed class FinanceShellCapabilityProviderTests
 
         // The registry refuses a screen id shared by two routes (ValidateUnique on ScreenId).
         Assert.Equal(routes.Length, routes.Select(item => item.ScreenId).Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(["C-04", "F-02", "F-02-DETAIL", "F-02-INSTRUMENTS", "F-02-NEW",
+        Assert.Equal(["C-04", "F-005-OFFICIAL", "F-005-OFFICIAL-APPROVAL", "F-02", "F-02-DETAIL", "F-02-INSTRUMENTS", "F-02-NEW",
                 "F-02-OFFICIAL-INVOICE-APPROVALS", "F-02-OFFICIAL-INVOICE-UPLOAD",
                 "F-02-PAYMENT-DETAIL", "F-02-PAYMENT-NEW",
                 "F-02-PAYMENTS", "F-02-REVERSAL-APPROVAL", "F-03", "F-03-OPEN-ITEM-DETAIL",
-                "F-03-OPEN-ITEMS", "F-04", "F-04-NEW", "M-03"],
+                "F-03-OPEN-ITEMS", "F-04", "F-04-NEW", "F-18-COLLATERALS", "F-18-CREDIT-LIMITS", "F-23-OPENING-BALANCES",
+                "F-25-EXPENSE-PAYMENTS", "F-32-CASH-TRANSFERS", "F-32-EXCHANGE-BOOK-APPROVE", "F-32-EXCHANGE-BOOK-PREPARE",
+                "F-32-PARTY-BALANCE-TRANSFER", "F-47-CREDITS", "M-03"],
             routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
 }

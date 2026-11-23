@@ -51,10 +51,32 @@ public static class ManufacturingModuleExtensions
         // Üretim U2-b / API-16: the plan's sales order link and Sales's linked-supply read, the same DbContext as the plan.
         services.AddScoped<IManufacturingPlanSalesOrderLinkStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         services.AddScoped<IManufacturingSalesOrderSupplyReadPortV1, ManufacturingSalesOrderSupplyReadPort>();
+        services.AddScoped<IManufacturingSubcontractCompletionReadPortV1, ManufacturingSubcontractCompletionReadPort>();
+        services.AddScoped<IManufacturingSubcontractCompletionReadPortV2, ManufacturingSubcontractCompletionReadPortV2>();
+        // URT-S20 (URT-D62, URT-D63): the output lineage edges with their shares, backward and forward; reads only.
+        services.AddScoped<IManufacturingLabelLineageReadPortV1, ManufacturingLabelLineageReadPort>();
+        // Üretim F-010a (URT-D29): the plan's hand-entered termin, the same store and DbContext as the plan.
+        services.AddScoped<IManufacturingPlanDueDateStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         services.AddScoped<IManufacturingSalesOrderBindingReadPortV1, ManufacturingSalesOrderBindingReadPort>();
         services.AddScoped<IManufacturingOrderStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        // URT-D66 (3): the order's own termin, the same store and DbContext as the order.
+        services.AddScoped<IManufacturingOrderDueDateStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        // URT-SC33 (URT-D86): the work center queue of the termin suggestion, the same store and DbContext as the plan.
+        services.AddScoped<IManufacturingWorkCenterQueueStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        services.AddScoped<IManufacturingWorkCenterQueueOrderingStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        services.AddScoped<IManufacturingOrderReopeningStoreV1>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        // URT-S8/SC36: these facts and immutable cost generations share the physical order's context and transaction.
+        services.AddScoped<IManufacturingCostGenerationStoreV1>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        services.AddScoped<IManufacturingNonKgInputStoreV1>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        services.AddScoped<IManufacturingPlanPriorityStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        // F-009 D5 (URT-D33/D34/D35): the order cancel with its plan release and the plan's re-approval, the same store.
+        services.AddScoped<IManufacturingOrderCancellationStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        services.AddScoped<IManufacturingPlanReapprovalStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         // URT-D42 (3): the read-only list of closed orders for the output-above-input report, the same store and DbContext.
         services.AddScoped<IManufacturingClosedOrderListStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        // URT-S13 (URT-D47, URT-D65): the monthly scrap price entry and its read for a weighing, the same store and DbContext.
+        services.AddScoped<IManufacturingMonthlyScrapPriceStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        services.AddScoped<IManufacturingMonthlyScrapPriceReaderV1>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         // ADR-011: the command log shares the store's DbContext, so a success joins the business save.
         services.AddScoped<IManufacturingCommandLog>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         // MFG-API (#313): the command surface. Settings' kilogram profile and the fresh authority

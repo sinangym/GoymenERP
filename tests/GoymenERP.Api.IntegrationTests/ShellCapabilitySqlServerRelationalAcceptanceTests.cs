@@ -179,7 +179,7 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             // not a CompanyWide-only or controlled authorization substitute.
             using (var scopedReader = factory.CreateClientFor(TestUsers.CompanyAViewer, TestCompanyIds.CompanyA))
             {
-                AssertExactOrganizationSnapshot(await ReadSnapshotAsync(scopedReader), includeStatus: false);
+                AssertExactOrganizationSnapshot(await ReadSnapshotAsync(scopedReader), includeStatus: false, includeCompanyTaxId: false);
                 using var scopedList = await scopedReader.GetAsync("/api/v1/organization/locations?page=1&pageSize=25");
                 Assert.Equal(HttpStatusCode.OK, scopedList.StatusCode);
                 var scopedPage = await scopedList.Content.ReadFromJsonAsync<JsonElement>();
@@ -727,13 +727,13 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
     {
         var baseConnectionString = Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
-        var factory = new SqlServerRelationalApiFactory(baseConnectionString);
-        await CreateDatabaseWithRcsiDisabledAsync(
-            baseConnectionString,
-            factory.DatabaseName);
+        var database = new SqlServerTestDatabase(baseConnectionString, $"goymen_erp_ci_{Guid.NewGuid():N}",
+            Environment.GetEnvironmentVariable("GOYMEN_ERP_TEST_SQLSERVER_DATA_DIRECTORY"));
+        var factory = new SqlServerRelationalApiFactory(baseConnectionString, testDatabase: database);
 
         try
         {
+            await database.CreateAsync(rcsiEnabled: false);
             var exception = await Record.ExceptionAsync(async () =>
             {
                 using var client = factory.CreateClient();
@@ -750,7 +750,7 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
         finally
         {
             await factory.DisposeAsync();
-            await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
+            await database.DropAsync();
         }
     }
 
@@ -861,7 +861,7 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
     }
 
     private static void AssertExactOrganizationSnapshot(
-        CapabilitySnapshotProbe snapshot, bool includeSites = true, bool includeStatus = true)
+        CapabilitySnapshotProbe snapshot, bool includeSites = true, bool includeStatus = true, bool includeCompanyTaxId = true)
     {
         AssertSnapshotEnvelope(snapshot);
         var expected = new List<string>
@@ -886,6 +886,9 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
         // ORG-04's card stands on the same `organization.work-centers.read` alone, so it is published exactly with the
         // list for every actor above (same seed reasoning; no separate flag).
         expected.Add(OrganizationShellCapabilityProvider.WorkCenterDetailCapabilityId);
+        // ORG-05 requires only the existing company-wide context-read grant held by these seeded actors.
+        // Tax-id values still require their separate read authority at the endpoint.
+        if (includeCompanyTaxId) expected.Add(OrganizationShellCapabilityProvider.CompanyTaxIdCapabilityId);
         Assert.Equal(expected.Order(StringComparer.Ordinal), snapshot.Capabilities);
     }
 
@@ -958,25 +961,6 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
                 ALTER DATABASE [{databaseName}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
                 DROP DATABASE [{databaseName}];
             END;
-            """;
-        await command.ExecuteNonQueryAsync();
-    }
-
-    private static async Task CreateDatabaseWithRcsiDisabledAsync(
-        string baseConnectionString,
-        string databaseName)
-    {
-        var builder = new SqlConnectionStringBuilder(baseConnectionString)
-        {
-            InitialCatalog = "master",
-        };
-        await using var connection = new SqlConnection(builder.ConnectionString);
-        await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = $"""
-            CREATE DATABASE [{databaseName}];
-            ALTER DATABASE [{databaseName}]
-                SET READ_COMMITTED_SNAPSHOT OFF WITH ROLLBACK IMMEDIATE;
             """;
         await command.ExecuteNonQueryAsync();
     }

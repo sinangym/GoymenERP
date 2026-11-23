@@ -58,6 +58,22 @@ public sealed class ApprovedAccountingSourcePackageParserV1Tests
             && issue.Code == ApprovedAccountingSourcePackageCodesV1.HeaderInvalid);
     }
 
+    [Theory]
+    [InlineData(NormalJournalSourceKindsV1.RecordedExpensePayment)]
+    [InlineData(NormalJournalSourceKindsV1.RecordedCashTransfer)]
+    [InlineData(NormalJournalSourceKindsV1.ApprovedCashExchangeBookValue)]
+    [InlineData(NormalJournalSourceKindsV1.RecordedCreditMovement)]
+    public void Financial_movement_bindings_keep_exact_approved_source_kind_without_inventing_accounts(string kind)
+    {
+        var source = Mappings().Replace(NormalJournalSourceKindsV1.RecordedManualReceipt, kind, StringComparison.Ordinal);
+        var result = Parser().Preview(Trusted(), Request(Bytes(Accounts()), Bytes(source)));
+        Assert.True(result.IsValid);
+        var binding = Assert.Single(result.Package!.Bindings);
+        Assert.Equal(kind, binding.SourceKind);
+        Assert.Equal(Source, binding.SourceId);
+        Assert.Equal([Debit, Credit], binding.Rule.Mappings.Select(x => x.Account.AccountId));
+    }
+
     [Fact]
     public void Invalid_trusted_context_cannot_be_replaced_by_file_content()
     {

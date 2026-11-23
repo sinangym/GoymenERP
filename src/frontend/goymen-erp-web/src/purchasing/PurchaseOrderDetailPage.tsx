@@ -12,6 +12,9 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { pendingApprovalKey, recallPendingApproval, releasePendingApproval, reservePendingApproval, type ApprovalSnapshot } from './pendingApprovalStore'
 import styles from './PurchaseOrderDetailPage.module.css'
 import { GoodsReceiptDetailRow } from './GoodsReceiptDetail'
+import { GoodsReceiptBatchPanel } from './GoodsReceiptBatchPanel'
+import { SupplierReturnPanel } from './SupplierReturnPanel'
+import { ReceiptAdjustmentWorkspace } from './ReceiptAdjustmentWorkspace'
 import { GoodsReceiptPanel } from './GoodsReceiptPanel'
 import { receiptAttemptBinding } from './goodsReceiptAttempt'
 import { GOODS_RECEIPT_TEXT } from './goodsReceiptText'
@@ -23,10 +26,15 @@ import { DocumentsPanel } from '../documents/DocumentsPanel'
 import { OWNER_KIND } from '../documents/contract'
 import { Button } from '../ui/Button'
 import { StatusIndicator } from '../ui/StatusIndicator'
+import { AllocationLinkPanel } from './AllocationLinkPanel'
 import { PurchaseOrderCancellationPanel } from './PurchaseOrderCancellationPanel'
+import { LineSchedulePanel } from './LineSchedulePanel'
+import { SupplierRevisionPanel } from './SupplierRevisionPanel'
 import { ORDER_CANCELLATION_TEXT, PURCHASE_ORDER_STATUS_LABEL } from './purchasingText'
 import { PURCHASE_ORDER_STATUS_TONE } from './purchaseOrderStatus'
-import type { PurchaseOrderCurrency, PurchaseOrderLine } from './contract'
+import type { PurchaseKgPrice, PurchaseOrderCurrency, PurchaseOrderLine, PurchaseOrderRealization } from './contract'
+import { ADDITIONAL_COST_CAPABILITY, additionalCostPath } from './additionalCostContract'
+import { ADDITIONAL_COST_TEXT } from './additionalCostText'
 
 const HEADING_ID = 'purchase-order-detail-heading'
 
@@ -110,6 +118,72 @@ function PriceCells({ line, currency }: { readonly line: PurchaseOrderLine; read
   </>
 }
 
+/** AK-5 (SAT-D436): drawn only when the server sends the kg price indicator (switch on, prices visible). */
+const KG_PRICE_COLUMNS = [
+  { name: T.theoreticalKgPrice, numeric: true }, { name: T.realKgPrice, numeric: true },
+] as const
+
+/** AK-5: a kg price or its reason, as the server answered it; the screen never recomputes it. */
+function kgPriceText(value: string | null, code: string | null, currency: PurchaseOrderCurrency | null): string {
+  if (value !== null && currency !== null) return T.kgPricePerKg(value, currency.currencyCode)
+  return code === null ? T.noDiscount : T.kgPriceUnavailable[code] ?? code
+}
+
+function KgPriceCells({ line, currency }: { readonly line: PurchaseOrderLine; readonly currency: PurchaseOrderCurrency | null }) {
+  const kg = line.kgPrice
+  if (kg === undefined) {
+    const text = line.kind === 'Technical' ? T.technicalPriceCell : T.noDiscount
+    return <>{KG_PRICE_COLUMNS.map((column) => <Cell key={column.name} label={column.name} numeric>{text}</Cell>)}</>
+  }
+  return <>
+    <Cell label={T.theoreticalKgPrice} numeric>{kgPriceText(kg.theoreticalKgPrice, kg.theoreticalUnavailable, currency)}</Cell>
+    <Cell label={T.realKgPrice} numeric>{kgPriceText(kg.realKgPrice, kg.realUnavailable, currency)}</Cell>
+  </>
+}
+
+/** AK-3b (SAT-D436 TK6): drawn only when the server sent a realization (order read, prices visible). */
+const REALIZATION_COLUMNS = [
+  { name: T.realizationRow }, { name: T.invoicedQuantity, numeric: true }, { name: T.invoicedAmount, numeric: true },
+  { name: T.weighedKg, numeric: true }, { name: T.theoreticalKg, numeric: true }, { name: T.realizationDifferenceKg, numeric: true },
+  { name: T.deviationPercent, numeric: true }, { name: T.realKgPrice, numeric: true }, { name: T.theoreticalKgPrice, numeric: true },
+] as const
+
+/**
+ * AK-3b: one realization row — every figure the server's own text. A missing figure shows a reason in words: "Henüz
+ * faturalanmadı" when the server says nothing is invoiced, otherwise the text of the figure's own code (no weighed kg, no
+ * theoretical kg, amount unknown); a difference or deviation that follows from a missing kg is a dash. Nothing is computed.
+ */
+function RealizationRow({ label, testId, realization, kgPrice, currency, document }: {
+  readonly label: ReactNode
+  readonly testId: string
+  readonly realization: PurchaseOrderRealization
+  readonly kgPrice: PurchaseKgPrice | undefined
+  readonly currency: PurchaseOrderCurrency | null
+  readonly document?: boolean
+}) {
+  const notInvoiced = realization.realUnavailable === 'NotInvoiced' ? T.kgPriceUnavailable.NotInvoiced : null
+  const missing = (code: string | null) => notInvoiced ?? (code === null ? T.noDiscount : T.kgPriceUnavailable[code] ?? code)
+  const kg = (value: string | null, code: string | null) => value === null ? missing(code) : T.kgValue(value)
+  // The sign is the server's own, only written out for a positive figure; the digits are never touched.
+  const zero = (value: string) => /^-?0(?:\.0+)?$/.test(value)
+  const signed = (value: string) => value.startsWith('-') || zero(value) ? value : `+${value}`
+  const signedPercent = (value: string) => zero(value) ? T.percentValue(value)
+    : value.startsWith('-') ? `-${T.percentValue(value.slice(1))}` : `+${T.percentValue(value)}`
+  return <tr role="row" data-testid={testId}>
+    <Cell label={T.realizationRow}>{label}</Cell>
+    <Cell label={T.invoicedQuantity} numeric>{realization.invoicedQuantity ?? (document ? T.realizationPerLine : T.noDiscount)}</Cell>
+    <Cell label={T.invoicedAmount} numeric>{realization.invoicedAmount === null ? missing('AmountUnavailable')
+      : currency === null ? realization.invoicedAmount : T.money(realization.invoicedAmount, currency.currencyCode)}</Cell>
+    <Cell label={T.weighedKg} numeric>{kg(realization.weighedKg, 'WeighedKgUnavailable')}</Cell>
+    <Cell label={T.theoreticalKg} numeric>{kg(realization.theoreticalKg, 'TheoreticalKgUnavailable')}</Cell>
+    <Cell label={T.realizationDifferenceKg} numeric>{realization.differenceKg === null ? missing(null) : T.kgValue(signed(realization.differenceKg))}</Cell>
+    <Cell label={T.deviationPercent} numeric>{realization.deviationPercent === null ? missing(null) : signedPercent(realization.deviationPercent)}</Cell>
+    <Cell label={T.realKgPrice} numeric>{kgPriceText(realization.realKgPrice, realization.realUnavailable, currency)}</Cell>
+    <Cell label={T.theoreticalKgPrice} numeric>{kgPrice === undefined ? T.noDiscount
+      : kgPriceText(kgPrice.theoreticalKgPrice, kgPrice.theoreticalUnavailable, currency)}</Cell>
+  </tr>
+}
+
 const ACCEPTANCE_COLUMNS = [
   { name: T.acceptanceId }, { name: T.lineNo }, { name: T.quantity, numeric: true }, { name: T.recordedAtUtc },
 ] as const
@@ -130,6 +204,8 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
   const actorId = shell.activeContext?.userId ?? null
   const canApprove = hasCapability(shell, PURCHASING_CAPABILITY.orderApprove)
   const canCancel = hasCapability(shell, PURCHASING_CAPABILITY.orderCancel)
+  // F-027 (UI-07, EK16 §2a): the line termin change control; the backend re-measures purchasing.orders.revise on every call.
+  const canEditSchedule = hasCapability(shell, PURCHASING_CAPABILITY.orderLineScheduleWrite)
   const canReadSourceRequest = hasCapability(shell, PURCHASING_CAPABILITY.requestDetail)
   const canOpenParty = hasCapability(shell, CAPABILITY.cariPartiesDetail)
   const storeKey = pendingApprovalKey(shell.sessionEpoch, actorId, companyId, orderId ?? '')
@@ -209,7 +285,13 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
   const cancellation = state.data.cancellation ?? null
   // A2a-1 (PRS-02): prices are drawn only when the server says Visible; a body from before A2a-1 carries none.
   const pricesVisible = state.data.priceDisclosure === 'Visible'
+  // AK-5: the kg price columns only when the server sent the indicator on some line.
+  const kgPricesShown = state.data.lines.some((line) => line.kgPrice !== undefined)
   const currency = state.data.currency ?? null
+  // AK-3b: the realization table only when the server sent one (order read, prices visible); absent = nothing is drawn.
+  const realizedLines = lines.filter((line) => line.realization !== undefined)
+  const documentRealization = state.data.realization
+  const realizationShown = pricesVisible && (realizedLines.length > 0 || documentRealization !== undefined)
   const isCurrentDetail = order.id === orderId && order.companyId === companyId
   const lineNoById = new Map(lines.map((line) => [line.lineId, line.lineNo] as const))
   const unresolved = attempt.phase === 'unknown' || attempt.phase === 'submitting'
@@ -221,9 +303,12 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
         : T.approvalFailed(attempt.code ?? attempt.status)}</p>
       : null
   return frame(<>
+    {isCurrentDetail && hasCapability(shell, ADDITIONAL_COST_CAPABILITY.read)
+      ? <Link to={additionalCostPath('GoodsOrder', order.id)}>{ADDITIONAL_COST_TEXT.title}</Link> : null}
     <section className={styles.section} aria-labelledby="purchase-order-summary-heading" data-testid="purchase-order-summary">
       <h2 id="purchase-order-summary-heading">{T.summaryHeading}</h2>
       <dl className={styles.facts} data-testid="purchase-order-status-facts">
+        <div><dt>{T.documentNumber}</dt><dd>{order.documentNumber ?? T.documentNumberUnavailable}</dd></div>
         <div><dt>{T.orderId}</dt><dd className={styles.identifier}>{order.id}</dd></div>
         <div><dt>{T.version}</dt><dd>{order.version}</dd></div>
         <div><dt>{T.businessDate}</dt><dd><time dateTime={order.effectiveOn}>{formatBusinessDate(order.effectiveOn)}</time></dd></div>
@@ -241,7 +326,8 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
       <h2 id="purchase-order-lines-heading">{T.linesHeading}</h2>
       {state.data.priceDisclosure === 'Withheld' ? <p data-testid="purchase-order-prices-withheld">{T.pricesWithheld}</p> : null}
       {pricesVisible && state.data.pricePending === true ? <p role="status" className={styles.warning} data-testid="purchase-order-price-pending">{T.pricePending}</p> : null}
-      <RecordTable label={T.linesCaption} columns={pricesVisible ? [...LINE_COLUMNS, ...PRICE_COLUMNS] : LINE_COLUMNS}>
+      <RecordTable label={T.linesCaption} columns={pricesVisible
+        ? [...LINE_COLUMNS, ...PRICE_COLUMNS, ...(kgPricesShown ? KG_PRICE_COLUMNS : [])] : LINE_COLUMNS}>
         {lines.map((line) => <tr key={line.lineId} role="row" data-testid={`purchase-order-line-${line.lineNo}`}>
           <Cell label={LINE_NO}>{line.lineNo}</Cell>
           <Cell label={T.productId} identifier>{line.productId}</Cell>
@@ -253,9 +339,49 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
           <Cell label={T.cancelledShare} numeric>{line.cancelled ?? '0'}</Cell>
           <Cell label={T.remaining} numeric>{line.remaining}</Cell>
           {pricesVisible ? <PriceCells line={line} currency={currency} /> : null}
+          {pricesVisible && kgPricesShown ? <KgPriceCells line={line} currency={currency} /> : null}
         </tr>)}
       </RecordTable>
+      {pricesVisible && state.data.kgPrice !== undefined ? <dl className={styles.facts} data-testid="purchase-order-kg-price"
+        aria-label={T.kgPriceHeading}>
+        <div><dt>{T.theoreticalKgPrice}</dt><dd>{kgPriceText(state.data.kgPrice.theoreticalKgPrice, state.data.kgPrice.theoreticalUnavailable, currency)}</dd></div>
+        <div><dt>{T.realKgPrice}</dt><dd>{kgPriceText(state.data.kgPrice.realKgPrice, state.data.kgPrice.realUnavailable, currency)}</dd></div>
+      </dl> : null}
+      {realizationShown ? <div data-testid="purchase-order-realization">
+        <h3>{T.realizationHeading}</h3>
+        <p>{T.realizationHint}</p>
+        <RecordTable label={T.realizationCaption} columns={REALIZATION_COLUMNS}>
+          {realizedLines.map((line) => line.realization === undefined ? null : <RealizationRow key={line.lineId}
+            testId={`purchase-order-realization-line-${line.lineNo}`} label={line.lineNo} realization={line.realization}
+            kgPrice={line.kgPrice} currency={currency} />)}
+          {documentRealization === undefined ? null : <RealizationRow testId="purchase-order-realization-document"
+            label={T.realizationDocumentRow} realization={documentRealization} kgPrice={state.data.kgPrice} currency={currency} document />}
+        </RecordTable>
+      </div> : null}
     </section>
+    {/* F-027 (ALS-D94, ALS-D81): each line's current termin and its recorded revisions; the termin change control (UI-07) only
+        behind its child capability. */}
+    {isCurrentDetail && namespace !== null ? <div className={styles.section}><LineSchedulePanel
+      fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} order={order} lines={lines}
+      editor={canEditSchedule && actorId !== null
+        ? { sessionEpoch: shell.sessionEpoch, actorId, onSettled: () => query.refetch() }
+        : null} /></div> : null}
+    {/* F-027 (ALC-S16; KLN-D43): the order's bulk goods receipts, read only and loaded only when opened. */}
+    {isCurrentDetail && namespace !== null ? <div className={styles.section}><SupplierRevisionPanel
+      fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} order={order} lines={lines} actorId={actorId}
+      sessionEpoch={shell.sessionEpoch} canEdit={hasCapability(shell, PURCHASING_CAPABILITY.orderSupplierRevise)}
+      hasCurrency={state.data.currency !== null && state.data.currency !== undefined} onSettled={() => query.refetch()} /></div> : null}
+    {isCurrentDetail && namespace !== null ? <div className={styles.section}><GoodsReceiptBatchPanel
+      fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} orderId={order.id}
+      orderVersion={order.version} /></div> : null}
+    {/* B-19 (ALC-S5; SAT-D306, SAT-D393): the order's returns to supplier, read only and loaded only when opened. */}
+    {isCurrentDetail && namespace !== null ? <div className={styles.section}><SupplierReturnPanel
+      fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} orderId={order.id}
+      orderVersion={order.version} /></div> : null}
+    {isCurrentDetail && namespace !== null && receiptAttempt !== null ? <div className={styles.section}><ReceiptAdjustmentWorkspace
+      detail={state.data} binding={`${namespace}::${shell.routeEntryGeneration}`} attemptBinding={receiptAttempt}
+      canAdjust={hasCapability(shell, PURCHASE_GOODS_RECEIPT_CAPABILITY)} canReturn={hasCapability(shell, PURCHASING_CAPABILITY.supplierReturnRecord)}
+      canDecide={canApprove} onSettled={() => { void query.refetch() }} /></div> : null}
     {isCurrentDetail && cancellation !== null ? <section className={styles.section} aria-labelledby="purchase-order-cancellation-facts-heading" data-testid="purchase-order-cancellation-facts">
       <h2 id="purchase-order-cancellation-facts-heading">{ORDER_CANCELLATION_TEXT.cancellationHeading}</h2>
       <dl className={styles.facts}>
@@ -293,6 +419,11 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
     /> : null}
     {canApprove ? outcomeNotice : null}
     {canApprove && (order.status === 'Draft' || unresolved) ? <section className={styles.section}><h2>{T.approvalHeading}</h2><p>{T.approvalNote}</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>{T.approvalUnknown}</p> : null}<Button type="button" variant="primary" disabled={attempt.phase === 'submitting'} onClick={() => void sendApproval(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? T.approvalSending : attempt.phase === 'unknown' ? T.approvalRetry : T.approve}</Button></section> : null}
+    {isCurrentDetail && namespace !== null && actorId !== null
+      ? <div className={styles.section}><AllocationLinkPanel fenceKey={`${namespace}::${shell.routeEntryGeneration}`}
+          actorId={actorId} companyId={companyId} order={order} lines={lines} canCancel={canCancel}
+          onSettled={() => query.refetch()} /></div>
+      : null}
     {canCancel && isCurrentDetail && namespace !== null && actorId !== null
       ? <div className={styles.section}><PurchaseOrderCancellationPanel sessionEpoch={shell.sessionEpoch}
           fenceKey={`${namespace}::${shell.routeEntryGeneration}`} actorId={actorId} companyId={companyId} order={order}

@@ -8,7 +8,79 @@
 
 export const MOVEMENT_KINDS = [
   'Receipt', 'Issue', 'Block', 'Release', 'Return', 'CountAdjustment', 'Scrap', 'TransferDispatch', 'TransferAccept',
+  'ManufacturingOutputReversal', 'TransferDispatchCancellation',
+  // StockMovementKind 12–16 (B-22c KLN-D21/D24/D23, B-19 SAT-D306, ALS-D86); any other name stays malformed.
+  'TransferReceiptShortage', 'TransferReceiptOverage', 'TransferTransitLoss', 'SupplierReturnExit', 'PurchaseAcceptanceReversal',
 ] as const
+
+/**
+ * The writer's line shape per kind (`StockMovement` invariants): exactly the backend's checks, so an answer breaking them is
+ * not shown. Shared by the movement timeline and the label detail decoders.
+ */
+export function movementLinesFitKind(kind: InventoryMovementKind, lines: readonly MovementLineShape[]): boolean {
+  switch (kind) {
+    case 'Receipt':
+    case 'Return':
+    case 'TransferAccept':
+    case 'TransferDispatchCancellation':
+      return lines.every((item) => item.direction === 'In')
+    case 'Issue':
+      return lines.every((item) => item.direction === 'Out' && item.block === 'Free')
+    case 'TransferDispatch':
+      return lines.every((item) => item.direction === 'Out')
+    case 'Scrap':
+    case 'TransferReceiptShortage':
+    case 'SupplierReturnExit':
+    case 'PurchaseAcceptanceReversal':
+      return lines.length === 1 && lines[0].direction === 'Out'
+    case 'TransferReceiptOverage':
+      return lines.length === 1 && lines[0].direction === 'In'
+    case 'TransferTransitLoss':
+      // In-then-Out pairs of the same kilograms on the same position: a fact without a balance change.
+      return lines.length % 2 === 0 && lines.every((item, index) => index % 2 === 1 || (item.direction === 'In'
+        && lines[index + 1].direction === 'Out' && samePosition(item, lines[index + 1]) && item.quantityKg === lines[index + 1].quantityKg))
+    case 'ManufacturingOutputReversal':
+      return lines.length === 1 && lines[0].direction === 'Out' && lines[0].block === 'Free'
+    case 'CountAdjustment':
+      return lines.length === 1
+    case 'Block':
+    case 'Release':
+      return blockChangeFits(kind, lines)
+  }
+}
+
+/** The members of a movement line both decoders read the shape from. */
+export interface MovementLineShape {
+  readonly direction: 'In' | 'Out'
+  /** Absent on the label detail's lines, which all belong to the one label read. */
+  readonly labelId?: string
+  readonly labelCode?: string
+  readonly ownerKind: string
+  readonly ownerId: string
+  readonly custodianKind: string
+  readonly custodianId: string
+  readonly locationId: string
+  readonly productId: string
+  readonly block: 'Free' | 'Blocked'
+  readonly quantityKg: string
+}
+
+function samePosition(left: MovementLineShape, right: MovementLineShape): boolean {
+  return (left.labelId ?? '').toLowerCase() === (right.labelId ?? '').toLowerCase() && left.labelCode === right.labelCode
+    && left.ownerKind === right.ownerKind
+    && left.ownerId.toLowerCase() === right.ownerId.toLowerCase() && left.custodianKind === right.custodianKind
+    && left.custodianId.toLowerCase() === right.custodianId.toLowerCase() && left.locationId.toLowerCase() === right.locationId.toLowerCase()
+    && left.productId.toLowerCase() === right.productId.toLowerCase() && left.block === right.block
+}
+
+function blockChangeFits(kind: 'Block' | 'Release', lines: readonly MovementLineShape[]): boolean {
+  if (lines.length !== 2) return false
+  const from = lines.find((item) => item.direction === 'Out')
+  const to = lines.find((item) => item.direction === 'In')
+  return from !== undefined && to !== undefined && from.block === (kind === 'Block' ? 'Free' : 'Blocked')
+    && to.block === (kind === 'Block' ? 'Blocked' : 'Free') && from.quantityKg === to.quantityKg
+    && samePosition(from, { ...to, block: from.block })
+}
 export type InventoryMovementKind = typeof MOVEMENT_KINDS[number]
 
 export interface InventoryMovementLine {
@@ -121,39 +193,6 @@ function line(value: unknown): InventoryMovementLine | null {
   }
 }
 
-function validBlockChange(kind: 'Block' | 'Release', lines: readonly InventoryMovementLine[]): boolean {
-  if (lines.length !== 2) return false
-  const from = lines.filter((item) => item.direction === 'Out')
-  const to = lines.filter((item) => item.direction === 'In')
-  if (from.length !== 1 || to.length !== 1) return false
-  const [a, b] = [from[0], to[0]]
-  return a.block === (kind === 'Block' ? 'Free' : 'Blocked') && b.block === (kind === 'Block' ? 'Blocked' : 'Free') &&
-    a.labelId === b.labelId && a.labelCode === b.labelCode &&
-    a.ownerKind === b.ownerKind && a.ownerId === b.ownerId &&
-    a.custodianKind === b.custodianKind && a.custodianId === b.custodianId &&
-    a.locationId === b.locationId && a.productId === b.productId && a.quantityKg === b.quantityKg
-}
-
-function linesFitKind(kind: InventoryMovementKind, lines: readonly InventoryMovementLine[]): boolean {
-  switch (kind) {
-    case 'Receipt':
-    case 'Return':
-    case 'TransferAccept':
-      return lines.every((item) => item.direction === 'In')
-    case 'Issue':
-      return lines.every((item) => item.direction === 'Out' && item.block === 'Free')
-    case 'TransferDispatch':
-      return lines.every((item) => item.direction === 'Out')
-    case 'Scrap':
-      return lines.length === 1 && lines[0].direction === 'Out'
-    case 'CountAdjustment':
-      return lines.length === 1
-    case 'Block':
-    case 'Release':
-      return validBlockChange(kind, lines)
-  }
-}
-
 function movement(value: unknown): InventoryMovement | null {
   const source = record(value)
   if (source === null || !exact(source, [
@@ -169,7 +208,7 @@ function movement(value: unknown): InventoryMovement | null {
   const lines = decoded as InventoryMovementLine[]
   if (lines.some((item, index) => index > 0 && lines[index - 1].sequence >= item.sequence)) return null
   const kind = source.kind as InventoryMovementKind
-  if (!linesFitKind(kind, lines)) return null
+  if (!movementLinesFitKind(kind, lines)) return null
   return {
     movementId: source.movementId,
     kind,

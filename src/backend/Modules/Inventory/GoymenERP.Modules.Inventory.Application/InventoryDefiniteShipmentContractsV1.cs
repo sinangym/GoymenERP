@@ -21,7 +21,10 @@ public interface IInventoryDefiniteShipmentParticipantV1 : IAsyncDisposable
 /// <summary>
 /// The exact Inventory facts carried by a definite shipment. The allocation is the authority for
 /// the physical label and position; owner, custodian and location are deliberately not accepted
-/// from Logistics. Quantity is lossless kg text and is consumed exactly as supplied.
+/// from Logistics. Quantity is lossless kg text and is consumed exactly as supplied. <c>PieceCount</c> (KLN-D119, AK-2) is
+/// the number of pieces leaving a piece-tracking label: required for such a label (omitted → refused, fail-closed) and
+/// refused on a kg-only label; both answer 400 <see cref="InventoryDefiniteShipmentCodesV1.InvalidQuantity"/>. Callers before
+/// AK-4 omit it and kg-only labels ship exactly as before.
 /// </summary>
 public sealed record InventoryDefiniteShipmentRequestV1(
     Guid CompanyId,
@@ -34,7 +37,8 @@ public sealed record InventoryDefiniteShipmentRequestV1(
     string ExpectedLabelVersion,
     Guid MovementId,
     string QuantityKg,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    int? PieceCount = null);
 
 /// <summary>
 /// Inventory's staged answer. It is uncommitted until the host atomically persists the Logistics
@@ -100,7 +104,7 @@ public static class InventoryDefiniteShipmentCodesV1
 
 public sealed class InventoryDefiniteShipmentException : Exception
 {
-    private InventoryDefiniteShipmentException(int status, string code) : base(code)
+    private InventoryDefiniteShipmentException(int status, string code, Exception? innerException = null) : base(code, innerException)
     {
         Status = status;
         Code = code;
@@ -109,10 +113,25 @@ public sealed class InventoryDefiniteShipmentException : Exception
     public int Status { get; }
     public string Code { get; }
 
-    public static InventoryDefiniteShipmentException Refused(int status, string code) =>
+    public static InventoryDefiniteShipmentException Refused(int status, string code, Exception? innerException = null) =>
         InventoryDefiniteShipmentCodesV1.IsDefined(status, code)
-            ? new(status, code)
+            ? new(status, code, innerException)
             : throw new InvalidOperationException("Inventory definite-shipment refusal is outside its closed contract.");
+
+    /// <summary>The separate subcontract command's closed refusals; the normal Sale refusal contract stays unchanged.</summary>
+    public static InventoryDefiniteShipmentException RefusedSubcontract(int status, string code, Exception? innerException = null) =>
+        InventoryDefiniteShipmentCodesV1.IsDefined(status, code) || (status, code) is
+            (400, InventorySubcontractDeliveryContractV1.Invalid) or
+            (404, InventorySubcontractDeliveryContractV1.SourceMismatch) or
+            (409, InventorySubcontractDeliveryContractV1.SourceMismatch) or
+            (409, InventorySubcontractDeliveryContractV1.OwnerMismatch) or
+            (409, InventoryAllocationCodesV1.InsufficientFreeStock) or
+            (409, GoymenERP.BuildingBlocks.Concurrency.SalesOrderLineSerializationLockContractV1.BusyCode) or
+            (503, InventorySubcontractDeliveryContractV1.SourceMismatch) or
+            (503, InventoryDefiniteShipmentCodesV1.PhysicalStockInsufficient) or
+            (503, InventorySubcontractDeliveryContractV1.Unavailable)
+            ? new(status, code, innerException)
+            : throw new InvalidOperationException("Inventory subcontract-delivery refusal is outside its closed contract.");
 }
 
 /// <summary>

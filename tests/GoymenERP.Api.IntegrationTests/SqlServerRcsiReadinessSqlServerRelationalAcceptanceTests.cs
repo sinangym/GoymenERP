@@ -13,6 +13,8 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
 {
+    // xUnit creates one suite instance per test; ownership never crosses test cases.
+    private readonly Dictionary<string, SqlServerTestDatabase> databases = new(StringComparer.Ordinal);
     [SqlServerFact]
     public async Task ValidateOnly_CompatibleDatabaseIsReady_AndWriteGuardsProveNoInitializationAttempt()
     {
@@ -200,7 +202,7 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
             databaseCreated = true;
             factory = new SqlServerRelationalApiFactory(
                 baseConnectionString,
-                databaseName: databaseName);
+                databaseName: databaseName, testDatabase: databases[databaseName]);
             var evidence = await ProbeAsync(factory.DatabaseConnectionString, databaseName);
             AssertReady(evidence, databaseName);
 
@@ -360,7 +362,7 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
             databaseCreated = true;
             var disabledFactory = new SqlServerRelationalApiFactory(
                 baseConnectionString,
-                databaseName: databaseName);
+                databaseName: databaseName, testDatabase: databases[databaseName]);
             try
             {
                 var disabledEvidence = await ProbeAsync(
@@ -392,7 +394,7 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
             await SetRcsiForTestAsync(baseConnectionString, databaseName, enabled: true);
             var enabledFactory = new SqlServerRelationalApiFactory(
                 baseConnectionString,
-                databaseName: databaseName);
+                databaseName: databaseName, testDatabase: databases[databaseName]);
             try
             {
                 Assert.Equal(
@@ -655,10 +657,9 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
             Assert.True(
                 File.ReadAllBytes(readyOutput).SequenceEqual(ready.StandardOutput),
                 $"Wrapper stdout differed from evidence: {Encoding.UTF8.GetString(ready.StandardOutput)}");
-            Assert.DoesNotContain(
-                new SqlConnectionStringBuilder(readyConnection).Password,
-                Encoding.UTF8.GetString(ready.StandardOutput),
-                StringComparison.Ordinal);
+            var readyPassword = new SqlConnectionStringBuilder(readyConnection).Password;
+            if (readyPassword.Length > 0)
+                Assert.DoesNotContain(readyPassword, Encoding.UTF8.GetString(ready.StandardOutput), StringComparison.Ordinal);
             using (var document = JsonDocument.Parse(ready.StandardOutput))
             {
                 var hashes = document.RootElement
@@ -681,10 +682,9 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
                 testProcessTimeout: wrapperTestProcessTimeout);
             Assert.Equal(4, off.ExitCode);
             Assert.Contains("native exit 4", off.StandardError, StringComparison.Ordinal);
-            Assert.DoesNotContain(
-                new SqlConnectionStringBuilder(offConnection).Password,
-                off.StandardError,
-                StringComparison.Ordinal);
+            var offPassword = new SqlConnectionStringBuilder(offConnection).Password;
+            if (offPassword.Length > 0)
+                Assert.DoesNotContain(offPassword, off.StandardError, StringComparison.Ordinal);
             Assert.True(File.Exists(offOutput));
             Assert.Equal(File.ReadAllBytes(offOutput), off.StandardOutput);
             using (var document = JsonDocument.Parse(off.StandardOutput))
@@ -1125,7 +1125,9 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         Assert.False(fileBytes.AsSpan().StartsWith(new byte[] { 0xEF, 0xBB, 0xBF }));
         var fileJson = Encoding.UTF8.GetString(fileBytes);
         Assert.DoesNotContain(rawLogicalEndpoint, fileJson, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain(secret, fileJson, StringComparison.Ordinal);
+        // Integrated authentication supplies no password. An empty substring is present in every output;
+        // still enforce every schema/hash/endpoint check below and the real password check when one exists.
+        if (secret.Length > 0) Assert.DoesNotContain(secret, fileJson, StringComparison.Ordinal);
 
         using var document = JsonDocument.Parse(fileBytes);
         var root = document.RootElement;
@@ -1385,24 +1387,25 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
 
-    private static SqlServerRelationalApiFactory CreateValidateOnlyFactory(
+    private SqlServerRelationalApiFactory CreateValidateOnlyFactory(
         string baseConnectionString,
         string databaseName) =>
         new(
             baseConnectionString,
             databaseName: databaseName,
+            testDatabase: databases[databaseName],
             configurationOverrides: new Dictionary<string, string?>
             {
                 ["DatabaseStartup:Mode"] = "ValidateOnly",
             });
 
-    private static async Task InitializeDatabaseAsync(
+    private async Task InitializeDatabaseAsync(
         string baseConnectionString,
         string databaseName)
     {
         await using var factory = new SqlServerRelationalApiFactory(
             baseConnectionString,
-            databaseName: databaseName);
+            databaseName: databaseName, testDatabase: databases[databaseName]);
         using var client = factory.CreateClient();
         using var live = await client.GetAsync("/health/live");
         Assert.Equal(HttpStatusCode.OK, live.StatusCode);
@@ -1556,8 +1559,13 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
 
     private sealed record MigrationHistoryRow(string MigrationId, string ProductVersion);
 
-    private static string NewDatabaseName(string prefix = "goymen_erp_rcsi") =>
-        $"{prefix}_{Guid.NewGuid():N}";
+    private string NewDatabaseName(string prefix = "goymen_erp_rcsi")
+    {
+        var name = $"{prefix}_{Guid.NewGuid():N}";
+        databases.Add(name, new SqlServerTestDatabase(GetBaseConnectionString(), name,
+            Environment.GetEnvironmentVariable("GOYMEN_ERP_TEST_SQLSERVER_DATA_DIRECTORY")));
+        return name;
+    }
 
     private static string BuildDatabaseConnectionString(
         string baseConnectionString,
@@ -1566,6 +1574,7 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         var builder = new SqlConnectionStringBuilder(baseConnectionString)
         {
             InitialCatalog = databaseName,
+            AttachDBFilename = string.Empty,
         };
         return builder.ConnectionString;
     }
@@ -1603,22 +1612,14 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         Assert.Equal(databaseName, evidence.ObservedDatabase);
     }
 
-    private static async Task CreateDatabaseAsync(
+    private async Task CreateDatabaseAsync(
         string baseConnectionString,
         string databaseName,
         bool rcsiEnabled)
     {
         try
         {
-            await using var connection = await OpenMasterConnectionAsync(baseConnectionString);
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"""
-                CREATE DATABASE [{databaseName}];
-                ALTER DATABASE [{databaseName}]
-                    SET READ_COMMITTED_SNAPSHOT {(rcsiEnabled ? "ON" : "OFF")}
-                    WITH ROLLBACK IMMEDIATE;
-                """;
-            await command.ExecuteNonQueryAsync();
+            await databases[databaseName].CreateAsync(rcsiEnabled);
             ClearDatabasePoolForTest(baseConnectionString, databaseName);
         }
         catch
@@ -1678,20 +1679,11 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         return Assert.IsType<int>(await command.ExecuteScalarAsync());
     }
 
-    private static async Task DropDatabaseAsync(
+    private async Task DropDatabaseAsync(
         string baseConnectionString,
         string databaseName)
     {
-        await using var connection = await OpenMasterConnectionAsync(baseConnectionString);
-        await using var command = connection.CreateCommand();
-        command.CommandText = $"""
-            IF DB_ID(N'{databaseName}') IS NOT NULL
-            BEGIN
-                ALTER DATABASE [{databaseName}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
-                DROP DATABASE [{databaseName}];
-            END;
-            """;
-        await command.ExecuteNonQueryAsync();
+        await databases[databaseName].DropAsync();
         ClearDatabasePoolForTest(baseConnectionString, databaseName);
     }
 
@@ -1701,6 +1693,7 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         var builder = new SqlConnectionStringBuilder(baseConnectionString)
         {
             InitialCatalog = "master",
+            AttachDBFilename = string.Empty,
         };
         var connection = new SqlConnection(builder.ConnectionString);
         await connection.OpenAsync();

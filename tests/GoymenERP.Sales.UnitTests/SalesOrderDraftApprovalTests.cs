@@ -167,7 +167,10 @@ public sealed class SalesOrderDraftApprovalTests
         Assert.Equal(["AddLine", "Approve", "ApproveDiscountExceptions", "ApproveOverDelivery", "ApprovePriceFloorExceptions", "ApproveRemainderChange",
             "Cancel", "CloseByUser", "CloseLine", "ForceClose",
             // SAT-D115: the customer rejection is a mutation entry; IsCustomerRejected and IsOverDeliveryApproved are the reads in the population (queries).
-            "IsCustomerRejected", "IsLineClosed", "IsOverDeliveryApproved", "RecordCustomerAcceptance", "RecordCustomerRejection",
+            "IsCustomerRejected", "IsLineClosed", "IsOverDeliveryApproved",
+            // SAT-D437 (AK-4): KilogramsPerUnitOf and NeedsKilogramsPerUnit are queries; PinKilogramsPerUnit is an approval-only entry.
+            "KilogramsPerUnitOf", "NeedsKilogramsPerUnit",
+            "PinKilogramsPerUnit", "PinMarginCosts", "RecordCustomerAcceptance", "RecordCustomerRejection",
             // SAT-D253 / API-11: so is the source plan save (RequireSourcePlanWritable only reads).
             "RecordSourcePlan", "Reject", "RejectRemainderChange",
             "RequestRemainderChange", "RescheduleDelivery", "ReviseCommercial", "ReviseHeader",
@@ -177,6 +180,10 @@ public sealed class SalesOrderDraftApprovalTests
         var draft = Draft();
         draft.Withdraw(2, Preparer, "SENTETIK", T0);
         var before = (draft.ApprovalState, draft.Version, draft.Revision, draft.Approval, draft.Lines.Count, draft.Lines[0].Commercial);
+        Assert.Throws<InvalidOperationException>(() => draft.PinMarginCosts([]));
+        Assert.Empty(draft.MarginCosts);
+        Assert.Throws<InvalidOperationException>(() => draft.PinKilogramsPerUnit([]));
+        Assert.Empty(draft.KilogramsPerUnitSnapshots);
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.AddLine(3, Line(), T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Submit(3, Preparer, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Approve(3, Approver, T0)));
@@ -494,6 +501,58 @@ public sealed class SalesOrderDraftApprovalTests
         draft.Approve(3, Approver, T0);
         Assert.True(draft.IsCustomerAccepted);
         Assert.Null(draft.CustomerAcceptance);
+    }
+
+    [Theory]
+    [InlineData(true, "cost-kg", true)]     // SAT-D438 / TM1: a piece line pins its cost per kilogram (the named kg unit)
+    [InlineData(true, "order", true)]       // the closed AK-6 path: the piece line's own unit
+    [InlineData(true, "other", false)]      // any other unit is refused
+    [InlineData(true, "cost-kg-unnamed", false)] // a kg cost unit the caller did not name is refused
+    [InlineData(false, "order", true)]      // a kg line pins in its own unit only
+    [InlineData(false, "cost-kg", false)]
+    [InlineData(false, "other", false)]
+    public void SAT_D438_a_margin_cost_is_pinned_in_the_line_unit_or_for_a_piece_line_in_the_named_kilogram_unit(bool pieceLine,
+        string unitCase, bool accepted)
+    {
+        var costKilogram = Guid.Parse("c5ef643e-a6e8-51f3-89f2-8e68b00cb983");
+        var piece = Guid.Parse("5e0cbe45-61cc-541a-834a-366355de36e5");
+        var line = pieceLine ? PieceLine() : Line();
+        var draft = Draft(line);
+        draft.Submit(2, Preparer, T0);
+        draft.Approve(3, Approver, T0);
+        var orderUnit = pieceLine ? piece : KgUnit;
+        var unit = unitCase switch
+        {
+            "cost-kg" or "cost-kg-unnamed" => costKilogram,
+            "order" => orderUnit,
+            _ => Guid.Parse("10000000-0000-4000-8000-000000000438"),
+        };
+        var snapshot = new SalesMarginCostSnapshot(draft.Lines[0].Id, draft.Revision, draft.Lines[0].Product.ProductId, unit,
+            draft.Lines[0].Quantity.Value, Guid.Parse("55555555-5555-4555-8555-555555555555"), 3m, null, "{}", draft.Approval.DecidedAtUtc!.Value);
+        Guid? named = unitCase == "cost-kg-unnamed" ? null : costKilogram;
+
+        if (accepted)
+        {
+            draft.PinMarginCosts([snapshot], named);
+            Assert.Equal(unit, Assert.Single(draft.MarginCosts).UnitId);
+        }
+        else
+        {
+            Assert.Throws<InvalidOperationException>(() => draft.PinMarginCosts([snapshot], named));
+            Assert.Empty(draft.MarginCosts);
+        }
+
+        Assert.Throws<ArgumentException>(() => draft.PinMarginCosts([snapshot], Guid.Empty));
+
+        SalesDraftLineInput PieceLine()
+        {
+            var pieceProfile = new UnitProfileSnapshot(Company, piece, "adet", "count", KgProfile, "4", false, 0, 0, true,
+                new DateOnly(2026, 9, 1), null);
+            var binding = new UnitBindingSnapshot(Company, piece, KgProfile, "4");
+            var product = new ProductSnapshot(Guid.Parse("99999999-9999-4999-8999-999999999999"), "7", "GDC-001", "Sentetik bant", Day,
+                binding, binding, binding);
+            return new SalesDraftLineInput(Guid.NewGuid(), product, pieceProfile, "100", 100m);
+        }
     }
 
     private static SalesDraftHeader Header() => new(Guid.Parse("33333333-3333-4333-8333-333333333333"),

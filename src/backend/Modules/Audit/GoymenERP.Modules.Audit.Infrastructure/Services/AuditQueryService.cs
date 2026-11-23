@@ -27,6 +27,7 @@ internal sealed class AuditQueryService(
         string? correlationId,
         string? entityType,
         string? entityId,
+        string? outcome,
         CancellationToken cancellationToken = default)
     {
         if (!companyContext.IsResolved
@@ -75,6 +76,19 @@ internal sealed class AuditQueryService(
         {
             var normalizedEntityId = entityId.Trim();
             query = query.Where(x => x.EntityId == normalizedEntityId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(outcome))
+        {
+            // F023-5a: only the two stored outcomes are filterable; the match is exact (ordinal), so
+            // "refused" is refused rather than silently widened. Served by the
+            // (CompanyId, Outcome, OccurredAtUtc DESC, Id DESC) index.
+            if (!TryNormalizeOutcome(outcome, out var normalizedOutcome))
+            {
+                return AuditEventQueryResult.InvalidOutcome;
+            }
+
+            query = query.Where(x => x.Outcome == normalizedOutcome);
         }
 
         var events = await query
@@ -155,6 +169,25 @@ internal sealed class AuditQueryService(
         && companyContext.CompanyId == expectedCompanyId
         && currentUser.CanAccessCompany(expectedCompanyId)
         && string.Equals(currentUser.UserId, expectedActorId, StringComparison.Ordinal);
+
+    private static bool TryNormalizeOutcome(string outcome, out string normalizedOutcome)
+    {
+        var trimmed = outcome.Trim();
+        if (string.Equals(trimmed, AuditOutcomes.Succeeded, StringComparison.Ordinal))
+        {
+            normalizedOutcome = AuditOutcomes.Succeeded;
+            return true;
+        }
+
+        if (string.Equals(trimmed, AuditOutcomes.Refused, StringComparison.Ordinal))
+        {
+            normalizedOutcome = AuditOutcomes.Refused;
+            return true;
+        }
+
+        normalizedOutcome = string.Empty;
+        return false;
+    }
 
     private static int NormalizePageSize(int pageSize)
     {

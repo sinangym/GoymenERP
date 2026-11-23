@@ -92,7 +92,8 @@ public sealed class LogisticsOperationsWorkService(
 
         var wanted = lineIds.ToHashSet();
         if (totals is null || totals.Any(total => total is null || !wanted.Contains(total.OrderLineId) || total.UnitId == Guid.Empty
-                || total.Delivered < 0m || total.Delivered > total.Shipped || total.Shipped > total.Loaded || total.Loaded > total.Instructed)
+                || total.Instructed < 0m || total.ApprovedPlanExcess is < 0m || total.Delivered < 0m || total.Delivered > total.Shipped
+                || total.Shipped > total.Loaded || total.Loaded > total.Instructed && total.Loaded - total.Instructed > (total.ApprovedPlanExcess ?? 0m))
             || totals.GroupBy(total => (total.OrderLineId, total.UnitId)).Any(group => group.Count() > 1))
         {
             throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
@@ -114,7 +115,8 @@ public sealed class LogisticsOperationsWorkService(
             items.Add(new LogisticsSalesWorkItemView(item.OrderId, item.DocumentNo, item.LineId, item.LineNo, item.PartyId,
                 names[(item.PartyId, item.CompanyAccountId)], item.ProductId, item.ProductCode, item.ProductName, item.OrderUnitId, item.UnitCode,
                 item.QuantityText, Text(inUnit?.Instructed ?? 0m), Text(inUnit?.Loaded ?? 0m), Text(inUnit?.Shipped ?? 0m),
-                Text(inUnit?.Delivered ?? 0m), item.RequestedDeliveryDate));
+                Text(inUnit?.Delivered ?? 0m), item.RequestedDeliveryDate,
+                inUnit?.ApprovedPlanExcess is { } extra && extra != 0m ? Text(extra) : null));
         }
 
         return new LogisticsSalesWorkPage(LogisticsOperationsWorkSectionsV1.Sales, items, page.NextCursor);

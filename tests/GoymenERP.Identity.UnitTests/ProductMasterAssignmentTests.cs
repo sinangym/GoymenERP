@@ -11,6 +11,7 @@ public sealed class ProductMasterAssignmentTests
     [InlineData(ProductMasterOperation.Activate)]
     [InlineData(ProductMasterOperation.Deactivate)]
     [InlineData(ProductMasterOperation.Reactivate)]
+    [InlineData(ProductMasterOperation.SetCogsClassification)]
     public void AssignmentIsOneExplicitOperationAndRevocationPreservesOriginalDecision(ProductMasterOperation operation)
     {
         var grant = Assignment(operation);
@@ -29,6 +30,7 @@ public sealed class ProductMasterAssignmentTests
     public void UnknownOperationAndEmptyOrNoncanonicalProvenanceFailClosed()
     {
         Assert.Throws<ArgumentException>(() => Assignment((ProductMasterOperation)99));
+        Assert.Throws<ArgumentException>(() => Assignment((ProductMasterOperation)8));
         Assert.Throws<ArgumentException>(() => Assignment(ProductMasterOperation.Read, Guid.Empty));
         Assert.Throws<ArgumentException>(() => Assignment(ProductMasterOperation.Read, reference: " unknown "));
         Assert.Throws<ArgumentException>(() => Assignment(ProductMasterOperation.Read,

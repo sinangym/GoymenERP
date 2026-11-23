@@ -27,6 +27,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         Assert.Equal(InventoryAverageCostReadStatusV1.NoSource, (await AverageCostReadAsync(run, CompanyA, locationA, product)).Status);
 
+        // The known figures cover real company-owned on-hand stock, as the port's completeness guard requires.
+        await SeedCompanyWideStockAsync(run, CompanyA, locationA, product, CompanyOwner, CompanyA, FreeBlock, 7m);
+        await SeedCompanyWideStockAsync(run, CompanyB, locationB, product, CompanyOwner, CompanyB, FreeBlock, 3m);
         await InsertKnownAverageCostAsync(run, CompanyA, locationA, product, 7m, 10.5714m);
         await InsertKnownAverageCostAsync(run, CompanyB, locationB, product, 3m, 99.1234m);
         var unreadableProduct = Guid.NewGuid();

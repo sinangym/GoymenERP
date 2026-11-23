@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Purchasing.Domain.GoodsReceipts;
 using GoymenERP.Modules.Purchasing.Domain.Orders;
 
 namespace GoymenERP.Modules.Purchasing.Application;
@@ -19,9 +20,21 @@ public sealed partial class PurchasingService
         catch (JsonException) { throw new PurchasingServiceException(400, "validation_failed"); }
         var runner = goodsReceipts ?? throw ReceiptUnavailable();
         var envelope = Envelope(scope, metadata, permission!);
+        var piece = await PieceReceiptAsync(scope, permission, orderId, lineId, request, cancellationToken);
+        // AK-3b: the comparison is evaluated once, for a first attempt, with the Ayarlar tolerance in force now. A replay answers
+        // the comparison recorded with the acceptance, so an unusable policy read is only raised when a first attempt needs it.
+        PurchaseGoodsReceiptPieceKilogramsV1? comparison = null;
+        PurchasingServiceException? comparisonFailure = null;
+        if (piece is not null)
+        {
+            try { comparison = piece.Compare(await ReadReceiptPolicyAsync(scope, permission, cancellationToken)); }
+            catch (PurchasingServiceException exception) when (exception.Status != 403) { comparisonFailure = exception; }
+        }
+
         try
         {
-            return await runner.ExecuteAsync(scope.CompanyId, async (participants, token) =>
+            return await runner.ExecuteAsync(scope.CompanyId, new(orderId, lineId, request.ExpectedPurchaseOrderVersion),
+                request.AcceptanceId, envelope, async (participants, token) =>
             {
                 var original = await GuardedAsync(scope, permission,
                     () => participants.ReadOriginalAsync(request.AcceptanceId, envelope, token), token);
@@ -36,15 +49,19 @@ public sealed partial class PurchasingService
                 else
                 {
                     source = await ReceiptSourceAsync(scope, permission, orderId, lineId, token);
+                    if (comparisonFailure is not null) throw comparisonFailure;
                 }
 
                 var purchase = await GuardedAsync(scope, permission, () => participants.StagePurchaseAsync(
                     new(scope.CompanyId, request.AcceptanceId, orderId, lineId, request.ExpectedPurchaseOrderVersion,
-                        source.ProductId, request.ExpectedProductVersion, source.UnitId, request.AcceptedQuantity, request.OccurredAtUtc), envelope, token), token);
+                        source.ProductId, request.ExpectedProductVersion, source.UnitId, request.AcceptedQuantity, request.OccurredAtUtc,
+                        piece is null ? null : request.MeasuredQuantityKg) { PieceKilograms = original is null ? comparison : null },
+                    envelope, token), token);
                 if (purchase is null || purchase.CompanyId != scope.CompanyId || purchase.AcceptanceId != request.AcceptanceId
                     || purchase.PurchaseOrderId != orderId || purchase.PurchaseOrderLineId != lineId
                     || purchase.AcceptedQuantity != request.AcceptedQuantity || !ReceiptVersion(purchase.PurchaseOrderVersion)
-                    || purchase.IsReplay != (original is not null) || string.IsNullOrWhiteSpace(purchase.OriginalCorrelationId))
+                    || purchase.IsReplay != (original is not null) || string.IsNullOrWhiteSpace(purchase.OriginalCorrelationId)
+                    || !PieceReceiptFacts.Describes(piece, purchase.PieceKilograms) || !purchase.IsReplay && purchase.PieceKilograms != comparison)
                 {
                     throw ReceiptSourceInvalid();
                 }
@@ -52,7 +69,8 @@ public sealed partial class PurchasingService
                 PurchaseReceiptStockRequestV1 stockRequest;
                 if (original is not null)
                 {
-                    if (original.PurchaseOrderVersionAfter != purchase.PurchaseOrderVersion) throw ReceiptSourceInvalid();
+                    if (original.PurchaseOrderVersionAfter != purchase.PurchaseOrderVersion || original.PieceCount != piece?.PieceCount)
+                        throw ReceiptSourceInvalid();
                     stockRequest = original;
                 }
                 else
@@ -65,7 +83,7 @@ public sealed partial class PurchasingService
                         source.ProductId, request.ExpectedProductVersion, source.UnitId, request.LotId, request.LabelId,
                         request.LabelCode, request.HeatNumber, request.CoilNumber, PurchaseGoodsReceiptDocumentPolicyV1.RequiredForNewReceipt,
                         facts.OwnerKind, facts.OwnerId, facts.CustodianKind, facts.CustodianId, facts.LocationId,
-                        request.MovementId, request.MeasuredQuantityKg, request.OccurredAtUtc);
+                        request.MovementId, request.MeasuredQuantityKg, request.OccurredAtUtc) { PieceCount = piece?.PieceCount };
                 }
 
                 var inventory = await GuardedAsync(scope, permission,
@@ -81,18 +99,37 @@ public sealed partial class PurchasingService
                     throw ReceiptSourceInvalid();
                 }
 
+                var releases = RequireFutureSupplyReleases(inventory.FutureSupplyReleases);
                 return new PurchaseGoodsReceiptResponseV1(new(scope.CompanyId, request.AcceptanceId, orderId, lineId,
                     purchase.PurchaseOrderVersion, source.ProductId, inventory.ProductVersion, source.UnitId,
                     purchase.AcceptedQuantity, purchase.RemainingQuantity, inventory.LotId, inventory.LabelId,
                     request.LabelCode, inventory.LabelVersion, inventory.MovementId, request.LocationId,
-                    inventory.QuantityKg, stockRequest.InitialBlock, request.OccurredAtUtc), purchase.IsReplay, purchase.OriginalCorrelationId);
+                    inventory.QuantityKg, stockRequest.InitialBlock, request.OccurredAtUtc), purchase.IsReplay, purchase.OriginalCorrelationId)
+                {
+                    FutureSupplyReleases = releases,
+                    // First attempt: the comparison just recorded. Replay: the recorded one (null for an acceptance older than AK-3b).
+                    PieceKilograms = purchase.PieceKilograms,
+                };
             }, token => RequireStillAsync(scope, permission, token), cancellationToken);
         }
         catch (PurchaseAcceptanceParticipantException exception)
         {
+            await RequireStillAsync(scope, permission, cancellationToken);
             throw new PurchasingServiceException(exception.StatusCode, exception.Code);
         }
-        catch (PurchasingStoreException exception) { throw Store(exception); }
+        catch (PurchasingStoreException exception)
+        {
+            await RequireStillAsync(scope, permission, cancellationToken);
+            throw Store(exception);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch
+        {
+            // Host preparation can refuse before any GuardedAsync callback read/stage. Recheck the original command's
+            // authority/company before disclosing that owner/lock failure; never invoke beforeCommit an extra time.
+            await RequireStillAsync(scope, permission, cancellationToken);
+            throw;
+        }
     }
 
     public async Task<PurchaseGoodsReceiptOptionsV1> GetGoodsReceiptOptionsAsync(Guid orderId, Guid lineId,
@@ -107,7 +144,10 @@ public sealed partial class PurchasingService
             || answer.Locations.Any(location => location is null || location.LocationId == Guid.Empty
                 || string.IsNullOrWhiteSpace(location.LocationCode) || string.IsNullOrWhiteSpace(location.LocationName)
                 || string.IsNullOrWhiteSpace(location.SiteName))
-            || answer.Locations.Select(location => location.LocationId).Distinct().Count() != answer.Locations.Count)
+            || answer.Locations.Select(location => location.LocationId).Distinct().Count() != answer.Locations.Count
+            || answer.FutureSupply is not { } future || future.CompanyId != scope.CompanyId
+            || future.PurchaseOrderId != orderId || future.PurchaseOrderGeneralLineId != source.PurchaseOrderGeneralLineId
+            || future.UnitId != source.UnitId || !ReceiptNonNegativeQuantity(future.ActiveAllocatedQuantity))
         {
             throw ReceiptSourceInvalid();
         }
@@ -203,8 +243,78 @@ public sealed partial class PurchasingService
             ?? throw new PurchasingServiceException(404, "not_found");
         if (stored.Order.Status != PurchaseOrderStatus.Approved) throw new PurchasingServiceException(409, PurchaseAcceptanceParticipantCodes.OrderStateConflict);
         return new(scope.CompanyId, orderId, lineId, stored.Order.Version.ToString(CultureInfo.InvariantCulture),
-            line.ProductId, VersionOf(stored.ProductVersionsByLineId, lineId), line.UnitId, stored.EffectiveOn);
+            line.ProductId, VersionOf(stored.ProductVersionsByLineId, lineId), line.UnitId, stored.EffectiveOn)
+        {
+            PurchaseOrderGeneralLineId = line.Kind switch
+            {
+                PurchaseOrderLineKind.General when line.ParentLineId is null => line.Id,
+                PurchaseOrderLineKind.Technical when line.ParentLineId is { } parent && parent != Guid.Empty => parent,
+                _ => throw ReceiptSourceInvalid(),
+            },
+        };
     }
+
+    /// <summary>
+    /// AK-3 (KLN-D119, BS-16/BS-17, golden TA4): the piece facts of a receipt on a piece-unit line, or null on a kilogram line. The
+    /// accepted quantity must be a whole piece count; the line (a technical slice reads its general line) must carry the theoretical
+    /// kg per piece recorded at approval (fail-closed 409 otherwise). The theoretical kilograms (pieces × kg/piece, URN-D9) are
+    /// compared with the weighed kilograms against the Ayarlar tolerance by <see cref="PieceReceiptFacts.Compare"/>; the outcome is
+    /// a warning, never a block, and the cost uses the weighed kilograms (ALS-D119).
+    /// </summary>
+    private async Task<PieceReceiptFacts?> PieceReceiptAsync(Scope scope, string? permission, Guid orderId, Guid lineId,
+        RecordPurchaseGoodsReceiptV1 request, CancellationToken cancellationToken)
+    {
+        if (orderId == Guid.Empty || lineId == Guid.Empty) return null;
+        var stored = await GuardedAsync(scope, permission, () => store.FindOrderAsync(orderId, cancellationToken), cancellationToken);
+        var line = stored?.Order.Lines.SingleOrDefault(candidate => candidate.Id == lineId);
+        if (stored is null || line is null || line.Quantity.Unit != QuantityUnit.Piece) return null;
+        return PieceReceiptFacts.Of(stored.Order, line, request.AcceptedQuantity, request.MeasuredQuantityKg, "acceptedQuantity");
+    }
+
+    /// <summary>
+    /// AK-3/AK-3b: one piece receipt's own facts (single receipt and each bulk-receipt label share them): whole pieces, the kg per
+    /// piece recorded on the general line at approval, the theoretical kilograms and the weighed kilograms. No tolerance is read here.
+    /// </summary>
+    private sealed record PieceReceiptFacts(int PieceCount, decimal KilogramsPerUnit, decimal TheoreticalKg, decimal MeasuredKg)
+    {
+        public static PieceReceiptFacts Of(PurchaseOrder order, PurchaseOrderLine line, string acceptedQuantity, string measuredQuantityKg,
+            string field)
+        {
+            var snapshot = KilogramsPerUnitOf(order, line);
+            var pieces = decimal.Parse(acceptedQuantity, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
+            if (decimal.Truncate(pieces) != pieces || pieces > int.MaxValue)
+                throw new PurchasingServiceException(400, PurchaseGoodsReceiptCodesV1.PieceCountInvalid, [new(field, PurchaseGoodsReceiptCodesV1.PieceCountInvalid)]);
+            var measured = decimal.Parse(measuredQuantityKg, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
+            var theoretical = PurchasePieceKilograms.TheoreticalKilograms(pieces, snapshot);
+            // Golden K15: a theoretical kg that rounds to zero (a tiny kg/unit over few pieces) admits no comparison; refuse with
+            // the missing-theoretical-kg problem instead of letting the variance check throw (K3-B P3-1).
+            if (theoretical <= 0m)
+                throw new PurchasingServiceException(409, PurchaseGoodsReceiptCodesV1.TheoreticalKilogramsMissing,
+                    [new(field, PurchaseGoodsReceiptCodesV1.TheoreticalKilogramsMissing)]);
+            return new((int)pieces, snapshot, theoretical, measured);
+        }
+
+        /// <summary>The kg per piece recorded at approval on the line's general line; a piece line without it takes no receipt (409).</summary>
+        public static decimal KilogramsPerUnitOf(PurchaseOrder order, PurchaseOrderLine line)
+        {
+            var general = line.Kind == PurchaseOrderLineKind.General ? line
+                : order.Lines.SingleOrDefault(candidate => candidate.Id == line.ParentLineId) ?? throw ReceiptSourceInvalid();
+            return (general.TheoreticalKilograms
+                ?? throw new PurchasingServiceException(409, PurchaseGoodsReceiptCodesV1.TheoreticalKilogramsMissing)).KilogramsPerUnit;
+        }
+
+        /// <summary>A recorded comparison belongs to this receipt: same pieces and weighed kg; a kilogram line has none.</summary>
+        public static bool Describes(PieceReceiptFacts? facts, PurchaseGoodsReceiptPieceKilogramsV1? recorded) => recorded is null
+            || facts is not null && recorded.PieceCount == facts.PieceCount && recorded.MeasuredQuantityKg == Exact(facts.MeasuredKg);
+
+        /// <summary>BS-16/BS-17 (golden TA4): weighed against theoretical under the Ayarlar tolerance read by the caller.</summary>
+        public PurchaseGoodsReceiptPieceKilogramsV1 Compare(PurchaseGoodsReceiptPolicyV1 policy) => new(PieceCount, Exact(KilogramsPerUnit),
+            Exact(TheoreticalKg), Exact(MeasuredKg), Exact(MeasuredKg - TheoreticalKg),
+            GoodsReceiptKgVariance.Evaluate(TheoreticalKg, MeasuredKg, policy.KgTolerancePercent).ToString(),
+            policy.KgTolerancePercent is { } tolerance ? Exact(tolerance) : null);
+    }
+
+    private static string Exact(decimal value) => PurchaseAcceptanceParticipantContractV1.FormatQuantity(value);
 
     private static void RequireOriginalReceipt(Guid companyId, Guid orderId, Guid lineId, RecordPurchaseGoodsReceiptV1 request,
         PurchaseReceiptStockRequestV1 original)
@@ -233,6 +343,30 @@ public sealed partial class PurchasingService
             throw ReceiptSourceInvalid();
         }
     }
+
+    /// <summary>
+    /// KLN-D94: the released future allocations are owner facts from Inventory's conversion in the same transaction. A malformed
+    /// list is not shown as a partial warning; it fails closed like any other inconsistent receipt source (the receipt rolls back).
+    /// </summary>
+    private static IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1> RequireFutureSupplyReleases(
+        IReadOnlyList<PurchaseReceiptFutureSupplyReleaseV1>? releases)
+    {
+        if (releases is null || releases.Count == 0) return [];
+        var seen = new HashSet<Guid>();
+        foreach (var release in releases)
+        {
+            if (release is null || release.FutureAllocationId == Guid.Empty || !seen.Add(release.FutureAllocationId)
+                || !ReceiptPositiveQuantity(release.ReleasedQuantity)
+                || release.FailureCode is null || !PurchaseReceiptFutureSupplyReleaseCodesV1.All.Contains(release.FailureCode))
+            {
+                throw ReceiptSourceInvalid();
+            }
+        }
+        return releases.ToArray();
+    }
+
+    private static bool ReceiptPositiveQuantity(string? value) => value is not null && value == value.Trim()
+        && decimal.TryParse(value, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var quantity) && quantity > 0m;
 
     private static bool ReceiptVersion(string value) => long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var version)
         && version > 0 && version.ToString(CultureInfo.InvariantCulture) == value;

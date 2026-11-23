@@ -198,14 +198,10 @@ public sealed record SalesOrderDraftLinePricingResponse(string Version, IReadOnl
 public enum SalesMarginDisclosure { Visible, Withheld }
 
 /// <summary>
-/// SAT-D247 / SAT-D259 / SAT-D262…D267 (S-05): the line margins of the draft. <c>Withheld</c> ⇒ <c>costBasis</c>, <c>kind</c>
-/// and <c>lines</c> are null. <c>Visible</c> ⇒ <c>costBasis</c> = <c>PurchaseCostOnly</c> (the margin is the KDV hariç net sale
-/// after discount and before the maturity surcharge — the vade farkı is left out, SAT-D275 — minus the purchase cost only — no
-/// freight, overhead or financing; the unit cost is the company-wide, all-warehouse weighted
-/// moving-average purchase cost that Stok supplies through its versioned read port, never a manual entry — SAT-D272, orders
-/// carry no warehouse), <c>kind</c> = <c>Preview</c> (an estimate on the draft,
-/// not a booked result) and one entry per line. Until the Inventory cost source exists every line is <c>Unavailable</c> with
-/// <c>CostSourceMissing</c> (SAT-D265 (5)): an unknown cost is never a margin of zero.
+/// SAT-D250: withheld means every other field is null. The historical V1 costBasis literal PurchaseCostOnly is retained
+/// for wire compatibility; URT-D67 now includes finalized production cost in the Inventory-owned average. Neither Sales
+/// nor the UI computes that average. Preview uses a live read; Snapshot uses immutable internal-approval cost evidence.
+/// Missing currency/conversion/cost and the separate SAT-D265(5) golden acceptance are explicit unavailable reasons.
 /// </summary>
 public sealed record SalesDraftMarginV1(SalesMarginDisclosure Disclosure, string? CostBasis, string? Kind,
     IReadOnlyList<SalesDraftLineMarginV1>? Lines);
@@ -215,6 +211,7 @@ public static class SalesDraftMarginTextsV1
 {
     public const string PurchaseCostOnly = "PurchaseCostOnly";
     public const string Preview = "Preview";
+    public const string Snapshot = "Snapshot";
 }
 
 /// <summary>
@@ -348,7 +345,24 @@ public sealed record SalesOrderDraftLineDetail(
     string? OrderUnitCode = null,
     // SAT-D167 (EK24): the revision a line revision added this line in ("Rev.N"); omitted for a line that came with the create.
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? AddedInRevision = null);
+    string? AddedInRevision = null,
+    // SAT-D437 (AK-4): the theoretical kg per order unit pinned on a piece line at its internal approval (invariant text, never
+    // re-read from the card); omitted for a kg line, a line not yet approved and an order approved before AK-4 (no back-fill).
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? TheoreticalKilogramsPerUnit = null,
+    // SAT-D474 / SAT-D477: present only when the pinned figure was taken from the card's ENTERED direction because the kg/m table
+    // holds the profile measures in both directions with different values — the approver's warning, kept on the document.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    SalesKilogramsPerUnitTableConflictV1? TheoreticalKilogramsPerUnitConflict = null);
+
+/// <summary>
+/// SAT-D474 / SAT-D477: the kg/m table conflict a pinned kg/unit was resolved from. <c>Selection</c> is
+/// <c>weight-table:entered-orientation</c>; <c>SelectedKilogramsPerUnit</c> is the pinned figure, <c>OtherKilogramsPerUnit</c> the
+/// reversed direction's, <c>DifferenceKilogramsPerUnit</c> = other − selected (signed); the two kg/m values are the table's. All are
+/// invariant decimal text. The table must be corrected; the approved document does not move when it is (SAT-D437).
+/// </summary>
+public sealed record SalesKilogramsPerUnitTableConflictV1(string Selection, string SelectedKilogramsPerUnit, string OtherKilogramsPerUnit,
+    string DifferenceKilogramsPerUnit, string SelectedKgPerMetre, string OtherKgPerMetre);
 
 /// <summary>
 /// D2 (Sinan 5749046401): <c>IsOwnDraft</c> is the RELATIONSHIP, computed on the server for the caller — "the caller is
@@ -424,6 +438,9 @@ public static class SalesDraftApiV1
     // AT-018 / AT-021: the line pricing read (price read) and the line's list-price references (price write). The detail
     // wire is unchanged: pricing lives on its own route so the S-04 decoder (exact members) keeps working.
     public const string LinePricingPath = "/api/v1/sales/drafts/{id}/line-pricing";
+
+    /// <summary>SAT-D436 (AK-5): the order's kg prices and realization (draft read and price read).</summary>
+    public const string KilogramPricesPath = "/api/v1/sales/drafts/{id}/kilogram-prices";
     public const string PriceReferencesPath = "/api/v1/sales/drafts/{id}/lines/{lineId}/price-references";
 
     // DEC-SAL-002 / AT-023: the quantity revision (200 with the detail after the change; same-key replay 200 +
@@ -457,6 +474,9 @@ public static class SalesDraftApiV1
 
     // MOD-01 / API-06: the read-only customer risk check (DEC-FIN-007 gross risk against the credit limit), under the draft read.
     public const string RiskCheckPath = "/api/v1/sales/drafts/{id}/risk-check";
+
+    // F-018 / plan S1: the order's recorded limit warnings at submit / approve (read-only, no amount), under the draft read.
+    public const string RiskWarningsPath = "/api/v1/sales/drafts/{id}/risk-warnings";
 
     // MOD-07: the order's current revision as a PDF attachment (application/pdf), under the draft-read authority; prices only
     // under the price read (otherwise the price-less variant). Rendered on request, stored nowhere.

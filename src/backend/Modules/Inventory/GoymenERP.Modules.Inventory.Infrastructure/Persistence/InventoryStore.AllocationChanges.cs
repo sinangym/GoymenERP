@@ -51,6 +51,7 @@ public sealed partial class InventoryStore
             || !TryVersion(request.ExpectedTargetLabelVersion, out var expectedTargetLabelVersion)
             || string.IsNullOrWhiteSpace(request.ProductVersion) || request.ProductVersion.Length > 128
             || string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 1000
+            || request.PieceCount is <= 0
             || !TryQuantity(request.QuantityKg, out var quantity))
         {
             throw AllocationError(400, InventoryAllocationCodesV1.ValidationFailed);
@@ -58,7 +59,7 @@ public sealed partial class InventoryStore
 
         var companyId = companyContext.CompanyId;
         var keyHash = AllocationKeyHash(metadata.IdempotencyKey);
-        var payloadHash = AllocationPayloadHash(new
+        var payloadHash = WithPieces(AllocationPayloadHash(new
         {
             allocationId,
             expectedVersion,
@@ -71,7 +72,7 @@ public sealed partial class InventoryStore
             quantityKg = quantity.ToString(),
             request.Reason,
             request.NewAllocationId,
-        });
+        }), request.PieceCount);
         if (await FindChangeReplayAsync(keyHash, payloadHash, metadata.ActorId, cancellationToken) is { } replay)
         {
             return replay;
@@ -101,8 +102,7 @@ public sealed partial class InventoryStore
                 ?? throw AllocationError(404, InventoryAllocationCodesV1.InvalidReference)
             : sourceLabel;
 
-        var allocation = StockAllocation.Restore(row.Id, PositionOf(row, sourceLabel, companyId),
-            Kilograms.Positive(row.AllocatedKg), Kilograms.Of(row.RemainingKg), row.Version, (StockAllocationStatus)row.Status);
+        var allocation = Restore(row, PositionOf(row, sourceLabel, companyId));
         if (allocation.Version != expectedVersion)
         {
             throw AllocationError(409, InventoryAllocationCodesV1.AllocationVersionConflict);
@@ -118,12 +118,15 @@ public sealed partial class InventoryStore
             throw AllocationError(409, InventoryAllocationCodesV1.LabelVersionConflict);
         }
 
-        if (targetLabel.ProductId != request.ProductId)
+        // KLN-D39: resizing a substitute ("muadil") allocation keeps its verified label; a move always targets a label of
+        // the line's own product (a new substitute is a new confirmed create, re-verified against the tolerance).
+        if (targetLabel.ProductId != request.ProductId && !(row.IsSubstitute && !isMove))
         {
             throw AllocationError(422, InventoryAllocationCodesV1.InvalidReference);
         }
 
-        if (!isMove && quantity.Value == allocation.Remaining.Value)
+        if (!isMove && quantity.Value == allocation.Remaining.Value
+            && request.PieceCount == allocation.RemainingPieces?.Value)
         {
             throw AllocationError(422, InventoryAllocationCodesV1.ChangeUnchanged);
         }
@@ -135,9 +138,11 @@ public sealed partial class InventoryStore
         AllocationChangeRow history;
         if (isMove)
         {
-            var target = await ReservableTargetAsync(targetLabel, companyId, quantity, cancellationToken);
+            var (target, targetPieces) = await ReservableTargetAsync(targetLabel, companyId, quantity, request.PieceCount,
+                allocation, cancellationToken);
             allocation.Release(expectedVersion);
             row.RemainingKg = allocation.Remaining.Value;
+            row.RemainingPieces = allocation.RemainingPieces?.Value;
             row.Status = (int)allocation.Status;
             row.Version = allocation.Version;
             row.UpdatedAtUtc = now;
@@ -150,7 +155,7 @@ public sealed partial class InventoryStore
                 new StockOwner((StockPartyKind)target.OwnerKind, target.OwnerId),
                 new StockCustodian((StockPartyKind)target.CustodianKind, target.CustodianId),
                 target.LocationId, identity, BlockState.Free);
-            var created = StockAllocation.Create(request.NewAllocationId!.Value, position, quantity);
+            var created = StockAllocation.Create(request.NewAllocationId!.Value, position, quantity, targetPieces);
             var next = new AllocationRow
             {
                 Id = created.Id,
@@ -171,6 +176,8 @@ public sealed partial class InventoryStore
                 ReservedUntilUtc = row.ReservedUntilUtc,
                 AllocatedKg = created.Allocated.Value,
                 RemainingKg = created.Remaining.Value,
+                AllocatedPieces = created.AllocatedPieces?.Value,
+                RemainingPieces = created.RemainingPieces?.Value,
                 Status = (int)created.Status,
                 Version = created.Version,
                 CreatedAtUtc = now,
@@ -200,9 +207,11 @@ public sealed partial class InventoryStore
                     cancellationToken);
             }
 
+            // KLN-D119: the pieces the allocation holds afterwards are a reservation of its own position again.
+            var heldPieces = await ResizedPiecesAsync(row, allocation, quantity, request.PieceCount, cancellationToken);
             try
             {
-                allocation.Resize(expectedVersion, quantity);
+                allocation.Resize(expectedVersion, quantity, heldPieces);
             }
             catch (StockAllocationException exception)
             {
@@ -211,12 +220,16 @@ public sealed partial class InventoryStore
                     StockAllocationFailure.VersionConflict => AllocationError(409, InventoryAllocationCodesV1.AllocationVersionConflict),
                     StockAllocationFailure.StateConflict => AllocationError(409, InventoryAllocationCodesV1.AllocationStateConflict),
                     StockAllocationFailure.Unchanged => AllocationError(422, InventoryAllocationCodesV1.ChangeUnchanged),
+                    StockAllocationFailure.PiecesRequired or StockAllocationFailure.PiecesNotTracked
+                        or StockAllocationFailure.PiecesInsufficient or StockAllocationFailure.PiecesInvalid => PieceError(exception),
                     _ => new InvalidOperationException("Tahsis değişikliği reddi eşlenemedi.", exception),
                 };
             }
 
             row.AllocatedKg = allocation.Allocated.Value;
             row.RemainingKg = allocation.Remaining.Value;
+            row.AllocatedPieces = allocation.AllocatedPieces?.Value;
+            row.RemainingPieces = allocation.RemainingPieces?.Value;
             row.Version = allocation.Version;
             row.UpdatedAtUtc = now;
             BumpLabel(sourceLabel, now);
@@ -263,10 +276,12 @@ public sealed partial class InventoryStore
     }
 
     /// <summary>The single Free position of the target label, owned and held by this company, with room for the quantity.</summary>
-    private async Task<BalanceRow> ReservableTargetAsync(
+    private async Task<(BalanceRow Target, PieceCount? Pieces)> ReservableTargetAsync(
         LabelRow label,
         Guid companyId,
         Kilograms quantity,
+        int? requestedPieces,
+        StockAllocation moved,
         CancellationToken cancellationToken)
     {
         var freeRows = await dbContext.Balances
@@ -286,14 +301,49 @@ public sealed partial class InventoryStore
             throw AllocationError(422, InventoryAllocationCodesV1.OwnerNotCompany);
         }
 
-        var activeAllocated = await ActiveAllocatedAtAsync(target.LabelId, target.OwnerKind, target.OwnerId,
-            target.CustodianKind, target.CustodianId, target.LocationId, exceptAllocationId: null, cancellationToken);
-        if (quantity.Value > target.QuantityKg - activeAllocated)
+        var active = await ActiveAllocatedAtAsync(target, exceptAllocationId: null, cancellationToken);
+        if (quantity.Value > target.QuantityKg - active.Kilograms)
         {
             throw AllocationError(409, InventoryAllocationCodesV1.InsufficientFreeStock);
         }
 
-        return target;
+        return (target, ReservablePieces(quantity, requestedPieces, target, active, moved));
+    }
+
+    /// <summary>
+    /// KLN-D119: the pieces an in-place change leaves on the allocation. An allocation that holds pieces re-reserves them
+    /// against its own Free position (every other active reservation deducted); one without pieces never gains them.
+    /// </summary>
+    private async Task<PieceCount?> ResizedPiecesAsync(AllocationRow row, StockAllocation allocation, Kilograms quantity,
+        int? requestedPieces, CancellationToken cancellationToken)
+    {
+        if (!allocation.TracksPieces)
+        {
+            return requestedPieces is null
+                ? null
+                : throw AllocationError(422, InventoryAllocationCodesV1.PieceCountNotTracked);
+        }
+
+        if (requestedPieces is null)
+        {
+            throw AllocationError(422, InventoryAllocationCodesV1.PieceCountRequired);
+        }
+
+        var free = await dbContext.Balances
+            .Where(candidate => candidate.LabelId == row.LabelId && candidate.Block == (int)BlockState.Free
+                && candidate.OwnerKind == row.OwnerKind && candidate.OwnerId == row.OwnerId
+                && candidate.CustodianKind == row.CustodianKind && candidate.CustodianId == row.CustodianId
+                && candidate.LocationId == row.LocationId)
+            .ToListAsync(cancellationToken);
+        if (free.Count != 1 || free[0].PieceCount is null)
+        {
+            // The allocation holds pieces its position no longer counts: nothing can be re-stated safely.
+            throw AllocationError(free.Count > 1 ? 503 : 409,
+                free.Count > 1 ? InventoryAllocationCodesV1.InvalidReference : InventoryAllocationCodesV1.InsufficientFreePieces);
+        }
+
+        var others = await ActiveAllocatedAtAsync(free[0], row.Id, cancellationToken);
+        return ReservablePieces(quantity, requestedPieces, free[0], others);
     }
 
     /// <summary>An in-place increase: the allocation's own Free position must still be the company's and cover the extra kg.</summary>
@@ -321,8 +371,8 @@ public sealed partial class InventoryStore
         }
 
         var physical = free.Count == 0 ? 0m : free[0].QuantityKg;
-        var others = await ActiveAllocatedAtAsync(row.LabelId, row.OwnerKind, row.OwnerId, row.CustodianKind,
-            row.CustodianId, row.LocationId, row.Id, cancellationToken);
+        var others = (await ActiveAllocatedAtAsync(row.LabelId, row.OwnerKind, row.OwnerId, row.CustodianKind,
+            row.CustodianId, row.LocationId, row.Id, cancellationToken)).Kilograms;
         // The position must hold this allocation's current remainder, every other active remainder AND the increase.
         if (row.RemainingKg + increase > physical - others)
         {
@@ -330,7 +380,7 @@ public sealed partial class InventoryStore
         }
     }
 
-    private async Task<decimal> ActiveAllocatedAtAsync(
+    private async Task<ActiveAllocated> ActiveAllocatedAtAsync(
         Guid labelId,
         int ownerKind,
         Guid ownerId,
@@ -338,15 +388,20 @@ public sealed partial class InventoryStore
         Guid custodianId,
         Guid locationId,
         Guid? exceptAllocationId,
-        CancellationToken cancellationToken) =>
-        await dbContext.Allocations.AsNoTracking()
+        CancellationToken cancellationToken)
+    {
+        var held = await dbContext.Allocations.AsNoTracking()
             .Where(candidate => candidate.LabelId == labelId
                 && candidate.OwnerKind == ownerKind && candidate.OwnerId == ownerId
                 && candidate.CustodianKind == custodianKind && candidate.CustodianId == custodianId
                 && candidate.LocationId == locationId && candidate.Block == (int)BlockState.Free
                 && candidate.Status == (int)StockAllocationStatus.Active
                 && (exceptAllocationId == null || candidate.Id != exceptAllocationId))
-            .SumAsync(candidate => (decimal?)candidate.RemainingKg, cancellationToken) ?? 0m;
+            .Select(candidate => new { candidate.RemainingKg, candidate.RemainingPieces })
+            .ToListAsync(cancellationToken);
+        return new ActiveAllocated(held.Sum(candidate => candidate.RemainingKg),
+            held.Sum(candidate => candidate.RemainingPieces ?? 0), held.All(candidate => candidate.RemainingPieces is not null));
+    }
 
     private static StockPosition PositionOf(AllocationRow row, LabelRow label, Guid companyId) =>
         new StockPosition(companyId,

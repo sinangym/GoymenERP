@@ -58,6 +58,8 @@ public sealed record InventoryGoodsReceiptSourceV1(
 /// tolerance, quality or initial block policy is inferred here. Owner, custodian, location and block
 /// must be supplied from already-authorized server-side facts. <paramref name="PurchaseOrderVersionAfter"/>
 /// is Purchasing's returned post-stage version, never the host request's pre-stage expected version.
+/// <c>PieceCount</c> (KLN-D119, AK-2) is the received piece count of a piece-tracking product: when given (at least one) the
+/// new label tracks pieces from its first stock; when omitted (every caller before AK-3) the label is kg-only as before.
 /// </summary>
 public sealed record InventoryGoodsReceiptRequestV1(
     Guid CompanyId,
@@ -82,7 +84,8 @@ public sealed record InventoryGoodsReceiptRequestV1(
     BlockState InitialBlock,
     Guid MovementId,
     string QuantityKg,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    int? PieceCount = null);
 
 public sealed record InventoryGoodsReceiptResultV1(
     Guid CompanyId,
@@ -126,7 +129,7 @@ public static class InventoryGoodsReceiptCodesV1
 
 public sealed class InventoryGoodsReceiptException : Exception
 {
-    private InventoryGoodsReceiptException(int status, string code) : base(code)
+    private InventoryGoodsReceiptException(int status, string code, Exception? innerException = null) : base(code, innerException)
     {
         Status = status;
         Code = code;
@@ -135,9 +138,9 @@ public sealed class InventoryGoodsReceiptException : Exception
     public int Status { get; }
     public string Code { get; }
 
-    public static InventoryGoodsReceiptException Refused(int status, string code) =>
+    public static InventoryGoodsReceiptException Refused(int status, string code, Exception? innerException = null) =>
         InventoryGoodsReceiptCodesV1.IsDefined(status, code)
-            ? new(status, code)
+            ? new(status, code, innerException)
             : throw new InvalidOperationException("Inventory goods-receipt refusal is outside its closed contract.");
 }
 
