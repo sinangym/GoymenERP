@@ -9,6 +9,7 @@
  * route.
  */
 
+import { ACCOUNTING_INBOX_KINDS } from './inboxKinds/accounting'
 import { FINANCE_INBOX_KINDS } from './inboxKinds/finance'
 import { IDENTITY_INBOX_KINDS } from './inboxKinds/identity'
 import { INVENTORY_INBOX_KINDS } from './inboxKinds/inventory'
@@ -27,6 +28,7 @@ export const WORK_INBOX_KINDS: readonly WorkInboxKind[] = [
   ...MANUFACTURING_INBOX_KINDS,
   ...PURCHASING_INBOX_KINDS,
   ...FINANCE_INBOX_KINDS,
+  ...ACCOUNTING_INBOX_KINDS,
   ...INVENTORY_INBOX_KINDS,
   ...IDENTITY_INBOX_KINDS,
   ...SETTINGS_INBOX_KINDS,

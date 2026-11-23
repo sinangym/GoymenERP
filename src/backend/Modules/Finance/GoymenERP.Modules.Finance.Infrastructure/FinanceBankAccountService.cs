@@ -77,8 +77,8 @@ public sealed class FinanceBankAccountService(
     public const string ProposeIbanChangeCommand = "finance.bank-account.iban-change.propose";
     public const string ApproveIbanChangeCommand = "finance.bank-account.iban-change.approve";
     private const string EntityType = "Finance.BankAccount";
-    private const int Proposed = 1;
-    private const int Approved = 2;
+    internal const int Proposed = 1;
+    internal const int Approved = 2;
     private const int IdentityMaximumLength = 128;
     private const int DisplayNameMaximumLength = 200;
 

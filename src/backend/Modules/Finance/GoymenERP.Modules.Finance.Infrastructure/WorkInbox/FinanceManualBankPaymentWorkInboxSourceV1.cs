@@ -8,8 +8,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// <summary>
 /// W1-A (AI-D31, AI-D32, YOL-D18): the R47 manual outgoing bank payments waiting for approval, as Finance lists them for
 /// the Work inbox. A payment waits while its status is Draft (the approve command accepts only a draft); it is approved on
-/// the payment's own screen by a holder of <c>finance.manual-bank-payment.approve</c> other than the preparer (the inbox
-/// decides nothing). Every draft of the company is returned, the caller's own included: Work hides a maker's own item.
+/// the payment's own screen by a holder of <c>finance.manual-bank-payment.approve</c> who neither prepared nor revised the
+/// draft (FNS-D118: the approve command refuses the preparer and everyone whose draft save succeeded; the first preparer is
+/// the item's maker, the other revisers are its excluded deciders). The inbox decides nothing. Every draft of the company is returned, the caller's own included: Work hides a maker's own item.
 /// <para>
 /// Finance holds no approval matrix, threshold or limit for this payment (R47: every payment needs one approval), so the
 /// one rule carries the stored amount as the actual value and nothing else. Finance stores the currency identity, not its
@@ -49,6 +50,7 @@ internal sealed class FinanceManualBankPaymentWorkInboxSourceV1(
 
         List<ManualBankPaymentRow> drafts;
         Dictionary<Guid, string> banks;
+        IReadOnlyDictionary<Guid, IReadOnlyList<string>>? revisers;
         try
         {
             drafts = await dbContext.ManualBankPayments.AsNoTracking()
@@ -60,6 +62,8 @@ internal sealed class FinanceManualBankPaymentWorkInboxSourceV1(
             banks = await dbContext.BankAccounts.AsNoTracking()
                 .Where(row => row.CompanyId == context.CompanyId && bankIds.Contains(row.Id))
                 .ToDictionaryAsync(row => row.Id, row => row.DisplayName, cancellationToken);
+            revisers = await FinanceDraftRevisers.ManualBankPaymentsAsync(dbContext, context.CompanyId,
+                drafts.Take(maxCount).Select(row => row.Id).ToArray(), cancellationToken);
         }
         catch (Exception) when (!cancellationToken.IsCancellationRequested)
         {
@@ -75,7 +79,7 @@ internal sealed class FinanceManualBankPaymentWorkInboxSourceV1(
         var items = new List<WorkInboxItemV1>(Math.Min(drafts.Count, maxCount));
         foreach (var row in drafts.Take(maxCount))
         {
-            if (!TryItem(row, banks, out var item))
+            if (revisers is null || !TryItem(row, banks, revisers, out var item))
             {
                 // A record Finance cannot read as its own invariants say: unavailable, never a partial list.
                 return WorkInboxSourceResultV1.Unavailable();
@@ -87,13 +91,15 @@ internal sealed class FinanceManualBankPaymentWorkInboxSourceV1(
         return WorkInboxSourceResultV1.Found(context.CompanyId, items, drafts.Count > maxCount);
     }
 
-    private static bool TryItem(ManualBankPaymentRow row, IReadOnlyDictionary<Guid, string> banks, out WorkInboxItemV1 item)
+    private static bool TryItem(ManualBankPaymentRow row, IReadOnlyDictionary<Guid, string> banks,
+        IReadOnlyDictionary<Guid, IReadOnlyList<string>> revisers, out WorkInboxItemV1 item)
     {
         item = null!;
         if (row.Id == Guid.Empty || row.CurrencyId == Guid.Empty || row.PartyId == Guid.Empty
             || row.CompanyAccountId == Guid.Empty || row.TreasuryAccountId == Guid.Empty
             || string.IsNullOrWhiteSpace(row.PreparedBy)
-            || !FinanceWorkInboxFence.TryAmount(row.AmountText, out var amount))
+            || !FinanceWorkInboxFence.TryAmount(row.AmountText, out var amount)
+            || FinanceDraftRevisers.ExcludedBesides(revisers, row.Id, row.PreparedBy) is not { } excluded)
         {
             return false;
         }
@@ -122,7 +128,7 @@ internal sealed class FinanceManualBankPaymentWorkInboxSourceV1(
         item = new WorkInboxItemV1(ModuleName, KindName, row.Id, label, row.PreparedAtUtc.ToUniversalTime(),
             FinanceWorkInboxFence.Link(ScreenPath, row.Id), row.PreparedBy,
             [new WorkApprovalRuleResultV1(ApprovalRequiredRule, null, WorkInboxRulesV1.Decimal(amount), null, null)],
-            references);
+            references, excluded.Count == 0 ? null : excluded);
         return true;
     }
 

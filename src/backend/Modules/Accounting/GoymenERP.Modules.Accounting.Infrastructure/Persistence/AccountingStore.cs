@@ -385,11 +385,16 @@ public sealed partial class AccountingStore(
                 throw Refused(NormalJournalDraftStoreCodesV1.NotPending, "Normal fiş taslağı artık onay beklemiyor.");
             }
 
-            // Q9 is credit-specific. The generic normal journal approval policy remains unchanged.
-            if (row.PreparedByUserId == approvedByUserId && await dbContext.CreditMovementProposals.AsNoTracking()
-                    .AnyAsync(x => x.Id == row.SourceId, cancellationToken))
-                throw Refused(NormalJournalDraftStoreCodesV1.CreditSelfApproval,
-                    "Kredi fişini hazırlayan kişi aynı fişi onaylayamaz.");
+            // ROL-D14 (maker ≠ checker, locked): whoever prepared the draft may not approve it. A credit journal keeps its
+            // Q9 code; every other normal draft answers the generic self-approval code. Both are a 403 before any posting.
+            if (row.PreparedByUserId == approvedByUserId)
+            {
+                if (await dbContext.CreditMovementProposals.AsNoTracking().AnyAsync(x => x.Id == row.SourceId, cancellationToken))
+                    throw Refused(NormalJournalDraftStoreCodesV1.CreditSelfApproval,
+                        "Kredi fişini hazırlayan kişi aynı fişi onaylayamaz.");
+                throw Refused(NormalJournalDraftStoreCodesV1.SelfApproval,
+                    "Normal fiş taslağını hazırlayan kişi aynı taslağı onaylayamaz.");
+            }
             await freshAuthorityFence(cancellationToken);
 
             var lineRows = await dbContext.NormalJournalDraftLines

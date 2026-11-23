@@ -769,7 +769,8 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
                 journalId: snapshot?.Id,
                 reverseLines: reverseLines),
             1,
-            run.Actor,
+            // ROL-D14: the draft is prepared by another person than the approver (run.Actor).
+            run.Preparer,
             mirror,
             rule).Draft!;
     }

@@ -60,6 +60,55 @@ public sealed class FinanceManualBankPaymentWorkInboxSourceV1Tests
     }
 
     [Fact]
+    public async Task A_later_reviser_of_the_draft_is_an_excluded_decider_and_a_failed_save_is_not()
+    {
+        // FNS-D118: the owner refuses everyone whose draft save succeeded; a refused save makes no one a maker.
+        var payment = Payment("100", Start);
+        await using var run = await Run.CreateAsync([payment], [],
+        [
+            SaveCommand(payment.Id, Preparer, CommandOutcome.Succeeded),
+            SaveCommand(payment.Id, "SENTETIK-reviser", CommandOutcome.Succeeded),
+            SaveCommand(payment.Id, "SENTETIK-refused", CommandOutcome.Denied),
+        ]);
+
+        var result = await run.Source().ListPendingAsync(Context(), 10, CancellationToken.None);
+
+        var item = Assert.Single(result.Items!);
+        Assert.Equal(Preparer, item.PreparedBy);
+        Assert.Equal(["SENTETIK-reviser"], item.ExcludedDeciders);
+        Assert.False(item.Excludes("SENTETIK-refused"));
+        Assert.False(item.Excludes(Caller));
+    }
+
+    [Fact]
+    public async Task An_unreadable_save_result_makes_the_source_unavailable()
+    {
+        var payment = Payment("100", Start);
+        var broken = SaveCommand(payment.Id, "SENTETIK-reviser", CommandOutcome.Succeeded);
+        broken.ResultJson = "{}";
+        await using var run = await Run.CreateAsync([payment], [], [broken]);
+
+        var result = await run.Source().ListPendingAsync(Context(), 10, CancellationToken.None);
+
+        Assert.Equal(NativeApprovalQueueOutcomeV1.Unavailable, result.Outcome);
+    }
+
+    private static FinanceCommandRow SaveCommand(Guid paymentId, string actor, CommandOutcome outcome) =>
+        new()
+        {
+            CompanyId = Company,
+            CommandName = GoymenERP.Modules.Finance.Infrastructure.ManualBankPaymentService.DraftCommand,
+            IdempotencyKeyHash = Guid.NewGuid().ToString("N"),
+            ActorId = actor,
+            PayloadHash = "SENTETIK",
+            ManualBankPaymentId = paymentId,
+            ResultJson = System.Text.Json.JsonSerializer.Serialize(
+                new ManualBankPaymentCommandResult(outcome, null, false, "SENTETIK-correlation", []), FinanceJson.CreateOptions()),
+            CorrelationId = "SENTETIK-correlation",
+            RecordedAtUtc = Start,
+        };
+
+    [Fact]
     public async Task Another_companys_drafts_never_appear_and_its_own_company_sees_only_its_own()
     {
         var mine = Payment("100", Start);
@@ -169,7 +218,8 @@ public sealed class FinanceManualBankPaymentWorkInboxSourceV1Tests
         private readonly string _database = $"manual-bank-payment-inbox-{Guid.NewGuid():N}";
         public FinanceDbContext Db { get; private set; } = null!;
 
-        public static async Task<Run> CreateAsync(ManualBankPaymentRow[] payments, BankAccountRow[] banks)
+        public static async Task<Run> CreateAsync(ManualBankPaymentRow[] payments, BankAccountRow[] banks,
+            FinanceCommandRow[]? commands = null)
         {
             var run = new Run();
             foreach (var company in payments.Select(row => row.CompanyId).Append(Company).Distinct())
@@ -179,6 +229,7 @@ public sealed class FinanceManualBankPaymentWorkInboxSourceV1Tests
                 await using var db = run.Context(seed);
                 db.ManualBankPayments.AddRange(payments.Where(row => row.CompanyId == company));
                 db.BankAccounts.AddRange(banks.Where(row => row.CompanyId == company));
+                db.Commands.AddRange((commands ?? []).Where(row => row.CompanyId == company));
                 await db.SaveChangesAsync();
             }
 

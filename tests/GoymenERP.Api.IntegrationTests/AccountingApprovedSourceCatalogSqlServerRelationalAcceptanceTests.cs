@@ -658,7 +658,15 @@ public sealed partial class AccountingApprovedSourceCatalogSqlServerRelationalAc
         var approveKey = Key("draft-approve");
         JsonElement approvedBody;
         {
-            var approveClient = Track(run.Client(Preparer, CompanyA));
+            // ROL-D14: the preparer may not approve their own draft; another holder of the approve name does.
+            var self = Track(await SendJsonAsync(Track(run.Client(Preparer, CompanyA)), $"{NormalDraftsPath}/{draftId:D}/approval",
+                Key("draft-self-approve"), approveRequest));
+            Assert.Equal(HttpStatusCode.Forbidden, self.StatusCode);
+            await run.GrantAsync(OtherActor, CompanyA, DraftApprovePermission,
+                AccountingPermissionManifestV1.JournalsRead);
+        }
+        {
+            var approveClient = Track(run.Client(OtherActor, CompanyA));
             var approved = Track(await SendJsonAsync(approveClient, $"{NormalDraftsPath}/{draftId:D}/approval",
                 approveKey, approveRequest));
             Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
@@ -671,7 +679,7 @@ public sealed partial class AccountingApprovedSourceCatalogSqlServerRelationalAc
                     approvedBody.GetProperty("status").GetString(), approvedBody.GetProperty("version").GetInt64()));
         }
         {
-            var replayClient = Track(run.Client(Preparer, CompanyA));
+            var replayClient = Track(run.Client(OtherActor, CompanyA));
             var replay = Track(await SendJsonAsync(replayClient, $"{NormalDraftsPath}/{draftId:D}/approval",
                 approveKey, approveRequest));
             Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
