@@ -106,7 +106,7 @@ EXPECTED_RISKY_SOURCE_SURFACE_FILE_COUNT = 1516
 # AK-1..AK-8 + AK-3b/4b/7b/8b and golden EK1 switches: producer re-measured; 1505 inputs, 357 migrations; K3 pending.
 # (earlier) AK-1..AK-8 integration (piece/kg package): producer re-measured; 1498 inputs, 354 migrations; K3 pending.
 EXPECTED_RISKY_SOURCE_SURFACE_FINGERPRINT = (
-    '899d9450c9f56669071d11d263d6f6b46cc8e5f326584399b951869f5ca7f726'
+    '7b1b544802e0a674e36b8f67e55ed7d0b08646e613b5ba3d80f584f0add866f0'
 )
 RISKY_SOURCE_TOKENS = (
     "DbContext",
@@ -1672,11 +1672,11 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.CustomerReturns.cs": "a238cb434ea935fbdd0a10e83366f1442560b4a30e33783f254ec43f8bd1044d",
     "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs": "c8b78e13e5a6b5d2075730346a718dbf48672ca47356de212271240a7f76b472",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceAcceptanceService.cs": "f58cbd4f72a68b91df38f64cafbf47dcccae5b3751c62a970fec1597c082cd5d",
-    "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ExpensePaymentService.cs": "6e814210168b5a0623f44268699506f68078d6893398e0c3d87e4b1487f42b0d",
+    "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ExpensePaymentService.cs": "ecc74c3309d07a7ccfebf43080f17a6eee0fba64f1f7a3f004767dfbd921cc32",
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinancePartyCreditLimitService.cs": "e31360adde051e12f46f433cb831f044338a085dbd64368f18098ddcc3f4cb04",
-    "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductDimensionService.cs": "917f76d56262c646943d23540c306f9eecbf035fe77fbeae18c7ef309cb2e115",
+    "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductDimensionService.cs": "ad01dff80e83d56e1f715f2890f0af357d8343d377669cb65f4226edc98d8eb3",
     # tren-1 wave 3 (stok_lojistik): new live writers; K3 review pending (stok).
-    "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductProfileWeightTableService.cs": "23fbd437a6ce008fba062e652a547692f2fe70f07ddad6525225736f2568f625",
+    "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductProfileWeightTableService.cs": "4efec6204bb9a49dc72b1379bb8d044ae09446ba5dc059e97bfb51caf0556aad",
     "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySupplierReturnExitParticipant.cs": '90c070e8a5178e6bbfbe180a279e8187fde126731121e2b8db7ec1e1f46b90b6',
     # tren-1 wave 5 integration: values from print_recovery_actuals.py; K3 review pending.
     "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditAccountService.cs": '8c3cd1d3609ee51f45ce933e387e199e5e27a10da084b8982a3ef3864b072d21',
