@@ -10,7 +10,7 @@ using GoymenERP.Modules.Sales.Domain;
 
 namespace GoymenERP.Modules.Sales.Application;
 
-/// <summary>SAT-D96 / #1189 6957924089: records a proved existing cancellation; never cancels an external invoice.
+/// <summary>SAT-D96 / #1189 6957924089 (GOV-D16): records a proved existing cancellation; never cancels an external invoice.
 /// Existing finalize authority only. Price-free receipts avoid silently requiring a new price/read grant.</summary>
 public sealed class SalesOfficialInvoiceCancellationServiceV1(ICompanyContext company, ICurrentUser user,
     IErpAuthorityRevalidationService authority, ICorrelationContext correlation,

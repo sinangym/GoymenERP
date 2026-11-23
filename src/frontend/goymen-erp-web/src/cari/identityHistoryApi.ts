@@ -70,7 +70,10 @@ export async function fetchIdentityHistory(
   return data === null ? { type: 'malformed' } : { type: 'ok', data }
 }
 
-/** `RecordCounterpartyPartySuccessionV1` stores 204, 404, 409 and 422 for the same key and body. */
+/**
+ * `RecordCounterpartyPartySuccessionV1` stores 204, 404, 409 and 422 for the same key and body. The ALS-D99 422
+ * `deactivation_warning_acknowledgement_required` is NOT stored (nothing was decided), so it is never a replay.
+ */
 export const SUCCESSION_REPLAYABLE: ReplayableFailures = new Map([
   [404, new Set<string>([IDENTITY_HISTORY_PROBLEM_CODE.notFound])],
   [
@@ -111,6 +114,8 @@ export function recordPartySuccession(
       kind: payload.kind,
       legalBasis: payload.legalBasis,
       effectiveOn: payload.effectiveOn,
+      // ALS-D99: only an acknowledged body carries the flag, so every unacknowledged body is byte-for-byte as before.
+      ...(payload.exposureWarningAcknowledged === true ? { exposureWarningAcknowledged: true } : {}),
     },
     signal,
     SUCCESSION_REPLAYABLE,

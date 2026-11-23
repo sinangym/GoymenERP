@@ -13,6 +13,7 @@
  *  - Remounted per committed context and route entry; a group (multi-company) context shows the no-company state.
  */
 
+import { EditedAttemptNotice } from './EditedAttemptNotice'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '../ui/Button'
@@ -475,9 +476,12 @@ function Outcome<D>({ status }: { readonly status: AttemptStatus<D> }) {
   }
   if (status.kind === 'unknown') {
     return (
-      <p role="alert" className={styles.error}>
-        {T.unknownOutcome}
-      </p>
+      <>
+        <p role="alert" className={styles.error}>
+          {T.unknownOutcome}
+        </p>
+        <EditedAttemptNotice status={status} />
+      </>
     )
   }
   return null

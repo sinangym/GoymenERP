@@ -13,7 +13,7 @@ function recall(storageKey: string): Pending | null {
   try {
     const raw: unknown = JSON.parse(sessionStorage.getItem(storageKey) ?? 'null')
     return typeof raw === 'object' && raw !== null && 'key' in raw && 'requestedAtUtc' in raw
-      && typeof raw.key === 'string' && raw.key.length > 0 && typeof raw.requestedAtUtc === 'string'
+      && Object.keys(raw).length === ('template' in raw ? 3 : 2) && typeof raw.key === 'string' && raw.key.length > 0 && typeof raw.requestedAtUtc === 'string'
       && /^\d{4}-\d{2}-\d{2}T/.test(raw.requestedAtUtc)
       && (!('template' in raw) || validTemplate(raw.template))
       ? { key: raw.key, requestedAtUtc: raw.requestedAtUtc, ...('template' in raw ? { template: raw.template as LabelPdfTemplateSelection } : {}) } : null
@@ -21,7 +21,7 @@ function recall(storageKey: string): Pending | null {
 }
 function validTemplate(raw: unknown): raw is LabelPdfTemplateSelection {
   return raw !== null && typeof raw === 'object' && 'publicationId' in raw && 'publicationVersion' in raw
-    && (raw.publicationId === null && raw.publicationVersion === null || brandingGuid(raw.publicationId) && brandingVersion(raw.publicationVersion))
+    && Object.keys(raw).length === 2 && (raw.publicationId === null && raw.publicationVersion === null || brandingGuid(raw.publicationId) && brandingVersion(raw.publicationVersion))
 }
 
 export function LabelPrintPanel({ labelId, companyId, actorId, namespace }: {

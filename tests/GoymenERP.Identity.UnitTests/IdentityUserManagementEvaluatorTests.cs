@@ -124,13 +124,58 @@ public sealed class IdentityUserManagementEvaluatorTests : IDisposable
         Assert.Empty(await Evaluator().GetCompanyWideManagedCompanyIdsAsync(AddUser(isActive: false), Now, CancellationToken.None));
     }
 
+    [Fact]
+    public async Task The_list_holds_only_fully_manageable_members_of_the_context_company_and_own_unassigned_accounts()
+    {
+        var actor = AddUser();
+        Assign(actor, managerRoleId, companyA);
+        var onlyA = AddUser(); Assign(onlyA, plainRoleId, companyA);
+        var onlyB = AddUser(); Assign(onlyB, plainRoleId, companyB);
+        var both = AddUser(); Assign(both, plainRoleId, companyA); Assign(both, plainRoleId, companyB);
+        var ownUnassigned = AddUser(createdBy: actor);
+        var ownExpired = AddUser(createdBy: actor); Assign(ownExpired, plainRoleId, companyB, validUntilUtc: Now.AddDays(-1));
+        var otherUnassigned = AddUser(createdBy: Guid.NewGuid());
+        var creatorless = AddUser();
+
+        var listed = await Evaluator().GetListedUserIdsAsync(actor, companyA, Now, CancellationToken.None);
+
+        Assert.Equal(new[] { actor, onlyA, ownUnassigned, ownExpired }.Order(), listed.Order());
+        Assert.DoesNotContain(onlyB, listed); Assert.DoesNotContain(both, listed);
+        Assert.DoesNotContain(otherUnassigned, listed); Assert.DoesNotContain(creatorless, listed);
+    }
+
+    [Fact]
+    public async Task Only_the_founder_named_by_the_bootstrap_marker_sees_every_unassigned_account()
+    {
+        var founder = AddUser();
+        var other = AddUser();
+        Assign(founder, managerRoleId, companyA);
+        Assign(other, managerRoleId, companyA);
+        var foreign = AddUser(createdBy: Guid.NewGuid());
+        var creatorless = AddUser();
+        var memberOfB = AddUser(); Assign(memberOfB, plainRoleId, companyB);
+
+        // No marker: the founder branch admits nobody (fail-closed).
+        Assert.DoesNotContain(foreign, await Evaluator().GetListedUserIdsAsync(founder, companyA, Now, CancellationToken.None));
+
+        context.BootstrapStates.Add(new GoymenERP.Modules.Identity.Domain.Bootstrap.IdentityBootstrapState(founder, Now.AddDays(-1)));
+        context.SaveChanges();
+        context.ChangeTracker.Clear();
+
+        var founderList = await Evaluator().GetListedUserIdsAsync(founder, companyA, Now, CancellationToken.None);
+        Assert.Contains(foreign, founderList); Assert.Contains(creatorless, founderList);
+        Assert.DoesNotContain(memberOfB, founderList);
+        var otherList = await Evaluator().GetListedUserIdsAsync(other, companyA, Now, CancellationToken.None);
+        Assert.DoesNotContain(foreign, otherList); Assert.DoesNotContain(creatorless, otherList);
+    }
+
     public void Dispose() => context.Dispose();
 
     private IdentityUserManagementEvaluator Evaluator() => new(context);
 
-    private Guid AddUser(bool isActive = true)
+    private Guid AddUser(bool isActive = true, Guid? createdBy = null)
     {
-        var user = new UserAccount(Guid.NewGuid(), "Sentetik Kullanıcı", email: null);
+        var user = new UserAccount(Guid.NewGuid(), "Sentetik Kullanıcı", email: null, createdByUserId: createdBy);
         if (!isActive)
         {
             typeof(UserAccount).GetProperty(nameof(UserAccount.IsActive))!.SetValue(user, false);

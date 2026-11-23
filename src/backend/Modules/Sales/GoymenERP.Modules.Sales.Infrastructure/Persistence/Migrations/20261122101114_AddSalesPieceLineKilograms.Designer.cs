@@ -2518,7 +2518,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_InvoiceLines_Json", "ISJSON([TaxJson]) = 1 AND ([PricingJson] IS NULL OR ISJSON([PricingJson]) = 1)");
 
-                            t.HasCheckConstraint("CK_InvoiceLines_KilogramInformation", "([TheoreticalKg] IS NULL AND [ActualKg] IS NULL) OR ([TheoreticalKg] IS NOT NULL AND [TheoreticalKg] > 0 AND [ActualKg] IS NOT NULL AND [ActualKg] > 0)");
+                            t.HasCheckConstraint("CK_InvoiceLines_KilogramInformation", "([TheoreticalKg] IS NULL AND [ActualKg] IS NULL) OR ([ActualKg] IS NOT NULL AND [ActualKg] > 0 AND ([TheoreticalKg] IS NULL OR [TheoreticalKg] > 0))");
 
                             t.HasCheckConstraint("CK_InvoiceLines_LineNo", "[LineNo] >= 1 AND [NoteLineNo] >= 1 AND [PriceBasisRevision] >= 0");
 

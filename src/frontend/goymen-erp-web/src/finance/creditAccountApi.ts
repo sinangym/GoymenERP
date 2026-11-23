@@ -3,6 +3,7 @@ import { isBoundUuid, isInstant, isOpaqueVersion } from './contract'
 import { isDateOnly } from './dateOnly'
 import { isNonNegativeDecimalText, isPositiveDecimalText } from './decimalText'
 import type { ViewOutcome } from '../shell/uiState'
+import { COMMAND_RESULT_FIELDS, hasExactKeys, replayHeadersAgree } from './wireShape'
 import { decodeCustomerInstrumentPage, type CustomerInstrumentPage } from './customerInstrumentContract'
 
 export type CreditGroup = 'Cash' | 'NonCash' | 'InstrumentAndFactoring' | 'Leasing'
@@ -43,37 +44,58 @@ const inSet = (value: unknown, values: readonly string[]) => typeof value === 's
 const CASH = ['Spot', 'Revolving', 'Installment', 'Overdraft', 'ForeignCurrencyIndexed', 'Export', 'CreditCard']
 const NONCASH = ['Guarantee', 'LetterOfCredit', 'Acceptance', 'Aval']
 const INSTRUMENT = ['ChequeCollateral', 'NoteCollateral', 'Factoring']
+// Exact OpenAPI property sets (required first, then optional) — K3 P2-3.
+const PROFILE_REQUIRED = ['lenderCompanyPartyAccountId', 'lenderPartyId', 'planNature', 'sourceDocument']
+const PROFILE_OPTIONAL = ['cash', 'instrumentAndFactoring', 'leasing', 'nonCash']
+const SOURCE_DOCUMENT_FIELDS = ['documentDate', 'reference', 'revision']
+const CASH_FIELDS = ['kind', 'maturityDate']
+const NONCASH_FIELDS = ['beneficiaryReference', 'expiryDate', 'isIndefinite', 'kind']
+const INSTRUMENT_FIELDS = ['instrumentIds', 'kind', 'receivableDocumentReferences', 'withRecourse']
+const LEASING_FIELDS = ['assetReference', 'leaseEndDate', 'leaseStartDate']
+const AMOUNT_FIELDS = ['bsmv', 'installment', 'interest', 'kkdf', 'principal']
+const INSTALLMENT_REQUIRED = [...AMOUNT_FIELDS, 'dueDate', 'sequence']
+const CHARGE_FIELDS = ['amount', 'description', 'sourceDocumentReference', 'treatment']
+const CHARGE_TOTAL_FIELDS = ['collectedSeparately', 'includedInInstallment']
+const TOLERANCE_FIELDS = ['currencyScale', 'profileId', 'profileVersion', 'smallestCurrencyUnit']
+const ACCOUNT_REQUIRED = ['companyId', 'contractReference', 'currencyId', 'decidedAtUtc', 'group', 'id', 'installments', 'isOwnProposal',
+  'lenderName', 'planTotals', 'principalAmount', 'proposedAtUtc', 'rejectionReason', 'startDate', 'status', 'version']
+const ACCOUNT_OPTIONAL = ['profile', 'tolerance']
+const LIST_FIELDS = ['companyId', 'items']
+const CURRENCY_FIELDS = ['code', 'currencyId', 'displayLabel']
+const ISSUE_FIELDS = ['code', 'field']
 export function decodeCreditProfile(value: unknown, group: CreditGroup): CreditProfile | null {
-  if (!record(value) || !isBoundUuid(value.lenderPartyId) || !isBoundUuid(value.lenderCompanyPartyAccountId)
-    || !record(value.sourceDocument) || !text(value.sourceDocument.reference) || !date(value.sourceDocument.documentDate)
+  if (!record(value) || !hasExactKeys(value, PROFILE_REQUIRED, PROFILE_OPTIONAL) || !isBoundUuid(value.lenderPartyId)
+    || !isBoundUuid(value.lenderCompanyPartyAccountId) || !record(value.sourceDocument)
+    || !hasExactKeys(value.sourceDocument, SOURCE_DOCUMENT_FIELDS) || !text(value.sourceDocument.reference) || !date(value.sourceDocument.documentDate)
     || !text(value.sourceDocument.revision) || !inSet(value.planNature, ['Installments', 'SourceMovements'])) return null
   const shapes = [value.cash, value.nonCash, value.instrumentAndFactoring, value.leasing].filter(item => item !== null && item !== undefined)
   if (shapes.length !== 1) return null
-  if (group === 'Cash' && (!record(value.cash) || !inSet(value.cash.kind, CASH) || !nullableDate(value.cash.maturityDate))) return null
-  if (group === 'NonCash' && (!record(value.nonCash) || !inSet(value.nonCash.kind, NONCASH) || !text(value.nonCash.beneficiaryReference)
+  if (group === 'Cash' && (!record(value.cash) || !hasExactKeys(value.cash, CASH_FIELDS) || !inSet(value.cash.kind, CASH) || !nullableDate(value.cash.maturityDate))) return null
+  if (group === 'NonCash' && (!record(value.nonCash) || !hasExactKeys(value.nonCash, NONCASH_FIELDS) || !inSet(value.nonCash.kind, NONCASH) || !text(value.nonCash.beneficiaryReference)
     || typeof value.nonCash.isIndefinite !== 'boolean' || !nullableDate(value.nonCash.expiryDate)
     || value.nonCash.isIndefinite !== (value.nonCash.expiryDate === null) || value.planNature !== 'SourceMovements')) return null
   if (group === 'InstrumentAndFactoring') {
     const item = value.instrumentAndFactoring
-    if (!record(item) || !inSet(item.kind, INSTRUMENT) || item.withRecourse !== null && typeof item.withRecourse !== 'boolean'
+    if (!record(item) || !hasExactKeys(item, INSTRUMENT_FIELDS) || !inSet(item.kind, INSTRUMENT) || item.withRecourse !== null && typeof item.withRecourse !== 'boolean'
       || !Array.isArray(item.instrumentIds) || item.instrumentIds.some(id => !isBoundUuid(id))
       || new Set(item.instrumentIds).size !== item.instrumentIds.length || !Array.isArray(item.receivableDocumentReferences)
       || item.receivableDocumentReferences.some(reference => !text(reference))
       || (item.kind === 'Factoring' ? typeof item.withRecourse !== 'boolean' || item.receivableDocumentReferences.length === 0 : item.instrumentIds.length === 0)) return null
   }
-  if (group === 'Leasing' && (!record(value.leasing) || !text(value.leasing.assetReference) || !date(value.leasing.leaseStartDate)
+  if (group === 'Leasing' && (!record(value.leasing) || !hasExactKeys(value.leasing, LEASING_FIELDS) || !text(value.leasing.assetReference) || !date(value.leasing.leaseStartDate)
     || !date(value.leasing.leaseEndDate) || value.leasing.leaseEndDate < value.leasing.leaseStartDate)) return null
   return value as unknown as CreditProfile
 }
 function installment(value: unknown, index: number): value is CreditInstallment {
-  return record(value) && value.sequence === index + 1 && date(value.dueDate)
-    && ['installment', 'principal', 'interest', 'bsmv', 'kkdf'].every(key => isNonNegativeDecimalText(value[key]))
+  return record(value) && hasExactKeys(value, INSTALLMENT_REQUIRED, ['charges']) && value.sequence === index + 1 && date(value.dueDate)
+    && AMOUNT_FIELDS.every(key => isNonNegativeDecimalText(value[key]))
     && (value.charges === undefined || Array.isArray(value.charges) && value.charges.every(charge => record(charge)
-      && text(charge.description) && isNonNegativeDecimalText(charge.amount) && text(charge.sourceDocumentReference)
+      && hasExactKeys(charge, CHARGE_FIELDS) && text(charge.description) && isNonNegativeDecimalText(charge.amount) && text(charge.sourceDocumentReference)
       && inSet(charge.treatment, ['IncludedInInstallment', 'CollectedSeparately'])))
 }
 export function decodeCreditAccount(value: unknown, company: string): CreditAccount | null {
-  if (!record(value) || !isBoundUuid(value.id) || !isBoundUuid(value.companyId) || value.companyId.toLowerCase() !== company.toLowerCase()
+  if (!record(value) || !hasExactKeys(value, ACCOUNT_REQUIRED, ACCOUNT_OPTIONAL) || !isBoundUuid(value.id)
+    || !isBoundUuid(value.companyId) || value.companyId.toLowerCase() !== company.toLowerCase()
     || !isOpaqueVersion(value.version) || !inSet(value.group, ['Cash', 'NonCash', 'InstrumentAndFactoring', 'Leasing'])
     || !text(value.lenderName) || !text(value.contractReference) || !isBoundUuid(value.currencyId) || !isPositiveDecimalText(value.principalAmount)
     || !date(value.startDate) || !inSet(value.status, ['Proposed', 'Approved', 'Rejected']) || typeof value.isOwnProposal !== 'boolean'
@@ -85,13 +107,13 @@ export function decodeCreditAccount(value: unknown, company: string): CreditAcco
   const profile = value.profile === undefined || value.profile === null ? null : decodeCreditProfile(value.profile, value.group as CreditGroup)
   if (value.profile !== undefined && value.profile !== null && profile === null) return null
   if (profile?.planNature === 'SourceMovements' && (value.installments.length !== 0 || value.planTotals !== null)) return null
-  if (value.planTotals !== null && (!record(value.planTotals)
-    || !['installment', 'principal', 'interest', 'bsmv', 'kkdf'].every(key => isNonNegativeDecimalText((value.planTotals as Record<string, unknown>)[key]))
-    || value.planTotals.charges !== undefined && (!record(value.planTotals.charges)
+  if (value.planTotals !== null && (!record(value.planTotals) || !hasExactKeys(value.planTotals, AMOUNT_FIELDS, ['charges'])
+    || !AMOUNT_FIELDS.every(key => isNonNegativeDecimalText((value.planTotals as Record<string, unknown>)[key]))
+    || value.planTotals.charges !== undefined && (!record(value.planTotals.charges) || !hasExactKeys(value.planTotals.charges, CHARGE_TOTAL_FIELDS)
       || !isNonNegativeDecimalText(value.planTotals.charges.includedInInstallment) || !isNonNegativeDecimalText(value.planTotals.charges.collectedSeparately)))) return null
   if (profile?.planNature === 'Installments' && (value.installments.length === 0 || value.planTotals === null)) return null
   const tolerance = value.tolerance ?? null
-  if (tolerance !== null && (!record(tolerance) || !isBoundUuid(tolerance.profileId) || !Number.isSafeInteger(tolerance.profileVersion)
+  if (tolerance !== null && (!record(tolerance) || !hasExactKeys(tolerance, TOLERANCE_FIELDS) || !isBoundUuid(tolerance.profileId) || !Number.isSafeInteger(tolerance.profileVersion)
     || (tolerance.profileVersion as number) < 1 || !Number.isInteger(tolerance.currencyScale) || (tolerance.currencyScale as number) < 0
     || !isPositiveDecimalText(tolerance.smallestCurrencyUnit))) return null
   return { ...value, profile, tolerance } as unknown as CreditAccount
@@ -106,13 +128,15 @@ async function read<T>(company: string, path: string, decode: (body: unknown) =>
   } catch { return signal?.aborted ? { type: 'fence-stale' } : navigator.onLine ? { type: 'network-error' } : { type: 'offline' } }
 }
 export const fetchCreditAccounts = (company: string, signal?: AbortSignal) => read(company, '', body => {
-  if (!record(body) || typeof body.companyId !== 'string' || body.companyId.toLowerCase() !== company.toLowerCase() || !Array.isArray(body.items)) return null
+  if (!record(body) || !hasExactKeys(body, LIST_FIELDS) || typeof body.companyId !== 'string'
+    || body.companyId.toLowerCase() !== company.toLowerCase() || !Array.isArray(body.items)) return null
   const items = body.items.map(item => decodeCreditAccount(item, company))
   return items.some(item => item === null) || new Set(items.map(item => item?.id)).size !== items.length ? null : items as CreditAccount[]
 }, signal)
 export const fetchCreditCurrencies = (company: string, signal?: AbortSignal) => read(company, '/currency-candidates', body => {
-  if (!record(body) || typeof body.companyId !== 'string' || body.companyId.toLowerCase() !== company.toLowerCase() || !Array.isArray(body.items)
-    || body.items.some(item => !record(item) || !isBoundUuid(item.currencyId) || !text(item.code) || !text(item.displayLabel))
+  if (!record(body) || !hasExactKeys(body, LIST_FIELDS) || typeof body.companyId !== 'string'
+    || body.companyId.toLowerCase() !== company.toLowerCase() || !Array.isArray(body.items)
+    || body.items.some(item => !record(item) || !hasExactKeys(item, CURRENCY_FIELDS) || !isBoundUuid(item.currencyId) || !text(item.code) || !text(item.displayLabel))
     || new Set(body.items.map(item => item.currencyId)).size !== body.items.length) return null
   return body.items as CreditCurrency[]
 }, signal)
@@ -125,15 +149,16 @@ export async function sendCreditAccount(company: string, attempt: CreditAttempt)
     if (response.status === 200) {
       const value = record(body) ? decodeCreditAccount(body.resource, company) : null
       const status = attempt.operation === 'propose' ? 'Proposed' : attempt.operation === 'approve' ? 'Approved' : 'Rejected'
-      return record(body) && body.outcome === 'Succeeded' && typeof body.isReplay === 'boolean' && text(body.originalCorrelationId)
+      return record(body) && hasExactKeys(body, COMMAND_RESULT_FIELDS) && body.outcome === 'Succeeded' && typeof body.isReplay === 'boolean'
+        && text(body.originalCorrelationId) && replayHeadersAgree(response.headers, body.isReplay, body.originalCorrelationId)
         && Array.isArray(body.issues) && body.issues.length === 0 && value !== null && value.status === status
         && (attempt.operation === 'propose' ? value.contractReference === attempt.request.contractReference && value.currencyId === attempt.request.currencyId
           : value.id.toLowerCase() === attempt.id.toLowerCase())
         ? { type: 'applied', value, replay: body.isReplay } : { type: 'unknown' }
     }
     if ([400, 401, 403, 404, 415].includes(response.status)) return { type: 'refused', status: response.status, issues: [] }
-    if ([409, 422].includes(response.status) && record(body) && body.resource === null && Array.isArray(body.issues)
-      && body.issues.every(issue => record(issue) && text(issue.field) && text(issue.code))
+    if ([409, 422].includes(response.status) && record(body) && hasExactKeys(body, COMMAND_RESULT_FIELDS) && body.resource === null && Array.isArray(body.issues)
+      && body.issues.every(issue => record(issue) && hasExactKeys(issue, ISSUE_FIELDS) && text(issue.field) && text(issue.code))
       && (response.status === 422 ? body.outcome === 'ValidationFailed' : ['VersionConflict', 'IdempotencyConflict'].includes(body.outcome as string)))
       return { type: 'refused', status: response.status, issues: body.issues as { field: string; code: string }[] }
     return { type: 'unknown' }

@@ -27,7 +27,8 @@ export function pendingTransformationKey(
 function pending(value: unknown): PendingLabelTransformation | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
   const candidate = value as Partial<PendingLabelTransformation>
-  return typeof candidate.actorId === 'string' && candidate.actorId.length > 0 &&
+  // Exactly the five members checked below: a stored value with any other key is not this store's attempt.
+  return Object.keys(candidate).length === 5 && typeof candidate.actorId === 'string' && candidate.actorId.length > 0 &&
     isGuid(candidate.companyId) && isGuid(candidate.originLabelId) && isGuid(candidate.idempotencyKey) &&
     isLabelTransformationRequest(candidate.payload) &&
     candidate.payload.sources.some((source) => source.labelId === candidate.originLabelId)

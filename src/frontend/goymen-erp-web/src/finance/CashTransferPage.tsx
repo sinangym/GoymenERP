@@ -477,10 +477,12 @@ function useCommitCommand(companyId: string, storeKey: string, onApplied: (resou
       setState({ phase: 'unknown', reason: outcome.reason, attempt })
       return
     }
-    if (held !== null && outcome.kind === 'failed' && (outcome.status === 401 || outcome.status === 403)) {
-      // A 401/403 on the RETRY of an unknown attempt says nothing about the first send, which may have moved the money: the key
+    if (held !== null && outcome.kind === 'failed' && outcome.outcome === null) {
+      // A code-less 400/401/403/404/415 on the RETRY of an unknown attempt is answered before the owner reads the
+      // idempotency receipt, so it says nothing about the first send, which may have moved the money (K3 P2-9). The key
       // is kept and the attempt stays unknown, so the next send is that same attempt again — never a second transfer.
-      boundary.report(outcome.status, snapshot)
+      // Only a decided owner answer (applied, or a 409/422 with its outcome) settles it.
+      if (outcome.status === 401 || outcome.status === 403) boundary.report(outcome.status, snapshot)
       setState({ phase: 'unknown', reason: null, attempt })
       return
     }

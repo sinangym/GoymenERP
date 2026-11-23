@@ -20,7 +20,7 @@ public static class LogisticsPermissionManifestV1
     public const string ShipmentsRecord = "logistics.shipments.record";
     public const string DeliveriesRecord = "logistics.deliveries.record";
 
-    /// <summary>SAT-D417 / direct user 6963301286: approve a separate positive plan exception. Registration only; no role or maker exclusion.</summary>
+    /// <summary>SAT-D417 / direct user 6963301286 (GOV-D16): approve a separate positive plan exception. Registration only; no role or maker exclusion.</summary>
     public const string ShipmentPlanExcessApprove = LogisticsPlanExcessV1.ApprovePermission;
 
     /// <summary>

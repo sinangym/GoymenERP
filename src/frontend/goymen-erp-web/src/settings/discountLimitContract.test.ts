@@ -79,4 +79,37 @@ describe('discount limit decoders', () => {
     expect(problemSubjectOf({ companyId: COMPANY_B, groupCode: 'MUDUR' })).toEqual({ companyId: COMPANY_B, groupCode: 'MUDUR' })
     expect(problemSubjectOf({ companyId: 'x', groupCode: 'bad code' })).toEqual({ companyId: null, groupCode: null })
   })
+
+  it('K3 P2: accept only the exact key set of every object in every answer', () => {
+    const without = (value: object, key: string) => Object.fromEntries(Object.entries(value).filter(([name]) => name !== key))
+    /** The value itself decodes; one extra key and each single missing key do not. */
+    const exactOnly = (value: Record<string, unknown>, decode: (candidate: Record<string, unknown>) => unknown) => {
+      expect(decode(value)).not.toBeNull()
+      expect(decode({ ...value, extra: 'SENTETIK' })).toBeNull()
+      for (const key of Object.keys(value)) expect(decode(without(value, key))).toBeNull()
+    }
+    const list: Record<string, unknown> = groupList()
+    const [, seller] = list.groups as Record<string, unknown>[]
+    const [entry] = seller.scheduled as Record<string, unknown>[]
+    const group = (candidate: Record<string, unknown>) => decodeGroupList({ ...list, groups: [candidate] }, COMPANY_A)
+    exactOnly(list, (candidate) => decodeGroupList(candidate, COMPANY_A))
+    exactOnly(seller, group)
+    exactOnly(seller.limit as Record<string, unknown>, (limit) => group({ ...seller, limit }))
+    exactOnly(seller.effectiveLimit as Record<string, unknown>, (effectiveLimit) => group({ ...seller, effectiveLimit }))
+    exactOnly(entry, (scheduled) => group({ ...seller, scheduled: [scheduled] }))
+    exactOnly(entry.limit as Record<string, unknown>, (limit) => group({ ...seller, scheduled: [{ ...entry, limit }] }))
+    exactOnly(entry.effectiveLimit as Record<string, unknown>, (effectiveLimit) => group({ ...seller, scheduled: [{ ...entry, effectiveLimit }] }))
+
+    exactOnly({ id: PERSON, version: '1' }, decodeCreated)
+    const person = { userId: PERSON, displayName: 'Ali' }
+    exactOnly({ items: [person], hasMore: false }, decodePeople)
+    exactOnly(person, (candidate) => decodePeople({ items: [candidate], hasMore: false }))
+
+    const bound: Record<string, unknown> = binding('1', '0')
+    const [company] = bound.companies as Record<string, unknown>[]
+    const [boundGroup] = company.groups as Record<string, unknown>[]
+    exactOnly(bound, (candidate) => decodeBinding(candidate, PERSON))
+    exactOnly(company, (candidate) => decodeBinding({ ...bound, companies: [candidate] }, PERSON))
+    exactOnly(boundGroup, (candidate) => decodeBinding({ ...bound, companies: [{ ...company, groups: [candidate] }] }, PERSON))
+  })
 })

@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
-import { decodeCostDifference, sendCostDifference } from './manufacturingCostDifferenceApi'
+import { decodeCostDifference, fetchCostDifferences, sendCostDifference } from './manufacturingCostDifferenceApi'
 import { ACCOUNTING_CAPABILITY } from './capabilities'
 import { COMPANY_A, COMPANY_B, PREPARER, APPROVER, ACCOUNT_DEBIT, ACCOUNT_CREDIT, PERIOD_SEPTEMBER, installFetch, json, renderAt, requestsFor } from './testHarness'
+import { keyProbes } from './exactKeysTestSupport'
 
 const proposalId = 'c0623000-0000-4000-8000-000000000001'
 const source = 'c0623000-0000-4000-8000-000000000002'
@@ -62,5 +63,22 @@ describe('manufacturing consumed cost accounting suggestion', () => {
   it('does not claim a malformed successful response is a definite refusal or success', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => json({ status: 'Posted' })))
     expect(await sendCostDifference(COMPANY_A, { operation: 'approve', id: proposalId, key: 'same-key', request: { expectedVersion: 2 } })).toEqual({ type: 'unknown' })
+  })
+})
+describe('manufacturing cost difference exact key sets', () => {
+  it('rejects an unknown or missing key on the proposal, an output, the account plan and its accounts', () => {
+    expect(decodeCostDifference(fixture(), COMPANY_A)).not.toBeNull()
+    for (const [label, body] of keyProbes(fixture(), [[[], 'reason'], [['outputs', 0], 'labelId'], [['accountPlan'], 'sha256'],
+      [['accountPlan', 'debit'], 'name'], [['accountPlan', 'credit'], 'code']]))
+      expect(decodeCostDifference(body, COMPANY_A), label).toBeNull()
+  })
+  it('rejects an unknown or missing key on the list envelope', async () => {
+    const list = { companyId: COMPANY_A, items: [fixture()] }
+    vi.stubGlobal('fetch', vi.fn(async () => json(list)))
+    expect((await fetchCostDifferences(COMPANY_A)).type).toBe('ok-single')
+    for (const [label, body] of keyProbes(list, [[[], 'companyId'], [['items', 0], 'version']])) {
+      vi.stubGlobal('fetch', vi.fn(async () => json(body)))
+      expect((await fetchCostDifferences(COMPANY_A)).type, label).toBe('malformed')
+    }
   })
 })

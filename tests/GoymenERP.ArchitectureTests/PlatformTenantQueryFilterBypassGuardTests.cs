@@ -232,7 +232,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // W8: normal adapter Warning RunInfo metadata occurs in completed runs as well.
     // W8 diagnostic collection: RunInfo is not a veto once an exact complete Failed TRX is proved.
     // This branch always retains native failure and cannot write proof; passing acceptance is unchanged.
-    // User decision 2026-11-18: one broad SQL shard budget is 10800s; each native process stays capped at 2400s.
+    // User decision 2026-11-18 (GOV-D18): one broad SQL shard budget is 10800s; each native process stays capped at 2400s.
     // No renewal, retries, inventory changes, skips or partial proof; independent exact-head K3 review is pending.
     // W8: 9077fdf4f reports the effective global/process timeout budget without changing either deadline.
     // Reviewed the source delta and its timeout/redaction regression; re-fingerprinted with the house producer.
@@ -345,7 +345,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 wave 3 (integration): +12/-2 lines, ordinal-sorted (09b1b156… -> eb0d35db…).
                 // Re-fingerprinted for tren-1 W5 (integration): +7 fact(s) from the W5 team merges; value from guard_fingerprint.py (eb0d35db… -> 1b47e9a3…).
                 // Re-fingerprinted for tren-1 W7: source facts kept ordinal-sorted; SQL execution NOT_RUN.
-                "3ed95909038b2f1363defb4e6791ab793cfc5645cae26c84ee7c0a23d5802cac",
+                "c340aab3a3a45072f102f366dbff5d6b0c8e69f554f569b6ba7c2b6d3220dc47",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -394,7 +394,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for AK-8 (SAT-D433/SAT-D441/SAT-D445): +1 SQL fact, ordinal-sorted; SQL execution NOT_RUN; value from guard_fingerprint.py (6e29756c… -> 10cf1aea…).
                 // Re-fingerprinted for AK-4b (KLN-D119): +3 allocation piece facts (create/change/release, definite shipment, 52022 Down guard), ordinal-sorted; SQL execution NOT_RUN (10cf1aea… -> 2d0b7ef5…).
                 // Re-fingerprinted for the tren-1 piece/kg integration (AK-3b, AK-8b, golden EK1 switches): producer-measured (2d0b7ef5… -> 94908a78…); API counts checked by the guard; K3 review pending.
-                "fb102ea88b00cb6061430c468991f912e2ea50ab626714f07a120c514b60b991",
+                "cb02b3eddc45ac1cc9b1035b1ac510e63c10bb92a2fe481a99c497ca544bd0a2",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -413,7 +413,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): +5 facts, ordinal-sorted (82e1c19f… -> 3d8ec0f2…).
                 // Re-fingerprinted for tren-1 W5 (integration): token change since the wave-4 merge (stale pin), same fact count; value from guard_fingerprint.py (3d8ec0f2… -> 2b3edb43…).
                 // AK-4 (KLN-D119): +1 piece-line kilogram fact (stored, rebuilt, 52052 Down refusal), ordinal-sorted (17b267a5… -> 04a01300…).
-                "04a013006a7cb37d5ab9ece7be68a99b44874bf83b4a591e67b3120669c1d972",
+                "4df55e37c158c86a1c25361e75c533d6c99e046e2eaf1c6ef8982e6b241936a1",
 
             // manufacturing
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
@@ -1348,7 +1348,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // W8 provider-error repair; K3 review pending. SqlClient classifies provider errors only;
                 // no connection creation, raw command, filter bypass or tenant-scope change.
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsSalesPolicyAdministration.cs"] =
-                    new("ec16a23400984cc6716206c5d365dccd35dbfeba1bf11c02a121b27cc918fbd9",
+                    new("49d5b26ad9c5b9c04d668e4ee9f7c7e9326a8f8e600bd68743ad92dbdbed7879",
                         new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
                 // W8 provider-error repair; K3 review pending. SqlClient classifies provider errors only;
                 // no connection creation, raw command, filter bypass or tenant-scope change.
@@ -1393,7 +1393,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Tren-1 W7; K3 review pending. SAT-D364: namespace only to recognize SQL unique-key 2601/2627 after owner SaveChanges; no connection, SQL command or filter bypass.
                 // W8 source repairs: producer-recomputed fingerprint; existing review scope retained.
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsCompanyPolicyAdministration.cs"] =
-                    new("29aa7fea31b189ca7d2ec708068d86e392cae3f56f8e61d24f4d8e5905bda054",
+                    new("a59209665ef9fd722f3975ba41e393bb362810bf1877e505da1be9129ac6f94b",
                         new Dictionary<string, int>(StringComparer.Ordinal) { ["Microsoft.Data.SqlClient"] = 1 }),
                 // Tren-1 W7; K3 review pending. KIM-D20/D21: one fixed parameterless MIN_ACTIVE_ROWVERSION visibility horizon prevents cursor loss; event rows remain explicitly ambient-company filtered and read-only.
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/IdentityCompanySetupOutboxSource.cs"] =
@@ -1923,7 +1923,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ExpensePaymentService.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 W7: owner transaction or response changes; existing API counts retained; K3 review pending.
-                        "782c7018f19ca60bc7b9568740377f203f7893033cdc23f4ba5166f72ef83bba",
+                        "6e814210168b5a0623f44268699506f68078d6893398e0c3d87e4b1487f42b0d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1935,7 +1935,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceAcceptanceService.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (9f8f8994… -> 8949362f…).
-                        "3f2756cbdd32e32bf426ea4265f1e7b03f63250c65e9b39740947f17d919a4e6",
+                        "f58cbd4f72a68b91df38f64cafbf47dcccae5b3751c62a970fec1597c082cd5d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2012,7 +2012,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/CashTransferService.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 W7: owner transaction or response changes; existing API counts retained; K3 review pending.
-                        "e17c8b935548619c0094588563bd471a9c33b338f1a57a1caf60e48a9ee00ae8",
+                        "fbf58bbbeb0048eec3a67b37ab09287879970e773884fa4ec2708c2e9d17d393",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2160,7 +2160,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
                  + "Persistence/InventoryGoodsReceiptFutureSupplyConversion.cs"] =
                     new(
-                        "fd16f9ec61c3a016aac251e94322549dc3f62ac0cd0e4703c2e0231bfd577179",
+                        "cec013fdb3e00a90c18e0653615fb89af8f85768313f7c178845d2b13de895c4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                         ["System.Data.Common"] = 1,
@@ -2408,7 +2408,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceOfficialSalesInvoiceReadPortV1.cs"] =
                     new(
-                        "ee6d419229193cf4d3ebfac7f030927d2ffb81058b6a2032661d6013324a6572",
+                        "0c05fd1a35aa7b785b57b06ca8af22938c170ac91f1c95b44b573fe135529ba1",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinancePartyCreditPanelService.cs"] =
@@ -2419,7 +2419,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // tren-1 wave 2 trial integration: construction-only surfaces (target-typed sites); no provider token. Pending K3 review.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialSalesInvoiceImportDocumentsV2.cs"] =
                     new(
-                        "33db841532f5c744f378e11f57fe395c747781720c588e7bdef723e1906d904a",
+                        "91c90dd4e98275748b82e053d4e94324ba7f80e2c854e52867beef2686b4a6be",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/PartyLedgerReadService.cs"] =
                     new(
@@ -2480,7 +2480,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialSalesInvoiceServiceV1.cs"] =
                     new(
-                        "7ad45f56c7c70c7f951530fb407c4af9e3a42d0031df86ed94a6cf4f3df12f65",
+                        "666cc401ffcd69c6f107950c6a091ffe85a73f3c5c65b9588b3fb5ae1e0bd8f4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2589,7 +2589,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceOfficialInvoiceImportApprovalServiceV1.cs"] =
                     new(
-                        "573d1b13dafb963b6521a099600130a759711d016f22c62529c3da0b2227a1af",
+                        "de37298e34d85118fae273b5d0039e74254c5c1273e2f2a4c3f74fc04fba3d59",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -2804,7 +2804,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // the Serializable section maps to ConcurrentChange; no new database API and SqlClient count unchanged.
                         // Re-fingerprinted for tren-1 wave 3 (integration, stok_lojistik): the unload weighing record over the same filtered context (7045422a… -> e0254929…).
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (e0254929… -> ea2ff89e…).
-                        "198fa7cddd38fb3bb2e1d3c4b3be63fd06b90c77fe4ae0363734d8b1d3cec477",
+                        "0ecbf165d11097bf527b90ce613475c524b92b633f6532fb111b037c97d416bd",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -3345,7 +3345,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // participant on same caller handles; replacement request/actual answers exact company/acceptance proof checked;
                 // no direct foreign DML.
                 ["src/backend/GoymenERP.Api/PurchasingRuntime/PurchaseReceiptReversalHost.Correction.cs"] =
-                    new("9072477383c7eb71d55bee4da80d47dca62f9d441d35a791899b1fdb6d987606",
+                    new("df457c45f839625a5a27c1a0455c3353f600c1eb0a00faa4e7d613fc82145ee4",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["DbConnection"] = 1,
@@ -3377,7 +3377,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/GoymenERP.Api/PurchasingRuntime/PurchaseReceiptReversalHost.cs"] =
                     // Re-fingerprinted for AK-3 (KLN-D119): a piece line's supplier return hands its whole-piece undo quantity to the Inventory exit (422 when missing); same API counts; K3 review pending.
                     // Re-fingerprinted for the tren-1 piece/kg integration (AK-3b, AK-8b, golden EK1 switches): producer-measured (f6b84f62… -> b5fead69…); API counts checked by the guard; K3 review pending.
-                    new("b5fead694b8e193660b38003774bf348c9aaedf76b8ac1ffa25095a6b281d86d",
+                    new("11be2b1b63b0b5e35d52b4669d4b2a4ce83dbf2010d509b1358e7c5effc3f35b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["GetDbConnection"] = 1,
@@ -3514,7 +3514,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Tren-1 W8; K3 review pending. System.Data.Common imports DbException for typed read/transaction failure mapping
                 // and rollback catch. Own Finance EF Serializable transaction, atomic proposal/decision/command/audit.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/CashExchangeBookValueServiceV1.cs"] =
-                    new("8987e87fcdbdc99cd3b71e34e836f925bbd48175a7fdbcee4121e3f434ef9d2a",
+                    new("7f2dd2aa7581329a6f572012ad3cd1725a65efd53509deb4a4e55e9acf9d6cba",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -3584,7 +3584,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryGoodsReceiptReversalParticipant.cs"] =
                 // Re-fingerprinted for AK-2b (KLN-D119): optional piece count on the acceptance undo; SQL API counts unchanged.
                     // Re-fingerprinted for the AK-3 merge (KLN-D119): the derived piece count stays outside the payload hash; SQL API counts unchanged; K3 review pending.
-                    new("bcc5654de23ef966551da455d5ebae4f9efaebf1e98da56bcd3c341dbd6bdb81",
+                    new("0cb06188f4b35e9a713424ac09358ecab3e3b0c0f94244f057c10e2988f790a5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["DbConnection"] = 3,
@@ -3690,7 +3690,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // entity reload.
                 // W8 guard-race closure; K3 review pending. Existing typed409 only, same owner TX/SQL API counts.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventorySubcontractAllocationReleaseStoreV1.cs"] =
-                    new("12961a0452fca4061a658d50a7d76989ebeb8273e910a19a76a6f18032752e67",
+                    new("803b61cf99e15e2e6e6948cab72a60cf6b6f569d20dce705fdf004e3699bc6ed",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             [".ReloadAsync"] = 2,
@@ -4270,7 +4270,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Sql"] = 1
                         }),
-                // tren-1 wave 3 — one-step party credit limit: Down refuses (51563, number shared with the Idempotency retention purge migration) while direct limits exist (forward fix). One Sql; K3 review pending.
+                // tren-1 wave 3 — one-step party credit limit: Down refuses (51563; the Idempotency retention purge Down guard has its own number, 51564) while direct limits exist (forward fix). One Sql; K3 review pending.
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
                  + "Persistence/Migrations/20261115163811_RestorePartyCreditLimitOneStep.cs"] =
                     new(
@@ -4288,11 +4288,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Sql"] = 1
                         }),
-                // tren-1 wave 3 — OPEN-021 / NS-12 retention purge: an append-only trigger on the purge evidence (51561/51562), the CommandExecutions mutation trigger re-created to admit the recorded purge (51010), and in Down a refusal (51563, shared with the Finance one-step credit limit migration) plus the original trigger restored. Four Sql; K3 review pending.
+                // tren-1 wave 3 — OPEN-021 / NS-12 retention purge: an append-only trigger on the purge evidence (51561/51562), the CommandExecutions mutation trigger re-created to admit the recorded purge (51010), and in Down a refusal (51564; 51563 belongs to the Finance one-step credit limit migration) plus the original trigger restored. Four Sql; K3 review pending.
                 ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
                  + "Persistence/Migrations/20261115162318_AddIdempotencyRetentionPurge.cs"] =
                     new(
-                        "c8fe3a692c86d7a57832a1b391a077f24fb7e2619ecc28928d8a90b7d2524fde",
+                        "f7c31cf94609b45a3f9ad3f9439e375bd9985462e1fa19343076e0faff28350b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 4
@@ -4502,10 +4502,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Persistence/Migrations/20261115151824_AddInventoryTransferDispatchCancellation.cs"] =
                     new(
                         // Re-fingerprinted for tren-1 W5 (integration): the seven team merges combined; value from the guard output (ec316c9d… -> a1a0ba7e…).
-                        "a1a0ba7e1a65cff5e9f2a29694ae5f13333680aef7046ca1a85d4d4834ec1414",
+                        // Tren-1 K3 fix G3: Up also backfills pre-existing dispatches to SourceScaleSettingAtDispatch = 3 (Unreadable, never Off);
+                        // one tenant-neutral UPDATE of the module's own table. Sql 1 -> 2 (a1a0ba7e… -> f4cbb88f…).
+                        "f4cbb88f26c531a997744d66d032c1f69315c9d8f4fc1165def38893f9005443",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
-                            ["Sql"] = 1
+                            ["Sql"] = 2
                         }),
                 // tren-1 wave 2 — URT monthly scrap prices: Down refuses (51387) while prices exist (forward fix). One guard Sql; K3 review.
                 ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/"
@@ -6270,7 +6272,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20261122213615_AddUserAccountCreatedBy.cs"] =
                     new("8410925ac218229082bf6f975335ddefa38b0e2d365cf4dbc849034d97a3c7ba", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // Tren-1 K3 fix F4 (ALS-D91 replacement-expected supplier return); K3 review in the train-1 exact-head review. Down
-                // refuses (52300, used by no other migration) while a marked return exists; use a forward fix. 1 lexical Sql call(s).
+                // refuses (52073, used by no other migration) while a marked return exists; use a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20261122205751_AllowPurchaseSupplierReturnReplacement.cs"] =
                     new("33893073ded647ba118b6647fd822673720e158ef55cf1fc497f145a2f72efc3", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // WP-A4; K3 review pending. Down refuses (52290, WP-A4 range, used by no other migration) while AI knowledge package

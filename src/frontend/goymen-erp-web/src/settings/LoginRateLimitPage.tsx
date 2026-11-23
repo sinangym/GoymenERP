@@ -12,6 +12,7 @@
  * conflict closes the form and re-reads; an unknown outcome keeps the same Idempotency-Key for "retry".
  */
 
+import { EditedAttemptNotice } from './EditedAttemptNotice'
 import { useState, type FormEvent } from 'react'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
@@ -344,6 +345,7 @@ function Footer<D>({
           {loginRateLimitRefusalText(status.status, status.code)}
         </p>
       ) : null}
+      <EditedAttemptNotice status={status} />
       {status.kind === 'unknown' ? (
         <p role="alert" className={styles.error}>
           {T.unknownOutcome}

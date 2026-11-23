@@ -46,12 +46,12 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
             Assert.Equal((493.8m, 500.16m), (replay!.Invoice.Lines[0].Share.TheoreticalKilograms, replay.Invoice.Lines[0].Share.ActualKilograms));
         }
 
-        // CK_InvoiceLines_KilogramInformation runs before the AFTER trigger: half the information or a non-positive figure is refused.
-        // (Each half is IS NOT NULL-guarded: "x > 0 AND NULL > 0" is UNKNOWN, which a CHECK lets through.)
+        // CK_InvoiceLines_KilogramInformation runs before the AFTER trigger: a theoretical kg without the actual kg or a non-positive
+        // figure is refused. (Each branch is IS NOT NULL-guarded: "x > 0 AND NULL > 0" is UNKNOWN, which a CHECK lets through.)
+        // SAT-D473: the actual kg alone is a valid piece-line fact, so clearing only the theoretical kg reaches the trigger below.
         foreach (var sql in new[]
         {
             "UPDATE sales.InvoiceLines SET ActualKg = NULL WHERE InvoiceId = @id",
-            "UPDATE sales.InvoiceLines SET TheoreticalKg = NULL WHERE InvoiceId = @id",
             "UPDATE sales.InvoiceLines SET ActualKg = 0 WHERE InvoiceId = @id",
             "UPDATE sales.InvoiceLines SET TheoreticalKg = -1 WHERE InvoiceId = @id",
         })
@@ -67,6 +67,7 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
             "UPDATE sales.InvoiceLines SET TheoreticalKg = 493.801 WHERE InvoiceId = @id",
             "UPDATE sales.InvoiceLines SET ActualKg = 748.900 WHERE InvoiceId = @id",
             "UPDATE sales.InvoiceLines SET TheoreticalKg = NULL, ActualKg = NULL WHERE InvoiceId = @id",
+            "UPDATE sales.InvoiceLines SET TheoreticalKg = NULL WHERE InvoiceId = @id",
         })
         {
             var guard = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(sql, ("@id", invoiceId)));
@@ -91,6 +92,25 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
             "UPDATE sales.InvoiceLines SET TheoreticalKg = 1 WHERE InvoiceId = @id", ("@id", kgInvoice)))).Number);
         Assert.Equal(51224, (await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
             "UPDATE sales.InvoiceLines SET TheoreticalKg = 1, ActualKg = 1 WHERE InvoiceId = @id", ("@id", kgInvoice)))).Number);
+
+        // SAT-D473: a piece line approved without a kg/unit is stored with its scale kg only — the theoretical kg stays NULL (never
+        // 0) and replays exactly so.
+        var unpinnedInvoice = Guid.NewGuid();
+        await using (var scope = run.Store(CompanyA))
+        {
+            var unpinned = await scope.Invoices.StoreInvoiceAsync(run.Envelope("i-piece-unpinned"), Hash('3'),
+                number => PieceInvoice(unpinnedInvoice, number, run.Actor, Guid.NewGuid(), theoreticalKg: null));
+            Assert.Equal(SalesDraftWriteOutcome.Recorded, unpinned.Outcome);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.InvoiceLines WHERE InvoiceId = @id AND Quantity = 40 AND TheoreticalKg IS NULL AND ActualKg = 500.160 "
+            + "AND NetAmount = 10000.00", ("@id", unpinnedInvoice)));
+        await using (var scope = run.Store(CompanyA))
+        {
+            var share = Assert.Single((await scope.Invoices.FindInvoiceAsync(unpinnedInvoice))!.Lines).Share;
+            Assert.Equal((40m, (decimal?)null, (decimal?)500.16m), (share.Quantity, share.TheoreticalKilograms, share.ActualKilograms));
+        }
     }
 
     [SqlServerFact]
@@ -151,12 +171,12 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
     }
 
     /// <summary>Golden K02: one piece line, 40 adet × 250,00 TL, theoretical 493,800 kg and scale 500,160 kg (information only).</summary>
-    private static SalesInvoice PieceInvoice(Guid id, string number, string actor, Guid shipment)
+    private static SalesInvoice PieceInvoice(Guid id, string number, string actor, Guid shipment, decimal? theoreticalKg = 493.8m)
     {
         var tax = new SalesLineTaxSnapshot(Product, Day, "Normal", "Steel", "Resolved", null, "Record", Guid.NewGuid(), 1, "Resolved", 20m,
             "NotRequired", null, null, "NotApplied", null, "NotRequired", null, null, null, 0, "Normal", false);
         var share = new SalesInvoiceShareInput(Guid.NewGuid(), shipment, Guid.NewGuid(), "IRS-2026-000001", 1, Day, Guid.NewGuid(),
-            Guid.NewGuid(), 0, Product, PieceUnit, 40m, "40", new CommercialDraftFields("250.00", PieceUnit, null), tax, 493.8m, 500.16m);
+            Guid.NewGuid(), 0, Product, PieceUnit, 40m, "40", new CommercialDraftFields("250.00", PieceUnit, null), tax, theoreticalKg, 500.16m);
         var terms = SalesDueTerms.Create([new SalesDueInstalment(1, SalesDueBasis.OrderDate, 30, "100")]);
         return SalesInvoice.Create(id, CompanyA, number, new SalesInvoiceHeader(Guid.NewGuid(), Guid.NewGuid(), Try, Guid.NewGuid(), "1", 2, Day, null),
             [share], SalesDueDateCalculator.Compute(terms, Day, Day).DueDates, terms, actor, DateTimeOffset.UtcNow);

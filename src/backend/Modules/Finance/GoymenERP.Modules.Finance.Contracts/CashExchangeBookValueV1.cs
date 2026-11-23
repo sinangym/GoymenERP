@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace GoymenERP.Modules.Finance.Contracts;
 
-/// <summary>FIN-S14, direct decision #1189/6960684942. Existing Accounting permissions; no grant or new role.</summary>
+/// <summary>FIN-S14, direct decision #1189/6960684942 (GOV-D16). Existing Accounting permissions; no grant or new role.</summary>
 public static class CashExchangeBookValuePermissionsV1
 {
     public const string Prepare = "accounting.normal-journal.draft.create";

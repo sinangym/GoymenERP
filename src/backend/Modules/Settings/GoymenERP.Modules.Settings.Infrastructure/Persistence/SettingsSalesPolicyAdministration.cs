@@ -46,9 +46,6 @@ internal sealed partial class SettingsSalesPolicyAdministration(
     /// <summary>The reviewed compiled catalog the baseline comes from (Settings' own tests build another one).</summary>
     internal ApprovedSalesPolicyCatalog Catalog { get; init; } = ApprovedSalesPolicyCatalog.Approved;
 
-    /// <summary>The money profiles a threshold currency and its amount scale are checked against.</summary>
-    internal ApprovedMoneyProfileCatalog MoneyProfiles { get; init; } = ApprovedMoneyProfileCatalog.Approved;
-
     private Guid RequireContextCompany()
     {
         if (!currentUser.IsAuthenticated || string.IsNullOrWhiteSpace(currentUser.UserId)

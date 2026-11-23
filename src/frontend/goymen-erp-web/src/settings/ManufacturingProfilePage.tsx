@@ -1,3 +1,4 @@
+import { EditedAttemptNotice } from './EditedAttemptNotice'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
@@ -104,7 +105,7 @@ function Mutation<TBody extends { readonly reason: string }>({ company, body, va
   }
   return <form className={styles.form} onSubmit={(event) => void submit(event)} aria-busy={busy}>
     <fieldset disabled={busy || frozen !== null}>{children(busy || frozen !== null)}</fieldset>
-    {attempt.status.kind === 'unknown' && <p role="alert">{T.unknown}</p>}{attempt.status.kind === 'refused' && <p role="alert">{T.refused}</p>}
+    {attempt.status.kind === 'unknown' && <p role="alert">{T.unknown}</p>}<EditedAttemptNotice status={attempt.status} />{attempt.status.kind === 'refused' && <p role="alert">{T.refused}</p>}
     <Button type="submit" variant="primary" disabled={busy || (!valid && frozen === null)}>{busy ? T.pending : frozen !== null ? T.retry : saved === T.prepared ? T.save : saved === T.transferred ? T.transfer : T.publish}</Button>
     <Button type="button" disabled={busy || frozen !== null} onClick={() => finish(null)}>{T.cancel}</Button>
   </form>
