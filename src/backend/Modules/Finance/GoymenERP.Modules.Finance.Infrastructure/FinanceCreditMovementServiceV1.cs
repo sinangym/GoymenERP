@@ -155,7 +155,7 @@ public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompany
             || money.Profile.Version < 1 || money.Scale is < 0 or > 28 || money.EffectiveFrom > source.TransactionDate || money.EffectiveThrough < source.TransactionDate)
             return (Failure(context, CommandOutcome.Unavailable, new ValidationIssue("profile", "credit_plan_profile_unavailable")), null, null);
         // The source is kept exactly, including its fractional precision. The currency smallest unit is
-        // FNS-D99's plan tolerance, not authorization to round or replace actual bank components.
+        // FNS-D99's plan tolerance (FNS-D116), not authorization to round or replace actual bank components.
         if (source.BankEffect is { } bank)
         {
             var eligible = await db.BankAccounts.AsNoTracking().AnyAsync(x => x.Id == bank.BankAccountId && x.CurrencyId == account.CurrencyId

@@ -232,7 +232,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // W8: normal adapter Warning RunInfo metadata occurs in completed runs as well.
     // W8 diagnostic collection: RunInfo is not a veto once an exact complete Failed TRX is proved.
     // This branch always retains native failure and cannot write proof; passing acceptance is unchanged.
-    // User decision 2026-11-18: one broad SQL shard budget is 10800s; each native process stays capped at 2400s.
+    // User decision 2026-11-18 (GOV-D18): one broad SQL shard budget is 10800s; each native process stays capped at 2400s.
     // No renewal, retries, inventory changes, skips or partial proof; independent exact-head K3 review is pending.
     // W8: 9077fdf4f reports the effective global/process timeout budget without changing either deadline.
     // Reviewed the source delta and its timeout/redaction regression; re-fingerprinted with the house producer.

@@ -42,7 +42,7 @@ public sealed class PurchaseAdditionalCostServiceV1(ICompanyContext company, ICu
     public async Task<PurchaseAdditionalCostResponseV1> RecordAsync(RecordPurchaseAdditionalCostV1 request, PurchasingCommandMetadata metadata,
         CancellationToken token = default)
     {
-        // ALS-D23/D27/D80/D107 plus the explicit ALC-S8 answer (6946921285). Composition never grants authority.
+        // ALS-D23/D27/D80/D107 plus the explicit ALC-S8 answer (6946921285 (GOV-D16)). Composition never grants authority.
         if (!user.IsAuthenticated || string.IsNullOrWhiteSpace(user.UserId)) throw Failure(401);
         if (!company.IsResolved || company.CompanyId == Guid.Empty || !user.CanAccessCompany(company.CompanyId)) throw Failure(403);
         var admission = writeAdmission ?? throw Failure(503);
