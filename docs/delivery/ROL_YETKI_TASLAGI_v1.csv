@@ -290,3 +290,18 @@ work.tasks.assign,work,hayır,evet,+,,+,,+,+,,,,,,,+,,+,,ÖNERİ,AI-D23: görev 
 work.tasks.complete,work,hayır,evet,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,,ÖNERİ,AI-D23: yalnız kendisine atanan görevi tamamlar (kural Work alanında). Sistem Yöneticisi iş kaydı taşımadığı için önerilmez (ROL-D6); Kalite pasif (ROL-D20).
 ai.panel.use,ai,hayır,evet,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,KARARLI,"ROL-D16: başlangıçta bütün kullanıcı rollerine önerilir (AI-D8'in yerine); AI-D1/AI-D6 sürer, grant insan kapısı."
 ai.decisions.read,ai,hayır,evet,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,+,KARARLI,AI-D36: bütün kullanıcı rollerine (ROL-D16 ile tutarlı); kişi adları dizinde maskelenir (AI-D34); AI canlıda kapalı (AI-D6); grant insan kapısı.
+settings.ai-gateway.manage,settings,hayır,evet,,,,,,,,,,,,,,,,+,ÖNERİ,ROL-D24; AI-D24/AI-D30 ağ geçidi politikası. Bütçe değeri ayrı insan kararı (YOL-D43); AI canlıda kapalı.
+ai.knowledge.approve,ai,hayır,evet,,,,,,,,,,,,,,,,+,ÖNERİ,ROL-D24; bilgi paketi sürüm onayı. Kayıtta Critical değil; Critical işareti insan kapısı.
+work.assistant-memory.oversee,work,hayır,evet,,,,,,,,,,,,,,,,+,ÖNERİ,"ROL-D24; AI-D30/AI-D39: hafıza ve zamanlı görev gözetimi; her görüntüleme ve kapatma denetime yazılır, kullanıcıya bildirilmez. Hafıza AI-D50 metni onaylanana kadar kapalı."
+finance.bank-statements.match,finance,hayır,evet,,,,,,,,,,,,+,,,,,ÖNERİ,"ROL-D24; FNS-D113: ekstre satırını kayıtlı harekete kesin eşler, ters kayıtla geri alır."
+finance.bank-statements.import,finance,hayır,evet,,,,,,,,,,,,+,,,,,KARARLI,ROL-D25 (E-94): ekstre içe alma FIN. Öneri; atama insan kapısı.
+finance.bank-statements.read,finance,hayır,evet,+,,,,,,,,,,,+,+,,,,KARARLI,ROL-D25 (E-94): ekstre görme FIN + FINM + GM. Öneri; atama insan kapısı.
+reporting.export,reporting,hayır,evet,+,,+,,+,+,,,,,,,+,,+,,ÖNERİ,"ROL-D24 (""bütün müdür rolleri + GM""); raporun kendi okuma izni ayrıca gerekir; her dışa aktarma kayıt ve denetim üretir."
+reporting.auditor-package.export,reporting,hayır,evet,+,,,,,,,,,,,,,,+,,ÖNERİ,"ROL-D24; YOL-D13/ROL-D13: denetçiye sistem erişimi yok, paket dışa aktarılır."
+reporting.intercompany.read,reporting,hayır,evet,+,,,,,,,,,,,,,,+,+,KARARLI,"ROL-D15, ROL-D24: grup içi döküm GM + SYS + MUHM."
+inventory.average-cost.read,inventory,hayır,evet,+,,+,,,,,,,,,,,,+,,ÖNERİ,"ROL-D24; satış marjı izni ayrı kalır (`sales.orders.margin.read`, ROL-D21)."
+settings.legal-deadline-calendar.manage,settings,hayır,evet,,,,,,,,,,,,,,,+,,ÖNERİ,ROL-D24; YOL-D4 (c) yasal süre takvimi sürümleri.
+settings.legal-deadlines.read,settings,hayır,evet,+,,,,,,,,,,,,+,+,+,,ÖNERİ,ROL-D24; Work görünümündeki yasal süre sayaçları.
+ai.document-drafts.prepare,ai,hayır,evet,,+,,+,,,,,,,,,,+,,,ÖNERİ,ROL-D24; `ai.panel.use` ve belge türünün sahip modül izni ayrıca gerekir; taslak kayıt yaratmaz.
+ai.document-drafts.supplier-confirmation,ai,hayır,evet,,,,,+,,,,,,,,,,,,ÖNERİ,ROL-D24; `ai.panel.use` + `ai.document-drafts.prepare` ayrıca gerekir; taslak kayıt yaratmaz.
+accounting.periods.reopen,accounting,hayır,evet,+,,,,,,,,,,,,,,,,KARARLI,"ROL-D12: dönem yeniden açma ayrı izin, yalnız GM (§3.1 akış 48'in kayıtlı adı). ROL-D24 kapsamında değil; tren-2'de kayıtlı bulunduğu için v1.4'te eklendi."
