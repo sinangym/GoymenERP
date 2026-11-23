@@ -21,14 +21,16 @@ function recall(key: string, order: string, line: string): FutureAllocationPendi
     const value: unknown = JSON.parse(sessionStorage.getItem(key) ?? 'null')
     if (typeof value !== 'object' || value === null || !('kind' in value) || !('key' in value) || !('payload' in value)
       || typeof value.key !== 'string' || value.key.length === 0 || value.key.length > 128 || typeof value.payload !== 'object' || value.payload === null) return null
-    if (value.kind === 'create' && 'allocationId' in value.payload && futureGuid(value.payload.allocationId)
+    // Exact key sets: a stored attempt carrying any other member is not replayed.
+    const keys = Object.keys(value).length; const payloadKeys = Object.keys(value.payload).length
+    if (value.kind === 'create' && keys === 3 && payloadKeys === 8 && 'allocationId' in value.payload && futureGuid(value.payload.allocationId)
       && 'salesOrderId' in value.payload && value.payload.salesOrderId === order
       && 'salesOrderLineId' in value.payload && value.payload.salesOrderLineId === line
       && 'purchaseOrderId' in value.payload && futureGuid(value.payload.purchaseOrderId)
       && 'purchaseOrderLineId' in value.payload && futureGuid(value.payload.purchaseOrderLineId)
       && 'unitId' in value.payload && futureGuid(value.payload.unitId) && 'quantityText' in value.payload && typeof value.payload.quantityText === 'string'
       && 'reason' in value.payload && typeof value.payload.reason === 'string') return value as FutureAllocationPending
-    if (value.kind === 'release' && 'allocationId' in value && futureGuid(value.allocationId)
+    if (value.kind === 'release' && keys === 4 && payloadKeys === 4 && 'allocationId' in value && futureGuid(value.allocationId)
       && 'expectedAllocationVersion' in value.payload && typeof value.payload.expectedAllocationVersion === 'string'
       && 'quantityText' in value.payload && value.payload.quantityText === null && 'reasonCode' in value.payload && value.payload.reasonCode === 'manual-release'
       && 'reasonText' in value.payload && typeof value.payload.reasonText === 'string') return value as FutureAllocationPending

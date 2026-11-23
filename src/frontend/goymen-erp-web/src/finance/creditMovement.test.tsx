@@ -48,6 +48,37 @@ describe('actual credit movements', () => {
     expect(decodeCreditPostingProposals({ companyId: Company, items: [{ ...proposal, source: { ...source, bankEffect: {} } }] }, Company)).toBeNull()
     expect(decodeCreditPostingProposals({ companyId: Company, items: [{ ...proposal, source: { ...source, components: [...source.components, ...source.components] } }] }, Company)).toBeNull()
   })
+  it('accepts a posting proposal only with the exact contract key set at every level', () => {
+    const bankEffect = { bankAccountId: Account, amount: '100.00', sourceReference: 'SENTETIK bank line' }
+    const source = { eventId: Movement, companyId: Company, movementId: Movement, creditAccountId: Account, currencyId: Currency,
+      kind: 'Drawdown', sourceDocument: input().sourceDocument, transactionDate: '2026-11-17', accountingDate: '2026-11-17',
+      components: input().components, bankEffect, reversesMovementId: null, approvedBy: 'SENTETIK checker', reason: 'SENTETIK source' }
+    const proposal = { proposalId: Movement, companyId: Company, status: 'AwaitingMapping', mappingStatus: 'MappingMissing', mappingVersion: null,
+      waitingReasons: ['credit_mapping_missing'], receivedAtUtc: '2026-11-17T09:00:00Z', source }
+    const without = (value: Record<string, unknown>, key: string) => Object.fromEntries(Object.entries(value).filter(([name]) => name !== key))
+    const decode = (item: unknown, list: Record<string, unknown> = {}) => decodeCreditPostingProposals({ companyId: Company, items: [item], ...list }, Company)
+    const withSource = (changed: unknown) => ({ ...proposal, source: changed })
+    expect(decode(proposal)).toHaveLength(1)
+    // list
+    expect(decode(proposal, { nextCursor: null })).toBeNull()
+    expect(decodeCreditPostingProposals({ items: [proposal] }, Company)).toBeNull()
+    // proposal row
+    expect(decode({ ...proposal, postedAtUtc: null })).toBeNull()
+    expect(decode(without(proposal, 'mappingVersion'))).toBeNull()
+    // source
+    expect(decode(withSource({ ...source, lenderName: 'SENTETIK' }))).toBeNull()
+    expect(decode(withSource(without(source, 'reversesMovementId')))).toBeNull()
+    expect(decode(withSource(without(source, 'bankEffect')))).toBeNull()
+    // source document
+    expect(decode(withSource({ ...source, sourceDocument: { ...source.sourceDocument, note: 'SENTETIK' } }))).toBeNull()
+    expect(decode(withSource({ ...source, sourceDocument: without(source.sourceDocument, 'revision') }))).toBeNull()
+    // component
+    expect(decode(withSource({ ...source, components: [{ ...source.components[0], rate: '1' }] }))).toBeNull()
+    expect(decode(withSource({ ...source, components: [without(source.components[0]!, 'functionalAmount')] }))).toBeNull()
+    // bank effect
+    expect(decode(withSource({ ...source, bankEffect: { ...bankEffect, valueDate: '2026-11-17' } }))).toBeNull()
+    expect(decode(withSource({ ...source, bankEffect: without(bankEffect, 'sourceReference') }))).toBeNull()
+  })
   it('keeps unknown TL and source text while refusing numeric money, foreign company and wrong account', () => {
     expect(decodeCreditMovement(row(), Company, Account)?.source.components[0]?.functionalAmount).toBeNull()
     expect(decodeCreditMovement({ ...row(), companyId: Account }, Company, Account)).toBeNull()

@@ -75,6 +75,33 @@ describe('future allocation workflow', () => {
     expect(api.send.mock.calls[1]).toEqual(api.send.mock.calls[0])
   })
 
+  it('recalls a stored attempt only with exactly its own members, at the top level and in the payload', async () => {
+    const storeKey = `goymen.inventory.future-allocation.v1:1:SENTETIK-actor:${id}:${id}:${id}`
+    const create = { kind: 'create', key: 'SENTETIK-key', payload: { allocationId: id, salesOrderId: id, salesOrderLineId: id,
+      purchaseOrderId: id, purchaseOrderLineId: id, unitId: id, quantityText: '5', reason: 'Sentetik gerekçe' } }
+    const release = { kind: 'release', key: 'SENTETIK-key', allocationId: id,
+      payload: { expectedAllocationVersion: '1', quantityText: null, reasonCode: 'manual-release', reasonText: 'Sentetik gerekçe' } }
+    const recalled = async (value: unknown) => {
+      sessionStorage.setItem(storeKey, JSON.stringify(value))
+      mount()
+      await screen.findByRole('heading', { level: 1, name: T.title })
+      const retry = screen.queryByRole('button', { name: T.retry }) !== null
+      cleanup()
+      return retry
+    }
+    expect(await recalled(create)).toBe(true)
+    expect(await recalled(release)).toBe(true)
+    expect(await recalled({ ...create, extra: 1 })).toBe(false)
+    expect(await recalled({ ...release, extra: 1 })).toBe(false)
+    expect(await recalled({ ...create, allocationId: id })).toBe(false)
+    expect(await recalled({ ...release, allocationId: undefined })).toBe(false)
+    expect(await recalled({ ...create, payload: { ...create.payload, extra: 1 } })).toBe(false)
+    expect(await recalled({ ...create, payload: { ...create.payload, reason: undefined } })).toBe(false)
+    expect(await recalled({ ...release, payload: { ...release.payload, extra: 1 } })).toBe(false)
+    expect(await recalled({ ...release, payload: { ...release.payload, reasonText: undefined } })).toBe(false)
+    expect(api.send).not.toHaveBeenCalled()
+  })
+
   it('does not fetch source choices or display write controls without the separate write capability', async () => {
     scenario.write = false
     mount()
