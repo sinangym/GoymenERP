@@ -44,7 +44,7 @@ function command(kind: ReceiptCommand['kind']): ReceiptCommand {
   if (kind === 'finalize') return { kind, document: draft(), payload: { expectedDocumentVersion: '1', expectedTransferVersion: '2', reason: 'SENTETIK kesinleştir' } }
   if (kind === 'receive') return { kind, lineId: LINE, document: effective(), payload: { expectedTransferVersion: '2', receivedAtUtc: AT,
     incomingDocument: { kind: 'inventory.transfer.incoming', id: DOCUMENT, lineId: DOCLINE }, receivedKg: '8', overageReason: null, expectedIncomingDocumentVersion: '2' } }
-  if (kind === 'overage-decision') return { kind, lineId: LINE, payload: { decision: 'Approve', decidedAtUtc: AT, reason: 'SENTETIK karar', requestNumber: 1 } }
+  if (kind === 'overage-decision') return { kind, lineId: LINE, payload: { expectedTransferVersion: '3', decision: 'Approve', decidedAtUtc: AT, reason: 'SENTETIK karar', requestNumber: 1 } }
   if (kind === 'overage-renewal') return { kind, lineId: LINE, payload: { expectedTransferVersion: '3', requestedAtUtc: AT, reason: 'SENTETIK yeni talep', overageKg: '1' } }
   if (kind === 'loss-request') return { kind, lineId: LINE, payload: { expectedTransferVersion: '2', requestedAtUtc: AT, explanation: 'SENTETIK kayıp' } }
   if (kind === 'loss-decision') return { kind, lineId: LINE, payload: { expectedTransferVersion: '2', decision: 'Approve', decidedAtUtc: AT, reason: 'SENTETIK karar', requestNumber: 2 } }

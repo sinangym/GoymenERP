@@ -346,7 +346,7 @@ public sealed class InventoryTransferReceiptHttpAcceptanceTests(GoymenErpApiFact
     {
         "receive" => ReceiveBody("9.5"),
         "overage" => JsonSerializer.Serialize(new DecideInventoryTransferOverageV1(
-            InventoryTransferDecisionKindV1.Approve, At.AddHours(3), "SENTETIK tartı onayı"), Web),
+            "3", InventoryTransferDecisionKindV1.Approve, At.AddHours(3), "SENTETIK tartı onayı"), Web),
         "loss-request" => JsonSerializer.Serialize(
             new RequestInventoryTransferLossV1("2", At.AddHours(3), "SENTETIK yolda kayıp"), Web),
         "loss-decision" => JsonSerializer.Serialize(new DecideInventoryTransferLossV1("3",

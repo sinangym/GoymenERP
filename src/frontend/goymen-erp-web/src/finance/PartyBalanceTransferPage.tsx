@@ -111,13 +111,24 @@ function TransferScreen({ bound, entry }: { readonly bound: NonNullable<ReturnTy
     ? documents.data.data.items.filter((item) => item.downloadable) : []
   const document = documentRows.find((item) => item.id === documentId) ?? null
   const reset = () => { setSelection(null); setMessage(null); setSaved(null); setDocumentId('') }
-  const run = async (value: BalanceTransferAttempt, wasUnknown: boolean) => {
+  /**
+   * `final` (K3 P2-1): the user's explicit way out of an unknown attempt. The same key and body are sent once more;
+   * only a decoded command answer closes the attempt (a replay shows the recorded transfer, a decoded 409/422 says
+   * this key wrote nothing). No answer, a 401/403 (the session or authority) and a code-less 400/404/415 (answered
+   * before the command is admitted, so it says nothing about the first send) keep it open with the same key.
+   */
+  const run = async (value: BalanceTransferAttempt, wasUnknown: boolean, final = false) => {
     const fence = boundary.capture()
     const reply = await recordBalanceTransfer(companyId, value.key, value.request)
     if (reply.kind === 'refused' && (reply.status === 401 || reply.status === 403)) boundary.report(reply.status, fence)
     if (!mounted.current || recallBalanceTransfer(slot)?.key !== value.key) return
     if (reply.kind === 'answered' && reply.result.outcome === 'Succeeded' && reply.result.resource !== null) {
       settleBalanceTransfer(slot, value.key); setAttempt(null); setSaved(reply.result.resource); setSelection(null); setMessage(T.success)
+      void client.invalidateQueries({ queryKey: [bound.namespace, 'finance'] })
+    } else if (final && reply.kind !== 'answered') {
+      setAttempt(markBalanceTransferUnknown(slot, value.key)); setMessage(T.finalOpen)
+    } else if (final) {
+      settleBalanceTransfer(slot, value.key); setAttempt(null); setSelection(null); setMessage(T.abandoned)
       void client.invalidateQueries({ queryKey: [bound.namespace, 'finance'] })
     } else if (reply.kind === 'unknown' || (wasUnknown && (reply.kind !== 'answered' || !reply.result.replayed))) {
       setAttempt(markBalanceTransferUnknown(slot, value.key)); setMessage(T.unknown)
@@ -160,7 +171,12 @@ function TransferScreen({ bound, entry }: { readonly bound: NonNullable<ReturnTy
     </>}
     <label>{T.occurredOn}<input type="date" value={occurredOn} disabled={frozen} onChange={(event) => setOccurredOn(event.target.value)} /></label>
     <label>{T.reason}<textarea value={reason} maxLength={1000} disabled={frozen} onChange={(event) => setReason(event.target.value)} /></label>
-    {attempt?.phase === 'unknown' ? <button type="button" onClick={() => { const next = retryBalanceTransfer(slot); if (next) { setAttempt(next); void run(next, true) } }}>{T.retry}</button>
+    {attempt?.phase === 'unknown' ? <>
+      <button type="button" onClick={() => { const next = retryBalanceTransfer(slot); if (next) { setAttempt(next); void run(next, true) } }}>{T.retry}</button>
+      <button type="button" aria-describedby="party-balance-transfer-final-help"
+        onClick={() => { const next = retryBalanceTransfer(slot); if (next) { setAttempt(next); void run(next, true, true) } }}>{T.finalCheck}</button>
+      <p id="party-balance-transfer-final-help">{T.finalCheckHelp}</p>
+    </>
       : <button type="button" disabled={frozen || snapshot === null || !snapshot.canRecord || document === null || !isDateOnly(occurredOn) || reason.trim() === ''} onClick={submit}>{T.submit}</button>}
     {attempt?.phase === 'unknown' && message === null ? <p role="status">{T.unknown}</p> : null}
     {message === null ? null : <p role="status">{message}</p>}

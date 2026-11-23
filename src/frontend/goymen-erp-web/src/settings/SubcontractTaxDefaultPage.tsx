@@ -1,3 +1,4 @@
+import { EditedAttemptNotice } from './EditedAttemptNotice'
 import { useState } from 'react'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
@@ -49,7 +50,7 @@ function Editor({ side, data, options, changed }: { readonly side: SubcontractTa
       <SubcontractTaxChoiceFields options={options} value={choice} onChange={setChoice} />
       {options.vatRates.length === 0 && <p role="status">{T.noSource}</p>}
       <Field label={T.reason}>{p => <textarea {...p} required maxLength={4000} value={reason} onChange={e => setReason(e.target.value)} />}</Field>
-    </fieldset>{invalid && <p role="alert">{T.invalid}</p>}{attempt.status.kind === 'unknown' && <p role="alert">{T.unknown}</p>}{attempt.status.kind === 'refused' && <p role="alert">{T.refused}</p>}
+    </fieldset>{invalid && <p role="alert">{T.invalid}</p>}{attempt.status.kind === 'unknown' && <p role="alert">{T.unknown}</p>}<EditedAttemptNotice status={attempt.status} />{attempt.status.kind === 'refused' && <p role="alert">{T.refused}</p>}
       <Button type="submit" disabled={busy || options.vatRates.length === 0}>{busy ? T.pending : frozen !== null ? T.retry : T.save}</Button></form>
     <table className={styles.table}><caption>{T.history}</caption><thead><tr><th scope="col">{T.version}</th><th scope="col">{T.vat}</th><th scope="col">{T.withholding}</th><th scope="col">{T.who}</th><th scope="col">{T.when}</th><th scope="col">{T.reason}</th></tr></thead>
       <tbody>{data.versions.map(x => <tr key={x.version}><td>{x.version}</td><td>{x.value.vatPercent ?? x.value.exemptionCode ?? T.noSource}</td><td>{x.value.withholdingPercent ?? T.none} {x.value.withholdingCode}</td><td>{x.recordedBy}</td><td>{x.recordedAtUtc}</td><td>{x.reason}</td></tr>)}</tbody></table>

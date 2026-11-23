@@ -159,7 +159,7 @@ function Workspace({ transferId: seed, onChanged, shell, namespace, allowed, com
       : work.facts.losses.filter((row) => row.status === 'Pending')
     const selectedRequest = pending.find((row) => row !== null && `${row.lineId}:${row.requestNumber}` === requestKey)
     if (!selectedRequest || kind !== 'loss-withdrawal' && choice === '') { setError(T.invalid); return }
-    if (kind === 'overage-decision') start({ kind, lineId: selectedRequest.lineId, payload: { decision: choice as 'Approve' | 'Reject', decidedAtUtc: at, reason: why, requestNumber: selectedRequest.requestNumber } })
+    if (kind === 'overage-decision') start({ kind, lineId: selectedRequest.lineId, payload: { expectedTransferVersion: work.transfer.version, decision: choice as 'Approve' | 'Reject', decidedAtUtc: at, reason: why, requestNumber: selectedRequest.requestNumber } })
     else if (kind === 'loss-decision') start({ kind, lineId: selectedRequest.lineId, payload: { expectedTransferVersion: work.transfer.version, decision: choice as 'Approve' | 'Reject', decidedAtUtc: at, reason: why, requestNumber: selectedRequest.requestNumber } })
     else start({ kind, lineId: selectedRequest.lineId, payload: { expectedTransferVersion: work.transfer.version, withdrawnAtUtc: at, reason: why, requestNumber: selectedRequest.requestNumber } })
   }

@@ -29,7 +29,9 @@ export function pendingLabelClassificationKey(
 function pending(value: unknown): PendingLabelClassification | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
   const candidate = value as Partial<PendingLabelClassification>
-  return typeof candidate.startedAuthorityNamespace === 'string' && candidate.startedAuthorityNamespace.length > 0
+  // Exactly the six members checked below: a stored value with any other key is not this store's attempt.
+  return Object.keys(candidate).length === 6
+    && typeof candidate.startedAuthorityNamespace === 'string' && candidate.startedAuthorityNamespace.length > 0
     && typeof candidate.actorId === 'string' && candidate.actorId.length > 0
     && typeof candidate.companyId === 'string' && GUID.test(candidate.companyId)
     && typeof candidate.labelId === 'string' && GUID.test(candidate.labelId)

@@ -1138,6 +1138,15 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
             var line = lines.Single(candidate => candidate.LineId == share.LineId);
             var quantity = Quantity.Of(share.Quantity, line.UnitIsKilogram ? QuantityUnit.Kilogram : QuantityUnit.Piece);
             Quantity? kilograms = share.QuantityKg is { } storedKg ? Quantity.Of(storedKg, QuantityUnit.Kilogram) : null;
+            if (!line.UnitIsKilogram && kilograms is null && share.Kind is (int)LoadingShareKind.Loaded or (int)LoadingShareKind.Shipped)
+            {
+                // AK-4 (KLN-D119): a piece line's load / shipment is rebuilt only with its physical kg. Before AK-4 the unit
+                // verifier refused a piece load before any share was written, so such a row is not a command's record; it is
+                // never given a guessed kg and never surfaces as a command rule refusal: the store is inconsistent.
+                throw new InvalidOperationException(
+                    "Kayıtlı adetli satır payının fiziksel kg'si yok; talimat kg tahmin edilerek yeniden kurulmaz.");
+            }
+
             switch ((LoadingShareKind)share.Kind)
             {
                 case LoadingShareKind.Loaded:

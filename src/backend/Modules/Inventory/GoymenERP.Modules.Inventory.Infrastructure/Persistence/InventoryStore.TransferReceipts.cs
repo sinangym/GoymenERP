@@ -327,6 +327,12 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             throw TransferError(404, InventoryTransferCodesV1.TransferNotFound);
         }
 
+        if (row.Version != parsed.ExpectedVersion)
+        {
+            // K3: the decider saw another transfer version (a correction, reversal or loss write-off moved it).
+            throw TransferError(409, InventoryTransferCodesV1.TransferVersionConflict);
+        }
+
         if (receipt is null || receipt.OverageKg <= 0m
             || (overageRequestNumber != FirstOverageRequestNumber && renewal is null))
         {
@@ -1097,7 +1103,9 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         DecideInventoryTransferOverageV1 request)
     {
         var reason = InventoryTransferReceiptApiV1.NormalizeText(request.Reason);
-        if (transferId == Guid.Empty || lineId == Guid.Empty || !Enum.IsDefined(request.Decision)
+        if (transferId == Guid.Empty || lineId == Guid.Empty
+            || !TryVersion(request.ExpectedTransferVersion, out var expectedVersion)
+            || !Enum.IsDefined(request.Decision)
             || request.DecidedAtUtc.Offset != TimeSpan.Zero || reason is null
             || request.RequestNumber is < FirstOverageRequestNumber)
         {
@@ -1105,13 +1113,14 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         }
 
         var decidedAtUtc = request.DecidedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture);
-        // KLN-D107: the request number joins the hash only when it is sent, so a decision recorded before re-requests
-        // existed still replays with its stored hash.
+        // KLN-D107: the request number joins the hash only when it is sent. The expected transfer version always joins
+        // it (same shape as the loss decision), so a retry against another version is a different payload.
         var payloadHash = request.RequestNumber is { } sentNumber
             ? GenealogyPayloadHash(new
             {
                 transferId,
                 lineId,
+                expectedVersion,
                 requestNumber = sentNumber,
                 decision = (int)request.Decision,
                 decidedAtUtc,
@@ -1121,11 +1130,13 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             {
                 transferId,
                 lineId,
+                expectedVersion,
                 decision = (int)request.Decision,
                 decidedAtUtc,
                 reason,
             });
-        return new(0, request.RequestNumber ?? FirstOverageRequestNumber, (int)request.Decision, reason, payloadHash);
+        return new(expectedVersion, request.RequestNumber ?? FirstOverageRequestNumber, (int)request.Decision, reason,
+            payloadHash);
     }
 
     private static (long ExpectedVersion, string Explanation, string PayloadHash) LossRequestPayload(

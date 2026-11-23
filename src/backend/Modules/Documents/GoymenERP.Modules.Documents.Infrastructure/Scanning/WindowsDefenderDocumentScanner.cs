@@ -26,7 +26,7 @@ public sealed record WindowsDefenderScannerOptions(string ExecutablePath, TimeSp
 /// <item>exit code <see cref="ThreatExitCode"/> (2), or real-time protection refusing the copy as infected while it is
 /// written → Infected (the upload is refused, nothing is stored);</item>
 /// <item>any other exit code, a timeout, a process that cannot start, a copy that cannot be written or that changed or
-/// vanished → Unavailable (stored NotScanned, never served).</item>
+/// vanished → Unavailable (KLN-D60 (3): the upload is refused, nothing is stored).</item>
 /// </list>
 /// The copy is removed afterwards (it is a scan artefact, not a document). The process runner is injectable for tests.
 /// </summary>

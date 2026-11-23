@@ -110,7 +110,8 @@ public sealed record FinanceOfficialSalesInvoiceViewV1(
     string? WithdrawnBy,
     DateTimeOffset? WithdrawnAtUtc,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateOnly? InvoiceDate = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<FinanceOfficialInvoiceSourceDifferenceV1>? SourceDifferences = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<FinanceOfficialInvoiceSourceDifferenceV1>? SourceDifferences = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] FinanceOfficialInvoiceTaxWarningV1? TaxWarning = null);
 
 /// <summary>FNS-D90 / KLN-D104 detail and approval warning; neither source is rewritten and no notification is sent.</summary>
 public sealed record FinanceOfficialInvoiceSourceDifferenceV1(Guid ImportBatchId, Guid SourceDocumentId,
@@ -242,4 +243,23 @@ public interface IFinanceOfficialSalesInvoiceServiceV1
         bool pendingOnly,
         string? cursor,
         CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// FNS-D64 (SINAN_KARARLARI_2026-11-15_DALGA2_EK5.md): the tax base + VAT − withholding = payable check of an official sales
+/// invoice, in the functional (TL) amounts. A difference of any size is only a WARNING: the record is never blocked, the
+/// warning is shown on the record and the CSV preview and written to the audit. One backend calculator answers it.
+/// <see cref="SourceDocumentId"/> names the CSV document (null on a manual record; the key is always written, as the
+/// published schema requires it); <see cref="DifferenceFunctionalAmount"/>
+/// is the absolute difference; <see cref="ExpectedPayableFunctionalAmount"/> may be negative text when withholding exceeds
+/// base + VAT.
+/// </summary>
+public sealed record FinanceOfficialInvoiceTaxWarningV1(
+    string Code,
+    Guid? SourceDocumentId,
+    string ExpectedPayableFunctionalAmount,
+    string PayableFunctionalAmount,
+    string DifferenceFunctionalAmount)
+{
+    public const string InconsistentCode = "finance_official_invoice_tax_inconsistent";
 }

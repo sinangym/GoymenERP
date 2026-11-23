@@ -18,7 +18,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// The ETTN is compared in its stored lowercase form.</item>
 /// <item>Only live records are read (pending and approved — the same filter as the unique indexes, FNS-D39): a rejected
 /// or withdrawn record frees its number and ETTN and reads as NotFound. A pending record answers PendingApproval without
-/// facts; only an approved record carries them (F-005 D1).</item>
+/// facts; only an approved record carries them (F-005 D1). An approved import whose document's open items are all cancelled
+/// (API-11) is not live either: it reads as NotFound (or PendingApproval beside a pending manual record), never Approved.</item>
 /// <item>A stored approved row Finance cannot read back exactly (an amount that is not exact decimal text, a missing
 /// approval time, an empty identity), two live rows on one key, or a store fault answer Unavailable — never a guess.</item>
 /// </list>
@@ -98,6 +99,15 @@ internal sealed class FinanceOfficialSalesInvoiceReadPortV1(FinanceDbContext dbC
             || !holders.TryGetValue((FinanceOfficialInvoiceIdentityKinds.Ettn, ettn), out var identity)
             || number.HolderBatchId != identity.HolderBatchId || number.HolderSourceDocumentId != identity.HolderSourceDocumentId)
             return FinanceOfficialSalesInvoiceReadAnswerV1.Unavailable;
+        // A cancelled import (API-11: every open item of the document is Cancelled) frees its identity exactly like a
+        // rejected or withdrawn manual record (FNS-D39) and the admission's live-holder rule: it is never Approved.
+        var approvedInstallment = FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment;
+        var cancelled = FinanceOpenItemStatuses.Cancelled;
+        var live = await dbContext.OpenItems.AsNoTracking()
+            .AnyAsync(item => item.CompanyId == companyId && item.SourceKind == approvedInstallment
+                && item.SourceBatchId == number.HolderBatchId && item.SourceId == number.HolderSourceDocumentId
+                && item.Status != cancelled, cancellationToken);
+        if (!live) return null;
         var upload = await dbContext.OfficialInvoiceImportBatches.AsNoTracking()
             .SingleOrDefaultAsync(row => row.Id == number.HolderBatchId, cancellationToken);
         var approval = await dbContext.OfficialInvoiceImportApprovals.AsNoTracking()

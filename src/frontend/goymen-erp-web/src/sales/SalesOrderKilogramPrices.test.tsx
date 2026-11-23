@@ -86,12 +86,29 @@ describe('SalesOrderKilogramPrices on the order detail', () => {
     expect(view.container.textContent).toBe('')
 
     release({ type: 'ok-single', data: computed() })
-    expect((await screen.findByTestId('sales-kilogram-line-1-theoretical')).textContent).toBe(T.perKg('20.25', CURRENCY))
-    expect(screen.getByTestId('sales-kilogram-line-1-actual').textContent).toBe(T.perKg('19.99', CURRENCY))
-    expect(screen.getByTestId('sales-kilogram-document-theoretical').textContent).toBe(T.perKg('20.25', CURRENCY))
-    expect(screen.getByTestId('sales-kilogram-document-actual').textContent).toBe(T.perKg('19.99', CURRENCY))
+    // Without the currencies authority (sales.drafts.create) the currency is a neutral Turkish text, never its GUID.
+    expect((await screen.findByTestId('sales-kilogram-line-1-theoretical')).textContent).toBe('20.25 belge para birimi/kg')
+    expect(screen.getByTestId('sales-kilogram-line-1-actual').textContent).toBe(T.perKg('19.99', T.currencyUnnamed))
+    expect(screen.getByTestId('sales-kilogram-document-theoretical').textContent).toBe(T.perKg('20.25', T.currencyUnnamed))
+    expect(screen.getByTestId('sales-kilogram-document-actual').textContent).toBe(T.perKg('19.99', T.currencyUnnamed))
+    expect(view.container.textContent).not.toContain(CURRENCY)
     expect(screen.queryByTestId('sales-kilogram-prices-pending')).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('shows the neutral currency text, not the GUID, when the authorised currencies reference does not list the currency', async () => {
+    caps.create = true
+    const currencies: UseCurrencyOptions = () => ({ status: 'ready',
+      data: [{ currencyId: '33333333-3333-4333-8333-333333333333', code: 'EUR', profileId: 'p', profileVersion: '1' }] })
+    api.fetch.mockResolvedValue({ type: 'ok-single', data: computed() })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0 } } })
+    clients.push(client)
+    const view = render(<QueryClientProvider client={client}><SalesCurrencySourceContext.Provider value={currencies}>
+      <SalesOrderKilogramPrices shell={shell} detail={detail()} companyId={COMPANY} />
+    </SalesCurrencySourceContext.Provider></QueryClientProvider>)
+    expect((await screen.findByTestId('sales-kilogram-document-actual')).textContent).toBe(T.perKg('19.99', T.currencyUnnamed))
+    expect(view.container.textContent).not.toContain(CURRENCY)
+    expect(view.container.textContent).not.toContain('EUR')
   })
 
   it('still shows the closed indicator when the server answers FormulaGoldenPending', async () => {

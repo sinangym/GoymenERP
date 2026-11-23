@@ -101,7 +101,8 @@ function AdditionalCosts({ scope, orderId, kind }: { readonly scope: Scope; read
       </fieldset>
       {invalid && <p role="alert">{T.invalid}</p>}
       {attempt.sending && <p role="status">{T.saving}</p>}
-      {attempt.outcome?.type === 'unknown' && <div role="alert">{T.unknown}<Button type="button" onClick={attempt.retry}>{T.retry}</Button></div>}
+      {/* The held attempt, not the last answer, offers the retry: a remount or refreshed read keeps the same key reachable. */}
+      {!attempt.sending && attempt.snapshot !== null && <div role="alert">{T.unknown}<Button type="button" onClick={attempt.retry}>{T.retry}</Button></div>}
       {attempt.outcome?.type === 'failed' && <p role="alert">{T.refused}</p>}
       {attempt.outcome?.type === 'applied' && <p role="status">{T.saved}</p>}
       <Button type="submit" disabled={attempt.locked || reference === null}>{T.record}</Button>

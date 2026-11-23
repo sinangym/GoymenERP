@@ -133,7 +133,7 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1(
         }
 
         Audit(context, metadata, row.Id, "finance.official-invoice-import.uploaded.v1", "Upload", null, 1,
-            "{}", AuditJson(row, null), envelopes.Upload, "Resmî fatura/taksit dosyası onay beklemek üzere yüklendi");
+            "{}", AuditJson(row, null, preview.TaxWarnings), envelopes.Upload, "Resmî fatura/taksit dosyası onay beklemek üzere yüklendi");
         return await SaveAsync(context, UploadCommand, FinanceOfficialInvoiceImportAuthorityActionV1.Upload,
             row.Id, keyHash, payloadHash, cancellationToken) ?? result;
     }
@@ -496,11 +496,20 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1(
         approval?.ApprovedBy, approval?.ApprovedAtUtc);
 
     private static string AuditJson(FinanceOfficialInvoiceImportBatchRow row,
-        FinanceOfficialInvoiceImportApprovalRow? approval) => JsonSerializer.Serialize(new
+        FinanceOfficialInvoiceImportApprovalRow? approval,
+        IReadOnlyList<FinanceOfficialInvoiceTaxWarningV1>? taxWarnings = null) => taxWarnings is null
+        ? JsonSerializer.Serialize(new
         {
             batchId = row.Id, row.BatchVersion, row.BatchChecksum, row.TemplateVersion, row.RowCount,
             row.UploadedBy, row.UploadedAtUtc, approvedBy = approval?.ApprovedBy, approvedAtUtc = approval?.ApprovedAtUtc,
             version = approval is null ? "1" : "2",
+        }, Json)
+        // FNS-D64: the non-blocking tax consistency warnings of the uploaded file are written to the audit.
+        : JsonSerializer.Serialize(new
+        {
+            batchId = row.Id, row.BatchVersion, row.BatchChecksum, row.TemplateVersion, row.RowCount,
+            row.UploadedBy, row.UploadedAtUtc, approvedBy = approval?.ApprovedBy, approvedAtUtc = approval?.ApprovedAtUtc,
+            version = approval is null ? "1" : "2", taxWarnings,
         }, Json);
 
     private static string UploadPayloadHash(FinanceOfficialInvoiceImportPreviewRequestV1 request)

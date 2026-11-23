@@ -261,6 +261,21 @@ internal sealed partial class PurchaseReceiptReversalHost(PurchasingDbContext pu
             : throw new PurchasingServiceException(422, code, [new PurchasingFieldError("undoQuantity", code)]);
     }
 
+    /// <summary>
+    /// AK-3 / AK-8b (KLN-D119): a receipt correction's replacement receipt on a piece purchase line IS its whole pieces — the new
+    /// label tracks them like any new receipt. A fraction, a zero or a missing quantity is refused (422), never guessed from kg.
+    /// Null for a kilogram line.
+    /// </summary>
+    internal static int? ReplacementPieceCountOf(bool unitIsKilogram, string? acceptedQuantity)
+    {
+        if (unitIsKilogram) return null;
+        const string code = PurchaseReceiptAdjustmentCodesV1.PieceCountRequired;
+        return int.TryParse(acceptedQuantity, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture,
+            out var pieces) && pieces >= 1
+            ? pieces
+            : throw new PurchasingServiceException(422, code, [new PurchasingFieldError("replacementReceipt.acceptedQuantity", code)]);
+    }
+
     private static async Task<bool> RollbackQuietlyAsync(IDbContextTransaction transaction)
     { try { await transaction.RollbackAsync(CancellationToken.None); return true; } catch { return false; } }
 }

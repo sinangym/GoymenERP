@@ -149,7 +149,7 @@ public sealed class IdempotencyRetentionPurgeSqlServerRelationalAcceptanceTests
 
             await InsertEvidenceAsync(connectionString, companyId, now.AddDays(-90), now, deletedCount: 1);
             var refused = await Assert.ThrowsAsync<SqlException>(() => ExecuteAsync(connectionString, guard));
-            Assert.Equal(51563, refused.Number);
+            Assert.Equal(51564, refused.Number); // Its own number: 51563 is the Finance one-step credit limit Down guard.
             Assert.Single(await ReadEvidenceAsync(connectionString));
         });
     }

@@ -333,6 +333,59 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
         await Assert.ThrowsAsync<InvalidOperationException>(() => port.ReadPartyRiskAsync(Party, Account));
     }
 
+    [Fact]
+    public async Task Balance_transfer_assignments_move_only_the_transferred_amounts_between_the_predecessor_and_the_successor()
+    {
+        var successorParty = Guid.Parse("66666666-6666-4666-8666-000000000002");
+        var successorAccount = Guid.Parse("77777777-7777-4777-8777-000000000002");
+        var item = Row("100.00", "100.00");
+        var receipt = Payment(Guid.NewGuid(), "30.00");
+        var refund = Outgoing("8.00");
+        FinancePartyBalanceAssignmentRow Assigned(int kind, Guid source, string available) => new()
+        {
+            CompanyId = Company, Kind = kind, SourceId = source, OriginalPartyId = Party, OriginalAccountId = Account,
+            CurrentPartyId = successorParty, CurrentAccountId = successorAccount, CurrencyId = Try,
+            AvailableAmountText = available, LastTransferId = Guid.NewGuid(), Version = 1,
+        };
+        await using var run = await Run.CreateAsync([item], [receipt], outgoing: [refund], assignments:
+        [
+            Assigned(FinanceBalanceAssignmentKinds.OpenItem, item.Id, "60.00"),
+            Assigned(FinanceBalanceAssignmentKinds.Receipt, receipt.SourceId, "20.00"),
+            Assigned(FinanceBalanceAssignmentKinds.Payment, refund.PaymentId, "5.00"),
+        ]);
+
+        // Predecessor: item 100 - 60 = 40; receipt 30 - 20 = 10 unallocated, refund 8 - 5 = 3 nets it to 7 → 33.
+        var predecessor = await run.Port(Company).ReadPartyRiskAsync(Party, Account);
+        Assert.Equal(SalesPartyRiskFigureStateV1.Available, predecessor.OpenReceivables.State);
+        Assert.Equal([new SalesPartyRiskAmountV1(Try, 33m)], predecessor.OpenReceivables.Amounts);
+
+        // Successor: item 60; receipt 20, refund 5 nets it to 15 → 45. Nothing is read twice across the two accounts.
+        var successor = await run.Port(Company).ReadPartyRiskAsync(successorParty, successorAccount);
+        Assert.Equal(SalesPartyRiskFigureStateV1.Available, successor.OpenReceivables.State);
+        Assert.Equal([new SalesPartyRiskAmountV1(Try, 45m)], successor.OpenReceivables.Amounts);
+        Assert.False(run.Db.ChangeTracker.HasChanges());
+    }
+
+    [Fact]
+    public async Task An_assignment_larger_than_its_source_makes_the_receivable_unavailable_never_a_partial_sum()
+    {
+        var item = Row("100.00", "50.00");
+        await using var run = await Run.CreateAsync([item], [], assignments:
+        [
+            new FinancePartyBalanceAssignmentRow
+            {
+                CompanyId = Company, Kind = FinanceBalanceAssignmentKinds.OpenItem, SourceId = item.Id,
+                OriginalPartyId = Party, OriginalAccountId = Account, CurrentPartyId = Guid.NewGuid(),
+                CurrentAccountId = Guid.NewGuid(), CurrencyId = Try, AvailableAmountText = "60.00",
+                LastTransferId = Guid.NewGuid(), Version = 1,
+            },
+        ]);
+
+        var answer = await run.Port(Company).ReadPartyRiskAsync(Party, Account);
+        Assert.Equal((SalesPartyRiskFigureStateV1.Unavailable, FinanceSalesPartyRiskReadPortV1.OpenItemUnreadable),
+            (answer.OpenReceivables.State, answer.OpenReceivables.ReasonCode));
+    }
+
     private static FinanceOpenItemRow Row(string original, string outstanding, int status = FinanceOpenItemStatuses.Open,
         Guid? currency = null, Guid? party = null, Guid? account = null, Guid? company = null) => new()
     { Direction = FinanceOpenItemDirectionCodes.Receivable,
@@ -583,7 +636,8 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
         public static async Task<Run> CreateAsync(FinanceOpenItemRow[] rows, MoneyEventRow[] payments,
             FinanceSourceAllocationStateRow[]? states = null, ReversalProposalRow[]? reversals = null,
             OutgoingMoneyEventRow[]? outgoing = null, OutgoingMoneyEventReversalRow[]? paymentReversals = null,
-            PartyCreditLimitRow[]? limits = null, PartyCollateralRow[]? collaterals = null)
+            PartyCreditLimitRow[]? limits = null, PartyCollateralRow[]? collaterals = null,
+            FinancePartyBalanceAssignmentRow[]? assignments = null)
         {
             var run = new Run();
             var companies = rows.Select(row => row.CompanyId).Concat(payments.Select(row => row.CompanyId))
@@ -602,6 +656,7 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
                 db.OutgoingMoneyEventReversals.AddRange((paymentReversals ?? []).Where(row => row.CompanyId == company));
                 db.PartyCreditLimits.AddRange((limits ?? []).Where(row => row.CompanyId == company));
                 db.PartyCollaterals.AddRange((collaterals ?? []).Where(row => row.CompanyId == company));
+                db.PartyBalanceAssignments.AddRange((assignments ?? []).Where(row => row.CompanyId == company));
                 await db.SaveChangesAsync();
             }
 
