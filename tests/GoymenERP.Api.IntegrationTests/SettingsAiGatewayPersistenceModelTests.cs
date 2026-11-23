@@ -60,7 +60,9 @@ public sealed class SettingsAiGatewayPersistenceModelTests
     public void The_ai_gateway_migration_is_ddl_only_and_Down_first_refuses_with_52180_while_versions_or_ledger_rows_exist()
     {
         using var database = Create();
-        Assert.Equal("20261122202350_AddAiGatewayPolicyAndBudgetLedger", database.Database.GetMigrations().Last());
+        // WP2 (tren-2) appends the work digest times after the AI gateway migration.
+        Assert.Equal(["20261122202350_AddAiGatewayPolicyAndBudgetLedger", "20261122224127_Wp2WorkDigestTimes"],
+            database.Database.GetMigrations().TakeLast(2).ToArray());
         Assert.False(database.Database.HasPendingModelChanges());
         var migration = new AddAiGatewayPolicyAndBudgetLedger();
         Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
