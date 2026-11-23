@@ -192,7 +192,8 @@ Kurallar: kredi takip kaydı TFRS 16 kullanım hakkı, iskonto veya amortisman h
 Döviz taksitte sistem kur hesaplamaz; TL karşılığı kaynakta yoksa türetilmez.
 
 Muhasebe etkisi: kira ödemesi `credit.bank` + anapara + faiz + KDV bileşenleri; KDV eşleme anahtarı muhasebe eşleme
-yetkilisince ayrıca açılır (FNS-D127); anahtar açılana kadar KDV'li öneri "eşleme eksik" bekler (FNS-D97). Kullanım hakkı varlığı ve kira yükümlülüğü muhasebesi bu taslağın kapsamı dışındadır.
+yetkilisince ayrıca açılır (FNS-D127). Anahtar açılana kadar KDV'li öneri "eşleme eksik" bekler — **FNS-D97'den
+çıkarım (karar metninde açık değil); Sinan teyidi gerekebilir.** Kullanım hakkı varlığı ve kira yükümlülüğü muhasebesi bu taslağın kapsamı dışındadır.
 
 ### H. Sınırlar
 
@@ -200,8 +201,9 @@ yetkilisince ayrıca açılır (FNS-D127); anahtar açılana kadar KDV'li öneri
   olmayan yeni alan yeni karar ister.
 - Bu bölüm `OPEN-*` kapatmaz, Finance STOP'ı değiştirmez, grant/rol/Critical atamaz; production etkinleştirmesi insan
   kapısıdır.
-- Gayrinakdi nazım hesap izlemesi kapalıdır (FNS-D125); açılması yeni karar ister. Leasing KDV eşleme anahtarı açılana
-  kadar KDV'li fiş önerisi "eşleme eksik" bekler.
+- Gayrinakdi nazım hesap izlemesi kapalıdır (FNS-D125); açılması yeni karar ister.
+- Leasing KDV eşleme anahtarı açılana kadar KDV'li fiş önerisinin "eşleme eksik" beklemesi **FNS-D97'den çıkarımdır
+  (karar metninde açık değil); Sinan teyidi gerekebilir.**
 
 ## Kayıt, karar ve hareket ayrımı
 
