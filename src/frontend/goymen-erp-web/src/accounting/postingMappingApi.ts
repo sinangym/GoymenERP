@@ -1,6 +1,7 @@
 import type { ViewOutcome } from '../shell/uiState'
 import { isDateOnly } from '../finance/dateOnly'
 import { ACCOUNTING_BASE, devHeaders } from './api'
+import { exactKeys } from './exactKeys'
 
 export interface PostingMappingRow {
   readonly purpose: string; readonly mappingKey: string; readonly accountId: string; readonly accountCode: string
@@ -38,8 +39,18 @@ const instant = (v: unknown) => typeof v === 'string' && Number.isFinite(Date.pa
 const keys: Record<string, readonly string[]> = { 'sales-invoice': ['receivable', 'revenue', 'vat-output', 'withholding-receivable'],
   'purchase-invoice': ['payable', 'inventory', 'vat-input', 'withholding-payable', 'expense'], 'cost-of-goods-sold': ['trade-goods', 'manufactured'] }
 const base = `${ACCOUNTING_BASE}/posting-account-mappings`
+// OpenAPI: AccountingPostingAccountMappingViewV1 / RowViewV1 (vatRateCode is not in `required`),
+// AccountingPostingAccountMappingWorkspaceV1, AccountingPostingMappingAccountV1, AccountingCogsMappingDefaultV1.
+const MAPPING_KEYS = ['companyId', 'mappingVersion', 'effectiveFrom', 'status', 'version', 'accountPlanSourceVersion',
+  'accountPlanSourceSha256', 'preparedByUserId', 'preparedAtUtc', 'activatedByUserId', 'activatedAtUtc', 'rows'] as const
+const ROW_KEYS = ['purpose', 'mappingKey', 'itemType', 'linePurpose', 'isExport', 'accountId', 'accountCode'] as const
+const ROW_OPTIONAL_KEYS = ['vatRateCode'] as const
+const WORKSPACE_KEYS = ['companyId', 'latestMappingVersion', 'accountPlanState', 'accountPlanSourceVersion', 'accountPlanSourceSha256',
+  'accounts', 'cogsDefaults', 'active', 'prepared'] as const
+const ACCOUNT_KEYS = ['accountId', 'code', 'name'] as const
+const COGS_DEFAULT_KEYS = ['mappingKey', 'accountCode', 'accountId'] as const
 export function decodePostingMapping(body: unknown, company: string): PostingMapping | null {
-  if (!rec(body) || !guid(body.companyId) || !same(body.companyId, company) || !number(body.mappingVersion) || !number(body.version)
+  if (!rec(body) || !exactKeys(body, MAPPING_KEYS) || !guid(body.companyId) || !same(body.companyId, company) || !number(body.mappingVersion) || !number(body.version)
     || !text(body.effectiveFrom) || !isDateOnly(body.effectiveFrom) || !['Prepared', 'Active', 'Superseded'].includes(body.status as string)
     || !text(body.accountPlanSourceVersion) || !hash(body.accountPlanSourceSha256) || !guid(body.preparedByUserId) || !instant(body.preparedAtUtc)
     || !Array.isArray(body.rows) || body.rows.length === 0 || body.rows.length > 1000) return null
@@ -47,7 +58,7 @@ export function decodePostingMapping(body: unknown, company: string): PostingMap
     : !guid(body.activatedByUserId) || same(body.activatedByUserId, body.preparedByUserId) || !instant(body.activatedAtUtc)) return null
   const seen = new Set<string>()
   for (const row of body.rows) {
-    if (!rec(row) || !text(row.purpose) || !text(row.mappingKey) || !keys[row.purpose]?.includes(row.mappingKey) || !guid(row.accountId)
+    if (!rec(row) || !exactKeys(row, ROW_KEYS, ROW_OPTIONAL_KEYS) || !text(row.purpose) || !text(row.mappingKey) || !keys[row.purpose]?.includes(row.mappingKey) || !guid(row.accountId)
       || !text(row.accountCode) || !nullableText(row.itemType) || !nullableText(row.linePurpose) || !nullableText(row.vatRateCode)
       || row.isExport !== null && typeof row.isExport !== 'boolean') return null
     if (row.purpose === 'cost-of-goods-sold' && [row.itemType, row.linePurpose, row.vatRateCode, row.isExport].some(v => v !== null)) return null
@@ -58,17 +69,17 @@ export function decodePostingMapping(body: unknown, company: string): PostingMap
   return body as unknown as PostingMapping
 }
 export function decodePostingMappingWorkspace(body: unknown, company: string): PostingMappingWorkspace | null {
-  if (!rec(body) || !guid(body.companyId) || !same(body.companyId, company) || !number(body.latestMappingVersion, 0)
+  if (!rec(body) || !exactKeys(body, WORKSPACE_KEYS) || !guid(body.companyId) || !same(body.companyId, company) || !number(body.latestMappingVersion, 0)
     || !['Available', 'Unavailable'].includes(body.accountPlanState as string) || !Array.isArray(body.accounts)
     || !Array.isArray(body.cogsDefaults) || body.cogsDefaults.length !== 2 || !Array.isArray(body.prepared)) return null
   if (body.accountPlanState === 'Available' ? !text(body.accountPlanSourceVersion) || !hash(body.accountPlanSourceSha256) || body.accounts.length === 0
     : body.accountPlanSourceVersion !== null || body.accountPlanSourceSha256 !== null || body.accounts.length !== 0) return null
-  if (body.accounts.some(x => !rec(x) || !guid(x.accountId) || !text(x.code) || !text(x.name))
+  if (body.accounts.some(x => !rec(x) || !exactKeys(x, ACCOUNT_KEYS) || !guid(x.accountId) || !text(x.code) || !text(x.name))
     || new Set(body.accounts.map(x => (x.accountId as string).toLowerCase())).size !== body.accounts.length
     || new Set(body.accounts.map(x => x.code)).size !== body.accounts.length) return null
   if (new Set(body.cogsDefaults.map(x => rec(x) && x.mappingKey)).size !== 2) return null
   for (const item of body.cogsDefaults) {
-    if (!rec(item) || !['trade-goods', 'manufactured'].includes(item.mappingKey as string)
+    if (!rec(item) || !exactKeys(item, COGS_DEFAULT_KEYS) || !['trade-goods', 'manufactured'].includes(item.mappingKey as string)
       || item.accountCode !== (item.mappingKey === 'trade-goods' ? '621' : '620')
       || item.accountId !== null && (!guid(item.accountId) || !body.accounts.some(x => same(x.accountId, item.accountId as string) && x.code === item.accountCode))) return null
   }

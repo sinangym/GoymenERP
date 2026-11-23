@@ -46,8 +46,8 @@ public static class DocumentObjectKeys
 /// <summary>
 /// DEC-DOC-009's malware scan. The verdict is the scanner's; the vault never turns "no answer" into "clean". The
 /// production scanner is Windows Defender on the server (user decision 2026-09-30), registered only when configured;
-/// without a scanner, or when it cannot answer, every upload is stored as <see cref="DocumentScanState.NotScanned"/>
-/// and is not downloadable.
+/// KLN-D60 (3): without a scanner, or when it cannot answer, the upload is refused fail-closed and nothing is stored
+/// (an earlier <see cref="DocumentScanState.NotScanned"/> version stays not downloadable).
 /// </summary>
 public interface IDocumentContentScannerV1
 {

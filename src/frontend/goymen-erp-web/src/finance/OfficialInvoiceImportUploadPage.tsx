@@ -6,7 +6,7 @@ import {
   type OfficialInvoiceUploadAttemptContext,
   type OfficialInvoiceUploadClient,
 } from './officialInvoiceImportUploadClient'
-import type { OfficialInvoiceImportPreview } from './OfficialInvoiceImportPanel'
+import { OfficialInvoiceTaxWarningList, type OfficialInvoiceImportPreview } from './OfficialInvoiceImportPanel'
 import styles from './Finance.module.css'
 import { OFFICIAL_INVOICE_IMPORT_TEXT, officialInvoiceIssueLine } from './officialInvoiceImportText'
 
@@ -155,6 +155,7 @@ export function OfficialInvoiceImportUploadForm({ context, client }: {
       </div>
       {phase === 'previewing' ? <p role="status">Seçilen dosya doğrulanıyor…</p> : null}
       {preview === null ? null : <p role="status">Önizleme hazır. SHA-256: {preview.sourceSha256}</p>}
+      {preview === null ? null : <OfficialInvoiceTaxWarningList warnings={preview.taxWarnings} />}
       {phase === 'sending' ? <p role="status">Fatura kaynağı bekleyen onaya kaydediliyor…</p> : null}
       {phase === 'unknown' ? <p role="status">Sonuç bilinmiyor; yeni işlem üretmeden aynı istek yeniden gönderilebilir.</p> : null}
       {phase === 'conflicted' ? <p role="alert">Aynı işlem anahtarı farklı içerikle çakıştı; yeni kayıt yapılmadı.</p> : null}

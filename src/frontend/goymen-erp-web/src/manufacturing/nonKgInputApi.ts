@@ -9,12 +9,16 @@ const guid = (v: unknown): v is string => typeof v === 'string' && /^(?!00000000
 const text = (v: unknown, max: number): v is string => typeof v === 'string' && v.trim() === v && v.length > 0 && v.length <= max
 export const nonKgQuantity = (v: unknown): v is string => typeof v === 'string' && v.length <= 60 && /^(0|[1-9]\d*)(\.\d*[1-9])?$/.test(v)
 const utc = (v: unknown): v is string => typeof v === 'string' && /(?:Z|\+00:00)$/.test(v) && Number.isFinite(Date.parse(v))
+// Key sets mirror ManufacturingNonKgInputHistoryV1 / ManufacturingNonKgInputConsumptionV1 one-to-one.
+const HISTORY_KEYS = 'companyId,facts,orderId,orderVersion,revision'
+const FACT_KEYS = 'factId,item,kind,occurredAtUtc,quantity,reason,replacesFactId,revision,unit'
+const keys = (v: Record<string, unknown>) => Object.keys(v).sort().join(',')
 export function decodeNonKgHistory(v: unknown, company: string, order: string): NonKgHistory | null {
-  if (!object(v) || v.companyId !== company || v.orderId !== order || !Number.isSafeInteger(v.orderVersion) || (v.orderVersion as number) < 1
+  if (!object(v) || keys(v) !== HISTORY_KEYS || v.companyId !== company || v.orderId !== order || !Number.isSafeInteger(v.orderVersion) || (v.orderVersion as number) < 1
     || !Number.isSafeInteger(v.revision) || (v.revision as number) < 0 || !Array.isArray(v.facts) || v.facts.length !== v.revision) return null
   const seen = new Map<string, NonKgFact>(); const replaced = new Set<string>()
   for (const [index, raw] of v.facts.entries()) {
-    if (!object(raw) || !guid(raw.factId) || seen.has(raw.factId) || raw.revision !== index + 1 || ![1, 2].includes(Number(raw.kind))
+    if (!object(raw) || keys(raw) !== FACT_KEYS || !guid(raw.factId) || seen.has(raw.factId) || raw.revision !== index + 1 || ![1, 2].includes(Number(raw.kind))
       || ![1, 2, 3].includes(Number(raw.unit)) || typeof raw.kind !== 'number' || typeof raw.unit !== 'number' || raw.kind === 1 && raw.unit !== 1
       || !text(raw.item, 200) || !nonKgQuantity(raw.quantity) || !utc(raw.occurredAtUtc) || !text(raw.reason, 1000)) return null
     if (raw.replacesFactId !== null) {

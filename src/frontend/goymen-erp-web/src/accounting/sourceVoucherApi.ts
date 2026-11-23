@@ -1,6 +1,7 @@
 import type { ViewOutcome } from '../shell/uiState'
 import { isDateOnly } from '../finance/dateOnly'
 import { ACCOUNTING_BASE, devHeaders } from './api'
+import { exactKeys } from './exactKeys'
 import { decodeJournalReversalProposal, type JournalReversalProposal } from './journalReversalContract'
 
 export interface SourceVoucher {
@@ -29,9 +30,18 @@ const text = (v: unknown): v is string => typeof v === 'string' && v.trim() !== 
 const nullableText = (v: unknown) => v === null || text(v)
 const amount = (v: unknown): v is string => typeof v === 'string' && /^(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(v)
 const base = `${ACCOUNTING_BASE}/source-vouchers`
+// OpenAPI: AccountingSourceVoucherListV1, AccountingSourceVoucherViewV1 (cancellationId, reversalProposal not in `required`),
+// AccountingSourceVoucherLineViewV1 (accountCode, accountName not in `required`).
+const LIST_KEYS = ['companyId', 'items'] as const
+const VOUCHER_KEYS = ['id', 'companyId', 'documentKind', 'sourceDocumentId', 'invoiceId', 'finalizedVersion', 'sourceActorId', 'partyId',
+  'documentCurrencyId', 'exchangeRate', 'documentDate', 'dueDate', 'status', 'version', 'mappingVersion', 'periodId', 'journalId',
+  'approvedBy', 'approvedAtUtc', 'cancellationReason', 'lines', 'officialInvoiceNo', 'functionalPayable'] as const
+const VOUCHER_OPTIONAL_KEYS = ['cancellationId', 'reversalProposal'] as const
+const LINE_KEYS = ['lineNumber', 'mappingKey', 'side', 'accountId', 'functionalAmount', 'sourceLineNumber', 'vatRateCode'] as const
+const LINE_OPTIONAL_KEYS = ['accountCode', 'accountName'] as const
 
 export function decodeSourceVoucher(body: unknown, company: string): SourceVoucher | null {
-  if (!rec(body) || !guid(body.companyId) || body.companyId.toLowerCase() !== company.toLowerCase()
+  if (!rec(body) || !exactKeys(body, VOUCHER_KEYS, VOUCHER_OPTIONAL_KEYS) || !guid(body.companyId) || body.companyId.toLowerCase() !== company.toLowerCase()
     || !['id', 'sourceDocumentId', 'invoiceId', 'sourceActorId', 'partyId', 'documentCurrencyId'].every(key => guid(body[key]))
     || !['finalizedVersion', 'version', 'mappingVersion'].every(key => positive(body[key]))
     || !['sales-invoice', 'purchase-invoice'].includes(body.documentKind as string)
@@ -41,7 +51,7 @@ export function decodeSourceVoucher(body: unknown, company: string): SourceVouch
     || body.exchangeRate !== null && (!amount(body.exchangeRate) || /^0(\.0+)?$/.test(body.exchangeRate))
     || !['periodId', 'journalId', 'approvedBy'].every(key => nullableGuid(body[key]))
     || !nullableText(body.officialInvoiceNo) || !nullableText(body.cancellationReason) || !amount(body.functionalPayable)
-    || !Array.isArray(body.lines) || body.lines.length === 0 || body.lines.some(line => !rec(line)
+    || !Array.isArray(body.lines) || body.lines.length === 0 || body.lines.some(line => !rec(line) || !exactKeys(line, LINE_KEYS, LINE_OPTIONAL_KEYS)
       || !positive(line.lineNumber) || !text(line.mappingKey) || ![1, 2].includes(line.side as number) || !guid(line.accountId)
       || !amount(line.functionalAmount) || /^0(\.0+)?$/.test(line.functionalAmount)
       || line.sourceLineNumber !== null && !positive(line.sourceLineNumber)
@@ -101,7 +111,7 @@ export async function fetchSourceVouchers(company: string, signal?: AbortSignal)
     const response = await fetch(base, { headers: { ...devHeaders(), 'X-Company-Id': company }, signal })
     const body: unknown = await response.json().catch(() => null)
     if (response.status !== 200) return { type: 'http', status: response.status, body }
-    if (!rec(body) || typeof body.companyId !== 'string' || body.companyId.toLowerCase() !== company.toLowerCase() || !Array.isArray(body.items)) return { type: 'malformed' }
+    if (!rec(body) || !exactKeys(body, LIST_KEYS) || typeof body.companyId !== 'string' || body.companyId.toLowerCase() !== company.toLowerCase() || !Array.isArray(body.items)) return { type: 'malformed' }
     const items = body.items.map(item => decodeSourceVoucher(item, company))
     if (items.some(item => item === null) || new Set(items.map(item => item?.id.toLowerCase())).size !== items.length) return { type: 'malformed' }
     return { type: 'ok-single', data: items as SourceVoucher[] }

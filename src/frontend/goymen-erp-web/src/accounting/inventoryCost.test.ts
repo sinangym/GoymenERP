@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { decodeInventoryCost, fetchInventoryCosts, sendInventoryCost, type InventoryCostAttempt } from './inventoryCostApi'
+import { decodeInventoryCost, fetchInventoryCostOptions, fetchInventoryCosts, sendInventoryCost, type InventoryCostAttempt } from './inventoryCostApi'
+import { keyProbes } from './exactKeysTestSupport'
 import { COMPANY_A, COMPANY_B, PREPARER, APPROVER, ACCOUNT_DEBIT, ACCOUNT_CREDIT, PERIOD_SEPTEMBER,
   JOURNAL, PROPOSAL, json, reversalProposal, approvedReversalProposal } from './testHarness'
 
@@ -10,7 +11,7 @@ const correctedJournal = 'c0633000-0000-4000-8000-000000000004'
 const fixture = (patch: Record<string, unknown> = {}) => ({ proposalId: id, companyId: COMPANY_A, eventId: source, kind: 1,
   invoiceId: source, invoiceVersion: 3, admissionId: source, invoiceDate: '2026-09-17', officialInvoiceNumber: 'SENTETIK-2026-1',
   component: { componentKey: `invoice-line:${line}`, productId: source, invoiceLineId: line, invoiceLineNumber: 1,
-    locationId: null, signedTlAmount: { numerator: '10001', denominator: '100' }, sourceProofSha256: 'a'.repeat(64) },
+    locationId: null, signedTlAmount: { numerator: '10001', denominator: '100' }, sourceProofJson: '{}', sourceProofSha256: 'a'.repeat(64) },
   version: 2, status: 'Prepared', sourceOccurredAtUtc: '2026-09-17T09:00:00Z', exactTlAmount: '100.01',
   preparation: { periodId: PERIOD_SEPTEMBER, accountingDate: '2026-09-17', transactionDate: '2026-09-17', currencyId: source,
     signedAmount: '100.01', moneyProfileId: source, moneyProfileVersion: 2, moneyScale: 2, preparedBy: PREPARER,
@@ -154,5 +155,55 @@ describe('immutable inventory cost proposal contract', () => {
     expect(await fetchInventoryCosts(COMPANY_A, 1)).toEqual({ type: 'malformed' })
     vi.stubGlobal('fetch', vi.fn(async () => json({ companyId: COMPANY_A, items: [fixture({ companyId: COMPANY_B })] })))
     expect(await fetchInventoryCosts(COMPANY_A, 1)).toEqual({ type: 'malformed' })
+  })
+})
+describe('inventory cost exact key sets', () => {
+  it('rejects an unknown or missing key on the proposal, its component, preparation, classification and counter account', () => {
+    const base = fixture()
+    const value = { ...base, component: { ...base.component, salesPhysicalClaims: [{ shipmentId: source, movementId: line,
+      movementLineNumber: 1, productId: source, quantityKg: 1 }] } }
+    expect(decodeInventoryCost(value, COMPANY_A, 1)).not.toBeNull()
+    for (const [label, body] of keyProbes(value, [[[], 'invoiceDate'], [['component'], 'sourceProofJson'],
+      [['component', 'signedTlAmount'], 'denominator'], [['component', 'salesPhysicalClaims', 0], 'quantityKg'],
+      [['preparation'], 'reason'], [['preparation', 'classification'], 'origin'], [['preparation', 'counterAccount'], 'code']]))
+      expect(decodeInventoryCost(body, COMPANY_A, 1), label).toBeNull()
+  })
+  it('rejects an unknown or missing key on the recorded source rounding and the posting rounding of a first purchase', () => {
+    const base = fixture(); const rounding = { exactSignedAmount: { numerator: '1', denominator: '250' }, roundedSignedAmount: '0',
+      exactSignedResidue: { numerator: '1', denominator: '250' }, exactSignedAmountText: '0.004', exactSignedResidueText: '0.004',
+      ruleVersion: 'accounting.inventory-cost-component-total.v1' }
+    const value = fixture({ kind: 2, exactTlAmount: '0', component: { ...base.component, componentKey: `purchase-first/${source}/${line}`,
+      invoiceLineId: null, invoiceLineNumber: null, locationId: line, signedTlAmount: { numerator: '0', denominator: '1' },
+      recordedRounding: { currencyId: source, moneyProfileId: source, moneyProfileVersion: 1, moneyScale: 2, rounding } },
+      preparation: { ...base.preparation, signedAmount: '0', rounding } })
+    expect(decodeInventoryCost(value, COMPANY_A, 2)).not.toBeNull()
+    for (const [label, body] of keyProbes(value, [[['component', 'recordedRounding'], 'moneyScale'],
+      [['component', 'recordedRounding', 'rounding'], 'ruleVersion'], [['component', 'recordedRounding', 'rounding', 'exactSignedAmount'], 'numerator'],
+      [['preparation', 'rounding'], 'roundedSignedAmount'], [['preparation', 'rounding', 'exactSignedResidue'], 'denominator']]))
+      expect(decodeInventoryCost(body, COMPANY_A, 2), label).toBeNull()
+  })
+  it('rejects an unknown or missing key on a component cancellation, its components and money profiles', () => {
+    const value = componentCancelled()
+    expect(decodeInventoryCost(value, COMPANY_A, 1)).not.toBeNull()
+    for (const [label, body] of keyProbes(value, [[[], 'eventId'], [['componentCancellation'], 'reason'],
+      [['componentCancellation', 'components', 0], 'origin'], [['componentCancellation', 'moneyProfiles', 0], 'scale']]))
+      expect(decodeInventoryCost(body, COMPANY_A, 1), label).toBeNull()
+  })
+  it('rejects an unknown or missing key on the list and options envelopes', async () => {
+    const list = { companyId: COMPANY_A, items: [fixture()] }
+    vi.stubGlobal('fetch', vi.fn(async () => json(list)))
+    expect((await fetchInventoryCosts(COMPANY_A, 1)).type).toBe('ok-single')
+    for (const [label, body] of keyProbes(list, [[[], 'companyId'], [['items', 0], 'version']])) {
+      vi.stubGlobal('fetch', vi.fn(async () => json(body)))
+      expect((await fetchInventoryCosts(COMPANY_A, 1)).type, label).toBe('malformed')
+    }
+    const options = { companyId: COMPANY_A, accounts: [{ accountId: ACCOUNT_CREDIT, code: '153', name: 'SENTETIK counter' }],
+      openPeriods: [{ periodId: PERIOD_SEPTEMBER, startsOn: '2026-09-01', endsOn: '2026-09-30' }] }
+    vi.stubGlobal('fetch', vi.fn(async () => json(options)))
+    expect((await fetchInventoryCostOptions(COMPANY_A, 1)).type).toBe('ok-single')
+    for (const [label, body] of keyProbes(options, [[[], 'openPeriods'], [['accounts', 0], 'name'], [['openPeriods', 0], 'endsOn']])) {
+      vi.stubGlobal('fetch', vi.fn(async () => json(body)))
+      expect((await fetchInventoryCostOptions(COMPANY_A, 1)).type, label).toBe('malformed')
+    }
   })
 })

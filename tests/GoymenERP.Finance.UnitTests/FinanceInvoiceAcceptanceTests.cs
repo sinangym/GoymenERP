@@ -617,7 +617,7 @@ public sealed class FinanceInvoiceAcceptanceTests
         var assignment = Assignment(item, "100.00");
         var plan = FinanceInvoiceAcceptanceService.Plan([item], "30.00");
 
-        var transferred = FinanceInvoiceAcceptanceService.TransferredReductions(plan, [assignment]);
+        var transferred = FinanceInvoiceAcceptanceService.TransferredReductions(plan, [assignment], Transfers);
 
         Assert.Null(transferred.Issue);
         var reduction = Assert.Single(transferred.Reductions);
@@ -641,22 +641,87 @@ public sealed class FinanceInvoiceAcceptanceTests
         var released = Item("50.00", "50.00");
         var plan = FinanceInvoiceAcceptanceService.Plan([untouched, released], "150.00");
 
-        var transferred = FinanceInvoiceAcceptanceService.TransferredReductions(plan, [Assignment(released, "0.00")]);
+        var transferred = FinanceInvoiceAcceptanceService.TransferredReductions(plan,
+            [Assignment(released, "0.00")], Transfers);
 
         Assert.Null(transferred.Issue);
         Assert.Empty(transferred.Reductions);
     }
 
     [Fact]
-    public void A_return_that_would_split_between_the_original_account_and_a_successor_is_refused()
+    public void A_return_of_a_partly_transferred_item_reduces_the_original_part_first_then_the_successor_FNS_D115()
+    {
+        var item = Item("100.00", "100.00");
+        var assignment = Assignment(item, "80.00");
+        var plan = FinanceInvoiceAcceptanceService.Plan([item], "30.00");
+
+        var transferred = FinanceInvoiceAcceptanceService.TransferredReductions(plan, [assignment], Transfers);
+
+        Assert.Null(transferred.Issue);
+        var reduction = Assert.Single(transferred.Reductions);
+        Assert.Same(assignment, reduction.Assignment);
+        Assert.True(FinanceExactDecimalText.Equal("10.00", reduction.Reduced.Text));
+        assignment.AvailableAmountText = FinanceAllocationPositions.Amount(assignment.AvailableAmountText)
+            .Subtract(reduction.Reduced).Text;
+        var positions = new FinanceAllocationPositions(Party, Account, Currency, plan.Reductions[0].After.Text,
+            [assignment]).All();
+        Assert.True(FinanceAllocationPositions.Amount(positions[0].AvailableAmount).IsZero);
+        Assert.True(FinanceExactDecimalText.Equal("70.00", positions[1].AvailableAmount));
+    }
+
+    [Fact]
+    public void A_return_within_the_original_accounts_remaining_part_leaves_the_successor_untouched_FNS_D115()
+    {
+        var item = Item("100.00", "100.00");
+        var assignment = Assignment(item, "80.00");
+        var plan = FinanceInvoiceAcceptanceService.Plan([item], "20.00");
+
+        var transferred = FinanceInvoiceAcceptanceService.TransferredReductions(plan, [assignment], Transfers);
+
+        Assert.Null(transferred.Issue);
+        Assert.Empty(transferred.Reductions);
+        var positions = new FinanceAllocationPositions(Party, Account, Currency, plan.Reductions[0].After.Text,
+            [assignment]).All();
+        Assert.True(FinanceAllocationPositions.Amount(positions[0].AvailableAmount).IsZero);
+        Assert.True(FinanceExactDecimalText.Equal("80.00", positions[1].AvailableAmount));
+    }
+
+    [Fact]
+    public void A_return_over_two_successors_takes_the_most_recently_transferred_first_FNS_D117()
+    {
+        var item = Item("100.00", "100.00");
+        var earlier = Assignment(item, "30.00", Guid.Parse("8a888888-8888-4888-8888-888888888888"), EarlierTransfer);
+        var later = Assignment(item, "50.00", Guid.Parse("8b888888-8888-4888-8888-888888888888"), LaterTransfer);
+        var plan = FinanceInvoiceAcceptanceService.Plan([item], "90.00");
+
+        // 20.00 stays with the original account; the rest 70.00 takes 50.00 from the later transfer, 20.00 from the earlier.
+        var transferred = FinanceInvoiceAcceptanceService.TransferredReductions(plan, [earlier, later], Transfers);
+
+        Assert.Null(transferred.Issue);
+        Assert.Collection(transferred.Reductions,
+            first =>
+            {
+                Assert.Same(later, first.Assignment);
+                Assert.True(FinanceExactDecimalText.Equal("50.00", first.Reduced.Text));
+            },
+            second =>
+            {
+                Assert.Same(earlier, second.Assignment);
+                Assert.True(FinanceExactDecimalText.Equal("20.00", second.Reduced.Text));
+            });
+    }
+
+    [Fact]
+    public void A_successor_assignment_whose_transfer_does_not_read_back_is_not_understood()
     {
         var item = Item("100.00", "100.00");
         var plan = FinanceInvoiceAcceptanceService.Plan([item], "30.00");
 
-        var transferred = FinanceInvoiceAcceptanceService.TransferredReductions(plan, [Assignment(item, "80.00")]);
+        var transferred = FinanceInvoiceAcceptanceService.TransferredReductions(plan,
+            [Assignment(item, "80.00", transferId: Guid.Parse("9a999999-9999-4999-8999-999999999999"))], Transfers);
 
         Assert.Empty(transferred.Reductions);
-        Assert.Equal(FinanceInvoiceAcceptanceService.TransferredBalanceSplitCode, transferred.Issue!.Code);
+        Assert.Equal(FinanceInvoiceAcceptanceService.StoredStateNotUnderstoodCode, transferred.Issue!.Code);
     }
 
     [Fact]
@@ -665,13 +730,25 @@ public sealed class FinanceInvoiceAcceptanceTests
         var item = Item("100.00", "100.00");
         var plan = FinanceInvoiceAcceptanceService.Plan([item], "30.00");
 
-        var transferred = FinanceInvoiceAcceptanceService.TransferredReductions(plan, [Assignment(item, "120.00")]);
+        var transferred = FinanceInvoiceAcceptanceService.TransferredReductions(plan,
+            [Assignment(item, "120.00")], Transfers);
 
         Assert.Empty(transferred.Reductions);
         Assert.Equal(FinanceInvoiceAcceptanceService.StoredStateNotUnderstoodCode, transferred.Issue!.Code);
     }
 
-    private static FinancePartyBalanceAssignmentRow Assignment(FinanceOpenItemRow item, string available) => new()
+    private static readonly Guid EarlierTransfer = Guid.Parse("99999999-9999-4999-8999-999999999999");
+    private static readonly Guid LaterTransfer = Guid.Parse("9b999999-9999-4999-8999-999999999999");
+
+    private static readonly IReadOnlyDictionary<Guid, (DateOnly OccurredOn, DateTimeOffset RecordedAtUtc)> Transfers =
+        new Dictionary<Guid, (DateOnly, DateTimeOffset)>
+        {
+            [EarlierTransfer] = (new DateOnly(2026, 11, 10), new DateTimeOffset(2026, 11, 10, 9, 0, 0, TimeSpan.Zero)),
+            [LaterTransfer] = (new DateOnly(2026, 11, 12), new DateTimeOffset(2026, 11, 12, 9, 0, 0, TimeSpan.Zero)),
+        };
+
+    private static FinancePartyBalanceAssignmentRow Assignment(FinanceOpenItemRow item, string available,
+        Guid? currentAccountId = null, Guid? transferId = null) => new()
     {
         CompanyId = TestCompany,
         Kind = FinanceBalanceAssignmentKinds.OpenItem,
@@ -679,10 +756,10 @@ public sealed class FinanceInvoiceAcceptanceTests
         OriginalPartyId = item.PartyId,
         OriginalAccountId = item.CompanyAccountId,
         CurrentPartyId = Guid.Parse("77777777-7777-4777-8777-777777777777"),
-        CurrentAccountId = Guid.Parse("88888888-8888-4888-8888-888888888888"),
+        CurrentAccountId = currentAccountId ?? Guid.Parse("88888888-8888-4888-8888-888888888888"),
         CurrencyId = item.CurrencyId,
         AvailableAmountText = available,
-        LastTransferId = Guid.Parse("99999999-9999-4999-8999-999999999999"),
+        LastTransferId = transferId ?? EarlierTransfer,
         Version = 1,
     };
 

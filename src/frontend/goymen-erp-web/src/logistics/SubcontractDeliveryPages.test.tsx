@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
 import { initialShellState, type ShellState } from '../shell/shellState'
@@ -67,5 +67,40 @@ describe('subcontract terminal physical kilograms stay in their authorized conte
   it.each([401, 403, 503])('never renders physical kg or replay text on a nondisclosable status %s', status => {
     recordedRefusal(true, status); mount()
     expect(screen.queryByText(detail)).toBeNull(); expect(screen.queryByText(T.replayedRefusal)).toBeNull()
+  })
+})
+
+describe('K3 P2-6: leaving an unresolved subcontract create', () => {
+  it('reads the instruction without sending a command and releases the slot when the owner does not know it', async () => {
+    // The way out is a read: no command is sent, and 404 proves the create did not apply.
+    const binding = JSON.stringify([shell.activeContext!.userId, company, shell.sessionEpoch])
+    const instruction = '22222222-2222-4222-8222-222222222222'
+    const snapshot = beginSubcontractAttempt(binding, company, instruction, PATH, 'subcontract', { instructionId: instruction, effectiveOn: '2026-11-17', lines: [] })!
+    finishSubcontractAttempt(snapshot, { type: 'unknown', reason: 'network-error' })
+    const calls: { url: string; method: string }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), method: init?.method ?? 'GET' })
+      if (String(input).endsWith(`/${instruction}`)) return new Response('{}', { status: 404 })
+      return new Response(JSON.stringify({ companyId: company, items: [], nextCursor: null }))
+    }))
+    mount()
+    expect(await screen.findByText(T.unknown)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: T.finalCheck }))
+    expect(await screen.findByText(T.released)).toBeTruthy()
+    expect(screen.queryByText(T.unknown)).toBeNull()
+    await waitFor(() => expect(calls.some(call => call.url.endsWith(`/${instruction}`))).toBe(true))
+    expect(calls.filter(call => call.method === 'POST')).toHaveLength(0)
+  })
+  it('keeps the attempt open when the instruction cannot be read', async () => {
+    const binding = JSON.stringify([shell.activeContext!.userId, company, shell.sessionEpoch])
+    const instruction = '22222222-2222-4222-8222-222222222222'
+    const snapshot = beginSubcontractAttempt(binding, company, instruction, PATH, 'subcontract', { instructionId: instruction, effectiveOn: '2026-11-17', lines: [] })!
+    finishSubcontractAttempt(snapshot, { type: 'unknown', reason: 'network-error' })
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).endsWith(`/${instruction}`)
+      ? new Response('{}', { status: 503 }) : new Response(JSON.stringify({ companyId: company, items: [], nextCursor: null }))))
+    mount()
+    fireEvent.click(await screen.findByRole('button', { name: T.finalCheck }))
+    expect(await screen.findByText(T.finalOpen)).toBeTruthy()
+    expect(screen.getByText(T.unknown)).toBeTruthy()
   })
 })

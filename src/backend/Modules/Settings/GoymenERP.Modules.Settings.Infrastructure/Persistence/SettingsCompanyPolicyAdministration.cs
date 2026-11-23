@@ -24,7 +24,7 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 /// <item><b>Manufacturing due-date buffer</b> (URT-D96/URT-D100): whole working days ≥ 0, company default, start value 0
 /// without a row; authority <see cref="ErpPermissions.ManufacturingPlansApprove"/> (URT-D100).</item>
 /// <item><b>Sales subcontract tax default</b> (SAT-D381): one default VAT/withholding code a line may change; authority
-/// <see cref="ErpPermissions.SalesOrdersApprove"/> alone (SAT-D469, splitting SAT-D395 by module; #1189 6947126872).
+/// <see cref="ErpPermissions.SalesOrdersApprove"/> alone (SAT-D469, splitting SAT-D395 by module; #1189 6947126872 (GOV-D16)).
 /// Purchasing uses its separate <see cref="ErpPermissions.PurchasingOrdersApprove"/> authority and record (ALS-D105, SAT-D469).
 /// Codes must be in the tax master list in force today.</item>
 /// <item><b>Every command</b>: the key's permission company-wide, measured first and re-measured fresh before every save;

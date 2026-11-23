@@ -69,6 +69,18 @@ describe('ALC-S7 user workflow source (synthetic, NOT_ENV)', () => {
     await waitFor(() => expect(submitServiceOrder).toHaveBeenCalledTimes(2))
     expect(vi.mocked(submitServiceOrder).mock.calls[1]).toEqual(first)
   })
+  it('offers the retry of an unknown approval again after the screen is reopened and resends the same key and body', async () => {
+    mount('detail'); await screen.findByText(T.withheld)
+    fireEvent.change(screen.getByLabelText(T.reason), { target: { value: 'SENTETIK onay gerekçesi' } })
+    fireEvent.click(screen.getByRole('button', { name: T.approve }))
+    await screen.findByText(T.unknown)
+    const first = vi.mocked(submitServiceOrder).mock.calls[0]
+    cleanup(); mount('detail'); await screen.findByText(T.withheld)
+    expect(screen.getByRole('button', { name: T.approve }).matches(':disabled')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: T.retry }))
+    await waitFor(() => expect(submitServiceOrder).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(submitServiceOrder).mock.calls[1]).toEqual(first)
+  })
   it('hides writes when the current capability set lacks approval or acceptance', async () => {
     currentShell = { ...currentShell, activeContext: { ...currentShell.activeContext!, capabilities: [C.detail] } }
     mount('detail'); await screen.findByText(T.withheld)

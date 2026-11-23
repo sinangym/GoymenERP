@@ -63,11 +63,37 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Theory]
-    [InlineData(ProductTheoreticalKilogramsPerUnitOutcomeV1.NoSource, ProductTheoreticalKilogramsPerUnitCodesV1.NoSource, ProductTheoreticalKilogramsPerUnitCodesV1.NoSource)]
+    [InlineData(ProductTheoreticalKilogramsPerUnitCodesV1.NoSource)]
+    [InlineData(ProductTheoreticalKilogramsPerUnitCodesV1.UnitNotOnCard)]
+    public async Task SAT_D473_a_readable_card_without_a_figure_approves_the_piece_line_with_its_figure_left_empty(string ownerCode)
+    {
+        var source = new FakeKilogramsPerUnit { Outcome = ProductTheoreticalKilogramsPerUnitOutcomeV1.NoSource, Code = ownerCode };
+        var world = PieceWorld(source);
+        var created = (await world.Service().CreateDraftAsync(PieceRequest(), Metadata("kpu-nosource-create"))).Detail;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("kpu-nosource-submit"));
+
+        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-nosource-approve"));
+
+        Assert.Equal("Approved", approved.Detail.Draft.ApprovalState);
+        Assert.Null(approved.Detail.Lines[0].TheoreticalKilogramsPerUnit);
+        Assert.Single(source.Asked);
+        var draft = Assert.Single(world.Store.Drafts);
+        Assert.Empty(draft.KilogramsPerUnitSnapshots);
+
+        // SAT-D437: a card fixed later never moves the approved document; a replay answers the recorded approval.
+        world.KilogramsPerUnit = new FakeKilogramsPerUnit { Figure = 12.345m };
+        var replay = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-nosource-approve"));
+        Assert.True(replay.IsReplay);
+        Assert.Null(replay.Detail.Lines[0].TheoreticalKilogramsPerUnit);
+        Assert.Empty(Assert.Single(world.Store.Drafts).KilogramsPerUnitSnapshots);
+    }
+
+    [Theory]
     [InlineData(ProductTheoreticalKilogramsPerUnitOutcomeV1.Refused, ProductTheoreticalKilogramsPerUnitCodesV1.WeightConflict, ProductTheoreticalKilogramsPerUnitCodesV1.WeightConflict)]
     [InlineData(ProductTheoreticalKilogramsPerUnitOutcomeV1.Unavailable, ProductTheoreticalKilogramsPerUnitCodesV1.Unavailable, ProductTheoreticalKilogramsPerUnitCodesV1.Unavailable)]
     [InlineData(ProductTheoreticalKilogramsPerUnitOutcomeV1.NotFound, null, SalesDraftProblemCodesV1.KilogramsPerUnitUnavailable)]
-    public async Task SAT_D437_a_piece_line_without_a_figure_refuses_the_approval_and_records_nothing(
+    [InlineData(ProductTheoreticalKilogramsPerUnitOutcomeV1.Denied, null, SalesDraftProblemCodesV1.KilogramsPerUnitUnavailable)]
+    public async Task SAT_D473_an_owner_that_could_not_answer_still_refuses_the_approval_and_records_nothing(
         ProductTheoreticalKilogramsPerUnitOutcomeV1 outcome, string? ownerCode, string fieldCode)
     {
         var world = PieceWorld(new FakeKilogramsPerUnit { Outcome = outcome, Code = ownerCode });

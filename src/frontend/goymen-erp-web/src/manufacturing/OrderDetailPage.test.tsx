@@ -318,6 +318,30 @@ describe('order balances', () => {
   })
 })
 
+describe('order fact form dirty scope (K3 P2-7)', () => {
+  it('an untouched form with its default output class is not dirty; a typed mass is', async () => {
+    const user = userEvent.setup()
+    stub({ capabilities: RECORDER_CAPABILITIES })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    const company = screen.getByRole('combobox', { name: 'Şirket' }) as HTMLSelectElement
+    await user.selectOptions(company, COMPANY_B)
+    // No unsaved change: the switch is not asked about.
+    await waitFor(() => expect(company.value).toBe(COMPANY_B))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('a typed mass makes the company switch ask', async () => {
+    const user = userEvent.setup()
+    stub({ capabilities: RECORDER_CAPABILITIES })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await user.type(screen.getByLabelText('Kütle (kg)'), '12')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Şirket' }), COMPANY_B)
+    expect(await screen.findByRole('dialog')).toBeTruthy()
+  })
+})
+
 describe('mass balance panel (GDC-BAL/1)', () => {
   it("shows BAL-003 as the server computed it and BAL-004 / BAL-006 as the engine's Unavailable, never a number", async () => {
     const { recorded } = stub({

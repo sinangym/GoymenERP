@@ -44,7 +44,7 @@ export type ReceiptCommand =
   | { readonly kind: 'create'; readonly payload: CreateBody }
   | { readonly kind: 'finalize'; readonly document: ReceiptDocument; readonly payload: { readonly expectedDocumentVersion: string; readonly expectedTransferVersion: string; readonly reason: string } }
   | { readonly kind: 'receive'; readonly lineId: string; readonly document: ReceiptDocument; readonly payload: ReceiveBody }
-  | { readonly kind: 'overage-decision'; readonly lineId: string; readonly payload: { readonly decision: 'Approve' | 'Reject'; readonly decidedAtUtc: string; readonly reason: string; readonly requestNumber: number } }
+  | { readonly kind: 'overage-decision'; readonly lineId: string; readonly payload: { readonly expectedTransferVersion: string; readonly decision: 'Approve' | 'Reject'; readonly decidedAtUtc: string; readonly reason: string; readonly requestNumber: number } }
   | { readonly kind: 'overage-renewal'; readonly lineId: string; readonly payload: { readonly expectedTransferVersion: string; readonly requestedAtUtc: string; readonly overageKg: string; readonly reason: string
     /** KLN-D119: the re-requested excess pieces — sent exactly for a piece-tracking line. */
     readonly overagePieceCount?: number } }

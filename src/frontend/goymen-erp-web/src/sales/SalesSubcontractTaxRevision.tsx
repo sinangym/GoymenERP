@@ -1,3 +1,4 @@
+import { EditedAttemptNotice } from '../settings/EditedAttemptNotice'
 import { useState } from 'react'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
@@ -45,6 +46,6 @@ function Editor({ company, detail, source, onRecorded }: { readonly company: str
     <LineTaxFields allowKeep={false} idPrefix={`subcontract-${detail.draft.id}`} value={choice} options={{ ...source.options, itemTypes: source.options.itemTypes.filter(x => x === 'Service') }}
       onChange={value => { if (value.mode !== 'keep') setChoice({ ...value, mode: value.mode }) }} />
     {choice.mode === 'default' && <Field label={T.reason}>{p => <textarea {...p} required maxLength={4000} value={reason} onChange={e => setReason(e.target.value)} />}</Field>}
-  </fieldset>{invalid && <p role="alert">{T.invalid}</p>}{attempt.status.kind === 'unknown' && <p role="alert">{T.unknown}</p>}{attempt.status.kind === 'refused' && <p role="alert">{T.refused}</p>}
+  </fieldset>{invalid && <p role="alert">{T.invalid}</p>}{attempt.status.kind === 'unknown' && <p role="alert">{T.unknown}</p>}<EditedAttemptNotice status={attempt.status} />{attempt.status.kind === 'refused' && <p role="alert">{T.refused}</p>}
     <Button type="submit" disabled={busy}>{busy ? T.pending : frozen === null ? T.save : T.retry}</Button></form>
 }

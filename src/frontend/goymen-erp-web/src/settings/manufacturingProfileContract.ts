@@ -25,16 +25,34 @@ const nullableText = (value: unknown): value is string | null => value === null 
 const timestamp = (value: unknown): value is string | null => value === null || (typeof value === 'string' && /^\d{4}-\d\d-\d\dT/.test(value) && Number.isFinite(Date.parse(value)))
 export const isManufacturingVersion = (value: unknown): value is string => typeof value === 'string' && value.length <= 19 && /^(0|[1-9]\d*)$/.test(value) && BigInt(value) <= 9223372036854775807n
 const process = (value: unknown): value is ManufacturingProcess => typeof value === 'string' && MANUFACTURING_PROCESSES.some((item) => item === value)
+/**
+ * Exact key sets of the OpenAPI schemas (ManufacturingProfileCommandReceiptV1, Manufacturing{Parameter,Tolerance}Profile{List,}ViewV1,
+ * ManufacturingParameterDefinitionViewV1, ManufacturingParameterValueViewV1): an unknown or missing key fails closed.
+ */
+const exact = (raw: Record<string, unknown>, keys: readonly string[]) => Object.keys(raw).length === keys.length && keys.every((key) => Object.hasOwn(raw, key))
+const RECEIPT_FIELDS = ['profileId', 'profileVersion', 'stateVersion', 'status'] as const
+const PROFILE_COMMON_FIELDS = ['profileId', 'source', 'process', 'workCenterId', 'profileVersion', 'stateVersion', 'status', 'effectiveFrom', 'effectiveThrough',
+  'preparedBy', 'preparedAtUtc', 'preparationReason', 'approvedBy', 'approvedAtUtc', 'approvalReason', 'publishedBy', 'publishedAtUtc', 'publicationReason'] as const
+const PROFILE_FIELDS: Readonly<Record<ManufacturingProfileKind, readonly string[]>> = {
+  parameters: [...PROFILE_COMMON_FIELDS, 'values'],
+  tolerances: [...PROFILE_COMMON_FIELDS, 'maximumFirePercent', 'massBalanceDifferenceTolerancePercent'],
+}
+const LIST_FIELDS: Readonly<Record<ManufacturingProfileKind, readonly string[]>> = {
+  parameters: ['companyId', 'businessDate', 'keys', 'profiles', 'startingValuesTransferVersion'],
+  tolerances: ['companyId', 'businessDate', 'profiles', 'startingValues', 'startingValuesTransferVersion'],
+}
+const VALUE_FIELDS = ['key', 'unit', 'value'] as const
+const KEY_FIELDS = ['key', 'unit', 'kind', 'maximumScale', 'processes', 'choices'] as const
 const invariant = (value: unknown): value is string => typeof value === 'string' && /^(0|[1-9]\d*)(\.\d+)?$/.test(value)
 
 export function decodeManufacturingProfileReceipt(raw: unknown): ManufacturingProfileReceipt | null {
-  if (!record(raw) || !isUuid(raw.profileId) || !isManufacturingVersion(raw.profileVersion) || !isManufacturingVersion(raw.stateVersion)
+  if (!record(raw) || !exact(raw, RECEIPT_FIELDS) || !isUuid(raw.profileId) || !isManufacturingVersion(raw.profileVersion) || !isManufacturingVersion(raw.stateVersion)
     || (raw.status !== 'Draft' && raw.status !== 'Approved' && raw.status !== 'Published')) return null
   return { profileId: raw.profileId, profileVersion: raw.profileVersion, stateVersion: raw.stateVersion, status: raw.status }
 }
 
 function profile(raw: unknown, kind: ManufacturingProfileKind): ManufacturingProfile | null {
-  if (!record(raw) || !isUuid(raw.profileId) || (raw.source !== 'Catalog' && raw.source !== 'Settings') || !process(raw.process)
+  if (!record(raw) || !exact(raw, PROFILE_FIELDS[kind]) || !isUuid(raw.profileId) || (raw.source !== 'Catalog' && raw.source !== 'Settings') || !process(raw.process)
     || (raw.workCenterId !== null && !isUuid(raw.workCenterId)) || !isManufacturingVersion(raw.profileVersion) || !isManufacturingVersion(raw.stateVersion)
     || !['Draft', 'Approved', 'Published', 'StartingValue'].includes(String(raw.status)) || !isDateText(raw.effectiveFrom)
     || (raw.effectiveThrough !== null && (!isDateText(raw.effectiveThrough) || raw.effectiveThrough < raw.effectiveFrom))
@@ -45,7 +63,7 @@ function profile(raw: unknown, kind: ManufacturingProfileKind): ManufacturingPro
   if (kind === 'parameters') {
     if (!Array.isArray(raw.values)) return null
     for (const value of raw.values) {
-      if (!record(value) || !text(value.key) || !text(value.unit) || !text(value.value) || values.some((item) => item.key === value.key)) return null
+      if (!record(value) || !exact(value, VALUE_FIELDS) || !text(value.key) || !text(value.unit) || !text(value.value) || values.some((item) => item.key === value.key)) return null
       values.push({ key: value.key, unit: value.unit, value: value.value })
     }
   } else if (!invariant(raw.maximumFirePercent) || (raw.massBalanceDifferenceTolerancePercent !== null && !invariant(raw.massBalanceDifferenceTolerancePercent))) return null
@@ -60,13 +78,13 @@ function profile(raw: unknown, kind: ManufacturingProfileKind): ManufacturingPro
 }
 
 export function decodeManufacturingProfiles(raw: unknown, company: string, kind: ManufacturingProfileKind): ManufacturingProfileList | null {
-  if (!record(raw) || raw.companyId !== company || !isDateText(raw.businessDate) || !Array.isArray(raw.profiles)
+  if (!record(raw) || !exact(raw, LIST_FIELDS[kind]) || raw.companyId !== company || !isDateText(raw.businessDate) || !Array.isArray(raw.profiles)
     || (raw.startingValuesTransferVersion !== '0' && raw.startingValuesTransferVersion !== '1')) return null
   const keys: ParameterKey[] = []
   if (kind === 'parameters') {
     if (!Array.isArray(raw.keys)) return null
     for (const key of raw.keys) {
-      if (!record(key) || !text(key.key) || !text(key.unit) || typeof key.kind !== 'string' || !['Positive', 'NonNegative', 'RatioUpToOne', 'WholeCount', 'Choice'].includes(key.kind)
+      if (!record(key) || !exact(key, KEY_FIELDS) || !text(key.key) || !text(key.unit) || typeof key.kind !== 'string' || !['Positive', 'NonNegative', 'RatioUpToOne', 'WholeCount', 'Choice'].includes(key.kind)
         || typeof key.maximumScale !== 'number' || !Number.isInteger(key.maximumScale) || key.maximumScale < 0 || key.maximumScale > 28
         || !Array.isArray(key.processes) || !key.processes.every(process) || !Array.isArray(key.choices) || !key.choices.every(text)
         || keys.some((item) => item.key === key.key)) return null
