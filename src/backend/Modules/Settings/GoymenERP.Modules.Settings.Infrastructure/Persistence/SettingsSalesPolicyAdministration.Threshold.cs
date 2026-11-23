@@ -19,6 +19,12 @@ internal sealed partial class SettingsSalesPolicyAdministration
     private const string ThresholdBaselineEvent = "settings.sales-approval-threshold.baseline-transferred.v1";
     private const string ThresholdRecordedEvent = "settings.sales-approval-threshold.recorded.v1";
 
+    /// <summary>
+    /// The Sales owner's published money-profile operation key for its order amounts (Business #254 5654539215; the same key
+    /// the approved money profiles list). A threshold is expressed in the currency as Settings serves it for that operation.
+    /// </summary>
+    private const string ThresholdMoneyOperation = "sales.order-draft.v1";
+
     public async Task<SalesApprovalThresholdsViewV1> GetApprovalThresholdsAsync(CancellationToken cancellationToken = default)
     {
         var companyId = RequireContextCompany();
@@ -241,19 +247,19 @@ internal sealed partial class SettingsSalesPolicyAdministration
             return Done("threshold-record", metadata, subject, Replay(existing, requestHash, metadata));
         }
 
-        var (transferred, rows) = await ReadAsync(async () => (
+        var (transferred, rows, moneyRows) = await ReadAsync(async () => (
             await SalesPolicyReads.IsTransferredAsync(database, SalesPolicyFamiliesV1.ApprovalAmountThreshold, cancellationToken),
-            await SalesPolicyReads.LoadThresholdsAsync(database, currencyId, cancellationToken)));
+            await SalesPolicyReads.LoadThresholdsAsync(database, currencyId, cancellationToken),
+            await MoneyProfileReads.LoadAsync(database, currencyId, ThresholdMoneyOperation, cancellationToken)));
         var timeline = SalesPolicyReads.ThresholdTimeline(rows);
         var latest = SalesPolicyTimelineV1.LatestVersion(timeline);
         var today = SettingsBusinessDate.Today(timeProvider);
         var effectiveFrom = request.EffectiveFrom ?? today;
-        var profile = MoneyProfiles.VersionFor(companyId, currencyId, effectiveFrom);
+        var profile = ThresholdMoneyProfile(companyId, currencyId, moneyRows, effectiveFrom);
         var refusal = !transferred ? Answers.BaselineRequired()
             : latest != expectedVersion ? Answers.VersionConflict()
             : effectiveFrom < today ? Answers.EffectiveFromPast()
-            : profile is null || !profile.IsActive || profile.EffectiveFrom > effectiveFrom
-              || (profile.EffectiveThrough is { } profileThrough && profileThrough < effectiveFrom) ? Answers.CurrencyNotServed()
+            : profile is null || !profile.IsActive ? Answers.CurrencyNotServed()
             : enabled && scale > profile.Scale ? Answers.AmountScaleExceeded(profile.Scale)
             : null;
         if (refusal is not null)
@@ -333,4 +339,21 @@ internal sealed partial class SettingsSalesPolicyAdministration
             entry.Value.RecordedBy,
             entry.Value.RecordedAtUtc,
             entry.Value.Reason);
+
+    /// <summary>
+    /// F029-S3: the currency's money profile as Settings serves it — the stored timeline of the operation once it was transferred,
+    /// else the compiled baseline (the same source as <see cref="SettingsMoneyProfilePrerequisiteProvider"/>), never the compiled
+    /// catalog alone. Null when no version covers the date: the currency is not served then.
+    /// </summary>
+    private static MoneyProfileVersionRow? ThresholdMoneyProfile(Guid companyId, Guid currencyId, MoneyProfileVersionRow[] stored,
+        DateOnly effectiveFrom)
+    {
+        var rows = stored.Length != 0 ? stored : MoneyProfileReads.Baseline(companyId, currencyId, ThresholdMoneyOperation);
+        if (stored.Length != 0)
+        {
+            MoneyProfileReads.Validate(rows, companyId, currencyId, ThresholdMoneyOperation);
+        }
+
+        return SalesPolicyTimelineV1.For(MoneyProfileReads.Timeline(rows), effectiveFrom)?.Value;
+    }
 }

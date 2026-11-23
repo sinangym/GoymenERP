@@ -437,6 +437,11 @@ against the currency's money profile.
   e.g. USD/EUR for GDC today) is **not** "disabled": per DEC-SET-001 fail-closed the consumer
   must not silently skip amount routing for that currency. What it does instead is
   **NEEDS-SINAN (#66 comment 6404405195 follow-up)**, an open consumer question.
+- Approval threshold money profile (**ASSUMPTION-SET-THRESHOLD-MONEY-OP**, technical, reversible): recording a
+  threshold checks the currency and the amount scale against the money profile Settings serves for the Sales
+  operation `sales.order-draft.v1` (the stored timeline once transferred, else the compiled baseline; F029-S3),
+  not the compiled catalog alone. The operation key is the Sales owner's published key; choosing it is a
+  technical mapping, not a policy, and can be changed without a data migration.
 - Tolerance (SAT-D15): bounds are inclusive and over and under delivery use the same
   thresholds. Deviation = |delivered − ordered| / ordered × 100, and a bound value falls into
   the band it starts:

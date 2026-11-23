@@ -83,7 +83,7 @@ public sealed class IdempotencyPersistenceModelTests
 
         var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
         Assert.Contains("[idempotency].[RetentionPurgeRecords]", guard.Sql, StringComparison.Ordinal);
-        Assert.Contains("THROW 51563", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51564", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("(forward fix)", guard.Sql, StringComparison.Ordinal);
         var restore = Assert.IsType<SqlOperation>(migration.DownOperations[1]);
         Assert.Contains("THROW 51010", restore.Sql, StringComparison.Ordinal);

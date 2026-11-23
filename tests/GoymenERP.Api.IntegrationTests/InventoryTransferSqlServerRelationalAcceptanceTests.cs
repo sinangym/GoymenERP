@@ -313,8 +313,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Task.Run(() => RaceDispatchAsync(run, stockRacePlan, dispatchRequest, dispatchMetadata,
                 dispatchBarrier)));
         Assert.Single(dispatchResults, result => result.Outcome is InventoryTransferResultV1 { IsReplay: false });
+        // A losing racer answers a controlled 409 problem, never a raw EF concurrency exception.
         Assert.All(dispatchResults, result => Assert.True(result.Outcome is InventoryTransferResultV1
-            or DbUpdateConcurrencyException or InventoryTransferException { Status: 409 }));
+            or InventoryTransferException { Status: 409 }, result.Outcome.GetType().FullName));
         // The physical-validation guard serializes before SaveChanges. A real guard contention may require
         // an explicit retry; the original key/body still returns the one immutable dispatch.
         await using (var retry = run.Store(CompanyA))
@@ -340,7 +341,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                 Metadata(run) with { IdempotencyKey = $"transfer-accept-b-{Guid.NewGuid():N}" }, acceptBarrier)));
         Assert.Single(acceptResults, result => result.Outcome is InventoryTransferResultV1 { IsReplay: false });
         Assert.All(acceptResults, result => Assert.True(result.Outcome is InventoryTransferResultV1
-            or DbUpdateConcurrencyException or InventoryTransferException { Status: 409 }));
+            or InventoryTransferException { Status: 409 }, result.Outcome.GetType().FullName));
         Assert.Equal((1, 1, 8m, destinationLocation, stockRaceSource.LabelVersion + 2), (
             await run.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM inventory.TransferAcceptances WHERE TransferId = @id",
@@ -621,7 +622,6 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         {
             return new(exception, fenceCalls);
         }
-        catch (DbUpdateConcurrencyException exception) { return new(exception, fenceCalls); }
     }
 
     private static async Task<TransferRaceResult> RaceAcceptAsync(
@@ -649,7 +649,6 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         {
             return new(exception, fenceCalls);
         }
-        catch (DbUpdateConcurrencyException exception) { return new(exception, fenceCalls); }
     }
 
     private static async Task<long> TransferLabelVersionAsync(Run run, Guid labelId) =>

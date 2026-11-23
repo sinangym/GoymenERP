@@ -83,6 +83,33 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Transfer_dispatch_cancellation_migration_backfills_an_earlier_dispatch_as_an_unreadable_scale_setting()
+    {
+        var migration = new GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations.AddInventoryTransferDispatchCancellation();
+        var addColumn = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddColumnOperation>()
+            .Single(operation => operation.Name == "SourceScaleSettingAtDispatch");
+        var backfill = Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        // The backfill runs right after the column exists, before any later dispatch can store its own value.
+        Assert.Equal(migration.UpOperations.ToList().IndexOf(addColumn) + 1, migration.UpOperations.ToList().IndexOf(backfill));
+
+        await using var run = await Run.StartAsync();
+        var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-TRANSFER-SCALE-BACKFILL", 2m);
+        var plan = TransferPlan(source, await run.LocationOfAsync(CompanyA), await TransferLocationAsync(run, CompanyA, offset: 1), "2");
+        var request = TransferDispatch();
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Store.PlanAsync(plan, Metadata(run), Authorized);
+            await scope.Store.DispatchAsync(plan.TransferId, request, EffectiveOutgoing(plan, request),
+                InventoryTransferSourceScaleSetting.Off, Metadata(run), Authorized);
+        }
+
+        // A dispatch that existed when the column was added never stored its value: it is a read error, not Off.
+        await ExecuteAsync(run, backfill.Sql);
+        Assert.Equal((int)InventoryTransferSourceScaleSetting.Unreadable, await run.ScalarAsync<int>(
+            "SELECT SourceScaleSettingAtDispatch FROM inventory.TransferDispatches WHERE TransferId = @id", ("@id", plan.TransferId)));
+    }
+
+    [SqlServerFact]
     public async Task Transfer_dispatch_cancel_returns_the_stock_to_its_source_without_writing_the_average_cost_ledger()
     {
         await using var run = await Run.StartAsync();
