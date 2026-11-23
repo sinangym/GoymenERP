@@ -60,7 +60,8 @@ const MAX_REASON = 500
 
 const MODULE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
 const KIND = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)*\.v[1-9][0-9]*$/
-const PERMISSION = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)+$/
+/** WP7-2 (ASSUMPTION-WP7-PERM-1): a permission's words may join with "-" or "_" (`counterparties.legal_name.approve`). */
+const PERMISSION = /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*(?:\.[a-z0-9]+(?:[-_][a-z0-9]+)*)+$/
 const VERSION = /^(?:0|[1-9][0-9]{0,18})$/
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

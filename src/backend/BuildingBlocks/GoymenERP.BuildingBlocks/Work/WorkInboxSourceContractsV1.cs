@@ -184,8 +184,14 @@ public static class WorkInboxRulesV1
     private static readonly Regex UnitPattern = new(
         "^(?:%|[A-Za-z]{1,16})\\z", RegexOptions.CultureInvariant);
 
+    /// <summary>
+    /// WP7-2 (ASSUMPTION-WP7-PERM-1, reversible): an approve permission is a dotted lowercase name whose segments may join
+    /// their words with "-" or "_" — the shapes the central catalogue (<c>ErpPermissions</c>) really registers (e.g.
+    /// <c>counterparties.legal_name.approve</c>). Existing names are not renamed; whether the name is registered is the owner's
+    /// and the rule table's check (<c>ErpPermissions.IsKnown</c>), not this shape rule.
+    /// </summary>
     private static readonly Regex PermissionPattern = new(
-        "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\\.[a-z0-9]+(?:-[a-z0-9]+)*)+\\z", RegexOptions.CultureInvariant);
+        "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*(?:\\.[a-z0-9]+(?:[-_][a-z0-9]+)*)+\\z", RegexOptions.CultureInvariant);
 
     /// <summary>
     /// The owner's identity comparison for "the same user": equal ordinal text, or two Guid texts naming the same Guid

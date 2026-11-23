@@ -47,6 +47,7 @@ public static class CounterpartyModuleExtensions
         // WP7-2 (AI-D31/AI-D32): the read-only Work inbox source(s) of Counterparty pending decisions; they decide nothing.
         Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddScoped<GoymenERP.BuildingBlocks.Work.WorkInboxCompanyWideFenceV1>(services);
         services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1, WorkInbox.CounterpartyTaxIdentityChangeWorkInboxSourceV1>();
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1, WorkInbox.CounterpartyLegalNameChangeWorkInboxSourceV1>();
         // WP-A3a: Cari owner READ tools over the authorized list/detail read (registration only; Ai:AllowedTools stays
         // empty, so the catalog admits none).
         services.AddScoped<IAiOwnerToolV1, CounterpartyPartyLookupAiTool>();

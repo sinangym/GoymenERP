@@ -137,6 +137,8 @@ const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const EMPTY_GUID = '00000000-0000-0000-0000-000000000000'
 const UTC_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)$/
 const DOTTED_CODE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)+$/
+/** WP7-2 (ASSUMPTION-WP7-PERM-1): a permission's words may also join with "_" (`counterparties.legal_name.approve`). */
+const PERMISSION = /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*(?:\.[a-z0-9]+(?:[-_][a-z0-9]+)*)+$/
 const ROLE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
 const DECIMAL = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/
 const UNIT = /^(?:%|[A-Za-z]{1,16})$/
@@ -167,7 +169,7 @@ const isUtcInstant = (value: unknown): value is string =>
 const isLabel = (value: unknown, max: number): value is string =>
   typeof value === 'string' && value.trim().length > 0 && value.length <= max
 export const isInboxPermission = (value: unknown): value is string =>
-  typeof value === 'string' && value.length <= INBOX_MAX_PERMISSION_LENGTH && DOTTED_CODE.test(value)
+  typeof value === 'string' && value.length <= INBOX_MAX_PERMISSION_LENGTH && PERMISSION.test(value)
 const isDecimalText = (value: unknown): value is string | null =>
   value === null || (typeof value === 'string' && value.length <= INBOX_MAX_DECIMAL_TEXT_LENGTH && DECIMAL.test(value))
 const isDurationClass = (value: unknown): value is WorkInboxDurationClass =>

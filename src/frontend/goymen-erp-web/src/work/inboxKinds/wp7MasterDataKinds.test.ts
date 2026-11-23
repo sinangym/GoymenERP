@@ -6,6 +6,7 @@ import { inboxKindText, inboxModuleText, inboxPermissionText, inboxRoleText, inb
 const KINDS = [
   ['organization.company-tax-id-change.v1', 'organization'],
   ['counterparty.tax-identity-change.v1', 'counterparty'],
+  ['counterparty.legal-name-change.v1', 'counterparty'],
   ['product.package-standard-version.v1', 'product'],
   ['product.price-list-version.v1', 'product'],
 ] as const
@@ -13,6 +14,7 @@ const KINDS = [
 const RULES = [
   'organization.company-tax-id-change-approval-required', 'organization.company-tax-id-change-stale', 'organization.company-tax-id-first',
   'counterparty.tax-identity-change-approval-required', 'counterparty.tax-identity-change-stale',
+  'counterparty.legal-name-change-approval-required', 'counterparty.legal-name-change-stale',
   'product.package-standard-approval-required', 'product.package-standard-entries', 'product.package-standard-customer-entries',
   'product.price-list-version-publication-required', 'product.price-list-next-version',
 ]
@@ -31,7 +33,7 @@ describe('WP7-2 master data inbox kinds', () => {
   it('has words for every rule code, reference role and decision permission the sources use', () => {
     for (const rule of RULES) expect(inboxRuleText(rule)).not.toBeNull()
     for (const role of ['party', 'product', 'price-list']) expect(inboxRoleText(role)).not.toBeNull()
-    for (const permission of ['organization.company.tax-id.approve', 'counterparty.parties.tax-identity.approve',
+    for (const permission of ['organization.company.tax-id.approve', 'counterparty.parties.tax-identity.approve', 'counterparties.legal_name.approve',
       'product.package-standards.approve', 'product.price-lists.publish']) expect(inboxPermissionText(permission)).not.toBe(permission)
   })
 
@@ -39,5 +41,14 @@ describe('WP7-2 master data inbox kinds', () => {
     expect(WORK_INBOX_CAPABILITIES).toContain('price-lists.publish')
     expect(WORK_INBOX_KINDS.filter((entry) => entry.kind !== 'product.price-list-version.v1'
       && KINDS.some(([kind]) => kind === entry.kind)).every((entry) => entry.capability === null)).toBe(true)
+  })
+})
+
+describe('ASSUMPTION-WP7-PERM-1 permission shape', () => {
+  it('accepts a registered underscore permission and still refuses malformed names', async () => {
+    const { isInboxPermission } = await import('../workInboxContract')
+    expect(isInboxPermission('counterparties.legal_name.approve')).toBe(true)
+    expect(isInboxPermission('purchasing.orders.approve')).toBe(true)
+    for (const bad of ['Counterparties.legal_name.approve', 'legal_name', 'a._b', 'a.b_', 'a b.c', '']) expect(isInboxPermission(bad)).toBe(false)
   })
 })
