@@ -43,6 +43,7 @@ import { CariIdentityHistoryPanel, IDENTITY_HISTORY_QUERY_KIND } from './CariIde
 import { CariCustomerGroupPanel } from './CariCustomerGroupPanel'
 import { CariEDocumentPanel } from './CariEDocumentPanel'
 import { CariPartyIbanPanel } from './CariPartyIbanPanel'
+import { PARTY_IBAN_CAPABILITY } from './partyIban'
 import {
   armTaxIdentityDiscard,
   forgetTaxIdentityAttempt,
@@ -527,8 +528,10 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
           />
         ) : null}
         {/* FNS-D121: the cari IBAN list in the selected company (Confidential, its own read and manage names). */}
-        {namespace !== null && activeCompanyId !== null && account.companyId === activeCompanyId ? (
-          <CariPartyIbanPanel partyId={detail.id} companyId={activeCompanyId} namespace={namespace} />
+        {namespace !== null && activeCompanyId !== null && account.companyId === activeCompanyId &&
+        hasCapability(shell, PARTY_IBAN_CAPABILITY.read) ? (
+          <CariPartyIbanPanel partyId={detail.id} companyId={activeCompanyId} namespace={namespace}
+            canManage={hasCapability(shell, PARTY_IBAN_CAPABILITY.manage)} />
         ) : null}
         {/* F018 §L3: Finance's credit limit and collateral figures of this account. Read only; Finance owns them. */}
         {namespace !== null && activeCompanyId !== null && account.companyId === activeCompanyId &&

@@ -207,6 +207,30 @@ describe('C-03 core summary (spec §5.1)', () => {
     expect(factValue('Şirket hesabı durumu')).toBe('Pasif')
   })
 
+  it('draws the FNS-D121 IBAN panel only with its read control and never asks for the list without it', async () => {
+    const ibans = (companyId: string | null, url: string) => url.includes('/ibans')
+      ? json({ companyId, partyId: PARTY, ibans: [] })
+      : json(detail())
+    const granted = installFetch({
+      capabilities: [CAPABILITY.cariPartiesList, CAPABILITY.cariPartiesDetail, 'cari.party-ibans.read'],
+      detail: ibans,
+    })
+    renderAt(`/cari/${PARTY}`)
+    await screen.findByRole('heading', { name: /Örnek Metal/ }, CHAIN)
+    expect(await screen.findByText('Bu cari için IBAN kaydı yok.', {}, CHAIN)).toBeTruthy()
+    // Read without manage: the list is drawn, the add form is not.
+    expect(screen.queryByRole('button', { name: 'IBAN ekle' })).toBeNull()
+    expect(granted.calls.some((call) => call.url.includes('/ibans'))).toBe(true)
+
+    cleanup()
+    const ungranted = installFetch({ capabilities: [CAPABILITY.cariPartiesList, CAPABILITY.cariPartiesDetail], detail: ibans })
+    renderAt(`/cari/${PARTY}`)
+    await screen.findByRole('heading', { name: /Örnek Metal/ }, CHAIN)
+    expect(document.querySelector('[data-section="party-ibans"]')).toBeNull()
+    expect(screen.queryByText('IBAN listesini görme yetkiniz yok.')).toBeNull()
+    expect(ungranted.calls.some((call) => call.url.includes('/ibans'))).toBe(false)
+  })
+
   it('offers the contact editor only where the server granted its capability', async () => {
     /**
      * A button whose only function is to fail is worse than no button. The API

@@ -3,23 +3,26 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { addPartyIban, deactivatePartyIban, fetchPartyIbans, type PartyIbanReply } from './partyIbanApi'
-import { groupIban, isTurkishIban, normalizeIban, type PartyIbanView } from './partyIban'
+import { groupIban, isForeignIban, isTurkishIban, normalizeIban, type PartyIbanView } from './partyIban'
 import { PARTY_IBAN_TEXT as T } from './partyIbanText'
 
 interface Props {
   readonly partyId: string
   readonly companyId: string
   readonly namespace: string
+  /** `cari.party-ibans.manage` from the shell snapshot: without it the add form and deactivate buttons are not drawn. */
+  readonly canManage: boolean
 }
 
 /** One pending command per panel: an unknown outcome keeps the same key and body for the retry (never a new key). */
 type Pending = { readonly key: string; readonly send: (key: string) => Promise<PartyIbanReply>; readonly success: string }
 
 /**
- * FNS-D121: the cari card's IBAN list in the selected company — read, add, deactivate (no edit, no delete). The server
- * decides who may read or manage; a 403 is shown as the panel's own forbidden state and nothing is assumed.
+ * FNS-D121: the cari card's IBAN list in the selected company — read, add, deactivate (no edit, no delete). The page
+ * draws the panel only with `cari.party-ibans.read` and the manage controls only with `cari.party-ibans.manage`; the
+ * server still decides each request, and a late 403 (stale snapshot) is shown as the panel's own forbidden state.
  */
-export function CariPartyIbanPanel({ partyId, companyId, namespace }: Props) {
+export function CariPartyIbanPanel({ partyId, companyId, namespace, canManage }: Props) {
   const boundary = useAuthBoundary()
   const client = useQueryClient()
   const queryKey = useMemo(() => [namespace, 'cari.party-ibans', partyId, companyId], [namespace, partyId, companyId])
@@ -72,6 +75,7 @@ export function CariPartyIbanPanel({ partyId, companyId, namespace }: Props) {
 
   const normalized = normalizeIban(iban)
   const submitAdd = () => {
+    if (isForeignIban(normalized)) { setMessage(T.foreignIban); return }
     if (!isTurkishIban(normalized)) { setMessage(T.invalidIban); return }
     if (bank.trim() === '') { setMessage(T.bankRequired); return }
     const request = { ibanId: crypto.randomUUID(), iban: normalized, bankName: bank.trim(),
@@ -105,27 +109,27 @@ export function CariPartyIbanPanel({ partyId, companyId, namespace }: Props) {
     {data.data.ibans.length === 0 ? <p>{T.empty}</p> : <table>
       <caption>{T.heading}</caption>
       <thead><tr><th scope="col">{T.iban}</th><th scope="col">{T.bank}</th><th scope="col">{T.description}</th>
-        <th scope="col">{T.state}</th><th scope="col">{T.addedBy}</th><th scope="col"><span className="visually-hidden">{T.deactivate}</span></th></tr></thead>
+        <th scope="col">{T.state}</th><th scope="col">{T.addedBy}</th>{canManage ? <th scope="col"><span className="visually-hidden">{T.deactivate}</span></th> : null}</tr></thead>
       <tbody>{data.data.ibans.map((row) => <tr key={row.id} data-iban-state={row.isActive ? 'active' : 'passive'}>
         <td>{groupIban(row.iban)}</td><td>{row.bankName}</td><td>{row.description ?? '—'}</td>
         <td>{row.isActive ? T.active : `${T.passive} — ${row.deactivationReason ?? ''}`}</td><td>{row.addedBy}</td>
-        <td>{row.isActive ? <button type="button" disabled={pending !== null} onClick={() => { setClosing(row); setReason(''); setMessage(null) }}>
-          {T.deactivate}</button> : null}</td>
+        {canManage ? <td>{row.isActive ? <button type="button" disabled={pending !== null} onClick={() => { setClosing(row); setReason(''); setMessage(null) }}>
+          {T.deactivate}</button> : null}</td> : null}
       </tr>)}</tbody>
     </table>}
-    {closing === null ? null : <div>
+    {!canManage || closing === null ? null : <div>
       <label>{T.reason}<textarea value={reason} maxLength={1000} disabled={pending !== null}
         onChange={(event) => setReason(event.target.value)} /></label>
       <button type="button" disabled={pending !== null} onClick={submitDeactivate}>{T.confirmDeactivate}</button>
       <button type="button" disabled={pending !== null} onClick={() => setClosing(null)}>{T.cancel}</button>
     </div>}
-    <fieldset disabled={pending !== null}>
+    {canManage ? <fieldset disabled={pending !== null}>
       <legend>{T.add}</legend>
       <label>{T.iban}<input value={iban} maxLength={40} onChange={(event) => setIban(event.target.value)} /></label>
       <label>{T.bank}<input value={bank} maxLength={200} onChange={(event) => setBank(event.target.value)} /></label>
       <label>{T.description}<input value={description} maxLength={500} onChange={(event) => setDescription(event.target.value)} /></label>
       <button type="button" onClick={submitAdd}>{T.add}</button>
-    </fieldset>
+    </fieldset> : null}
   </>
 
   return <section aria-labelledby={`cari-iban-${partyId}`} data-section="party-ibans">

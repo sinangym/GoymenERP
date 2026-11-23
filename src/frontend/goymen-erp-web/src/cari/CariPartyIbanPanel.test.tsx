@@ -16,9 +16,9 @@ const row = { id: '22222222-2222-4222-8222-222222222222', companyId: company, pa
   bankName: 'SENTETIK Banka', description: null, isActive: true, version: '1', addedBy: 'SENTETIK', addedAtUtc: '2026-11-23T08:00:00+00:00',
   deactivatedBy: null, deactivatedAtUtc: null, deactivationReason: null }
 
-function renderPanel() {
+function renderPanel(canManage = true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0 } } })
-  return render(<QueryClientProvider client={client}><CariPartyIbanPanel partyId={party} companyId={company} namespace="ns" /></QueryClientProvider>)
+  return render(<QueryClientProvider client={client}><CariPartyIbanPanel partyId={party} companyId={company} namespace="ns" canManage={canManage} /></QueryClientProvider>)
 }
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
@@ -35,6 +35,26 @@ describe('cari IBAN panel', () => {
     vi.mocked(fetchPartyIbans).mockResolvedValueOnce({ type: 'http', status: 403 })
     renderPanel()
     expect(await screen.findByText(T.forbidden)).toBeTruthy()
+  })
+
+  it('draws no add form and no deactivate button without the manage control', async () => {
+    vi.mocked(fetchPartyIbans).mockResolvedValueOnce({ type: 'ok', data: { companyId: company, partyId: party, ibans: [row] } })
+    renderPanel(false)
+    expect(await screen.findByText('TR13 0006 2000 0000 0000 0000 02')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: T.add })).toBeNull()
+    expect(screen.queryByRole('button', { name: T.deactivate })).toBeNull()
+    expect(screen.queryByLabelText(T.iban)).toBeNull()
+  })
+
+  it('refuses a foreign IBAN with its own Turkish message and sends nothing', async () => {
+    vi.mocked(fetchPartyIbans).mockResolvedValue({ type: 'ok', data: { companyId: company, partyId: party, ibans: [] } })
+    renderPanel()
+    await screen.findByText(T.empty)
+    fireEvent.change(screen.getByLabelText(T.iban), { target: { value: 'DE89 3704 0044 0532 0130 00' } })
+    fireEvent.change(screen.getByLabelText(T.bank), { target: { value: 'SENTETIK Bank' } })
+    fireEvent.click(screen.getByRole('button', { name: T.add }))
+    expect(await screen.findByText(T.foreignIban)).toBeTruthy()
+    expect(addPartyIban).not.toHaveBeenCalled()
   })
 
   it('refuses an invalid IBAN locally and retries an unknown add with the same key and body', async () => {

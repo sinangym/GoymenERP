@@ -47,6 +47,18 @@ export function isTurkishIban(value: string): boolean {
   }
   return remainder === 1
 }
+/**
+ * FNS-D121 (fail-closed until Sinan decides on foreign IBANs): a well-formed IBAN of another country (two letters, two
+ * check digits, then 11–30 letters/digits) is recognised only to explain the refusal; it is never accepted.
+ */
+export const isForeignIban = (value: string) => /^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(value) && !value.startsWith('TR')
+
+/** FNS-D121 shell controls inside C-03; listing them grants nothing (the server snapshot decides). */
+export const PARTY_IBAN_CAPABILITY = {
+  read: 'cari.party-ibans.read',
+  manage: 'cari.party-ibans.manage',
+} as const
+
 export const normalizeIban = (value: string) => value.replace(/[\s-]/g, '').toUpperCase()
 export const groupIban = (value: string) => value.replace(/(.{4})/g, '$1 ').trim()
 

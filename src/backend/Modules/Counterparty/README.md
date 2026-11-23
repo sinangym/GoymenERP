@@ -290,5 +290,9 @@ spaces, upper case). Personal data class Confidential (AI-D42: `iban` in `Counte
 | Migration | `20261123075528_AddPartyIbans`; Down refuses with **THROW 52252** while rows exist (forward fix) |
 | Read port | `ICounterpartyPartyIbanSourceV1` answers Finance's statement IBAN question (active rows, same company) |
 
-The Cari detail screen shows the list; the shell has no separate IBAN control (the API answers 403 without permission).
+Shell (Counterparty 1.6): controls `cari.party-ibans.read` and `cari.party-ibans.manage` inside C-03 (same route,
+context and scope as the detail; declarations grant nothing). The Cari detail draws the panel only with the read control
+and its add/deactivate controls only with the manage control; the API re-checks each request. The two disposable C-01
+envelopes and the CARI-ACCEPTANCE-006 profile keep both controls closed/outside. A foreign IBAN is refused (fail-closed,
+NEEDS-SINAN) with an explicit Turkish message.
 Real SQL facts are written and NOT_RUN locally.

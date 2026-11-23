@@ -18,7 +18,8 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
         var root = document.RootElement;
         var provider = new CounterpartyShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
-        Assert.Equal(4, declarations.Count);
+        // Four routes plus the two FNS-D121 IBAN controls inside C-03 (Counterparty 1.6).
+        Assert.Equal(6, declarations.Count);
         var declaration = Assert.Single(
             declarations,
             item => item.CapabilityId
@@ -244,6 +245,33 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
         Assert.Equal("blocked", root.GetProperty("implementationReadiness").GetString());
         Assert.Equal("no_go", root.GetProperty("productionActivation").GetString());
         Assert.True(declaration.ImplementationAvailable);
+    }
+
+    [Fact]
+    public void Fns_d121_iban_controls_sit_inside_the_detail_and_need_their_own_permissions()
+    {
+        var provider = new CounterpartyShellCapabilityProvider();
+        var declarations = provider.GetDeclarations();
+        var detail = Assert.Single(declarations,
+            item => item.CapabilityId == CounterpartyShellCapabilityProvider.DetailCapabilityId);
+        var read = Assert.Single(declarations,
+            item => item.CapabilityId == CounterpartyShellCapabilityProvider.PartyIbansReadCapabilityId);
+        var manage = Assert.Single(declarations,
+            item => item.CapabilityId == CounterpartyShellCapabilityProvider.PartyIbansManageCapabilityId);
+
+        Assert.Equal("1.6", provider.ContractVersion);
+        foreach (var control in new[] { read, manage })
+        {
+            Assert.Equal(CounterpartyShellCapabilityProvider.DetailCapabilityId, control.ParentCapabilityId);
+            Assert.Equal(detail.RouteId, control.RouteId);
+            Assert.Equal(detail.RoutePath, control.RoutePath);
+            Assert.Equal(detail.ContextRequirement, control.ContextRequirement);
+            Assert.Equal(detail.ScopeRequirement, control.ScopeRequirement);
+        }
+        Assert.Equal([ErpPermissions.CounterpartyPartiesRead, ErpPermissions.CounterpartyPartyIbansRead],
+            read.RequiredPermissions);
+        Assert.Equal([ErpPermissions.CounterpartyPartiesRead, ErpPermissions.CounterpartyPartyIbansRead,
+            ErpPermissions.CounterpartyPartyIbansManage], manage.RequiredPermissions);
     }
 
     private static string FindRepositoryRoot()

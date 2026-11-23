@@ -8,6 +8,7 @@ export const PARTY_IBAN_TEXT = {
   retry: 'Aynı anahtarla yeniden dene',
   empty: 'Bu cari için IBAN kaydı yok.',
   forbidden: 'IBAN listesini görme yetkiniz yok.',
+  foreignIban: 'Şimdilik yalnız Türkiye (TR) IBAN\'ları kaydedilebilir; yurt dışı IBAN kabul edilmez.',
   invalidIban: 'Geçerli bir TR IBAN girin (TR ile başlayan 26 karakter, kontrol basamakları doğru).',
   bankRequired: 'Banka adı zorunludur.', reasonRequired: 'Gerekçe zorunludur.',
   added: 'IBAN eklendi.', deactivated: 'IBAN pasifleştirildi.',
@@ -15,7 +16,7 @@ export const PARTY_IBAN_TEXT = {
   conflict: 'Kayıt değişmiş veya bu IBAN zaten listede. Listeyi yenileyin.',
   refused: 'İşlem kaydedilmedi.',
   codes: {
-    counterparty_party_iban_invalid: 'IBAN geçersiz.',
+    counterparty_party_iban_invalid: 'IBAN geçersiz. Şimdilik yalnız Türkiye (TR) IBAN\'ları kaydedilebilir.',
     counterparty_party_iban_already_listed: 'Bu IBAN listede zaten etkin.',
     counterparty_party_iban_bank_name_required: 'Banka adı zorunludur.',
     counterparty_party_iban_reason_required: 'Gerekçe zorunludur.',

@@ -381,7 +381,7 @@ internal static class C01E2eStagedDeclarations
     // would have started offering a create screen, and the two disposable authority constants would
     // have moved with it: a silent widening of an acceptance surface as a side effect of an
     // unrelated flip. An envelope's contents are DECLARED, not inherited — so this switch is
-    // exhaustive over the owner's four capabilities and the default arm now refuses an unknown one
+    // exhaustive over the owner's six capabilities and the default arm now refuses an unknown one
     // rather than quietly admitting it with the owner's flag.
     internal static IReadOnlyCollection<ShellCapabilityDeclaration> Open(
         CounterpartyShellCapabilityProvider source, bool detail) =>
@@ -398,8 +398,11 @@ internal static class C01E2eStagedDeclarations
                     ImplementationAvailable = detail,
                 },
                 // Closed in both envelopes, independently of what the normal host publishes.
+                // FNS-D121 (Counterparty 1.6): the IBAN controls inside C-03 are closed too; neither envelope is about IBANs.
                 CounterpartyShellCapabilityProvider.CreateCapabilityId
-                    or CounterpartyShellCapabilityProvider.LinkCapabilityId => declaration with
+                    or CounterpartyShellCapabilityProvider.LinkCapabilityId
+                    or CounterpartyShellCapabilityProvider.PartyIbansReadCapabilityId
+                    or CounterpartyShellCapabilityProvider.PartyIbansManageCapabilityId => declaration with
                 {
                     ImplementationAvailable = false,
                 },

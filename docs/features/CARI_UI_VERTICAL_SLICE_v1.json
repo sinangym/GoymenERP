@@ -1,5 +1,5 @@
 {
-  "contractVersion": "1.5",
+  "contractVersion": "1.6",
   "sliceId": "CARI-UI-001",
   "title": "Cari Kartlar ve Cari 360 ilk uçtan uca dilim",
   "contractStatus": "accepted",
@@ -164,6 +164,33 @@
       "scope": "both-company-wide-on-target",
       "idempotency": true,
       "backend": "main-via-PR-106"
+    },
+    {
+      "id": "cari.party-ibans.read",
+      "method": "GET",
+      "path": "/api/v1/counterparties/{partyId}/ibans",
+      "permissions": [
+        "counterparty.parties.read",
+        "counterparty.party-ibans.read"
+      ],
+      "scope": "company-wide",
+      "parent": "cari.parties.detail",
+      "decision": "FNS-D121"
+    },
+    {
+      "id": "cari.party-ibans.manage",
+      "method": "POST",
+      "path": "/api/v1/counterparties/{partyId}/ibans",
+      "permissions": [
+        "counterparty.parties.read",
+        "counterparty.party-ibans.read",
+        "counterparty.party-ibans.manage"
+      ],
+      "scope": "company-wide",
+      "idempotency": true,
+      "optimisticConcurrency": true,
+      "parent": "cari.parties.detail",
+      "decision": "FNS-D121"
     }
   ],
   "capabilityRules": {

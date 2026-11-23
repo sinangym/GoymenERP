@@ -1,6 +1,6 @@
 // SENTETIK: FNS-D121 decoder and TR mod-97 evidence.
 import { describe, expect, it } from 'vitest'
-import { decodePartyIbanCommandResult, decodePartyIbanList, groupIban, isTurkishIban, normalizeIban } from './partyIban'
+import { decodePartyIbanCommandResult, decodePartyIbanList, groupIban, isForeignIban, isTurkishIban, normalizeIban } from './partyIban'
 
 const company = 'aaaaaaaa-0000-4000-8000-000000000001'
 const party = '11111111-1111-4111-8111-111111111111'
@@ -13,6 +13,9 @@ describe('cari IBAN contract', () => {
     expect(isTurkishIban(normalizeIban('tr13 0006 2000 0000 0000 0000 02'))).toBe(true)
     expect(isTurkishIban('TR130006200000000000000003')).toBe(false)
     expect(isTurkishIban('DE89370400440532013000')).toBe(false)
+    expect(isForeignIban('DE89370400440532013000')).toBe(true)
+    expect(isForeignIban('TR130006200000000000000002')).toBe(false)
+    expect(isForeignIban('TR13')).toBe(false)
     expect(groupIban('TR130006200000000000000002')).toBe('TR13 0006 2000 0000 0000 0000 02')
   })
 

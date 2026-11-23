@@ -18,7 +18,7 @@ public sealed partial class ShellCapabilityRegistryTests
             new ShellCapabilityAuthorityCatalog(
                 [ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetail]));
 
-        Assert.Equal(4, registry.Registrations.Count);
+        Assert.Equal(6, registry.Registrations.Count); // four routes plus the two FNS-D121 IBAN controls (Counterparty 1.6)
         Assert.Equal(
             ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetail,
             registry.Revision);
