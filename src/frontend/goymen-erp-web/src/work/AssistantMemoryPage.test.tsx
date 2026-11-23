@@ -21,7 +21,7 @@ const entry = (overrides: Record<string, unknown> = {}) => ({
 const page = (items: unknown[]) => ({ companyId: COMPANY_A, ownerUserId: ACTOR, items, hasMore: false })
 const status = (writable: boolean) => ({
   companyId: COMPANY_A, userId: ACTOR, writable, disabledReasons: writable ? [] : ['pilot_off', 'information_notice_pending'],
-  pilotEnabled: writable, retentionDays: writable ? 30 : null, maxEntriesPerUser: writable ? 5 : null,
+  pilotEnabled: writable, retentionDays: 365, maxEntriesPerUser: 200,
   informationNoticeVersion: writable ? 'SENTETIK-NOTICE-1' : null, activeEntryCount: 1,
 })
 
@@ -80,6 +80,7 @@ describe('WP-C6 assistant memory page', () => {
     expect(await screen.findByText(T.unknownOutcome)).toBeTruthy()
     await user.click(screen.getByRole('button', { name: T.save }))
     expect(await screen.findByText(T.limitReached)).toBeTruthy()
+    expect(screen.getByTestId('work-assistant-memory-usage').textContent).toBe(`${T.usage}: 1 / 200`)
     const posts = calls.filter((call) => call.method === 'POST')
     expect(posts.map((call) => call.body)).toEqual([{ kind: 'preference', body: 'SENTETIK tercih' }, { kind: 'preference', body: 'SENTETIK tercih' }])
     expect(posts[0].headers['Idempotency-Key']).toBe(posts[1].headers['Idempotency-Key'])

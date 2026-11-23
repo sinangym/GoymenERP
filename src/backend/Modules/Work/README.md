@@ -163,7 +163,7 @@ geri alınır.
 `WidenWorkRecordTypesAndNoteReads` migration'ı üç kontrol kısıtını 1–12'ye genişletir ve `RecordNoteReads` tablosunu
 ekler. Down guard **52170**: okundu satırı ya da 6–12 türüne bağlı not/görev/bildirim varken geri almayı reddeder
 (forward fix).
-## WP-C6: kişisel asistan hafızası pilotu (AI-D15, AI-D22, AI-D30, AI-D38, AI-D39)
+## WP-C6: kişisel asistan hafızası pilotu (AI-D15, AI-D22, AI-D30, AI-D38, AI-D39, AI-D48)
 
 - Kayıt: kısa tercih veya not (`preference` | `note`, tek satır, en çok 500 karakter); kayda bağlı değildir, ERP verisinin
   kopyası değildir. Modele yalnız `WorkAssistantMemoryDataBlockV1` biçiminde, sabit başlıklı **veri** (JSON, HTML/ASCII dışı
@@ -177,9 +177,11 @@ ekler. Down guard **52170**: okundu satırı ya da 6–12 türüne bağlı not/g
   yeniden açar (`/oversight/**`). Her görüntüleme önce `AssistantMemoryOversightViews` satırı + `work.assistant-memory.viewed.v1`
   denetim olayı olarak kaydedilir, sonra sunulur. AI-D39: görüntüleme ve kapatma kullanıcıya **bildirilmez** (bildirim,
   "kim görüntüledi" listesi ve kapatma gerekçesi yoktur); yalnız denetim kaydı. Denetim metni kopyalamaz.
-- Yazma şu üç koşul sağlanmadan kapalıdır (`Work:AssistantMemory`): `PilotEnabled` (varsayılan kapalı, insan kapısı),
-  `MaxEntriesPerUser` (parametre — değer NEEDS-SINAN), `InformationNoticeVersion` (hukukçu teyitli bilgilendirme metninin
-  onaylı sürümü; metin yer tutucu, NEEDS-SINAN).
+- Kayıt sınırı (AI-D48): kişi başı en fazla **200** etkin kayıt (`MaxEntriesPerUser` varsayılanı 200, ayardan değiştirilebilir;
+  pozitif olmayan değer hafızayı kapatır). Sınırda yeni kayıt 409 `work_assistant_memory_limit_reached` ile reddedilir; kişi
+  önce eski bir kaydı siler. Otomatik kapatma yoktur.
+- Yazma şu iki koşul sağlanmadan kapalıdır (`Work:AssistantMemory`): `PilotEnabled` (varsayılan kapalı, insan kapısı) ve
+  `InformationNoticeVersion` (hukukçu teyitli bilgilendirme metninin onaylı sürümü; metin yer tutucu, NEEDS-SINAN).
 
 | İzin | Anlam | Rol |
 |---|---|---|

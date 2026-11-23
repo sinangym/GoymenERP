@@ -132,6 +132,8 @@ function AssistantMemoryBody() {
       ? <StateBlock state={status.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(status.data) as RemoteViewState<unknown>} subject={T.subject} onRetry={() => void status.refetch()} />
       : statusData.writable ? <p role="note">{T.writableYes}</p>
         : <div role="note"><p>{T.writableNo}</p><ul>{statusData.disabledReasons.map((item) => <li key={item}>{REASON[item]}</li>)}</ul></div>}
+    {statusData?.maxEntriesPerUser == null ? null
+      : <p data-testid="work-assistant-memory-usage">{T.usage}: {statusData.activeEntryCount} / {statusData.maxEntriesPerUser}</p>}
 
     {statusData?.writable ? <form aria-labelledby="work-assistant-memory-new" onSubmit={(event) => { event.preventDefault(); create() }}>
       <h2 id="work-assistant-memory-new">{T.newHeading}</h2>

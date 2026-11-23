@@ -20,10 +20,11 @@ namespace GoymenERP.Modules.Work.Domain;
 /// <para>
 /// Retention (AI-D38): an entry becomes passive one year after its last use (the owner's last write or the assistant's last
 /// read of it); passive entries are never handed to the assistant and are never physically destroyed here (destruction is a
-/// separate policy). Writing is closed unless ALL of these hold: the pilot flag is on (default off), a per-person entry limit
-/// is configured (AI-D30 "parametre"; value undecided, NEEDS-SINAN) and an approved employee information-notice version is
-/// configured (the notice text is a placeholder until the lawyer-confirmed text is approved by a human; NEEDS-SINAN). Seeing
-/// and deleting one's own entries is never closed.
+/// separate policy). Entry limit (AI-D48): at most 200 active entries per person (changeable setting); at the limit a new entry
+/// is refused (409 <c>work_assistant_memory_limit_reached</c>) until the person removes an older one — nothing is closed
+/// automatically. Writing is closed unless the pilot flag is on (default off) and an approved employee information-notice
+/// version is configured (the notice text is a placeholder until the lawyer-confirmed text is approved by a human;
+/// NEEDS-SINAN). Seeing and deleting one's own entries is never closed.
 /// </para>
 /// </summary>
 public enum WorkAssistantMemoryKindV1
@@ -92,8 +93,8 @@ public static class WorkAssistantMemoryLimitsV1
 }
 
 /// <summary>
-/// Configuration section <c>Work:AssistantMemory</c>. The pilot flag, the entry limit and the notice version are unset by
-/// default, which keeps writing closed; the retention period carries the decided value (AI-D38).
+/// Configuration section <c>Work:AssistantMemory</c>. The pilot flag and the notice version are unset by
+/// default, which keeps writing closed; the retention period (AI-D38) and the entry limit (AI-D48) carry the decided values.
 /// </summary>
 public sealed class WorkAssistantMemoryOptions
 {
@@ -111,8 +112,14 @@ public sealed class WorkAssistantMemoryOptions
     /// </summary>
     public int? RetentionDays { get; set; } = DecidedRetentionDays;
 
-    /// <summary>Active entries one person may keep (AI-D30 "parametre"). Unset = memory closed.</summary>
-    public int? MaxEntriesPerUser { get; set; }
+    /// <summary>AI-D48: the decided per-person limit of active entries.</summary>
+    public const int DecidedMaxEntriesPerUser = 200;
+
+    /// <summary>
+    /// Active entries one person may keep. Defaults to the decided <see cref="DecidedMaxEntriesPerUser"/> (AI-D48, changeable
+    /// as a setting); a non-positive value is a misconfiguration and keeps memory closed instead of inventing another limit.
+    /// </summary>
+    public int? MaxEntriesPerUser { get; set; } = DecidedMaxEntriesPerUser;
 
     /// <summary>The approved employee information-notice version (lawyer-confirmed, human approval). Unset = memory closed.</summary>
     public string? InformationNoticeVersion { get; set; }
@@ -123,7 +130,7 @@ public static class WorkAssistantMemoryDisabledReasonsV1
 {
     public const string PilotOff = "pilot_off";
     public const string RetentionInvalid = "retention_invalid";
-    public const string EntryLimitUndecided = "entry_limit_undecided";
+    public const string EntryLimitInvalid = "entry_limit_invalid";
     public const string InformationNoticePending = "information_notice_pending";
     public const string ClosedForUser = "closed_for_user";
 }

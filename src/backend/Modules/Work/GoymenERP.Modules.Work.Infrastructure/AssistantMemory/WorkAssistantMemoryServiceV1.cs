@@ -404,7 +404,7 @@ public sealed class WorkAssistantMemoryServiceV1(
         var reasons = new List<string>();
         if (settings?.PilotEnabled != true) reasons.Add(WorkAssistantMemoryDisabledReasonsV1.PilotOff);
         if (settings?.RetentionDays is not > 0) reasons.Add(WorkAssistantMemoryDisabledReasonsV1.RetentionInvalid);
-        if (settings?.MaxEntriesPerUser is not > 0) reasons.Add(WorkAssistantMemoryDisabledReasonsV1.EntryLimitUndecided);
+        if (settings?.MaxEntriesPerUser is not > 0) reasons.Add(WorkAssistantMemoryDisabledReasonsV1.EntryLimitInvalid);
         if (string.IsNullOrWhiteSpace(settings?.InformationNoticeVersion)) reasons.Add(WorkAssistantMemoryDisabledReasonsV1.InformationNoticePending);
         if (closedForUser) reasons.Add(WorkAssistantMemoryDisabledReasonsV1.ClosedForUser);
         return reasons;
