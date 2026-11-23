@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
 import {
-  CREATE_ALLOCATION_422_CODES, decodeAllocationSuggestions, decodePhysicalAllocation, normalizeRequestedKg,
+  CREATE_ALLOCATION_422_CODES, decodeAllocationSuggestions, decodePhysicalAllocation, decodePhysicalAllocationPage, normalizeRequestedKg,
 } from './allocationContract'
 import type { DraftLine } from './contract'
 
@@ -148,6 +148,22 @@ describe('allocation suggestion decoder', () => {
     expect(decodePhysicalAllocation(legacy, scope)?.isSubstitute).toBe(false)
     expect(decodePhysicalAllocation(allocation({ isSubstitute: 'true' }), scope)).toBeNull()
     expect(decodePhysicalAllocation(allocation({ productId: OTHER_PRODUCT }), scope)).toBeNull()
+  })
+
+  it('rejects an unknown or missing key on an allocation, its page and each page item', () => {
+    expect(decodePhysicalAllocation(allocation(), scope)).not.toBeNull()
+    expect(decodePhysicalAllocation(allocation({ extra: null }), scope)).toBeNull()
+    const withoutReservedUntil: Record<string, unknown> = { ...allocation() }
+    delete withoutReservedUntil.reservedUntilUtc
+    expect(decodePhysicalAllocation(withoutReservedUntil, scope)).toBeNull()
+
+    const item = { allocation: allocation(), labelVersion: '3' }
+    expect(decodePhysicalAllocationPage({ items: [item], searchWindowFull: false }, scope)?.items).toHaveLength(1)
+    expect(decodePhysicalAllocationPage({ items: [item], searchWindowFull: false, extra: null }, scope)).toBeNull()
+    expect(decodePhysicalAllocationPage({ items: [item] }, scope)).toBeNull()
+    expect(decodePhysicalAllocationPage({ items: [{ ...item, extra: null }], searchWindowFull: false }, scope)).toBeNull()
+    expect(decodePhysicalAllocationPage({ items: [{ allocation: allocation() }], searchWindowFull: false }, scope)).toBeNull()
+    expect(decodePhysicalAllocationPage({ items: [{ ...item, allocation: allocation({ extra: null }) }], searchWindowFull: false }, scope)).toBeNull()
   })
 })
 

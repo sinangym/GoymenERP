@@ -788,6 +788,7 @@ public static partial class InventoryEndpoints
             {
                 InventoryTransferCodesV1.IdempotencyConflict,
                 InventoryTransferCodesV1.ConcurrentChange,
+                InventoryTransferCodesV1.TransferVersionConflict,
                 InventoryTransferCodesV1.TransferStateConflict,
                 InventoryTransferCodesV1.LabelVersionConflict,
                 InventoryTransferCodesV1.SourcePositionConflict,

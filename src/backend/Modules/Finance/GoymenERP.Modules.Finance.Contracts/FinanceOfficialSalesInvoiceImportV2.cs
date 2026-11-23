@@ -8,7 +8,7 @@ namespace GoymenERP.Modules.Finance.Contracts;
 /// columns the accounting export carries: official number, ETTN, and the functional (TL) tax base, VAT and
 /// withholding. The document columns repeat on every installment row of the same <c>sourceDocumentId</c> and must
 /// be identical there. The file reuses v1's byte and row limits, upload, maker≠checker approval and admission.
-/// No formula check (tax base + VAT − withholding = payable) is applied: FNS-D17 did not choose one (NEEDS-SINAN).
+/// The tax base + VAT − withholding = payable check (FNS-D64) is a non-blocking preview warning, never a row issue.
 /// </summary>
 public static class FinanceOfficialSalesInvoiceImportTemplateV2
 {

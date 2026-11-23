@@ -173,6 +173,71 @@ describe('F-027 / KLN-D38 Cari card identity history and succession', () => {
     expect(screen.queryByRole('button', { name: T.submit })).toBeNull()
   })
 
+  it('ALS-D99: a 422 acknowledgement refusal shows the old account warning and only the acknowledged resend carries the flag', async () => {
+    let recorded = false
+    const warning = {
+      companyId: COMPANY,
+      partyId: PARTY,
+      accountVersion: '5',
+      isActive: true,
+      acknowledgementRequired: true,
+      items: [
+        { kind: 'finance-open-balance', outcome: 'open', openItemCount: 2 },
+        { kind: 'sales-open-documents', outcome: 'unavailable', openItemCount: null },
+        { kind: 'purchasing-open-documents', outcome: 'clear', openItemCount: null },
+      ],
+    }
+    const calls = install((call) => {
+      if (call.method === 'PUT') {
+        const body = call.body as Record<string, unknown>
+        if (body.exposureWarningAcknowledged !== true) {
+          return json({ code: 'deactivation_warning_acknowledgement_required' }, 422)
+        }
+        recorded = true
+        return noContent()
+      }
+      if (call.url.endsWith('/deactivation-warning')) return json(warning)
+      return json(recorded ? view({ accountVersion: '6', accountIsActive: false, successor: successorLink }) : view())
+    })
+    renderPanel()
+    const user = userEvent.setup()
+    await fillForm(user)
+    await user.click(screen.getByRole('button', { name: T.submit }))
+
+    expect(await screen.findByText(T.refusal.deactivation_warning_acknowledgement_required)).toBeTruthy()
+    const acknowledge = await screen.findByLabelText(T.warningAcknowledge)
+    expect(document.querySelectorAll('[data-warning-items] li')).toHaveLength(3)
+
+    // Without the tick nothing more is sent.
+    await user.click(screen.getByRole('button', { name: T.submit }))
+    expect(await screen.findByText(T.warningAcknowledgeRequired)).toBeTruthy()
+    expect(puts(calls)).toHaveLength(1)
+
+    await user.click(acknowledge)
+    await user.click(screen.getByRole('button', { name: T.submit }))
+    expect(await screen.findByText(T.saved)).toBeTruthy()
+    const [first, second] = puts(calls)
+    expect(puts(calls)).toHaveLength(2)
+    expect(first.body).not.toHaveProperty('exposureWarningAcknowledged')
+    expect(second.body).toEqual({ ...(first.body as object), exposureWarningAcknowledged: true })
+    expect(second.headers['Idempotency-Key']).not.toBe(first.headers['Idempotency-Key'])
+  })
+
+  it('ALS-D99: an unreadable warning sends nothing further', async () => {
+    const calls = install((call) => {
+      if (call.method === 'PUT') return json({ code: 'deactivation_warning_acknowledgement_required' }, 422)
+      if (call.url.endsWith('/deactivation-warning')) return json({ code: 'service_unavailable' }, 503)
+      return json(view())
+    })
+    renderPanel()
+    const user = userEvent.setup()
+    await fillForm(user)
+    await user.click(screen.getByRole('button', { name: T.submit }))
+    expect(await screen.findByText(T.warningUnavailable)).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: T.submit }))
+    expect(puts(calls)).toHaveLength(1)
+  })
+
   it('refuses a missing legal basis in the form and sends nothing', async () => {
     const calls = install(() => json(view()))
     renderPanel()

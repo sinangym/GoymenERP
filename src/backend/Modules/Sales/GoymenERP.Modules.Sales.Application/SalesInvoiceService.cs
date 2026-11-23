@@ -588,10 +588,13 @@ public sealed partial class SalesInvoiceService(
                 item.ShipmentDate, share.SalesOrderId, share.SalesOrderLineId, item.Basis.Revision, share.ProductId, share.UnitId,
                 scaleKilograms, scaleKilograms.ToString(CultureInfo.InvariantCulture), item.Line.Commercial, item.Line.Tax!);
 
-        var perUnit = order.KilogramsPerUnitOf(share.SalesOrderLineId)?.KilogramsPerUnit
-            ?? throw NotReady([new(item.Field, SalesInvoiceReasonCodesV1.KilogramsPerUnitMissing)]);
+        // SAT-D473: an order line approved without a kg/unit (the card gave none) is still invoiced as pieces × piece price with its
+        // scale kg; its theoretical kg stays empty (never zero), so its theoretical kg price reads unavailable.
+        var perUnit = order.KilogramsPerUnitOf(share.SalesOrderLineId)?.KilogramsPerUnit;
         var pieces = share.Quantity / 1.000000000000000000000000000m;
-        var theoretical = decimal.Round(pieces * perUnit, SalesInvoice.KilogramInformationScale, MidpointRounding.AwayFromZero);
+        decimal? theoretical = perUnit is { } figure
+            ? decimal.Round(pieces * figure, SalesInvoice.KilogramInformationScale, MidpointRounding.AwayFromZero)
+            : null;
         return new SalesInvoiceShareInput(Guid.NewGuid(), share.ShipmentId, share.DispatchNoteId, share.SystemNumber, share.NoteLineNo,
             item.ShipmentDate, share.SalesOrderId, share.SalesOrderLineId, item.Basis.Revision, share.ProductId, share.UnitId,
             pieces, pieces.ToString(CultureInfo.InvariantCulture), item.Line.Commercial, item.Line.Tax!, theoretical, scaleKilograms);
@@ -603,7 +606,7 @@ public sealed partial class SalesInvoiceService(
         var first = prepared[0];
         foreach (var item in prepared.Skip(1))
         {
-            // 2026-11-17 user answer, #1189 6943483644 (agent relay): USD shipments on different
+            // 2026-11-17 user answer, #1189 6943483644 (GOV-D16) (agent relay): USD shipments on different
             // business days are invoiced separately even if both days resolve to an equal bulletin/rate.
             if (first.Basis.CurrencyId == SettingsCurrencyIdentitiesV1.UnitedStatesDollar
                 && item.Basis.CurrencyId == first.Basis.CurrencyId && item.ShipmentDate != first.ShipmentDate)
@@ -967,12 +970,25 @@ public sealed partial class SalesInvoiceService(
 
     private sealed record Scope(Guid CompanyId, string ActorId, IReadOnlyCollection<string> RoleCodes);
 
-    private sealed record BasisLine(Guid OrderUnitId, CommercialDraftFields Commercial, SalesLineTaxSnapshot? Tax, bool IsKilogram = true);
+    private sealed record BasisLine(Guid OrderUnitId, CommercialDraftFields Commercial, SalesLineTaxSnapshot? Tax, bool IsKilogram);
 
-    /// <summary>AK-4: whether an archived basis line's unit is the kilogram — the order line's own Settings answer for that unit.</summary>
-    private static bool IsKilogramUnit(SalesOrderDraft order, Guid lineId, Guid unitId) =>
-        order.Lines.Concat(order.RemovedLines).FirstOrDefault(line => line.Id == lineId && line.OrderUnit.UnitId == unitId)
-            ?.OrderUnit.IsKilogram ?? false;
+    /// <summary>
+    /// AK-4: whether an archived basis line's unit is the kilogram — the order line's own Settings answer for that unit, else
+    /// (the line's unit changed in a later revision) the Settings answer another line of the order holds for the SAME unit
+    /// identity (the kind is the unit's, SalesOrderDraft refuses a profile whose kind and dimension disagree). K3 review: a unit
+    /// no line of the order still answers is not guessed to be a piece unit (the invoice would bill pieces × price instead of the
+    /// scale kg); the basis is unreadable and nothing is invoiced (fail-closed).
+    /// </summary>
+    internal static bool IsKilogramUnit(SalesOrderDraft order, Guid lineId, Guid unitId)
+    {
+        var known = order.Lines.Concat(order.RemovedLines).ToArray();
+        if (known.FirstOrDefault(line => line.Id == lineId && line.OrderUnit.UnitId == unitId) is { } same)
+            return same.OrderUnit.IsKilogram;
+        var answers = known.Where(line => line.OrderUnit.UnitId == unitId).Select(line => line.OrderUnit.IsKilogram).Distinct().ToArray();
+        return answers.Length == 1
+            ? answers[0]
+            : throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
+    }
 
     private sealed record InvoiceBasis(int Revision, Guid PartyId, Guid CompanyAccountId, Guid CurrencyId, Guid MoneyProfileId,
         string MoneyProfileVersion, int MoneyScale, SalesDueTerms? DueTerms, SalesBuyerTax? BuyerTax,

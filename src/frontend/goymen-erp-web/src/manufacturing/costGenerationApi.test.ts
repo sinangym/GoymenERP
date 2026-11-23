@@ -30,3 +30,24 @@ describe('manufacturing immutable cost generations', () => {
     expect(decodeCostAttempt({ idempotencyKey: generation, expectedVersion: 4, expectedGenerationRevision: -1, reason: 'Synthetic source' })).toBeNull()
   })
 })
+const without = (value: object, key: string) => Object.fromEntries(Object.entries(value).filter(([name]) => name !== key))
+describe('cost generation exact key set (SENTETIK)', () => {
+  it('rejects an extra or a missing key on the history, the generation and every output', () => {
+    const value = row(), output = value.outputs[0], history = { orderId: order, orderVersion: 4, generations: [value] }
+    expect(decodeCostGeneration(value, company, order)).toEqual(value)
+    expect(decodeCostHistory(history, company, order)).toEqual(history)
+    expect(decodeCostHistory({ ...history, extra: 1 }, company, order)).toBeNull()
+    for (const key of Object.keys(history)) expect(decodeCostHistory(without(history, key), company, order)).toBeNull()
+    expect(decodeCostGeneration({ ...value, extra: 1 }, company, order)).toBeNull()
+    expect(decodeCostHistory({ ...history, generations: [{ ...value, extra: 1 }] }, company, order)).toBeNull()
+    for (const key of Object.keys(value)) expect(decodeCostGeneration(without(value, key), company, order)).toBeNull()
+    expect(decodeCostGeneration({ ...value, outputs: [{ ...output, extra: 1 }] }, company, order)).toBeNull()
+    for (const key of Object.keys(output)) expect(decodeCostGeneration({ ...value, outputs: [without(output, key)] }, company, order)).toBeNull()
+  })
+  it('keeps the two ratio members optional but never unknown', () => {
+    const value = row(), output = { ...value.outputs[0], remainingKgRatio: { numerator: '70', denominator: '1' }, consumedKgRatio: { numerator: '30', denominator: '1' } }
+    expect(decodeCostGeneration({ ...value, outputs: [output] }, company, order)).not.toBeNull()
+    expect(decodeCostGeneration({ ...value, outputs: [{ ...output, remainingKgRatio: { ...output.remainingKgRatio, extra: 1 } }] }, company, order)).toBeNull()
+    expect(decodeCostGeneration({ ...value, outputs: [{ ...output, remainingKgRatio: { numerator: '70' } }] }, company, order)).toBeNull()
+  })
+})

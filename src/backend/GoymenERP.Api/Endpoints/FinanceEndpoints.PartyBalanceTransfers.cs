@@ -49,6 +49,7 @@ public static partial class FinanceEndpoints
                 _ => Results.Problem(statusCode: 503),
             };
         }).WithName("RecordFinancePartyBalanceTransferV1").WithTags("Finance").RequireAuthorization().RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK)
             .Accepts<RecordFinancePartyBalanceTransferV1>("application/json").Produces<FinancePartyBalanceTransferCommandResultV1>()
             .Produces<FinancePartyBalanceTransferCommandResultV1>(409).Produces<FinancePartyBalanceTransferCommandResultV1>(422)
             .ProducesErpAuthenticatedProblems().ProducesErpBadRequest().AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody()

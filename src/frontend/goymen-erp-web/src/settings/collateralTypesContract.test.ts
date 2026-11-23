@@ -14,4 +14,12 @@ describe('SC32a collateral catalog contract', () => {
     expect(decodeCollateralTypes({ companyId: 'other', entries: [item] }, company)).toBeNull()
     expect(decodeCollateralTypes({ companyId: company, entries: [item, item] }, company)).toBeNull()
   })
+  it('rejects an unknown or missing key on the catalog and on each entry', () => {
+    expect(decodeCollateralTypes({ companyId: company, entries: [item] }, company)).not.toBeNull()
+    expect(decodeCollateralTypes({ companyId: company, entries: [item], extra: null }, company)).toBeNull()
+    expect(decodeCollateralTypes({ companyId: company }, company)).toBeNull()
+    expect(decodeCollateralTypes({ companyId: company, entries: [{ ...item, extra: null }] }, company)).toBeNull()
+    const { recordedBy: _recordedBy, ...withoutRecordedBy } = item
+    expect(decodeCollateralTypes({ companyId: company, entries: [withoutRecordedBy] }, company)).toBeNull()
+  })
 })

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { postedManufacturingCostShare } from './postedManufacturingCostProof'
 import { decodeInventoryCost } from './inventoryCostApi'
 import { decodeCogsHistory, decodeCogsProposal } from './invoiceLineCogsApi'
+import { keyProbes } from './exactKeysTestSupport'
 
 const id = (suffix: string) => `c0871000-0000-4000-8000-${suffix.padStart(12, '0')}`
 const company = id('1'); const product = id('2'); const line = id('3')
@@ -10,12 +11,14 @@ const share = () => ({ companyId: company, sourceEventId: id('4'), outputId: id(
   journalTotal: '100.01', signedAmount: '33.34', exactSignedAmount: { numerator: '10001', denominator: '300' },
   signedRoundingResidue: '0', moneyProfileId: id('12'), moneyProfileVersion: 2, moneyScale: 2,
   profileAccountingDate: '2026-11-17', sourcePayloadSha256: 'A'.repeat(64), lineageSha256: 'b'.repeat(64), historySha256: 'c'.repeat(64), fingerprint: 'D'.repeat(64),
-  shipment: { shipmentId: id('13'), movementId: id('14'), movementLineNumber: 1, productId: product, physicalQuantityKg: 1, recordedAtUtc: '2026-11-17T09:00:00Z' } })
+  shipment: { shipmentId: id('13'), movementId: id('14'), movementLineNumber: 1, loadingInstructionLineId: id('60'), productId: product, labelId: id('61'),
+    physicalQuantityKg: 1, rootShare: { numerator: '1', denominator: '3' }, netRootQuantityKg: { numerator: '1', denominator: '1' },
+    recordedAtUtc: '2026-11-17T09:00:00Z', provenOriginalSequence: null, hasReturns: false, physicalProofJson: '{}' } })
 const proposal = () => ({ proposalId: id('15'), companyId: company, eventId: id('16'), kind: 1, invoiceId: id('17'), invoiceVersion: 3,
   admissionId: id('18'), invoiceDate: '2026-11-17', officialInvoiceNumber: 'SENTETIK-001', version: 1, status: 'AlreadyAccounted',
   sourceOccurredAtUtc: '2026-11-17T09:00:00Z', exactTlAmount: '33.34',
   component: { componentKey: `invoice-line:${line}`, productId: product, invoiceLineId: line, invoiceLineNumber: 1, locationId: null,
-    signedTlAmount: { numerator: '1667', denominator: '50' }, sourceProofSha256: 'a'.repeat(64), alreadyPostedComponents: [share()] },
+    signedTlAmount: { numerator: '1667', denominator: '50' }, sourceProofJson: '{}', sourceProofSha256: 'a'.repeat(64), alreadyPostedComponents: [share()] },
   preparation: null, approvedBy: null, approvedAtUtc: null, journalId: null, cancellationId: null, reversalProposal: null })
 
 describe('existing posted manufacturing attribution proof', () => {
@@ -100,6 +103,9 @@ describe('existing posted manufacturing attribution proof', () => {
       currencyId: id('9'), amount: '25.13', sourceFingerprint: 'A'.repeat(64) }
     const mixed = { ...value, postedEvidence: normal, reversingCorrectionJournalId: id('51'), replacementCorrectionJournalId: id('52') }
     expect(decodeCogsProposal(mixed, company, invoice, line)?.attributedCorrections).toHaveLength(1)
+    for (const [label, body] of keyProbes(mixed, [[['attributedEvidence', 0], 'currentJournalTotal'], [['attributedEvidence', 0, 'source'], 'historySha256'],
+      [['attributedCorrections', 0], 'sourceJournalId'], [['postedEvidence'], 'amount']]))
+      expect(decodeCogsProposal(body, company, invoice, line), label).toBeNull()
     expect(decodeCogsProposal({ ...mixed, postedEvidence: null }, company, invoice, line)).toBeNull()
     const history = { companyId: company, invoiceId: invoice, invoiceLineId: line, lineVersion: 0, current: null, revisions: [], proposals: [],
       source: { companyId: company, invoiceId: invoice, invoiceLineId: line, finalizedVersion: 3, finalizationAdmissionId: id('18'), productId: product,
@@ -111,5 +117,22 @@ describe('existing posted manufacturing attribution proof', () => {
     expect(decodeCogsHistory({ ...history, postedEvidence: null }, company, invoice, line)).toBeNull()
     expect(decodeCogsHistory({ ...history, attributedEvidence: undefined }, company, invoice, line)).toBeNull()
     expect(decodeCogsHistory({ ...history, postingEvidenceState: 'PostedCogs' }, company, invoice, line)).toBeNull()
+  })
+})
+describe('posted manufacturing share exact key sets', () => {
+  it('rejects an unknown or missing key on the share, its ratio, its shipment and a return', () => {
+    const original = share()
+    const value = { ...original, shipment: { ...original.shipment, hasReturns: true, returns: [{ returnId: id('70'), movementId: id('71'),
+      movementLineNumber: 1, sourceIssueMovementId: original.shipment.movementId, quantityKg: 0.5, recordedAtUtc: '2026-11-17T10:00:00Z' }] } }
+    expect(postedManufacturingCostShare(value, company, product)).toBe(true)
+    for (const [label, body] of keyProbes(value, [[[], 'lineageSha256'], [['exactSignedAmount'], 'numerator'], [['shipment'], 'labelId'],
+      [['shipment'], 'hasReturns'], [['shipment', 'rootShare'], 'denominator'], [['shipment', 'returns', 0], 'quantityKg']]))
+      expect(postedManufacturingCostShare(body, company, product), label).toBe(false)
+  })
+  it('rejects an unknown or missing key on an already-posted proposal, its component and its nested share', () => {
+    expect(decodeInventoryCost(proposal(), company, 1)).not.toBeNull()
+    for (const [label, body] of keyProbes(proposal(), [[[], 'invoiceDate'], [['component'], 'sourceProofJson'],
+      [['component', 'alreadyPostedComponents', 0], 'fingerprint'], [['component', 'alreadyPostedComponents', 0, 'shipment'], 'physicalProofJson']]))
+      expect(decodeInventoryCost(body, company, 1), label).toBeNull()
   })
 })

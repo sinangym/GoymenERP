@@ -34,8 +34,9 @@ internal sealed partial class IdentityAccessAssignmentService
     /// <item>the user is a member of the context company now and every membership company of the user is one where the
     /// actor holds <c>identity.users.manage</c> company-wide (KIM-D16, the same evaluator as the
     /// password-reset/unlock/deactivate fence), or</item>
-    /// <item>the user has no valid assignment in any company and the actor created the account (KIM-D57). The platform-level
-    /// System Administrator branch of KIM-D57 has no technical mapping yet and admits nobody (fail-closed).</item>
+    /// <item>the user has no valid assignment in any company and the actor either created the account (KIM-D57) or is the
+    /// founder account recorded by the bootstrap marker (KIM-D58, replacing the platform-level System Administrator).
+    /// Nobody else sees an unassigned account.</item>
     /// </list>
     /// </summary>
     public async Task<IReadOnlyList<IdentityManagedUserV1>> ReadUsersAsync(CancellationToken cancellationToken = default)
@@ -44,14 +45,10 @@ internal sealed partial class IdentityAccessAssignmentService
         if (!Guid.TryParse(currentUser.UserId, out var actor) || actor == Guid.Empty) throw new UnauthorizedAccessException();
         await RequireAsync(ErpPermissions.IdentityUsersManage, company, cancellationToken);
         var now = timeProvider.GetUtcNow();
-        var managed = await new IdentityUserManagementEvaluator(database).GetCompanyWideManagedCompanyIdsAsync(actor, now, cancellationToken);
-        var valid = database.RoleAssignments.AsNoTracking().Where(a => a.Status == RoleAssignmentStatus.Active
-            && a.ValidFromUtc <= now && (a.ValidUntilUtc == null || a.ValidUntilUtc > now));
+        var visible = await new IdentityUserManagementEvaluator(database).GetListedUserIdsAsync(actor, company, now, cancellationToken);
         var rows = await (from user in database.Users.AsNoTracking()
                           join credential in database.LocalCredentials.AsNoTracking() on user.Id equals credential.UserId
-                          where (valid.Any(a => a.UserId == user.Id && a.CompanyId == company)
-                                  && !valid.Any(a => a.UserId == user.Id && !managed.Contains(a.CompanyId)))
-                              || (user.CreatedByUserId == actor && !valid.Any(a => a.UserId == user.Id))
+                          where visible.Contains(user.Id)
                           orderby user.DisplayName, user.Id
                           select new { user.Id, user.DisplayName, user.IsActive, credential.UserName, credential.Version,
                               credential.MustChangePassword, credential.LockoutEndUtc }).ToListAsync(cancellationToken);

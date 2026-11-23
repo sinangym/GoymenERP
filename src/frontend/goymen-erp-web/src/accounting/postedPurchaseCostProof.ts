@@ -1,4 +1,5 @@
 import { isDateOnly } from '../finance/dateOnly'
+import { exactKeys } from './exactKeys'
 
 export interface PostedPurchaseCostShare {
   readonly approval: { readonly companyId: string; readonly sourceEventId: string; readonly invoiceLineId: string
@@ -16,13 +17,30 @@ const hash = (v: unknown) => typeof v === 'string' && /^[a-f0-9]{64}$/i.test(v)
 const integer = (v: unknown) => Number.isSafeInteger(v) && (v as number) > 0
 const decimal = (v: unknown): v is string => typeof v === 'string' && /^(0|[1-9][0-9]*)(\.[0-9]{0,27}[1-9])?$/.test(v)
 const utc = (v: unknown) => typeof v === 'string' && /(?:Z|\+00:00)$/.test(v) && Number.isFinite(Date.parse(v))
-const ratio = (v: unknown) => rec(v) && typeof v.numerator === 'string' && /^-?(0|[1-9][0-9]*)$/.test(v.numerator)
+const ratio = (v: unknown) => rec(v) && exactKeys(v, ['numerator', 'denominator']) && typeof v.numerator === 'string' && /^-?(0|[1-9][0-9]*)$/.test(v.numerator)
   && v.numerator !== '-0' && typeof v.denominator === 'string' && /^[1-9][0-9]*$/.test(v.denominator)
 const scale = (v: unknown) => Number.isSafeInteger(v) && (v as number) >= 0 && (v as number) <= 28
+const optionalText = (v: unknown) => v === undefined || v === null || typeof v === 'string'
+// OpenAPI: PostedPurchaseCostShareV1, PurchaseFirstCostApprovalV1, AccountingInventoryCostRecordedRoundingV1,
+// AccountingInventoryCostRoundingV1 (the two *Text keys are not in `required`), PurchaseFirstCostCandidateV1,
+// PurchaseFirstCostShipmentV1, PurchaseFirstCostReturnV1, AccountingInventoryCostRatioV1.
+const SHARE_KEYS = ['approval', 'shipmentId', 'movementId', 'movementLineNumber', 'productId', 'physicalQuantityKg', 'signedAmount',
+  'exactSignedAmount', 'exactSignedResidue', 'candidates', 'fingerprint'] as const
+const APPROVAL_KEYS = ['companyId', 'sourceEventId', 'invoiceLineId', 'proposalId', 'proposalVersion', 'journalId', 'status', 'signedAmount',
+  'currencyId', 'moneyProfileId', 'moneyProfileVersion', 'moneyScale', 'cogsAccountId', 'counterAccountId', 'accountingDate', 'preparedBy',
+  'approvedBy', 'approvedAtUtc', 'recordedRounding', 'sourceProofSha256', 'fingerprint'] as const
+const RECORDED_ROUNDING_KEYS = ['currencyId', 'moneyProfileId', 'moneyProfileVersion', 'moneyScale', 'rounding'] as const
+const ROUNDING_KEYS = ['exactSignedAmount', 'roundedSignedAmount', 'exactSignedResidue', 'ruleVersion'] as const
+const ROUNDING_OPTIONAL_KEYS = ['exactSignedAmountText', 'exactSignedResidueText'] as const
+const CANDIDATE_KEYS = ['companyId', 'sourceEventId', 'invoiceLineId', 'acceptanceId', 'receiptMovementId', 'rootLabelId', 'productId',
+  'invoicedRootShare', 'invoicedNetQuantityKg', 'exactTlAmount', 'shipment', 'sourceProofSha256', 'physicalSourceSha256', 'fingerprint'] as const
+const SHIPMENT_KEYS = ['shipmentId', 'movementId', 'movementLineNumber', 'loadingInstructionLineId', 'productId', 'labelId',
+  'physicalQuantityKg', 'rootShare', 'netRootQuantityKg', 'recordedAtUtc', 'provenOriginalSequence', 'returns', 'physicalProofJson'] as const
+const RETURN_KEYS = ['returnId', 'movementId', 'movementLineNumber', 'sourceIssueMovementId', 'quantityKg', 'recordedAtUtc'] as const
 
 // Identity/shape gate only: source exact amounts, sums and remainder allocation are never recalculated in the UI.
 export function postedPurchaseCostShare(v: unknown, company: string, product: string): v is PostedPurchaseCostShare {
-  if (!rec(v) || !rec(v.approval)) return false
+  if (!rec(v) || !exactKeys(v, SHARE_KEYS) || !rec(v.approval) || !exactKeys(v.approval, APPROVAL_KEYS)) return false
   const a = v.approval
   if (!same(a.companyId, company) || !['sourceEventId', 'invoiceLineId', 'proposalId', 'currencyId', 'moneyProfileId', 'cogsAccountId', 'counterAccountId', 'preparedBy', 'approvedBy'].every(k => guid(a[k]))
     || !integer(a.proposalVersion) || (a.proposalVersion as number) < 3 || !integer(a.moneyProfileVersion) || !scale(a.moneyScale)
@@ -32,8 +50,10 @@ export function postedPurchaseCostShare(v: unknown, company: string, product: st
     || (a.status === 'Posted' ? !guid(a.journalId) || a.signedAmount === '0'
       : a.status !== 'RoundedNoCost' || a.journalId !== null || a.signedAmount !== '0' || v.signedAmount !== '0')) return false
   const recorded = a.recordedRounding
-  if (!rec(recorded) || !same(recorded.currencyId, a.currencyId) || !guid(recorded.moneyProfileId) || !integer(recorded.moneyProfileVersion)
-    || !scale(recorded.moneyScale) || !rec(recorded.rounding) || recorded.rounding.ruleVersion !== 'accounting.inventory-cost-component-total.v1'
+  if (!rec(recorded) || !exactKeys(recorded, RECORDED_ROUNDING_KEYS) || !same(recorded.currencyId, a.currencyId) || !guid(recorded.moneyProfileId) || !integer(recorded.moneyProfileVersion)
+    || !scale(recorded.moneyScale) || !rec(recorded.rounding) || !exactKeys(recorded.rounding, ROUNDING_KEYS, ROUNDING_OPTIONAL_KEYS)
+    || !optionalText(recorded.rounding.exactSignedAmountText) || !optionalText(recorded.rounding.exactSignedResidueText)
+    || recorded.rounding.ruleVersion !== 'accounting.inventory-cost-component-total.v1'
     || recorded.rounding.roundedSignedAmount !== a.signedAmount || !ratio(recorded.rounding.exactSignedAmount)
     || !ratio(recorded.rounding.exactSignedResidue)) return false
   if (!guid(v.shipmentId) || !guid(v.movementId) || !integer(v.movementLineNumber) || !same(v.productId, product)
@@ -42,10 +62,10 @@ export function postedPurchaseCostShare(v: unknown, company: string, product: st
     || !Array.isArray(v.candidates) || v.candidates.length === 0 || v.candidates.length > 10000) return false
   const identities = new Set<string>()
   for (const c of v.candidates) {
-    if (!rec(c) || !same(c.companyId, company) || !same(c.sourceEventId, a.sourceEventId) || !same(c.invoiceLineId, a.invoiceLineId)
+    if (!rec(c) || !exactKeys(c, CANDIDATE_KEYS) || !same(c.companyId, company) || !same(c.sourceEventId, a.sourceEventId) || !same(c.invoiceLineId, a.invoiceLineId)
       || !same(c.productId, product) || !guid(c.acceptanceId) || !guid(c.receiptMovementId) || !guid(c.rootLabelId)
       || !ratio(c.invoicedRootShare) || !ratio(c.invoicedNetQuantityKg) || !ratio(c.exactTlAmount)
-      || c.sourceProofSha256 !== a.sourceProofSha256 || !hash(c.physicalSourceSha256) || !hash(c.fingerprint) || !rec(c.shipment)) return false
+      || c.sourceProofSha256 !== a.sourceProofSha256 || !hash(c.physicalSourceSha256) || !hash(c.fingerprint) || !rec(c.shipment) || !exactKeys(c.shipment, SHIPMENT_KEYS)) return false
     const s = c.shipment
     if (!same(s.shipmentId, v.shipmentId) || !same(s.movementId, v.movementId) || s.movementLineNumber !== v.movementLineNumber
       || !same(s.productId, product) || s.physicalQuantityKg !== v.physicalQuantityKg || !guid(s.loadingInstructionLineId) || !guid(s.labelId)
@@ -57,7 +77,7 @@ export function postedPurchaseCostShare(v: unknown, company: string, product: st
     identities.add(key)
     const returnIds = new Set<string>()
     for (const r of s.returns) {
-      if (!rec(r) || !guid(r.returnId) || !guid(r.movementId) || !integer(r.movementLineNumber) || !same(r.sourceIssueMovementId, v.movementId)
+      if (!rec(r) || !exactKeys(r, RETURN_KEYS) || !guid(r.returnId) || !guid(r.movementId) || !integer(r.movementLineNumber) || !same(r.sourceIssueMovementId, v.movementId)
         || typeof r.quantityKg !== 'number' || !Number.isFinite(r.quantityKg) || r.quantityKg <= 0 || !utc(r.recordedAtUtc)
         || returnIds.has(r.returnId.toLowerCase())) return false
       returnIds.add(r.returnId.toLowerCase())

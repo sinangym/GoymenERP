@@ -42,7 +42,7 @@ group authority or new approval mode exists. SQL/browser/CI acceptance and real 
 
 ### KIM-S9: explicitly targeted server operator 2FA recovery
 
-KIM-D27 and the human answer relayed at #1189 / 6951606530 authorize the separate interactive
+KIM-D27 and the human answer relayed at #1189 / 6951606530 (GOV-D16) authorize the separate interactive
 `identity recover-two-factor` command for every local user, including an inactive account or a user with no
 company memberships. The exact two command words are the entire argv. Target name, retry key and reason
 are read at the terminal; the confirmation displays the real target and confirmed versions. No password,

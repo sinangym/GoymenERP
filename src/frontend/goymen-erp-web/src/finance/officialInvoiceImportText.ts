@@ -18,6 +18,14 @@ export const OFFICIAL_INVOICE_IMPORT_TEXT = {
   pendingManual: 'Onay bekleyen elle kayıt var; ithal kaynağı engellemez.',
   manualWins: 'Onaylı elle kayıt esas alınır; ithal belge korunur.',
   differences: 'Kaynaklar arasındaki farklı alanlar',
+  // FNS-D64: the server's check; the screen only shows the amounts it returned.
+  taxWarnings: 'Uyarı: aşağıdaki belgelerde matrah + KDV − tevkifat, ödenecek tutar (TL) ile uyuşmuyor. Dosya engellenmez; uyarı denetime yazılır.',
+  taxWarningDocument: 'Belge',
+  taxWarningExpected: 'Beklenen ödenecek tutar (TL)',
+  taxWarningPayable: 'Dosyadaki ödenecek tutar (TL)',
+  taxWarningDifference: 'Fark (TL)',
+  taxWarningCode: 'Uyarı kodu',
+  taxWarningNoDocument: 'Belge kimliği yok',
   identityHint:
     'Aynı resmî numara veya ETTN ile iptal edilmemiş bir alacak varken dosya kabul edilmez; kapanmış alacak da '
     + 'engeller. Belge numarası mükerrerliği kabul anında yeniden denetlenir.',

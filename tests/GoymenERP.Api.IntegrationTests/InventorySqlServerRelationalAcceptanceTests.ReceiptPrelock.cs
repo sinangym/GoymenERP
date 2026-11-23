@@ -201,6 +201,41 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task A_failed_receipt_link_leaves_its_share_on_the_label_for_the_next_allocation_in_the_order()
+    {
+        await using var run = await Run.StartAsync();
+        var seed = await SeedGoodsReceiptPurchaseOrderAsync(run);
+        var failing = new FutureSupplyIds(seed.OrderId, seed.LineId, GoodsReceiptUnit, GoodsReceiptProduct, Guid.NewGuid(), Guid.NewGuid());
+        var following = failing with { DemandOrder = Guid.NewGuid(), DemandLine = Guid.NewGuid() };
+        await SeedReceiptFutureAllocationAsync(run, failing, 2m);
+        await SeedReceiptFutureAllocationAsync(run, following, 2m);
+        // A stored manual order makes the failing allocation first regardless of the creation clock.
+        await run.ExecuteAsync("UPDATE inventory.FutureSupplyAllocations SET ManualSequence = CASE WHEN DemandLineId = @failing THEN 1 ELSE 2 END "
+            + "WHERE PurchaseOrderLineId = @line", ("@failing", failing.DemandLine), ("@line", seed.LineId));
+        await using var host = ReceiptPrelockHarness.Create(run, failing, demand: new ReceiptNotApprovedDemand(failing, failing.DemandLine));
+        var receipt = Receipt(seed, Guid.NewGuid(), "2", await run.LocationOfAsync(CompanyA)) with { InitialBlock = BlockState.Free };
+        var envelope = GoodsReceiptPurchaseEnvelope(run, "SENTETIK-receipt-link-share", "SENTETIK-receipt-link-share");
+
+        var posted = await host.Single.ExecuteAsync(CompanyA, new(seed.OrderId, seed.LineId, "3"), receipt.AcceptanceId, envelope,
+            (participants, token) => PostReceiptThroughHostAsync(participants, seed, receipt, envelope, token), _ => Task.CompletedTask);
+
+        // §3.5 / KLN-D94: the failed link is released whole and the receipt stands; the accepted 2 are not spent on it, so
+        // the next allocation in the order is consumed for them and nothing is left for the KLN-D110 sweep to drop.
+        var release = Assert.Single(posted.FutureSupplyReleases);
+        Assert.Equal(PurchaseReceiptFutureSupplyReleaseCodesV1.DemandNotApproved, release.FailureCode);
+        await using var context = run.Context(CompanyA);
+        var rows = await context.FutureSupplyAllocations.AsNoTracking()
+            .Where(row => row.PurchaseOrderLineId == seed.LineId).ToDictionaryAsync(row => row.DemandLineId);
+        Assert.Equal((0m, 2m), (rows[failing.DemandLine].RemainingQuantity, rows[failing.DemandLine].ReleasedQuantity));
+        Assert.Equal((0m, 0m), (rows[following.DemandLine].RemainingQuantity, rows[following.DemandLine].ReleasedQuantity));
+        var conversion = Assert.Single(await context.FutureSupplyConversions.AsNoTracking()
+            .Where(row => row.AcceptanceId == receipt.AcceptanceId
+                && row.Outcome == (int)InventoryFutureSupplyConversionOutcomeV1.Converted).ToListAsync());
+        Assert.Equal((rows[following.DemandLine].Id, 2m, 2m),
+            (conversion.FutureAllocationId, conversion.Quantity, conversion.PhysicalQuantityKg));
+    }
+
+    [SqlServerFact]
     public async Task Cancellation_in_receipt_preparation_stages_nothing_and_the_order_target_is_company_scoped()
     {
         await using var run = await Run.StartAsync();
@@ -264,7 +299,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         // The optional read-only screen adapters are not used by ExecuteAsync in these transaction facts.
         public PurchaseGoodsReceiptHost Single { get; } = new(context, null!, locations, null!, null!, services, TimeProvider.System);
         public static ReceiptPrelockHarness Create(Run run, FutureSupplyIds supply,
-            ISalesOrderLineSerializationLockBinderV1? sales = null, IInventoryFutureAllocationReleasePortV1? releasePort = null)
+            ISalesOrderLineSerializationLockBinderV1? sales = null, IInventoryFutureAllocationReleasePortV1? releasePort = null,
+            IInventoryFutureDemandSourceV1? demand = null)
         {
             var ownerScope = run.Factory.Services.CreateAsyncScope();
             var owners = ownerScope.ServiceProvider;
@@ -295,7 +331,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
                     .AddSingleton<IPurchaseLineSerializationLockBinderV1>(purchase)
                     .AddSingleton<IInventoryFutureAllocationReleasePortV1>(releasePort ?? new InventoryFutureAllocationReleasePort(company, purchase, TimeProvider.System))
                     .AddSingleton<IInventoryGoodsReceiptFutureSupplyPortV1>(new InventoryGoodsReceiptFutureSupplyPort(company, purchase,
-                        new ReceiptPrelockDemand(supply), new ReceiptPrelockKilograms(), TimeProvider.System)).BuildServiceProvider();
+                        demand ?? new ReceiptPrelockDemand(supply), new ReceiptPrelockKilograms(), TimeProvider.System)).BuildServiceProvider();
                 var context = new PurchasingDbContext(new DbContextOptionsBuilder<PurchasingDbContext>()
                     .UseSqlServer(run.Factory.DatabaseConnectionString).Options, company);
                 return new(context, services, new ReceiptPrelockLocations(), ownerScope, http, previousHttpContext);
@@ -337,6 +373,13 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         public Task<InventoryFutureDemandSourceAnswerV1> GetDemandLineAsync(Guid orderId, Guid lineId, CancellationToken cancellationToken = default) =>
             Task.FromResult(new InventoryFutureDemandSourceAnswerV1(InventoryFutureDemandSourceOutcomeV1.Open,
                 new(orderId, lineId, supply.Product, "product-v1", supply.Unit, "10")));
+    }
+    private sealed class ReceiptNotApprovedDemand(FutureSupplyIds supply, Guid notApprovedLine) : IInventoryFutureDemandSourceV1
+    {
+        public Task<InventoryFutureDemandSourceAnswerV1> GetDemandLineAsync(Guid orderId, Guid lineId, CancellationToken cancellationToken = default) =>
+            lineId == notApprovedLine
+                ? Task.FromResult(new InventoryFutureDemandSourceAnswerV1(InventoryFutureDemandSourceOutcomeV1.NotApproved, null))
+                : new ReceiptPrelockDemand(supply).GetDemandLineAsync(orderId, lineId, cancellationToken);
     }
     private sealed class ReceiptPrelockKilograms : IInventoryFutureUnitConverterV1
     {

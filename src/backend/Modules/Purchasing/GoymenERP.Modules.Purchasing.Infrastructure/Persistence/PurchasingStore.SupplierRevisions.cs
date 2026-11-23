@@ -1,3 +1,4 @@
+using System.Data;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Domain.Orders;
 using Microsoft.EntityFrameworkCore;
@@ -8,14 +9,14 @@ public sealed partial class PurchasingStore : IPurchasingSupplierRevisionStoreV1
 {
     public Task<PurchasingOrderStoreResult?> ReviseSupplierAsync(Guid orderId, long expectedVersion, Guid partyId, Guid companyAccountId,
         string reason, PurchasingWriteEnvelope envelope, string requestHash, Func<CancellationToken, Task> requireStillAuthorized,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, Func<PurchaseOrder, IDbTransaction, CancellationToken, Task>? allocationGuard = null)
     {
         ArgumentNullException.ThrowIfNull(requireStillAuthorized);
         if (companyAccountId == Guid.Empty) throw new ArgumentException("Cari şirket hesabı gerekli.", nameof(companyAccountId));
         var invoiceHistory = PurchaseOrderInvoiceHistory.Unavailable;
         return MutateOrderCoreAsync(envelope, requestHash, PurchasingCommands.OrderSupplierReviseV1, orderId,
             (order, now) => order.ReviseSupplier(expectedVersion, partyId, invoiceHistory, envelope.ActorId.Trim(), reason, now),
-            null, new PurchasingMutationAudit("purchasing.purchase-order.supplier-revised.v1", "ReviseSupplier", reason), cancellationToken,
+            allocationGuard, new PurchasingMutationAudit("purchasing.purchase-order.supplier-revised.v1", "ReviseSupplier", reason), cancellationToken,
             async (_, token) =>
             {
                 invoiceHistory = await dbContext.InvoiceOrderBindings.AsNoTracking().AnyAsync(item => item.OrderId == orderId, token)
