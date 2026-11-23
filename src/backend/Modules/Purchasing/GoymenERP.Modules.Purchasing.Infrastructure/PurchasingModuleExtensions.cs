@@ -62,6 +62,9 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchasingStore>(serviceProvider => serviceProvider.GetRequiredService<PurchasingStore>());
         services.AddScoped<IPurchasingIncomingInvoiceStoreV1>(serviceProvider => serviceProvider.GetRequiredService<PurchasingStore>());
         services.AddScoped<IPurchaseIncomingInvoiceWorkflowV1, PurchaseIncomingInvoiceWorkflow>();
+        // WP15 (1.16): read-only duplicate check; warns, never blocks (ALS-D125; the record command asks for a reason).
+        services.AddScoped<IPurchasingInvoiceDuplicateCandidateSourceV1>(serviceProvider => serviceProvider.GetRequiredService<PurchasingStore>());
+        services.AddScoped<IPurchaseInvoiceDuplicateCheckV1, PurchaseInvoiceDuplicateCheck>();
         services.AddScoped<IPurchaseIncomingInvoiceMatchSourceV1, PurchaseIncomingInvoiceMatchSource>();
         services.AddScoped<IPurchaseIncomingInvoiceWorkspaceV1, PurchaseIncomingInvoiceWorkspace>();
         services.AddScoped<IPurchaseIncomingInvoiceDiagnosticsV1, PurchaseIncomingInvoiceDiagnostics>();
@@ -104,6 +107,9 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IWorkInboxSourceV1, PurchaseOrderWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, PurchaseIncomingInvoiceVarianceWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, PurchaseGoodsReceiptBatchWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, PurchaseRequestWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, PurchaseSupplierReturnCostExceptionWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, PurchaseServiceOrderWorkInboxSourceV1>();
         // F-017 F17-1 (ALS-D82): the allocatable amount of an approved general line, read by Inventory's future allocation only.
         services.AddScoped<IPurchaseFutureSupplyReadPortV1, PurchaseFutureSupplyReadPort>();
         // F17-1b / KLN-D30: current unreceived schedule slices, on the same scoped owner context/transaction.

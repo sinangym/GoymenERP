@@ -18,6 +18,7 @@ import { WorkInboxSection } from './WorkInboxSection'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import styles from './Work.module.css'
+import { LegalDeadlinesPanel } from '../settings/LegalDeadlinesPage'
 
 export function WorkQueuePage() {
   const shell = useShellState()
@@ -48,5 +49,7 @@ export function WorkQueuePage() {
         routeEntryGeneration={shell.routeEntryGeneration}
         enabled={inboxEnabled} />
     </section>
+    {/* WP15 (1.16): upcoming legal deadlines, owned and computed by Settings; drawn only with settings.legal-deadlines.read. */}
+    <LegalDeadlinesPanel heading />
   </section>
 }

@@ -44,9 +44,11 @@ public sealed class WorkAssistantMemoryServiceTests
         Assert.False(status.Writable);
         Assert.Equal(new[]
         {
-            WorkAssistantMemoryDisabledReasonsV1.PilotOff, WorkAssistantMemoryDisabledReasonsV1.RetentionUndecided,
-            WorkAssistantMemoryDisabledReasonsV1.EntryLimitUndecided, WorkAssistantMemoryDisabledReasonsV1.InformationNoticePending,
+            WorkAssistantMemoryDisabledReasonsV1.PilotOff, WorkAssistantMemoryDisabledReasonsV1.EntryLimitUndecided, WorkAssistantMemoryDisabledReasonsV1.InformationNoticePending,
         }, status.DisabledReasons);
+        // AI-D38: the decided one-year retention is the default; it is not an open decision any more.
+        Assert.Equal(WorkAssistantMemoryOptions.DecidedRetentionDays, status.RetentionDays);
+        Assert.Equal(365, WorkAssistantMemoryOptions.DecidedRetentionDays);
         var context = await harness.Service(Owner).ReadForCurrentActorAsync();
         Assert.Equal(WorkAssistantMemoryReadOutcomeV1.Disabled, context.Outcome);
         Assert.Empty(context.Items);
@@ -56,7 +58,7 @@ public sealed class WorkAssistantMemoryServiceTests
     [InlineData("retention")]
     [InlineData("limit")]
     [InlineData("notice")]
-    public async Task With_the_pilot_on_but_an_undecided_retention_limit_or_notice_writing_stays_closed(string missing)
+    public async Task With_the_pilot_on_but_an_invalid_retention_or_an_undecided_limit_or_notice_writing_stays_closed(string missing)
     {
         var options = OpenPilot();
         switch (missing)
@@ -126,7 +128,7 @@ public sealed class WorkAssistantMemoryServiceTests
     }
 
     [Fact]
-    public async Task Every_overseer_view_is_saved_as_a_view_row_and_an_audit_event_before_the_entries_are_returned()
+    public async Task Every_overseer_view_is_saved_as_a_view_row_and_an_audit_event_before_the_entries_are_returned_and_is_not_notified()
     {
         var harness = new Harness(OpenPilot());
         var entry = await harness.Service(Owner, ErpPermissions.AiPanelUse).CreateEntryAsync(new("preference", "Turkce cevap ver."), Meta("v1"));
@@ -152,11 +154,12 @@ public sealed class WorkAssistantMemoryServiceTests
             Assert.All(views, row => Assert.Equal((Overseer, Owner, 1), (row.ViewerUserId, row.SubjectUserId, row.EntryCount)));
         }
 
-        // The owner sees who looked.
-        var seen = await harness.Service(Owner).ListViewsOfMyMemoryAsync();
-        Assert.Equal(2, seen.Items.Count);
-        Assert.All(seen.Items, item => Assert.Equal(Overseer, item.ViewerUserId));
-        Assert.Empty((await harness.Service(Overseer).ListViewsOfMyMemoryAsync()).Items);
+        // AI-D39: the person is not notified; no inbox notification of any kind is written.
+        await using (var database = harness.Database())
+        {
+            Assert.Empty(await database.InboxNotifications.ToListAsync());
+            Assert.Empty(await database.Notifications.ToListAsync());
+        }
     }
 
     [Fact]
@@ -207,7 +210,15 @@ public sealed class WorkAssistantMemoryServiceTests
             .CloseEntryAsync(entry.Entry.Id, new("1", "Uygunsuz icerik SENTETIK"), Meta("k2"));
         Assert.Equal(("closed", "2", "Uygunsuz icerik SENTETIK"), (closed.Entry.State, closed.Entry.Version, closed.Entry.CloseReason));
         Assert.Empty((await harness.Service(Owner).ListMyEntriesAsync(false)).Items);
-        Assert.Equal(new[] { "closed" }, (await harness.Service(Owner).ListMyEntriesAsync(true)).Items.Select(item => item.State));
+        // AI-D39: the owner sees that the entry is closed, but not the overseer's reason, and gets no notification.
+        var ownerClosed = Assert.Single((await harness.Service(Owner).ListMyEntriesAsync(true)).Items);
+        Assert.Equal(("closed", (string?)null), (ownerClosed.State, ownerClosed.CloseReason));
+        Assert.Equal("Uygunsuz icerik SENTETIK", Assert.Single((await harness.Service(Overseer, WorkPermissionManifestV1.AssistantMemoryOversee)
+            .ViewUserMemoryAsync(Owner)).Items).CloseReason);
+        await using (var database = harness.Database())
+        {
+            Assert.Empty(await database.InboxNotifications.ToListAsync());
+        }
 
         var userClosure = await harness.Service(Overseer, WorkPermissionManifestV1.AssistantMemoryOversee)
             .SetUserClosureAsync(Owner, new("0", true, "Pilot disi SENTETIK"), Meta("k3"));
@@ -250,7 +261,28 @@ public sealed class WorkAssistantMemoryServiceTests
         harness.Time.Now = Now.AddDays(31);
         Assert.Empty((await harness.Service(Owner).ReadForCurrentActorAsync()).Items);
         Assert.Empty((await harness.Service(Owner).ListMyEntriesAsync(false)).Items);
-        Assert.All((await harness.Service(Owner).ListMyEntriesAsync(true)).Items, item => Assert.Equal("expired", item.State));
+        Assert.All((await harness.Service(Owner).ListMyEntriesAsync(true)).Items, item => Assert.Equal("passive", item.State));
+    }
+
+    [Fact]
+    public async Task An_assistant_read_counts_as_use_and_moves_the_passive_date_forward_without_a_new_version()
+    {
+        var harness = new Harness(OpenPilot());
+        var created = await harness.Service(Owner, ErpPermissions.AiPanelUse).CreateEntryAsync(new("preference", "Kisa cevap ver."), Meta("u1"));
+        Assert.Equal(Now.AddDays(30), created.Entry.ExpiresAtUtc);
+
+        harness.Time.Now = Now.AddDays(20);
+        Assert.Single((await harness.Service(Owner).ReadForCurrentActorAsync()).Items);
+
+        // Without that use the entry would be passive on day 40; with it, it stays active until day 50.
+        harness.Time.Now = Now.AddDays(40);
+        var entry = Assert.Single((await harness.Service(Owner).ListMyEntriesAsync(false)).Items);
+        Assert.Equal(("active", "1", "Kisa cevap ver.", Now.AddDays(50), Now), (entry.State, entry.Version, entry.Body, entry.ExpiresAtUtc, entry.UpdatedAtUtc));
+        Assert.Single(harness.Audit.Events);
+
+        harness.Time.Now = Now.AddDays(50);
+        Assert.Empty((await harness.Service(Owner).ReadForCurrentActorAsync()).Items);
+        Assert.Equal("passive", Assert.Single((await harness.Service(Owner).ListMyEntriesAsync(true)).Items).State);
     }
 
     [Theory]

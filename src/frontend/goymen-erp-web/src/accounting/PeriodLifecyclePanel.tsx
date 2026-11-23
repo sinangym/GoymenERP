@@ -29,7 +29,8 @@ export function PeriodLifecyclePanel({ row, rows, namespace, disabled, onFrozenC
   const inFlight = useRef(false); const mounted = useRef(true)
   const frozen = sending || outcome?.type === 'unknown'
   const canPropose = hasCapability(shell, ACCOUNTING_CAPABILITY.periodsPropose)
-  const canApprove = hasCapability(shell, ACCOUNTING_CAPABILITY.periodsReopen) // ROL-D12: reopening has its own name
+  // ROL-D12: approving a reopening is its own control (accounting.periods.reopen), never the opening approval.
+  const canApprove = hasCapability(shell, ACCOUNTING_CAPABILITY.periodsReopen)
   useEffect(() => { onFrozenChange(frozen) }, [frozen, onFrozenChange])
   useEffect(() => { dispatch({ type: frozen ? 'DIRTY_SET' : 'DIRTY_CLEAR', scope: 'accounting.period-reopening' }) }, [frozen, dispatch])
   useEffect(() => () => dispatch({ type: 'DIRTY_CLEAR', scope: 'accounting.period-reopening' }), [dispatch])

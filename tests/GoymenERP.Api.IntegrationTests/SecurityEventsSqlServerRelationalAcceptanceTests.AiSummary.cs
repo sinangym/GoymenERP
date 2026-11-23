@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using GoymenERP.Api.Ai;
+using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
@@ -49,6 +50,8 @@ public sealed partial class SecurityEventsSqlServerRelationalAcceptanceTests
                 ["Ai:MaxDataClass"] = "Confidential",
                 ["Ai:AllowedTools:0:ToolId"] = SecurityEventsSummaryAiTool.ToolId,
                 ["Ai:AllowedTools:0:Version"] = SecurityEventsSummaryAiTool.ToolVersion,
+                ["Ai:AllowedTools:0:DescriptionSha256"] = AiToolDescriptionPinV1.Compute(
+                    new SecurityEventsSummaryAiTool(null!, TimeProvider.System).Descriptor),
             });
         try
         {

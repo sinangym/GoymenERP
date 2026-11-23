@@ -4,6 +4,8 @@
  * the maps of `workInboxText.ts`; kept apart so module packages do not edit one shared list.
  */
 
+import type { WorkInboxModuleText } from './textTypes'
+
 export const FINANCE_ACCOUNTING_KIND_TEXT: Readonly<Record<string, string>> = {
   'finance.official-sales-invoice.v1': 'Resmî satış faturası onayı',
   'finance.manual-bank-payment-reversal.v1': 'Banka ödemesi ters kaydı',
@@ -102,4 +104,12 @@ export const FINANCE_ACCOUNTING_PERMISSION_TEXT: Readonly<Record<string, string>
   'accounting.periods.reopen': 'Dönem yeniden açma onayı',
   'accounting.normal-journal.draft.approve': 'Normal fiş onayı',
   'accounting.journal.reverse.approve': 'Fiş ters kayıt onayı',
+}
+
+export const FINANCE_ACCOUNTING_INBOX_TEXT: WorkInboxModuleText = {
+  modules: { accounting: 'Muhasebe' },
+  kinds: FINANCE_ACCOUNTING_KIND_TEXT,
+  rules: FINANCE_ACCOUNTING_RULE_TEXT,
+  roles: FINANCE_ACCOUNTING_ROLE_TEXT,
+  permissions: FINANCE_ACCOUNTING_PERMISSION_TEXT,
 }

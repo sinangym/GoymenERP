@@ -25,7 +25,9 @@ namespace GoymenERP.Modules.Work.Infrastructure.AssistantMemory;
 /// remove what is kept about them). Writing one's own entries needs <c>ai.panel.use</c> (the assistant capability) and the
 /// open pilot (<see cref="WorkAssistantMemoryOptions"/>). Viewing and closing another person's memory needs
 /// <c>work.assistant-memory.oversee</c>; each view is saved as a view row plus an audit event BEFORE any entry is returned, so a
-/// view that cannot be recorded is not served. Nothing here talks to a model; the assistant read is
+/// view that cannot be recorded is not served. Views and closures are not notified to the person (AI-D39): no message, no
+/// owner-facing view list and no closure reason in the owner's own answers. Retention (AI-D38): every use (the owner's write,
+/// the assistant's read) moves the passive-after date one retention period forward; nothing is ever physically deleted. Nothing here talks to a model; the assistant read is
 /// <see cref="IWorkAssistantMemoryReaderV1"/> and its only output form is <see cref="WorkAssistantMemoryDataBlockV1"/>.
 /// </para>
 /// </summary>
@@ -83,7 +85,7 @@ public sealed class WorkAssistantMemoryServiceV1(
             .Take(WorkAssistantMemoryLimitsV1.PageSize + 1).ToArrayAsync(cancellationToken);
         RequireStill(actor);
         return new WorkAssistantMemoryEntryPageV1(actor.CompanyId, actor.ActorUserId,
-            rows.Take(WorkAssistantMemoryLimitsV1.PageSize).Select(row => View(row, now)).ToArray(),
+            rows.Take(WorkAssistantMemoryLimitsV1.PageSize).Select(row => View(row, now, showCloseReason: false)).ToArray(),
             rows.Length > WorkAssistantMemoryLimitsV1.PageSize);
     }
 
@@ -204,21 +206,6 @@ public sealed class WorkAssistantMemoryServiceV1(
         return new(await DeletionViewAsync(scope, entryId, cancellationToken), false, metadata.CorrelationId);
     }
 
-    public async Task<WorkAssistantMemoryOversightViewPageV1> ListViewsOfMyMemoryAsync(CancellationToken cancellationToken = default)
-    {
-        var actor = RequireActor();
-        await RequireMemberAsync(actor, cancellationToken);
-        var rows = await database.AssistantMemoryOversightViews.AsNoTracking()
-            .Where(row => row.CompanyId == actor.CompanyId && row.SubjectUserId == actor.ActorUserId)
-            .OrderByDescending(row => row.ViewedAtUtc).ThenBy(row => row.Id)
-            .Take(WorkAssistantMemoryLimitsV1.PageSize + 1).ToArrayAsync(cancellationToken);
-        RequireStill(actor);
-        return new WorkAssistantMemoryOversightViewPageV1(actor.CompanyId, actor.ActorUserId,
-            rows.Take(WorkAssistantMemoryLimitsV1.PageSize)
-                .Select(row => new WorkAssistantMemoryOversightViewV1(row.Id, row.ViewerUserId, row.ViewedAtUtc, row.EntryCount)).ToArray(),
-            rows.Length > WorkAssistantMemoryLimitsV1.PageSize);
-    }
-
     // ---- Oversight (AI-D30) ---------------------------------------------------------------------------------------------
 
     public async Task<WorkAssistantMemoryOversightPageV1> ViewUserMemoryAsync(Guid subjectUserId, CancellationToken cancellationToken = default)
@@ -253,7 +240,8 @@ public sealed class WorkAssistantMemoryServiceV1(
                 HashJson),
             "Yönetici kişisel asistan hafızasını görüntüledi.");
         await SaveOnceAsync(scope, cancellationToken);
-        return new WorkAssistantMemoryOversightPageV1(scope.CompanyId, subjectUserId, viewId, closed, page.Select(row => View(row, now)).ToArray(),
+        return new WorkAssistantMemoryOversightPageV1(scope.CompanyId, subjectUserId, viewId, closed,
+            page.Select(row => View(row, now, showCloseReason: true)).ToArray(),
             rows.Length > WorkAssistantMemoryLimitsV1.PageSize);
     }
 
@@ -360,18 +348,42 @@ public sealed class WorkAssistantMemoryServiceV1(
             if (await IsClosedForUserAsync(actor.CompanyId, actor.ActorUserId, cancellationToken))
                 return new(WorkAssistantMemoryReadOutcomeV1.Disabled, []);
             var now = time.GetUtcNow();
-            var rows = await database.AssistantMemoryEntries.AsNoTracking()
+            var rows = await database.AssistantMemoryEntries
                 .Where(row => row.CompanyId == actor.CompanyId && row.OwnerUserId == actor.ActorUserId
                     && row.State == (int)WorkAssistantMemoryStateV1.Active && row.ExpiresAtUtc > now)
                 .OrderByDescending(row => row.UpdatedAtUtc).ThenBy(row => row.Id)
                 .Take(settings!.MaxEntriesPerUser!.Value).ToArrayAsync(cancellationToken);
             RequireStill(actor);
-            return new(WorkAssistantMemoryReadOutcomeV1.Ready,
-                rows.Select(row => new WorkAssistantMemoryItemV1(WorkAssistantMemoryKindsV1.Wire((WorkAssistantMemoryKindV1)row.Kind), row.Body)).ToArray());
+            var items = rows.Select(row => new WorkAssistantMemoryItemV1(WorkAssistantMemoryKindsV1.Wire((WorkAssistantMemoryKindV1)row.Kind), row.Body))
+                .ToArray();
+            await TouchAsync(rows, now.AddDays(settings.RetentionDays!.Value), cancellationToken);
+            return new(WorkAssistantMemoryReadOutcomeV1.Ready, items);
         }
         catch (WorkCollaborationException)
         {
             return new(WorkAssistantMemoryReadOutcomeV1.Unavailable, []);
+        }
+    }
+
+    /// <summary>
+    /// AI-D38 "last use": handing an entry to the assistant moves its passive-after date forward. This is bookkeeping, not an
+    /// owner change: text, kind, update time and version stay as they are (the write guard admits exactly this) and no audit
+    /// event is written. A lost race with the owner's own change only skips this touch; the entries already read are served.
+    /// </summary>
+    private async Task TouchAsync(IReadOnlyList<WorkAssistantMemoryEntryRow> rows, DateTimeOffset expiresAtUtc, CancellationToken cancellationToken)
+    {
+        try
+        {
+            foreach (var row in rows.Where(row => row.ExpiresAtUtc < expiresAtUtc)) row.ExpiresAtUtc = expiresAtUtc;
+            if (database.ChangeTracker.HasChanges()) await database.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // The owner changed or deleted the entry meanwhile; the next read touches it again.
+        }
+        finally
+        {
+            database.ChangeTracker.Clear();
         }
     }
 
@@ -391,7 +403,7 @@ public sealed class WorkAssistantMemoryServiceV1(
     {
         var reasons = new List<string>();
         if (settings?.PilotEnabled != true) reasons.Add(WorkAssistantMemoryDisabledReasonsV1.PilotOff);
-        if (settings?.RetentionDays is not > 0) reasons.Add(WorkAssistantMemoryDisabledReasonsV1.RetentionUndecided);
+        if (settings?.RetentionDays is not > 0) reasons.Add(WorkAssistantMemoryDisabledReasonsV1.RetentionInvalid);
         if (settings?.MaxEntriesPerUser is not > 0) reasons.Add(WorkAssistantMemoryDisabledReasonsV1.EntryLimitUndecided);
         if (string.IsNullOrWhiteSpace(settings?.InformationNoticeVersion)) reasons.Add(WorkAssistantMemoryDisabledReasonsV1.InformationNoticePending);
         if (closedForUser) reasons.Add(WorkAssistantMemoryDisabledReasonsV1.ClosedForUser);
@@ -581,11 +593,11 @@ public sealed class WorkAssistantMemoryServiceV1(
         row.SubjectUserId, row.IsClosed, row.Version, row.ChangedAtUtc, row.ChangedByUserId,
     }, HashJson);
 
-    private static WorkAssistantMemoryEntryViewV1 View(WorkAssistantMemoryEntryRow row, DateTimeOffset now) =>
+    private static WorkAssistantMemoryEntryViewV1 View(WorkAssistantMemoryEntryRow row, DateTimeOffset now, bool showCloseReason) =>
         new(row.Id, row.CompanyId, row.OwnerUserId, WorkAssistantMemoryKindsV1.Wire((WorkAssistantMemoryKindV1)row.Kind), row.Body,
             WorkAssistantMemoryStatesV1.Wire((WorkAssistantMemoryStateV1)row.State, row.ExpiresAtUtc, now),
             row.Version.ToString(CultureInfo.InvariantCulture), row.CreatedAtUtc, row.UpdatedAtUtc, row.ExpiresAtUtc,
-            row.State == (int)WorkAssistantMemoryStateV1.ClosedByOverseer ? row.EndedAtUtc : null, row.CloseReason);
+            row.State == (int)WorkAssistantMemoryStateV1.ClosedByOverseer ? row.EndedAtUtc : null, showCloseReason ? row.CloseReason : null);
 
     private async Task<WorkAssistantMemoryEntryViewV1> EntryViewAsync(Scope scope, Guid entryId, CancellationToken cancellationToken,
         bool anyOwner = false)
@@ -594,7 +606,7 @@ public sealed class WorkAssistantMemoryServiceV1(
                 && item.Id == entryId && (anyOwner || item.OwnerUserId == scope.ActorUserId), cancellationToken);
         // A replay of an entry its owner deleted since then has nothing to show: the text is not served again.
         if (row is null || row.State == (int)WorkAssistantMemoryStateV1.DeletedByOwner) throw new WorkCollaborationException(404, "not_found");
-        return View(row, time.GetUtcNow());
+        return View(row, time.GetUtcNow(), showCloseReason: anyOwner);
     }
 
     private async Task<WorkAssistantMemoryDeletionViewV1> DeletionViewAsync(Scope scope, Guid entryId, CancellationToken cancellationToken)

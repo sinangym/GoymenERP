@@ -94,6 +94,8 @@ public sealed class CounterpartyRoleCountsAiTool(ICounterpartyReadService partie
 
         var content = new CounterpartyRoleCountsContentV1(
             counts.Values.All(value => value is not null),
+            CounterpartyAiRelease.FieldPolicy,
+            CounterpartyAiRelease.EffectiveClass(["count"]).ToString(),
             counts[PartyRole.None],
             counts[PartyRole.Customer],
             counts[PartyRole.Supplier],
@@ -110,6 +112,8 @@ public sealed class CounterpartyRoleCountsAiTool(ICounterpartyReadService partie
 /// <summary>Counts only. The role counts overlap (a party with two roles is in both) and do not add up to the total.</summary>
 public sealed record CounterpartyRoleCountsContentV1(
     bool Complete,
+    string FieldPolicy,
+    string DataClass,
     int? ActivePartyCount,
     int? CustomerCount,
     int? SupplierCount,

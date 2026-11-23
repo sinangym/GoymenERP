@@ -69,6 +69,7 @@ public static partial class PurchasingEndpoints
             MutateAsync(context, correlation, PurchaseIncomingInvoiceWireV1.ReadVersion,
                 async (request, metadata) => PurchaseIncomingInvoiceWireV1.Response(await service.RetryFinanceAsync(id, request, metadata, token)), token))
             .WithName("RetryPurchaseIncomingInvoiceFinanceAdmissionV1").Accepts<PurchaseIncomingInvoiceVersionRequestV1>("application/json"));
+        MapIncomingInvoiceDuplicateChecks(group);
     }
     private static void InvoiceMutation(RouteHandlerBuilder endpoint) => endpoint
         .WithIdempotencyContract(PurchasingApiV1.MutationStatus, 409).Produces<PurchaseIncomingInvoiceCommandResponseV1>()

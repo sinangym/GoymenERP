@@ -39,7 +39,7 @@ public sealed class CounterpartyPartyLookupAiTool(ICounterpartyReadService parti
         ToolVersion,
         ownerModule: "Counterparty",
         AiToolRiskClassV1.Read,
-        AiDataClassV1.Confidential,
+        AiDataClassV1.Internal,
         requiredPermissions: [ErpPermissions.CounterpartyPartiesRead],
         fieldAllowlist: [LimitField, QueryField, RoleField],
         ownerCommandName: null,
@@ -120,11 +120,14 @@ public sealed class CounterpartyPartyLookupAiTool(ICounterpartyReadService parti
                     countKnown ? (int)page.TotalCount!.Value : null,
                     page.HasMore,
                     CounterpartyAiRelease.Masking,
+                    CounterpartyAiRelease.FieldPolicy,
+                    CounterpartyAiRelease.EffectiveClass(CounterpartyAiRelease.PartyFields).ToString(),
+                    CounterpartyAiRelease.Classes(CounterpartyAiRelease.PartyFields),
                     released.Count,
                     released);
                 var source = new AiSourceV1(ToolId, ToolVersion, TargetKind, context.CompanyId, "Cari arama",
                     AiReadToolArgumentsV1.SourceVersion(released.Select(party => $"{party.PartyId:D}:{party.Version}:{party.Account.Version}")),
-                    timeProvider.GetUtcNow().ToUniversalTime(), AiDataClassV1.Confidential);
+                    timeProvider.GetUtcNow().ToUniversalTime(), AiDataClassV1.Internal);
                 return new AiReadResultV1(AiToolOutcomeV1.Succeeded, JsonSerializer.Serialize(content, Json), source);
             default:
                 return new AiReadResultV1(AiToolOutcomeV1.Unavailable);
@@ -159,12 +162,15 @@ public sealed class CounterpartyPartyLookupAiTool(ICounterpartyReadService parti
     }
 }
 
-/// <summary>The released fields only: no contact, address, tax identity or bank field; natural-person names masked.</summary>
+/// <summary>The released fields only (all Internal, AI-D42): no contact, address, tax identity or bank field; natural-person names masked.</summary>
 public sealed record CounterpartyPartyLookupContentV1(
     bool Complete,
     string? RoleFilter,
     int? MatchCount,
     bool Truncated,
     string Masking,
+    string FieldPolicy,
+    string DataClass,
+    IReadOnlyDictionary<string, string> FieldClasses,
     int ListedCount,
     IReadOnlyList<CounterpartyAiPartyV1> Items);

@@ -11,6 +11,12 @@ internal sealed class PurchaseIncomingInvoiceRow : IPurchasingTenantRow
     public Guid DocumentId { get; set; }
     public long DocumentVersion { get; set; }
     public string DocumentSha256 { get; set; } = string.Empty;
+
+    /// <summary>WP15 duplicate check facts, copied from the immutable recorded source and amounts. Null on records written
+    /// before the column existed; the duplicate check then reads them from the first revision snapshot.</summary>
+    public DateOnly? InvoiceDate { get; set; }
+    public Guid? CurrencyId { get; set; }
+    public decimal? PayableAmount { get; set; }
 }
 
 /// <summary>Every transition is appended. A unique version is the optimistic concurrency fence.</summary>

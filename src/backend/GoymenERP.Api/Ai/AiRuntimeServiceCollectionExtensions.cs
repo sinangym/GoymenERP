@@ -1,3 +1,4 @@
+using GoymenERP.Api.Ai.DocumentDrafts;
 using GoymenERP.Api.Ai.Commands;
 using GoymenERP.Api.Ai.External;
 using GoymenERP.Api.Ai.Gateway;
@@ -6,6 +7,7 @@ using GoymenERP.Api.Ai.SecurityWatch;
 using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Security.SecretStore;
+using GoymenERP.Modules.AiKnowledge.Domain;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
@@ -14,7 +16,8 @@ namespace GoymenERP.Api.Ai;
 public static class AiRuntimeServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the AI-3 READ runtime and the platform-owned <c>decisions.lookup.v1</c> READ tool (Y-A1). Module READ
+    /// Registers the AI-3 READ runtime and the platform-owned knowledge READ tools <c>decisions.lookup.v1</c> (Y-A1) and
+    /// <c>release-knowledge.lookup.v1</c> (WP-A4). Module READ
     /// tools are added by their owning modules (e.g. Logistics <c>logistics.pending-shipments.v1</c>); every tool still
     /// needs a configuration allowlist entry before the catalog admits it.
     /// </summary>
@@ -34,11 +37,16 @@ public static class AiRuntimeServiceCollectionExtensions
         services.TryAddScoped<IAiExternalEgressPolicySourceV1, UnconfiguredAiExternalEgressPolicySource>();
         services.TryAddScoped<ExternalAiModelProvider>();
         services.TryAddScoped<IAiModelProviderV1>(ResolveModelProvider);
-        // Y-A1: the platform-owned decision index READ tool. Registration only: the catalog admits it solely when
-        // Ai:AllowedTools lists decisions.lookup.v1@1, a call still needs ai.panel.use + ai.decisions.read, and with no
-        // Ai:Knowledge:DecisionIndexPath configured the tool answers unavailable.
-        services.TryAddSingleton<IAiDecisionIndexSource, ConfiguredAiDecisionIndexSource>();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IAiOwnerToolV1, DecisionLookupAiTool>());
+        // Y-A1 / WP-A4: the platform-owned knowledge READ tools over the packaged (API content) knowledge files. Registration
+        // only: the catalog admits a tool solely when Ai:AllowedTools lists it, a call still needs its permissions, and a
+        // package is a source only after ai.knowledge.approve approved its exact bytes for the company (AI-D32). Without the
+        // AiKnowledge module the approval reader answers unavailable, so the tools stay closed.
+        services.TryAddSingleton<IAiDecisionIndexSource, PackagedAiDecisionIndexSource>();
+        services.TryAddSingleton<IAiReleaseKnowledgeSource, PackagedAiReleaseKnowledgeSource>();
+        services.TryAddSingleton<IAiKnowledgePackageCatalogV1, PackagedAiKnowledgeCatalog>();
+        services.TryAddScoped<IAiKnowledgeApprovalReaderV1, UnconfiguredAiKnowledgeApprovalReader>();
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IAiOwnerToolV1, DecisionLookupAiTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IAiOwnerToolV1, ReleaseKnowledgeLookupAiTool>());
         services.AddScoped<AiToolCatalog>();
         services.AddScoped<AiCapabilityService>();
         // WP-A1 gateway: the Settings-owned policy port and usage ledger come from the Settings module. Only the in-process
@@ -48,11 +56,22 @@ public static class AiRuntimeServiceCollectionExtensions
         services.AddSingleton<IAiAnswerComposerV1>(_ => new FakeAiAnswerComposer(AiModelPlacementV1.OnPremises));
         services.AddScoped<IAiGatewayV1, AiGateway>();
         services.AddScoped<AiAskService>();
+
+        // WP-B3 document drafts: off (Ai:DocumentDrafts:Enabled=false and Ai:Enabled=false). OCR and the local model are
+        // closed ports (no engine, OPEN-014); counterparty matching waits for an owner tax-identity port; the product
+        // matcher uses the Product owner's candidate ports; the source goes to the object-storage abstraction.
+        services.AddOptions<AiDocumentDraftOptions>().Bind(configuration.GetSection(AiDocumentDraftOptions.SectionName));
+        services.TryAddSingleton<IAiDocumentOcrV1, UnavailableAiDocumentOcr>();
+        services.TryAddSingleton<IAiDocumentLocalModelV1, ClosedAiDocumentLocalModel>();
+        services.TryAddSingleton<IAiDocumentCounterpartyMatcherV1, UnconfiguredAiDocumentCounterpartyMatcher>();
+        services.TryAddScoped<IAiDocumentProductMatcherV1, ProductCandidatesAiDocumentProductMatcher>();
+        services.TryAddScoped<IAiDocumentSourceStoreV1, ObjectStoreAiDocumentSourceStore>();
+        services.AddScoped<AiDocumentDraftService>();
         // WP-C1: the approved write pipeline. Closed: Ai:Commands:Enabled is false, no command tool is allowlisted, the
-        // ledger is unconfigured (no durable store yet) and step-up never verifies (decision 156; method undecided).
+        // ledger is unconfigured (no durable store yet). YOL-D27: second approval by another person with password re-entry.
         services.AddOptions<AiCommandOptions>().Bind(configuration.GetSection(AiCommandOptions.SectionName));
         services.TryAddScoped<IAiCommandLedgerV1, UnconfiguredAiCommandLedger>();
-        services.TryAddScoped<IAiStepUpVerifierV1, UnconfiguredAiStepUpVerifier>();
+        services.TryAddScoped<IAiStepUpVerifierV1, AiLocalAccountStepUpVerifier>();
         services.AddScoped<AiCommandToolCatalog>();
         services.AddScoped<AiCommandPipeline>();
         return services;

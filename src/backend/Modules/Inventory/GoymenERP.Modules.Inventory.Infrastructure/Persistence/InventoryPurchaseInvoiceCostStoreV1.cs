@@ -105,7 +105,7 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
                         throw Unavailable("purchase_invoice_cost_first_reversal_basis_changed");
                     firstPlans.Add(await PrepareFirstCostAsync(source, share, receipt.MovementId,
                         receipt.LabelId, receipt.LocationId, receipt.QuantityKg, stamp, basis, cancellationToken,
-                        basis.Cohort is null ? RemainingPieceShare(basis, share, priorShares) : null));
+                        PieceShareOf(basis, share, priorShares)));
                     continue;
                 }
                 var originalUnit = InventoryExactCostRatioV1.Resolve(stamp.UnitCostPerKg, stamp.UnitCostRatioJson is null ? null
@@ -119,7 +119,7 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
                     .CompareTo(basis.OriginalKg.Divide(share.AcceptedQuantity)) != 0)
                     throw Unavailable("purchase_invoice_cost_known_reversal_basis_unavailable");
                 // Physical kg comes from the immutable original Inventory receipt, not current Product conversion.
-                var invoicedKg = RemainingPieceShare(basis, share, priorShares)
+                var invoicedKg = PieceShareOf(basis, share, priorShares)
                     ?? PurchaseInvoiceKilogramShare.Of(basis.EligibleKg, share.MatchedQuantity, basis.EligibleQuantity);
                 var previousValue = originalUnit.Multiply(invoicedKg);
                 var invoiceValue = share.TlNetShare.Value();
@@ -208,6 +208,34 @@ public sealed partial class InventoryPurchaseInvoiceCostStoreV1(InventoryDbConte
             db.ChangeTracker.Clear();
             auditWriter.DiscardPending();
             throw;
+        }
+    }
+
+    /// <summary>
+    /// The piece-line kilogram share (null on a kilogram line or with the switch closed). Without an explicit supplier-return source
+    /// the remaining figures are the receipt's after its returns less the earlier invoices (<see cref="RemainingPieceShare"/>); with
+    /// one (an AK-8b cohort, which exists only after a return) they are the cohort's pending root kg and pending pieces — the part no
+    /// invoice took yet after every return — so the same ALS-D122/D123/D124 rule applies: three decimals, the last invoice takes the
+    /// remaining kg (golden EK1 E26, E28).
+    /// </summary>
+    private ExactCostRatio? PieceShareOf(ReceiptCostBasis basis, InventoryPurchaseInvoiceCostReceiptV1 share,
+        IReadOnlyList<PurchaseInvoiceReceiptCostEffectRow> priorShares) => basis.Cohort is { } cohort
+        ? CohortPieceShare(remainingShareAccepted, share.MeasuredQuantityKg, cohort.PendingRootKg, cohort.PendingQuantity,
+            share.MatchedQuantity)
+        : RemainingPieceShare(basis, share, priorShares);
+
+    /// <summary>ALS-D122/D123/D124 over an explicit-source cohort's pending figures; nothing pending keeps the source waiting.</summary>
+    internal static ExactCostRatio? CohortPieceShare(bool remainingShareAccepted, decimal? measuredQuantityKg,
+        ExactCostRatio pendingRootKg, ExactCostRatio pendingPieces, decimal invoicedPieces)
+    {
+        if (!remainingShareAccepted || measuredQuantityKg is null) return null;
+        try
+        {
+            return PurchaseInvoiceKilogramShare.RemainingShare(pendingRootKg, pendingPieces, invoicedPieces);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            throw Unavailable("purchase_invoice_cost_piece_remaining_share_unavailable");
         }
     }
 

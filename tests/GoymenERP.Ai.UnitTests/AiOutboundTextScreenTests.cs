@@ -52,3 +52,19 @@ public sealed class AiOutboundTextScreenTests
         Assert.True(AiOutboundTextScreenV1.Screen("SENTETIK 3 TLX parcasi").IsClean);
     }
 }
+
+/// <summary>AI-D44: a free question is Internal unless its text carries personal data. All texts are SENTETIK.</summary>
+public sealed class AiQuestionDataClassTests
+{
+    [Theory]
+    [InlineData("SENTETIK: bugün bekleyen sevkiyatlar hangileri?", GoymenERP.BuildingBlocks.Ai.AiDataClassV1.Internal)]
+    [InlineData("SENTETIK: 1.250 TL tutarlı sipariş nerede?", GoymenERP.BuildingBlocks.Ai.AiDataClassV1.Internal)]
+    [InlineData("SENTETIK: TCKN 10000000146 olan müşteri kim?", GoymenERP.BuildingBlocks.Ai.AiDataClassV1.Confidential)]
+    [InlineData("SENTETIK: 0555 000 00 00 numaralı kişi", GoymenERP.BuildingBlocks.Ai.AiDataClassV1.Confidential)]
+    [InlineData("SENTETIK: TR00 0000 0000 0000 0000 0000 00 hesabı", GoymenERP.BuildingBlocks.Ai.AiDataClassV1.Confidential)]
+    [InlineData("SENTETIK: sentetik@example.com adresli kişi", GoymenERP.BuildingBlocks.Ai.AiDataClassV1.Confidential)]
+    public void A_question_is_internal_unless_it_carries_personal_data(string question, GoymenERP.BuildingBlocks.Ai.AiDataClassV1 expected)
+    {
+        Assert.Equal(expected, GoymenERP.BuildingBlocks.Ai.AiQuestionDataClassV1.Classify(question));
+    }
+}

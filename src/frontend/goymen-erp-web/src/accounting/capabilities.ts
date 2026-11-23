@@ -37,10 +37,7 @@ export const ACCOUNTING_CAPABILITY = {
   periodsApprove: 'accounting.periods.approve',
   /** M-07 — the close control of the list (Ö5; not a route). */
   periodsClose: 'accounting.periods.close',
-  /**
-   * M-07 — ROL-D12: approving another person's period reopening proposal is its own control of the list under the
-   * separate `accounting.periods.reopen` name (not a route; registered, granted to no role).
-   */
+  /** M-07 — the reopening approval control of the list (ROL-D12: its own permission; not a route). */
   periodsReopen: 'accounting.periods.reopen',
   /** M-04 Muhasebe Fişleri — the journals, read-only. */
   journalsList: 'accounting.journals.list',

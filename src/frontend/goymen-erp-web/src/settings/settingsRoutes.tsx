@@ -30,6 +30,9 @@ import { PurchaseInvoiceVariancePolicyPage } from './PurchaseInvoiceVariancePoli
 import { WarehouseTransferScalePage } from './WarehouseTransferScalePage'
 import { SubcontractTaxDefaultPage } from './SubcontractTaxDefaultPage'
 import { WorkApprovalDurationPage } from './WorkApprovalDurationPage'
+import { AiGatewayPage } from './AiGatewayPage'
+import { LegalDeadlineCalendarPage } from './LegalDeadlineCalendarPage'
+import { LegalDeadlinesPage } from './LegalDeadlinesPage'
 
 export const settingsRoutes: RouteObject[] = [
   { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.financePolicies].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.financePolicies}><FinanceApprovalPoliciesPage /></CapabilityRoute> },
@@ -44,6 +47,9 @@ export const settingsRoutes: RouteObject[] = [
   { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.manufacturingScrapCost].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.manufacturingScrapCost}><OperationalPolicyPage kind="scrap-cost" /></CapabilityRoute> },
   { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.notificationRetention].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.notificationRetention}><OperationalPolicyPage kind="notification-retention" /></CapabilityRoute> },
   { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.workApprovalDuration].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.workApprovalDuration}><WorkApprovalDurationPage /></CapabilityRoute> },
+  { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.aiGateway].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.aiGateway}><AiGatewayPage /></CapabilityRoute> },
+  { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.legalDeadlineCalendar].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.legalDeadlineCalendar}><LegalDeadlineCalendarPage /></CapabilityRoute> },
+  { path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.legalDeadlines].slice(1), element: <CapabilityRoute capability={SETTINGS_CAPABILITY.legalDeadlines}><LegalDeadlinesPage /></CapabilityRoute> },
   {
     path: SETTINGS_ROUTE[SETTINGS_CAPABILITY.salesContractDiscountLimit].slice(1),
     element: <CapabilityRoute capability={SETTINGS_CAPABILITY.salesContractDiscountLimit}><SalesContractDiscountLimitPage /></CapabilityRoute>,

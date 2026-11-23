@@ -168,7 +168,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             "UPDATE purchasing.PurchaseGoodsReceiptBatches SET Status = 1 WHERE BatchId = @id", ("@id", pieceBatchId)));
         Assert.Equal(547, piecePending.Number);
         var zeroPieces = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
-            "UPDATE purchasing.PurchaseGoodsReceiptBatchLabels SET PieceCount = 0 WHERE BatchId = @id AND LineNo = 1", ("@id", pieceBatchId)));
+            "UPDATE purchasing.PurchaseGoodsReceiptBatchLabels SET PieceCount = 0 WHERE BatchId = @id AND [LineNo] = 1", ("@id", pieceBatchId)));
         Assert.Equal(547, zeroPieces.Number);
         Assert.Contains("CK_PurchaseGoodsReceiptBatchLabels_PieceCount", zeroPieces.Message, StringComparison.Ordinal);
 

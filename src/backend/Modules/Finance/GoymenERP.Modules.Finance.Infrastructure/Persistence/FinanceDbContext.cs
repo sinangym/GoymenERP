@@ -2506,8 +2506,21 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
                     throw new InvalidOperationException("Banka ekstresi içe alma kaydı yalnız bir kez, dosya okunduğunda değişir.");
                 }
 
+                if (entry.Entity is FinanceBankStatementMatchRow statementMatch
+                    && (entry.State != EntityState.Modified
+                        || entry.Property(nameof(FinanceBankStatementMatchRow.ReversalId)).OriginalValue is not null
+                        || statementMatch.ReversalId is null
+                        || entry.Property(nameof(FinanceBankStatementMatchRow.Version)).OriginalValue is not 1L
+                        || statementMatch.Version != 2))
+                {
+                    // FNS-D113: a confirmed match is never deleted; it changes once, when its reversal record is linked.
+                    throw new InvalidOperationException("Banka ekstresi eşleşmesi silinmez; yalnız bir kez ters kayıtla geri alınır.");
+                }
+
                 string[] allowed = entry.Entity switch
                 {
+                    // FNS-D113: only the link to the reversal record; the match itself never changes.
+                    FinanceBankStatementMatchRow => [nameof(FinanceBankStatementMatchRow.ReversalId)],
                     // WP12: only the parse result; the account, format and bank key never change. Lines are append-only.
                     FinanceBankStatementImportRow =>
                     [

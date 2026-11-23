@@ -44,6 +44,8 @@ public sealed class InventoryReadPermissionRegistrationTests
         // onaylayan); registered only, no shipped actor holds either.
         ErpPermissions.InventoryOpeningCostSubmit,
         ErpPermissions.InventoryOpeningCostApprove,
+        // AI-D45: the stock cost disclosure name ("maliyet görme izni"); registered only, no shipped actor holds it.
+        ErpPermissions.InventoryAverageCostRead,
     };
 
     [Fact]
@@ -61,6 +63,7 @@ public sealed class InventoryReadPermissionRegistrationTests
         Assert.Equal("inventory.stock-count.approve", ErpPermissions.InventoryStockCountApprove);
         Assert.Equal("inventory.opening-cost.submit", ErpPermissions.InventoryOpeningCostSubmit);
         Assert.Equal("inventory.opening-cost.approve", ErpPermissions.InventoryOpeningCostApprove);
+        Assert.Equal("inventory.average-cost.read", ErpPermissions.InventoryAverageCostRead);
     }
 
     [Theory]

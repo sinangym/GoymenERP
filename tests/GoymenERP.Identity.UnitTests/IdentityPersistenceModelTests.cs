@@ -21,6 +21,23 @@ namespace GoymenERP.Identity.UnitTests;
 public sealed class IdentityPersistenceModelTests
 {
     [Fact]
+    public void The_KIM_D57_creator_column_is_nullable_and_its_migration_Down_refuses_while_a_creator_is_recorded()
+    {
+        using var context = Context();
+        var users = context.Model.FindEntityType(typeof(GoymenERP.Modules.Identity.Domain.Users.UserAccount))!;
+        Assert.True(users.FindProperty(nameof(GoymenERP.Modules.Identity.Domain.Users.UserAccount.CreatedByUserId))!.IsNullable);
+        var migration = new AddUserAccountCreatedBy();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 52082", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Throws<ArgumentException>(() => new GoymenERP.Modules.Identity.Domain.Users.UserAccount(Guid.NewGuid(), "Sentetik", null, Guid.Empty));
+        var creator = Guid.NewGuid();
+        Assert.Equal(creator, new GoymenERP.Modules.Identity.Domain.Users.UserAccount(Guid.NewGuid(), "Sentetik", null, creator).CreatedByUserId);
+        Assert.Null(new GoymenERP.Modules.Identity.Domain.Users.UserAccount(Guid.NewGuid(), "Sentetik", null).CreatedByUserId);
+    }
+
+    [Fact]
     public void The_identity_migrations_include_Audit_ownership_and_company_setup_and_the_snapshot_matches_the_model()
     {
         using var context = Context();
@@ -28,8 +45,9 @@ public sealed class IdentityPersistenceModelTests
         Assert.Equal(
             ["20261114164716_AddLocalCredentials", "20261115144305_AddIdentityBootstrapState", "20261115170730_AddAccessGrantRequestWorkflow",
                 "20261116164010_RemoveIdentityAuditTableMapping", "20261116185533_AddCompanySetupInboxAndOutboxPosition", "20261116205256_AddExplicitCompanySetupAuthority",
-                "20261117004612_AddLocalTwoFactorSecrets", "20261117082918_AddProductCogsClassificationAuthority", "20261117160905_AddOperatorTwoFactorRecoveryAttempts", "20261118211933_RejectNullAccessGrantApprovalModes"],
-            context.Database.GetMigrations().TakeLast(10));
+                "20261117004612_AddLocalTwoFactorSecrets", "20261117082918_AddProductCogsClassificationAuthority", "20261117160905_AddOperatorTwoFactorRecoveryAttempts", "20261118211933_RejectNullAccessGrantApprovalModes",
+                "20261122213615_AddUserAccountCreatedBy"],
+            context.Database.GetMigrations().TakeLast(11));
         Assert.False(context.Database.HasPendingModelChanges());
         Assert.Null(context.Model.FindEntityType("GoymenERP.Modules.Audit.Domain.Events.AuditEvent"));
         // Audit was excluded from Identity migrations already. The generated ownership

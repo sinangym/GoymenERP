@@ -136,6 +136,8 @@ public static class LogisticsModuleExtensions
         services.AddScoped<IWorkInboxSourceV1, WorkInbox.LogisticsDispatchNoteWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, WorkInbox.LogisticsPlanExcessWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, WorkInbox.LogisticsWeighingDifferenceWorkInboxSourceV1>();
+        // WP6 (AI-D31, DALGA_PLANI_v2 1.4): the physical customer return acceptance as a Work inbox source.
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.LogisticsCustomerReturnWorkInboxSourceV1>();
         return services;
     }
 

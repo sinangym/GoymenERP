@@ -49,17 +49,21 @@ namespace GoymenERP.Api.Shell;
 internal static class ShellCapabilityRegistryAuthorities
 {
     // Produced by the exact actual-host tuple test, including STK-S13's separate provider.
+    // Tren-1 K3 fix F5 (ROL-D12): Accounting 1.11 adds the accounting.periods.reopen control; every row containing the
+    // Accounting provider re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // Tren-1 W8 (UI-64, API-33 / API-36): Sales 1.27 publishes the four invoice controls of the S-09 list; every row that
     // contains the Sales provider re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision; names unchanged.
     // W1-A: Settings 1.19 adds the approval duration screen; re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
     // WP-A1: Settings 1.20 declares the AI gateway policy screen (not yet implemented); re-derived in place by
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
-    internal const string FullNormalHostWithSettingsAndPaintMemberships = "sha256:4AqN7bdFB-_Xc4v6xLbVBB3QlMOiM5g9I1aawYlozPg";
+    // WP-A5: Settings 1.21 implements the AI management screen and adds its read-only event list control; this row and the
+    // Work row below re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
+    // WP15: Settings 1.22 (merged after WP-A5 1.21) adds the legal deadline calendar and upcoming legal deadlines screens;
+    // re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
+    internal const string FullNormalHostWithSettingsAndPaintMemberships = "sha256:Sq9-z6F5ssSVUEHHro_c41HQDJyPn0zwpkncDiJkUoU";
     // WP9: the actual host adds Work 1.0 (work.tasks.mine route + work.tasks.assign control); produced by
     // ShellCapabilityRegistry.ComputeCandidateRevision over the actual providers.
-    // NOTE (WP5, ROL-D12): Accounting 1.11 adds the period reopening approval control (accounting.periods.reopen); the rows
-    // carrying Accounting re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
-    internal const string FullNormalHostWithSettingsPaintMembershipsAndWork = "sha256:0GgobWNXArLyU4OCCOZvUha_GvNKhzwcRWohEh09oWE";
+    internal const string FullNormalHostWithSettingsPaintMembershipsAndWork = "sha256:-27oju8w4HznQLBnEjFe8uQytkZzEQ1GAjMO0cxgC58";
     // Tren-1 wave 7: Settings 1.11 and Inventory 1.9; active authority rows re-derived in place
     // by ShellCapabilityRegistry.ComputeCandidateRevision over actual providers; historical rows preserved.
     // Tren-1 wave 6: Manufacturing 1.11, Inventory 1.8, Identity 1.2 and Settings 1.9; active authority rows
@@ -756,8 +760,9 @@ internal const string FullNormalHostWithProductPriceListsAndSalesReports =
     // rows re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); names stay historical.
 // W1-A: Settings 1.19 re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
 // WP-A1: Settings 1.20 re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
+// WP-A5: Settings 1.21 (AI management screen implemented + event list control) re-derived in place likewise.
 internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV11 =
-        "sha256:rdC9PCwIMrOtjk0kf8x3-VkWfHXtAPkgWQV7hfYCGeI";
+        "sha256:XYwSXZFojVxYhu0hkohAmDRCy-E0ZbByHsWqzOfK-pQ"; // WP15: Settings 1.22, re-derived in place.
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

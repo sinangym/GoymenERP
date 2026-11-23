@@ -139,7 +139,7 @@ public sealed partial class InventoryStore
         if (isMove)
         {
             var (target, targetPieces) = await ReservableTargetAsync(targetLabel, companyId, quantity, request.PieceCount,
-                cancellationToken);
+                allocation, cancellationToken);
             allocation.Release(expectedVersion);
             row.RemainingKg = allocation.Remaining.Value;
             row.RemainingPieces = allocation.RemainingPieces?.Value;
@@ -281,6 +281,7 @@ public sealed partial class InventoryStore
         Guid companyId,
         Kilograms quantity,
         int? requestedPieces,
+        StockAllocation moved,
         CancellationToken cancellationToken)
     {
         var freeRows = await dbContext.Balances
@@ -306,7 +307,7 @@ public sealed partial class InventoryStore
             throw AllocationError(409, InventoryAllocationCodesV1.InsufficientFreeStock);
         }
 
-        return (target, ReservablePieces(quantity, requestedPieces, target, active));
+        return (target, ReservablePieces(quantity, requestedPieces, target, active, moved));
     }
 
     /// <summary>

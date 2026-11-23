@@ -44,8 +44,8 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     /// own narrow read name (<see cref="AccountPlanPermissionNamesV1.Read"/>) is declared.
     /// </para>
     /// <para>
-    /// 1.11 (WP5, ROL-D12): the declaration set changed — the period reopening approval is its own control of the period
-    /// list under the separate <see cref="AccountingPermissionManifestV1.PeriodsReopen"/> name (registered, not granted).
+    /// 1.11 (ROL-D12, K3-B finding 2): the period reopening approval is its own control on the period list under
+    /// <see cref="AccountingPermissionManifestV1.PeriodsReopen"/>, apart from the opening approval control.
     /// </para>
     /// </summary>
     public const string OwnerContractVersion = "1.11";
@@ -193,7 +193,7 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
                 ParentCapabilityId = PeriodListCapabilityId,
                 RequiredPermissions = [AccountingPermissionManifestV1.PeriodsRead, AccountingPermissionManifestV1.PeriodsClose],
             },
-            // ROL-D12: approving a period reopening is a control on the list too, under its own name.
+            // ROL-D12: approving a period reopening is its own control and permission (General Manager; grant is a human gate).
             periods with
             {
                 CapabilityId = PeriodReopenCapabilityId,

@@ -88,7 +88,8 @@ public sealed class SettingsAiGatewayPersistenceModelTests
         var declaration = Assert.Single(new SettingsShellCapabilityProvider().GetDeclarations(), item => item.CapabilityId == name);
         Assert.Equal("/ayarlar/yapay-zeka-ag-gecidi", declaration.RoutePath);
         Assert.Equal([name], declaration.RequiredPermissions);
-        Assert.False(declaration.ImplementationAvailable);
+        // WP-A5 implements the management screen (Settings provider 1.21).
+        Assert.True(declaration.ImplementationAvailable);
         Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
     }
 

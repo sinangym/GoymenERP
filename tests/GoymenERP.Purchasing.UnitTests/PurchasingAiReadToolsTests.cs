@@ -112,6 +112,8 @@ public sealed class PurchasingAiReadToolsTests
         using var content = JsonDocument.Parse(result.ContentJson!);
         var root = content.RootElement;
         Assert.Equal(3, root.GetProperty("lineCount").GetInt32());
+        Assert.Equal("KLN-D42", root.GetProperty("definition").GetString());
+        Assert.Equal(3, root.GetProperty("orderCount").GetInt32());
         var perUnit = root.GetProperty("remainingByUnit").EnumerateArray()
             .ToDictionary(item => item.GetProperty("unitId").GetGuid(), item => item.GetProperty("remainingTotal").GetString());
         Assert.Equal(2, perUnit.Count);

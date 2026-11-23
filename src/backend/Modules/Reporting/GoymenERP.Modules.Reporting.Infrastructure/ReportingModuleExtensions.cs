@@ -37,6 +37,7 @@ public static class ReportingModuleExtensions
         services.TryAddScoped<IReportingRecallSourceV1>(sp => sp.GetRequiredService<ReportingNotConnectedSourcesV1>());
         services.TryAddScoped<IReportingIntercompanySourceV1>(sp => sp.GetRequiredService<ReportingNotConnectedSourcesV1>());
         services.TryAddScoped<IReportingTrialBalanceSourceV1>(sp => sp.GetRequiredService<ReportingNotConnectedSourcesV1>());
+        services.TryAddScoped<IReportingPartyAgingSourceV1>(sp => sp.GetRequiredService<ReportingNotConnectedSourcesV1>());
         services.AddScoped<IReportingServiceV1, ReportingServiceV1>();
         return services;
     }

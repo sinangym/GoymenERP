@@ -395,7 +395,7 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_Facts_OutputLine", "([OutputLineKind] IS NULL AND [OutputLineSequence] IS NULL AND [OutputLineId] IS NULL) OR ([Kind] = 3 AND (([OutputLineKind] = 1 AND [OutputClass] = 1 AND [OutputLineSequence] >= 1 AND [OutputLineId] IS NULL) OR ([OutputLineKind] = 2 AND [OutputClass] = 1 AND [OutputLineSequence] IS NULL AND [OutputLineId] IS NOT NULL AND [OutputLineId] <> '00000000-0000-0000-0000-000000000000') OR ([OutputLineKind] = 3 AND [OutputLineSequence] IS NULL AND [OutputLineId] IS NULL)))");
 
-                            t.HasCheckConstraint("CK_Facts_OutputPieces", "([OutputPieceCount] IS NULL AND [OutputTheoreticalKgPerPiece] IS NULL AND [OutputTheoreticalKgPerPieceSource] IS NULL) OR ([Kind] = 3 AND [OutputClass] IN (1, 2, 3, 4) AND [OutputPieceCount] > 0 AND [OutputTheoreticalKgPerPiece] > 0 AND LEN([OutputTheoreticalKgPerPieceSource]) > 0)");
+                            t.HasCheckConstraint("CK_Facts_OutputPieces", "([OutputPieceCount] IS NULL AND [OutputTheoreticalKgPerPiece] IS NULL AND [OutputTheoreticalKgPerPieceSource] IS NULL) OR ([OutputPieceCount] IS NOT NULL AND [OutputTheoreticalKgPerPiece] IS NOT NULL AND [OutputTheoreticalKgPerPieceSource] IS NOT NULL AND [Kind] = 3 AND [OutputClass] IN (1, 2, 3, 4) AND [OutputPieceCount] > 0 AND [OutputTheoreticalKgPerPiece] > 0 AND LEN([OutputTheoreticalKgPerPieceSource]) > 0)");
 
                             t.HasCheckConstraint("CK_Facts_Text", "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
                         });

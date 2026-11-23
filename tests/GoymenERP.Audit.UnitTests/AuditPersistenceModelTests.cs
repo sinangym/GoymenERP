@@ -27,8 +27,8 @@ public sealed class AuditPersistenceModelTests
             ["20260827160529_InitialAudit", "20260912173914_AddGlobalProductAuditSubject",
                 "20261115121446_AddAuditOutcomeQueryIndex", "20261116220434_AddTypedFounderRecoverySystemAudit",
                 "20261117003912_AddLocalCredentialSelfServiceAudit", "20261117160915_AddPlatformCredentialRecoveryAudit",
-                "20261119131410_ProtectAuditHistoryRollback"],
-            context.Database.GetMigrations().TakeLast(7));
+                "20261119131410_ProtectAuditHistoryRollback", "20261122205421_AddFounderBootstrapSystemAudit"],
+            context.Database.GetMigrations().TakeLast(8));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -69,6 +69,28 @@ public sealed class AuditPersistenceModelTests
         Assert.Equal("AuditEvents", drop.Table);
         Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
         Assert.DoesNotContain(migration.DownOperations, operation => operation is SqlOperation);
+    }
+
+    [Fact]
+    public void The_founder_bootstrap_audit_migration_adds_only_the_typed_variant_and_refuses_rollback_while_history_exists()
+    {
+        using var context = Context();
+        var auditEvents = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(AuditEvent))!;
+        var check = Assert.Single(auditEvents.GetCheckConstraints(), value => value.Name == "CK_AuditEvents_PermissionOrFounderRecovery");
+        Assert.EndsWith(" OR " + AuditEventModelBuilderExtensions.FounderBootstrapPermissionCheck, check.Sql, StringComparison.Ordinal);
+        Assert.Contains("N'identity.bootstrap-founder'", AuditEventModelBuilderExtensions.FounderBootstrapPermissionCheck, StringComparison.Ordinal);
+        Assert.Contains("[EntityVersionBefore] IS NULL", AuditEventModelBuilderExtensions.FounderBootstrapPermissionCheck, StringComparison.Ordinal);
+
+        var migration = new AddFounderBootstrapSystemAudit();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        var add = Assert.Single(migration.UpOperations.OfType<AddCheckConstraintOperation>());
+        Assert.Equal(check.Sql, add.Sql);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.Contains("TABLOCKX", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 52081", guard.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("N'identity.bootstrap-founder'",
+            Assert.Single(migration.DownOperations.OfType<AddCheckConstraintOperation>()).Sql, StringComparison.Ordinal);
     }
 
     [Fact]

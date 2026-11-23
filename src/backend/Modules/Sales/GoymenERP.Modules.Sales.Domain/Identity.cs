@@ -560,4 +560,19 @@ public static class SalesRuleCodes
     /// aggregate is the single authority; this code marks the second, defensive check.
     /// </summary>
     public const string InternalInvariant = "sales_internal_invariant";
+
+    /// <summary>
+    /// WP13 (YOL-D11): the signed approval document is not a clean PDF/PNG/JPEG uploaded to this sales order in the context
+    /// company, as the Documents owner answered it (unknown, another record's, not downloadable or another kind).
+    /// </summary>
+    public const string SignedApprovalDocumentInvalid = "sales_signed_approval_document_invalid";
+
+    /// <summary>WP13 (YOL-D11): this exact document version is already the order's active signed approval.</summary>
+    public const string SignedApprovalAlreadyCurrent = "sales_signed_approval_already_current";
+
+    /// <summary>WP13 (YOL-D11): a deactivation carries no reason.</summary>
+    public const string SignedApprovalReasonRequired = "sales_signed_approval_reason_required";
+
+    /// <summary>WP13 (YOL-D11): a deactivation reason exceeds its bound (never cut).</summary>
+    public const string SignedApprovalReasonTooLong = "sales_signed_approval_reason_too_long";
 }

@@ -17,22 +17,27 @@ public sealed class ReportingDomainTests
         Assert.All(ReportingPermissionManifestV1.Names, name => Assert.True(ErpPermissions.IsKnown(name)));
         Assert.All(ReportingCatalogV1.Reports.SelectMany(report => report.RequiredPermissions),
             permission => Assert.True(ErpPermissions.IsKnown(permission)));
-        Assert.Equal(new[] { "stock-aging", "otif", "recall", "intercompany" }, ReportingCatalogV1.Reports.Select(report => report.Id).ToArray());
+        Assert.Equal(new[] { "stock-aging", "otif", "recall", "intercompany", "party-aging" }, ReportingCatalogV1.Reports.Select(report => report.Id).ToArray());
         Assert.Equal(new[] { ErpPermissions.ReportingIntercompanyRead },
             ReportingCatalogV1.Find(ReportingCatalogV1.Intercompany)!.RequiredPermissions.ToArray());
     }
 
     [Fact]
-    public void A_measure_the_decisions_do_not_define_is_a_required_parameter_without_a_default()
+    public void Decided_measures_take_no_parameter_and_the_undecided_stock_buckets_stay_required()
     {
+        // YOL-D29: OTIF has no tolerance; only the period is asked.
         var otif = ReportingCatalogV1.Find(ReportingCatalogV1.Otif)!;
-        Assert.All(new[] { "onTimeToleranceDays", "inFullTolerancePercent" },
-            id => Assert.True(otif.Parameters.Single(parameter => parameter.Id == id).Required));
+        Assert.Equal(new[] { "from", "to" }, otif.Parameters.Select(parameter => parameter.Id).ToArray());
+        // YOL-D30: the receivable/payable buckets are fixed; only the measuring date and the direction are asked.
+        var party = ReportingCatalogV1.Find(ReportingCatalogV1.PartyAging)!;
+        Assert.Equal(new[] { "asOf", "direction" }, party.Parameters.Select(parameter => parameter.Id).ToArray());
+        Assert.Equal(new[] { ErpPermissions.FinanceOpenItemsRead, ErpPermissions.FinanceOpenItemsAmountRead }, party.RequiredPermissions.ToArray());
         var aging = ReportingCatalogV1.Find(ReportingCatalogV1.StockAging)!;
-        Assert.All(new[] { "bucketDays", "ageBasis", "asOf" }, id => Assert.True(aging.Parameters.Single(parameter => parameter.Id == id).Required));
-        var missing = Assert.Throws<ReportingException>(() => ReportingParameterSetV1.Parse(otif,
-            new Dictionary<string, string?> { ["from"] = "2026-11-01", ["to"] = "2026-11-30", ["onTimeToleranceDays"] = "2" }));
-        Assert.Equal((422, ReportingProblemCodesV1.ParameterRequired, "inFullTolerancePercent"), (missing.StatusCode, missing.Code, missing.Field));
+        Assert.True(aging.Parameters.Single(parameter => parameter.Id == "bucketDays").Required);
+        Assert.DoesNotContain(aging.Parameters, parameter => parameter.Id == "ageBasis");
+        var missing = Assert.Throws<ReportingException>(() => ReportingParameterSetV1.Parse(aging,
+            new Dictionary<string, string?> { ["asOf"] = "2026-11-22" }));
+        Assert.Equal((422, ReportingProblemCodesV1.ParameterRequired, "bucketDays"), (missing.StatusCode, missing.Code, missing.Field));
     }
 
     [Theory]
@@ -42,11 +47,10 @@ public sealed class ReportingDomainTests
     [InlineData("bucketDays", "0", 422, "reporting_parameter_invalid")]
     [InlineData("bucketDays", "30, 60", 422, "reporting_parameter_invalid")]
     [InlineData("asOf", "2026-13-01", 422, "reporting_parameter_invalid")]
-    [InlineData("ageBasis", "guess", 422, "reporting_parameter_invalid")]
     [InlineData("productId", "00000000-0000-0000-0000-000000000000", 422, "reporting_parameter_invalid")]
     public void A_wrong_parameter_is_refused_with_its_status_and_field(string name, string value, int status, string code)
     {
-        var raw = new Dictionary<string, string?> { ["asOf"] = "2026-11-22", ["ageBasis"] = "label-created", ["bucketDays"] = "30,60" };
+        var raw = new Dictionary<string, string?> { ["asOf"] = "2026-11-22", ["bucketDays"] = "30,60" };
         raw[name] = value;
         var refused = Assert.Throws<ReportingException>(() => ReportingParameterSetV1.Parse(ReportingCatalogV1.Find("stock-aging")!, raw));
         Assert.Equal((status, code, name), (refused.StatusCode, refused.Code, refused.Field));
@@ -60,13 +64,12 @@ public sealed class ReportingDomainTests
             new Dictionary<string, string?> { ["from"] = "2026-11-02", ["to"] = "2026-11-01" })).Field);
         Assert.Equal("to", Assert.Throws<ReportingException>(() => ReportingParameterSetV1.Parse(report,
             new Dictionary<string, string?> { ["from"] = "2025-01-01", ["to"] = "2026-01-02" })).Field);
-        var otif = ReportingParameterSetV1.Parse(ReportingCatalogV1.Find(ReportingCatalogV1.Otif)!, new Dictionary<string, string?>
+        var aging = ReportingParameterSetV1.Parse(ReportingCatalogV1.Find(ReportingCatalogV1.StockAging)!, new Dictionary<string, string?>
         {
-            ["to"] = "2026-11-30", ["from"] = "2026-11-01", ["onTimeToleranceDays"] = "2", ["inFullTolerancePercent"] = "2.50",
+            ["bucketDays"] = "30,60", ["asOf"] = "2026-11-22",
         });
-        Assert.Equal(new[] { "from", "inFullTolerancePercent", "onTimeToleranceDays", "to" }, otif.Canonical.Keys.ToArray());
-        Assert.Equal("2.5", otif.Canonical["inFullTolerancePercent"]);
-        Assert.Equal(2.5m, otif.Decimal("inFullTolerancePercent"));
+        Assert.Equal(new[] { "asOf", "bucketDays" }, aging.Canonical.Keys.ToArray());
+        Assert.Equal(new[] { 30, 60 }, aging.WholeNumbers("bucketDays").ToArray());
     }
 
     [Theory]
@@ -84,22 +87,37 @@ public sealed class ReportingDomainTests
     }
 
     [Fact]
-    public void Otif_separates_a_first_shipment_on_time_the_total_in_full_and_the_quantity_in_full_by_the_deadline()
+    public void Otif_is_the_whole_quantity_shipped_on_or_before_the_promised_day_without_tolerance()
     {
-        var requested = new DateOnly(2026, 11, 10);
-        // 60 on the 9th, 40 on the 20th: on time (first shipment), in full (total), not OTIF (only 60 by the deadline).
-        var late = ReportingOtifCalculatorV1.Evaluate(requested, 100, [new(new DateOnly(2026, 11, 20), 40), new(new DateOnly(2026, 11, 9), 60)], 0, 0);
-        Assert.Equal((100m, (DateOnly?)new DateOnly(2026, 11, 20), true, true, false), (late.ShippedQuantity, late.InFullDate, late.OnTime, late.InFull, late.Otif));
-        // The tolerances widen both sides: 2 days late and 2% short still count.
-        var tolerated = ReportingOtifCalculatorV1.Evaluate(requested, 100, [new(new DateOnly(2026, 11, 12), 98)], 2, 2);
-        Assert.Equal((true, true, true), (tolerated.OnTime, tolerated.InFull, tolerated.Otif));
-        var strict = ReportingOtifCalculatorV1.Evaluate(requested, 100, [new(new DateOnly(2026, 11, 12), 98)], 1, 1);
-        Assert.Equal((false, false, false), (strict.OnTime, strict.InFull, strict.Otif));
-        var none = ReportingOtifCalculatorV1.Evaluate(requested, 100, [], 5, 5);
-        Assert.Equal((0m, (DateOnly?)null, false, false, false), (none.ShippedQuantity, none.InFullDate, none.OnTime, none.InFull, none.Otif));
-        Assert.Throws<ArgumentException>(() => ReportingOtifCalculatorV1.Evaluate(requested, 100, [new(requested, 0)], 0, 0));
+        var promised = new DateOnly(2026, 11, 10);
+        var onTheDay = ReportingOtifCalculatorV1.Evaluate(promised, 100, [new(promised, 100)]);
+        Assert.Equal((100m, 100m, (DateOnly?)promised, true), (onTheDay.ShippedQuantity, onTheDay.ShippedByPromisedDate, onTheDay.InFullDate, onTheDay.Otif));
+        // Partial by the promise and the rest a day late: not OTIF (YOL-D29), the in-full date is the late day.
+        var late = ReportingOtifCalculatorV1.Evaluate(promised, 100, [new(new DateOnly(2026, 11, 11), 40), new(new DateOnly(2026, 11, 9), 60)]);
+        Assert.Equal((100m, 60m, (DateOnly?)new DateOnly(2026, 11, 11), false), (late.ShippedQuantity, late.ShippedByPromisedDate, late.InFullDate, late.Otif));
+        // 99.9 of 100 on time is still partial: there is no tolerance.
+        Assert.False(ReportingOtifCalculatorV1.Evaluate(promised, 100, [new(promised, 99.9m)]).Otif);
+        var none = ReportingOtifCalculatorV1.Evaluate(promised, 100, []);
+        Assert.Equal((0m, (DateOnly?)null, false), (none.ShippedQuantity, none.InFullDate, none.Otif));
+        Assert.Throws<ArgumentException>(() => ReportingOtifCalculatorV1.Evaluate(promised, 100, [new(promised, 0)]));
         Assert.Equal("66.67", ReportingOtifCalculatorV1.Percent(2, 3));
         Assert.Null(ReportingOtifCalculatorV1.Percent(0, 0));
+    }
+
+    [Theory]
+    [InlineData("2026-11-23", "notDue")]
+    [InlineData("2026-11-22", "overdue0To30")]
+    [InlineData("2026-10-23", "overdue0To30")]
+    [InlineData("2026-10-22", "overdue31To60")]
+    [InlineData("2026-09-23", "overdue31To60")]
+    [InlineData("2026-09-22", "overdue61To90")]
+    [InlineData("2026-08-24", "overdue61To90")]
+    [InlineData("2026-08-23", "overdue90Plus")]
+    [InlineData(null, "dueUnknown")]
+    public void Party_aging_counts_the_delay_from_the_due_date_in_the_decided_buckets(string? due, string bucket)
+    {
+        var dueOn = due is null ? (DateOnly?)null : DateOnly.Parse(due, System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Equal(bucket, ReportingPartyAgingCalculatorV1.Bucket(dueOn, new DateOnly(2026, 11, 22)));
     }
 
     [Fact]

@@ -2,8 +2,12 @@ using GoymenERP.BuildingBlocks.Ai;
 
 namespace GoymenERP.Api.Ai;
 
-/// <summary>A tool the model may plan to call: identity only, never company, actor or authority.</summary>
-public sealed record AiModelToolV1(string ToolId, string Version, AiDataClassV1 DataClass, IReadOnlyList<string> FieldAllowlist);
+/// <summary>
+/// A tool the model may plan to call: identity only, never company, actor or authority. The description is the pinned
+/// one (WP-A6): the catalog only lists tools whose card matches the approved pin.
+/// </summary>
+public sealed record AiModelToolV1(string ToolId, string Version, AiDataClassV1 DataClass, IReadOnlyList<string> FieldAllowlist,
+    string Description = "");
 
 /// <summary>A caller-supplied tool suggestion. It is untrusted input exactly like model output.</summary>
 public sealed record AiToolHintV1(string ToolId, string ToolVersion, string ArgumentsJson);

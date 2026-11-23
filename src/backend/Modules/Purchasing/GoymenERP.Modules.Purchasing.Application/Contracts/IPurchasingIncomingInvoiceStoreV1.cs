@@ -25,6 +25,13 @@ public interface IPurchasingIncomingInvoiceStoreV1
     Task<PurchasingIncomingInvoiceWriteResult> RecordIncomingInvoiceAsync(PurchaseIncomingInvoice invoice,
         PurchasingWriteEnvelope envelope, string requestHash, Func<CancellationToken, Task> requireStillAuthorized,
         CancellationToken cancellationToken = default);
+    /// <summary>ALS-D125: records with an audit note (the duplicate warning reason) in the same save. A store that cannot carry the
+    /// note refuses instead of dropping it (fail closed); without a note it is the plain record.</summary>
+    Task<PurchasingIncomingInvoiceWriteResult> RecordIncomingInvoiceAsync(PurchaseIncomingInvoice invoice,
+        PurchasingWriteEnvelope envelope, string requestHash, Func<CancellationToken, Task> requireStillAuthorized, string? auditNote,
+        CancellationToken cancellationToken = default) => auditNote is null
+        ? RecordIncomingInvoiceAsync(invoice, envelope, requestHash, requireStillAuthorized, cancellationToken)
+        : throw new NotSupportedException("This store cannot record an audit note.");
     Task<PurchasingIncomingInvoiceWriteResult?> MutateIncomingInvoiceAsync(Guid invoiceId, string command,
         PurchasingWriteEnvelope envelope, string requestHash, IReadOnlyList<Guid> orderIdsToLock,
         Func<PurchaseIncomingInvoice, CancellationToken, Task> mutate,

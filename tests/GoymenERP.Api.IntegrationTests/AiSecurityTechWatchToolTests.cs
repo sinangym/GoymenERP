@@ -238,6 +238,8 @@ public sealed class AiSecurityTechWatchToolTests
         services.AddSingleton<IHostEnvironment>(new TestHostEnvironment());
         services.AddScoped<ISecurityEventQueryServiceV1, FakeQuery>();
         services.AddScoped<SecurityEventDigestReader>();
+        // WP-A4: the runtime's release-knowledge tool measures authority; nothing is granted here.
+        services.AddScoped<IErpAuthorityRevalidationService, DeniedAuthority>();
         services.AddAiRuntime(configuration);
         services.AddAiSecurityWatchTools();
         using var provider = services.BuildServiceProvider();
@@ -320,6 +322,12 @@ public sealed class AiSecurityTechWatchToolTests
     }
 
     /// <summary>A SENTETIK owner read: newest first, one page per type, the status it is told to answer.</summary>
+    private sealed class DeniedAuthority : IErpAuthorityRevalidationService
+    {
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
+            CancellationToken cancellationToken = default) => Task.FromResult(PermissionScope.Denied);
+    }
+
     private sealed class FakeQuery : ISecurityEventQueryServiceV1
     {
         private readonly List<SecurityEventItemV1> rows = [];

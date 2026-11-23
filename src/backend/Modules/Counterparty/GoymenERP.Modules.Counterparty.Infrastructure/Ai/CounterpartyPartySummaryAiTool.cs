@@ -31,7 +31,7 @@ public sealed class CounterpartyPartySummaryAiTool(ICounterpartyReadService part
         ToolVersion,
         ownerModule: "Counterparty",
         AiToolRiskClassV1.Read,
-        AiDataClassV1.Confidential,
+        AiDataClassV1.Internal,
         requiredPermissions: [ErpPermissions.CounterpartyPartiesRead],
         fieldAllowlist: [PartyIdField],
         ownerCommandName: null,
@@ -92,12 +92,16 @@ public sealed class CounterpartyPartySummaryAiTool(ICounterpartyReadService part
             CounterpartyAiRelease.Name(detail.Kind, detail.LegalName), CounterpartyAiRelease.Name(detail.Kind, detail.TradeName),
             detail.Kind == Domain.Parties.PartyKind.NaturalPerson, detail.IsActive, detail.Version,
             new CounterpartyAiAccountV1(account.Id, CounterpartyAiRelease.RoleNames(account.Roles), account.IsActive, account.Version));
-        var content = new CounterpartyPartySummaryContentV1(CounterpartyAiRelease.Masking, party);
+        var content = new CounterpartyPartySummaryContentV1(CounterpartyAiRelease.Masking, CounterpartyAiRelease.FieldPolicy,
+            CounterpartyAiRelease.EffectiveClass(CounterpartyAiRelease.PartyFields).ToString(),
+            CounterpartyAiRelease.Classes(CounterpartyAiRelease.PartyFields), party);
         var source = new AiSourceV1(ToolId, ToolVersion, TargetKind, detail.Id, "Cari özeti",
             AiReadToolArgumentsV1.SourceVersion([$"{detail.Id:D}:{detail.Version}:{account.Id:D}:{account.Version}"]),
-            timeProvider.GetUtcNow().ToUniversalTime(), AiDataClassV1.Confidential);
+            timeProvider.GetUtcNow().ToUniversalTime(), AiDataClassV1.Internal);
         return new AiReadResultV1(AiToolOutcomeV1.Succeeded, JsonSerializer.Serialize(content, Json), source);
     }
 }
 
-public sealed record CounterpartyPartySummaryContentV1(string Masking, CounterpartyAiPartyV1 Party);
+/// <summary>All Internal under AI-D42; the authorised persons and their channels are <c>counterparty.party-contacts.v1</c> (Confidential).</summary>
+public sealed record CounterpartyPartySummaryContentV1(string Masking, string FieldPolicy, string DataClass,
+    IReadOnlyDictionary<string, string> FieldClasses, CounterpartyAiPartyV1 Party);

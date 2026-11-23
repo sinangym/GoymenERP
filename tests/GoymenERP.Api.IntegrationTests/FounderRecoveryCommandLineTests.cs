@@ -191,6 +191,7 @@ public sealed class FounderRecoveryCommandLineTests
         public string? ReadNewPassword() => throw new InvalidOperationException();
 
         public string? ReadNewPasswordConfirmation() => throw new InvalidOperationException();
+        public FounderRecoveryOperatorDeclaration? ReadOperatorDeclaration() => throw new InvalidOperationException();
     }
 
     private sealed class NeverReadRecoveryConsole : IFounderRecoveryConsole

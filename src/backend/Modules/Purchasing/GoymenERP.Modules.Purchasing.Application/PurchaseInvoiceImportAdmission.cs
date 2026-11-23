@@ -18,7 +18,8 @@ public sealed partial class PurchaseInvoiceImportAdmission(ICompanyContext compa
     ISettingsReferenceListReaderV1 references, TimeProvider time,
     ISettingsUnitIdentityCatalogV1? unitCatalog = null, ISettingsMoneyCandidateReaderV2? moneyCatalog = null,
     IPurchaseInvoiceImportProductSearchV1? productSearch = null,
-    IPurchasingProductItemTypePortV1? itemTypes = null) : IPurchaseInvoiceImportAdmissionV1, IPurchaseInvoiceImportMappingV1
+    IPurchasingProductItemTypePortV1? itemTypes = null,
+    IPurchasingInvoiceDuplicateCandidateSourceV1? duplicates = null) : IPurchaseInvoiceImportAdmissionV1, IPurchaseInvoiceImportMappingV1
 {
     private sealed record Scope(Guid Company, string Actor, IReadOnlyCollection<string> Roles);
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -33,7 +34,9 @@ public sealed partial class PurchaseInvoiceImportAdmission(ICompanyContext compa
             || request.Installments.Any(x => x is null) || !Identity(request.ExpectedPartyVersion, 32)
             || !Identity(request.ExpectedAccountVersion, 32) || metadata is null
             || !Identity(metadata.IdempotencyKey, 200) || !Identity(metadata.CorrelationId, 128)
-            || metadata.CausationId is { } cause && !Identity(cause, 128)) throw Invalid();
+            || metadata.CausationId is { } cause && !Identity(cause, 128)
+            || request.DuplicateReason is { } given && (string.IsNullOrWhiteSpace(given) || given != given.Trim()
+                || given.Length > PurchaseInvoiceDuplicateBehaviorV1.MaximumReasonLength || given.Any(char.IsControl))) throw Invalid();
         var envelope = new PurchasingWriteEnvelope(scope.Actor, PurchaseIncomingInvoicePermissionNamesV1.Import, scope.Roles,
             metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey, correlation.SourceChannel,
             correlation.ClientIpAddress, correlation.UserAgent);
@@ -164,12 +167,14 @@ public sealed partial class PurchaseInvoiceImportAdmission(ICompanyContext compa
                 money.Profile.ProfileId, money.Profile.Version, functional.Profile.ProfileId, functional.Profile.Version,
                 JsonSerializer.Serialize(unitProofs, Json), ratePurpose,
                 typeProofs.Count == 0 ? null : JsonSerializer.Serialize(typeProofs, Json));
+            var auditNote = await DuplicateNoteAsync(scope, new(request.SupplierPartyId, file.Number, Guid.Empty, file.InvoiceDate,
+                money.CurrencyId, amountsTotal.Payable), request.DuplicateReason, token);
             var invoice = PurchaseIncomingInvoice.Record(importId, scope.Company, request.SupplierPartyId, request.CompanyAccountId,
                 money.CurrencyId, functional.CurrencyId, money.Scale, functional.Scale, rate,
                 new(preview.DocumentId, preview.DocumentVersion, preview.DocumentSha256, file.Number, file.Ettn, file.InvoiceDate, proof),
                 amountsTotal, functionalTotal, lines, installments, scope.Actor, time.GetUtcNow());
             var result = await GuardAsync(scope, () => store.RecordIncomingInvoiceAsync(invoice, envelope, hash,
-                ct => FenceProductTypesAsync(scope, typeSources, ct), token), token);
+                ct => FenceProductTypesAsync(scope, typeSources, ct), auditNote, token), token);
             return Result(result, scope.Company, importId);
         }
         catch (PurchasingServiceException exception) when (exception.Status == 409 && exception.Code == PurchasingProblemCodesV1.VersionConflict)
@@ -184,6 +189,26 @@ public sealed partial class PurchaseInvoiceImportAdmission(ICompanyContext compa
         }
         catch (Exception exception) when (exception is ArgumentException or OverflowException or FormatException)
         { await FenceAsync(scope, token); throw Invalid(); }
+    }
+
+    /// <summary>
+    /// ALS-D125 (WP15): the duplicate rule on the facts being recorded. The ETTN rule is not asked here (the database already
+    /// refuses a second ETTN). A match never blocks: without a reason the command answers 422 (not stored; the actor retries with
+    /// one); with a reason the note goes to the record's audit. No match needs no reason and stores none. A missing candidate
+    /// source is unavailable, never "no match".
+    /// </summary>
+    private async Task<string?> DuplicateNoteAsync(Scope scope, PurchaseInvoiceDuplicateProbe probe, string? reason, CancellationToken token)
+    {
+        if (duplicates is null) throw Unavailable();
+        var candidates = await GuardAsync(scope, () => duplicates.ListDuplicateCandidatesAsync(probe, token), token);
+        var matches = PurchaseInvoiceDuplicateRule.Evaluate(probe, candidates);
+        if (matches.Count == 0) return null;
+        if (reason is null)
+            throw new PurchasingServiceException(422, PurchaseInvoiceDuplicateBehaviorV1.ReasonRequired,
+                [new("duplicateReason", PurchaseInvoiceDuplicateBehaviorV1.ReasonRequired)]);
+        var rules = string.Join(", ", matches.Select(match => PurchaseInvoiceDuplicateRule.Code(match.Reason)).Distinct().Order(StringComparer.Ordinal));
+        return string.Create(CultureInfo.InvariantCulture,
+            $"mükerrer uyarısına rağmen kaydedildi ({matches.Count} benzer fatura; {rules}); gerekçe: {reason}");
     }
 
     private async Task ReferenceAsync(Scope scope, SettingsReferenceListKindV1 kind, Guid id, string? version, CancellationToken token)

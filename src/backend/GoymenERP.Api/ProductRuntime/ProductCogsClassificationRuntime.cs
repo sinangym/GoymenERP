@@ -9,6 +9,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
+using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Idempotency.Infrastructure.Executions;
 using GoymenERP.Modules.Product.Application.Contracts;
@@ -143,7 +144,7 @@ public sealed class ProductCogsClassificationRuntime(ProductRuntimeOptions optio
                         CompanyId = identity.CompanyId, CommandName = ProductCogsClassificationContractsV1.CommandName,
                         Operation = "SetCogsClassification", TargetType = "Product.Product", TargetId = productId.ToString("D"),
                         ExpectedVersion = classificationVersion, ActorType = AuditActorTypes.User, ActorId = metadata.ActorId,
-                        PermissionCode = ProductCogsClassificationContractsV1.Manage, RoleCodes = ["SYSTEM_ADMINISTRATOR"],
+                        PermissionCode = ProductCogsClassificationContractsV1.Manage, RoleCodes = RefusalAuditRoleCodes,
                         HttpStatus = staged.StatusCode, ProblemCode = staged.Code!,
                         RefusalClass = staged.StatusCode == 409 ? RefusedAttemptClassesV1.Concurrency : RefusedAttemptClassesV1.BusinessRule,
                         CorrelationId = metadata.CorrelationId, CausationId = metadata.CausationId, SourceChannel = metadata.SourceChannel,
@@ -177,6 +178,12 @@ public sealed class ProductCogsClassificationRuntime(ProductRuntimeOptions optio
         }
         throw Unavailable();
     }
+    /// <summary>
+    /// The role codes a refused classification attempt is audited with: the system role the reviewed global Product authority
+    /// grants <see cref="GroupSharedMasterOperation.SetCogsClassification"/> to (Identity's <see cref="ProductMasterAssignment.RequiredRoleCode"/>,
+    /// the one the SQL authority provider checks) — read from that owner, never a role name typed here (AGENTS.md).
+    /// </summary>
+    public static IReadOnlyList<string> RefusalAuditRoleCodes { get; } = Array.AsReadOnly(new[] { ProductMasterAssignment.RequiredRoleCode });
     private bool ValidMetadata(ProductCogsClassificationCommandMetadataV1 metadata,Identity identity) =>
         metadata.CompanyId == identity.CompanyId && metadata.ActorId == identity.ActorId.ToString("D")
         && !string.IsNullOrEmpty(metadata.IdempotencyKey) && metadata.IdempotencyKey.Length <= 128

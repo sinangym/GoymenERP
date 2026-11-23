@@ -203,6 +203,23 @@ public sealed class ManufacturingPlanWorkInboxSourceTests
     }
 
     [Fact]
+    public async Task Every_item_carries_its_plans_work_center_as_scope_and_a_scoped_holder_is_not_asked()
+    {
+        Plan(Id(1), status: 1, minutes: 5);
+        Plan(Id(2), status: 2, minutes: 0, version: 3);
+        Order(Id(2), Id(92), status: 3, planVersionAfterCancel: 3, cancelledMinutes: 10);
+
+        var result = await Source().ListPendingAsync(Context(), 10, CancellationToken.None);
+
+        // WP6 (D11): the scope names the work center only; the owner's approval is company-wide, so no scoped read happens.
+        Assert.Equal([Id(1), Id(2)], result.Items!.Select(item => item.ItemId));
+        Assert.All(result.Items!, item => Assert.Equal(new WorkInboxItemScopeV1(null, null, Id(8001)), item.Scope));
+        Assert.False(((IWorkInboxSourceV1)Source()).AcceptsScopedApprovers);
+        var scope = new WorkInboxGrantScopeV1(new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid> { Id(8001) });
+        Assert.All(result.Items!, item => Assert.True(scope.Covers(item.Scope)));
+    }
+
+    [Fact]
     public async Task Both_queries_translate_for_sql_server_with_the_explicit_company_filter()
     {
         using var translating = new ManufacturingSqlTranslatingWorkInboxRows(CompanyA);

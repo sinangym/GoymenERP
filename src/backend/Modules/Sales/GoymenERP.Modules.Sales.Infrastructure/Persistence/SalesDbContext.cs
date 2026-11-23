@@ -9,6 +9,7 @@ using GoymenERP.Modules.Sales.Domain.Quotes;
 using GoymenERP.Modules.Sales.Domain.Requests;
 using GoymenERP.Modules.Sales.Domain.RiskExceptions;
 using GoymenERP.Modules.Sales.Domain.SalesContracts;
+using GoymenERP.Modules.Sales.Domain.SignedApprovals;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -302,6 +303,12 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
     /// <summary>S-11 (ADR-011 §2): the contract commands' own attempt records (append-only).</summary>
     internal DbSet<ContractAttemptRow> ContractAttempts => Set<ContractAttemptRow>();
 
+    /// <summary>WP13 (YOL-D11): the customers' signed approval records of sales orders (the file stays in the Document Vault).</summary>
+    internal DbSet<OrderSignedApprovalRow> OrderSignedApprovals => Set<OrderSignedApprovalRow>();
+
+    /// <summary>WP13 (ADR-011 §2–§8): the signed approval commands' attempt records.</summary>
+    internal DbSet<OrderSignedApprovalAttemptRow> OrderSignedApprovalAttempts => Set<OrderSignedApprovalAttemptRow>();
+
     /// <summary>F2 (SAT-D309/D312, LOJ-D9/D12): the subcontract service invoice drafts keyed by the delivery weighing.</summary>
     internal DbSet<SubcontractServiceInvoiceRow> SubcontractServiceInvoices => Set<SubcontractServiceInvoiceRow>();
 
@@ -502,6 +509,43 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
         "([Outcome] = 1 AND [ContractId] IS NOT NULL AND [RefusalJson] IS NULL) "
         + "OR ([Outcome] = 2 AND [ContractId] IS NOT NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1 "
         + "AND [CommandName] <> N'" + SalesContractCommands.CreateV1 + "')";
+
+    /// <summary>
+    /// TR_OrderSignedApprovals_Guard (WP13): the record's facts never change; the only change is Active (1) → Passive (2) once, with the
+    /// version moving 1 → 2 and the deactivation facts set; no row is deleted (THROW 52261). Declared so EF Core does not use OUTPUT
+    /// without INTO.
+    /// </summary>
+    internal const string OrderSignedApprovalGuardTrigger = "TR_OrderSignedApprovals_Guard";
+
+    /// <summary>TR_OrderSignedApprovalAttempts_Guard (WP13): an attempt row is append-only (THROW 52262).</summary>
+    internal const string OrderSignedApprovalAttemptGuardTrigger = "TR_OrderSignedApprovalAttempts_Guard";
+
+    /// <summary>
+    /// CK_OrderSignedApprovals_State (WP13): an active record carries no deactivation facts (version 1); a passive one carries them
+    /// (version 2) — a withdrawal with its reason and no successor, a supersession with its successor and no reason.
+    /// </summary>
+    internal const string OrderSignedApprovalStateConstraint =
+        "([State] = 1 AND [Version] = 1 AND [DeactivationKind] IS NULL AND [DeactivatedBy] IS NULL AND [DeactivatedAtUtc] IS NULL "
+        + "AND [DeactivationReason] IS NULL AND [SupersededById] IS NULL) "
+        + "OR ([State] = 2 AND [Version] = 2 AND [DeactivatedBy] IS NOT NULL AND LEN([DeactivatedBy]) > 0 AND [DeactivatedAtUtc] IS NOT NULL "
+        + "AND (([DeactivationKind] = 1 AND [DeactivationReason] IS NOT NULL AND LEN([DeactivationReason]) > 0 AND [SupersededById] IS NULL) "
+        + "OR ([DeactivationKind] = 2 AND [DeactivationReason] IS NULL AND [SupersededById] IS NOT NULL AND [SupersededById] <> [Id])))";
+
+    /// <summary>CK_OrderSignedApprovals_Document (WP13): a pinned vault version (≥ 1) and a lowercase SHA-256 hex digest.</summary>
+    internal const string OrderSignedApprovalDocumentConstraint =
+        "[DocumentId] <> '00000000-0000-0000-0000-000000000000' AND [DocumentVersionNo] >= 1 AND LEN([DocumentSha256]) = 64 "
+        + "AND [DocumentSha256] NOT LIKE '%[^0-9a-f]%' COLLATE Latin1_General_100_BIN2";
+
+    /// <summary>UX_OrderSignedApprovals_Active (WP13): at most one active signed approval per order.</summary>
+    internal const string OrderSignedApprovalActiveFilter = "[State] = 1";
+
+    /// <summary>CK_OrderSignedApprovalAttempts_Command (WP13): only the signed approval's own versioned commands record here.</summary>
+    internal const string OrderSignedApprovalAttemptCommandConstraint =
+        "[CommandName] IN (N'" + SalesOrderSignedApprovalCommands.RecordV1 + "', N'" + SalesOrderSignedApprovalCommands.DeactivateV1 + "')";
+
+    /// <summary>CK_OrderSignedApprovalAttempts_Outcome (WP13): a recorded attempt has no refusal; a refusal carries its JSON.</summary>
+    internal const string OrderSignedApprovalAttemptOutcomeConstraint =
+        "([Outcome] = 1 AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
 
     /// <summary>UX_InvoiceLines_ActiveShipment (AT-055, SAT-D94): a shipment is on at most one active invoice line.</summary>
     internal const string ActiveInvoiceShipmentFilter = "[ReleasedAtUtc] IS NULL";
@@ -774,6 +818,7 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
         ConfigureShipmentRiskExceptions(modelBuilder);
         ConfigureCustomerReturns(modelBuilder);
         ConfigureContracts(modelBuilder);
+        ConfigureOrderSignedApprovals(modelBuilder);
         ConfigureSubcontractServiceInvoices(modelBuilder);
         ConfigureSubcontractLifecycle(modelBuilder);
         ConfigureOfficialInvoiceCancellations(modelBuilder);
@@ -2181,6 +2226,69 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
         attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // WP13 (YOL-D11): the signed approval records of sales orders and their attempts.
+    private void ConfigureOrderSignedApprovals(ModelBuilder modelBuilder)
+    {
+        var approval = modelBuilder.Entity<OrderSignedApprovalRow>();
+        approval.ToTable("OrderSignedApprovals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OrderSignedApprovals_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [OrderRevision] >= 0 AND [OrderVersion] >= 1");
+            table.HasCheckConstraint("CK_OrderSignedApprovals_Document", OrderSignedApprovalDocumentConstraint);
+            table.HasCheckConstraint("CK_OrderSignedApprovals_State", OrderSignedApprovalStateConstraint);
+            table.HasCheckConstraint("CK_OrderSignedApprovals_Text", "LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasTrigger(OrderSignedApprovalGuardTrigger);
+        });
+        approval.HasKey(x => x.Id);
+        approval.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        approval.Property(x => x.Id).ValueGeneratedNever();
+        approval.Property(x => x.DocumentSha256).HasMaxLength(SalesOrderSignedApproval.Sha256Length).IsUnicode(false)
+            .IsFixedLength().UseCollation(IdentityCollation).IsRequired();
+        approval.Property(x => x.RecordedBy).HasMaxLength(SalesOrderSignedApproval.MaximumActorLength).IsRequired();
+        approval.Property(x => x.DeactivatedBy).HasMaxLength(SalesOrderSignedApproval.MaximumActorLength);
+        approval.Property(x => x.DeactivationReason).HasMaxLength(SalesOrderSignedApproval.MaximumReasonLength);
+        approval.Property(x => x.Version).IsConcurrencyToken();
+        approval.Property(x => x.RowVersion).IsRowVersion();
+        approval.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        approval.HasIndex(x => new { x.CompanyId, x.OrderId }).IsUnique().HasFilter(OrderSignedApprovalActiveFilter)
+            .HasDatabaseName("UX_OrderSignedApprovals_Active");
+        approval.HasIndex(x => new { x.CompanyId, x.OrderId, x.RecordedAtUtc }).HasDatabaseName("IX_OrderSignedApprovals_Order");
+        approval.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        approval.HasOne<DraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OrderId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        approval.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var attempt = modelBuilder.Entity<OrderSignedApprovalAttemptRow>();
+        attempt.ToTable("OrderSignedApprovalAttempts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OrderSignedApprovalAttempts_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+            table.HasCheckConstraint("CK_OrderSignedApprovalAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_OrderSignedApprovalAttempts_Command", OrderSignedApprovalAttemptCommandConstraint);
+            table.HasCheckConstraint("CK_OrderSignedApprovalAttempts_Outcome", OrderSignedApprovalAttemptOutcomeConstraint);
+            table.HasTrigger(OrderSignedApprovalAttemptGuardTrigger);
+        });
+        attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.RefusalJson).HasColumnType("nvarchar(max)");
+        attempt.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasOne<DraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.OrderId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     // F2 (SAT-D309/D312, LOJ-D4/D9/D12): the subcontract service invoice drafts, their service lines and their attempts.
     private void ConfigureSubcontractServiceInvoices(ModelBuilder modelBuilder)
     {
@@ -2472,6 +2580,15 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
                         nameof(ContractRow.RejectionReason), nameof(ContractRow.UpdatedAtUtc),
                     ],
                     ContractAttemptRow => [],
+                    // WP13 (YOL-D11): a signed approval moves only Active → Passive once (checked below); its facts never change;
+                    // its attempts are APPEND-ONLY.
+                    OrderSignedApprovalRow =>
+                    [
+                        nameof(OrderSignedApprovalRow.State), nameof(OrderSignedApprovalRow.DeactivationKind),
+                        nameof(OrderSignedApprovalRow.DeactivatedBy), nameof(OrderSignedApprovalRow.DeactivatedAtUtc),
+                        nameof(OrderSignedApprovalRow.DeactivationReason), nameof(OrderSignedApprovalRow.SupersededById),
+                    ],
+                    OrderSignedApprovalAttemptRow => [],
                     // SAT-D380: only the declared lifecycle state/version may change; source lines and lifecycle history remain append-only.
                     SubcontractServiceInvoiceRow => [nameof(SubcontractServiceInvoiceRow.State), nameof(SubcontractServiceInvoiceRow.Version)],
                     SubcontractInvoiceLifecycleRow => [],
@@ -2539,6 +2656,18 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
                             && (int)contractState.CurrentValue! is (int)SalesContractState.Active or (int)SalesContractState.DiscountRejected))
                     {
                         throw new InvalidOperationException("Sözleşmenin durumu yalnız bir kez, İskonto onayı bekliyor → Etkin/İskonto reddedildi yönünde değişir.");
+                    }
+                }
+
+                if (entry.Entity is OrderSignedApprovalRow)
+                {
+                    // WP13: a signed approval becomes passive once — Active → Passive; nothing else.
+                    var approvalState = entry.Property(nameof(OrderSignedApprovalRow.State));
+                    if (!(approvalState.IsModified
+                            && (int)approvalState.OriginalValue! == (int)SalesOrderSignedApprovalState.Active
+                            && (int)approvalState.CurrentValue! == (int)SalesOrderSignedApprovalState.Passive))
+                    {
+                        throw new InvalidOperationException("İmzalı onay yalnız bir kez, Etkin → Pasif yönünde değişir.");
                     }
                 }
 

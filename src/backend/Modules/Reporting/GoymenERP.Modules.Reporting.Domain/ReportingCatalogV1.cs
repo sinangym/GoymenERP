@@ -48,8 +48,10 @@ public sealed record ReportingReportDefinitionV1(
 
 /// <summary>
 /// WP14: the closed report catalogue. Report ids, parameter ids and column ids are wire names (the screen holds the Turkish
-/// labels). No threshold, tolerance or bucket is decided here: wherever the decisions do not define a measure, it is a required
-/// parameter (OTIF tolerances, aging buckets and the age basis) — NEEDS-SINAN in the WP14 report.
+/// labels). Measures come from the decisions — OTIF (YOL-D29: on or before the promised day AND the whole quantity, no
+/// tolerance), receivable/payable aging (YOL-D30: from the due date, 0-30/31-60/61-90/90+, not-yet-due apart), group company
+/// (YOL-D31: the party ↔ company link on the party card). A measure no decision defines stays a required parameter: the stock
+/// aging buckets (NEEDS-SINAN).
 /// </summary>
 public static class ReportingCatalogV1
 {
@@ -57,9 +59,10 @@ public static class ReportingCatalogV1
     public const string Otif = "otif";
     public const string Recall = "recall";
     public const string Intercompany = "intercompany";
+    public const string PartyAging = "party-aging";
 
-    public const string AgeBasisLabelCreated = "label-created";
-    public const string AgeBasisFirstIncoming = "first-incoming";
+    public const string DirectionReceivable = "receivable";
+    public const string DirectionPayable = "payable";
     public const string DirectionForward = "forward";
     public const string DirectionBackward = "backward";
 
@@ -80,7 +83,6 @@ public static class ReportingCatalogV1
         new(StockAging, "inventory", [ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead],
         [
             Date("asOf"),
-            new("ageBasis", ReportingParameterKindV1.Choice, true, [AgeBasisLabelCreated, AgeBasisFirstIncoming], null, null),
             new("bucketDays", ReportingParameterKindV1.AscendingWholeNumbers, true, [], 1, MaximumBucketDays),
             new("productId", ReportingParameterKindV1.Guid, false, [], null, null),
             new("locationId", ReportingParameterKindV1.Guid, false, [], null, null),
@@ -90,21 +92,20 @@ public static class ReportingCatalogV1
             Col("productId", ReportingColumnKindV1.Identifier), Col("locationId", ReportingColumnKindV1.Identifier),
             Col("heatNumber", ReportingColumnKindV1.Text), Col("coilNumber", ReportingColumnKindV1.Text),
             Col("physicalKg", ReportingColumnKindV1.Number), Col("entryDate", ReportingColumnKindV1.Date),
-            Col("ageDays", ReportingColumnKindV1.Number), Col("bucket", ReportingColumnKindV1.Text),
+            Col("entryInherited", ReportingColumnKindV1.Flag), Col("ageDays", ReportingColumnKindV1.Number),
+            Col("bucket", ReportingColumnKindV1.Text),
         ]),
         new(Otif, "sales", [ErpPermissions.SalesReportsRead],
         [
             Date("from"), Date("to"),
-            new("onTimeToleranceDays", ReportingParameterKindV1.WholeNumber, true, [], 0, 365),
-            new("inFullTolerancePercent", ReportingParameterKindV1.Decimal, true, [], 0, 100),
         ],
         [
             Col("orderNumber", ReportingColumnKindV1.Text), Col("orderId", ReportingColumnKindV1.Identifier),
             Col("lineNumber", ReportingColumnKindV1.Number), Col("customerId", ReportingColumnKindV1.Identifier),
-            Col("unitCode", ReportingColumnKindV1.Text), Col("requestedDate", ReportingColumnKindV1.Date),
-            Col("orderedQuantity", ReportingColumnKindV1.Number), Col("shippedQuantity", ReportingColumnKindV1.Number),
-            Col("inFullDate", ReportingColumnKindV1.Date), Col("onTime", ReportingColumnKindV1.Flag),
-            Col("inFull", ReportingColumnKindV1.Flag), Col("otif", ReportingColumnKindV1.Flag),
+            Col("unitCode", ReportingColumnKindV1.Text), Col("promisedDate", ReportingColumnKindV1.Date),
+            Col("orderedQuantity", ReportingColumnKindV1.Number), Col("shippedByPromisedDate", ReportingColumnKindV1.Number),
+            Col("shippedQuantity", ReportingColumnKindV1.Number), Col("inFullDate", ReportingColumnKindV1.Date),
+            Col("otif", ReportingColumnKindV1.Flag),
         ]),
         new(Recall, "inventory", [ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead],
         [
@@ -126,6 +127,19 @@ public static class ReportingCatalogV1
             Col("documentDate", ReportingColumnKindV1.Date), Col("documentKind", ReportingColumnKindV1.Text),
             Col("documentNumber", ReportingColumnKindV1.Text), Col("counterpartyCompanyId", ReportingColumnKindV1.Identifier),
             Col("currencyCode", ReportingColumnKindV1.Text), Col("netAmount", ReportingColumnKindV1.Number),
+        ]),
+        new(PartyAging, "finance", [ErpPermissions.FinanceOpenItemsRead, ErpPermissions.FinanceOpenItemsAmountRead],
+        [
+            Date("asOf"),
+            new("direction", ReportingParameterKindV1.Choice, true, [DirectionReceivable, DirectionPayable], null, null),
+        ],
+        [
+            Col("partyId", ReportingColumnKindV1.Identifier), Col("companyAccountId", ReportingColumnKindV1.Identifier),
+            Col("currencyId", ReportingColumnKindV1.Identifier), Col("notDue", ReportingColumnKindV1.Number),
+            Col("overdue0To30", ReportingColumnKindV1.Number), Col("overdue31To60", ReportingColumnKindV1.Number),
+            Col("overdue61To90", ReportingColumnKindV1.Number), Col("overdue90Plus", ReportingColumnKindV1.Number),
+            Col("dueUnknown", ReportingColumnKindV1.Number), Col("total", ReportingColumnKindV1.Number),
+            Col("itemCount", ReportingColumnKindV1.Number),
         ]),
     ];
 

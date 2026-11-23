@@ -1,3 +1,5 @@
+using GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Shell;
@@ -304,8 +306,10 @@ public sealed class PurchasingPersistenceModelTests
                 "20261119012425_AllowPurchaseIncomingInvoiceFinalizedOutboxEvents",
                 "20261120103531_AddPurchaseSupplierReturnCostAllocations", "20261122095454_AddPurchasePieceKilogramFacts",
                 "20261122122332_AddPurchaseSupplierReturnLineageSource",
-                "20261122141554_AddPurchaseGoodsReceiptBatchPieceFacts", "20261122142515_AddPurchaseSupplierReturnLineageParts"],
-            context.Database.GetMigrations().TakeLast(26));
+                "20261122141554_AddPurchaseGoodsReceiptBatchPieceFacts", "20261122142515_AddPurchaseSupplierReturnLineageParts",
+                "20261122200945_AddPurchaseIncomingInvoiceDuplicateFacts",
+                "20261122205751_AllowPurchaseSupplierReturnReplacement"],
+            context.Database.GetMigrations().TakeLast(28));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;
@@ -631,8 +635,15 @@ public sealed class PurchasingPersistenceModelTests
         var checks = returns.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
         Assert.Equal(PurchasingDbContext.SupplierReturnDecisionCheck, checks["CK_PurchaseSupplierReturns_Decision"]);
         Assert.Equal("[Status] IN (1, 2, 3) AND [CostBasis] IN (1, 2)", checks["CK_PurchaseSupplierReturns_Status"]);
-        // ALS-D91: a replacement return is not offered by this version; SAT-D396's same-actor rule stays a policy, not a CHECK.
-        Assert.Contains("[ReplacementExpected] = 0", checks["CK_PurchaseSupplierReturns_Values"], StringComparison.Ordinal);
+        // ALS-D91: a "replacement expected" return exists only on the receipt-adjusting path (expected order version + undo
+        // quantity), exactly what the service and the store accept; SAT-D396's same-actor rule stays a policy, not a CHECK.
+        Assert.Equal(PurchasingDbContext.SupplierReturnValuesCheck, checks["CK_PurchaseSupplierReturns_Values"]);
+        Assert.Contains("([ReplacementExpected] = 0 OR ([ExpectedPurchaseOrderVersion] IS NOT NULL AND [UndoQuantity] IS NOT NULL))",
+            checks["CK_PurchaseSupplierReturns_Values"], StringComparison.Ordinal);
+        var replacement = new AllowPurchaseSupplierReturnReplacement();
+        Assert.DoesNotContain(replacement.UpOperations, operation => operation is SqlOperation);
+        Assert.Contains("THROW 52300", Assert.IsType<SqlOperation>(replacement.DownOperations[0]).Sql, StringComparison.Ordinal);
+        Assert.Single(replacement.DownOperations.OfType<SqlOperation>());
         Assert.DoesNotContain("<> [RequestedBy]", PurchasingDbContext.SupplierReturnDecisionCheck, StringComparison.Ordinal);
         var exit = Assert.Single(returns.GetIndexes(), index => index.GetDatabaseName() == "UX_PurchaseSupplierReturns_MovementId");
         Assert.True(exit.IsUnique);
