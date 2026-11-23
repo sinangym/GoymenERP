@@ -74,6 +74,63 @@ public sealed class FinanceExpensePaymentWorkInboxSourceV1Tests : FinanceWorkInb
             && reference.RecordId == cash.TreasuryAccountId && reference.Label == "SENTETIK Merkez Kasa");
     }
 
+    [Fact]
+    public async Task A_later_reviser_of_the_draft_is_an_excluded_decider_and_a_failed_save_is_not()
+    {
+        // FNS-D118: the owner refuses everyone whose draft save succeeded; a refused save makes no one a maker.
+        var payment = Payment(Company, Start, Maker, ExpensePaymentStatuses.Draft);
+
+        var result = await ListAsync(db =>
+        {
+            db.ExpensePayments.Add(payment);
+            db.ExpensePaymentCommands.AddRange(
+                SaveCommand(payment.Id, Maker, CommandOutcome.Succeeded),
+                SaveCommand(payment.Id, "SENTETIK-reviser", CommandOutcome.Succeeded),
+                SaveCommand(payment.Id, "SENTETIK-reviser", CommandOutcome.Succeeded),
+                SaveCommand(payment.Id, "SENTETIK-refused", CommandOutcome.ValidationFailed));
+        });
+
+        var item = Assert.Single(result.Items!);
+        Assert.Equal(Maker, item.PreparedBy);
+        Assert.Equal(["SENTETIK-reviser"], item.ExcludedDeciders);
+        Assert.True(item.Excludes("SENTETIK-reviser"));
+        Assert.False(item.Excludes("SENTETIK-refused"));
+        Assert.False(item.Excludes(Caller));
+    }
+
+    [Fact]
+    public async Task An_unreadable_save_result_makes_the_source_unavailable_rather_than_a_partial_exclusion()
+    {
+        var payment = Payment(Company, Start, Maker, ExpensePaymentStatuses.Draft);
+        var broken = SaveCommand(payment.Id, "SENTETIK-reviser", CommandOutcome.Succeeded);
+        broken.ResultJson = "{\"unexpected\":true}";
+
+        var result = await ListAnyAsync(db =>
+        {
+            db.ExpensePayments.Add(payment);
+            db.ExpensePaymentCommands.Add(broken);
+        });
+
+        Assert.Equal(NativeApprovalQueueOutcomeV1.Unavailable, result.Outcome);
+        Assert.Null(result.Items);
+    }
+
+    private static ExpensePaymentCommandRow SaveCommand(Guid paymentId, string actor, CommandOutcome outcome) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = Company,
+            CommandName = GoymenERP.Modules.Finance.Infrastructure.ExpensePaymentService.DraftCommand,
+            IdempotencyKeyHash = Guid.NewGuid().ToString("N"),
+            ActorId = actor,
+            PayloadHash = "SENTETIK",
+            PaymentId = paymentId,
+            ResultJson = System.Text.Json.JsonSerializer.Serialize(
+                new ExpensePaymentCommandResult(outcome, null, false, "SENTETIK-correlation", []), FinanceJson.CreateOptions()),
+            CorrelationId = "SENTETIK-correlation",
+            RecordedAtUtc = Start,
+        };
+
     private static ExpensePaymentRow Payment(Guid company, DateTimeOffset at, string preparedBy, int status,
         string amount = "100", int sourceKind = ExpensePaymentSourceKinds.Bank) =>
         new()

@@ -9,8 +9,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// W1-A (AI-D31, AI-D32, YOL-D18): the expense payments (FNS-D25, API-25) waiting for approval, as Finance lists them for
 /// the Work inbox. A payment waits while its status is Draft (the approve command accepts only a draft) since it was
 /// prepared; Finance keeps no separate time for a later draft edit, so the preparation time stands. It is approved on the
-/// expense payment screen by a holder of <c>finance.expense-payment.approve</c> other than the preparer (the approve
-/// command refuses only the preparer; a later editor of the draft is not refused). The owner's permission port answers
+/// expense payment screen by a holder of <c>finance.expense-payment.approve</c> who neither prepared nor revised the draft
+/// (FNS-D118: the approve command refuses the preparer and everyone whose draft save succeeded; the first preparer is the
+/// item's maker, the other revisers are its excluded deciders). The owner's permission port answers
 /// only a company-wide grant, so scoped approvers are not accepted. Every draft of the company is returned, the caller's
 /// own included: Work hides a maker's own item.
 /// <para>
@@ -60,14 +61,18 @@ internal sealed class FinanceExpensePaymentWorkInboxSourceV1(
         var cash = await dbContext.CashAccounts.AsNoTracking()
             .Where(row => row.CompanyId == companyId && cashIds.Contains(row.Id))
             .ToDictionaryAsync(row => row.Id, row => row.DisplayName, cancellationToken);
-        return (rows, new Lookup(banks, cash));
+        var revisers = await FinanceDraftRevisers.ExpensePaymentsAsync(dbContext, companyId,
+            returned.Select(row => row.Id).ToArray(), cancellationToken);
+        return (rows, new Lookup(banks, cash, revisers));
     }
 
     private static WorkInboxItemV1? Item(ExpensePaymentRow row, Lookup lookup)
     {
         if (row.Id == Guid.Empty || row.TreasuryAccountId == Guid.Empty || row.ExpenseItemId == Guid.Empty
             || row.CurrencyId == Guid.Empty || string.IsNullOrWhiteSpace(row.PreparedBy)
-            || FinanceWorkInboxRead.Amount(row.AmountText) is not { } amount)
+            || FinanceWorkInboxRead.Amount(row.AmountText) is not { } amount
+            || lookup.Revisers is null
+            || FinanceDraftRevisers.ExcludedBesides(lookup.Revisers, row.Id, row.PreparedBy) is not { } excluded)
         {
             return null;
         }
@@ -94,8 +99,12 @@ internal sealed class FinanceExpensePaymentWorkInboxSourceV1(
                 treasury,
                 FinanceWorkInboxRead.Reference("expense-item", row.ExpenseItemId),
                 FinanceWorkInboxRead.Reference("currency", row.CurrencyId),
-            ]);
+            ],
+            excluded.Count == 0 ? null : excluded);
     }
 
-    private sealed record Lookup(IReadOnlyDictionary<Guid, string> Banks, IReadOnlyDictionary<Guid, string> Cash);
+    private sealed record Lookup(
+        IReadOnlyDictionary<Guid, string> Banks,
+        IReadOnlyDictionary<Guid, string> Cash,
+        IReadOnlyDictionary<Guid, IReadOnlyList<string>>? Revisers);
 }

@@ -14,7 +14,11 @@ const ROLES = [
   'invoice-line', 'inventory-cost-proposal', 'invoice-cancellation', 'source-document',
 ]
 
+// YOL-D41: approvals without an owner screen; decided from the inbox detail (WP8).
+const NO_SCREEN = ['finance.cash-account.v1', 'finance.cash-account-passivation.v1', 'finance.cash-account-reactivation.v1']
+
 const PERMISSIONS = [
+  'finance.cash-account.approve', 'finance.cash-account.passivation.approve', 'finance.cash-account.reactivation.approve',
   'finance.official-sales-invoices.approve', 'finance.manual-bank-payment.reverse.approve',
   'finance.manual-receipt.reverse.approve', 'finance.expense-payment.approve', 'finance.bank-account.approve',
   'finance.credits.approve', 'finance.opening-balances.approve', 'accounting.periods.approve', 'accounting.periods.reopen',
@@ -30,10 +34,10 @@ describe('WP5 Finance and Accounting inbox kinds', () => {
       expect(entry.kind.startsWith(`${entry.module}.`)).toBe(true)
       expect(entry.kind).toMatch(/\.v1$/)
       expect(inboxKindText(entry.kind)).not.toBe(entry.kind)
-      expect(entry.capability).not.toBeNull()
-      expect(WORK_INBOX_CAPABILITIES).toContain(entry.capability)
+      if (NO_SCREEN.includes(entry.kind)) expect(entry.capability).toBeNull()
+      else expect(WORK_INBOX_CAPABILITIES).toContain(entry.capability)
     }
-    expect(FINANCE_INBOX_KINDS).toHaveLength(15)
+    expect(FINANCE_INBOX_KINDS).toHaveLength(18)
     expect(ACCOUNTING_INBOX_KINDS).toHaveLength(10)
     expect(inboxModuleText('accounting')).toBe('Muhasebe')
   })

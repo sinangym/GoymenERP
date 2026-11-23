@@ -183,6 +183,14 @@ public abstract class FinanceWorkInboxSourceContractTests
         });
     }
 
+    /// <summary>Lists the company's pending items with a granted company-wide authority, whatever the outcome.</summary>
+    private protected async Task<WorkInboxSourceResultV1> ListAnyAsync(Action<FinanceDbContext> seed)
+    {
+        await using var run = new Run(this);
+        await run.SeedAsync(Company, db => { seed(db); return Guid.Empty; });
+        return await run.Source().ListPendingAsync(Context(), 10, CancellationToken.None);
+    }
+
     /// <summary>Lists the company's pending items with a granted company-wide authority (for the per-source facts).</summary>
     private protected async Task<WorkInboxSourceResultV1> ListAsync(Action<FinanceDbContext> seed)
     {
