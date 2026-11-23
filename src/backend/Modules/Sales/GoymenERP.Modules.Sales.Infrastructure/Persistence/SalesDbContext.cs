@@ -639,8 +639,13 @@ public sealed partial class SalesDbContext(DbContextOptions<SalesDbContext> opti
     /// <summary>TR_InvoiceLines_Guard: the lines of a non-draft invoice are immutable but for their release stamp (THROW 51224).</summary>
     internal const string InvoiceLineGuardTrigger = "TR_InvoiceLines_Guard";
 
+    /// <summary>
+    /// AK-4 / SAT-D473: a kg invoice line carries no kg information; a piece line always carries its positive scale (actual) kg and
+    /// its positive theoretical kg only when the order line had a kg/unit pinned at approval (none: theoretical stays NULL).
+    /// Every branch is IS NOT NULL-guarded so no half fact passes as UNKNOWN.
+    /// </summary>
     internal const string InvoiceLineKilogramInformationConstraint =
-        "([TheoreticalKg] IS NULL AND [ActualKg] IS NULL) OR ([TheoreticalKg] IS NOT NULL AND [TheoreticalKg] > 0 AND [ActualKg] IS NOT NULL AND [ActualKg] > 0)";
+        "([TheoreticalKg] IS NULL AND [ActualKg] IS NULL) OR ([ActualKg] IS NOT NULL AND [ActualKg] > 0 AND ([TheoreticalKg] IS NULL OR [TheoreticalKg] > 0))";
 
     /// <summary>API-35: the match row is append-only; the trigger refuses every UPDATE and DELETE (THROW 51226).</summary>
     internal const string InvoiceMatchGuardTrigger = "TR_InvoiceMatches_Guard";

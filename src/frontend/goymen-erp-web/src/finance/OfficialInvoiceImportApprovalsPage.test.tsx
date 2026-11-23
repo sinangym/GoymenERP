@@ -293,6 +293,18 @@ describe('official invoice checker journey', () => {
     expect(selected).not.toHaveBeenCalled()
   })
 
+  it('shows the server tax warnings of the pending source to the checker', async () => {
+    const warned: OfficialInvoicePendingDetail = { ...detail, preview: { ...detail.preview, taxWarnings: [{
+      code: 'finance_official_invoice_tax_inconsistent', sourceDocumentId: '44444444-4444-4444-8444-444444444444',
+      expectedPayableFunctionalAmount: '1200', payableFunctionalAmount: '1200.01', differenceFunctionalAmount: '0.01' }] } }
+    const client: OfficialInvoiceApprovalClient = { listPending: vi.fn(), getPending: vi.fn().mockResolvedValue(warned), approve: vi.fn() }
+    render(<ApprovalPage initialEntry={`${OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE}?approvalId=${pending.batchId}`}
+      client={client} context={context} onApprovedSource={() => undefined} />)
+    const note = await screen.findByRole('note')
+    expect(note.textContent).toContain('Beklenen ödenecek tutar (TL): 1200')
+    expect(note.textContent).toContain('Fark (TL): 0.01')
+  })
+
   it('opens and reopens the exact pending approval from the query-bound URL', async () => {
     const listPending = vi.fn()
     const getPending = vi.fn().mockResolvedValue(detail)

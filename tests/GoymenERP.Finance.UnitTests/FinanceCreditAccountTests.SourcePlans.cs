@@ -64,6 +64,31 @@ public sealed partial class FinanceCreditAccountTests
         Assert.Null(missing.Totals);
     }
 
+    [Theory]
+    [InlineData(2, "100.01", "100.02")]
+    [InlineData(3, "100.001", "100.002")]
+    public void Fns_d116_a_non_lira_credit_uses_its_own_profile_smallest_unit(int scale, string within, string outside)
+    {
+        // FNS-D116: the tolerance is the credit currency's smallest unit from its Settings profile, not a fixed TL amount.
+        CreditPlanInstallmentInput Line(string installment) => new(1, Start, installment, "100", "0", "0", "0");
+        Assert.True(FinanceCreditPlanCalculator.Validate("100", [Line(within)], scale).IsValid);
+        var refused = FinanceCreditPlanCalculator.Validate("100", [Line(outside)], scale);
+        Assert.Equal(("installments[0].installment", FinanceCreditPlanCalculator.InstallmentSumMismatch),
+            (Assert.Single(refused.Issues).Field, refused.Issues[0].Code));
+    }
+
+    [Fact]
+    public void Fns_d116_a_separately_collected_charge_never_enters_the_installment_equality()
+    {
+        // 121 balances only if the separate 9 were added (100 + 10 + 1 + 1 + 9); FNS-D116 admits only declared included charges.
+        var line = new CreditPlanInstallmentInput(1, Start, "121", "100", "10", "1", "1",
+            [new("SENTETIK ayrı masraf", "9", CreditChargeTreatmentV1.CollectedSeparately, "BANK-2")]);
+        var verdict = FinanceCreditPlanCalculator.Validate("100", [line], 2);
+        Assert.Equal(("installments[0].installment", FinanceCreditPlanCalculator.InstallmentSumMismatch),
+            (Assert.Single(verdict.Issues).Field, verdict.Issues[0].Code));
+        Assert.Equal(new CreditPlanChargeTotalsV1("0", "9"), verdict.Totals!.Charges);
+    }
+
     [Fact]
     public async Task Noncash_source_movement_profile_keeps_no_synthetic_installments_and_still_requires_another_approver()
     {

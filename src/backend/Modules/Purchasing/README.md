@@ -462,13 +462,13 @@ may be the order supplier or another active Supplier. Actual Settings expense ty
 profile/version are retained; an empty active expense catalog uses the required description, while a nonempty active
 catalog requires an explicit current type. Historical untyped facts are not rewritten. Shared tax calculation provides
 the frozen VAT/gross amounts. No quantity, Inventory movement, average cost or cost allocation is produced.
-The direct ALC-S8 answer (Issue #1189, 6946921285) selects existing `purchasing.orders.revise` for recording;
+The direct ALC-S8 answer (Issue #1189, 6946921285 (GOV-D16)) selects existing `purchasing.orders.revise` for recording;
 price-read and company-wide authority are revalidated. No permission grant is added. Its command owns a clean
 Serializable transaction, expected source order version, idempotency, terminal source conflict replay and actual
 Audit append; failure rolls back all rows. Reads remain company/actor/price fenced.
 EF generated `20261117114517_AddPurchaseAdditionalCosts` with additive DDL. Down first refuses with **THROW 51998**
 while expense facts or command attempts exist; an empty store can roll back. No DB migration was applied.
-Partial invoice binding was approved separately (6947000365) and is the next source followup; no artificial receipt
+Partial invoice binding was approved separately (6947000365 (GOV-D16)) and is the next source followup; no artificial receipt
 or physical quantity substitutes for a monetary expense share. Runtime acceptance remains NOT_RUN.
 
 ## ALC-S7 / ALS-D29, ALS-D40 and KIM-D49 service orders
@@ -543,7 +543,7 @@ activates nothing; real-SQL acceptance is **NOT_RUN** and independent K3 accepta
 `20261122205751_AllowPurchaseSupplierReturnReplacement` widens `CK_PurchaseSupplierReturns_Values`
 (`PurchasingDbContext.SupplierReturnValuesCheck`): `ReplacementExpected = 1` is allowed only with the receipt-adjusting
 facts (`ExpectedPurchaseOrderVersion` and `UndoQuantity`), exactly what the service and the store accept; the earlier
-`[ReplacementExpected] = 0` refused the decided path on SQL Server. Pure DDL Up; Down first refuses with `THROW 52300`
+`[ReplacementExpected] = 0` refused the decided path on SQL Server. Pure DDL Up; Down first refuses with `THROW 52073`
 while such a return exists (forward fix).
 
 ## AK-3b (adet/kg — alışı tamamlama)
@@ -572,3 +572,4 @@ existing database refusals (company + ETTN, company + supplier + exact number) a
 `20261122200945_AddPurchaseIncomingInvoiceDuplicateFacts` adds nullable `InvoiceDate`, `CurrencyId`, `PayableAmount`
 (all-or-nothing check) and the `IX_IncomingInvoices_DuplicateDate` index; pure DDL, no backfill (older rows are read from
 their first revision). Down drops only derived copies, so it carries no guard.
+- ALS-D127 (BS-1 ayrıntısı): mal kabul maliyet kuru, geri alınan/iade edilen kısım düşüldükten sonra kalan miktarın tamamı kesinleşmiş faturayla karşılanınca kesinleşir; tamamen geri alınmış/iade edilmiş kabulde kalan 0 olduğundan kur bilerek hiç kesinleşmez (`purchase_invoice_coverage_incomplete`).

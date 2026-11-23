@@ -165,6 +165,22 @@ public sealed class SettingsSalesPolicySqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'settings.sales-approval-threshold.recorded.v1' "
             + "AND [CompanyId] = @c AND [PermissionCode] = @p", ("@c", CompanyA), ("@p", Threshold)));
 
+        // F029-S3: once Settings holds the currency's own money timeline for the Sales operation, the threshold scale follows
+        // it, never the compiled catalog (whose TRY scale would accept one fraction digit).
+        await run.ExecuteAsync(
+            "INSERT INTO [settings].[MoneyProfileBaselineTransfers] ([CompanyId],[CurrencyId],[Operation]) "
+            + $"VALUES ('{CompanyA:D}','{lira:D}',N'sales.order-draft.v1'); "
+            + "INSERT INTO [settings].[MoneyProfileVersions] ([CompanyId],[CurrencyId],[Operation],[Version],[ProfileId],[CurrencyCode],"
+            + "[Scale],[UnitPriceScale],[IsActive],[EffectiveFrom],[SourceKind],[DecisionReference],[RecordedAtUtc],[RecordedBy],[Reason]) "
+            + $"VALUES ('{CompanyA:D}','{lira:D}',N'sales.order-draft.v1',1,'{Guid.NewGuid():D}',N'TRY',0,NULL,1,'2000-01-01',"
+            + "N'UserMaintained',NULL,'2026-01-01T00:00:00+00:00',N'SENTETIK',N'SENTETIK tam lira profili');");
+        var fraction = new RecordSalesApprovalThresholdRequestV1("2", true, "250000.5", "SENTETIK kuruşlu onay eşiği");
+        await run.CommandAsync(editor, $"{Root}/approval-thresholds/{lira:D}/versions", "k-th-scale", fraction,
+            HttpStatusCode.UnprocessableEntity);
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [settings].[SalesApprovalAmountThresholdVersions] WHERE [CompanyId] = @c AND [Version] = 3",
+            ("@c", CompanyA)));
+
         // Another company sees nothing of A's: its families are still answered by the catalog.
         var other = await run.JsonAsync(editorB, $"{Root}/delivery-tolerance");
         Assert.False(other.GetProperty("isBaselineTransferred").GetBoolean());

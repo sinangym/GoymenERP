@@ -27,6 +27,7 @@ export function moneyOperationLabel(operation: string): string {
     'finance.manual-bank-receipt.v1': 'Banka tahsilatı',
     'finance.credit-plan': 'Banka kaynaklı kredi planı',
     'finance.cash-transfer.v1': 'Virman ve döviz bozdurma',
+    'finance.expense-payment.v1': 'Masraf ödemesi',
     'purchasing.order.v1': 'Alış siparişi',
     'sales.order-draft.v1': 'Satış siparişi',
   }

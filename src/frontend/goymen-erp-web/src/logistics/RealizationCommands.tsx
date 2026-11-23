@@ -235,7 +235,7 @@ function DeliveryForm(props: LineProps) {
               {T.shipmentReference} {share.shareId.slice(-8)} / {formatInstant(share.recordedAtUtc)} ({T.remaining}: {shipmentRemainder(share, detail.shares)} {isPieceLine(line) ? T.pieceUnit : T.kgUnit})
             </option>)}
           </select>
-          <label htmlFor={`${id}-quantity`}>{T.quantity}</label>
+          <label htmlFor={`${id}-quantity`}>{isPieceLine(line) ? T.quantityPieces : T.quantity}</label>
           <input id={`${id}-quantity`} inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} aria-invalid={error || undefined} />
         </div>
         {error ? <p role="alert">{T.invalid}</p> : null}

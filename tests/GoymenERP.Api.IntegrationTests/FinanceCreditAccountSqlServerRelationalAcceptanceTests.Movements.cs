@@ -186,7 +186,9 @@ public sealed partial class FinanceCreditAccountSqlServerRelationalAcceptanceTes
             var service = new FinanceCreditMovementServiceV1(db, company, user, new SyntheticPermissions(),
                 new SyntheticCreditSources(company.CompanyId), periods, accountingOwner?.Invoke(db, company, user) ?? periods,
                 new InternalLedgerTreasuryBalanceGuard(db, company), audit,
-                new(new(ErpPermissions.FinanceCreditsPropose, ["SENTETIK"], "Web"), new(ErpPermissions.FinanceCreditsApprove, ["SENTETIK"], "Web")), TimeProvider.System);
+                new(new(ErpPermissions.FinanceCreditsPropose, ["SENTETIK"], "Web"), new(ErpPermissions.FinanceCreditsApprove, ["SENTETIK"], "Web")), TimeProvider.System,
+                // SENTETIK: the mechanics run as if every FNS-D106 group spec were approved; the host default stays closed.
+                groupGate: new FinanceCreditGroupGateV1(Enum.GetValues<CreditAccountGroup>()));
             return new(db, service, company, new(company.CompanyId, actor, Correlation, null));
         }
     }

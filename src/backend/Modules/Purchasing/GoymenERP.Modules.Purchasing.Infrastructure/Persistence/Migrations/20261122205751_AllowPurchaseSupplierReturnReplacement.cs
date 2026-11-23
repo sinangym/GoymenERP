@@ -31,7 +31,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
             migrationBuilder.Sql("""
                 IF EXISTS (SELECT 1 FROM [purchasing].[PurchaseSupplierReturns] WHERE [ReplacementExpected] = 1)
                 BEGIN
-                    THROW 52300, 'Purchase supplier returns with an expected replacement exist; AllowPurchaseSupplierReturnReplacement is not rolled back (forward fix).', 1;
+                    THROW 52073, 'Purchase supplier returns with an expected replacement exist; AllowPurchaseSupplierReturnReplacement is not rolled back (forward fix).', 1;
                 END;
                 """);
 

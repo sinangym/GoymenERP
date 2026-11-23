@@ -123,6 +123,22 @@ describe('FIN14 book-value workflow consumer', () => {
     expect(recallBookValueAttempt(pendingBinding())).toBeNull()
   })
 
+  it.each([[409, 'VersionConflict', T.conflict], [422, 'ValidationFailed', T.refused]] as const)(
+    'releases the unknown attempt on a decoded %i so the next send is a new command', async (status, outcome, message) => {
+      const posts = show(); const user = await prepareUnknown()
+      const transport = vi.mocked(fetch).getMockImplementation()!
+      vi.mocked(fetch).mockImplementation(async (url, init) => init?.method === 'POST'
+        ? json({ outcome, resource: null, isReplay: false, originalCorrelationId: 'SENTETIK-corr', code: 'SENTETIK_refusal' }, status) : transport(url, init))
+      const first = new Headers(posts[0].headers).get('Idempotency-Key')
+      expect(recallBookValueAttempt(pendingBinding())?.attempt.key).toBe(first)
+      await user.click(screen.getByRole('button', { name: T.retry }))
+      expect(await screen.findByText(message)).toBeTruthy()
+      expect(vi.mocked(fetch).mock.calls.filter(call => call[1]?.method === 'POST').map(call => new Headers(call[1]!.headers).get('Idempotency-Key'))).toEqual([first, first])
+      expect(recallBookValueAttempt(pendingBinding())).toBeNull()
+      expect(screen.queryByRole('button', { name: T.retry })).toBeNull()
+      expect((screen.getByLabelText(T.amount) as HTMLInputElement).closest('fieldset')?.disabled).toBe(false)
+    })
+
   it('reports an early 403 without settling the unknown owner receipt and restores it on authorized re-entry', async () => {
     const posts = show(); const user = await prepareUnknown()
     const transport = vi.mocked(fetch).getMockImplementation()!

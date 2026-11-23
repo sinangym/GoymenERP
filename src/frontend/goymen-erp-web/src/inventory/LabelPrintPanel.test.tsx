@@ -52,4 +52,24 @@ describe('etiket PDF paneli', () => {
     await waitFor(() => expect(fetchLabelPdfTemplate).toHaveBeenCalledTimes(1))
     expect(generate).not.toHaveBeenCalled(); expect(sessionStorage.length).toBe(0)
   })
+  it('saklanan denemeyi yalnız tam alan kümesiyle geri çağırır', () => {
+    const storageKey = `goymen.inventory.label-pdf.v1:${props.namespace}:${props.actorId}:${props.companyId}:${props.labelId}`
+    const template = { publicationId: '58000000-0000-4000-8000-000000000001', publicationVersion: '7' }
+    const stored = { key: 'SENTETIK-key', requestedAtUtc: '2026-11-20T08:00:00.000Z', template }
+    const recalled = (value: unknown) => {
+      sessionStorage.setItem(storageKey, JSON.stringify(value))
+      render(<LabelPrintPanel {...props} />)
+      const retry = screen.queryByRole('button', { name: T.retry }) !== null
+      cleanup()
+      return retry
+    }
+    expect(recalled(stored)).toBe(true)
+    expect(recalled({ key: stored.key, requestedAtUtc: stored.requestedAtUtc })).toBe(true)
+    expect(recalled({ ...stored, extra: 1 })).toBe(false)
+    expect(recalled({ key: stored.key, requestedAtUtc: stored.requestedAtUtc, extra: 1 })).toBe(false)
+    expect(recalled({ key: stored.key, template })).toBe(false)
+    expect(recalled({ requestedAtUtc: stored.requestedAtUtc, template })).toBe(false)
+    expect(recalled({ ...stored, template: { ...template, extra: 1 } })).toBe(false)
+    expect(recalled({ ...stored, template: { publicationId: template.publicationId } })).toBe(false)
+  })
 })

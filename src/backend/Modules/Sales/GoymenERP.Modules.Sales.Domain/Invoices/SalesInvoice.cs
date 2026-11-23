@@ -95,6 +95,7 @@ public sealed record SalesInvoiceShareInput(
     /// SAT-D434 / SAT-D435 (AK-4): a piece line is invoiced as pieces × piece price (<see cref="Quantity"/> is whole pieces); its
     /// theoretical kg (pieces × the kg/unit pinned at approval, SAT-D437, 3 decimals per URN-D9) and actual kg (the scale kg the
     /// weighing difference carried to the share) travel as information only and never change an amount. A kg line carries neither.
+    /// SAT-D473: a piece line approved without a kg/unit carries its actual kg only; its theoretical kg (and kg price) is unavailable.
     /// </summary>
     public bool CarriesKilogramInformation => TheoreticalKilograms is not null || ActualKilograms is not null;
 }
@@ -507,13 +508,14 @@ public sealed partial class SalesInvoice
             throw new ArgumentException("Sevk payının miktarı, irsaliye satırı ya da revizyonu geçersiz.", nameof(share));
         }
 
-        // AK-4: the kg information is both values or neither, each positive with at most the kilogram scale (3 decimals).
-        if (share.CarriesKilogramInformation && (share.TheoreticalKilograms is not { } theoretical || share.ActualKilograms is not { } actual
-            || theoretical <= 0m || actual <= 0m
-            || decimal.Round(theoretical, KilogramInformationScale, MidpointRounding.AwayFromZero) != theoretical
-            || decimal.Round(actual, KilogramInformationScale, MidpointRounding.AwayFromZero) != actual))
+        // AK-4: a piece line always carries its actual (scale) kg; SAT-D473: its theoretical kg only when a kg/unit was pinned at
+        // approval. Each present value is positive with at most the kilogram scale (3 decimals); a theoretical kg never travels alone.
+        if (share.CarriesKilogramInformation && (share.ActualKilograms is not { } actual || actual <= 0m
+            || decimal.Round(actual, KilogramInformationScale, MidpointRounding.AwayFromZero) != actual
+            || share.TheoreticalKilograms is { } theoretical && (theoretical <= 0m
+                || decimal.Round(theoretical, KilogramInformationScale, MidpointRounding.AwayFromZero) != theoretical)))
         {
-            throw new ArgumentException("Adetli fatura satırının teorik ve gerçek kg bilgisi birlikte ve pozitif olmalıdır.", nameof(share));
+            throw new ArgumentException("Adetli fatura satırının gerçek kg bilgisi pozitif olmalı; teorik kg varsa pozitif olmalıdır.", nameof(share));
         }
     }
 
