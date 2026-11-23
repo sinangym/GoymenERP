@@ -56,7 +56,7 @@ export const REPORTING_TEXT = {
     labelId: 'Etiket kimliği', direction: 'Yön',
   } as Record<string, string>,
   choiceLabels: {
-    receivable: 'Alacaklar', payable: 'Borçlar', forward: 'İleri (nereye gitti)', backward: 'Geri (nereden geldi)',
+    receivable: 'Alacak', payable: 'Borç', forward: 'İleri (nereye gitti)', backward: 'Geri (nereden geldi)',
   } as Record<string, string>,
   columnLabels: {
     labelCode: 'Etiket', labelId: 'Etiket kimliği', productId: 'Ürün', locationId: 'Lokasyon', heatNumber: 'Döküm no', coilNumber: 'Bobin no',
@@ -68,10 +68,10 @@ export const REPORTING_TEXT = {
     total: 'Toplam açık', itemCount: 'Açık kalem',
     occurredAt: 'Zaman', quantityKg: 'Miktar kg', partyRole: 'Taraf rolü', partyCode: 'Cari kodu', partyName: 'Cari unvanı', sourceKind: 'Kaynak türü',
     sourceId: 'Kaynak', documentDate: 'Belge tarihi', documentKind: 'Belge türü', documentNumber: 'Belge no',
-    counterpartyCompanyId: 'Karşı grup şirketi', currencyCode: 'Para birimi', netAmount: 'Net tutar',
+    counterpartyCompanyId: 'Karşı grup şirketi', initialAmount: 'İlk tutar', outstandingAmount: 'Açık tutar', status: 'Durum',
   } as Record<string, string>,
   summaryLabels: {
-    pageTotalKg: 'Sayfa toplamı kg', unknownAgeKg: 'Yaşı bilinmeyen kg', pageLines: 'Sayfadaki satır', groups: 'Cari hesap / para birimi grubu', otifLines: 'Zamanında ve tam satır', otifPercent: 'OTIF oranı (%)', events: 'Hareket', labels: 'Etiket',
+    pageTotalKg: 'Sayfa toplamı kg', unknownAgeKg: 'Yaşı bilinmeyen kg', pageLines: 'Sayfadaki satır', groups: 'Cari hesap / para birimi grubu', unmeasuredLines: 'Miktarı belirlenemeyen satır', otifLines: 'Zamanında ve tam satır', otifPercent: 'OTIF oranı (%)', events: 'Hareket', labels: 'Etiket',
     customers: 'Müşteri', pageRows: 'Sayfadaki satır', windowFull: 'İz sınırı doldu', productionStatus: 'Üretim bilgisi',
     partyStatus: 'Cari bilgisi', partyNameStatus: 'Cari unvanı bilgisi',
   } as Record<string, string>,
