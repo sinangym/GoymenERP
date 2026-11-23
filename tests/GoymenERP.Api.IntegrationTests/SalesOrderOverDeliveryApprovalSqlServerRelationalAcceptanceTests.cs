@@ -45,7 +45,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// 409, a larger total awaits a new approval, the shipper cannot approve, another company gets 404 and a reader without the name
 /// 403; the migration refuses to roll back over a recorded approval. SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class SalesOrderOverDeliveryApprovalSqlServerRelationalAcceptanceTests
+public sealed partial class SalesOrderOverDeliveryApprovalSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
