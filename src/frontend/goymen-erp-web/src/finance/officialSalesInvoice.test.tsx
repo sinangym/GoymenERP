@@ -14,7 +14,8 @@ const row = (patch: Record<string, unknown> = {}) => ({ invoiceId: Invoice, comp
   taxBaseFunctionalAmount: '10.0001', vatFunctionalAmount: '0', withholdingFunctionalAmount: '0', pdfDocumentId: Pdf, pdfDocumentVersionNo: 1,
   pdfSha256: 'a'.repeat(64), version: '1', status: 'PendingApproval', recordedBy: 'SENTETIK-maker', recordedAtUtc: '2026-11-17T10:00:00Z',
   approvedBy: null, approvedAtUtc: null, rejectedBy: null, rejectedAtUtc: null, rejectionReason: null, withdrawnBy: null, withdrawnAtUtc: null, ...patch })
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+const json = (body: unknown, status = 200, extra: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...extra } })
+const replayHeaders = { 'Idempotency-Replayed': 'true', 'Idempotency-Original-Correlation-Id': 'SENTETIK' }
 const result = (value: unknown) => ({ outcome: 'Succeeded', resource: value, isReplay: false, originalCorrelationId: 'SENTETIK', issues: [], existingOfficialNo: null })
 const boundary = vi.hoisted(() => ({ capture: vi.fn(() => ({})), report: vi.fn() }))
 const shell = vi.hoisted(() => ({ generation: 0, capabilities: ['finance.official-sales-invoices.approve'],
@@ -55,8 +56,11 @@ describe('official PDF first sales invoice', () => {
     const posts: { path: string; init: RequestInit }[] = []; let records = 0
     vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       posts.push({ path: String(url), init: init! })
-      if (String(url).endsWith('/reservations')) return json(result({ invoiceId: Invoice, companyId: Company, reservedBy: 'SENTETIK-maker', reservedAtUtc: '2026-11-17T10:00:00Z' }))
-      records++; return records === 1 ? json({}, 503) : json({ ...result(row()), isReplay: true })
+      if (String(url).endsWith('/reservations')) {
+        const { existingOfficialNo: _omitted, ...reservation } = result({ invoiceId: Invoice, companyId: Company, reservedBy: 'SENTETIK-maker', reservedAtUtc: '2026-11-17T10:00:00Z' })
+        return json(reservation)
+      }
+      records++; return records === 1 ? json({}, 503) : json({ ...result(row()), isReplay: true }, 200, replayHeaders)
     }))
     documents.upload.mockResolvedValue({ type: 'stored', upload: { document: { id: Pdf, contentType: 'application/pdf' } }, replayed: false })
     const pending = { id: Pdf, contentType: 'application/pdf', downloadable: false, scanState: 'NotScanned' }

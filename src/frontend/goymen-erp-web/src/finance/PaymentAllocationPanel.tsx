@@ -47,13 +47,23 @@ function Panel({ bound, paymentId, canWrite }: { readonly bound: NonNullable<Ret
   const item = items.find((value) => value.openItemId === openItemId) ?? null
   const parsed = parseAmountInput(amount)
   const frozen = attempt !== null || preparing
-  const run = async (value: PaymentAllocationAttempt, wasUnknown: boolean) => {
+  /**
+   * `final` (K3 P2-1): the user's explicit way out of an unknown attempt. The same key and body are sent once more;
+   * any decided server answer closes the attempt (a replay shows the recorded allocation). Only no answer or a 401/403
+   * — the session or authority, not this attempt — keeps it open, so leaving never mints a second key blindly.
+   */
+  const run = async (value: PaymentAllocationAttempt, wasUnknown: boolean, final = false) => {
     const fence = boundary.capture()
     const answer = await sendPaymentAllocation(companyId, value.key, value.request)
     if (answer.kind === 'refused' && (answer.status === 401 || answer.status === 403)) boundary.report(answer.status, fence)
     if (!mounted.current || recallPaymentAllocation(slot)?.key !== value.key) return
     if (answer.kind === 'answered' && answer.result.outcome === 'Succeeded') {
       settlePaymentAllocation(slot, value.key); setAttempt(null); setMessage(T.saved); setOpenItemId('')
+      void client.invalidateQueries({ queryKey: [bound.namespace, 'finance'] })
+    } else if (final && (answer.kind === 'unknown' || (answer.kind === 'refused' && (answer.status === 401 || answer.status === 403)))) {
+      setAttempt(unknownPaymentAllocation(slot, value.key)); setMessage(T.finalOpen)
+    } else if (final) {
+      settlePaymentAllocation(slot, value.key); setAttempt(null); setMessage(T.abandoned)
       void client.invalidateQueries({ queryKey: [bound.namespace, 'finance'] })
     } else if (answer.kind === 'unknown' || (wasUnknown && (answer.kind !== 'answered' || !answer.result.isReplay))) {
       setAttempt(unknownPaymentAllocation(slot, value.key)); setMessage(T.unknown)
@@ -111,7 +121,12 @@ function Panel({ bound, paymentId, canWrite }: { readonly bound: NonNullable<Ret
       <button type="button" disabled={page === 0 || frozen} onClick={() => { setPage((value) => value - 1); setOpenItemId('') }}>{T.previous}</button>
       <button type="button" disabled={(!data.hasMore && !data.hasMoreAllocations) || frozen} onClick={() => { setPage((value) => value + 1); setOpenItemId('') }}>{T.next}</button>
     </>}
-    {attempt?.phase !== 'unknown' ? null : <button type="button" onClick={() => { const next = retryPaymentAllocation(slot); if (next) { setAttempt(next); void run(next, true) } }}>{T.retry}</button>}
+    {attempt?.phase !== 'unknown' ? null : <>
+      <button type="button" onClick={() => { const next = retryPaymentAllocation(slot); if (next) { setAttempt(next); void run(next, true) } }}>{T.retry}</button>
+      <button type="button" aria-describedby={`payment-allocation-final-help-${paymentId}`}
+        onClick={() => { const next = retryPaymentAllocation(slot); if (next) { setAttempt(next); void run(next, true, true) } }}>{T.finalCheck}</button>
+      <p id={`payment-allocation-final-help-${paymentId}`}>{T.finalCheckHelp}</p>
+    </>}
     {message !== null ? <p role="status">{message}</p> : attempt?.phase === 'unknown' ? <p role="status">{T.unknown}</p> : null}
   </section>
 }

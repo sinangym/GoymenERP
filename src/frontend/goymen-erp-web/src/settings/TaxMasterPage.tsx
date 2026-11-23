@@ -13,6 +13,7 @@
  *  - Remounted per committed context and route entry; a group (multi-company) context shows the no-company state.
  */
 
+import { EditedAttemptNotice } from './EditedAttemptNotice'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '../ui/Button'
@@ -502,6 +503,7 @@ function Footer<T>({
           {taxRefusalText(status.status, status.code)}
         </p>
       ) : null}
+      <EditedAttemptNotice status={status} />
       {status.kind === 'unknown' ? (
         <p role="alert" className={styles.error}>
           {TAX_TEXT.unknownOutcome}

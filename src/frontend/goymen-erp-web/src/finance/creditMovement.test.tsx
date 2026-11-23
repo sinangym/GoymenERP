@@ -17,7 +17,12 @@ const row = (): CreditMovement => ({ id: Movement, companyId: Company, version: 
   isOwnProposal: false, proposedAtUtc: '2026-11-17T09:00:00Z', decidedAtUtc: null, rejectionReason: null, reversedByMovementId: null, openingPeriodVersion: null,
   moneyProfile: { profileId: Currency, profileVersion: 1, currencyScale: 2, smallestCurrencyUnit: '0.01' } })
 const account = { id: Account, companyId: Company, version: '2', status: 'Approved', currencyId: Currency, group: 'Cash' } as CreditAccount
-const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } })
+const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: {
+  'Content-Type': 'application/json',
+  // Contract: a body replay is announced by the same headers (K3 P2-3).
+  ...(typeof value === 'object' && value !== null && ((value as { isReplay?: unknown }).isReplay === true)
+    ? { 'Idempotency-Replayed': 'true', 'Idempotency-Original-Correlation-Id': String((value as { originalCorrelationId?: unknown }).originalCorrelationId) } : {}),
+} })
 const boundary = vi.hoisted(() => ({ capture: () => ({}), report: vi.fn() }))
 vi.mock('../shell/useAuthBoundary', () => ({ useAuthBoundary: () => boundary }))
 vi.mock('../shell/shellContext', () => ({ useShellState: () => ({ routeEntryGeneration: 0 }) }))

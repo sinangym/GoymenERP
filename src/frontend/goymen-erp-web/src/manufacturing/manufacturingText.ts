@@ -354,6 +354,8 @@ export const REPLAYED_DETAIL =
 
 const RULE_TEXT: Record<string, string> = {
   manufacturing_order_closed: CLOSED_ORDER_TEXT,
+  manufacturing_output_label_code_conflict:
+    'Bu çıktı etiket kodu şirkette zaten kullanılıyor; kod kendiliğinden değiştirilmez. Başka bir etiket kodu girin.',
   manufacturing_unexplained_difference:
     'Emir kapanmadı: en az bir ana ruloda açıklanamayan kütle farkı var. Fark tolerans ile geçilmez ve bir sınıfa ' +
     'yazılmaz; eksik kalan çıktı, iade ya da WIP kaydı tamamlandığında kapanış yeniden denenebilir.',

@@ -1,3 +1,4 @@
+import { EditedAttemptNotice } from './EditedAttemptNotice'
 import { useState, type FormEvent } from 'react'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
@@ -65,7 +66,7 @@ function Editor({ data, finish }: { readonly data: FinanceOpeningPeriod; readonl
     <Field label={T.newState}>{(control) => <select {...control} required value={open} onChange={(event) => setOpen(event.target.value)}><option value="">{T.choose}</option><option value="open">{T.open}</option><option value="closed">{T.closed}</option></select>}</Field>
     <section aria-label={T.preview}><h3>{T.preview}</h3><p>{stateLabel(data.state)} → {open === '' ? T.choose : open === 'open' ? T.open : T.closed}</p><p>{T.effect}</p></section>
     <Field label={T.reason}>{(control) => <textarea {...control} required maxLength={4000} value={reason} onChange={(event) => setReason(event.target.value)} />}</Field>
-    </fieldset>{attempt.status.kind === 'unknown' && <p role="alert">{T.unknown}</p>}{attempt.status.kind === 'refused' && <p role="alert">{T.refused}</p>}
+    </fieldset>{attempt.status.kind === 'unknown' && <p role="alert">{T.unknown}</p>}<EditedAttemptNotice status={attempt.status} />{attempt.status.kind === 'refused' && <p role="alert">{T.refused}</p>}
     <Button type="submit" variant="primary" disabled={busy || (!valid && frozen === null)}>{busy ? T.pending : frozen !== null ? T.retry : T.save}</Button>
     <Button type="button" disabled={busy || frozen !== null} onClick={() => finish(null)}>{T.cancel}</Button>
   </form>
