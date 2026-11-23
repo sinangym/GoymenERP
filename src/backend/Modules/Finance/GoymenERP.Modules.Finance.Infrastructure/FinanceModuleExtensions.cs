@@ -443,8 +443,8 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<ISettingsPrerequisiteProvider>(),
             provider.GetRequiredService<IFinanceRecordPeriodRule>(),
             provider.GetRequiredService<IAuditEventCollector>(),
-            // FNS-D48/FNS-D55: the expense payment reads its own Settings money profile row
-            // (finance.expense-payment.v1), managed apart from the manual bank payment's.
+            // FNS-D48/FNS-D55: the expense payment's own Settings money row (approved with the manual bank payment's
+            // values: TRY, scale 2, per seed company), never the manual bank payment's key.
             new ExpensePaymentBinding(FinanceMoneyOperations.ExpensePaymentV1),
             new ExpensePaymentAuditEnvelopes(
                 Envelope(provider, FinancePermissionNames.ExpensePaymentDraftSave, permissions,

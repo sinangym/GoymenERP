@@ -71,8 +71,16 @@ public sealed class ExpensePaymentServiceTests
         // The Settings money profile screen lists and accepts this row (the same write path as every authoring target).
         Assert.True(MoneyProfileAuthoringCatalogV1.Allows(ApprovedUnitProfileCatalog.GdcCompanyId,
             SettingsCurrencyIdentitiesV1.TurkishLira, FinanceMoneyOperations.ExpensePaymentV1));
-        Assert.DoesNotContain(ApprovedMoneyProfileCatalog.Approved.Entries,
-            row => row.Operations.Contains(FinanceMoneyOperations.ExpensePaymentV1));
+        // FNS-D55: every seed company's approved TRY row lists the key with the manual bank payment's values, so the
+        // payment works before any authored profile.
+        Assert.All(ApprovedMoneyProfileCatalog.Approved.Entries,
+            row => Assert.True(row.Operations.Contains(FinanceMoneyOperations.ExpensePaymentV1) && row.Scale == 2));
+        var gdc = new CompanyContext();
+        gdc.Set(ApprovedUnitProfileCatalog.GdcCompanyId);
+        var approved = await new ApprovedSettingsPrerequisiteProvider(gdc, new GdcActor()).GetMoneyProfileAsync(
+            SettingsCurrencyIdentitiesV1.TurkishLira, FinanceMoneyOperations.ExpensePaymentV1, OccurredOn);
+        Assert.Equal((FinanceMoneyOperations.ExpensePaymentV1, ApprovedMoneyProfileCatalog.GdcTurkishLiraV1.ProfileId, 2),
+            (approved.Operation, approved.Profile.ProfileId, approved.Scale));
 
         await using var run = await Run.StartAsync();
         await using (var legacy = run.Scope("maker", new AllowAll(), new UnavailableTreasuryBalanceGuard(),
@@ -173,8 +181,10 @@ public sealed class ExpensePaymentServiceTests
         Assert.Equal(ExpensePaymentStatuses.Draft, (await verify.ExpensePayments.SingleAsync()).Status);
     }
 
+    /// <summary>FNS-D118: with no separate send step, every reviser of the draft is on the preparer's side and cannot
+    /// approve it; an approver who never saved the draft can.</summary>
     [Fact]
-    public async Task Reviser_of_the_draft_cannot_approve_it_and_a_third_actor_can()
+    public async Task Fns_d118_reviser_of_the_draft_is_a_preparer_and_cannot_approve_it_and_a_third_actor_can()
     {
         await using var run = await Run.StartAsync();
         ExpensePaymentCommandResult draft;
@@ -219,8 +229,9 @@ public sealed class ExpensePaymentServiceTests
             (checkerApproval.Outcome, checkerApproval.Resource!.Status));
     }
 
+    /// <summary>FNS-D118: only a successful draft save puts the actor on the preparer's side; a refused one does not.</summary>
     [Fact]
-    public async Task Actor_whose_draft_revision_was_refused_is_not_a_maker()
+    public async Task Fns_d118_actor_whose_draft_revision_was_refused_is_not_a_preparer()
     {
         await using var run = await Run.StartAsync();
         ExpensePaymentCommandResult draft;
@@ -588,6 +599,14 @@ public sealed class ExpensePaymentServiceTests
         public IExpensePaymentService Service => service;
         public FinanceContext Context => context;
         public ValueTask DisposeAsync() => db.DisposeAsync();
+    }
+
+    private sealed class GdcActor : ICurrentUser
+    {
+        public bool IsAuthenticated => true;
+        public string? UserId => "SENTETIK-settings-reader";
+        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { ApprovedUnitProfileCatalog.GdcCompanyId };
+        public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
     }
 
     private sealed class AllowAll : IFinancePermissionPort
