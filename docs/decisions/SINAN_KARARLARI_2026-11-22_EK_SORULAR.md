@@ -91,6 +91,8 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | E-77 | Bayatlayan SMM düzeltme önerisi? (WP5) | **Bayat diye kapatılsın + bildirim (Önerilen)** | Seçilmeyen: "Kutuda 'bayat' olarak kalsın". |
 | E-78 | Ekranı olmayan onaylar (açılış maliyeti, kasa hesabı)? (WP5/WP6) | **İş kutusundan karar verilsin (Önerilen)** | Seçilmeyen: "Ayrı ekranlar yapılsın". |
 | E-79 | Kart kg/adet çelişkisi pratikte profil ölçüsünün kg/m tablosunda iki yönde farklı değer vermesidir (URN-D19); belgeye hangisi yazılsın? (SAT-D474 ayrıntısı, K3FIX-G4) | **Kartta girilen yön (Önerilen)** | Seçilmeyenler: "Büyük olan"; "Küçük olan"; "Onay reddedilsin". |
+| E-80 | Cari kartına yurt dışı IBAN girilebilsin mi? (WP12, FNS-D121) | **Evet, uluslararası doğrulamayla (Önerilen)** | Seçilmeyen: "Hayır, yalnız TR". |
+| E-81 | Not/görev eklenebilen kayıt türlerine satınalma mal kabulü eklensin mi? (WP9) | **Evet, port açılsın (Önerilen)** | Seçilmeyen: "Şimdilik hayır". |
 
 ## Kararlar
 
@@ -153,6 +155,8 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | FNS-D118 | Masraf ve elle banka ödemesi onayı (E-55; YOL-D23 uygulaması) | Siparişlerdeki gibi: kaydı giren taslağı değiştirebilir; onayı onay izni olan **müdür** verir. Ayrı "onaya gönder" adımı olmadığından taslağı giren ve değiştiren her kullanıcı hazırlayan tarafındadır ve **onaylayamaz** (bugünkü davranış karar olarak kabul edilir); başka ek dışlama yoktur. |
 | SAT-D474 | Kart kg/adedinde çelişki (E-56, E-57; SAT-D473'ü tamamlar) | Ürün kartının kaynakları adet başına teorik kg için farklı sonuç verirse sipariş onayı **reddedilmez**; belgeye **ağırlık tablosu** değeri yazılır ve sipariş teorik kg ile devam eder. Onaylayana iki değer ve fark uyarı olarak gösterilir; uyarı denetime yazılır. |
 | SAT-D477 | Tablo çelişkisinde kg/m (E-79; SAT-D474 ve URN-D19'u tamamlar) | Profil ölçüsü kg/m tablosunda iki yönde farklı değerle bulunursa belgeye **kartta girilen yönün** (ör. 40×60 girildiyse 40×60 satırı) kg/m'si ile hesaplanan kg/adet yazılır; ters yönün değeri ve fark onaylayana uyarı olarak gösterilir, tablonun düzeltilmesi gerektiği belirtilir ve uyarı denetime yazılır. SAT-D474'teki "ağırlık tablosu değeri" bu yön kuralıyla uygulanır. |
+| FNS-D122 | Yurt dışı IBAN (E-80; FNS-D121'i tamamlar) | Cari IBAN listesi tüm ülke IBAN'larını kabul eder; doğrulama ISO 13616'dır (mod-97 ve ülkeye göre uzunluk). TR IBAN için mevcut doğrulama aynen geçerlidir. |
+| YOL-D42 | Mal kabulüne not/görev (E-81; WP9) | Satınalma mal kabulü, kayda bağlı not ve görev türlerine eklenir; Satınalma mal kabulü kimliğiyle **okuma portu** sağlar, Work Satınalma tablosuna erişmez. |
 | YOL-D33 | Yükseltme zamanı (E-58; YOL-D17/YOL-D28 ayrıntısı) | Süresi dolan onaya hatırlatma gider; **bir süre sınıfı daha** (saat sınıfında 4 saat, iş günü sınıfında 2 iş günü) karar verilmezse onay yükseltme izni sahiplerine yükseltilir. ASSUMPTION-WP2-1'in yerine geçer. |
 | YOL-D34 | Sahipsiz onay (E-59; ROL-D3 uygulaması) | Onaylayabilecek kimse olmayan onay **`work.approvals.escalate`** izni sahiplerine gösterilir ve bildirilir; izin hiçbir role verilmez (atama insan kapısı). |
 | YOL-D35 | Özet saatleri izni (E-60; YOL-D25 ayrıntısı) | Günlük özet saatlerini **`settings.work-approval-duration.manage`** izni olan değiştirir; ayrı izin açılmaz. |
