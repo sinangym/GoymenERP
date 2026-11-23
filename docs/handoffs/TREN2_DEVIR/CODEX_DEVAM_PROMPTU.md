@@ -185,9 +185,23 @@ src/backend/GoymenERP.Api/GoymenERP.Api.csproj --context <XDbContext> --output-d
   stok-üretim / satınalma-satış), her oturum kendi dalında, sonra entegrasyon dalına merge.
 - Doküman PR'ları: iki DOCS review + hafif kontroller, CI şartı yok (22 Ekim kuralı).
 
-## 6. Sıradaki somut adımlar (bu dosya yazıldığı anda)
-1. `origin/claude/tren-2` son hâlini oku; 12 paket dalı + `claude/tren2-dokumanlar` birleşmiş mi kontrol et, eksikleri
-   birleştir, derle, test et.
+## 6. Sıradaki somut adımlar
+
+**Güncelleme (23 Kasım 2026):** 1. adım tamamlandı. `claude/tren-2` head'i `ab4a16de0`'dır. Bu head'e şunlar birleşti:
+main (tren-1), 12 paket dalı, karar dalı ve `claude/tren2-dokumanlar`.
+Durum:
+- Derleme 0 hata. 19 birim test projesi yeşil (17.917 test). Frontend tsc, lint ve vitest yeşil (10.806 test).
+- Api.IntegrationTests'te 3757 test geçti, 41 test kırmızı. 41'in hepsi henüz üretilmemiş karar dizininden
+  (AiYa1ReadToolsTests 23, AiEvalRunnerTests 18). Bunlar §3.3'te dizin üretilince geçmelidir.
+- Gerçek SQL testleri koşmadı, çünkü yerel Docker kapalıydı.
+- Birleşimde mantıksal çakışmalar çözüldü:
+  - WP5/WP6 açılış maliyeti onay kaynağı tek kayda indirildi.
+  - WP9 migration'ı WP2 bildirim türlerini koruyacak şekilde yeniden üretildi.
+  - WP12 ekstre portundaki bağımlılık döngüsü giderildi.
+- Pin'ler henüz üretilmedi: OpenAPI, guard, recovery, release ve araç kataloğu parmak izi. Bunlar §3.3'te
+  üretilecek. `finance.treasury-accounts.v1` parmak izi kesin yenilenecek.
+
+1. (Tamamlandı.) Yine de `git log origin/claude/tren-2` ile bu head'den sonra ne değiştiğine bak.
 2. §3.2'deki kalan paketleri (WP3, WP8, WP10, B1, B2, B4, B5, C2, C3, C5, C7, C8, C9, C1 kalıcı defter, YOL-D40,
    kredi grupları) tren-2 tabanından paralel başlat (en fazla 7–9 eşzamanlı).
 3. Hepsi birleşince §3.3 kapanış adımları.
