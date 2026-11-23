@@ -65,6 +65,7 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | E-51 | Tedarikçi revizyonunda, o alış satırına bağlı gelecek tahsis varsa ne olsun? (K3FIX-G4) | **Onayla serbest bıraksın** | Seçilmeyen: "Reddedilsin, önce tahsis kaldırılsın (Önerilen)". |
 | E-52 | Dövizli alışta kabul kısmen geri alınır/iade edilirse maliyet kuru ne zaman kesinleşsin? (K3FIX-G4, BS-1) | **Kalan miktar faturalanınca (Önerilen)** | Seçilmeyen: "İlk miktarın tamamı faturalanınca". |
 | E-53 | Adet tutan fiziksel tahsis kg olarak kısmen bırakılırsa kaç adet geri verilsin? (K3FIX-G3/F2) | **Adet zorunlu girilsin (Önerilen)** | Seçilmeyenler: "Kg oranıyla hesaplansın"; "Kısmi bırakma yasak kalsın". |
+| E-54 | Adetle satılan üründe adet başına kg hesaplanamıyorsa sipariş onayı ne olsun? (PR #1201 K3-B, SAT-D437) | **Onaylansın, kg bilgisi boş kalsın** | Seçilmeyenler: "Onay reddedilsin (Önerilen)"; "Onaylansın ama uyarı + gerekçe". |
 
 ## Kararlar
 
@@ -123,6 +124,7 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | ALS-D126 | Tedarikçi revizyonu ve gelecek tahsis (E-51) | Tedarikçi revizyonu istenen alış satırına bağlı aktif gelecek tahsis varsa kullanıcıya etkilenen tahsisler gösterilir; kullanıcı **onaylarsa** revizyon bu tahsisleri serbest bırakır (sipariş iptalindeki onaylı serbest bırakma gibi), onaysız istek reddedilir. Serbest bırakma denetime yazılır. |
 | ALS-D127 | Kısmi geri alma/iade sonrası maliyet kuru (E-52; BS-1 ayrıntısı) | Dövizli alışta kabulün bir kısmı geri alınmış veya iade edilmişse maliyet kuru, geri alınan/iade edilen kısım düşüldükten sonra **kalan miktarın tamamı faturalandığında** kesinleşir. |
 | KLN-D120 | Adetli tahsisin kısmi bırakılması (E-53; SAT-D463 ile aynı ilke) | Adet tutan fiziksel tahsis kg olarak kısmen bırakılırken kg ile birlikte **adet zorunludur**; adetsiz kısmi bırakma reddedilir. Tam bırakmada kalan adet sıfırlanır. |
+| SAT-D473 | Kg/adet yokken sipariş onayı (SAT-D437 ayrıntısı) | Adetle satılan ürünün teorik kg/adedi hesaplanamıyorsa satış siparişinin onayı **reddedilmez**; o satırın kg/adet kaydı **boş kalır** ve satırda kg fiyatı ile adetli marj "hesaplanamıyor" görünür (golden M11/K13). Ürün kartı sonradan düzeltilse de onaylı belge değişmez (SAT-D437). Sevkte fiziksel kg girişi (SAT-D462–D464) ve faturadaki gerçek kg kuralları aynen geçerlidir. |
 
 ## Taslağa doğrudan yansıyanlar (yeni karar değil)
 
