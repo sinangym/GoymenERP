@@ -93,6 +93,7 @@ işaretleri soranındır. Bu dosya bir **ajan aktarımıdır**; Issue #1189 kayd
 | E-79 | Kart kg/adet çelişkisi pratikte profil ölçüsünün kg/m tablosunda iki yönde farklı değer vermesidir (URN-D19); belgeye hangisi yazılsın? (SAT-D474 ayrıntısı, K3FIX-G4) | **Kartta girilen yön (Önerilen)** | Seçilmeyenler: "Büyük olan"; "Küçük olan"; "Onay reddedilsin". |
 | E-80 | Cari kartına yurt dışı IBAN girilebilsin mi? (WP12, FNS-D121) | **Evet, uluslararası doğrulamayla (Önerilen)** | Seçilmeyen: "Hayır, yalnız TR". |
 | E-81 | Not/görev eklenebilen kayıt türlerine satınalma mal kabulü eklensin mi? (WP9) | **Evet, port açılsın (Önerilen)** | Seçilmeyen: "Şimdilik hayır". |
+| E-82 | FNS-D118 yorumu doğru mu: ayrı gönder adımı olmadığından taslağı giren ve sonradan değiştiren herkes hazırlayan sayılır ve onaylayamaz; onayı bunlar dışındaki onay izni olan müdür verir? (PR #1201 K3-A P2-süreç) | **Evet, doğru (Önerilen)** | Seçilmeyenler: "Hayır, yalnız ilk giren onaylayamasın"; "Hayır, yalnız son değiştiren onaylayamasın". FNS-D118 Sinan teyidiyle kesinleşti. |
 
 ## Kararlar
 
