@@ -42,6 +42,14 @@ describe('WP5 Finance and Accounting inbox kinds', () => {
     expect(inboxModuleText('accounting')).toBe('Muhasebe')
   })
 
+  it('lists the Inventory opening-cost decision without a capability (YOL-D41)', () => {
+    const entry = WORK_INBOX_KINDS.find((candidate) => candidate.kind === 'inventory.opening-cost.v1')
+    expect(entry).toEqual({ kind: 'inventory.opening-cost.v1', module: 'inventory', capability: null })
+    expect(inboxKindText('inventory.opening-cost.v1')).toBe('Stok açılış maliyeti onayı')
+    expect(inboxRuleText('inventory.opening-cost-approval-required')).not.toBeNull()
+    expect(inboxPermissionText('inventory.opening-cost.approve')).toBe('Stok açılış maliyeti onayı')
+  })
+
   it('opens the period reopening only with its own ROL-D12 control', () => {
     const reopening = ACCOUNTING_INBOX_KINDS.find((entry) => entry.kind === 'accounting.period-reopening.v1')
     expect(reopening?.capability).toBe('accounting.periods.reopen')
@@ -50,7 +58,7 @@ describe('WP5 Finance and Accounting inbox kinds', () => {
 
   it('has words for every rule code, reference role and approve permission the sources emit', () => {
     for (const code of Object.keys(FINANCE_ACCOUNTING_RULE_TEXT)) {
-      expect(code).toMatch(/^(finance|accounting)\./)
+      expect(code).toMatch(/^(finance|accounting|inventory)\./)
       expect(inboxRuleText(code)).not.toBeNull()
     }
     for (const role of ROLES) expect(inboxRoleText(role), role).not.toBeNull()

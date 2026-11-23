@@ -1,6 +1,8 @@
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
+using GoymenERP.BuildingBlocks.Work;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Modules.Inventory.Infrastructure;
 
@@ -17,6 +19,9 @@ public static class InventoryOpeningCostRegistration
         ArgumentNullException.ThrowIfNull(services);
         services.AddScoped<IInventoryOpeningCostWriterV1>(provider => provider.GetRequiredService<InventoryStore>());
         services.AddScoped<IInventoryOpeningCostCommandV1, InventoryOpeningCostCommandService>();
+        // WP5 (YOL-D41): the pending submissions in the Work inbox; the decision is given from the inbox (WP8).
+        services.TryAddScoped<WorkInbox.InventoryWorkInboxFence>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.InventoryOpeningCostWorkInboxSourceV1>();
         return services;
     }
 }
