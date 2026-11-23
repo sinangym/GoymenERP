@@ -5,11 +5,11 @@
  * The answer's company must be the active company; a page's record must be the requested record.
  */
 
-// WP9 appends seven record kinds (the server's order; existing names never move). A dispatch note's notes are its loading
-// instruction's; a goods receipt's notes stay on its purchase order (the owner reads a receipt only by order + acceptance).
+// WP9 appends seven record kinds and YOL-D42 the purchase goods receipt (the server's order; existing names never move). A
+// dispatch note's notes are its loading instruction's; a goods receipt is addressed by its acceptance id.
 export const WORK_RECORD_TYPES = ['sales-order-draft', 'purchase-order', 'stock-label', 'manufacturing-plan', 'counterparty',
   'sales-invoice', 'loading-instruction', 'purchase-incoming-invoice', 'manufacturing-order', 'finance-manual-receipt',
-  'finance-manual-bank-payment', 'sales-quote'] as const
+  'finance-manual-bank-payment', 'sales-quote', 'purchase-goods-receipt'] as const
 export type WorkRecordType = (typeof WORK_RECORD_TYPES)[number]
 
 export const MY_TASKS_ROUTE = '/gorevlerim'

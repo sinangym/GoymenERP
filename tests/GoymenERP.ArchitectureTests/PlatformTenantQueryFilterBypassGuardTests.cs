@@ -6248,6 +6248,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // WP9; K3 review pending. Down refuses (52170, WP9 range, used by no other migration) while note read receipts or notes, tasks or notifications on record kinds 6..12 exist; use a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261122200838_WidenWorkRecordTypesAndNoteReads.cs"] =
                     new("8bedd8f941a95faa6dd0506081a2b36c6758b24ed2496e64b5f8bb7191d0ff24", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // YOL-D42 (WP9); K3 review pending. Down refuses (52171, WP9 range, used by no other migration) while a note, task or notification on a purchase goods receipt exists; use a forward fix. 1 lexical Sql call(s).
+                ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261123095430_AddWorkGoodsReceiptRecordType.cs"] =
+                    new("ded0c12bb75c7ad0bf1ef603e3ed65a1da40619d033f9a8b51fa5b5674e0d669", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // WP-C6; K3 review pending. Down refuses (52210, WP-C range, used by no other migration) while Work assistant memory entries, closures or oversight views exist; use a forward fix. 1 lexical Sql call(s).
                 ["src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261122201440_AddWorkAssistantMemory.cs"] =
                     new("c8b69576f8347846dbe40206bef8669e2c03fc2347a28c8e696795cdd176bd1a", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),

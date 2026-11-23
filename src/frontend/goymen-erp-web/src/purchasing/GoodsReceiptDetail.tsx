@@ -14,6 +14,7 @@ import { classifyOutcome } from '../shell/uiState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { Button } from '../ui/Button'
 import styles from './goodsReceiptDetail.module.css'
+import { RecordNotesSection } from '../work/RecordNotesSection'
 
 /** Address parameter naming the one receipt whose detail is open, so Back from its label reopens the same receipt. */
 const GOODS_RECEIPT_DETAIL_PARAM = 'kabul'
@@ -119,7 +120,11 @@ function DetailRead({ binding, detail, acceptanceId, linked }: {
   })
   return <section className={styles.body} aria-label={T.detailHeading} data-testid={`goods-receipt-detail-${acceptanceId}`}>
     {read.data?.type === 'ok-single'
-      ? <Facts detail={detail} receipt={read.data.data} linked={linked} />
+      ? <>
+        <Facts detail={detail} receipt={read.data.data} linked={linked} />
+        {/* YOL-D42 (WP9): the receipt's own notes and tasks, addressed by its acceptance id; opened on demand. */}
+        {linked ? <RecordNotesSection recordType="purchase-goods-receipt" recordId={read.data.data.acceptanceId} /> : null}
+      </>
       : <StateBlock subject={T.detailHeading}
           state={read.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(read.data)}
           onRetry={() => void read.refetch()} />}

@@ -6,8 +6,8 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence;
 public sealed partial class WorkDbContext
 {
     internal const string EmptyGuid = "'00000000-0000-0000-0000-000000000000'";
-    // WP9 widened 1..5 to 1..12 (WorkRecordTypesV1.StoredValues; a unit test keeps the two equal).
-    internal const string RecordTypeList = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12";
+    // WP9 widened 1..5 to 1..12, YOL-D42 to 1..13 (WorkRecordTypesV1.StoredValues; a unit test keeps the two equal).
+    internal const string RecordTypeList = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13";
     internal const string RecordNoteCheck =
         "[CompanyId] <> " + EmptyGuid + " AND [Id] <> " + EmptyGuid + " AND [RecordId] <> " + EmptyGuid
         + " AND [AuthorUserId] <> " + EmptyGuid + " AND [RecordType] IN (" + RecordTypeList + ") AND LEN([Body]) > 0"

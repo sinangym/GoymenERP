@@ -44,12 +44,12 @@ public sealed class WorkCollaborationDomainTests
     [Fact]
     public void Record_type_wire_names_round_trip_and_unknown_names_refuse()
     {
-        // WP9 appended seven kinds after the first five (values 6..12); existing values never move.
+        // WP9 appended seven kinds after the first five (values 6..12) and YOL-D42 the goods receipt (13); existing values never move.
         Assert.Equal(new[] { "sales-order-draft", "purchase-order", "stock-label", "manufacturing-plan", "counterparty",
                 "sales-invoice", "loading-instruction", "purchase-incoming-invoice", "manufacturing-order", "finance-manual-receipt",
-                "finance-manual-bank-payment", "sales-quote" },
+                "finance-manual-bank-payment", "sales-quote", "purchase-goods-receipt" },
             WorkRecordTypesV1.WireNames);
-        Assert.Equal(Enumerable.Range(1, 12), WorkRecordTypesV1.StoredValues);
+        Assert.Equal(Enumerable.Range(1, 13), WorkRecordTypesV1.StoredValues);
         foreach (var name in WorkRecordTypesV1.WireNames)
         {
             Assert.True(WorkRecordTypesV1.TryParse(name, out var type));
@@ -59,7 +59,7 @@ public sealed class WorkCollaborationDomainTests
         Assert.False(WorkRecordTypesV1.TryParse("Sales-Order-Draft", out _));
         Assert.False(WorkRecordTypesV1.TryParse(null, out _));
         Assert.False(WorkRecordTypesV1.IsKnown(0));
-        Assert.False(WorkRecordTypesV1.IsKnown(13));
+        Assert.False(WorkRecordTypesV1.IsKnown(14));
     }
 
     [Fact]

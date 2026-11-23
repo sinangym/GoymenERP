@@ -36,5 +36,5 @@ export const RECORD_TYPE_TEXT = {
   'manufacturing-plan': 'Üretim planı', counterparty: 'Cari',
   'sales-invoice': 'Satış faturası', 'loading-instruction': 'Yükleme talimatı / irsaliye', 'purchase-incoming-invoice': 'Gelen fatura',
   'manufacturing-order': 'Üretim emri', 'finance-manual-receipt': 'Tahsilat', 'finance-manual-bank-payment': 'Banka ödemesi',
-  'sales-quote': 'Teklif',
+  'sales-quote': 'Teklif', 'purchase-goods-receipt': 'Mal kabul',
 } as const
