@@ -45,7 +45,10 @@ describe('party balance transfer unknown attempt (K3 P2-1)', () => {
       .mockResolvedValueOnce({ kind: 'unknown' })
       .mockResolvedValueOnce({ kind: 'refused', status: 404 })
       .mockResolvedValueOnce({ kind: 'unknown' })
+      .mockResolvedValueOnce({ kind: 'refused', status: 400 })
       .mockResolvedValueOnce({ kind: 'refused', status: 404 })
+      .mockResolvedValueOnce({ kind: 'refused', status: 415 })
+      .mockResolvedValueOnce({ kind: 'answered', result: { outcome: 'ValidationFailed', resource: null, code: 'SENTETIK_refusal', replayed: false } })
     renderFinance(<PartyBalanceTransferPage canRecord />, { port: null, shell: shellFor(COMPANY_A), router: true })
 
     await screen.findByRole('option', { name: 'ESKI — SENTETIK eski' })
@@ -71,14 +74,25 @@ describe('party balance transfer unknown attempt (K3 P2-1)', () => {
     await screen.findByText(T.finalOpen)
     expect((screen.getByLabelText(T.reason) as HTMLTextAreaElement).disabled).toBe(true)
 
-    // A decided answer to the final check closes it and releases the form.
+    // A code-less 400/404/415 is answered before the command is admitted: it does not settle the first send, so the
+    // attempt stays open and frozen with the same key.
+    for (const count of [4, 5, 6]) {
+      fireEvent.click(await screen.findByRole('button', { name: T.finalCheck }))
+      await waitFor(() => expect(recordBalanceTransfer).toHaveBeenCalledTimes(count))
+      await screen.findByRole('button', { name: T.finalCheck })
+      expect(screen.queryByText(T.abandoned)).toBeNull()
+      expect((screen.getByLabelText(T.reason) as HTMLTextAreaElement).disabled).toBe(true)
+    }
+    await screen.findByText(T.finalOpen)
+
+    // A decoded refusal is the decided answer to the final check: it closes it and releases the form.
     fireEvent.click(screen.getByRole('button', { name: T.finalCheck }))
     await screen.findByText(T.abandoned)
     expect(screen.queryByRole('button', { name: T.finalCheck })).toBeNull()
     expect((screen.getByLabelText(T.reason) as HTMLTextAreaElement).disabled).toBe(false)
 
     const calls = vi.mocked(recordBalanceTransfer).mock.calls
-    expect(calls).toHaveLength(4)
+    expect(calls).toHaveLength(7)
     expect(new Set(calls.map((call) => call[1])).size).toBe(1)
     expect(calls.every((call) => call[2] === calls[0][2])).toBe(true)
   })

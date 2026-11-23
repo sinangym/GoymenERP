@@ -11,6 +11,7 @@ import {
   decodeManualBankPaymentPage,
   decodeManualBankPaymentView,
   type ApproveManualBankPaymentRequest,
+  type ManualBankPaymentCommandResult,
   type RecordManualBankPaymentRequest,
   type ManualBankPaymentDraftSaveRequest,
   type ManualBankPaymentView,
@@ -33,6 +34,14 @@ interface CommonProps {
 
 function key(): string {
   return globalThis.crypto.randomUUID()
+}
+
+/**
+ * The platform's 503 as the HTTP port restates it: `Unavailable` with no issue code. It states nothing about the
+ * attempt (the command may or may not have been admitted), so it is an unknown outcome, never a decided refusal.
+ */
+function isCodeLessUnavailable(result: ManualBankPaymentCommandResult): boolean {
+  return result.outcome === 'Unavailable' && result.issues.length === 0
 }
 
 function PaymentFacts({ payment }: { readonly payment: ManualBankPaymentView }) {
@@ -329,7 +338,8 @@ function ManualBankPaymentDetailContent({
     const reply = await port.saveManualBankPaymentDraft({ companyId }, attempt.key, attempt.request)
       .catch(() => ({ kind: 'no-reply' } as const))
     setBusy(false)
-    if (reply.kind === 'no-reply') {
+    const decoded = reply.kind === 'no-reply' ? null : decodeManualBankPaymentCommandResult(reply.body, companyId)
+    if (decoded === null || decoded.ok && isCodeLessUnavailable(decoded.value)) {
       setUnknownEdit(true)
       setMessage('Sonuç bilinmiyor. Aynı anahtar ve değişmeyen alanlarla tekrar deneyin.')
       return
@@ -337,7 +347,6 @@ function ManualBankPaymentDetailContent({
 
     editAttempt.current = null
     setUnknownEdit(false)
-    const decoded = decodeManualBankPaymentCommandResult(reply.body, companyId)
     if (!decoded.ok || decoded.value.outcome !== 'Succeeded'
       || decoded.value.resource.id !== payment.id || decoded.value.resource.status !== 'Draft') {
       setMessage(decoded.ok && decoded.value.outcome === 'Denied'
@@ -383,7 +392,8 @@ function ManualBankPaymentDetailContent({
       return
     }
     const decoded = decodeManualBankPaymentCommandResult(reply.body, companyId)
-    if (!decoded.ok || decoded.value.outcome === 'Succeeded'
+    // A 503 arrives from the port as a code-less `Unavailable`: the outcome is unknown, so the key is kept.
+    if (!decoded.ok || isCodeLessUnavailable(decoded.value) || decoded.value.outcome === 'Succeeded'
       && (decoded.value.resource.id !== paymentId
         || decoded.value.resource.status !== (operation === 'approve' ? 'Approved' : 'Recorded'))) {
       setUnknownSettlement(true)

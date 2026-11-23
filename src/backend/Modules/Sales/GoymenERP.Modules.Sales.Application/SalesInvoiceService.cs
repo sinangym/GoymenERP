@@ -588,10 +588,13 @@ public sealed partial class SalesInvoiceService(
                 item.ShipmentDate, share.SalesOrderId, share.SalesOrderLineId, item.Basis.Revision, share.ProductId, share.UnitId,
                 scaleKilograms, scaleKilograms.ToString(CultureInfo.InvariantCulture), item.Line.Commercial, item.Line.Tax!);
 
-        var perUnit = order.KilogramsPerUnitOf(share.SalesOrderLineId)?.KilogramsPerUnit
-            ?? throw NotReady([new(item.Field, SalesInvoiceReasonCodesV1.KilogramsPerUnitMissing)]);
+        // SAT-D473: an order line approved without a kg/unit (the card gave none) is still invoiced as pieces × piece price with its
+        // scale kg; its theoretical kg stays empty (never zero), so its theoretical kg price reads unavailable.
+        var perUnit = order.KilogramsPerUnitOf(share.SalesOrderLineId)?.KilogramsPerUnit;
         var pieces = share.Quantity / 1.000000000000000000000000000m;
-        var theoretical = decimal.Round(pieces * perUnit, SalesInvoice.KilogramInformationScale, MidpointRounding.AwayFromZero);
+        decimal? theoretical = perUnit is { } figure
+            ? decimal.Round(pieces * figure, SalesInvoice.KilogramInformationScale, MidpointRounding.AwayFromZero)
+            : null;
         return new SalesInvoiceShareInput(Guid.NewGuid(), share.ShipmentId, share.DispatchNoteId, share.SystemNumber, share.NoteLineNo,
             item.ShipmentDate, share.SalesOrderId, share.SalesOrderLineId, item.Basis.Revision, share.ProductId, share.UnitId,
             pieces, pieces.ToString(CultureInfo.InvariantCulture), item.Line.Commercial, item.Line.Tax!, theoretical, scaleKilograms);

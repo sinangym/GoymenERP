@@ -180,6 +180,7 @@ public sealed class ExpensePaymentService(
                 cancellationToken);
         if (!ExpensePaymentValidator.CanApprove(ToStatus(row.Status), row.PreparedBy, context.ActorId, request))
             return Refused(context, CommandOutcome.ValidationFailed, Issue("paymentId", "payment_approval_invalid"));
+        // FNS-D118: a reviser of the draft is a preparer and cannot approve it.
         var revisedByApprover = await RevisedByAsync(row.Id, context.ActorId, cancellationToken);
         if (await FenceAsync(context, action, row.Id, cancellationToken) is { } afterRevisers) return afterRevisers;
         if (revisedByApprover)
@@ -579,8 +580,10 @@ public sealed class ExpensePaymentService(
     }
 
     /// <summary>
-    /// SINAN_KARARLARI_2026-10-21 P6 (maker != approver) with No 103: whoever revised the draft is a maker as well as
-    /// its first preparer, so a successful draft save by the actor for this payment bars that actor from approving it.
+    /// FNS-D118 (SINAN_KARARLARI_2026-11-22_EK_SORULAR.md, E-55; YOL-D23), on P6 (maker != approver, SINAN_KARARLARI_2026-10-21)
+    /// with No 103: as on orders, the preparer may revise the draft and an approver holding the approval permission decides.
+    /// There is no separate "send for approval" step, so everyone who prepared or revised the draft is on the preparer's
+    /// side: a successful draft save by the actor for this payment bars that actor from approving it. No other exclusion.
     /// The successful saves are the module's own command rows (one per accepted create/update, written with the row).
     /// </summary>
     private async Task<bool> RevisedByAsync(Guid paymentId, string actorId, CancellationToken cancellationToken)

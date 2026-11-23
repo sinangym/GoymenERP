@@ -14,7 +14,7 @@ const context: OfficialInvoiceUploadAttemptContext = {
 const prepared = { utf8Csv: 'aW52b2ljZSxjc3Y=', sha256: checksum }
 const preview = {
   templateVersion: 'finance-official-invoice-installment-csv.v1', sourceSha256: checksum,
-  batchId, batchVersion: 'invoice-v1', rowCount: 1, issues: [],
+  batchId, batchVersion: 'invoice-v1', rowCount: 1, issues: [], taxWarnings: [],
 } as const
 const pending = {
   batchId, companyId, batchVersion: 'invoice-v1', batchChecksum: checksum,
@@ -64,6 +64,20 @@ describe('OfficialInvoiceImportUploadForm', () => {
     expect(upload).toHaveBeenCalledWith(batchId, 'invoice-v1', prepared, idempotencyKey, expect.any(AbortSignal))
     expect((api.preview as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0])
       .toBeLessThan(upload.mock.invocationCallOrder[0])
+  })
+
+  it('shows the server tax warnings of the preview and still allows sending for approval', async () => {
+    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValueOnce(batchId).mockReturnValueOnce(idempotencyKey)
+    const api = client(vi.fn())
+    api.preview = vi.fn().mockResolvedValue({ kind: 'ready', preview: { ...preview, taxWarnings: [{
+      code: 'finance_official_invoice_tax_inconsistent', sourceDocumentId: '44444444-4444-4444-8444-444444444444',
+      expectedPayableFunctionalAmount: '1200', payableFunctionalAmount: '1200.01', differenceFunctionalAmount: '0.01' }] } })
+    render(<OfficialInvoiceImportUploadForm context={context} client={api} />)
+    chooseFileAndVersion()
+    await previewSelectedFile()
+    const note = screen.getByRole('note')
+    expect(note.textContent).toContain('Belge: 44444444-4444-4444-8444-444444444444')
+    expect(note.textContent).toContain('Fark (TL): 0.01')
   })
 
   it('freezes the selected file and version while an asynchronous preview is in flight', async () => {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { decodePeriodLifecycle, submitPeriodReopening, type PeriodLifecycle, type PeriodReopeningAttempt } from './periodLifecycleApi'
+import { decodePeriodLifecycle, decodePeriodReopening, submitPeriodReopening, type PeriodLifecycle, type PeriodReopeningAttempt } from './periodLifecycleApi'
+import { keyProbes } from './exactKeysTestSupport'
 const id = (n: number) => `ae000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const company = id(1); const period = id(2)
 const view = (): PeriodLifecycle => ({ companyId: company, periodId: period, periodVersion: 3,
@@ -35,5 +36,17 @@ describe('period lifecycle source contract', () => {
     expect(await submitPeriodReopening(company, attempt)).toEqual({ type: 'unknown' })
     expect((await submitPeriodReopening(company, attempt)).type).toBe('applied')
     expect(fetch.mock.calls[0]).toEqual(fetch.mock.calls[1])
+  })
+})
+describe('period lifecycle exact key sets', () => {
+  it('rejects an unknown or missing key on the lifecycle, a closure and a reopening', () => {
+    expect(decodePeriodLifecycle(view(), company, period)).not.toBeNull()
+    for (const [label, body] of keyProbes(view(), [[[], 'periodVersion'], [['closures', 0], 'lineCount'], [['reopenings', 0], 'reason']]))
+      expect(decodePeriodLifecycle(body, company, period), label).toBeNull()
+  })
+  it('rejects an unknown or missing key on a reopening command response', () => {
+    const reopening = view().reopenings[0]
+    expect(decodePeriodReopening(reopening, company, period)).toEqual(reopening)
+    for (const [label, body] of keyProbes(reopening, [[[], 'approvedBy']])) expect(decodePeriodReopening(body, company, period), label).toBeNull()
   })
 })

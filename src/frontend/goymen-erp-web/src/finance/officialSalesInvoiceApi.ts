@@ -12,6 +12,11 @@ export type OfficialAmountField = typeof OFFICIAL_AMOUNT_FIELDS[number]
 export interface OfficialInvoiceInput extends Record<OfficialAmountField, string> {
   readonly officialNo: string; readonly ettn: string; readonly customerPartyId: string; readonly currencyId: string; readonly invoiceDate: string
 }
+/** FNS-D64: the server's non-blocking tax consistency warning. Every amount is the server's text; nothing is computed here. */
+export interface OfficialInvoiceTaxWarning {
+  readonly code: string; readonly sourceDocumentId: string | null; readonly expectedPayableFunctionalAmount: string
+  readonly payableFunctionalAmount: string; readonly differenceFunctionalAmount: string
+}
 export interface OfficialInvoice extends Record<OfficialAmountField, string> {
   readonly invoiceId: string; readonly companyId: string; readonly officialNo: string; readonly ettn: string; readonly customerPartyId: string; readonly currencyId: string
   readonly invoiceDate?: string | null; readonly pdfDocumentId: string; readonly pdfDocumentVersionNo: number; readonly pdfSha256: string; readonly version: string
@@ -19,6 +24,7 @@ export interface OfficialInvoice extends Record<OfficialAmountField, string> {
   readonly approvedBy: string | null; readonly approvedAtUtc: string | null; readonly rejectedBy: string | null; readonly rejectedAtUtc: string | null
   readonly rejectionReason: string | null; readonly withdrawnBy: string | null; readonly withdrawnAtUtc: string | null
   readonly sourceDifferences?: readonly { readonly importBatchId: string; readonly sourceDocumentId: string; readonly officialNo: string; readonly ettn: string; readonly fields: readonly string[]; readonly invoiceDate: string | null; readonly payableFunctionalAmount: string | null; readonly winner: string }[] | null
+  readonly taxWarning?: OfficialInvoiceTaxWarning | null
 }
 export interface OfficialInvoicePage { readonly companyId: string; readonly items: readonly OfficialInvoice[]; readonly nextCursor: string | null }
 export interface OfficialInvoiceCurrency { readonly currencyId: string; readonly code: string; readonly displayLabel: string }
@@ -39,7 +45,18 @@ const nullableInstant = (v: unknown) => v === null || isInstant(v)
 const INVOICE_REQUIRED = ['approvedAtUtc', 'approvedBy', 'companyId', 'currencyId', 'customerPartyId', 'ettn', 'invoiceId', 'officialNo',
   ...OFFICIAL_AMOUNT_FIELDS, 'pdfDocumentId', 'pdfDocumentVersionNo', 'pdfSha256', 'recordedAtUtc', 'recordedBy', 'rejectedAtUtc', 'rejectedBy',
   'rejectionReason', 'status', 'version', 'withdrawnAtUtc', 'withdrawnBy']
-const INVOICE_OPTIONAL = ['invoiceDate', 'sourceDifferences']
+const INVOICE_OPTIONAL = ['invoiceDate', 'sourceDifferences', 'taxWarning']
+// FinanceOfficialInvoiceTaxWarningV1: all five keys are required; sourceDocumentId is null on a manual record.
+const TAX_WARNING_FIELDS = ['code', 'differenceFunctionalAmount', 'expectedPayableFunctionalAmount', 'payableFunctionalAmount', 'sourceDocumentId']
+// The expected payable may be negative text (withholding above base + VAT); the other two amounts never are.
+const SIGNED_DECIMAL_RE = /^-?[0-9]+(?:\.[0-9]+)?$/
+export function decodeOfficialInvoiceTaxWarning(value: unknown): OfficialInvoiceTaxWarning | null {
+  return record(value) && hasExactKeys(value, TAX_WARNING_FIELDS) && text(value.code)
+    && (value.sourceDocumentId === null || isBoundUuid(value.sourceDocumentId))
+    && typeof value.expectedPayableFunctionalAmount === 'string' && SIGNED_DECIMAL_RE.test(value.expectedPayableFunctionalAmount)
+    && isNonNegativeDecimalText(value.payableFunctionalAmount) && isNonNegativeDecimalText(value.differenceFunctionalAmount)
+    ? value as unknown as OfficialInvoiceTaxWarning : null
+}
 const DIFFERENCE_FIELDS = ['ettn', 'fields', 'importBatchId', 'invoiceDate', 'officialNo', 'payableFunctionalAmount', 'sourceDocumentId', 'winner']
 const PAGE_FIELDS = ['companyId', 'items', 'nextCursor']
 const CURRENCIES_FIELDS = ['companyId', 'items']
@@ -67,6 +84,7 @@ export function decodeOfficialInvoice(value: unknown, company: string): Official
     || !isBoundUuid(x.sourceDocumentId) || !text(x.officialNo) || !isBoundUuid(x.ettn) || !Array.isArray(x.fields) || x.fields.length === 0
     || x.fields.some(k => typeof k !== 'string' || !differenceFields.includes(k)) || x.invoiceDate !== null && !date(x.invoiceDate)
     || x.payableFunctionalAmount !== null && !isNonNegativeDecimalText(x.payableFunctionalAmount) || !['manual', 'approved-import'].includes(x.winner as string)))) return null
+  if (value.taxWarning != null && decodeOfficialInvoiceTaxWarning(value.taxWarning) === null) return null
   return value as unknown as OfficialInvoice
 }
 export function decodeOfficialInvoicePage(body: unknown, company: string): OfficialInvoicePage | null {

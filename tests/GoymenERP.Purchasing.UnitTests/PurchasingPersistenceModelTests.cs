@@ -641,7 +641,7 @@ public sealed class PurchasingPersistenceModelTests
             checks["CK_PurchaseSupplierReturns_Values"], StringComparison.Ordinal);
         var replacement = new AllowPurchaseSupplierReturnReplacement();
         Assert.DoesNotContain(replacement.UpOperations, operation => operation is SqlOperation);
-        Assert.Contains("THROW 52300", Assert.IsType<SqlOperation>(replacement.DownOperations[0]).Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 52073", Assert.IsType<SqlOperation>(replacement.DownOperations[0]).Sql, StringComparison.Ordinal);
         Assert.Single(replacement.DownOperations.OfType<SqlOperation>());
         Assert.DoesNotContain("<> [RequestedBy]", PurchasingDbContext.SupplierReturnDecisionCheck, StringComparison.Ordinal);
         var exit = Assert.Single(returns.GetIndexes(), index => index.GetDatabaseName() == "UX_PurchaseSupplierReturns_MovementId");

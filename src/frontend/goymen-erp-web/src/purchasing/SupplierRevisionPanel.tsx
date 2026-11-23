@@ -41,6 +41,8 @@ function SupplierRevisionBody(props: Props) {
   const [search, setSearch] = useState(''); const [supplier, setSupplier] = useState(''); const [reason, setReason] = useState('')
   const [suppliers, setSuppliers] = useState<PurchasingSupplierOffer | null>(null); const [supplierStatus, setSupplierStatus] = useState('')
   const supplierGeneration = useRef(0)
+  // The key whose outcome is still unknown (restored from storage, or already sent once): its next send is a retry.
+  const unknownKey = useRef(initial.pending?.idempotencyKey ?? null)
   // ALS-D126: the revision refused because of active future allocations, with the list the actor must confirm.
   const [allocationReview, setAllocationReview] = useState<{ readonly command: Extract<SupplierRevisionCommand, { kind: 'supplier' }>
     readonly links: readonly PurchaseOrderFutureAllocationLink[] | null; readonly status: string } | null>(null)
@@ -72,8 +74,12 @@ function SupplierRevisionBody(props: Props) {
     const result = await sendSupplierRevision(attempt)
     if (!alive.current) return
     inFlight.current = false; setSending(false)
+    const retried = unknownKey.current === attempt.idempotencyKey; unknownKey.current = attempt.idempotencyKey
     if (result.type === 'unknown') { setMessage(T.unknown); return }
     if (result.type === 'failed' && (result.status === 401 || result.status === 403)) boundary.report(result.status, captured)
+    // A 401/403 or code-less refusal on the RETRY of an unknown attempt is answered before the owner reads the idempotency
+    // receipt, so it decides nothing about the first send: the same key is kept (virman pattern, frontend-screen-states §3).
+    if (retried && result.type === 'failed' && (result.status === 401 || result.status === 403 || result.code === null)) { setMessage(T.unknown); return }
     try { clearSupplierRevisionAttempt(storageKey, attempt); setPending(null) }
     catch { setStorageFault(true); setMessage(T.pendingStorage); return }
     if (result.type === 'failed' && result.status === 409 && attempt.command.kind === 'supplier'

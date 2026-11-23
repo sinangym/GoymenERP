@@ -17,4 +17,14 @@ describe('KIM-S19 finance opening period contract', () => {
     expect(decodeFinanceOpeningPeriod({ ...view, state: 1 }, COMPANY_A)).toBeNull()
     expect(decodeFinanceOpeningPeriod({ ...view, versions: [version, version] }, COMPANY_A)).toBeNull()
   })
+  it('K3 P2: accepts only the exact key sets of the view and of each version', () => {
+    const version = { version: '1', open: true, recordedBy: 'SENTETIK', recordedAtUtc: '2026-11-16T10:00:00Z', reason: 'SENTETIK' }
+    const view = { companyId: COMPANY_A, state: 1, version: '1', versions: [version] }
+    const without = (value: object, key: string) => Object.fromEntries(Object.entries(value).filter(([name]) => name !== key))
+    expect(decodeFinanceOpeningPeriod(view, COMPANY_A)).toEqual(view)
+    expect(decodeFinanceOpeningPeriod({ ...view, extra: 'SENTETIK' }, COMPANY_A)).toBeNull()
+    expect(decodeFinanceOpeningPeriod({ ...view, versions: [{ ...version, extra: 'SENTETIK' }] }, COMPANY_A)).toBeNull()
+    for (const key of Object.keys(view)) expect(decodeFinanceOpeningPeriod(without(view, key), COMPANY_A)).toBeNull()
+    for (const key of Object.keys(version)) expect(decodeFinanceOpeningPeriod({ ...view, versions: [without(version, key)] }, COMPANY_A)).toBeNull()
+  })
 })

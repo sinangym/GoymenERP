@@ -24,7 +24,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             await using var hostTransaction = await scope.Context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
             var staged = await scope.Store.MutateOrderAsync(run.Envelope("number-cancel"), Hash("number-cancel"),
                 PurchasingCommands.OrderCancelV1, orderId,
-                (order, now) => order.Cancel(order.Version, run.Actor, "SENTETIK numara boÅŸluÄŸu", now), OrderRemainderCancelled);
+                (order, now) => order.Cancel(order.Version, run.Actor, "SENTETIK numara boşluğu", now), OrderRemainderCancelled);
             Assert.Equal("ALI-2026-000001", staged!.Order.DocumentNumber);
             Assert.Same(hostTransaction, scope.Context.Database.CurrentTransaction);
             Assert.NotNull(hostTransaction.GetDbTransaction().Connection);
@@ -38,7 +38,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         {
             var cancelled = await scope.Store.MutateOrderAsync(run.Envelope("number-cancel"), Hash("number-cancel"),
                 PurchasingCommands.OrderCancelV1, orderId,
-                (order, now) => order.Cancel(order.Version, run.Actor, "SENTETIK numara boÅŸluÄŸu", now), OrderRemainderCancelled);
+                (order, now) => order.Cancel(order.Version, run.Actor, "SENTETIK numara boşluğu", now), OrderRemainderCancelled);
             Assert.Equal("ALI-2026-000001", cancelled!.Order.DocumentNumber);
             var replay = await scope.Store.MutateOrderAsync(run.Envelope("number-cancel"), Hash("number-cancel"),
                 PurchasingCommands.OrderCancelV1, orderId, (_, _) => throw new InvalidOperationException("Cancel replay must not mutate."), OrderRemainderCancelled);

@@ -66,7 +66,8 @@ function recall(storeKey: string | null): StoredAttempt | null {
     const raw: unknown = JSON.parse(sessionStorage.getItem(storeKey) ?? 'null')
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
     const value = raw as Partial<StoredAttempt>
-    if (!isUuid(value.key) || !isUuid(value.claim) || typeof value.payload !== 'object' || value.payload === null
+    // Exactly the three stored fields: a slot carrying anything else was not written by this journal.
+    if (Object.keys(raw).length !== 3 || !isUuid(value.key) || !isUuid(value.claim) || typeof value.payload !== 'object' || value.payload === null
       || Array.isArray(value.payload)) return null
     return value as StoredAttempt
   } catch {
