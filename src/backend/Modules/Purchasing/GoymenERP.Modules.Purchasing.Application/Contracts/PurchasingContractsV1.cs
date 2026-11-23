@@ -1196,7 +1196,7 @@ public static class PurchasingJson
     /// <summary>The most allocations one confirmed set may name (the owner's per-line list bound times the order's line bound).</summary>
     public const int MaximumSeenAllocations = 1000;
 
-    private static void RequireSeenShape(IReadOnlyList<PurchaseFutureAllocationSeenRequest>? seen)
+    internal static void RequireSeenShape(IReadOnlyList<PurchaseFutureAllocationSeenRequest>? seen)
     {
         if (seen is null || seen.Count > MaximumSeenAllocations)
         {

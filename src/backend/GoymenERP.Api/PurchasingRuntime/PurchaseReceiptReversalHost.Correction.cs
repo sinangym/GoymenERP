@@ -36,7 +36,10 @@ internal sealed partial class PurchaseReceiptReversalHost
                 || request.LabelId != next.LabelId || request.LotId != next.LotId || request.LabelCode != next.LabelCode
                 || request.MovementId != next.MovementId || request.QuantityKg != next.MeasuredQuantityKg
                 || request.LocationId != next.LocationId || request.HeatNumber != next.HeatNumber || request.CoilNumber != next.CoilNumber
-                || request.OccurredAtUtc != next.OccurredAtUtc) throw Unavailable();
+                || request.OccurredAtUtc != next.OccurredAtUtc
+                // AK-3 (KLN-D119): a stored piece replacement replays the same whole pieces it was received with.
+                || request.PieceCount is { } storedPieces
+                    && storedPieces.ToString(System.Globalization.CultureInfo.InvariantCulture) != next.AcceptedQuantity) throw Unavailable();
         }
         else
         {
@@ -54,7 +57,12 @@ internal sealed partial class PurchaseReceiptReversalHost
                     owner.ProductId, next.ExpectedProductVersion, owner.UnitId, next.LotId, next.LabelId, next.LabelCode,
                     next.HeatNumber, next.CoilNumber, PurchaseGoodsReceiptDocumentPolicyV1.RequiredForNewReceipt,
                     StockPartyKind.Company, companyId, StockPartyKind.Company, companyId, next.LocationId,
-                    Enum.Parse<BlockState>(PurchaseGoodsReceiptApiV1.InitialBlock), next.MovementId, next.MeasuredQuantityKg, next.OccurredAtUtc);
+                    Enum.Parse<BlockState>(PurchaseGoodsReceiptApiV1.InitialBlock), next.MovementId, next.MeasuredQuantityKg, next.OccurredAtUtc)
+                {
+                    // AK-3 / AK-8b (KLN-D119): the replacement receipt of a piece purchase line enters the new label with its whole
+                    // pieces, exactly as a new receipt does; a kilogram line sends none.
+                    PieceCount = ReplacementPieceCountOf(owner.UnitIsKilogram, next.AcceptedQuantity),
+                };
             }
         }
         var stocked = await receipt.StageAsync(request, metadata, token);

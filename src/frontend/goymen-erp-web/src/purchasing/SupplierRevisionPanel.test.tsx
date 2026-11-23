@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SupplierRevisionPanel } from './SupplierRevisionPanel'
 import { fetchSupplierRevisions, sendSupplierRevision, supplierRevisionAttemptKey } from './supplierRevisionApi'
 import { fetchPurchasingSupplierOptions } from './api'
+import { fetchPurchaseOrderFutureAllocations } from './allocationLinkApi'
 import { SUPPLIER_REVISION_TEXT as T } from './supplierRevisionText'
 import type { PurchaseOrderSummary, PurchaseOrderLine } from './contract'
 import type { ViewOutcome } from '../shell/uiState'
@@ -13,6 +14,7 @@ import type { SupplierRevisionHistory } from './supplierRevisionApi'
 const scenario = vi.hoisted(() => ({ report: vi.fn() }))
 vi.mock('../shell/useAuthBoundary', () => ({ useAuthBoundary: () => ({ capture: () => ({ token: 1 }), report: scenario.report }) }))
 vi.mock('./api', () => ({ fetchPurchasingSupplierOptions: vi.fn() }))
+vi.mock('./allocationLinkApi', () => ({ fetchPurchaseOrderFutureAllocations: vi.fn() }))
 vi.mock('./supplierRevisionApi', async original => ({ ...await original<typeof import('./supplierRevisionApi')>(), fetchSupplierRevisions: vi.fn(), sendSupplierRevision: vi.fn() }))
 const company = '11111111-1111-4111-8111-111111111111'; const orderId = '22222222-2222-4222-8222-222222222222'
 const supplier = '33333333-3333-4333-8333-333333333333'; const account = '44444444-4444-4444-8444-444444444444'
@@ -80,6 +82,42 @@ describe('Supplier revision screen states and replay', () => {
     await waitFor(() => expect(view.onSettled).toHaveBeenCalled())
     expect(vi.mocked(sendSupplierRevision).mock.calls[1][0]).toEqual(first)
     expect(sessionStorage.getItem(supplierRevisionAttemptKey(1, actor, company, orderId))).toBeNull()
+  })
+  it('ALS-D126: a 409 for active allocations shows the affected allocations and the confirmation resends exactly that set with a new key', async () => {
+    const allocation = '99999999-9999-4999-8999-999999999999'
+    vi.mocked(fetchPurchaseOrderFutureAllocations).mockResolvedValue({ type: 'ok-single', data: { orderId, orderVersion: '3', links: [{
+      allocationId: allocation, version: '2', lineId, salesOrderId: next, salesOrderLineId: unit, unitId: unit,
+      allocatedQuantity: '4', remainingQuantity: '3.5', createdAtUtc: at }] } })
+    vi.mocked(sendSupplierRevision).mockResolvedValueOnce({ type: 'failed', status: 409, code: 'purchasing_line_has_allocations' })
+      .mockResolvedValueOnce({ type: 'applied' })
+    vi.mocked(crypto.randomUUID).mockReturnValueOnce('88888888-8888-4888-8888-888888888888').mockReturnValueOnce('99999999-8888-4888-8888-888888888888')
+    const view = mount(); await userEvent.click(screen.getByRole('button', { name: T.open }))
+    await screen.findByText(T.empty); await userEvent.click(screen.getByRole('button', { name: T.search }))
+    await screen.findByRole('option', { name: 'SENTETIK tedarikçi' })
+    await userEvent.selectOptions(screen.getByLabelText(T.supplier), `${next}|${account}`)
+    await userEvent.type(screen.getByLabelText(T.reason), 'SENTETIK correction')
+    await userEvent.click(screen.getByRole('button', { name: T.submit }))
+    expect(await screen.findByText(T.allocationLine(1, '3.5'))).toBeTruthy()
+    expect(view.onSettled).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: T.allocationsConfirm }))
+    await waitFor(() => expect(view.onSettled).toHaveBeenCalled())
+    const [first, second] = vi.mocked(sendSupplierRevision).mock.calls.map(call => call[0])
+    expect(first.command).toEqual({ kind: 'supplier', expectedVersion: '3', supplierPartyId: next, companyAccountId: account, reason: 'SENTETIK correction' })
+    expect(second.command).toEqual({ ...first.command, seenAllocations: [{ allocationId: allocation, expectedAllocationVersion: '2' }] })
+    expect(second.idempotencyKey).not.toBe(first.idempotencyKey)
+  })
+  it('ALS-D126: an allocation list for another order version is never confirmed', async () => {
+    vi.mocked(fetchPurchaseOrderFutureAllocations).mockResolvedValue({ type: 'ok-single', data: { orderId, orderVersion: '4', links: [] } })
+    vi.mocked(sendSupplierRevision).mockResolvedValue({ type: 'failed', status: 409, code: 'purchasing_line_has_allocations' })
+    mount(); await userEvent.click(screen.getByRole('button', { name: T.open }))
+    await screen.findByText(T.empty); await userEvent.click(screen.getByRole('button', { name: T.search }))
+    await screen.findByRole('option', { name: 'SENTETIK tedarikçi' })
+    await userEvent.selectOptions(screen.getByLabelText(T.supplier), `${next}|${account}`)
+    await userEvent.type(screen.getByLabelText(T.reason), 'SENTETIK correction')
+    await userEvent.click(screen.getByRole('button', { name: T.submit }))
+    expect(await screen.findByText(T.allocationsUnavailable)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: T.allocationsConfirm })).toBeNull()
+    expect(sendSupplierRevision).toHaveBeenCalledTimes(1)
   })
   it('does not send a command when persisted pending data is corrupt', async () => {
     sessionStorage.setItem(supplierRevisionAttemptKey(1, actor, company, orderId), '{'); mount()

@@ -70,6 +70,10 @@ public enum CounterpartyPartySuccessionKindV1
 /// VKN/TCKN: the same VKN is the same legal person, which is rule 3 (same cari), not a succession. <c>legalBasis</c> is
 /// required (trimmed, at most 1000 characters; e.g. the trade registry announcement). <c>effectiveOn</c> is the business
 /// day the new legal person took over (yyyy-MM-dd); it may not be later than today's Europe/Istanbul business day.
+/// <c>exposureWarningAcknowledged</c> (ALS-D99, optional, false when omitted): the succession makes the predecessor's ACTIVE
+/// account passive, so the deactivation warning (open balance / open documents read from the owner modules) is re-read on the
+/// server; when it is not clear the command needs this acknowledgement (422 <c>deactivation_warning_acknowledgement_required</c>,
+/// not stored), exactly like the plain deactivation. The legal basis is the reason the audit records with the warning.
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record RecordCounterpartyPartySuccession(
@@ -77,7 +81,8 @@ public sealed record RecordCounterpartyPartySuccession(
     [property: JsonRequired] Guid SuccessorPartyId,
     [property: JsonRequired] CounterpartyPartySuccessionKindV1 Kind,
     [property: JsonRequired] string LegalBasis,
-    [property: JsonRequired] DateOnly EffectiveOn);
+    [property: JsonRequired] DateOnly EffectiveOn,
+    bool ExposureWarningAcknowledged = false);
 
 [JsonConverter(typeof(JsonStringEnumConverter<CounterpartyIdentityAttributeV1>))]
 public enum CounterpartyIdentityAttributeV1
