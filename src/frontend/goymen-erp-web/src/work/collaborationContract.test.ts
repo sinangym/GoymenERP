@@ -114,11 +114,13 @@ describe('W1-C collaboration decoders', () => {
     expect(decodeWorkNoteReadReceipt({ noteId: OTHER, readAtUtc: '2026-11-22T10:00:00Z' }, RECORD)).toBeNull()
   })
 
-  it('WP9: knows the twelve server record kinds in the server order and nothing else', () => {
+  it('WP9 + YOL-D42: knows the thirteen server record kinds in the server order and nothing else', () => {
     expect(WORK_RECORD_TYPES).toEqual(['sales-order-draft', 'purchase-order', 'stock-label', 'manufacturing-plan', 'counterparty',
       'sales-invoice', 'loading-instruction', 'purchase-incoming-invoice', 'manufacturing-order', 'finance-manual-receipt',
-      'finance-manual-bank-payment', 'sales-quote'])
+      'finance-manual-bank-payment', 'sales-quote', 'purchase-goods-receipt'])
     expect(decodeWorkNotePage({ ...notePage([note({ recordType: 'sales-quote' })]), recordType: 'sales-quote' }, COMPANY, 'sales-quote', RECORD)).not.toBeNull()
+    expect(decodeWorkNotePage({ ...notePage([note({ recordType: 'purchase-goods-receipt' })]), recordType: 'purchase-goods-receipt' },
+      COMPANY, 'purchase-goods-receipt', RECORD)).not.toBeNull()
     expect(decodeWorkNotePage(notePage([note({ recordType: 'goods-receipt' })]), COMPANY, 'sales-order-draft', RECORD)).toBeNull()
   })
 })

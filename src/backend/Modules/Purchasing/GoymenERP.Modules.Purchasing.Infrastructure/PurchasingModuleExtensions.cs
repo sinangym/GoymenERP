@@ -82,6 +82,9 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchasingOrderRecordReadSourceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchasingOrderReadServiceV1, PurchasingOrderReadServiceV1>();
         services.AddScoped<IPurchaseGoodsReceiptServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
+        // YOL-D42 (WP9): the receipt by acceptance id alone, for Work's record notes/tasks; the authorized receipt read decides.
+        services.AddScoped<IPurchaseAcceptanceOrderLookupV1, PurchaseAcceptanceOrderLookup>();
+        services.AddScoped<IPurchaseGoodsReceiptRecordReadPortV1, PurchaseGoodsReceiptRecordReadV1>();
         services.AddScoped<IPurchaseGoodsReceiptQuantityComparisonServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
         // ALC-S16 (F-027): the bulk goods receipt (KLN-D41/D43/D45).
         services.AddScoped<IPurchaseGoodsReceiptBatchStore, PurchaseGoodsReceiptBatchStore>();

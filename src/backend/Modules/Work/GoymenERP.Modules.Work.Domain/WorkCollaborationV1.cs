@@ -14,9 +14,8 @@ public enum WorkRecordTypeV1
     ManufacturingPlan = 4,
     Counterparty = 5,
     // WP9 (AI-D20/AI-D23, DALGA_PLANI_v2 1.7): the other main record kinds. A dispatch note (irsaliye) has no read of its own
-    // in Logistics — it is a child of its loading instruction — so its notes are the instruction's. A goods receipt is not
-    // here: Purchasing reads it only by (order, acceptance), so its notes stay on the purchase order until the owner offers a
-    // read by the acceptance id alone.
+    // in Logistics — it is a child of its loading instruction — so its notes are the instruction's. YOL-D42 (E-81) adds the
+    // purchase goods receipt (mal kabul), addressed by its acceptance id through Purchasing's read port.
     SalesInvoice = 6,
     LoadingInstruction = 7,
     PurchaseIncomingInvoice = 8,
@@ -24,6 +23,7 @@ public enum WorkRecordTypeV1
     FinanceManualReceipt = 10,
     FinanceManualBankPayment = 11,
     SalesQuote = 12,
+    PurchaseGoodsReceipt = 13,
 }
 
 public static class WorkRecordTypesV1
@@ -42,6 +42,7 @@ public static class WorkRecordTypesV1
         (WorkRecordTypeV1.FinanceManualReceipt, "finance-manual-receipt"),
         (WorkRecordTypeV1.FinanceManualBankPayment, "finance-manual-bank-payment"),
         (WorkRecordTypeV1.SalesQuote, "sales-quote"),
+        (WorkRecordTypeV1.PurchaseGoodsReceipt, "purchase-goods-receipt"),
     ];
 
     /// <summary>The persisted values, as the check constraints list them.</summary>

@@ -84,6 +84,7 @@ public sealed partial class WorkCollaborationServiceTests
     [InlineData("finance-manual-receipt", WorkRecordTypeV1.FinanceManualReceipt)]
     [InlineData("finance-manual-bank-payment", WorkRecordTypeV1.FinanceManualBankPayment)]
     [InlineData("sales-quote", WorkRecordTypeV1.SalesQuote)]
+    [InlineData("purchase-goods-receipt", WorkRecordTypeV1.PurchaseGoodsReceipt)]
     public async Task The_WP9_record_kinds_take_notes_and_tasks_through_the_owner_port_like_the_first_five(string wire, WorkRecordTypeV1 type)
     {
         Assert.True(WorkRecordTypesV1.TryParse(wire, out var parsed));
@@ -100,11 +101,13 @@ public sealed partial class WorkCollaborationServiceTests
     }
 
     [Fact]
-    public void A_goods_receipt_and_a_dispatch_note_are_not_record_kinds_of_their_own()
+    public void A_dispatch_note_is_not_a_record_kind_of_its_own_and_the_goods_receipt_is_YOL_D42s_thirteenth()
     {
         Assert.False(WorkRecordTypesV1.TryParse("goods-receipt", out _));
         Assert.False(WorkRecordTypesV1.TryParse("dispatch-note", out _));
-        Assert.Equal(12, WorkRecordTypesV1.WireNames.Distinct(StringComparer.Ordinal).Count());
+        Assert.True(WorkRecordTypesV1.TryParse("purchase-goods-receipt", out var receipt));
+        Assert.Equal(13, (int)receipt);
+        Assert.Equal(13, WorkRecordTypesV1.WireNames.Distinct(StringComparer.Ordinal).Count());
     }
 
     [Fact]

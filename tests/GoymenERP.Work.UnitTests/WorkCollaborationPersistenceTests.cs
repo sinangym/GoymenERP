@@ -172,6 +172,24 @@ public sealed class WorkCollaborationPersistenceTests
         Assert.All(reads.GetForeignKeys(), foreign => Assert.Equal(DeleteBehavior.Restrict, foreign.DeleteBehavior));
     }
 
+    [Fact]
+    public void The_YOL_D42_migration_only_widens_the_record_kinds_to_13_and_Down_first_refuses_with_THROW_52171()
+    {
+        var migration = new AddWorkGoodsReceiptRecordType();
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation or CreateTableOperation or DropTableOperation
+            or AddColumnOperation or DropColumnOperation or AlterColumnOperation);
+        var added = migration.UpOperations.OfType<AddCheckConstraintOperation>().ToArray();
+        Assert.Equal(new[] { "CK_WorkInboxNotifications_Identity", "CK_WorkRecordNotes_Identity", "CK_WorkTasks_Identity" },
+            added.Select(check => check.Name).Order(StringComparer.Ordinal));
+        Assert.All(added, check => Assert.Contains("[RecordType] IN (" + WorkDbContext.RecordTypeList + ")", check.Sql, StringComparison.Ordinal));
+        Assert.EndsWith(", 13", WorkDbContext.RecordTypeList, StringComparison.Ordinal);
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql;
+        Assert.Contains("THROW 52171", guard, StringComparison.Ordinal);
+        foreach (var table in new[] { "RecordNotes", "Tasks", "InboxNotifications" })
+            Assert.Contains("[work].[" + table + "] WHERE [RecordType] = 13", guard, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+    }
+
     private static void Check(IModel model, Type type, string name, string sql) =>
         Assert.Contains(model.FindEntityType(type)!.GetCheckConstraints(), check => check.Name == name && check.Sql == sql);
 

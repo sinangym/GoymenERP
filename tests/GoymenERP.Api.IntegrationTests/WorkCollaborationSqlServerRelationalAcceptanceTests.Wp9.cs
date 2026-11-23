@@ -42,10 +42,33 @@ public sealed partial class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
             Assert.Equal("sales-invoice", invoiceNote.Note.RecordType);
             var outOfRange = Sql(await Assert.ThrowsAnyAsync<Exception>(() => ExecAsync(connectionString, $"""
                 INSERT INTO [work].[RecordNotes] ([CompanyId],[Id],[RecordType],[RecordId],[AuthorUserId],[Body],[CorrectsNoteId],[CreatedAtUtc],[CorrelationId],[CausationId])
-                VALUES ('{TestCompanyIds.CompanyA}','{Guid.NewGuid()}',13,'{CollaborationRecord}','{CollaborationWriter}','x',NULL,SYSUTCDATETIME(),'c',NULL);
+                VALUES ('{TestCompanyIds.CompanyA}','{Guid.NewGuid()}',14,'{CollaborationRecord}','{CollaborationWriter}','x',NULL,SYSUTCDATETIME(),'c',NULL);
                 """)));
             Assert.Equal(547, outOfRange.Number);
             Assert.Equal(52170, (await Assert.ThrowsAsync<SqlException>(() => ExecAsync(connectionString, guard))).Number);
+            Assert.Equal(2, await CountAsync(connectionString, "RecordNotes", TestCompanyIds.CompanyA));
+        });
+    }
+
+    [SqlServerFact]
+    public async Task Collaboration_YOL_D42_Down_passes_with_other_kind_notes_and_refuses_with_52171_while_a_goods_receipt_note_exists()
+    {
+        await WithDatabaseAsync(async connectionString =>
+        {
+            var guard = Assert.IsType<SqlOperation>(new AddWorkGoodsReceiptRecordType().DownOperations[0]).Sql;
+            await ExecAsync(connectionString, guard);
+            await CollaborationService(connectionString, WorkPermissionManifestV1.NotesWrite)
+                .AddNoteAsync("sales-quote", CollaborationRecord, new("SENTETIK teklif notu", null, null), new("d42-1", "corr-d42-1", null));
+            await ExecAsync(connectionString, guard);
+            var receiptNote = await CollaborationService(connectionString, WorkPermissionManifestV1.NotesWrite)
+                .AddNoteAsync("purchase-goods-receipt", CollaborationRecord, new("SENTETIK mal kabul notu", null, null), new("d42-2", "corr-d42-2", null));
+            Assert.Equal("purchase-goods-receipt", receiptNote.Note.RecordType);
+            Assert.Equal(52171, (await Assert.ThrowsAsync<SqlException>(() => ExecAsync(connectionString, guard))).Number);
+            var outOfRange = Sql(await Assert.ThrowsAnyAsync<Exception>(() => ExecAsync(connectionString, $"""
+                INSERT INTO [work].[RecordNotes] ([CompanyId],[Id],[RecordType],[RecordId],[AuthorUserId],[Body],[CorrectsNoteId],[CreatedAtUtc],[CorrelationId],[CausationId])
+                VALUES ('{TestCompanyIds.CompanyA}','{Guid.NewGuid()}',14,'{CollaborationRecord}','{CollaborationWriter}','x',NULL,SYSUTCDATETIME(),'c',NULL);
+                """)));
+            Assert.Equal(547, outOfRange.Number);
             Assert.Equal(2, await CountAsync(connectionString, "RecordNotes", TestCompanyIds.CompanyA));
         });
     }

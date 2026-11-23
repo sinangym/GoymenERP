@@ -4,6 +4,7 @@ using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Identity.Application.Contracts;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Work.Domain;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,6 +33,22 @@ public sealed class WorkCollaborationHostTests
         var port = Port(services => services.AddSingleton<IInventoryLabelDetailsV1>(labels), new FakeHolders([]));
         Assert.Equal(expected, await port.CheckCurrentActorAsync(Company, new(WorkRecordTypeV1.StockLabel, Label)));
         Assert.Equal(new[] { Label }, labels.Asked);
+    }
+
+    [Theory]
+    [InlineData(0, WorkRecordAccessOutcomeV1.Readable)]
+    [InlineData(404, WorkRecordAccessOutcomeV1.NotReadable)]
+    [InlineData(403, WorkRecordAccessOutcomeV1.NotReadable)]
+    [InlineData(503, WorkRecordAccessOutcomeV1.Unavailable)]
+    public async Task YOL_D42_the_goods_receipt_answer_comes_from_Purchasings_read_port_by_acceptance_id(int status, WorkRecordAccessOutcomeV1 expected)
+    {
+        var receipts = new FakeReceiptPort(status);
+        var port = Port(services => services.AddSingleton<IPurchaseGoodsReceiptRecordReadPortV1>(receipts), new FakeHolders([]));
+        Assert.Equal(expected, await port.CheckCurrentActorAsync(Company, new(WorkRecordTypeV1.PurchaseGoodsReceipt, Label)));
+        Assert.Equal(new[] { Label }, receipts.Asked);
+        var holder = Port(_ => { }, new FakeHolders([ErpPermissions.PurchasingOrdersRead]));
+        Assert.Equal(WorkRecordAccessOutcomeV1.Readable,
+            await holder.CheckUserAsync(Company, new(WorkRecordTypeV1.PurchaseGoodsReceipt, Label), Named));
     }
 
     [Fact]
@@ -116,6 +133,18 @@ public sealed class WorkCollaborationHostTests
             Asked.Add(labelId);
             // A successful answer's body is never inspected by the port; only "no exception" means readable.
             return status == 0 ? Task.FromResult<InventoryLabelDetailV1>(null!) : throw new InventoryLabelDetailException(status, "SENTETIK");
+        }
+    }
+
+    private sealed class FakeReceiptPort(int status) : IPurchaseGoodsReceiptRecordReadPortV1
+    {
+        public List<Guid> Asked { get; } = [];
+
+        public Task<PurchaseGoodsReceiptRecordRefV1> ReadByAcceptanceAsync(Guid acceptanceId, CancellationToken cancellationToken = default)
+        {
+            Asked.Add(acceptanceId);
+            return status == 0 ? Task.FromResult(new PurchaseGoodsReceiptRecordRefV1(Company, Guid.NewGuid(), acceptanceId))
+                : throw new PurchasingServiceException(status, "SENTETIK");
         }
     }
 

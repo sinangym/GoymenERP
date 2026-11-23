@@ -140,9 +140,9 @@ geri alınır.
   yalnız talimat üzerinden okur), `purchase-incoming-invoice` (Satınalma `IPurchaseIncomingInvoiceWorkflowV1`;
   `purchasing.invoices.read` + alış fiyatı okuma), `manufacturing-order` (`ManufacturingCommandService.GetOrderAsync`),
   `finance-manual-receipt` / `finance-manual-bank-payment` (Finans `DetailAuthorizedAsync`), `sales-quote`
-  (`ISalesQuoteService`). Mal kabul ayrı tür değildir: Satınalma onu yalnız (sipariş, kabul) çiftiyle okur; notu alış
-  siparişindedir (NEEDS-SINAN/Satınalma: kabul kimliğiyle okuma portu gelirse tür eklenir). Adlandırılmış kişinin okuma
-  hakkı: sahibin okuma izinlerinin **hepsi** şirket genelinde, şimdi.
+  (`ISalesQuoteService`), `purchase-goods-receipt` (13, YOL-D42/E-81: kabul kimliğiyle Satınalma
+  `IPurchaseGoodsReceiptRecordReadPortV1`; `purchasing.orders.read`; Work Satınalma tablosuna erişmez). Adlandırılmış
+  kişinin okuma hakkı: sahibin okuma izinlerinin **hepsi** şirket genelinde, şimdi.
 - **Okundu bilgisi:** `POST /api/v1/work/notes/{noteId}/read` (anahtar yok; (not, okuyan) başına ilk okuma kalır;
   yazar kendi notunu işaretleyemez → 409 `work_note_own_read`). Not görünümü `readByMeAtUtc` ve `reads` (okuyan, ad,
   zaman) taşır; kaydı okuyabilen herkes aynı listeyi görür.
@@ -187,3 +187,6 @@ ekler. Down guard **52170**: okundu satırı ya da 6–12 türüne bağlı not/g
 
 `AddWorkAssistantMemory` migration'ı üç tenant filtreli tablo ekler. Down guard **52210**: hafıza kaydı, kişi kapatması
 veya görüntüleme kaydı varken geri almayı reddeder (forward fix); boş depo geri alınır.
+
+`AddWorkGoodsReceiptRecordType` (YOL-D42) üç kontrol kısıtını 1–13'e genişletir (yalnız DDL). Down guard **52171**: mal
+kabulüne bağlı not/görev/bildirim varken geri almayı reddeder (forward fix).

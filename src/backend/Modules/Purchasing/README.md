@@ -573,3 +573,11 @@ existing database refusals (company + ETTN, company + supplier + exact number) a
 `20261122200945_AddPurchaseIncomingInvoiceDuplicateFacts` adds nullable `InvoiceDate`, `CurrencyId`, `PayableAmount`
 (all-or-nothing check) and the `IX_IncomingInvoices_DuplicateDate` index; pure DDL, no backfill (older rows are read from
 their first revision). Down drops only derived copies, so it carries no guard.
+
+## YOL-D42 — goods receipt read by acceptance id (WP9, E-81)
+
+`IPurchaseGoodsReceiptRecordReadPortV1.ReadByAcceptanceAsync(acceptanceId)` answers (company, order, acceptance) for Work's
+record notes and tasks. It looks the order up in Purchasing's own company-filtered acceptance rows
+(`PurchaseAcceptanceOrderLookup`) and then answers with the authorized `GetGoodsReceiptAsync` read (order read permission
+company-wide, company fence, not-found rules). An unknown acceptance still goes through that read with an empty order id, so
+an unauthorized caller gets the same 403 whether or not the receipt exists. No endpoint, no write, no schema change.

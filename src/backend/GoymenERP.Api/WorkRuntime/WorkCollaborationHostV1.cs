@@ -63,6 +63,7 @@ internal sealed class WorkOwnerRecordAccessPortV1(IServiceProvider services, ICo
         WorkRecordTypeV1.FinanceManualReceipt => [ErpPermissions.FinanceManualReceiptDraftRead],
         WorkRecordTypeV1.FinanceManualBankPayment => [ErpPermissions.FinanceManualBankPaymentDraftRead],
         WorkRecordTypeV1.SalesQuote => [ErpPermissions.SalesQuotesRead],
+        WorkRecordTypeV1.PurchaseGoodsReceipt => [ErpPermissions.PurchasingOrdersRead],
         _ => throw new InvalidOperationException("Unknown record type."),
     };
 
@@ -86,6 +87,7 @@ internal sealed class WorkOwnerRecordAccessPortV1(IServiceProvider services, ICo
                 WorkRecordTypeV1.SalesQuote => await SalesStatusAsync(() => services.GetRequiredService<ISalesQuoteService>()
                     .GetQuoteDetailAsync(record.RecordId, cancellationToken)),
                 WorkRecordTypeV1.LoadingInstruction => await InstructionAsync(record.RecordId, cancellationToken),
+                WorkRecordTypeV1.PurchaseGoodsReceipt => await GoodsReceiptAsync(record.RecordId, cancellationToken),
                 WorkRecordTypeV1.PurchaseIncomingInvoice => await IncomingInvoiceAsync(record.RecordId, cancellationToken),
                 WorkRecordTypeV1.ManufacturingOrder => await ManufacturingOrderAsync(record.RecordId, cancellationToken),
                 WorkRecordTypeV1.FinanceManualReceipt => FinanceMap((await services.GetRequiredService<IManualReceiptService>()
@@ -160,6 +162,13 @@ internal sealed class WorkOwnerRecordAccessPortV1(IServiceProvider services, ICo
     private async Task<WorkRecordAccessOutcomeV1> IncomingInvoiceAsync(Guid id, CancellationToken token)
     {
         try { _ = await services.GetRequiredService<IPurchaseIncomingInvoiceWorkflowV1>().ReadAsync(id, token); return WorkRecordAccessOutcomeV1.Readable; }
+        catch (PurchasingServiceException exception) { return Map(exception.Status); }
+    }
+
+    /// <summary>YOL-D42: Purchasing's read port by acceptance id (its authorized receipt read); never Purchasing's tables.</summary>
+    private async Task<WorkRecordAccessOutcomeV1> GoodsReceiptAsync(Guid id, CancellationToken token)
+    {
+        try { _ = await services.GetRequiredService<IPurchaseGoodsReceiptRecordReadPortV1>().ReadByAcceptanceAsync(id, token); return WorkRecordAccessOutcomeV1.Readable; }
         catch (PurchasingServiceException exception) { return Map(exception.Status); }
     }
 
