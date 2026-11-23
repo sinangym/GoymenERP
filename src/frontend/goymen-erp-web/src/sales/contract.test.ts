@@ -285,6 +285,40 @@ describe('decodeDraftDetail / decodeDraftPage', () => {
     expect(decodeDraftDetail(unknown, unknown.draft.id)).toBeNull()
   })
 
+  it('SAT-D477: decodes the kg/m table conflict only with the pinned figure as selected and refuses every other shape', () => {
+    const conflict = {
+      selection: 'weight-table:entered-orientation', selectedKilogramsPerUnit: '21', otherKilogramsPerUnit: '21.6',
+      differenceKilogramsPerUnit: '0.6', selectedKgPerMetre: '3.5', otherKgPerMetre: '3.6',
+    }
+    const ok = clone(parse(detailResponse)) as any
+    ok.lines[0].theoreticalKilogramsPerUnit = '21'
+    ok.lines[0].theoreticalKilogramsPerUnitConflict = conflict
+    expect(decodeDraftDetail(ok, ok.draft.id)?.lines[0].theoreticalKilogramsPerUnitConflict).toEqual(conflict)
+
+    const negative = clone(ok) as any
+    negative.lines[0].theoreticalKilogramsPerUnitConflict = { ...conflict, otherKilogramsPerUnit: '20.4', differenceKilogramsPerUnit: '-0.6' }
+    expect(decodeDraftDetail(negative, negative.draft.id)?.lines[0].theoreticalKilogramsPerUnitConflict?.differenceKilogramsPerUnit).toBe('-0.6')
+
+    const plain = decodeDraftDetail(parse(detailResponse), 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')?.lines[0]
+    expect(plain).not.toHaveProperty('theoreticalKilogramsPerUnitConflict')
+
+    for (const broken of [
+      { ...conflict, selection: 'weight-table:larger' },
+      { ...conflict, selectedKilogramsPerUnit: '20' },
+      { ...conflict, differenceKilogramsPerUnit: '0' },
+      { ...conflict, otherKgPerMetre: '3.5' },
+      { ...conflict, extra: 'x' },
+      (({ otherKgPerMetre: _omit, ...rest }) => rest)(conflict),
+    ]) {
+      const body = clone(ok) as any
+      body.lines[0].theoreticalKilogramsPerUnitConflict = broken
+      expect(decodeDraftDetail(body, body.draft.id)).toBeNull()
+    }
+    const unpinned = clone(ok) as any
+    delete unpinned.lines[0].theoreticalKilogramsPerUnit
+    expect(decodeDraftDetail(unpinned, unpinned.draft.id)).toBeNull()
+  })
+
   it('keeps stored product/unit facts while a Withheld line remains commercially null', () => {
     const body = clone(parse(detailResponse)) as any
     body.draft.productSnapshots = [productSnapshot]

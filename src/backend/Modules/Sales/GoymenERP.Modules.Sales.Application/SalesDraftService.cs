@@ -1943,7 +1943,7 @@ public sealed partial class SalesDraftService(
                         slice.QuantityText, slice.RequestedDeliveryDate))],
                 Disclosed(disclosure, line.Commercial.DiscountPercent), disclosure, line.OrderUnit.UnitCode,
                 line.AddedInRevision is { } added ? SalesDraftApiV1.RevisionText(added) : null,
-                KilogramsPerUnitText(draft, line.Id)))],
+                KilogramsPerUnitText(draft, line.Id), KilogramsPerUnitConflict(draft, line.Id)))],
             Reference(draft.Header.DeliveryAddress), Reference(draft.Header.Contact), Reference(draft.Header.Responsible),
             Reference(draft.Header.PaymentTerms), Reference(draft.Header.SourceStrategy), Reference(draft.Header.Package),
             new SalesDraftApprovalV1(draft.Approval.SubmittedBy, draft.Approval.SubmittedAtUtc, draft.Approval.DecidedBy,

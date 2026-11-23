@@ -261,7 +261,8 @@ internal sealed class ProductDimensionService(
             return new ProductDimensionReadV1(ProductDimensionOutcomeV1.Found, row.SectionKind, row.ThicknessMm, row.WidthMm,
                 row.LengthMm, row.HeightMm, row.OuterDiameterMm, row.WallThicknessMm, weight?.KgPerMetre, row.Version,
                 weight?.SourceLabel ?? lookup.ConflictSourceLabel, weight?.TableVersion ?? lookup.ConflictTableVersion,
-                row.ProfileSeries, row.ProfileSize, row.MeshSpacingMm, row.SurfaceFinish, lookup.IsConflict);
+                row.ProfileSeries, row.ProfileSize, row.MeshSpacingMm, row.SurfaceFinish, lookup.IsConflict,
+                lookup.EnteredKgPerMetre, lookup.ReversedKgPerMetre);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

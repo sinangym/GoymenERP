@@ -324,6 +324,9 @@ public enum ProductDimensionOutcomeV1
 /// A profile matches the table in either direction (URN-D19: width and height swapped, same wall). <c>KgPerMetreConflict</c> is
 /// true when both directions stand in the table with different kg/m: <c>KgPerMetre</c> is then null and the source label and
 /// table version name the conflicting table, so a consumer refuses with its explicit conflict code instead of "no value".
+/// SAT-D477: on such a conflict of a non-square profile <c>ConflictEnteredKgPerMetre</c> is the kg/m of the card's entered
+/// direction (width × height) and <c>ConflictReversedKgPerMetre</c> the reversed one, each when that direction holds exactly one
+/// value; <c>KgPerMetre</c> stays null, so a consumer that does not opt in still refuses.
 /// </summary>
 public sealed record ProductDimensionReadV1(
     ProductDimensionOutcomeV1 Outcome,
@@ -342,7 +345,9 @@ public sealed record ProductDimensionReadV1(
     string? ProfileSize = null,
     decimal? MeshSpacingMm = null,
     string? SurfaceFinish = null,
-    bool KgPerMetreConflict = false)
+    bool KgPerMetreConflict = false,
+    decimal? ConflictEnteredKgPerMetre = null,
+    decimal? ConflictReversedKgPerMetre = null)
 {
     public static ProductDimensionReadV1 Without(ProductDimensionOutcomeV1 outcome) =>
         new(outcome, null, null, null, null, null, null, null, null, null);

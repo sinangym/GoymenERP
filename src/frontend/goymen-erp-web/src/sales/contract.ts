@@ -504,6 +504,42 @@ export interface DraftLine {
   readonly addedInRevision?: string
   /** SAT-D437 (AK-4, additive): the theoretical kg per order unit pinned on a piece line at approval; absent otherwise. */
   readonly theoreticalKilogramsPerUnit?: string
+  /** SAT-D474 / SAT-D477 (additive): the kg/m table conflict the pinned figure was resolved from; absent otherwise. */
+  readonly theoreticalKilogramsPerUnitConflict?: KilogramsPerUnitTableConflict
+}
+
+/** SAT-D477: the entered direction's figure was pinned; the reversed one and the signed difference (other − selected) warn. */
+export interface KilogramsPerUnitTableConflict {
+  readonly selection: 'weight-table:entered-orientation'
+  readonly selectedKilogramsPerUnit: string
+  readonly otherKilogramsPerUnit: string
+  readonly differenceKilogramsPerUnit: string
+  readonly selectedKgPerMetre: string
+  readonly otherKgPerMetre: string
+}
+
+const CONFLICT_KEYS = [
+  'selection', 'selectedKilogramsPerUnit', 'otherKilogramsPerUnit', 'differenceKilogramsPerUnit', 'selectedKgPerMetre', 'otherKgPerMetre',
+] as const
+const SIGNED_DECIMAL_RE = /^-?[0-9]+(?:\.[0-9]+)?$/
+
+/** Strict: exact keys, the one selection, positive figures, a signed non-zero difference; anything else is not this contract. */
+function decodeKilogramsPerUnitConflict(value: unknown, pinned: string | undefined): KilogramsPerUnitTableConflict | null {
+  const o = exactWithOptional(value, CONFLICT_KEYS, [])
+  if (o === null || o.selection !== 'weight-table:entered-orientation' || pinned === undefined) return null
+  if (!isDecimal(o.selectedKilogramsPerUnit, true) || !isDecimal(o.otherKilogramsPerUnit, true)
+    || !isDecimal(o.selectedKgPerMetre, true) || !isDecimal(o.otherKgPerMetre, true)
+    || typeof o.differenceKilogramsPerUnit !== 'string' || o.differenceKilogramsPerUnit.length > LIMITS.decimalText
+    || !SIGNED_DECIMAL_RE.test(o.differenceKilogramsPerUnit) || !/[1-9]/.test(o.differenceKilogramsPerUnit)
+    || o.selectedKilogramsPerUnit !== pinned || o.selectedKgPerMetre === o.otherKgPerMetre) return null
+  return {
+    selection: 'weight-table:entered-orientation',
+    selectedKilogramsPerUnit: o.selectedKilogramsPerUnit,
+    otherKilogramsPerUnit: o.otherKilogramsPerUnit,
+    differenceKilogramsPerUnit: o.differenceKilogramsPerUnit,
+    selectedKgPerMetre: o.selectedKgPerMetre,
+    otherKgPerMetre: o.otherKgPerMetre,
+  }
 }
 
 /** SAT-D167 (EK24, `SalesOrderDraftRemovedLineV1`): a passive line — out of the order's totals, risk and shipping; history only. */
@@ -921,10 +957,17 @@ const LINE_KEYS = [
 ] as const
 
 function decodeLine(value: unknown): DraftLine | null {
-  const o = exactWithOptional(value, LINE_KEYS, ['orderUnitCode', 'addedInRevision', 'theoreticalKilogramsPerUnit'])
+  const o = exactWithOptional(value, LINE_KEYS, ['orderUnitCode', 'addedInRevision', 'theoreticalKilogramsPerUnit',
+    'theoreticalKilogramsPerUnitConflict'])
   if (o === null) return null
   // SAT-D437: absent before approval, on a kg line or an older order; otherwise a positive exact decimal.
   if (o.theoreticalKilogramsPerUnit !== undefined && !isDecimal(o.theoreticalKilogramsPerUnit, true)) return null
+  // SAT-D477: the conflict names exactly the pinned figure as selected; a conflict without a pinned figure is malformed.
+  const conflict = o.theoreticalKilogramsPerUnitConflict === undefined
+    ? undefined
+    : decodeKilogramsPerUnitConflict(o.theoreticalKilogramsPerUnitConflict,
+      typeof o.theoreticalKilogramsPerUnit === 'string' ? o.theoreticalKilogramsPerUnit : undefined)
+  if (conflict === null) return null
   const slices = decodeSlices(o.requestedDeliverySlices)
   // SAT-D167: absent (or null) for a line of the create; otherwise the revision text the line was added in.
   if (o.addedInRevision !== undefined && o.addedInRevision !== null
@@ -979,6 +1022,7 @@ function decodeLine(value: unknown): DraftLine | null {
     priceDisclosure: o.priceDisclosure,
     ...(typeof o.addedInRevision === 'string' ? { addedInRevision: o.addedInRevision } : {}),
     ...(typeof o.theoreticalKilogramsPerUnit === 'string' ? { theoreticalKilogramsPerUnit: o.theoreticalKilogramsPerUnit } : {}),
+    ...(conflict === undefined ? {} : { theoreticalKilogramsPerUnitConflict: conflict }),
   }
 }
 

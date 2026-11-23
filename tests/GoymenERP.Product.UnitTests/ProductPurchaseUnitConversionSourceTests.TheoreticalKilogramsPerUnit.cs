@@ -106,6 +106,40 @@ public sealed partial class ProductPurchaseUnitConversionSourceTests
     }
 
     [Fact]
+    public async Task SAT_D477_a_two_direction_table_conflict_stays_refused_and_names_the_entered_direction_figure_as_selected()
+    {
+        var world = new World();
+        // Card 40 × 60 × 2, 6 m; the table holds 40×60 = 3.5 kg/m and 60×40 = 3.6 kg/m (URN-D19 conflict).
+        world.Dimension.Value = new(ProductDimensionOutcomeV1.Found, ProductDimensionSectionKindsV1.Profile, null, 40m, 6000m, 60m, null,
+            2m, null, 9, "SENTETIK-tablo", 11, KgPerMetreConflict: true, ConflictEnteredKgPerMetre: 3.5m, ConflictReversedKgPerMetre: 3.6m);
+
+        var answer = await Port(world).ReadAsync(ProductId, SalesUnitId, On);
+
+        // The outcome other consumers read is unchanged: a refusal without a figure.
+        AssertWithout(answer, ProductTheoreticalKilogramsPerUnitOutcomeV1.Refused, ProductTheoreticalKilogramsPerUnitCodesV1.WeightConflict);
+        var conflict = Assert.IsType<ProductTheoreticalKilogramsPerUnitTableConflictV1>(answer.TableConflict);
+        Assert.Equal((21m, 21.6m, 3.5m, 3.6m, "weight-table:entered-orientation"),
+            (conflict.SelectedKilogramsPerUnit, conflict.OtherKilogramsPerUnit, conflict.SelectedKgPerMetre, conflict.OtherKgPerMetre,
+                conflict.Selection));
+        Assert.Equal((CompanyId, ProductId, SalesUnitId, ProductPhysicalUnitKindV1.Piece, (long?)11L, "SENTETIK-tablo"),
+            (conflict.Evidence.CompanyId, conflict.Evidence.ProductId, conflict.Evidence.UnitId, conflict.Evidence.UnitKind,
+                conflict.Evidence.WeightTableVersion, conflict.Evidence.WeightTableSource));
+    }
+
+    [Fact]
+    public async Task SAT_D477_a_conflict_without_both_directions_stays_a_plain_refusal()
+    {
+        var world = new World();
+        world.Dimension.Value = new(ProductDimensionOutcomeV1.Found, ProductDimensionSectionKindsV1.Profile, null, 40m, 6000m, 60m, null,
+            2m, null, 9, "SENTETIK-tablo", 11, KgPerMetreConflict: true, ConflictEnteredKgPerMetre: 3.5m);
+
+        var answer = await Port(world).ReadAsync(ProductId, SalesUnitId, On);
+
+        AssertWithout(answer, ProductTheoreticalKilogramsPerUnitOutcomeV1.Refused, ProductTheoreticalKilogramsPerUnitCodesV1.WeightConflict);
+        Assert.Null(answer.TableConflict);
+    }
+
+    [Fact]
     public async Task Owner_not_found_denied_and_unavailable_answers_pass_through_without_a_figure()
     {
         var notFound = new World();
