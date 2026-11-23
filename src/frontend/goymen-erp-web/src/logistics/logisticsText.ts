@@ -269,6 +269,10 @@ export const PROBLEM_CODE_TEXT: Record<LogisticsProblemCode, string> = {
     'Müşteri riski okunamadı; geçerli tek sevk istisnası olmadan kesin sevk kaydedilmez.',
   [LOGISTICS_PROBLEM_CODE.shipmentRiskExceptionUsed]:
     'Bu siparişin tek sevk istisnası başka bir kesin sevkte kullanıldı; yeni istisna talebi ve onayı gerekir.',
+  [LOGISTICS_PROBLEM_CODE.overDeliveryApprovalPending]:
+    'Bu sevk sipariş satırını toleransın onay bandına taşıyor; fazla teslim onay talebi açıldı ve iş kutusunda bekliyor. Talep onaylanınca sevki yeniden kaydedin.',
+  [LOGISTICS_PROBLEM_CODE.overDeliveryBlocked]:
+    'Bu sevk sipariş satırını toleransın blok bandına taşıyor; fazla teslim onaylanamaz ve kesin sevk kaydedilmez.',
   [LOGISTICS_PROBLEM_CODE.sameKeyPayloadMismatch]:
     'Aynı işlem anahtarı farklı bir içerikle kullanılmış; bu gönderim uygulanmadı.',
   [LOGISTICS_PROBLEM_CODE.concurrentChange]: 'Aynı anda başka bir kayıt öne geçti; aynı gönderimi tekrar deneyin.',

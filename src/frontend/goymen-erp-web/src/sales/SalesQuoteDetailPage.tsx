@@ -18,6 +18,7 @@
 import { useContext, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router'
+import { SalesQuoteConversionRequests } from './SalesApprovalRequests'
 import { approveExpiredQuote, convertQuote, fetchQuoteDetail, fetchQuoteLossReasons, recordQuoteLoss, reviseQuote } from './poolApi'
 import {
   QUOTE_STATE,
@@ -236,6 +237,8 @@ function QuoteView({
       <QuoteHistory detail={detail} />
 
       {quote.state === QUOTE_STATE.open ? <QuoteCommands detail={detail} companyId={companyId} onReread={onReread} /> : null}
+      {/* WP4 (SAT-D476): the expired quote's conversion requests (open / reject); the approval stays the quote's own command. */}
+      <SalesQuoteConversionRequests detail={detail} companyId={companyId} onRecorded={onReread} />
     </section>
   )
 }
