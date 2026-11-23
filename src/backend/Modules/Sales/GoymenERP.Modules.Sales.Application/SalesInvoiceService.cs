@@ -603,7 +603,7 @@ public sealed partial class SalesInvoiceService(
         var first = prepared[0];
         foreach (var item in prepared.Skip(1))
         {
-            // 2026-11-17 user answer, #1189 6943483644 (agent relay): USD shipments on different
+            // 2026-11-17 user answer, #1189 6943483644 (GOV-D16) (agent relay): USD shipments on different
             // business days are invoiced separately even if both days resolve to an equal bulletin/rate.
             if (first.Basis.CurrencyId == SettingsCurrencyIdentitiesV1.UnitedStatesDollar
                 && item.Basis.CurrencyId == first.Basis.CurrencyId && item.ShipmentDate != first.ShipmentDate)

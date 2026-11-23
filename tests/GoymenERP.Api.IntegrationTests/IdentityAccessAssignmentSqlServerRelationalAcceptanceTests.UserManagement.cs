@@ -87,6 +87,21 @@ public sealed partial class IdentityAccessAssignmentSqlServerRelationalAcceptanc
             Assert.DoesNotContain(onlyB, listed);
             Assert.DoesNotContain(strangerUnassigned, listed);
 
+            // KIM-D58: once the bootstrap marker names the actor as founder, every unassigned account is listed, whoever
+            // created it; members of other companies stay hidden by KIM-D16.
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                Assert.False(await identity.BootstrapStates.AnyAsync());
+                identity.BootstrapStates.Add(new GoymenERP.Modules.Identity.Domain.Bootstrap.IdentityBootstrapState(actor, DateTimeOffset.UtcNow));
+                await identity.SaveChangesAsync();
+            }
+            listed = await ListAsync();
+            Assert.Contains(strangerUnassigned, listed);
+            Assert.Contains(creatorless, listed);
+            Assert.Contains(neverAssigned, listed);
+            Assert.DoesNotContain(onlyB, listed);
+
             // KIM-D57 migration Down is a forward fix while a creator is recorded (real SQL).
             var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(
                 new GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations.AddUserAccountCreatedBy().DownOperations[0]).Sql;
