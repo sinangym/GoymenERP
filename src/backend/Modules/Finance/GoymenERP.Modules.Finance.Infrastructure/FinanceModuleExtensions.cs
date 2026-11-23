@@ -128,6 +128,9 @@ public static class FinanceModuleExtensions
         services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceOpeningBalanceWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceOpeningBalanceReversalWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceCashExchangeBookValueWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceCashAccountWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceCashAccountPassivationWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.FinanceCashAccountReactivationWorkInboxSourceV1>();
         // FNS-D25 (API-25): one expense item. FNS-D102 uses the internal ledger, protected together with
         // each outgoing record in a serializable Finance transaction; unavailable never means sufficient.
         services.TryAddScoped<IFinanceExpenseItemCatalog, SingleExpenseItemCatalog>();
