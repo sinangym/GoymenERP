@@ -93,18 +93,46 @@ public sealed class FinanceBankStatementXlsxParserTests
     }
 
     [Fact]
-    public void An_unknown_or_repeated_header_or_a_signed_amount_column_refuses_the_file()
+    public void An_unknown_or_repeated_header_or_a_missing_amount_side_refuses_the_file()
     {
         C?[] row = [new C("17.11.2026"), new C("x"), new C(Number: "1"), null];
         Assert.Equal("xlsx_header_unknown", Assert.Single(FinanceBankStatementParser.ParseXlsx(Workbook([
             [new C("Tarih"), new C("Açıklama"), new C("Alacak"), new C("Borç"), new C("Kanal")], row])).Issues).Code);
         Assert.Equal("xlsx_header_unknown", Assert.Single(FinanceBankStatementParser.ParseXlsx(Workbook([
             [new C("Tarih"), new C("Açıklama"), new C("Alacak"), new C("Giriş")], row])).Issues).Code);
-        Assert.Equal("xlsx_header_unknown", Assert.Single(FinanceBankStatementParser.ParseXlsx(Workbook([
-            [new C("Tarih"), new C("Açıklama"), new C("Tutar")], row])).Issues).Code);
         Assert.Equal("xlsx_header_required_missing", Assert.Single(FinanceBankStatementParser.ParseXlsx(Workbook([
             [new C("Tarih"), new C("Açıklama"), new C("Alacak")], row])).Issues).Code);
         Assert.Equal("xlsx_header_unknown", Assert.Single(FinanceBankStatementParser.ParseXlsx(Workbook([[new C("Kolon")]])).Issues).Code);
+    }
+
+    [Fact]
+    public void Fns_d120_one_signed_amount_column_reads_minus_as_out_and_plus_as_in()
+    {
+        var result = FinanceBankStatementParser.ParseXlsx(Workbook([
+            [new C("Tarih"), new C("Açıklama"), new C("TUTAR")],
+            [new C("17.11.2026"), new C("Gelen SENTETIK"), new C(Number: "150.25")],
+            [new C("17.11.2026"), new C("Giden SENTETIK"), new C(Number: "-40")],
+        ]));
+        Assert.True(result.IsValid, string.Join(",", result.Issues.Select(issue => issue.Code)));
+        Assert.Equal([(FinanceBankStatementDirectionV1.Inflow, "150.25"), (FinanceBankStatementDirectionV1.Outflow, "40")],
+            result.Lines.Select(line => (line.Direction, line.Amount)).ToArray());
+
+        foreach (var bad in new[] { new C(Number: "0"), new C("1.234,56"), new C(Number: "-0.00") })
+            Assert.False(FinanceBankStatementParser.ParseXlsx(Workbook([
+                [new C("Tarih"), new C("Açıklama"), new C("İşlem Tutarı")], [new C("17.11.2026"), new C("x"), bad]])).IsValid);
+    }
+
+    [Theory]
+    [InlineData("Alacak")]
+    [InlineData("Çıkış")]
+    public void Fns_d120_a_signed_column_together_with_an_inflow_or_outflow_column_refuses_the_file(string side)
+    {
+        var result = FinanceBankStatementParser.ParseXlsx(Workbook([
+            [new C("Tarih"), new C("Açıklama"), new C("Tutar"), new C(side)],
+            [new C("17.11.2026"), new C("x"), new C(Number: "1"), null],
+        ]));
+        Assert.Equal("xlsx_amount_columns_conflict", Assert.Single(result.Issues).Code);
+        Assert.Empty(result.Lines);
     }
 
     [Fact]

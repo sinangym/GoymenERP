@@ -7,10 +7,11 @@ using GoymenERP.Modules.Finance.Contracts;
 namespace GoymenERP.Modules.Finance.Infrastructure;
 
 /// <summary>
-/// WP12 / NEEDS-SINAN WP12-S2: an XLSX statement read only through the known header names
+/// WP12 / FNS-D120: an XLSX statement read only through the known header names
 /// (<see cref="FinanceBankStatementXlsxHeadersV1"/>). The header row is the first row that has a known transaction date
 /// header; rows above it (bank banners) are ignored. Every non-empty header cell must be known and used once; date,
-/// description and the inflow/outflow pair are required. The first worksheet is read; formulas, macros, external links,
+/// description and EITHER one signed amount column (minus = out, plus = in) OR the inflow/outflow pair are required; both
+/// at once refuse the file. The first worksheet is read; formulas, macros, external links,
 /// embedded objects and the 1904 date system are refused. Amounts must be numeric cells (no culture guessing on text).
 /// </summary>
 internal static partial class FinanceBankStatementParser
@@ -23,7 +24,7 @@ internal static partial class FinanceBankStatementParser
     private const int MaximumColumns = 64;
     private static readonly CultureInfo Turkish = CultureInfo.GetCultureInfo("tr-TR");
 
-    private enum XlsxField { TransactionDate, ValueDate, Description, Inflow, Outflow, Balance, Reference, Currency }
+    private enum XlsxField { TransactionDate, ValueDate, Description, Inflow, Outflow, Amount, Balance, Reference, Currency }
 
     public static FinanceStatementParseResult ParseXlsx(ReadOnlySpan<byte> content)
     {
@@ -67,8 +68,17 @@ internal static partial class FinanceBankStatementParser
             }
         }
 
+        var signed = columns.ContainsKey(XlsxField.Amount);
+        var pair = columns.ContainsKey(XlsxField.Inflow) || columns.ContainsKey(XlsxField.Outflow);
+        if (signed && pair)
+        {
+            // FNS-D120: one signed column and separate inflow/outflow columns together are refused.
+            issues.Add(headerRow, "header", "xlsx_amount_columns_conflict");
+            return issues.Result();
+        }
+
         if (!columns.ContainsKey(XlsxField.TransactionDate) || !columns.ContainsKey(XlsxField.Description)
-            || !columns.ContainsKey(XlsxField.Inflow) || !columns.ContainsKey(XlsxField.Outflow))
+            || !signed && !(columns.ContainsKey(XlsxField.Inflow) && columns.ContainsKey(XlsxField.Outflow)))
         {
             issues.Add(headerRow, "header", "xlsx_header_required_missing");
             return issues.Result();
@@ -96,11 +106,28 @@ internal static partial class FinanceBankStatementParser
                 if (valueOn is null) issues.Add(rowNumber, "valueDate", "date_invalid");
             }
 
-            var inflowOk = XlsxAmount(Cell(XlsxField.Inflow), allowNegative: false, out var inflow);
-            var outflowOk = XlsxAmount(Cell(XlsxField.Outflow), allowNegative: false, out var outflow);
-            var inflowSet = inflow is not null && !IsZero(inflow);
-            var outflowSet = outflow is not null && !IsZero(outflow);
-            if (!inflowOk || !outflowOk || inflowSet == outflowSet) issues.Add(rowNumber, "amount", "amount_invalid");
+            string? inflow = null, outflow = null;
+            bool inflowSet, outflowSet;
+            if (signed)
+            {
+                // FNS-D120: minus = out of the account, plus = into it; zero or a non-numeric cell is not an amount.
+                var ok = XlsxAmount(Cell(XlsxField.Amount), allowNegative: true, out var amount);
+                var negative = amount?.StartsWith('-') == true;
+                var magnitude = negative ? amount![1..] : amount;
+                inflowSet = ok && magnitude is not null && !IsZero(magnitude) && !negative;
+                outflowSet = ok && magnitude is not null && !IsZero(magnitude) && negative;
+                if (inflowSet) inflow = magnitude;
+                if (outflowSet) outflow = magnitude;
+                if (!inflowSet && !outflowSet) issues.Add(rowNumber, "amount", "amount_invalid");
+            }
+            else
+            {
+                var inflowOk = XlsxAmount(Cell(XlsxField.Inflow), allowNegative: false, out inflow);
+                var outflowOk = XlsxAmount(Cell(XlsxField.Outflow), allowNegative: false, out outflow);
+                inflowSet = inflow is not null && !IsZero(inflow);
+                outflowSet = outflow is not null && !IsZero(outflow);
+                if (!inflowOk || !outflowOk || inflowSet == outflowSet) issues.Add(rowNumber, "amount", "amount_invalid");
+            }
 
             string? balance = null;
             if (Cell(XlsxField.Balance) is { IsEmpty: false } balanceCell
@@ -137,6 +164,7 @@ internal static partial class FinanceBankStatementParser
         : Known(FinanceBankStatementXlsxHeadersV1.Description, text) ? XlsxField.Description
         : Known(FinanceBankStatementXlsxHeadersV1.Inflow, text) ? XlsxField.Inflow
         : Known(FinanceBankStatementXlsxHeadersV1.Outflow, text) ? XlsxField.Outflow
+        : Known(FinanceBankStatementXlsxHeadersV1.Amount, text) ? XlsxField.Amount
         : Known(FinanceBankStatementXlsxHeadersV1.Balance, text) ? XlsxField.Balance
         : Known(FinanceBankStatementXlsxHeadersV1.Reference, text) ? XlsxField.Reference
         : Known(FinanceBankStatementXlsxHeadersV1.Currency, text) ? XlsxField.Currency

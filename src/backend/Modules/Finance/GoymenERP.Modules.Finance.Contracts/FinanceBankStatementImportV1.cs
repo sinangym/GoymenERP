@@ -19,9 +19,8 @@ public static class FinanceBankStatementPermissionsV1
 }
 
 /// <summary>
-/// FNS-D52: the file kinds a statement may be. The column source of a workbook is not decided (NEEDS-SINAN WP12-S2), so
-/// <see cref="Xlsx"/> is read only through a closed list of known header names (FinanceBankStatementXlsxHeadersV1); any
-/// other header refuses the file.
+/// FNS-D52: the file kinds a statement may be. <see cref="Xlsx"/> is read only through a closed list of known header names
+/// (FinanceBankStatementXlsxHeadersV1, FNS-D120); any other header refuses the file.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<FinanceBankStatementFormatV1>))]
 public enum FinanceBankStatementFormatV1
@@ -159,10 +158,10 @@ public static class FinanceBankStatementLimitsV1
 }
 
 /// <summary>
-/// NEEDS-SINAN WP12-S2: no workbook column source is decided, so an XLSX statement is read only when its header row uses
-/// these known names (compared trimmed, case-insensitive in the Turkish culture). Amounts come only from the explicit
-/// inflow/outflow pair ("Alacak"/"Giriş" = into the account, "Borç"/"Çıkış" = out of it), never from one signed column whose
-/// sign meaning is not decided. Any other header refuses the file.
+/// An XLSX statement is read only when its header row uses these known names (compared trimmed, case-insensitive in the
+/// Turkish culture); any other header refuses the file. The amount comes EITHER from one signed <see cref="Amount"/> column
+/// (FNS-D120: minus = out of the account, plus = into it) OR from the explicit inflow/outflow pair ("Alacak"/"Giriş" = into
+/// the account, "Borç"/"Çıkış" = out of it); a file with both is refused (FNS-D120).
 /// </summary>
 public static class FinanceBankStatementXlsxHeadersV1
 {
@@ -171,6 +170,7 @@ public static class FinanceBankStatementXlsxHeadersV1
     public static IReadOnlyList<string> Description { get; } = ["Açıklama"];
     public static IReadOnlyList<string> Inflow { get; } = ["Alacak", "Giriş"];
     public static IReadOnlyList<string> Outflow { get; } = ["Borç", "Çıkış"];
+    public static IReadOnlyList<string> Amount { get; } = ["Tutar", "İşlem Tutarı"];
     public static IReadOnlyList<string> Balance { get; } = ["Bakiye"];
     public static IReadOnlyList<string> Reference { get; } = ["Referans", "Dekont No"];
     public static IReadOnlyList<string> Currency { get; } = ["Para Birimi", "Döviz"];

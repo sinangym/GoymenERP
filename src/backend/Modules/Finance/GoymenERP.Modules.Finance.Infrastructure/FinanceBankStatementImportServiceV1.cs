@@ -25,7 +25,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// twice is refused.</item>
 /// <item><b>Suggestions</b> are a READ (<see cref="FinanceBankStatementMatcher"/>; FNS-D113 exact amount, no tolerance).
 /// A match becomes final only with <b>ConfirmMatch</b> (a person); <b>ReverseMatch</b> undoes it with a reversal record, never a
-/// deletion. No movement and no journal is created. A missing movement is recorded by a person with Finance's existing
+/// deletion. FNS-D119: the person who confirmed may reverse too (no second person); the reason is mandatory and audited. No movement and no journal is created. A missing movement is recorded by a person with Finance's existing
 /// commands.</item>
 /// </list>
 /// Every command: permission fence before and after each await, Idempotency-Key replay (same actor and payload) before
