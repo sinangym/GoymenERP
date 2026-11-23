@@ -120,6 +120,23 @@ public static class SalesApprovalRequestApiV1
     };
 }
 
+/// <summary>The strict wire readers of the approval request commands (unknown members are refused by the shared options).</summary>
+public static class SalesApprovalRequestJson
+{
+    public static SalesQuoteConversionRequestRequest ReadQuoteRequest(string json)
+    {
+        var request = JsonSerializer.Deserialize<SalesQuoteConversionRequestRequest>(json, SalesDraftJson.Options)
+            ?? throw new JsonException("Request body is required.");
+        return request.ExpectedVersion is null ? throw new JsonException("The expected version is required.") : request;
+    }
+
+    /// <summary>The approval carries the expected version only.</summary>
+    public static SalesDraftStateCommandRequest ReadApproval(string json) => SalesDraftJson.ReadStateCommand(json, allowReason: false);
+
+    /// <summary>The rejection takes the expected version and a reason.</summary>
+    public static SalesDraftStateCommandRequest ReadRejection(string json) => SalesDraftJson.ReadStateCommand(json, allowReason: true);
+}
+
 public static class SalesApprovalRequestHash
 {
     public static string Compute(Guid quoteId, SalesQuoteConversionRequestRequest request)

@@ -28,6 +28,9 @@ public static partial class SalesEndpoints
             .RequireAuthorization()
             .RequireCompanyContext();
 
+        // WP4 (SAT-D476): the expired quote's conversion requests.
+        MapQuoteApprovalRequests(quotes);
+
         quotes.MapPost("/", (HttpContext httpContext, [FromServices] ISalesQuoteService service, ICorrelationContext correlation,
                 CancellationToken cancellationToken) =>
             QuoteCommandAsync(httpContext, correlation, SalesQuoteJson.ReadCreate, SalesQuoteApiV1.CreatedStatus,
