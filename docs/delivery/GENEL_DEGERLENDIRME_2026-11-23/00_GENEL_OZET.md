@@ -174,6 +174,7 @@ Sıra bağımlılığa göredir. "İnsan kapısı" Sinan'ın kararını ya da i�
 | B4 | Zincir kopukluklarını kapatmak: risk okuması, sipariş kapatma, resmî iptal, alış siparişinin talebe bağlanması ve çok satır, çıktıdaki blok, plan ekranı alanları, kg toleransları |
 | B5 | Ekranlarda kimlik kodu yerine okunur ad ve numara (lojistik, üretim, muhasebe) |
 | B6 | Çift alacak riskini kapatmak |
+| B7 | Menü sadeleştirme: 107 girişten yaklaşık 36'ya; aynı işin kayıt türleri tek sayfada sekme olur, onay sayfaları çalışma alanına taşınır (`30_MENU_SADELESTIRME_VE_DEVAM_PLANI.md`) |
 
 ### Aşama C — günlük kullanım için gerekenler
 
@@ -221,6 +222,7 @@ ve bütçe, AI, malzeme ihtiyaç planı, StokERP geçişi.
 | `20_ZINCIR_SIPARISTEN_NAKDE.md` | Satış zinciri halka halka |
 | `21_ZINCIR_SATINALMADAN_ODEMEYE.md` | Satın alma zinciri halka halka |
 | `22_ZINCIR_URETIM_BELGE_SICIL_VE_BAGLANTI_MATRISI.md` | Üretim zinciri, belge, sicil, modüller arası bağımlılık matrisi |
+| `30_MENU_SADELESTIRME_VE_DEVAM_PLANI.md` | Menü sadeleştirme önerisi ve devam planı |
 
 ## 10. Bu değerlendirmenin sınırları
 
