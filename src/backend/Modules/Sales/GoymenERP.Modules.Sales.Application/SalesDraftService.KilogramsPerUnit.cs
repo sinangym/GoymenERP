@@ -124,8 +124,10 @@ public sealed partial class SalesDraftService
         if (draft.KilogramsPerUnitOf(lineId) is not { } snapshot) return null;
         using var document = JsonDocument.Parse(snapshot.SourceProof);
         if (!document.RootElement.TryGetProperty("tableConflict", out var conflict) || conflict.ValueKind != JsonValueKind.Object) return null;
-        string Read(string name) => conflict.GetProperty(name).GetString()
-            ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
+        // A recorded conflict always carries every member as a string; anything else is an unreadable proof (fail closed).
+        string Read(string name) => conflict.TryGetProperty(name, out var member) && member.ValueKind == JsonValueKind.String
+            ? member.GetString()!
+            : throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
         return new SalesKilogramsPerUnitTableConflictV1(Read("selection"), Read("selectedKilogramsPerUnit"), Read("otherKilogramsPerUnit"),
             Read("differenceKilogramsPerUnit"), Read("selectedKgPerMetre"), Read("otherKgPerMetre"));
     }

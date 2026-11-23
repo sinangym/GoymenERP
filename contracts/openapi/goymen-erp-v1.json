@@ -305769,6 +305769,37 @@
           }
         }
       },
+      "SalesKilogramsPerUnitTableConflictV1": {
+        "required": [
+          "selection",
+          "selectedKilogramsPerUnit",
+          "otherKilogramsPerUnit",
+          "differenceKilogramsPerUnit",
+          "selectedKgPerMetre",
+          "otherKgPerMetre"
+        ],
+        "type": "object",
+        "properties": {
+          "selection": {
+            "type": "string"
+          },
+          "selectedKilogramsPerUnit": {
+            "type": "string"
+          },
+          "otherKilogramsPerUnit": {
+            "type": "string"
+          },
+          "differenceKilogramsPerUnit": {
+            "type": "string"
+          },
+          "selectedKgPerMetre": {
+            "type": "string"
+          },
+          "otherKgPerMetre": {
+            "type": "string"
+          }
+        }
+      },
       "SalesLostAmountView": {
         "required": [
           "state",
@@ -307004,6 +307035,16 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "theoreticalKilogramsPerUnitConflict": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesKilogramsPerUnitTableConflictV1"
+              }
             ]
           }
         }
