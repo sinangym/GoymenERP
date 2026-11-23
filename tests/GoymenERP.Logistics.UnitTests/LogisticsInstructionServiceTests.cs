@@ -567,12 +567,13 @@ public sealed partial class LogisticsInstructionServiceTests
         public FakeStore Store { get; init; } = new();
         // STK-S27: the Sales risk gate answers within the limit unless a test says otherwise; null is an unregistered port.
         public FakeRiskGate? RiskGate { get; set; } = new();
+        public FakeOverDeliveryGate? OverDeliveryGate { get; set; } = new();
         public LogisticsInstructionServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, CreatePermission);
 
         public LogisticsInstructionService Service(ILogisticsRealizationTransactionRunnerV1? runner = null)
         {
             return new LogisticsInstructionService(Company, User, Authority, new FixedCorrelation(), Accounts, OrderLines,
-                new LoadingUnitVerifier(Settings), Store, Bindings, TimeProvider.System, runner, RiskGate);
+                new LoadingUnitVerifier(Settings), Store, Bindings, TimeProvider.System, runner, RiskGate, OverDeliveryGate);
         }
 
         public void ResetOwnerCalls()
