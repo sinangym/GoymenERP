@@ -35,7 +35,7 @@ Analiz yalnız kod okumaya dayanmıyor; projeyi kurup çalıştırdım.
 | Ölçüm | Sonuç |
 |---|---|
 | Arka uç derlemesi (Release) | 0 hata, 0 uyarı |
-| Arka uç testleri (yerel, SQL'siz) | 14.534 testten 14.528'i geçti. Kalan 6'sı bu ortama özgü (4'ü PowerShell ister, 2'si `root` kullanıcı adına takılır) |
+| Arka uç testleri (yerel, SQL'siz) | 21 test projesinde 14.534 testten 14.528'i geçti. Kalan 6'sı bu ortama özgü (4'ü PowerShell ister, 2'si `root` kullanıcı adına takılır). API entegrasyon test projesi yerelde süre sınırına takıldı ve tamamlanmadı; onun kanıtı aşağıdaki CI koşusudur |
 | Ön yüz | lint ve derleme temiz; 640 test dosyası, 10.421 test, hepsi geçti |
 | CI, `main` `9e6107f` (koşu 45164205956) | 22 işin 22'si başarılı; gerçek SQL Server kabul testleri (üç parça, her biri yaklaşık 2 saat) dahil. `ddc6cba` bunun üstüne yalnız 5 satır belge ekliyor |
 | Çalıştırma | API gerçek SQL Server 2022'de açıldı, bütün göçler uygulandı, `/health/ready` sağlıklı |
