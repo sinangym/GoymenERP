@@ -1030,7 +1030,10 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1(
         row.WithholdingFunctionalAmountText, row.PdfDocumentId, row.PdfDocumentVersionNo, row.PdfSha256,
         (FinanceOfficialSalesInvoiceStatusV1)row.Status, VersionText(row.Version), row.RecordedBy, row.RecordedAtUtc,
         row.ApprovedBy, row.ApprovedAtUtc, row.RejectedBy, row.RejectedAtUtc, row.RejectionReason, row.WithdrawnBy,
-        row.WithdrawnAtUtc, row.InvoiceDate);
+        row.WithdrawnAtUtc, row.InvoiceDate,
+        // FNS-D64: shown on every read and carried into the audit through AuditJson; never blocks the record.
+        TaxWarning: FinanceOfficialInvoiceTaxConsistencyV1.Check(row.TaxBaseFunctionalAmountText,
+            row.VatFunctionalAmountText, row.WithholdingFunctionalAmountText, row.PayableFunctionalAmountText));
 
     private static string AuditJson(FinanceOfficialSalesInvoiceRow row) => JsonSerializer.Serialize(View(row), Json);
 

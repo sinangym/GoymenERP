@@ -414,7 +414,7 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
             var payments = new ExpensePaymentService(dbContext, companyContext, currentUser, new SyntheticPermissions(),
                 new SingleExpenseItemCatalog(), balance ?? new SyntheticBalance(TreasuryBalanceOutcome.Sufficient),
                 new SyntheticSettings(company), new SyntheticOpenPeriod(), collector,
-                new ExpensePaymentBinding(FinanceMoneyOperations.ManualBankPaymentV1),
+                new ExpensePaymentBinding(FinanceMoneyOperations.ExpensePaymentV1),
                 new ExpensePaymentAuditEnvelopes(
                     Envelope(FinancePermissionNames.ExpensePaymentDraftSave),
                     Envelope(FinancePermissionNames.ExpensePaymentApprove),

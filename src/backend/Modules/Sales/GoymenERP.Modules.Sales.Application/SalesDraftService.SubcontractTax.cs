@@ -5,7 +5,7 @@ using GoymenERP.Modules.Sales.Domain.Drafts;
 
 namespace GoymenERP.Modules.Sales.Application;
 
-/// <summary>SAT-D381 and SAT-D469 (#1189 6947126872): tax-only writes use Sales approval alone, without conferring price-write authority.</summary>
+/// <summary>SAT-D381 and SAT-D469 (#1189 6947126872 (GOV-D16)): tax-only writes use Sales approval alone, without conferring price-write authority.</summary>
 public sealed partial class SalesDraftService : ISalesSubcontractTaxServiceV1
 {
     private async Task<Scope> WithSubcontractTaxAuthorityAsync(Scope scope, CancellationToken token)

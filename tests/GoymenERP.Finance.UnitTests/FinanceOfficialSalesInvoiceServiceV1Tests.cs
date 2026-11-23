@@ -102,6 +102,28 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1Tests
     }
 
     [Fact]
+    public async Task Fns_d64_a_tax_difference_is_recorded_with_a_warning_shown_and_audited_never_blocked()
+    {
+        var fixture = Fixture.Create();
+        var service = fixture.Service("maker", new Documents());
+
+        var consistent = Request();
+        Assert.Null(FinanceOfficialInvoiceTaxConsistencyV1.Check(consistent.TaxBaseFunctionalAmount,
+            consistent.VatFunctionalAmount, consistent.WithholdingFunctionalAmount, consistent.PayableFunctionalAmount));
+        var result = await service.RecordAsync(Context("maker"), new CommandMetadata("record-key"),
+            consistent with { PayableFunctionalAmount = "1250.51" }, default);
+
+        Assert.Equal(CommandOutcome.Succeeded, result.Outcome);
+        var warning = result.Resource!.TaxWarning!;
+        Assert.Equal((FinanceOfficialInvoiceTaxWarningV1.InconsistentCode, (Guid?)null, "1250.50", "1250.51", "0.01"),
+            (warning.Code, warning.SourceDocumentId, warning.ExpectedPayableFunctionalAmount, warning.PayableFunctionalAmount,
+                warning.DifferenceFunctionalAmount));
+        var recorded = Assert.Single(fixture.Audit.Events, e => e.EventType == "finance.official-sales-invoice.recorded.v1");
+        Assert.Contains(FinanceOfficialInvoiceTaxWarningV1.InconsistentCode, recorded.AfterJson, StringComparison.Ordinal);
+        Assert.Single(await fixture.Db.OfficialSalesInvoices.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
     public async Task Recorder_cannot_approve_own_record_and_the_record_stays_pending()
     {
         var fixture = Fixture.Create();

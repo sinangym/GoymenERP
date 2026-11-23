@@ -13,6 +13,7 @@
  * server is the judge of it; a version conflict re-reads; an unknown outcome keeps the same Idempotency-Key for "retry".
  */
 
+import { EditedAttemptNotice } from './EditedAttemptNotice'
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '../ui/Button'
@@ -419,6 +420,7 @@ function AttemptFooter<T>({
           {refusalText(status.status, status.code, companyLabel(status.companyId), status.groupCode)}
         </p>
       ) : null}
+      <EditedAttemptNotice status={status} />
       {status.kind === 'unknown' ? (
         <p role="alert" className={styles.error}>
           {LIMIT_TEXT.unknownOutcome}

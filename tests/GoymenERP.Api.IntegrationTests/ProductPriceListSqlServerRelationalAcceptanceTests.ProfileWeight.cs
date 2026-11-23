@@ -193,6 +193,22 @@ public sealed partial class ProductPriceListSqlServerRelationalAcceptanceTests
             var read = await ((IProductDimensionReaderV1)dimensions).GetAsync(ProductId);
             Assert.Equal((ProductDimensionOutcomeV1.Found, (decimal?)null, true, "SENTETIK KATALOG", (long?)1),
                 (read.Outcome, read.KgPerMetre, read.KgPerMetreConflict, read.KgPerMetreSourceLabel, read.KgPerMetreTableVersion));
+            // SAT-D477: the card's entered direction (40×60 → 2.6 kg/m) and the reversed one (60×40 → 2.5) are named; no value is.
+            Assert.Equal(((decimal?)2.6m, (decimal?)2.5m), (read.ConflictEnteredKgPerMetre, read.ConflictReversedKgPerMetre));
+        }
+
+        // Entered the other way round (60×40), the same table names 2.5 as the entered direction.
+        await using (var scope = run.Request())
+        {
+            await scope.Context.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE product.ProductCardDimensions SET WidthMm = 60.0, HeightMm = 40.0 WHERE ProductId = {ProductId}");
+        }
+
+        await using (var scope = run.Request())
+        {
+            var read = await ((IProductDimensionReaderV1)DimensionService(scope, run)).GetAsync(ProductId);
+            Assert.Equal((true, (decimal?)null, (decimal?)2.5m, (decimal?)2.6m),
+                (read.KgPerMetreConflict, read.KgPerMetre, read.ConflictEnteredKgPerMetre, read.ConflictReversedKgPerMetre));
         }
     }
 

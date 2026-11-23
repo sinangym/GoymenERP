@@ -19,7 +19,7 @@ vi.mock('../shell/useAuthBoundary', () => ({ useAuthBoundary: () => ({ capture: 
 const row = (patch: Record<string, unknown> = {}) => ({ proposalId: source, companyId: state.company, eventId: source,
   kind: 1, invoiceId: source, invoiceVersion: 2, admissionId: source, invoiceDate: '2026-11-17', officialInvoiceNumber: 'SENTETIK-F1',
   component: { componentKey: `invoice-line:${source}`, productId: source, invoiceLineId: source, invoiceLineNumber: 1, locationId: null,
-    signedTlAmount: { numerator: '600', denominator: '1' }, sourceProofSha256: 'a'.repeat(64) },
+    signedTlAmount: { numerator: '600', denominator: '1' }, sourceProofJson: '{}', sourceProofSha256: 'a'.repeat(64) },
   version: 2, status: 'Prepared', sourceOccurredAtUtc: '2026-11-17T09:00:00Z', exactTlAmount: '600',
   preparation: { periodId: source, accountingDate: '2026-11-17', transactionDate: '2026-11-17', currencyId: source,
     signedAmount: '600', moneyProfileId: source, moneyProfileVersion: 1, moneyScale: 2,

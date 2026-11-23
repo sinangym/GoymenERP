@@ -1,3 +1,4 @@
+import { EditedAttemptNotice } from './EditedAttemptNotice'
 import { useState, type FormEvent } from 'react'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
@@ -50,6 +51,6 @@ function Editor({ data, finish }: { readonly data: ContractDiscountLimit; readon
   return <form className={styles.form} onSubmit={event => void submit(event)} aria-busy={busy}><fieldset disabled={busy || frozen !== null}>
     <Field label={T.percent}>{control => <input {...control} required inputMode="decimal" maxLength={64} value={rate} onChange={event => setRate(event.target.value)} />}</Field>
     <Field label={T.reason}>{control => <textarea {...control} required maxLength={4000} value={reason} onChange={event => setReason(event.target.value)} />}</Field></fieldset>
-    {attempt.status.kind === 'unknown' && <p role="alert">{T.unknown}</p>}{attempt.status.kind === 'refused' && <p role="alert">{T.refused}</p>}
+    {attempt.status.kind === 'unknown' && <p role="alert">{T.unknown}</p>}<EditedAttemptNotice status={attempt.status} />{attempt.status.kind === 'refused' && <p role="alert">{T.refused}</p>}
     <Button type="submit" disabled={busy || (!valid && frozen === null)}>{busy ? T.pending : frozen !== null ? T.retry : T.save}</Button><Button type="button" disabled={busy || frozen !== null} onClick={() => finish(null)}>{T.cancel}</Button></form>
 }

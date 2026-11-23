@@ -84,4 +84,39 @@ describe('ALS-D112/D115 supplier revision wire and pending attempt', () => {
     vi.stubGlobal('fetch', vi.fn(async () => response({}, 503)))
     expect(await fetchSupplierRevisions(company, order)).toMatchObject({ type: 'http', status: 503 })
   })
+  it('accepts a history with exactly the contract key set and refuses an extra or a missing key at both levels', () => {
+    const drop = (value: object, key: string) => Object.fromEntries(Object.entries(value).filter(([name]) => name !== key))
+    expect(decodeSupplierRevisionHistory(history(), company, order)).toEqual(history())
+    expect(decodeSupplierRevisionHistory({ ...history(), supplierName: 'SENTETIK' }, company, order)).toBeNull()
+    for (const key of ['companyId', 'orderId', 'version', 'revision', 'revisions']) {
+      expect(decodeSupplierRevisionHistory(drop(history(), key), company, order)).toBeNull()
+    }
+    expect(decodeSupplierRevisionHistory({ ...history(), revisions: [{ ...history().revisions[0], unitPrice: '1' }] }, company, order)).toBeNull()
+    for (const key of Object.keys(history().revisions[0])) {
+      expect(decodeSupplierRevisionHistory({ ...history(), revisions: [drop(history().revisions[0], key)] }, company, order)).toBeNull()
+    }
+  })
+  it('recalls a pending attempt only with exactly its key set, at the attempt and at the command level', () => {
+    const key = supplierRevisionAttemptKey(1, attempt.actorId, company, order)
+    const drop = (value: object, name: string) => Object.fromEntries(Object.entries(value).filter(([field]) => field !== name))
+    const recall = (value: unknown) => { sessionStorage.setItem(key, JSON.stringify(value)); return readSupplierRevisionAttempt(key, attempt.actorId, company, order) }
+    const seen = { ...attempt, command: { ...attempt.command, seenAllocations: [{ allocationId: previous, expectedAllocationVersion: '2' }] } }
+    const price = { ...attempt, command: { kind: 'price', expectedVersion: '4', lineId: line, price: { unitPrice: '12.5', priceUnitId: unit } } }
+    expect(recall(attempt)).toEqual(attempt)
+    expect(recall(seen)).toEqual(seen)
+    expect(recall(price)).toEqual(price)
+    expect(() => recall({ ...attempt, sessionEpoch: 1 })).toThrow()
+    expect(() => recall(drop(attempt, 'idempotencyKey'))).toThrow()
+    expect(() => recall(drop(attempt, 'command'))).toThrow()
+    expect(() => recall({ ...attempt, command: { ...attempt.command, lineId: line } })).toThrow()
+    for (const name of ['expectedVersion', 'supplierPartyId', 'companyAccountId', 'reason']) {
+      expect(() => recall({ ...attempt, command: drop(attempt.command, name) })).toThrow()
+    }
+    expect(() => recall({ ...price, command: { ...price.command, reason: 'SENTETIK' } })).toThrow()
+    for (const name of ['expectedVersion', 'lineId', 'price']) {
+      expect(() => recall({ ...price, command: drop(price.command, name) })).toThrow()
+    }
+    expect(() => recall({ ...seen, command: { ...seen.command, seenAllocations: [{ ...seen.command.seenAllocations[0], extra: true }] } })).toThrow()
+    expect(() => recall({ ...seen, command: { ...seen.command, seenAllocations: [{ allocationId: previous }] } })).toThrow()
+  })
 })

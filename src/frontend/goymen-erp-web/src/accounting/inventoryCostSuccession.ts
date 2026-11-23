@@ -1,4 +1,5 @@
-import type { InventoryCostCancellationComponent } from './inventoryCostCancellation'
+import { exactKeys } from './exactKeys'
+import { CANCELLATION_COMPONENT_KEYS, CANCELLATION_COMPONENT_OPTIONAL_KEYS, type InventoryCostCancellationComponent } from './inventoryCostCancellation'
 
 type Ratio = { readonly numerator: string; readonly denominator: string }
 export interface InventoryCostClaimSuccession {
@@ -17,14 +18,21 @@ const rec = (v: unknown): v is Record<string, unknown> => typeof v === 'object' 
 const guid = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(v) && !/^0{8}-0{4}-0{4}-0{4}-0{12}$/.test(v)
 const hash = (v: unknown): v is string => typeof v === 'string' && /^[a-f0-9]{64}$/i.test(v)
 const integer = (v: unknown, min = 1) => Number.isSafeInteger(v) && (v as number) >= min
-const ratio = (v: unknown): v is Ratio => rec(v) && typeof v.numerator === 'string' && /^(0|[1-9][0-9]*)$/.test(v.numerator)
+const ratio = (v: unknown): v is Ratio => rec(v) && exactKeys(v, ['numerator', 'denominator']) && typeof v.numerator === 'string' && /^(0|[1-9][0-9]*)$/.test(v.numerator)
   && typeof v.denominator === 'string' && /^[1-9][0-9]*$/.test(v.denominator)
 const money = (v: unknown): v is string => typeof v === 'string' && /^-?(0|[1-9][0-9]*)(\.[0-9]{0,27}[1-9])?$/.test(v) && v !== '-0'
 const same = (a: unknown, b: unknown) => typeof a === 'string' && typeof b === 'string' && a.toLowerCase() === b.toLowerCase()
+// OpenAPI: InventoryCostClaimSuccessionV1, InventoryCostClaimGenerationV1, AccountingSalesPhysicalCostClaimV1 (all keys required);
+// reversed components are InventoryCostCancellationComponentV1.
+const SUCCESSION_KEYS = ['previousEventId', 'previousInvoiceId', 'previousInvoiceLineId', 'previousAdmissionId', 'previousFinalizedVersion',
+  'previousProposalId', 'previousProposalVersion', 'previousSourceSha256', 'cancellationId', 'invoiceLineRevision', 'claims',
+  'reversedComponents', 'capturedCostFingerprints', 'originalSourceAmount', 'knownBaseAmount', 'restoredAmount'] as const
+const GENERATION_KEYS = ['physical', 'previousGeneration', 'previousClaimSha256'] as const
+export const PHYSICAL_CLAIM_KEYS = ['shipmentId', 'movementId', 'movementLineNumber', 'productId', 'quantityKg'] as const
 
 /** Validate identities/evidence only. No cost, allocation or rounding is computed in the browser. */
 export function decodeInventoryCostSuccession(body: unknown, parent: Record<string, unknown>, component: Record<string, unknown>): InventoryCostClaimSuccession | null {
-  if (!rec(body) || !['previousEventId', 'previousInvoiceId', 'previousInvoiceLineId', 'previousAdmissionId', 'previousProposalId', 'cancellationId'].every(k => guid(body[k]))
+  if (!rec(body) || !exactKeys(body, SUCCESSION_KEYS) || !['previousEventId', 'previousInvoiceId', 'previousInvoiceLineId', 'previousAdmissionId', 'previousProposalId', 'cancellationId'].every(k => guid(body[k]))
     || same(body.previousInvoiceId, parent.invoiceId) || same(body.previousEventId, parent.eventId) || same(body.previousAdmissionId, parent.admissionId)
     || !integer(body.previousFinalizedVersion) || !integer(body.previousProposalVersion) || !integer(body.invoiceLineRevision, 0)
     || !hash(body.previousSourceSha256) || !ratio(body.originalSourceAmount) || !ratio(body.knownBaseAmount) || !ratio(body.restoredAmount)
@@ -34,7 +42,8 @@ export function decodeInventoryCostSuccession(body: unknown, parent: Record<stri
     || !Array.isArray(body.claims) || body.claims.length === 0 || body.claims.length > 10000
     || !Array.isArray(component.salesPhysicalClaims) || component.salesPhysicalClaims.length !== body.claims.length) return null
   const actual = component.salesPhysicalClaims as unknown[]
-  if (body.claims.some(p => !rec(p) || !integer(p.previousGeneration) || !hash(p.previousClaimSha256) || !rec(p.physical)
+  if (body.claims.some(p => !rec(p) || !exactKeys(p, GENERATION_KEYS) || !integer(p.previousGeneration) || !hash(p.previousClaimSha256)
+    || !rec(p.physical) || !exactKeys(p.physical, PHYSICAL_CLAIM_KEYS)
     || !['shipmentId', 'movementId', 'productId'].every(k => guid(p.physical && (p.physical as Record<string, unknown>)[k]))
     || !same(p.physical.productId, component.productId) || !integer(p.physical.movementLineNumber)
     || typeof p.physical.quantityKg !== 'number' || !Number.isFinite(p.physical.quantityKg) || p.physical.quantityKg <= 0
@@ -44,7 +53,7 @@ export function decodeInventoryCostSuccession(body: unknown, parent: Record<stri
   if (new Set(claims.map(p => `${p.physical.movementId.toLowerCase()}/${p.physical.movementLineNumber}`)).size !== claims.length
     || !Array.isArray(body.capturedCostFingerprints) || body.capturedCostFingerprints.some(p => !hash(p))
     || new Set(body.capturedCostFingerprints).size !== body.capturedCostFingerprints.length
-    || !Array.isArray(body.reversedComponents) || body.reversedComponents.some(p => !rec(p)
+    || !Array.isArray(body.reversedComponents) || body.reversedComponents.some(p => !rec(p) || !exactKeys(p, CANCELLATION_COMPONENT_KEYS, CANCELLATION_COMPONENT_OPTIONAL_KEYS)
       || !hash(p.economicKey) || !hash(p.sourceFingerprint) || !['Known', 'Manufacturing', 'Purchase'].includes(p.origin as string)
       || !['journalSourceId', 'currencyId', 'cogsAccountId', 'counterAccountId'].every(k => guid(p[k]))
       || same(p.cogsAccountId, p.counterAccountId) || typeof p.postingPurpose !== 'string' || !p.postingPurpose.trim()

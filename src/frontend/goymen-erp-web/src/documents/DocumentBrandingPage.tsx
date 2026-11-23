@@ -12,7 +12,7 @@ import { OWNER_KIND, type DocumentRow } from './contract'
 import { BRANDING_MANAGE, TEMPLATE_CATALOG, type AssetReference, type BrandingAsset, type BrandingCurrent,
   type TemplateCurrent, type TemplateModule } from './brandingContract'
 import { fetchBranding, fetchTemplate, writeBranding, type BrandingCommand } from './brandingApi'
-import { beginBrandingFlight, brandingAttempt, endBrandingFlight, setBrandingAttempt, subscribeBrandingAttempt,
+import { beginBrandingFlight, brandingAttempt, endBrandingFlight, refusalSettlesBrandingAttempt, setBrandingAttempt, subscribeBrandingAttempt,
   } from './brandingAttempt'
 import { BRANDING_TEXT as T } from './brandingText'
 
@@ -70,8 +70,8 @@ function BrandingEditor({ shell, company, module, namespace }: {
     if (alive.current) { setState(null); setMessage(null) }
     if (attempt.kind === 'upload') {
       const result = await uploadDocument(attempt.attempt)
-      endBrandingFlight(binding)
-      if (result.type === 'stored' || result.type === 'refused' && ![401, 403].includes(result.status)) setBrandingAttempt(binding, null)
+      endBrandingFlight(binding, result.type !== 'stored' && result.type !== 'refused')
+      if (result.type === 'stored' || result.type === 'refused' && refusalSettlesBrandingAttempt(attempt, result.status, result.code)) setBrandingAttempt(binding, null)
       if (!alive.current) return
       if (result.type === 'stored') {
         const row = result.upload.document
@@ -88,8 +88,8 @@ function BrandingEditor({ shell, company, module, namespace }: {
       return
     }
     const result = await writeBranding(company, attempt.key, attempt.command)
-    endBrandingFlight(binding)
-    if (result.type === 'applied' || result.type === 'refused' && ![401, 403].includes(result.status)) setBrandingAttempt(binding, null)
+    endBrandingFlight(binding, result.type === 'unknown')
+    if (result.type === 'applied' || result.type === 'refused' && refusalSettlesBrandingAttempt(attempt, result.status, result.code)) setBrandingAttempt(binding, null)
     if (!alive.current) return
     if (result.type === 'applied') {
       setReason(''); setSelection(null); setUploaded({}); setMessage(result.result.isReplay ? T.replayed : T.applied)

@@ -55,6 +55,29 @@ public sealed class FinanceOfficialSalesInvoiceReadPortV1Tests
     }
 
     [Fact]
+    public async Task A_cancelled_import_is_never_answered_as_approved()
+    {
+        await using (var alone = await Run.CreateAsync())
+        {
+            var port = alone.Port(Company);
+            await SeedImport(alone.Db, "1500.55", FinanceOpenItemStatuses.Cancelled);
+            var answer = await port.LookupAsync(Company, OfficialNo, Ettn);
+            Assert.Equal((FinanceOfficialSalesInvoiceReadOutcomeV1.NotFound, (FinanceOfficialSalesInvoiceFactsV1?)null),
+                (answer.Outcome, answer.Invoice));
+            Assert.Equal(SalesOfficialInvoiceOutcomeV1.NotFound,
+                (await alone.SalesPort(Company).LookupAsync(Company, OfficialNo, Ettn)).Outcome);
+        }
+
+        // Beside a pending manual record the cancelled import supplies nothing: the manual record is still pending.
+        await using var run = await Run.CreateAsync(Row(Guid.NewGuid(), FinanceOfficialSalesInvoiceStatusV1.PendingApproval));
+        var pending = run.Port(Company);
+        await SeedImport(run.Db, "1500.55", FinanceOpenItemStatuses.Cancelled);
+        Assert.Equal(FinanceOfficialSalesInvoiceReadOutcomeV1.PendingApproval,
+            (await pending.LookupAsync(Company, OfficialNo, Ettn)).Outcome);
+        Assert.False(run.Db.ChangeTracker.HasChanges());
+    }
+
+    [Fact]
     public async Task Missing_import_TL_is_unavailable_and_approved_manual_wins_without_rewriting_the_import()
     {
         await using (var missing = await Run.CreateAsync())
@@ -77,7 +100,7 @@ public sealed class FinanceOfficialSalesInvoiceReadPortV1Tests
         Assert.False(run.Db.ChangeTracker.HasChanges());
     }
 
-    private static async Task<Guid> SeedImport(FinanceDbContext db, string tl)
+    private static async Task<Guid> SeedImport(FinanceDbContext db, string tl, int openItemStatus = FinanceOpenItemStatuses.Open)
     {
         var batchId = Guid.NewGuid(); var documentId = Guid.NewGuid();
         var row = string.Join(',', Guid.NewGuid(), documentId, Guid.NewGuid(), "1", Customer,
@@ -95,6 +118,19 @@ public sealed class FinanceOfficialSalesInvoiceReadPortV1Tests
             db.OfficialInvoiceIdentityClaims.Add(new() { Id = Guid.NewGuid(), CompanyId = Company, IdentityKind = kind,
                 IdentityValue = value, Generation = 1, HolderBatchId = batchId, HolderSourceDocumentId = documentId,
                 ClaimedBy = "SENTETIK-checker", ClaimedAtUtc = ApprovedAt, CorrelationId = "SENTETIK" });
+        // The admission's open item of the document; API-11 cancellation marks it Cancelled (outstanding zero).
+        var source = parsed.Preview.Batch!.Rows[0];
+        db.OpenItems.Add(new FinanceOpenItemRow
+        {
+            Direction = FinanceOpenItemDirectionCodes.Receivable, Id = source.OpenItemId, CompanyId = Company,
+            SourceKind = FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment, SourceId = documentId,
+            SourceLineId = source.SourceInstallmentId, SourceVersion = source.SourceVersion, SourceBatchId = batchId,
+            SourceBatchVersion = "1", SourceBatchChecksum = parsed.Preview.SourceSha256, PartyId = source.PartyId,
+            CompanyAccountId = source.CompanyAccountId, CurrencyId = source.CurrencyId, OriginalAmountText = source.Amount,
+            OutstandingAmountText = openItemStatus == FinanceOpenItemStatuses.Cancelled ? "0" : source.Amount,
+            DueOn = source.DueOn ?? new DateOnly(2026, 12, 1), Status = openItemStatus, Version = 1,
+            CreatedBy = "SENTETIK-checker", CreatedAtUtc = ApprovedAt, UpdatedBy = "SENTETIK-checker", UpdatedAtUtc = ApprovedAt,
+        });
         await db.SaveChangesAsync(); db.ChangeTracker.Clear();
         return documentId;
     }

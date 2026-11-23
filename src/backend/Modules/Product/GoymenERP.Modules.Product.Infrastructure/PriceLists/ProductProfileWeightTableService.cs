@@ -325,12 +325,33 @@ internal sealed class ProductProfileWeightTableService(
 
         // At most two distinct values are needed to tell "one value" from "a table conflict".
         var weights = await lines.Select(line => line.KgPerMetre).Distinct().Take(2).ToListAsync(cancellationToken);
-        return weights.Count switch
+        if (weights.Count < 2)
         {
-            0 => ProfileWeightLookup.None,
-            1 => ProfileWeightLookup.Found(new ProfileWeightMatch(weights[0], header.SourceLabel, header.Version)),
-            _ => ProfileWeightLookup.Conflict(header.SourceLabel, header.Version),
-        };
+            return weights.Count == 0
+                ? ProfileWeightLookup.None
+                : ProfileWeightLookup.Found(new ProfileWeightMatch(weights[0], header.SourceLabel, header.Version));
+        }
+
+        // SAT-D477 (URN-D19): a non-square profile whose ENTERED direction (the card's width × height) and the reversed direction
+        // each hold exactly one kg/m names both values; the conflict stays a conflict (no consumer is given a value through it),
+        // but an owner read may present the entered direction as the document's value with the reversed one as the warning.
+        // Anything else (a square section, two values in one direction) carries no direction values.
+        if (tableKind == ProductDimensionSectionKindsV1.Profile && widthMm is { } enteredWidth && heightMm is { } enteredHeight
+            && enteredWidth != enteredHeight && wallThicknessMm is { } enteredWall)
+        {
+            var entered = await current.Where(line => line.WallThicknessMm == enteredWall && line.WidthMm == enteredWidth
+                    && line.HeightMm == enteredHeight)
+                .Select(line => line.KgPerMetre).Distinct().Take(2).ToListAsync(cancellationToken);
+            var reversed = await current.Where(line => line.WallThicknessMm == enteredWall && line.WidthMm == enteredHeight
+                    && line.HeightMm == enteredWidth)
+                .Select(line => line.KgPerMetre).Distinct().Take(2).ToListAsync(cancellationToken);
+            if (entered.Count == 1 && reversed.Count == 1 && entered[0] > 0m && reversed[0] > 0m && entered[0] != reversed[0])
+            {
+                return ProfileWeightLookup.Conflict(header.SourceLabel, header.Version, entered[0], reversed[0]);
+            }
+        }
+
+        return ProfileWeightLookup.Conflict(header.SourceLabel, header.Version);
     }
 
     private Task<long> CurrentVersionAsync(Guid companyId, CancellationToken cancellationToken) =>
@@ -569,14 +590,16 @@ internal sealed record ProfileWeightMatch(decimal KgPerMetre, string SourceLabel
 /// A conflict never carries a value.
 /// </summary>
 internal sealed record ProfileWeightLookup(ProfileWeightMatch? Match, bool IsConflict, string? ConflictSourceLabel,
-    long? ConflictTableVersion)
+    long? ConflictTableVersion, decimal? EnteredKgPerMetre = null, decimal? ReversedKgPerMetre = null)
 {
     public static ProfileWeightLookup None { get; } = new(null, false, null, null);
 
     public static ProfileWeightLookup Found(ProfileWeightMatch match) =>
         new(match ?? throw new ArgumentNullException(nameof(match)), false, null, null);
 
-    public static ProfileWeightLookup Conflict(string sourceLabel, long tableVersion) => new(null, true, sourceLabel, tableVersion);
+    /// <summary>A conflict; SAT-D477: with the entered and the reversed direction's single kg/m when both are known.</summary>
+    public static ProfileWeightLookup Conflict(string sourceLabel, long tableVersion, decimal? entered = null, decimal? reversed = null) =>
+        new(null, true, sourceLabel, tableVersion, entered, reversed);
 }
 
 /// <summary>

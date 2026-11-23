@@ -15,7 +15,12 @@ const row = (): CreditLimit => ({ id: Limit, companyId: Company, lenderPartyId: 
   source: { creditAccountId: Account, expectedCreditVersion: '2', expectedCurrentLimitId: null, expectedCurrentLimitVersion: null, amount: '50.000', sourceDocument: { reference: 'SENTETIK', documentDate: '2026-11-17', revision: '1' }, reason: 'SENTETIK' },
   isOwnProposal: false, proposedAtUtc: '2026-11-17T10:00:00Z', decidedAtUtc: null, rejectionReason: null, supersededById: null })
 const workspace = (): CreditLimitWorkspace => ({ companyId: Company, creditAccountId: Account, items: [row()], assessment: { recordedPrincipalNet: '-7.125', exceedsLimit: null, proposedMovements: [] } })
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: {
+  'Content-Type': 'application/json',
+  // Contract: a body replay is announced by the same headers (K3 P2-3).
+  ...(typeof body === 'object' && body !== null && ((body as { isReplay?: unknown }).isReplay === true)
+    ? { 'Idempotency-Replayed': 'true', 'Idempotency-Original-Correlation-Id': String((body as { originalCorrelationId?: unknown }).originalCorrelationId) } : {}),
+} })
 vi.mock('../shell/useAuthBoundary', () => ({ useAuthBoundary: () => ({ capture: () => ({}), report: vi.fn() }) }))
 vi.mock('../shell/shellContext', () => ({ useShellState: () => ({ routeEntryGeneration: 0 }) }))
 vi.mock('../shell/shellState', () => ({ hasCapability: (_: unknown, name: string) => name === 'finance.credits.approve' }))

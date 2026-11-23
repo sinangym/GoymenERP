@@ -7,6 +7,7 @@ import { isBoundUuid, isInstant } from './contract'
 import { isDateOnly } from './dateOnly'
 import { isNonNegativeDecimalText } from './decimalText'
 import { CREDIT_MOVEMENT_TEXT as T, CREDIT_POSTING_TEXT as P } from './creditMovementText'
+import { hasExactKeys } from './wireShape'
 
 export interface CreditPostingProposal {
   readonly proposalId: string; readonly companyId: string; readonly status: 'AwaitingMapping' | 'ReadyForPreparation'; readonly mappingStatus: 'MappingMissing' | 'MappingDetailsPending' | 'MappingReady'
@@ -22,26 +23,34 @@ const record = (value: unknown): value is Record<string, unknown> => value !== n
 const text = (value: unknown): value is string => typeof value === 'string' && value.trim() !== ''
 const date = (value: unknown) => typeof value === 'string' && isDateOnly(value)
 const reasons = P.reasons
+// Exact OpenAPI property sets (CreditMovementProposalListV1 and its nested schemas; every property is required).
+const LIST_FIELDS = ['companyId', 'items']
+const PROPOSAL_FIELDS = ['companyId', 'mappingStatus', 'mappingVersion', 'proposalId', 'receivedAtUtc', 'source', 'status', 'waitingReasons']
+const SOURCE_FIELDS = ['accountingDate', 'approvedBy', 'bankEffect', 'companyId', 'components', 'creditAccountId', 'currencyId', 'eventId',
+  'kind', 'movementId', 'reason', 'reversesMovementId', 'sourceDocument', 'transactionDate']
+const DOCUMENT_FIELDS = ['documentDate', 'reference', 'revision']
+const COMPONENT_FIELDS = ['amount', 'functionalAmount', 'kind']
+const BANK_EFFECT_FIELDS = ['amount', 'bankAccountId', 'sourceReference']
 export function decodeCreditPostingProposals(value: unknown, company: string): readonly CreditPostingProposal[] | null {
-  if (!record(value) || value.companyId !== company || !Array.isArray(value.items)) return null
+  if (!record(value) || !hasExactKeys(value, LIST_FIELDS) || value.companyId !== company || !Array.isArray(value.items)) return null
   const ids = new Set<string>()
   for (const row of value.items) {
-    if (!record(row) || !isBoundUuid(row.proposalId) || ids.has(row.proposalId) || row.companyId !== company || !['AwaitingMapping', 'ReadyForPreparation'].includes(row.status as string)
+    if (!record(row) || !hasExactKeys(row, PROPOSAL_FIELDS) || !isBoundUuid(row.proposalId) || ids.has(row.proposalId) || row.companyId !== company || !['AwaitingMapping', 'ReadyForPreparation'].includes(row.status as string)
       || !['MappingMissing', 'MappingDetailsPending', 'MappingReady'].includes(row.mappingStatus as string) || !isInstant(row.receivedAtUtc)
       || !Array.isArray(row.waitingReasons) || row.waitingReasons.some(x => typeof x !== 'string' || !Object.hasOwn(reasons, x))) return null
     if (row.mappingStatus === 'MappingDetailsPending' ? !Number.isSafeInteger(row.mappingVersion) || (row.mappingVersion as number) < 1 : row.mappingVersion !== null) return null
     if (row.status === 'ReadyForPreparation' ? row.mappingStatus !== 'MappingReady' || row.waitingReasons.length !== 0
       : row.mappingStatus === 'MappingReady' || row.waitingReasons.length === 0) return null
     const source = row.source
-    if (!record(source) || source.companyId !== company || source.eventId !== row.proposalId || !isBoundUuid(source.movementId)
+    if (!record(source) || !hasExactKeys(source, SOURCE_FIELDS) || source.companyId !== company || source.eventId !== row.proposalId || !isBoundUuid(source.movementId)
       || !isBoundUuid(source.creditAccountId) || !isBoundUuid(source.currencyId) || typeof source.kind !== 'string' || !Object.hasOwn(T.kinds, source.kind)
-      || !record(source.sourceDocument) || !text(source.sourceDocument.reference) || !date(source.sourceDocument.documentDate) || !text(source.sourceDocument.revision)
+      || !record(source.sourceDocument) || !hasExactKeys(source.sourceDocument, DOCUMENT_FIELDS) || !text(source.sourceDocument.reference) || !date(source.sourceDocument.documentDate) || !text(source.sourceDocument.revision)
       || !date(source.transactionDate) || !date(source.accountingDate) || source.reversesMovementId !== null && source.reversesMovementId !== source.movementId
       || !text(source.approvedBy) || !text(source.reason) || source.reversesMovementId !== null && source.kind !== 'OpeningBalance'
-      || !Array.isArray(source.components) || source.components.length === 0 || source.components.some(x => !record(x) || typeof x.kind !== 'string'
+      || !Array.isArray(source.components) || source.components.length === 0 || source.components.some(x => !record(x) || !hasExactKeys(x, COMPONENT_FIELDS) || typeof x.kind !== 'string'
         || !Object.hasOwn(T.components, x.kind) || !isNonNegativeDecimalText(x.amount) || x.functionalAmount !== null && !isNonNegativeDecimalText(x.functionalAmount))) return null
     if (new Set(source.components.map(x => x.kind)).size !== source.components.length) return null
-    if (source.bankEffect !== null && (!record(source.bankEffect) || !isBoundUuid(source.bankEffect.bankAccountId)
+    if (source.bankEffect !== null && (!record(source.bankEffect) || !hasExactKeys(source.bankEffect, BANK_EFFECT_FIELDS) || !isBoundUuid(source.bankEffect.bankAccountId)
       || !isNonNegativeDecimalText(source.bankEffect.amount) || !/[1-9]/.test(source.bankEffect.amount)
       || !text(source.bankEffect.sourceReference) || !['Drawdown', 'Repayment'].includes(source.kind))) return null
     ids.add(row.proposalId)

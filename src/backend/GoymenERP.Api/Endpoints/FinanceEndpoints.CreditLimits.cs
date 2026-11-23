@@ -43,7 +43,8 @@ public static partial class FinanceEndpoints
         }).WithName("DecideFinanceBankCreditLimitV1").Accepts<CreditLimitDecisionBodyV1>("application/json"));
     }
     private static RouteHandlerBuilder CreditLimitProblems(RouteHandlerBuilder builder) => builder.WithTags("Finance")
-        .RequireAuthorization().RequireCompanyContext().Produces<CreditLimitResultV1>()
+        .RequireAuthorization().RequireCompanyContext()
+        .WithIdempotencyContract(StatusCodes.Status200OK).Produces<CreditLimitResultV1>()
         .Produces<CreditLimitResultV1>(StatusCodes.Status422UnprocessableEntity)
         .Produces<CreditLimitResultV1>(StatusCodes.Status409Conflict)
         .ProducesErpAuthenticatedProblems().ProducesErpBadRequest().AllowsEmptyErpBadRequestBody().AllowsCodeLessErpBadRequestBody()
