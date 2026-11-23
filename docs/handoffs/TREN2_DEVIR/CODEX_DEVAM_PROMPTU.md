@@ -10,6 +10,8 @@
 >
 > Bu dosya ile depo çelişirse depo geçerlidir. Bu dosyadan sonra yeni karar veya commit geldiyse onları esas al.
 
+Work ve yapay zekânın hedefi, kapsamı ve ilerlemesi için ayrıca oku: `docs/handoffs/TREN2_DEVIR/WORK_AI_HEDEF_VE_KAPSAM.md`.
+
 İçindekiler:
 - §0 Rolün ve sınırların
 - §1 Güncel durumu okuma
