@@ -14,6 +14,7 @@ import { IDENTITY_INBOX_KINDS } from './inboxKinds/identity'
 import { INVENTORY_INBOX_KINDS } from './inboxKinds/inventory'
 import { LOGISTICS_INBOX_KINDS } from './inboxKinds/logistics'
 import { MANUFACTURING_INBOX_KINDS } from './inboxKinds/manufacturing'
+import { MASTER_DATA_INBOX_KINDS } from './inboxKinds/masterData'
 import { PURCHASING_INBOX_KINDS } from './inboxKinds/purchasing'
 import { SALES_INBOX_KINDS } from './inboxKinds/sales'
 import { SETTINGS_INBOX_KINDS } from './inboxKinds/settings'
@@ -30,6 +31,7 @@ export const WORK_INBOX_KINDS: readonly WorkInboxKind[] = [
   ...INVENTORY_INBOX_KINDS,
   ...IDENTITY_INBOX_KINDS,
   ...SETTINGS_INBOX_KINDS,
+  ...MASTER_DATA_INBOX_KINDS,
 ]
 
 /** The existing capabilities any one of which shows the inbox view (and opens the route). */
