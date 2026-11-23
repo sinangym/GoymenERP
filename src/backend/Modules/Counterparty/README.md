@@ -274,3 +274,18 @@ Up replaces only this check constraint; no column or data is changed. Down first
 while any tax-number history (`Attribute = 1`) exists, then restores the previous constraint. With only legal-name
 history or an empty table the guard passes. Existing tax history is retained; use a reviewed forward fix instead.
 The model, ASCII/trailing-space SQL regression and Down guard evidence remain subject to the final K3 review.
+
+## Grup şirketi bağlantısı (WP14, YOL-D31)
+
+`Party.GroupCompanyId` cari kartının hangi Göymen grup şirketi olduğunu tutar (grup geneli; cari gibi bütün şirketlerde aynı).
+Grup içi işlem dökümü grup şirketini **yalnız** bu bağlantıyla tanır; VKN eşleşmesi grup şirketi saymaz.
+
+- `GET /api/v1/counterparties/{partyId}/group-company-link` (`counterparty.parties.read`): bağlantı, PARTY sürümü, izin bilgisi.
+- `PUT …/group-company-link` (`counterparty.parties.group-company-link.update` + read; kayıtlı, **kimseye verilmedi**):
+  `{ expectedVersion, groupCompanyId | null }`; tek Idempotency-Key, PARTY sürüm çiti, gerçek değişiklikte bir audit olayı
+  (`counterparty.party.group-company-link.changed.v1`), aynı değer no-op. Hedef Organization'ın şirket yaşam döngüsü
+  okumasında etkin bir şirket değilse 400; dizin bağlı değilse 503.
+- Okuma portu `ICounterpartyGroupCompanyLinkReadPortV1` bütün bağlantıları verir (yetki taşımaz, yazmaz).
+- Migration `AddPartyGroupCompanyLink`: nullable kolon, filtreli indeks, `organization.Companies`'e Restrict FK. Down guard
+  **52271** bağlantılı cari varken reddeder (forward fix); bağlantı yoksa geri alınır. Party yazma koruması bu komutta yalnız
+  `GroupCompanyId`, `Version`, `UpdatedAtUtc`, `RowVersion` değişimine izin verir.
