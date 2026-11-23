@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using GoymenERP.Api.Ai.Knowledge;
 using GoymenERP.BuildingBlocks.Ai;
 
@@ -12,13 +11,12 @@ public sealed record AiEvalItemClassificationV1(AiDataClassV1 DataClass, bool Ho
 /// by default and rises to Confidential ("Gizli") when it carries personal data such as a national id, phone, IBAN or
 /// e-mail; AI-D42: a contact person's name, phone, e-mail or national id is Confidential). Signals are the shared outbound
 /// text screen (<see cref="AiOutboundTextScreenV1"/>: IBAN, e-mail, digit run, currency amount — fail-closed, every finding
-/// raises the class), the decision index's personal name terms, and an expected source that the index marks as a
-/// personal data candidate. A Confidential item never goes to an external provider (YOL-D21: the provider comparison uses
+/// raises the class) and an expected source that the index marks as a personal data candidate. WP-A4 (plan D2, AI-D36)
+/// masks person names at index generation and the packaged index carries no name list, so there is no name-term signal. A Confidential item never goes to an external provider (YOL-D21: the provider comparison uses
 /// only questions without personal data). It is a screen, not a guarantee; it only ever raises the class.
 /// </summary>
-public sealed partial class AiEvalDataClassifierV1(AiDecisionIndex? decisionIndex)
+public sealed class AiEvalDataClassifierV1(AiDecisionIndex? decisionIndex)
 {
-    public const string SignalPersonalName = "kisi_adi";
     public const string SignalPersonalSource = "kisisel_veri_adayi_kaynak";
 
     public AiEvalItemClassificationV1 Classify(AiEvalItemV1 item)
@@ -29,10 +27,6 @@ public sealed partial class AiEvalDataClassifierV1(AiDecisionIndex? decisionInde
 
         if (decisionIndex is not null)
         {
-            var folded = AiDecisionIndex.Fold(item.Question);
-            if (decisionIndex.PersonalNameTerms.Any(term => ContainsWord(folded, AiDecisionIndex.Fold(term))))
-                signals.Add(SignalPersonalName);
-
             if (item.ExpectedSourceIds.Any(id => decisionIndex.Find(id) is { } record
                     && string.Equals(record.DataClassCandidate, AiDecisionIndex.PersonalDataCandidate, StringComparison.Ordinal)))
                 signals.Add(SignalPersonalSource);
@@ -42,9 +36,4 @@ public sealed partial class AiEvalDataClassifierV1(AiDecisionIndex? decisionInde
         return new AiEvalItemClassificationV1(personal ? AiDataClassV1.Confidential : AiDataClassV1.Internal, personal,
             signals.AsReadOnly());
     }
-
-    private static bool ContainsWord(string foldedText, string foldedTerm) =>
-        foldedTerm.Length > 0
-        && Regex.IsMatch(foldedText, $"(?<![\\p{{L}}\\p{{N}}]){Regex.Escape(foldedTerm)}(?![\\p{{L}}\\p{{N}}])",
-            RegexOptions.CultureInvariant);
 }

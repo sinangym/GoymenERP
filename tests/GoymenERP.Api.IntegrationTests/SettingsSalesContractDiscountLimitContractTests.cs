@@ -24,7 +24,8 @@ public sealed class SettingsSalesContractDiscountLimitContractTests
                 "20261117085524_AddPurchaseInvoiceVariancePolicies", "20261117111242_AddWarehouseTransferScalePolicies",
                 "20261117200733_AddFinanceDocumentNumberSeries", "20261117220044_AddFinancePolicyFamilies",
                 "20261120101534_HardenWorkCenterSafetyBufferNullPairs", "20261122181548_AddWorkApprovalDurationPolicies",
-                "20261122202350_AddAiGatewayPolicyAndBudgetLedger"], database.Database.GetMigrations().TakeLast(11));
+                "20261122202227_AddLegalDeadlineCalendars", "20261122202350_AddAiGatewayPolicyAndBudgetLedger"],
+            database.Database.GetMigrations().TakeLast(12));
         Assert.False(database.Database.HasPendingModelChanges());
     }
 
@@ -58,7 +59,8 @@ public sealed class SettingsSalesContractDiscountLimitContractTests
         Assert.Contains("'sales.contract-discount-limit'", row.GetCheckConstraints().Single(check => check.Name == "CK_SettingsCompanyPolicyVersions_Key").Sql, StringComparison.Ordinal);
         var shape = row.GetCheckConstraints().Single(check => check.Name == "CK_SettingsCompanyPolicyVersions_Value").Sql;
         Assert.Contains("[PercentValue] IS NOT NULL AND [PercentValue] >= 0 AND [PercentValue] <= 100", shape, StringComparison.Ordinal);
-        Assert.Equal(3, shape.Split("[PercentValue] IS NULL", StringSplitOptions.None).Length - 1);
+        // W1-A added the approval duration branch (whole hours/business days): four non-percent branches, each PercentValue IS NULL.
+        Assert.Equal(4, shape.Split("[PercentValue] IS NULL", StringSplitOptions.None).Length - 1);
         Assert.Equal(ErpPermissions.SettingsSalesContractDiscountLimitManage, SettingsSalesContractDiscountLimitPermissionsV1.Manage);
         Assert.True(ErpPermissions.IsKnown(SettingsSalesContractDiscountLimitPermissionsV1.Manage));
         Assert.True(ErpPermissions.RequiresCompanyWideScope(SettingsSalesContractDiscountLimitPermissionsV1.Manage));

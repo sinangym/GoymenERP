@@ -60,10 +60,10 @@ internal static class ShellCapabilityRegistryAuthorities
     // Work row below re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:").
     // WP15: Settings 1.22 (merged after WP-A5 1.21) adds the legal deadline calendar and upcoming legal deadlines screens;
     // re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
-    internal const string FullNormalHostWithSettingsAndPaintMemberships = "sha256:1wxYz1JP2bVWgp6C2abAxSdzgsUc3sH7slkI8SRBS-0";
+    internal const string FullNormalHostWithSettingsAndPaintMemberships = "sha256:Sq9-z6F5ssSVUEHHro_c41HQDJyPn0zwpkncDiJkUoU";
     // WP9: the actual host adds Work 1.0 (work.tasks.mine route + work.tasks.assign control); produced by
     // ShellCapabilityRegistry.ComputeCandidateRevision over the actual providers.
-    internal const string FullNormalHostWithSettingsPaintMembershipsAndWork = "sha256:pDt8kbKKk9v7Vdj9Mqivgxs6wN3PvfrYxHSBzgNmNqo";
+    internal const string FullNormalHostWithSettingsPaintMembershipsAndWork = "sha256:-27oju8w4HznQLBnEjFe8uQytkZzEQ1GAjMO0cxgC58";
     // Tren-1 wave 7: Settings 1.11 and Inventory 1.9; active authority rows re-derived in place
     // by ShellCapabilityRegistry.ComputeCandidateRevision over actual providers; historical rows preserved.
     // Tren-1 wave 6: Manufacturing 1.11, Inventory 1.8, Identity 1.2 and Settings 1.9; active authority rows
@@ -762,7 +762,7 @@ internal const string FullNormalHostWithProductPriceListsAndSalesReports =
 // WP-A1: Settings 1.20 re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
 // WP-A5: Settings 1.21 (AI management screen implemented + event list control) re-derived in place likewise.
 internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV11 =
-        "sha256:9AEm1RdSHaqwUPdVZ6Kh4NXWlBBi0jmvziUK6eU7k_4"; // WP15: Settings 1.22, re-derived in place.
+        "sha256:XYwSXZFojVxYhu0hkohAmDRCy-E0ZbByHsWqzOfK-pQ"; // WP15: Settings 1.22, re-derived in place.
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";
