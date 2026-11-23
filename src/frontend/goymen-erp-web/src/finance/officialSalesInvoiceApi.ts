@@ -4,6 +4,7 @@ import { isDateOnly } from './dateOnly'
 import { isNonNegativeDecimalText } from './decimalText'
 import { fetchDocuments, uploadDocument, type UploadAttempt } from '../documents/api'
 import type { ViewOutcome } from '../shell/uiState'
+import { COMMAND_RESULT_FIELDS, hasExactKeys, replayHeadersAgree } from './wireShape'
 
 export const OFFICIAL_INVOICE_OWNER = 'finance.official-sales-invoice' as const
 export const OFFICIAL_AMOUNT_FIELDS = ['payableAmount', 'payableFunctionalAmount', 'taxBaseFunctionalAmount', 'vatFunctionalAmount', 'withholdingFunctionalAmount'] as const
@@ -34,9 +35,21 @@ const text = (v: unknown): v is string => typeof v === 'string' && v.trim() !== 
 const date = (v: unknown) => typeof v === 'string' && isDateOnly(v)
 const nullableText = (v: unknown) => v === null || text(v)
 const nullableInstant = (v: unknown) => v === null || isInstant(v)
+// Exact OpenAPI property sets — K3 P2-3.
+const INVOICE_REQUIRED = ['approvedAtUtc', 'approvedBy', 'companyId', 'currencyId', 'customerPartyId', 'ettn', 'invoiceId', 'officialNo',
+  ...OFFICIAL_AMOUNT_FIELDS, 'pdfDocumentId', 'pdfDocumentVersionNo', 'pdfSha256', 'recordedAtUtc', 'recordedBy', 'rejectedAtUtc', 'rejectedBy',
+  'rejectionReason', 'status', 'version', 'withdrawnAtUtc', 'withdrawnBy']
+const INVOICE_OPTIONAL = ['invoiceDate', 'sourceDifferences']
+const DIFFERENCE_FIELDS = ['ettn', 'fields', 'importBatchId', 'invoiceDate', 'officialNo', 'payableFunctionalAmount', 'sourceDocumentId', 'winner']
+const PAGE_FIELDS = ['companyId', 'items', 'nextCursor']
+const CURRENCIES_FIELDS = ['companyId', 'items']
+const CURRENCY_FIELDS = ['code', 'currencyId', 'displayLabel']
+const RESERVATION_FIELDS = ['companyId', 'invoiceId', 'reservedAtUtc', 'reservedBy']
+const INVOICE_RESULT_FIELDS = [...COMMAND_RESULT_FIELDS, 'existingOfficialNo']
+const ISSUE_FIELDS = ['code', 'field']
 const differenceFields = ['officialNo', 'ettn', 'customerPartyId', 'currencyId', ...OFFICIAL_AMOUNT_FIELDS, 'invoiceDate']
 export function decodeOfficialInvoice(value: unknown, company: string): OfficialInvoice | null {
-  if (!record(value) || !isBoundUuid(value.invoiceId) || value.companyId !== company || !text(value.officialNo) || !isBoundUuid(value.ettn)
+  if (!record(value) || !hasExactKeys(value, INVOICE_REQUIRED, INVOICE_OPTIONAL) || !isBoundUuid(value.invoiceId) || value.companyId !== company || !text(value.officialNo) || !isBoundUuid(value.ettn)
     || !isBoundUuid(value.customerPartyId) || !isBoundUuid(value.currencyId) || OFFICIAL_AMOUNT_FIELDS.some(k => !isNonNegativeDecimalText(value[k]))
     || value.invoiceDate != null && !date(value.invoiceDate) || !isBoundUuid(value.pdfDocumentId) || !Number.isSafeInteger(value.pdfDocumentVersionNo) || (value.pdfDocumentVersionNo as number) < 1
     || typeof value.pdfSha256 !== 'string' || !/^[0-9a-f]{64}$/i.test(value.pdfSha256) || !isOpaqueVersion(value.version)
@@ -50,14 +63,14 @@ export function decodeOfficialInvoice(value: unknown, company: string): Official
   if (value.status === 'Approved' && [value.rejectedBy, value.rejectedAtUtc, value.rejectionReason, value.withdrawnBy, value.withdrawnAtUtc].some(x => x !== null)
     || value.status === 'Rejected' && [value.approvedBy, value.approvedAtUtc, value.withdrawnBy, value.withdrawnAtUtc].some(x => x !== null)
     || value.status === 'Withdrawn' && [value.approvedBy, value.approvedAtUtc, value.rejectedBy, value.rejectedAtUtc, value.rejectionReason].some(x => x !== null)) return null
-  if (value.sourceDifferences != null && (!Array.isArray(value.sourceDifferences) || value.sourceDifferences.some(x => !record(x) || !isBoundUuid(x.importBatchId)
+  if (value.sourceDifferences != null && (!Array.isArray(value.sourceDifferences) || value.sourceDifferences.some(x => !record(x) || !hasExactKeys(x, DIFFERENCE_FIELDS) || !isBoundUuid(x.importBatchId)
     || !isBoundUuid(x.sourceDocumentId) || !text(x.officialNo) || !isBoundUuid(x.ettn) || !Array.isArray(x.fields) || x.fields.length === 0
     || x.fields.some(k => typeof k !== 'string' || !differenceFields.includes(k)) || x.invoiceDate !== null && !date(x.invoiceDate)
     || x.payableFunctionalAmount !== null && !isNonNegativeDecimalText(x.payableFunctionalAmount) || !['manual', 'approved-import'].includes(x.winner as string)))) return null
   return value as unknown as OfficialInvoice
 }
 export function decodeOfficialInvoicePage(body: unknown, company: string): OfficialInvoicePage | null {
-  if (!record(body) || body.companyId !== company || !Array.isArray(body.items) || !nullableText(body.nextCursor)) return null
+  if (!record(body) || !hasExactKeys(body, PAGE_FIELDS) || body.companyId !== company || !Array.isArray(body.items) || !nullableText(body.nextCursor)) return null
   const rows = body.items.map(x => decodeOfficialInvoice(x, company))
   return rows.some(x => x === null) || new Set(rows.map(x => x?.invoiceId)).size !== rows.length ? null : body as unknown as OfficialInvoicePage
 }
@@ -71,28 +84,33 @@ async function read<T>(company: string, path: string, decode: (body: unknown) =>
 export const fetchOfficialInvoices = (company: string, pendingOnly: boolean, cursor: string | null, signal?: AbortSignal) => read(company,
   `/finance/official-sales-invoices?${new URLSearchParams({ pendingOnly: String(pendingOnly), ...(cursor === null ? {} : { cursor }) })}`, x => decodeOfficialInvoicePage(x, company), signal)
 export const fetchOfficialInvoiceCurrencies = (company: string, signal?: AbortSignal) => read<readonly OfficialInvoiceCurrency[]>(company, '/finance/official-sales-invoices/currency-candidates', body => {
-  if (!record(body) || body.companyId !== company || !Array.isArray(body.items) || body.items.some(x => !record(x) || !isBoundUuid(x.currencyId) || !text(x.code) || !text(x.displayLabel))
+  if (!record(body) || !hasExactKeys(body, CURRENCIES_FIELDS) || body.companyId !== company || !Array.isArray(body.items)
+    || body.items.some(x => !record(x) || !hasExactKeys(x, CURRENCY_FIELDS) || !isBoundUuid(x.currencyId) || !text(x.code) || !text(x.displayLabel))
     || new Set(body.items.map(x => x.currencyId)).size !== body.items.length) return null
   return body.items as OfficialInvoiceCurrency[]
 }, signal)
-async function post(company: string, path: string, key: string, input: unknown): Promise<{ status: number; body: unknown } | null> {
+interface PostResult { readonly status: number; readonly body: unknown; readonly headers: Headers }
+async function post(company: string, path: string, key: string, input: unknown): Promise<PostResult | null> {
   try { const response = await fetch(`${API_BASE}/finance/official-sales-invoices${path}`, { method: 'POST', headers: { ...headers(company), 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(input) })
-    return { status: response.status, body: await response.json().catch(() => null) }
+    return { status: response.status, body: await response.json().catch(() => null), headers: response.headers }
   } catch { return null }
 }
-function refusal(result: { status: number; body: unknown } | null): OfficialInvoiceWriteOutcome {
+function refusal(result: PostResult | null, fields: readonly string[] = INVOICE_RESULT_FIELDS): OfficialInvoiceWriteOutcome {
   if (result === null || result.status >= 500) return { type: 'unknown' }
   const { status, body } = result
   if ([400, 401, 403, 404, 415].includes(status)) return { type: 'refused', status, codes: [], existingOfficialNo: null }
-  if ([409, 422].includes(status) && record(body) && body.resource === null && Array.isArray(body.issues) && body.issues.every(x => record(x) && text(x.code) && text(x.field))
+  if ([409, 422].includes(status) && record(body) && hasExactKeys(body, fields) && body.resource === null && Array.isArray(body.issues)
+    && body.issues.every(x => record(x) && hasExactKeys(x, ISSUE_FIELDS) && text(x.code) && text(x.field))
     && (status === 422 ? body.outcome === 'ValidationFailed' : ['VersionConflict', 'IdempotencyConflict'].includes(body.outcome as string)))
     return { type: 'refused', status, codes: body.issues.map(x => x.code as string), existingOfficialNo: text(body.existingOfficialNo) ? body.existingOfficialNo : null }
   return { type: 'unknown' }
 }
-function resultInvoice(result: { status: number; body: unknown } | null, company: string): OfficialInvoice | null {
-  const body = result?.body
-  return result?.status === 200 && record(body) && body.outcome === 'Succeeded' && typeof body.isReplay === 'boolean' && text(body.originalCorrelationId)
-    && Array.isArray(body.issues) && body.issues.length === 0 ? decodeOfficialInvoice(body.resource, company) : null
+function resultInvoice(result: PostResult | null, company: string): OfficialInvoice | null {
+  if (result === null) return null
+  const body = result.body
+  return result.status === 200 && record(body) && hasExactKeys(body, INVOICE_RESULT_FIELDS) && body.existingOfficialNo === null
+    && body.outcome === 'Succeeded' && typeof body.isReplay === 'boolean' && text(body.originalCorrelationId)
+    && replayHeadersAgree(result.headers, body.isReplay, body.originalCorrelationId) && Array.isArray(body.issues) && body.issues.length === 0 ? decodeOfficialInvoice(body.resource, company) : null
 }
 // The owner strips only integer leading zeros while preserving source scale. This is wire identity checking, no money calculation.
 const ownerAmountText = (text: string) => { const parts = text.split('.'); return (parts[0].replace(/^0+(?=\d)/, '') || '0') + (parts.length === 2 ? `.${parts[1]}` : '') }
@@ -100,9 +118,12 @@ const ownerAmountText = (text: string) => { const parts = text.split('.'); retur
 export async function continueOfficialInvoice(attempt: OfficialInvoiceCreateAttempt): Promise<OfficialInvoiceWriteOutcome> {
   if (attempt.phase === 'reserve') {
     const result = await post(attempt.company, '/reservations', attempt.reserveKey, {}); const body = result?.body
-    if (result?.status !== 200 || !record(body) || body.outcome !== 'Succeeded' || typeof body.isReplay !== 'boolean' || !text(body.originalCorrelationId)
-      || !Array.isArray(body.issues) || body.issues.length !== 0 || !record(body.resource) || body.resource.companyId !== attempt.company
-      || !isBoundUuid(body.resource.invoiceId) || body.resource.reservedBy !== attempt.actor || !isInstant(body.resource.reservedAtUtc)) return refusal(result)
+    if (result?.status !== 200 || !record(body) || !hasExactKeys(body, COMMAND_RESULT_FIELDS) || body.outcome !== 'Succeeded'
+      || typeof body.isReplay !== 'boolean' || !text(body.originalCorrelationId)
+      || !replayHeadersAgree(result.headers, body.isReplay, body.originalCorrelationId)
+      || !Array.isArray(body.issues) || body.issues.length !== 0 || !record(body.resource) || !hasExactKeys(body.resource, RESERVATION_FIELDS)
+      || body.resource.companyId !== attempt.company
+      || !isBoundUuid(body.resource.invoiceId) || body.resource.reservedBy !== attempt.actor || !isInstant(body.resource.reservedAtUtc)) return refusal(result, COMMAND_RESULT_FIELDS)
     attempt.invoiceId = body.resource.invoiceId; attempt.phase = 'upload'
   }
   if (attempt.invoiceId === null) return { type: 'unknown' }

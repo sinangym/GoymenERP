@@ -1,4 +1,5 @@
 import { API_BASE, devHeaders } from './http'
+import { COMMAND_RESULT_FIELDS, hasExactKeys, replayHeadersAgree } from './wireShape'
 import { isBoundUuid, isInstant, isOpaqueVersion } from './contract'
 import { isDateOnly } from './dateOnly'
 import { isNonNegativeDecimalText, isPositiveDecimalText } from './decimalText'
@@ -32,8 +33,19 @@ const date = (value: unknown): value is string => typeof value === 'string' && i
 const nullableId = (value: unknown) => value === null || isBoundUuid(value)
 const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical) : record(value)
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value
+// Exact OpenAPI property sets — K3 P2-3.
+const MOVEMENT_FIELDS = ['companyId', 'currencyId', 'decidedAtUtc', 'id', 'isOwnProposal', 'moneyProfile', 'openingPeriodVersion',
+  'proposedAtUtc', 'rejectionReason', 'reversedByMovementId', 'source', 'status', 'version']
+const SOURCE_FIELDS = ['accountingDate', 'bankEffect', 'components', 'creditAccountId', 'expectedCreditVersion',
+  'expectedOpeningMovementVersion', 'kind', 'reason', 'replacesOpeningMovementId', 'sourceDocument', 'transactionDate']
+const DOCUMENT_FIELDS = ['documentDate', 'reference', 'revision']
+const COMPONENT_FIELDS = ['amount', 'functionalAmount', 'kind']
+const BANK_EFFECT_FIELDS = ['amount', 'bankAccountId', 'sourceReference']
+const PROFILE_FIELDS = ['currencyScale', 'profileId', 'profileVersion', 'smallestCurrencyUnit']
+const PAGE_FIELDS = ['companyId', 'items']
+const ISSUE_FIELDS = ['code', 'field']
 export function decodeCreditMovement(value: unknown, company: string, accountId: string): CreditMovement | null {
-  if (!record(value) || !isBoundUuid(value.id) || value.companyId !== company || !isOpaqueVersion(value.version)
+  if (!record(value) || !hasExactKeys(value, MOVEMENT_FIELDS) || !isBoundUuid(value.id) || value.companyId !== company || !isOpaqueVersion(value.version)
     || !['Proposed', 'Approved', 'Rejected'].includes(value.status as string) || !isBoundUuid(value.currencyId)
     || typeof value.isOwnProposal !== 'boolean' || !isInstant(value.proposedAtUtc)
     || value.decidedAtUtc !== null && !isInstant(value.decidedAtUtc) || value.rejectionReason !== null && !text(value.rejectionReason)
@@ -41,20 +53,20 @@ export function decodeCreditMovement(value: unknown, company: string, accountId:
   if (value.status === 'Proposed' ? value.decidedAtUtc !== null || value.rejectionReason !== null
     : value.decidedAtUtc === null || value.status === 'Rejected' && !text(value.rejectionReason)) return null
   const source = value.source
-  if (!record(source) || source.creditAccountId !== accountId || !isOpaqueVersion(source.expectedCreditVersion)
+  if (!record(source) || !hasExactKeys(source, SOURCE_FIELDS) || source.creditAccountId !== accountId || !isOpaqueVersion(source.expectedCreditVersion)
     || !['Drawdown', 'Repayment', 'InterestAccrual', 'OpeningBalance'].includes(source.kind as string)
-    || !record(source.sourceDocument) || !text(source.sourceDocument.reference) || !date(source.sourceDocument.documentDate)
+    || !record(source.sourceDocument) || !hasExactKeys(source.sourceDocument, DOCUMENT_FIELDS) || !text(source.sourceDocument.reference) || !date(source.sourceDocument.documentDate)
     || !text(source.sourceDocument.revision) || !date(source.transactionDate) || !date(source.accountingDate) || !text(source.reason)
     || !nullableId(source.replacesOpeningMovementId) || source.expectedOpeningMovementVersion !== null && !isOpaqueVersion(source.expectedOpeningMovementVersion)
     || !Array.isArray(source.components) || source.components.length === 0 || source.components.length > 6
-    || source.components.some(x => !record(x) || !['principal', 'interest', 'bsmv', 'kkdf', 'commission', 'fee'].includes(x.kind as string)
+    || source.components.some(x => !record(x) || !hasExactKeys(x, COMPONENT_FIELDS) || !['principal', 'interest', 'bsmv', 'kkdf', 'commission', 'fee'].includes(x.kind as string)
       || !isNonNegativeDecimalText(x.amount) || x.functionalAmount !== null && !isNonNegativeDecimalText(x.functionalAmount))
     || new Set(source.components.map(x => x.kind)).size !== source.components.length) return null
-  if (source.bankEffect !== null && (!record(source.bankEffect) || !isBoundUuid(source.bankEffect.bankAccountId)
+  if (source.bankEffect !== null && (!record(source.bankEffect) || !hasExactKeys(source.bankEffect, BANK_EFFECT_FIELDS) || !isBoundUuid(source.bankEffect.bankAccountId)
     || !isPositiveDecimalText(source.bankEffect.amount) || !text(source.bankEffect.sourceReference)
     || !['Drawdown', 'Repayment'].includes(source.kind as string))) return null
   const profile = value.moneyProfile
-  if (!record(profile) || !isBoundUuid(profile.profileId) || !Number.isSafeInteger(profile.profileVersion) || (profile.profileVersion as number) < 1
+  if (!record(profile) || !hasExactKeys(profile, PROFILE_FIELDS) || !isBoundUuid(profile.profileId) || !Number.isSafeInteger(profile.profileVersion) || (profile.profileVersion as number) < 1
     || !Number.isInteger(profile.currencyScale) || (profile.currencyScale as number) < 0 || (profile.currencyScale as number) > 28
     || !isPositiveDecimalText(profile.smallestCurrencyUnit)) return null
   return value as unknown as CreditMovement
@@ -68,7 +80,7 @@ async function read<T>(company: string, path: string, decoder: (body: unknown) =
 }
 export const fetchCreditMovements = (company: string, accountId: string, signal?: AbortSignal) =>
   read(company, `/finance/credit-movements?${new URLSearchParams({ creditAccountId: accountId })}`, body => {
-    if (!record(body) || body.companyId !== company || !Array.isArray(body.items)) return null
+    if (!record(body) || !hasExactKeys(body, PAGE_FIELDS) || body.companyId !== company || !Array.isArray(body.items)) return null
     const rows = body.items.map(x => decodeCreditMovement(x, company, accountId))
     return rows.some(x => x === null) || new Set(rows.map(x => x?.id)).size !== rows.length ? null : rows as CreditMovement[]
   }, signal)
@@ -82,14 +94,15 @@ export async function sendCreditMovement(company: string, accountId: string, att
     if (response.status === 200) {
       const value = record(body) ? decodeCreditMovement(body.resource, company, accountId) : null
       const expectedStatus = attempt.operation === 'propose' ? 'Proposed' : attempt.request.approve ? 'Approved' : 'Rejected'
-      return record(body) && body.outcome === 'Succeeded' && typeof body.isReplay === 'boolean' && text(body.originalCorrelationId)
+      return record(body) && hasExactKeys(body, COMMAND_RESULT_FIELDS) && body.outcome === 'Succeeded' && typeof body.isReplay === 'boolean'
+        && text(body.originalCorrelationId) && replayHeadersAgree(response.headers, body.isReplay, body.originalCorrelationId)
         && Array.isArray(body.issues) && body.issues.length === 0 && value !== null && value.status === expectedStatus
         && (attempt.operation === 'propose' ? JSON.stringify(canonical(value.source)) === JSON.stringify(canonical(attempt.request)) : value.id === attempt.id)
         ? { type: 'applied', value } : { type: 'unknown' }
     }
     if ([400, 401, 403, 404, 415].includes(response.status)) return { type: 'refused', status: response.status, codes: [] }
-    if ([409, 422].includes(response.status) && record(body) && body.resource === null && Array.isArray(body.issues)
-      && body.issues.every(x => record(x) && text(x.code) && text(x.field)) && (response.status === 422 ? body.outcome === 'ValidationFailed'
+    if ([409, 422].includes(response.status) && record(body) && hasExactKeys(body, COMMAND_RESULT_FIELDS) && body.resource === null && Array.isArray(body.issues)
+      && body.issues.every(x => record(x) && hasExactKeys(x, ISSUE_FIELDS) && text(x.code) && text(x.field)) && (response.status === 422 ? body.outcome === 'ValidationFailed'
         : body.outcome === 'VersionConflict' || body.outcome === 'IdempotencyConflict'))
       return { type: 'refused', status: response.status, codes: body.issues.map(x => x.code as string) }
     return { type: 'unknown' }

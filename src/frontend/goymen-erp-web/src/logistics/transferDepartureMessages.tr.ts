@@ -12,7 +12,11 @@ export const TRANSFER_DEPARTURE_TEXT = {
   direction: 'Tartım sırası', chooseDirection: 'Tartım sırası seçin…', tareFirst: 'Önce dara, sonra brüt', grossFirst: 'Önce brüt, sonra dara',
   firstKg: 'Birinci tartım (kg)', secondKg: 'İkinci tartım (kg)', weighingHelp: 'Nokta ile en fazla üç ondalık basamak kullanın. Net ağırlığı sunucu hesaplar.',
   save: 'Çıkış kaydını kaydet', pending: 'Çıkış kaydı gönderiliyor…', saved: 'Çıkış kaydı kaydedildi.', replayed: 'Önceki çıkış kaydı doğrulandı.',
-  retry: 'Aynı isteği tekrar gönder', invalid: 'Olayı, geçerli zamanı ve gerekçeyi girin; tartı kaydı için tartım sırası ile iki ağırlık zorunludur.',
+  retry: 'Aynı isteği tekrar gönder',
+  finalCheck: 'Kaydı yeniden oku ve denemeyi kapat',
+  finalCheckHelp: 'Transferin çıkış bilgileri yeniden okunur; hiçbir şey gönderilmez. Çıkış kaydedilmişse kayıt gösterilir, kaydedilmemişse deneme kapatılır ve form açılır.',
+  finalOpen: 'Transfer yeniden okunamadı; deneme açık kalıyor. Bağlantı veya oturum düzelince yeniden okuyun.',
+  released: 'Transfer yeniden okundu: bu çıkış kaydedilmemiş. Deneme kapatıldı; güncel bilgilerle yeniden girebilirsiniz.', invalid: 'Olayı, geçerli zamanı ve gerekçeyi girin; tartı kaydı için tartım sırası ile iki ağırlık zorunludur.',
   refused: 'İstek kabul edilmedi. Bilgileri kontrol edip tekrar deneyin.', bothRecorded: 'Tartı ve araç çıkışı kayıtları tamamlanmış.',
   official: 'Resmî belge', gibSent: 'GİB gönderimi doğrulandı', gibNotSent: 'GİB gönderimi yapılmamış', version: 'Çıkış kayıt sürümü',
 } as const

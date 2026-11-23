@@ -3,7 +3,8 @@
  *
  * Same rule as ./financeText.ts: chosen from a decoded state or a stable code, never parsed from server prose. An
  * approved opening writes one opening movement (FNS-D84): a party opening appears in the party ledger; a cash or bank
- * opening does not yet change the treasury balance, so no text may suggest one. A correction is a reversal (FNS-D85).
+ * opening enters the internal treasury ledger balance (FNS-D102: approved opening + recorded movements; the backend
+ * computes it, this text never does). A correction is a reversal (FNS-D85).
  */
 
 import type {
@@ -23,8 +24,8 @@ export const OPENING_BALANCE_TEXT = {
   notice:
     'Kasa, banka ve cari açılış bakiyeleri yalnız Ayarlar\'daki açılış dönemi açıkken girilir. Uzman önerir, müdür ' +
     'onaylar veya reddeder; öneren kendi önerisini onaylayamaz. Onaylanan açılış tek bir açılış hareketi olarak ' +
-    'kaydedilir ve denetim izine yazılır; cari açılışı cari ekstrede görünür, kasa ve banka açılışı şimdilik kasa veya ' +
-    'banka bakiyesini değiştirmez. Onaylı açılış düzeltilmez: ters kaydı önerilir, başka bir yetkili onaylar ve ' +
+    'kaydedilir ve denetim izine yazılır; cari açılışı cari ekstrede görünür, kasa ve banka açılışı sistemin iç ' +
+    'defterindeki kasa veya banka bakiyesine dahil edilir (dış banka hesabıyla eşleştirme yapılmaz). Onaylı açılış düzeltilmez: ters kaydı önerilir, başka bir yetkili onaylar ve ' +
     'ardından yeni öneri girilir. Bakiye tarihi bugünden sonra olamaz; dönem ayarı öneriden sonra değiştiyse karar ' +
     'verilemez.',
   listCaption: 'Açılış bakiyeleri',
