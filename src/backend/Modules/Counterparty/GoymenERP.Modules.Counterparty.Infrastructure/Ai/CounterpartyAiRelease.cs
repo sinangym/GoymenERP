@@ -30,6 +30,8 @@ internal static class CounterpartyAiRelease
         ["contactJobTitle"] = AiDataClassV1.Internal,
         ["phone"] = AiDataClassV1.Confidential,
         ["email"] = AiDataClassV1.Confidential,
+        // FNS-D121 / AI-D42: a cari IBAN is Confidential personal data; no Cari tool releases it.
+        ["iban"] = AiDataClassV1.Confidential,
     };
 
     public const string FieldPolicy = "AI-D42";

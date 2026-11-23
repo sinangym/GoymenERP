@@ -135,6 +135,18 @@ public static class ErpPermissions
     public const string CounterpartyPartiesGroupDeactivate = "counterparty.parties.group-deactivate";
 
     /// <summary>
+    /// FNS-D121 (WP12): read a cari card's IBAN list in the resolved company. IBANs are personal/Confidential data (AI-D42),
+    /// so the list has its own read name, separate from counterparty.parties.read. Registered, not granted. Company-wide only.
+    /// </summary>
+    public const string CounterpartyPartyIbansRead = "counterparty.party-ibans.read";
+
+    /// <summary>
+    /// FNS-D121: add an IBAN to a cari card's list and deactivate one (versioned, audited; no deletion). Registered, not
+    /// granted. Company-wide only; not Critical.
+    /// </summary>
+    public const string CounterpartyPartyIbansManage = "counterparty.party-ibans.manage";
+
+    /// <summary>
     /// The narrow operational product-selection read (K-1(a), Sinan's decision relayed in Business
     /// #66 5719251344; registration asked for in 5720016574 §3). Registering the name makes it
     /// KNOWN, not granted: no role and no user receives it here, and an actor without an explicit
@@ -1844,6 +1856,8 @@ public static class ErpPermissions
             CounterpartyPartiesMergeApprove,
             CounterpartyPartiesSuccessionRecord,
             CounterpartyPartiesGroupDeactivate,
+            CounterpartyPartyIbansRead,
+            CounterpartyPartyIbansManage,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,
@@ -2167,6 +2181,8 @@ public static class ErpPermissions
             CounterpartyPartiesMergeApprove,
             CounterpartyPartiesSuccessionRecord,
             CounterpartyPartiesGroupDeactivate,
+            CounterpartyPartyIbansRead,
+            CounterpartyPartyIbansManage,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,

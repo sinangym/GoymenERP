@@ -9,7 +9,6 @@ using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.FinanceRuntime;
 
@@ -23,9 +22,8 @@ public static class FinanceBankStatementHostV1
     public static IServiceCollection AddFinanceBankStatementImportsV1(this IServiceCollection services)
     {
         services.AddScoped<IFinanceBankStatementDocumentReadV1, DocumentsFinanceBankStatementDocumentReadV1>();
-        // FNS-D114: the cari card carries no IBAN list on this tree, so party IBAN matching stays off until the Counterparty
-        // owner registers its own IFinancePartyIbanReadPortV1 (TryAdd keeps that registration when it exists).
-        services.TryAddScoped<IFinancePartyIbanReadPortV1, UnavailableFinancePartyIbanReadPort>();
+        // FNS-D114 / FNS-D121: the statement IBAN is looked up ONLY in the cari IBAN list (Counterparty owner).
+        services.AddScoped<IFinancePartyIbanReadPortV1, CounterpartyFinancePartyIbanReadPortV1>();
         services.AddScoped<IFinanceBankStatementImportServiceV1>(provider =>
         {
             var permissions = provider.GetRequiredService<FinancePermissionPort>();
@@ -100,5 +98,25 @@ public sealed class DocumentsFinanceBankStatementDocumentReadV1(IDocumentService
                 _ => FinanceBankStatementDocumentOutcomeV1.Unavailable,
             });
         }
+    }
+}
+
+/// <summary>
+/// FNS-D121: Finance's IBAN question answered by the Counterparty owner's active IBAN lists in the same company. The port
+/// carries no authority (the Finance service fenced its own permission); a source failure is Unavailable (matching off).
+/// </summary>
+public sealed class CounterpartyFinancePartyIbanReadPortV1(
+    GoymenERP.Modules.Counterparty.Application.Contracts.ICounterpartyPartyIbanSourceV1 source, ICompanyContext company)
+    : IFinancePartyIbanReadPortV1
+{
+    public async Task<FinancePartyIbanAnswerV1> ReadAsync(FinanceContext context, IReadOnlyCollection<string> ibans,
+        CancellationToken cancellationToken)
+    {
+        var off = new FinancePartyIbanAnswerV1(FinancePartyIbanOutcomeV1.Unavailable, new Dictionary<string, IReadOnlyList<Guid>>());
+        if (context is null || ibans is null || !company.IsResolved || company.CompanyId != context.CompanyId) return off;
+        var found = await source.FindPartiesAsync(ibans, cancellationToken);
+        return found is null || company.CompanyId != context.CompanyId
+            ? off
+            : new FinancePartyIbanAnswerV1(FinancePartyIbanOutcomeV1.Available, found);
     }
 }

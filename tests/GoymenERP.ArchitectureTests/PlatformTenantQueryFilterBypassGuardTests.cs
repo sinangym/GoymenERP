@@ -6048,6 +6048,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // WP12 (tren-2, FNS-D113); K3 review pending. Down refuses while confirmed matches or reversal records exist; AddBankStatementMatches is not rolled back (forward fix, THROW 52251). 1 lexical Sql call(s). Fingerprint pinned at the tren-2 head (not produced in the package).
                 ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261122220335_AddBankStatementMatches.cs"] =
                     new("0000000000000000000000000000000000000000000000000000000000000000", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
+                // WP12 (tren-2, FNS-D121); K3 review pending. Down refuses while cari IBAN rows or their command records exist; AddPartyIbans is not rolled back (forward fix, THROW 52252). 1 lexical Sql call(s). Fingerprint pinned at the tren-2 head (not produced in the package).
+                ["src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/Migrations/20261123075528_AddPartyIbans.cs"] =
+                    new("0000000000000000000000000000000000000000000000000000000000000000", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),
                 // Tren-1 W8; K3 review pending. Deployment-time Down refuses recorded owner history loss; Explicit COGS classification evidence exists; AddProductCogsClassificationTerminals is not rolled back (forward fix). 1 lexical Sql call(s).
                 ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/Migrations/20261117082927_AddProductCogsClassificationTerminals.cs"] =
                     new("b56cc14affae99cd499f5f2f53c38d73c3ddabe749c7977bbea75b2db9a81549", new Dictionary<string, int>(StringComparer.Ordinal) { ["Sql"] = 1 }),

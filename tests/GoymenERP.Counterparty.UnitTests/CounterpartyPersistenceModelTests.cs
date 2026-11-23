@@ -315,11 +315,17 @@ public sealed class CounterpartyPersistenceModelTests
             .Select(property => property.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        // AT-009 stores VKN/TCKN as the party's TaxIdentityNumber (asserted above); MERSİS and IBAN stay deferred.
+        // AT-009 stores VKN/TCKN as the party's TaxIdentityNumber (asserted above); MERSİS stays deferred.
         Assert.DoesNotContain("Vkn", propertyNames);
         Assert.DoesNotContain("Tckn", propertyNames);
         Assert.DoesNotContain("Mersis", propertyNames);
-        Assert.DoesNotContain("Iban", propertyNames);
+        // FNS-D121 decided the IBAN: it lives only in the cari IBAN list table, never on the party or account.
+        var ibanOwners = dbContext.Model.GetEntityTypes()
+            .Where(entity => entity.GetProperties().Any(property =>
+                string.Equals(property.Name, "Iban", StringComparison.OrdinalIgnoreCase)))
+            .Select(entity => entity.GetTableName() ?? string.Empty)
+            .ToArray();
+        Assert.Equal(new[] { "PartyIbans" }, ibanOwners);
     }
 
     [Fact]
@@ -353,10 +359,11 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Contains(
             "20261116111257_AddCounterpartyLegalNameChangeRequests",
             dbContext.Database.GetMigrations());
-        Assert.EndsWith(
-            "_RepairPartyIdentityRevisionTaxNumberFormat",
-            dbContext.Database.GetMigrations().Last(),
-            StringComparison.Ordinal);
+        Assert.Contains(
+            "20261118165020_RepairPartyIdentityRevisionTaxNumberFormat",
+            dbContext.Database.GetMigrations());
+        // FNS-D121 appends the cari IBAN list.
+        Assert.Equal("20261123075528_AddPartyIbans", dbContext.Database.GetMigrations().Last());
         Assert.False(dbContext.Database.HasPendingModelChanges());
     }
 
