@@ -671,5 +671,13 @@ public sealed class FinanceAiReadToolsTests
 
         public Task<ReadOutcome> CheckDocumentOwnerAsync(FinanceContext context, Guid importId, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+
+        public Task<FinanceBankStatementMatchCommandResultV1> ConfirmMatchAsync(FinanceContext context, CommandMetadata metadata,
+            Guid importId, ConfirmFinanceBankStatementMatchV1 request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<FinanceBankStatementMatchCommandResultV1> ReverseMatchAsync(FinanceContext context, CommandMetadata metadata,
+            Guid matchId, ReverseFinanceBankStatementMatchV1 request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 }

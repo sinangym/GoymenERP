@@ -161,6 +161,11 @@ public sealed class WorkAssistantMemoryServiceTests
         {
             // D9 (WP2): work.InboxNotifications is the single notification store (event kinds included), so this covers every kind.
             Assert.Empty(await database.InboxNotifications.ToListAsync());
+            // The former work.Notifications check, against the single store: no event-derived notification row (the kinds and
+            // event identity the old table held) is written for the person or anyone else, across every company.
+            Assert.Empty(await database.InboxNotifications.IgnoreQueryFilters()
+                .Where(row => row.EventId != null || row.SourceName != null || row.Kind == 4 || row.Kind == 5)
+                .ToListAsync());
         }
     }
 

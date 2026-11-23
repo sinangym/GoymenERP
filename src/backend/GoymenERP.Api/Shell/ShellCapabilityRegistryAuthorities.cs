@@ -64,7 +64,7 @@ internal static class ShellCapabilityRegistryAuthorities
     // WP9: the actual host adds Work 1.0 (work.tasks.mine route + work.tasks.assign control); produced by
     // ShellCapabilityRegistry.ComputeCandidateRevision over the actual providers.
     // WP2: Work 1.1 adds the work.approvals.follow-up route; re-derived in place by ShellCapabilityRegistry.ComputeCandidateRevision.
-    internal const string FullNormalHostWithSettingsPaintMembershipsAndWork = "sha256:Cd47KtFE-qYnBMx3sBIwjeql7dpigzDKYC4_4o3Axv0";
+    internal const string FullNormalHostWithSettingsPaintMembershipsAndWork = "sha256:VX6Fxb1-HSMBeuccstZQZ86UdFabW1ghWR2w8XkEefw";
     // Tren-1 wave 7: Settings 1.11 and Inventory 1.9; active authority rows re-derived in place
     // by ShellCapabilityRegistry.ComputeCandidateRevision over actual providers; historical rows preserved.
     // Tren-1 wave 6: Manufacturing 1.11, Inventory 1.8, Identity 1.2 and Settings 1.9; active authority rows
