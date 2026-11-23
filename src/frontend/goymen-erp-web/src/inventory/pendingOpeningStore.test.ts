@@ -50,4 +50,26 @@ describe('Inventory opening session stores', () => {
     sessionStorage.setItem(key!, JSON.stringify({ actorId: ACTOR, companyId: COMPANY, countId: 'bad' }))
     expect(recallLastOpeningCount(key)).toBeNull()
   })
+
+  it('recalls a pending command only with exactly its own members, at every level', () => {
+    const key = pendingOpeningCountKey(4, ACTOR, COMPANY)!
+    const stored = (value: unknown) => { sessionStorage.setItem(key, JSON.stringify(value)); return recallPendingOpeningCount(key) }
+    expect(stored(snapshot)).toEqual(snapshot)
+    expect(stored({ ...snapshot, extra: 1 })).toBeNull()
+    for (const name of Object.keys(snapshot)) expect(stored({ ...snapshot, [name]: undefined })).toBeNull()
+    expect(stored({ ...snapshot, payload: { ...snapshot.payload, extra: 1 } })).toBeNull()
+    expect(stored({ ...snapshot, payload: { ...snapshot.payload, sheetReference: undefined } })).toBeNull()
+    const line = snapshot.payload.lines[0]
+    expect(stored({ ...snapshot, payload: { ...snapshot.payload, lines: [{ ...line, extra: 1 }] } })).toBeNull()
+    expect(stored({ ...snapshot, payload: { ...snapshot.payload, lines: [{ ...line, productVersion: undefined }] } })).toBeNull()
+  })
+
+  it('recalls the last record only with exactly its own members', () => {
+    const key = lastOpeningCountKey(4, ACTOR, COMPANY)!
+    const value = { actorId: ACTOR, companyId: COMPANY, countId: COUNT }
+    const stored = (item: unknown) => { sessionStorage.setItem(key, JSON.stringify(item)); return recallLastOpeningCount(key) }
+    expect(stored(value)).toEqual(value)
+    expect(stored({ ...value, extra: 1 })).toBeNull()
+    for (const name of Object.keys(value)) expect(stored({ ...value, [name]: undefined })).toBeNull()
+  })
 })

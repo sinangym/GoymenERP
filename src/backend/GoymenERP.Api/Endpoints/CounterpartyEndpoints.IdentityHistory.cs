@@ -121,7 +121,8 @@ public static partial class CounterpartyEndpoints
                 CounterpartyClientContract.UnsupportedCode)
             .ProducesErpUnprocessableEntity(
                 CounterpartyProblemCodesV1.SuccessionSameParty,
-                CounterpartyProblemCodesV1.SuccessionSameTaxIdentity)
+                CounterpartyProblemCodesV1.SuccessionSameTaxIdentity,
+                CounterpartyProblemCodesV1.DeactivationWarningAcknowledgementRequired)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
     }
@@ -140,7 +141,8 @@ public static partial class CounterpartyEndpoints
         {
             CounterpartyCommandResult.NotFound => StatusCodes.Status404NotFound,
             CounterpartyCommandResult.SuccessionSameParty
-                or CounterpartyCommandResult.SuccessionSameTaxIdentity => StatusCodes.Status422UnprocessableEntity,
+                or CounterpartyCommandResult.SuccessionSameTaxIdentity
+                or CounterpartyCommandResult.DeactivationWarningAcknowledgementRequired => StatusCodes.Status422UnprocessableEntity,
             CounterpartyCommandResult.VersionConflict
                 or CounterpartyCommandResult.IdempotencyConflict
                 or CounterpartyCommandResult.SuccessionSuccessorInactive

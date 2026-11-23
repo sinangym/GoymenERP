@@ -10,8 +10,13 @@ namespace GoymenERP.Modules.Sales.Application;
 /// SAT-D437 (AK-4): the theoretical kilograms per unit of a non-kilogram (piece) line is read from the Product owner
 /// (<see cref="IProductTheoreticalKilogramsPerUnitReadPortV1"/>) at the internal approval and pinned on the document in the same
 /// save. Only lines that need it are read (a new line, or a line whose product or unit changed since its last figure; the
-/// SAT-D269/D271 re-pin rule); kilogram lines are never read. A piece line the owner gives no figure for refuses the approval
-/// (409 <see cref="SalesDraftProblemCodesV1.KilogramsPerUnitUnavailable"/>, not recorded): never a default, a zero or a guess.
+/// SAT-D269/D271 re-pin rule); kilogram lines are never read. SAT-D473: when the owner READ the card and says it gives no figure
+/// (<see cref="ProductTheoreticalKilogramsPerUnitOutcomeV1.NoSource"/>) the approval goes on and that line keeps NO figure — its kg
+/// price and piece margin read "cannot be calculated" (golden M11/K13), and a later card fix never moves the approved document.
+/// Anything that is not a definite "no value" — the owner not composed or unreachable, an unavailable, refused (contradictory
+/// sources), not-found or denied answer, a malformed or mismatching answer — still refuses the approval (409
+/// <see cref="SalesDraftProblemCodesV1.KilogramsPerUnitUnavailable"/>, not recorded): "no value" is not "could not read".
+/// Never a default, a zero or a guess.
 /// </summary>
 public sealed partial class SalesDraftService
 {
@@ -41,6 +46,9 @@ public sealed partial class SalesDraftService
                     timeProvider.GetUtcNow().ToUniversalTime()));
                 continue;
             }
+
+            // SAT-D473: a readable card without a figure is approved with this line's figure left empty.
+            if (answer is { Outcome: ProductTheoreticalKilogramsPerUnitOutcomeV1.NoSource, KilogramsPerUnit: null }) continue;
 
             refusals.Add(new(field, answer is { Code: { } code } && answer.Code.StartsWith("product_kg_per_unit_", StringComparison.Ordinal)
                 ? code

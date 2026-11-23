@@ -44,7 +44,8 @@ public sealed record ApprovedMoneyProfileEntry(
 /// <c>finance.manual-bank-payment.v1</c>. Its profile values (scale, companies, window) are not chosen here, so no
 /// approved entry lists it: every read for it answers <c>settings_provider_unavailable</c> (fail-closed) and is never
 /// served from the manual bank payment's profile. It is enabled only by a reviewed approved version that names it,
-/// with its own profile identity, as any other approval. Being listed on no entry, it does not narrow what an
+/// with its own profile identity, as any other approval, or by a human-authored profile for the separate authoring
+/// target <c>MoneyProfileAuthoringCatalogV1.ExpensePaymentOperation</c> (FNS-D55). Being listed on no entry, it does not narrow what an
 /// unrestricted profile is for the operation-less candidate read.
 /// </para>
 /// <para>

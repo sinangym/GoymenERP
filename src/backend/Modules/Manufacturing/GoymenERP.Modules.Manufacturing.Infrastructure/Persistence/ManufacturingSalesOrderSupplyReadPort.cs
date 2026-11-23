@@ -12,7 +12,8 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 /// linked to the sales order that is a Draft or Approved and has no order, or whose order is Open; a cancelled plan and a
 /// closed order are not open. Reads under the caller's resolved company only (the tenant filter) and creates nothing.
 /// The planned kg is the plan's CURRENT content (MFG-PLAN-EDIT): the newest revision its row's version covers, else the
-/// inputs it was created with — the same rule as the plan list.
+/// inputs it was created with — the same rule as the plan list. F-009 D5 (URT-D34): a cancelled order released its plan back
+/// to Approved with no order, so the open read ignores cancelled orders and answers that plan as open (no order) supply.
 /// </summary>
 internal sealed class ManufacturingSalesOrderSupplyReadPort(ManufacturingDbContext dbContext, ICompanyContext companyContext)
     : IManufacturingSalesOrderSupplyReadPortV1
@@ -55,9 +56,13 @@ internal sealed class ManufacturingSalesOrderSupplyReadPort(ManufacturingDbConte
             plans = plans.Where(plan => lineFilter.Contains(plan.SalesOrderLineId!.Value));
         }
 
+        // URT-D34: a cancelled order is history, not the plan's order; only the linked read (history) answers it.
+        var planOrders = includeCancelled
+            ? dbContext.Orders.AsNoTracking()
+            : dbContext.Orders.AsNoTracking().Where(order => order.Status != (int)OrderStatus.Cancelled);
         var rows = await (
             from plan in plans
-            join order in dbContext.Orders.AsNoTracking() on new { plan.CompanyId, PlanId = plan.Id }
+            join order in planOrders on new { plan.CompanyId, PlanId = plan.Id }
                 equals new { order.CompanyId, order.PlanId } into orders
             from order in orders.DefaultIfEmpty()
             where order == null || order.Status == OpenOrderStatus

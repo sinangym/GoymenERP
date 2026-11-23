@@ -22,7 +22,12 @@ export type AttemptStatus<T> =
       readonly companyId: string | null
       readonly groupCode: string | null
     }
-  | { readonly kind: 'unknown' }
+  /**
+   * The outcome of the pending attempt is unknown. `edited`: the form was submitted with a DIFFERENT body while that
+   * attempt is still unresolved. Nothing was sent — neither the edited body (it would need a new key and could apply a
+   * second command) nor anything under the old key — and the screen must say so instead of looking idle.
+   */
+  | { readonly kind: 'unknown'; readonly edited?: boolean }
 
 interface Pending<T> {
   readonly key: string
@@ -61,7 +66,8 @@ function recall(storeKey: string | null): StoredAttempt | null {
     const raw: unknown = JSON.parse(sessionStorage.getItem(storeKey) ?? 'null')
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
     const value = raw as Partial<StoredAttempt>
-    if (!isUuid(value.key) || !isUuid(value.claim) || typeof value.payload !== 'object' || value.payload === null
+    // Exactly the three stored fields: a slot carrying anything else was not written by this journal.
+    if (Object.keys(raw).length !== 3 || !isUuid(value.key) || !isUuid(value.claim) || typeof value.payload !== 'object' || value.payload === null
       || Array.isArray(value.payload)) return null
     return value as StoredAttempt
   } catch {
@@ -173,8 +179,12 @@ export function useCommandAttempt<T>(journal?: Journal<T>) {
   const run = useCallback(async (payload: unknown, execute: (idempotencyKey: string) => Promise<CommandOutcome<T>>) => {
     const fingerprint = JSON.stringify(payload)
     const previous = pendingRef.current
-    if (inFlight.current || (previous !== null && previous.fingerprint !== fingerprint))
+    if (inFlight.current) return { type: 'unknown', reason: 'unexpected' } as const
+    if (previous !== null && previous.fingerprint !== fingerprint) {
+      // K3 P2-4: an edited retry is never sent and never swallowed silently; the unresolved attempt stays pending.
+      setStatus({ kind: 'unknown', edited: true })
       return { type: 'unknown', reason: 'unexpected' } as const
+    }
     return dispatch(previous ?? { key: crypto.randomUUID(), fingerprint, payload, execute }, previous !== null)
   }, [dispatch])
 

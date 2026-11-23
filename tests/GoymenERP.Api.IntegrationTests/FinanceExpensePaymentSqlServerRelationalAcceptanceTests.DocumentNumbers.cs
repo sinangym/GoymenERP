@@ -145,7 +145,7 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
             NumberEnvelope(FinancePermissionNames.ExpensePaymentApprove), NumberEnvelope(FinancePermissionNames.ExpensePaymentRecord));
         var service = new ExpensePaymentService(db, company, new FixedCurrentUser(Recorder, CompanyA), permission ?? new SyntheticPermissions(),
             new SingleExpenseItemCatalog(), new SyntheticBalance(TreasuryBalanceOutcome.Sufficient), new SyntheticSettings(CompanyA),
-            new SyntheticOpenPeriod(), audit, new(FinanceMoneyOperations.ManualBankPaymentV1), envelopes, TimeProvider.System,
+            new SyntheticOpenPeriod(), audit, new(FinanceMoneyOperations.ExpensePaymentV1), envelopes, TimeProvider.System,
             documentNumbers: decorate?.Invoke(real) ?? real);
         return new(db, service, new(CompanyA, Recorder, run.Correlation, null));
     }

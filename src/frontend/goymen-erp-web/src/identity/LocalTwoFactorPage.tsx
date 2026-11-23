@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { EditedAttemptNotice } from '../settings/EditedAttemptNotice'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { StateBlock } from '../shell/StateBlock'
@@ -63,6 +64,6 @@ function SecurityForm({ company, state, finish }: { readonly company: string; re
         : <Button type="button" onClick={() => void send('enable')}>{T.enable}</Button>}</>}
     </fieldset></form>
     {error !== null && error.kind !== 'ready' && <StateBlock state={error} subject={T.subject} />}
-    {command.status.kind === 'refused' && <p role="alert">{T.refused}</p>}{frozen !== null && <><p role="alert">{T.unknown}</p><Button type="button" disabled={busy} onClick={() => void send(frozen.action)}>{T.retry}</Button></>}
+    {command.status.kind === 'refused' && <p role="alert">{T.refused}</p>}<EditedAttemptNotice status={command.status} />{frozen !== null && <><p role="alert">{T.unknown}</p><Button type="button" disabled={busy} onClick={() => void send(frozen.action)}>{T.retry}</Button></>}
   </section>
 }

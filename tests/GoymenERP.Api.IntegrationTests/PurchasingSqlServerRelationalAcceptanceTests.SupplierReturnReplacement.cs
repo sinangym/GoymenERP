@@ -13,10 +13,10 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
     /// <summary>
     /// ALS-D91 (K3-B P1): a supplier return marked "yerine yenisi gelecek" on the receipt-adjusting path is stored by the real store
     /// (the earlier CHECK refused it on SQL Server); the widened CHECK still refuses the flag without the adjustment metadata, and the
-    /// migration's Down refuses with 52300 while such a return exists (forward fix), leaving the row unchanged.
+    /// migration's Down refuses with 52073 while such a return exists (forward fix), leaving the row unchanged.
     /// </summary>
     [SqlServerFact]
-    public async Task A_replacement_expected_supplier_return_is_stored_the_check_keeps_its_adjustment_metadata_and_Down_refuses_52300()
+    public async Task A_replacement_expected_supplier_return_is_stored_the_check_keeps_its_adjustment_metadata_and_Down_refuses_52073()
     {
         await using var run = await Run.StartAsync();
         var seed = await SeedApprovedAcceptanceOrderAsync(run);
@@ -47,7 +47,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         var before = await run.ScalarAsync<string>(snapshot, ("@company", CompanyA), ("@return", returnId));
         var guard = Assert.IsType<SqlOperation>(new AllowPurchaseSupplierReturnReplacement().DownOperations[0]).Sql;
         var refusal = await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(guard + "\nSELECT 1;"));
-        Assert.Equal(52300, refusal.Number);
+        Assert.Equal(52073, refusal.Number);
         Assert.Equal(before, await run.ScalarAsync<string>(snapshot, ("@company", CompanyA), ("@return", returnId)));
     }
 }

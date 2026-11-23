@@ -15,6 +15,9 @@ interface StoredAttempt<T> extends AllocationCommandSnapshot<T> {
   readonly scope: AllocationAttemptScope
 }
 
+/** Exact key set of a stored attempt; anything else in the slot was not written by this module. */
+const STORED_FIELDS = ['schema', 'scope', 'idempotencyKey', 'correlationId', 'body'] as const
+
 const PREFIX = 'goymen:sales:allocation-attempt:v1:'
 
 const keyOf = (scope: AllocationAttemptScope) => PREFIX + [scope.companyId, scope.salesOrderId,
@@ -26,7 +29,10 @@ export function loadAllocationAttempt<T>(scope: AllocationAttemptScope): StoredA
   try {
     const raw = window.localStorage.getItem(keyOf(scope))
     if (raw === null) return null
-    const value = JSON.parse(raw) as Partial<StoredAttempt<T>>
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)
+      || Object.keys(parsed).length !== STORED_FIELDS.length || !STORED_FIELDS.every((field) => Object.hasOwn(parsed, field))) return null
+    const value = parsed as Partial<StoredAttempt<T>>
     if (value.schema !== 1 || JSON.stringify(value.scope) !== JSON.stringify(scope)
       || typeof value.idempotencyKey !== 'string' || typeof value.correlationId !== 'string'
       || value.body === undefined) return null

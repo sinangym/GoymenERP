@@ -51,6 +51,9 @@ public sealed class CashTransferService(
     private const string EntityType = "Finance.CashTransfer";
     private const string ListOrdering = "recordedAtUtc desc, id desc";
     private const int ApprovedTreasuryAccountStatus = 2;
+    private const int CashAccountPassivationChange = 1;
+    private const int CashAccountChangePending = 1;
+    internal const string SourcePassivationPendingCode = "cash_transfer_source_passivation_pending";
     private const int IdentityMaximumLength = 128;
     private const int PageSize = 50;
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
@@ -303,6 +306,17 @@ public sealed class CashTransferService(
         if (targetCurrency != preparation.TargetMoney.CurrencyId)
             accountIssues.Add(Issue("targetAccountId", "cash_transfer_target_ineligible"));
         if (accountIssues.Count > 0) return new Refusal(CommandOutcome.ValidationFailed, [.. accountIssues]);
+        // FNS-D50: a transfer out of a cash account whose passivation waits for its decision is a new payment from it
+        // and is refused; a rejected passivation is no longer pending. (Receiving into such an account is not a payment.)
+        if (preparation.SourceKind == CashTransferAccountKind.Cash)
+        {
+            var source = await dbContext.CashAccounts.AsNoTracking()
+                .SingleOrDefaultAsync(candidate => candidate.Id == preparation.SourceAccountId, cancellationToken);
+            if (await FenceAsync(context, action, cancellationToken) is { } afterPassivation) return afterPassivation;
+            if (source is null || source.ChangeKind == CashAccountPassivationChange && source.ChangeStatus == CashAccountChangePending)
+                return new Refusal(CommandOutcome.ValidationFailed,
+                    [Issue("sourceAccountId", source is null ? "cash_transfer_source_ineligible" : SourcePassivationPendingCode)]);
+        }
 
         if (await LegProfileAsync(context, action, "sourceProfile", "sourceMoney.amount", preparation.SourceMoney,
                 preparation.SourceProfile, preparation.OccurredOn, cancellationToken) is { } sourceProfile)

@@ -1,3 +1,4 @@
+import { EditedAttemptNotice } from '../settings/EditedAttemptNotice'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
@@ -107,7 +108,7 @@ function CommandForm({ company, action, id, body, finish, valid = true, submitLa
       {reasoned && <Field label={T.reason}>{(control) => <textarea {...control} required maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} />}</Field>}
       {action === 'reject' && <><Field label={T.reasonCode}>{(control) => <input {...control} required maxLength={64} value={reasonCode} onChange={(event) => setReasonCode(event.target.value)} />}</Field><p>{T.reasonCodeHelp}</p></>}
     </fieldset>
-    {attempt.status.kind === 'unknown' && <p role="alert">{T.unknown}</p>}{attempt.status.kind === 'refused' && <p role="alert">{refusal ?? T.refused}</p>}
+    {attempt.status.kind === 'unknown' && <p role="alert">{T.unknown}</p>}<EditedAttemptNotice status={attempt.status} />{attempt.status.kind === 'refused' && <p role="alert">{refusal ?? T.refused}</p>}
     <Button type="submit" variant="primary" disabled={busy || (!canSend && frozen === null)}>{busy ? T.pending : frozen !== null ? T.retry : submitLabel ?? T.confirm}</Button>
     <Button type="button" disabled={busy || frozen !== null} onClick={() => finish(null)}>{T.cancel}</Button>
   </form>

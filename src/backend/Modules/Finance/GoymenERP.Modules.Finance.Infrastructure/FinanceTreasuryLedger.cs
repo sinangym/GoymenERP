@@ -62,7 +62,7 @@ internal sealed class FinanceTreasuryLedger(FinanceDbContext dbContext, ICompany
                 if (row.CurrencyId != currencyId || row.BankAmountText is null) return null;
                 if (throughDate.HasValue)
                 {
-                    // FIN-S17 / #1189 6957888388: the actual bank date belongs to the
+                    // FIN-S17 / #1189 6957888388 (GOV-D16): the actual bank date belongs to the
                     // immutable approved source, not its separate AccountingDate or approval time.
                     // A missing/mismatched source cannot become an empty dated balance.
                     CreditMovementProposeV1? source;

@@ -123,6 +123,8 @@ function versionField(body: unknown, name: string): number | null {
 
 const PHYSICAL_STOCK_INSUFFICIENT = 'inventory_manufacturing_physical_stock_insufficient'
 export const ORDER_DUE_DATE_CHANGED = 'manufacturing_order_due_date_changed'
+/** 409 — the entered output label code already names a label in the company (URT output label codes). */
+export const OUTPUT_LABEL_CODE_CONFLICT = 'manufacturing_output_label_code_conflict'
 
 /**
  * SAT-D318: the physical-stock refusal of an input issue may name its shortfall. The member is
@@ -184,6 +186,9 @@ function classifyFailure(
     // URT-D66 (3): the order's termin moved since this screen read it; the screen reads the order again.
     if (code === ORDER_DUE_DATE_CHANGED) return { kind: 'rule', code }
     if (code === PHYSICAL_STOCK_INSUFFICIENT) return physicalStockRefusal(body, replayed, shortfallFor)
+    // K3 P2-5: the entered output label code is taken in the company — a definite refusal, never UNKNOWN;
+    // the server does not change the code by itself, the user enters another.
+    if (code === OUTPUT_LABEL_CODE_CONFLICT) return { kind: 'rule', code }
     // F-009 D3 (API-25): the output correction's 409 set — the physical reason Inventory gave for not taking the mass
     // back under its label fence (shipped, transferred, allocated, …), mapped to Manufacturing codes by the server.
     if (/^manufacturing_output_correction_[a-z_]+$/.test(code)) return { kind: 'rule', code }

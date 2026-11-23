@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { beginSubcontractAttempt, finishSubcontractAttempt, leaveSubcontractAttempt, resetSubcontractAttemptsForTests, retrySubcontractAttempt,
+import { beginSubcontractAttempt, finishSubcontractAttempt, leaveSubcontractAttempt, resetSubcontractAttemptsForTests, resolveSubcontractAttempt, retrySubcontractAttempt,
   sendSubcontractAttempt, subcontractAttempt, subcontractFrozen } from './subcontractDeliveryApi'
 import { decodeSubcontractInstruction, decodeSubcontractList, decodeSubcontractSalesLines, subcontractKg, subcontractVersion, SUBCONTRACT_DELIVERY_PATH as PATH } from './subcontractDeliveryContract'
 
@@ -113,5 +113,34 @@ describe('subcontract physical terminal details are authoritative bounded text',
     const sent = beginSubcontractAttempt('SENTETIK-status-fault', company, instruction, `${PATH}/${instruction}/ship`, 'subcontract', {})!
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 503, code: physical, detail }), { status: 409 })))
     expect(await sendSubcontractAttempt(sent)).toEqual({ type: 'unknown', reason: 'malformed-response' })
+  })
+})
+
+describe('K3 P2-6: leaving an unresolved subcontract command by reading its instruction', () => {
+  const unknown = (path: string, body: object) => {
+    const sent = beginSubcontractAttempt('SENTETIK-binding', company, instruction, path, 'subcontract', body)!
+    finishSubcontractAttempt(sent, { type: 'unknown', reason: 'network-error' }); return sent
+  }
+  const decoded = () => decodeSubcontractInstruction(view(), company, instruction)!
+  it('completes a create whose instruction exists and releases one the owner does not know', () => {
+    unknown(PATH, create())
+    expect(resolveSubcontractAttempt('SENTETIK-binding', decoded())).toBe('completed')
+    expect(subcontractAttempt('SENTETIK-binding')).toMatchObject({ phase: 'completed', outcome: { type: 'applied', replayed: true } })
+    resetSubcontractAttemptsForTests(); unknown(PATH, create())
+    expect(resolveSubcontractAttempt('SENTETIK-binding', null)).toBe('released')
+    expect(subcontractAttempt('SENTETIK-binding').phase).toBe('idle')
+  })
+  it('releases a versioned command only while the instruction version is still the expected one', () => {
+    unknown(`${PATH}/${instruction}/ship`, { expectedVersion: '1', lines: [] })
+    expect(resolveSubcontractAttempt('SENTETIK-binding', decoded())).toBe('open')
+    expect(subcontractFrozen(subcontractAttempt('SENTETIK-binding'))).toBe(true)
+    resetSubcontractAttemptsForTests(); unknown(`${PATH}/${instruction}/ship`, { expectedVersion: '2', lines: [] })
+    expect(resolveSubcontractAttempt('SENTETIK-binding', decoded())).toBe('released')
+    expect(subcontractFrozen(subcontractAttempt('SENTETIK-binding'))).toBe(false)
+  })
+  it('never resolves from a foreign instruction or a settled attempt', () => {
+    unknown(`${PATH}/${instruction}/ship`, { expectedVersion: '2', lines: [] })
+    expect(resolveSubcontractAttempt('SENTETIK-binding', { ...decoded(), instructionId: id(30) })).toBe('open')
+    expect(resolveSubcontractAttempt('SENTETIK-other', decoded())).toBe('open')
   })
 })

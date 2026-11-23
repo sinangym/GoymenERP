@@ -1,3 +1,4 @@
+import { EditedAttemptNotice } from './EditedAttemptNotice'
 import { useState, type FormEvent } from 'react'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
@@ -121,7 +122,7 @@ function Editor({ profile, today, company, suggestion, finish }: { readonly prof
       <p>{T.previewHistory}</p>{!valid && <p>{T.previewIncomplete}</p>}
     </section>
     <Field label={T.reason}>{(control) => <textarea {...control} required maxLength={4000} value={reason} disabled={pending || frozen !== null} onChange={(event) => setReason(event.target.value)} />}</Field>
-    {attempt.status.kind === 'unknown' && <p role="alert">{T.unknown}</p>}
+    {attempt.status.kind === 'unknown' && <p role="alert">{T.unknown}</p>}<EditedAttemptNotice status={attempt.status} />
     {attempt.status.kind === 'refused' && <p role="alert">{T.refused}</p>}
     <Button type="submit" variant="primary" disabled={pending || !valid}>{pending ? T.pending : frozen ? T.retry : T.save}</Button>
     <Button type="button" disabled={pending || frozen !== null} onClick={() => finish(null)}>{T.cancel}</Button>

@@ -9,8 +9,10 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// <list type="bullet">
 /// <item>The plan's amounts are taken AS GIVEN: exact non-negative decimal text (digits and at most one inner dot), never
 /// rounded, never converted. The system never calculates interest.</item>
-/// <item>Each line: installment equals principal + interest + BSMV + KKDF + source-included charges within one smallest
-/// currency unit from the approved Settings profile. Separately collected charges remain separate; no source amount is rounded.</item>
+/// <item>Each line (FNS-D99, FNS-D116 — SINAN_KARARLARI_2026-11-22_EK_SORULAR.md): installment equals principal + interest +
+/// BSMV + KKDF + the charges the source DECLARES as included in the installment, within one smallest unit of the credit's
+/// currency from its approved Settings profile (0,01 TL for the lira; the profile's own scale for any other currency).
+/// Separately collected charges never enter the equality; no source amount is rounded.</item>
 /// <item>The plan: the sum of the principals = the credit amount (exact positive text), exactly.</item>
 /// <item>Sequences run 1..n in the given order. Dates are carried as given (FNS-D94 checks the totals only).</item>
 /// </list>

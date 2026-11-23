@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { decodeFutureAllocationList } from './futureAllocationContract'
 import { fetchFutureAllocations, fetchFutureSupplyOptions, sendFutureAllocation, type FutureAllocationPending } from './futureAllocationApi'
 
 const id = '11111111-1111-4111-8111-111111111111'
@@ -16,12 +17,17 @@ describe('future allocation HTTP', () => {
     expect(fetch.mock.calls[0]).toEqual(fetch.mock.calls[1])
   })
   it('rejects another company read and opaque cursor misuse without interpreting an empty success', async () => {
-    const mock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ companyId: other, salesOrderId: id,
-      salesOrderLineId: id, items: [], windowFull: false, unitCodes: {} }))).mockResolvedValueOnce(new Response('{}', { status: 400 }))
+    // A complete, decodable list: the SAME body is accepted for its own company, so only the company check refuses it.
+    const foreign = JSON.stringify({ companyId: other, salesOrderId: id, salesOrderLineId: id, items: [], windowFull: false,
+      unitCodes: {}, evaluatedOn: '2026-11-16', schedules: {} })
+    expect(decodeFutureAllocationList(JSON.parse(foreign))).not.toBeNull()
+    const mock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(foreign))
+      .mockResolvedValueOnce(new Response('{}', { status: 400 })).mockResolvedValueOnce(new Response(foreign))
     expect(await fetchFutureAllocations(id, id, id)).toEqual({ type: 'malformed' })
     expect((await fetchFutureSupplyOptions(id, id, id, 'opaque:+/=')).type).toBe('http')
     expect(String(mock.mock.calls[1][0])).toContain('cursor=opaque%3A%2B%2F%3D')
     expect(mock.mock.calls[0][1]).toMatchObject({ cache: 'no-store', headers: { 'X-Company-Id': id } })
+    expect(await fetchFutureAllocations(other, id, id)).toMatchObject({ type: 'ok-single', data: { companyId: other, items: [] } })
   })
   it.each([401, 403, 404, 409, 422])('preserves terminal HTTP %s separately from service unavailability', async status => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status }))

@@ -27,7 +27,7 @@ Bu kodların bulunması gruba özgü iş akışlarının tamamlandığını gös
 - Banka + kredi türü limiti aşılırsa uyarı çıkar; aşım yeni bir engel değildir (FNS-D95).
 - Kullanım, geri ödeme ve faiz tahakkuku kesin muhasebe fişi yerine öneri üretir (FNS-D97).
   TK-30 başlangıç eşlemeleri otomatik doldurulmaz. Kullanıcının Q9 cevabı (ajan aktarımı
-  `6958072219`) doğrultusunda mevcut muhasebe eşleme yetkilileri belgedeki bileşenleri ayrı
+  `6958072219`, GOV-D17) doğrultusunda mevcut muhasebe eşleme yetkilileri belgedeki bileşenleri ayrı
   hesaplara bağlar; fişi hazırlayandan farklı muhasebe yetkilisi onaylar.
 - Kapalı açılış dönemindeki düzeltme açık dönemde ters kayıt + doğru kayıt olur;
   giriş/onay mevcut credits.propose/approve izinleriyle ve iki ayrı kişiyle yapılır (FNS-D108, W5-5.2).

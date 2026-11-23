@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { decodeInventoryCostSuccession } from './inventoryCostSuccession'
+import { keyProbes } from './exactKeysTestSupport'
 
 const id = (n: number) => `ca000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const physical = { shipmentId: id(1), movementId: id(2), movementLineNumber: 1, productId: id(3), quantityKg: 1 }
@@ -39,5 +40,14 @@ describe('reinvoice actual economic claim succession proof', () => {
     expect(decodeInventoryCostSuccession(value, parent, { ...component, signedTlAmount: zero })).not.toBeNull()
     expect(decodeInventoryCostSuccession({ ...value, reversedComponents: [{ ...value.reversedComponents[0], reversingJournalId: id(14) }] },
       parent, { ...component, signedTlAmount: zero })).toBeNull()
+  })
+})
+describe('claim succession exact key sets', () => {
+  it('rejects an unknown or missing key on the proof, a claim, its physical identity, a ratio and a reversed component', () => {
+    expect(decodeInventoryCostSuccession(proof(), parent, component)).not.toBeNull()
+    for (const [label, body] of keyProbes(proof(), [[[], 'invoiceLineRevision'], [['claims', 0], 'previousGeneration'],
+      [['claims', 0, 'physical'], 'quantityKg'], [['restoredAmount'], 'denominator'], [['knownBaseAmount'], 'numerator'],
+      [['reversedComponents', 0], 'postingPurpose']]))
+      expect(decodeInventoryCostSuccession(body, parent, component), label).toBeNull()
   })
 })

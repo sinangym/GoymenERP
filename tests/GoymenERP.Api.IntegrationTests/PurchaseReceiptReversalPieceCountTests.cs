@@ -46,4 +46,34 @@ public sealed class PurchaseReceiptReversalPieceCountTests
         Assert.Equal((422, PurchaseSupplierReturnCodesV1.PieceCountRequired), (supplierReturn.Status, supplierReturn.Code));
         Assert.Equal("undoQuantity", Assert.Single(undo.Errors).Field);
     }
+
+    [Theory]
+    [InlineData("1", 1)]
+    [InlineData("7", 7)]
+    public void A_correction_replacement_on_a_piece_line_enters_the_new_label_with_its_whole_pieces(string acceptedQuantity, int pieces)
+    {
+        Assert.Equal(pieces, PurchaseReceiptReversalHost.ReplacementPieceCountOf(unitIsKilogram: false, acceptedQuantity));
+    }
+
+    [Theory]
+    [InlineData("7")]
+    [InlineData("2.5")]
+    public void A_correction_replacement_on_a_kilogram_line_sends_no_piece_count(string acceptedQuantity)
+    {
+        Assert.Null(PurchaseReceiptReversalHost.ReplacementPieceCountOf(unitIsKilogram: true, acceptedQuantity));
+    }
+
+    [Theory]
+    [InlineData("2.5")]
+    [InlineData("0")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void A_correction_replacement_fraction_zero_or_missing_piece_quantity_is_refused_422(string? acceptedQuantity)
+    {
+        var refused = Assert.Throws<PurchasingServiceException>(() =>
+            PurchaseReceiptReversalHost.ReplacementPieceCountOf(unitIsKilogram: false, acceptedQuantity));
+
+        Assert.Equal((422, PurchaseReceiptAdjustmentCodesV1.PieceCountRequired), (refused.Status, refused.Code));
+        Assert.Equal("replacementReceipt.acceptedQuantity", Assert.Single(refused.Errors).Field);
+    }
 }

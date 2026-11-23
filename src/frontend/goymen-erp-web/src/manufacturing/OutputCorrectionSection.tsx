@@ -219,9 +219,25 @@ function CorrectionBody({
   }
 
   const send = async (snapshot: OutputCorrectionSnapshot) => {
+    // A send from the unknown phase is the RETRY of an attempt that may already have taken the kilograms back.
+    const held = attempt.phase === 'unknown' ? attempt.unknown : null
     setAttempt({ phase: 'sending', snapshot })
     reservePendingCorrection(pendingKey, { snapshot, unknown: { kind: 'aborted' } })
+    const security = boundary.capture()
     const outcome = await correctOutput(companyId, order.orderId, snapshot)
+    if (outcome.type === 'failed') {
+      const kind = outcome.failure.kind
+      if (kind === 'unauthenticated') boundary.report(401, security)
+      if (kind === 'forbidden') boundary.report(403, security)
+      if (held !== null && (kind === 'unauthenticated' || kind === 'forbidden' || kind === 'not-found' || kind === 'unsupported-media')) {
+        // A 401/403 (or code-less 404/415) on the retry is answered before the owner reads the idempotency receipt, so it
+        // decides nothing about the first send (virman pattern, frontend-screen-states §3): the SAME key stays held and
+        // the attempt stays unknown. Only an applied answer or a decoded owner refusal settles it.
+        reservePendingCorrection(pendingKey, { snapshot, unknown: held })
+        setAttempt({ phase: 'unknown', snapshot, unknown: held })
+        return
+      }
+    }
     if (outcome.type === 'unknown') reservePendingCorrection(pendingKey, { snapshot, unknown: outcome.unknown })
     else releasePendingCorrection(pendingKey, snapshot.idempotencyKey)
     if (outcome.type === 'applied') {

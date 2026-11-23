@@ -132,8 +132,27 @@ public sealed class CounterpartyIdentityHistorySqlServerRelationalAcceptanceTest
         Assert.Empty(before.GetProperty("revisions").EnumerateArray());
         var version = before.GetProperty("accountVersion").GetString()!;
 
+        // ALS-D99: no owner adapter answers the deactivation warning here, so every line is unavailable and the succession,
+        // which makes the active predecessor passive, needs the acknowledgement first: 422, nothing stored, account still active.
         var key = NewKey();
-        var body = Body(version, successor, "Merger", "  Ticaret sicili gazetesi birleşme ilanı  ");
+        using (var unacknowledged = await PutSuccessionAsync(admin, predecessor,
+                   Body(version, successor, "Merger", "  Ticaret sicili gazetesi birleşme ilanı  "), key))
+        {
+            await AssertProblemAsync(unacknowledged, HttpStatusCode.UnprocessableEntity,
+                CounterpartyProblemCodesV1.DeactivationWarningAcknowledgementRequired);
+        }
+
+        Assert.True((await ReadHistoryAsync(admin, predecessor)).GetProperty("accountIsActive").GetBoolean());
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [counterparty].[PartySuccessions] WHERE [CompanyId]=@CompanyId;", Parameters(predecessor, successor)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=@AuditEvent;", Parameters(predecessor, successor)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CommandName]=@Command AND [CompanyId]=@CompanyId;",
+            Parameters(predecessor, successor)));
+
+        // Unstored, so the same key with the acknowledged body is a fresh decision, not an idempotency conflict.
+        var body = Body(version, successor, "Merger", "  Ticaret sicili gazetesi birleşme ilanı  ", acknowledged: true);
         using (var recorded = await PutSuccessionAsync(admin, predecessor, body, key))
         {
             Assert.Equal(HttpStatusCode.NoContent, recorded.StatusCode);
@@ -147,7 +166,7 @@ public sealed class CounterpartyIdentityHistorySqlServerRelationalAcceptanceTest
 
         // The same key with another body is not a replay.
         using (var reused = await PutSuccessionAsync(
-                   admin, predecessor, Body(version, successor, "Death", "Başka gerekçe"), key))
+                   admin, predecessor, Body(version, successor, "Death", "Başka gerekçe", acknowledged: true), key))
         {
             await AssertProblemAsync(reused, HttpStatusCode.Conflict, CounterpartyProblemCodesV1.IdempotencyConflict);
         }
@@ -176,6 +195,18 @@ public sealed class CounterpartyIdentityHistorySqlServerRelationalAcceptanceTest
             "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=@AuditEvent AND [CompanyId]=@CompanyId "
             + "AND [PermissionCode]=@Permission AND [Reason]=N'Ticaret sicili gazetesi birleşme ilanı';",
             Parameters(predecessor, successor)));
+        // ALS-D99: the audit after-image records the warning the server read and its acknowledgement (scope "succession").
+        using (var afterJson = JsonDocument.Parse(await run.ScalarAsync<string>(
+                   "SELECT TOP (1) [AfterJson] FROM [audit].[AuditEvents] WHERE [EventType]=@AuditEvent AND [CompanyId]=@CompanyId;",
+                   Parameters(predecessor, successor))))
+        {
+            var warning = afterJson.RootElement.GetProperty("DeactivationWarning");
+            Assert.Equal("succession", warning.GetProperty("Scope").GetString());
+            Assert.True(warning.GetProperty("AcknowledgementRequired").GetBoolean());
+            Assert.True(warning.GetProperty("Acknowledged").GetBoolean());
+            Assert.Equal(3, warning.GetProperty("Items").GetArrayLength());
+        }
+
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [counterparty].[OutboxMessages] WHERE [CompanyId]=@CompanyId AND [EventType]=@OutboxEvent "
             + "AND [AggregateId]=(SELECT [Id] FROM [counterparty].[CompanyPartyAccounts] "
@@ -294,15 +325,25 @@ public sealed class CounterpartyIdentityHistorySqlServerRelationalAcceptanceTest
 
     private static string NewKey() => $"cari-halef-{Guid.NewGuid():N}";
 
-    private static string Body(string expectedVersion, Guid successorPartyId, string kind, string legalBasis) =>
-        JsonSerializer.Serialize(new
-        {
-            expectedVersion,
-            successorPartyId,
-            kind,
-            legalBasis,
-            effectiveOn = EffectiveOn,
-        });
+    private static string Body(string expectedVersion, Guid successorPartyId, string kind, string legalBasis, bool acknowledged = false) =>
+        acknowledged
+            ? JsonSerializer.Serialize(new
+            {
+                expectedVersion,
+                successorPartyId,
+                kind,
+                legalBasis,
+                effectiveOn = EffectiveOn,
+                exposureWarningAcknowledged = true,
+            })
+            : JsonSerializer.Serialize(new
+            {
+                expectedVersion,
+                successorPartyId,
+                kind,
+                legalBasis,
+                effectiveOn = EffectiveOn,
+            });
 
     private static SqlParameter[] Parameters(Guid predecessor, Guid successor) =>
     [

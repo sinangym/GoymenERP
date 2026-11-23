@@ -15,15 +15,15 @@ import styles from './SalesPages.module.css'
 
 /**
  * The document currency's code for a kg price (SAT-D439: the response's own currency, no rate). The currencies reference is the
- * create form's read (sales.drafts.create, as on the risk card): without it, or while it is not read, the currency's identity
- * is shown — never a guessed code.
+ * create form's read (sales.drafts.create, as on the risk card): without it, or while it is not read, a neutral text stands
+ * for the document currency — never a guessed code, and never the raw identity (a GUID says nothing to the user).
  */
 function useCurrencyName(shell: ShellState, companyId: string, effectiveOn: string): (currencyId: string) => string {
   const useCurrencies = useContext(SalesCurrencySourceContext)
   const currencies = useCurrencies(hasCapability(shell, SALES_CAPABILITY.draftsCreate) ? companyId : '', effectiveOn)
   return (currencyId) => (currencies.status === 'ready'
     ? currencies.data.find((candidate) => candidate.currencyId.toLowerCase() === currencyId.toLowerCase())?.code
-    : undefined) ?? currencyId
+    : undefined) ?? T.currencyUnnamed
 }
 
 /**

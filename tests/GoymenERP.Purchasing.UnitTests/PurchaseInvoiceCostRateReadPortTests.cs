@@ -173,6 +173,32 @@ public sealed class PurchaseInvoiceCostRateReadPortTests
             "purchase_invoice_multiple_official_rates", "purchase_invoice_no_foreign_currency_rate"], PurchaseInvoiceCostRateReasonsV1.All);
     }
 
+    [Theory]
+    [InlineData("10", "0", "10", null)]
+    [InlineData("10", "0", "8", PurchaseInvoiceCostRateReasonsV1.InvoiceCoverageIncomplete)]
+    [InlineData("10", "2", "8", null)]
+    [InlineData("10", "2", "7", PurchaseInvoiceCostRateReasonsV1.InvoiceCoverageIncomplete)]
+    [InlineData("10", "2", "10", null)]
+    [InlineData("10", "10", "0", PurchaseInvoiceCostRateReasonsV1.InvoiceCoverageIncomplete)]
+    [InlineData("10", "10", "10", PurchaseInvoiceCostRateReasonsV1.InvoiceCoverageIncomplete)]
+    public void ALS_D127_the_rate_is_final_once_the_remaining_quantity_after_undo_or_return_is_wholly_invoiced(
+        string accepted, string undone, string covered, string? reason)
+    {
+        Assert.Equal(reason, PurchaseInvoiceCostRateReadPort.CoverageRefusal(D(accepted), D(undone), D(covered), hasPending: false));
+    }
+
+    [Fact]
+    public void ALS_D127_a_pending_invoice_keeps_the_rate_unavailable_and_an_impossible_coverage_is_unreadable()
+    {
+        Assert.Equal(PurchaseInvoiceCostRateReasonsV1.InvoiceNotFinalized,
+            PurchaseInvoiceCostRateReadPort.CoverageRefusal(10m, 2m, 8m, hasPending: true));
+        Assert.Throws<InvalidOperationException>(() => PurchaseInvoiceCostRateReadPort.CoverageRefusal(10m, 11m, 0m, false));
+        Assert.Throws<InvalidOperationException>(() => PurchaseInvoiceCostRateReadPort.CoverageRefusal(10m, 0m, 11m, false));
+        Assert.Throws<InvalidOperationException>(() => PurchaseInvoiceCostRateReadPort.CoverageRefusal(10m, -1m, 5m, false));
+    }
+
+    private static decimal D(string value) => decimal.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+
     private static (PurchasingDbContext Context, PurchaseInvoiceCostRateReadPort Port) Port(bool resolved)
     {
         var company = new CompanyContext();
