@@ -557,3 +557,4 @@ while such a return exists (forward fix).
 - ASSUMPTION-AK3B-1 (geri alınabilir sunum ayrıntısı): sipariş gerçekleşme tablosunda sunucu yalnız gerçek kg fiyatı için neden kodu verir;
   diğer boş hücrelerin metni ekranda türetilir (`NotInvoiced` → "Henüz faturalanmadı", aksi halde alanın kendi nedeni).
 - Toplu mal kabul gönderim formu ayrı dilimdir; bu dilimde yalnız arka uç ve okuma paneli vardır.
+- ALS-D127 (BS-1 ayrıntısı): mal kabul maliyet kuru, geri alınan/iade edilen kısım düşüldükten sonra kalan miktarın tamamı kesinleşmiş faturayla karşılanınca kesinleşir; tamamen geri alınmış/iade edilmiş kabulde kalan 0 olduğundan kur bilerek hiç kesinleşmez (`purchase_invoice_coverage_incomplete`).
