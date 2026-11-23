@@ -88,6 +88,57 @@ public sealed partial class SalesDraftServiceTests
         Assert.Empty(Assert.Single(world.Store.Drafts).KilogramsPerUnitSnapshots);
     }
 
+    [Fact]
+    public async Task SAT_D477_a_table_conflict_approves_with_the_entered_direction_figure_and_keeps_the_warning_on_the_document()
+    {
+        var source = new FakeKilogramsPerUnit { Figure = 21m, ConflictOther = 21.6m };
+        var world = PieceWorld(source);
+        var created = (await world.Service().CreateDraftAsync(PieceRequest(), Metadata("kpu-conflict-create"))).Detail;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("kpu-conflict-submit"));
+
+        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-conflict-approve"));
+
+        Assert.Equal(("Approved", "21"), (approved.Detail.Draft.ApprovalState, approved.Detail.Lines[0].TheoreticalKilogramsPerUnit));
+        Assert.Equal(new SalesKilogramsPerUnitTableConflictV1("weight-table:entered-orientation", "21", "21.6", "0.6", "3.5", "3.6"),
+            approved.Detail.Lines[0].TheoreticalKilogramsPerUnitConflict);
+        var snapshot = Assert.Single(Assert.Single(world.Store.Drafts).KilogramsPerUnitSnapshots);
+        Assert.Equal(21m, snapshot.KilogramsPerUnit);
+        using var proof = System.Text.Json.JsonDocument.Parse(snapshot.SourceProof);
+        var warning = proof.RootElement.GetProperty("tableConflict");
+        Assert.True(warning.GetProperty("tableCorrectionRequired").GetBoolean());
+        Assert.Equal("tableConflict", proof.RootElement.EnumerateObject().Last().Name);
+        // Every later read carries the same warning; a replay answers it too.
+        var read = await world.Service().GetDraftDetailAsync(created.Draft.Id);
+        Assert.Equal(approved.Detail.Lines[0].TheoreticalKilogramsPerUnitConflict, read.Lines[0].TheoreticalKilogramsPerUnitConflict);
+    }
+
+    [Fact]
+    public async Task SAT_D477_a_plain_figure_carries_no_conflict_and_keeps_its_previous_proof_shape()
+    {
+        var world = PieceWorld(new FakeKilogramsPerUnit { Figure = 12.345m });
+        var created = (await world.Service().CreateDraftAsync(PieceRequest(), Metadata("kpu-plain-create"))).Detail;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("kpu-plain-submit"));
+
+        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-plain-approve"));
+
+        Assert.Null(approved.Detail.Lines[0].TheoreticalKilogramsPerUnitConflict);
+        Assert.DoesNotContain("tableConflict", Assert.Single(Assert.Single(world.Store.Drafts).KilogramsPerUnitSnapshots).SourceProof);
+    }
+
+    [Fact]
+    public async Task SAT_D477_a_table_conflict_for_another_product_is_refused_never_pinned()
+    {
+        var world = PieceWorld(new FakeKilogramsPerUnit { Figure = 21m, ConflictOther = 21.6m, AnswerProduct = Guid.NewGuid() });
+        var created = (await world.Service().CreateDraftAsync(PieceRequest(), Metadata("kpu-conflict-mismatch-create"))).Detail;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("kpu-conflict-mismatch-submit"));
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-conflict-mismatch-approve")));
+
+        Assert.Equal((409, SalesDraftProblemCodesV1.KilogramsPerUnitUnavailable), (refused.Status, refused.Code));
+        Assert.Empty(Assert.Single(world.Store.Drafts).KilogramsPerUnitSnapshots);
+    }
+
     [Theory]
     [InlineData(ProductTheoreticalKilogramsPerUnitOutcomeV1.Refused, ProductTheoreticalKilogramsPerUnitCodesV1.WeightConflict, ProductTheoreticalKilogramsPerUnitCodesV1.WeightConflict)]
     [InlineData(ProductTheoreticalKilogramsPerUnitOutcomeV1.Unavailable, ProductTheoreticalKilogramsPerUnitCodesV1.Unavailable, ProductTheoreticalKilogramsPerUnitCodesV1.Unavailable)]
@@ -228,17 +279,23 @@ public sealed partial class SalesDraftServiceTests
         public string? Code { get; set; }
         public Guid? AnswerProduct { get; set; }
         public ProductPhysicalUnitKindV1 UnitKind { get; set; } = ProductPhysicalUnitKindV1.Piece;
+        /// <summary>SAT-D477: answer the weight-conflict refusal naming the entered direction (Figure) and this reversed figure.</summary>
+        public decimal? ConflictOther { get; set; }
         public List<(Guid ProductId, Guid UnitId, DateOnly EffectiveOn)> Asked { get; } = [];
 
         public Task<ProductTheoreticalKilogramsPerUnitAnswerV1> ReadAsync(Guid productId, Guid unitId, DateOnly effectiveOn,
             CancellationToken cancellationToken = default)
         {
             Asked.Add((productId, unitId, effectiveOn));
+            var evidence = new ProductTheoreticalKilogramsPerUnitEvidenceV1(Company,
+                AnswerProduct ?? productId, unitId, UnitKind, "7", "product-unit-conversion-v1", 3, 11, "SENTETIK-tablo",
+                Guid.Parse("10000000-0000-4000-8000-000000000437"), 2, 7.85m,
+                Guid.Parse("10000000-0000-4000-8000-000000000438"), 1, "settings-unit-semantics-v1");
+            if (ConflictOther is { } other)
+                return Task.FromResult(ProductTheoreticalKilogramsPerUnitAnswerV1.RefusedWithTableConflict(new(Figure, other, 3.5m, 3.6m,
+                    ProductTheoreticalKilogramsPerUnitTableConflictV1.EnteredOrientation, evidence)));
             return Task.FromResult(Outcome == ProductTheoreticalKilogramsPerUnitOutcomeV1.Found
-                ? ProductTheoreticalKilogramsPerUnitAnswerV1.Found(Figure, new ProductTheoreticalKilogramsPerUnitEvidenceV1(Company,
-                    AnswerProduct ?? productId, unitId, UnitKind, "7", "product-unit-conversion-v1", 3, null, null,
-                    Guid.Parse("10000000-0000-4000-8000-000000000437"), 2, 7.85m,
-                    Guid.Parse("10000000-0000-4000-8000-000000000438"), 1, "settings-unit-semantics-v1"))
+                ? ProductTheoreticalKilogramsPerUnitAnswerV1.Found(Figure, evidence)
                 : ProductTheoreticalKilogramsPerUnitAnswerV1.Without(Outcome, Code));
         }
     }

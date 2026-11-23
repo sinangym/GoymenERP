@@ -106,6 +106,29 @@ public sealed record ProductTheoreticalKilogramsPerUnitAnswerV1
 
     public string? Code { get; }
 
+    /// <summary>
+    /// SAT-D477: on a <see cref="ProductTheoreticalKilogramsPerUnitCodesV1.WeightConflict"/> refusal whose two table directions
+    /// are each known, the entered direction's figure (the one a consumer that implements SAT-D474/D477 records) and the reversed
+    /// one, with the evidence. Null on every other answer; the outcome stays Refused, so a consumer that does not opt in refuses.
+    /// </summary>
+    public ProductTheoreticalKilogramsPerUnitTableConflictV1? TableConflict { get; private init; }
+
+    /// <summary>SAT-D477: the weight-conflict refusal with both directions' figures (see <see cref="TableConflict"/>).</summary>
+    public static ProductTheoreticalKilogramsPerUnitAnswerV1 RefusedWithTableConflict(ProductTheoreticalKilogramsPerUnitTableConflictV1 conflict)
+    {
+        ArgumentNullException.ThrowIfNull(conflict);
+        if (conflict.SelectedKilogramsPerUnit <= 0m || conflict.OtherKilogramsPerUnit <= 0m || conflict.SelectedKgPerMetre <= 0m
+            || conflict.OtherKgPerMetre <= 0m || conflict.SelectedKgPerMetre == conflict.OtherKgPerMetre
+            || !string.Equals(conflict.Selection, ProductTheoreticalKilogramsPerUnitTableConflictV1.EnteredOrientation, StringComparison.Ordinal))
+            throw new ArgumentException("A table conflict names two different positive directions and the entered one as selected.",
+                nameof(conflict));
+        _ = Found(conflict.SelectedKilogramsPerUnit, conflict.Evidence);
+        return new(ProductTheoreticalKilogramsPerUnitOutcomeV1.Refused, null, null, ProductTheoreticalKilogramsPerUnitCodesV1.WeightConflict)
+        {
+            TableConflict = conflict,
+        };
+    }
+
     public static ProductTheoreticalKilogramsPerUnitAnswerV1 Found(decimal kilogramsPerUnit,
         ProductTheoreticalKilogramsPerUnitEvidenceV1 evidence)
     {
@@ -154,4 +177,22 @@ public interface IProductTheoreticalKilogramsPerUnitReadPortV1
 {
     Task<ProductTheoreticalKilogramsPerUnitAnswerV1> ReadAsync(Guid productId, Guid unitId, DateOnly effectiveOn,
         CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// SAT-D474 / SAT-D477 (URN-D19): the card's profile measures stand in the kg/m table in both directions with different values.
+/// <see cref="SelectedKilogramsPerUnit"/> is computed from the ENTERED direction (the card's width × height; <see cref="Selection"/>
+/// <c>weight-table:entered-orientation</c>), <see cref="OtherKilogramsPerUnit"/> from the reversed one, by the same calculator.
+/// <see cref="Evidence"/> is the selected figure's source evidence.
+/// </summary>
+public sealed record ProductTheoreticalKilogramsPerUnitTableConflictV1(
+    decimal SelectedKilogramsPerUnit,
+    decimal OtherKilogramsPerUnit,
+    decimal SelectedKgPerMetre,
+    decimal OtherKgPerMetre,
+    string Selection,
+    ProductTheoreticalKilogramsPerUnitEvidenceV1 Evidence)
+{
+    /// <summary>The only selection SAT-D477 makes: the card's entered direction.</summary>
+    public const string EnteredOrientation = "weight-table:entered-orientation";
 }

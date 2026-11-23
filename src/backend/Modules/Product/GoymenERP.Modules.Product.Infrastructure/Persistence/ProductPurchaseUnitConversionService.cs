@@ -125,6 +125,7 @@ public sealed class ProductPurchaseUnitConversionService(ICompanyContext company
                 { /* A reachable source without a policy provides no product coefficient. */ }
             }
             var answerUnits = new List<ProductPurchaseConversionUnitV1>();
+            var conflictUnits = new List<ProductWeightTableOrientationConflictUnitV1>();
             foreach (var id in unitIds)
             {
                 var meaning = await FencedAsync(() => semantics.ReadAsync(id, token), scope, token);
@@ -139,6 +140,14 @@ public sealed class ProductPurchaseUnitConversionService(ICompanyContext company
                     factor = meaning.KgPerUnit ?? Coefficient(kind, dimension, policy, settings);
                     if ((meaning.Kind == SettingsPhysicalUnitKindV1.Kilogram) != profile.Profile.IsKilogram)
                         return Without(ProductPurchaseUnitConversionOutcomeV1.Unavailable);
+                    // SAT-D477: on a two-direction table conflict the same calculator answers each direction's coefficient.
+                    if (meaning.KgPerUnit is null && dimension is { KgPerMetreConflict: true, ConflictEnteredKgPerMetre: { } entered,
+                            ConflictReversedKgPerMetre: { } reversed }
+                        && Coefficient(kind, dimension with { KgPerMetre = entered, KgPerMetreConflict = false }, policy, settings)
+                            is { } enteredFactor
+                        && Coefficient(kind, dimension with { KgPerMetre = reversed, KgPerMetreConflict = false }, policy, settings)
+                            is { } reversedFactor)
+                        conflictUnits.Add(new(id, enteredFactor, reversedFactor));
                 }
                 answerUnits.Add(new(id, kind, factor, meaning.SourceVersion, profile?.Profile.Profile.ProfileId,
                     profile?.Profile.Profile.Version));
@@ -157,7 +166,11 @@ public sealed class ProductPurchaseUnitConversionService(ICompanyContext company
                 ProductUnitConversionCalculatorV1.FormulaVersion, dimension.Version, dimension.KgPerMetreTableVersion,
                 dimension.KgPerMetreSourceLabel, policy?.Profile.ProfileId, policy?.Profile.Version,
                 dimension.KgPerMetreConflict ? WeightConflictReason : hasFormula ? null : NoSourceCode,
-                policy?.DensityGramsPerCubicCentimetre);
+                policy?.DensityGramsPerCubicCentimetre,
+                dimension is { KgPerMetreConflict: true, ConflictEnteredKgPerMetre: { } enteredKg, ConflictReversedKgPerMetre: { } reversedKg }
+                    && conflictUnits.Count > 0
+                    ? new ProductWeightTableOrientationConflictV1(enteredKg, reversedKg, conflictUnits)
+                    : null);
             return new(new(ProductPurchaseUnitConversionOutcomeV1.Available, source), settings);
         }
         catch (OperationCanceledException) { throw; }

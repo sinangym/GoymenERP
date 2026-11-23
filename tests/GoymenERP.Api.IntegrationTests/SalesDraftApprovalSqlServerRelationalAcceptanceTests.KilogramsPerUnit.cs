@@ -43,4 +43,65 @@ public sealed partial class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         Assert.Equal(12.345m, await run.ScalarAsync<decimal>(
             "SELECT KilogramsPerUnit FROM sales.DraftLineKilogramsPerUnit WHERE DraftId = @id", ("@id", draft.Id)));
     }
+
+    /// <summary>
+    /// SAT-D474 / SAT-D477 on real SQL: an approval that resolved a kg/m table conflict with the card's ENTERED direction pins that
+    /// figure in the approval's one save; the reversed figure, the difference and "table must be corrected" stay in the stored
+    /// source proof and in the approval's audit event, and a reload reads them back unchanged.
+    /// </summary>
+    [SqlServerFact]
+    public async Task SAT_D477_an_approval_pins_the_entered_direction_figure_and_keeps_the_table_conflict_warning_in_its_audit()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var pieceUnit = Guid.Parse("5e0cbe45-61cc-541a-834a-366355de36e5");
+        var pieceProfile = Guid.Parse("5e0cbe45-61cc-541a-834a-366355de36e6");
+        SalesOrderDraft draft;
+        await using (var scope = run.Store(CompanyA))
+        {
+            draft = (await scope.Store.StoreDraftAsync(run.Envelope("kpu-conflict-create"), Hash("kpu-conflict-create"), number =>
+            {
+                var created = SalesOrderDraft.Create(Guid.NewGuid(), owners.Company, number,
+                    new SalesDraftHeader(owners.Party, owners.Account, Currency, Day, DueTerms: TestDueTerms.PointDue30),
+                    new MoneyProfileSnapshot(owners.Company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2), T0);
+                var unit = new UnitProfileSnapshot(owners.Company, pieceUnit, "adet", "count", pieceProfile, "1", false, 0, 0, true, From, null);
+                var binding = new UnitBindingSnapshot(owners.Company, pieceUnit, pieceProfile, "1");
+                created.AddLine(created.Version, new SalesDraftLineInput(Guid.NewGuid(),
+                    new ProductSnapshot(Product, "7", "PRF-4060", "Sentetik profil 40x60", Day, binding, binding, binding), unit, "10", 10m), T0);
+                return created;
+            })).Draft;
+            await scope.Store.UpdateDraftStateAsync(run.Envelope("kpu-conflict-submit"), Hash("kpu-conflict-submit"), SalesDraftCommands.SubmitV1,
+                draft.Id, (d, now) => d.Submit(2, run.Actor, now), Submitted);
+        }
+
+        const string proof = "{\"contractVersion\":1,\"unitKind\":\"Piece\",\"weightTableVersion\":11,\"weightTableSource\":\"SENTETIK-tablo\","
+            + "\"tableConflict\":{\"selection\":\"weight-table:entered-orientation\",\"selectedKilogramsPerUnit\":\"21\","
+            + "\"otherKilogramsPerUnit\":\"21.6\",\"differenceKilogramsPerUnit\":\"0.6\",\"selectedKgPerMetre\":\"3.5\","
+            + "\"otherKgPerMetre\":\"3.6\",\"tableCorrectionRequired\":true}}";
+        var lineId = draft.Lines[0].Id;
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Store.UpdateDraftStateAsync(run.Envelope("kpu-conflict-approve", actor: "SENTETIK-approver"), Hash("kpu-conflict-approve"),
+                SalesDraftCommands.ApproveV1, draft.Id, (d, now) =>
+                {
+                    d.Approve(3, "SENTETIK-approver", now);
+                    d.PinKilogramsPerUnit([new SalesLineKilogramsPerUnitSnapshot(lineId, d.Revision, Product, pieceUnit, 21m, proof,
+                        d.Approval.DecidedAtUtc!.Value)]);
+                }, Approved);
+        }
+
+        Assert.Equal(21m, await run.ScalarAsync<decimal>(
+            "SELECT KilogramsPerUnit FROM sales.DraftLineKilogramsPerUnit WHERE DraftId = @id AND LineId = @line", ("@id", draft.Id), ("@line", lineId)));
+        Assert.Equal("weight-table:entered-orientation", await run.ScalarAsync<string>(
+            "SELECT JSON_VALUE(SourceProof, '$.tableConflict.selection') FROM sales.DraftLineKilogramsPerUnit WHERE DraftId = @id", ("@id", draft.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id AND EventType = N'sales.order-draft.approved.v1' "
+            + "AND AfterJson LIKE N'%otherKilogramsPerUnit%21.6%' AND AfterJson LIKE N'%tableCorrectionRequired%'", ("@id", draft.Id.ToString("D"))));
+        await using (var scope = run.Store(CompanyA))
+        {
+            var reloaded = (await scope.Store.FindDraftAsync(draft.Id))!;
+            var pinned = Assert.Single(reloaded.KilogramsPerUnitSnapshots);
+            Assert.Equal((21m, proof), (reloaded.KilogramsPerUnitOf(lineId)!.KilogramsPerUnit, pinned.SourceProof));
+        }
+    }
 }

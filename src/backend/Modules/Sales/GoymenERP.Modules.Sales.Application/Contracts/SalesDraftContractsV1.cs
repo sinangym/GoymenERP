@@ -349,7 +349,20 @@ public sealed record SalesOrderDraftLineDetail(
     // SAT-D437 (AK-4): the theoretical kg per order unit pinned on a piece line at its internal approval (invariant text, never
     // re-read from the card); omitted for a kg line, a line not yet approved and an order approved before AK-4 (no back-fill).
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? TheoreticalKilogramsPerUnit = null);
+    string? TheoreticalKilogramsPerUnit = null,
+    // SAT-D474 / SAT-D477: present only when the pinned figure was taken from the card's ENTERED direction because the kg/m table
+    // holds the profile measures in both directions with different values — the approver's warning, kept on the document.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    SalesKilogramsPerUnitTableConflictV1? TheoreticalKilogramsPerUnitConflict = null);
+
+/// <summary>
+/// SAT-D474 / SAT-D477: the kg/m table conflict a pinned kg/unit was resolved from. <c>Selection</c> is
+/// <c>weight-table:entered-orientation</c>; <c>SelectedKilogramsPerUnit</c> is the pinned figure, <c>OtherKilogramsPerUnit</c> the
+/// reversed direction's, <c>DifferenceKilogramsPerUnit</c> = other − selected (signed); the two kg/m values are the table's. All are
+/// invariant decimal text. The table must be corrected; the approved document does not move when it is (SAT-D437).
+/// </summary>
+public sealed record SalesKilogramsPerUnitTableConflictV1(string Selection, string SelectedKilogramsPerUnit, string OtherKilogramsPerUnit,
+    string DifferenceKilogramsPerUnit, string SelectedKgPerMetre, string OtherKgPerMetre);
 
 /// <summary>
 /// D2 (Sinan 5749046401): <c>IsOwnDraft</c> is the RELATIONSHIP, computed on the server for the caller — "the caller is
