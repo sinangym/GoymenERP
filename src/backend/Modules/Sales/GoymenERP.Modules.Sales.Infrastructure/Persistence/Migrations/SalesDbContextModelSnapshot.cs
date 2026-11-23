@@ -185,6 +185,189 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.ApprovalRequestAttemptRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CommandName")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("IdempotencyKeyHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("Outcome")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RefusalJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<Guid?>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
+
+                    b.HasIndex("CompanyId", "RequestId");
+
+                    b.ToTable("ApprovalRequestAttempts", "sales", t =>
+                        {
+                            t.HasCheckConstraint("CK_ApprovalRequestAttempts_Command", "[CommandName] IN (N'sales.approval-request.request-quote-conversion.v1', N'sales.approval-request.reject-quote-conversion.v1', N'sales.approval-request.approve-over-delivery.v1', N'sales.approval-request.reject-over-delivery.v1')");
+
+                            t.HasCheckConstraint("CK_ApprovalRequestAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+
+                            t.HasCheckConstraint("CK_ApprovalRequestAttempts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SubjectId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+
+                            t.HasCheckConstraint("CK_ApprovalRequestAttempts_Outcome", "([Outcome] = 1 AND [RequestId] IS NOT NULL AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND [RequestId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.ApprovalRequestRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset?>("DecidedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DecidedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("DecisionReason")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("LineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("Ordered")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Quantity")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int>("RequestNo")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("RequestedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("RequestedTotal")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid?>("SourceInstructionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("SourceShipmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("State")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("SubjectRevision")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "SubjectId", "LineId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ApprovalRequests_PendingOrderLine")
+                        .HasFilter("[Kind] = 2 AND [State] = 1");
+
+                    b.HasIndex("CompanyId", "SubjectId", "SubjectRevision")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ApprovalRequests_PendingQuoteRevision")
+                        .HasFilter("[Kind] = 1 AND [State] = 1");
+
+                    b.HasIndex("CompanyId", "Kind", "State", "RequestedAtUtc")
+                        .HasDatabaseName("IX_ApprovalRequests_Pending");
+
+                    b.HasIndex("CompanyId", "Kind", "SubjectId", "RequestNo")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ApprovalRequests_No");
+
+                    b.ToTable("ApprovalRequests", "sales", t =>
+                        {
+                            t.HasCheckConstraint("CK_ApprovalRequests_Decision", "([State] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [DecisionReason] IS NULL) OR ([State] = 2 AND [Kind] = 2 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [DecisionReason] IS NULL) OR ([State] = 3 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [DecisionReason] IS NOT NULL AND LEN([DecisionReason]) > 0)");
+
+                            t.HasCheckConstraint("CK_ApprovalRequests_Facts", "([Kind] = 1 AND [LineId] IS NULL AND [Ordered] IS NULL AND [Quantity] IS NULL AND [RequestedTotal] IS NULL AND [SourceInstructionId] IS NULL AND [SourceShipmentId] IS NULL AND ([Note] IS NULL OR LEN([Note]) > 0)) OR ([Kind] = 2 AND [LineId] IS NOT NULL AND [LineId] <> '00000000-0000-0000-0000-000000000000' AND [Ordered] IS NOT NULL AND LEN([Ordered]) > 0 AND [Quantity] IS NOT NULL AND LEN([Quantity]) > 0 AND [RequestedTotal] IS NOT NULL AND LEN([RequestedTotal]) > 0 AND [SourceInstructionId] IS NOT NULL AND [SourceInstructionId] <> '00000000-0000-0000-0000-000000000000' AND [SourceShipmentId] IS NOT NULL AND [SourceShipmentId] <> '00000000-0000-0000-0000-000000000000' AND [Note] IS NULL)");
+
+                            t.HasCheckConstraint("CK_ApprovalRequests_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SubjectId] <> '00000000-0000-0000-0000-000000000000' AND [Kind] IN (1, 2) AND [RequestNo] >= 1 AND [SubjectRevision] >= 0 AND [Version] >= 1");
+
+                            t.HasCheckConstraint("CK_ApprovalRequests_MakerChecker", "[Kind] <> 2 OR [DecidedBy] IS NULL OR [DecidedBy] COLLATE Latin1_General_100_BIN2 <> [RequestedBy] COLLATE Latin1_General_100_BIN2");
+
+                            t.HasCheckConstraint("CK_ApprovalRequests_State", "[State] IN (1, 2, 3)");
+
+                            t.HasCheckConstraint("CK_ApprovalRequests_Text", "LEN([RequestedBy]) > 0 AND LEN([CorrelationId]) > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.ContractAttemptRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -4729,6 +4912,30 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         });
 
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.ApprovalRequestAttemptRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.ApprovalRequestRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "RequestId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.ApprovalRequestRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.ContractAttemptRow", b =>
