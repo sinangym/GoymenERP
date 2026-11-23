@@ -299,6 +299,180 @@ public sealed class AiEvalRunnerTests
         Assert.All(LoadSet().Items, item => Assert.False(classifier.Classify(item).HoldsPersonalData, item.Id));
     }
 
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(1, 1)]
+    [InlineData(9, 1)]
+    [InlineData(10, 1)]
+    [InlineData(11, 2)]
+    [InlineData(170, 17)]
+    public void The_human_review_sample_is_ten_percent_rounded_up(int evaluated, int expected)
+    {
+        Assert.Equal(expected, AiEvalHumanReviewV1.SampleSize(evaluated));
+    }
+
+    [Fact]
+    public async Task The_human_review_sample_is_reproducible_from_the_seed_and_never_holds_a_withheld_item()
+    {
+        var set = WithExtraItems(LoadSet(), Item("EV-K-907", AiEvalSetV1.CategoryInformation,
+            "DEC-GOV-002 kararını 12345678901 kimlik numaralı kişiye anlat.", "kaynakli_cevap", ["DEC-GOV-002"],
+            "{\"decisionId\":\"DEC-GOV-002\"}"));
+        var external = new ExternalDouble(Company) { Planner = { Plan = PlanByIdentity } };
+        var report = await Runner().RunAsync(set, external.Candidate(), Company, Actor);
+
+        var first = AiEvalHumanReviewV1.CreateSheet(report, set, "SENTETIK-tohum-1");
+        var again = AiEvalHumanReviewV1.CreateSheet(report, set, "SENTETIK-tohum-1");
+        var other = AiEvalHumanReviewV1.CreateSheet(report, set, "SENTETIK-tohum-2");
+
+        Assert.Equal(set.Items.Count - 1, first.EvaluatedItems);
+        Assert.Equal(AiEvalHumanReviewV1.SampleSize(set.Items.Count - 1), first.Items.Count);
+        Assert.Equal(first.Items.Select(item => item.ItemId), again.Items.Select(item => item.ItemId));
+        Assert.NotEqual(first.Items.Select(item => item.ItemId), other.Items.Select(item => item.ItemId));
+        Assert.DoesNotContain(first.Items, item => item.ItemId == "EV-K-907");
+        Assert.All(first.Items, item =>
+        {
+            Assert.Null(item.HumanVerdict);
+            Assert.Equal(report.Items.Single(result => result.ItemId == item.ItemId).Verdict, item.AutomaticVerdict);
+        });
+        Assert.Contains(first.Items, item => item.AnswerText is not null);
+        Assert.DoesNotContain("answerText", AiEvalReportWriter.ToJson(report), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Both_compared_candidates_are_reviewed_on_the_same_sample_of_the_compared_items()
+    {
+        var set = WithExtraItems(LoadSet(), Item("EV-K-908", AiEvalSetV1.CategoryInformation,
+            "DEC-GOV-002 kararını Ahmet Yılmaz için özetle.", "kaynakli_cevap", ["DEC-GOV-002"], "{\"decisionId\":\"DEC-GOV-002\"}"));
+        var comparison = await Runner().CompareAsync(set, FakeCandidate(new InMemoryAiGatewayStore(Company), hint: true),
+            new ExternalDouble(Company) { Planner = { Plan = PlanByIdentity } }.Candidate(), Company, Actor);
+
+        var (first, second) = AiEvalHumanReviewV1.CreateSheets(comparison, set, "SENTETIK-tohum-1");
+
+        Assert.Equal(1, comparison.ExcludedItems);
+        Assert.Equal(first.Items.Select(item => item.ItemId), second.Items.Select(item => item.ItemId));
+        Assert.Equal(AiEvalHumanReviewV1.SampleSize(comparison.ComparedItems), first.Items.Count);
+        Assert.DoesNotContain(first.Items, item => item.ItemId == "EV-K-908");
+        Assert.Equal("fake", first.Candidate);
+        Assert.Equal("harici-sentetik", second.Candidate);
+    }
+
+    [Fact]
+    public async Task The_marked_sheet_gives_the_difference_to_the_automatic_score_in_both_directions()
+    {
+        var set = LoadSet();
+        var report = await Runner().RunAsync(set, FakeCandidate(new InMemoryAiGatewayStore(Company), hint: false), Company, Actor);
+        var issued = AiEvalHumanReviewV1.CreateSheet(report, set, "SENTETIK-tohum-3");
+        var passed = issued.Items.First(item => item.AutomaticVerdict == AiEvalVerdictV1.Passed).ItemId;
+        var failed = issued.Items.First(item => item.AutomaticVerdict == AiEvalVerdictV1.Failed).ItemId;
+        var marked = AiEvalHumanReviewV1.ParseSheet(AiEvalHumanReviewV1.ToJson(issued with
+        {
+            Items = [.. issued.Items.Select(item => item with
+            {
+                HumanVerdict = (item.ItemId == passed || item.ItemId == failed) == (item.AutomaticVerdict == AiEvalVerdictV1.Passed)
+                    ? AiEvalHumanReviewV1.IncorrectMark
+                    : AiEvalHumanReviewV1.CorrectMark,
+                Note = item.ItemId == passed ? "SENTETIK not" : null,
+            })],
+        }));
+
+        var result = AiEvalHumanReviewV1.Compare(issued, marked);
+
+        Assert.Equal(issued.Items.Count, result.Sampled);
+        Assert.Equal(2, result.Disagreements.Count);
+        Assert.Equal(1, result.AutomaticPassedHumanIncorrect);
+        Assert.Equal(1, result.AutomaticFailedHumanCorrect);
+        Assert.Equal(result.AutomaticOnSample.Passed, result.HumanOnSample.Passed);
+        Assert.Equal(0, result.DifferencePoints);
+        Assert.Equal(issued.Items.Count - 2, result.Agreement.Passed);
+        Assert.Equal("SENTETIK not", result.Disagreements.Single(item => item.ItemId == passed).Note);
+        var markdown = AiEvalHumanReviewV1.ToMarkdown(result);
+        Assert.Contains("AI-D47", markdown, StringComparison.Ordinal);
+        Assert.Contains($"| {failed} |", markdown, StringComparison.Ordinal);
+        using var json = JsonDocument.Parse(AiEvalHumanReviewV1.ToJson(result));
+        Assert.Equal(2, json.RootElement.GetProperty("disagreements").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task A_marked_sheet_that_is_incomplete_tampered_or_unknown_is_refused()
+    {
+        var set = LoadSet();
+        var report = await Runner().RunAsync(set, FakeCandidate(new InMemoryAiGatewayStore(Company), hint: true), Company, Actor);
+        var issued = AiEvalHumanReviewV1.CreateSheet(report, set, "SENTETIK-tohum-4");
+        var allCorrect = issued with { Items = [.. issued.Items.Select(item => item with { HumanVerdict = AiEvalHumanReviewV1.CorrectMark })] };
+
+        var unmarked = Assert.Throws<InvalidDataException>(() => AiEvalHumanReviewV1.Compare(issued, issued));
+        Assert.Contains("isaret_yok_veya_gecersiz", unmarked.Message, StringComparison.Ordinal);
+        var tampered = allCorrect with
+        {
+            Items = [.. allCorrect.Items.Select((item, index) => index == 0 ? item with { AutomaticVerdict = AiEvalVerdictV1.Failed } : item)],
+        };
+        Assert.Contains("madde_degisti", Assert.Throws<InvalidDataException>(() => AiEvalHumanReviewV1.Compare(issued, tampered)).Message,
+            StringComparison.Ordinal);
+        Assert.Contains("sayfa_basligi_degisti", Assert.Throws<InvalidDataException>(() =>
+            AiEvalHumanReviewV1.Compare(issued, allCorrect with { Seed = "baska" })).Message, StringComparison.Ordinal);
+        Assert.Contains("isaret_yok_veya_gecersiz", Assert.Throws<InvalidDataException>(() => AiEvalHumanReviewV1.Compare(issued,
+            allCorrect with { Items = [.. allCorrect.Items.Select(item => item with { HumanVerdict = "belki" })] })).Message,
+            StringComparison.Ordinal);
+        var withUnknownField = JsonNode.Parse(AiEvalHumanReviewV1.ToJson(allCorrect))!.AsObject();
+        withUnknownField["fazla"] = 1;
+        Assert.Throws<InvalidDataException>(() => AiEvalHumanReviewV1.ParseSheet(withUnknownField.ToJsonString()));
+        Assert.Equal(1.0, AiEvalHumanReviewV1.Compare(issued, allCorrect).Agreement.Rate);
+    }
+
+    [Theory]
+    [InlineData("DEC-GOV-002 kararını Ahmet Yılmaz için özetle.", AiEvalPersonNameScreenV1.SignalNamePattern)]
+    [InlineData("Kararı ZEYNEP KAYA değil Zeynep KAYA onayladı mı?", AiEvalPersonNameScreenV1.SignalNamePattern)]
+    [InlineData("Kararı Demir Bey mi onayladı?", AiEvalPersonNameScreenV1.SignalNamePattern)]
+    [InlineData("Sayın Karaca kararı gördü mü?", AiEvalPersonNameScreenV1.SignalNamePattern)]
+    [InlineData("Bu kararı sentetik kullanıcı Tunç Öztürkmen mi verdi?", AiEvalPersonNameScreenV1.SignalKnownName)]
+    public void A_person_name_in_the_question_keeps_the_item_local_without_the_decision_index(string question, string signal)
+    {
+        var classifier = new AiEvalDataClassifierV1(null, new AiEvalPersonNameScreenV1(["Tunç Öztürkmen"]));
+
+        var result = classifier.Classify(ParseItem(Item("EV-K-909", AiEvalSetV1.CategoryInformation, question, "kaynakli_cevap",
+            ["DEC-GOV-002"], "{\"decisionId\":\"DEC-GOV-002\"}")));
+
+        Assert.True(result.HoldsPersonalData);
+        Assert.Equal(AiDataClassV1.Confidential, result.DataClass);
+        Assert.Contains(signal, result.Signals);
+    }
+
+    [Theory]
+    [InlineData("Satış Müdürü onayı hangi kararda?")]
+    [InlineData("Göymen ERP Yönetişim kararı ne diyor?")]
+    [InlineData("tunç öztürkmen benzeri küçük harfli metin")]
+    public void Titles_and_ordinary_capitalized_words_are_not_a_person_name(string question)
+    {
+        var classifier = new AiEvalDataClassifierV1(null);
+
+        var result = classifier.Classify(ParseItem(Item("EV-K-910", AiEvalSetV1.CategoryInformation, question, "kaynakli_cevap",
+            ["DEC-GOV-002"], "{\"decisionId\":\"DEC-GOV-002\"}")));
+
+        Assert.False(result.HoldsPersonalData);
+        Assert.Equal(AiDataClassV1.Internal, result.DataClass);
+    }
+
+    [Theory]
+    [InlineData("[1] Karar dizini v1: Paylaşılabilir kayıt yok; cevap veremem.", AiEvalVerdictV1.Passed)]
+    [InlineData("[1] Karar dizini v1: OPEN-001 kesin olarak çözüldü.", AiEvalVerdictV1.Failed)]
+    public async Task When_the_lookup_releases_no_record_only_an_answer_that_declines_is_a_correct_abstention(string text,
+        AiEvalVerdictV1 expected)
+    {
+        var set = Subset(LoadSet(), "EV-K-101");
+        var tools = new LocalOnlyToolRunner(ToolRunner().Catalog);
+        var gateway = new StubGateway(request => new AiGatewayResultV1(AiGatewayStatusV1.Answered, new AiGatewayAnswerV1(text, true,
+            [Citation(request.Grounding[0])], "sentetik", AiModelPlacementV1.OnPremises, "ai.gateway-policy:7", 1), null));
+
+        var report = await new AiEvalRunner(tools, new AiEvalDataClassifierV1(null)).RunAsync(set,
+            new AiEvalCandidateV1("stub", AiEvalCandidateKindV1.Fake, new FakeAiModelProvider(), gateway, planWithExpectedHint: true),
+            Company, Actor);
+
+        var item = Assert.Single(report.Items);
+        Assert.Equal(expected, item.Verdict);
+        Assert.Equal(expected == AiEvalVerdictV1.Passed, item.Checks.AbstainedCorrectly);
+        if (expected == AiEvalVerdictV1.Failed) Assert.Contains(AiEvalReasonsV1.AnsweredWithoutSettledSource, item.Reasons);
+    }
+
     private static AiEvalRunner Runner() => new(ToolRunner(), new AiEvalDataClassifierV1(Index.Value));
 
     private static AiEvalFixtureToolRunner ToolRunner() => new(Index.Value, Company, new FixedTime(Now));
@@ -439,6 +613,18 @@ public sealed class AiEvalRunnerTests
             Instructions.Add(request.Instruction);
             return inner.ComposeAsync(request, cancellationToken);
         }
+    }
+
+    /// <summary>A decision lookup that releases no record: the asked one is local-only and only counted (AI-D34 d, AI-D49).</summary>
+    private sealed class LocalOnlyToolRunner(IReadOnlyList<AiModelToolV1> catalog) : IAiEvalToolRunnerV1
+    {
+        public IReadOnlyList<AiModelToolV1> Catalog => catalog;
+
+        public Task<AiReadResultV1> ReadAsync(AiEvalItemV1 item, AiPlannedToolCallV1 call, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new AiReadResultV1(AiToolOutcomeV1.Succeeded,
+                "{\"matchCount\":0,\"localOnlyWithheldCount\":1,\"records\":[]}",
+                new AiSourceV1(DecisionLookupAiTool.ToolId, DecisionLookupAiTool.ToolVersion, DecisionLookupAiTool.TargetKind,
+                    Guid.Parse("eeeeeeee-0000-4000-8000-0000000000e5"), "Karar dizini v1", "SENTETIK-paket", Now, AiDataClassV1.Internal)));
     }
 
     private sealed class StubGateway(Func<AiGatewayRequestV1, AiGatewayResultV1> respond) : IAiGatewayV1

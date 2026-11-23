@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using GoymenERP.Api.Ai.Gateway;
 using GoymenERP.BuildingBlocks.Ai;
 
@@ -91,6 +92,13 @@ public sealed record AiEvalScoringOptionsV1
     public IReadOnlyList<string> IncompleteResultMarkers { get; init; } =
         ["eksik", "kesin sayı verilmez", "kesin sayi verilmez", "tamamlanmadı", "tamamlanmadi"];
 
+    /// <summary>
+    /// Phrases (folded) that say "I cannot answer" when the tool released no record of the asked decision (for example a
+    /// local-only record the Internal-class lookup only counts, AI-D34 d / AI-D49).
+    /// </summary>
+    public IReadOnlyList<string> CannotAnswerMarkers { get; init; } =
+        ["cevap veremem", "paylaşılabilir kayıt yok", "paylasilabilir kayit yok", "kesin değer yok", "kesin deger yok"];
+
     /// <summary>Decision index statuses that mean "not settled" (ASSUMPTION-AI-INDEX-STATUS-1).</summary>
     public IReadOnlyList<string> OpenDecisionStatuses { get; init; } = ["acik", "belirsiz", "gecici"];
 
@@ -100,7 +108,7 @@ public sealed record AiEvalScoringOptionsV1
             throw new ArgumentOutOfRangeException(nameof(MinimumTermCoverage));
         if (MinimumTermLength < 1) throw new ArgumentOutOfRangeException(nameof(MinimumTermLength));
         if (OpenDecisionMarkers is not { Count: > 0 } || IncompleteResultMarkers is not { Count: > 0 }
-            || OpenDecisionStatuses is not { Count: > 0 })
+            || OpenDecisionStatuses is not { Count: > 0 } || CannotAnswerMarkers is not { Count: > 0 })
             throw new ArgumentException("Marker lists must not be empty.");
     }
 }
@@ -152,7 +160,15 @@ public sealed record AiEvalItemResultV1(
     AiGatewayStatusV1? GatewayStatus,
     string? CannotAnswerReason,
     int CitationCount,
-    int UsageUnits);
+    int UsageUnits)
+{
+    /// <summary>
+    /// The composed text, kept only for the AI-D47 human review sheet (<see cref="AiEvalHumanReviewV1"/>). Never written to
+    /// the JSON or Markdown result report.
+    /// </summary>
+    [JsonIgnore]
+    public string? AnswerText { get; init; }
+}
 
 /// <summary>Passed / evaluated for one slice; <see cref="Rate"/> is null when nothing was evaluated.</summary>
 public sealed record AiEvalRateV1(int Passed, int Evaluated)

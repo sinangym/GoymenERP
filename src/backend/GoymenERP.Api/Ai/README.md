@@ -103,6 +103,13 @@ identities, verdicts and reason codes only (no question/answer text).
   result (the tool itself is pinned against the same fixtures in `LogisticsPendingShipmentsAiToolTests`).
 - Scoring has no model judge (ASSUMPTION-AI-EVAL-SCORING-1: identities, summary term coverage ≥ 0.5, marker phrases;
   `AiEvalScoringOptionsV1`). A real provider comparison should add a human-reviewed sample.
+- Human review (AI-D47): `AiEvalHumanReviewV1` samples 10 % (rounded up) of each candidate's evaluated answers by SHA-256 of
+  seed + item id (reproducible; both compared candidates get the same sample; withheld items never sampled), writes the
+  review sheet (`goymen.ai.eval-human-review.v1`; the reviewer fills `humanVerdict` = `dogru`/`yanlis` and an optional
+  `note`), and compares the marked copy strictly (header, items, automatic verdicts unchanged; every item marked) into a
+  difference report: automatic vs human pass rate on the sample, agreement, difference in points, both disagreement kinds.
+- Person names (AI-D44/AI-D49) without the index: `AiEvalPersonNameScreenV1` — host-supplied known names (e.g. Identity's
+  user directory), common given name + capitalized surname, honorific (`Bey`/`Hanım`/`Sayın`).
 - Run: `GOYMEN_AI_EVAL_REPORT_DIR=<dir> dotnet test tests/GoymenERP.Api.IntegrationTests --filter
   "FullyQualifiedName~AiEvalRunnerTests"` writes `ai-eval-report.json` / `.md`. CI wiring is WP16.
 
