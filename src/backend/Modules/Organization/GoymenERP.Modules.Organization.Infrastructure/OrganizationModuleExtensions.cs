@@ -44,6 +44,9 @@ public static class OrganizationModuleExtensions
             configureDbContext?.Invoke(serviceProvider, options);
         });
         services.AddScoped<OrganizationBootstrapWriteScope>();
+        // WP7-2 (AI-D31/AI-D32): the read-only Work inbox source(s) of Organization pending decisions; they decide nothing.
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddScoped<GoymenERP.BuildingBlocks.Work.WorkInboxCompanyWideFenceV1>(services);
+        services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1, WorkInbox.OrganizationCompanyTaxIdChangeWorkInboxSourceV1>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<OrganizationCompanyLifecycleReader>();
         services.AddScoped<ICompanyLifecycleReadPortV1>(sp => sp.GetRequiredService<OrganizationCompanyLifecycleReader>());

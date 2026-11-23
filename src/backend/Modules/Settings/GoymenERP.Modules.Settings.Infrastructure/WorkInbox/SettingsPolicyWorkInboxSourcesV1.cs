@@ -15,7 +15,8 @@ namespace GoymenERP.Modules.Settings.Infrastructure.WorkInbox;
 /// Draft (or, for a Manufacturing profile, left Approved under the retired D-MFG-PROFILE-AUTH-01=A chain) — exactly what the
 /// family's publish command accepts; it is published on the family's own Ayarlar screen (the inbox publishes nothing).
 /// <para>
-/// URN-D3/URN-D6: the authorized manager prepares and publishes alone; no second approver is sought. The owner's rule
+/// URN-D3/URN-D6 and YOL-D38 (E-65, SINAN_KARARLARI_2026-11-22_EK_SORULAR): the manager holding the publish permission may
+/// prepare and publish alone; K15's "yayımlayan ≠ hazırlayan" does not apply to these policies; no second approver is sought. The owner's rule
 /// therefore names no maker and refuses no one: <see cref="WorkInboxItemV1.PreparedBy"/> is null and the preparer sees their
 /// own draft. The caller must hold every permission the publish command measures (company-wide, as it stands now, before and
 /// after the read); the kind's <see cref="IWorkInboxSourceV1.ApproverPermission"/> is the decisive one of them. A draft waits
