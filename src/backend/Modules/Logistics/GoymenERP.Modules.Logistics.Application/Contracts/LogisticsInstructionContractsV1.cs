@@ -273,6 +273,9 @@ public static class LogisticsProblemCodesV1
     /// </summary>
     public const string DispatchNoteState = "logistics_dispatch_note_state";
 
+    /// <summary>409, terminal (§7; ROL-D14 maker ≠ checker): the actor prepared the draft dispatch note and may not approve it.</summary>
+    public const string DispatchNoteSelfApproval = "logistics_dispatch_note_self_approval";
+
     /// <summary>409, terminal (§7): the e-İrsaliye number is already on another dispatch note of this company.</summary>
     public const string EDispatchNumberInUse = "logistics_e_dispatch_number_in_use";
 

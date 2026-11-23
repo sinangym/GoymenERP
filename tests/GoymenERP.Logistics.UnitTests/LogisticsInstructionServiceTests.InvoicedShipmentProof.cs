@@ -110,7 +110,7 @@ public sealed partial class LogisticsInstructionServiceTests
         var (world, instructionId, _, firstShipment, secondShipment) = await ShippedWorld();
         var draft = DispatchNote("6", firstShipment, secondShipment);
         await world.Service().CreateDispatchNoteAsync(instructionId, draft, Metadata("invoice-proof-create"));
-        await world.Service().ApproveDispatchNoteAsync(instructionId, draft.DispatchNoteId,
+        await world.Approver().ApproveDispatchNoteAsync(instructionId, draft.DispatchNoteId,
             new ApproveDispatchNoteRequest("7"), Metadata("invoice-proof-approve"));
         return (world, instructionId, draft.DispatchNoteId, firstShipment);
     }

@@ -27,8 +27,10 @@ public sealed class InventoryOpeningCostWorkInboxSourceTests
         Assert.Equal(("inventory", Kind, "inventory.opening-cost.approve", false),
             (source.Module, source.Kind, source.ApproverPermission, ((IWorkInboxSourceV1)source).AcceptsScopedApprovers));
         Assert.Equal(InventoryPermissionManifestV1.OpeningCostApprove, source.ApproverPermission);
+        Assert.True(ErpPermissions.IsKnown(source.ApproverPermission));
+        // WP5 + WP6 (tren-2): both registrations together add the source exactly once.
         var services = new ServiceCollection().AddInventoryTransfers().AddInventoryOpeningCosts();
-        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IWorkInboxSourceV1)
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IWorkInboxSourceV1)
             && descriptor.ImplementationType == typeof(InventoryOpeningCostWorkInboxSourceV1)
             && descriptor.Lifetime == ServiceLifetime.Scoped);
         Assert.Single(services, descriptor => descriptor.ServiceType == typeof(InventoryWorkInboxFence));

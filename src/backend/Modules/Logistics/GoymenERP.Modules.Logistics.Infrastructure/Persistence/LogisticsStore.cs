@@ -1264,7 +1264,7 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
                 RestoreDispatchNote(instruction, row, lines);
                 return;
             case DispatchStepKind.Approve:
-                instruction.ApproveDispatchNote(instruction.Version, row.DispatchNoteId, row.ApprovedBy!, row.ApprovedAtUtc!.Value);
+                instruction.RestoreDispatchNoteApproval(instruction.Version, row.DispatchNoteId, row.ApprovedBy!, row.ApprovedAtUtc!.Value);
                 restored = instruction.AssignDispatchNoteNumber(row.DispatchNoteId, DispatchNoteNumber.Of(row.SeriesCode!, row.SequenceNo!.Value));
                 if (restored.ApprovedStep != row.ApprovedStep)
                 {

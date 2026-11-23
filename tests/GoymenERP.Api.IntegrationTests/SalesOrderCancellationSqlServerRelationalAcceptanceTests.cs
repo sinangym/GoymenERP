@@ -493,7 +493,7 @@ public sealed class SalesOrderCancellationSqlServerRelationalAcceptanceTests
                 new LogisticsMutationAudit("logistics.loading-instruction.dispatch-note-created.v1", "CreateDispatchNote", "SENTETIK irsaliye taslağı")))!.Instruction;
             await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-approve-note"),
                 Hash($"{keyPrefix}-l-approve-note"), LogisticsCommands.ApproveDispatchNoteV1, stored.Instruction.Id,
-                (value, now) => value.ApproveDispatchNote(stored.Instruction.Version, noteId, Actor, now),
+                (value, now) => value.ApproveDispatchNote(stored.Instruction.Version, noteId, "SENTETIK-dispatch-note-approver", now),
                 new LogisticsMutationAudit("logistics.loading-instruction.dispatch-note-approved.v1", "ApproveDispatchNote", "SENTETIK irsaliye onaylandı"));
             return noteId;
         }

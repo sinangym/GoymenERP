@@ -25,6 +25,14 @@ internal sealed class InventoryWorkInboxFence(
     /// <summary>The transfer loss approval screen (<c>InventoryShellCapabilityProvider.TransferLossApprovalRoutePath</c>).</summary>
     public const string TransferLossApprovalPath = Shell.InventoryShellCapabilityProvider.TransferLossApprovalRoutePath;
 
+    /// <summary>
+    /// YOL-D41: an approval with no owner screen is decided from the Work inbox (WP8). Until then its item links to the inbox
+    /// itself, filtered to its kind (the inbox's <c>tur</c> member); the explanation card carries the detail.
+    /// </summary>
+    public const string WorkInboxPath = "/onaylarim/kuyruk";
+
+    public static string WorkInboxKindLink(string kind) => WorkInboxPath + "?tur=" + Uri.EscapeDataString(kind);
+
     /// <summary>The label detail screen (ST-01 → label), where a label's movements are read.</summary>
     public const string LabelDetailPath = "/stok/etiket";
 

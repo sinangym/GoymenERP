@@ -10,7 +10,8 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.WorkInbox;
 /// them for the Work inbox. An exception waits while it is Pending (status 1, version 1) on an Issued instruction — the state
 /// <c>ApproveLogisticsPlanExcessV1</c> accepts — and is decided on the plan-excess approval screen by a holder of
 /// <c>logistics.shipments.plan-excess.approve</c> (the inbox decides nothing). Every pending exception of the company is
-/// returned, the proposer's own included: Work hides a maker's own item.
+/// returned, the proposer's own included: Work hides a maker's own item. WP6: the owner's approval refuses the proposer
+/// (ROL-D14, <c>logistics_plan_excess_self_approval</c>), so the proposer is exactly the owner's "may not decide" set.
 /// <para>
 /// The rule results come only from stored values: the line's instructed (planned) quantity and the proposed excess quantity
 /// (no threshold exists: any positive excess needs approval). The unit is <c>kg</c> on a kilogram line; Logistics stores only

@@ -418,7 +418,7 @@ public sealed class SalesDispatchSqlServerRelationalAcceptanceTests
             await using var scope = LogisticsStore(company);
             var result = await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{key}-approve"), Hash($"{key}-approve-{note.NoteId:N}"),
                 LogisticsCommands.ApproveDispatchNoteV1, shipped.InstructionId,
-                (instruction, now) => instruction.ApproveDispatchNote(shipped.Version, note.NoteId, Actor, now), NoteApproved);
+                (instruction, now) => instruction.ApproveDispatchNote(shipped.Version, note.NoteId, "SENTETIK-dispatch-note-approver", now), NoteApproved);
             shipped.Version = result!.Instruction.Instruction.Version;
         }
 

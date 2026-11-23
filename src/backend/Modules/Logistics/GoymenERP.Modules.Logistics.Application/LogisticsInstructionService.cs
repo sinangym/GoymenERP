@@ -585,6 +585,13 @@ public sealed partial class LogisticsInstructionService(
             return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.DispatchNoteState, [new("status", exception.Code)]), cancellationToken);
         }
+        catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.DispatchNoteSelfApproval)
+        {
+            // ROL-D14: the preparer's own approval is a recorded terminal refusal; another approver may still approve the draft.
+            return await TerminalAsync(scope, permission, envelope, requestHash, commandName,
+                new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.DispatchNoteSelfApproval, [new("dispatchNoteId", exception.Code)]),
+                cancellationToken);
+        }
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.EDispatchNumberInUse)
         {
             return await TerminalAsync(scope, permission, envelope, requestHash, commandName,

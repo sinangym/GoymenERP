@@ -15,7 +15,7 @@ public sealed partial class LogisticsInstructionServiceTests
             world.Service().GetApprovedDispatchInvoiceSourceAsync(draft.DispatchNoteId));
         Assert.Equal((404, "not_found"), (notApproved.Status, notApproved.Code));
 
-        await world.Service().ApproveDispatchNoteAsync(instructionId, draft.DispatchNoteId,
+        await world.Approver().ApproveDispatchNoteAsync(instructionId, draft.DispatchNoteId,
             new ApproveDispatchNoteRequest("7"), Metadata("invoice-source-approve"));
         var authorityCalls = world.Authority.Calls;
         var transitions = world.Store.Transitions.Count;
@@ -46,7 +46,7 @@ public sealed partial class LogisticsInstructionServiceTests
         var (world, instructionId, _, firstShipment, _) = await ShippedWorld();
         var draft = DispatchNote("6", firstShipment);
         await world.Service().CreateDispatchNoteAsync(instructionId, draft, Metadata("invoice-source-create"));
-        await world.Service().ApproveDispatchNoteAsync(instructionId, draft.DispatchNoteId,
+        await world.Approver().ApproveDispatchNoteAsync(instructionId, draft.DispatchNoteId,
             new ApproveDispatchNoteRequest("7"), Metadata("invoice-source-approve"));
         await world.Service().CancelDispatchNoteAsync(instructionId, draft.DispatchNoteId,
             new CancelDispatchNoteRequest("8", "Yanlış araç"), Metadata("invoice-source-cancel"));
@@ -63,7 +63,7 @@ public sealed partial class LogisticsInstructionServiceTests
         var (world, instructionId, _, firstShipment, _) = await ShippedWorld();
         var draft = DispatchNote("6", firstShipment);
         await world.Service().CreateDispatchNoteAsync(instructionId, draft, Metadata("invoice-source-create"));
-        await world.Service().ApproveDispatchNoteAsync(instructionId, draft.DispatchNoteId,
+        await world.Approver().ApproveDispatchNoteAsync(instructionId, draft.DispatchNoteId,
             new ApproveDispatchNoteRequest("7"), Metadata("invoice-source-approve"));
         world.Authority.DenyOnCall = world.Authority.Calls + 2;
 
@@ -80,7 +80,7 @@ public sealed partial class LogisticsInstructionServiceTests
         var (world, instructionId, _, firstShipment, _) = await ShippedWorld();
         var draft = DispatchNote("6", firstShipment);
         await world.Service().CreateDispatchNoteAsync(instructionId, draft, Metadata("invoice-source-create"));
-        await world.Service().ApproveDispatchNoteAsync(instructionId, draft.DispatchNoteId,
+        await world.Approver().ApproveDispatchNoteAsync(instructionId, draft.DispatchNoteId,
             new ApproveDispatchNoteRequest("7"), Metadata("invoice-source-approve"));
         var transitions = world.Store.Transitions.Count;
         world.Store.InvoiceSourceRevisionOverride = -1;
@@ -100,7 +100,7 @@ public sealed partial class LogisticsInstructionServiceTests
         var (world, instructionId, _, firstShipment, _) = await ShippedWorld();
         var draft = DispatchNote("6", firstShipment);
         await world.Service().CreateDispatchNoteAsync(instructionId, draft, Metadata("invoice-link-create"));
-        await world.Service().ApproveDispatchNoteAsync(instructionId, draft.DispatchNoteId,
+        await world.Approver().ApproveDispatchNoteAsync(instructionId, draft.DispatchNoteId,
             new ApproveDispatchNoteRequest("7"), Metadata("invoice-link-approve"));
         var authorityCalls = world.Authority.Calls;
         var transitions = world.Store.Transitions.Count;

@@ -47,7 +47,7 @@ public static partial class LogisticsEndpoints
             .WithName("ApproveLogisticsPlanExcessV1").Accepts<ApproveLogisticsPlanExcessV1>("application/json")
             .WithIdempotencyContract(200, 409).Produces<LogisticsPlanExcessResultV1>()
             .ProducesErpBadRequest("validation_failed", LogisticsProblemCodesV1.CommandMetadataInvalid).ProducesErpCodeLessNotFound()
-            .ProducesErpConflict(LogisticsPlanExcessV1.Conflict, LogisticsStoreCodes.SameKeyPayloadMismatch, LogisticsStoreCodes.ConcurrentChange)
+            .ProducesErpConflict(LogisticsPlanExcessV1.Conflict, LogisticsPlanExcessV1.SelfApproval, LogisticsStoreCodes.SameKeyPayloadMismatch, LogisticsStoreCodes.ConcurrentChange)
             .ProducesErpUnsupportedMediaType().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
         return endpoints;
     }

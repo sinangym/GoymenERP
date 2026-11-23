@@ -41,6 +41,7 @@ public static class InventoryTransferRegistration
         services.TryAddScoped<WorkInbox.InventoryWorkInboxFence>();
         services.AddScoped<IWorkInboxSourceV1, WorkInbox.InventoryTransferOverageWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, WorkInbox.InventoryTransferLossWorkInboxSourceV1>();
+        // YOL-D41: the opening cost source is registered once, by AddInventoryOpeningCosts (WP5 + WP6 merged in tren-2).
         return services;
     }
 

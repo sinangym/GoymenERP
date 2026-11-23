@@ -23,7 +23,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             await using var tx = await setup.Context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
             await setup.Store.ProposePlanExcessAsync(setup.Envelope("extra-rb-propose") with { PermissionCode = LogisticsPermissionManifestV1.LoadsRecord },
                 S3Hash("extra-rb-propose"), instructionId, lineId, new(exceptionId, "3", "20", "SENTETIK"), default);
-            await setup.Store.ApprovePlanExcessAsync(setup.Envelope("extra-rb-approve") with { PermissionCode = LogisticsPlanExcessV1.ApprovePermission },
+            await setup.Store.ApprovePlanExcessAsync(setup.Envelope("extra-rb-approve") with { ActorId = "SENTETIK-plan-excess-approver", PermissionCode = LogisticsPlanExcessV1.ApprovePermission },
                 S3Hash("extra-rb-approve"), exceptionId, new("1", "3"), default); await tx.CommitAsync();
         }
         await using (var read = SubcontractHostScope.Create(run, seed.Party, seed.Account))
@@ -61,7 +61,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         }
         await using (var tx = await scope.Context.Database.BeginTransactionAsync(IsolationLevel.Serializable))
         {
-            await scope.Store.ApprovePlanExcessAsync(scope.Envelope("extra-approve") with { PermissionCode = LogisticsPlanExcessV1.ApprovePermission },
+            await scope.Store.ApprovePlanExcessAsync(scope.Envelope("extra-approve") with { ActorId = "SENTETIK-plan-excess-approver", PermissionCode = LogisticsPlanExcessV1.ApprovePermission },
                 S3Hash("extra-approve"), exceptionId, new("1", "3"), default); await tx.CommitAsync();
         }
         var approved = await scope.Host.ReadAsync(created.InstructionId); var additionalId = Guid.NewGuid();

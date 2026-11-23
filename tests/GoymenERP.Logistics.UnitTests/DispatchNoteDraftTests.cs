@@ -111,6 +111,33 @@ public sealed class DispatchNoteDraftTests
     }
 
     [Fact]
+    public void The_drafts_preparer_never_approves_it_and_the_refusal_moves_nothing()
+    {
+        var (instruction, _, _, shipments, _) = Shipped();
+        var id = Guid.NewGuid();
+        instruction.CreateDispatchNoteDraft(10, id, [shipments[0]], "preparer", T0);
+
+        // ROL-D14: maker != checker, compared on the trimmed actor.
+        Assert.Equal(LogisticsRuleCodes.DispatchNoteSelfApproval, CodeOf(() => instruction.ApproveDispatchNote(11, id, " preparer ", T0)));
+        Assert.Equal((11L, 1, DispatchNoteStatus.Draft),
+            (instruction.Version, instruction.DispatchSteps, instruction.DispatchNotes.Single().Status));
+        Assert.Equal(DispatchNoteStatus.Approved, instruction.ApproveDispatchNote(11, id, "approver", T0).Status);
+    }
+
+    [Fact]
+    public void A_stored_approval_by_the_preparer_from_before_the_rule_is_still_restored_with_every_state_check()
+    {
+        var (instruction, _, _, shipments, _) = Shipped();
+        var id = Guid.NewGuid();
+        instruction.CreateDispatchNoteDraft(10, id, [shipments[0]], "preparer", T0);
+
+        var restored = instruction.RestoreDispatchNoteApproval(11, id, "preparer", T0);
+
+        Assert.Equal((DispatchNoteStatus.Approved, "preparer", 12L), (restored.Status, restored.ApprovedBy, instruction.Version));
+        Assert.Equal(LogisticsRuleCodes.DispatchNoteState, CodeOf(() => instruction.RestoreDispatchNoteApproval(12, id, "other", T0)));
+    }
+
+    [Fact]
     public void Approve_cancel_and_the_e_dispatch_number_are_steps_in_order_and_a_cancel_releases_the_shipments()
     {
         var (instruction, _, _, shipments, _) = Shipped();

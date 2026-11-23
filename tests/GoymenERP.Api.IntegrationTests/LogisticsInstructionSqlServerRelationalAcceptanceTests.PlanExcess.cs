@@ -11,6 +11,44 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTests
 {
+    /// <summary>ROL-D14 (WP6): the plan-excess proposer is never its approver; approvals run as this second actor.</summary>
+    private const string PlanExcessApprover = "SENTETIK-plan-excess-approver";
+
+    [SqlServerFact]
+    public async Task Plan_excess_proposer_never_approves_it_and_the_refusal_writes_nothing()
+    {
+        await using var run = await Run.StartAsync(); var owners = Owners.For(CompanyA);
+        var instruction = InstructionForOrderLine(owners, Guid.NewGuid(), 100m); var exceptionId = Guid.NewGuid();
+        await using var frame = PlanExcessFrame(run, CompanyA); var store = frame.Store; var db = frame.Db;
+        await store.StoreInstructionAsync(run.Envelope("px-self-create"), Hash("px-self-create"), Day, () => instruction);
+        await store.MutateInstructionAsync(run.Envelope("px-self-issue"), Hash("px-self-issue"), LogisticsCommands.IssueV1, instruction.Id, (value, now) => value.Issue(2, now), Issued);
+        await using (var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable))
+        {
+            await store.ProposePlanExcessAsync(run.Envelope("px-self-propose") with { PermissionCode = LogisticsPermissionManifestV1.LoadsRecord },
+                Hash("px-self-propose"), instruction.Id, instruction.Lines[0].Id, new(exceptionId, "3", "20", "SENTETIK"), default);
+            await tx.CommitAsync();
+        }
+        var before = await run.CountsAsync(instruction.Id);
+        await using (var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable))
+        {
+            var own = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => store.ApprovePlanExcessAsync(
+                run.Envelope("px-self-approve") with { PermissionCode = LogisticsPlanExcessV1.ApprovePermission },
+                Hash("px-self-approve"), exceptionId, new("1", "3"), default));
+            Assert.Equal((409, LogisticsPlanExcessV1.SelfApproval), (own.Status, own.Code));
+            await tx.RollbackAsync();
+        }
+        db.ChangeTracker.Clear();
+        Assert.Equal(before, await run.CountsAsync(instruction.Id));
+        Assert.Equal((1, 0m), ((await db.PlanExcessExceptions.SingleAsync()).Status, await db.Lines.Select(row => row.ApprovedPlanExcess).SingleAsync()));
+        await using (var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable))
+        {
+            var approved = await store.ApprovePlanExcessAsync(run.Envelope("px-other-approve", actor: PlanExcessApprover) with
+                { PermissionCode = LogisticsPlanExcessV1.ApprovePermission }, Hash("px-other-approve"), exceptionId, new("1", "3"), default);
+            Assert.Equal((run.Actor, PlanExcessApprover, "Approved"), (approved.Exception.ProposedBy, approved.Exception.ApprovedBy, approved.Exception.Status));
+            await tx.CommitAsync();
+        }
+    }
+
     [SqlServerFact]
     public async Task Approved_plan_excess_uses_are_separate_from_plan_and_immutable_original_approval_replay()
     {
@@ -20,7 +58,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         await store.StoreInstructionAsync(run.Envelope("px-create"), Hash("px-create"), Day, () => original);
         await store.MutateInstructionAsync(run.Envelope("px-issue"), Hash("px-issue"), LogisticsCommands.IssueV1, original.Id, (value, now) => value.Issue(2, now), Issued);
         var exceptionId = Guid.NewGuid(); var propose = run.Envelope("px-propose") with { PermissionCode = LogisticsPermissionManifestV1.LoadsRecord };
-        var approve = run.Envelope("px-approve") with { PermissionCode = LogisticsPlanExcessV1.ApprovePermission };
+        var approve = run.Envelope("px-approve", actor: PlanExcessApprover) with { PermissionCode = LogisticsPlanExcessV1.ApprovePermission };
         await using (var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable))
         {
             var pending = await store.ProposePlanExcessAsync(propose, Hash("px-propose"), original.Id, line.Id, new(exceptionId, "3", "20", "SENTETIK fazla yükleme"), default);
@@ -30,7 +68,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         await using (var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable))
         {
             var approved = await store.ApprovePlanExcessAsync(approve, Hash("px-approve"), exceptionId, new("1", "3"), default);
-            Assert.Equal((run.Actor, run.Actor, "Approved", "3"), (approved.Exception.ProposedBy, approved.Exception.ApprovedBy, approved.Exception.Status, approved.Exception.InstructionVersion));
+            Assert.Equal((run.Actor, PlanExcessApprover, "Approved", "3"), (approved.Exception.ProposedBy, approved.Exception.ApprovedBy, approved.Exception.Status, approved.Exception.InstructionVersion));
             await tx.CommitAsync();
         }
         await store.MutateWithPlanExcessAsync(run.Envelope("px-load"), Hash("px-load"), LogisticsCommands.RecordLoadV1, original.Id,
@@ -71,7 +109,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         await using var frame = PlanExcessFrame(run, CompanyA); var store = frame.Store; var db = frame.Db;
         await store.StoreInstructionAsync(run.Envelope("px-rb-create"), Hash("px-rb-create"), Day, () => original);
         await store.MutateInstructionAsync(run.Envelope("px-rb-issue"), Hash("px-rb-issue"), LogisticsCommands.IssueV1, original.Id, (value, now) => value.Issue(2, now), Issued);
-        var id = Guid.NewGuid(); var envelope = run.Envelope("px-rb-approve") with { PermissionCode = LogisticsPlanExcessV1.ApprovePermission };
+        var id = Guid.NewGuid(); var envelope = run.Envelope("px-rb-approve", actor: PlanExcessApprover) with { PermissionCode = LogisticsPlanExcessV1.ApprovePermission };
         await using (var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable))
         {
             await store.ProposePlanExcessAsync(run.Envelope("px-rb-propose") with { PermissionCode = LogisticsPermissionManifestV1.LoadsRecord }, Hash("px-rb-propose"), original.Id, original.Lines[0].Id, new(id, "3", "20", "SENTETIK"), default);
@@ -115,7 +153,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         Assert.Equal(51818, changed.Number);
         await using (var tx = await frame.Db.Database.BeginTransactionAsync(IsolationLevel.Serializable))
         {
-            await frame.Store.ApprovePlanExcessAsync(run.Envelope("px-guard-approve") with { PermissionCode = LogisticsPlanExcessV1.ApprovePermission },
+            await frame.Store.ApprovePlanExcessAsync(run.Envelope("px-guard-approve", actor: PlanExcessApprover) with { PermissionCode = LogisticsPlanExcessV1.ApprovePermission },
                 Hash("px-guard-approve"), exceptionId, new("1", "3"), default); await tx.CommitAsync();
         }
         await frame.Store.MutateWithPlanExcessAsync(run.Envelope("px-guard-load"), Hash("px-guard-load"), LogisticsCommands.RecordLoadV1, instruction.Id,
@@ -142,7 +180,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             await using var tx = await seed.Db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
             await seed.Store.ProposePlanExcessAsync(run.Envelope("px-race-propose") with { PermissionCode = LogisticsPermissionManifestV1.LoadsRecord },
                 Hash("px-race-propose"), instruction.Id, line.Id, new(exceptionId, "4", "20", "SENTETIK"), default);
-            await seed.Store.ApprovePlanExcessAsync(run.Envelope("px-race-approve") with { PermissionCode = LogisticsPlanExcessV1.ApprovePermission },
+            await seed.Store.ApprovePlanExcessAsync(run.Envelope("px-race-approve", actor: PlanExcessApprover) with { PermissionCode = LogisticsPlanExcessV1.ApprovePermission },
                 Hash("px-race-approve"), exceptionId, new("1", "4"), default); await tx.CommitAsync();
         }
         var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

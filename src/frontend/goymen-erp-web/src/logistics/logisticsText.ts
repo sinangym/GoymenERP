@@ -260,6 +260,8 @@ export const PROBLEM_CODE_TEXT: Record<LogisticsProblemCode, string> = {
   [LOGISTICS_PROBLEM_CODE.shipmentNotFound]: 'Seçilen kayıt bu talimatın kesin sevki değil; taslak oluşturulmadı.',
   [LOGISTICS_PROBLEM_CODE.dispatchNoteState]:
     'İrsaliyenin durumu bu işleme uygun değil (ör. zaten onaylanmış, iptal edilmiş ya da e-İrsaliye numarası zaten kayıtlı); hiçbir şey değişmedi.',
+  [LOGISTICS_PROBLEM_CODE.dispatchNoteSelfApproval]:
+    'İrsaliye taslağını siz hazırladınız; hazırlayan kendi irsaliyesini onaylayamaz. Başka bir onaycı onaylamalıdır; hiçbir şey değişmedi.',
   [LOGISTICS_PROBLEM_CODE.eDispatchNumberInUse]: 'Bu e-İrsaliye numarası şirketin başka bir irsaliyesinde kayıtlı; numara kaydedilmedi.',
   [LOGISTICS_PROBLEM_CODE.shipmentRiskOverLimit]:
     'Müşteri risk limiti aşıldı; geçerli tek sevk istisnası olmadan kesin sevk kaydedilmez.',

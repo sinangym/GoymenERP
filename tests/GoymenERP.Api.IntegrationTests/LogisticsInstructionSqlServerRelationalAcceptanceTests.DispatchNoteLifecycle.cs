@@ -51,7 +51,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         await using (var a = run.Store(CompanyA))
         {
             var approved = await a.Store.MutateInstructionAsync(run.Envelope("k-approve"), Hash("approve-10"), LogisticsCommands.ApproveDispatchNoteV1, id,
-                (instruction, now) => instruction.ApproveDispatchNote(10, note, run.Actor, now), Approved);
+                (instruction, now) => instruction.ApproveDispatchNote(10, note, "SENTETIK-dispatch-note-approver", now), Approved);
             var numbered = Assert.Single(approved!.Instruction.Instruction.DispatchNotes);
             Assert.Equal((11L, DispatchNoteStatus.Approved, "IRS-000001"), (approved.Instruction.Instruction.Version, numbered.Status, numbered.Number!.Text));
         }
@@ -98,7 +98,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             await a.Store.MutateInstructionAsync(run.Envelope("k-redraft"), Hash("redraft-13"), LogisticsCommands.CreateDispatchNoteV1, id,
                 (instruction, now) => instruction.CreateDispatchNoteDraft(13, correction, [shipments[0]], run.Actor, now), Drafted);
             await a.Store.MutateInstructionAsync(run.Envelope("k-approve-2"), Hash("approve-14"), LogisticsCommands.ApproveDispatchNoteV1, id,
-                (instruction, now) => instruction.ApproveDispatchNote(14, correction, run.Actor, now), Approved);
+                (instruction, now) => instruction.ApproveDispatchNote(14, correction, "SENTETIK-dispatch-note-approver", now), Approved);
 
             // The rebuild replays every step in its order and reaches the stored state.
             var rebuilt = (await a.Store.FindInstructionAsync(id))!.Instruction;
@@ -124,7 +124,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         await using (var b = run.Store(CompanyB))
         {
             var approvedB = await b.Store.MutateInstructionAsync(run.Envelope("k-approve-b"), Hash("approve-b"), LogisticsCommands.ApproveDispatchNoteV1, idB,
-                (instruction, now) => instruction.ApproveDispatchNote(10, noteB, run.Actor, now), Approved);
+                (instruction, now) => instruction.ApproveDispatchNote(10, noteB, "SENTETIK-dispatch-note-approver", now), Approved);
             Assert.Equal("IRS-000001", approvedB!.Instruction.Instruction.DispatchNotes[0].Number!.Text);
             Assert.Empty(await b.Store.ListSalesOrderDispatchNotesAsync(owners.Order, 101));
         }
@@ -148,7 +148,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             try
             {
                 var result = await writer.Store.MutateInstructionAsync(run.Envelope(key), Hash(key), LogisticsCommands.ApproveDispatchNoteV1, draft.Id,
-                    (instruction, now) => instruction.ApproveDispatchNote(10, draft.Note, run.Actor, now), Approved);
+                    (instruction, now) => instruction.ApproveDispatchNote(10, draft.Note, "SENTETIK-dispatch-note-approver", now), Approved);
                 return result!.Instruction.Instruction.DispatchNotes[0].Number!.Text;
             }
             catch (LogisticsStoreException exception)
@@ -178,7 +178,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
                 Assert.Equal(10L, await run.ScalarAsync<long>("SELECT Version FROM logistics.LoadingInstructions WHERE Id = @id", ("@id", draft.Id)));
                 await using var retry = run.Store(CompanyA);
                 await retry.Store.MutateInstructionAsync(run.Envelope($"k-retry-{index}"), Hash($"retry-{index}"), LogisticsCommands.ApproveDispatchNoteV1, draft.Id,
-                    (instruction, now) => instruction.ApproveDispatchNote(10, draft.Note, run.Actor, now), Approved);
+                    (instruction, now) => instruction.ApproveDispatchNote(10, draft.Note, "SENTETIK-dispatch-note-approver", now), Approved);
             }
         }
 
@@ -214,9 +214,9 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         await using (var a = run.Store(CompanyA))
         {
             await a.Store.MutateInstructionAsync(run.Envelope("k-approve-1"), Hash("approve-1"), LogisticsCommands.ApproveDispatchNoteV1, firstId,
-                (instruction, now) => instruction.ApproveDispatchNote(10, firstNote, run.Actor, now), Approved);
+                (instruction, now) => instruction.ApproveDispatchNote(10, firstNote, "SENTETIK-dispatch-note-approver", now), Approved);
             await a.Store.MutateInstructionAsync(run.Envelope("k-approve-2"), Hash("approve-2"), LogisticsCommands.ApproveDispatchNoteV1, secondId,
-                (instruction, now) => instruction.ApproveDispatchNote(10, secondNote, run.Actor, now), Approved);
+                (instruction, now) => instruction.ApproveDispatchNote(10, secondNote, "SENTETIK-dispatch-note-approver", now), Approved);
             await a.Store.MutateInstructionAsync(run.Envelope("k-e-1"), Hash("e-1"), LogisticsCommands.SetEDispatchNumberV1, firstId,
                 (instruction, now) => instruction.SetEDispatchNumber(11, firstNote, "GYM2026000000007", run.Actor, now), EDispatchRecorded);
 
@@ -362,7 +362,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         {
             Assert.Single((await a.Store.FindInstructionAsync(id))!.Instruction.DispatchNotes);
             await a.Store.MutateInstructionAsync(run.Envelope("k-approve"), Hash("approve"), LogisticsCommands.ApproveDispatchNoteV1, id,
-                (instruction, now) => instruction.ApproveDispatchNote(10, note, run.Actor, now), Approved);
+                (instruction, now) => instruction.ApproveDispatchNote(10, note, "SENTETIK-dispatch-note-approver", now), Approved);
         }
 
         await using (var context = new LogisticsDbContext(options, companyContext))
