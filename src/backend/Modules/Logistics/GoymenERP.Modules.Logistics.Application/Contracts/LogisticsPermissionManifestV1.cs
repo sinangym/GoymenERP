@@ -20,7 +20,8 @@ public static class LogisticsPermissionManifestV1
     public const string ShipmentsRecord = "logistics.shipments.record";
     public const string DeliveriesRecord = "logistics.deliveries.record";
 
-    /// <summary>SAT-D417 / direct user 6963301286 (GOV-D16): approve a separate positive plan exception. Registration only; no role or maker exclusion.</summary>
+    /// <summary>SAT-D417 / direct user 6963301286 (GOV-D16): approve a separate positive plan exception. Registration only; no role.
+    /// ROL-D14 (maker ≠ checker): the proposer never approves their own exception.</summary>
     public const string ShipmentPlanExcessApprove = LogisticsPlanExcessV1.ApprovePermission;
 
     /// <summary>
@@ -58,8 +59,8 @@ public static class LogisticsPermissionManifestV1
     /// <summary>
     /// AT-055 (user decision 2026-09-30): approve (finalise) a dispatch-note draft — the system series number is assigned on
     /// approval — and record the official e-İrsaliye number on an approved note. Its own name, apart from preparing the draft.
-    /// No maker-checker rule is documented for the irsaliye (no DEC-* names one), so the preparer is not barred from approving
-    /// (ASSUMPTION-AT055-APPROVER); segregating the two is a grant decision.
+    /// ROL-D14 (maker ≠ checker, kept by YOL-D23): the draft's preparer never approves it; this closes
+    /// ASSUMPTION-AT055-APPROVER. Who else holds the name is a grant decision.
     /// </summary>
     public const string DispatchNotesApprove = "logistics.dispatch-notes.approve";
 

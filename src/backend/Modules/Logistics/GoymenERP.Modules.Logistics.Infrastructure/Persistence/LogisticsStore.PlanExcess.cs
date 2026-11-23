@@ -85,6 +85,9 @@ public sealed partial class LogisticsStore : ILogisticsPlanExcessStoreV1
         if (request.ExpectedVersion != "1" || row.Status != 1 || row.Version != 1 || instruction.Status != (int)LoadingInstructionStatus.Issued
             || instruction.Version.ToString(CultureInfo.InvariantCulture) != request.ExpectedInstructionVersion || line.IsBlocked)
             throw new LogisticsInstructionServiceException(409, LogisticsPlanExcessV1.Conflict);
+        // ROL-D14 (maker ≠ checker, kept by YOL-D23): the proposer never approves their own plan excess.
+        if (string.Equals(row.ProposedBy.Trim(), envelope.ActorId.Trim(), StringComparison.Ordinal))
+            throw new LogisticsInstructionServiceException(409, LogisticsPlanExcessV1.SelfApproval);
         line.ApprovedPlanExcess = RequireFits(checked(line.ApprovedPlanExcess + row.Quantity));
         row.Status = 2; row.Version = 2; row.ApprovedBy = envelope.ActorId; row.ApprovedAtUtc = timeProvider.GetUtcNow();
         var view = await PlanExcessViewAsync(row, token);

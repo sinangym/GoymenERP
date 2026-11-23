@@ -136,7 +136,7 @@ public sealed partial class LogisticsInstructionServiceTests
         Assert.Equal(("2.5", second), (next.Detail.DispatchNotes[1].Lines[0].Quantity, next.Detail.DispatchNotes[1].Lines[0].ShipmentId));
 
         // An APPROVED note holds its shipments the same way.
-        await world.Service().ApproveDispatchNoteAsync(id, drafted.Detail.DispatchNotes[0].DispatchNoteId, new ApproveDispatchNoteRequest("8"), Metadata("k-approve"));
+        await world.Approver().ApproveDispatchNoteAsync(id, drafted.Detail.DispatchNotes[0].DispatchNoteId, new ApproveDispatchNoteRequest("8"), Metadata("k-approve"));
         var onApproved = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
             world.Service().CreateDispatchNoteAsync(id, DispatchNote("9", first), Metadata("k-note-4")));
         Assert.Equal((409, LogisticsProblemCodesV1.ShipmentAlreadyDispatched), (onApproved.Status, onApproved.Code));
@@ -218,7 +218,7 @@ public sealed partial class LogisticsInstructionServiceTests
         // Holding create does not approve or cancel; each lifecycle command is its own name.
         world.Authority.DeniedPermission = DispatchNoteApprovePermission;
         var approveDenied = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
-            world.Service().ApproveDispatchNoteAsync(id, request.DispatchNoteId, new ApproveDispatchNoteRequest("7"), Metadata("k-approve")));
+            world.Approver().ApproveDispatchNoteAsync(id, request.DispatchNoteId, new ApproveDispatchNoteRequest("7"), Metadata("k-approve")));
         Assert.Equal(403, approveDenied.Status);
         var eNumberDenied = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
             world.Service().SetEDispatchNumberAsync(id, request.DispatchNoteId, new SetEDispatchNumberRequest("7", "GYM2026000000001"), Metadata("k-e")));
@@ -230,7 +230,7 @@ public sealed partial class LogisticsInstructionServiceTests
         Assert.Equal((DispatchNoteStatus.Draft, 7L), (world.Store.Instruction(id).DispatchNotes[0].Status, world.Store.Instruction(id).Version));
 
         world.Authority.DeniedPermission = null;
-        await world.Service().ApproveDispatchNoteAsync(id, request.DispatchNoteId, new ApproveDispatchNoteRequest("7"), Metadata("k-approve-ok"));
+        await world.Approver().ApproveDispatchNoteAsync(id, request.DispatchNoteId, new ApproveDispatchNoteRequest("7"), Metadata("k-approve-ok"));
         Assert.Equal(DispatchNoteApprovePermission, world.Authority.LastPermission);
         await world.Service().CancelDispatchNoteAsync(id, request.DispatchNoteId, new CancelDispatchNoteRequest("8", "gerekçe"), Metadata("k-cancel-ok"));
         Assert.Equal(DispatchNoteCancelPermission, world.Authority.LastPermission);
@@ -259,6 +259,29 @@ public sealed partial class LogisticsInstructionServiceTests
     }
 
     [Fact]
+    public async Task The_drafts_preparer_never_approves_it_the_refusal_is_terminal_and_another_approver_still_can()
+    {
+        var (world, id, _, first, _) = await ShippedWorld();
+        var a = DispatchNote("6", first);
+        await world.Service().CreateDispatchNoteAsync(id, a, Metadata("k-a"));
+
+        // ROL-D14 (maker != checker, kept by YOL-D23): the preparer's own approval is refused and recorded under its key.
+        var own = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service().ApproveDispatchNoteAsync(id, a.DispatchNoteId, new ApproveDispatchNoteRequest("7"), Metadata("k-own")));
+        var ownReplayed = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service().ApproveDispatchNoteAsync(id, a.DispatchNoteId, new ApproveDispatchNoteRequest("7"), Metadata("k-own")));
+        var approved = await world.Approver().ApproveDispatchNoteAsync(id, a.DispatchNoteId, new ApproveDispatchNoteRequest("7"),
+            Metadata("k-approve"));
+
+        Assert.Equal((409, LogisticsProblemCodesV1.DispatchNoteSelfApproval, "dispatchNoteId", false),
+            (own.Status, own.Code, own.Errors[0].Field, own.IsReplay));
+        Assert.Equal((LogisticsProblemCodesV1.DispatchNoteSelfApproval, true), (ownReplayed.Code, ownReplayed.IsReplay));
+        var note = Assert.Single(approved.Detail.DispatchNotes);
+        Assert.Equal(("Approved", "IRS-000001", DispatchNoteApprover, "8"),
+            (note.Status, note.Number, note.ApprovedBy, approved.Detail.Instruction.Version));
+    }
+
+    [Fact]
     public async Task Approval_gives_each_note_the_next_company_number_once_and_a_second_approval_is_a_recorded_terminal_refusal()
     {
         var (world, id, _, first, second) = await ShippedWorld();
@@ -268,9 +291,9 @@ public sealed partial class LogisticsInstructionServiceTests
         await world.Service().CreateDispatchNoteAsync(id, b, Metadata("k-b"));
 
         // Approved out of creation order: the number is the approval order (the company series), not the draft order.
-        var approvedB = await world.Service().ApproveDispatchNoteAsync(id, b.DispatchNoteId, new ApproveDispatchNoteRequest("8"), Metadata("k-approve-b"));
+        var approvedB = await world.Approver().ApproveDispatchNoteAsync(id, b.DispatchNoteId, new ApproveDispatchNoteRequest("8"), Metadata("k-approve-b"));
         var noteB = approvedB.Detail.DispatchNotes.Single(note => note.DispatchNoteId == b.DispatchNoteId);
-        Assert.Equal(("9", "Approved", "IRS-000001", Actor), (approvedB.Detail.Instruction.Version, noteB.Status, noteB.Number, noteB.ApprovedBy));
+        Assert.Equal(("9", "Approved", "IRS-000001", DispatchNoteApprover), (approvedB.Detail.Instruction.Version, noteB.Status, noteB.Number, noteB.ApprovedBy));
         Assert.NotNull(noteB.ApprovedAtUtc);
         Assert.Equal(DispatchNoteApprovePermission, world.Authority.LastPermission);
 
@@ -278,30 +301,30 @@ public sealed partial class LogisticsInstructionServiceTests
         var (_, otherId, _, otherShipment, _) = await ShippedWorld(world);
         var other = DispatchNote("6", otherShipment);
         await world.Service().CreateDispatchNoteAsync(otherId, other, Metadata("k-other"));
-        var approvedOther = await world.Service().ApproveDispatchNoteAsync(otherId, other.DispatchNoteId, new ApproveDispatchNoteRequest("7"), Metadata("k-approve-other"));
+        var approvedOther = await world.Approver().ApproveDispatchNoteAsync(otherId, other.DispatchNoteId, new ApproveDispatchNoteRequest("7"), Metadata("k-approve-other"));
         Assert.Equal("IRS-000002", Assert.Single(approvedOther.Detail.DispatchNotes).Number);
-        var approvedA = await world.Service().ApproveDispatchNoteAsync(id, a.DispatchNoteId, new ApproveDispatchNoteRequest("9"), Metadata("k-approve-a"));
+        var approvedA = await world.Approver().ApproveDispatchNoteAsync(id, a.DispatchNoteId, new ApproveDispatchNoteRequest("9"), Metadata("k-approve-a"));
         Assert.Equal("IRS-000003", approvedA.Detail.DispatchNotes.Single(note => note.DispatchNoteId == a.DispatchNoteId).Number);
 
         // The same key again: the stored answer — no second number, no version step.
-        var replay = await world.Service().ApproveDispatchNoteAsync(id, a.DispatchNoteId, new ApproveDispatchNoteRequest("9"), Metadata("k-approve-a"));
+        var replay = await world.Approver().ApproveDispatchNoteAsync(id, a.DispatchNoteId, new ApproveDispatchNoteRequest("9"), Metadata("k-approve-a"));
         Assert.True(replay.IsReplay);
         Assert.Equal(("10", "IRS-000003"), (replay.Detail.Instruction.Version, replay.Detail.DispatchNotes.Single(note => note.DispatchNoteId == a.DispatchNoteId).Number));
 
         // Approving an approved note again (another key) is a recorded terminal refusal; the number stays.
         var twice = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
-            world.Service().ApproveDispatchNoteAsync(id, a.DispatchNoteId, new ApproveDispatchNoteRequest("10"), Metadata("k-approve-a-2")));
+            world.Approver().ApproveDispatchNoteAsync(id, a.DispatchNoteId, new ApproveDispatchNoteRequest("10"), Metadata("k-approve-a-2")));
         Assert.Equal((409, LogisticsProblemCodesV1.DispatchNoteState, "status"), (twice.Status, twice.Code, twice.Errors[0].Field));
         var twiceReplayed = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
-            world.Service().ApproveDispatchNoteAsync(id, a.DispatchNoteId, new ApproveDispatchNoteRequest("10"), Metadata("k-approve-a-2")));
+            world.Approver().ApproveDispatchNoteAsync(id, a.DispatchNoteId, new ApproveDispatchNoteRequest("10"), Metadata("k-approve-a-2")));
         Assert.True(twiceReplayed.IsReplay);
 
         // A stale version and an unknown note: nothing moves.
         var stale = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
-            world.Service().ApproveDispatchNoteAsync(id, b.DispatchNoteId, new ApproveDispatchNoteRequest("3"), Metadata("k-approve-stale")));
+            world.Approver().ApproveDispatchNoteAsync(id, b.DispatchNoteId, new ApproveDispatchNoteRequest("3"), Metadata("k-approve-stale")));
         Assert.Equal((409, LogisticsProblemCodesV1.VersionConflict), (stale.Status, stale.Code));
         var unknown = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
-            world.Service().ApproveDispatchNoteAsync(id, Guid.NewGuid(), new ApproveDispatchNoteRequest("10"), Metadata("k-approve-unknown")));
+            world.Approver().ApproveDispatchNoteAsync(id, Guid.NewGuid(), new ApproveDispatchNoteRequest("10"), Metadata("k-approve-unknown")));
         Assert.Equal((404, "not_found"), (unknown.Status, unknown.Code));
         Assert.Equal(10L, world.Store.Instruction(id).Version);
 
@@ -316,7 +339,7 @@ public sealed partial class LogisticsInstructionServiceTests
         var (world, id, _, first, second) = await ShippedWorld();
         var draft = DispatchNote("6", first, second);
         await world.Service().CreateDispatchNoteAsync(id, draft, Metadata("k-note"));
-        await world.Service().ApproveDispatchNoteAsync(id, draft.DispatchNoteId, new ApproveDispatchNoteRequest("7"), Metadata("k-approve"));
+        await world.Approver().ApproveDispatchNoteAsync(id, draft.DispatchNoteId, new ApproveDispatchNoteRequest("7"), Metadata("k-approve"));
 
         // The reason is required, trimmed text (the wire refuses a padded one), ≤ 500 characters.
         foreach (var reason in new[] { "", "   ", " padded ", new string('x', 501) })
@@ -338,7 +361,7 @@ public sealed partial class LogisticsInstructionServiceTests
             world.Service().CancelDispatchNoteAsync(id, draft.DispatchNoteId, new CancelDispatchNoteRequest("9", "tekrar"), Metadata("k-cancel-2")));
         Assert.Equal((409, LogisticsProblemCodesV1.DispatchNoteState), (again.Status, again.Code));
         var approve = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
-            world.Service().ApproveDispatchNoteAsync(id, draft.DispatchNoteId, new ApproveDispatchNoteRequest("9"), Metadata("k-approve-2")));
+            world.Approver().ApproveDispatchNoteAsync(id, draft.DispatchNoteId, new ApproveDispatchNoteRequest("9"), Metadata("k-approve-2")));
         Assert.Equal((409, LogisticsProblemCodesV1.DispatchNoteState), (approve.Status, approve.Code));
 
         // Correction = cancel + new draft: the released shipments go on a new note; the cancelled one stays visible with its number.
@@ -346,7 +369,7 @@ public sealed partial class LogisticsInstructionServiceTests
         var redrafted = await world.Service().CreateDispatchNoteAsync(id, correction, Metadata("k-redraft"));
         Assert.Equal([("Cancelled", "IRS-000001"), ("Draft", (string?)null)],
             redrafted.Detail.DispatchNotes.Select(item => (item.Status, item.Number)).ToArray());
-        var approved = await world.Service().ApproveDispatchNoteAsync(id, correction.DispatchNoteId, new ApproveDispatchNoteRequest("10"), Metadata("k-approve-3"));
+        var approved = await world.Approver().ApproveDispatchNoteAsync(id, correction.DispatchNoteId, new ApproveDispatchNoteRequest("10"), Metadata("k-approve-3"));
         Assert.Equal("IRS-000002", approved.Detail.DispatchNotes[1].Number);
 
         // A cancelled note's id is never reused.
@@ -380,8 +403,8 @@ public sealed partial class LogisticsInstructionServiceTests
             world.Service().SetEDispatchNumberAsync(id, a.DispatchNoteId, new SetEDispatchNumberRequest("8", "GYM2026000000001"), Metadata("k-e-draft")));
         Assert.Equal((409, LogisticsProblemCodesV1.DispatchNoteState), (onDraft.Status, onDraft.Code));
 
-        await world.Service().ApproveDispatchNoteAsync(id, a.DispatchNoteId, new ApproveDispatchNoteRequest("8"), Metadata("k-approve-a"));
-        await world.Service().ApproveDispatchNoteAsync(id, b.DispatchNoteId, new ApproveDispatchNoteRequest("9"), Metadata("k-approve-b"));
+        await world.Approver().ApproveDispatchNoteAsync(id, a.DispatchNoteId, new ApproveDispatchNoteRequest("8"), Metadata("k-approve-a"));
+        await world.Approver().ApproveDispatchNoteAsync(id, b.DispatchNoteId, new ApproveDispatchNoteRequest("9"), Metadata("k-approve-b"));
 
         foreach (var text in new[] { "gym2026000000001", "GYM202600000001", "GYM20260000000011", "GY-2026000000001", "GYM2026A00000001" })
         {

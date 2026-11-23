@@ -78,6 +78,9 @@ public static class LogisticsRuleCodes
     public const string DuplicateDispatchNoteId = "logistics_duplicate_dispatch_note_id";
     public const string DispatchNoteNotFound = "logistics_dispatch_note_not_found";
     public const string DispatchNoteState = "logistics_dispatch_note_state";
+
+    /// <summary>ROL-D14: the draft's preparer never approves their own dispatch note.</summary>
+    public const string DispatchNoteSelfApproval = "logistics_dispatch_note_self_approval";
     public const string EDispatchNumberInUse = "logistics_e_dispatch_number_in_use";
 
     /// <summary>

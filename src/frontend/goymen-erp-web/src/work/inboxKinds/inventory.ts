@@ -15,4 +15,6 @@ export const INVENTORY_INBOX_KINDS: readonly WorkInboxKind[] = [
   { kind: 'inventory.stock-scrap.v1', module: 'inventory', capability: INVENTORY_STOCK_SCRAP_SOURCE.capability },
   { kind: 'inventory.transfer-overage.v1', module: 'inventory', capability: OVERAGE_APPROVE },
   { kind: 'inventory.transfer-loss.v1', module: 'inventory', capability: LOSS_APPROVE },
+  // YOL-D41: no owner screen and no frontend capability; the Work inbox decision (WP8) covers it.
+  { kind: 'inventory.opening-cost.v1', module: 'inventory', capability: null },
 ]

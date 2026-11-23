@@ -411,6 +411,8 @@ export const LOGISTICS_PROBLEM_CODE = {
   duplicateDispatchNote: 'logistics_duplicate_dispatch_note_id',
   shipmentNotFound: 'logistics_shipment_not_found',
   dispatchNoteState: 'logistics_dispatch_note_state',
+  /** ROL-D14 (WP6): the draft's preparer may not approve their own dispatch note (recorded terminal refusal). */
+  dispatchNoteSelfApproval: 'logistics_dispatch_note_self_approval',
   eDispatchNumberInUse: 'logistics_e_dispatch_number_in_use',
   /**
    * STK-S27 (L-1..L-7): the Sales owner's customer risk gate stopped the definite shipment. Each is a recorded terminal

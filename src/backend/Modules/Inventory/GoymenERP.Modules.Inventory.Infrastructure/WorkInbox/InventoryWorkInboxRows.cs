@@ -30,6 +30,11 @@ internal abstract class InventoryWorkInboxRows
 
     public abstract IQueryable<LabelRow> Labels { get; }
 
+    /// <summary>YOL-D41: the opening-cost submissions and their one decision.</summary>
+    public abstract IQueryable<OpeningCostRow> OpeningCosts { get; }
+
+    public abstract IQueryable<OpeningCostDecisionRow> OpeningCostDecisions { get; }
+
     public abstract Task<List<T>> ListAsync<T>(IQueryable<T> query, CancellationToken cancellationToken);
 }
 
@@ -61,6 +66,11 @@ internal sealed class InventoryWorkInboxDbRows(InventoryDbContext dbContext) : I
         dbContext.TransferLossWithdrawals.AsNoTracking();
 
     public override IQueryable<LabelRow> Labels => dbContext.Labels.AsNoTracking();
+
+    public override IQueryable<OpeningCostRow> OpeningCosts => dbContext.OpeningCosts.AsNoTracking();
+
+    public override IQueryable<OpeningCostDecisionRow> OpeningCostDecisions =>
+        dbContext.OpeningCostDecisions.AsNoTracking();
 
     public override Task<List<T>> ListAsync<T>(IQueryable<T> query, CancellationToken cancellationToken) =>
         query.ToListAsync(cancellationToken);

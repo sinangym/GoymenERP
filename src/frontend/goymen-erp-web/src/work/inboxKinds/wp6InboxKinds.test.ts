@@ -7,6 +7,7 @@ describe('WP6 iş kutusu türleri (Stok / Lojistik)', () => {
     const kinds = WORK_INBOX_KINDS.map((entry) => entry.kind)
     expect(kinds).toEqual(expect.arrayContaining([
       'inventory.transfer-overage.v1', 'inventory.transfer-loss.v1', 'logistics.customer-return.v1',
+      'inventory.opening-cost.v1',
     ]))
     expect(new Set(kinds).size).toBe(kinds.length)
     for (const kind of kinds) expect(inboxKindText(kind)).not.toBe(kind)
@@ -23,6 +24,7 @@ describe('WP6 iş kutusu türleri (Stok / Lojistik)', () => {
     for (const code of [
       'inventory.transfer-overage-received', 'inventory.transfer-overage-renewal', 'inventory.transfer-overage-pieces',
       'inventory.transfer-loss-request', 'inventory.transfer-loss-renewed', 'logistics.customer-return-request',
+      'inventory.opening-cost-submitted',
     ]) expect(inboxRuleText(code)).not.toBeNull()
     expect(inboxRoleText('inventory-transfer')).toBe('Transfer')
     expect(inboxPermissionText('logistics.customer-returns.decision')).toBe('Müşteri iadesi kabul kararı')

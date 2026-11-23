@@ -77,7 +77,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         {
             stored = (await approver.Store.MutateInstructionAsync(run.Envelope("invoice-source-approve"), Hash("invoice-source-approve"),
                 LogisticsCommands.ApproveDispatchNoteV1, instruction.Id,
-                (value, now) => value.ApproveDispatchNote(stored.Instruction.Version, noteId, run.Actor, now), Approved))!.Instruction;
+                (value, now) => value.ApproveDispatchNote(stored.Instruction.Version, noteId, "SENTETIK-dispatch-note-approver", now), Approved))!.Instruction;
         }
 
         var logisticsBefore = await run.CountsAsync(instruction.Id);

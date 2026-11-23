@@ -575,11 +575,38 @@ public sealed partial class LogisticsInstructionServiceTests
                 new LoadingUnitVerifier(Settings), Store, Bindings, TimeProvider.System, runner, RiskGate);
         }
 
+        /// <summary>
+        /// ROL-D14 (WP6): the draft's preparer never approves their own dispatch note, so the approval runs as a second actor
+        /// (<see cref="DispatchNoteApprover"/>) and every other command keeps the preparer.
+        /// </summary>
+        public DispatchNoteApproverCalls Approver(ILogisticsRealizationTransactionRunnerV1? runner = null) => new(this, runner);
+
         public void ResetOwnerCalls()
         {
             Accounts.Calls = 0;
             OrderLines.Calls = 0;
             Settings.Calls = 0;
+        }
+    }
+
+    private const string DispatchNoteApprover = "synthetic-dispatch-note-approver";
+
+    private sealed class DispatchNoteApproverCalls(World world, ILogisticsRealizationTransactionRunnerV1? runner)
+    {
+        public async Task<LoadingInstructionResponse> ApproveDispatchNoteAsync(Guid instructionId, Guid dispatchNoteId,
+            ApproveDispatchNoteRequest request, LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            var preparer = world.User.CurrentActor;
+            world.User.CurrentActor = DispatchNoteApprover;
+            try
+            {
+                return await world.Service(runner).ApproveDispatchNoteAsync(instructionId, dispatchNoteId, request, metadata,
+                    cancellationToken);
+            }
+            finally
+            {
+                world.User.CurrentActor = preparer;
+            }
         }
     }
 

@@ -267,7 +267,8 @@ public static partial class LogisticsEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(LogisticsProblemCodesV1.VersionConflict, LogisticsProblemCodesV1.InstructionState,
-                LogisticsProblemCodesV1.DispatchNoteState, LogisticsProblemCodesV1.SameKeyPayloadMismatch, LogisticsProblemCodesV1.ConcurrentChange)
+                LogisticsProblemCodesV1.DispatchNoteState, LogisticsProblemCodesV1.DispatchNoteSelfApproval,
+                LogisticsProblemCodesV1.SameKeyPayloadMismatch, LogisticsProblemCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed")
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();

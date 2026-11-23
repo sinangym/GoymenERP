@@ -10,7 +10,8 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.WorkInbox;
 /// as Logistics lists them for the Work inbox. A note waits while it is a Draft on an Issued instruction — the exact state
 /// <c>ApproveLoadingInstructionDispatchNoteV1</c> accepts — and is decided on the instruction detail screen by a holder of
 /// <c>logistics.dispatch-notes.approve</c> (the inbox decides nothing). Every pending draft of the company is returned, the
-/// caller's own included: Work hides a maker's own item.
+/// caller's own included: Work hides a maker's own item. WP6: the owner's approval refuses the draft's preparer (ROL-D14,
+/// <c>logistics_dispatch_note_self_approval</c>), so the creator is exactly the owner's "may not decide" set.
 /// <para>
 /// No document number exists before approval (the system number is given on approval), so the label is the note's identity.
 /// The draft has no separate submission: it waits from its creation. No threshold applies: every draft needs approval, so the

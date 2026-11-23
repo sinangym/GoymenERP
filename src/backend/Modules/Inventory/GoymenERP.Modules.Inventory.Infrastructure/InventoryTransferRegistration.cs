@@ -40,6 +40,8 @@ public static class InventoryTransferRegistration
         services.AddScoped<WorkInbox.InventoryWorkInboxFence>();
         services.AddScoped<IWorkInboxSourceV1, WorkInbox.InventoryTransferOverageWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, WorkInbox.InventoryTransferLossWorkInboxSourceV1>();
+        // YOL-D41: the opening cost has no owner screen; it is listed and decided from the Work inbox (WP8).
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.InventoryOpeningCostWorkInboxSourceV1>();
         return services;
     }
 

@@ -26,6 +26,9 @@ public static class LogisticsPlanExcessV1
     public const string ReserveCommand = "logistics.plan-excess.reserve.v1";
     public const string ApprovalRequired = "logistics_plan_excess_approval_required";
     public const string Conflict = "logistics_plan_excess_conflict";
+
+    /// <summary>409 (ROL-D14 maker ≠ checker): the proposer never approves their own plan excess.</summary>
+    public const string SelfApproval = "logistics_plan_excess_self_approval";
     public const string Unavailable = "logistics_plan_excess_unavailable";
 }
 public interface ILogisticsPlanExcessServiceV1

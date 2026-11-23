@@ -547,9 +547,22 @@ public sealed class LoadingInstruction
     /// Approves (finalises) a DRAFT dispatch note (user decision 2026-09-30). The note becomes <see cref="DispatchNoteStatus.Approved"/>;
     /// its system number is assigned right after, in the same save, by <see cref="AssignDispatchNoteNumber"/> from the company's
     /// gap-free series (the series lives outside this aggregate). An approved note is never deleted, only cancelled. Who may
-    /// approve is the permission's (no self-approval restriction is documented; ASSUMPTION-AT055-APPROVER).
+    /// approve is the permission's, except the note's preparer: ROL-D14 (maker ≠ checker, kept by YOL-D23) refuses the one who
+    /// created the draft (it closes ASSUMPTION-AT055-APPROVER).
     /// </summary>
-    public DispatchNoteDraft ApproveDispatchNote(long expectedVersion, Guid dispatchNoteId, string approvedBy, DateTimeOffset now)
+    public DispatchNoteDraft ApproveDispatchNote(long expectedVersion, Guid dispatchNoteId, string approvedBy, DateTimeOffset now) =>
+        ApproveDispatchNoteCore(expectedVersion, dispatchNoteId, approvedBy, now, refusePreparer: true);
+
+    /// <summary>
+    /// Rebuilds a STORED approval step while the aggregate is restored from its rows. The approval was decided under the rules
+    /// in force when it was recorded — a note approved by its preparer before ROL-D14 was enforced (WP6) is history, not a new
+    /// decision — so the preparer check is not repeated; every state and step check still is.
+    /// </summary>
+    public DispatchNoteDraft RestoreDispatchNoteApproval(long expectedVersion, Guid dispatchNoteId, string approvedBy, DateTimeOffset approvedAtUtc) =>
+        ApproveDispatchNoteCore(expectedVersion, dispatchNoteId, approvedBy, approvedAtUtc, refusePreparer: false);
+
+    private DispatchNoteDraft ApproveDispatchNoteCore(long expectedVersion, Guid dispatchNoteId, string approvedBy, DateTimeOffset now,
+        bool refusePreparer)
     {
         RequireVersion(expectedVersion);
         RequireStatus(LoadingInstructionStatus.Issued, LogisticsRuleCodes.InstructionNotIssued, "İrsaliye yalnız yayımlanmış talimatta onaylanır.");
@@ -558,6 +571,12 @@ public sealed class LoadingInstruction
         if (note.Status != DispatchNoteStatus.Draft)
         {
             throw new LogisticsRuleException(LogisticsRuleCodes.DispatchNoteState, "Yalnız taslak irsaliye onaylanır.");
+        }
+
+        if (refusePreparer && string.Equals(note.CreatedBy.Trim(), approvedBy.Trim(), StringComparison.Ordinal))
+        {
+            throw new LogisticsRuleException(LogisticsRuleCodes.DispatchNoteSelfApproval,
+                "İrsaliye taslağını hazırlayan kişi kendi irsaliyesini onaylayamaz.");
         }
 
         var approved = note with
