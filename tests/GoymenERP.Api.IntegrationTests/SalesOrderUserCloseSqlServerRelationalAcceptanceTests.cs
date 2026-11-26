@@ -31,7 +31,7 @@ namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// SAT-D32 / SAT-D168 / SAT-D215 against a REAL SQL Server and the REAL host composition: the user closure of a "kapanmaya hazır"
-/// order. On main's composition the source, invoicing and financial-closure axes are NoSource, so the command is the key's
+/// order. With an explicitly uncomposed owner seam the source, invoicing and financial-closure axes are NoSource, so the command is the key's
 /// recorded 409 (replayed, nothing written); a holder of the force-close name only is 403; another company sees 404. With the
 /// TEST SEAM (a synthetic owner of the three owner-less axes and the SAT-D5 ladder as synthetic Settings data) and Logistics
 /// really shipping the line in full, the status read says ready and the route closes the order in ONE save (header state 3 +
@@ -40,7 +40,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// append-only and never beside a force-closure; the migration refuses to roll back over a closure (51212). Orders are stored
 /// through the real Sales store from ISOLATED SYNTHETIC owner snapshots; every grant is a fresh synthetic role. SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class SalesOrderUserCloseSqlServerRelationalAcceptanceTests
+public sealed partial class SalesOrderUserCloseSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
@@ -160,9 +160,9 @@ public sealed class SalesOrderUserCloseSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
-    public async Task On_mains_composition_the_close_is_the_keys_recorded_not_ready_409_403_without_the_name_and_404_for_another_company_on_real_sql()
+    public async Task With_an_explicitly_uncomposed_owner_seam_close_is_recorded_not_ready_409_403_without_the_name_and_404_for_another_company_on_real_sql()
     {
-        await using var run = await Run.StartAsync();
+        await using var run = await Run.StartAsync(uncomposedSeam: true);
         var draft = await run.ApprovedDraftAsync(CompanyA, "k", "6");
         await run.ShippedInFullAsync(CompanyA, draft, "k");
         var path = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/close";
@@ -188,7 +188,7 @@ public sealed class SalesOrderUserCloseSqlServerRelationalAcceptanceTests
 
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = N'sales.order-draft.close.v1'"));
 
-        // Granted, but on main the owner-less axes are NoSource: never ready — the key's recorded 409, replayed.
+        // Explicitly uncomposed TEST seam: NoSource is never ready — the key's recorded 409, replayed.
         var subject = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersClose);
         using var client = run.Client(subject, CompanyA);
         var status = await run.JsonAsync(client, $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/status");
@@ -392,7 +392,7 @@ public sealed class SalesOrderUserCloseSqlServerRelationalAcceptanceTests
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
     }
 
-    private sealed class Run : IAsyncDisposable
+    private sealed partial class Run : IAsyncDisposable
     {
         private readonly string baseConnectionString;
 
@@ -411,18 +411,22 @@ public sealed class SalesOrderUserCloseSqlServerRelationalAcceptanceTests
         /// that calls them complete and the SAT-D5 starting ladder as synthetic Settings data (nothing on main answers either),
         /// so the status read and the command can reach "kapanmaya hazır". Without it the host is main's composition.
         /// </summary>
-        public static async Task<Run> StartAsync(bool readySeam = false)
+        public static async Task<Run> StartAsync(bool readySeam = false, bool uncomposedSeam = false,
+            Action<IServiceCollection>? configure = null)
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
-            var factory = new SqlServerRelationalApiFactory(baseConnectionString, readySeam
-                ? services =>
+            var factory = new SqlServerRelationalApiFactory(baseConnectionString, services =>
                 {
-                    services.RemoveAll<ISalesOrderOwnerAxesSourceV1>();
-                    services.AddScoped<ISalesOrderOwnerAxesSourceV1, SyntheticCompleteOwnerAxes>();
-                    services.RemoveAll<ISettingsSalesPolicyProviderV1>();
-                    services.AddScoped<ISettingsSalesPolicyProviderV1, SyntheticToleranceLadder>();
-                }
-                : null);
+                    if (readySeam)
+                    {
+                        services.RemoveAll<ISalesOrderOwnerAxesSourceV1>();
+                        services.AddScoped<ISalesOrderOwnerAxesSourceV1, SyntheticCompleteOwnerAxes>();
+                        services.RemoveAll<ISettingsSalesPolicyProviderV1>();
+                        services.AddScoped<ISettingsSalesPolicyProviderV1, SyntheticToleranceLadder>();
+                    }
+                    if (uncomposedSeam) services.RemoveAll<ISalesOrderOwnerAxesSourceV1>();
+                    configure?.Invoke(services);
+                });
             var run = new Run(baseConnectionString, factory);
             using var client = factory.CreateClient();
             using var health = await client.GetAsync("/health/live");
