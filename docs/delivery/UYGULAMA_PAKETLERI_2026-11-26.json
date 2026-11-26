@@ -1716,6 +1716,56 @@
         "scope": "WP8 screenless owner decisions, delegation execution fence, then Work management UI",
         "schema": "Work exclusive; no migration planned",
         "activation": "No grants/flags/provider changes"
+      },
+      "execution": {
+        "source_commit": "bb453a75f954976155531b4d4f00970657cda83b",
+        "implemented_kinds": [
+          "inventory.opening-cost.v1",
+          "finance.cash-account.v1",
+          "finance.cash-account-passivation.v1",
+          "finance.cash-account-reactivation.v1"
+        ],
+        "local_checks": {
+          "Finance.UnitTests": "1876 passed, 0 skipped",
+          "Inventory opening-cost source and shell": "29 passed, 0 skipped",
+          "API owner-dispatch/fresh fence/DI and Work declaration": "13 passed, 0 skipped",
+          "Frontend Work and shell navigation": "452 passed in 23 files",
+          "frontend tsc": "exit 0",
+          "frontend lint": "exit 0",
+          "bounded staged secret scan": "exit 0; redacted; no findings",
+          "new_SQL_facts": "2 written and compiled; NOT_RUN"
+        },
+        "reuse": [
+          "existing FinanceCashAccountService commands and durable receipts",
+          "FinanceTreasuryTransaction optional final fence; existing callers unchanged by default",
+          "InventoryOpeningCostCommandService and append-only submission identity",
+          "WP3 IWorkDelegationReaderV1 and existing Identity directory read port",
+          "WorkApprovalRulesSection",
+          "ApprovalFollowUpPage",
+          "useScopedCommandAttempt durable journal",
+          "existing Work post transport and SQL fixtures"
+        ],
+        "remaining": [
+          "Other owner decision adapters and all 64 flow acceptance evidence",
+          "Per-kind rule editing in the Work management screen; current rules table and existing duration policy route are reused",
+          "Delegation history display-name enrichment and complete incoming-delegation paging UX",
+          "Actual SQL, HTTP/runtime browser acceptance, shell/OpenAPI/guard/recovery pins, full CI and two independent exact-head K3 reviews"
+        ],
+        "sql": "NOT_RUN",
+        "browser": "NOT_RUN",
+        "hosted_ci": "NOT_RUN",
+        "independent_review": "PENDING",
+        "integration_pins": "DEFERRED_TO_TRAIN_CLOSE; shell authority changed and is intentionally unpinned",
+        "migration": null,
+        "new_permissions": [],
+        "activation": "No grants/role/Critical changes; Work delegations and AI remain off",
+        "measurements": {
+          "token": "NOT_AVAILABLE",
+          "development_duration": "NOT_SEPARATELY_MEASURED",
+          "source_delta": "40 files; 1295 added / 42 removed lines including tests and existing plan lease",
+          "test_time": "Finance ~5s, Inventory ~1s, API ~56ms excluding builds; frontend final run 25.57s",
+          "rework": "Preserved malformed-input validation before opening cash transaction; final commit check only for successful decisions; synthetic remount fixture bound to actual session; scoped navigation and two-person picker corrected"
+        }
       }
     },
     {

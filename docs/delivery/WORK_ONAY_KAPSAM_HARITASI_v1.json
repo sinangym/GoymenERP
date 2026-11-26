@@ -656,7 +656,17 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "wp8_source_evidence": {
+        "source_commit": "bb453a75f954976155531b4d4f00970657cda83b",
+        "kinds": [
+          "inventory.opening-cost.v1"
+        ],
+        "host_tests": "tests/GoymenERP.Api.IntegrationTests/WorkDecisionHostTests.cs",
+        "sql_tests": "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.WorkDecisions.cs (cash opening only; NOT_RUN)",
+        "runtime_acceptance": "NOT_RUN",
+        "independent_review": "PENDING"
+      }
     },
     {
       "flow": 24,
@@ -1104,7 +1114,17 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "wp8_source_evidence": {
+        "source_commit": "bb453a75f954976155531b4d4f00970657cda83b",
+        "kinds": [
+          "finance.cash-account.v1"
+        ],
+        "host_tests": "tests/GoymenERP.Api.IntegrationTests/WorkDecisionHostTests.cs",
+        "sql_tests": "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.WorkDecisions.cs (cash opening only; NOT_RUN)",
+        "runtime_acceptance": "NOT_RUN",
+        "independent_review": "PENDING"
+      }
     },
     {
       "flow": 38,
@@ -1139,7 +1159,17 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "wp8_source_evidence": {
+        "source_commit": "bb453a75f954976155531b4d4f00970657cda83b",
+        "kinds": [
+          "finance.cash-account-passivation.v1"
+        ],
+        "host_tests": "tests/GoymenERP.Api.IntegrationTests/WorkDecisionHostTests.cs",
+        "sql_tests": "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.WorkDecisions.cs (cash opening only; NOT_RUN)",
+        "runtime_acceptance": "NOT_RUN",
+        "independent_review": "PENDING"
+      }
     },
     {
       "flow": 39,
@@ -1172,7 +1202,17 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "wp8_source_evidence": {
+        "source_commit": "bb453a75f954976155531b4d4f00970657cda83b",
+        "kinds": [
+          "finance.cash-account-reactivation.v1"
+        ],
+        "host_tests": "tests/GoymenERP.Api.IntegrationTests/WorkDecisionHostTests.cs",
+        "sql_tests": "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.WorkDecisions.cs (cash opening only; NOT_RUN)",
+        "runtime_acceptance": "NOT_RUN",
+        "independent_review": "PENDING"
+      }
     },
     {
       "flow": 40,

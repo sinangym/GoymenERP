@@ -58,7 +58,7 @@ Codex backend/DB/port ve sözleşme; Claude frontend/tarayıcı; mevcut koordina
 | W5-RAPOR/WP14-COVERAGE | P0 / K2 | ACCEPTANCE_REQUIRED | — |
 | W5-MIGRASYON/CUTOVER | P0 / K3 | HUMAN_ACTIVATION_REQUIRED | W1-YETKI/ROLE-UX, W1-ORG/BOOTSTRAP, W1-CARI/QUICK-CREATE, W1-URUN/UNIT-SCOPE, W2-SATINALMA/MULTILINE, W2-SATINALMA/MIXED-MIN, W2-SATINALMA/NOPO-MIN, W4-MUHASEBE/CLASSIFY-MIN, W4-MUHASEBE/CORRECTION-MIN, W4-FINANS/EXPENSE-CATALOG, W2-SATIS/CLOSURE-AXES, W4-RISK/SECOND-SHIPMENT, W2-ACIKKALEM/LEGAL-IDENTITY, W3-URETIM/FIVE-ENGINES, W3-URETIM/SUBCONTRACT, W3-LOJISTIK/EXIT-EVIDENCE, W2-BELGE/MIKRO-EDOC |
 | T2/WP3 | P1 / K3 | SOURCE_IMPLEMENTED_LOCAL | — |
-| T2/WP8 | P1 / K3 | SOURCE_REVIEW_REQUIRED | T2/WP3 |
+| T2/WP8 | P1 / K3 | SOURCE_PARTIALLY_IMPLEMENTED_LOCAL | T2/WP3 |
 | T2/WP10 | P1 / K2 | DECISION_REQUIRED | — |
 | T2/WP-B1 | P1 / K2 | SOURCE_REVIEW_REQUIRED | — |
 | T2/WP-B2 | P1 / K2 | SOURCE_REVIEW_REQUIRED | — |
@@ -122,3 +122,10 @@ Sinan’ın açık talimatıyla Claude kapasitesi yokken frontend dahil gelişti
 `T2/CREDIT-GROUPS` kısmi teslimi: `267d08ec1` / `f45d0ce05`. Dört onaylı alan kapısı ve leasing kaynak KDV’si mevcut plan/hareket/muhasebe zincirine bağlandı. Finans 1876, muhasebe kredi 9, frontend kredi 22 test yeşil; SQL/CI/K3 ve kalan grup ayrıntıları bekler. WP3 yönetim kararı ROL-D27 ile kaydedildi; ek onay ve otomatik grant yok.
 
 `T2/WP3` kaynak teslimi: `4d39b9287`. ROL-D27 kendi vekâleti ve ayrı şirket yönetim izni, süre/zincir/SoD ve atomik audit ile uygulandı. Work 169, Identity 866, ilgili API 18 test geçti (0 skip). Yeni izinle güncel sayı 312/17 Critical; GM/SYS satırı yalnız öneridir. Dört SQL testi yazılı ve derlenmiş, NOT_RUN. Vekâlet kapalı; WP8 ekran/owner komutu bağlantısı, SQL/pin/CI/K3 bekler.
+
+
+`T2/WP8` ilk kaynak teslimi: `bb453a75f`. YOL-D41'in dört ekransız türü mevcut Inventory/Finance karar komutlarına bağlandı. Work yönetiminde mevcut kural tablosu ve geciken/sahipsiz bileşenleri, WP3 oluşturma/iptal ekranıyla birlikte kullanılır. Vekâlet yeni yetki kazandırmaz; owner yetki kontrolünde tekrar ölçülür. Kasa sahibi, mevcut transaction helper'ında yazım sonrası/commit öncesi yetki kaybında karar/receipt/audit'i geri alır.
+
+Yerel kanıt: Finans 1876, Inventory 29, API 13, frontend 452 test; toplam 2370, atlanan 0. `tsc -b`, lint, sınırlı staged secret scan ve referans/parite kontrolü temiz. İki gerçek SQL testi yazıldı ve derlendi, **NOT_RUN**. Sayı 312 izin / 17 Critical; rol/grant ataması yok. Yeni migration yok. Shell authority/OpenAPI/guard/recovery pinleri kapanışa bırakıldı; genel host/runtime kabulü bu nedenle ileri sürülmez.
+
+WP8 **kısmi kaynak teslimidir**: diğer owner türleri ve 64 akış kanıtı, yönetim ekranında tür bazlı kural düzenleme, vekâlet geçmişinde okunur kişi adları ve gelen vekâletlerin tam sayfalama deneyimi devam eder. SQL, gerçek API ile tarayıcı, tam CI ve iki K3 incelemesi bekler. Satış kaynak/finans kapanış soruları cevap bekler; bu kapı bağımsız paketleri durdurmaz.
