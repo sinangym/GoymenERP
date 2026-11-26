@@ -48,8 +48,8 @@ public sealed partial class SalesDraftServiceTests
 
         var version = await ApproveDiscountChecksAsync(world, created.Draft.Id, created.Draft.Version, created.Lines[0].LineId);
         var submitted = await world.Service().SubmitDraftAsync(created.Draft.Id, Command(version), Metadata("k-piece-invoice-submit"));
-        var approved = (await world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version),
-            Metadata("k-piece-invoice-approve"))).Detail;
+        var approved = (await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id,
+            Command(submitted.Detail.Draft.Version), Metadata("k-piece-invoice-approve")))).Detail;
         await world.Service().RecordCustomerAcceptanceAsync(approved.Draft.Id, Command(approved.Draft.Version), Metadata("k-piece-invoice-accept"));
         Assert.Equal(pinFigure ? "12.345" : null, approved.Lines[0].TheoreticalKilogramsPerUnit);
 

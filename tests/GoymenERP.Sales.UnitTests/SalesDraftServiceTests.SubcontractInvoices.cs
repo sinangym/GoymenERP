@@ -280,8 +280,8 @@ public sealed partial class SalesDraftServiceTests
             var created = (await world.Service().CreateDraftAsync(Subcontract("2.50"), Metadata("k-fason-inv-order"))).Detail;
             var submitted = await world.Service().SubmitDraftAsync(created.Draft.Id, Command(created.Draft.Version),
                 Metadata("k-fason-inv-submit"));
-            var approved = (await world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version),
-                Metadata("k-fason-inv-approve"))).Detail;
+            var approved = (await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id,
+                Command(submitted.Detail.Draft.Version), Metadata("k-fason-inv-approve")))).Detail;
             // Q9 / SAT-D114: the customer accepted the approved revision, so the invoicing gate is open.
             await world.Service().RecordCustomerAcceptanceAsync(approved.Draft.Id, Command(approved.Draft.Version),
                 Metadata("k-fason-inv-accept"));

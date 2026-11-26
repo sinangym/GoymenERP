@@ -465,7 +465,7 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().SubmitDraftAsync(created.Id, Command("2"), Metadata("k-no-terms-submit"));
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-no-terms-approve")));
+            WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-no-terms-approve"))));
 
         Assert.Equal((422, "validation_failed", "dueTerms", SalesRuleCodes.DueTermsRequired),
             (refused.Status, refused.Code, Assert.Single(refused.Errors).Field, refused.Errors[0].Code));
@@ -473,11 +473,11 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal("PendingApproval", (await world.Service().GetDraftDetailAsync(created.Id)).Draft.ApprovalState);
 
         // Rejected, given its due terms by a header revision (in place: never approved), resubmitted and approved.
-        await world.Service().RejectDraftAsync(created.Id, Command("3", "SENTETIK vade yok"), Metadata("k-no-terms-reject"));
+        await WithIndependentApproverAsync(world, () => world.Service().RejectDraftAsync(created.Id, Command("3", "SENTETIK vade yok"), Metadata("k-no-terms-reject")));
         var entered = await world.Service().ReviseHeaderAsync(created.Id, HeaderRevision("4"), Metadata("k-no-terms-header"));
         Assert.Equal(("Rejected", "Rev.0", "5"), (entered.Detail.Draft.ApprovalState, entered.Detail.Draft.Revision, entered.Detail.Draft.Version));
         await world.Service().SubmitDraftAsync(created.Id, Command("5"), Metadata("k-terms-submit"));
-        var approved = await world.Service().ApproveDraftAsync(created.Id, Command("6"), Metadata("k-terms-approve"));
+        var approved = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Id, Command("6"), Metadata("k-terms-approve")));
         Assert.Equal("Approved", approved.Detail.Draft.ApprovalState);
 
         // Clearing the due terms of the approved order re-enters approval, and that approval is refused again.
@@ -486,7 +486,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(("Preparing", "Rev.1"), (cleared.Detail.Draft.ApprovalState, cleared.Detail.Draft.Revision));
         await world.Service().SubmitDraftAsync(created.Id, Command("8"), Metadata("k-clear-submit"));
         var again = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            world.Service().ApproveDraftAsync(created.Id, Command("9"), Metadata("k-clear-approve")));
+            WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Id, Command("9"), Metadata("k-clear-approve"))));
         Assert.Equal(SalesRuleCodes.DueTermsRequired, Assert.Single(again.Errors).Code);
     }
 

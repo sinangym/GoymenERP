@@ -468,7 +468,7 @@ public sealed partial class SalesDraftServiceTests
             var party = Guid.Parse($"b7100000-0000-4000-8000-{index:D12}");
             var id = (await world.Service().CreateDraftAsync(Request() with { PartyId = party }, Metadata($"many-{index}-create"))).Detail.Draft.Id;
             await world.Service().SubmitDraftAsync(id, Command("2"), Metadata($"many-{index}-submit"));
-            await world.Service().ApproveDraftAsync(id, Command("3"), Metadata($"many-{index}-approve"));
+            await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(id, Command("3"), Metadata($"many-{index}-approve")));
             var accepted = (await world.Service().RecordCustomerAcceptanceAsync(id, Command("4"), Metadata($"many-{index}-accept"))).Detail;
             world.Reports!.Orders.Add((await world.Store.FindDraftAsync(id))!);
             orders.Add((id, accepted.Lines[0].LineId, party));

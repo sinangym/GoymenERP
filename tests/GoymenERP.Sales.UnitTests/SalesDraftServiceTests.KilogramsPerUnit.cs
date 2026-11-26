@@ -34,7 +34,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Null(created.Lines[0].TheoreticalKilogramsPerUnit); // TK7: no figure before the approval.
 
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("kpu-submit"));
-        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-approve"));
+        var approved = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-approve")));
 
         Assert.Equal("Approved", approved.Detail.Draft.ApprovalState);
         Assert.Equal("12.345", approved.Detail.Lines[0].TheoreticalKilogramsPerUnit);
@@ -53,7 +53,7 @@ public sealed partial class SalesDraftServiceTests
         var world = PieceWorld(source);
         var created = (await world.Service().CreateDraftAsync(PieceRequest(), Metadata("kpu-m10-create"))).Detail;
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("kpu-m10-submit"));
-        await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-m10-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-m10-approve")));
 
         source.Figure = 12.4m; // Golden M10 / TM4: the card changed after the approval.
         var detail = await world.Service().GetDraftDetailAsync(created.Draft.Id);
@@ -72,7 +72,7 @@ public sealed partial class SalesDraftServiceTests
         var created = (await world.Service().CreateDraftAsync(PieceRequest(), Metadata("kpu-nosource-create"))).Detail;
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("kpu-nosource-submit"));
 
-        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-nosource-approve"));
+        var approved = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-nosource-approve")));
 
         Assert.Equal("Approved", approved.Detail.Draft.ApprovalState);
         Assert.Null(approved.Detail.Lines[0].TheoreticalKilogramsPerUnit);
@@ -82,7 +82,7 @@ public sealed partial class SalesDraftServiceTests
 
         // SAT-D437: a card fixed later never moves the approved document; a replay answers the recorded approval.
         world.KilogramsPerUnit = new FakeKilogramsPerUnit { Figure = 12.345m };
-        var replay = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-nosource-approve"));
+        var replay = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-nosource-approve")));
         Assert.True(replay.IsReplay);
         Assert.Null(replay.Detail.Lines[0].TheoreticalKilogramsPerUnit);
         Assert.Empty(Assert.Single(world.Store.Drafts).KilogramsPerUnitSnapshots);
@@ -96,7 +96,7 @@ public sealed partial class SalesDraftServiceTests
         var created = (await world.Service().CreateDraftAsync(PieceRequest(), Metadata("kpu-conflict-create"))).Detail;
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("kpu-conflict-submit"));
 
-        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-conflict-approve"));
+        var approved = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-conflict-approve")));
 
         Assert.Equal(("Approved", "21"), (approved.Detail.Draft.ApprovalState, approved.Detail.Lines[0].TheoreticalKilogramsPerUnit));
         Assert.Equal(new SalesKilogramsPerUnitTableConflictV1("weight-table:entered-orientation", "21", "21.6", "0.6", "3.5", "3.6"),
@@ -119,7 +119,7 @@ public sealed partial class SalesDraftServiceTests
         var created = (await world.Service().CreateDraftAsync(PieceRequest(), Metadata("kpu-plain-create"))).Detail;
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("kpu-plain-submit"));
 
-        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-plain-approve"));
+        var approved = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-plain-approve")));
 
         Assert.Null(approved.Detail.Lines[0].TheoreticalKilogramsPerUnitConflict);
         Assert.DoesNotContain("tableConflict", Assert.Single(Assert.Single(world.Store.Drafts).KilogramsPerUnitSnapshots).SourceProof);
@@ -133,7 +133,7 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("kpu-conflict-mismatch-submit"));
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-conflict-mismatch-approve")));
+            WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-conflict-mismatch-approve"))));
 
         Assert.Equal((409, SalesDraftProblemCodesV1.KilogramsPerUnitUnavailable), (refused.Status, refused.Code));
         Assert.Empty(Assert.Single(world.Store.Drafts).KilogramsPerUnitSnapshots);
@@ -152,7 +152,7 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("kpu-none-submit"));
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-none-approve")));
+            WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-none-approve"))));
 
         Assert.Equal((409, SalesDraftProblemCodesV1.KilogramsPerUnitUnavailable), (refused.Status, refused.Code));
         Assert.Equal([new SalesDraftFieldError("lines[0].orderUnitId", fieldCode)], refused.Errors);
@@ -162,7 +162,7 @@ public sealed partial class SalesDraftServiceTests
 
         // Not recorded: once the card has a kilogram source the same key approves.
         world.KilogramsPerUnit = new FakeKilogramsPerUnit { Figure = 12.345m };
-        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-none-approve"));
+        var approved = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-none-approve")));
         Assert.Equal("12.345", approved.Detail.Lines[0].TheoreticalKilogramsPerUnit);
     }
 
@@ -175,7 +175,7 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("kpu-absent-submit"));
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-absent-approve")));
+            WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-absent-approve"))));
 
         Assert.Equal((409, SalesDraftProblemCodesV1.KilogramsPerUnitUnavailable), (refused.Status, refused.Code));
     }
@@ -188,7 +188,7 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("kpu-mismatch-submit"));
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-mismatch-approve")));
+            WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-mismatch-approve"))));
 
         Assert.Equal(SalesDraftProblemCodesV1.KilogramsPerUnitUnavailable, refused.Code);
         Assert.Empty(Assert.Single(world.Store.Drafts).KilogramsPerUnitSnapshots);
@@ -202,7 +202,7 @@ public sealed partial class SalesDraftServiceTests
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("kpu-kg-create"))).Detail;
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("kpu-kg-submit"));
 
-        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-kg-approve"));
+        var approved = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-kg-approve")));
 
         Assert.Equal("Approved", approved.Detail.Draft.ApprovalState);
         Assert.Null(approved.Detail.Lines[0].TheoreticalKilogramsPerUnit);
@@ -264,7 +264,7 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("kpu-kind-submit"));
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-kind-approve")));
+            WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("kpu-kind-approve"))));
 
         Assert.Equal((409, SalesDraftProblemCodesV1.KilogramsPerUnitUnavailable), (refused.Status, refused.Code));
         Assert.Empty(Assert.Single(world.Store.Drafts).KilogramsPerUnitSnapshots);

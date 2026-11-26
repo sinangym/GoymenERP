@@ -392,7 +392,7 @@ public sealed partial class SalesDraftServiceTests
         var checkedVersion = await ApproveDiscountChecksAsync(world, created.Draft.Id, created.Draft.Version, lineId);
         Assert.Equal("3", checkedVersion);
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("3"), Metadata("k-submit"));
-        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("4"), Metadata("k-approve"));
+        var approved = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("4"), Metadata("k-approve")));
         Assert.Equal(("Approved", SalesDraftApiV1.Rev0), (approved.Detail.Draft.ApprovalState, approved.Detail.Draft.Revision));
 
         var revised = await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision("5", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r1"));
@@ -437,7 +437,7 @@ public sealed partial class SalesDraftServiceTests
         var world = new World();
         var created = (await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-1"))).Detail;
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("3"), Metadata("k-submit"));
-        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("4"), Metadata("k-approve"));
+        var approved = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("4"), Metadata("k-approve")));
         Assert.Equal(("Approved", "5"), (approved.Detail.Draft.ApprovalState, approved.Detail.Draft.Version));
         world.Authority.Measured.Clear();
 
@@ -498,7 +498,7 @@ public sealed partial class SalesDraftServiceTests
         var world = new World();
         var created = (await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-1"))).Detail;
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("3"), Metadata("k-submit"));
-        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("4"), Metadata("k-approve"));
+        var approved = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("4"), Metadata("k-approve")));
         world.Authority.Denied.Add(SchedulePermission);
 
         var moved = await world.Service().RescheduleDeliveryAsync(created.Draft.Id,
@@ -618,7 +618,7 @@ public sealed partial class SalesDraftServiceTests
         var checkedVersion = await ApproveDiscountChecksAsync(world, created.Draft.Id, created.Draft.Version, lineId);
         Assert.Equal("3", checkedVersion);
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("3"), Metadata("k-submit"));
-        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("4"), Metadata("k-approve"));
+        var approved = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("4"), Metadata("k-approve")));
         var attemptsBefore = world.Store.Attempts;
         var transitionsBefore = world.Store.Transitions.Count;
         world.Store.OnStore = () => world.Authority.Denied.Add(PricePermission);
@@ -650,7 +650,7 @@ public sealed partial class SalesDraftServiceTests
         var checkedVersion = await ApproveDiscountChecksAsync(world, created.Draft.Id, created.Draft.Version, lineId);
         Assert.Equal("3", checkedVersion);
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("3"), Metadata("k-submit"));
-        await world.Service().ApproveDraftAsync(created.Draft.Id, Command("4"), Metadata("k-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("4"), Metadata("k-approve")));
         await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision("5", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r1"));
 
         world.Authority.Denied.Add(PriceReadPermission);
@@ -1246,8 +1246,8 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal((SalesDraftCommands.SubmitV1, CreatePermission, "sales.order-draft.submitted.v1", "Submit", 2L, 3L),
             (submission.Command, submission.Envelope.PermissionCode, submission.Audit.EventType, submission.Audit.Operation, submission.VersionBefore, submission.VersionAfter));
 
-        var approved = await world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-approve"));
-        Assert.Equal(("Approved", "4", Actor, Actor), (approved.Detail.Draft.ApprovalState, approved.Detail.Draft.Version,
+        var approved = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-approve")));
+        Assert.Equal(("Approved", "4", Actor, IndependentApprover), (approved.Detail.Draft.ApprovalState, approved.Detail.Draft.Version,
             approved.Detail.Approval.SubmittedBy, approved.Detail.Approval.DecidedBy));
         Assert.Null(approved.Detail.Approval.RejectionReason);
         Assert.Equal((SalesDraftCommands.ApproveV1, ApprovePermission, "sales.order-draft.approved.v1", "Approve"),
@@ -1262,7 +1262,7 @@ public sealed partial class SalesDraftServiceTests
         var approvedList = await world.Service().GetDraftListAsync(new SalesOrderDraftListQuery(ApprovalState: "Approved"));
         Assert.Equal("Approved", Assert.Single(approvedList.Items).ApprovalState);
         var detail = await world.Service().GetDraftDetailAsync(created.Id);
-        Assert.Equal(("Approved", Actor), (detail.Draft.ApprovalState, detail.Approval.DecidedBy));
+        Assert.Equal(("Approved", IndependentApprover), (detail.Draft.ApprovalState, detail.Approval.DecidedBy));
         var badFilter = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetDraftListAsync(new SalesOrderDraftListQuery(ApprovalState: "approved")));
         Assert.Equal((400, "validation_failed"), (badFilter.Status, badFilter.Code));
     }
@@ -1285,7 +1285,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(SalesCommercialStageV1.Quote, created.Draft.CommercialStage);
 
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-submit"));
-        await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-approve")));
         var accepted = await world.Service().RecordCustomerAcceptanceAsync(created.Draft.Id, Command("4"), Metadata("k-accept"));
         Assert.Equal(("5", SalesDraftApiV1.Rev0, Actor, true), (accepted.Detail.Draft.Version,
             accepted.Detail.CustomerAcceptance.AcceptedRevision, accepted.Detail.CustomerAcceptance.AcceptedBy,
@@ -1312,7 +1312,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal("7", await ApproveDiscountChecksAsync(world, created.Draft.Id, "6", created.Lines[0].LineId));
 
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("7"), Metadata("k-submit-r1"));
-        await world.Service().ApproveDraftAsync(created.Draft.Id, Command("8"), Metadata("k-approve-r1"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("8"), Metadata("k-approve-r1")));
         var acceptedRevision = await world.Service().RecordCustomerAcceptanceAsync(created.Draft.Id, Command("9"), Metadata("k-accept-r1"));
         Assert.Equal(("10", "Rev.1", true), (acceptedRevision.Detail.Draft.Version,
             acceptedRevision.Detail.CustomerAcceptance.AcceptedRevision,
@@ -1328,7 +1328,7 @@ public sealed partial class SalesDraftServiceTests
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail.Draft;
         await world.Service().SubmitDraftAsync(created.Id, Command("2"), Metadata("k-submit"));
 
-        var rejected = await world.Service().RejectDraftAsync(created.Id, Command("3", "  SENTETIK neden  "), Metadata("k-reject"));
+        var rejected = await WithIndependentApproverAsync(world, () => world.Service().RejectDraftAsync(created.Id, Command("3", "  SENTETIK neden  "), Metadata("k-reject")));
         Assert.Equal(("Rejected", "4", "SENTETIK neden"), (rejected.Detail.Draft.ApprovalState, rejected.Detail.Draft.Version, rejected.Detail.Approval.RejectionReason));
         Assert.Equal("sales.order-draft.rejected.v1", world.Store.Transitions[^1].Audit.EventType);
 
@@ -1339,7 +1339,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Null(again.Detail.Approval.RejectionReason);
 
         var tooLong = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            world.Service().RejectDraftAsync(created.Id, Command("5", new string('x', SalesOrderDraft.MaximumRejectionReasonLength + 1)), Metadata("k-reject-2")));
+            WithIndependentApproverAsync(world, () => world.Service().RejectDraftAsync(created.Id, Command("5", new string('x', SalesOrderDraft.MaximumRejectionReasonLength + 1)), Metadata("k-reject-2"))));
         Assert.Equal((422, SalesDraftProblemCodesV1.ApprovalReasonTooLong, "reason"), (tooLong.Status, tooLong.Code, tooLong.Errors[0].Field));
         Assert.Empty(world.Store.Refusals);
     }
@@ -1351,14 +1351,14 @@ public sealed partial class SalesDraftServiceTests
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail.Draft;
 
         // Approving a draft that was never submitted: 409 sales_state_conflict, recorded under the key.
-        var wrongState = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveDraftAsync(created.Id, Command("2"), Metadata("k-approve")));
+        var wrongState = await Assert.ThrowsAsync<SalesDraftServiceException>(() => WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Id, Command("2"), Metadata("k-approve"))));
         Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict, false, "approvalState"), (wrongState.Status, wrongState.Code, wrongState.IsReplay, wrongState.Errors[0].Field));
         var recorded = Assert.Single(world.Store.Refusals);
         Assert.Equal(("k-approve", 409, SalesDraftProblemCodesV1.StateConflict), (recorded.Envelope.IdempotencyKey, recorded.Refusal.Status, recorded.Refusal.Code));
-        var replayed = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveDraftAsync(created.Id, Command("2"), Metadata("k-approve", correlation: "retry")));
+        var replayed = await Assert.ThrowsAsync<SalesDraftServiceException>(() => WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Id, Command("2"), Metadata("k-approve", correlation: "retry"))));
         Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict, true, "synthetic-correlation"), (replayed.Status, replayed.Code, replayed.IsReplay, replayed.OriginalCorrelationId));
         // The same key with another version is another content: one 409, nothing disclosed.
-        var other = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-approve")));
+        var other = await Assert.ThrowsAsync<SalesDraftServiceException>(() => WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-approve"))));
         Assert.Equal((409, SalesDraftProblemCodesV1.SameKeyPayloadMismatch), (other.Status, other.Code));
 
         // A stale version: 409 version_conflict, terminal too; the draft did not move.
@@ -1382,7 +1382,7 @@ public sealed partial class SalesDraftServiceTests
 
         // Another key's transition took the draft's version first: the caller's concurrent_change, nothing recorded.
         world.Store.Race = "version-at-store";
-        var raced = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-approve")));
+        var raced = await Assert.ThrowsAsync<SalesDraftServiceException>(() => WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-approve"))));
         Assert.Equal((409, SalesDraftProblemCodesV1.ConcurrentChange), (raced.Status, raced.Code));
         Assert.Empty(world.Store.Refusals);
     }
@@ -1568,21 +1568,23 @@ public sealed partial class SalesDraftServiceTests
         world.User.Id = submitter.ToString("D");
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-users"))).Detail;
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-users-submit"));
-        await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-users-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-users-approve")));
 
         var detail = await world.ReadService().GetDraftDetailAsync(created.Draft.Id);
 
-        Assert.Equal((submitter.ToString("D"), submitter.ToString("D")), (detail.Approval.SubmittedBy, detail.Approval.DecidedBy));
+        var approver = Guid.Parse(IndependentApprover);
+        Assert.Equal((submitter.ToString("D"), IndependentApprover), (detail.Approval.SubmittedBy, detail.Approval.DecidedBy));
         Assert.Equal(1, world.UserDisplays.Calls);
-        Assert.Equal([submitter], world.UserDisplays.Asked);
+        Assert.Equal(new[] { submitter, approver }.Order(), world.UserDisplays.Asked.Order());
         Assert.Equal((Company, submitter.ToString("D")), (world.UserDisplays.CompanyId, world.UserDisplays.ActorId));
-        Assert.Equal([new SalesUserDisplayV1(submitter, $"Kisi {submitter:N}", true)], detail.UserDisplays);
+        Assert.Equal(new[] { new SalesUserDisplayV1(submitter, $"Kisi {submitter:N}", true),
+            new SalesUserDisplayV1(approver, $"Kisi {approver:N}", true) }.OrderBy(item => item.UserId), detail.UserDisplays.OrderBy(item => item.UserId));
 
         // Another reader of the same record sees the same names; the ids are the record's, never the reader's.
         var reader = Guid.Parse("c8000000-0000-4000-8000-000000000002");
         world.User.Id = reader.ToString("D");
         var again = await world.ReadService().GetDraftDetailAsync(created.Draft.Id);
-        Assert.Equal([submitter], world.UserDisplays.Asked);
+        Assert.Equal(new[] { submitter, approver }.Order(), world.UserDisplays.Asked.Order());
         Assert.Equal(reader.ToString("D"), world.UserDisplays.ActorId);
         Assert.Equal(detail.UserDisplays, again.UserDisplays);
     }

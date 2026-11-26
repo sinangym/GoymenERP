@@ -141,14 +141,14 @@ public sealed partial class SalesDraftServiceTests
                 return draft;
             })).Draft;
         await world.Service().SubmitDraftAsync(legacy.Id, Command("2"), Metadata("future-legacy-submit0"));
-        await world.Service().ApproveDraftAsync(legacy.Id, Command("3"), Metadata("future-legacy-approve0"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(legacy.Id, Command("3"), Metadata("future-legacy-approve0")));
         Owners(world);
         var participant = Assert.IsType<FakeFutureDemandReduction>(world.FutureDemandReduction);
         await world.Service().ReviseQuantityAsync(legacy.Id,
             new("4", "SENTETIK azaltma", [new(legacy.Lines[0].Id, "1")]), Metadata("future-legacy-revise"));
         await world.Service().SubmitDraftAsync(legacy.Id, Command("5"), Metadata("future-legacy-submit1"));
         Assert.Empty(participant.Requests);
-        var approved = await world.Service().ApproveDraftAsync(legacy.Id, Command("6"), Metadata("future-legacy-approve1"));
+        var approved = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(legacy.Id, Command("6"), Metadata("future-legacy-approve1")));
         Assert.Equal("7", approved.Detail.Draft.Version);
         Assert.Equal("1", Assert.Single(Assert.Single(participant.Requests).Lines).NewOpenQuantityText);
     }

@@ -12,7 +12,7 @@ public sealed partial class SalesDraftServiceTests
         var world = new World { ItemTypes = new FakeItemTypes(), LineTaxes = new FakeLineTaxes() };
         var created = (await world.Service().CreateDraftAsync(Subcontract("10"), Metadata("SENTETIK-tax-create"))).Detail;
         var submitted = await world.Service().SubmitDraftAsync(created.Draft.Id, Command(created.Draft.Version), Metadata("SENTETIK-tax-submit"));
-        var approved = (await world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata("SENTETIK-tax-approve"))).Detail;
+        var approved = (await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata("SENTETIK-tax-approve")))).Detail;
         world.Authority.Denied.Add(PricePermission); world.Authority.Measured.Clear();
         var request = new SalesSubcontractTaxRevisionV1(approved.Draft.Version, approved.Lines[0].LineId,
             new(SalesDraftLineTaxModesV1.Override, TaxBuyerSituationsV1.FinalConsumer, "SENTETIK alıcı vergi dayanağı"), "SENTETIK satır vergisi");
@@ -47,7 +47,7 @@ public sealed partial class SalesDraftServiceTests
         var world = new World { ItemTypes = new FakeItemTypes(), LineTaxes = new FakeLineTaxes() };
         var created = (await world.Service().CreateDraftAsync(Subcontract("10"), Metadata("SENTETIK-tax-sales-only-create"))).Detail;
         var submitted = await world.Service().SubmitDraftAsync(created.Draft.Id, Command(created.Draft.Version), Metadata("SENTETIK-tax-sales-only-submit"));
-        var approved = (await world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata("SENTETIK-tax-sales-only-approve"))).Detail;
+        var approved = (await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata("SENTETIK-tax-sales-only-approve")))).Detail;
         world.Authority.Denied.Add(GoymenERP.BuildingBlocks.Security.ErpPermissions.PurchasingOrdersApprove);
         world.Authority.Measured.Clear();
         var request = new SalesSubcontractTaxRevisionV1(approved.Draft.Version, approved.Lines[0].LineId,

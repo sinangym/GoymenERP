@@ -19,7 +19,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Null(preview.Percent);
 
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("margin-zero-submit"));
-        await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("margin-zero-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("margin-zero-approve")));
 
         var draft = Assert.Single(world.Store.Drafts);
         Assert.Equal(InternalApprovalState.Approved, draft.ApprovalState);
@@ -77,7 +77,7 @@ public sealed partial class SalesDraftServiceTests
         var draft = Assert.Single(world.Store.Drafts);
         await ApproveDiscountChecksAsync(world, created.Draft.Id, draft.Version.ToString(), created.Lines[0].LineId);
         await world.Service().SubmitDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("margin-price-submit"));
-        await world.Service().ApproveDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("margin-price-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("margin-price-approve")));
         var pin = Assert.Single(draft.MarginCosts);
         source.Cost = 99m;
         Owners(world);
@@ -85,7 +85,7 @@ public sealed partial class SalesDraftServiceTests
             Revision(draft.Version.ToString(), new SalesDraftLineCommercialV1(created.Lines[0].LineId, "13.00", KgUnit, "5")), Metadata("margin-price-revise"));
         await ApproveDiscountChecksAsync(world, created.Draft.Id, draft.Version.ToString(), created.Lines[0].LineId);
         await world.Service().SubmitDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("margin-price-resubmit"));
-        await world.Service().ApproveDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("margin-price-reapprove"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("margin-price-reapprove")));
         Assert.Equal(pin, Assert.Single(draft.MarginCosts));
         Assert.Equal(1, source.Reads);
     }
@@ -103,7 +103,7 @@ public sealed partial class SalesDraftServiceTests
 
         await ApproveDiscountChecksAsync(world, created.Draft.Id, draft.Version.ToString(), created.Lines[0].LineId);
         await world.Service().SubmitDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-margin-submit"));
-        await world.Service().ApproveDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-margin-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-margin-approve")));
 
         var pin = Assert.Single(draft.MarginCosts);
         Assert.Equal((Currency, 34.5678m), (pin.SaleRate!.CurrencyId, pin.SaleRate.Rate));
@@ -136,7 +136,7 @@ public sealed partial class SalesDraftServiceTests
         var added = AddedLine();
         await world.Service().ReviseLinesAsync(approved.Id, LineRevision("5", [added]), Metadata("fx-revision-add"));
         await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("fx-revision-submit"));
-        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("fx-revision-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("fx-revision-approve")));
 
         var repinned = Assert.Single(draft.MarginCosts, cost => cost.LineId == added.LineId);
         Assert.Equal(first, repinned.SaleRate);
@@ -187,7 +187,7 @@ public sealed partial class SalesDraftServiceTests
         var added = AddedLine();
         await world.Service().ReviseLinesAsync(approved.Id, LineRevision("5", [added]), Metadata("fx-late-add"));
         await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("fx-late-submit"));
-        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("fx-late-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("fx-late-approve")));
 
         var frozen = Assert.Single(draft.MarginCosts, cost => cost.LineId == added.LineId).SaleRate!;
         Assert.Equal((Currency, 34.5678m), (frozen.CurrencyId, frozen.Rate));
@@ -209,7 +209,7 @@ public sealed partial class SalesDraftServiceTests
         var line = created.Lines[0].LineId;
         await ApproveDiscountChecksAsync(world, created.Draft.Id, draft.Version.ToString(), line);
         await world.Service().SubmitDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-d15-submit"));
-        await world.Service().ApproveDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-d15-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-d15-approve")));
         var firstPin = Assert.Single(draft.MarginCosts);
         Assert.Null(firstPin.SaleRate);
         Assert.Equal("CurrencyConversionUndecided",
@@ -223,7 +223,7 @@ public sealed partial class SalesDraftServiceTests
             Revision(draft.Version.ToString(), new SalesDraftLineCommercialV1(line, "13.00", KgUnit, "5")), Metadata("fx-d15-revise"));
         await ApproveDiscountChecksAsync(world, created.Draft.Id, draft.Version.ToString(), line);
         await world.Service().SubmitDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-d15-resubmit"));
-        await world.Service().ApproveDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-d15-reapprove"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-d15-reapprove")));
 
         Assert.Equal(1, source.Reads);
         var carrier = Assert.Single(draft.MarginCosts, cost => cost.Revision == draft.Revision);
@@ -244,7 +244,7 @@ public sealed partial class SalesDraftServiceTests
             Revision(draft.Version.ToString(), new SalesDraftLineCommercialV1(line, "13.50", KgUnit, "5")), Metadata("fx-d15-revise-2"));
         await ApproveDiscountChecksAsync(world, created.Draft.Id, draft.Version.ToString(), line);
         await world.Service().SubmitDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-d15-resubmit-2"));
-        await world.Service().ApproveDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-d15-reapprove-2"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-d15-reapprove-2")));
         Assert.Equal(2, draft.MarginCosts.Count); // no further copy: the rate is already frozen
         var again = Assert.Single((await world.Service().GetDraftLinePricingAsync(draft.Id)).Margin.Lines!);
         Assert.Equal(ExpectedMargin(draft, line, firstPin with { SaleRate = carrier.SaleRate }), again.Amount);
@@ -269,7 +269,7 @@ public sealed partial class SalesDraftServiceTests
         var draft = Assert.Single(world.Store.Drafts);
         await ApproveDiscountChecksAsync(world, created.Draft.Id, draft.Version.ToString(), created.Lines[0].LineId);
         await world.Service().SubmitDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-missing-submit"));
-        await world.Service().ApproveDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-missing-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(draft.Id, Command(draft.Version.ToString()), Metadata("fx-missing-approve")));
 
         Assert.Equal(InternalApprovalState.Approved, draft.ApprovalState);
         Assert.Null(Assert.Single(draft.MarginCosts).SaleRate);
@@ -289,7 +289,7 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().ReviseLinesAsync(approved.Id, LineRevision("5", [AddedLine()], [new SalesDraftLineRemovalV1(lineId)]),
             Metadata("margin-reinstated-remove"));
         await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("margin-reinstated-submit"));
-        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("margin-reinstated-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("margin-reinstated-approve")));
         await world.Service().RecordCustomerRejectionAsync(approved.Id, Command("8", "SENTETIK satır geri gelsin"),
             Metadata("margin-reinstated-reject"));
         var reads = source.Reads;
@@ -320,7 +320,7 @@ public sealed partial class SalesDraftServiceTests
         var created = (await world.Service().CreateDraftAsync(request, Metadata(key + "-create"))).Detail;
         var version = await ApproveDiscountChecksAsync(world, created.Draft.Id, created.Draft.Version, created.Lines[0].LineId);
         var submitted = await world.Service().SubmitDraftAsync(created.Draft.Id, Command(version), Metadata(key + "-submit"));
-        await world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata(key + "-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata(key + "-approve")));
         return (world, created.Draft.Id);
     }
 
@@ -436,12 +436,12 @@ public sealed partial class SalesDraftServiceTests
         var world = new World { MarginCosts = source };
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("margin-create"))).Detail;
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("margin-submit"));
-        await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("margin-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("margin-approve")));
         var pin = Assert.Single(Assert.Single(world.Store.Drafts).MarginCosts);
         Assert.Equal((Currency, (decimal?)12.3456m, 0), (pin.CurrencyId, pin.CostPerUnit, pin.Revision));
         Assert.Contains("17", pin.SourceProof, StringComparison.Ordinal);
         source.Cost = 99;
-        Assert.True((await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("margin-approve"))).IsReplay);
+        Assert.True((await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("margin-approve")))).IsReplay);
         var pricing = await world.Service().GetDraftLinePricingAsync(created.Draft.Id);
         Assert.Equal("Snapshot", pricing.Margin.Kind);
         Assert.Equal(pin, Assert.Single(Assert.Single(world.Store.Drafts).MarginCosts));
@@ -457,7 +457,7 @@ public sealed partial class SalesDraftServiceTests
         var world = new World { MarginCosts = source };
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("margin-missing-create"))).Detail;
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("margin-missing-submit"));
-        await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("margin-missing-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("margin-missing-approve")));
         source.Reason = null;
         Assert.Equal(reason.ToString(), Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Margin.Lines!).UnavailableReason);
         Assert.Null(Assert.Single(Assert.Single(world.Store.Drafts).MarginCosts).CostPerUnit);
@@ -489,7 +489,7 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().ReviseQuantityAsync(approved.Id,
             new SalesDraftQuantityRevisionRequest("5", "SENTETIK miktar değişimi", [new SalesDraftLineQuantityV1(line, "2")]), Metadata("margin-quantity"));
         await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("margin-quantity-submit"));
-        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("margin-quantity-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("margin-quantity-approve")));
         var pins = Assert.Single(world.Store.Drafts).MarginCosts;
         Assert.Equal(2, pins.Count);
         Assert.Equal(old, pins[0]);

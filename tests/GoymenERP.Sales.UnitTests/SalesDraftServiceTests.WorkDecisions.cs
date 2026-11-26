@@ -9,7 +9,7 @@ public sealed partial class SalesDraftServiceTests
     [InlineData(false)]
     public async Task YOL_D23_does_not_exclude_an_authorized_contributor_who_neither_created_nor_submitted(bool approve)
     {
-        var world=new World();
+        var world=new World().AllowDiscountsUpTo(10m);
         var created=(await world.Service().CreateDraftAsync(Request(),Metadata("k-contributor-create"))).Detail;
         world.User.Id="synthetic-editor";
         var edited=await world.Service().ReviseCommercialAsync(created.Draft.Id,

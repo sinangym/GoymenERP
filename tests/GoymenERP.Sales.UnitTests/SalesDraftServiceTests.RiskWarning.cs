@@ -20,7 +20,7 @@ public sealed partial class SalesDraftServiceTests
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-rw-create"))).Detail.Draft;
 
         var submitted = await world.Service().SubmitDraftAsync(created.Id, Command("2"), Metadata("k-rw-submit"));
-        var approved = await world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-rw-approve"));
+        var approved = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-rw-approve")));
 
         // The warning never blocks: the order is submitted and approved as on main.
         Assert.Equal(("PendingApproval", "Approved"), (submitted.Detail.Draft.ApprovalState, approved.Detail.Draft.ApprovalState));
@@ -60,7 +60,7 @@ public sealed partial class SalesDraftServiceTests
 
         // The finance owner failing at the approval: still approved, the warning names the source, never "within".
         partyRisk.Answer = (_, _) => throw new InvalidOperationException("SENTETIK finance outage");
-        var approved = await world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-rw-limit-approve"));
+        var approved = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-rw-limit-approve")));
         Assert.Equal("Approved", approved.Detail.Draft.ApprovalState);
         Assert.Equal((SalesDraftCommands.ApproveV1, SalesOrderRiskWarningCategory.SourceUnavailable),
             (world.Store.RiskWarnings[1].Command, world.Store.RiskWarnings[1].Warning.Category));
@@ -78,13 +78,13 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(409, (await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
             world.Service().SubmitDraftAsync(created.Id, Command("9"), Metadata("k-rw-stale-submit")))).Status);
         Assert.Equal(409, (await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            world.Service().ApproveDraftAsync(created.Id, Command("2"), Metadata("k-rw-early-approve")))).Status);
+            WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Id, Command("2"), Metadata("k-rw-early-approve"))))).Status);
         Assert.Empty(partyRisk.Asked);
         Assert.Empty(world.Store.RiskWarnings);
 
         // Submitted (one warning), then rejected: the rejection evaluates nothing and records nothing.
         await world.Service().SubmitDraftAsync(created.Id, Command("2"), Metadata("k-rw-submit-1"));
-        await world.Service().RejectDraftAsync(created.Id, Command("3", "SENTETIK ret"), Metadata("k-rw-reject"));
+        await WithIndependentApproverAsync(world, () => world.Service().RejectDraftAsync(created.Id, Command("3", "SENTETIK ret"), Metadata("k-rw-reject")));
         Assert.Single(partyRisk.Asked);
         Assert.Equal([SalesDraftCommands.SubmitV1], world.Store.RiskWarnings.Select(warning => warning.Command));
 

@@ -120,7 +120,7 @@ public sealed partial class SalesDraftServiceTests
         var withTerms = (await world.Service().ReviseHeaderAsync(order.Id, new SalesDraftHeaderRevisionRequest(order.Version, "SENTETIK vade",
             order.PartyId, order.CompanyAccountId, order.CurrencyId, null, null, null, TestDueTerms.PointDue30Wire), Metadata("o-terms"))).Detail.Draft;
         var submitted = (await world.Service().SubmitDraftAsync(order.Id, Command(withTerms.Version), Metadata("o-submit"))).Detail.Draft;
-        var approved = (await world.Service().ApproveDraftAsync(order.Id, Command(submitted.Version), Metadata("o-approve"))).Detail.Draft;
+        var approved = (await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(order.Id, Command(submitted.Version), Metadata("o-approve")))).Detail.Draft;
         var preview = await world.Service().GetCancellationImpactAsync(order.Id);
         await world.Service().CancelDraftAsync(order.Id, new SalesDraftCancelRequest(approved.Version, "SENTETIK müşteri vazgeçti",
             preview.ImpactToken), Metadata("o-cancel"));

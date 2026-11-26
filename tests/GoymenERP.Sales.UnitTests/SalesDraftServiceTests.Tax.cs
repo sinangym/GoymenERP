@@ -208,7 +208,7 @@ public sealed partial class SalesDraftServiceTests
         var buyer = new SalesDraftBuyerTaxV1(TaxBuyerSituationsV1.ExportRegistered, "701");
         var created = (await world.Service().CreateDraftAsync(Request() with { BuyerTax = buyer }, Metadata("k-doc-create"))).Detail.Draft;
         await world.Service().SubmitDraftAsync(created.Id, Command("2"), Metadata("k-doc-submit"));
-        await world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-doc-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-doc-approve")));
         await world.Service().RecordCustomerAcceptanceAsync(created.Id, Command("4"), Metadata("k-doc-accept"));
         var before = await world.Service().GetDraftTaxAsync(created.Id);
         Assert.Contains("buyer_document_missing", before.Lines[0].InvoiceBlockers);

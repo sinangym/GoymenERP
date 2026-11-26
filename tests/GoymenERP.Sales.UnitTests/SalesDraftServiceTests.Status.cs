@@ -339,7 +339,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal("Draft", (await world.Service().GetDraftStatusAsync(created.Id)).Lifecycle.State);
         await world.Service().SubmitDraftAsync(created.Id, Command("2"), Metadata("k-submit"));
         Assert.Equal("Draft", (await world.Service().GetDraftStatusAsync(created.Id)).Lifecycle.State);
-        await world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-approve")));
         Assert.Equal("Active", (await world.Service().GetDraftStatusAsync(created.Id)).Lifecycle.State);
 
         // SAT-D32: a quantity revision archives the approved Rev.0; Rev.1 awaits re-approval, the order stays "Aktif" — but it is
