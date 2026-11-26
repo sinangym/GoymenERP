@@ -129,18 +129,18 @@ public sealed partial class SalesOrderOwnerAxesHostV1
                 || history.Items.Any(x => x.Id == Guid.Empty || !long.TryParse(x.Version, out var version) || version < 1)
                 || !history.Items.Where(x => x.State == "Finalized").Select(x => x.Id).Order().SequenceEqual(ids.Keys.Order()))
                 return Result(sourceAxis, Complete, Unknown);
-            // The existing Finance settlement contract deliberately does not declare a cancelled invoice cleared.
-            // Retain this gap explicitly even after a replacement invoice settles; never erase reversal-pending debt.
-            if (history.Items.Any(x => x.State == "OfficiallyCancelled")) return Result(sourceAxis, Complete, Unknown);
+            if (!history.Items.Where(x => x.State == "OfficiallyCancelled").Select(x => x.Id).Order()
+                    .SequenceEqual((quantities.CancelledInvoices ?? []).Select(x => x.InvoiceId).Order())
+                || !TryFinancialScope(query.CompanyId, "Subcontract", quantities, ids, out var financialIds))
+                return Result(sourceAxis, Complete, Unknown);
             var settlement = await Read(() => finance.ReadAsync(new(query.CompanyId, actor!, correlation.CorrelationId, correlation.CausationId),
-                ids.Keys.Order().ToArray(), freshConsumerFence, token));
+                financialIds.Keys.Order().ToArray(), freshConsumerFence, token));
             signature.Add(JsonSerializer.Serialize(settlement));
             if (settlement.Outcome != ReadOutcome.Found || settlement.Resource is not { } batch || batch.CompanyId != query.CompanyId
-                || batch.Invoices.Count != ids.Count || batch.Invoices.Select(x => x.InvoiceId).Distinct().Count() != ids.Count
-                || batch.Invoices.Any(x => !ids.TryGetValue(x.InvoiceId, out var id) || x.ScopeId != id.AdmissionId || x.SourceVersion != id.Version
-                    || x.Status is not (FinanceSalesInvoiceSettlementStatusV1.Open or FinanceSalesInvoiceSettlementStatusV1.Settled)))
+                || batch.Invoices.Count != financialIds.Count || batch.Invoices.Select(x => x.InvoiceId).Distinct().Count() != financialIds.Count
+                || batch.Invoices.Any(x => !ValidSettlement(x, financialIds)))
                 return Result(sourceAxis, Complete, Unknown);
-            return Result(sourceAxis, Complete, batch.Invoices.All(x => x.Status == FinanceSalesInvoiceSettlementStatusV1.Settled) ? Complete : Open);
+            return Result(sourceAxis, Complete, batch.Invoices.Where(x => !financialIds[x.InvoiceId].Cancelled).All(x => x.Status == FinanceSalesInvoiceSettlementStatusV1.Settled) ? Complete : Open);
 
             async Task<SalesOrderOwnerAxisV1> Source()
             {

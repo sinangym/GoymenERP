@@ -136,19 +136,18 @@ public sealed partial class SalesOrderOwnerAxesHostV1(ICompanyContext company, I
             }
             if (!ids.Keys.Order().SequenceEqual(billed.Lines.Select(x => x.InvoiceId).Distinct().Order()))
                 return Result(source, Unknown, Unknown);
-            // Current claims exclude released invoices. Their historical Finance reversal needs separate owner proof.
-            if (billed.HasOfficiallyCancelledInvoices is not false) return Result(source, Complete, Unknown);
+            if (!TryFinancialScope(query.CompanyId, "Normal", billed, ids, out var financialIds))
+                return Result(source, Complete, Unknown);
             try
             {
                 var context = new FinanceContext(query.CompanyId, actor!, correlation.CorrelationId, correlation.CausationId);
-                var settlement = await Read(() => finance.ReadAsync(context, ids.Keys.Order().ToArray(), freshConsumerFence, cancellationToken));
+                var settlement = await Read(() => finance.ReadAsync(context, financialIds.Keys.Order().ToArray(), freshConsumerFence, cancellationToken));
                 signature.Add(JsonSerializer.Serialize(settlement));
                 if (settlement.Outcome != ReadOutcome.Found || settlement.Resource is not { } batch || batch.CompanyId != query.CompanyId
-                    || batch.Invoices.Count != ids.Count || batch.Invoices.Select(x => x.InvoiceId).Distinct().Count() != ids.Count
-                    || batch.Invoices.Any(x => !ids.TryGetValue(x.InvoiceId, out var id) || x.ScopeId != id.AdmissionId || x.SourceVersion != id.Version
-                        || x.Status is not (FinanceSalesInvoiceSettlementStatusV1.Open or FinanceSalesInvoiceSettlementStatusV1.Settled)))
+                    || batch.Invoices.Count != financialIds.Count || batch.Invoices.Select(x => x.InvoiceId).Distinct().Count() != financialIds.Count
+                    || batch.Invoices.Any(x => !ValidSettlement(x, financialIds)))
                     return Result(source, Complete, Unknown);
-                return Result(source, Complete, batch.Invoices.All(x => x.Status == FinanceSalesInvoiceSettlementStatusV1.Settled) ? Complete : Open);
+                return Result(source, Complete, batch.Invoices.Where(x => !financialIds[x.InvoiceId].Cancelled).All(x => x.Status == FinanceSalesInvoiceSettlementStatusV1.Settled) ? Complete : Open);
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception) { return Result(source, Complete, Unknown); }

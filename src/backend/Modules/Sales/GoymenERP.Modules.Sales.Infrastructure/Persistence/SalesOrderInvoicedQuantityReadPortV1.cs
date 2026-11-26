@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Invoices;
@@ -29,6 +30,8 @@ public sealed class SalesOrderInvoicedQuantityReadPortV1(SalesDbContext db, ICom
             if (before.Normal.Length > 0 && normalClaims is null) return Unavailable();
             var lines = new List<SalesOrderInvoicedQuantityLineV1>();
             var versions = new List<string>();
+            var cancelled = new Dictionary<Guid, SalesOrderCancelledInvoiceProofV1>();
+            var normalHistoricalLines = new HashSet<(Guid InvoiceId, Guid LineId)>();
             foreach (var ids in before.Normal.Select(row => row.ShipmentId).Distinct().Order().Chunk(SalesFinalizedShipmentClaimReadPortV1.MaximumShipmentIds))
             {
                 await Fence();
@@ -41,6 +44,22 @@ public sealed class SalesOrderInvoicedQuantityReadPortV1(SalesDbContext db, ICom
                 versions.Add(answer.SourceVersion);
                 foreach (var item in answer.Items)
                 {
+                    if (item.Outcome is not (SalesShipmentClaimReadOutcomeV1.Available or SalesShipmentClaimReadOutcomeV1.NotInvoiced)) return Unavailable();
+                    foreach (var historical in item.HistoricalFinalizedClaims ?? [])
+                    {
+                        var f = historical.Finalization;
+                        if (f.CompanyId != companyId || f.ShipmentSource.SalesOrderId != salesOrderId
+                            || f.ShipmentSource.ShipmentId != item.ShipmentId || f.Lifecycle.State != "OfficiallyCancelled"
+                            || f.Lifecycle.ReleasedAtUtc != historical.CancelledAtUtc || f.Lifecycle.CancelledAtUtc != historical.CancelledAtUtc
+                            || !before.Normal.Any(x => x.InvoiceId == f.InvoiceId && x.LineId == f.InvoiceLineId
+                                && x.State == (int)SalesInvoiceState.OfficiallyCancelled && x.Version == f.Lifecycle.Version)
+                            || !normalHistoricalLines.Add((f.InvoiceId, f.InvoiceLineId))) return Unavailable();
+                        var proof = new SalesOrderCancelledInvoiceProofV1(companyId, f.InvoiceId, "Normal", f.AdmissionId,
+                            f.FinalizedVersion, f.Lifecycle.Version, f.FinalizedEventId, f.FinalizedPayloadSha256,
+                            historical.CancellationId, historical.CancellationEventId, historical.CancellationPayloadSha256, historical.CancelledAtUtc);
+                        if (cancelled.TryGetValue(f.InvoiceId, out var prior) && prior != proof) return Unavailable();
+                        cancelled[f.InvoiceId] = proof;
+                    }
                     // Only the current active claim is invoiced. Historical finalized evidence retained for cost
                     // attribution after official cancellation never restores an active billed quantity.
                     if (item.Outcome == SalesShipmentClaimReadOutcomeV1.NotInvoiced && item.Claim is null) continue;
@@ -64,7 +83,8 @@ public sealed class SalesOrderInvoicedQuantityReadPortV1(SalesDbContext db, ICom
                 if (invoice is null || invoice.CompanyId != companyId || invoice.Id != header.Id
                     || invoice.Source.SalesOrderId != salesOrderId || invoice.Version != header.Version
                     || (int)invoice.State != header.State || invoice.Lines.Count > MaximumEvidenceLines) return Unavailable();
-                if (invoice.State != SalesSubcontractServiceInvoiceState.Finalized) continue;
+                if (invoice.State is not (SalesSubcontractServiceInvoiceState.Finalized or SalesSubcontractServiceInvoiceState.OfficiallyCancelled)) continue;
+                var officiallyCancelled = invoice.State == SalesSubcontractServiceInvoiceState.OfficiallyCancelled;
                 if (invoice.Finalization is not { FinalizedVersion: > 0 } finalization || finalization.AdmissionId == Guid.Empty
                     || invoice.Match is null || invoice.Source.LoadingInstructionId == Guid.Empty || invoice.Source.WeighingId == Guid.Empty
                     || invoice.Source.WeighingRevision < 1 || invoice.Source.InstructionVersion < 1) return Unavailable();
@@ -76,7 +96,36 @@ public sealed class SalesOrderInvoicedQuantityReadPortV1(SalesDbContext db, ICom
                 if (events is not [var finalizedEvent] || finalizedEvent.Id == Guid.Empty || finalizedEvent.SchemaVersion != 1
                     || finalizedEvent.Sequence != 1 || finalizedEvent.AggregateVersion != finalization.FinalizedVersion
                     || finalizedEvent.OccurredAtUtc != finalization.FinalizedAtUtc
-                    || finalizedEvent.PayloadJson != SalesStore.FinalizedSubcontractPayload(invoice, finalization)) return Unavailable();
+                    || finalizedEvent.PayloadJson != OriginalSubcontractPayload(invoice, finalization)) return Unavailable();
+                if (officiallyCancelled)
+                {
+                    if (subcontractInvoices is not ISalesOfficialInvoiceCancellationStoreV1 cancellationOwner) return Unavailable();
+                    await Fence();
+                    var retained = await cancellationOwner.ReadForInvoiceAsync(SalesOfficialInvoiceKindV1.Subcontract, invoice.Id, Fence, cancellationToken);
+                    await Fence();
+                    if (retained?.Cancellation is not { } view || view.CompanyId != companyId || view.InvoiceId != invoice.Id
+                        || view.Kind != SalesOfficialInvoiceKindV1.Subcontract || view.InvoiceVersion != invoice.Version.ToString(CultureInfo.InvariantCulture)
+                        || view.FinalizedVersion != finalization.FinalizedVersion.ToString(CultureInfo.InvariantCulture)
+                        || view.AdmissionId != finalization.AdmissionId || retained.Admission.AdmissionId != finalization.AdmissionId
+                        || retained.Admission.InvoiceId != invoice.Id || retained.Admission.InvoiceVersion != view.FinalizedVersion) return Unavailable();
+                    var cancellationEvents = await db.OutboxMessages.AsNoTracking().Where(row => row.CompanyId == companyId
+                            && row.AggregateId == invoice.Id && row.EventType == SalesOfficialInvoiceCancellationCommandsV1.EventType)
+                        .Take(2).ToArrayAsync(cancellationToken);
+                    await Fence();
+                    var expectedCancellationPayload = JsonSerializer.Serialize(new { companyId, cancellationId = view.CancellationId,
+                        invoiceId = invoice.Id, admissionId = finalization.AdmissionId, finalizedVersion = finalization.FinalizedVersion,
+                        cancelledBy = Guid.Parse(view.RecordedBy), cancelledAtUtc = view.RecordedAtUtc, reason = view.Reason }, Json);
+                    if (cancellationEvents is not [var cancellationEvent] || cancellationEvent.Id != view.CancellationId
+                        || cancellationEvent.AggregateType != "Sales.SubcontractServiceInvoice" || cancellationEvent.SchemaVersion != 1
+                        || cancellationEvent.Sequence != 1 || cancellationEvent.AggregateVersion != invoice.Version
+                        || cancellationEvent.OccurredAtUtc != view.RecordedAtUtc || cancellationEvent.PayloadJson != expectedCancellationPayload) return Unavailable();
+                    cancelled.Add(invoice.Id, new(companyId, invoice.Id, "Subcontract", finalization.AdmissionId, finalization.FinalizedVersion,
+                        invoice.Version, finalizedEvent.Id, Sha(finalizedEvent.PayloadJson), view.CancellationId, cancellationEvent.Id,
+                        Sha(cancellationEvent.PayloadJson), view.RecordedAtUtc));
+                    versions.Add(Sha(JsonSerializer.Serialize(new { invoice.Id, invoice.Version, view.CancellationId,
+                        FinalizedPayload = Sha(finalizedEvent.PayloadJson), CancellationPayload = Sha(cancellationEvent.PayloadJson) }, Json)));
+                    continue; // Historical invoice never restores active billed quantity.
+                }
                 var sourceVersion = Sha(JsonSerializer.Serialize(new { companyId, invoice.Id, invoice.Version, invoice.State,
                     invoice.Source, finalization.AdmissionId, finalization.FinalizedVersion, finalization.FinalizedAtUtc,
                     EventId = finalizedEvent.Id, PayloadSha256 = Sha(finalizedEvent.PayloadJson),
@@ -88,6 +137,12 @@ public sealed class SalesOrderInvoicedQuantityReadPortV1(SalesDbContext db, ICom
                         line.Input.Quantity, "Subcontract", sourceVersion));
                 if (lines.Count > MaximumEvidenceLines) return Unavailable();
             }
+            if (!normalHistoricalLines.Order().SequenceEqual(before.Normal.Where(x => x.State == (int)SalesInvoiceState.OfficiallyCancelled)
+                    .Select(x => (x.InvoiceId, x.LineId)).Order())) return Unavailable();
+            var expectedCancelled = before.Normal.Where(x => x.State == (int)SalesInvoiceState.OfficiallyCancelled).Select(x => x.InvoiceId)
+                .Concat(before.Subcontract.Where(x => x.State == (int)SalesSubcontractServiceInvoiceState.OfficiallyCancelled).Select(x => x.Id)).Distinct().Order();
+            if (!cancelled.Keys.Order().SequenceEqual(expectedCancelled)) return Unavailable();
+            var cancelledProofs = cancelled.Values.OrderBy(x => x.InvoiceId).ToArray();
             var after = await DiscoverAsync();
             if (JsonSerializer.Serialize(before, Json) != JsonSerializer.Serialize(after, Json)
                 || lines.Any(line => line.InvoiceId == Guid.Empty || line.InvoiceLineId == Guid.Empty
@@ -96,11 +151,11 @@ public sealed class SalesOrderInvoicedQuantityReadPortV1(SalesDbContext db, ICom
                 return Unavailable();
             await Fence();
             var version = ISalesOrderInvoicedQuantityReadPortV1.SourceVersionPrefix
-                + Sha(JsonSerializer.Serialize(new { companyId, salesOrderId, after, versions, lines }, Json));
+                + Sha(JsonSerializer.Serialize(new { companyId, salesOrderId, after, versions, lines, cancelledProofs }, Json));
             return new SalesOrderInvoicedQuantityReadV1(companyId, salesOrderId, SalesOrderInvoicedQuantityReadOutcomeV1.Available,
                 lines.AsReadOnly(), version,
                 after.Normal.Any(x => x.State == (int)SalesInvoiceState.OfficiallyCancelled)
-                || after.Subcontract.Any(x => x.State == (int)SalesSubcontractServiceInvoiceState.OfficiallyCancelled));
+                || after.Subcontract.Any(x => x.State == (int)SalesSubcontractServiceInvoiceState.OfficiallyCancelled), cancelledProofs);
         }
         catch (OperationCanceledException) { throw; }
         catch
@@ -138,6 +193,14 @@ public sealed class SalesOrderInvoicedQuantityReadPortV1(SalesDbContext db, ICom
                 throw new InvalidOperationException("Invoice quantity evidence exceeds its bounded read.");
             return new Discovery(normal, subcontract);
         }
+    }
+
+    private static string OriginalSubcontractPayload(SalesSubcontractServiceInvoice invoice, SalesInvoiceFinalization finalization)
+    {
+        // The native writer emitted the original finalized version. Cancellation retains all other frozen facts.
+        var payload = JsonNode.Parse(SalesStore.FinalizedSubcontractPayload(invoice, finalization))!;
+        payload["version"] = finalization.FinalizedVersion;
+        return payload.ToJsonString(Json);
     }
 
     private static string Sha(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();

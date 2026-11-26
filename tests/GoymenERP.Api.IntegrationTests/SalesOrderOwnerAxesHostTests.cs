@@ -169,7 +169,7 @@ public sealed partial class SalesOrderOwnerAxesHostTests
         Task<SalesOrderInvoicedQuantityReadV1> ISalesOrderInvoicedQuantityReadPortV1.ReadAsync(Guid companyId, Guid salesOrderId, Func<CancellationToken, Task> fence, CancellationToken cancellationToken) =>
             Task.FromResult(ComposeSubcontract ? SubcontractQuantities() : new SalesOrderInvoicedQuantityReadV1(CompanyId, Order, SalesOrderInvoicedQuantityReadOutcomeV1.Available,
                 Shares.Select(x => new SalesOrderInvoicedQuantityLineV1(x.ShipmentId == shipment ? Invoice : OtherInvoice,
-                    x.ShipmentId == shipment ? invoiceLine : otherInvoiceLine, Line, Unit, x.Quantity, "Normal", "billed:1")).ToArray(), "billed:1", Fault == "historical-cancelled" ? true : Fault == "missing-invoice-history" ? null : false));
+                    x.ShipmentId == shipment ? invoiceLine : otherInvoiceLine, Line, Unit, x.Quantity, "Normal", "billed:1")).ToArray(), "billed:1", CancelledProofs is { Length: > 0 } || Fault == "historical-cancelled" ? true : Fault == "missing-invoice-history" ? null : false, CancelledProofs));
         public Task<SalesOrderAllocationReadAnswerV2> ReadOrderAllocationsAsync(Guid orderId, CancellationToken cancellationToken) =>
             Task.FromResult(new SalesOrderAllocationReadAnswerV2(CompanyId, Order,
                 OpenSource is "physical-allocation" or "future-allocation" ? [new(Line, OpenSource == "physical-allocation" ? SalesOrderAllocationKindsV2.Physical : SalesOrderAllocationKindsV2.FutureSupply, 1, 1m, OpenSource == "physical-allocation" ? null : Unit)] : []));
@@ -180,7 +180,7 @@ public sealed partial class SalesOrderOwnerAxesHostTests
         public Task<ReadResult<FinanceSalesInvoiceSettlementBatchV1>> ReadAsync(FinanceContext context, IReadOnlyList<Guid> invoiceIds, Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken)
         {
             FinanceCalls++; FinanceIds = invoiceIds;
-            var rows = invoiceIds.Select(id => new FinanceSalesInvoiceSettlementV1(id,
+            var rows = invoiceIds.Where(id => !OmitCancelledSettlement || CancelledProofs?.All(x => x.InvoiceId != id) != false).Select(id => SettlementOverride?.Invoke(id) ?? new FinanceSalesInvoiceSettlementV1(id,
                 Fault == "unknown-finance" ? FinanceSalesInvoiceSettlementStatusV1.Unknown : Unsettled && (id == OtherInvoice || ComposeSubcontract) ? FinanceSalesInvoiceSettlementStatusV1.Open : FinanceSalesInvoiceSettlementStatusV1.Settled,
                 Fault == "wrong-admission" ? Guid.NewGuid() : SubcontractInvoice?.Finalization?.AdmissionId ?? Admission,
                 Fault == "wrong-invoice-version" ? "99" : SubcontractInvoice?.Finalization?.FinalizedVersion.ToString() ?? "4")).ToArray();

@@ -11,7 +11,15 @@ public sealed record SalesOrderInvoicedQuantityReadV1(Guid CompanyId, Guid Sales
     SalesOrderInvoicedQuantityReadOutcomeV1 Outcome, IReadOnlyList<SalesOrderInvoicedQuantityLineV1> Lines,
     string? SourceVersion,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    bool? HasOfficiallyCancelledInvoices = null);
+    bool? HasOfficiallyCancelledInvoices = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<SalesOrderCancelledInvoiceProofV1>? CancelledInvoices = null);
+
+/// <summary>Retained native finalization and official-cancellation proof. No amount or inference of Finance reversal.</summary>
+public sealed record SalesOrderCancelledInvoiceProofV1(Guid CompanyId, Guid InvoiceId, string InvoiceKind,
+    Guid AdmissionId, long OriginalFinalizedVersion, long CancellationInvoiceVersion,
+    Guid FinalizedEventId, string FinalizedPayloadSha256, Guid CancellationId, Guid CancellationEventId,
+    string CancellationPayloadSha256, DateTimeOffset CancelledAtUtc);
 
 /// <summary>Price-free internal purpose read for an authorized order reader. A complete empty source proves zero;
 /// missing, changing, ambiguous or legacy evidence is Unavailable. The token is not a later mutation lock.</summary>

@@ -39,6 +39,25 @@ public sealed partial class SalesSubcontractServiceInvoiceSqlServerRelationalAcc
         var quantityAfter = await ReadQuantityAsync();
         Assert.Equal(SalesOrderInvoicedQuantityReadOutcomeV1.Available, quantityAfter.Outcome);
         Assert.Empty(quantityAfter.Lines); // Official cancellation and its new Draft replacement are not finalized quantities.
+        var retained = Assert.Single(quantityAfter.CancelledInvoices!);
+        Assert.Equal((CompanyA, invoice.Id, "Subcontract", finalized.Invoice.Finalization!.AdmissionId, finalized.Invoice.Finalization.FinalizedVersion, 6L),
+            (retained.CompanyId, retained.InvoiceId, retained.InvoiceKind, retained.AdmissionId, retained.OriginalFinalizedVersion, retained.CancellationInvoiceVersion));
+        Assert.NotEqual(Guid.Empty, retained.FinalizedEventId);
+        Assert.Equal(retained.CancellationId, retained.CancellationEventId);
+        Assert.Equal(64, retained.FinalizedPayloadSha256.Length);
+        Assert.Equal(64, retained.CancellationPayloadSha256.Length);
+        // Real Sales commands, with this fixture's explicitly synthetic weighing source. No Finance reversal/settlement assertion.
+        await MoveLifecycleAsync(run,replacement.Id,"replacement-submit",SalesSubcontractInvoiceLifecycleCommandsV1.Submit,(x,n)=>x.Submit(1,"SENTETIK-submitter",n),"SENTETIK-submitter");
+        await MoveLifecycleAsync(run,replacement.Id,"replacement-approve",SalesSubcontractInvoiceLifecycleCommandsV1.Approve,(x,n)=>x.Approve(2,"SENTETIK-checker",n),"SENTETIK-checker");
+        var replacementOfficial=LifecycleOfficial(replacement,Guid.NewGuid().ToString("D"));
+        await MoveLifecycleAsync(run,replacement.Id,"replacement-match",SalesSubcontractInvoiceLifecycleCommandsV1.Match,(x,n)=>x.RecordMatch(3,"SENTETIK-matcher",replacementOfficial,Currency,null,0.05m,false,null,n),"SENTETIK-matcher");
+        await MoveLifecycleAsync(run,replacement.Id,"replacement-final",SalesSubcontractInvoiceLifecycleCommandsV1.Finalize,(x,n)=>x.Finalize(4,"SENTETIK-finalizer",Guid.NewGuid,n),"SENTETIK-finalizer");
+        var current=await ReadQuantityAsync();
+        Assert.Equal(SalesOrderInvoicedQuantityReadOutcomeV1.Available,current.Outcome);
+        Assert.Equal(replacement.Lines.Count,current.Lines.Count);
+        Assert.All(current.Lines,x=>Assert.Equal(replacement.Id,x.InvoiceId));
+        Assert.Equal(retained,Assert.Single(current.CancelledInvoices!));
+        Assert.NotEqual(quantityAfter.SourceVersion,current.SourceVersion);
         await using var foreign=run.OfficialFasonStore(CompanyB);Assert.Null(await foreign.Store.ReadForInvoiceAsync(SalesOfficialInvoiceKindV1.Subcontract,invoice.Id,_=>Task.CompletedTask));
 
         async Task<SalesOrderInvoicedQuantityReadV1> ReadQuantityAsync()

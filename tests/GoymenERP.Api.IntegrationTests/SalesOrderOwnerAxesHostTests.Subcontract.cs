@@ -147,13 +147,15 @@ public sealed partial class SalesOrderOwnerAxesHostTests
         private SalesOrderInvoicedQuantityReadV1 SubcontractQuantities() => new(CompanyId, Order,
             SalesOrderInvoicedQuantityReadOutcomeV1.Available,
             SubcontractInvoice!.Lines.Select(x => new SalesOrderInvoicedQuantityLineV1(Invoice, x.Id, Line, Unit,
-                Fault == "wrong-invoice-quantity" ? 10m : x.Input.Quantity, "Subcontract", "subcontract-quantity:1")).ToArray(), "subcontract-quantity:1", false);
+                Fault == "wrong-invoice-quantity" ? 10m : x.Input.Quantity, "Subcontract", "subcontract-quantity:1")).ToArray(), "subcontract-quantity:1", CancelledProofs is { Length: > 0 }, CancelledProofs);
         public Task<SalesSubcontractServiceInvoice?> FindSubcontractServiceInvoiceByWeighingAsync(Guid order, Guid instruction, Guid weighing,
             CancellationToken token) => Task.FromResult(SubcontractInvoice);
         public Task<SalesSubcontractServiceInvoice?> FindSubcontractServiceInvoiceAsync(Guid id, CancellationToken token) => Task.FromResult(SubcontractInvoice);
         public Task<SalesSubcontractInvoiceListV1> ListSubcontractInvoicesAsync(Guid order, int size, string? cursor, CancellationToken token) =>
             Task.FromResult(new SalesSubcontractInvoiceListV1(Order,
-                Fault == "cancelled-history"
+                CancelledProofs is { Length: > 0 }
+                    ? [new(Invoice, "SENTETIK", "Finalized", "5", default, default), .. CancelledProofs.Select(x => new SalesSubcontractInvoiceListItemV1(x.InvoiceId, "SENTETIK-old", "OfficiallyCancelled", x.CancellationInvoiceVersion.ToString(), default, default))]
+                    : Fault == "cancelled-history"
                     ? [new(Invoice, "SENTETIK", "Finalized", "5", default, default), new(OtherInvoice, "SENTETIK-old", "OfficiallyCancelled", "6", default, default)]
                     : [new(Invoice, "SENTETIK", "Finalized", "5", default, default)], null));
         public Task<SalesSubcontractServiceInvoiceStoreResult> StoreSubcontractServiceInvoiceAsync(SalesDraftWriteEnvelope e, string h,

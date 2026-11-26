@@ -1,6 +1,8 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
+using GoymenERP.Modules.Sales.Domain.Invoices;
+using GoymenERP.Modules.Sales.Domain.Drafts;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -41,6 +43,28 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
         Assert.Empty(released.Lines);
         Assert.Equal(true, released.HasOfficiallyCancelledInvoices);
         Assert.NotEqual(read.SourceVersion, released.SourceVersion);
+        var retained = Assert.Single(released.CancelledInvoices!);
+        Assert.Equal((CompanyA, invoice.Id, "Normal", invoice.Finalization!.AdmissionId, invoice.Finalization.FinalizedVersion, invoice.Version + 1),
+            (retained.CompanyId, retained.InvoiceId, retained.InvoiceKind, retained.AdmissionId, retained.OriginalFinalizedVersion, retained.CancellationInvoiceVersion));
+        Assert.NotEqual(Guid.Empty, retained.FinalizedEventId);
+        Assert.Equal(retained.CancellationId, retained.CancellationEventId);
+        Assert.Equal(64, retained.FinalizedPayloadSha256.Length);
+        Assert.Equal(64, retained.CancellationPayloadSha256.Length);
+        // Native Sales lifecycle proof only. Finance reversal/settlement is not synthesized by this fixture.
+        var replacement = await FinalizedAsync(run, "quantity-replacement", "SENTETIK-QTY-REPLACEMENT", Guid.NewGuid().ToString("D"),
+            "SENTETIK-replacement-checker", actor, (id, number) =>
+            {
+                var terms = SalesDueTerms.Create([new(1, SalesDueBasis.OrderDate, 30, "100")]);
+                return SalesInvoice.Create(id, CompanyA, number, invoice.Header,
+                    invoice.Lines.Select(x => x.Share with { LineId = Guid.NewGuid() }).ToArray(),
+                    SalesDueDateCalculator.Compute(terms, invoice.Header.BusinessDate, invoice.Header.BusinessDate).DueDates,
+                    terms, run.Actor, DateTimeOffset.UtcNow);
+            });
+        var current = await ReadOrderInvoiceQuantityAsync(run, CompanyA, orderId);
+        Assert.Equal(SalesOrderInvoicedQuantityReadOutcomeV1.Available, current.Outcome);
+        Assert.Equal(replacement.Id, Assert.Single(current.Lines).InvoiceId);
+        Assert.Equal(retained, Assert.Single(current.CancelledInvoices!));
+        Assert.NotEqual(released.SourceVersion, current.SourceVersion);
         // The cancellation releases the original share, not its immutable finalization or physical quantity.
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceFinalizations WHERE InvoiceId=@id", ("@id", invoice.Id)));
         Assert.Equal(line.Share.QuantityText, await run.ScalarAsync<string>("SELECT QuantityText FROM sales.InvoiceLines WHERE InvoiceId=@id AND [LineNo]=1", ("@id", invoice.Id)));
@@ -94,6 +118,7 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
         Assert.Equal(SalesOrderInvoicedQuantityReadOutcomeV1.Unavailable, answer.Outcome);
         Assert.Empty(answer.Lines);
         Assert.Null(answer.SourceVersion);
+        Assert.Null(answer.CancelledInvoices);
         Assert.Empty((await ReadOrderInvoiceQuantityAsync(run, CompanyA, invoice.Lines[0].Share.SalesOrderId)).Lines);
     }
 
