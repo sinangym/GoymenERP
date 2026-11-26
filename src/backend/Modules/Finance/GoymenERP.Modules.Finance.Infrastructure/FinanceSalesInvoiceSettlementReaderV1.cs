@@ -139,7 +139,7 @@ public sealed class FinanceSalesInvoiceSettlementReaderV1(
                     || applied.Add(advance).CompareTo(total) != 0) return unknown;
                 var creditItems = proof.Reductions.Where(x => x.CreditId == credit.Id).ToArray();
                 var result = JsonSerializer.Deserialize<FinanceInvoiceAcceptanceResultV2>(credit.ResultJson, Json);
-                if (result is null || result.Outcome != CommandOutcome.Succeeded || result.AcceptanceId != credit.Id
+                if (result is null || result.Outcome != CommandOutcome.Succeeded || result.CreditId != credit.Id
                     || result.Reductions is null || result.Reductions.Count != creditItems.Length) return unknown;
                 var appliedProof = zero;
                 foreach (var reduction in creditItems)
