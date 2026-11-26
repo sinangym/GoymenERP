@@ -8,7 +8,8 @@ export interface Delegation {
   readonly version: string; readonly recordedByUserId: string; readonly recordedAtUtc: string; readonly reason: string
   readonly revokedByUserId: string | null; readonly revokedAtUtc: string | null; readonly revocationReason: string | null
 }
-export interface DelegationPage { readonly companyId: string; readonly items: readonly Delegation[]; readonly page: number; readonly hasMore: boolean }
+export interface DelegationPerson { readonly userId: string; readonly displayName: string }
+export interface DelegationPage { readonly companyId: string; readonly items: readonly Delegation[]; readonly page: number; readonly hasMore: boolean; readonly people: readonly DelegationPerson[] }
 export interface PeoplePage { readonly companyId: string; readonly kind: string; readonly items: readonly { readonly userId: string; readonly displayName: string }[]; readonly hasMore: boolean }
 export interface CreateDelegation { readonly kind: string; readonly delegateUserId: string; readonly endsAtUtc: string; readonly reason: string; readonly delegatorUserId: string | null; readonly startsAtUtc: string }
 export interface RevokeDelegation { readonly expectedVersion: string; readonly reason: string }
@@ -27,11 +28,16 @@ export function decodeDelegation(v: unknown, company: string): Delegation | null
   return v as unknown as Delegation
 }
 export function decodeDelegationPage(v: unknown, company: string, page: number): DelegationPage | null {
-  if (!record(v) || !hasExactKeys(v,['companyId','items','page','hasMore']) || !same(v.companyId,company) || v.page !== page
+  if (!record(v) || !(hasExactKeys(v,['companyId','items','page','hasMore']) || hasExactKeys(v,['companyId','items','page','hasMore','people'])) || !same(v.companyId,company) || v.page !== page
     || typeof v.hasMore !== 'boolean' || !Array.isArray(v.items) || v.items.length > 200) return null
   const items = v.items.map(row => decodeDelegation(row,company))
   if (items.some(row => row === null) || new Set(items.map(row => row!.id)).size !== items.length) return null
-  return { companyId: company, items: items as Delegation[], page, hasMore: v.hasMore }
+  const ids = new Set(items.flatMap(row => [row!.delegatorUserId,row!.delegateUserId]))
+  const people = Object.hasOwn(v,'people') ? v.people : [] // Older owner projection: explicit unavailable-name fallback.
+  if (!Array.isArray(people) || people.length > ids.size || !people.every(person => record(person)
+    && hasExactKeys(person,['userId','displayName']) && isBoundUuid(person.userId) && ids.has(person.userId) && text(person.displayName))
+    || new Set(people.map(person => person.userId)).size !== people.length) return null
+  return { companyId: company, items: items as Delegation[], page, hasMore: v.hasMore, people: people as DelegationPerson[] }
 }
 export function decodePeople(v: unknown, company: string, kind: string): PeoplePage | null {
   if (!record(v) || !hasExactKeys(v,['companyId','kind','items','hasMore']) || !same(v.companyId,company) || v.kind !== kind

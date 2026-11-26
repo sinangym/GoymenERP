@@ -54,12 +54,40 @@ public static class WorkDelegationEndpoints
         }).WithName("GetWorkDelegationPeopleV1").Produces<WorkDelegationPeopleV1>().ProducesErpCodeLessBadRequest()
             .AllowsCodeLessErpBadRequestBody().ProducesErpAuthenticatedProblems().ProducesErpServiceUnavailable();
         group.MapGet("", async (bool? all, int? page, HttpContext http, ICorrelationContext correlation,
-                [FromServices] IWorkDelegationServiceV1 service, CancellationToken token) =>
+                [FromServices] IWorkDelegationServiceV1 service, ICompanyContext company, ICurrentUser user,
+                IUserDirectoryReadPortV1 directory, CancellationToken token) =>
             {
                 NoStore(http);
-                try { return Results.Json(await service.ListAsync(all == true, page ?? 0, token)); }
+                try
+                {
+                    var companyId = company.CompanyId; var actor = user.UserId;
+                    var table = await service.ListAsync(all == true, page ?? 0, token);
+                    if (table.CompanyId != companyId || table.Items.Any(row => row.CompanyId != companyId))
+                        return Results.Problem(statusCode: 503);
+                    var names = new Dictionary<Guid, string>();
+                    var ids = table.Items.SelectMany(row => new[] { row.DelegatorUserId, row.DelegateUserId }).Distinct().ToArray();
+                    // Resolve only identities already disclosed by the authorized owner page, within the existing port's bound.
+                    foreach (var batch in ids.Chunk(UserDirectoryLimitsV1.MaximumResolveCount))
+                    {
+                        var answer = await directory.ResolveAsync(new(companyId, actor!, batch), token);
+                        if (answer.Outcome != UserDirectoryOutcomeV1.Found)
+                        { names.Clear(); break; } // Names are optional; never invent them when Identity is unavailable or denies.
+                        foreach (var person in answer.Items.Where(person => batch.Contains(person.UserId)
+                                     && !string.IsNullOrWhiteSpace(person.DisplayName)))
+                            names[person.UserId] = person.DisplayName;
+                    }
+                    // The existing owner remeasures caller, company, feature and all-view permission after the directory awaits.
+                    var current = ids.Length == 0 ? table : await service.ListAsync(all == true, page ?? 0, token);
+                    if (!user.IsAuthenticated || user.UserId != actor || !company.IsResolved || company.CompanyId != companyId
+                        || !user.CanAccessCompany(companyId)) return Results.Problem(statusCode: 403);
+                    if (current.CompanyId != companyId || current.Items.Any(row => row.CompanyId != companyId))
+                        return Results.Problem(statusCode: 503);
+                    var visibleIds = current.Items.SelectMany(row => new[] { row.DelegatorUserId, row.DelegateUserId }).ToHashSet();
+                    return Results.Json(new WorkDelegationDisplayTableV1(current.CompanyId, current.Items, current.Page, current.HasMore,
+                        names.Where(person => visibleIds.Contains(person.Key)).Select(person => new WorkDelegationPersonV1(person.Key, person.Value)).ToArray()));
+                }
                 catch (WorkDelegationException error) { return Problem(error, http, correlation); }
-            }).WithName("GetWorkDelegationsV1").Produces<WorkDelegationTableV1>()
+            }).WithName("GetWorkDelegationsV1").Produces<WorkDelegationDisplayTableV1>()
             .ProducesErpBadRequest(WorkDelegationCodesV1.Invalid).AllowsEmptyErpBadRequestBody()
             .ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
 
@@ -132,3 +160,5 @@ public static class WorkDelegationEndpoints
 
 public sealed record WorkDelegationPersonV1(Guid UserId, string DisplayName);
 public sealed record WorkDelegationPeopleV1(Guid CompanyId, string Kind, IReadOnlyList<WorkDelegationPersonV1> Items, bool HasMore);
+public sealed record WorkDelegationDisplayTableV1(Guid CompanyId, IReadOnlyList<WorkDelegationViewV1> Items, int Page,
+    bool HasMore, IReadOnlyList<WorkDelegationPersonV1> People);

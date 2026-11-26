@@ -6,4 +6,7 @@ export const WORK_DECISION_TEXT = {
   reload: 'Kaydı yenile', back: 'İş kutusuna dön', reference: 'Dayanak kayıtlar',
   cost: 'Beyan edilen birim maliyet (şirket para birimi / kg)', hiddenCost: 'Birim maliyet, ayrı maliyet görme yetkisine tabidir.',
   delegation: 'Vekâlet kullan', delegationChoice: 'Vekâlet kaydı', choose: 'Seçiniz', delegationEmpty: 'Bu tür için size verilmiş vekâlet kaydı bulunamadı.',
+  delegationMore: 'Diğer vekâletleri yükle',
+  delegationMoreAvailable: 'Daha fazla vekâlet kaydı var; sonraki sayfaları yükleyebilirsiniz.',
+  delegationNoMatchesYet: 'Yüklenen sayfalarda bu tür için size verilmiş vekâlet bulunamadı.',
 } as const

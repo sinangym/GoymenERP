@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery, type InfiniteData } from '@tanstack/react-query'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, capabilityFailClosed } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
@@ -10,9 +10,16 @@ import { useScopedCommandAttempt } from '../settings/useCommandAttempt'
 import { Button } from '../ui/Button'
 import { inboxKindText, inboxRoleText } from './workInboxText'
 import { fetchWorkDecision, sendWorkDecision, isWorkDecisionRequest, type WorkDecisionKind } from './workDecisionApi'
-import { fetchDelegations } from './workDelegationApi'
+import { fetchDelegations, type DelegationPage } from './workDelegationApi'
+import { delegationPersonLabel } from './delegationPersonLabel'
+import type { ViewOutcome } from '../shell/uiState'
 import { WORK_DECISION_TEXT as T } from './workDecisionText'
 import styles from './Work.module.css'
+
+class DelegationReadFailure extends Error {
+  readonly outcome: ViewOutcome<unknown>
+  constructor(outcome: ViewOutcome<unknown>) { super('delegation-read-failed'); this.outcome = outcome }
+}
 
 export function WorkDecisionPage({ kind }: { readonly kind: WorkDecisionKind }) {
   const shell = useShellState(); const context = contextKey(shell); const { approvalId = '' } = useParams()
@@ -24,14 +31,19 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const namespace = context === null ? null : contextKeyString(context)
   const [reason, setReason] = useState('')
   const [useDelegation, setUseDelegation] = useState(false); const [delegationId, setDelegationId] = useState('')
-  const delegations = useQuery({ queryKey: [namespace, shell.routeEntryGeneration, 'work-decision-delegations'],
-    enabled: useDelegation && company !== null && namespace !== null && !capabilityFailClosed(shell), queryFn: async ({ signal }) => {
-      const captured = boundary.capture(); const answer = await fetchDelegations(company!, false, 0, signal)
+  const delegations = useInfiniteQuery<DelegationPage,DelegationReadFailure,InfiniteData<DelegationPage>,readonly unknown[],number>({ queryKey: [namespace, shell.routeEntryGeneration, 'work-decision-delegations'],
+    initialPageParam: 0, retry: false,
+    getNextPageParam: last => last.hasMore ? last.page + 1 : undefined,
+    enabled: useDelegation && company !== null && namespace !== null && !capabilityFailClosed(shell), queryFn: async ({ signal, pageParam }) => {
+      const captured = boundary.capture(); const answer = await fetchDelegations(company!, false, pageParam, signal)
       if (answer.type === 'http') boundary.report(answer.status, captured)
-      return answer
+      if (answer.type !== 'ok-single') throw new DelegationReadFailure(answer)
+      return answer.data
     } })
-  const candidates = delegations.data?.type === 'ok-single' ? delegations.data.data.items.filter(row => row.kind === kind
-    && row.delegateUserId === shell.activeContext?.userId && row.revokedAtUtc === null) : []
+  const pages = delegations.data?.pages ?? []
+  const candidates = [...new Map(pages.flatMap(page => page.items).map(row => [row.id,row])).values()].filter(row => row.kind === kind
+    && row.delegateUserId === shell.activeContext?.userId && row.revokedAtUtc === null)
+  const people = pages.flatMap(page => page.people)
   const query = useQuery({ queryKey: [namespace, shell.routeEntryGeneration, 'work-decision', kind, id],
     enabled: company !== null && namespace !== null && !capabilityFailClosed(shell), queryFn: async ({ signal }) => {
       const captured = boundary.capture(); const result = await fetchWorkDecision(company!, kind, id, signal)
@@ -60,8 +72,13 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       {preview.pending ? <fieldset disabled={frozen}><label>{T.reason}<textarea value={reason} maxLength={500} onChange={event => setReason(event.target.value)} /></label>
         <label><input type="checkbox" checked={useDelegation} onChange={event => { setUseDelegation(event.target.checked); setDelegationId('') }} />{T.delegation}</label>
         {useDelegation ? <><label>{T.delegationChoice}<select value={delegationId} onChange={event => setDelegationId(event.target.value)}><option value="">{T.choose}</option>
-          {candidates.map(row => <option key={row.id} value={row.id}>{new Date(row.startsAtUtc).toLocaleString('tr-TR')} – {new Date(row.endsAtUtc).toLocaleString('tr-TR')} · {row.reason}</option>)}</select></label>
-          {delegations.data !== undefined && delegations.data.type !== 'ok-single' ? <StateBlock state={classifyOutcome(delegations.data) as RemoteViewState<unknown>} subject={T.delegationChoice} onRetry={() => void delegations.refetch()} /> : candidates.length === 0 ? <p>{T.delegationEmpty}</p> : null}</> : null}
+          {candidates.map(row => <option key={row.id} value={row.id}>{delegationPersonLabel(people,row.delegatorUserId)} · {new Date(row.startsAtUtc).toLocaleString('tr-TR')} – {new Date(row.endsAtUtc).toLocaleString('tr-TR')} · {row.reason}</option>)}</select></label>
+          {delegations.isPending ? <StateBlock state={{kind:'initial-loading'}} subject={T.delegationChoice} />
+            : delegations.error instanceof DelegationReadFailure ? <StateBlock state={classifyOutcome(delegations.error.outcome) as RemoteViewState<unknown>} subject={T.delegationChoice}
+              onRetry={() => void (pages.length === 0 ? delegations.refetch() : delegations.fetchNextPage())} />
+            : candidates.length === 0 ? <p>{delegations.hasNextPage ? T.delegationNoMatchesYet : T.delegationEmpty}</p> : null}
+          {delegations.hasNextPage ? <><p>{T.delegationMoreAvailable}</p><Button type="button" disabled={delegations.isFetchingNextPage}
+            onClick={() => void delegations.fetchNextPage()}>{T.delegationMore}</Button></> : null}</> : null}
         <div className={styles.actions}><Button type="button" disabled={useDelegation && !delegationId || preview.approvalReasonRequired && reason.trim() === ''} onClick={() => void submit(true)}>{T.approve}</Button>
           <Button type="button" variant="secondary" disabled={useDelegation && !delegationId || reason.trim() === ''} onClick={() => void submit(false)}>{T.reject}</Button></div></fieldset> : <p>{T.closed}</p>}
     </>}

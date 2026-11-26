@@ -10,4 +10,5 @@ export const WORK_MANAGEMENT_TEXT = {
   useDelegation: 'Mevcut vekâlet kaydıyla karar ver', choose: 'Seçiniz', unavailable: 'Vekâletler okunamadı.',
   noPeople: 'Aramaya uygun kişi bulunamadı.', narrowSearch: 'Daha fazla kişi var; aramayı daraltın.',
   recorded: 'Kayıt', ownDelegator: 'Onaycı', status: 'Durum', active: 'Süre aralığı',
+  nameUnavailable: 'Kişi adı okunamadı',
 } as const

@@ -9,6 +9,7 @@ import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useScopedCommandAttempt, type AttemptStatus } from '../settings/useCommandAttempt'
 import { WorkApprovalRulesSection } from '../settings/WorkApprovalRulesSection'
 import { WorkApprovalRuleEditor } from './WorkApprovalRuleEditor'
+import { delegationPersonLabel } from './delegationPersonLabel'
 import { Button } from '../ui/Button'
 import { ApprovalFollowUpPage } from './ApprovalFollowUpPage'
 import { WORK_INBOX_KINDS, WORK_INBOX_CAPABILITIES } from './workInboxKinds'
@@ -50,7 +51,7 @@ function Delegations({company,namespace}:{readonly company:string;readonly names
     <Create company={company} namespace={namespace} manage={manage} refresh={()=>void query.refetch()} />
     {rows===null?<StateBlock state={query.data===undefined?{kind:'initial-loading'}:classifyOutcome(query.data) as RemoteViewState<unknown>} subject={T.delegations} onRetry={()=>void query.refetch()}/>
       : rows.items.length===0?<p>{T.empty}</p>:<ul>{rows.items.map(row=><li key={row.id}><p>{inboxKindText(row.kind)} · <time dateTime={row.startsAtUtc}>{new Date(row.startsAtUtc).toLocaleString('tr-TR')}</time> – <time dateTime={row.endsAtUtc}>{new Date(row.endsAtUtc).toLocaleString('tr-TR')}</time></p>
-        <p>{T.ownDelegator}: <code>{row.delegatorUserId}</code> · {T.person}: <code>{row.delegateUserId}</code></p><p>{row.reason}</p>
+        <p>{T.ownDelegator}: <span title={row.delegatorUserId}>{delegationPersonLabel(rows.people,row.delegatorUserId)}</span> · {T.person}: <span title={row.delegateUserId}>{delegationPersonLabel(rows.people,row.delegateUserId)}</span></p><p>{row.reason}</p>
         {(manage||row.delegatorUserId===shell.activeContext?.userId)?<Revoke row={row} refresh={()=>void query.refetch()}/>:row.revokedAtUtc!==null?<p>{T.inactive}</p>:null}</li>)}</ul>}
     <Button type="button" disabled={page===0} onClick={()=>setPage(p=>p-1)}>{T.previous}</Button><Button type="button" disabled={!rows?.hasMore} onClick={()=>setPage(p=>p+1)}>{T.more}</Button>
   </section>
