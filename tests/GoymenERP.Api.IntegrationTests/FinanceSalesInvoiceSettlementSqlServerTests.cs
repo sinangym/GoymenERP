@@ -161,7 +161,7 @@ public sealed class FinanceSalesInvoiceSettlementSqlServerTests
     {
         public Task<ReadResult<PartyAccountEligibility>> GetAuthorizedAsync(FinanceContext context, Guid partyId,
             Guid companyAccountId, CancellationToken cancellationToken) => Task.FromResult(
-                new ReadResult<PartyAccountEligibility>(ReadOutcome.Found, new(Party, Account, Company, true, true)));
+                new ReadResult<PartyAccountEligibility>(ReadOutcome.Found, new(Party, Account, Company, true, IsPartyActive: true)));
     }
     private sealed class Authority : IFinanceInvoiceOpenItemAdmissionAuthorityV1
     {
