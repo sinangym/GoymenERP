@@ -2761,7 +2761,11 @@
         "local_checks": {
           "frontend": "Agent 143b0240468c156a72fc9cc8384c31cc9f89d3ca: 62 passed, 0 skipped; tsc/scoped lint passed. All 15 changed frontend files match integrated source. Later explicit renewal UI is a separate pending increment.",
           "API_build_and_EF": "Agent 7b094764: API build 0 errors/0 warnings; EF10.0.8 generated additional Work migration; Work/Accounting has-pending-model-changes both exit0. Root integrated build/test compile pending.",
-          "explicit renewal UI": "Agent 1bd77957ed56e7af40428802e18918b821ead578: complete changed Accounting page test file 29/29 passed, 0 skipped; tsc/scoped lint passed. Existing native preparation form/command and stable unknown-result retry reused; successor receipt and authorized list selection verified."
+          "explicit renewal UI": "Agent 1bd77957ed56e7af40428802e18918b821ead578: complete changed Accounting page test file 29/29 passed, 0 skipped; tsc/scoped lint passed. Existing native preparation form/command and stable unknown-result retry reused; successor receipt and authorized list selection verified.",
+          "root integrated API": "Entire API integration test project compiled, including new SQL facts; 44 selected owner-host/stale-consumer tests passed, 0 failed, 0 skipped. Synthetic composition tests, not HTTP/SQL acceptance.",
+          "root Work model and registration": "17 passed, 0 failed, 0 skipped",
+          "root Accounting model": "39 passed, 0 failed, 0 skipped",
+          "root EF pending models": "LogisticsDbContext, WorkDbContext, AccountingDbContext: has-pending-model-changes each exit0; no changes"
         },
         "migrations": [
           "20261126223339_AddStaleCostProposalClosure",
@@ -2779,7 +2783,7 @@
         "hosted_ci": "NOT_RUN",
         "independent_review": "PENDING",
         "remaining": [
-          "Root integrated model/unit/consumer tests and real SQL acceptance",
+          "Real SQL and authorized HTTP/browser acceptance",
           "Component cancellation and invoice-line correction families are separate existing workflows; this increment covers shipment COGS and purchase difference proposals",
           "Train pins, full CI, browser and two exact-head independent K3 reviews"
         ],
@@ -2985,7 +2989,8 @@
           "69ffd6ccb",
           "264975943",
           "e719f413f",
-          "7e3faaaa3"
+          "7e3faaaa3",
+          "db40e1fe2"
         ],
         "reuse": [
           "Existing immutable PartyBalanceTransferCommands.ResultJson and replay authorization/payload fence",
@@ -2995,7 +3000,9 @@
         ],
         "local_checks": {
           "Finance replay tests": "5 passed, 0 skipped; original and retry correlation differ; legacy missing metadata preserved without fabrication; public JSON shape unchanged",
-          "ShareId model": "LogisticsPersistenceModelTests: 24 passed, 0 failed, 0 skipped, at 7e3faaaa3 source. First --no-restore invocation produced no tests because assets were absent; only the restored invocation counts."
+          "ShareId model": "LogisticsPersistenceModelTests: 24 passed, 0 failed, 0 skipped, at 7e3faaaa3 source. First --no-restore invocation produced no tests because assets were absent; only the restored invocation counts.",
+          "small UI texts": "Agent d85bb16b19b9d4a52b32ae7cc176ca6b6133706f: 25/25 tests, 0 skipped; tsc/scoped lint passed. Active opening-cost owner/text preserved; retired WP6 duplicate entries removed. Existing generic plan-excess approval-required owner reason localized; native API has no distinct rejected-only code.",
+          "ShareId SQL source compile": "Five SQL facts compiled with the full API integration test project; execution NOT_RUN"
         },
         "sql": "NOT_RUN",
         "browser": "NOT_RUN",
@@ -3006,8 +3013,8 @@
         "remaining": [
           "Legacy receipts without original correlation remain replayable without a fabricated original header",
           "SQL/HTTP host acceptance, train pins, hosted CI and K3",
-          "Plan-excess rejection/unused text gaps are a separate in-progress UI increment",
-          "Five ShareId SQL facts are written; real existing records and live migration acceptance NOT_RUN; downstream shipment/delivery/invoice/cost identity E2E remains required"
+          "Five ShareId SQL facts are written; real existing records and live migration acceptance NOT_RUN; downstream shipment/delivery/invoice/cost identity E2E remains required",
+          "Backend has no distinct plan-excess rejected-only problem code; UI truthfully explains missing approved sufficient quantity without claiming rejection status."
         ],
         "measurements": {
           "token": "NOT_AVAILABLE",
