@@ -49,9 +49,14 @@ public sealed class FinancePartyBalanceTransferServiceTests
         await using var run = new Run();
         await run.SeedAsync("10.00");
         var request = run.Request(await run.PreviewAsync());
-        var result = await run.Service.RecordAsync(run.Context, new("SENTETIK-legacy"), request, default);
+        var result = await run.Service.RecordAsync(run.Context, new("SENTETIK-current"), request, default);
         var stored = await run.Db.PartyBalanceTransferCommands.SingleAsync();
-        stored.ResultJson = System.Text.Json.JsonSerializer.Serialize(result, FinanceJson.CreateOptions());
+        // Seed the old JSON shape as an additional historical fixture; immutable command rows are never edited.
+        run.Db.PartyBalanceTransferCommands.Add(new FinancePartyBalanceTransferCommandRow
+        {
+            CompanyId = run.Company, KeyHash = FinanceCommandKeys.Hash("SENTETIK-legacy"), ActorId = stored.ActorId,
+            PayloadHash = stored.PayloadHash, ResultJson = System.Text.Json.JsonSerializer.Serialize(result, FinanceJson.CreateOptions()),
+        });
         await run.Db.SaveChangesAsync();
         run.Db.ChangeTracker.Clear();
         var replay = await run.Service.RecordAsync(run.Context with { CorrelationId = "SENTETIK-retry" }, new("SENTETIK-legacy"), request, default);
