@@ -39,7 +39,12 @@ public static partial class FinanceEndpoints
             if (await ReadBodyAsync<RecordFinancePartyBalanceTransferV1>(http, token) is not { } body)
                 return http.Request.HasJsonContentType() ? Results.Problem(statusCode: 400) : Results.StatusCode(415);
             var result = await service.RecordAsync(Context(company, user, correlation), new(key), body, token);
-            if (result.Replayed) http.Response.Headers["Idempotency-Replayed"] = "true";
+            if (result.Replayed)
+            {
+                http.Response.Headers["Idempotency-Replayed"] = "true";
+                if (!string.IsNullOrWhiteSpace(result.OriginalCorrelationId))
+                    http.Response.Headers["Idempotency-Original-Correlation-Id"] = result.OriginalCorrelationId;
+            }
             return result.Outcome switch
             {
                 CommandOutcome.Succeeded => Results.Ok(result),

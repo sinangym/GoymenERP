@@ -55,6 +55,7 @@ public sealed class FinancePartyBalanceTransferHttpAcceptanceTests(GoymenErpApiF
         Assert.Equal(HttpStatusCode.OK, reply.StatusCode);
         Assert.Equal(Input, owner.Input); Assert.Equal(TestCompanyIds.CompanyA, owner.Context!.CompanyId);
         Assert.Equal("SENTETIK-key", owner.Key); Assert.Equal("true", Assert.Single(reply.Headers.GetValues("Idempotency-Replayed")));
+        Assert.Equal("SENTETIK-original-transfer", Assert.Single(reply.Headers.GetValues("Idempotency-Original-Correlation-Id")));
         Assert.True(reply.Headers.CacheControl?.Private); Assert.True(reply.Headers.CacheControl?.NoStore);
     }
     private WebApplicationFactory<Program> Host(Capture owner) => factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
@@ -78,6 +79,6 @@ public sealed class FinancePartyBalanceTransferHttpAcceptanceTests(GoymenErpApiF
         { Calls++; return Task.FromResult(new FinancePartyBalanceTransferReadResultV1(ReadOutcome.NotFound, null, null)); }
         public Task<FinancePartyBalanceTransferCommandResultV1> RecordAsync(FinanceContext context, CommandMetadata metadata, RecordFinancePartyBalanceTransferV1 input, CancellationToken token)
         { Calls++; Context = context; Input = input; Key = metadata.IdempotencyKey;
-          return Task.FromResult(new FinancePartyBalanceTransferCommandResultV1(CommandOutcome.Succeeded, null, null, true)); }
+          return Task.FromResult(new FinancePartyBalanceTransferCommandResultV1(CommandOutcome.Succeeded, null, null, true, "SENTETIK-original-transfer")); }
     }
 }

@@ -97,7 +97,8 @@ public sealed record FinancePartyBalanceTransferReadResultV1(
     [property: JsonConverter(typeof(JsonStringEnumConverter<ReadOutcome>))] ReadOutcome Outcome, FinancePartyBalanceTransferPreviewV1? Preview, FinancePartyBalanceTransferViewV1? Transfer);
 
 public sealed record FinancePartyBalanceTransferCommandResultV1(
-    CommandOutcome Outcome, FinancePartyBalanceTransferViewV1? Resource, string? Code, bool Replayed = false);
+    CommandOutcome Outcome, FinancePartyBalanceTransferViewV1? Resource, string? Code, bool Replayed = false,
+    [property: JsonIgnore] string? OriginalCorrelationId = null);
 
 public interface IFinancePartyBalanceTransferServiceV1
 {

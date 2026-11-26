@@ -78,8 +78,12 @@ public sealed class FinancePartyBalanceTransferServiceV1(FinanceDbContext databa
         {
             if (await FenceAsync(context, cancellationToken) is { } replayFence) return Refused(replayFence);
             if (prior.ActorId != context.ActorId || prior.PayloadHash != payload) return Refused(CommandOutcome.IdempotencyConflict);
-            try { return (JsonSerializer.Deserialize<FinancePartyBalanceTransferCommandResultV1>(prior.ResultJson, Json)
-                ?? throw new JsonException()) with { Replayed = true }; }
+            try
+            {
+                var stored = JsonSerializer.Deserialize<StoredCommandResult>(prior.ResultJson, Json) ?? throw new JsonException();
+                // Older receipts have no original correlation. Never substitute the retry's correlation for it.
+                return new(stored.Outcome, stored.Resource, stored.Code, true, stored.OriginalCorrelationId);
+            }
             catch (JsonException) { return Refused(CommandOutcome.Unavailable); }
         }
         if (await database.PartyBalanceTransfers.AsNoTracking().AnyAsync(x => x.Id == request.TransferId, cancellationToken))
@@ -121,11 +125,13 @@ public sealed class FinancePartyBalanceTransferServiceV1(FinanceDbContext databa
         };
         database.PartyBalanceTransfers.Add(row);
         foreach (var source in snapshot.Sources) await MovePositionAsync(context, row, source, now, cancellationToken);
-        var result = new FinancePartyBalanceTransferCommandResultV1(CommandOutcome.Succeeded, View(row), null);
+        var result = new FinancePartyBalanceTransferCommandResultV1(CommandOutcome.Succeeded, View(row), null,
+            OriginalCorrelationId: context.CorrelationId);
         database.PartyBalanceTransferCommands.Add(new FinancePartyBalanceTransferCommandRow()
         {
             CompanyId = context.CompanyId, KeyHash = key, ActorId = context.ActorId,
-            PayloadHash = payload, ResultJson = JsonSerializer.Serialize(result, Json),
+            PayloadHash = payload, ResultJson = JsonSerializer.Serialize(new StoredCommandResult(
+                result.Outcome, result.Resource, result.Code, result.Replayed, result.OriginalCorrelationId), Json),
         });
         if (await FenceAsync(context, cancellationToken) is { } finalFence) return Refused(finalFence);
         audit.Enqueue(new AuditEventDraft(context.CompanyId, "finance.party-balance-transfer.recorded.v1",
@@ -136,6 +142,10 @@ public sealed class FinancePartyBalanceTransferServiceV1(FinanceDbContext databa
         await database.SaveChangesAsync(cancellationToken);
         return result;
     }
+
+    // Additive metadata in the existing immutable receipt JSON; no second command ledger or database column.
+    private sealed record StoredCommandResult(CommandOutcome Outcome, FinancePartyBalanceTransferViewV1? Resource,
+        string? Code, bool Replayed = false, string? OriginalCorrelationId = null);
 
     private async Task MovePositionAsync(FinanceContext context, FinancePartyBalanceTransferRow voucher,
         FinanceBalanceTransferSourceFact source, DateTimeOffset now, CancellationToken cancellationToken)

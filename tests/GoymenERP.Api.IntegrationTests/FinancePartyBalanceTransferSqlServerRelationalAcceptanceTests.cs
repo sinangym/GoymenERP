@@ -45,7 +45,10 @@ public sealed class FinancePartyBalanceTransferSqlServerRelationalAcceptanceTest
             var read = await reopened.Service.GetAuthorizedAsync(reopened.Context, request.TransferId, default);
             Assert.Equal(ReadOutcome.Found, read.Outcome);
             Assert.Equal("60.0000", Assert.Single(read.Transfer!.Currencies).Amount);
-            Assert.True((await reopened.Service.RecordAsync(reopened.Context, new("SENTETIK-transfer"), request, default)).Replayed);
+            var replay = await reopened.Service.RecordAsync(reopened.Context with { CorrelationId = "SENTETIK-reopened-retry" },
+                new("SENTETIK-transfer"), request, default);
+            Assert.True(replay.Replayed);
+            Assert.Equal("SENTETIK-transfer-correlation", replay.OriginalCorrelationId);
             var source = await reopened.Db.OpenItems.AsNoTracking().SingleAsync(x => x.Id == itemId);
             Assert.Equal((Party, Account, "100.0100", "100.0100", 2L),
                 (source.PartyId, source.CompanyAccountId, source.OriginalAmountText, source.OutstandingAmountText, source.Version));

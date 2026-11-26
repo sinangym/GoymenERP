@@ -23,8 +23,11 @@ public sealed class FinancePartyBalanceTransferServiceTests
         var request = run.Request(preview);
         var result = await run.Service.RecordAsync(run.Context, new("SENTETIK-key"), request, default);
         Assert.Equal(CommandOutcome.Succeeded, result.Outcome);
-        var replay = await run.Service.RecordAsync(run.Context, new("SENTETIK-key"), request, default);
+        var replay = await run.Service.RecordAsync(run.Context with { CorrelationId = "SENTETIK-retry" }, new("SENTETIK-key"), request, default);
         Assert.True(replay.Replayed);
+        Assert.Equal(run.Context.CorrelationId, result.OriginalCorrelationId);
+        Assert.Equal(result.OriginalCorrelationId, replay.OriginalCorrelationId);
+        Assert.DoesNotContain("originalCorrelationId", System.Text.Json.JsonSerializer.Serialize(result, FinanceJson.CreateOptions()));
         Assert.Single(await run.Db.PartyBalanceTransfers.ToListAsync());
         Assert.Equal(2, await run.Db.PartyBalanceAssignments.CountAsync());
         Assert.Empty(await run.Db.MoneyEvents.ToListAsync());
@@ -38,6 +41,25 @@ public sealed class FinancePartyBalanceTransferServiceTests
         Assert.Equal("100.0100", successor.Currencies.Single(c => c.CurrencyId == run.Currency).Balance.Amount.Money!.Amount);
         Assert.Single(run.Audit.Events);
         Assert.Equal(FinancePartyBalanceTransferPermissionsV1.Record, run.Audit.Events[0].PermissionCode);
+    }
+
+    [Fact]
+    public async Task Legacy_receipt_without_correlation_is_replayed_without_inventing_a_retry_correlation()
+    {
+        await using var run = new Run();
+        await run.SeedAsync("10.00");
+        var request = run.Request(await run.PreviewAsync());
+        var result = await run.Service.RecordAsync(run.Context, new("SENTETIK-legacy"), request, default);
+        var stored = await run.Db.PartyBalanceTransferCommands.SingleAsync();
+        stored.ResultJson = System.Text.Json.JsonSerializer.Serialize(result, FinanceJson.CreateOptions());
+        await run.Db.SaveChangesAsync();
+        run.Db.ChangeTracker.Clear();
+        var replay = await run.Service.RecordAsync(run.Context with { CorrelationId = "SENTETIK-retry" }, new("SENTETIK-legacy"), request, default);
+        Assert.Equal(CommandOutcome.Succeeded, replay.Outcome);
+        Assert.True(replay.Replayed);
+        Assert.Null(replay.OriginalCorrelationId);
+        Assert.Single(await run.Db.PartyBalanceTransfers.ToListAsync());
+        Assert.Single(run.Audit.Events);
     }
 
     [Fact]
