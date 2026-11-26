@@ -2,7 +2,7 @@
 
 Bu katalog çalışan yeni fonksiyonların kabul listesi değildir. 50 kaynak/test giriş noktasıdır. Her kayıtta gerçek yol, sembol/satır, SHA-256, Git blob, karar ilişkisi, uyarlama sınırı ve yeni kullanım testi bulunur.
 
-**Kaynak:** `claude/tren-2` `c24706af4de4300d4a171eca11459098d87cd14f`. 29 kaydın kaynak ve test blobları geçmiş başarılı CI ağacıyla aynıdır; 21 kayıt yalnız kaynak/test kanıtına sahiptir. Tek tek test sonuçları bu çalışmada okunmadı. Yeni kullanım için SQL, tarayıcı ve işletme kabulü yapılmadı.
+**Kaynak:** `claude/tren-2` `c24706af4de4300d4a171eca11459098d87cd14f`. 28 kaydın kaynak ve test blobları geçmiş başarılı CI ağacıyla aynıdır; 22 kayıt yalnız kaynak/test kanıtına sahiptir. Tek tek test sonuçları bu çalışmada okunmadı. Yeni kullanım için SQL, tarayıcı ve işletme kabulü yapılmadı.
 
 Makine kaynağı: [REFERANS_KOD_KATALOGU_v1.json](REFERANS_KOD_KATALOGU_v1.json). Doğrulayıcı: `python3 -I -S -B tools/verify_delivery_reference_catalog.py`. Windows’ta kurulu Python yürütücüsü kullanılabilir.
 
@@ -23,7 +23,7 @@ Makine kaynağı: [REFERANS_KOD_KATALOGU_v1.json](REFERANS_KOD_KATALOGU_v1.json)
 | REF-MFG-02 | Üretim iadesi ve çıktı portu | SMALL_EXTENSION | Kaynak/test ve yeni hedefli yerel kontrol |
 | REF-SUBCONTRACT-01 | Gelen fason tamamlama kaynağı | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
 | REF-LOGISTICS-01 | Yükleme/sevk owner servisi | SMALL_EXTENSION | Kaynak/test var |
-| REF-OPENITEM-01 | Faturadan tek açık kalem | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
+| REF-OPENITEM-01 | Faturadan tek açık kalem | DIRECT_REUSE | Kaynak/test; güncel SQL kabulü bekliyor |
 | REF-ALLOCATE-01 | Ödeme dağıtımı ve tek para hareketi | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
 | REF-EXPENSE-01 | Masraf ödemesi ve audit/idempotency | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |
 | REF-CREDIT-01 | Kredi hareketi öneri ve karar | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |

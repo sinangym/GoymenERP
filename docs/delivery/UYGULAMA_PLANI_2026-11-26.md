@@ -48,7 +48,7 @@ Codex backend/DB/port ve sözleşme; Claude frontend/tarayıcı; mevcut koordina
 | W4-MUHASEBE/CORRECTION-MIN | P0 / K3 | SOURCE_REVIEW_REQUIRED | W4-MUHASEBE/CLASSIFY-MIN |
 | W4-FINANS/EXPENSE-CATALOG | P0 / K3 | CONTRACT_REQUIRED | — |
 | W2-SATIS/CLOSURE-AXES | P0 / K3 | SOURCE_PARTIALLY_IMPLEMENTED_LOCAL | — |
-| W4-RISK/SECOND-SHIPMENT | P0 / K3 | REPRODUCTION_REQUIRED | — |
+| W4-RISK/SECOND-SHIPMENT | P0 / K3 | SOURCE_PARTIALLY_IMPLEMENTED_LOCAL | — |
 | W2-ACIKKALEM/LEGAL-IDENTITY | P0 / K3 | REPRODUCTION_REQUIRED | — |
 | W3-URETIM/INPUT-PIECES | P0 / K3 | SOURCE_IMPLEMENTED_LOCAL | — |
 | W3-URETIM/FIVE-ENGINES | P0 / K3 | ACCEPTANCE_REQUIRED | W3-URETIM/INPUT-PIECES |
@@ -156,3 +156,6 @@ WP8 Sales kaynak eklemesi: `8882e4ecb` (`6405e21db` agent kaynağı). Sipariş v
 LOJ-D21 kısmi kaynak teslimi `e719f413f`/`7e3faaaa3`: şirket+ShareId filtresiz SQL tekilliği, iptal sonrası kimliğin korunması ve terminal replay yarışı mevcut altyapıya bağlandı. EF10.0.8 ile üretilen migration, eski çakışmada 52350 ile durur; geçmiş hareket varken Down 52351 ile reddedilir. Model testleri 24/24 geçti (0 skip); beş SQL senaryosu kaynakta, gerçek SQL ve geçmiş kayıt kontrolü NOT_RUN. YOL-D40 yenileme UI eki `92bdc40fb`: mevcut komutla yeni öneri, eski kapanışın korunması, aynı belirsiz isteğin güvenli tekrarı; değişen ekran dosyasının tüm 29 testi agent kaynağında geçti (0 skip).
 
 Yerel birleşik kontrol: API test projesi yeni SQL kaynaklarıyla derlendi; owner/Work/stale tüketici hedefinde 44/44, Work model/kayıt hedefinde 17/17, Muhasebe model hedefinde 39/39 geçti (tümü 0 skip). Logistics/Work/Accounting için EF pending-model kontrolü exit0. Bunlar gerçek SQL veya HTTP/tarayıcı kabulü değildir. `db40e1fe2` küçük UI eki: eski WP6 açılış maliyeti metinleri kaldırıldı; aktif WP5 owner/metin korunuyor; 25/25 test ve tsc/lint agent kaynağında geçti. Owner ayrı ret kodu vermediği için plan üstü sevk uyarısı gerçekte söylediği onaylı/yeterli ek miktar eksiğini açıklar.
+
+
+İkinci sevkiyat risk kaynağı `c54147e79`/`51a59cf5d`: Finance açık alacağı ve işlenmiş fatura kümesi aynı Serializable okumada, Sales native kesinleşmiş fatura/pay geçmişiyle bağlandı. Mevcut hesap motoru ve resmi ters kayıt yolu korundu; tamamen mahsup edilmiş fatura tekrar faturalanmamış sevk sayılmaz. Agent `4c3945058` kaynağında tam Sales 2447/2447 geçti (0 skip); bütün Sales/Finance kaynakları ve Sales test ağacı birleşik dalda aynı. API integration projesi yeni SQL kaynağıyla derlendi. Gerçek SQL, normal Logistics→Sales→Finance zinciri, tarayıcı, tam CI ve K3 bekler; paket bütünü kabul edilmedi. Değişen test blobu nedeniyle REF-OPENITEM-01 eski CI ağacı eşliğinden kaynak/test kanıtına indirildi; eski kanıt yeni kullanım kabulü sayılmadı.

@@ -726,15 +726,15 @@
           "path": "tests/GoymenERP.Api.IntegrationTests/FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests.cs",
           "line": 34,
           "anchor": "public async Task A_sales_invoice_becomes_receivables_and_the_same_admission_replays_once()",
-          "sha256": "d5a34682a0ef42e0dd9581d7feb9758a1944a2e34040a5db99ce7dcb90e877ea",
-          "git_blob": "4f5fc472aa94cacaaffc595ab4d8ff882faa8bd0"
+          "sha256": "89e8fe6406d650d158719dbec7391c15813234852277980c05dc799b23687b6c",
+          "git_blob": "39c6ee795fea37f5360196ab30af0ac4526e1bab"
         }
       ],
-      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
-      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "source_commit": "51a59cf5dff47fdc4c09d172b06cf944cc3ad9eb",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
-      "sql_evidence": "HISTORICAL_SUITE_ONLY_NOT_INDIVIDUAL_RESULT",
+      "sql_evidence": "HISTORICAL_SUITE_ONLY_NOT_CURRENT_SOURCE_ACCEPTANCE",
       "invariants": [
         "CompanyId ve güncel yetki",
         "Owner modül veri sahipliği",
@@ -752,7 +752,9 @@
         "SAT-D208",
         "SAT-D86"
       ],
-      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
+      "previous_source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "previous_historical_evidence": "HISTORICAL_CI_TREE_MATCH"
     },
     {
       "id": "REF-ALLOCATE-01",

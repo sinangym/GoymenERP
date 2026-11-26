@@ -898,7 +898,7 @@
       "backlog_parent": "W4-RISK",
       "title": "İkinci sevk risk kaynağı ve çift sayım",
       "group": "FIRST_USE",
-      "status": "REPRODUCTION_REQUIRED",
+      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P0",
       "risk": "K3",
       "scope": "Mevcut EvaluateShipmentRiskGateAsync hesabını koruyup faturalanmış/faturalanmamış/açık kalem owner zincirini izle; yalnız kopuk bağlantıyı düzelt.",
@@ -920,7 +920,10 @@
       ],
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
-        "Risk gate deterministik ve fail-closed; önceki ikinci sevk bulgusunun canlı tekrar kanıtı henüz yok; otomatik bug sayılmaz."
+        "Finance V1 implementation did not supply the existing V2 processed-invoice contract; Sales now composes native finalized invoice/share history with the same Finance snapshot as open receivables.",
+        "Existing deterministic risk calculator, admission and allocation rules are reused. Awaiting-Finance is a sub-row of shipped-unbilled; it is not added twice.",
+        "Fully settled finalized invoices stay in processed membership with zero receivables. Official cancellation removes membership only when the native Finance reversal has actually completed.",
+        "Foreign-company, unavailable processed membership, missing native identity and changing history are fail-closed; no partial risk total or legacy fallback."
       ],
       "decisions": [
         "FNS-D30",
@@ -931,19 +934,22 @@
       "existing_tests": [
         "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.ShipmentRiskGate.cs",
         "tests/GoymenERP.Api.IntegrationTests/FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests.cs",
-        "tests/GoymenERP.Api.IntegrationTests/LogisticsInstructionSqlServerRelationalAcceptanceTests.ShipmentRiskGate.cs"
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsInstructionSqlServerRelationalAcceptanceTests.ShipmentRiskGate.cs",
+        "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.RiskProcessedInvoices.cs",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests.RiskProcessedInvoices.cs"
       ],
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
         "K3 mutation/migration: gerçek SQL; ilgili UI: gerçek owner API ile tarayıcı ve erişim iptali.",
-        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
+        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı.",
+        "Real SQL must prove admission/reversal and fully settled membership; the native second Logistics shipment through the Sales gate and Finance V2 remains a separate integrated acceptance requirement."
       ],
       "business_acceptance": [
         "İlk sevk+kesin fatura sonrası ikinci sevk doğru kaynaklı risk döndürür; aynı borç iki kez sayılmaz; kaynaksızsa hold."
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "Complete real SQL and native shipment-chain acceptance at train closure; no new risk formula or activation.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -954,7 +960,34 @@
         "tests/GoymenERP.Api.IntegrationTests/LogisticsInstructionSqlServerRelationalAcceptanceTests.ShipmentRiskGate.cs",
         "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.ShipmentRiskGate.cs"
       ],
-      "change_files": []
+      "change_files": [
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceModuleExtensions.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceSalesPartyRiskReadPortV1.ProcessedInvoices.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceSalesPartyRiskReadPortV1.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.RiskCheck.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.RiskProcessedInvoices.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/SalesModuleExtensions.cs",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests.RiskProcessedInvoices.cs",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.RiskProcessedInvoices.cs"
+      ],
+      "execution": {
+        "source_commits": [
+          "c54147e79",
+          "51a59cf5d"
+        ],
+        "agent_source_commit": "4c39450580fde8019efcddfb51616c29df4ac10d",
+        "local_checks": {
+          "Sales full suite": "2447 passed, 0 skipped, exit 0 at agent 4c3945058; integrated Sales/Finance sources and complete Sales unit tree match that source exactly.",
+          "API integration compilation": "Agent production 57c6a53a0: exit 0, 0 warnings, 0 errors, including new SQL test source; followup changes only Sales test assertions."
+        },
+        "real_sql": "NOT_RUN: one real Finance admission/official-reversal scenario written and compiled. Native Logistics-to-Sales-to-Finance V2 and fully settled membership SQL acceptance still pending.",
+        "hosted_ci": "NOT_RUN",
+        "browser": "NOT_RUN",
+        "independent_k3": "PENDING",
+        "reuse": "Existing V1 exact-decimal receivables calculator, Finance admission/reversal and Sales immutable native invoice/share history; no schema, formula, grant or production activation change."
+      }
     },
     {
       "id": "W2-ACIKKALEM/LEGAL-IDENTITY",
