@@ -47,7 +47,7 @@ Codex backend/DB/port ve sözleşme; Claude frontend/tarayıcı; mevcut koordina
 | W4-MUHASEBE/CLASSIFY-MIN | P0 / K3 | CONTRACT_REQUIRED | — |
 | W4-MUHASEBE/CORRECTION-MIN | P0 / K3 | SOURCE_REVIEW_REQUIRED | W4-MUHASEBE/CLASSIFY-MIN |
 | W4-FINANS/EXPENSE-CATALOG | P0 / K3 | CONTRACT_REQUIRED | — |
-| W2-SATIS/CLOSURE-AXES | P0 / K3 | SOURCE_REVIEW_REQUIRED | — |
+| W2-SATIS/CLOSURE-AXES | P0 / K3 | SOURCE_PARTIALLY_IMPLEMENTED_LOCAL | — |
 | W4-RISK/SECOND-SHIPMENT | P0 / K3 | REPRODUCTION_REQUIRED | — |
 | W2-ACIKKALEM/LEGAL-IDENTITY | P0 / K3 | REPRODUCTION_REQUIRED | — |
 | W3-URETIM/INPUT-PIECES | P0 / K3 | SOURCE_IMPLEMENTED_LOCAL | — |
@@ -128,4 +128,13 @@ Sinan’ın açık talimatıyla Claude kapasitesi yokken frontend dahil gelişti
 
 Yerel kanıt: Finans 1876, Inventory 29, API 13, frontend 452 test; toplam 2370, atlanan 0. `tsc -b`, lint, sınırlı staged secret scan ve referans/parite kontrolü temiz. İki gerçek SQL testi yazıldı ve derlendi, **NOT_RUN**. Sayı 312 izin / 17 Critical; rol/grant ataması yok. Yeni migration yok. Shell authority/OpenAPI/guard/recovery pinleri kapanışa bırakıldı; genel host/runtime kabulü bu nedenle ileri sürülmez.
 
-WP8 **kısmi kaynak teslimidir**: diğer owner türleri ve 64 akış kanıtı, yönetim ekranında tür bazlı kural düzenleme, vekâlet geçmişinde okunur kişi adları ve gelen vekâletlerin tam sayfalama deneyimi devam eder. SQL, gerçek API ile tarayıcı, tam CI ve iki K3 incelemesi bekler. Satış kaynak/finans kapanış soruları cevap bekler; bu kapı bağımsız paketleri durdurmaz.
+WP8 **kısmi kaynak teslimidir**: diğer owner türleri ve 64 akış kanıtı, vekâlet geçmişinde okunur kişi adları ve gelen vekâletlerin tam sayfalama deneyimi devam eder. SQL, gerçek API ile tarayıcı, tam CI ve iki K3 incelemesi bekler. Satış kaynak/finans kapanış soruları SAT-D478/479 ile cevaplandı; owner bağlantılarının uygulaması sürer.
+
+
+27 Kasım ek teslimi: SAT-D478/479 ve DEC-SAL-001 sicil eşliği, normal satış kapanışının kaynak payı ve geçerli mahsup koşullarını kaydeder. Banka mutabakatı bağımsızdır; bütün eksenler ve insanın kapatma komutu korunur.
+
+`T2/WP8` kural düzenleme kaynak teslimi: `ea68692d1` / `99e7e7aed`. Mevcut tür bazlı PUT komutu, strict decoder ve durable işlem günlüğü kullanıldı. Owner onay izni salt okunur; süre sınıfı, yükseltme izni ve gerekçe beklenen sürümle kaydedilir. Belirsiz sonuçta aynı anahtar/payload, şirket/oturum ayrımı ve stale conflict korunur. Son frontend ağacı üzerinde 53/53 test, TypeScript ve scoped lint geçti; mevcut sayfanın Fast Refresh uyarısı sürer. Yeni izin veya atama yok; 312/17 eşliği korunur.
+
+`W2-SATIS/CLOSURE-AXES` kısmi backend teslimi: `01697d4f7`. Finance, bütün fatura taksitlerinin geçerli kayıt/mahsup/ters kayıt/iade ve mevcut bakiye devri kanıtını salt okunur porttan sunar; yeni para hareketi üretmez. Finans 1898/1898 test geçti, atlanan 0. İki SQL testi yazıldı ve API integration projesi 0 hata/0 uyarıyla derlendi; gerçek SQL **NOT_RUN**. Sales fatura/sevk kaynak kümesi ve eksen kompozisyonu henüz bağlı değildir; `NoSource` kapanış engeli korunur. Kaynak ekseninde henüz siparişleşmemiş talep ve ortak belgenin sipariş payı özellikle kapsanacaktır.
+
+SQL, gerçek API ile tarayıcı, pinler, tam hosted CI ve iki bağımsız K3 incelemesi bekler. Bu teslimler tren/main kabulü değildir. 41 paket ve 50 referans korunmuştur; yeni paralel backlog oluşturulmamıştır.

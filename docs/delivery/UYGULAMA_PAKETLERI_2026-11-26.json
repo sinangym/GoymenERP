@@ -757,7 +757,7 @@
       "backlog_parent": "W2-SATIS",
       "title": "Satış normal kapanış owner bağlantıları",
       "group": "FIRST_USE",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P0",
       "risk": "K3",
       "scope": "Kaynak/tahsis, faturalama ve finans kapanış eksenlerini owner okuma portlarından bağla; mevcut SAT-D32 hesabı değişmez.",
@@ -779,11 +779,17 @@
       ],
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
-        "ISalesOrderOwnerAxesSourceV1 tüketimi var; src/backend içinde somut kayıt/implementasyon bulunmadı; NoSource ReadyToClose=false bırakır."
+        "ISalesOrderOwnerAxesSourceV1 tüketimi var; src/backend içinde somut kayıt/implementasyon bulunmadı; NoSource ReadyToClose=false bırakır.",
+        "SAT-D478/479: 27 Kasım doğrudan kullanıcı cevabı kaydedildi; banka mutabakatı bağımsız, yalnız ilgili sipariş kaynak payı esas.",
+        "Purchasing mevcut linked-supply reader kendi Sales kaynaklı request satırının kalanını hesaplıyor; bütün ortak sipariş kapanışını beklemiyor. Ancak yalnız onaylı alış siparişi satırlarını okuması, henüz siparişleşmemiş talebi tek başına kanıtlamaz.",
+        "Manufacturing mevcut linked-supply reader tek SalesOrderLine bağlantılı planın açık emrini okuyor. Gerçek sevk kaynak kanıtı ve kaynak yükümlülüklerinin eksiksiz kapsamı aggregate bağlanmadan Completed sayılmayacak.",
+        "Finance salt okunur settlement portu kaynakta kayıtlı; Sales owner axes kompozisyonu henüz bağlı değil, mevcut NoSource kapanış engeli korunur."
       ],
       "decisions": [
         "SAT-D32",
-        "DEC-SAL-001"
+        "DEC-SAL-001",
+        "SAT-D478",
+        "SAT-D479"
       ],
       "depends_on": [],
       "open_decisions": [],
@@ -794,14 +800,16 @@
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
         "K3 mutation/migration: gerçek SQL; ilgili UI: gerçek owner API ile tarayıcı ve erişim iptali.",
-        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
+        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı.",
+        "SAT-D478: sadece kaynak planı yeterli değil; gerçek sevk bağlantısı, açık talep/tedarik/üretim/tahsis yükümlülükleri ve ortak belgenin yalnız bu sipariş payı test edilir.",
+        "SAT-D479: tüm kesinleşmiş faturaların tüm taksitleri, geçerli mahsup/iptal/ters kayıt ve bakiye devriyle doğrulanır; beklenen ödeme kapanış sağlamaz; banka mutabakatı gecikmesi kapanışı engellemez."
       ],
       "business_acceptance": [
         "Kısmi sevk/fatura/tahsilatta doğru ayrı eksenler; tüm koşullar tamamlanınca normal kapat; force-close ikame değil."
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "Finance owner portunu doğrula; Sales içindeki kesinleşmiş fatura/sevk kanıtını ve tam kaynak yükümlülüğü okumasını bağla. Eksik owner kanıtında NoSource/Unreadable; bütün eksenler ve insan normal kapatma komutu korunur.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -810,7 +818,56 @@
         "tests/GoymenERP.Api.IntegrationTests/FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests.cs",
         "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.Status.cs"
       ],
-      "change_files": []
+      "change_files": [
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Contracts/FinanceSalesInvoiceSettlementV1.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceSalesInvoiceSettlementReaderV1.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceModuleExtensions.cs",
+        "tests/GoymenERP.Finance.UnitTests/FinanceSalesInvoiceSettlementTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceSalesInvoiceSettlementSqlServerTests.cs"
+      ],
+      "execution": {
+        "source_commit": "01697d4f7be72c945aa4184cdf623d7b9dade6cc",
+        "source_commits": [
+          "54332b9c8",
+          "6c3b010c5",
+          "6c2ab25a1",
+          "01697d4f7"
+        ],
+        "local_checks": {
+          "Finance.UnitTests": "1898 passed, 0 skipped; includes 22 new owner evidence tests",
+          "Api.IntegrationTests build": "0 errors, 0 warnings; OpenApiGenerateDocumentsOnBuild=false",
+          "new_SQL_facts": "2 written and compiled; NOT_RUN"
+        },
+        "reuse": [
+          "FinanceExactDecimalText exact arithmetic",
+          "FinanceAllocationPositions.Select existing beneficiary/transfer resolver",
+          "existing invoice admission receipt, allocations, source state, recorded receipt/money event and return-credit proof",
+          "existing admission/allocation/release commands in SQL source"
+        ],
+        "remaining": [
+          "Sales-owned authoritative finalized invoice set and invoicing axis",
+          "Full actual-shipment source evidence and all order-share supply obligations, including unconverted linked requests",
+          "API/Sales owner axes composition with caller fresh authorization fence",
+          "Real SQL, browser, train pins, full CI and two independent K3 reviews"
+        ],
+        "sql": "NOT_RUN",
+        "browser": "NOT_RUN",
+        "hosted_ci": "NOT_RUN",
+        "independent_review": "PENDING",
+        "migration": null,
+        "new_permissions": [],
+        "limitations": [
+          "State-only read: 128 invoice IDs, 4096 rows per table query, double snapshot; no amount/currency disclosure",
+          "Unsupported or ambiguous collection proof remains Unknown; old successful CI is not acceptance of this port",
+          "SourceVersion identifies admitted invoice, not a durable settlement concurrency token"
+        ],
+        "measurements": {
+          "token": "NOT_AVAILABLE",
+          "development_duration": "NOT_SEPARATELY_MEASURED",
+          "test_time": "Finance full suite ~5s excluding build",
+          "rework": "Source beneficiary/global allocation proof strengthened; two compile-time contract mismatches corrected before successful build"
+        }
+      }
     },
     {
       "id": "W4-RISK/SECOND-SHIPMENT",
@@ -1652,7 +1709,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Continue remaining owner adapters against the 64-flow map, per-kind rule editing and delegation name/paging UX; then train SQL/browser/pins/full CI/two K3 reviews.",
+      "next_action": "Continue other owner adapters against the 64-flow map and delegation name/paging UX; per-kind rule editor source delivered. Train SQL/browser/pins/full CI/two K3 reviews remain.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -1707,7 +1764,12 @@
         "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs",
         "tests/GoymenERP.Inventory.UnitTests/InventoryOpeningCostWorkInboxSourceTests.cs",
         "tests/GoymenERP.Inventory.UnitTests/InventoryShellCapabilityProviderTests.cs",
-        "tools/relational_inventory/finance.txt"
+        "tools/relational_inventory/finance.txt",
+        "src/frontend/goymen-erp-web/src/settings/workApprovalRulesApi.ts",
+        "src/frontend/goymen-erp-web/src/settings/workApprovalRulesContract.ts",
+        "src/frontend/goymen-erp-web/src/work/WorkApprovalRuleEditor.tsx",
+        "src/frontend/goymen-erp-web/src/work/WorkApprovalRuleEditor.test.tsx",
+        "src/frontend/goymen-erp-web/src/work/WorkApprovalRuleEditorText.ts"
       ],
       "ownership_lease": {
         "branch": "codex/erp-completion-20261126",
@@ -1747,7 +1809,6 @@
         ],
         "remaining": [
           "Other owner decision adapters and all 64 flow acceptance evidence",
-          "Per-kind rule editing in the Work management screen; current rules table and existing duration policy route are reused",
           "Delegation history display-name enrichment and complete incoming-delegation paging UX",
           "Actual SQL, HTTP/runtime browser acceptance, shell/OpenAPI/guard/recovery pins, full CI and two independent exact-head K3 reviews"
         ],
@@ -1765,7 +1826,36 @@
           "source_delta": "40 files; 1295 added / 42 removed lines including tests and existing plan lease",
           "test_time": "Finance ~5s, Inventory ~1s, API ~56ms excluding builds; frontend final run 25.57s",
           "rework": "Preserved malformed-input validation before opening cash transaction; final commit check only for successful decisions; synthetic remount fixture bound to actual session; scoped navigation and two-person picker corrected"
-        }
+        },
+        "increments": [
+          {
+            "source_commit": "99e7e7aed59f8fb2e6292d1e0c0e814ce3a4c832",
+            "source_commits": [
+              "ea68692d1",
+              "99e7e7aed"
+            ],
+            "scope": "Work management per-kind duration/escalation rule editor; native owner command, exact version and existing permission; no approver grant editing",
+            "local_checks": {
+              "frontend": "53 passed, 0 skipped in editor and existing duration regression tests",
+              "frontend tsc": "exit 0",
+              "frontend lint": "exit 0; existing WorkManagementPage Fast Refresh warning only"
+            },
+            "evidence_scope": "Agent test head 4747dd6c9; git diff of entire frontend tree against integrated root head is empty (checkout newlines may differ).",
+            "reuse": [
+              "WorkApprovalRulesSection query and strict decoder",
+              "existing PUT work/approval-rules/{kind}",
+              "useScopedCommandAttempt durable company/session-scoped journal"
+            ],
+            "remaining": [
+              "Real owner API browser, SQL/CI/K3 train acceptance"
+            ],
+            "measurements": {
+              "token": "NOT_AVAILABLE",
+              "test_time": "combined frontend 10.76s",
+              "rework": "WP2 escalation default decoder and fresh success receipt exact payload/version matching fixed"
+            }
+          }
+        ]
       }
     },
     {
