@@ -2892,11 +2892,11 @@
         "ShareId kararı yalnız ilgili stok/maliyet değişikliğini bekletir; replay başlığı ve Türkçe metin bağımsızdır.",
         "Party balance transfer original correlation persists additively inside existing immutable command ResultJson; no schema migration or extra ledger is needed. Prior handoff migration assumption is not applicable to this implementation."
       ],
-      "decisions": [],
-      "depends_on": [],
-      "open_decisions": [
-        "Q-SHAREID"
+      "decisions": [
+        "LOJ-D21"
       ],
+      "depends_on": [],
+      "open_decisions": [],
       "existing_tests": [
         "tests/GoymenERP.Api.IntegrationTests/FinanceExpensePaymentSqlServerRelationalAcceptanceTests.PartyCarryLedger.cs",
         "tests/GoymenERP.Manufacturing.UnitTests/ProductionLineageShareCalculatorTests.cs",
@@ -2905,7 +2905,8 @@
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
         "K3 mutation/migration: gerçek SQL; ilgili UI: gerçek owner API ile tarayıcı ve erişim iptali.",
-        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
+        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı.",
+        "LOJ-D21: SQL CompanyId+ShareId uniqueness across instructions; preflight existing duplicates aborts migration without rewriting history. Cancelled instruction shares retain identity; same-key replay and concurrent cross-instruction duplicate cannot create a second physical/cost fact."
       ],
       "business_acceptance": [
         "Aynı talimat payı ikinci maliyet üretemez; replay özgün correlation; test assertions gevşetilmez."
@@ -3252,8 +3253,9 @@
       "id": "Q-SHAREID",
       "question": "ShareId farklı talimatlarda maliyet kaynağı tekilliği",
       "recommendation": "Önce mevcut karar/üretici kimliği araştırması; ikinci maliyet üretemeyen owner tekilliği, kapsamı kararsızsa soru.",
-      "blocks": "Stok/maliyet migration",
-      "kind": "SOURCE_RESEARCH_BEFORE_USER_QUESTION"
+      "blocks": "No unresolved business decision; source/SQL implementation and acceptance remain.",
+      "kind": "ANSWERED_BY_USER",
+      "answer": "LOJ-D21; 27 November direct user reply. Company-wide immutable identity, no cross-instruction reuse, historical conflict preflight, no automatic historical rewrite."
     },
     {
       "id": "Q-EXCEPTIONS",

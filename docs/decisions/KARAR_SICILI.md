@@ -1,5 +1,7 @@
 # Göymen ERP Karar Sicili v1.0
 
+Son tarihli ek karar: [LOJ-D21 — şirket genelinde hareket payı kimliği ve geçmiş çakışma kapısı](SINAN_KARARLARI_2026-11-27_LOJISTIK_SHARE_ID.md). Sinan'ın 27 Kasım doğrudan cevabıdır; aşağıdaki kaynak önceliğine göre uygulanır.
+
 Bu sicil, Master Rapor v3.0 ile 26 Ağustos 2026 tarihli son kullanıcı cevaplarını uygulama kararlarına dönüştürür.
 
 ## Durumlar
