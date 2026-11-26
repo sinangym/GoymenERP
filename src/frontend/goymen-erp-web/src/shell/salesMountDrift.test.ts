@@ -10,9 +10,13 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { matchPath } from 'react-router'
+import { matchPath, matchRoutes } from 'react-router'
 import { CAPABILITY, CAPABILITY_ROUTE } from './capabilities'
-import { SALES_CAPABILITY, SALES_POOL_CAPABILITY_ID, SALES_POOL_ROUTE, SALES_ROUTE, salesDetailPath } from '../sales/capabilities'
+import { SALES_WORK_DECISION_CAPABILITY, SALES_WORK_DECISION_ROUTE, SALES_CAPABILITY, SALES_POOL_CAPABILITY_ID, SALES_POOL_ROUTE, SALES_ROUTE, salesDetailPath } from '../sales/capabilities'
+import { shellRoutes } from './router'
+import { workRoutes } from '../work/workRoutes'
+import { WORK_ROUTE } from '../work/workText'
+import { WORK_MANAGEMENT_ROUTE } from '../work/WorkManagementPage'
 import { CAPABILITY_NAV_LABEL, NAV_CAPABILITIES, NAV_GROUPS } from './navigation'
 
 describe('shell ↔ Sales lane capability ids', () => {
@@ -22,6 +26,25 @@ describe('shell ↔ Sales lane capability ids', () => {
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesOfficialInvoiceCancellation]).toBe('Resmî fatura iptal kaydı')
     expect(NAV_CAPABILITIES).toContain(CAPABILITY.salesOfficialInvoiceCancellation)
     expect(NAV_GROUPS.find((group) => group.id === 'sales')?.entries).toContain(CAPABILITY.salesOfficialInvoiceCancellation)
+  })
+
+  it.each(['order', 'invoice'] as const)('mounts the Sales %s purpose route exactly once ahead of the legacy generic detail', key => {
+    const capability = SALES_WORK_DECISION_CAPABILITY[key]
+    const path = SALES_WORK_DECISION_ROUTE[key]
+    expect(Object.values(CAPABILITY)).toContain(capability)
+    expect(CAPABILITY_ROUTE[capability]).toBe(path)
+    expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
+    expect(NAV_CAPABILITIES).not.toContain(capability)
+    const mounted = workRoutes.filter(route => route.path === path.slice(1))
+    expect(mounted).toHaveLength(1)
+    const url = path.replace(':approvalId', 'cccccccc-0000-4000-8000-0000000000f1')
+    // Both patterns match; static Sales kind must beat legacy :kind and the catch-all.
+    expect(matchPath(WORK_ROUTE.approvalDetail, url)).not.toBeNull()
+    expect(matchRoutes(shellRoutes, url)?.at(-1)?.route).toBe(mounted[0])
+    for (const staticPath of [WORK_ROUTE.queue, WORK_MANAGEMENT_ROUTE]) {
+      expect(matchPath(path, staticPath)).toBeNull()
+      expect(matchRoutes(shellRoutes, staticPath)?.at(-1)?.route.path).toBe(staticPath.slice(1))
+    }
   })
 
   it('declares the same three ids the lane does', () => {
@@ -37,6 +60,7 @@ describe('shell ↔ Sales lane capability ids', () => {
     // UI-20: the two S-01 pool LISTS are named in the sidebar too (their routes stay the lane's pool gates).
     const laneRoutedIds = [
       ...(Object.values(SALES_CAPABILITY) as string[]).filter((id) => id !== SALES_CAPABILITY.ordersApprove),
+      ...Object.values(SALES_WORK_DECISION_CAPABILITY),
       SALES_POOL_CAPABILITY_ID.requestsList,
       SALES_POOL_CAPABILITY_ID.quotesList,
     ]

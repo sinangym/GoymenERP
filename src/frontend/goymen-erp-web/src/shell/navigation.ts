@@ -271,6 +271,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // ORG-05: its only entry point is the sidebar.
   'organization.company.tax-id': 'Şirket Vergi Numarası',
   'sales.drafts.list': 'Satış Siparişleri',
+  'sales.order-draft.work-decision': '',
+  'sales.invoice.work-decision': '',
   // K5: creation is reached through the list's authorised action, never a parallel sidebar entry.
   'sales.drafts.create': '',
   // Nor this one: the 360 is reached from a list row, never from the sidebar.

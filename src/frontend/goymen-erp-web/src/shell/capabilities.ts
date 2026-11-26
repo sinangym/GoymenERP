@@ -154,6 +154,9 @@ export const CAPABILITY = {
   organizationCompanyTaxId: 'organization.company.tax-id',
   /** S-02 sales order draft list. Route `/satis/siparisler`, owner the Sales lane (SİPARİŞ). */
   salesDraftsList: 'sales.drafts.list',
+  /** Sales-owned purpose routes mounted by Work; no browse grant required. */
+  salesOrderWorkDecision: 'sales.order-draft.work-decision',
+  salesInvoiceWorkDecision: 'sales.invoice.work-decision',
   /** S-04 Sales order 360, one draft. Route `/satis/siparisler/:draftId`. A SEPARATE grant from the list. */
   salesDraftsDetail: 'sales.drafts.detail',
   /** S-03 new sales order draft. Route `/satis/siparisler/yeni`. A SEPARATE grant from reading. */
@@ -482,6 +485,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // ORG-05: a static sibling of the work-centre list; no url matches it and any other Organization route.
   [CAPABILITY.organizationCompanyTaxId]: '/ayarlar/organizasyon/sirket-vergi-no',
   [CAPABILITY.salesDraftsList]: '/satis/siparisler',
+  [CAPABILITY.salesOrderWorkDecision]: '/onaylarim/sales.order-draft.v1/:approvalId',
+  [CAPABILITY.salesInvoiceWorkDecision]: '/onaylarim/sales.invoice.v1/:approvalId',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a draft id.
   [CAPABILITY.salesDraftsCreate]: '/satis/siparisler/yeni',
   [CAPABILITY.salesDraftsDetail]: '/satis/siparisler/:draftId',

@@ -38,6 +38,8 @@ import { PRODUCT_LIST_TEXT } from '../product/productText'
 import { productPage } from '../product/testHarness'
 import { workRoutes } from '../work/workRoutes'
 import { reportingRoutes } from '../reporting/reportingRoutes'
+import { SALES_WORK_DECISION_CAPABILITY, SALES_WORK_DECISION_ROUTE, SALES_ROUTE } from '../sales/capabilities'
+import { WORK_DECISION_TEXT } from '../work/workDecisionText'
 import { APPROVALS_TEXT } from '../work/workText'
 
 const COMPANY = 'aaaaaaaa-0000-0000-0000-000000000001'
@@ -190,6 +192,30 @@ describe('shell mounts the D-05 Onaylarım routes on ANY connected owner\'s own 
     await waitFor(() => expect(notFoundBlock()).not.toBeNull())
     expect(screen.queryByRole('heading', { level: 1, name: APPROVALS_TEXT.heading })).toBeNull()
     expect(calls.filter((url) => BUSINESS_PATHS.some((p) => url.includes(p)))).toEqual([])
+  })
+})
+
+describe('Sales purpose decisions through the real shell', () => {
+  it.each(['order', 'invoice'] as const)('opens %s with only its purpose capability and no Sales browse grant', async key => {
+    const calls = installFetch([SALES_WORK_DECISION_CAPABILITY[key]])
+    await renderShellAt(SALES_WORK_DECISION_ROUTE[key].replace(':approvalId', 'cccccccc-0000-4000-8000-0000000000f1'))
+    expect(await screen.findByRole('heading', { level: 1, name: WORK_DECISION_TEXT.title })).toBeTruthy()
+    await waitFor(() => expect(calls.some(url => url.includes('/work/decisions/'))).toBe(true))
+    expect(calls.some(url => url.includes('/api/v1/sales/'))).toBe(false)
+    expect(notFoundBlock()).toBeNull()
+  })
+  it.each(['order', 'invoice'] as const)('keeps %s closed with browse grants but no purpose capability', async key => {
+    const calls = installFetch([CAPABILITY.salesDraftsList, CAPABILITY.salesDraftsDetail, CAPABILITY.salesInvoicesList])
+    await renderShellAt(SALES_WORK_DECISION_ROUTE[key].replace(':approvalId', 'cccccccc-0000-4000-8000-0000000000f1'))
+    await waitFor(() => expect(notFoundBlock()).not.toBeNull())
+    expect(screen.queryByRole('heading', { level: 1, name: WORK_DECISION_TEXT.title })).toBeNull()
+    expect(calls.some(url => url.includes('/work/decisions/') || url.includes('/api/v1/sales/'))).toBe(false)
+  })
+  it.each([SALES_ROUTE.list, SALES_ROUTE.invoices])('does not open browse route %s with purpose capabilities alone', async path => {
+    const calls = installFetch(Object.values(SALES_WORK_DECISION_CAPABILITY))
+    await renderShellAt(path)
+    await waitFor(() => expect(notFoundBlock()).not.toBeNull())
+    expect(calls.some(url => url.includes('/api/v1/sales/'))).toBe(false)
   })
 })
 
