@@ -975,14 +975,16 @@
       "execution": {
         "source_commits": [
           "c54147e79",
-          "51a59cf5d"
+          "51a59cf5d",
+          "e3d7c806a"
         ],
         "agent_source_commit": "4c39450580fde8019efcddfb51616c29df4ac10d",
         "local_checks": {
           "Sales full suite": "2447 passed, 0 skipped, exit 0 at agent 4c3945058; integrated Sales/Finance sources and complete Sales unit tree match that source exactly.",
-          "API integration compilation": "Agent production 57c6a53a0: exit 0, 0 warnings, 0 errors, including new SQL test source; followup changes only Sales test assertions."
+          "API integration compilation": "Agent production 57c6a53a0: exit 0, 0 warnings, 0 errors, including new SQL test source; followup changes only Sales test assertions.",
+          "real Finance settlement SQL source compilation": "Agent 02d4f2f5e: API integration build exit 0, 0 warnings, 0 errors; 4m25s. Integrated Finance/Sales sources, Sales test tree and changed SQL fixtures match agent source exactly."
         },
-        "real_sql": "NOT_RUN: one real Finance admission/official-reversal scenario written and compiled. Native Logistics-to-Sales-to-Finance V2 and fully settled membership SQL acceptance still pending.",
+        "real_sql": "NOT_RUN: three compiled scenarios cover real admission/official reversal, native full settlement (zero AR retains processed membership), and allocation release followed by approved receipt reversal. Release alone retains unallocated receipt credit (SAT-D52); only actual receipt reversal restores AR. Native Logistics-to-Sales-to-Finance V2 chain still awaits integrated acceptance.",
         "hosted_ci": "NOT_RUN",
         "browser": "NOT_RUN",
         "independent_k3": "PENDING",
