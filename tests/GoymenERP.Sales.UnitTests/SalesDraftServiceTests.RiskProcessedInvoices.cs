@@ -69,16 +69,43 @@ public sealed partial class SalesDraftServiceTests
         world.InvoiceRecords = invoicing.Invoices;
         world.Deliveries = new FakeDeliveries(orderId => new(Company, orderId,
             [new(order.Lines[0].LineId, KgUnit, 1.25m, 0m)]));
-        world.PartyRisk = new ProcessedRiskOwner([id]) { Foreign = foreign, Unavailable = !foreign };
-        await AssertUnbilledAsync(world, order.Draft.Id, SalesDraftRiskReasonCodesV1.FinanceProcessedSetUnavailable);
+        var owner = new ProcessedRiskOwner([id])
+        {
+            AnswerOverride = answer => foreign
+                ? answer with { CompanyId = Guid.NewGuid() }
+                : answer with { ProcessedSalesInvoices = new(SalesPartyRiskProcessedSetStateV2.Unavailable,
+                    "SENTETIK.same-snapshot", [], "synthetic_unavailable") },
+        };
+        world.PartyRisk = owner;
+
+        var result = await world.Service().GetDraftRiskCheckAsync(order.Draft.Id);
+
+        Assert.Equal([id], Assert.Single(owner.Queries).SalesInvoiceIds); // Valid native identity reached V2.
+        Assert.Equal(SalesPartyRiskFigureStateV1.Available, owner.LastAnswer!.OpenReceivables.State);
+        Assert.Equal(SalesDraftRiskResultsV1.Unavailable, result.Result);
+        foreach (var index in new[] { UnbilledIndex, AwaitingFinanceIndex })
+        {
+            Assert.Equal("Unavailable", result.Components[index].State);
+            Assert.Equal(SalesDraftRiskReasonCodesV1.FinanceProcessedSetUnavailable, result.Components[index].ReasonCode);
+            Assert.Null(result.Components[index].Amounts);
+        }
+        Assert.NotNull(result.InLocalCurrency);
+        Assert.Null(result.InLocalCurrency.GrossRisk);
+        Assert.Null(result.InLocalCurrency.GrossRiskWithThisOrder);
+        if (result.InLimitCurrency is { } limit)
+        {
+            Assert.Null(limit.GrossRisk);
+            Assert.Null(limit.GrossRiskWithThisOrder);
+        }
+        Assert.Equal(0, owner.LegacyReads);
     }
 
     private sealed class ProcessedRiskOwner(IReadOnlyList<Guid> processed) : ISalesPartyRiskReadPortV1, ISalesPartyRiskReadPortV2
     {
         public List<SalesPartyRiskReadQueryV2> Queries { get; } = [];
         public int LegacyReads { get; private set; }
-        public bool Foreign { get; init; }
-        public bool Unavailable { get; init; }
+        public Func<SalesPartyRiskReadAnswerV2, SalesPartyRiskReadAnswerV2>? AnswerOverride { get; init; }
+        public SalesPartyRiskReadAnswerV2? LastAnswer { get; private set; }
         public Task<SalesPartyRiskReadAnswerV1> ReadPartyRiskAsync(Guid partyId, Guid accountId, CancellationToken token = default)
         {
             LegacyReads++;
@@ -88,9 +115,12 @@ public sealed partial class SalesDraftServiceTests
         {
             Queries.Add(query);
             var figures = FinanceLike([])(query.PartyId, query.CompanyAccountId); // Includes the fully-settled case: zero receivables, membership retained.
-            return Task.FromResult(new SalesPartyRiskReadAnswerV2(Foreign ? Guid.NewGuid() : Company, Party, Account, figures.OpenReceivables,
-                figures.CreditLimit, figures.Collateral, new(Unavailable ? SalesPartyRiskProcessedSetStateV2.Unavailable : SalesPartyRiskProcessedSetStateV2.Available,
-                    "SENTETIK.same-snapshot", Unavailable ? [] : processed, Unavailable ? "synthetic_unavailable" : null)));
+            var answer = new SalesPartyRiskReadAnswerV2(Company, Party, Account, figures.OpenReceivables,
+                new(SalesPartyRiskFigureStateV1.Available, "SENTETIK.limit", [new(Lira, 10000m)], null, null),
+                new(SalesPartyRiskFigureStateV1.Available, "SENTETIK.collateral", [], null, null),
+                new(SalesPartyRiskProcessedSetStateV2.Available, "SENTETIK.same-snapshot", processed, null));
+            LastAnswer = AnswerOverride?.Invoke(answer) ?? answer;
+            return Task.FromResult(LastAnswer);
         }
     }
 }
