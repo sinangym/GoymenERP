@@ -246,6 +246,8 @@ export const PROBLEM_CODE_TEXT: Record<LogisticsProblemCode, string> = {
   [LOGISTICS_PROBLEM_CODE.instructionShipped]:
     'Bu talimatta kesin sevk kaydı var; sevk kesinleştikten sonra talimat iptal edilemez. Talimat değişmedi.',
   [LOGISTICS_PROBLEM_CODE.loadExceedsInstructed]: 'Yükleme payı talimat kalanını aşıyor; pay kaydedilmedi.',
+  [LOGISTICS_PROBLEM_CODE.planExcessApprovalRequired]:
+    'Plan üstü sevk için bu satırın onaylı ve yeterli ek miktarı bulunmuyor. Onay durumunu ve seçilen istisnayı kontrol edin.',
   [LOGISTICS_PROBLEM_CODE.lineBlocked]: 'Satır bloklu; yeni yükleme payı kaydedilmez.',
   [LOGISTICS_PROBLEM_CODE.duplicateShare]: 'Bu yükleme kaydı daha önce işlendi; ikinci kez kaydedilmedi.',
   [LOGISTICS_PROBLEM_CODE.weighingAlreadyRecorded]:

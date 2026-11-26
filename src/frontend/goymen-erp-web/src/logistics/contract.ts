@@ -430,6 +430,8 @@ export const LOGISTICS_PROBLEM_CODE = {
    */
   overDeliveryApprovalPending: 'logistics_over_delivery_approval_pending',
   overDeliveryBlocked: 'logistics_over_delivery_blocked',
+  /** Existing Logistics owner code: an approved, sufficient plan-excess selection is required. */
+  planExcessApprovalRequired: 'logistics_plan_excess_approval_required',
   sameKeyPayloadMismatch: 'same_key_payload_mismatch',
   concurrentChange: 'concurrent_change',
   unsupportedUnit: 'unsupported_unit',

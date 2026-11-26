@@ -32,6 +32,7 @@ describe('command notices on the detail', () => {
     LOGISTICS_PROBLEM_CODE.instructionState,
     LOGISTICS_PROBLEM_CODE.instructionShipped,
     LOGISTICS_PROBLEM_CODE.loadExceedsInstructed,
+    LOGISTICS_PROBLEM_CODE.planExcessApprovalRequired,
     LOGISTICS_PROBLEM_CODE.lineBlocked,
     LOGISTICS_PROBLEM_CODE.duplicateShare,
     LOGISTICS_PROBLEM_CODE.sameKeyPayloadMismatch,
@@ -46,6 +47,17 @@ describe('command notices on the detail', () => {
     expect(commandNotice(failed(null, 403))?.message).toBe(INSTRUCTION_DETAIL_TEXT.command.forbidden)
     expect(commandNotice(failed(null, 404))?.message).toBe(INSTRUCTION_DETAIL_TEXT.command.notFound)
     expect(commandNotice(failed('some_future_code'))?.message).toBe(INSTRUCTION_DETAIL_TEXT.command.conflict)
+  })
+
+  it('explains the owner plan-excess approval requirement without inventing a rejected status or resolving an unknown retry', () => {
+    const code = LOGISTICS_PROBLEM_CODE.planExcessApprovalRequired
+    expect(code).toBe('logistics_plan_excess_approval_required')
+    const reason = 'Plan üstü sevk için bu satırın onaylı ve yeterli ek miktarı bulunmuyor. Onay durumunu ve seçilen istisnayı kontrol edin.'
+    expect(commandNotice(failed(code))?.message).toBe(`${INSTRUCTION_DETAIL_TEXT.command.conflict} ${reason}`)
+    const unknown = commandNotice(failed(code, 409, 'network-error'))
+    expect(unknown).toMatchObject({ tone: 'unknown', actions: ['retry', 'abandon'] })
+    expect(unknown?.message).toContain(reason)
+    expect(unknown?.message).toContain(INSTRUCTION_DETAIL_TEXT.command.refusedAfterUnknown)
   })
 
   it('a refusal that answered a retry of an unknown outcome says it MAY be applied and offers retry/abandon', () => {
