@@ -125,7 +125,7 @@ derler ve birim testleri koşar; sonraki adım güncel tren-2'den açılır.
 **THROW aralıkları:** WP1 52100–09 · WP2 52110–19 · WP3 52120–29 · WP4 52130–39 · WP5 52140–49 · WP6 52150–59 ·
 WP7 52160–69 · WP9 52170–79 · WP10 52230–39 · WP11 52240–49 · WP12 52250–59 · WP13 52260–69 · WP14 52270–79 ·
 WP15 52280–89 · WP-A1 52180–89 · WP-A4/A5/A6 52290–99 · WP-B3 52190–99 · WP-B diğer 52300–19 · WP-C1 52200–09 ·
-WP-C diğer 52210–29 ve 52320–59.
+WP-C diğer 52210–29 ve 52320–59. 27 Kasım entegrasyonunda 52350–51, LOJ-D21 şirket geneli ShareId migration Up/Down korumalarına ayrıldı; sonraki WP-C/WP8 işleri bu iki kodu yeniden kullanmaz.
 
 **Sıcak dosyalar:** her paket `ErpPermissions` ve manifestlere yalnız kendi modül bloğunda ekler; Work şemasını aynı
 adımda tek paket değiştirir (adım 2: WP1, adım 3: WP2, adım 4: WP3/WP8 sırayla); frontend onay türü listesi modül başına
