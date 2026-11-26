@@ -2,7 +2,7 @@
 
 Bu katalog çalışan yeni fonksiyonların kabul listesi değildir. 50 kaynak/test giriş noktasıdır. Her kayıtta gerçek yol, sembol/satır, SHA-256, Git blob, karar ilişkisi, uyarlama sınırı ve yeni kullanım testi bulunur.
 
-**Kaynak:** `claude/tren-2` `c24706af4de4300d4a171eca11459098d87cd14f`. 28 kaydın kaynak ve test blobları geçmiş başarılı CI ağacıyla aynıdır; 22 kayıt yalnız kaynak/test kanıtına sahiptir. Tek tek test sonuçları bu çalışmada okunmadı. Yeni kullanım için SQL, tarayıcı ve işletme kabulü yapılmadı.
+**Kaynak:** `claude/tren-2` `c24706af4de4300d4a171eca11459098d87cd14f`. 27 kaydın kaynak ve test blobları geçmiş başarılı CI ağacıyla aynıdır; 23 kayıt yalnız kaynak/test kanıtına sahiptir. Tek tek test sonuçları bu çalışmada okunmadı. Yeni kullanım için SQL, tarayıcı ve işletme kabulü yapılmadı.
 
 Makine kaynağı: [REFERANS_KOD_KATALOGU_v1.json](REFERANS_KOD_KATALOGU_v1.json). Doğrulayıcı: `python3 -I -S -B tools/verify_delivery_reference_catalog.py`. Windows’ta kurulu Python yürütücüsü kullanılabilir.
 
@@ -13,7 +13,7 @@ Makine kaynağı: [REFERANS_KOD_KATALOGU_v1.json](REFERANS_KOD_KATALOGU_v1.json)
 | REF-CARD-01 | Cari oluşturma, şirket hesabı ve tekrar güvenliği | SMALL_EXTENSION | Kaynak/test var |
 | REF-CATALOG-01 | Sürümlü referans liste ve pasifleştirme | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
 | REF-POLICY-01 | Şirket politikası ve yürürlük sürümü | REFERENCE_PATTERN | Eski CI ağacı eşleşiyor |
-| REF-ORDER-01 | Çok satırlı alış ve belge onayı | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |
+| REF-ORDER-01 | Çok satırlı alış ve belge onayı | SMALL_EXTENSION | Kaynak/test; güncel SQL kabulü bekliyor |
 | REF-INVOICE-01 | Alış faturası kaynağı ve kabul eşleştirme testleri | REFERENCE_PATTERN | Eski CI ağacı eşleşiyor |
 | REF-CLOSE-01 | Satış normal kapanış eksenleri | SMALL_EXTENSION | Güncel kaynak/test; yeni owner kompozisyonu hedefli doğrulandı, SQL/CI bekler |
 | REF-RISK-01 | Sevkte deterministik risk kapısı | DIRECT_REUSE | Eski CI ağacı eşleşiyor |

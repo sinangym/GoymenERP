@@ -39,7 +39,7 @@ Codex backend/DB/port ve sözleşme; Claude frontend/tarayıcı; mevcut koordina
 | W1-YETKI/ROL-D24-PARITY | P0 / K2 | IMPLEMENTED_LOCAL | — |
 | W1-YETKI/ROLE-UX | P0 / K3 | SOURCE_REVIEW_REQUIRED | W1-YETKI/ROL-D24-PARITY |
 | W1-ORG/BOOTSTRAP | P0 / K3 | SOURCE_REVIEW_REQUIRED | — |
-| W1-CARI/QUICK-CREATE | P0 / K2 | SOURCE_REVIEW_REQUIRED | — |
+| W1-CARI/QUICK-CREATE | P0 / K2 | SOURCE_PARTIALLY_IMPLEMENTED_LOCAL | — |
 | W1-URUN/UNIT-SCOPE | P0 / K3 | SOURCE_REVIEW_REQUIRED | — |
 | W2-SATINALMA/MULTILINE | P0 / K2 | SOURCE_IMPLEMENTED_LOCAL | — |
 | W2-SATINALMA/MIXED-MIN | P0 / K3 | SOURCE_REVIEW_REQUIRED | W2-SATINALMA/MULTILINE, W1-URUN/UNIT-SCOPE |
@@ -161,3 +161,7 @@ Yerel birleşik kontrol: API test projesi yeni SQL kaynaklarıyla derlendi; owne
 İkinci sevkiyat risk kaynağı `c54147e79`/`51a59cf5d`: Finance açık alacağı ve işlenmiş fatura kümesi aynı Serializable okumada, Sales native kesinleşmiş fatura/pay geçmişiyle bağlandı. Mevcut hesap motoru ve resmi ters kayıt yolu korundu; tamamen mahsup edilmiş fatura tekrar faturalanmamış sevk sayılmaz. Agent `4c3945058` kaynağında tam Sales 2447/2447 geçti (0 skip); bütün Sales/Finance kaynakları ve Sales test ağacı birleşik dalda aynı. API integration projesi yeni SQL kaynağıyla derlendi. Gerçek SQL, normal Logistics→Sales→Finance zinciri, tarayıcı, tam CI ve K3 bekler; paket bütünü kabul edilmedi. Değişen test blobu nedeniyle REF-OPENITEM-01 eski CI ağacı eşliğinden kaynak/test kanıtına indirildi; eski kanıt yeni kullanım kabulü sayılmadı.
 
 Risk SQL kaynak eki `e3d7c806a`: mevcut Finance native kayıt/mahsup/mahsup geri alma/tahsilat ters kayıt fixture’ı kullanılarak iki senaryo daha eklendi. Tam mahsupta alacak sıfır olsa da fatura işlenmiş kalır. Mahsup geri alma tek başına mevcut tahsilatı yok etmez (SAT-D52); yetkili onaylı tahsilat ters kaydı borcu tekrar riskte gösterir. Toplam üç risk SQL senaryosu derlendi (0 hata/0 uyarı), gerçek SQL **NOT_RUN**; tam ikinci sevk zinciri kabulü açık.
+
+Hızlı cari kısmi kaynak teslimi `0dc6182ab`: alış, satış ve manuel banka ödeme başlangıcı, mevcut Cari formu/komutu ve yetkili owner sorgularını kullanır. Şirket hesabı yalnız tam kimlik eşleşmesiyle seçilir; belirsiz işlem aynı anahtarla korunur ve ana formun gönderilmesi engellenir. Beş etkilenen dosyada 101/101 test (0 skip), tsc ve scoped lint geçti (12 mevcut uyarı). Native DTO’da VKN alanı, ayrı oluşturma talebi servisi ve hazır bağımsız gelen belge/tahsilat girişi bulunmadığı için bunların kabulü tamamlanmadı. Yeni rol/grant, API veya migration yok; gerçek tarayıcı/CI kabulü bekler.
+
+WP8 satınalma talebi backend eki `25835fe7a`: owner native onay/ret ve amaçlı snapshot bağlandı. Native maker/gönderen yasağı, 4000 karakter ret ve terminal replay korunur; save sonrası/commit öncesi yetki veya vekâlet kaybında karar/attempt/audit rollback olur. Agent `84b4d2343` kaynağında Purchasing 1241/1241 ve Work host kompozisyonu 27/27 geçti (0 skip). Üç SQL kaynağı derlendi, gerçek SQL **NOT_RUN**; authority/delegation sınırı sentetik olduğundan gerçek kullanıcı HTTP/tarayıcı kabulü sayılmaz. Purpose route ve shell bağlantısı ayrı artımda; yeni permission/grant veya migration yok.

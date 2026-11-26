@@ -226,7 +226,7 @@
       "backlog_parent": "W1-CARI",
       "title": "İşlemden ayrılmadan cari oluşturma/talep",
       "group": "FIRST_USE",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P0",
       "risk": "K2",
       "scope": "Mevcut arama ve CreateAsync akışını alış/satış formuna bağla; yetkisiz kullanıcı yalnız talep/taslak hazırlar. Yeni Party modeli açma.",
@@ -247,7 +247,10 @@
       ],
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
-        "Cari owner CreateAsync ve şirket hesabı idempotency mevcut."
+        "Cari owner CreateAsync ve şirket hesabı idempotency mevcut.",
+        "Native CreateAsync already creates the party and active current-company account atomically; no second create/link service was added.",
+        "Ready Sales, Purchasing and manual bank-payment entry points now reuse the existing native Cari form. Exact account selection requires the current owner eligibility query, not a fabricated account or mutation response alone.",
+        "The native create DTO has no VKN/TCKN field; tax identity and legal duplicate acceptance are not complete. No creation-request service/DTO or independent incoming-document/receipt-start entry was found; those remain gaps, not implemented placeholders."
       ],
       "decisions": [
         "YOL-D2",
@@ -257,7 +260,12 @@
       "open_decisions": [],
       "existing_tests": [
         "tests/GoymenERP.Api.IntegrationTests/CounterpartyCompanyScopedIdempotencySqlServerRelationalAcceptanceTests.cs",
-        "src/frontend/goymen-erp-web/src/shell/StateBlock.test.tsx"
+        "src/frontend/goymen-erp-web/src/shell/StateBlock.test.tsx",
+        "src/frontend/goymen-erp-web/src/cari/CariQuickCreate.test.tsx",
+        "src/frontend/goymen-erp-web/src/finance/ManualBankPaymentStartPage.test.tsx",
+        "src/frontend/goymen-erp-web/src/purchasing/PurchaseOrderCreatePage.test.tsx",
+        "src/frontend/goymen-erp-web/src/sales/SalesDraftCreatePage.test.tsx",
+        "src/frontend/goymen-erp-web/src/cari/CariCreatePage.test.tsx"
       ],
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
@@ -270,7 +278,7 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "Complete tax-identity/duplicate and unauthorized-request integration through real owner contracts; connect remaining entry points when their upstream workflow exists. Real authorized browser and train acceptance pending.",
       "planned_owner": "Claude ekran; Codex mevcut owner sözleşmesi",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -279,7 +287,52 @@
         "src/frontend/goymen-erp-web/src/shell/StateBlock.tsx",
         "tests/GoymenERP.Api.IntegrationTests/CounterpartyCompanyScopedIdempotencySqlServerRelationalAcceptanceTests.cs"
       ],
-      "change_files": []
+      "change_files": [
+        "src/frontend/goymen-erp-web/src/cari/CariCreatePage.tsx",
+        "src/frontend/goymen-erp-web/src/cari/CariQuickCreate.module.css",
+        "src/frontend/goymen-erp-web/src/cari/CariQuickCreate.test.tsx",
+        "src/frontend/goymen-erp-web/src/cari/CariQuickCreate.tsx",
+        "src/frontend/goymen-erp-web/src/cari/quickCreateSelection.ts",
+        "src/frontend/goymen-erp-web/src/cari/quickCreateText.ts",
+        "src/frontend/goymen-erp-web/src/finance/ManualBankPaymentStartPage.test.tsx",
+        "src/frontend/goymen-erp-web/src/finance/ManualBankPaymentStartPage.tsx",
+        "src/frontend/goymen-erp-web/src/purchasing/PurchaseOrderCreatePage.test.tsx",
+        "src/frontend/goymen-erp-web/src/purchasing/PurchaseOrderCreatePage.tsx",
+        "src/frontend/goymen-erp-web/src/sales/SalesDraftCreatePage.test.tsx",
+        "src/frontend/goymen-erp-web/src/sales/SalesDraftCreatePage.tsx"
+      ],
+      "execution": {
+        "source_commits": [
+          "0dc6182ab"
+        ],
+        "agent_source_commit": "7b2ed4d6fa93f318a467a4c9cdbc073e77e05313",
+        "local_checks": {
+          "frontend": "Complete five affected test files: 101/101 passed, 0 skipped, 126.13s. Scoped integrated Cari/Sales/Purchasing/Finance entry files match agent source exactly.",
+          "tsc": "exit 0",
+          "lint": "exit 0; 0 errors, 12 existing hook/memo warnings; no broad cleanup."
+        },
+        "reuse": [
+          "CariCreatePage native form/probe/useCommandAttempt and strict mutation decoder",
+          "Existing Sales/Purchasing owner option queries",
+          "Existing Finance Cari list and canonical draft-context validation"
+        ],
+        "remaining": [
+          "VKN/TCKN and legal-identity duplicate acceptance",
+          "Unauthorized creation request contract/service",
+          "Incoming-document and independent receipt-start entry points",
+          "Real browser/API, SQL/full CI and independent review"
+        ],
+        "behavior": "Unknown create attempt is preserved on close/reopen with the same key/body; parent submit is blocked while unresolved. Scope change aborts late eligibility reads. New business-party Customer/Supplier role defaults are visible/editable; no Identity role/grant is assigned.",
+        "browser": "NOT_RUN",
+        "real_sql": "NOT_RUN",
+        "hosted_ci": "NOT_RUN",
+        "independent_review": "PENDING",
+        "measurements": {
+          "token": "NOT_AVAILABLE",
+          "test_time": "126.13s",
+          "source_delta": "12 frontend files, 401 added/21 removed lines including reuse and tests"
+        }
+      }
     },
     {
       "id": "W1-URUN/UNIT-SCOPE",
@@ -1871,7 +1924,8 @@
           "finance.cash-account-passivation.v1",
           "finance.cash-account-reactivation.v1",
           "sales.order-draft.v1",
-          "sales.invoice.v1"
+          "sales.invoice.v1",
+          "purchasing.request.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -1943,6 +1997,20 @@
               "test_time": "combined frontend 10.76s",
               "rework": "WP2 escalation default decoder and fresh success receipt exact payload/version matching fixed"
             }
+          },
+          {
+            "source_commit": "25835fe7a",
+            "scope": "Purchasing request native approve/reject and purpose snapshot, own transaction final authority/delegation fence and rollback; native reason max4000 and refusal/replay remain on owner.",
+            "local_checks": {
+              "Purchasing full unit suite": "1241/1241 passed, 0 skipped at agent84b4d2343.",
+              "API composition": "27/27 passed, 0 skipped at agent84b4d2343; WorkPurchasingRequestDecisionHostTests, WorkDecisionHostTests and WorkSalesDecisionHostTests. Integration assembly compiled three new SQL sources; not HTTP/SQL execution."
+            },
+            "sql": "Three owner-store/transaction SQL sources written, NOT_RUN; synthetic Work/Identity authority boundary is explicitly not HTTP/real-user acceptance.",
+            "remaining": [
+              "Purpose-route frontend and shell connection",
+              "SQL/real HTTP/browser, pins/full CI/two K3 train acceptance"
+            ],
+            "evidence_scope": "Integrated Purchasing source, WorkDecisionHost and changed tests match the agent source at delivery. Subsequent purpose-link/shell UI increment requires its own changed-source checks."
           }
         ],
         "source_commits": [
@@ -1950,7 +2018,8 @@
           "8882e4ecb",
           "60a3b7998",
           "e6acbdaca",
-          "f4ccda30f"
+          "f4ccda30f",
+          "25835fe7a"
         ]
       }
     },

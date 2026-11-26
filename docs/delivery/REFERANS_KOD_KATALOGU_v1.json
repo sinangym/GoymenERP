@@ -185,12 +185,12 @@
           "path": "tests/GoymenERP.Purchasing.UnitTests/PurchasingServiceTests.cs",
           "line": 36,
           "anchor": "public async Task A_request_and_an_order_bound_to_it_are_stored_once_with_the_owners_product_version_and_the_fences_measured()",
-          "sha256": "a14a6b4c466733a13b960ba321430ac4c898dbc84708aa1dcaabf25d8f89d53c",
-          "git_blob": "e0f1ef1044da7050af9a05f41920cd3fec81bd3d"
+          "sha256": "161dee5e879f9529adddcbd0351aba0f4153559b9515e051256b17ddee697b7c",
+          "git_blob": "9882904394d09ee84a9c0cd17f401a4a1188640f"
         }
       ],
-      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
-      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "source_commit": "25835fe7ab8f0983b4a01554ee6b43f958883cf7",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
       "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
@@ -218,7 +218,9 @@
         "SAT-D437",
         "SAT-D54"
       ],
-      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
+      "previous_source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "previous_historical_evidence": "HISTORICAL_CI_TREE_MATCH"
     },
     {
       "id": "REF-INVOICE-01",
