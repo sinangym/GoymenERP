@@ -449,6 +449,24 @@ describe('mass balance panel (GDC-BAL/1)', () => {
 })
 
 describe('fact forms', () => {
+  it('sends a counted input unchanged on an unknown-result retry', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({ capabilities: RECORDER_CAPABILITIES,
+      commands: [() => problem(503, {}), () => json(order(), 200, { 'Idempotency-Replayed': 'true' })] })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillFact(user)
+    await user.type(screen.getByLabelText('Girdi / iade adedi'), '4')
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+    await screen.findByRole('button', { name: 'Aynı olguyu yeniden gönder' })
+    expect(posts(recorded)[0].body).toMatchObject({ pieceCount: 4 })
+    expect((screen.getByLabelText('Girdi / iade adedi') as HTMLInputElement).disabled).toBe(true)
+    await user.click(screen.getByRole('button', { name: 'Aynı olguyu yeniden gönder' }))
+    await waitFor(() => expect(posts(recorded)).toHaveLength(2))
+    expect(posts(recorded)[1].body).toEqual(posts(recorded)[0].body)
+    expect(posts(recorded)[1].headers['Idempotency-Key']).toBe(posts(recorded)[0].headers['Idempotency-Key'])
+  })
+
   it('requires an explicit server-backed plan output line and switches class lines with the output class', async () => {
     const user = userEvent.setup()
     stub({ capabilities: INVENTORY_RECORDER_CAPABILITIES, reads: [() => json(order({ outputLines: [

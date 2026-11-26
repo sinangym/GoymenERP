@@ -45,7 +45,7 @@ internal sealed class ManufacturingInventoryInputIssueHost(
                 command.ParentLabelId,
                 command.MovementId,
                 command.Quantity,
-                command.OccurredAtUtc), metadata, cancellationToken);
+                command.OccurredAtUtc, command.PieceCount), metadata, cancellationToken);
             return new ManufacturingInventoryInputIssuePortResultV1(
                 result.OrderVersion, result.ParentLabelVersion, result.ParentPosition, result.IsReplay);
         }
@@ -128,7 +128,7 @@ internal sealed class ManufacturingInventoryInputIssueHost(
                 expectedLabelVersion.ToString(CultureInfo.InvariantCulture),
                 command.MovementId,
                 command.Quantity.Value.ToString("0.###", CultureInfo.InvariantCulture),
-                command.OccurredAtUtc)
+                command.OccurredAtUtc, PieceCount: command.PieceCount)
             {
                 AllocationId = allocation?.AllocationId,
                 PlanId = allocation is null ? null : stored.PlanId,
@@ -397,7 +397,8 @@ internal sealed record ManufacturingInventoryInputIssueCommand(
     Guid ParentLabelId,
     Guid MovementId,
     Kilograms Quantity,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    int? PieceCount = null);
 
 internal sealed record ManufacturingInventoryInputIssueResult(
     Guid OrderId,

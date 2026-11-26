@@ -981,7 +981,7 @@ function formFromSnapshot(snapshot: FactSnapshot): FormValues {
     productId: snapshot.kind === 'outputs' ? snapshot.productId : '',
     locationId: snapshot.kind === 'outputs' ? snapshot.locationId : '',
     labelCode: snapshot.kind === 'outputs' ? (snapshot.labelCode ?? '') : '',
-    pieceCount: snapshot.kind === 'outputs' && snapshot.pieceCount != null ? String(snapshot.pieceCount) : '',
+    pieceCount: 'pieceCount' in snapshot && snapshot.pieceCount != null ? String(snapshot.pieceCount) : '',
     heatNumber: snapshot.kind === 'outputs' ? (snapshot.heatNumber ?? '') : '',
     coilNumber: snapshot.kind === 'outputs' ? (snapshot.coilNumber ?? '') : '',
     requiredDocuments: snapshot.kind === 'outputs' ? snapshot.requiredDocuments.join('\n') : '',
@@ -1263,7 +1263,7 @@ function FactSection({
       if (outcome.type === 'applied') {
         setForm((current) => ({
           ...current, kg: '', labelCode: current.kind === 'outputs' ? '' : current.labelCode,
-          pieceCount: current.kind === 'outputs' ? '' : current.pieceCount,
+          pieceCount: '',
         }))
         await refreshReads(snapshot)
       } else if (
@@ -1302,8 +1302,10 @@ function FactSection({
     if (outputSelected && selectedProduct?.pieceCounting === 'SourceMissing')
       return setError(OUTPUT_PIECE_TEXT.sourceMissingSubmit)
     const counted = outputSelected && selectedProduct?.pieceCounting === 'Counted'
-    const pieceCount = counted ? parsePieceCount(form.pieceCount, 1) : null
-    if (pieceCount === undefined) return setError(OUTPUT_PIECE_TEXT.pieceCountFormat)
+    const inventoryInput = form.kind === 'input-issues' || returnSelected
+    const pieceCount = counted ? parsePieceCount(form.pieceCount, 1)
+      : inventoryInput ? parsePieceCount(form.pieceCount, 0) : null
+    if (pieceCount === undefined) return setError(inventoryInput ? FACT_FORM_TEXT.pieceCountFormat : OUTPUT_PIECE_TEXT.pieceCountFormat)
     if (counted && pieceCount === null) return setError(OUTPUT_PIECE_TEXT.pieceCountRequired)
     setError(null)
     const common = {
@@ -1315,7 +1317,8 @@ function FactSection({
       occurredAtUtc: timing.occurredAtUtc,
     }
     const snapshot: FactSnapshot = form.kind === 'input-issues'
-      ? { ...common, kind: form.kind, movementId: newId(), expectedParentLabelVersion: null }
+      ? { ...common, kind: form.kind, movementId: newId(), expectedParentLabelVersion: null,
+          ...(pieceCount == null ? {} : { pieceCount }) }
       : form.kind === 'input-returns'
         ? {
             ...common,
@@ -1323,6 +1326,7 @@ function FactSection({
             movementId: newId(),
             expectedParentLabelVersion: labelState?.kind === 'ready' ? labelState.data.labelVersion : '',
             ...(form.sourceIssueMovementId === '' ? {} : { sourceIssueMovementId: form.sourceIssueMovementId }),
+            ...(pieceCount == null ? {} : { pieceCount }),
           }
         : form.kind === 'outputs'
           ? {
@@ -1391,7 +1395,7 @@ function FactSection({
                 name="fact-kind"
                 value={kind}
                 checked={form.kind === kind}
-                onChange={() => update({ kind })}
+                onChange={() => update({ kind, pieceCount: '' })}
               />
               {FACT_KIND_LABEL[kind]}
             </label>
@@ -1409,7 +1413,7 @@ function FactSection({
               id="mfg-fact-roll"
               value={form.parentRollId}
               disabled={frozen}
-              onChange={(event) => update({ parentRollId: event.target.value, sourceIssueMovementId: '' })}
+              onChange={(event) => update({ parentRollId: event.target.value, sourceIssueMovementId: '', pieceCount: '' })}
             >
               <option value="">{FACT_FORM_TEXT.choose}</option>
               {order.rolls.map((roll) => (
@@ -1435,6 +1439,13 @@ function FactSection({
               {KG_FORMAT_HELP}
             </span>
           </div>
+          {form.kind === 'input-issues' || returnSelected ? <div className={styles.control}>
+            <label htmlFor="mfg-input-piece-count">{FACT_FORM_TEXT.pieceCount}</label>
+            <input id="mfg-input-piece-count" type="text" inputMode="numeric" autoComplete="off"
+              value={form.pieceCount} disabled={frozen} aria-describedby="mfg-input-piece-help"
+              onChange={event => update({ pieceCount: event.target.value })} />
+            <span id="mfg-input-piece-help" className={styles.help}>{FACT_FORM_TEXT.pieceCountHelp}</span>
+          </div> : null}
           <div className={styles.control}>
             <label htmlFor="mfg-fact-occurred-at">{FACT_FORM_TEXT.time}</label>
             <input

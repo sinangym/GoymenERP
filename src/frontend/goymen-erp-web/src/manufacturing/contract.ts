@@ -1345,12 +1345,14 @@ export type FactSnapshot =
       readonly kind: 'input-issues'
       readonly movementId: string
       readonly expectedParentLabelVersion: null
+      readonly pieceCount?: number | null
     })
   | (FactSnapshotBase & {
       readonly kind: 'input-returns'
       readonly movementId: string
       readonly expectedParentLabelVersion: string
       readonly sourceIssueMovementId?: string | null
+      readonly pieceCount?: number | null
     })
   | (FactSnapshotBase & {
       readonly kind: 'wip-measurements'
@@ -1398,7 +1400,8 @@ export function factBody(snapshot: FactSnapshot): Record<string, unknown> {
     occurredAtUtc: snapshot.occurredAtUtc,
   }
   if (snapshot.kind === 'input-issues') {
-    return { issueId: snapshot.factId, ...common, movementId: snapshot.movementId }
+    return { issueId: snapshot.factId, ...common, movementId: snapshot.movementId,
+      ...(snapshot.pieceCount == null ? {} : { pieceCount: snapshot.pieceCount }) }
   }
   if (snapshot.kind === 'input-returns') {
     return {
@@ -1407,6 +1410,7 @@ export function factBody(snapshot: FactSnapshot): Record<string, unknown> {
       expectedParentLabelVersion: snapshot.expectedParentLabelVersion,
       movementId: snapshot.movementId,
       ...(snapshot.sourceIssueMovementId == null ? {} : { sourceIssueMovementId: snapshot.sourceIssueMovementId }),
+      ...(snapshot.pieceCount == null ? {} : { pieceCount: snapshot.pieceCount }),
     }
   }
   if (snapshot.kind === 'outputs') {

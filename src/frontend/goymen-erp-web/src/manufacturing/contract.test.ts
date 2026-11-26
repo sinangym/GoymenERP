@@ -201,6 +201,15 @@ describe('factBody', () => {
     })
   })
 
+  it('preserves counted input and return quantities while leaving legacy counts absent', () => {
+    expect(factBody({ ...base, pieceCount: null })).not.toHaveProperty('pieceCount')
+    expect(factBody({ ...base, pieceCount: 4 })).toHaveProperty('pieceCount', 4)
+    const returned: FactSnapshot = { ...base, kind: 'input-returns', expectedParentLabelVersion: '8',
+      sourceIssueMovementId: ORDER, pieceCount: 1 }
+    expect(factBody(returned)).toMatchObject({ pieceCount: 1, sourceIssueMovementId: ORDER })
+    expect(factBody({ ...returned, pieceCount: 0 })).toHaveProperty('pieceCount', 0)
+  })
+
   it('keeps a legacy null return source absent and freezes an explicit source movement without substituting the fact id', () => {
     const snapshot: FactSnapshot = { ...base, kind: 'input-returns', expectedParentLabelVersion: '8' }
     expect(factBody(snapshot)).not.toHaveProperty('sourceIssueMovementId')

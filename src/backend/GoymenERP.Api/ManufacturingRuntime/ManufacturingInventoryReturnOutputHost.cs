@@ -55,7 +55,7 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 command.ExpectedParentLabelVersion,
                 command.MovementId,
                 command.Quantity,
-                command.OccurredAtUtc, command.SourceIssueMovementId), metadata, cancellationToken);
+                command.OccurredAtUtc, command.SourceIssueMovementId, command.PieceCount), metadata, cancellationToken);
             return new ManufacturingInventoryInputReturnPortResultV1(
                 result.OrderVersion, result.ParentLabelVersion, result.IsReplay);
         }
@@ -427,7 +427,7 @@ internal sealed class ManufacturingInventoryReturnOutputHost(
                 command.ExpectedParentLabelVersion.ToString(CultureInfo.InvariantCulture),
                 command.MovementId,
                 Quantity(command.Quantity),
-                command.OccurredAtUtc, command.SourceIssueMovementId);
+                command.OccurredAtUtc, command.SourceIssueMovementId, command.PieceCount);
             var inventoryMetadata = InventoryMetadata(metadata, companyId, command.OrderId, command.ReturnId,
                 "manufacturing-input-return");
             var connection = manufacturing.Database.GetDbConnection();
@@ -961,7 +961,7 @@ internal sealed record ManufacturingInventoryInputReturnCommand(
     long ExpectedParentLabelVersion,
     Guid MovementId,
     Kilograms Quantity,
-    DateTimeOffset OccurredAtUtc, Guid? SourceIssueMovementId = null);
+    DateTimeOffset OccurredAtUtc, Guid? SourceIssueMovementId = null, int? PieceCount = null);
 
 internal sealed record ManufacturingInventoryOutputCommand(
     Guid OrderId,

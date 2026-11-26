@@ -43,7 +43,8 @@ public sealed record ManufacturingInventoryInputIssuePortCommandV1(
     Guid ParentLabelId,
     Guid MovementId,
     Kilograms Quantity,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    int? PieceCount = null);
 
 public sealed record ManufacturingInventoryInputReturnPortCommandV1(
     Guid OrderId,
@@ -54,7 +55,8 @@ public sealed record ManufacturingInventoryInputReturnPortCommandV1(
     Guid MovementId,
     Kilograms Quantity,
     DateTimeOffset OccurredAtUtc,
-    Guid? SourceIssueMovementId = null);
+    Guid? SourceIssueMovementId = null,
+    int? PieceCount = null);
 
 /// <summary>
 /// URT-S16 (BS-14, URT-D43): <see cref="RemnantClassification"/> is the label classification the operator chose for a

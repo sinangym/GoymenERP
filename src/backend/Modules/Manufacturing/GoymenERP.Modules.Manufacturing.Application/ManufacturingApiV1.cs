@@ -106,12 +106,14 @@ public sealed record RecordFactRequestV1(
 
 public sealed record IssueInventoryInputRequestV1(
     Guid IssueId, long ExpectedVersion, Guid ParentRollId, Guid MovementId, string? Kg,
-    DateTimeOffset? OccurredAtUtc);
+    DateTimeOffset? OccurredAtUtc,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? PieceCount = null);
 
 public sealed record ReturnInventoryInputRequestV1(
     Guid ReturnId, long ExpectedVersion, Guid ParentRollId, string? ExpectedParentLabelVersion,
     Guid MovementId, string? Kg, DateTimeOffset? OccurredAtUtc,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? SourceIssueMovementId = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? SourceIssueMovementId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? PieceCount = null);
 
 /// <summary>
 /// F-009 D3 (API-25, URT-S2): takes <see cref="Kg"/> back from one recorded output declaration (the path's fact id) as an
@@ -1513,6 +1515,11 @@ public sealed partial class ManufacturingCommandService(
         string permission,
         CancellationToken cancellationToken)
     {
+        if (request?.PieceCount is < 0)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("pieceCount"));
+        }
+
         if (orderId == Guid.Empty || request is null || request.IssueId == Guid.Empty
             || request.ParentRollId == Guid.Empty || request.MovementId == Guid.Empty
             || request.MovementId == request.IssueId || request.ExpectedVersion <= 0)
@@ -1530,7 +1537,7 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<OrderViewV1>("occurredAtUtc"));
         }
 
-        var canonical = new
+        object canonical = new
         {
             orderId,
             issueId = request.IssueId,
@@ -1540,6 +1547,14 @@ public sealed partial class ManufacturingCommandService(
             kg = Text(kg),
             occurredAtUtc = occurredAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
         };
+
+        // Preserve the exact kg-only command identity. Inventory owns counted-label validation and balances.
+        if (request.PieceCount is { } pieceCount)
+        {
+            var node = JsonSerializer.SerializeToNode(canonical, Json)!.AsObject();
+            node["pieceCount"] = pieceCount;
+            canonical = node;
+        }
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.IssueInput,
             canonical, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
@@ -1564,7 +1579,7 @@ public sealed partial class ManufacturingCommandService(
                 var outcome = await inventoryInputIssues.IssueAsync(
                     new ManufacturingInventoryInputIssuePortCommandV1(
                         orderId, request.ExpectedVersion, request.IssueId, request.ParentRollId,
-                        request.MovementId, mass.Value, occurredAt),
+                        request.MovementId, mass.Value, occurredAt, request.PieceCount),
                     metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, outcome.IsReplay, cancellationToken);
             }, stored => OrderView((ProductionOrder)stored), cancellationToken);
@@ -1577,6 +1592,11 @@ public sealed partial class ManufacturingCommandService(
         string permission,
         CancellationToken cancellationToken)
     {
+        if (request?.PieceCount is < 0)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("pieceCount"));
+        }
+
         if (request?.SourceIssueMovementId == Guid.Empty)
             return Task.FromResult(Invalid<OrderViewV1>("sourceIssueMovementId"));
         if (orderId == Guid.Empty || request is null || request.ReturnId == Guid.Empty
@@ -1621,6 +1641,12 @@ public sealed partial class ManufacturingCommandService(
             node["sourceIssueMovementId"] = sourceIssueMovementId;
             canonical = node;
         }
+        if (request.PieceCount is { } pieceCount)
+        {
+            var node = JsonSerializer.SerializeToNode(canonical, Json)!.AsObject();
+            node["pieceCount"] = pieceCount;
+            canonical = node;
+        }
 
         return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.ReturnInput,
             canonical, ManufacturingApiStatus.Ok, async (metadata, _, _) =>
@@ -1645,7 +1671,8 @@ public sealed partial class ManufacturingCommandService(
                 var outcome = await inventoryReturnsAndOutputs.ReturnAsync(
                     new ManufacturingInventoryInputReturnPortCommandV1(
                         orderId, request.ExpectedVersion, request.ReturnId, request.ParentRollId,
-                        expectedParentLabelVersion, request.MovementId, mass.Value, occurredAt, request.SourceIssueMovementId),
+                        expectedParentLabelVersion, request.MovementId, mass.Value, occurredAt, request.SourceIssueMovementId,
+                        request.PieceCount),
                     metadata, cancellationToken);
                 return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, outcome.IsReplay, cancellationToken);
             }, stored => OrderView((ProductionOrder)stored), cancellationToken);
