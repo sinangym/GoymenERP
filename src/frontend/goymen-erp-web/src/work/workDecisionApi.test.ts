@@ -61,3 +61,25 @@ it('accepts the native Purchasing purpose shape while preserving strict company/
   expect((await sendWorkDecision(company,purchaseKind,id,{...request,approve:false,reason:'Ret gerekçesi'},'original-key')).type).toBe('unknown')
  }
 })
+
+it('accepts only the native current Rejected projection for a replayed request approval with matching receipt identity', async () => {
+ const purchaseKind='purchasing.request.v1'
+ const body={companyId:company,kind:purchaseKind,itemId:id,state:'Rejected',replayed:true,originalCorrelationId:'original'}
+ const headers={'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}
+ const fetch=vi.fn(async()=>new Response(JSON.stringify(body),{status:200,headers}))
+ vi.stubGlobal('fetch',fetch)
+ const approve={...request,approve:true}
+ expect((await sendWorkDecision(company,purchaseKind,id,approve,'original-key')).type).toBe('applied')
+ for(const delta of [{replayed:false},{state:'Draft'},{state:'Submitted'},{state:'Withdrawn'},{state:'Cancelled'},{state:'Unknown'},{companyId:id},{itemId:company},{kind:'sales.invoice.v1'},{originalCorrelationId:'other'},{extra:true}]){
+  fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,...delta}),{status:200,headers}))
+  expect((await sendWorkDecision(company,purchaseKind,id,approve,'original-key')).type).toBe('unknown')
+ }
+ fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,replayed:false}),{status:200}))
+ expect((await sendWorkDecision(company,purchaseKind,id,approve,'original-key')).type).toBe('unknown')
+ fetch.mockImplementation(async()=>new Response(JSON.stringify(body),{status:200}))
+ expect((await sendWorkDecision(company,purchaseKind,id,approve,'original-key')).type).toBe('unknown')
+ fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,state:'Approved'}),{status:200,headers}))
+ expect((await sendWorkDecision(company,purchaseKind,id,{...approve,approve:false,reason:'Ret'},'original-key')).type).toBe('unknown')
+ fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,kind:'sales.invoice.v1'}),{status:200,headers}))
+ expect((await sendWorkDecision(company,'sales.invoice.v1',id,approve,'original-key')).type).toBe('unknown')
+})

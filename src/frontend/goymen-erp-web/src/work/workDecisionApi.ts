@@ -50,8 +50,12 @@ export async function sendWorkDecision(company: string, kind: WorkDecisionKind, 
   if (response.status === 200) {
     const state = kind === 'finance.cash-account-passivation.v1' ? request.approve ? 'Passive' : 'Approved'
       : kind === 'finance.cash-account-reactivation.v1' ? request.approve ? 'Approved' : 'Passive' : request.approve ? 'Approved' : 'Rejected'
+    // Purchasing replays its current request. A successful approval can later be rejected natively;
+    // withdrawal/draft/submission cannot follow a recorded approval, and rejection is terminal.
+    const currentPurchaseRejection = kind === 'purchasing.request.v1' && request.approve
+      && record(body) && body.replayed === true && body.state === 'Rejected'
     return record(body) && hasExactKeys(body, ['companyId', 'kind', 'itemId', 'state', 'replayed', 'originalCorrelationId'])
-      && same(body.companyId, company) && body.kind === kind && same(body.itemId, id) && body.state === state
+      && same(body.companyId, company) && body.kind === kind && same(body.itemId, id) && (body.state === state || currentPurchaseRejection)
       && typeof body.replayed === 'boolean' && text(body.originalCorrelationId) && replayHeadersAgree(response.headers, body.replayed, body.originalCorrelationId)
       ? { type: 'applied', data: body as unknown as WorkDecisionResult, replayed: body.replayed } : { type: 'unknown', reason: 'unexpected' }
   }
