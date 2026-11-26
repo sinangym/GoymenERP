@@ -56,6 +56,8 @@ public sealed partial class FinanceSalesInvoiceSettlementTests
     [InlineData("unconfirmed-release-in-cancellation")]
     [InlineData("missing-released-source-state")]
     [InlineData("inconsistent-released-source-state")]
+    [InlineData("excess-released-allocation")]
+    [InlineData("foreign-released-source-assignment")]
     public void Partial_legacy_or_contradictory_reversal_evidence_remains_unknown(string fault)
     {
         var proof = ReversedProof(releasedAllocation: fault.Contains("allocation", StringComparison.Ordinal)
@@ -97,6 +99,9 @@ public sealed partial class FinanceSalesInvoiceSettlementTests
                 new(cancellation.Id, FinanceInvoiceProducerV1.Sales, Invoice, cancellation.InvoiceVersion, cancellation.Reason)); break;
             case "missing-released-source-state": proof = proof with { States = [] }; break;
             case "inconsistent-released-source-state": proof.States[0].UnallocatedAmountText = "0"; break;
+            case "excess-released-allocation": proof.Allocations[0].AmountText = "11"; break;
+            case "foreign-released-source-assignment": proof = proof with { Assignments = [new()
+                { CompanyId = Guid.NewGuid(), Kind = FinanceBalanceAssignmentKinds.Receipt, SourceId = proof.Sources[0].Id }] }; break;
         }
         var result = Project(proof);
         Assert.Equal(FinanceSalesInvoiceSettlementStatusV1.Unknown, result.Status);

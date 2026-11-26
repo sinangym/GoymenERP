@@ -51,7 +51,7 @@ internal static class FinanceOfficialSalesInvoiceReversalProofV1
                 || item.SourceBatchChecksum != admission.SourceChecksum || item.PartyId == Guid.Empty || item.CompanyAccountId == Guid.Empty
                 || item.CurrencyId == Guid.Empty || item.PartyId != first.PartyId || item.CompanyAccountId != first.CompanyAccountId
                 || item.CurrencyId != first.CurrencyId || item.Version < 2 || item.Status != FinanceOpenItemStatuses.Cancelled
-                || item.OutstandingAmountText != "0" || !FinanceExactDecimalText.TryParsePositive(item.OriginalAmountText, out _)
+                || item.OutstandingAmountText != "0" || !FinanceExactDecimalText.TryParsePositive(item.OriginalAmountText, out var itemOriginal)
                 || item.UpdatedBy != cancellation.ActorId || item.UpdatedAtUtc != cancellation.CancelledAtUtc) return false;
             var reversal = reversed.Single(x => x.OpenItemId == item.Id);
             if (reversal.CompanyId != company || reversal.CancellationId != cancellation.Id
@@ -66,16 +66,17 @@ internal static class FinanceOfficialSalesInvoiceReversalProofV1
                     || allocation.CurrencyId != item.CurrencyId || allocation.Status != FinanceAllocationStatuses.Released
                     || allocation.Version < 2 || !Text(allocation.ReleasedBy) || !Text(allocation.ReleaseReason)
                     || allocation.ReleasedAtUtc is not { } releasedAt || releasedAt > cancellation.CancelledAtUtc
-                    || releasedAt < allocation.CreatedAtUtc || !FinanceExactDecimalText.TryParsePositive(allocation.AmountText, out _)
+                    || releasedAt < allocation.CreatedAtUtc || !FinanceExactDecimalText.TryParsePositive(allocation.AmountText, out var allocationAmount)
+                    || allocationAmount.CompareTo(itemOriginal) > 0
                     || releasedAt == cancellation.CancelledAtUtc && (!confirmed || allocation.ReleasedBy != cancellation.ActorId
                         || allocation.ReleaseReason != cancellation.Reason)
-                    || !ReleasedSourceIsConsistent(company, allocation.SourceId, item.CurrencyId, proof)) return false;
+                    || !ReleasedSourceIsConsistent(company, allocation.SourceId, item.CurrencyId, allocationAmount, proof)) return false;
             }
         }
         return true;
     }
 
-    private static bool ReleasedSourceIsConsistent(Guid company, Guid sourceId, Guid currency,
+    private static bool ReleasedSourceIsConsistent(Guid company, Guid sourceId, Guid currency, FinanceExactDecimalText allocationAmount,
         FinanceSalesInvoiceSettlementReaderV1.Snapshot proof)
     {
         var source = proof.Sources.Single(x => x.Id == sourceId);
@@ -85,7 +86,7 @@ internal static class FinanceOfficialSalesInvoiceReversalProofV1
             || !Text(source.RecordedBy) || source.CurrencyId != currency || source.PartyId == Guid.Empty || source.CompanyAccountId == Guid.Empty
             || state.CompanyId != company || state.CurrencyId != currency || state.Version < 1
             || !FinanceExactDecimalText.Equal(state.OriginalAmountText, source.AmountText)
-            || !FinanceExactDecimalText.TryParsePositive(source.AmountText, out var original)
+            || !FinanceExactDecimalText.TryParsePositive(source.AmountText, out var original) || allocationAmount.CompareTo(original) > 0
             || !FinanceExactDecimalText.TryParseNonNegative(state.UnallocatedAmountText, out var available)
             || money.CompanyId != company || money.Kind != MoneyEventKinds.ManualBankReceiptRecorded
             || money.PartyId != source.PartyId || money.CompanyAccountId != source.CompanyAccountId || money.CurrencyId != currency
@@ -100,6 +101,9 @@ internal static class FinanceOfficialSalesInvoiceReversalProofV1
             if (!FinanceExactDecimalText.TryParsePositive(sibling.AmountText, out var amount)) return false;
             allocated = allocated.Add(amount);
         }
+        var assignments = proof.Assignments.Where(x => x.Kind == FinanceBalanceAssignmentKinds.Receipt && x.SourceId == sourceId).ToArray();
+        if (assignments.Any(x => x.CompanyId != company)) return false;
+        _ = new FinanceAllocationPositions(source.PartyId, source.CompanyAccountId, currency, state.UnallocatedAmountText, assignments).All();
         return available.Add(allocated).CompareTo(original) == 0;
     }
 
