@@ -13,7 +13,7 @@
       "registered_permission_candidates": [
         "sales.orders.approve"
       ],
-      "source_row": 626,
+      "source_row": 631,
       "preparer_proposal": "SAT, SATM, GM",
       "approver_proposal": "SATM, GM",
       "duration_cell": "2 iş günü",
@@ -56,7 +56,7 @@
       "registered_permission_candidates": [
         "sales.orders.price-floor-exception.approve"
       ],
-      "source_row": 627,
+      "source_row": 632,
       "preparer_proposal": "SAT",
       "approver_proposal": "SATM, GM",
       "duration_cell": "2 iş günü",
@@ -84,7 +84,7 @@
       "registered_permission_candidates": [
         "sales.orders.discount-exception.approve"
       ],
-      "source_row": 628,
+      "source_row": 633,
       "preparer_proposal": "SAT",
       "approver_proposal": "SATM; kendi limitini aşanı GM",
       "duration_cell": "2 iş günü",
@@ -110,7 +110,7 @@
       "registered_permission_candidates": [
         "sales.orders.over-delivery.approve"
       ],
-      "source_row": 629,
+      "source_row": 634,
       "preparer_proposal": "DEPO (sevk)",
       "approver_proposal": "SAT (K), SATM, GM",
       "duration_cell": "2 iş günü",
@@ -138,7 +138,7 @@
       "registered_permission_candidates": [
         "sales.orders.risk-exception.approve"
       ],
-      "source_row": 630,
+      "source_row": 635,
       "preparer_proposal": "SAT, SATM, DEPO",
       "approver_proposal": "SAT (K), SATM, GM",
       "duration_cell": "2 iş günü",
@@ -163,7 +163,7 @@
       "name": "Kalan miktar değişikliği",
       "permission_cell": "doğrulanmadı",
       "registered_permission_candidates": [],
-      "source_row": 631,
+      "source_row": 636,
       "preparer_proposal": "SAT",
       "approver_proposal": "ÖNERİ: SATM, GM",
       "duration_cell": "2 iş günü",
@@ -184,7 +184,7 @@
       "registered_permission_candidates": [
         "sales.requests.approve"
       ],
-      "source_row": 632,
+      "source_row": 637,
       "preparer_proposal": "SAT",
       "approver_proposal": "SATM, GM",
       "duration_cell": "2 iş günü",
@@ -213,7 +213,7 @@
       "registered_permission_candidates": [
         "sales.quotes.expired-conversion.approve"
       ],
-      "source_row": 633,
+      "source_row": 638,
       "preparer_proposal": "SAT",
       "approver_proposal": "SATM, GM",
       "duration_cell": "2 iş günü",
@@ -241,7 +241,7 @@
       "registered_permission_candidates": [
         "sales.invoices.approve"
       ],
-      "source_row": 634,
+      "source_row": 639,
       "preparer_proposal": "MUH",
       "approver_proposal": "MUH (başka kişi), MUHM, GM",
       "duration_cell": "2 iş günü",
@@ -269,7 +269,7 @@
       "registered_permission_candidates": [
         "sales.returns.approve"
       ],
-      "source_row": 635,
+      "source_row": 640,
       "preparer_proposal": "SAT",
       "approver_proposal": "SATM, GM",
       "duration_cell": "2 iş günü",
@@ -292,7 +292,7 @@
       "registered_permission_candidates": [
         "sales.contracts.discount.approve"
       ],
-      "source_row": 636,
+      "source_row": 641,
       "preparer_proposal": "SAT, SATM",
       "approver_proposal": "SATM, GM",
       "duration_cell": "2 iş günü",
@@ -313,7 +313,7 @@
       "name": "Fason hizmet faturası",
       "permission_cell": "doğrulanmadı (servis `sales.invoices.write/read` kullanıyor)",
       "registered_permission_candidates": [],
-      "source_row": 637,
+      "source_row": 642,
       "preparer_proposal": "MUH",
       "approver_proposal": "ÖNERİ: MUHM, GM",
       "duration_cell": "2 iş günü",
@@ -334,7 +334,7 @@
       "registered_permission_candidates": [
         "purchasing.requests.approve"
       ],
-      "source_row": 638,
+      "source_row": 643,
       "preparer_proposal": "ALM, SAT",
       "approver_proposal": "ALMM, GM",
       "duration_cell": "2 iş günü",
@@ -377,7 +377,7 @@
       "registered_permission_candidates": [
         "purchasing.orders.approve"
       ],
-      "source_row": 639,
+      "source_row": 644,
       "preparer_proposal": "ALM, SAT",
       "approver_proposal": "ALMM, GM",
       "duration_cell": "2 iş günü",
@@ -410,7 +410,7 @@
       "registered_permission_candidates": [
         "purchasing.goods-receipts.approve-variance"
       ],
-      "source_row": 640,
+      "source_row": 645,
       "preparer_proposal": "DEPO",
       "approver_proposal": "ALMM, GM",
       "duration_cell": "2 iş günü",
@@ -436,7 +436,7 @@
       "registered_permission_candidates": [
         "purchasing.invoices.approve-variance"
       ],
-      "source_row": 641,
+      "source_row": 646,
       "preparer_proposal": "MUH",
       "approver_proposal": "MUHM, GM",
       "duration_cell": "2 iş günü",
@@ -458,7 +458,7 @@
       "name": "Tedarikçi iadesi maliyet istisnası",
       "permission_cell": "doğrulanmadı",
       "registered_permission_candidates": [],
-      "source_row": 642,
+      "source_row": 647,
       "preparer_proposal": "ALM",
       "approver_proposal": "ÖNERİ: MUHM, GM",
       "duration_cell": "2 iş günü",
@@ -479,7 +479,7 @@
       "registered_permission_candidates": [
         "purchasing.orders.approve"
       ],
-      "source_row": 643,
+      "source_row": 648,
       "preparer_proposal": "ALM",
       "approver_proposal": "ALMM, GM",
       "duration_cell": "2 iş günü",
@@ -512,7 +512,7 @@
       "registered_permission_candidates": [
         "inventory.stock-count.approve"
       ],
-      "source_row": 644,
+      "source_row": 649,
       "preparer_proposal": "DEPO",
       "approver_proposal": "OPM, GM",
       "duration_cell": "2 iş günü",
@@ -545,7 +545,7 @@
       "registered_permission_candidates": [
         "inventory.stock-scrap.approve"
       ],
-      "source_row": 645,
+      "source_row": 650,
       "preparer_proposal": "DEPO, UOP",
       "approver_proposal": "OPM, GM",
       "duration_cell": "2 iş günü",
@@ -576,7 +576,7 @@
       "registered_permission_candidates": [
         "inventory.stock-transfer.overage-approve"
       ],
-      "source_row": 646,
+      "source_row": 651,
       "preparer_proposal": "DEPO",
       "approver_proposal": "OPM, GM",
       "duration_cell": "2 iş günü",
@@ -607,7 +607,7 @@
       "registered_permission_candidates": [
         "inventory.stock-transfer.loss-approve"
       ],
-      "source_row": 647,
+      "source_row": 652,
       "preparer_proposal": "DEPO",
       "approver_proposal": "OPM, GM",
       "duration_cell": "2 iş günü",
@@ -638,7 +638,7 @@
       "registered_permission_candidates": [
         "inventory.opening-cost.approve"
       ],
-      "source_row": 648,
+      "source_row": 653,
       "preparer_proposal": "MUH",
       "approver_proposal": "MUHM, GM",
       "duration_cell": "2 iş günü",
@@ -665,7 +665,7 @@
       "registered_permission_candidates": [
         "logistics.dispatch-notes.approve"
       ],
-      "source_row": 649,
+      "source_row": 654,
       "preparer_proposal": "DEPO",
       "approver_proposal": "OPM veya SATM; GM yedek",
       "duration_cell": "**4 saat**",
@@ -702,7 +702,7 @@
       "registered_permission_candidates": [
         "logistics.shipments.plan-excess.approve"
       ],
-      "source_row": 650,
+      "source_row": 655,
       "preparer_proposal": "DEPO",
       "approver_proposal": "OPM, GM",
       "duration_cell": "**4 saat**",
@@ -734,7 +734,7 @@
       "registered_permission_candidates": [
         "logistics.weighing-differences.approve"
       ],
-      "source_row": 651,
+      "source_row": 656,
       "preparer_proposal": "DEPO, UOP, KNT (hazırlayan)",
       "approver_proposal": "OPM, GM",
       "duration_cell": "**4 saat**",
@@ -760,7 +760,7 @@
       "registered_permission_candidates": [
         "logistics.customer-returns.decision"
       ],
-      "source_row": 652,
+      "source_row": 657,
       "preparer_proposal": "SAT, DEPO",
       "approver_proposal": "SATM, OPM, GM",
       "duration_cell": "2 iş günü",
@@ -785,7 +785,7 @@
       "registered_permission_candidates": [
         "manufacturing.plans.approve"
       ],
-      "source_row": 653,
+      "source_row": 658,
       "preparer_proposal": "UPL",
       "approver_proposal": "OPM, GM",
       "duration_cell": "**4 saat**",
@@ -835,7 +835,7 @@
       "registered_permission_candidates": [
         "finance.official-invoice-import.approve"
       ],
-      "source_row": 654,
+      "source_row": 659,
       "preparer_proposal": "FIN, MUH",
       "approver_proposal": "FINM, GM",
       "duration_cell": "2 iş günü",
@@ -867,7 +867,7 @@
       "registered_permission_candidates": [
         "finance.official-sales-invoices.approve"
       ],
-      "source_row": 655,
+      "source_row": 660,
       "preparer_proposal": "FIN",
       "approver_proposal": "FINM, GM",
       "duration_cell": "2 iş günü",
@@ -895,7 +895,7 @@
       "registered_permission_candidates": [
         "finance.manual-bank-payment.approve"
       ],
-      "source_row": 656,
+      "source_row": 661,
       "preparer_proposal": "FIN",
       "approver_proposal": "FINM, GM",
       "duration_cell": "2 iş günü",
@@ -953,7 +953,7 @@
       "registered_permission_candidates": [
         "finance.manual-bank-payment.reverse.approve"
       ],
-      "source_row": 657,
+      "source_row": 662,
       "preparer_proposal": "FIN",
       "approver_proposal": "FINM, GM",
       "duration_cell": "2 iş günü",
@@ -977,7 +977,7 @@
       "registered_permission_candidates": [
         "finance.manual-receipt.reverse.approve"
       ],
-      "source_row": 658,
+      "source_row": 663,
       "preparer_proposal": "FIN",
       "approver_proposal": "FINM, GM",
       "duration_cell": "2 iş günü",
@@ -1000,7 +1000,7 @@
       "registered_permission_candidates": [
         "finance.expense-payment.approve"
       ],
-      "source_row": 659,
+      "source_row": 664,
       "preparer_proposal": "FIN",
       "approver_proposal": "FINM, GM",
       "duration_cell": "2 iş günü",
@@ -1023,7 +1023,7 @@
       "registered_permission_candidates": [
         "finance.bank-account.approve"
       ],
-      "source_row": 660,
+      "source_row": 665,
       "preparer_proposal": "FIN (Critical aday)",
       "approver_proposal": "FINM (Critical aday)",
       "duration_cell": "2 iş günü",
@@ -1060,7 +1060,7 @@
       "name": "IBAN değişikliği",
       "permission_cell": "doğrulanmadı (servis `finance.bank-account.propose/approve` kullanıyor; Critical)",
       "registered_permission_candidates": [],
-      "source_row": 661,
+      "source_row": 666,
       "preparer_proposal": "FIN",
       "approver_proposal": "FINM (IK)",
       "duration_cell": "2 iş günü",
@@ -1081,7 +1081,7 @@
       "registered_permission_candidates": [
         "finance.cash-account.approve"
       ],
-      "source_row": 662,
+      "source_row": 667,
       "preparer_proposal": "FIN",
       "approver_proposal": "FINM (IK)",
       "duration_cell": "2 iş günü",
@@ -1113,7 +1113,7 @@
       "registered_permission_candidates": [
         "finance.cash-account.passivation.approve"
       ],
-      "source_row": 663,
+      "source_row": 668,
       "preparer_proposal": "FIN",
       "approver_proposal": "FINM (IK)",
       "duration_cell": "2 iş günü",
@@ -1148,7 +1148,7 @@
       "registered_permission_candidates": [
         "finance.cash-account.reactivation.approve"
       ],
-      "source_row": 664,
+      "source_row": 669,
       "preparer_proposal": "FIN",
       "approver_proposal": "FINM (IK)",
       "duration_cell": "2 iş günü",
@@ -1181,7 +1181,7 @@
       "registered_permission_candidates": [
         "finance.credit-limits.approve"
       ],
-      "source_row": 665,
+      "source_row": 670,
       "preparer_proposal": "FIN",
       "approver_proposal": "FINM veya GM (IK)",
       "duration_cell": "2 iş günü",
@@ -1222,7 +1222,7 @@
       "registered_permission_candidates": [
         "finance.credits.approve"
       ],
-      "source_row": 666,
+      "source_row": 671,
       "preparer_proposal": "FIN",
       "approver_proposal": "FINM veya GM (IK)",
       "duration_cell": "2 iş günü",
@@ -1263,7 +1263,7 @@
       "name": "Banka kredi limiti",
       "permission_cell": "doğrulanmadı",
       "registered_permission_candidates": [],
-      "source_row": 667,
+      "source_row": 672,
       "preparer_proposal": "FIN",
       "approver_proposal": "ÖNERİ: FINM, GM",
       "duration_cell": "2 iş günü",
@@ -1282,7 +1282,7 @@
       "name": "Kredi hareketi",
       "permission_cell": "doğrulanmadı (servis `finance.credits.propose/approve` kullanıyor; Critical)",
       "registered_permission_candidates": [],
-      "source_row": 668,
+      "source_row": 673,
       "preparer_proposal": "FIN",
       "approver_proposal": "FINM veya GM (IK)",
       "duration_cell": "2 iş günü",
@@ -1303,7 +1303,7 @@
       "registered_permission_candidates": [
         "finance.opening-balances.approve"
       ],
-      "source_row": 669,
+      "source_row": 674,
       "preparer_proposal": "FIN",
       "approver_proposal": "FINM, GM",
       "duration_cell": "2 iş günü",
@@ -1342,7 +1342,7 @@
       "name": "Açılış bakiyesi ters kaydı",
       "permission_cell": "doğrulanmadı (servisteki dizge kayıtlı izin listesinde yok)",
       "registered_permission_candidates": [],
-      "source_row": 670,
+      "source_row": 675,
       "preparer_proposal": "FIN",
       "approver_proposal": "ÖNERİ: FINM, GM",
       "duration_cell": "2 iş günü",
@@ -1363,7 +1363,7 @@
       "registered_permission_candidates": [
         "accounting.normal-journal.draft.approve"
       ],
-      "source_row": 671,
+      "source_row": 676,
       "preparer_proposal": "FIN",
       "approver_proposal": "ÖNERİ: MUHM, GM",
       "duration_cell": "2 iş günü",
@@ -1389,7 +1389,7 @@
       "registered_permission_candidates": [
         "accounting.periods.approve"
       ],
-      "source_row": 672,
+      "source_row": 677,
       "preparer_proposal": "MUHM",
       "approver_proposal": "MUHM (başka kişi), GM",
       "duration_cell": "2 iş günü",
@@ -1417,7 +1417,7 @@
       "registered_permission_candidates": [
         "accounting.periods.reopen"
       ],
-      "source_row": 673,
+      "source_row": 678,
       "preparer_proposal": "MUHM",
       "approver_proposal": "yalnız GM",
       "duration_cell": "2 iş günü",
@@ -1446,7 +1446,7 @@
       "registered_permission_candidates": [
         "accounting.normal-journal.draft.approve"
       ],
-      "source_row": 674,
+      "source_row": 679,
       "preparer_proposal": "MUH",
       "approver_proposal": "MUHM, GM",
       "duration_cell": "2 iş günü",
@@ -1472,7 +1472,7 @@
       "registered_permission_candidates": [
         "accounting.journal.reverse.approve"
       ],
-      "source_row": 675,
+      "source_row": 680,
       "preparer_proposal": "MUH",
       "approver_proposal": "MUHM, GM",
       "duration_cell": "2 iş günü",
@@ -1497,7 +1497,7 @@
       "registered_permission_candidates": [
         "accounting.approved-source-catalog.activate"
       ],
-      "source_row": 676,
+      "source_row": 681,
       "preparer_proposal": "MUH",
       "approver_proposal": "MUHM, GM",
       "duration_cell": "2 iş günü",
@@ -1521,7 +1521,7 @@
       "registered_permission_candidates": [
         "accounting.posting-mappings.activate"
       ],
-      "source_row": 677,
+      "source_row": 682,
       "preparer_proposal": "MUH",
       "approver_proposal": "MUHM, GM",
       "duration_cell": "2 iş günü",
@@ -1544,7 +1544,7 @@
       "name": "Üretim maliyet farkı",
       "permission_cell": "doğrulanmadı",
       "registered_permission_candidates": [],
-      "source_row": 678,
+      "source_row": 683,
       "preparer_proposal": "sistem",
       "approver_proposal": "ÖNERİ: MUHM, GM",
       "duration_cell": "2 iş günü",
@@ -1563,7 +1563,7 @@
       "name": "Fatura satırı SMM düzeltmesi",
       "permission_cell": "doğrulanmadı",
       "registered_permission_candidates": [],
-      "source_row": 679,
+      "source_row": 684,
       "preparer_proposal": "MUH",
       "approver_proposal": "ÖNERİ: MUHM, GM",
       "duration_cell": "2 iş günü",
@@ -1582,7 +1582,7 @@
       "name": "Stok maliyet teklifleri",
       "permission_cell": "doğrulanmadı",
       "registered_permission_candidates": [],
-      "source_row": 680,
+      "source_row": 685,
       "preparer_proposal": "sistem, MUH",
       "approver_proposal": "ÖNERİ: MUHM, GM",
       "duration_cell": "2 iş günü",
@@ -1601,7 +1601,7 @@
       "name": "Maliyet bileşeni iptali",
       "permission_cell": "doğrulanmadı",
       "registered_permission_candidates": [],
-      "source_row": 681,
+      "source_row": 686,
       "preparer_proposal": "MUH",
       "approver_proposal": "ÖNERİ: MUHM, GM",
       "duration_cell": "2 iş günü",
@@ -1620,7 +1620,7 @@
       "name": "Kaynak fiş",
       "permission_cell": "doğrulanmadı",
       "registered_permission_candidates": [],
-      "source_row": 682,
+      "source_row": 687,
       "preparer_proposal": "sistem, MUH",
       "approver_proposal": "ÖNERİ: MUHM, GM",
       "duration_cell": "2 iş günü",
@@ -1641,7 +1641,7 @@
       "registered_permission_candidates": [
         "identity.access.approve"
       ],
-      "source_row": 683,
+      "source_row": 688,
       "preparer_proposal": "herkes (`identity.access.request`); kurgulayan Sistem Yöneticisi",
       "approver_proposal": "Sistem Yöneticisi (IK)",
       "duration_cell": "2 iş günü",
@@ -1664,7 +1664,7 @@
       "registered_permission_candidates": [
         "organization.company.tax-id.approve"
       ],
-      "source_row": 684,
+      "source_row": 689,
       "preparer_proposal": "MUHM",
       "approver_proposal": "GM",
       "duration_cell": "2 iş günü",
@@ -1690,7 +1690,7 @@
       "registered_permission_candidates": [
         "counterparty.parties.tax-identity.approve"
       ],
-      "source_row": 685,
+      "source_row": 690,
       "preparer_proposal": "MUH, MUHM",
       "approver_proposal": "MUHM veya GM (IK)",
       "duration_cell": "2 iş günü",
@@ -1719,7 +1719,7 @@
       "registered_permission_candidates": [
         "counterparties.legal_name.approve"
       ],
-      "source_row": 686,
+      "source_row": 691,
       "preparer_proposal": "MUH, MUHM",
       "approver_proposal": "MUHM, GM",
       "duration_cell": "2 iş günü",
@@ -1748,7 +1748,7 @@
       "registered_permission_candidates": [
         "counterparty.parties.merge.approve"
       ],
-      "source_row": 687,
+      "source_row": 692,
       "preparer_proposal": "ayrı hazırlama izni yok",
       "approver_proposal": "MUHM, GM",
       "duration_cell": "2 iş günü",
@@ -1779,7 +1779,7 @@
       "registered_permission_candidates": [
         "product.package-standards.approve"
       ],
-      "source_row": 688,
+      "source_row": 693,
       "preparer_proposal": "UPL",
       "approver_proposal": "OPM, GM",
       "duration_cell": "2 iş günü",
@@ -1805,7 +1805,7 @@
       "registered_permission_candidates": [
         "product.price-lists.publish"
       ],
-      "source_row": 689,
+      "source_row": 694,
       "preparer_proposal": "SATM (`write`)",
       "approver_proposal": "SATM (aynı kişi olabilir), GM",
       "duration_cell": "2 iş günü",
@@ -1820,5 +1820,6 @@
       "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
     }
   ],
-  "closure": "For each flow verify real inbox listing, owner decision, company/scope, maker-checker exceptions, expected version, replay and audit. Do not replace owner rules with proposal cells."
+  "closure": "For each flow verify real inbox listing, owner decision, company/scope, maker-checker exceptions, expected version, replay and audit. Do not replace owner rules with proposal cells.",
+  "source_extension": "WP3 ROL-D27 role proposal shifts navigation rows only; all 64 runtime acceptances remain NOT_RUN."
 }

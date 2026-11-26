@@ -310,3 +310,4 @@ finance.treasury-balance.read,finance,hayır,evet,+,,,,,,,,,,,+,+,,,,ÖNERİ,ROL
 counterparty.party-ibans.read,counterparty,hayır,evet,,,,,,,,,,,,+,+,+,+,,ÖNERİ,ROL-D24: yalnız rol taslağı önerisi; hiçbir role/seed veya kişiye atanmaz.
 counterparty.party-ibans.manage,counterparty,hayır,evet,,,,,,,,,,,,+,,,,,ÖNERİ,ROL-D24: yalnız rol taslağı önerisi; hiçbir role/seed veya kişiye atanmaz.
 counterparty.parties.group-company-link.update,counterparty,hayır,evet,,,,,,,,,,,,,,,+,,ÖNERİ,ROL-D24: yalnız rol taslağı önerisi; hiçbir role/seed veya kişiye atanmaz.
+work.delegations.manage,work,hayır,evet,+,,,,,,,,,,,,,,,+,ÖNERİ,"ROL-D27: şirket vekâlet yönetimi için GM ve Sistem Yöneticisi önerisi; onay yetkisi vermez, hiçbir role/seed veya kişiye atanmaz. Kendi vekâleti için ayrıca bu izin aranmaz."

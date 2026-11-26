@@ -1,18 +1,19 @@
 {
   "version": "1.0",
-  "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+  "source_commit": "4d39b92873d2c61384358a7847ba12f491a7557d",
   "source_path": "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/ErpPermissions.cs",
-  "count": 311,
+  "count": 312,
   "critical_count": 17,
-  "company_wide_count": 296,
-  "role_matrix_rows": 311,
+  "company_wide_count": 297,
+  "role_matrix_rows": 312,
   "original_matrix_rows": 306,
   "added_proposal_rows": [
     "counterparty.parties.group-company-link.update",
     "counterparty.party-ibans.manage",
     "counterparty.party-ibans.read",
     "finance.treasury-balance.read",
-    "work.approvals.escalate"
+    "work.approvals.escalate",
+    "work.delegations.manage"
   ],
   "runtime_acceptance": "NOT_RUN",
   "method": "All/Critical/CompanyWideOnly lexical extraction; source occurrences, not control-flow proof.",
@@ -15555,6 +15556,56 @@
       "semantic_authorization": "NOT_VERIFIED",
       "sensitive_field_behavior": "OWNER_REVIEW_REQUIRED",
       "notes": "Lexical navigation only: a reference is not proof of an endpoint guard, grant or effective user access."
+    },
+    {
+      "permission": "work.delegations.manage",
+      "constant": "WorkDelegationsManage",
+      "critical": false,
+      "company_wide_only": true,
+      "role_proposals": {
+        "GM": "+",
+        "SYS": "+"
+      },
+      "proposal_status": "ÖNERİ",
+      "evidence": {
+        "backend": {
+          "occurrences": 6,
+          "locations": [
+            "src/backend/Modules/Work/GoymenERP.Modules.Work.Domain/WorkPermissionManifestV1.cs:23",
+            "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Delegations/WorkDelegationServiceV1.cs:190",
+            "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Delegations/WorkDelegationServiceV1.cs:194",
+            "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/ErpPermissions.cs:1800",
+            "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/ErpPermissions.cs:2161",
+            "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/ErpPermissions.cs:2485"
+          ]
+        },
+        "frontend": {
+          "occurrences": 0,
+          "locations": []
+        },
+        "test": {
+          "occurrences": 6,
+          "locations": [
+            "tests/GoymenERP.Identity.UnitTests/WorkCollaborationPermissionRegistrationTests.cs:29",
+            "tests/GoymenERP.Identity.UnitTests/WorkCollaborationPermissionRegistrationTests.cs:40",
+            "tests/GoymenERP.Work.UnitTests/WorkCollaborationDomainTests.cs:92",
+            "tests/GoymenERP.Work.UnitTests/WorkDelegationServiceTests.cs:64",
+            "tests/GoymenERP.Work.UnitTests/WorkDelegationServiceTests.cs:87",
+            "tests/GoymenERP.Work.UnitTests/WorkDelegationServiceTests.cs:185"
+          ]
+        },
+        "capability": {
+          "occurrences": 2,
+          "locations": [
+            "src/backend/Modules/Work/GoymenERP.Modules.Work.Domain/WorkPermissionManifestV1.cs:23",
+            "src/backend/Modules/Work/GoymenERP.Modules.Work.Domain/WorkPermissionManifestV1.cs:26"
+          ]
+        }
+      },
+      "semantic_authorization": "NOT_VERIFIED",
+      "sensitive_field_behavior": "OWNER_REVIEW_REQUIRED",
+      "notes": "ROL-D27 WP3 source extension; lexical navigation is not a grant or runtime acceptance."
     }
-  ]
+  ],
+  "working_source_extension": "ROL-D27/WP3 adds one registered permission, proposal only; no grant or runtime acceptance."
 }

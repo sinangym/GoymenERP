@@ -135,7 +135,8 @@
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
         "K3 mutation/migration: gerçek SQL; ilgili UI: gerçek owner API ile tarayıcı ve erişim iptali.",
-        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
+        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı.",
+        "Reuse ErpPersonaRoleCodes technical template IDs consistently with existing ROL-D4 delegation eligibility; constants create no real role or grant."
       ],
       "business_acceptance": [
         "İki şirketli çift rol kullanıcısı üçüncü şirkete erişemez; kendi kaydına onay veremez; ROL-D17/D18 istisnaları korunur.",
@@ -1463,7 +1464,7 @@
       "backlog_parent": "W1-YETKI",
       "title": "Süreli vekâlet",
       "group": "TREN2",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_IMPLEMENTED_LOCAL",
       "priority": "P1",
       "risk": "K3",
       "scope": "Yalnız zaten onay izni olan vekil; şirket/süre; zincir ve kendi kaydını onaylama yok; başlangıç kapalı.",
@@ -1483,8 +1484,9 @@
       ],
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
-        "Devir belgesinde kalan iş; listedeki mevcut kaynak/testler bulundu.",
-        "Tam davranış ve runtime kabulü: NOT_RUN."
+        "Existing Work context, CollaborationAttempts, owner inbox sources, Identity permission-holder read port and Audit transactional writer reused.",
+        "ROL-D27 self/company management implemented; ROL-D4 manager eligibility, existing scope, maker exclusion, interval and chain fences preserved.",
+        "WP8 consumes the reader and provides the management UI; no owner decision, role grant or activation added."
       ],
       "decisions": [
         "ROL-D4",
@@ -1495,7 +1497,11 @@
       "open_decisions": [],
       "existing_tests": [
         "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs",
-        "tests/GoymenERP.Identity.UnitTests/ErpAuthorityRevalidationServiceTests.cs"
+        "tests/GoymenERP.Identity.UnitTests/ErpAuthorityRevalidationServiceTests.cs",
+        "tests/GoymenERP.Work.UnitTests/WorkDelegationServiceTests.cs",
+        "tests/GoymenERP.Identity.UnitTests/WorkDelegationPermissionHolderTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkDelegationEndpointTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkDelegationSqlServerRelationalAcceptanceTests.cs"
       ],
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
@@ -1503,11 +1509,13 @@
         "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
       ],
       "business_acceptance": [
-        "Süre bitişi/yetki iptali/aynı hazırlayan reddi; audit ve owner onayı."
+        "Süre bitişi/yetki iptali/aynı hazırlayan reddi; audit ve owner onayı.",
+        "ROL-D27: self create/revoke or explicit company management permission, no extra approval; delegation grants no rights.",
+        "ROL-D4: General Manager delegates only to an actual module manager holding the relevant permission in sufficient scope."
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "WP8 is the next exclusive Work schema writer; preserve pending SQL and K3 gates.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -1516,8 +1524,81 @@
         "tests/GoymenERP.Identity.UnitTests/ErpAuthorityRevalidationServiceTests.cs",
         "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs"
       ],
-      "change_files": [],
-      "decision_resolution": "26 Kasım doğrudan cevap: kendi vekâleti + ayrı yönetim izni; ek onay yok, rol matrisinde yalnız öneri. Geçerli mevcut izin, süre, zincirsizlik, SoD ve audit korunur."
+      "change_files": [
+        "src/backend/GoymenERP.Api/Endpoints/WorkDelegationEndpoints.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Delegations/WorkDelegationContractsV1.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Delegations/WorkDelegationServiceV1.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261126183924_AddWorkApprovalDelegations.Designer.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261126183924_AddWorkApprovalDelegations.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDbContext.Delegations.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDelegationRow.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/WorkDelegationModuleExtensions.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkDelegationEndpointTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkDelegationSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Identity.UnitTests/WorkDelegationPermissionHolderTests.cs",
+        "tests/GoymenERP.Work.UnitTests/WorkDelegationServiceTests.cs",
+        "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/ErpPermissions.cs",
+        "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/ErpPersonaRoleCodes.cs",
+        "src/backend/GoymenERP.Api/Program.cs",
+        "src/backend/GoymenERP.Api/WorkRuntime/WorkApprovalFollowUpHostV1.cs",
+        "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Application/Contracts/PermissionHolderListContractsV1.cs",
+        "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/PermissionHolderListPortV1.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Domain/WorkPermissionManifestV1.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/ApprovalFollowUp/WorkApprovalFollowUpContractsV1.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/WorkDbContextModelSnapshot.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDbContext.cs",
+        "src/backend/Modules/Work/README.md",
+        "tests/GoymenERP.Api.IntegrationTests/WorkOutboxDispatchSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Identity.UnitTests/WorkCollaborationPermissionRegistrationTests.cs",
+        "tests/GoymenERP.Work.UnitTests/WorkCollaborationDomainTests.cs",
+        "tests/GoymenERP.Work.UnitTests/WorkOutboxRegistrationTests.cs",
+        "tools/relational_inventory/work.txt"
+      ],
+      "decision_resolution": "26 Kasım doğrudan cevap: kendi vekâleti + ayrı yönetim izni; ek onay yok, rol matrisinde yalnız öneri. Geçerli mevcut izin, süre, zincirsizlik, SoD ve audit korunur.",
+      "ownership_lease": {
+        "branch": "codex/erp-completion-20261126",
+        "base_head": "5e118830095f1d53ce8d8a008053c6eeacc9d32d",
+        "writer": "Codex",
+        "schema": "Work exclusive until WP3 source commit; WP8 next, YOL-D40 after WP8",
+        "activation": "CLOSED"
+      },
+      "execution": {
+        "source_commit": "4d39b92873d2c61384358a7847ba12f491a7557d",
+        "local_checks": {
+          "Work.UnitTests": "169 passed, 0 skipped",
+          "Identity.UnitTests": "866 passed, 0 skipped",
+          "API Work delegation/collaboration/follow-up": "18 passed, 0 skipped",
+          "EF_model": "No pending Work model changes (unit model check)",
+          "new_SQL_facts": "4 written and compiled; NOT_RUN"
+        },
+        "reuse": [
+          "WorkDbContext",
+          "WorkCollaborationAttempts",
+          "IWorkInboxSourceV1",
+          "IPermissionHolderListPortV1",
+          "IAuditTransactionWriterV1",
+          "existing SQL fixture"
+        ],
+        "migration": "20261126183924_AddWorkApprovalDelegations",
+        "throw_codes": [
+          52120
+        ],
+        "new_permissions": [
+          "work.delegations.manage (registered only; no assignments; not Critical)"
+        ],
+        "remaining": [
+          "WP8 UI and authorized owner decision integration",
+          "actual SQL, browser, train pins/full CI and two independent exact-head K3 reviews"
+        ],
+        "activation": "Work:Delegations:Enabled defaults false; no grant/activation change",
+        "measurements": {
+          "token": "NOT_AVAILABLE",
+          "development_duration": "NOT_MEASURED",
+          "test_time": "Work and Identity ~1s each; API 19s excluding builds",
+          "new_code": "git show --stat source commit; generated EF designer/snapshot included",
+          "rework": "Migration-tail expectation and scope-specific manager eligibility checks corrected locally"
+        }
+      }
     },
     {
       "id": "T2/WP8",

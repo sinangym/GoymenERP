@@ -57,7 +57,7 @@ Codex backend/DB/port ve sözleşme; Claude frontend/tarayıcı; mevcut koordina
 | W2-BELGE/MIKRO-EDOC | P0 / K3 | SOURCE_REVIEW_REQUIRED | — |
 | W5-RAPOR/WP14-COVERAGE | P0 / K2 | ACCEPTANCE_REQUIRED | — |
 | W5-MIGRASYON/CUTOVER | P0 / K3 | HUMAN_ACTIVATION_REQUIRED | W1-YETKI/ROLE-UX, W1-ORG/BOOTSTRAP, W1-CARI/QUICK-CREATE, W1-URUN/UNIT-SCOPE, W2-SATINALMA/MULTILINE, W2-SATINALMA/MIXED-MIN, W2-SATINALMA/NOPO-MIN, W4-MUHASEBE/CLASSIFY-MIN, W4-MUHASEBE/CORRECTION-MIN, W4-FINANS/EXPENSE-CATALOG, W2-SATIS/CLOSURE-AXES, W4-RISK/SECOND-SHIPMENT, W2-ACIKKALEM/LEGAL-IDENTITY, W3-URETIM/FIVE-ENGINES, W3-URETIM/SUBCONTRACT, W3-LOJISTIK/EXIT-EVIDENCE, W2-BELGE/MIKRO-EDOC |
-| T2/WP3 | P1 / K3 | SOURCE_REVIEW_REQUIRED | — |
+| T2/WP3 | P1 / K3 | SOURCE_IMPLEMENTED_LOCAL | — |
 | T2/WP8 | P1 / K3 | SOURCE_REVIEW_REQUIRED | T2/WP3 |
 | T2/WP10 | P1 / K2 | DECISION_REQUIRED | — |
 | T2/WP-B1 | P1 / K2 | SOURCE_REVIEW_REQUIRED | — |
@@ -120,3 +120,5 @@ Sinan’ın açık talimatıyla Claude kapasitesi yokken frontend dahil gelişti
 `T2/WP-C1-LEDGER` kaynak teslimi: `b3742be08`. Mevcut AI bağlamında ayrı `ai` şeması, atomik durum/olay ve sürüm CAS bağlandı. 94 hedefli test geçti (0 skip); EF model farkı yok. Dört SQL kabulü yazıldı, koşulmadı. Pin/tam CI/K3 kapanışta bekler; AI kapalıdır.
 
 `T2/CREDIT-GROUPS` kısmi teslimi: `267d08ec1` / `f45d0ce05`. Dört onaylı alan kapısı ve leasing kaynak KDV’si mevcut plan/hareket/muhasebe zincirine bağlandı. Finans 1876, muhasebe kredi 9, frontend kredi 22 test yeşil; SQL/CI/K3 ve kalan grup ayrıntıları bekler. WP3 yönetim kararı ROL-D27 ile kaydedildi; ek onay ve otomatik grant yok.
+
+`T2/WP3` kaynak teslimi: `4d39b9287`. ROL-D27 kendi vekâleti ve ayrı şirket yönetim izni, süre/zincir/SoD ve atomik audit ile uygulandı. Work 169, Identity 866, ilgili API 18 test geçti (0 skip). Yeni izinle güncel sayı 312/17 Critical; GM/SYS satırı yalnız öneridir. Dört SQL testi yazılı ve derlenmiş, NOT_RUN. Vekâlet kapalı; WP8 ekran/owner komutu bağlantısı, SQL/pin/CI/K3 bekler.

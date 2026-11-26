@@ -1,6 +1,6 @@
-# Rol–Yetki Taslağı v1.4.2 (bütün modüller)
+# Rol–Yetki Taslağı v1.4.3 (bütün modüller)
 
-- **Durum:** TASLAK v1.4.2 (v1.4.1: ROL-D25 banka ekstresi izinleri, §2.4; v1.4: ROL-D24 izin → rol önerileri eklendi, §2.4; v1.3: yeni kayıtlı 5 izin öneri olarak eklendi, plan D12 / WP16). Sinan'ın S-01–S-20 cevaplarıyla (ROL-D1–ROL-D20,
+- **Durum:** TASLAK v1.4.3 (WP3: ROL-D27 yönetim izni önerisi eklendi) (v1.4.1: ROL-D25 banka ekstresi izinleri, §2.4; v1.4: ROL-D24 izin → rol önerileri eklendi, §2.4; v1.3: yeni kayıtlı 5 izin öneri olarak eklendi, plan D12 / WP16). Sinan'ın S-01–S-20 cevaplarıyla (ROL-D1–ROL-D20,
   `docs/decisions/SINAN_KARARLARI_2026-11-22_ROL_YETKI.md`) ve Y-01–Y-05 cevaplarıyla (ROL-D21–ROL-D23, AI-D36,
   `docs/decisions/SINAN_KARARLARI_2026-11-22_EK_SORULAR.md`) güncellendi. Bu belge **karar değildir**; yeni karar kimliği
   üretmez, `KARAR_SICILI.md`'yi, `docs/decisions/**`'ı, seed'i, manifesti veya kodu değiştirmez.
@@ -11,7 +11,11 @@
 - **Makine-okunur eş:** [`ROL_YETKI_TASLAGI_v1.csv`](ROL_YETKI_TASLAGI_v1.csv) — her izin için bir satır; §2.3 matrisi o
   dosyadan üretilmiştir. Çelişki olursa CSV'deki hücre esas alınır ve belge yeniden üretilir.
 
-## v1.4.2 kaynak eşliği — 26 Kasım 2026
+## v1.4.3 WP3 eki — 26 Kasım 2026
+
+Kayıtlı izin sayısı 312 oldu: önceki 311 adına `work.delegations.manage` eklendi. Critical sayısı 17 kalır. Bu izin GM ve Sistem Yöneticisi için yalnız öneridir; ticari onay, yeni grant veya canlı aktivasyon değildir.
+
+## v1.4.2 başlangıç kaynak eşliği — 26 Kasım 2026
 
 Tren-2 `c24706af4de4300d4a171eca11459098d87cd14f` kaynak `All` kümesi **311**, Critical kümesi **17** izin.
 v1.4.1'in beş eksik-kayıt notu eskimiştir: adlar kodda vardır, CSV'de eksiktir. ROL-D24'te zaten
@@ -568,6 +572,7 @@ Yalnız öneri: izin ataması veya seed değişikliği değildir. `IK` insan kap
 | `work.tasks.complete` | + | + | + | + | + | + | + | + | + | + | + | + | + | + | + | · | ÖNERİ | AI-D23: yalnız kendisine atanan görevi tamamlar (kural Work alanında). Sistem Yöneticisi iş kaydı taşımadığı için önerilmez (ROL-D6); Kalite pasif (ROL-D20). |
 | `work.assistant-memory.oversee` | · | · | · | · | · | · | · | · | · | · | · | · | · | · | · | + | ÖNERİ | ROL-D24; AI-D30/AI-D39: hafıza ve zamanlı görev gözetimi; her görüntüleme ve kapatma denetime yazılır, kullanıcıya bildirilmez. Hafıza AI-D50 metni onaylanana kadar kapalı. |
 | `work.approvals.escalate` | + | · | · | · | · | · | · | · | · | · | · | · | · | · | · | · | ÖNERİ | ROL-D24: yalnız rol taslağı önerisi; hiçbir role/seed veya kişiye atanmaz. |
+| `work.delegations.manage` | + | · | · | · | · | · | · | · | · | · | · | · | · | · | · | + | ÖNERİ | ROL-D27: şirket vekâlet yönetimi için GM ve Sistem Yöneticisi önerisi; onay yetkisi vermez, hiçbir role/seed veya kişiye atanmaz. Kendi vekâleti için ayrıca bu izin aranmaz. |
 
 ### AI (5 izin)
 
