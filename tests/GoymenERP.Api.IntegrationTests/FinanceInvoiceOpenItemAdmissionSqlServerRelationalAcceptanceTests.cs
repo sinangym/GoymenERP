@@ -19,7 +19,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// the exchange columns are all-or-none in SQL and the migration's Down refuses while exchange data is stored. The
 /// party port is a SENTETIK test input.
 /// </summary>
-public sealed class FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests
+public sealed partial class FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests
 {
     private const string Actor = "SENTETIK-invoice-finaliser";
     private const string BeforeExchange = "20261102134844_AddOpenItemDirection";
@@ -227,7 +227,7 @@ public sealed class FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptance
     private static FinanceInvoiceInstallmentV1 Installment(int sequence, string amount, string? functional = null) =>
         new(Guid.NewGuid(), Guid.NewGuid(), sequence, new DateOnly(2026, 12, 1).AddMonths(sequence - 1), amount, functional);
 
-    private sealed class Run : IAsyncDisposable
+    private sealed partial class Run : IAsyncDisposable
     {
         private readonly string baseConnectionString;
 

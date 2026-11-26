@@ -37,9 +37,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// haircut is OPEN-010 (still open): none is applied. The documentary risk (FNS-D58) is not part of this contract.</item>
 /// </list>
 /// </summary>
-internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext, ICompanyContext companyContext,
+internal sealed partial class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext, ICompanyContext companyContext,
     IFinanceCollateralTypeCatalogReader collateralTypes, TimeProvider timeProvider, IFinanceCollateralPolicyReaderV1? collateralPolicies = null)
-    : ISalesPartyRiskReadPortV1
+    : ISalesPartyRiskReadPortV1, ISalesPartyRiskReadPortV2
 {
     /// <summary>Without a Settings collateral type catalog: the collateral figure fails closed when any collateral is held.</summary>
     public FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext, ICompanyContext companyContext)

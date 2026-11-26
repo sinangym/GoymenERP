@@ -82,7 +82,8 @@ public sealed partial class SalesDraftService(
     ISalesOrderFutureDemandReductionParticipantV1? futureDemandReduction = null,
     ISalesMarginCostReadPortV1? marginCosts = null,
     ISalesOrderInvoicedQuantityReadPortV1? invoicedQuantities = null,
-    IProductTheoreticalKilogramsPerUnitReadPortV1? kilogramsPerUnitSource = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService,
+    IProductTheoreticalKilogramsPerUnitReadPortV1? kilogramsPerUnitSource = null,
+    ISalesPartyRiskReadPortV2? partyRiskV2 = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService,
     ISalesOrderCustomerAcceptanceWithSignedApprovalV1
 {
     private const int DefaultPageSize = 50;

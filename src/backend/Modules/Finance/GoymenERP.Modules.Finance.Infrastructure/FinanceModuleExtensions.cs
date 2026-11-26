@@ -157,7 +157,9 @@ public static class FinanceModuleExtensions
         // MOD-01: the Sales-declared customer risk-input port, answered from Finance's own open items, (API-85a) the
         // effective credit limit record and (API-85b) the held received collaterals weighted by the Settings type rate
         // at read time. It carries no authority; the Sales risk read measures its own.
-        services.AddScoped<ISalesPartyRiskReadPortV1>(CreateSalesPartyRiskReadPort);
+        services.AddScoped<FinanceSalesPartyRiskReadPortV1>(CreateSalesPartyRiskReadPort);
+        services.AddScoped<ISalesPartyRiskReadPortV1>(provider => provider.GetRequiredService<FinanceSalesPartyRiskReadPortV1>());
+        services.AddScoped<ISalesPartyRiskReadPortV2>(provider => provider.GetRequiredService<FinanceSalesPartyRiskReadPortV1>());
         // FIN-S6 (F-005 D3): the official sales invoice record read by official number + ETTN over Finance's own store,
         // and the Sales-declared API-35 port answered from it (approved records only). Neither carries authority; the
         // Sales match measures its own.
