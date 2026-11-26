@@ -612,6 +612,81 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkDelegationRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ApproverPermission")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("DelegateUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DelegatorUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("EndsAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(160)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("RecordedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RevocationReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset?>("RevokedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("RevokedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTimeOffset>("StartsAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "ApproverPermission", "StartsAtUtc", "EndsAtUtc");
+
+                    b.ToTable("ApprovalDelegations", "work", t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkApprovalDelegations_Content", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [Id] <> '00000000-0000-0000-0000-000000000000' AND [DelegatorUserId] <> '00000000-0000-0000-0000-000000000000' AND [DelegateUserId] <> '00000000-0000-0000-0000-000000000000' AND [DelegatorUserId] <> [DelegateUserId] AND [RecordedByUserId] <> '00000000-0000-0000-0000-000000000000' AND LEN([Kind]) > 0 AND LEN([ApproverPermission]) > 0 AND LEN([Reason]) > 0 AND [StartsAtUtc] >= [RecordedAtUtc] AND [EndsAtUtc] > [StartsAtUtc] AND (([Version] = 1 AND [RevokedByUserId] IS NULL AND [RevokedAtUtc] IS NULL AND [RevocationReason] IS NULL) OR ([Version] = 2 AND [RevokedByUserId] IS NOT NULL AND [RevokedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [RevokedAtUtc] IS NOT NULL AND [RevokedAtUtc] >= [RecordedAtUtc] AND [RevocationReason] IS NOT NULL AND LEN([RevocationReason]) > 0))");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkDesiredStateSnapshotRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1428,6 +1503,15 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkCollaborationAttemptRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Work.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Work.Infrastructure.Persistence.WorkDelegationRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Work.Infrastructure.Persistence.OrganizationCompanyReference", null)
                         .WithMany()

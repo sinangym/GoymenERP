@@ -192,3 +192,22 @@ veya görüntüleme kaydı varken geri almayı reddeder (forward fix); boş depo
 
 `AddWorkGoodsReceiptRecordType` (YOL-D42) üç kontrol kısıtını 1–13'e genişletir (yalnız DDL). Down guard **52171**: mal
 kabulüne bağlı not/görev/bildirim varken geri almayı reddeder (forward fix).
+
+## WP3: süreli vekâlet (YOL-D17, ROL-D4, ROL-D27)
+
+`Work:Delegations:Enabled` yokken/false iken kapalıdır. `GET/POST /api/v1/work/delegations`
+ve `POST /api/v1/work/delegations/{id}/revocation` aynı Work komut deposunu kullanır.
+Onaycı kendi vekâletini yönetir; `work.delegations.manage` şirket genelinde yönetim sağlar.
+Bu yeni izin Critical değildir, hiçbir role atanmaz; rol matrisindeki GM/SYS yalnız öneridir.
+
+Vekil zaten ilgili onay iznine ve gerekli kapsama sahip olmalıdır. Genel Müdürün vekili
+ROL-D4 uyarınca mevcut onay iznini taşıyan modül müdürü olmalıdır; Identity yalnız bu uygunluk
+bilgisini okuma portundan verir. Vekâlet yeni yetki oluşturmaz, zincirlenmez; çakışan dönemler
+reddedilir. Hazırlayan/karardan dışlanan kişi engeli ve güncel yetki her kullanımda korunur.
+Karar verme sahip modülde kalır; okuyucu WP8 bağlantısı için hazırdır, yönetim ekranı WP8 işidir.
+
+Kayıt sürümlüdür; ilk kayıt değişmez, yalnız beklenen sürümle iptal edilebilir. Komut denemesi,
+vekalet ve Audit sahibinin denetim olayı aynı SQL işlemindedir. Replay özgün correlation ID döndürür.
+`20261126183924_AddWorkApprovalDelegations` yalnız Work tablosu ekler; Down **52120** ile kayıt
+veya komut geçmişi varken veri kaybetmek yerine forward fix ister. SQL testleri yazılmıştır;
+gerçek SQL, pinler, tam CI ve bağımsız K3 incelemeleri tren kapanışında bekler.

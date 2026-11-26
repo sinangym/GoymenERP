@@ -47,6 +47,12 @@ internal sealed class PermissionHolderListPortV1(IdentityDbContext dbContext, IC
                 .Select(assignment => new
                 {
                     assignment.UserId,
+                    RoleCode = dbContext.Roles.Where(role => role.Id == assignment.RoleId).Select(role => role.Code).First(),
+                    IsGeneralManager = dbContext.RoleAssignments.Any(other => other.CompanyId == companyId && other.UserId == assignment.UserId
+                        && other.Status == RoleAssignmentStatus.Active && other.ValidFromUtc <= now
+                        && (!other.ValidUntilUtc.HasValue || other.ValidUntilUtc > now)
+                        && other.Scopes.Any() && dbContext.Roles.Any(role => role.Id == other.RoleId && role.IsActive
+                            && role.Code == ErpPersonaRoleCodes.GeneralManager)),
                     Scopes = assignment.Scopes.Select(scope => new { scope.ScopeType, scope.ScopeId }).ToList(),
                 })
                 .Take(PermissionHolderListLimitsV1.MaximumHolders * 4 + 1)
@@ -69,8 +75,15 @@ internal sealed class PermissionHolderListPortV1(IdentityDbContext dbContext, IC
                     Guid[] Of(AccessScopeType type) => companyWide
                         ? []
                         : scopes.Where(scope => scope.ScopeType == type).Select(scope => scope.ScopeId).Distinct().Order().ToArray();
+                    var managerScopes = group.Where(assignment => ErpPersonaRoleCodes.ModuleManagers.Contains(assignment.RoleCode))
+                        .SelectMany(assignment => assignment.Scopes).ToArray();
+                    var managerWide = managerScopes.Any(scope => scope.ScopeType == AccessScopeType.Company && scope.ScopeId == companyId);
+                    Guid[] ManagerOf(AccessScopeType type) => managerWide ? [] : managerScopes.Where(scope => scope.ScopeType == type)
+                        .Select(scope => scope.ScopeId).Distinct().Order().ToArray();
                     return new PermissionHolderV1(group.Key, companyWide, Of(AccessScopeType.Site), Of(AccessScopeType.Location),
-                        Of(AccessScopeType.WorkCenter));
+                        Of(AccessScopeType.WorkCenter), group.Any(assignment => assignment.IsGeneralManager),
+                        managerScopes.Length == 0 ? null : new PermissionHolderScopeV1(managerWide, ManagerOf(AccessScopeType.Site),
+                            ManagerOf(AccessScopeType.Location), ManagerOf(AccessScopeType.WorkCenter)));
                 })
                 .Where(holder => holder.UserId != Guid.Empty)
                 .OrderBy(holder => holder.UserId)

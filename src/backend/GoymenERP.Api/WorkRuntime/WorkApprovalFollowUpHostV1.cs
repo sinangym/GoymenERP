@@ -72,7 +72,9 @@ internal sealed class WorkIdentityPermissionHolderDirectoryV1(IPermissionHolderL
         return answer.Outcome != UserDirectoryOutcomeV1.Found
             ? WorkPermissionHoldersV1.Unavailable
             : new WorkPermissionHoldersV1(true, answer.Holders.Select(holder => new WorkPermissionHolderV1(holder.UserId,
-                holder.IsCompanyWide, holder.SiteIds.ToHashSet(), holder.LocationIds.ToHashSet(), holder.WorkCenterIds.ToHashSet())).ToArray());
+                holder.IsCompanyWide, holder.SiteIds.ToHashSet(), holder.LocationIds.ToHashSet(), holder.WorkCenterIds.ToHashSet(),
+                holder.IsGeneralManager, holder.ModuleManagerScope is { } manager ? new WorkPermissionHolderScopeV1(manager.IsCompanyWide,
+                    manager.SiteIds.ToHashSet(), manager.LocationIds.ToHashSet(), manager.WorkCenterIds.ToHashSet()) : null)).ToArray());
     }
 }
 

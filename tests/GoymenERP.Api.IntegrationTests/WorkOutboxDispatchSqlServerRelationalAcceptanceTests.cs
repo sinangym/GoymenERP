@@ -178,7 +178,10 @@ public sealed partial class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
     private static async Task<int> CountAsync(string connectionString, string table, Guid companyId) =>
         int.Parse((await ScalarAsync(connectionString, $"SELECT COUNT(*) FROM [work].[{table}] WHERE [CompanyId] = '{companyId}'"))!);
 
-    private static async Task WithDatabaseAsync(Func<string, Task> test)
+    private static Task WithDatabaseAsync(Func<string, Task> test) =>
+        WithDatabaseAsync((connectionString, _) => test(connectionString));
+
+    private static async Task WithDatabaseAsync(Func<string, SqlServerRelationalApiFactory, Task> test)
     {
         var baseConnection = Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
         var databaseName = $"GoymenERP_Work_Outbox_{Guid.NewGuid():N}";
@@ -206,7 +209,7 @@ public sealed partial class WorkOutboxDispatchSqlServerRelationalAcceptanceTests
             }
             await using var migrate = Db(connectionString, TestCompanyIds.CompanyA);
             await migrate.Database.MigrateAsync();
-            await test(connectionString);
+            await test(connectionString, factory);
         }
         finally
         {

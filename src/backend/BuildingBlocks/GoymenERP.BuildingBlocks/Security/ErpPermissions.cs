@@ -1795,6 +1795,9 @@ public static class ErpPermissions
     /// holds it only the approvers get the reminder (YOL-D28). A grant is a human gate.
     /// </summary>
     public const string WorkApprovalsEscalate = "work.approvals.escalate";
+    /// <summary>ROL-D27: manages the company's approval delegations; never grants an approval permission.
+    /// Company-wide only. Registered, not granted; Critical classification and assignments remain human gates.</summary>
+    public const string WorkDelegationsManage = "work.delegations.manage";
     /// <summary>
     /// Y-A1 (AI-D12, AI-D32, DALGA_PLANI_v2 A.4 (1)): may use the READ tool <c>decisions.lookup.v1</c> over the decision
     /// index in addition to <see cref="AiPanelUse"/>. AI-D36 recommends it for every user role (consistent with ROL-D16);
@@ -2155,6 +2158,7 @@ public static class ErpPermissions
             WorkTasksComplete,
             WorkAssistantMemoryOversee,
             WorkApprovalsEscalate,
+            WorkDelegationsManage,
             ReportingExport,
             ReportingAuditorPackageExport,
             ReportingIntercompanyRead,
@@ -2478,6 +2482,7 @@ public static class ErpPermissions
             WorkTasksComplete,
             WorkAssistantMemoryOversee,
             WorkApprovalsEscalate,
+            WorkDelegationsManage,
             ReportingExport,
             ReportingAuditorPackageExport,
             ReportingIntercompanyRead,

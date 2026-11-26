@@ -11,7 +11,12 @@ public sealed record WorkPermissionHolderV1(
     bool IsCompanyWide,
     IReadOnlySet<Guid> SiteIds,
     IReadOnlySet<Guid> LocationIds,
-    IReadOnlySet<Guid> WorkCenterIds);
+    IReadOnlySet<Guid> WorkCenterIds,
+    bool IsGeneralManager = false,
+    WorkPermissionHolderScopeV1? ModuleManagerScope = null);
+
+public sealed record WorkPermissionHolderScopeV1(bool IsCompanyWide, IReadOnlySet<Guid> SiteIds,
+    IReadOnlySet<Guid> LocationIds, IReadOnlySet<Guid> WorkCenterIds);
 
 /// <summary><see cref="Available"/> false: the owner could not answer (nothing is assumed, nobody is told, no step is taken).</summary>
 public sealed record WorkPermissionHoldersV1(bool Available, IReadOnlyList<WorkPermissionHolderV1> Holders)

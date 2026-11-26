@@ -38,6 +38,7 @@ public sealed partial class WorkDbContext(
         ConfigureApprovalInbox(modelBuilder);
         ConfigureCollaboration(modelBuilder);
         ConfigureApprovalRules(modelBuilder);
+        ConfigureDelegations(modelBuilder);
         ConfigureAssistantMemory(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
@@ -244,6 +245,7 @@ public sealed partial class WorkDbContext(
             }
 
             GuardAssistantMemoryWrite(entry);
+            GuardDelegationWrite(entry);
 
             if (IsAppendOnlyCollaborationRow(entry.Entity) && entry.State != EntityState.Added)
             {

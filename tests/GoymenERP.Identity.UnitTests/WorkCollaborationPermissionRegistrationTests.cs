@@ -26,6 +26,7 @@ public sealed class WorkCollaborationPermissionRegistrationTests
         ErpPermissions.WorkTasksComplete,
         ErpPermissions.WorkAssistantMemoryOversee,
         ErpPermissions.WorkApprovalsEscalate,
+        ErpPermissions.WorkDelegationsManage,
     };
 
     [Fact]
@@ -36,6 +37,7 @@ public sealed class WorkCollaborationPermissionRegistrationTests
         Assert.Equal("work.tasks.complete", ErpPermissions.WorkTasksComplete);
         Assert.Equal("work.assistant-memory.oversee", ErpPermissions.WorkAssistantMemoryOversee);
         Assert.Equal("work.approvals.escalate", ErpPermissions.WorkApprovalsEscalate);
+        Assert.Equal("work.delegations.manage", ErpPermissions.WorkDelegationsManage);
     }
 
     [Theory]

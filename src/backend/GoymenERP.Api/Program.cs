@@ -214,6 +214,7 @@ builder.Services.AddWorkApprovalInboxMeasurementsV1();
 // WP1 (D5): the four native D-05 kinds are inbox sources too — one box; the duration class comes from Work's versioned rule
 // table (D3, YOL-D18 defaults) and business days are counted in the P7 / SAT-D10 business time zone (D6).
 builder.Services.AddWorkApprovalRulesV1();
+builder.Services.AddWorkDelegationsV1(builder.Configuration);
 builder.Services.AddScoped<IWorkInboxSourceV1>(provider => new NativeApprovalWorkInboxSourceV1(
     ActivatorUtilities.CreateInstance<FinanceInvoiceImportPendingApprovalAdapterV1>(provider)));
 builder.Services.AddScoped<IWorkInboxSourceV1>(provider => new NativeApprovalWorkInboxSourceV1(
@@ -670,6 +671,7 @@ app.MapWorkApprovalEndpoints();
 app.MapWorkQueueEndpoints();
 app.MapWorkInboxEndpoints();
 app.MapWorkApprovalRuleEndpoints();
+app.MapWorkDelegationEndpoints();
 app.MapWorkDeadlineEndpoints();
 app.MapWorkNotificationEndpoints();
 app.MapWorkCollaborationEndpoints();
