@@ -9,7 +9,7 @@ public sealed record AccountingCostProposalRenewalV1(Guid PreviousProposalId, lo
 
 /// <summary>Price-free immutable owner event. PreparedBy is the recorded preparer, never the approving caller.</summary>
 public sealed record AccountingCostProposalStalePayloadV1(Guid CompanyId, Guid ProposalId, long ProposalVersion,
-    Guid PreparedBy, string ReasonCode, string ReasonText, DateTimeOffset ClosedAtUtc);
+    Guid PreparedBy, string ReasonCode, string ReasonText, DateTimeOffset ClosedAtUtc, AccountingInventoryCostKindV1 CostKind);
 
 public static class AccountingCostProposalStaleEventV1
 {

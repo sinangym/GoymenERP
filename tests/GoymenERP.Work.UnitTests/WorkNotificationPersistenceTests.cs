@@ -83,6 +83,43 @@ public sealed class WorkNotificationPersistenceTests
     }
 
     [Fact]
+    public void Cost_kind_is_required_only_for_stale_cost_events_and_null_is_omitted_from_legacy_wire_contracts()
+    {
+        using var database = Database();
+        var row = database.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(WorkInboxNotificationRow))!;
+        Assert.True(row.FindProperty(nameof(WorkInboxNotificationRow.CostKind))!.IsNullable);
+        Assert.Equal(WorkDbContext.InboxNotificationCostKindCheck,
+            row.GetCheckConstraints().Single(check => check.Name == "CK_WorkInboxNotifications_CostKind").Sql);
+        Assert.Equal("([Kind] = 10 AND [CostKind] IS NOT NULL AND [CostKind] IN (1, 2)) OR ([Kind] <> 10 AND [CostKind] IS NULL)",
+            WorkDbContext.InboxNotificationCostKindCheck);
+        var migration = new AddStaleCostNotificationCostKind();
+        Assert.Empty(migration.UpOperations.OfType<SqlOperation>());
+        Assert.Collection(migration.UpOperations,
+            operation => { var column = Assert.IsType<AddColumnOperation>(operation); Assert.Equal("CostKind", column.Name); Assert.True(column.IsNullable); },
+            operation => Assert.Equal(WorkDbContext.InboxNotificationCostKindCheck, Assert.IsType<AddCheckConstraintOperation>(operation).Sql));
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql;
+        Assert.Contains("[work].[InboxNotifications]", guard); Assert.Contains("[CostKind] IS NOT NULL", guard); Assert.Contains("THROW 52143", guard);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.Equal(3, migration.DownOperations.Count);
+        var json = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+        var legacy = new WorkInboxEventRefV1(Guid.NewGuid(), "1", "reason", "SENTETIK", DateTimeOffset.UnixEpoch, null, null, null, null);
+        Assert.DoesNotContain("costKind", System.Text.Json.JsonSerializer.Serialize(legacy, json));
+        Assert.Contains("\"costKind\":2", System.Text.Json.JsonSerializer.Serialize(legacy with { CostKind = 2 }, json));
+        var item = new WorkNotificationItemV1(Guid.NewGuid(), Company, "allocation-released", null, null,
+            Guid.NewGuid(), "1", "reason", "SENTETIK", DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, null);
+        Assert.DoesNotContain("costKind", System.Text.Json.JsonSerializer.Serialize(item, json));
+        Assert.Contains("\"costKind\":1", System.Text.Json.JsonSerializer.Serialize(item with { CostKind = 1 }, json));
+        // WP2 fingerprints used default record serialization before D40: optional extension fields must not change old event hashes.
+        var command = new DeliverWorkNotificationV1(Company, "inventory.notifications", Guid.NewGuid(), "inventory.future-allocation.released.v1",
+            1, "{}", WorkNotificationKindV1.AllocationReleased, Guid.NewGuid(), "1", "reason", "SENTETIK", DateTimeOffset.UnixEpoch,
+            "SENTETIK-correlation", null, [new(Guid.NewGuid(), Guid.NewGuid())]);
+        var oldShape = new { command.CompanyId, command.SourceName, command.EventId, command.EventType, command.SchemaVersion,
+            command.PayloadJson, command.Kind, command.SourceEntityId, command.SourceVersion, command.ReasonCode, command.ReasonText,
+            command.OccurredAtUtc, command.CorrelationId, command.CausationId, command.Targets, command.PurchaseTarget };
+        Assert.Equal(System.Text.Json.JsonSerializer.Serialize(oldShape), System.Text.Json.JsonSerializer.Serialize(command));
+    }
+
+    [Fact]
     public void The_WP2_migration_moves_the_old_store_before_dropping_it_and_Down_first_refuses_while_moved_or_new_rows_exist()
     {
         var migration = new Wp2SingleNotificationStoreAndApprovalFollowUp();

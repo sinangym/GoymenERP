@@ -66,6 +66,9 @@ public sealed partial class WorkDbContext
         + " AND [SalesOrderLineId] IS NULL AND [ObservedSalesOrderVersion] IS NULL AND [PurchaseOrderId] IS NULL"
         + " AND [PurchaseOrderLineId] IS NULL AND [ObservedPurchaseOrderVersion] IS NULL)";
 
+    internal const string InboxNotificationCostKindCheck =
+        "([Kind] = 10 AND [CostKind] IS NOT NULL AND [CostKind] IN (1, 2)) OR ([Kind] <> 10 AND [CostKind] IS NULL)";
+
     internal const string EventGrainIndexName = "UX_WorkInboxNotifications_EventGrain";
 
     /// <summary>WP2: one follow-up step of one approval cycle (see <see cref="WorkApprovalFollowUpRow"/>).</summary>
@@ -158,6 +161,7 @@ public sealed partial class WorkDbContext
         {
             table.HasCheckConstraint("CK_WorkInboxNotifications_Identity", InboxNotificationCheck);
             table.HasCheckConstraint("CK_WorkInboxNotifications_Event", InboxNotificationEventCheck);
+            table.HasCheckConstraint("CK_WorkInboxNotifications_CostKind", InboxNotificationCostKindCheck);
         });
         inbox.HasKey(row => new { row.CompanyId, row.Id });
         inbox.Property(row => row.CorrelationId).HasMaxLength(128).IsRequired();

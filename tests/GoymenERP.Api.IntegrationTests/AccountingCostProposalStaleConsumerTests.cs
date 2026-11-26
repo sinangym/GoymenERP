@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using GoymenERP.Api.WorkRuntime;
 using GoymenERP.BuildingBlocks.Messaging;
 using GoymenERP.Modules.Accounting.Application;
@@ -8,16 +8,18 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed class AccountingCostProposalStaleConsumerTests
 {
-    [Fact]
-    public async Task Closure_notifies_only_the_immutable_preparer_without_money_or_commercial_targets()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task Closure_notifies_only_the_immutable_preparer_without_money_or_commercial_targets(int costKind)
     {
-        var delivery = new Delivery(); var message = Envelope();
+        var delivery = new Delivery(); var message = Envelope(costKind);
         await new AccountingCostProposalStaleNotificationConsumerV1(delivery).HandleAsync(message, default);
         var command = Assert.Single(delivery.Commands);
         Assert.Equal(WorkNotificationKindV1.AccountingCostProposalStale, command.Kind);
         var payload = JsonSerializer.Deserialize<AccountingCostProposalStalePayloadV1>(message.PayloadJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
         Assert.Equal(payload.PreparedBy, command.PreparedByUserId);
-        Assert.Equal(payload.ProposalId, command.SourceEntityId);
+        Assert.Equal(payload.ProposalId, command.SourceEntityId); Assert.Equal(costKind, command.CostKind);
         Assert.Equal("3", command.SourceVersion); Assert.Empty(command.Targets); Assert.Null(command.PurchaseTarget);
         Assert.Equal(WorkInboxNotificationClassV1.Digest, WorkInboxNotificationClassesV1.Of(WorkInboxNotificationKindV1.AccountingCostProposalStale));
     }
@@ -31,15 +33,16 @@ public sealed class AccountingCostProposalStaleConsumerTests
             message with { Version = 2 }, message with { OccurredAtUtc = message.OccurredAtUtc.AddSeconds(1) },
             message with { PayloadJson = message.PayloadJson.Replace("\"preparedBy\":", "\"unknown\":") },
             message with { PayloadJson = message.PayloadJson[..^1] + ",\"preparedBy\":\"" + Guid.NewGuid() + "\"}" },
+            message with { PayloadJson = message.PayloadJson.Replace("\"costKind\":1", "\"costKind\":3") },
             message with { PayloadJson = "{}" } })
             Assert.Equal("notification_stale_cost_contract_invalid", (await Assert.ThrowsAsync<OutboxPermanentFailureException>(() => consumer.HandleAsync(bad, default))).Code);
         Assert.Empty(delivery.Commands);
     }
-    internal static WorkInboxEventV1 Envelope()
+    internal static WorkInboxEventV1 Envelope(int costKind = 1)
     {
         var at = DateTimeOffset.Parse("2026-11-27T00:00:00Z");
         var value = new AccountingCostProposalStalePayloadV1(TestCompanyIds.CompanyA, Guid.NewGuid(), 3, Guid.NewGuid(),
-            AccountingCostProposalStaleEventV1.ReasonCode, AccountingCostProposalStaleEventV1.ReasonText, at);
+            AccountingCostProposalStaleEventV1.ReasonCode, AccountingCostProposalStaleEventV1.ReasonText, at, (AccountingInventoryCostKindV1)costKind);
         return new(AccountingCostProposalStaleEventV1.SourceName, Guid.NewGuid(), value.CompanyId, AccountingCostProposalStaleEventV1.EventType,
             1, JsonSerializer.Serialize(value, new JsonSerializerOptions(JsonSerializerDefaults.Web)), at, "SENTETIK-stale-cost", null);
     }

@@ -46,14 +46,14 @@ public sealed class AccountingCostProposalStaleOutboxSourceV1(AccountingDbContex
         var view = JsonSerializer.Deserialize<AccountingInventoryCostProposalV1>(row.ViewJson, Json);
         var closure = view?.StaleClosure;
         if (view is null || view.Status != "Stale" || row.Status != 7 || closure is null
-            || view.CompanyId != row.CompanyId || view.ProposalId != row.Id || view.Version != row.Version || row.OutboxPosition == 0
+            || !Enum.IsDefined(view.Kind) || view.CompanyId != row.CompanyId || view.ProposalId != row.Id || view.Version != row.Version || row.OutboxPosition == 0
             || closure.EventId == Guid.Empty || closure.PreparedBy != row.PreparedBy || closure.PreparedBy == Guid.Empty
             || closure.PreparedVersion != row.Version - 1 || closure.ReasonCode != AccountingCostProposalStaleEventV1.ReasonCode
             || closure.ReasonText != AccountingCostProposalStaleEventV1.ReasonText || closure.ClosedAtUtc == default
             || closure.ClosedAtUtc.Offset != TimeSpan.Zero || string.IsNullOrWhiteSpace(closure.CorrelationId))
             throw new InvalidOperationException("Accounting stale closure evidence is invalid.");
         var payload = new AccountingCostProposalStalePayloadV1(row.CompanyId, row.Id, row.Version, closure.PreparedBy,
-            closure.ReasonCode, closure.ReasonText, closure.ClosedAtUtc);
+            closure.ReasonCode, closure.ReasonText, closure.ClosedAtUtc, view.Kind);
         return new(closure.EventId, row.CompanyId, AccountingCostProposalStaleEventV1.EventType, 1, JsonSerializer.Serialize(payload, Json),
             closure.ClosedAtUtc, closure.CorrelationId, closure.CausationId, row.OutboxPosition.ToString("D20", CultureInfo.InvariantCulture));
     }

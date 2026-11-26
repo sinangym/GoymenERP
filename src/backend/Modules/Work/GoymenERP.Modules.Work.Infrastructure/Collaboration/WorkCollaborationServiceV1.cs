@@ -375,7 +375,7 @@ public sealed class WorkCollaborationServiceV1(
                 : null,
             row.EventId is not null
                 ? new WorkInboxEventRefV1(row.SourceEntityId!.Value, row.SourceVersion!, row.ReasonCode!, row.ReasonText!,
-                    row.OccurredAtUtc!.Value, row.SalesOrderId, row.SalesOrderLineId, row.PurchaseOrderId, row.PurchaseOrderLineId)
+                    row.OccurredAtUtc!.Value, row.SalesOrderId, row.SalesOrderLineId, row.PurchaseOrderId, row.PurchaseOrderLineId, row.CostKind)
                 : null)).ToArray();
         return new WorkInboxNotificationPageV1(actor.CompanyId, items, rows.Length > WorkCollaborationLimitsV1.PageSize,
             counts.Where(count => count.Class == (int)WorkInboxNotificationClassV1.Now).Sum(count => count.Count),
@@ -466,6 +466,7 @@ public sealed class WorkCollaborationServiceV1(
         public Guid? SalesOrderLineId { get; init; }
         public Guid? PurchaseOrderId { get; init; }
         public Guid? PurchaseOrderLineId { get; init; }
+        public int? CostKind { get; init; }
     }
 
     private IQueryable<VisibleRow> Visible(Actor actor)
@@ -493,7 +494,7 @@ public sealed class WorkCollaborationServiceV1(
                 EventId = item.EventId, SourceEntityId = item.SourceEntityId, SourceVersion = item.SourceVersion,
                 ReasonCode = item.ReasonCode, ReasonText = item.ReasonText, OccurredAtUtc = item.OccurredAtUtc,
                 SalesOrderId = item.SalesOrderId, SalesOrderLineId = item.SalesOrderLineId,
-                PurchaseOrderId = item.PurchaseOrderId, PurchaseOrderLineId = item.PurchaseOrderLineId,
+                PurchaseOrderId = item.PurchaseOrderId, PurchaseOrderLineId = item.PurchaseOrderLineId, CostKind = item.CostKind,
             };
     }
 

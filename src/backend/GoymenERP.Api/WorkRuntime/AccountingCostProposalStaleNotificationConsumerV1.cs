@@ -12,7 +12,7 @@ internal sealed class AccountingCostProposalStaleNotificationConsumerV1(IWorkNot
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     { PropertyNameCaseInsensitive = false, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
-    private static readonly string[] Fields = ["companyId", "proposalId", "proposalVersion", "preparedBy", "reasonCode", "reasonText", "closedAtUtc"];
+    private static readonly string[] Fields = ["companyId", "proposalId", "proposalVersion", "preparedBy", "reasonCode", "reasonText", "closedAtUtc", "costKind"];
     public async Task HandleAsync(WorkInboxEventV1 message, CancellationToken cancellationToken)
     {
         AccountingCostProposalStalePayloadV1 value;
@@ -26,7 +26,7 @@ internal sealed class AccountingCostProposalStaleNotificationConsumerV1(IWorkNot
             if (message.SourceName != AccountingCostProposalStaleEventV1.SourceName || message.EventType != AccountingCostProposalStaleEventV1.EventType
                 || message.Version != 1 || message.EventId == Guid.Empty || message.CompanyId == Guid.Empty
                 || value.CompanyId != message.CompanyId || value.ProposalId == Guid.Empty || value.PreparedBy == Guid.Empty
-                || value.ProposalVersion < 3 || value.ReasonCode != AccountingCostProposalStaleEventV1.ReasonCode
+                || !Enum.IsDefined(value.CostKind) || value.ProposalVersion < 3 || value.ReasonCode != AccountingCostProposalStaleEventV1.ReasonCode
                 || value.ReasonText != AccountingCostProposalStaleEventV1.ReasonText || value.ClosedAtUtc != message.OccurredAtUtc
                 || value.ClosedAtUtc == default || value.ClosedAtUtc.Offset != TimeSpan.Zero
                 || string.IsNullOrWhiteSpace(message.CorrelationId) || message.CorrelationId.Length > 128 || message.CausationId?.Length > 128)
@@ -37,6 +37,6 @@ internal sealed class AccountingCostProposalStaleNotificationConsumerV1(IWorkNot
         await delivery.DeliverAsync(new(message.CompanyId, message.SourceName, message.EventId, message.EventType, message.Version,
             message.PayloadJson, WorkNotificationKindV1.AccountingCostProposalStale, value.ProposalId,
             value.ProposalVersion.ToString(CultureInfo.InvariantCulture), value.ReasonCode, value.ReasonText, value.ClosedAtUtc,
-            message.CorrelationId, message.CausationId, [], PreparedByUserId: value.PreparedBy), cancellationToken);
+            message.CorrelationId, message.CausationId, [], PreparedByUserId: value.PreparedBy, CostKind: (int)value.CostKind), cancellationToken);
     }
 }

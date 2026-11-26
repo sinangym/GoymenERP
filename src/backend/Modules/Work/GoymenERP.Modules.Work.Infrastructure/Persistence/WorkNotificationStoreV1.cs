@@ -144,7 +144,7 @@ public sealed class WorkNotificationStoreV1(IServiceScopeFactory scopes, ICompan
             Class = (int)WorkInboxNotificationClassesV1.Of(kind), SourceId = id, RecordedAtUtc = now,
             CorrelationId = command.CorrelationId, CausationId = command.CausationId, SourceName = command.SourceName,
             EventId = command.EventId, SourceEntityId = command.SourceEntityId, SourceVersion = command.SourceVersion,
-            ReasonCode = command.ReasonCode, ReasonText = command.ReasonText, OccurredAtUtc = command.OccurredAtUtc,
+            ReasonCode = command.ReasonCode, ReasonText = command.ReasonText, OccurredAtUtc = command.OccurredAtUtc, CostKind = command.CostKind,
         };
         target(row);
         return row;
@@ -191,14 +191,14 @@ public sealed class WorkNotificationStoreV1(IServiceScopeFactory scopes, ICompan
     private static bool ValidKindTarget(DeliverWorkNotificationV1 value) => value.Kind switch
     {
         WorkNotificationKindV1.AllocationReleased => value.EventType == "inventory.future-allocation.released.v1"
-            && value.Targets?.Count == 1 && value.PurchaseTarget is null && value.PreparedByUserId is null,
+            && value.Targets?.Count == 1 && value.PurchaseTarget is null && value.PreparedByUserId is null && value.CostKind is null,
         WorkNotificationKindV1.PurchaseSupplyRevived => value.EventType == "purchasing.order-line.revived.v1"
-            && value.PreparedByUserId is null && value.PurchaseTarget is { } target && target.PurchaseOrderId != Guid.Empty
+            && value.PreparedByUserId is null && value.CostKind is null && value.PurchaseTarget is { } target && target.PurchaseOrderId != Guid.Empty
             && target.PurchaseOrderLineId != Guid.Empty && value.SourceEntityId == target.PurchaseOrderLineId,
         WorkNotificationKindV1.AccountingCostProposalStale => value.SourceName == "accounting.cost-proposals"
             && value.EventType == "accounting.inventory-cost.proposal-stale.v1" && value.Targets?.Count == 0
             && value.PurchaseTarget is null && value.PreparedByUserId is { } preparer && preparer != Guid.Empty
-            && value.ReasonCode == "inventory_cost_preparation_stale" && value.ReasonText == "Bayatladı",
+            && value.CostKind is 1 or 2 && value.ReasonCode == "inventory_cost_preparation_stale" && value.ReasonText == "Bayatladı",
         _ => false,
     };
 }
@@ -234,7 +234,7 @@ public sealed class WorkNotificationReadV1(WorkDbContext database, ICompanyConte
                     : item.Kind == (int)WorkInboxNotificationKindV1.PurchaseSupplyRevived ? "purchase-supply-revived" : "accounting-cost-proposal-stale",
                 item.SalesOrderId, item.SalesOrderLineId, item.SourceEntityId!.Value, item.SourceVersion!, item.ReasonCode!,
                 item.ReasonText!, item.OccurredAtUtc!.Value, item.RecordedAtUtc, passive == null ? null : passive.PassivatedAtUtc,
-                item.PurchaseOrderId, item.PurchaseOrderLineId)).Take(101).ToArrayAsync(cancellationToken);
+                item.PurchaseOrderId, item.PurchaseOrderLineId, item.CostKind)).Take(101).ToArrayAsync(cancellationToken);
         await RequireStillAsync(companyId, actor!, cancellationToken);
         return new WorkNotificationPageV1(companyId, rows.Take(100).ToArray(), rows.Length > 100, rows.Length > 100 ? rows[99].Id : null);
     }

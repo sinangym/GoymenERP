@@ -55,6 +55,7 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         Assert.Equal(history, rows.Take(2).Select(x => x.ViewJson)); Assert.Equal(3, rows.Length);
         var message = Assert.Single(await outbox.ReadAfterAsync(null, 10, default));
         Assert.Equal(closed.StaleClosure.EventId, message.EventId);
+        Assert.Equal(kind, System.Text.Json.JsonSerializer.Deserialize<AccountingCostProposalStalePayloadV1>(message.PayloadJson, Json)!.CostKind);
         Assert.Equal(52140, (await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(() => run.Execute(downGuard))).Number);
         Assert.DoesNotContain("amount", message.PayloadJson, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(await outbox.ReadAfterAsync(message.Position, 10, default));

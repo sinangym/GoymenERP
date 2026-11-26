@@ -99,6 +99,7 @@ internal sealed class WorkInboxNotificationRow : IWorkTenantRow
     public Guid? PurchaseOrderId { get; set; }
     public Guid? PurchaseOrderLineId { get; set; }
     public long? ObservedPurchaseOrderVersion { get; set; }
+    public int? CostKind { get; set; }
 }
 
 internal sealed class WorkInboxNotificationReadRow : IWorkTenantRow

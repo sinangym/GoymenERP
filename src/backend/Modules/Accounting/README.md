@@ -685,3 +685,7 @@ stale families are outside this migration. Down first refuses retained stale clo
 proposal lineage with **52141**, requiring a forward fix; empty/legacy-only stores remain rollback-safe. The generated
 snapshot matches the model. API source build and pending-model checks exit0; tests and real SQL acceptance remain NOT_RUN.
 No database migration, backfill, SQL guard allowlist, permission or activation change was applied.
+
+The stale closure owner event also carries mandatory `costKind` (1 or 2) from the immutable Accounting proposal.
+Work records and returns this metadata so the preparer can locate the existing authorized preparation list and proposal.
+The event remains price-free; no journal, formula, source identity or proposal lifecycle changes accompany this metadata.

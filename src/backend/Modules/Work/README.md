@@ -219,3 +219,11 @@ inbox/dedup ile tekrar teslim tek hazırlayan bildirimi üretir. Yeni tablo, var
 politikası eklenmez. Down önce kind 10 geçmişi varken **52142** ile geri almayı reddeder ve forward fix ister; boş depo
 geri alınabilir. Snapshot modelle eşleşir; API derlemesi ve pending-model kontrolleri exit0, testler ve gerçek SQL kabulü
 NOT_RUN durumundadır. Veritabanı uygulanmadı; dispatcher/production aktivasyonu veya SQL guard allowlist'i değiştirilmedi.
+
+`20261126224759_AddStaleCostNotificationCostKind` bu geçmişi değiştirmeyen ek Work migration'ıdır: mevcut bildirim satırına nullable
+`CostKind` ve ayrı `CK_WorkInboxNotifications_CostKind` kısıtı ekler. Yalnız kind 10 için 1 (sevk SMM) veya 2 (alış maliyet
+farkı) zorunludur; diğer bildirim türlerinde null olmalıdır. Owner olayı, legacy item ve WP2 eventRef aynı kaydedilmiş türü
+iletir; null JSON alanı yazılmaz, eski bildirimlerin strict decoder ve delivery fingerprint biçimi korunur. Tür, mevcut
+yetkili Muhasebe hazırlama listesini/proposal kimliğini bulmak içindir; yetki vermez. Eski kind 10 satırında tür yoksa Up
+kaynak tahmini veya backfill yapmaz, constraint ile kapanır. Down tür kanıtı varken **52143** ile forward fix ister.
+Önceki iki D40 migration'ı ve snapshot geçmişi korunur; veritabanı uygulanmadı, SQL kabulü NOT_RUN.

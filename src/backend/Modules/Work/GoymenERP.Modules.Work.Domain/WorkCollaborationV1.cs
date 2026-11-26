@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 namespace GoymenERP.Modules.Work.Domain;
 
 /// <summary>
@@ -401,7 +402,8 @@ public sealed record WorkInboxApprovalRefV1(string Kind, Guid ItemId, string Doc
 
 /// <summary>D9 (WP2): the owner event an event-derived notification (kinds 4–5) carries, as recorded at delivery.</summary>
 public sealed record WorkInboxEventRefV1(Guid SourceEntityId, string SourceVersion, string ReasonCode, string ReasonText,
-    DateTimeOffset OccurredAtUtc, Guid? SalesOrderId, Guid? SalesOrderLineId, Guid? PurchaseOrderId, Guid? PurchaseOrderLineId);
+    DateTimeOffset OccurredAtUtc, Guid? SalesOrderId, Guid? SalesOrderLineId, Guid? PurchaseOrderId, Guid? PurchaseOrderLineId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? CostKind = null);
 
 public sealed record WorkInboxNotificationPageV1(Guid CompanyId, IReadOnlyList<WorkInboxNotificationViewV1> Items,
     bool HasMore, int UnreadNowCount, int UnreadDigestCount);

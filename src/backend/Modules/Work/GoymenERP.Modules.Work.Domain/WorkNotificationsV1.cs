@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Work.Domain;
 
 public enum WorkNotificationKindV1 { AllocationReleased = 1, PurchaseSupplyRevived = 2, AccountingCostProposalStale = 3 }
@@ -30,14 +32,16 @@ public sealed record DeliverWorkNotificationV1(Guid CompanyId, string SourceName
     int SchemaVersion, string PayloadJson, WorkNotificationKindV1 Kind, Guid SourceEntityId, string SourceVersion,
     string ReasonCode, string ReasonText, DateTimeOffset OccurredAtUtc, string CorrelationId, string? CausationId,
     IReadOnlyList<WorkNotificationTargetV1> Targets, WorkPurchaseNotificationTargetV1? PurchaseTarget = null,
-    Guid? PreparedByUserId = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? PreparedByUserId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? CostKind = null);
 public interface IWorkNotificationDeliveryV1
 {
     Task DeliverAsync(DeliverWorkNotificationV1 command, CancellationToken cancellationToken = default);
 }
 public sealed record WorkNotificationItemV1(Guid Id, Guid CompanyId, string Kind, Guid? SalesOrderId, Guid? SalesOrderLineId,
     Guid SourceEntityId, string SourceVersion, string ReasonCode, string ReasonText, DateTimeOffset OccurredAtUtc,
-    DateTimeOffset RecordedAtUtc, DateTimeOffset? PassivatedAtUtc, Guid? PurchaseOrderId = null, Guid? PurchaseOrderLineId = null);
+    DateTimeOffset RecordedAtUtc, DateTimeOffset? PassivatedAtUtc, Guid? PurchaseOrderId = null, Guid? PurchaseOrderLineId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? CostKind = null);
 public sealed record WorkNotificationPageV1(Guid CompanyId, IReadOnlyList<WorkNotificationItemV1> Items, bool HasMore, Guid? NextCursor);
 public interface IWorkNotificationReadV1
 {
