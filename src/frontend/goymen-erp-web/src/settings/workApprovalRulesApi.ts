@@ -43,8 +43,12 @@ export async function recordWorkApprovalRule(company: string, kind: string, body
   try { raw = await response.json() } catch { /* Malformed success remains unresolved. */ }
   if (response.status === 200) {
     const row = decodeWorkApprovalRule(raw)
-    // Replays may return a newer current view; never replace the frozen expected version with it during retry.
-    return row !== null && row.kind === kind && BigInt(row.version) > BigInt(body.expectedVersion)
+    // The owner increments exactly once for a fresh receipt. A replay returns CurrentViewAsync and may project a later edit.
+    const matches = row !== null && row.kind === kind && (replay === 'true'
+      ? BigInt(row.version) > BigInt(body.expectedVersion)
+      : BigInt(row.version) === BigInt(body.expectedVersion) + 1n && row.durationClass === body.durationClass
+        && row.escalationPermission === body.escalationPermission && row.reason === body.reason)
+    return matches
       ? { type: 'applied', data: row, replayed: replay === 'true' } : unexpected
   }
   if (response.status >= 500) return { type: 'unknown', reason: 'server' }

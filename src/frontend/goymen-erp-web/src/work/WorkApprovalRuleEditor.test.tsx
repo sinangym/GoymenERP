@@ -7,6 +7,7 @@ import { ShellProvider } from '../shell/ShellProvider'
 import { AppShell } from '../shell/AppShell'
 import { COMPANY_A, COMPANY_B, IDENTITY, installFetch, json, problem, commands } from '../settings/testHarness'
 import { recordWorkApprovalRule, isRecordWorkApprovalRule } from '../settings/workApprovalRulesApi'
+import { decodeWorkApprovalRule } from '../settings/workApprovalRulesContract'
 import { RULE_EDITOR_TEXT as T } from './WorkApprovalRuleEditorText'
 import { workRoutes } from './workRoutes'
 
@@ -128,15 +129,33 @@ describe('WP8 rule editor over the existing shell (SENTETIK)',() => {
 })
 
 describe('WP8 strict command receipt',() => {
+  // Keep each mutation a valid owner projection so the command correlation guard, rather than shape rejection, is exercised.
+  const changedRule = (fields: Record<string,unknown>) => {
+    const current=rule('1')
+    return {...current,...fields,versions:current.versions.map(version => ({...version,...fields}))}
+  }
   it.each([
     ['wrong kind', {...rule('1'),kind:'manufacturing.other.v1',versionText:'work.approval-rule:manufacturing.other.v1:1'},{}],
     ['extra member',{...rule('1'),extra:true},{}],
     ['unchanged version',rule(),{}],
     ['incomplete replay',rule('1'),{'Idempotency-Replayed':'true'}],
     ['orphan original',rule('1'),{'Idempotency-Original-Correlation-Id':'original'}],
+    ['fresh mismatched duration',changedRule({durationClass:'Hours'}),{}],
+    ['fresh mismatched escalation',changedRule({escalationPermission:'work.approvals.escalate'}),{}],
+    ['fresh mismatched reason',changedRule({reason:'SENTETIK another change'}),{}],
+    ['fresh jumped version',rule('3'),{}],
   ])('leaves %s unresolved',async(_name,value,headers) => {
+    if (_name.startsWith('fresh')) expect(decodeWorkApprovalRule(value)).not.toBeNull()
     vi.stubGlobal('fetch',vi.fn(async() => new Response(JSON.stringify(value),{status:200,headers:{'Content-Type':'application/json',...headers}})))
     expect((await recordWorkApprovalRule(COMPANY_A,KIND,body,'SENTETIK-key')).type).toBe('unknown')
+  })
+  it('accepts a valid replay projecting a later current version with different values',async() => {
+    const value={...rule('4'),...{durationClass:'Hours',escalationPermission:'work.approvals.escalate',reason:'SENTETIK later edit'},
+      versions:rule('4').versions.map(version => ({...version,durationClass:'Hours',escalationPermission:'work.approvals.escalate',reason:'SENTETIK later edit'}))}
+    vi.stubGlobal('fetch',vi.fn(async() => new Response(JSON.stringify(value),{status:200,headers:{
+      'Content-Type':'application/json','Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK-original',
+    }})))
+    expect(await recordWorkApprovalRule(COMPANY_A,KIND,body,'SENTETIK-key')).toEqual({type:'applied',data:value,replayed:true})
   })
   it('rejects persisted edits to owner permission and noncanonical versions',() => {
     expect(isRecordWorkApprovalRule(body)).toBe(true)
