@@ -14,12 +14,15 @@ namespace GoymenERP.Api.SalesRuntime;
 
 /// <summary>SAT-D478/479. State-only composition of existing owner evidence. No writes, grants, cost disclosure or bank-match gate.
 /// Each observation is bounded and repeated; it is not a cross-module lock. The native close command reads it again at save.</summary>
-public sealed class SalesOrderOwnerAxesHostV1(ICompanyContext company, ICurrentUser user, ICorrelationContext correlation,
+public sealed partial class SalesOrderOwnerAxesHostV1(ICompanyContext company, ICurrentUser user, ICorrelationContext correlation,
     ISalesInvoiceableShipmentReadPortV1 shipments, ILogisticsInvoicedShipmentProofReadPortV1 logistics,
     IInventoryShipmentCostReadPortV1 inventory, ISalesFinalizedShipmentClaimReadPortV1 invoices,
     ISalesOrderInvoicedQuantityReadPortV1 invoicedQuantities,
     ISalesOrderAllocationReadPortV2 allocations, IManufacturingSalesOrderSupplyReadPortV1 production,
-    IPurchaseSalesOrderObligationReadPortV1 purchasing, IFinanceSalesInvoiceSettlementPortV1 finance)
+    IPurchaseSalesOrderObligationReadPortV1 purchasing, IFinanceSalesInvoiceSettlementPortV1 finance,
+    ILogisticsSubcontractOrderDeliveryReadPortV1? subcontractDeliveries = null,
+    IInventorySubcontractOrderDeliveryProofReadPortV1? subcontractPhysical = null,
+    ISalesSubcontractServiceInvoiceStore? subcontractInvoices = null)
     : ISalesOrderOwnerAxesSourceV1
 {
     private const int MaximumShares = 128;
@@ -58,7 +61,7 @@ public sealed class SalesOrderOwnerAxesHostV1(ICompanyContext company, ICurrentU
             || query.Lines.Any(x => x.LineId == Guid.Empty || x.ProductId == Guid.Empty || x.UnitId == Guid.Empty)
             || query.Lines.Select(x => x.LineId).Distinct().Count() != query.Lines.Count) return Answer(Unknown, Unknown, Unknown);
         // Subcontract invoices use their own immutable weighing/claim family; do not misclassify absence of normal invoices.
-        if (query.IsSubcontractService) { await Fence(); return Answer(Missing, Missing, Missing); }
+        if (query.IsSubcontractService) return await ReadSubcontractAsync(query, freshConsumerFence, cancellationToken);
         try
         {
             var first = await Observe();
@@ -133,6 +136,8 @@ public sealed class SalesOrderOwnerAxesHostV1(ICompanyContext company, ICurrentU
             }
             if (!ids.Keys.Order().SequenceEqual(billed.Lines.Select(x => x.InvoiceId).Distinct().Order()))
                 return Result(source, Unknown, Unknown);
+            // Current claims exclude released invoices. Their historical Finance reversal needs separate owner proof.
+            if (billed.HasOfficiallyCancelledInvoices is not false) return Result(source, Complete, Unknown);
             try
             {
                 var context = new FinanceContext(query.CompanyId, actor!, correlation.CorrelationId, correlation.CausationId);

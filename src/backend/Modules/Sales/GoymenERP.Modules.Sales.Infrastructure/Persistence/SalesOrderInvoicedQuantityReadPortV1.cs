@@ -98,7 +98,9 @@ public sealed class SalesOrderInvoicedQuantityReadPortV1(SalesDbContext db, ICom
             var version = ISalesOrderInvoicedQuantityReadPortV1.SourceVersionPrefix
                 + Sha(JsonSerializer.Serialize(new { companyId, salesOrderId, after, versions, lines }, Json));
             return new SalesOrderInvoicedQuantityReadV1(companyId, salesOrderId, SalesOrderInvoicedQuantityReadOutcomeV1.Available,
-                lines.AsReadOnly(), version);
+                lines.AsReadOnly(), version,
+                after.Normal.Any(x => x.State == (int)SalesInvoiceState.OfficiallyCancelled)
+                || after.Subcontract.Any(x => x.State == (int)SalesSubcontractServiceInvoiceState.OfficiallyCancelled));
         }
         catch (OperationCanceledException) { throw; }
         catch

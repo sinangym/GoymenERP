@@ -13,7 +13,7 @@ using GoymenERP.Modules.Sales.Application.Contracts;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>Composition tests with explicit synthetic owner evidence; not SQL or real financial acceptance.</summary>
-public sealed class SalesOrderOwnerAxesHostTests
+public sealed partial class SalesOrderOwnerAxesHostTests
 {
     [Fact]
     public async Task Actual_owner_proofs_complete_the_three_axes_without_cost_or_bank_match_authority()
@@ -89,7 +89,7 @@ public sealed class SalesOrderOwnerAxesHostTests
     }
 
     [Fact]
-    public async Task Unsupported_subcontract_family_is_explicitly_missing_and_cancellation_propagates()
+    public async Task Uncomposed_subcontract_owners_are_explicitly_missing_and_cancellation_propagates()
     {
         var f = new Fixture();
         var answer = await f.Host().ReadOrderOwnerAxesAsync(f.Query with { IsSubcontractService = true }, f.Fence);
@@ -99,7 +99,7 @@ public sealed class SalesOrderOwnerAxesHostTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => f.Host().ReadOrderOwnerAxesAsync(f.Query, f.Fence, cancelled.Token));
     }
 
-    private sealed class Fixture : ISalesInvoiceableShipmentReadPortV1, ILogisticsInvoicedShipmentProofReadPortV1,
+    private sealed partial class Fixture : ISalesInvoiceableShipmentReadPortV1, ILogisticsInvoicedShipmentProofReadPortV1,
         IInventoryShipmentCostReadPortV1, ISalesFinalizedShipmentClaimReadPortV1, ISalesOrderInvoicedQuantityReadPortV1,
         ISalesOrderAllocationReadPortV2, IManufacturingSalesOrderSupplyReadPortV1,
         IPurchaseSalesOrderObligationReadPortV1, IFinanceSalesInvoiceSettlementPortV1
@@ -120,7 +120,8 @@ public sealed class SalesOrderOwnerAxesHostTests
         private readonly Guid shipment = Guid.NewGuid(), otherShipment = Guid.NewGuid(), note = Guid.NewGuid(), invoiceLine = Guid.NewGuid(), otherInvoiceLine = Guid.NewGuid();
         public Fixture() { Company.Set(CompanyId); User = new CurrentUser(CompanyId); correlation.Set("SENTETIK-closure", null, "Web", null, null); }
         public SalesOrderClosureQueryV1 Query => new(CompanyId, Order, Party, Account, false, [new(Line, Product, Unit, true, "10")]);
-        public SalesOrderOwnerAxesHostV1 Host() => new(Company, User, correlation, this, this, this, this, this, this, this, this, this);
+        public SalesOrderOwnerAxesHostV1 Host() => new(Company, User, correlation, this, this, this, this, this, this, this, this, this,
+            ComposeSubcontract ? this : null, ComposeSubcontract ? this : null, ComposeSubcontract ? this : null);
         public Task<SalesOrderOwnerAxesV1?> Read() => Host().ReadOrderOwnerAxesAsync(Query, Fence);
         public Task Fence(CancellationToken token)
         { token.ThrowIfCancellationRequested(); Fences++; if (!User.Authenticated) throw new UnauthorizedAccessException(); return Task.CompletedTask; }
@@ -166,9 +167,9 @@ public sealed class SalesOrderOwnerAxesHostTests
             return Task.FromResult(new SalesShipmentClaimBatchV1(CompanyId, SalesShipmentClaimReadOutcomeV1.Available, result, "batch:1"));
         }
         Task<SalesOrderInvoicedQuantityReadV1> ISalesOrderInvoicedQuantityReadPortV1.ReadAsync(Guid companyId, Guid salesOrderId, Func<CancellationToken, Task> fence, CancellationToken cancellationToken) =>
-            Task.FromResult(new SalesOrderInvoicedQuantityReadV1(CompanyId, Order, SalesOrderInvoicedQuantityReadOutcomeV1.Available,
+            Task.FromResult(ComposeSubcontract ? SubcontractQuantities() : new SalesOrderInvoicedQuantityReadV1(CompanyId, Order, SalesOrderInvoicedQuantityReadOutcomeV1.Available,
                 Shares.Select(x => new SalesOrderInvoicedQuantityLineV1(x.ShipmentId == shipment ? Invoice : OtherInvoice,
-                    x.ShipmentId == shipment ? invoiceLine : otherInvoiceLine, Line, Unit, x.Quantity, "Normal", "billed:1")).ToArray(), "billed:1"));
+                    x.ShipmentId == shipment ? invoiceLine : otherInvoiceLine, Line, Unit, x.Quantity, "Normal", "billed:1")).ToArray(), "billed:1", Fault == "historical-cancelled" ? true : Fault == "missing-invoice-history" ? null : false));
         public Task<SalesOrderAllocationReadAnswerV2> ReadOrderAllocationsAsync(Guid orderId, CancellationToken cancellationToken) =>
             Task.FromResult(new SalesOrderAllocationReadAnswerV2(CompanyId, Order,
                 OpenSource is "physical-allocation" or "future-allocation" ? [new(Line, OpenSource == "physical-allocation" ? SalesOrderAllocationKindsV2.Physical : SalesOrderAllocationKindsV2.FutureSupply, 1, 1m, OpenSource == "physical-allocation" ? null : Unit)] : []));
@@ -180,8 +181,9 @@ public sealed class SalesOrderOwnerAxesHostTests
         {
             FinanceCalls++; FinanceIds = invoiceIds;
             var rows = invoiceIds.Select(id => new FinanceSalesInvoiceSettlementV1(id,
-                Fault == "unknown-finance" ? FinanceSalesInvoiceSettlementStatusV1.Unknown : Unsettled && id == OtherInvoice ? FinanceSalesInvoiceSettlementStatusV1.Open : FinanceSalesInvoiceSettlementStatusV1.Settled,
-                Fault == "wrong-admission" ? Guid.NewGuid() : Admission, Fault == "wrong-invoice-version" ? "5" : "4")).ToArray();
+                Fault == "unknown-finance" ? FinanceSalesInvoiceSettlementStatusV1.Unknown : Unsettled && (id == OtherInvoice || ComposeSubcontract) ? FinanceSalesInvoiceSettlementStatusV1.Open : FinanceSalesInvoiceSettlementStatusV1.Settled,
+                Fault == "wrong-admission" ? Guid.NewGuid() : SubcontractInvoice?.Finalization?.AdmissionId ?? Admission,
+                Fault == "wrong-invoice-version" ? "99" : SubcontractInvoice?.Finalization?.FinalizedVersion.ToString() ?? "4")).ToArray();
             return Task.FromResult(new ReadResult<FinanceSalesInvoiceSettlementBatchV1>(ReadOutcome.Found,
                 new(CompanyId, Fault == "missing-installment-proof" ? [] : rows)));
         }

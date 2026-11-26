@@ -18,6 +18,7 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
         var orderId = line.Share.SalesOrderId;
         var read = await ReadOrderInvoiceQuantityAsync(run, CompanyA, orderId);
         Assert.Equal(SalesOrderInvoicedQuantityReadOutcomeV1.Available, read.Outcome);
+        Assert.Equal(false, read.HasOfficiallyCancelledInvoices);
         var actual = Assert.Single(read.Lines);
         Assert.Equal((invoice.Id, line.Share.LineId, line.Share.SalesOrderLineId, line.Share.UnitId, 3m, "Normal"),
             (actual.InvoiceId, actual.InvoiceLineId, actual.SalesOrderLineId, actual.UnitId, actual.Quantity, actual.InvoiceKind));
@@ -29,6 +30,7 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
         var foreign = await ReadOrderInvoiceQuantityAsync(run, CompanyB, orderId);
         Assert.Equal(SalesOrderInvoicedQuantityReadOutcomeV1.Available, foreign.Outcome);
         Assert.Empty(foreign.Lines);
+        Assert.Equal(false, foreign.HasOfficiallyCancelledInvoices);
 
         await using (var owner = run.OfficialStore(CompanyA))
             await owner.Store.RecordAsync(run.Envelope("quantity-official-cancel", actor: actor, permission: SalesPermissionManifestV1.InvoicesFinalize),
@@ -37,6 +39,7 @@ public sealed partial class SalesInvoiceSqlServerRelationalAcceptanceTests
         var released = await ReadOrderInvoiceQuantityAsync(run, CompanyA, orderId);
         Assert.Equal(SalesOrderInvoicedQuantityReadOutcomeV1.Available, released.Outcome);
         Assert.Empty(released.Lines);
+        Assert.Equal(true, released.HasOfficiallyCancelledInvoices);
         Assert.NotEqual(read.SourceVersion, released.SourceVersion);
         // The cancellation releases the original share, not its immutable finalization or physical quantity.
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.InvoiceFinalizations WHERE InvoiceId=@id", ("@id", invoice.Id)));

@@ -6,9 +6,12 @@ public enum SalesOrderInvoicedQuantityReadOutcomeV1 { Available = 1, Unavailable
 public sealed record SalesOrderInvoicedQuantityLineV1(Guid InvoiceId, Guid InvoiceLineId, Guid SalesOrderLineId,
     Guid UnitId, decimal Quantity, string InvoiceKind, string SourceVersion);
 
+/// <summary>History flag is part of the same bounded source snapshot: null means unknown; true requires separate Finance cancellation proof.</summary>
 public sealed record SalesOrderInvoicedQuantityReadV1(Guid CompanyId, Guid SalesOrderId,
     SalesOrderInvoicedQuantityReadOutcomeV1 Outcome, IReadOnlyList<SalesOrderInvoicedQuantityLineV1> Lines,
-    string? SourceVersion);
+    string? SourceVersion,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    bool? HasOfficiallyCancelledInvoices = null);
 
 /// <summary>Price-free internal purpose read for an authorized order reader. A complete empty source proves zero;
 /// missing, changing, ambiguous or legacy evidence is Unavailable. The token is not a later mutation lock.</summary>
