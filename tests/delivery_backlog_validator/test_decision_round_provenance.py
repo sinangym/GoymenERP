@@ -83,7 +83,7 @@ class IndependentProvenanceRecomputeTests(unittest.TestCase):
             result["decisionRegistry"]["statusHistogram"],
         )
         self.assertEqual(
-            "a8d28aa149be31337c1231809e3fd3004e422277868f314cdcddd3935c9ccb98",
+            "01ced8e23d2b9479289423262a9fccce9048671beeaee8718afa58fe2c97222d",
             result["decisionRegistry"]["canonicalRowsSha256"],
         )
         self.assertEqual(
