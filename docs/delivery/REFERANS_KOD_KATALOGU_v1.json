@@ -859,8 +859,8 @@
           "path": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditMovementServiceV1.cs",
           "line": 29,
           "anchor": "public async Task<CreditMovementResultV1> ProposeAsync(FinanceContext context, CommandMetadata metadata,",
-          "sha256": "2eae72eaab44e0091b86c5963c700cbbf6cf88ef38509d9ebd23862946660ec5",
-          "git_blob": "4f7a052ee6e5f6b7a71fe61848284246840bc897"
+          "sha256": "7831902a41e0f21a3cc3a0055a148b260ebefb4007f71bdac87f3429af1f443b",
+          "git_blob": "f813fe3ec06c4b7f3a2df41c949c71b46ff39d59"
         }
       ],
       "tests": [
@@ -872,10 +872,10 @@
           "git_blob": "db61f67f5655e3f1908e9d2e65e22f8e6bd56b44"
         }
       ],
-      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
-      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "source_commit": "f45d0ce05f368eaeeaab64fefa90569f888661bd",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
-      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "historical_ci_url": null,
       "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
       "invariants": [
         "CompanyId ve güncel yetki",
@@ -884,7 +884,7 @@
         "Eski test sonucu yeni kullanım kabulü değildir"
       ],
       "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
-      "adaptations": "Host NoneApproved; dört alan listesi onaylıdır ama leasing KDV eşlemesi ayrıca tamamlanır.",
+      "adaptations": "FNS-D124..D127 alan listesi kapısı ve kaynaktan leasing KDV bağlantısı eklendi; grubun kalan alan ve tazmin/evrak kabulü ayrıca tamamlanır.",
       "limitations": [
         "Host NoneApproved; dört alan listesi onaylıdır ama leasing KDV eşlemesi ayrıca tamamlanır.",
         "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
@@ -896,7 +896,21 @@
         "FNS-D97",
         "FNS-D99"
       ],
-      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
+      "previous_baseline": {
+        "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+        "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+        "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956"
+      },
+      "local_validation": {
+        "status": "TARGETED_LOCAL_ONLY",
+        "source_commit": "f45d0ce05f368eaeeaab64fefa90569f888661bd",
+        "finance_unit_passed": 1876,
+        "accounting_credit_passed": 9,
+        "frontend_credit_passed": 22,
+        "skipped": 0,
+        "sql_acceptance": "NOT_RUN"
+      }
     },
     {
       "id": "REF-CARRY-01",

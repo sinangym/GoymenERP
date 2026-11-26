@@ -1488,7 +1488,8 @@
       ],
       "decisions": [
         "ROL-D4",
-        "YOL-D17"
+        "YOL-D17",
+        "ROL-D27"
       ],
       "depends_on": [],
       "open_decisions": [],
@@ -1515,7 +1516,8 @@
         "tests/GoymenERP.Identity.UnitTests/ErpAuthorityRevalidationServiceTests.cs",
         "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs"
       ],
-      "change_files": []
+      "change_files": [],
+      "decision_resolution": "26 Kasım doğrudan cevap: kendi vekâleti + ayrı yönetim izni; ek onay yok, rol matrisinde yalnız öneri. Geçerli mevcut izin, süre, zincirsizlik, SoD ve audit korunur."
     },
     {
       "id": "T2/WP8",
@@ -2408,7 +2410,7 @@
       "backlog_parent": "W4-RISK",
       "title": "Onaylı dört kredi grubu",
       "group": "TREN2",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P1",
       "risk": "K3",
       "scope": "FNS-D124…127 alan listesini gate/komut/ekran/fiş bileşenleriyle uygula; kapıyı tek satırla kör açma.",
@@ -2456,7 +2458,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "Tamamlandı değildir: onaylı alan listesinin kalan grup alanlarını, gayrinakdi gerçek tazmin/banka bağlantısını ve evrakın iki krediye bağlanmamasını tamamla; rol/grant/aktivasyon yapma. SQL/CI/K3 kapanışta.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2465,7 +2467,59 @@
         "tests/GoymenERP.Accounting.UnitTests/NormalJournalDraftLifecycleV1Tests.cs",
         "tests/GoymenERP.Api.IntegrationTests/FinanceCreditMovementHttpAcceptanceTests.cs"
       ],
-      "change_files": []
+      "change_files": [
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/CreditMovementJournalComponentsV1.cs",
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/Inbox/CreditMovementProposalInboxConsumerV1.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Contracts/CreditAccountV1.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditAccountProfilePolicy.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditAccountService.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditGroupGateV1.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditMovementPolicyV1.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditMovementServiceV1.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditPlanCalculator.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceModuleExtensions.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/FinanceDbContext.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/FinanceRows.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261126181654_AddLeasingInstallmentVat.Designer.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/20261126181654_AddLeasingInstallmentVat.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Persistence/Migrations/FinanceDbContextModelSnapshot.cs",
+        "src/backend/Modules/Finance/README.md",
+        "src/frontend/goymen-erp-web/src/finance/CreditAccountProposalForm.tsx",
+        "src/frontend/goymen-erp-web/src/finance/CreditAccountsPage.tsx",
+        "src/frontend/goymen-erp-web/src/finance/CreditMovementsPanel.tsx",
+        "src/frontend/goymen-erp-web/src/finance/creditAccount.test.tsx",
+        "src/frontend/goymen-erp-web/src/finance/creditAccountApi.ts",
+        "src/frontend/goymen-erp-web/src/finance/creditAccountText.ts",
+        "src/frontend/goymen-erp-web/src/finance/creditMovementApi.ts",
+        "src/frontend/goymen-erp-web/src/finance/creditMovementText.ts",
+        "tests/GoymenERP.Accounting.UnitTests/CreditMovementJournalComponentsV1Tests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCreditAccountSqlServerRelationalAcceptanceTests.LeasingVat.cs",
+        "tests/GoymenERP.Finance.UnitTests/FinanceBankAccountTests.cs",
+        "tests/GoymenERP.Finance.UnitTests/FinanceBankStatementPersistenceModelTests.cs",
+        "tests/GoymenERP.Finance.UnitTests/FinanceCreditAccountTests.LeasingVat.cs",
+        "tests/GoymenERP.Finance.UnitTests/FinanceCreditAccountTests.Movements.cs",
+        "tests/GoymenERP.Finance.UnitTests/FinanceCreditAccountTests.cs",
+        "tools/relational_inventory/finance.txt"
+      ],
+      "execution": {
+        "source_commit": "f45d0ce05f368eaeeaab64fefa90569f888661bd",
+        "gate_commit": "267d08ec1",
+        "reuse": "Existing credit account/plan calculator, actual movement outbox, normal-journal source mapping and React forms",
+        "token_consumption": "UNKNOWN; no per-package counter",
+        "development_duration": "NOT_SEPARATELY_MEASURED",
+        "checks": [
+          "Finance unit: 1876 passed, 0 skipped",
+          "Accounting credit: 9 passed, 0 skipped",
+          "Frontend credit: 22 passed; TypeScript exit 0; targeted lint exit 0 (one existing warning)",
+          "API integration test project build: 0 errors/0 warnings"
+        ],
+        "sql": "NOT_RUN; leasing VAT SQL acceptance added",
+        "browser": "NOT_RUN",
+        "hosted_ci": "NOT_RUN",
+        "independent_review": "PENDING",
+        "integration_pins": "DEFERRED_TO_TRAIN_CLOSE",
+        "migration": "20261126181654_AddLeasingInstallmentVat; Down THROW 52360"
+      }
     },
     {
       "id": "T2/SMALL-GAPS",

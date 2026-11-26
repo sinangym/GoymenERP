@@ -118,3 +118,5 @@ Sinan’ın açık talimatıyla Claude kapasitesi yokken frontend dahil gelişti
 İlk teslimler: `W3-URETIM/INPUT-PIECES` (`c48f96c91`) ve `W2-SATINALMA/MULTILINE` (`c98ede21d`). Yerel hedefli kanıtlar JSON `execution` alanındadır; gerçek SQL, browser, pin, hosted CI ve bağımsız review bekler. Bunlar üretim kabulü veya tren kapanışı değildir. Son kontrolün CUTOVER, Work şema sırası, açık karar ayrımı ve sonraki kapsam bağlantıları aynı 41 pakete işlendi.
 
 `T2/WP-C1-LEDGER` kaynak teslimi: `b3742be08`. Mevcut AI bağlamında ayrı `ai` şeması, atomik durum/olay ve sürüm CAS bağlandı. 94 hedefli test geçti (0 skip); EF model farkı yok. Dört SQL kabulü yazıldı, koşulmadı. Pin/tam CI/K3 kapanışta bekler; AI kapalıdır.
+
+`T2/CREDIT-GROUPS` kısmi teslimi: `267d08ec1` / `f45d0ce05`. Dört onaylı alan kapısı ve leasing kaynak KDV’si mevcut plan/hareket/muhasebe zincirine bağlandı. Finans 1876, muhasebe kredi 9, frontend kredi 22 test yeşil; SQL/CI/K3 ve kalan grup ayrıntıları bekler. WP3 yönetim kararı ROL-D27 ile kaydedildi; ek onay ve otomatik grant yok.
