@@ -164,17 +164,17 @@ public sealed partial class SalesDraftServiceTests
         purchasing.Answer = (query, kind) => Answer(query, kind);
         await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("k-d219-submit-2"));
         purchasing.Answer = (query, kind) => Answer(query, kind, OpenPurchaseOrder(line));
-        var atApprove = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-d219-approve")));
+        var atApprove = await Assert.ThrowsAsync<SalesDraftServiceException>(() => WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-d219-approve"))));
         Assert.Equal((409, SalesDraftProblemCodesV1.RevisionBlocked, "removedLines[0].lineId", SalesRuleCodes.LineRevisionLineLinked),
             (atApprove.Status, atApprove.Code, Assert.Single(atApprove.Errors).Field, atApprove.Errors[0].Code));
         Assert.Equal("PendingApproval", Assert.Single(world.Store.Drafts).ApprovalState.ToString());
 
         // An unreadable owner at the decision is 503 (fail-closed); readable and clear, the approval goes through.
         purchasing.Answer = (query, kind) => Answer(query, kind) with { Status = SalesCancellationImpactStatusesV1.Unreadable };
-        var unread = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-d219-approve-2")));
+        var unread = await Assert.ThrowsAsync<SalesDraftServiceException>(() => WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-d219-approve-2"))));
         Assert.Equal((503, SalesDraftProblemCodesV1.RevisionImpactUnavailable), Status(unread));
         purchasing.Answer = (query, kind) => Answer(query, kind);
-        var done = await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-d219-approve-3"));
+        var done = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-d219-approve-3")));
         Assert.Equal("Approved", done.Detail.Draft.ApprovalState);
     }
 

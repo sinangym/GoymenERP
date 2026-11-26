@@ -69,7 +69,7 @@ public sealed partial class SalesDraftServiceTests
 
         // The existing flow approves Rev.1; close and reopen shows Rev.1 approved and Rev.0 archived with its reason.
         await world.Service().SubmitDraftAsync(approved.Draft.Id, Command("5"), Metadata("k-submit-rev1"));
-        await world.Service().ApproveDraftAsync(approved.Draft.Id, Command("6"), Metadata("k-approve-rev1"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Draft.Id, Command("6"), Metadata("k-approve-rev1")));
         await world.Service().RecordCustomerAcceptanceAsync(approved.Draft.Id, Command("7"), Metadata("k-accept-rev1"));
         var detail = await world.Service().GetDraftDetailAsync(approved.Draft.Id);
         Assert.Equal(("Approved", "Rev.1", "8", "2"), (detail.Draft.ApprovalState, detail.Draft.Revision, detail.Draft.Version, detail.Lines[0].Quantity));

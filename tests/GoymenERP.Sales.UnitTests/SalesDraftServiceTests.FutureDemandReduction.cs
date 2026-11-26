@@ -16,7 +16,7 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().ReviseQuantityAsync(approved.Id,
             new("5", "SENTETIK azaltma", [new(line, "1")]), Metadata("future-revision"));
         await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("future-submit"));
-        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("future-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("future-approve")));
         await world.Service().RecordCustomerRejectionAsync(approved.Id, Command("8", "SENTETIK ret"), Metadata("future-reject"));
         Assert.Empty(participant.Requests);
     }
@@ -32,7 +32,7 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().ReviseQuantityAsync(approved.Id,
             new("5", "SENTETIK azaltma", [new(line, "1")]), Metadata("future-revision"));
         await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("future-submit"));
-        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("future-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("future-approve")));
         var accepted = await world.Service().RecordCustomerAcceptanceAsync(approved.Id, Command("8"), Metadata("future-accept"));
         var request = Assert.Single(participant.Requests);
         var demand = Assert.Single(request.Lines);
@@ -56,12 +56,12 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().ReviseQuantityAsync(approved.Id,
             new("5", "SENTETIK reddedilecek artış", [new(line, "2")]), Metadata("future-rejected-revision"));
         await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("future-first-submit"));
-        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("future-first-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("future-first-approve")));
         await world.Service().RecordCustomerRejectionAsync(approved.Id, Command("8", "SENTETIK ret"), Metadata("future-first-reject"));
         await world.Service().ReviseQuantityAsync(approved.Id,
             new("9", "SENTETIK kabul edilecek miktar", [new(line, "1.5")]), Metadata("future-second-revision"));
         await world.Service().SubmitDraftAsync(approved.Id, Command("10"), Metadata("future-second-submit"));
-        await world.Service().ApproveDraftAsync(approved.Id, Command("11"), Metadata("future-second-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("11"), Metadata("future-second-approve")));
         await world.Service().RecordCustomerAcceptanceAsync(approved.Id, Command("12"), Metadata("future-second-accept"));
         // 1.5 is lower than the rejected 2, but higher than the effective accepted 1.25: no release.
         Assert.Empty(participant.Requests);
@@ -79,7 +79,7 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().ReviseQuantityAsync(approved.Id,
             new("5", "SENTETIK azaltma", [new(line, "1")]), Metadata("future-revision"));
         await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("future-submit"));
-        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("future-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("future-approve")));
         participant.Failure = new SalesFutureAllocationReleaseException(409, "synthetic_future_refusal", terminal);
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
             world.Service().RecordCustomerAcceptanceAsync(approved.Id, Command("8"), Metadata("future-accept")));
@@ -110,7 +110,7 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().ReviseQuantityAsync(approved.Id,
             new("5", "SENTETIK azaltma", [new(line, "1")]), Metadata("future-revision"));
         await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("future-submit"));
-        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("future-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("future-approve")));
         world.FutureDemandReduction = null;
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
             world.Service().RecordCustomerAcceptanceAsync(approved.Id, Command("8"), Metadata("future-accept")));

@@ -402,14 +402,14 @@ public sealed partial class SalesDraftServiceTests
             revised.Detail.Draft.Version, revised.Detail.Lines[0].UnitPrice, revised.Detail.Lines[0].PriceUnitId, revised.Detail.Lines[0].DiscountPercent));
         Assert.Equal(new SalesDraftApprovalV1(null, null, null, null, null), revised.Detail.Approval);
         var archived = Assert.Single(world.Store.Archived);
-        Assert.Equal((0, "12.50", Actor, Actor), (archived.Revision, archived.Lines[0].Commercial.UnitPrice, archived.Approval.SubmittedBy, archived.Approval.DecidedBy));
+        Assert.Equal((0, "12.50", Actor, IndependentApprover), (archived.Revision, archived.Lines[0].Commercial.UnitPrice, archived.Approval.SubmittedBy, archived.Approval.DecidedBy));
         // The command ran under the price permission, as its own transition with its audit event.
         var transition = world.Store.Transitions.Single(item => item.Command == SalesDraftCommands.ReviseCommercialV1);
         Assert.Equal((PricePermission, "sales.order-draft.commercial-revised.v1", 5L, 6L), (transition.Envelope.PermissionCode, transition.Audit.EventType, transition.VersionBefore, transition.VersionAfter));
         // The history is read back under the draft read: Rev.0 with its facts and the OLD values.
         var history = await world.Service().GetDraftRevisionsAsync(created.Draft.Id);
         var item = Assert.Single(history.Items);
-        Assert.Equal(("Rev.0", Actor, Actor, "12.50", "5", 1), (item.Revision, item.SubmittedBy, item.ApprovedBy, item.Lines[0].UnitPrice, item.Lines[0].DiscountPercent, item.Lines.Count));
+        Assert.Equal(("Rev.0", Actor, IndependentApprover, "12.50", "5", 1), (item.Revision, item.SubmittedBy, item.ApprovedBy, item.Lines[0].UnitPrice, item.Lines[0].DiscountPercent, item.Lines.Count));
         // The SAME key resent is the replay of the stored result — never the "no change" refusal (ADR-011 §4/§8).
         var replay = await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision("5", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r1"));
         Assert.True(replay.IsReplay);

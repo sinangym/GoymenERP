@@ -148,7 +148,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Empty((await port.ListApprovedLinesAsync(10, null)).Items);
 
         // Rejected: the line comes back and ships under the last approved revision (Rev.0, its quantity as the cap).
-        await world.Service().RejectDraftAsync(approved.Id, Command("7"), Metadata("k-d211-reject"));
+        await WithIndependentApproverAsync(world, () => world.Service().RejectDraftAsync(approved.Id, Command("7"), Metadata("k-d211-reject")));
         await AssertLastApprovedAsync(port, approved.Id, line, "Rejected", "1.25", "1.25", "8");
         Assert.Equal(line, Assert.Single((await port.ListApprovedLinesAsync(10, null)).Items).LineId);
 
@@ -164,7 +164,7 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().ReviseLinesAsync(approved.Id, LineRevision("8", [AddedLine()]), Metadata("k-d211-again"));
         Assert.Equal(SalesOrderLineReferenceOutcomeV1.Approved, (await port.GetApprovedLineAsync(approved.Id, line)).Outcome);
         await world.Service().SubmitDraftAsync(approved.Id, Command("9"), Metadata("k-d211-resubmit"));
-        var reapproved = await world.Service().ApproveDraftAsync(approved.Id, Command("10"), Metadata("k-d211-reapprove"));
+        var reapproved = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("10"), Metadata("k-d211-reapprove")));
         Assert.Contains(reapproved.Detail.Lines, candidate => candidate.LineId == line);
         Assert.DoesNotContain(reapproved.Detail.RemovedLines ?? [], candidate => candidate.LineId == line);
     }
@@ -198,7 +198,7 @@ public sealed partial class SalesDraftServiceTests
 
         // Rejected: the old line comes back (active) under Rev.0; the replacement goes passive in the rejected revision, so the
         // order never holds both products, and it never ships.
-        await world.Service().RejectDraftAsync(approved.Id, Command("7"), Metadata("k-pc-reject"));
+        await WithIndependentApproverAsync(world, () => world.Service().RejectDraftAsync(approved.Id, Command("7"), Metadata("k-pc-reject")));
         await AssertLastApprovedAsync(port, approved.Id, line, "Rejected", "1.25", "1.25", "8");
         Assert.Equal(SalesOrderLineReferenceOutcomeV1.NotFound, (await port.GetApprovedLineAsync(approved.Id, replacement.LineId)).Outcome);
         var detail = await world.Service().GetDraftDetailAsync(approved.Id);
@@ -225,7 +225,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.DoesNotContain((await port.ListApprovedLinesAsync(10, null)).Items, item => item.LineId == line);
 
         // Rejected: the line comes back and is offered again.
-        await world.Service().RejectDraftAsync(approved.Id, Command("7"), Metadata("k-d220-reject"));
+        await WithIndependentApproverAsync(world, () => world.Service().RejectDraftAsync(approved.Id, Command("7"), Metadata("k-d220-reject")));
         Assert.Equal(SalesOrderLineReferenceOutcomeV1.Approved, (await port.GetApprovedLineAsync(approved.Id, line)).Outcome);
         Assert.Contains((await port.ListApprovedLinesAsync(10, null)).Items, item => item.LineId == line);
     }
@@ -240,7 +240,7 @@ public sealed partial class SalesDraftServiceTests
         var port = LinePort(world);
         await world.Service().ReviseLinesAsync(approved.Id, LineRevision("5", [AddedLine()], [new SalesDraftLineRemovalV1(line)]), Metadata("k-d211c"));
         await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("k-d211c-submit"));
-        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-d211c-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-d211c-approve")));
         // Approved internally, the customer has not decided: the removed line is not shipped.
         Assert.Equal(SalesOrderLineReferenceOutcomeV1.NotFound, (await port.GetApprovedLineAsync(approved.Id, line)).Outcome);
 
@@ -273,7 +273,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.DoesNotContain(Assert.Single(world.Store.Drafts).ArchivedRevisions[^1].Lines, archived => archived.LineId == line);
         Assert.Equal(SalesOrderLineReferenceOutcomeV1.Approved, (await port.GetApprovedLineAsync(approved.Id, line)).Outcome);
         await world.Service().SubmitDraftAsync(approved.Id, Command("10"), Metadata("k-d211c-rev2-submit"));
-        var rev2 = await world.Service().ApproveDraftAsync(approved.Id, Command("11"), Metadata("k-d211c-rev2-approve"));
+        var rev2 = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("11"), Metadata("k-d211c-rev2-approve")));
         Assert.Contains(rev2.Detail.Lines, candidate => candidate.LineId == line);
         Assert.DoesNotContain(rev2.Detail.RemovedLines ?? [], candidate => candidate.LineId == line);
     }
@@ -384,7 +384,7 @@ public sealed partial class SalesDraftServiceTests
         var revised = await world.Service().ReviseLinesAsync(approved.Draft.Id,
             LineRevision(accepted.Detail.Draft.Version, [AddedLine()], [new SalesDraftLineRemovalV1(removedId)]), Metadata("k-pend-lines"));
         var submitted = await world.Service().SubmitDraftAsync(approved.Draft.Id, Command(revised.Detail.Draft.Version), Metadata("k-pend-submit"));
-        var approvedAgain = await world.Service().ApproveDraftAsync(approved.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata("k-pend-approve"));
+        var approvedAgain = await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata("k-pend-approve")));
         var rejected = await world.Service().RecordCustomerRejectionAsync(approved.Draft.Id,
             Command(approvedAgain.Detail.Draft.Version, "SENTETIK musteri istemedi"), Metadata("k-pend-reject"));
         var version = rejected.Detail.Draft.Version;

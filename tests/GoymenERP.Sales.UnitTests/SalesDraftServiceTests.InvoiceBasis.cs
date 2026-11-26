@@ -31,16 +31,16 @@ public sealed partial class SalesDraftServiceTests
         switch (scenario)
         {
             case "accepted-archive":
-                await world.Service().ApproveDraftAsync(draftId, Command(await VersionAsync()), Metadata("k-basis-approve"));
+                await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(draftId, Command(await VersionAsync()), Metadata("k-basis-approve")));
                 await world.Service().RecordCustomerRejectionAsync(draftId, Command(await VersionAsync(), "SENTETIK musteri istemedi"),
                     Metadata("k-basis-customer-reject"));
                 break;
             case "current":
-                await world.Service().ApproveDraftAsync(draftId, Command(await VersionAsync()), Metadata("k-basis-approve"));
+                await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(draftId, Command(await VersionAsync()), Metadata("k-basis-approve")));
                 await world.Service().RecordCustomerAcceptanceAsync(draftId, Command(await VersionAsync()), Metadata("k-basis-accept"));
                 break;
             default:
-                await world.Service().RejectDraftAsync(draftId, Command(await VersionAsync(), "SENTETIK ic ret"), Metadata("k-basis-reject"));
+                await WithIndependentApproverAsync(world, () => world.Service().RejectDraftAsync(draftId, Command(await VersionAsync(), "SENTETIK ic ret"), Metadata("k-basis-reject")));
                 break;
         }
 
@@ -189,7 +189,7 @@ public sealed partial class SalesDraftServiceTests
         var created = (await world.Service().CreateDraftAsync(tweak(Priced(discount: null)), Metadata($"{key}-create"))).Detail;
         var version = await ApproveDiscountChecksAsync(world, created.Draft.Id, created.Draft.Version, created.Lines[0].LineId);
         var submitted = await world.Service().SubmitDraftAsync(created.Draft.Id, Command(version), Metadata($"{key}-submit"));
-        var approved = (await world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata($"{key}-approve"))).Detail;
+        var approved = (await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata($"{key}-approve")))).Detail;
         await world.Service().RecordCustomerAcceptanceAsync(approved.Draft.Id, Command(approved.Draft.Version), Metadata($"{key}-accept"));
         return approved;
     }

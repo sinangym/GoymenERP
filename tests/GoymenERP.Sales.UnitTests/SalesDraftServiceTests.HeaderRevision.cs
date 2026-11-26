@@ -101,7 +101,7 @@ public sealed partial class SalesDraftServiceTests
 
         // The existing flow approves Rev.1; then every consumer moves to it.
         await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("k-header-submit"));
-        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-header-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-header-approve")));
         await world.Service().RecordCustomerAcceptanceAsync(approved.Id, Command("8"), Metadata("k-header-accept"));
         var answer = await port.GetApprovedLineAsync(approved.Id, line);
         Assert.Equal((SalesOrderLineReferenceOutcomeV1.Approved, 1), (answer.Outcome, answer.Line!.Revision));
@@ -141,13 +141,13 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("k-customer-submit"));
         allocations.Answer = order => new(Company, order, [new SalesOrderLineAllocationV1(line, 1, 0.5m)]);
         var blocked = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-customer-approve")));
+            WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-customer-approve"))));
         Assert.Equal((409, SalesDraftProblemCodesV1.RevisionBlocked), Status(blocked));
         Assert.Equal(SalesCancellationImpactSourcesV1.ActiveAllocations, Assert.Single(blocked.Errors).Field);
         Assert.Empty(world.Store.Refusals);
 
         allocations.Answer = order => new(Company, order, []);
-        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-customer-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-customer-approve")));
         await world.Service().RecordCustomerAcceptanceAsync(approved.Id, Command("8"), Metadata("k-customer-accept"));
         var answer = await port.GetApprovedLineAsync(approved.Id, line);
         Assert.Equal((SalesOrderLineReferenceOutcomeV1.Approved, NewAccount, 1), (answer.Outcome, answer.Line!.CompanyAccountId, answer.Line.Revision));

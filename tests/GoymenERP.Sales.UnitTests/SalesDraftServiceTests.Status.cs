@@ -380,7 +380,7 @@ public sealed partial class SalesDraftServiceTests
 
         // Rev.1 approved: now 2 kg is the approved quantity and the same shipments are partial against it.
         await world.Service().SubmitDraftAsync(approved.Draft.Id, Command("5"), Metadata("k-submit-1"));
-        await world.Service().ApproveDraftAsync(approved.Draft.Id, Command("6"), Metadata("k-approve-1"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Draft.Id, Command("6"), Metadata("k-approve-1")));
         var reapproved = await world.Service().GetDraftStatusAsync(approved.Draft.Id);
         Assert.Equal(("Partial", "Rev.1", "2"), (reapproved.Realization.State, reapproved.Realization.BasisRevision,
             reapproved.Realization.Lines[0].Ordered));

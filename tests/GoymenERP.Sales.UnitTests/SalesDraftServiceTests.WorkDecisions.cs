@@ -14,8 +14,9 @@ public sealed partial class SalesDraftServiceTests
         world.User.Id="synthetic-editor";
         var edited=await world.Service().ReviseCommercialAsync(created.Draft.Id,
             Revision("2",new SalesDraftLineCommercialV1(created.Lines[0].LineId,"13.00",KgUnit,"5")),Metadata("k-contributor-edit"));
+        var version=await ApproveDiscountChecksAsync(world,created.Draft.Id,edited.Detail.Draft.Version,created.Lines[0].LineId);
         world.User.Id="synthetic-submitter";
-        var submitted=await world.Service().SubmitDraftAsync(created.Draft.Id,Command(edited.Detail.Draft.Version),Metadata("k-contributor-submit"));
+        var submitted=await world.Service().SubmitDraftAsync(created.Draft.Id,Command(version),Metadata("k-contributor-submit"));
         world.User.Id="synthetic-editor";
         var decided=approve?await world.Service().ApproveDraftAsync(created.Draft.Id,Command(submitted.Detail.Draft.Version),Metadata("k-contributor-decide"))
             :await world.Service().RejectDraftAsync(created.Draft.Id,Command(submitted.Detail.Draft.Version),Metadata("k-contributor-decide"));

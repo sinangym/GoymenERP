@@ -111,7 +111,7 @@ public sealed partial class SalesDraftServiceTests
 
         // Rev.1 approved inside, the customer has not accepted it: still 1.25 − 1 open; the +0.75 awaits acceptance (Rev.1).
         await world.Service().SubmitDraftAsync(approved.Draft.Id, Command("6"), Metadata("k-submit-1"));
-        await world.Service().ApproveDraftAsync(approved.Draft.Id, Command("7"), Metadata("k-approve-1"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Draft.Id, Command("7"), Metadata("k-approve-1")));
         world.Reports.Orders[0] = (await world.Store.FindDraftAsync(approved.Draft.Id))!;
         var awaiting = Assert.Single((await world.Service().GetOpenOrderReportAsync(query)).Groups);
         Assert.Equal(("1.25", "1", "0.25", "0.75"), (awaiting.ApprovedQuantity, awaiting.ShippedQuantity, awaiting.RemainingQuantity,

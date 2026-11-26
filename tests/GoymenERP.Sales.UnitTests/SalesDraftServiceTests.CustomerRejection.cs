@@ -25,7 +25,7 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().ReviseQuantityAsync(approved.Id,
             new SalesDraftQuantityRevisionRequest("5", "SENTETIK müşteri 2 kg istedi", [new SalesDraftLineQuantityV1(line, "2")]), Metadata("k-rj-up"));
         await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("k-rj-submit"));
-        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-rj-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-rj-approve")));
         var waiting = await port.GetApprovedLineAsync(approved.Id, line);
         Assert.Equal((SalesOrderLineReferenceOutcomeV1.NotApproved, "CustomerAcceptancePending"), (waiting.Outcome, waiting.ApprovalState));
         Assert.Equal((SalesDraftInvoicingGatesV1.AwaitingCustomerAcceptance, (string?)null), await GateAsync(world, approved.Id));
@@ -121,7 +121,7 @@ public sealed partial class SalesDraftServiceTests
             new SalesDraftQuantityRevisionRequest("6", "SENTETIK revizyon", [new SalesDraftLineQuantityV1(line, rejectedQuantity)]),
             Metadata("risk-rj-revise"));
         await world.Service().SubmitDraftAsync(draftId, Command("7"), Metadata("risk-rj-r1-submit"));
-        await world.Service().ApproveDraftAsync(draftId, Command("8"), Metadata("risk-rj-r1-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(draftId, Command("8"), Metadata("risk-rj-r1-approve")));
         var rejected = await world.Service().RecordCustomerRejectionAsync(draftId, Command("9", "SENTETIK müşteri istemedi"),
             Metadata("risk-rj-reject"));
         Assert.Equal(("Rev.1", rejectedQuantity), (rejected.Detail.Draft.Revision, rejected.Detail.Lines[0].Quantity));
@@ -170,7 +170,7 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().ReviseHeaderAsync(approved.Id,
             HeaderRevision("5", account: NewAccount, reason: "SENTETIK cari hesap değişti"), Metadata("k-rjh-revise"));
         await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("k-rjh-submit"));
-        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-rjh-approve"));
+        await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-rjh-approve")));
         await world.Service().RecordCustomerRejectionAsync(approved.Id, Command("8", "SENTETIK müşteri cari değişikliğini istemedi"),
             Metadata("k-rjh-reject"));
 
