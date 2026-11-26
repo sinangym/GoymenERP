@@ -480,6 +480,7 @@ builder.Services.AddScoped<IPurchaseRequestSalesSourcePortV1, PurchasingRequestS
 // Sales): the linked-supply read (SupplyKind Production) with its recorder declaration, and the approved-line reader the plan's
 // sales order link uses.
 builder.Services.AddScoped<ISalesOrderLinkedSupplyReadPortV1, ManufacturingSalesOrderLinkedSupplyReadPort>();
+builder.Services.AddScoped<ISalesOrderOwnerAxesSourceV1, SalesOrderOwnerAxesHostV1>();
 builder.Services.AddSingleton<ISalesOrderLinkedSupplyRecorderV1, ManufacturingSalesOrderLinkedSupplyRecorder>();
 builder.Services.AddScoped<IManufacturingSalesOrderLineReferencePortV1, ManufacturingSalesOrderLineReferencePort>();
 // Üretim U5-b / API-36 (URT-D16, URT-D22, SAT-D175): the subcontract service order read a customer-goods plan's link checks,

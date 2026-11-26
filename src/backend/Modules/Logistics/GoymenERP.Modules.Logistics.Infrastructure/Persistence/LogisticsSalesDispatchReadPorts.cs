@@ -139,7 +139,7 @@ internal sealed class LogisticsSalesDispatchReadPorts(LogisticsDbContext dbConte
         }
 
         var companyId = companyContext.CompanyId;
-        if (query.Limit < 1 || query.CompanyAccountId == Guid.Empty)
+        if (query.Limit < 1 || query.CompanyAccountId == Guid.Empty || !SalesInvoiceableShipmentQueryV1.IsValidOrderIds(query.OrderIds))
         {
             throw new ArgumentOutOfRangeException(nameof(query));
         }
@@ -162,6 +162,11 @@ internal sealed class LogisticsSalesDispatchReadPorts(LogisticsDbContext dbConte
         if (query.CompanyAccountId is { } account)
         {
             shares = shares.Where(row => row.CompanyAccountId == account);
+        }
+
+        if (query.OrderIds is { } orderIds)
+        {
+            shares = shares.Where(row => orderIds.Contains(row.line.SourceOrderId));
         }
 
         var rows = await shares

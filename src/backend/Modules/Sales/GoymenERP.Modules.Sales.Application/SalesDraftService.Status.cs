@@ -19,9 +19,9 @@ namespace GoymenERP.Modules.Sales.Application;
 /// (SAT-D29 b; the date Sales reads its other Settings profiles on). The tolerance is asked only when a line needs it. A missing,
 /// refused, inactive, out-of-window, other-company or malformed policy is <c>PolicyUnavailable</c> — never a default; an
 /// owner that is not composed, fails or answers a malformed value is <c>Unreadable</c> — never zero.</item>
-/// <item><b>No source yet</b>: source/allocation strategy (MOD-05, API-11), invoicing (S5) and financial closure (MOD-04)
-/// have no owner module on main: <c>NoSource</c>, never complete or zero (SAT-D32: they are read through the
-/// <see cref="ISalesOrderOwnerAxesSourceV1"/> seam, which nothing composes on main). The invoicing axis carries the Sales-owned
+/// <item><b>Owner composition</b>: source/allocation, invoicing and financial closure are read through the
+/// <see cref="ISalesOrderOwnerAxesSourceV1"/> seam. No composition means NoSource; missing evidence never means completion.
+/// The invoicing axis carries the Sales-owned
 /// SAT-D103 gate (<see cref="InvoicingGate"/>) for the S5 invoicing owner to obey.</item>
 /// <item><b>Kapanmaya hazır</b> (SAT-D32): computed by <see cref="OrderStatusAsync"/>, the same calculation the user closure
 /// recomputes inside its save.</item>
@@ -88,12 +88,11 @@ public sealed partial class SalesDraftService
         var realization = await RealizationAsync(scope, permission, draft, withReturns, cancellationToken);
         var lifecycle = Lifecycle(draft);
         var acceptance = CustomerAcceptanceAxis(draft);
-        var owners = await OwnerAxesAsync(scope, permission, draft, cancellationToken);
+        var owners = await OwnerAxesAsync(scope, permission, draft, realization, cancellationToken);
         var (gate, priceBasis) = InvoicingGate(draft);
         var invoicing = new SalesDraftInvoicingAxisV1(owners.Invoicing.State, gate, priceBasis);
         // SAT-D32 "kapanmaya hazır": ALL seven axes complete ("tüm eksenler tamamlansa"). An axis that is NoSource, Unreadable or
-        // PolicyUnavailable is never complete, so while source (MOD-05), invoicing (S5) and financial closure (MOD-04) have no
-        // owner the flag is always false. A flag only — closing stays the user's action (SAT-D32 close command).
+        // PolicyUnavailable is never complete. A flag only — closing stays the user's action (SAT-D32 close command).
         var readyToClose = lifecycle == SalesDraftStatusAxisStatesV1.Active
             && draft.ApprovalState == InternalApprovalState.Approved
             && draft.PendingRemainderChange is null
@@ -111,10 +110,11 @@ public sealed partial class SalesDraftService
 
     /// <summary>
     /// The source, invoicing and financial-closure axes from <see cref="ISalesOrderOwnerAxesSourceV1"/>: NoSource when nothing is
-    /// composed (main today); Unreadable when it throws or answers another company's or another order's axes or a blank state.
+    /// composed; Unreadable when it throws or answers another company's or another order's axes or a blank state.
     /// A fence loss is 403.
     /// </summary>
-    private async Task<OwnerAxes> OwnerAxesAsync(Scope scope, string? permission, SalesOrderDraft draft, CancellationToken cancellationToken)
+    private async Task<OwnerAxes> OwnerAxesAsync(Scope scope, string? permission, SalesOrderDraft draft,
+        SalesDraftRealizationAxisV1 realization, CancellationToken cancellationToken)
     {
         if (ownerAxes is not { } owner)
         {
@@ -124,7 +124,12 @@ public sealed partial class SalesDraftService
         SalesOrderOwnerAxesV1? answer;
         try
         {
-            answer = await GuardedAsync(scope, permission, () => owner.ReadOrderOwnerAxesAsync(draft.Id, cancellationToken), cancellationToken);
+            var query = new SalesOrderClosureQueryV1(scope.CompanyId, draft.Id, draft.Header.PartyId,
+                draft.Header.CompanyAccountId, draft.IsSubcontractService,
+                draft.Lines.Select(line => new SalesOrderClosureLineV1(line.Id, line.Product.ProductId, line.OrderUnit.UnitId,
+                    line.OrderUnit.IsKilogram, realization.Lines.SingleOrDefault(item => item.LineId == line.Id)?.Shipped)).ToArray());
+            answer = await GuardedAsync(scope, permission, () => owner.ReadOrderOwnerAxesAsync(query,
+                async token => { _ = await RequireStillAsync(scope, permission, token); }, cancellationToken), cancellationToken);
         }
         catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
         {

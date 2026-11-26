@@ -94,6 +94,24 @@ public sealed class SalesDispatchSqlServerRelationalAcceptanceTests
         var n4 = await run.DraftNoteAsync(CompanyA, i3, "n4");
         await run.ApproveNoteAsync(CompanyA, i3, n4, "n4");
 
+        // The order filter must run before the owner limit: another order of the SAME customer must not consume its page.
+        await using (var owner = run.LogisticsContext(CompanyA))
+        {
+            var ports = new LogisticsSalesDispatchReadPorts(owner.Context, owner.Company);
+            var secondOnly = await ports.ReadInvoiceableShipmentsAsync(new(customer.AccountId, 1, [second.Id]));
+            Assert.False(secondOnly.HasMore);
+            Assert.Equal((second.Id, i3.ShipmentId, n4.NoteId),
+                (Assert.Single(secondOnly.Shares).SalesOrderId, secondOnly.Shares[0].ShipmentId, secondOnly.Shares[0].DispatchNoteId));
+            var firstOnly = await ports.ReadInvoiceableShipmentsAsync(new(customer.AccountId, 1, [first.Id]));
+            Assert.False(firstOnly.HasMore);
+            Assert.Equal(i2.ShipmentId, Assert.Single(firstOnly.Shares).ShipmentId);
+            var both = await ports.ReadInvoiceableShipmentsAsync(new(customer.AccountId, 1, [first.Id, second.Id]));
+            Assert.True(both.HasMore);
+            Assert.Empty((await ports.ReadInvoiceableShipmentsAsync(new(customer.AccountId, 1, [Guid.NewGuid()]))).Shares);
+            await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => ports.ReadInvoiceableShipmentsAsync(new(null, 1, [])));
+            await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => ports.ReadInvoiceableShipmentsAsync(new(null, 1, [first.Id, first.Id])));
+        }
+
         var reader = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead);
         using (var client = run.Client(reader, CompanyA))
         {

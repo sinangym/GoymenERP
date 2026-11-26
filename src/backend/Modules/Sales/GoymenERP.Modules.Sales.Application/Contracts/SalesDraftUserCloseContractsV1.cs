@@ -6,9 +6,9 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 // kullanıcı kapatır." SAT-D168 (EK24): the closure is its own name (`sales.orders.close`; who holds it — Satış Uzmanı, Satış
 // Müdürü, GM, Admin per SAT-D168/D188/D190 — is a human gate, no role receives it here). SAT-D215 (EK37): no reason is required.
 // The precondition is the status read's own `readyToClose`, recomputed inside the save from the same calculation; a closure is
-// never decided on a stale flag. While the source (MOD-05/API-11), invoicing (S5) and financial-closure (MOD-04) owners do not
-// exist those axes are NoSource, so the flag — and the command — are refused (409 sales_order_not_ready_to_close). SAT-D221
-// (EK40) confirms it: every axis is required, no interim narrowing to the existing axes; a force-close (SAT-D12) is the way out.
+// never decided on a stale flag. An uncomposed owner axis stays NoSource; missing or invalid proof never completes it.
+// SAT-D221 (EK40) requires every axis. SAT-D478/479 define real source shares and valid invoice settlement; bank matching
+// remains separate. Force-close (SAT-D12) retains its own rules and is not a replacement for normal closure.
 
 /// <summary>SAT-D32: POST …/{id}/close — the expected version (text) only; no reason (SAT-D215), no other member.</summary>
 public sealed record SalesDraftCloseRequest(string ExpectedVersion);
@@ -20,19 +20,35 @@ public sealed record SalesDraftUserClosureV1(string Revision, string ClosedBy, D
 public sealed record SalesOrderDraftUserClosureResponse(SalesDraftUserClosureV1? UserClosure);
 
 /// <summary>
-/// SAT-D32: the composition seam of the three status axes whose owners do not exist on main — source/allocation strategy
-/// (MOD-05, API-11), invoicing (S5) and financial closure (MOD-04). NOTHING implements or registers it on main: the axes are
-/// then <c>NoSource</c> and never complete, so <c>readyToClose</c> is false and the user closure is refused. When an owner
-/// lands, its binding is reviewed here (which state is its complete one is that owner's answer, not a Sales default); until
-/// then only tests bind a synthetic source to prove the ready path. A source that throws or answers a malformed value makes
-/// the three axes <c>Unreadable</c> (never complete). Sales-owned; no other module implements or calls it today (SAT-D209).
+/// SAT-D32/SAT-D478/479: host composition of the source, invoicing and financial owner observations.
+/// An absent composition is NoSource; malformed or unreadable evidence never completes an axis. The real caller's
+/// authorization is preserved across owner awaits; neither an owner answer nor the composition grants authority.
 /// </summary>
 public interface ISalesOrderOwnerAxesSourceV1
 {
     Task<SalesOrderOwnerAxesV1?> ReadOrderOwnerAxesAsync(Guid orderId, CancellationToken cancellationToken = default);
+
+    /// <summary>SAT-D478/479: the real Sales snapshot and caller's fresh read/close fence.
+    /// Existing synthetic sources retain the old seam; production composition requires this overload.</summary>
+    async Task<SalesOrderOwnerAxesV1?> ReadOrderOwnerAxesAsync(SalesOrderClosureQueryV1 query,
+        Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(freshConsumerFence);
+        await freshConsumerFence(cancellationToken);
+        var answer = await ReadOrderOwnerAxesAsync(query.OrderId, cancellationToken);
+        await freshConsumerFence(cancellationToken);
+        return answer;
+    }
 }
 
-/// <summary>The three owner-less axes of one order as their owners answer them.</summary>
+/// <summary>Internal Sales-owned identities and the already measured shipment totals; no prices or client authority.</summary>
+public sealed record SalesOrderClosureQueryV1(Guid CompanyId, Guid OrderId, Guid PartyId, Guid CompanyAccountId,
+    bool IsSubcontractService, IReadOnlyList<SalesOrderClosureLineV1> Lines);
+
+public sealed record SalesOrderClosureLineV1(Guid LineId, Guid ProductId, Guid UnitId, bool UnitIsKilogram,
+    string? ShippedQuantity);
+
+/// <summary>The three composed owner axes of one order.</summary>
 public sealed record SalesOrderOwnerAxesV1(Guid CompanyId, Guid OrderId, SalesOrderOwnerAxisV1 Source, SalesOrderOwnerAxisV1 Invoicing,
     SalesOrderOwnerAxisV1 FinancialClosure);
 
