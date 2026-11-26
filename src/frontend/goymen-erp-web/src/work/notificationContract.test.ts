@@ -3,7 +3,7 @@ import { decodeWorkNotifications } from './notificationContract'
 const company = 'aaaaaaaa-0000-4000-8000-000000000001'
 const item = { id: 'bbbbbbbb-0000-4000-8000-000000000001', companyId: company, kind: 'allocation-released', salesOrderId: 'cccccccc-0000-4000-8000-000000000001', salesOrderLineId: 'dddddddd-0000-4000-8000-000000000001', sourceEntityId: 'eeeeeeee-0000-4000-8000-000000000001', sourceVersion: '9223372036854775807', reasonCode: 'acceptance-link-failed', reasonText: 'SENTETIK ayrım bırakıldı', occurredAtUtc: '2026-11-17T00:00:00Z', recordedAtUtc: '2026-11-17T00:00:01Z', passivatedAtUtc: null, purchaseOrderId: null, purchaseOrderLineId: null }
 describe('notification contract', () => {
-  const stale = { ...item, kind: 'accounting-cost-proposal-stale', salesOrderId: null, salesOrderLineId: null,
+  const stale = { ...item, kind: 'accounting-cost-proposal-stale', costKind: 1, salesOrderId: null, salesOrderLineId: null,
     sourceVersion: '3', reasonCode: 'inventory_cost_preparation_stale', reasonText: 'Bayatladı' }
   it('accepts one stale proposal beside 99 existing notifications and preserves the page cursor', () => {
     const items = [...Array.from({ length: 99 }, (_, index) => ({ ...item,
@@ -11,12 +11,15 @@ describe('notification contract', () => {
     expect(decodeWorkNotifications({ companyId: company, items, hasMore: true, nextCursor: stale.id }, company)?.items).toEqual(items)
   })
   it('requires exact stale evidence, company and a real proposal identity without loosening other variants', () => {
-    for (const delta of [{ companyId: item.id }, { sourceEntityId: null }, { sourceEntityId: '00000000-0000-0000-0000-000000000000' },
+    for (const delta of [{ costKind: 0 }, { costKind: 3 }, { costKind: '1' }, { costKind: null }, { companyId: item.id }, { sourceEntityId: null }, { sourceEntityId: '00000000-0000-0000-0000-000000000000' },
       { sourceVersion: '2' }, { sourceVersion: '03' }, { reasonCode: 'inventory_cost_other' }, { reasonCode: 'inventory-cost-preparation-stale' },
       { reasonText: 'SENTETIK invented' }, { salesOrderId: item.salesOrderId }, { purchaseOrderId: item.salesOrderId },
       { salesOrderLineId: item.salesOrderLineId }, { purchaseOrderLineId: item.salesOrderLineId }, { extra: true }])
       expect(decodeWorkNotifications({ companyId: company, items: [{ ...stale, ...delta }], hasMore: false, nextCursor: null }, company)).toBeNull()
+    const { costKind: _costKind, ...missingCostKind } = stale
+    expect(decodeWorkNotifications({ companyId: company, items: [missingCostKind], hasMore: false, nextCursor: null }, company)).toBeNull()
     for (const existing of [item, { ...item, kind: 'purchase-supply-revived' }]) {
+      expect(decodeWorkNotifications({ companyId: company, items: [{ ...existing, costKind: 1 }], hasMore: false, nextCursor: null }, company)).toBeNull()
       expect(decodeWorkNotifications({ companyId: company, items: [{ ...existing, reasonCode: stale.reasonCode }], hasMore: false, nextCursor: null }, company)).toBeNull()
       expect(decodeWorkNotifications({ companyId: company, items: [{ ...existing, salesOrderId: null, salesOrderLineId: null }], hasMore: false, nextCursor: null }, company)).toBeNull()
     }

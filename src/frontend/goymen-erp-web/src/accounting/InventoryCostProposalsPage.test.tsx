@@ -29,9 +29,9 @@ const row = (patch: Record<string, unknown> = {}) => ({ proposalId: source, comp
     accountPlanSha256: 'b'.repeat(64), preparedBy: maker, preparedAtUtc: '2026-11-17T09:01:00Z', reason: 'SENTETIK gerçek kaynak' },
   approvedBy: null, approvedAtUtc: null, journalId: null, cancellationId: null, reversalProposal: null, ...patch })
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
-const mount = (canApprove = true, canPrepare = false, canProposeReversal = false, canApproveCancellation = false) => {
+const mount = (canApprove = true, canPrepare = false, canProposeReversal = false, canApproveCancellation = false, path = '/') => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
-  const content = (approve: boolean, prepare: boolean, reverse: boolean) => <MemoryRouter><QueryClientProvider client={client}>
+  const content = (approve: boolean, prepare: boolean, reverse: boolean) => <MemoryRouter initialEntries={[path]}><QueryClientProvider client={client}>
     <InventoryCostProposalsPage kind={1} canPrepare={prepare} canApprove={approve} canProposeReversal={reverse} canApproveCancellation={canApproveCancellation} /></QueryClientProvider></MemoryRouter>
   const view = render(content(canApprove, canPrepare, canProposeReversal))
   return { ...view, updateAuthority: (approve: boolean, prepare = false, reverse = false) => view.rerender(content(approve, prepare, reverse)) }
@@ -41,6 +41,53 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); state.actor = 'e0431000-0000
   state.committedContextRevision = 1; state.sessionEpoch = 0 })
 
 describe('inventory cost human approval flow', () => {
+  const stale = () => ({ ...row({ status: 'Stale', version: 3 }), staleClosure: { eventId: counter, preparedVersion: 2, preparedBy: maker,
+    closedAtUtc: '2026-11-17T09:02:00Z', reasonCode: 'inventory_cost_preparation_stale', reasonText: 'Bayatladı', correlationId: 'SENTETIK-D40', causationId: null } })
+  it('opens a linked immutable stale proposal without offering a fresh command or reading options', async () => {
+    const fetch = vi.fn(async () => json({ companyId: state.company, items: [stale()] })); vi.stubGlobal('fetch', fetch)
+    mount(true, true, false, false, `/?proposalId=${source}`)
+    expect(await screen.findByText(T.staleClosed)).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 2, name: /Bayatladı/ })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: T.prepare })).toBeNull()
+    expect(screen.queryByRole('button', { name: T.approve })).toBeNull()
+    expect(fetch.mock.calls).toHaveLength(1)
+  })
+  it('validates immutable stale closure and renewal lineage without accepting evidence on legacy statuses', () => {
+    const value = stale()
+    expect(decodeInventoryCost(value, state.company, 1)).not.toBeNull()
+    for (const delta of [{ preparedVersion: 1 }, { preparedVersion: 3 }, { preparedBy: state.actor }, { eventId: '' },
+      { reasonCode: 'invented' }, { reasonText: 'SENTETIK other' }, { closedAtUtc: 'not-a-date' },
+      { closedAtUtc: '2026-11-17T09:02:00+03:00' }, { correlationId: '' }, { extra: true }])
+      expect(decodeInventoryCost({ ...value, staleClosure: { ...(value.staleClosure as object), ...delta } }, state.company, 1)).toBeNull()
+    for (const patch of [{ staleClosure: null }, { staleClosure: undefined }, { preparation: null }, { cancellationId: counter }])
+      expect(decodeInventoryCost({ ...value, ...patch }, state.company, 1)).toBeNull()
+    expect(decodeInventoryCost(row({ staleClosure: value.staleClosure }), state.company, 1)).toBeNull()
+    const renewal = { previousProposalId: counter, previousClosedVersion: 3, closureEventId: maker }
+    expect(decodeInventoryCost(row({ version: 4, renewedFrom: renewal }), state.company, 1)).not.toBeNull()
+    for (const delta of [{ previousProposalId: source }, { previousClosedVersion: 4 }, { previousClosedVersion: 2 }, { closureEventId: null }, { extra: true }])
+      expect(decodeInventoryCost(row({ version: 4, renewedFrom: { ...renewal, ...delta } }), state.company, 1)).toBeNull()
+  })
+  it('initially selects a linked proposal only from the existing authorized company list', async () => {
+    const fetch = vi.fn(async () => json({ companyId: state.company, items: [row()] })); vi.stubGlobal('fetch', fetch)
+    mount(true, false, false, false, `/?proposalId=${source}`)
+    expect(await screen.findByRole('heading', { level: 2, name: /SENTETIK-F1/ })).toBeTruthy()
+    expect(fetch.mock.calls).toHaveLength(1)
+  })
+  it.each([source, 'bad-id', `${source}&proposalId=${source}`])('shows an explicit missing linked proposal for %s without a separate record read', async id => {
+    const fetch = vi.fn(async () => json({ companyId: state.company, items: [] })); vi.stubGlobal('fetch', fetch)
+    mount(true, false, false, false, `/?proposalId=${id}`)
+    expect(await screen.findByText(T.linkedProposalMissing)).toBeTruthy()
+    expect(fetch.mock.calls).toHaveLength(1)
+    expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
+  })
+  it('refuses a linked proposal returned under another company', async () => {
+    const foreign = 'e0431000-0000-4000-8000-000000000099'
+    vi.stubGlobal('fetch', vi.fn(async () => json({ companyId: foreign, items: [row({ companyId: foreign })] })))
+    mount(true, false, false, false, `/?proposalId=${source}`)
+    await screen.findByText(`Beklenmeyen yanıt — ${T.subject}`)
+    expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
+    expect(screen.queryByRole('button', { name: T.approve })).toBeNull()
+  })
   it('lets a different reversal approver confirm actual cost shares without creating an initial SMM proposal', async () => {
     const initial = row(); const journal = 'e0431000-0000-4000-8000-000000000005'
     const componentCancellation = { id: source, companyId: state.company, inventoryCostProposalId: source, cancellationId: source,

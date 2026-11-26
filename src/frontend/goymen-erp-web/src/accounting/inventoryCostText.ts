@@ -1,4 +1,5 @@
 export const INVENTORY_COST_TEXT = {
+  linkedProposalMissing: 'Bildirimdeki maliyet önerisi bu şirkette erişebildiğiniz listede bulunamadı.',
   succession: 'Bu sevkin önceki fatura maliyet payı iptal/ters kayıt kanıtıyla serbest bırakıldı. Eski kayıtlar korunur; bu faturanın tutarı yeniden hazırlama ve farklı muhasebe onayına gider.',
   salesTitle: 'Faturalanan sevklerin maliyet önerileri', differenceTitle: 'Alış faturası maliyet önerileri', subject: 'Maliyet önerileri',
   intro: 'Kesin kaynak, fiş tutarı ve yuvarlama artığı ayrı izlenir. Hazırlayan açık dönemi, tarihi ve karşı hesabı seçer; farklı muhasebe yetkilisi onaylar.',
@@ -16,7 +17,8 @@ export const INVENTORY_COST_TEXT = {
   componentApprove: 'Maliyet paylarının iptalini onayla', componentReverseJournal: 'Pay ters kayıt fişi',
   reversalApproval: 'Ters kayıt onayına git', existingReversal: 'Ters kayıt önerisi mevcut.',
   denied: 'Bu işlem için yetkiniz yok.', sourceNumberMissing: 'Resmî numarası bulunmayan kaynak fatura',
-  statuses: { AwaitingPreparation: 'Hazırlık bekliyor', Prepared: 'Onay bekliyor', Posted: 'Fiş kaydedildi', NoCost: 'Kaynak maliyeti sıfır',
+  staleClosed: 'Bu maliyet önerisi bayatladığı için kapatıldı. Hazırlık ve kaynak kanıtları geçmiş kayıt olarak korunur.',
+  statuses: { Stale: 'Bayatladı', AwaitingPreparation: 'Hazırlık bekliyor', Prepared: 'Onay bekliyor', Posted: 'Fiş kaydedildi', NoCost: 'Kaynak maliyeti sıfır',
     RoundedNoCost: 'Sıfıra yuvarlanan tutar onaylandı; fiş yok', RoundedNoCostCancelled: 'Fatura iptal edildi; onaylı sıfır tutarın fişi yok',
     Cancelled: 'Fatura iptal edildi', CancellationReversalPending: 'İptal ters kaydı bekliyor', CancelledByReversal: 'Ters kayıt onaylandı',
     AlreadyAccounted: 'Önceden onaylı maliyet payı bağlandı', AttributedCancellationPending: 'Bağlı maliyet payının iptal işlemi bekliyor',

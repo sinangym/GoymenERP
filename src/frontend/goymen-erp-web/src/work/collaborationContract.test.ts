@@ -26,6 +26,25 @@ export const inboxItem = (overrides: Record<string, unknown> = {}) => ({
   recordType: 'sales-order-draft', recordId: RECORD, actorUserId: AUTHOR, recordedAtUtc: '2026-11-22T09:00:00+00:00',
   visibleAtUtc: '2026-11-22T09:00:00+00:00', readAtUtc: null, approval: null, event: null, ...overrides,
 })
+
+describe('YOL-D40 unified digest evidence', () => {
+  const event = { sourceEntityId: RECORD, sourceVersion: '3', reasonCode: 'inventory_cost_preparation_stale', reasonText: 'Bayatladı',
+    occurredAtUtc: '2026-11-22T09:00:00Z', salesOrderId: null, salesOrderLineId: null, purchaseOrderId: null, purchaseOrderLineId: null, costKind: 1 }
+  const stale = inboxItem({ kind: 'accounting-cost-proposal-stale', class: 'digest', recordType: null, recordId: null, actorUserId: null, event })
+  const page = (item: unknown) => ({ companyId: COMPANY, items: [item], hasMore: false, unreadNowCount: 0, unreadDigestCount: 1 })
+  it('requires the exact stale event shape while keeping other event shapes unchanged', () => {
+    for (const costKind of [1, 2]) expect(decodeWorkInboxPage(page({ ...stale, event: { ...event, costKind } }), COMPANY)).not.toBeNull()
+    for (const patch of [{ costKind: 0 }, { costKind: '1' }, { costKind: null }, { reasonCode: 'inventory_cost_other' }, { reasonText: 'Other' },
+      { sourceEntityId: null }, { sourceVersion: '2' }, { sourceVersion: '03' }, { salesOrderId: RECORD }, { purchaseOrderId: RECORD }, { extra: true }])
+      expect(decodeWorkInboxPage(page({ ...stale, event: { ...event, ...patch } }), COMPANY)).toBeNull()
+    const { costKind: _removed, ...missing } = event
+    expect(decodeWorkInboxPage(page({ ...stale, event: missing }), COMPANY)).toBeNull()
+    for (const patch of [{ companyId: OTHER }, { class: 'now' }, { actorUserId: AUTHOR }, { recordType: 'sales-order-draft', recordId: RECORD }, { event: null }])
+      expect(decodeWorkInboxPage(page({ ...stale, ...patch }), COMPANY)).toBeNull()
+    expect(decodeWorkInboxPage(page({ ...stale, kind: 'allocation-released', event: { ...event,
+      salesOrderId: RECORD, salesOrderLineId: OTHER } }), COMPANY)).toBeNull()
+  })
+})
 const notePage = (items: unknown[]) => ({ companyId: COMPANY, recordType: 'sales-order-draft', recordId: RECORD, items, hasMore: false })
 
 describe('W1-C collaboration decoders', () => {

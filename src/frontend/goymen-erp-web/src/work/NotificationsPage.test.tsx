@@ -7,18 +7,36 @@ import { ShellProvider } from '../shell/ShellProvider'
 import { AppShell } from '../shell/AppShell'
 import { COMPANY_A, installFetch, json } from '../settings/testHarness'
 import { workRoutes } from './workRoutes'
+import { shellRoutes } from '../shell/router'
+import { ACCOUNTING_CAPABILITY, ACCOUNTING_ROUTE } from '../accounting/capabilities'
 import { NOTIFICATION_TEXT as T } from './notificationText'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
-function mount() {
-  const router = createMemoryRouter([{ path: '/', element: <AppShell />, children: workRoutes }], { initialEntries: ['/bildirimlerim'] })
+function mount(path = '/bildirimlerim', realShell = false) {
+  const router = createMemoryRouter(realShell ? shellRoutes : [{ path: '/', element: <AppShell />, children: workRoutes }], { initialEntries: [path] })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
   render(<ShellProvider queryClient={queryClient}><RouterProvider router={router} /></ShellProvider>)
 }
 const item = { id: 'bbbbbbbb-0000-4000-8000-000000000001', companyId: COMPANY_A, kind: 'allocation-released', salesOrderId: 'cccccccc-0000-4000-8000-000000000001', salesOrderLineId: 'dddddddd-0000-4000-8000-000000000001', sourceEntityId: 'eeeeeeee-0000-4000-8000-000000000001', sourceVersion: '2', reasonCode: 'acceptance-link-failed', reasonText: 'SENTETIK ayrım bırakıldı', occurredAtUtc: '2026-11-17T00:00:00Z', recordedAtUtc: '2026-11-17T00:00:01Z', passivatedAtUtc: null, purchaseOrderId: null, purchaseOrderLineId: null }
 describe('personal notification inbox', () => {
+  it.each([1, 2] as const)('links cost kind %s only to its existing authorized prepare route', async costKind => {
+    const capability = costKind === 1 ? ACCOUNTING_CAPABILITY.invoicedShipmentPrepare : ACCOUNTING_CAPABILITY.purchaseCostPrepare
+    const path = costKind === 1 ? ACCOUNTING_ROUTE.invoicedShipmentPrepare : ACCOUNTING_ROUTE.purchaseCostPrepare
+    const stale = { ...item, kind: 'accounting-cost-proposal-stale', costKind, salesOrderId: null, salesOrderLineId: null,
+      sourceVersion: '3', reasonCode: 'inventory_cost_preparation_stale', reasonText: 'Bayatladı' }
+    installFetch({ capabilities: [capability], respond: url => url.includes('/work/notifications?')
+      ? json({ companyId: COMPANY_A, items: [stale], hasMore: false, nextCursor: null }) : undefined })
+    mount()
+    expect((await screen.findByRole('link', { name: T.openCost })).getAttribute('href')).toBe(`${path}?proposalId=${stale.sourceEntityId}`)
+  })
+  it.each([ACCOUNTING_ROUTE.invoicedShipmentPrepare, ACCOUNTING_ROUTE.purchaseCostPrepare])('does not fetch owner data for an ungranted deep link %s', async path => {
+    const calls = installFetch({ capabilities: [] })
+    mount(`${path}?proposalId=${item.sourceEntityId}`, true)
+    await waitFor(() => expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+    expect(calls.some(call => call.url.includes('/accounting/'))).toBe(false)
+  })
   it('shows a stale cost proposal beside 99 old records with an Accounting next step and no guessed owner link', async () => {
-    const stale = { ...item, kind: 'accounting-cost-proposal-stale', salesOrderId: null, salesOrderLineId: null,
+    const stale = { ...item, kind: 'accounting-cost-proposal-stale', costKind: 1, salesOrderId: null, salesOrderLineId: null,
       sourceVersion: '3', reasonCode: 'inventory_cost_preparation_stale', reasonText: 'Bayatladı' }
     const items = [...Array.from({ length: 99 }, (_, index) => ({ ...item,
       id: `bbbbbbbb-0000-4000-8000-${(index + 2).toString().padStart(12, '0')}` })), stale]

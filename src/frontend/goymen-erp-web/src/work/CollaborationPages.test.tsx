@@ -10,6 +10,8 @@ import { workRoutes } from './workRoutes'
 import { RecordNotesPanel } from './RecordNotesPanel'
 import { COLLABORATION_TEXT as T } from './collaborationText'
 import { WORK_CAPABILITY } from './capabilities'
+import { ACCOUNTING_CAPABILITY, ACCOUNTING_ROUTE } from '../accounting/capabilities'
+import { NOTIFICATION_TEXT as NT } from './notificationText'
 
 /** SENTETIK data only. */
 const RECORD = 'cccccccc-0000-4000-8000-000000000001'
@@ -182,6 +184,29 @@ describe('W1-C my tasks', () => {
 })
 
 describe('W1-C collaboration inbox', () => {
+  it.each([1, 2, null] as const)('shows stale cost digest with an owner link only when cost kind %s is granted', async grantedKind => {
+    const costKind = grantedKind ?? 1
+    const capability = costKind === 1 ? ACCOUNTING_CAPABILITY.invoicedShipmentPrepare : ACCOUNTING_CAPABILITY.purchaseCostPrepare
+    const path = costKind === 1 ? ACCOUNTING_ROUTE.invoicedShipmentPrepare : ACCOUNTING_ROUTE.purchaseCostPrepare
+    const event = { sourceEntityId: RECORD, sourceVersion: '3', costKind, reasonCode: 'inventory_cost_preparation_stale', reasonText: 'Bayatladı',
+      occurredAtUtc: '2026-11-22T09:00:00Z', salesOrderId: null, salesOrderLineId: null, purchaseOrderId: null, purchaseOrderLineId: null }
+    const item = { id: READER, companyId: COMPANY_A, kind: 'accounting-cost-proposal-stale', class: 'digest', sourceId: READER,
+      recordType: null, recordId: null, actorUserId: null, recordedAtUtc: '2026-11-22T09:00:00Z', visibleAtUtc: '2026-11-22T09:00:00Z',
+      readAtUtc: null, approval: null, event }
+    const calls = installFetch({ capabilities: grantedKind === null ? [] : [capability], respond: url => {
+      if (url.includes('/work/notifications?')) return json({ companyId: COMPANY_A, items: [], hasMore: false, nextCursor: null })
+      if (url.includes('/work/inbox-notifications?')) return json({ companyId: COMPANY_A,
+        items: url.includes('notificationClass=digest') ? [item] : [], hasMore: false, unreadNowCount: 0, unreadDigestCount: 1 })
+      return undefined
+    } })
+    mount('/bildirimlerim')
+    await userEvent.setup().click(await screen.findByRole('button', { name: new RegExp(T.classDigest) }))
+    expect(await screen.findByText(T.kindStaleCost)).toBeTruthy()
+    expect(screen.getByText('Bayatladı')).toBeTruthy()
+    if (grantedKind === null) expect(screen.queryByRole('link', { name: NT.openCost })).toBeNull()
+    else expect(screen.getByRole('link', { name: NT.openCost }).getAttribute('href')).toBe(`${path}?proposalId=${RECORD}`)
+    expect(calls.some(call => call.url.includes('/accounting/'))).toBe(false)
+  })
   it('shows the now class with its unread count and marks an item read', async () => {
     let read = false
     const item = { id: '87654321-0000-4000-8000-000000000001', companyId: COMPANY_A, kind: 'mention', class: 'now', sourceId: 'ffffffff-0000-4000-8000-000000000001',

@@ -1,3 +1,4 @@
+import { validAccountingCostStaleEvent } from './notificationContract'
 /**
  * W1-C (AI-D20/AI-D23/AI-D29) — strict decoders for the Work collaboration surface: record notes and mentions, tasks,
  * the personal two-class inbox and the people picker. Every answer is `unknown` until it decodes with EXACTLY the
@@ -51,12 +52,12 @@ export interface WorkTaskPage { readonly companyId: string; readonly items: read
 
 export type WorkInboxKind = 'mention' | 'task-assigned' | 'task-overdue'
   // D9 (WP2): event notifications moved into the single store ("özet").
-  | 'allocation-released' | 'purchase-supply-revived'
+  | 'allocation-released' | 'purchase-supply-revived' | 'accounting-cost-proposal-stale'
   // WP2 (AI-D29, YOL-D17, YOL-D28): approval follow-up ("şimdi").
   | 'approval-waiting' | 'approval-reminder' | 'approval-escalated' | 'approval-orphaned'
 export const WORK_INBOX_KINDS: readonly WorkInboxKind[] = ['mention', 'task-assigned', 'task-overdue', 'allocation-released',
-  'purchase-supply-revived', 'approval-waiting', 'approval-reminder', 'approval-escalated', 'approval-orphaned']
-const DIGEST_KINDS: readonly WorkInboxKind[] = ['task-assigned', 'allocation-released', 'purchase-supply-revived']
+  'purchase-supply-revived', 'accounting-cost-proposal-stale', 'approval-waiting', 'approval-reminder', 'approval-escalated', 'approval-orphaned']
+const DIGEST_KINDS: readonly WorkInboxKind[] = ['task-assigned', 'allocation-released', 'purchase-supply-revived', 'accounting-cost-proposal-stale']
 const APPROVAL_KINDS: readonly WorkInboxKind[] = ['approval-waiting', 'approval-reminder', 'approval-escalated', 'approval-orphaned']
 export type WorkApprovalFollowUpStep = 'waiting' | 'reminder' | 'escalated' | 'orphaned'
 /** WP2: the approval cycle an approval notification is about; the decision is given on `link` (the owner's screen). */
@@ -66,6 +67,7 @@ export interface WorkInboxApprovalRef {
 }
 /** D9 (WP2): the owner event an event notification carries. */
 export interface WorkInboxEventRef {
+  readonly costKind?: 1 | 2
   readonly sourceEntityId: string; readonly sourceVersion: string; readonly reasonCode: string; readonly reasonText: string
   readonly occurredAtUtc: string; readonly salesOrderId: string | null; readonly salesOrderLineId: string | null
   readonly purchaseOrderId: string | null; readonly purchaseOrderLineId: string | null
@@ -193,9 +195,10 @@ function decodeApprovalRef(raw: unknown): WorkInboxApprovalRef | null {
 }
 
 function decodeEventRef(raw: unknown, kind: WorkInboxKind): WorkInboxEventRef | null {
-  if (!object(raw) || !exact(raw, INBOX_EVENT_FIELDS) || !guid(raw.sourceEntityId) || !text(raw.sourceVersion, 128) || !text(raw.reasonCode, 64)
+  if (!object(raw) || !exact(raw, kind === 'accounting-cost-proposal-stale' ? [...INBOX_EVENT_FIELDS, 'costKind'] : INBOX_EVENT_FIELDS) || !guid(raw.sourceEntityId) || !text(raw.sourceVersion, 128) || !text(raw.reasonCode, 64)
     || !text(raw.reasonText, 4000) || !instant(raw.occurredAtUtc) || !nullable(raw.salesOrderId, guid) || !nullable(raw.salesOrderLineId, guid)
     || !nullable(raw.purchaseOrderId, guid) || !nullable(raw.purchaseOrderLineId, guid)) return null
+  if (kind === 'accounting-cost-proposal-stale') return validAccountingCostStaleEvent(raw) ? raw as unknown as WorkInboxEventRef : null
   const sales = raw.salesOrderId !== null && raw.salesOrderLineId !== null && raw.purchaseOrderId === null && raw.purchaseOrderLineId === null
   const purchase = kind === 'purchase-supply-revived' && raw.purchaseOrderId !== null && raw.purchaseOrderLineId !== null
     && raw.salesOrderId === null && raw.salesOrderLineId === null
@@ -214,7 +217,7 @@ function decodeInboxItem(raw: unknown, companyId: string): WorkInboxItem | null 
   if (raw.class !== expectedClass || (kind === 'mention' && (raw.recordId === null || raw.actorUserId === null))
     || (kind === 'task-overdue' && raw.actorUserId !== null) || (kind === 'task-assigned' && raw.actorUserId === null)) return null
   const isApproval = APPROVAL_KINDS.includes(kind)
-  const isEvent = kind === 'allocation-released' || kind === 'purchase-supply-revived'
+  const isEvent = kind === 'allocation-released' || kind === 'purchase-supply-revived' || kind === 'accounting-cost-proposal-stale'
   if ((isApproval || isEvent) && (raw.actorUserId !== null || raw.recordType !== null)) return null
   // An approval notification may come without its follow-up row only if the server could not join it; the step must match.
   const approval = raw.approval === null ? null : decodeApprovalRef(raw.approval)

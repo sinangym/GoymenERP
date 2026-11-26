@@ -1,8 +1,10 @@
+import { ACCOUNTING_CAPABILITY, ACCOUNTING_ROUTE } from '../accounting/capabilities'
+import { NOTIFICATION_TEXT as NT } from './notificationText'
 import { Link } from 'react-router'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useShellState } from '../shell/shellContext'
-import { capabilityFailClosed, contextKey, contextKeyString } from '../shell/shellState'
+import { capabilityFailClosed, contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -14,6 +16,7 @@ import styles from './Work.module.css'
 
 const KIND_TEXT: Readonly<Record<WorkInboxItem['kind'], string>> = {
   'mention': T.kindMention, 'task-assigned': T.kindAssigned, 'task-overdue': T.kindOverdue,
+  'accounting-cost-proposal-stale': T.kindStaleCost,
   'allocation-released': T.kindAllocationReleased, 'purchase-supply-revived': T.kindSupplyRevived,
   'approval-waiting': T.kindApprovalWaiting, 'approval-reminder': T.kindApprovalReminder,
   'approval-escalated': T.kindApprovalEscalated, 'approval-orphaned': T.kindApprovalOrphaned,
@@ -79,7 +82,7 @@ export function CollaborationInbox() {
             <time dateTime={item.approval.waitingSinceUtc}>{new Date(item.approval.waitingSinceUtc).toLocaleString('tr-TR')}</time>
             {item.approval.dueAtUtc === null ? null : <>{' · '}{T.approvalDue}{' '}<time dateTime={item.approval.dueAtUtc}>{new Date(item.approval.dueAtUtc).toLocaleString('tr-TR')}</time></>}
             {' · '}<Link to={item.approval.link}>{T.openApproval}</Link></p>}
-          {item.event === null ? null : <p className={styles.noteMeta}>{item.event.reasonText}</p>}
+          {item.event === null ? null : <><p className={styles.noteMeta}>{item.event.reasonText}</p>{item.kind === 'accounting-cost-proposal-stale' ? <p>{NT.costProposal}: {item.event.sourceEntityId}<br />{NT.staleCostNextStep}{' '}{hasCapability(shell, item.event.costKind === 1 ? ACCOUNTING_CAPABILITY.invoicedShipmentPrepare : ACCOUNTING_CAPABILITY.purchaseCostPrepare) ? <Link to={`${item.event.costKind === 1 ? ACCOUNTING_ROUTE.invoicedShipmentPrepare : ACCOUNTING_ROUTE.purchaseCostPrepare}?${new URLSearchParams({ proposalId: item.event.sourceEntityId }).toString()}`}>{NT.openCost}</Link> : null}</p> : null}</>}
           {item.readAtUtc === null ? <Button type="button" size="sm" disabled={busy !== null} onClick={() => void markRead(item)}>{T.markRead}</Button> : null}
         </li>)}</ul>}
     {message === null ? null : <p role="status">{message}</p>}

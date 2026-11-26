@@ -1,3 +1,4 @@
+import { validInventoryCostStaleEvidence, type InventoryCostStaleClosure, type InventoryCostRenewal } from './inventoryCostStaleContract'
 import type { ViewOutcome } from '../shell/uiState'
 import { isDateOnly } from '../finance/dateOnly'
 import { ACCOUNTING_BASE, devHeaders } from './api'
@@ -23,6 +24,7 @@ export interface InventoryCostProposal {
   readonly proposalId: string; readonly companyId: string; readonly eventId: string; readonly kind: InventoryCostKind
   readonly invoiceId: string; readonly invoiceVersion: number; readonly admissionId: string; readonly invoiceDate: string
   readonly officialInvoiceNumber: string | null; readonly version: number; readonly status: string; readonly sourceOccurredAtUtc: string; readonly exactTlAmount: string
+  readonly staleClosure?: InventoryCostStaleClosure; readonly renewedFrom?: InventoryCostRenewal
   readonly unpostedTlAmountText?: string
   readonly component: { readonly componentKey: string; readonly productId: string; readonly invoiceLineId: string | null
     readonly invoiceLineNumber: number | null; readonly locationId: string | null
@@ -76,7 +78,7 @@ const LIST_KEYS = ['companyId', 'items'] as const
 const PROPOSAL_KEYS = ['proposalId', 'companyId', 'eventId', 'kind', 'invoiceId', 'invoiceVersion', 'admissionId', 'invoiceDate',
   'officialInvoiceNumber', 'component', 'version', 'status', 'sourceOccurredAtUtc'] as const
 const PROPOSAL_OPTIONAL_KEYS = ['preparation', 'approvedBy', 'approvedAtUtc', 'journalId', 'cancellationId', 'reversalProposal',
-  'currentPostedJournalId', 'componentCancellation', 'exactTlAmount', 'unpostedTlAmountText'] as const
+  'currentPostedJournalId', 'componentCancellation', 'exactTlAmount', 'unpostedTlAmountText', 'staleClosure', 'renewedFrom'] as const
 const COMPONENT_KEYS = ['componentKey', 'productId', 'invoiceLineId', 'invoiceLineNumber', 'locationId', 'signedTlAmount',
   'sourceProofJson', 'sourceProofSha256'] as const
 const COMPONENT_OPTIONAL_KEYS = ['salesPhysicalClaims', 'alreadyPostedComponents', 'recordedRounding', 'unpostedTlAmount',
@@ -132,7 +134,7 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
   if (!rec(body) || !exactKeys(body, PROPOSAL_KEYS, PROPOSAL_OPTIONAL_KEYS) || !['proposalId', 'companyId', 'eventId', 'invoiceId', 'admissionId'].every(k => guid(body[k]))
     || !same(body.companyId as string, company) || body.kind !== kind || !version(body.invoiceVersion) || !version(body.version)
     || !date(body.invoiceDate) || !utc(body.sourceOccurredAtUtc) || !text(body.exactTlAmount) || body.officialInvoiceNumber !== null && !text(body.officialInvoiceNumber)
-    || !['AwaitingPreparation', 'Prepared', 'Posted', 'NoCost', 'RoundedNoCost', 'RoundedNoCostCancelled', 'Cancelled', 'CancellationReversalPending', 'CancelledByReversal', 'AlreadyAccounted', 'AttributedCancellationPending', 'MixedCancellationPending'].includes(body.status as string)) return null
+    || !['Stale', 'AwaitingPreparation', 'Prepared', 'Posted', 'NoCost', 'RoundedNoCost', 'RoundedNoCostCancelled', 'Cancelled', 'CancellationReversalPending', 'CancelledByReversal', 'AlreadyAccounted', 'AttributedCancellationPending', 'MixedCancellationPending'].includes(body.status as string)) return null
   const c = body.component
   if (!rec(c) || !exactKeys(c, COMPONENT_KEYS, COMPONENT_OPTIONAL_KEYS) || typeof c.sourceProofJson !== 'string'
     || c.salesPhysicalClaims != null && (!Array.isArray(c.salesPhysicalClaims) || !c.salesPhysicalClaims.every(physicalClaim))
@@ -203,7 +205,7 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
       || cl.origin === 'InvoiceLine' && (!version(cl.invoiceLineRevision) || cl.productVersion !== null || cl.classificationVersion !== null || cl.mappingVersion !== null)
       || cl.origin !== 'Product' && cl.origin !== 'InvoiceLine') return null
   }
-  if (['Prepared', 'Posted', 'CancellationReversalPending', 'CancelledByReversal', 'RoundedNoCost', 'RoundedNoCostCancelled'].includes(body.status as string) && p === null) return null
+  if (['Stale', 'Prepared', 'Posted', 'CancellationReversalPending', 'CancelledByReversal', 'RoundedNoCost', 'RoundedNoCostCancelled'].includes(body.status as string) && p === null) return null
   if ((['AwaitingPreparation', 'NoCost'].includes(body.status as string) || attributed) && p !== null) return null
   if (body.status === 'NoCost' ? firstPurchase || c.signedTlAmount.numerator !== '0' || c.signedTlAmount.denominator !== '1' || body.exactTlAmount !== '0'
     : body.status !== 'Cancelled' && !attributed && !firstPurchase && !mixedCancelled && postingRatio.numerator === '0') return null
@@ -227,6 +229,7 @@ export function decodeInventoryCost(body: unknown, company: string, kind: Invent
   if (body.reversalProposal !== null && reversal === null) return null
   if (reversal !== null && (typeof currentJournal !== 'string' || !same(reversal.sourceJournalId, currentJournal)
     || !['CancellationReversalPending', 'CancelledByReversal'].includes(body.status as string))) return null
+  if (!validInventoryCostStaleEvidence(body)) return null
   return { ...body, currentPostedJournalId: currentJournal, reversalProposal: reversal } as unknown as InventoryCostProposal
 }
 

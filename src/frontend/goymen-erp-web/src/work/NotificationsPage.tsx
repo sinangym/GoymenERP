@@ -6,6 +6,7 @@ import { contextKey, contextKeyString, capabilityFailClosed, hasCapability } fro
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
+import { ACCOUNTING_CAPABILITY, ACCOUNTING_ROUTE } from '../accounting/capabilities'
 import { SALES_CAPABILITY, SALES_ROUTE } from '../sales/capabilities'
 import { PURCHASING_CAPABILITY, purchaseOrderDetailPath } from '../purchasing/capabilities'
 import { fetchWorkNotifications } from './notificationApi'
@@ -50,7 +51,7 @@ function NotificationsBody() {
       : page.items.length === 0 ? <StateBlock state={{ kind: 'empty-no-data' }} subject={T.subject} />
         : <><div className={styles.tableWrap} role="region" aria-label={T.heading} tabIndex={0}><table className={styles.table}><caption>{T.heading}</caption>
           <thead><tr><th scope="col">{T.heading}</th><th scope="col">{T.source}</th><th scope="col">{T.reason}</th><th scope="col">{T.time}</th><th scope="col">{T.status}</th></tr></thead>
-          <tbody>{page.items.map((item) => <tr key={item.id}><td>{item.kind === 'allocation-released' ? T.released : item.kind === 'purchase-supply-revived' ? T.revived : T.staleCost}</td><td>{item.kind === 'accounting-cost-proposal-stale' ? <>{T.costProposal}: {item.sourceEntityId}<p>{T.staleCostNextStep}</p></> : item.salesOrderLineId ?? item.purchaseOrderLineId}
+          <tbody>{page.items.map((item) => <tr key={item.id}><td>{item.kind === 'allocation-released' ? T.released : item.kind === 'purchase-supply-revived' ? T.revived : T.staleCost}</td><td>{item.kind === 'accounting-cost-proposal-stale' ? <>{T.costProposal}: {item.sourceEntityId}<p>{T.staleCostNextStep}</p>{hasCapability(shell, item.costKind === 1 ? ACCOUNTING_CAPABILITY.invoicedShipmentPrepare : ACCOUNTING_CAPABILITY.purchaseCostPrepare) ? <Link to={`${item.costKind === 1 ? ACCOUNTING_ROUTE.invoicedShipmentPrepare : ACCOUNTING_ROUTE.purchaseCostPrepare}?${new URLSearchParams({ proposalId: item.sourceEntityId }).toString()}`}>{T.openCost}</Link> : null}</> : item.salesOrderLineId ?? item.purchaseOrderLineId}
             {item.salesOrderId !== null && hasCapability(shell, SALES_CAPABILITY.draftsDetail) ? <> <Link to={SALES_ROUTE.detail.replace(':draftId', item.salesOrderId)}>{T.order}</Link></> : null}
             {item.purchaseOrderId !== null && hasCapability(shell, PURCHASING_CAPABILITY.orderDetail) ? <> <Link to={purchaseOrderDetailPath(item.purchaseOrderId)}>{T.order}</Link></> : null}</td>
             <td>{item.reasonText}</td><td><time dateTime={item.recordedAtUtc}>{new Date(item.recordedAtUtc).toLocaleString('tr-TR')}</time></td><td>{item.passivatedAtUtc === null ? T.active : T.passive}</td></tr>)}</tbody>

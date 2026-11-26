@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { StateBlock } from '../shell/StateBlock'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString } from '../shell/shellState'
@@ -17,17 +17,22 @@ const pending = new Map<string, InventoryCostAttempt>()
 
 export function InventoryCostProposalsPage(props: Props) {
   const shell = useShellState(); const context = contextKey(shell)
+  const [searchParams] = useSearchParams()
+  const requested = searchParams.getAll('proposalId')
+  const linkedProposalId = requested.length === 0 ? null : requested.length === 1
+    && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(requested[0])
+    && requested[0] !== '00000000-0000-0000-0000-000000000000' ? requested[0].toLowerCase() : ''
   const namespace = context === null ? null : contextKeyString(context)
-  return <Page key={`${namespace}:${shell.routeEntryGeneration}:${props.kind}`} {...props} namespace={namespace} />
+  return <Page key={`${namespace}:${shell.routeEntryGeneration}:${props.kind}:${linkedProposalId}`} {...props} namespace={namespace} linkedProposalId={linkedProposalId} />
 }
 
-function Page({ kind, canPrepare, canApprove, canProposeReversal, canApproveCancellation = false, namespace }: Props & { readonly namespace: string | null }) {
+function Page({ kind, canPrepare, canApprove, canProposeReversal, canApproveCancellation = false, namespace, linkedProposalId }: Props & { readonly namespace: string | null; readonly linkedProposalId: string | null }) {
   const shell = useShellState(); const boundary = useAuthBoundary(); const actor = shell.activeContext?.userId ?? ''
   const company = shell.activeContext?.companyId ?? ''; const single = namespace !== null && company !== '' && shell.activeContext?.scopeMode === 'single'
   // Authority/cache generations may change while a command's outcome is unknown. Keep its immutable retry
   // identity within this session, actor and company; the query namespace still fences every fresh read.
   const slot = JSON.stringify([shell.sessionEpoch, actor, company, kind]); const held = pending.get(slot) ?? null
-  const [selected, setSelected] = useState<string | null>(held?.id ?? null)
+  const [selected, setSelected] = useState<string | null>(held?.id ?? linkedProposalId)
   const [attempt, setAttempt] = useState<InventoryCostAttempt | null>(held)
   const [outcome, setOutcome] = useState<InventoryCostOutcome | null>(held ? { type: 'unknown' } : null)
   const [sending, setSending] = useState(false); const inFlight = useRef(false); const mounted = useRef(true)
@@ -64,7 +69,7 @@ function Page({ kind, canPrepare, canApprove, canProposeReversal, canApproveCanc
           <td>{value.exactTlAmount}</td><td>{T.statuses[value.status]}</td><td><button type="button" disabled={frozen}
             onClick={() => { setSelected(value.proposalId); setOutcome(null); setAttempt(null) }}>{T.choose}</button></td>
         </tr>)}</tbody></table></div>}
-      {selected !== null && row === undefined ? <StateBlock state={{ kind: 'not-found' }} subject={T.subject} /> : null}
+      {selected !== null && row === undefined ? <><StateBlock state={{ kind: 'not-found' }} subject={T.subject} />{selected === linkedProposalId ? <p role="status">{T.linkedProposalMissing}</p> : null}</> : null}
       {row !== undefined ? <>
         <h2>{row.officialInvoiceNumber ?? T.sourceNumberMissing} · {T.statuses[row.status]}</h2><p>{T.amount}: {row.exactTlAmount}</p>
         {row.unpostedTlAmountText !== undefined && <p>{T.unposted}: {row.unpostedTlAmountText}</p>}
@@ -89,6 +94,7 @@ function Page({ kind, canPrepare, canApprove, canProposeReversal, canApproveCanc
           {row.preparation.rounding ? <><dt>{T.beforeRounding}</dt><dd>{row.preparation.rounding.exactSignedAmountText}</dd>
             <dt>{T.roundingResidue}</dt><dd>{row.preparation.rounding.exactSignedResidueText}</dd>
             <dt>{T.moneyScale}</dt><dd>{row.preparation.moneyScale}</dd><dt>{T.moneyProfileVersion}</dt><dd>{row.preparation.moneyProfileVersion}</dd></> : null}</dl> : null}
+        {row.status === 'Stale' ? <p role="status">{T.staleClosed}</p> : null}
         {row.status === 'RoundedNoCost' || row.status === 'RoundedNoCostCancelled' ? <p>{T.roundedZero}</p> : null}
         {canPrepare && ['AwaitingPreparation', 'Prepared'].includes(row.status) ? <Preparation key={`${row.proposalId}:${row.version}:prepare`}
           row={row} company={company} namespace={namespace!} actor={actor} frozen={frozen} reverse={false} send={next => void send(next)} /> : null}
