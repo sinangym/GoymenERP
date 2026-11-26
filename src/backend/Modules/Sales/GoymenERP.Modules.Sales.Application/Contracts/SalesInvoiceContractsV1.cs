@@ -545,6 +545,13 @@ public interface ISalesInvoiceStore
         Guid invoiceId, Action<SalesInvoice, DateTimeOffset> mutate, SalesDraftStateAudit audit,
         CancellationToken cancellationToken = default);
 
+    /// <summary>The native decision in its own clean transaction. The required request-local fence is measured
+    /// after owner reads before staging and after SaveChanges before commit, including a raced replay. A late
+    /// authority/delegation loss rolls back the decision, attempt and audit. No ambient/borrowed transaction.</summary>
+    Task<SalesInvoiceStoreResult?> DecideInvoiceGuardedAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid invoiceId, Action<SalesInvoice, DateTimeOffset> mutate, SalesDraftStateAudit audit,
+        Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// API-35: records the official match of the company's approved invoice in one save (the match row, the attempt, the audit).
     /// <paramref name="record"/> is the domain's decision; a refusal writes nothing. Null when the invoice does not exist here.

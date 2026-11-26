@@ -354,8 +354,13 @@ public sealed partial class SalesStore : ISalesInvoiceStore
         await SaveAsync(cancellationToken);
     }
 
-    public async Task<SalesInvoiceStoreResult?> DecideInvoiceAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+    public Task<SalesInvoiceStoreResult?> DecideInvoiceAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         Guid invoiceId, Action<SalesInvoice, DateTimeOffset> mutate, SalesDraftStateAudit audit, CancellationToken cancellationToken = default)
+        => DecideInvoiceCoreAsync(envelope, requestHash, commandName, invoiceId, mutate, audit, null, cancellationToken);
+
+    private async Task<SalesInvoiceStoreResult?> DecideInvoiceCoreAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid invoiceId, Action<SalesInvoice, DateTimeOffset> mutate, SalesDraftStateAudit audit,
+        Func<CancellationToken, Task>? freshFence, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
@@ -379,7 +384,9 @@ public sealed partial class SalesStore : ISalesInvoiceStore
             .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
         if (attempt is not null)
         {
-            return await ReplayInvoiceAttemptAsync(attempt, actorId, requestHash, cancellationToken);
+            var replay = await ReplayInvoiceAttemptAsync(attempt, actorId, requestHash, cancellationToken);
+            if (freshFence is not null) await freshFence(cancellationToken);
+            return replay;
         }
 
         if (invoiceId == Guid.Empty)
@@ -405,6 +412,7 @@ public sealed partial class SalesStore : ISalesInvoiceStore
             throw new InvalidOperationException("Fatura kararı tam olarak bir sürüm ilerletir ve faturayı değiştirmez.");
         }
 
+        if (freshFence is not null) await freshFence(cancellationToken);
         SalesInvoiceRows.ApplyDecision(row, invoice);
         dbContext.InvoiceAttempts.Add(new InvoiceAttemptRow
         {

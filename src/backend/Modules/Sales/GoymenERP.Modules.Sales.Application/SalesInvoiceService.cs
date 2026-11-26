@@ -294,14 +294,18 @@ public sealed partial class SalesInvoiceService(
             throw new SalesDraftServiceException(404, "not_found");
         }
 
-        // The last fences that can still prevent the write; none after the commit.
+        // The owner also measures this request's authority after its reads and after SaveChanges, before commit.
         await RequireStillAsync(scope, permission, cancellationToken);
         await RequirePriceReadAsync(scope, cancellationToken);
         SalesInvoiceStoreResult? result;
         try
         {
-            result = await invoices.DecideInvoiceAsync(envelope, requestHash, commandName, invoiceId,
-                (target, now) => decide(target, scope.ActorId, expectedVersion, now), audit, cancellationToken);
+            result = await invoices.DecideInvoiceGuardedAsync(envelope, requestHash, commandName, invoiceId,
+                (target, now) => decide(target, scope.ActorId, expectedVersion, now), audit, async token =>
+                {
+                    await RequireStillAsync(scope, permission, token);
+                    await RequirePriceReadAsync(scope, token);
+                }, cancellationToken);
         }
         catch (SalesVersionConflictException exception)
         {
@@ -362,10 +366,12 @@ public sealed partial class SalesInvoiceService(
         catch (SalesDraftStoreException exception)
         {
             await RequireStillAsync(scope, permission, cancellationToken);
+            await RequirePriceReadAsync(scope, cancellationToken);
             throw Store(exception);
         }
 
         await RequireStillAsync(scope, permission, cancellationToken);
+        await RequirePriceReadAsync(scope, cancellationToken);
         return replay;
     }
 

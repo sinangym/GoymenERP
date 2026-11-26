@@ -833,6 +833,19 @@ public sealed partial class SalesDraftServiceTests
 
         public Dictionary<string, (string Hash, string Actor, Guid Invoice, string Correlation, SalesDraftTerminalRefusal? Refusal)> StateAttempts { get; } = [];
         public int DecideCalls { get; private set; }
+        public Action? BeforeGuardedDecisionRead { get; set; }
+        public Action? AfterStateReplayRead { get; set; }
+
+        public async Task<SalesInvoiceStoreResult?> DecideInvoiceGuardedAsync(SalesDraftWriteEnvelope envelope,
+            string requestHash, string commandName, Guid invoiceId, Action<SalesInvoice, DateTimeOffset> mutate,
+            SalesDraftStateAudit audit, Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken = default)
+        {
+            BeforeGuardedDecisionRead?.Invoke();
+            await freshFence(cancellationToken);
+            var result = await DecideInvoiceAsync(envelope, requestHash, commandName, invoiceId, mutate, audit, cancellationToken);
+            await freshFence(cancellationToken);
+            return result;
+        }
 
         public Task<SalesInvoiceReplay?> FindInvoiceStateReplayAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
             CancellationToken cancellationToken = default)
@@ -842,6 +855,7 @@ public sealed partial class SalesDraftServiceTests
                 return Task.FromResult<SalesInvoiceReplay?>(null);
             }
 
+            AfterStateReplayRead?.Invoke();
             return attempt.Hash == requestHash && attempt.Actor == envelope.ActorId
                 ? Task.FromResult<SalesInvoiceReplay?>(new SalesInvoiceReplay(attempt.Refusal is null ? Stored[attempt.Invoice] : null, attempt.Refusal, attempt.Correlation))
                 : throw new SalesDraftStoreException(SalesDraftStoreCodes.SameKeyPayloadMismatch, "same key, other content");
