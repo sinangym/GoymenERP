@@ -34,7 +34,7 @@ function applied() {
   return { type: 'applied' as const, replayed: false, response: { detail: { order: { id: ORDER, companyId: COMPANY, status: 'Draft' as const, version: '1', supplierPartyId: PARTY, companyAccountId: ACCOUNT, sourceRequestId: null, effectiveOn: '2026-09-23', createdAtUtc: '2026-09-23T10:00:00Z', updatedAtUtc: '2026-09-23T10:00:00Z', lineCount: 1 }, lines: [] }, isReplay: false, originalCorrelationId: 'corr-1' } }
 }
 
-async function fillAndSubmit(user: ReturnType<typeof userEvent.setup>) {
+async function fillDraft(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole('option', { name: 'CAR-42 — Tedarikçi AŞ' })
   await user.selectOptions(screen.getByLabelText('Tedarikçi cari hesabı'), `${PARTY}|${ACCOUNT}`)
   await user.type(screen.getByLabelText('İş tarihi'), '2026-09-23')
@@ -42,6 +42,10 @@ async function fillAndSubmit(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole('option', { name: 'PRD-7 — Bant · kg' })
   await user.selectOptions(screen.getByLabelText('Ürün ve alış birimi'), PRODUCT)
   await user.type(screen.getByLabelText('Miktar'), '12,5')
+}
+
+async function fillAndSubmit(user: ReturnType<typeof userEvent.setup>) {
+  await fillDraft(user)
   await user.click(screen.getByRole('button', { name: 'Taslak siparişi kaydet' }))
 }
 
@@ -54,6 +58,68 @@ beforeEach(() => {
 })
 
 describe('P-04 purchase order create form', () => {
+  it('sends queued products and the final editor line once, preserving prices, units and unknown-result replay', async () => {
+    api.products.mockResolvedValue({ type: 'ok-single', data: { items: [
+      { productId: PRODUCT, productVersion: '7', code: 'PRD-7', name: 'Bant', unitId: UNIT, unitCode: 'kg' },
+      { productId: PRODUCT_B, productVersion: '8', code: 'PRD-8', name: 'Profil', unitId: '99999999-9999-4999-8999-999999999999', unitCode: 'adet' },
+    ], searchWindowFull: false } })
+    api.create.mockResolvedValueOnce({ type: 'unknown', reason: 'network-error' }).mockResolvedValueOnce(applied())
+    const user = userEvent.setup()
+    render(<MemoryRouter><PurchaseOrderCreatePage /></MemoryRouter>)
+    await fillDraft(user)
+    await user.selectOptions(screen.getByLabelText('Para birimi'), CURRENCY)
+    await user.type(screen.getByLabelText('Birim fiyat'), '0')
+    await user.click(screen.getByRole('button', { name: 'Satırı siparişe ekle' }))
+    expect((screen.getByLabelText('İş tarihi') as HTMLInputElement).disabled).toBe(true)
+    expect((screen.getByLabelText('Para birimi') as HTMLSelectElement).disabled).toBe(true)
+    await user.selectOptions(screen.getByLabelText('Ürün ve alış birimi'), PRODUCT_B)
+    await user.type(screen.getByLabelText('Miktar'), '3')
+    await user.type(screen.getByLabelText('Birim fiyat'), '21,75')
+    await user.click(screen.getByRole('button', { name: 'Satırı siparişe ekle' }))
+    await user.selectOptions(screen.getByLabelText('Ürün ve alış birimi'), PRODUCT)
+    await user.type(screen.getByLabelText('Miktar'), '5')
+    await user.click(screen.getByRole('button', { name: 'Taslak siparişi kaydet' }))
+    await screen.findByRole('button', { name: 'Aynı anahtarla yeniden gönder' })
+    const first = api.create.mock.calls[0]
+    expect(first[0].lines).toHaveLength(3)
+    expect(new Set(first[0].lines.map((line: { lineId: string }) => line.lineId)).size).toBe(3)
+    expect(first[0].lines[0]).toMatchObject({ productId: PRODUCT, unitId: UNIT, quantity: '12.5', price: { unitPrice: '0' } })
+    expect(first[0].lines[1]).toMatchObject({ productId: PRODUCT_B, quantity: '3', price: { unitPrice: '21.75' } })
+    expect(first[0].lines[2]).toMatchObject({ productId: PRODUCT, quantity: '5' })
+    expect(first[0].lines[2]).not.toHaveProperty('price')
+    expect((screen.getByRole('button', { name: '1. sipariş satırını kaldır' }) as HTMLButtonElement).disabled).toBe(true)
+    await user.click(screen.getByRole('button', { name: 'Aynı anahtarla yeniden gönder' }))
+    await waitFor(() => expect(api.create).toHaveBeenCalledTimes(2))
+    expect(api.create.mock.calls[1]).toEqual(first)
+  })
+
+  it('saves queued lines with an empty editor and never silently discards an incomplete extra line', async () => {
+    api.create.mockResolvedValue(applied())
+    const user = userEvent.setup()
+    render(<MemoryRouter><PurchaseOrderCreatePage /></MemoryRouter>)
+    await fillDraft(user)
+    await user.click(screen.getByRole('button', { name: 'Satırı siparişe ekle' }))
+    await user.type(screen.getByLabelText('Miktar'), '2')
+    await user.click(screen.getByRole('button', { name: 'Taslak siparişi kaydet' }))
+    expect(api.create).not.toHaveBeenCalled()
+    await user.clear(screen.getByLabelText('Miktar'))
+    await user.click(screen.getByRole('button', { name: 'Taslak siparişi kaydet' }))
+    await waitFor(() => expect(api.create).toHaveBeenCalledTimes(1))
+    expect(api.create.mock.calls[0][0].lines).toHaveLength(1)
+  })
+
+  it('removing a queued line restores the editable date and sends no removed product', async () => {
+    const user = userEvent.setup()
+    render(<MemoryRouter><PurchaseOrderCreatePage /></MemoryRouter>)
+    await fillDraft(user)
+    await user.click(screen.getByRole('button', { name: 'Satırı siparişe ekle' }))
+    await user.click(screen.getByRole('button', { name: '1. sipariş satırını kaldır' }))
+    expect((screen.getByLabelText('İş tarihi') as HTMLInputElement).disabled).toBe(false)
+    expect(screen.queryByRole('table')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Taslak siparişi kaydet' }))
+    expect(api.create).not.toHaveBeenCalled()
+  })
+
   it('discards a late product response after the effective date changes', async () => {
     let resolveOld!: (value: unknown) => void
     const oldResponse = new Promise((resolve) => { resolveOld = resolve })
