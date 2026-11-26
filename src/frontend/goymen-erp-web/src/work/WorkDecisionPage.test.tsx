@@ -1,20 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter } from 'react-router'
 import { ShellProvider } from '../shell/ShellProvider'
 import { AppShell } from '../shell/AppShell'
-import { COMPANY_A, installFetch, json, problem } from '../settings/testHarness'
+import { COMPANY_A, COMPANY_B, IDENTITY, installFetch, json, problem } from '../settings/testHarness'
+import { shellRoutes } from '../shell/router'
 import { workRoutes } from './workRoutes'
 import { WORK_DECISION_TEXT as T } from './workDecisionText'
 const id='cccccccc-0000-4000-8000-0000000000f1',kind='finance.cash-account.v1',cap='finance.cash-account.work-decision'
 const path=`/work/decisions/${kind}/${id}`
 const preview={companyId:COMPANY_A,kind,itemId:id,documentLabel:'SENTETIK kasa',sourceVersion:'7',pending:true,approvalReasonRequired:false,references:[],rules:[]}
-afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks();sessionStorage.clear()})
-function mount(route=`/onaylarim/${kind}/${id}`){
- const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:workRoutes}],{initialEntries:[route]})
+afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks();sessionStorage.clear();Object.assign(IDENTITY,{authenticationSessionBinding:null})})
+function mount(route=`/onaylarim/${kind}/${id}`, fullShell=false){
+ const router=createMemoryRouter(fullShell?shellRoutes:[{path:'/',element:<AppShell/>,children:workRoutes}],{initialEntries:[route]})
  render(<ShellProvider queryClient={new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})}><RouterProvider router={router}/></ShellProvider>)
+ return router
 }
 describe('WP8 screenless owner decision',()=>{
  it('freezes an unknown payload and reuses its original key across a remount',async()=>{
@@ -75,4 +77,90 @@ describe('WP8 screenless owner decision',()=>{
   expect(calls.some(call=>call.url.includes('/identity/assignments'))).toBe(false)
  })
 
+})
+
+const purchaseKind='purchasing.request.v1',purchaseCap='purchasing.request.work-decision'
+const purchasePath=`/work/decisions/${purchaseKind}/${id}`,purchaseRoute=`/onaylarim/${purchaseKind}/${id}`
+const purchasePreview={...preview,kind:purchaseKind,documentLabel:'SENTETIK talep'}
+describe('WP8 native Purchasing request purpose',()=>{
+ it('opens for the purpose-only approver without browse/create/price access and keeps blank rejection closed',async()=>{
+  const calls=installFetch({capabilities:[purchaseCap],respond:url=>url.includes(purchasePath)?json(purchasePreview):undefined})
+  const router=mount(purchaseRoute,true);await screen.findByText('SENTETIK talep',{exact:false})
+  expect((screen.getByRole('textbox',{name:T.reason}) as HTMLTextAreaElement).maxLength).toBe(4000)
+  expect((screen.getByRole('button',{name:T.reject}) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:'   '}})
+  expect((screen.getByRole('button',{name:T.reject}) as HTMLButtonElement).disabled).toBe(true)
+  expect((screen.getByRole('button',{name:T.approve}) as HTMLButtonElement).disabled).toBe(false)
+  for(const route of ['/satinalma/talepler','/satinalma/talepler/yeni',`/satinalma/talepler/${id}`]){
+   await act(async()=>{await router.navigate(route)})
+   await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+  }
+  expect(calls.some(call=>call.url.includes('/purchasing/'))).toBe(false)
+  expect(calls.some(call=>call.method==='POST')).toBe(false)
+ })
+ it('sends the complete native 4000-character rejection with the displayed version, trimming only the edges',async()=>{
+  let decided=false
+  const calls=installFetch({capabilities:[purchaseCap],respond:(url,init)=>{
+   if(!url.includes(purchasePath))return undefined
+   if(init?.method==='POST'){decided=true;return json({companyId:COMPANY_A,kind:purchaseKind,itemId:id,state:'Rejected',replayed:false,originalCorrelationId:'SENTETIK'})}
+   return json(decided?{...purchasePreview,pending:false,sourceVersion:'8'}:purchasePreview)
+  }})
+  mount(purchaseRoute);await screen.findByText('SENTETIK talep',{exact:false})
+  const reason='R'.repeat(4000)
+  fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:`  ${reason}  `}})
+  await userEvent.setup().click(screen.getByRole('button',{name:T.reject}));await screen.findByText(T.done);await screen.findByText(T.closed)
+  const sent=calls.filter(call=>call.method==='POST')
+  expect(sent).toHaveLength(1);expect(sent[0].body).toEqual({expectedVersion:'7',approve:false,reason,delegationId:null})
+  expect(sent[0].headers['X-Company-Id']).toBe(COMPANY_A)
+  expect(sent[0].headers['Idempotency-Key']).toBeTruthy()
+ })
+ it('does not send or silently cut an overlong native rejection',async()=>{
+  const calls=installFetch({capabilities:[purchaseCap],respond:url=>url.includes(purchasePath)?json(purchasePreview):undefined})
+  mount(purchaseRoute);await screen.findByText('SENTETIK talep',{exact:false})
+  const input=screen.getByRole('textbox',{name:T.reason}) as HTMLTextAreaElement
+  fireEvent.change(input,{target:{value:'R'.repeat(4001)}})
+  expect(input.value).toHaveLength(4001)
+  expect((screen.getByRole('button',{name:T.reject}) as HTMLButtonElement).disabled).toBe(true)
+  await userEvent.setup().click(screen.getByRole('button',{name:T.reject}))
+  expect(calls.some(call=>call.method==='POST')).toBe(false)
+ })
+ it('keeps the original rejection version/body/key across remount and a newer closed owner projection',async()=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-purchase-decision'})
+  let posts=0
+  const calls=installFetch({capabilities:[purchaseCap],respond:(url,init)=>{
+   if(!url.includes(purchasePath))return undefined
+   if(init?.method==='POST')return ++posts===1?problem(503):new Response(JSON.stringify({companyId:COMPANY_A,kind:purchaseKind,itemId:id,state:'Rejected',replayed:true,originalCorrelationId:'original'}),{status:200,headers:{'Content-Type':'application/json','Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}})
+   return json(posts?{...purchasePreview,pending:false,sourceVersion:'8'}:purchasePreview)
+  }})
+  mount(purchaseRoute);await screen.findByText('SENTETIK talep',{exact:false})
+  fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:'Native ret gerekçesi'}})
+  await userEvent.setup().click(screen.getByRole('button',{name:T.reject}));await screen.findByText(T.unknown)
+  cleanup();mount(purchaseRoute);await screen.findByText(T.closed);await screen.findByText(T.unknown)
+  await userEvent.setup().click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+  const sent=calls.filter(call=>call.method==='POST');expect(sent).toHaveLength(2)
+  expect(sent[1].body).toEqual(sent[0].body);expect(sent[1].body).toMatchObject({expectedVersion:'7',reason:'Native ret gerekçesi'})
+  expect(sent[1].headers['Idempotency-Key']).toBe(sent[0].headers['Idempotency-Key'])
+ })
+ it('keeps maker/submitter refusal on the server and closes on a fresh command 403',async()=>{
+  const calls=installFetch({capabilities:[purchaseCap],respond:(url,init)=>url.includes(purchasePath)?init?.method==='POST'?problem(403):json(purchasePreview):undefined})
+  mount(purchaseRoute);await screen.findByText('SENTETIK talep',{exact:false})
+  await userEvent.setup().click(screen.getByRole('button',{name:T.approve}))
+  await waitFor(()=>expect(screen.queryByRole('button',{name:T.approve})).toBeNull())
+  expect(screen.queryByText(T.done)).toBeNull()
+  expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+  expect(calls.find(call=>call.method==='POST')?.body).toEqual({expectedVersion:'7',approve:true,reason:null,delegationId:null})
+ })
+ it('refuses a foreign-company preview without displaying or deciding its record',async()=>{
+  const calls=installFetch({capabilities:[purchaseCap],respond:url=>url.includes(purchasePath)?json({...purchasePreview,companyId:COMPANY_B}):undefined})
+  mount(purchaseRoute)
+  await waitFor(()=>expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
+  expect(screen.queryByText('SENTETIK talep',{exact:false})).toBeNull()
+  expect(calls.some(call=>call.method==='POST')).toBe(false)
+ })
+ it('does not read the owner when the actor has only the old browse-dependent approval control or no purpose capability',async()=>{
+  const calls=installFetch({capabilities:['purchasing.requests.approve'],respond:url=>url.includes(purchasePath)?json(purchasePreview):undefined})
+  mount(purchaseRoute,true)
+  await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+  expect(calls.some(call=>call.url.includes(purchasePath))).toBe(false)
+ })
 })

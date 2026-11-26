@@ -46,8 +46,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PURCHASING";
-    // W8 closure: 1.15 canonicalizes ScreenIds and service-order control parent RouteIds; paths, permissions and availability stay unchanged.
-    public const string OwnerContractVersion = "1.15";
+    // WP8 1.16: request purpose decisions use the existing approval name without a browse/price grant.
+    public const string OwnerContractVersion = "1.16";
     public const string AdditionalCostReadCapabilityId = "purchasing.additional-costs.read";
     public const string AdditionalCostRecordCapabilityId = "purchasing.additional-costs.record";
 
@@ -65,6 +65,7 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
     public const string InvoiceApproveVarianceCapabilityId = "purchasing.invoices.approve-variance";
     public const string InvoiceFinalizeCapabilityId = "purchasing.invoices.finalize";
 
+    public const string RequestWorkDecisionCapabilityId = "purchasing.request.work-decision";
     public const string RequestListCapabilityId = "purchasing.requests.list";
     public const string RequestListRoutePath = "/satinalma/talepler";
     public const string RequestListScreenId = "P-01";
@@ -116,6 +117,10 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 
         return
         [
+            new ShellCapabilityDeclaration(RequestWorkDecisionCapabilityId, "purchasing-request-work-decision",
+                "/onaylarim/purchasing.request.v1/:approvalId", "W-PURCHASING-REQUEST-01",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide, [PurchasingPermissionManifestV1.RequestsApprove], ImplementationAvailable: true),
             new ShellCapabilityDeclaration(AdditionalCostReadCapabilityId, AdditionalCostReadCapabilityId,
                 "/satinalma/ek-masraflar/:sourceKind/:orderId", "ALC-S8-READ",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,

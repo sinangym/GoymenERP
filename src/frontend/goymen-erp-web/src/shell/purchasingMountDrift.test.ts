@@ -9,9 +9,27 @@ import {
   purchaseOrderDetailPath,
   purchaseRequestDetailPath,
 } from '../purchasing/capabilities'
+import { workRoutes } from '../work/workRoutes'
+import { WORK_ROUTE } from '../work/workText'
+import { NAV_CAPABILITIES } from './navigation'
 import { purchasingRoutes } from '../purchasing/purchasingRoutes'
 
 describe('shell ↔ Purchasing lane route catalogue', () => {
+  it('mounts the approve-only request purpose route once ahead of legacy generic detail without a menu entry', () => {
+    const capability = CAPABILITY.purchasingRequestWorkDecision
+    const path = '/onaylarim/purchasing.request.v1/:approvalId'
+    expect(CAPABILITY_ROUTE[capability]).toBe(path)
+    expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
+    expect(NAV_CAPABILITIES).not.toContain(capability)
+    const routes = workRoutes.filter(route => route.path === path.slice(1))
+    expect(routes).toHaveLength(1)
+    const url = path.replace(':approvalId', 'cccccccc-0000-4000-8000-0000000000f1')
+    expect(matchPath(WORK_ROUTE.approvalDetail, url)).not.toBeNull()
+    expect(matchRoutes(shellRoutes, url)?.at(-1)?.route).toBe(routes[0])
+    expect(matchRoutes(shellRoutes, WORK_ROUTE.queue)?.at(-1)?.route.path).toBe(WORK_ROUTE.queue.slice(1))
+    expect(matchPath(path, WORK_ROUTE.queue)).toBeNull()
+  })
+
   it('mounts order and invoice routes while keeping mutation controls out of the route catalogue', () => {
     expect(CAPABILITY.purchasingRequestsList).toBe(PURCHASING_CAPABILITY.requestList)
     expect(CAPABILITY.purchasingRequestsCreate).toBe(PURCHASING_CAPABILITY.requestCreate)
@@ -22,6 +40,7 @@ describe('shell ↔ Purchasing lane route catalogue', () => {
 
     const shellIds = (Object.values(CAPABILITY) as string[]).filter((id) => id.startsWith('purchasing.'))
     expect([...shellIds].sort()).toEqual([
+      CAPABILITY.purchasingRequestWorkDecision,
       PURCHASING_CAPABILITY.requestCreate,
       PURCHASING_CAPABILITY.requestDetail,
       PURCHASING_CAPABILITY.requestList,

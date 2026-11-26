@@ -55,8 +55,11 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   if (company === null || capabilityFailClosed(shell)) return <StateBlock state={{ kind: 'no-authorized-company' }} subject={T.title} />
   const preview = query.data?.type === 'ok-single' ? query.data.data : null
   const frozen = attempt.status.kind === 'busy' || attempt.hasPendingRetry
+  const reasonLimit = workDecisionReasonLimit(kind)
+  const reasonRequired = (approve: boolean) => preview?.approvalReasonRequired || !approve && !isSalesWorkDecisionKind(kind)
+  const invalidReason = (approve: boolean) => reasonRequired(approve) && reason.trim() === '' || (preview?.approvalReasonRequired || !approve) && reason.trim().length > reasonLimit
   const submit = async (approve: boolean) => {
-    if (preview === null || frozen) return
+    if (preview === null || frozen || invalidReason(approve) || useDelegation && !delegationId) return
     const answer = await attempt.run({ expectedVersion: preview.sourceVersion, approve,
       reason: preview.approvalReasonRequired || !approve ? reason.trim() || null : null, delegationId: useDelegation ? delegationId : null })
     if (answer.type === 'applied') void query.refetch()
@@ -69,7 +72,8 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {preview.sourceVersion}</p>
       {kind === 'inventory.opening-cost.v1' ? <p>{cost == null ? T.hiddenCost : `${T.cost}: ${cost}`}</p> : null}
       <h3>{T.reference}</h3><ul>{preview.references.map((ref, i) => <li key={i}>{inboxRoleText(ref.role) ?? T.reference}: {ref.label}</li>)}</ul>
-      {preview.pending ? <fieldset disabled={frozen}><label>{T.reason}<textarea value={reason} maxLength={workDecisionReasonLimit(kind)} onChange={event => setReason(event.target.value)} /></label>
+      {preview.pending ? <fieldset disabled={frozen}><label>{T.reason}<textarea value={reason} maxLength={reasonLimit} onChange={event => setReason(event.target.value)} /></label>
+        {kind === 'purchasing.request.v1' ? <p>{T.rejectionReasonRequired(reasonLimit)}</p> : null}
         <label><input type="checkbox" checked={useDelegation} onChange={event => { setUseDelegation(event.target.checked); setDelegationId('') }} />{T.delegation}</label>
         {useDelegation ? <><label>{T.delegationChoice}<select value={delegationId} onChange={event => setDelegationId(event.target.value)}><option value="">{T.choose}</option>
           {candidates.map(row => <option key={row.id} value={row.id}>{delegationPersonLabel(people,row.delegatorUserId)} · {new Date(row.startsAtUtc).toLocaleString('tr-TR')} – {new Date(row.endsAtUtc).toLocaleString('tr-TR')} · {row.reason}</option>)}</select></label>
@@ -79,8 +83,8 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
             : candidates.length === 0 ? <p>{delegations.hasNextPage ? T.delegationNoMatchesYet : T.delegationEmpty}</p> : null}
           {delegations.hasNextPage ? <><p>{T.delegationMoreAvailable}</p><Button type="button" disabled={delegations.isFetchingNextPage}
             onClick={() => void delegations.fetchNextPage()}>{T.delegationMore}</Button></> : null}</> : null}
-        <div className={styles.actions}><Button type="button" disabled={useDelegation && !delegationId || preview.approvalReasonRequired && reason.trim() === ''} onClick={() => void submit(true)}>{T.approve}</Button>
-          <Button type="button" variant="secondary" disabled={useDelegation && !delegationId || !isSalesWorkDecisionKind(kind) && reason.trim() === ''} onClick={() => void submit(false)}>{T.reject}</Button></div></fieldset> : <p>{T.closed}</p>}
+        <div className={styles.actions}><Button type="button" disabled={useDelegation && !delegationId || invalidReason(true)} onClick={() => void submit(true)}>{T.approve}</Button>
+          <Button type="button" variant="secondary" disabled={useDelegation && !delegationId || invalidReason(false)} onClick={() => void submit(false)}>{T.reject}</Button></div></fieldset> : <p>{T.closed}</p>}
     </>}
     {attempt.status.kind === 'unknown' ? <div role="alert"><p>{T.unknown}</p><Button type="button" onClick={() => void attempt.retry()}>{T.retry}</Button></div> : null}
     {attempt.status.kind === 'refused' ? <p role="alert">{T.refused} ({attempt.status.status})</p> : null}

@@ -456,3 +456,18 @@ describe('/onaylarim/kuyruk — Benden karar bekleyen', () => {
     expect(api.queueReads()).toEqual([])
   })
 })
+
+it('opens the request inbox for the approve-only purpose capability and follows the owner purpose link', async () => {
+  const kind='purchasing.request.v1',permission='purchasing.requests.approve',id='cccccccc-0000-4000-8000-0000000000f1'
+  const link=`/onaylarim/${kind}/${id}`
+  const item={...limitItem,module:'purchasing',kind,itemId:id,documentLabel:'SENTETIK talep',link,awaitingPermission:permission,ruleVersion:RV(kind),
+    explanation:{rules:[{ruleCode:'purchasing.request-approval-required',threshold:null,actual:null,deviation:null,unit:null}],references:[]}}
+  const api=installFetch({granted:[CAPABILITY.purchasingRequestWorkDecision],inbox:()=>json({companyId:COMPANY,view:'awaiting-my-decision',generatedAtUtc:'2026-11-26T08:00:00Z',items:[item],
+    sources:[{module:'purchasing',kind,awaitingPermission:permission,durationClass:'BusinessDays',ruleVersion:RV(kind),state:'Ready',hasMore:false}]})})
+  await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-list')
+  const card=cardOf(kind)
+  expect(within(card).getByRole('link',{name:T.openOwnerLabel('Satın alma talebi onayı','SENTETIK talep')}).getAttribute('href')).toBe(link)
+  expect(api.inboxReads()).toHaveLength(1)
+  expect(api.inboxReads()[0].companyId).toBe(COMPANY)
+  expect(api.queueReads()).toHaveLength(0)
+})

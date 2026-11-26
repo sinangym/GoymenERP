@@ -5,6 +5,7 @@ export const WORK_DECISION_TEXT = {
   retry: 'Aynı isteği yeniden gönder', refused: 'Karar uygulanmadı. Güncel kaydı ve yetkinizi kontrol edin.',
   reload: 'Kaydı yenile', back: 'İş kutusuna dön', reference: 'Dayanak kayıtlar',
   cost: 'Beyan edilen birim maliyet (şirket para birimi / kg)', hiddenCost: 'Birim maliyet, ayrı maliyet görme yetkisine tabidir.',
+  rejectionReasonRequired: (limit: number) => `Reddetmek için gerekçe zorunludur. En fazla ${limit} karakter yazabilirsiniz.`,
   delegation: 'Vekâlet kullan', delegationChoice: 'Vekâlet kaydı', choose: 'Seçiniz', delegationEmpty: 'Bu tür için size verilmiş vekâlet kaydı bulunamadı.',
   delegationMore: 'Diğer vekâletleri yükle',
   delegationMoreAvailable: 'Daha fazla vekâlet kaydı var; sonraki sayfaları yükleyebilirsiniz.',

@@ -4,11 +4,11 @@ import { hasExactKeys, replayHeadersAgree } from '../finance/wireShape'
 import { readJson, type CommandOutcome } from '../settings/discountLimitApi'
 
 export const WORK_DECISION_KINDS = ['inventory.opening-cost.v1', 'finance.cash-account.v1',
-  'finance.cash-account-passivation.v1', 'finance.cash-account-reactivation.v1','sales.order-draft.v1','sales.invoice.v1'] as const
+  'finance.cash-account-passivation.v1', 'finance.cash-account-reactivation.v1','sales.order-draft.v1','sales.invoice.v1','purchasing.request.v1'] as const
 export type WorkDecisionKind = typeof WORK_DECISION_KINDS[number]
 export const isSalesWorkDecisionKind = (kind: WorkDecisionKind) => kind === 'sales.order-draft.v1' || kind === 'sales.invoice.v1'
-/** SalesOrderDraft.MaximumRejectionReasonLength / SalesInvoice.MaximumReasonLength; native optional reason. */
-export const workDecisionReasonLimit = (kind: WorkDecisionKind) => isSalesWorkDecisionKind(kind) ? 4000 : 500
+/** Native Sales and PurchaseRequest reason bounds; optional rejection remains Sales-only. */
+export const workDecisionReasonLimit = (kind: WorkDecisionKind) => isSalesWorkDecisionKind(kind) || kind === 'purchasing.request.v1' ? 4000 : 500
 export const isWorkDecisionKind = (value: string): value is WorkDecisionKind => WORK_DECISION_KINDS.some(kind => kind === value)
 export interface WorkDecisionRequest { readonly expectedVersion: string; readonly approve: boolean; readonly reason: string | null; readonly delegationId: string | null }
 export interface WorkDecisionPreview {

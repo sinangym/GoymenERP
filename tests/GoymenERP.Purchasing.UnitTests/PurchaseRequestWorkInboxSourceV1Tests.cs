@@ -36,7 +36,7 @@ public sealed class PurchaseRequestWorkInboxSourceV1Tests
         var first = result.Items![0];
         AssertContractShape("purchasing", first);
         Assert.Equal("purchasing.request.v1", first.Kind);
-        Assert.Equal("/satinalma/talepler/" + older.Id.ToString("D"), first.Link);
+        Assert.Equal("/onaylarim/purchasing.request.v1/" + older.Id.ToString("D"), first.Link);
         Assert.Equal(Start, first.WaitingSinceUtc);
         Assert.Equal(PurchasingWorkInboxFence.ShortReference(older.Id), first.DocumentLabel);
         Assert.Equal([new WorkApprovalRuleResultV1(PurchaseRequestWorkInboxSourceV1.ApprovalRequiredRule, null, null, null, null)],

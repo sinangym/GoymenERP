@@ -46,8 +46,9 @@ describe('WP7 inbox kinds', () => {
       'settings.manufacturing-tolerance-profiles.publish']) expect(inboxPermissionText(permission)).not.toBe(permission)
   })
 
-  it('opens the inbox for the existing approve controls only; Ayarlar publication has no capability yet', () => {
-    expect(WORK_INBOX_CAPABILITIES).toContain('purchasing.requests.approve')
+  it('opens request decisions for their approve-only purpose route; other existing approve controls and Ayarlar publication has no capability yet', () => {
+    expect(WORK_INBOX_CAPABILITIES).toContain('purchasing.request.work-decision')
+    expect(WORK_INBOX_KINDS.find(entry => entry.kind === 'purchasing.request.v1')?.capability).toBe('purchasing.request.work-decision')
     expect(WORK_INBOX_CAPABILITIES).toContain('purchasing.service-orders.approve')
     expect(WORK_INBOX_CAPABILITIES).toContain('identity.access.approve')
     expect(WORK_INBOX_KINDS.filter((entry) => entry.module === 'settings').every((entry) => entry.capability === null)).toBe(true)

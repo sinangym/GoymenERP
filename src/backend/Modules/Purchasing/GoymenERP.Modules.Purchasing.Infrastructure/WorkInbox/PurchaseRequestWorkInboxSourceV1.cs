@@ -116,7 +116,7 @@ internal sealed class PurchaseRequestWorkInboxSourceV1(
         var others = excluded.Where(actor => !string.Equals(actor, preparedBy, StringComparison.Ordinal)).ToArray();
         item = new WorkInboxItemV1(ModuleName, KindName, row.Id, PurchasingWorkInboxFence.ShortReference(row.Id),
             row.UpdatedAtUtc.ToUniversalTime(),
-            PurchasingWorkInboxFence.Link(PurchasingWorkInboxFence.RequestScreenPath, row.Id), preparedBy,
+            "/onaylarim/purchasing.request.v1/" + row.Id.ToString("D"), preparedBy,
             [new(ApprovalRequiredRule, null, null, null, null)], [], others);
         return true;
     }

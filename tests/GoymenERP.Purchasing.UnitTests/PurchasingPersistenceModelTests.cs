@@ -147,10 +147,19 @@ public sealed class PurchasingPersistenceModelTests
     public void The_request_and_order_screens_and_their_controls_are_published()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal("1.15", PurchasingShellCapabilityProvider.OwnerContractVersion);
-        Assert.Equal(29, declarations.Count);
+        Assert.Equal("1.16", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal(30, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(!declaration.CapabilityId.StartsWith("purchasing.invoices.", StringComparison.Ordinal), declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
+        var purpose = byId[PurchasingShellCapabilityProvider.RequestWorkDecisionCapabilityId];
+        Assert.Equal("/onaylarim/purchasing.request.v1/:approvalId", purpose.RoutePath);
+        Assert.Equal("purchasing-request-work-decision", purpose.RouteId);
+        Assert.Equal("W-PURCHASING-REQUEST-01", purpose.ScreenId);
+        Assert.Null(purpose.ParentCapabilityId);
+        Assert.Equal(ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, purpose.RoutePrecedence);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, purpose.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, purpose.ScopeRequirement);
+        Assert.Equal([PurchasingPermissionManifestV1.RequestsApprove], purpose.RequiredPermissions);
         var import = byId[PurchasingShellCapabilityProvider.InvoiceImportCapabilityId];
         var invoiceList = byId[PurchasingShellCapabilityProvider.InvoiceListCapabilityId];
         Assert.Equal(invoiceList.CapabilityId, import.ParentCapabilityId);

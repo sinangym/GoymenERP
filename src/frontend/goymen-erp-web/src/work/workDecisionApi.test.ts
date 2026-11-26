@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { decodeWorkDecisionPreview, sendWorkDecision, isWorkDecisionRequest } from './workDecisionApi'
+import { decodeWorkDecisionPreview, sendWorkDecision, isWorkDecisionRequest, isWorkDecisionKind, isSalesWorkDecisionKind, workDecisionReasonLimit } from './workDecisionApi'
 import { decodeDelegation, decodeDelegationPage, decodePeople } from './workDelegationApi'
 const company='aaaaaaaa-0000-4000-8000-000000000001', id='cccccccc-0000-4000-8000-000000000001'
 const kind='finance.cash-account.v1' as const
@@ -40,4 +40,24 @@ describe('WP8 bounded owner contracts',()=>{
   expect(decodePeople({companyId:company,kind,items:[{userId:id,displayName:'SENTETIK'}],hasMore:false},company,kind)).not.toBeNull()
   expect(decodePeople({companyId:id,kind,items:[],hasMore:false},company,kind)).toBeNull()
  })
+})
+
+it('accepts the native Purchasing purpose shape while preserving strict company/version and its required 4000 reason family', async () => {
+ const purchaseKind='purchasing.request.v1'
+ expect(isWorkDecisionKind(purchaseKind)).toBe(true)
+ expect(isSalesWorkDecisionKind(purchaseKind)).toBe(false)
+ expect(workDecisionReasonLimit(purchaseKind)).toBe(4000)
+ const value={...preview,kind:purchaseKind}
+ expect(decodeWorkDecisionPreview(value,company,purchaseKind,id)).not.toBeNull()
+ for(const delta of [{companyId:id},{itemId:company},{sourceVersion:'0'},{sourceVersion:'9223372036854775808'},{approvalReasonRequired:true},{extra:true}])
+  expect(decodeWorkDecisionPreview({...value,...delta},company,purchaseKind,id)).toBeNull()
+ expect(decodeWorkDecisionPreview({...value,pending:false},company,purchaseKind,id)).not.toBeNull()
+ const body={companyId:company,kind:purchaseKind,itemId:id,state:'Rejected',replayed:true,originalCorrelationId:'original'}
+ const fetch=vi.fn(async()=>new Response(JSON.stringify(body),{status:200,headers:{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}}))
+ vi.stubGlobal('fetch',fetch)
+ expect((await sendWorkDecision(company,purchaseKind,id,{...request,approve:false,reason:'Ret gerekçesi'},'original-key')).type).toBe('applied')
+ for(const delta of [{companyId:id},{kind},{itemId:company},{state:'Approved'},{replayed:false},{extra:true}]) {
+  fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,...delta}),{status:200,headers:{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}}))
+  expect((await sendWorkDecision(company,purchaseKind,id,{...request,approve:false,reason:'Ret gerekçesi'},'original-key')).type).toBe('unknown')
+ }
 })
