@@ -209,7 +209,7 @@ public sealed partial class SalesOrderUserCloseSqlServerRelationalAcceptanceTest
     {
         public Task<ReadResult<PartyAccountEligibility>> GetAuthorizedAsync(FinanceContext context, Guid partyId, Guid companyAccountId,
             CancellationToken cancellationToken) => Task.FromResult(new ReadResult<PartyAccountEligibility>(ReadOutcome.Found,
-                new(invoice.Header.PartyId, invoice.Header.CompanyAccountId, CompanyA, true, true)));
+                new(invoice.Header.PartyId, invoice.Header.CompanyAccountId, CompanyA, IsActive: true, IsPartyActive: true)));
     }
     private sealed class ClosureAdmissionAuthority : IFinanceInvoiceOpenItemAdmissionAuthorityV1
     {
