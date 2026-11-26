@@ -17,7 +17,7 @@ public sealed partial class AccountingInventoryCostStoreV1
         try { view = Decode<AccountingInventoryCostProposalV1>(row.ViewJson); source = Decode<AccountingInventoryCostSourceV1>(header.SourceJson); }
         catch (System.Text.Json.JsonException) { throw Refuse("inventory_cost_source_unavailable"); }
         var component = source.Components?.SingleOrDefault(x => x.ComponentKey == row.ComponentKey);
-        var status = row.Status switch { 1 => "AwaitingPreparation", 2 => "Prepared", 3 => "Posted", 4 => "NoCost", 5 => "AlreadyAccounted", 6 => "RoundedNoCost", _ => "" };
+        var status = row.Status switch { 1 => "AwaitingPreparation", 2 => "Prepared", 3 => "Posted", 4 => "NoCost", 5 => "AlreadyAccounted", 6 => "RoundedNoCost", 7 => "Stale", _ => "" };
         if (header.CompanyId != Company() || source.CompanyId != header.CompanyId || source.EventId != header.EventId
             || (int)source.Kind != header.Kind || source.InvoiceId != header.InvoiceId || source.InvoiceVersion != header.InvoiceVersion
             || source.AdmissionId != header.AdmissionId || source.SourcePayloadSha256 != header.PayloadHash
@@ -32,6 +32,28 @@ public sealed partial class AccountingInventoryCostStoreV1
             || view.ApprovedBy != row.ApprovedBy || view.JournalId != row.JournalId || view.CancellationId is not null
             || view.ReversalProposal is not null || view.ComponentCancellation is not null)
             throw Refuse("inventory_cost_source_unavailable");
+        if ((view.Status == "Stale") != (view.StaleClosure is not null)
+            || view.StaleClosure is { } closed && (closed.EventId == Guid.Empty || closed.PreparedBy != view.Preparation?.PreparedBy
+                || closed.PreparedVersion != view.Version - 1 || closed.ClosedAtUtc == default || closed.ClosedAtUtc.Offset != TimeSpan.Zero
+                || closed.ReasonCode != AccountingCostProposalStaleEventV1.ReasonCode || closed.ReasonText != AccountingCostProposalStaleEventV1.ReasonText
+                || string.IsNullOrWhiteSpace(closed.CorrelationId) || view.ApprovedBy is not null || view.JournalId is not null))
+            throw Refuse("inventory_cost_source_unavailable");
+        if (view.RenewedFrom is { } renewed)
+        {
+            var previousRow = await db.InventoryCostProposals.AsNoTracking().SingleOrDefaultAsync(x =>
+                x.Id == renewed.PreviousProposalId && x.Version == renewed.PreviousClosedVersion, token);
+            AccountingInventoryCostProposalV1? previous;
+            try { previous = previousRow is null ? null : Decode<AccountingInventoryCostProposalV1>(previousRow.ViewJson); }
+            catch (System.Text.Json.JsonException) { throw Refuse("inventory_cost_source_unavailable"); }
+            if (renewed.PreviousProposalId == view.ProposalId || renewed.ClosureEventId == Guid.Empty
+                || renewed.PreviousClosedVersion < 3 || renewed.PreviousClosedVersion >= view.Version
+                || previousRow?.Status != 7 || previousRow.CompanyId != view.CompanyId || previousRow.EventId != view.EventId
+                || previousRow.ComponentKey != row.ComponentKey || previous?.ProposalId != renewed.PreviousProposalId
+                || previous.CompanyId != view.CompanyId || previous.EventId != view.EventId || previous.Status != "Stale"
+                || previous.Version != renewed.PreviousClosedVersion || previous.StaleClosure?.EventId != renewed.ClosureEventId
+                || Encode(previous.Component) != Encode(view.Component))
+                throw Refuse("inventory_cost_source_unavailable");
+        }
         if (view.Preparation?.Rounding is { } rounding && (!AccountingInventoryCostRoundingV1Rules.TryResolve(component,
                 view.Preparation.CurrencyId, view.Preparation.MoneyProfileId, view.Preparation.MoneyProfileVersion,
                 view.Preparation.MoneyScale, out _, out var expectedRounding)
@@ -137,6 +159,7 @@ public sealed partial class AccountingInventoryCostStoreV1
 
     private async Task<AccountingInventoryCostProposalV1> CurrentState(AccountingInventoryCostProposalV1 view, CancellationToken token)
     {
+        if (view.Status == "Stale") return view;
         var cancelled = await Cancellation(view, token);
         if (cancelled is null) return view;
         if (view.Component.SalesPhysicalClaims is { Count: > 0 })

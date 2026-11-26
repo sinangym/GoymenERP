@@ -86,7 +86,9 @@ public sealed record AccountingInventoryCostProposalV1(Guid ProposalId, Guid Com
     Guid? ApprovedBy = null, DateTimeOffset? ApprovedAtUtc = null, Guid? JournalId = null,
     Guid? CancellationId = null, AccountingJournalReversalProposalViewV1? ReversalProposal = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? CurrentPostedJournalId = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] InventoryCostCancellationV1? ComponentCancellation = null)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] InventoryCostCancellationV1? ComponentCancellation = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AccountingCostProposalStaleClosureV1? StaleClosure = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AccountingCostProposalRenewalV1? RenewedFrom = null)
 {
     public string ExactTlAmount => AccountingInventoryCostAmountsV1.TryExactDecimal(Component.SignedTlAmount, 28, out var amount)
         ? amount.ToString("0.############################", System.Globalization.CultureInfo.InvariantCulture)

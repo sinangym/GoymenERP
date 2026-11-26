@@ -36,7 +36,7 @@ public sealed partial class WorkDbContext
         + " OR ([Kind] = 2 AND [Class] = 2 AND [ActorUserId] IS NOT NULL)"
         + " OR ([Kind] = 3 AND [Class] = 1 AND [ActorUserId] IS NULL)"
         // D9 (WP2): the event-derived kinds moved from work.Notifications are "özet" (AI-D29); WP2's approval kinds are "şimdi".
-        + " OR ([Kind] IN (4, 5) AND [Class] = 2 AND [ActorUserId] IS NULL AND [RecordType] IS NULL AND [RecordId] IS NULL)"
+        + " OR ([Kind] IN (4, 5, 10) AND [Class] = 2 AND [ActorUserId] IS NULL AND [RecordType] IS NULL AND [RecordId] IS NULL)"
         + " OR ([Kind] IN (6, 7, 8, 9) AND [Class] = 1 AND [ActorUserId] IS NULL AND [RecordType] IS NULL AND [RecordId] IS NULL))"
         + " AND (([RecordType] IS NULL AND [RecordId] IS NULL) OR ([RecordType] IN (" + RecordTypeList + ") AND [RecordId] IS NOT NULL"
         + " AND [RecordId] <> " + EmptyGuid + "))";
@@ -47,18 +47,21 @@ public sealed partial class WorkDbContext
     /// IS NOT NULL so an unknown never passes the check.
     /// </summary>
     internal const string InboxNotificationEventCheck =
-        "([Kind] IN (4, 5) AND [SourceId] = [Id] AND [SourceName] IS NOT NULL AND LEN([SourceName]) > 0"
+        "([Kind] IN (4, 5, 10) AND [SourceId] = [Id] AND [SourceName] IS NOT NULL AND LEN([SourceName]) > 0"
         + " AND [EventId] IS NOT NULL AND [EventId] <> " + EmptyGuid
         + " AND [SourceEntityId] IS NOT NULL AND [SourceEntityId] <> " + EmptyGuid
         + " AND [SourceVersion] IS NOT NULL AND LEN([SourceVersion]) > 0 AND [ReasonCode] IS NOT NULL AND LEN([ReasonCode]) > 0"
         + " AND [ReasonText] IS NOT NULL AND LEN([ReasonText]) > 0 AND [OccurredAtUtc] IS NOT NULL"
-        + " AND (([SalesOrderId] IS NOT NULL AND [SalesOrderLineId] IS NOT NULL AND [ObservedSalesOrderVersion] IS NOT NULL"
+        + " AND (([Kind] IN (4, 5) AND [SalesOrderId] IS NOT NULL AND [SalesOrderLineId] IS NOT NULL AND [ObservedSalesOrderVersion] IS NOT NULL"
         + " AND [SalesOrderId] <> " + EmptyGuid + " AND [SalesOrderLineId] <> " + EmptyGuid + " AND [ObservedSalesOrderVersion] >= 1"
         + " AND [PurchaseOrderId] IS NULL AND [PurchaseOrderLineId] IS NULL AND [ObservedPurchaseOrderVersion] IS NULL)"
         + " OR ([Kind] = 5 AND [PurchaseOrderId] IS NOT NULL AND [PurchaseOrderLineId] IS NOT NULL AND [ObservedPurchaseOrderVersion] IS NOT NULL"
         + " AND [PurchaseOrderId] <> " + EmptyGuid + " AND [PurchaseOrderLineId] <> " + EmptyGuid + " AND [ObservedPurchaseOrderVersion] >= 1"
-        + " AND [SalesOrderId] IS NULL AND [SalesOrderLineId] IS NULL AND [ObservedSalesOrderVersion] IS NULL)))"
-        + " OR ([Kind] NOT IN (4, 5) AND [SourceName] IS NULL AND [EventId] IS NULL AND [SourceEntityId] IS NULL AND [SourceVersion] IS NULL"
+        + " AND [SalesOrderId] IS NULL AND [SalesOrderLineId] IS NULL AND [ObservedSalesOrderVersion] IS NULL)"
+        + " OR ([Kind] = 10 AND [SourceName] = 'accounting.cost-proposals' AND [ReasonCode] = 'inventory_cost_preparation_stale'"
+        + " AND [SalesOrderId] IS NULL AND [SalesOrderLineId] IS NULL AND [ObservedSalesOrderVersion] IS NULL"
+        + " AND [PurchaseOrderId] IS NULL AND [PurchaseOrderLineId] IS NULL AND [ObservedPurchaseOrderVersion] IS NULL)))"
+        + " OR ([Kind] NOT IN (4, 5, 10) AND [SourceName] IS NULL AND [EventId] IS NULL AND [SourceEntityId] IS NULL AND [SourceVersion] IS NULL"
         + " AND [ReasonCode] IS NULL AND [ReasonText] IS NULL AND [OccurredAtUtc] IS NULL AND [SalesOrderId] IS NULL"
         + " AND [SalesOrderLineId] IS NULL AND [ObservedSalesOrderVersion] IS NULL AND [PurchaseOrderId] IS NULL"
         + " AND [PurchaseOrderLineId] IS NULL AND [ObservedPurchaseOrderVersion] IS NULL)";

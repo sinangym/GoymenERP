@@ -147,7 +147,8 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
         {
             Actor(actorId, metadata);
             var view = await Load(proposalId, kind, request.ExpectedVersion, cancellationToken);
-            if (view.Status is not ("AwaitingPreparation" or "Prepared")) throw Refuse("inventory_cost_not_preparable");
+            if (view.Status is not ("AwaitingPreparation" or "Prepared" or "Stale")) throw Refuse("inventory_cost_not_preparable");
+            if (view.Status == "Stale") await RequireUnrenewedStale(view, cancellationToken);
             if (request.TransactionDate == default || string.IsNullOrWhiteSpace(request.Reason) || request.Reason != request.Reason.Trim()
                 || request.Reason.Length > 1000) throw Refuse("inventory_cost_request_invalid");
             await Period(request.PeriodId, request.AccountingDate, cancellationToken);
@@ -167,7 +168,11 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
                 moneyProfile.Profile.ProfileId, moneyProfile.Profile.Version, moneyProfile.Scale, classification,
                 new InvoiceLineCogsAccountV1(counter.Account.AccountId, counter.Code, counter.Name), plan.PackageId, plan.Version, plan.CatalogVersion,
                 plan.AccountPlanSourceVersion, plan.AccountsSourceSha256, actorId, clock.GetUtcNow(), request.Reason, rounding);
-            var result = view with { Version = checked(view.Version + 1), Status = "Prepared", Preparation = preparation };
+            var result = view with { Version = checked(view.Version + 1), Status = "Prepared", Preparation = preparation,
+                ProposalId = view.Status == "Stale" ? Guid.NewGuid() : view.ProposalId,
+                StaleClosure = null,
+                RenewedFrom = view.Status == "Stale"
+                    ? new(view.ProposalId, view.Version, view.StaleClosure!.EventId) : view.RenewedFrom };
             Add(result); Audit(result, metadata, "prepared", view);
             return result;
         }, cancellationToken);
@@ -190,7 +195,7 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
                 || plan.AccountPlanSourceVersion != prepared.AccountPlanSourceVersion || plan.AccountsSourceSha256 != prepared.AccountPlanSha256
                 || await TlCurrency(cancellationToken) != prepared.CurrencyId || moneyProfile.Profile.ProfileId != prepared.MoneyProfileId
                 || moneyProfile.Profile.Version != prepared.MoneyProfileVersion || moneyProfile.Scale != prepared.MoneyScale)
-                throw Refuse("inventory_cost_preparation_stale");
+                return CloseStale(view, metadata);
             decimal signed;
             if (prepared.Rounding is { } recordedRounding)
             {
@@ -256,7 +261,8 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
     {
         CompanyId = view.CompanyId, Id = view.ProposalId, Version = view.Version, EventId = view.EventId,
         ComponentKey = view.Component.ComponentKey, Status = view.Status switch
-        { "AwaitingPreparation" => 1, "Prepared" => 2, "Posted" => 3, "NoCost" => 4, "AlreadyAccounted" => 5, "RoundedNoCost" => 6, _ => throw Refuse("inventory_cost_state_invalid") },
+        { "AwaitingPreparation" => 1, "Prepared" => 2, "Posted" => 3, "NoCost" => 4, "AlreadyAccounted" => 5, "RoundedNoCost" => 6,
+            "Stale" => 7, _ => throw Refuse("inventory_cost_state_invalid") },
         PreparedBy = view.Preparation?.PreparedBy, ApprovedBy = view.ApprovedBy, PeriodId = view.Preparation?.PeriodId,
         JournalId = view.JournalId, ViewJson = Encode(view), RecordedAtUtc = clock.GetUtcNow(),
     });
@@ -303,7 +309,7 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
         "accounting.inventory-cost." + action + ".v1", "Accounting.InventoryCostProposal", view.ProposalId.ToString("D"), action,
         before?.Version, view.Version, system ? AuditActorTypes.System : AuditActorTypes.User,
         metadata.ActorId, metadata.PermissionCode, metadata.RoleCodes, before is null ? "{}" : Encode(before), Encode(view),
-        view.Preparation?.Reason ?? "Gerçek stok maliyeti muhasebe önerisi olarak alındı; yevmiye kaydı oluşturulmadı.",
+        view.StaleClosure?.ReasonText ?? view.Preparation?.Reason ?? "Gerçek stok maliyeti muhasebe önerisi olarak alındı; yevmiye kaydı oluşturulmadı.",
         Encode(new { view.EventId, view.InvoiceId, view.Component.SourceProofSha256 }), AuditAiInvolvement.None, null,
         metadata.SourceChannel, metadata.ClientIpAddress, metadata.UserAgent, metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
     private Guid Company() => company.IsResolved && company.CompanyId != Guid.Empty ? company.CompanyId : throw Refuse(AccountingStoreCodes.CompanyContextMismatch);

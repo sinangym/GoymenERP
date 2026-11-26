@@ -22,6 +22,8 @@ internal sealed class AccountingInventoryCostProposalRow : IAccountingTenantRow
     public Guid CompanyId { get; set; }
     public Guid Id { get; set; }
     public long Version { get; set; }
+    /// <summary>Committed-horizon cursor of the immutable proposal version when it closes stale (YOL-D40).</summary>
+    public ulong OutboxPosition { get; set; }
     public Guid EventId { get; set; }
     public string ComponentKey { get; set; } = "";
     public int Status { get; set; }
@@ -35,7 +37,7 @@ internal sealed class AccountingInventoryCostProposalRow : IAccountingTenantRow
 
 public sealed partial class AccountingDbContext
 {
-    internal const string InventoryCostProposalStateCheck = "([Status] IN (1,4,5) AND [Version] = 1 AND [PreparedBy] IS NULL AND [ApprovedBy] IS NULL AND [PeriodId] IS NULL AND [JournalId] IS NULL) OR ([Status] = 2 AND [Version] > 1 AND [PreparedBy] IS NOT NULL AND [PeriodId] IS NOT NULL AND [ApprovedBy] IS NULL AND [JournalId] IS NULL) OR ([Status] IN (3,6) AND [Version] > 2 AND [PreparedBy] IS NOT NULL AND [PeriodId] IS NOT NULL AND [ApprovedBy] IS NOT NULL AND (([Status] = 3 AND [JournalId] IS NOT NULL) OR ([Status] = 6 AND [JournalId] IS NULL)) AND [ApprovedBy] <> [PreparedBy])";
+    internal const string InventoryCostProposalStateCheck = "([Status] IN (1,4,5) AND [Version] = 1 AND [PreparedBy] IS NULL AND [ApprovedBy] IS NULL AND [PeriodId] IS NULL AND [JournalId] IS NULL) OR ([Status] = 2 AND [Version] > 1 AND [PreparedBy] IS NOT NULL AND [PeriodId] IS NOT NULL AND [ApprovedBy] IS NULL AND [JournalId] IS NULL) OR ([Status] IN (3,6) AND [Version] > 2 AND [PreparedBy] IS NOT NULL AND [PeriodId] IS NOT NULL AND [ApprovedBy] IS NOT NULL AND (([Status] = 3 AND [JournalId] IS NOT NULL) OR ([Status] = 6 AND [JournalId] IS NULL)) AND [ApprovedBy] <> [PreparedBy]) OR ([Status] = 7 AND [Version] > 2 AND [PreparedBy] IS NOT NULL AND [PeriodId] IS NOT NULL AND [ApprovedBy] IS NULL AND [JournalId] IS NULL)";
     internal DbSet<AccountingInventoryCostSourceRow> InventoryCostSources => Set<AccountingInventoryCostSourceRow>();
     internal DbSet<AccountingInventoryCostProposalRow> InventoryCostProposals => Set<AccountingInventoryCostProposalRow>();
 
@@ -63,6 +65,10 @@ public sealed partial class AccountingDbContext
             table.HasCheckConstraint("CK_InventoryCostProposals_Actors", "([PreparedBy] IS NULL OR [PreparedBy] <> '00000000-0000-0000-0000-000000000000') AND ([ApprovedBy] IS NULL OR [ApprovedBy] <> '00000000-0000-0000-0000-000000000000') AND ([PeriodId] IS NULL OR [PeriodId] <> '00000000-0000-0000-0000-000000000000') AND ([JournalId] IS NULL OR [JournalId] <> '00000000-0000-0000-0000-000000000000')");
         });
         proposal.HasKey(x => new { x.CompanyId, x.Id, x.Version });
+        proposal.Property(x => x.OutboxPosition).IsRowVersion().HasConversion<byte[]>();
+        proposal.HasIndex(x => new { x.CompanyId, x.OutboxPosition });
+        proposal.HasIndex(x => new { x.CompanyId, x.Id }).IsUnique().HasFilter("[Status] = 7")
+            .HasDatabaseName("UX_InventoryCostProposals_StaleClosure");
         proposal.HasIndex(x => new { x.CompanyId, x.EventId, x.ComponentKey, x.Version }).IsUnique();
         proposal.HasIndex(x => new { x.CompanyId, x.JournalId }).IsUnique().HasFilter("[JournalId] IS NOT NULL");
         proposal.Property(x => x.ComponentKey).HasMaxLength(128).UseCollation(IdentityCollation);

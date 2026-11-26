@@ -93,6 +93,9 @@ public static class TrainCompletionHostComposition
         services.AddWorkOutboxEventSource<SalesOutboxEventSourceV1>(SalesOutboxContractV1.SourceName,
             SalesOutboxContractV1.Publishes.ToArray());
         services.AddWorkNotificationHostV1(InventoryOutboxContractV1.SourceName, AccountingPurchaseInvoiceFinalizedInboxV1.SourceName);
+        services.AddWorkOutboxEventSource<AccountingCostProposalStaleOutboxSourceV1>(AccountingCostProposalStaleEventV1.SourceName,
+            new WorkOutboxEventTypeV1(AccountingCostProposalStaleEventV1.EventType, 1));
+        services.AddAccountingCostProposalStaleNotificationHostV1();
         services.AddWorkInboxConsumer<InventoryPurchaseInvoiceCostInboxConsumerV1>(InventoryPurchaseInvoiceCostInboxV1.ConsumerName,
             InventoryPurchaseInvoiceCostInboxV1.Subscriptions.ToArray());
         services.AddWorkInboxConsumer<ManufacturingCostDifferenceInboxConsumerV1>(ManufacturingCostDifferenceInboxV1.ConsumerName,

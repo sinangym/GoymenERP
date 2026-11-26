@@ -80,6 +80,8 @@ public sealed class WorkNotificationStoreV1(IServiceScopeFactory scopes, ICompan
                         row.PurchaseOrderLineId = purchase.PurchaseOrderLineId;
                         row.ObservedPurchaseOrderVersion = purchase.ObservedOrderVersion;
                     }));
+            if (command.PreparedByUserId is { } preparer)
+                database.InboxNotifications.Add(Row(companyId, command, preparer, now, _ => { }));
             RequireOriginalCompany(companyId);
             await database.SaveChangesAsync(cancellationToken);
             RequireOriginalCompany(companyId);
@@ -127,6 +129,7 @@ public sealed class WorkNotificationStoreV1(IServiceScopeFactory scopes, ICompan
     {
         WorkNotificationKindV1.AllocationReleased => WorkInboxNotificationKindV1.AllocationReleased,
         WorkNotificationKindV1.PurchaseSupplyRevived => WorkInboxNotificationKindV1.PurchaseSupplyRevived,
+        WorkNotificationKindV1.AccountingCostProposalStale => WorkInboxNotificationKindV1.AccountingCostProposalStale,
         _ => throw new OutboxPermanentFailureException("notification_event_invalid", "The notification kind is unknown."),
     };
 
@@ -148,7 +151,8 @@ public sealed class WorkNotificationStoreV1(IServiceScopeFactory scopes, ICompan
     }
 
     private static readonly int[] EventKinds =
-        [(int)WorkInboxNotificationKindV1.AllocationReleased, (int)WorkInboxNotificationKindV1.PurchaseSupplyRevived];
+        [(int)WorkInboxNotificationKindV1.AllocationReleased, (int)WorkInboxNotificationKindV1.PurchaseSupplyRevived,
+         (int)WorkInboxNotificationKindV1.AccountingCostProposalStale];
 
     internal static IQueryable<WorkInboxNotificationRow> EventRows(WorkDbContext database) =>
         database.InboxNotifications.Where(row => EventKinds.Contains(row.Kind));
@@ -172,11 +176,7 @@ public sealed class WorkNotificationStoreV1(IServiceScopeFactory scopes, ICompan
         if (value is null || value.CompanyId == Guid.Empty || value.EventId == Guid.Empty || value.SourceEntityId == Guid.Empty
             || !WorkOutboxRegistrationNamesV1.IsValidName(value.SourceName)
             || value.SchemaVersion != 1
-            || (value.Kind == WorkNotificationKindV1.AllocationReleased
-                ? value.EventType != "inventory.future-allocation.released.v1" || value.Targets?.Count != 1 || value.PurchaseTarget is not null
-                : value.Kind != WorkNotificationKindV1.PurchaseSupplyRevived || value.EventType != "purchasing.order-line.revived.v1"
-                    || value.PurchaseTarget is not { PurchaseOrderId: var orderId, PurchaseOrderLineId: var lineId }
-                    || orderId == Guid.Empty || lineId == Guid.Empty || value.SourceEntityId != lineId)
+            || !ValidKindTarget(value)
             || !long.TryParse(value.SourceVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var version) || version < 1
             || value.SourceVersion != version.ToString(CultureInfo.InvariantCulture)
             || string.IsNullOrWhiteSpace(value.PayloadJson) || string.IsNullOrWhiteSpace(value.ReasonCode) || value.ReasonCode.Length > 64
@@ -187,6 +187,20 @@ public sealed class WorkNotificationStoreV1(IServiceScopeFactory scopes, ICompan
             || value.Targets.Distinct().Count() != value.Targets.Count)
             throw new OutboxPermanentFailureException("notification_event_invalid", "The notification event contract is invalid.");
     }
+
+    private static bool ValidKindTarget(DeliverWorkNotificationV1 value) => value.Kind switch
+    {
+        WorkNotificationKindV1.AllocationReleased => value.EventType == "inventory.future-allocation.released.v1"
+            && value.Targets?.Count == 1 && value.PurchaseTarget is null && value.PreparedByUserId is null,
+        WorkNotificationKindV1.PurchaseSupplyRevived => value.EventType == "purchasing.order-line.revived.v1"
+            && value.PreparedByUserId is null && value.PurchaseTarget is { } target && target.PurchaseOrderId != Guid.Empty
+            && target.PurchaseOrderLineId != Guid.Empty && value.SourceEntityId == target.PurchaseOrderLineId,
+        WorkNotificationKindV1.AccountingCostProposalStale => value.SourceName == "accounting.cost-proposals"
+            && value.EventType == "accounting.inventory-cost.proposal-stale.v1" && value.Targets?.Count == 0
+            && value.PurchaseTarget is null && value.PreparedByUserId is { } preparer && preparer != Guid.Empty
+            && value.ReasonCode == "inventory_cost_preparation_stale" && value.ReasonText == "Bayatladı",
+        _ => false,
+    };
 }
 
 public sealed class WorkNotificationReadV1(WorkDbContext database, ICompanyContext company, ICurrentUser user,
@@ -216,7 +230,8 @@ public sealed class WorkNotificationReadV1(WorkDbContext database, ICompanyConte
             where item.CompanyId == companyId && item.RecipientUserId == userId && (includePassive || passive == null)
             orderby item.RecordedAtUtc descending, item.Id
             select new WorkNotificationItemV1(item.Id, item.CompanyId,
-                item.Kind == (int)WorkInboxNotificationKindV1.AllocationReleased ? "allocation-released" : "purchase-supply-revived",
+                item.Kind == (int)WorkInboxNotificationKindV1.AllocationReleased ? "allocation-released"
+                    : item.Kind == (int)WorkInboxNotificationKindV1.PurchaseSupplyRevived ? "purchase-supply-revived" : "accounting-cost-proposal-stale",
                 item.SalesOrderId, item.SalesOrderLineId, item.SourceEntityId!.Value, item.SourceVersion!, item.ReasonCode!,
                 item.ReasonText!, item.OccurredAtUtc!.Value, item.RecordedAtUtc, passive == null ? null : passive.PassivatedAtUtc,
                 item.PurchaseOrderId, item.PurchaseOrderLineId)).Take(101).ToArrayAsync(cancellationToken);

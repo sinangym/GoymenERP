@@ -119,8 +119,7 @@ public sealed class AccountingInventoryCostServiceV1(IAccountingInventoryCostSto
         var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
         if (!scope.IsGranted || !scope.IsCompanyWide || !Current(companyId, actor, actorText)) return Denied<AccountingInventoryCostProposalV1>();
         AccountingCommandRecord Complete(object value) => new(command, keyHash, actorText, requestHash,
-            JsonSerializer.Serialize(new AccountingApiResult<AccountingInventoryCostProposalV1>(AccountingApiStatus.Ok,
-                (AccountingInventoryCostProposalV1)value, false, null), Json), correlation.CorrelationId);
+            JsonSerializer.Serialize(Result((AccountingInventoryCostProposalV1)value), Json), correlation.CorrelationId);
         var metadata = new AccountingCommandMetadata(actorText, permission, [.. scope.RoleCodes.Order(StringComparer.Ordinal)],
             correlation.CorrelationId, correlation.CausationId, key.Trim(), correlation.SourceChannel,
             correlation.ClientIpAddress, correlation.UserAgent, Complete);
@@ -148,7 +147,7 @@ public sealed class AccountingInventoryCostServiceV1(IAccountingInventoryCostSto
         try
         {
             var result = await write(actor, Fence, metadata);
-            return new(AccountingApiStatus.Ok, result, false, null);
+            return Result(result);
         }
         catch (DeniedException) { return Denied<AccountingInventoryCostProposalV1>(); }
         catch (AccountingVersionConflictException exception)
@@ -192,6 +191,10 @@ public sealed class AccountingInventoryCostServiceV1(IAccountingInventoryCostSto
         catch (SettingsPrerequisiteException)
         { return await Allowed(permission, companyId, actor, actorText, cancellationToken) ? new(AccountingApiStatus.Unavailable, null, false, null) : Denied<AccountingInventoryCostProposalV1>(); }
     }
+
+    private static AccountingApiResult<AccountingInventoryCostProposalV1> Result(AccountingInventoryCostProposalV1 value) =>
+        new(value.Status == "Stale" ? AccountingApiStatus.Conflict : AccountingApiStatus.Ok, value, false,
+            value.Status == "Stale" ? AccountingCostProposalStaleEventV1.ReasonCode : null);
 
     private async Task<bool> Allowed(string permission, Guid companyId, Guid actor, string actorText, CancellationToken cancellationToken)
     {

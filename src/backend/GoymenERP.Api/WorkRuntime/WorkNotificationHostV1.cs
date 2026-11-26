@@ -15,6 +15,11 @@ namespace GoymenERP.Api.WorkRuntime;
 
 public static class WorkNotificationHostV1
 {
+    public static IServiceCollection AddAccountingCostProposalStaleNotificationHostV1(this IServiceCollection services) =>
+        services.AddWorkInboxConsumer<AccountingCostProposalStaleNotificationConsumerV1>("work.accounting-cost-proposal-stale",
+            new WorkInboxSubscriptionV1(GoymenERP.Modules.Accounting.Application.AccountingCostProposalStaleEventV1.SourceName,
+                GoymenERP.Modules.Accounting.Application.AccountingCostProposalStaleEventV1.EventType, 1));
+
     /// <summary>Host composition only; caller registers Inventory's real committed-horizon source. No dispatcher activation.</summary>
     public static IServiceCollection AddWorkNotificationHostV1(this IServiceCollection services, string inventorySourceName, string purchasingSourceName)
     {

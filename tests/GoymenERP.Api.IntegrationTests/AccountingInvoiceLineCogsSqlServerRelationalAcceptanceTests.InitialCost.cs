@@ -60,7 +60,7 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
     }
 
     [SqlServerFact]
-    public async Task A_classification_approved_before_the_first_cost_journal_overrides_the_product_default_and_is_fenced_at_approval()
+    public async Task A_classification_changed_before_the_first_cost_journal_closes_the_older_preparation_stale_without_a_journal()
     {
         await using var run = await Run.Start(); var period = await run.Period(); var reader = new CostReader(run.Source.Facts);
         await using var scope = run.Open(); var store = Costs(scope, reader);
@@ -69,13 +69,24 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         await store.PrepareAsync(received.ProposalId, received.Kind, CostPreparation(period), Maker, Fence, Metadata(Maker));
         var correction = await scope.Store.PrepareAsync(run.Source.Facts, Request(run.Source.Facts, period), Maker, Fence, Metadata(Maker));
         await scope.Store.ApproveAsync(run.Source.Facts, correction.ProposalId, 1, Checker, Fence, Metadata(Checker, true));
-        var stale = await Assert.ThrowsAsync<AccountingStoreException>(() => store.ApproveAsync(received.ProposalId, received.Kind, 2, Checker, Fence, Metadata(Checker)));
-        Assert.Equal("inventory_cost_preparation_stale", stale.Code);
-        var reprepare = await store.PrepareAsync(received.ProposalId, received.Kind, CostPreparation(period) with { ExpectedVersion = 2 }, Maker, Fence, Metadata(Maker));
-        Assert.Equal("InvoiceLine", reprepare.Preparation!.Classification.Origin);
-        Assert.Equal(Next, reprepare.Preparation.Classification.AccountId);
-        await store.ApproveAsync(received.ProposalId, received.Kind, 3, Checker, Fence, Metadata(Checker));
+        var stale = await store.ApproveAsync(received.ProposalId, received.Kind, 2, Checker, Fence, Metadata(Checker));
+        Assert.Equal("Stale", stale.Status); Assert.Equal(3, stale.Version);
+        Assert.Equal("Bayatladı", stale.StaleClosure!.ReasonText);
+        Assert.Equal(Maker, stale.StaleClosure.PreparedBy);
+        var fresh = await store.PrepareAsync(received.ProposalId, received.Kind,
+            CostPreparation(period) with { ExpectedVersion = 3 }, Maker, Fence, Metadata(Maker));
+        Assert.NotEqual(stale.ProposalId, fresh.ProposalId); Assert.Equal(4, fresh.Version);
+        Assert.Null(fresh.StaleClosure); Assert.Equal(stale.ProposalId, fresh.RenewedFrom!.PreviousProposalId);
+        Assert.Equal(Next, fresh.Preparation!.Classification.AccountId);
+        await store.ApproveAsync(fresh.ProposalId, fresh.Kind, fresh.Version, Checker, Fence, Metadata(Checker));
         Assert.Equal(Next, (await scope.Db.JournalLines.AsNoTracking().SingleAsync(x => x.LineNumber == 1)).AccountId);
+        Assert.Equal(1, await run.Count("accounting.Journals"));
+        Assert.Equal(5, await run.Count("accounting.InventoryCostProposals"));
+        var list = await store.ListAsync(received.Kind);
+        Assert.Contains(list, row => row.ProposalId == stale.ProposalId && row.Status == "Stale" && row.Preparation == stale.Preparation);
+        Assert.Contains(list, row => row.ProposalId == fresh.ProposalId && row.Status == "Posted");
+        await Assert.ThrowsAsync<AccountingVersionConflictException>(() => store.PrepareAsync(stale.ProposalId, stale.Kind,
+            CostPreparation(period) with { ExpectedVersion = 3 }, Maker, Fence, Metadata(Maker)));
     }
 
     [SqlServerFact]

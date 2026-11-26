@@ -1,6 +1,6 @@
 namespace GoymenERP.Modules.Work.Domain;
 
-public enum WorkNotificationKindV1 { AllocationReleased = 1, PurchaseSupplyRevived = 2 }
+public enum WorkNotificationKindV1 { AllocationReleased = 1, PurchaseSupplyRevived = 2, AccountingCostProposalStale = 3 }
 public enum WorkNotificationRecipientOutcomeV1 { Found = 1, NotFound = 2, Unassigned = 3, Unavailable = 4 }
 public sealed record WorkNotificationRecipientV1(WorkNotificationRecipientOutcomeV1 Outcome, Guid CompanyId,
     Guid SalesOrderId, Guid SalesOrderLineId, Guid? UserId, long? ObservedSalesOrderVersion);
@@ -29,7 +29,8 @@ public interface IWorkPurchaseNotificationRecipientReaderV1
 public sealed record DeliverWorkNotificationV1(Guid CompanyId, string SourceName, Guid EventId, string EventType,
     int SchemaVersion, string PayloadJson, WorkNotificationKindV1 Kind, Guid SourceEntityId, string SourceVersion,
     string ReasonCode, string ReasonText, DateTimeOffset OccurredAtUtc, string CorrelationId, string? CausationId,
-    IReadOnlyList<WorkNotificationTargetV1> Targets, WorkPurchaseNotificationTargetV1? PurchaseTarget = null);
+    IReadOnlyList<WorkNotificationTargetV1> Targets, WorkPurchaseNotificationTargetV1? PurchaseTarget = null,
+    Guid? PreparedByUserId = null);
 public interface IWorkNotificationDeliveryV1
 {
     Task DeliverAsync(DeliverWorkNotificationV1 command, CancellationToken cancellationToken = default);

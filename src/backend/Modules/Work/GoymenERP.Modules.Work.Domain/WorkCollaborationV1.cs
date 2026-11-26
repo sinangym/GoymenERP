@@ -333,6 +333,8 @@ public enum WorkInboxNotificationKindV1
     ApprovalEscalated = 8,
     /// <summary>The approval has no eligible approver ("sahipsiz onay").</summary>
     ApprovalOrphaned = 9,
+    /// <summary>YOL-D40: an Accounting preparation closed stale; addressed to its recorded preparer.</summary>
+    AccountingCostProposalStale = 10,
 }
 
 public enum WorkInboxNotificationClassV1
@@ -355,6 +357,7 @@ public static class WorkInboxNotificationClassesV1
         WorkInboxNotificationKindV1.TaskAssigned => WorkInboxNotificationClassV1.Digest,
         WorkInboxNotificationKindV1.AllocationReleased => WorkInboxNotificationClassV1.Digest,
         WorkInboxNotificationKindV1.PurchaseSupplyRevived => WorkInboxNotificationClassV1.Digest,
+        WorkInboxNotificationKindV1.AccountingCostProposalStale => WorkInboxNotificationClassV1.Digest,
         WorkInboxNotificationKindV1.ApprovalWaiting => WorkInboxNotificationClassV1.Now,
         WorkInboxNotificationKindV1.ApprovalReminder => WorkInboxNotificationClassV1.Now,
         WorkInboxNotificationKindV1.ApprovalEscalated => WorkInboxNotificationClassV1.Now,
@@ -369,6 +372,7 @@ public static class WorkInboxNotificationClassesV1
         WorkInboxNotificationKindV1.TaskOverdue => "task-overdue",
         WorkInboxNotificationKindV1.AllocationReleased => "allocation-released",
         WorkInboxNotificationKindV1.PurchaseSupplyRevived => "purchase-supply-revived",
+        WorkInboxNotificationKindV1.AccountingCostProposalStale => "accounting-cost-proposal-stale",
         WorkInboxNotificationKindV1.ApprovalWaiting => "approval-waiting",
         WorkInboxNotificationKindV1.ApprovalReminder => "approval-reminder",
         WorkInboxNotificationKindV1.ApprovalEscalated => "approval-escalated",

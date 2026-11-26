@@ -77,23 +77,26 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
     }
 
     [SqlServerFact]
-    public async Task Revoked_authority_rolls_back_a_rounded_zero_approval_and_a_changed_money_profile_requires_a_new_preparation()
+    public async Task Revoked_authority_rolls_back_a_rounded_zero_approval_and_a_changed_money_profile_closes_the_preparation_stale()
     {
         await using var run = await Run.Start(); var period = await run.Period(); var profiles = new MutableCostProfiles();
         var reader = new RoundedCostReader(run.Source.Facts, new("1", "250"));
         await using var scope = run.Open(); var store = Costs(scope, reader, profiles); await store.AcceptAsync(reader.Envelope);
         var source = Assert.Single(await store.ListAsync(AccountingInventoryCostKindV1.SalesInvoicedShipment));
         await store.PrepareAsync(source.ProposalId, source.Kind, CostPreparation(period), Maker, Fence, Metadata(Maker));
-        profiles.Version = 2;
-        Assert.Equal("inventory_cost_preparation_stale", (await Assert.ThrowsAsync<AccountingStoreException>(() =>
-            store.ApproveAsync(source.ProposalId, source.Kind, 2, Checker, Fence, Metadata(Checker)))).Code);
-        profiles.Version = 1;
         var auditBefore = await run.Count("audit.AuditEvents");
         Task RevokeAfterAppend(CancellationToken _) => scope.Db.ChangeTracker.Entries<AccountingInventoryCostProposalRow>().Any(x => x.Entity.Status == 6)
             ? throw new InvalidOperationException("SENTETIK checker authority lost after append") : Task.CompletedTask;
         await Assert.ThrowsAsync<InvalidOperationException>(() => store.ApproveAsync(source.ProposalId, source.Kind, 2, Checker, RevokeAfterAppend, Metadata(Checker)));
         Assert.Equal(2, await run.Count("accounting.InventoryCostProposals"));
         Assert.Equal(auditBefore, await run.Count("audit.AuditEvents")); Assert.Equal(0, await run.Count("accounting.Journals"));
+        profiles.Version = 2;
+        var stale = await store.ApproveAsync(source.ProposalId, source.Kind, 2, Checker, Fence, Metadata(Checker));
+        Assert.Equal("Stale", stale.Status); Assert.Equal(3, stale.Version);
+        Assert.Equal(Maker, stale.StaleClosure!.PreparedBy);
+        Assert.Equal(3, await run.Count("accounting.InventoryCostProposals"));
+        Assert.Equal(auditBefore + 1, await run.Count("audit.AuditEvents"));
+        Assert.Equal(0, await run.Count("accounting.Journals"));
     }
 
     [SqlServerFact]
@@ -115,11 +118,10 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         Assert.Equal(2, prepared.Preparation.MoneyProfileVersion);
         Assert.Equal(profiles.CurrentId, prepared.Preparation.MoneyProfileId); Assert.Equal(3, prepared.Preparation.MoneyScale);
         profiles.Version = 3;
-        Assert.Equal("inventory_cost_preparation_stale", (await Assert.ThrowsAsync<AccountingStoreException>(() =>
-            store.ApproveAsync(source.ProposalId, source.Kind, 2, Checker, Fence, Metadata(Checker)))).Code);
-        profiles.Version = 2;
-        var approved = await store.ApproveAsync(source.ProposalId, source.Kind, 2, Checker, Fence, Metadata(Checker));
-        Assert.Equal("RoundedNoCost", approved.Status); Assert.Equal(0, await run.Count("accounting.Journals"));
+        var stale = await store.ApproveAsync(source.ProposalId, source.Kind, 2, Checker, Fence, Metadata(Checker));
+        Assert.Equal("Stale", stale.Status);
+        Assert.Equal(rounding, stale.Preparation!.Rounding);
+        Assert.Equal(0, await run.Count("accounting.Journals"));
     }
 
     [SqlServerFact]
