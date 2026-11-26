@@ -58,6 +58,12 @@ public sealed class LogisticsPersistenceModelTests
             && check.Sql.Contains("[Loaded] <= [Instructed]+[ApprovedPlanExcess] AND [Shipped] <= [Loaded] AND [Delivered] <= [Shipped]", StringComparison.Ordinal));
         var shares = designModel.FindEntityType(typeof(LoadingShareRow))!;
         Assert.True(shares.GetIndexes().Single(index => index.GetDatabaseName() == "UX_LoadingShares_ShareId").IsUnique);
+        var companyShare = shares.GetIndexes().Single(index => index.GetDatabaseName() == "UX_LoadingShares_CompanyId_ShareId");
+        Assert.True(companyShare.IsUnique);
+        Assert.Equal(["CompanyId", "ShareId"], companyShare.Properties.Select(property => property.Name).ToArray());
+        Assert.Null(companyShare.GetFilter()); // Cancelled instructions keep reserving the identity (LOJ-D21).
+        Assert.Contains(shares.GetKeys(), key => key.Properties.Select(property => property.Name)
+            .SequenceEqual(["CompanyId", "InstructionId", "ShareId"])); // PlanExcess composite FK remains valid.
         Assert.Equal(3, shares.FindProperty(nameof(LoadingShareRow.Quantity))!.GetScale());
         var instructions = designModel.FindEntityType(typeof(LoadingInstructionRow))!;
         Assert.True(instructions.FindProperty(nameof(LoadingInstructionRow.Version))!.IsConcurrencyToken);

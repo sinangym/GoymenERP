@@ -207,6 +207,9 @@ public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbConte
         // SAT-D216: the recording actor, compared ordinally by Sales (binary collation); null only for pre-column shares.
         entity.Property(x => x.RecordedBy).HasMaxLength(128).UseCollation(IdentityCollation);
         entity.HasIndex(x => new { x.CompanyId, x.InstructionId, x.ShareId }).IsUnique().HasDatabaseName("UX_LoadingShares_ShareId");
+        // LOJ-D21: retained shares, including cancelled instructions, reserve their identity for this company.
+        // Keep the instruction-scoped index above: PlanExcess uses its composite principal key.
+        entity.HasIndex(x => new { x.CompanyId, x.ShareId }).IsUnique().HasDatabaseName("UX_LoadingShares_CompanyId_ShareId");
         entity.Property(x => x.Quantity).HasPrecision(18, 3);
         entity.Property(x => x.QuantityKg).HasPrecision(18, 3);
         entity.HasOne<LoadingInstructionRow>().WithMany()

@@ -386,6 +386,7 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
         var now = timeProvider.GetUtcNow();
         // The domain decides; a refusal leaves the tracked rows untouched (nothing below has run).
         mutate(instruction, now);
+        await RequireNewShareIdentitiesAsync(companyId, instruction.Shares.Skip(sharesBefore), cancellationToken);
         await AppendPlanExcessUsesAsync(companyId, instruction, lineRows, instruction.Shares.Skip(sharesBefore).ToArray(),
             planExcessUses, actorId, envelope.CorrelationId, now, cancellationToken);
         var weighingAdded = weighingBefore is null && instruction.Weighing is not null;
@@ -1492,6 +1493,14 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
         {
             dbContext.ChangeTracker.Clear();
             throw Refused(LogisticsStoreCodes.ConcurrentChange, "Aggregate yazma yarışı kaybedildi; hiçbir şey kaydedilmedi.", exception);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 } sql
+            && sql.Message.Contains("'UX_LoadingShares_CompanyId_ShareId'", StringComparison.Ordinal))
+        {
+            // LOJ-D21: the losing transaction writes no share/attempt/audit/outbox. The existing service records
+            // DuplicateShareId as its terminal refusal after this transaction has unwound.
+            dbContext.ChangeTracker.Clear();
+            throw new LogisticsRuleException(LogisticsRuleCodes.DuplicateShareId, "Bu hareket payı kimliği aynı şirkette zaten kayıtlı.");
         }
         catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
