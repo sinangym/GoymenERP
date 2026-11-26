@@ -1,5 +1,5 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
   "main_commit": "ddc6cba4e0e172cca60a2dc3d4e339972a08e5f6",
   "canonical_backlog": "docs/backlog/DELIVERY_BACKLOG_v1.json",
@@ -9,17 +9,19 @@
   "coordination": {
     "coordinator": "Mevcut CODEX-ORCHESTRATOR; yeni servis/ajan kurulmadı",
     "backend": "Codex",
-    "frontend": "Claude Code",
+    "frontend": "Codex; Sinan 26 Kasım açık geçici sahiplik devri, Claude kapasitesi yokken",
     "business_acceptance": "Sinan / ChatGPT spec; mali müşavir gerekli yerde",
     "leases": "Her pakette dosya listesi ve branch/head lease yazılmadan ikinci yazar yok; bu plan aktif görevlendirme değildir.",
     "migration_sequence": [
-      "Work: WP3 → WP8 → YOL-D40 bildirim migration (tek Work yazarı)",
+      "Work: WP3 → WP8 → YOL-D40; dependency edges enforce the same single-writer order",
       "Accounting: YOL-D40 → sınıflama/düzeltme (muhasebe şema lease sırasıyla)",
       "AI ledger: ayrı AI şeması; C1 → C2/C3; Work snapshot değiştirmez",
       "Inventory/Manufacturing: adet zinciri koordineli; yeni THROW envanterden",
       "Finance: kredi/devir işleri aynı şema için sıralı"
     ],
-    "heavy_checks": "Tek ağır iş kilidi ve mevcut resource gate; pin/tren kapanışı; yeni watcher/servis yok"
+    "heavy_checks": "Tek ağır iş kilidi ve mevcut resource gate; pin/tren kapanışı; yeni watcher/servis yok",
+    "active_branch": "codex/erp-completion-20261126",
+    "shared_plan": "Bu JSON ve aynı dal/head üzerindeki MD; ikinci plan yok."
   },
   "packages": [
     {
@@ -35,7 +37,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex belge/kaynak eşliği; atama Sinan",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/IErpAuthorityRevalidationService.cs",
         "src/frontend/goymen-erp-web/src/identity/AccessGrantPanel.tsx",
@@ -73,14 +75,23 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex belge/kaynak eşliği; atama Sinan",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/IErpAuthorityRevalidationService.cs",
+        "src/frontend/goymen-erp-web/src/identity/AccessGrantPanel.test.tsx",
+        "src/frontend/goymen-erp-web/src/identity/AccessGrantPanel.tsx",
+        "tests/GoymenERP.Identity.UnitTests/ErpAuthorityRevalidationServiceTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "W1-YETKI/ROLE-UX",
       "backlog_parent": "W1-YETKI",
       "title": "Şirket ve görev şablonuyla sade kullanıcı yönetimi",
       "group": "FIRST_USE",
-      "status": "HUMAN_ACTIVATION_REQUIRED",
+      "status": "SOURCE_REVIEW_REQUIRED",
       "priority": "P0",
       "risk": "K3",
       "scope": "Mevcut grant talebi üzerine şirket/rol şablonu önizlemesi; çok rol birleşimi, hassas veri ve onay etkisi. Gerçek atamayı mevcut komut yürütür.",
@@ -88,7 +99,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/IErpAuthorityRevalidationService.cs",
         "src/frontend/goymen-erp-web/src/identity/AccessGrantPanel.tsx",
@@ -127,18 +138,29 @@
         "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
       ],
       "business_acceptance": [
-        "İki şirketli çift rol kullanıcısı üçüncü şirkete erişemez; kendi kaydına onay veremez; ROL-D17/D18 istisnaları korunur."
+        "İki şirketli çift rol kullanıcısı üçüncü şirkete erişemez; kendi kaydına onay veremez; ROL-D17/D18 istisnaları korunur.",
+        "Erişim iptali API/UI/rapor/dışa aktarım/Work/AI ve zamanlı görevde tekrar kontrol edilir; tesis/lokasyon yalnız backend gerçekten uygularsa sunulur."
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/IErpAuthorityRevalidationService.cs",
+        "src/frontend/goymen-erp-web/src/identity/AccessGrantPanel.test.tsx",
+        "src/frontend/goymen-erp-web/src/identity/AccessGrantPanel.tsx",
+        "tests/GoymenERP.Identity.UnitTests/ErpAuthorityRevalidationServiceTests.cs"
+      ],
+      "change_files": [],
+      "activation_status": "HUMAN_ACTIVATION_REQUIRED"
     },
     {
       "id": "W1-ORG/BOOTSTRAP",
       "backlog_parent": "W1-ORG",
       "title": "İlk kullanım kurulum ve readiness",
       "group": "FIRST_USE",
-      "status": "HUMAN_ACTIVATION_REQUIRED",
+      "status": "SOURCE_REVIEW_REQUIRED",
       "priority": "P0",
       "risk": "K3",
       "scope": "Üç şirket, ilk yönetici, çalışma takvimi, ürün runtime, outbox ve muhasebe kabul kapılarının mevcut kurulum yolunu izole ortamda doğrula; eksikleri salt okunur readiness de göster.",
@@ -146,7 +168,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.cs",
         "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/IErpAuthorityRevalidationService.cs",
@@ -186,7 +208,17 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/IErpAuthorityRevalidationService.cs",
+        "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.cs",
+        "tests/GoymenERP.Api.IntegrationTests/CounterpartyCompanyScopedIdempotencySqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Identity.UnitTests/ErpAuthorityRevalidationServiceTests.cs"
+      ],
+      "change_files": [],
+      "activation_status": "HUMAN_ACTIVATION_REQUIRED"
     },
     {
       "id": "W1-CARI/QUICK-CREATE",
@@ -201,7 +233,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Claude ekran; Codex mevcut owner sözleşmesi",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.cs",
         "src/frontend/goymen-erp-web/src/shell/StateBlock.tsx",
@@ -232,26 +264,36 @@
         "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
       ],
       "business_acceptance": [
-        "Aynı VKN/unvanda mükerrer yaratma yok; yetki yoksa mevcut yetkiliye talep; eksik kimlikle resmi işlem veya ödeme açılmaz."
+        "Aynı VKN/unvanda mükerrer yaratma yok; yetki yoksa mevcut yetkiliye talep; eksik kimlikle resmi işlem veya ödeme açılmaz.",
+        "Alış, satış, finans ve gelen belge giriş noktaları mevcut owner servisini kullanır; yetkisiz kullanıcı aktif kart yaratmaz."
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Claude ekran; Codex mevcut owner sözleşmesi",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.cs",
+        "src/frontend/goymen-erp-web/src/shell/StateBlock.test.tsx",
+        "src/frontend/goymen-erp-web/src/shell/StateBlock.tsx",
+        "tests/GoymenERP.Api.IntegrationTests/CounterpartyCompanyScopedIdempotencySqlServerRelationalAcceptanceTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "W1-URUN/UNIT-SCOPE",
       "backlog_parent": "W1-URUN",
       "title": "Çelik dışı mal/hizmet birim kapsamı",
       "group": "FIRST_USE",
-      "status": "DECISION_REQUIRED",
+      "status": "SOURCE_REVIEW_REQUIRED",
       "priority": "P0",
       "risk": "K3",
-      "scope": "Çelik kg/adet golden larını koru; sarf/motor/hizmet örneklerinde mevcut unit ve role desteğini doğrula. Desteklenmeyen aile için yalnız gerekli genişletmeyi planla.",
+      "scope": "Çelik kg/adet golden larını koru; sarf/motor/hizmet örneklerinde mevcut unit ve role desteğini doğrula. Desteklenmeyen aile için yalnız gerekli genişletmeyi planla. Yön cevaplıdır: aile bazlı kg/ton/adet/metre/litre/takım/set/saat/gün/hizmet uygunluğu; yalnız tanımlı teknik dönüşüm. Gerçek aile/birim verisi ve katsayıları ayrı kurulum girdisidir.",
       "exclusions": [
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Domain/Balances/StockLedger.cs",
         "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsReferenceListAdministration.cs",
@@ -288,14 +330,23 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Domain/Balances/StockLedger.cs",
+        "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsReferenceListAdministration.cs",
+        "tests/GoymenERP.Api.IntegrationTests/SettingsReferenceListSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Inventory.UnitTests/StockLedgerTests.PieceCounts.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "W2-SATINALMA/MULTILINE",
       "backlog_parent": "W2-SATINALMA",
       "title": "Mevcut çok satırlı alışın ekran bağlantısı",
       "group": "FIRST_USE",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_IMPLEMENTED_LOCAL",
       "priority": "P0",
       "risk": "K2",
       "scope": "CreateOrderAsync Lines listesini mevcut alanlarla ekrandan doldur; talep kaynaklarını koru. Ayrı mal/hizmet aggregate larını yeni karma motorla birleştirme.",
@@ -303,7 +354,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Claude frontend; Codex mevcut API teyidi",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchasingService.cs",
         "src/frontend/goymen-erp-web/src/shell/StateBlock.tsx",
@@ -332,14 +383,43 @@
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
         "K3 mutation/migration: gerçek SQL; ilgili UI: gerçek owner API ile tarayıcı ve erişim iptali.",
-        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
+        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı.",
+        "Birden çok ürün/sürüm/birim/miktar/fiyat aynen tek owner komutuna gider; tarayıcıda tutar hesabı yok.",
+        "Unknown sonuçta bütün satırlar, kimlikler ve anahtar donmuş kalır; eksik editör satırı sessizce atılmaz; eklenen satırın tarih/para bağlamı değişmez."
       ],
       "business_acceptance": [
         "Aynı para biriminde üç ürün satırı ve iki kısmi kabul/fatura; gerekli belge onayı; satırların kaybolmaması."
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Claude frontend; Codex mevcut API teyidi",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchasingService.cs",
+        "src/frontend/goymen-erp-web/src/shell/StateBlock.test.tsx",
+        "src/frontend/goymen-erp-web/src/shell/StateBlock.tsx",
+        "tests/GoymenERP.Purchasing.UnitTests/PurchasingServiceTests.cs"
+      ],
+      "change_files": [
+        "src/frontend/goymen-erp-web/src/purchasing/PurchaseOrderCreatePage.tsx",
+        "src/frontend/goymen-erp-web/src/purchasing/purchasingText.ts",
+        "src/frontend/goymen-erp-web/src/purchasing/PurchaseOrderCreatePage.test.tsx"
+      ],
+      "execution": {
+        "source_commit": "c98ede21d6792d8307eed98ca29a060d7cc029bf",
+        "reuse": "Existing owner commands/transaction/fixture and React field components",
+        "token_consumption": "UNKNOWN; client has no per-package counter",
+        "development_duration": "NOT_SEPARATELY_MEASURED; sequential shared session",
+        "sql": "NOT_RUN",
+        "browser": "NOT_RUN",
+        "hosted_ci": "NOT_RUN",
+        "independent_review": "PENDING",
+        "integration_pins": "DEFERRED_TO_TRAIN_CLOSE",
+        "checks": [
+          "PurchaseOrderCreatePage: 16 passed; combined affected frontend: 323 passed; TypeScript exit 0; lint exit 0 (warnings present)"
+        ]
+      }
     },
     {
       "id": "W2-SATINALMA/MIXED-MIN",
@@ -354,7 +434,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchasingService.cs",
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchaseIncomingInvoiceWorkflow.cs",
@@ -395,7 +475,18 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchaseIncomingInvoiceWorkflow.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchasingService.cs",
+        "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsReferenceListAdministration.cs",
+        "tests/GoymenERP.Api.IntegrationTests/SettingsReferenceListSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Purchasing.UnitTests/PurchaseIncomingInvoiceWorkflowTests.cs",
+        "tests/GoymenERP.Purchasing.UnitTests/PurchasingServiceTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "W2-SATINALMA/NOPO-MIN",
@@ -410,7 +501,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchaseIncomingInvoiceWorkflow.cs",
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchaseInvoiceImportAdmission.cs",
@@ -453,7 +544,20 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Application/DocumentService.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemAdmissionService.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchaseIncomingInvoiceWorkflow.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchaseInvoiceImportAdmission.cs",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Documents.UnitTests/DocumentServiceTests.cs",
+        "tests/GoymenERP.Purchasing.UnitTests/PurchaseIncomingInvoiceWorkflowTests.cs",
+        "tests/GoymenERP.Purchasing.UnitTests/PurchaseInvoiceImportAdmissionTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "W4-MUHASEBE/CLASSIFY-MIN",
@@ -468,7 +572,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/NormalJournalDraftLifecycleV1.cs",
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Domain/Balances/StockLedger.cs",
@@ -510,7 +614,18 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/NormalJournalDraftLifecycleV1.cs",
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Domain/Balances/StockLedger.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchaseIncomingInvoiceWorkflow.cs",
+        "tests/GoymenERP.Accounting.UnitTests/NormalJournalDraftLifecycleV1Tests.cs",
+        "tests/GoymenERP.Inventory.UnitTests/StockLedgerTests.PieceCounts.cs",
+        "tests/GoymenERP.Purchasing.UnitTests/PurchaseIncomingInvoiceWorkflowTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "W4-MUHASEBE/CORRECTION-MIN",
@@ -525,7 +640,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/NormalJournalDraftLifecycleV1.cs",
         "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/AccountingJournalReversalLifecycleV1.cs"
@@ -564,7 +679,16 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/AccountingJournalReversalLifecycleV1.cs",
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/NormalJournalDraftLifecycleV1.cs",
+        "tests/GoymenERP.Accounting.UnitTests/AccountingJournalReversalLifecycleV1Tests.cs",
+        "tests/GoymenERP.Accounting.UnitTests/NormalJournalDraftLifecycleV1Tests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "W4-FINANS/EXPENSE-CATALOG",
@@ -579,7 +703,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsReferenceListAdministration.cs",
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ExpensePaymentService.cs",
@@ -592,7 +716,8 @@
       ],
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
-        "Host IFinanceExpenseItemCatalog için SingleExpenseItemCatalog kaydediyor; hizmet/masraf tip listeleri KIM-D49 ile zaten açılmıştır."
+        "Host IFinanceExpenseItemCatalog için SingleExpenseItemCatalog kaydediyor; hizmet/masraf tip listeleri KIM-D49 ile zaten açılmıştır.",
+        "Settings katalog portunu bağlamak hesap eşlemesini beklemez; fiş üretimi ayrı eşleme kapısındadır."
       ],
       "decisions": [
         "FNS-D51",
@@ -600,9 +725,7 @@
         "ALS-D80"
       ],
       "depends_on": [],
-      "open_decisions": [
-        "Q-MAPPING"
-      ],
+      "open_decisions": [],
       "existing_tests": [
         "tests/GoymenERP.Api.IntegrationTests/SettingsReferenceListSqlServerRelationalAcceptanceTests.cs",
         "tests/GoymenERP.Api.IntegrationTests/FinanceExpensePaymentSqlServerRelationalAcceptanceTests.cs"
@@ -617,7 +740,16 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ExpensePaymentService.cs",
+        "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsReferenceListAdministration.cs",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceExpensePaymentSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/SettingsReferenceListSqlServerRelationalAcceptanceTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "W2-SATIS/CLOSURE-AXES",
@@ -632,7 +764,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.Status.cs",
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemAdmissionService.cs",
@@ -668,7 +800,16 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemAdmissionService.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.Status.cs",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.Status.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "W4-RISK/SECOND-SHIPMENT",
@@ -683,7 +824,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.ShipmentRiskGate.cs",
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemAdmissionService.cs",
@@ -720,7 +861,18 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemAdmissionService.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Application/LogisticsInstructionService.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.ShipmentRiskGate.cs",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsInstructionSqlServerRelationalAcceptanceTests.ShipmentRiskGate.cs",
+        "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.ShipmentRiskGate.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "W2-ACIKKALEM/LEGAL-IDENTITY",
@@ -735,7 +887,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemAdmissionService.cs",
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchaseInvoiceImportAdmission.cs",
@@ -770,14 +922,23 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemAdmissionService.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchaseInvoiceImportAdmission.cs",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Purchasing.UnitTests/PurchaseInvoiceImportAdmissionTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "W3-URETIM/INPUT-PIECES",
       "backlog_parent": "W3-URETIM",
       "title": "Adetli üretim girdisi ve kullanılmayan iade",
       "group": "FIRST_USE",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_IMPLEMENTED_LOCAL",
       "priority": "P0",
       "risk": "K3",
       "scope": "Girdi/iade adet bilgisini public DTO→application→port→host→Inventory boyunca taşı; mevcut adet/kg defteri ve golden hesabını yeniden yazma.",
@@ -785,7 +946,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex port/host/SQL; Claude input ve iade alanları",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryInputIssueHost.cs",
         "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryReturnOutputHost.cs",
@@ -818,14 +979,50 @@
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
         "K3 mutation/migration: gerçek SQL; ilgili UI: gerçek owner API ile tarayıcı ve erişim iptali.",
-        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
+        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı.",
+        "Null pieceCount eski kg-only request hashini değiştirmez; açık count komut kimliğine dahildir; aynı anahtar farklı count reddedilir.",
+        "Inventory mevcut PieceCountReturnRule ve ortak transaction sahibi kalır; count eksik/aşımında Manufacturing fact dahil rollback, kg ve adet tekil."
       ],
       "business_acceptance": [
         "ERW çıktısı profil boyamaya kısmi adet/kg ile girer; kalan iade aynı kaynak etikete döner; bütün rollback/replay ve adet aşımı reddi."
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex port/host/SQL; Claude input ve iade alanları",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryInputIssueHost.cs",
+        "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryReturnOutputHost.cs",
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Domain/Balances/StockLedger.cs",
+        "tests/GoymenERP.Api.IntegrationTests/InventoryManufacturingOutputReversalSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/InventoryManufacturingRealizationParticipantSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Inventory.UnitTests/StockLedgerTests.PieceCounts.cs"
+      ],
+      "change_files": [
+        "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Application/ManufacturingApiV1.cs",
+        "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Application/ManufacturingInventoryRealizationPortV1.cs",
+        "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryInputIssueHost.cs",
+        "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryReturnOutputHost.cs",
+        "src/frontend/goymen-erp-web/src/manufacturing/OrderDetailPage.tsx",
+        "src/frontend/goymen-erp-web/src/manufacturing/contract.ts",
+        "src/frontend/goymen-erp-web/src/manufacturing/manufacturingText.ts"
+      ],
+      "execution": {
+        "source_commit": "c48f96c91412c98d05db963322275b288e22e959",
+        "reuse": "Existing owner commands/transaction/fixture and React field components",
+        "token_consumption": "UNKNOWN; client has no per-package counter",
+        "development_duration": "NOT_SEPARATELY_MEASURED; sequential shared session",
+        "sql": "NOT_RUN",
+        "browser": "NOT_RUN",
+        "hosted_ci": "NOT_RUN",
+        "independent_review": "PENDING",
+        "integration_pins": "DEFERRED_TO_TRAIN_CLOSE",
+        "checks": [
+          "Manufacturing command service: 520 passed, 0 skipped; API test project build: 0 errors/0 warnings",
+          "Combined affected frontend: 323 passed; TypeScript exit 0; lint exit 0 (warnings present)"
+        ]
+      }
     },
     {
       "id": "W3-URETIM/FIVE-ENGINES",
@@ -840,7 +1037,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/Engines/Slitting/SlittingEngineV1.cs",
         "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/Engines/ColdRolling/ColdRollingEngineV1.cs",
@@ -891,7 +1088,25 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/Engines/Balance/MassBalanceEngineV1.cs",
+        "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/Engines/ColdRolling/ColdRollingEngineV1.cs",
+        "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/Engines/CutToLength/CutToLengthEngineV1.cs",
+        "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/Engines/Painting/PaintingEngineV1.cs",
+        "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/Engines/Slitting/SlittingEngineV1.cs",
+        "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/Engines/TubeProfile/TubeProfileEngineV1.cs",
+        "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/Plans/ProductionDueDateSuggestionCalculatorV1.cs",
+        "tests/GoymenERP.Manufacturing.UnitTests/Engines/ColdRollingEngineTests.cs",
+        "tests/GoymenERP.Manufacturing.UnitTests/Engines/CutToLengthEngineTests.cs",
+        "tests/GoymenERP.Manufacturing.UnitTests/Engines/MassBalanceEngineTests.cs",
+        "tests/GoymenERP.Manufacturing.UnitTests/Engines/SlittingWindingGoldenTests.cs",
+        "tests/GoymenERP.Manufacturing.UnitTests/Engines/TubeProfileAndPaintingEngineTests.cs",
+        "tests/GoymenERP.Manufacturing.UnitTests/ProductionDueDateSuggestionCalculatorTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "W3-URETIM/SUBCONTRACT",
@@ -906,7 +1121,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingSubcontractCompletionReadPortV2.cs",
         "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Application/LogisticsInstructionService.cs",
@@ -944,14 +1159,25 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Application/LogisticsInstructionService.cs",
+        "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingSubcontractCompletionReadPortV2.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchaseIncomingInvoiceWorkflow.cs",
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsInstructionSqlServerRelationalAcceptanceTests.ShipmentRiskGate.cs",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommandServiceTests.SubcontractCompletionV2.cs",
+        "tests/GoymenERP.Purchasing.UnitTests/PurchaseIncomingInvoiceWorkflowTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "W3-LOJISTIK/EXIT-EVIDENCE",
       "backlog_parent": "W3-LOJISTIK",
       "title": "Resmi belge kanıtı ile fiili çıkış ayrımı",
       "group": "FIRST_USE",
-      "status": "HUMAN_ACTIVATION_REQUIRED",
+      "status": "SOURCE_REVIEW_REQUIRED",
       "priority": "P0",
       "risk": "K3",
       "scope": "Mevcut irsaliye/dispatch owner adımlarını dış kanıt ve araç çıkışına bağla; kanıt yokken hukuki belge başarı sonucu üretme.",
@@ -959,7 +1185,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Application/LogisticsInstructionService.cs",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/Contracts/SalesOfficialInvoiceCancellationV1.cs",
@@ -999,14 +1225,26 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Application/DocumentService.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Application/LogisticsInstructionService.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/Contracts/SalesOfficialInvoiceCancellationV1.cs",
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsInstructionSqlServerRelationalAcceptanceTests.ShipmentRiskGate.cs",
+        "tests/GoymenERP.Documents.UnitTests/DocumentServiceTests.cs",
+        "tests/GoymenERP.Sales.UnitTests/SalesSubcontractServiceInvoiceTests.OfficialCancellation.cs"
+      ],
+      "change_files": [],
+      "activation_status": "HUMAN_ACTIVATION_REQUIRED"
     },
     {
       "id": "W2-BELGE/MIKRO-EDOC",
       "backlog_parent": "W2-BELGE",
       "title": "Mikro mutabakatı ve ilk e-Belge adapter sınırı",
       "group": "FIRST_USE",
-      "status": "HUMAN_ACTIVATION_REQUIRED",
+      "status": "SOURCE_REVIEW_REQUIRED",
       "priority": "P0",
       "risk": "K3",
       "scope": "İlk yıl Mikro; belge türü başına tek fiş sahibi. Mevcut XML import, resmi kimlik, iptal kanıtı ve Documents portlarını kullan; yalnız seçilen ilk provider.",
@@ -1014,7 +1252,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/Contracts/SalesOfficialInvoiceCancellationV1.cs",
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchaseInvoiceImportAdmission.cs",
@@ -1058,7 +1296,21 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/NormalJournalDraftLifecycleV1.cs",
+        "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Application/DocumentService.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchaseInvoiceImportAdmission.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/Contracts/SalesOfficialInvoiceCancellationV1.cs",
+        "tests/GoymenERP.Accounting.UnitTests/NormalJournalDraftLifecycleV1Tests.cs",
+        "tests/GoymenERP.Documents.UnitTests/DocumentServiceTests.cs",
+        "tests/GoymenERP.Purchasing.UnitTests/PurchaseInvoiceImportAdmissionTests.cs",
+        "tests/GoymenERP.Sales.UnitTests/SalesSubcontractServiceInvoiceTests.OfficialCancellation.cs"
+      ],
+      "change_files": [],
+      "activation_status": "HUMAN_ACTIVATION_REQUIRED"
     },
     {
       "id": "W5-RAPOR/WP14-COVERAGE",
@@ -1073,7 +1325,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Reporting/GoymenERP.Modules.Reporting.Infrastructure/ReportingServiceV1.cs",
         "src/frontend/goymen-erp-web/src/sales/SalesOrderTabs.tsx",
@@ -1111,7 +1363,16 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Reporting/GoymenERP.Modules.Reporting.Infrastructure/ReportingServiceV1.cs",
+        "src/frontend/goymen-erp-web/src/sales/SalesOrderTabs.test.tsx",
+        "src/frontend/goymen-erp-web/src/sales/SalesOrderTabs.tsx",
+        "tests/GoymenERP.Reporting.UnitTests/ReportingServiceTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "W5-MIGRASYON/CUTOVER",
@@ -1126,7 +1387,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "tools/verify_backup_restore.py",
         "tests/GoymenERP.Api.IntegrationTests/GoymenErpApiFactory.cs",
@@ -1146,9 +1407,22 @@
         "DEC-GOV-005"
       ],
       "depends_on": [
+        "W1-YETKI/ROLE-UX",
         "W1-ORG/BOOTSTRAP",
+        "W1-CARI/QUICK-CREATE",
+        "W1-URUN/UNIT-SCOPE",
+        "W2-SATINALMA/MULTILINE",
+        "W2-SATINALMA/MIXED-MIN",
+        "W2-SATINALMA/NOPO-MIN",
+        "W4-MUHASEBE/CLASSIFY-MIN",
+        "W4-MUHASEBE/CORRECTION-MIN",
+        "W4-FINANS/EXPENSE-CATALOG",
+        "W2-SATIS/CLOSURE-AXES",
+        "W4-RISK/SECOND-SHIPMENT",
         "W2-ACIKKALEM/LEGAL-IDENTITY",
         "W3-URETIM/FIVE-ENGINES",
+        "W3-URETIM/SUBCONTRACT",
+        "W3-LOJISTIK/EXIT-EVIDENCE",
         "W2-BELGE/MIKRO-EDOC"
       ],
       "open_decisions": [
@@ -1165,11 +1439,24 @@
         "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
       ],
       "business_acceptance": [
-        "İki prova, gerçek rol UAT, SQL+object store restore ve outbox replay; geçiş sonrası işlemleri kaybetmeyen geri dönüş."
+        "İki prova, gerçek rol UAT, SQL+object store restore ve outbox replay; geçiş sonrası işlemleri kaybetmeyen geri dönüş.",
+        "U01–U32 aileleri mevcut AT-001–AT-070 maddelerine ve gerçek kaynak testlere bağlanır; eksik aile PASS sayılmaz.",
+        "Gerçek rollerle stok/tahsis/etiket, tedarikçi ve müşteri iadesi, avans/mahsup, çek, döviz ve virman; negatif şirket/yetki, restore ve dış etki mutabakatı."
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinancePartyBalanceTransferServiceV1.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiCommandPipelineTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceExpensePaymentSqlServerRelationalAcceptanceTests.PartyCarryLedger.cs",
+        "tests/GoymenERP.Api.IntegrationTests/GoymenErpApiFactory.cs",
+        "tests/backup_restore_verifier/test_verify_backup_restore.py",
+        "tools/verify_backup_restore.py"
+      ],
+      "change_files": []
     },
     {
       "id": "T2/WP3",
@@ -1184,7 +1471,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/ApprovalRules/WorkApprovalRuleServiceV1.cs",
         "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/IErpAuthorityRevalidationService.cs"
@@ -1219,7 +1506,16 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/IErpAuthorityRevalidationService.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/ApprovalRules/WorkApprovalRuleServiceV1.cs",
+        "tests/GoymenERP.Identity.UnitTests/ErpAuthorityRevalidationServiceTests.cs",
+        "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "T2/WP8",
@@ -1234,7 +1530,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/ApprovalRules/WorkApprovalRuleServiceV1.cs",
         "src/frontend/goymen-erp-web/src/sales/SalesOrderTabs.tsx"
@@ -1270,7 +1566,16 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/ApprovalRules/WorkApprovalRuleServiceV1.cs",
+        "src/frontend/goymen-erp-web/src/sales/SalesOrderTabs.test.tsx",
+        "src/frontend/goymen-erp-web/src/sales/SalesOrderTabs.tsx",
+        "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "T2/WP10",
@@ -1285,7 +1590,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Reporting/GoymenERP.Modules.Reporting.Infrastructure/ReportingServiceV1.cs",
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Collaboration/WorkCollaborationServiceV1.cs"
@@ -1321,7 +1626,16 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Reporting/GoymenERP.Modules.Reporting.Infrastructure/ReportingServiceV1.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Collaboration/WorkCollaborationServiceV1.cs",
+        "tests/GoymenERP.Reporting.UnitTests/ReportingServiceTests.cs",
+        "tests/GoymenERP.Work.UnitTests/WorkCollaborationServiceTests.Wp9.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "T2/WP-B1",
@@ -1336,7 +1650,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/GoymenERP.Api/Ai/Gateway/AiGateway.cs",
         "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/AiKnowledgeApprovalServiceV1.cs"
@@ -1370,7 +1684,16 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/GoymenERP.Api/Ai/Gateway/AiGateway.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/AiKnowledgeApprovalServiceV1.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiGatewayTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiKnowledgeApprovalTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "T2/WP-B2",
@@ -1385,7 +1708,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/ApprovalRules/WorkApprovalRuleServiceV1.cs",
         "src/backend/GoymenERP.Api/Ai/Gateway/AiGateway.cs"
@@ -1419,7 +1742,16 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/GoymenERP.Api/Ai/Gateway/AiGateway.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/ApprovalRules/WorkApprovalRuleServiceV1.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiGatewayTests.cs",
+        "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "T2/WP-B4",
@@ -1434,7 +1766,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/GoymenERP.Api/Ai/Gateway/AiGateway.cs",
         "src/backend/Modules/Reporting/GoymenERP.Modules.Reporting.Infrastructure/ReportingServiceV1.cs"
@@ -1468,7 +1800,16 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/GoymenERP.Api/Ai/Gateway/AiGateway.cs",
+        "src/backend/Modules/Reporting/GoymenERP.Modules.Reporting.Infrastructure/ReportingServiceV1.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiGatewayTests.cs",
+        "tests/GoymenERP.Reporting.UnitTests/ReportingServiceTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "T2/WP-B5",
@@ -1483,7 +1824,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/GoymenERP.Api/Ai/Gateway/AiGateway.cs"
       ],
@@ -1514,7 +1855,14 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/GoymenERP.Api/Ai/Gateway/AiGateway.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiGatewayTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "T2/WP-C1-LEDGER",
@@ -1529,7 +1877,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/GoymenERP.Api/Ai/Commands/AiCommandPipeline.cs",
         "src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Domain/Executions/CommandExecution.cs",
@@ -1560,14 +1908,26 @@
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
         "K3 mutation/migration: gerçek SQL; ilgili UI: gerçek owner API ile tarayıcı ve erişim iptali.",
-        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
+        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı.",
+        "Owner commit sonrası ledger yanıtı kaybolma/restart senaryosu aynı owner idempotency identity ile mutabık; ikinci etki yok."
       ],
       "business_acceptance": [
         "Eşzamanlı execute bir etki; process restart sonrası aynı preview/approval; onay hash değişince geçersiz; kalıcı kayıt hatası dış etki üretmez."
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/GoymenERP.Api/Ai/Commands/AiCommandPipeline.cs",
+        "src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Domain/Executions/CommandExecution.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261122201654_AddWorkApprovalRuleVersions.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiCommandPipelineTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkApprovalRuleSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Idempotency.UnitTests/CommandExecutionTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "T2/WP-C2",
@@ -1582,7 +1942,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/GoymenERP.Api/Ai/Commands/AiCommandPipeline.cs",
         "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.cs"
@@ -1620,7 +1980,16 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/GoymenERP.Api/Ai/Commands/AiCommandPipeline.cs",
+        "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiCommandPipelineTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/CounterpartyCompanyScopedIdempotencySqlServerRelationalAcceptanceTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "T2/WP-C3",
@@ -1635,7 +2004,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/GoymenERP.Api/Ai/Commands/AiCommandPipeline.cs",
         "src/frontend/goymen-erp-web/src/identity/AccessGrantPanel.tsx",
@@ -1675,7 +2044,18 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/GoymenERP.Api/Ai/Commands/AiCommandPipeline.cs",
+        "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsCompanyPolicyAdministration.cs",
+        "src/frontend/goymen-erp-web/src/identity/AccessGrantPanel.test.tsx",
+        "src/frontend/goymen-erp-web/src/identity/AccessGrantPanel.tsx",
+        "tests/GoymenERP.Api.IntegrationTests/AiCommandPipelineTests.cs",
+        "tests/GoymenERP.Settings.UnitTests/CompanyPolicyRulesV1Tests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "T2/WP-C5",
@@ -1690,7 +2070,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkNotificationStoreV1.cs",
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Collaboration/WorkCollaborationServiceV1.cs",
@@ -1727,7 +2107,18 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/GoymenERP.Api/Ai/Gateway/AiGateway.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Collaboration/WorkCollaborationServiceV1.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkNotificationStoreV1.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiGatewayTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkNotificationSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Work.UnitTests/WorkCollaborationServiceTests.Wp9.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "T2/WP-C7",
@@ -1742,7 +2133,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/GoymenERP.Api/Ai/Commands/AiCommandPipeline.cs",
         "src/backend/GoymenERP.Api/Ai/DocumentDrafts/AiDocumentDraftService.cs",
@@ -1779,7 +2170,18 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/GoymenERP.Api/Ai/Commands/AiCommandPipeline.cs",
+        "src/backend/GoymenERP.Api/Ai/DocumentDrafts/AiDocumentDraftService.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiCommandPipelineTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiDocumentDraftServiceTests.cs",
+        "tests/GoymenERP.Work.UnitTests/WorkOutboxDispatcherTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "T2/WP-C8",
@@ -1794,7 +2196,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/GoymenERP.Api/Ai/Gateway/AiGateway.cs",
         "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/IErpAuthorityRevalidationService.cs"
@@ -1828,7 +2230,16 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/IErpAuthorityRevalidationService.cs",
+        "src/backend/GoymenERP.Api/Ai/Gateway/AiGateway.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiGatewayTests.cs",
+        "tests/GoymenERP.Identity.UnitTests/ErpAuthorityRevalidationServiceTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "T2/WP-C9",
@@ -1843,7 +2254,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/AiKnowledgeApprovalServiceV1.cs",
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Collaboration/WorkCollaborationServiceV1.cs"
@@ -1879,7 +2290,16 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/AiKnowledgeApprovalServiceV1.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Collaboration/WorkCollaborationServiceV1.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiKnowledgeApprovalTests.cs",
+        "tests/GoymenERP.Work.UnitTests/WorkCollaborationServiceTests.Wp9.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "T2/YOL-D40",
@@ -1894,7 +2314,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/NormalJournalDraftLifecycleV1.cs",
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkNotificationStoreV1.cs",
@@ -1915,7 +2335,7 @@
         "YOL-D40"
       ],
       "depends_on": [
-        "T2/WP3"
+        "T2/WP8"
       ],
       "open_decisions": [],
       "existing_tests": [
@@ -1933,14 +2353,25 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/NormalJournalDraftLifecycleV1.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkNotificationStoreV1.cs",
+        "tests/GoymenERP.Accounting.UnitTests/NormalJournalDraftLifecycleV1Tests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkNotificationSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Work.UnitTests/WorkOutboxDispatcherTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "T2/CREDIT-GROUPS",
       "backlog_parent": "W4-RISK",
       "title": "Onaylı dört kredi grubu",
       "group": "TREN2",
-      "status": "DECISION_REQUIRED",
+      "status": "SOURCE_REVIEW_REQUIRED",
       "priority": "P1",
       "risk": "K3",
       "scope": "FNS-D124…127 alan listesini gate/komut/ekran/fiş bileşenleriyle uygula; kapıyı tek satırla kör açma.",
@@ -1948,7 +2379,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditMovementServiceV1.cs",
         "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/NormalJournalDraftLifecycleV1.cs"
@@ -1961,7 +2392,8 @@
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
         "Devir belgesinde kalan iş; listedeki mevcut kaynak/testler bulundu.",
-        "Tam davranış ve runtime kabulü: NOT_RUN."
+        "Tam davranış ve runtime kabulü: NOT_RUN.",
+        "FNS-D97: eşleme eksikse fiş önerisi bekler; dört grubun geliştirmesi ve gerçek hesap değeri ayrı kapılardır."
       ],
       "decisions": [
         "FNS-D124",
@@ -1987,14 +2419,23 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/NormalJournalDraftLifecycleV1.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditMovementServiceV1.cs",
+        "tests/GoymenERP.Accounting.UnitTests/NormalJournalDraftLifecycleV1Tests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCreditMovementHttpAcceptanceTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "T2/SMALL-GAPS",
       "backlog_parent": "W4-FINANS",
       "title": "Devir replay, ShareId ve kalan küçük açıklar",
       "group": "TREN2",
-      "status": "DECISION_REQUIRED",
+      "status": "SOURCE_REVIEW_REQUIRED",
       "priority": "P1",
       "risk": "K3",
       "scope": "Devir özgün correlation başlığı; ShareId çapraz talimat tekilliği; frontend red metni. Ayrı owner dosyaları, ortak paket kararı değil.",
@@ -2002,7 +2443,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinancePartyBalanceTransferServiceV1.cs",
         "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/Lineage/ProductionLineageShareCalculatorV1.cs",
@@ -2017,7 +2458,8 @@
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
         "Devir belgesinde kalan iş; listedeki mevcut kaynak/testler bulundu.",
-        "Tam davranış ve runtime kabulü: NOT_RUN."
+        "Tam davranış ve runtime kabulü: NOT_RUN.",
+        "ShareId kararı yalnız ilgili stok/maliyet değişikliğini bekletir; replay başlığı ve Türkçe metin bağımsızdır."
       ],
       "decisions": [],
       "depends_on": [],
@@ -2039,7 +2481,18 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinancePartyBalanceTransferServiceV1.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Application/LogisticsInstructionService.cs",
+        "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/Lineage/ProductionLineageShareCalculatorV1.cs",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceExpensePaymentSqlServerRelationalAcceptanceTests.PartyCarryLedger.cs",
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsInstructionSqlServerRelationalAcceptanceTests.ShipmentRiskGate.cs",
+        "tests/GoymenERP.Manufacturing.UnitTests/ProductionLineageShareCalculatorTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "T2/RELEASE",
@@ -2054,7 +2507,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261122201654_AddWorkApprovalRuleVersions.cs",
         "tests/GoymenERP.Api.IntegrationTests/GoymenErpApiFactory.cs",
@@ -2107,11 +2560,23 @@
         "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
       ],
       "business_acceptance": [
-        "64 onay türü owner bağlantısı; öneriler ve AI kapalı; tüm zorunlu joblar yeşil; açık P0/P1/P2 yok; merge insan kapılarını açmaz."
+        "64 onay türü owner bağlantısı; öneriler ve AI kapalı; tüm zorunlu joblar yeşil; açık P0/P1/P2 yok; merge insan kapılarını açmaz.",
+        "WP13 fatura/alış siparişi/teklif/sözleşme PDF ve imzalı kabul; WP14 beş rapor, genel liste dışa aktarımı/kayıtlı görünüm ve gerçek sayaçlar; AI runtime bağımlılıkları tek tek kaynak+test+kanıtla kapanır."
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261122201654_AddWorkApprovalRuleVersions.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiCommandPipelineTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/GoymenErpApiFactory.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkApprovalRuleSqlServerRelationalAcceptanceTests.cs",
+        "tests/backup_restore_verifier/test_verify_backup_restore.py",
+        "tools/verify_backup_restore.py"
+      ],
+      "change_files": []
     },
     {
       "id": "W5-RAPOR/PROACTIVE",
@@ -2126,7 +2591,7 @@
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkNotificationStoreV1.cs",
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Collaboration/WorkCollaborationServiceV1.cs",
@@ -2165,11 +2630,25 @@
         "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
       ],
       "business_acceptance": [
-        "Faturasız kabul/geciken termin/vade farkı için kaynak, şirket, sorumlu ve süre; AI kapalıyken aynı iş; yinelenen olayda tek görev."
+        "Faturasız kabul/geciken termin/vade farkı için kaynak, şirket, sorumlu ve süre; AI kapalıyken aynı iş; yinelenen olayda tek görev.",
+        "Satış/alış/stok/üretim/fason/lojistik/finans/muhasebe/bakım/yönetim/sistem: tetik, owner, sorumlu, tekillik, çözülme olayı ve ölçüt; yeni eşik tahmin edilmez."
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/GoymenERP.Api/Ai/Gateway/AiGateway.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Collaboration/WorkCollaborationServiceV1.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkNotificationStoreV1.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiGatewayTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkNotificationSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Work.UnitTests/WorkCollaborationServiceTests.Wp9.cs",
+        "tests/GoymenERP.Work.UnitTests/WorkOutboxDispatcherTests.cs"
+      ],
+      "change_files": []
     },
     {
       "id": "W4-MUHASEBE/EQUIPMENT-LINK",
@@ -2179,12 +2658,12 @@
       "status": "DEFERRED_BY_DECISION",
       "priority": "P2",
       "risk": "K3",
-      "scope": "Ekipman teknik kimliği/QR/arıza ile mali varlık ayrı; mevcut kart/Docs/Work desenleri kullanılır. İlk kullanım için gerekli kaynak bağlantıları korunur; tam amortisman/bakım/sensör sistemi şimdi yazılmaz.",
+      "scope": "Ekipman teknik kimliği/QR/arıza ile mali varlık ayrı; mevcut kart/Docs/Work desenleri kullanılır. İlk kullanım için gerekli kaynak bağlantıları korunur; tam amortisman/bakım/sensör sistemi şimdi yazılmaz. Sonraki Dalga 3–6: ekipman hiyerarşi/QR/belge/bakım ve yedek parça, bağımsız mali varlık, maliyet merkezleri/dağıtım ve gerçek üretim maliyeti; özel entegratörlük ayrı proje. Mevcut ERTELENEN_KAPSAM ve DALGA_PLANI_v2 ile izlenir.",
       "exclusions": [
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
         "Açık para/stok/formül/saklama politikası seçme"
       ],
-      "owner": "Codex backend; Claude frontend",
+      "owner": "Codex (26 Kasım geçici tüm geliştirme devri); atama ve aktivasyon Sinan",
       "files": [
         "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.cs",
         "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Application/DocumentService.cs",
@@ -2228,7 +2707,20 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir."
+      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "planned_owner": "Codex backend; Claude frontend",
+      "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
+      "reference_files": [
+        "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.cs",
+        "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Application/DocumentService.cs",
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Domain/Costing/CompanyWideAverageCostCalculator.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Collaboration/WorkCollaborationServiceV1.cs",
+        "tests/GoymenERP.Api.IntegrationTests/CounterpartyCompanyScopedIdempotencySqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Documents.UnitTests/DocumentServiceTests.cs",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryCompanyWideAverageCostCalculatorTests.cs",
+        "tests/GoymenERP.Work.UnitTests/WorkCollaborationServiceTests.Wp9.cs"
+      ],
+      "change_files": []
     }
   ],
   "open_questions": [
@@ -2248,21 +2740,21 @@
     },
     {
       "id": "Q-UNITS",
-      "question": "DEC-PRD-007 çelik dışı ürün/hizmet birim kapsamı",
+      "question": "Gerçek ürün ailesi–birim matrisi ve onaylı dönüşüm parametreleri (uygun birim desteği yönü cevaplı)",
       "recommendation": "Çelik kg/adet korunur; sarf/ekipman kendi onaylı birimi, hizmet fiziksel stok dışı.",
       "blocks": "Domain kontratı",
       "kind": "WHEN_PACKAGE_REACHES_GATE"
     },
     {
       "id": "Q-NOPO-APPROVER",
-      "question": "Siparişsiz/acil türlerinde kontrol yetkisi ve rutin istisna",
+      "question": "Tür/departman bazlı gerçek ihtiyaç sorumlusu ve rutin gider politika değerleri; destek ve sorumluluk ayrımı yönü cevaplı",
       "recommendation": "Mal/hizmet teslim sahibi ayrı; hammadde ticari kontrol ALMM, fatura fark MUHM; gider/yatırım tür eşlemesi Sinan belirlesin.",
       "blocks": "İlk kullanım kaynak türleri; geçmiş sipariş uydurma yok",
       "kind": "WHEN_PACKAGE_REACHES_GATE"
     },
     {
       "id": "Q-MAPPING",
-      "question": "Şirket hesap eşlemesi ve mali kullanım amacı politikası",
+      "question": "Gerçek şirket Mikro hesap kodları ve ilk kullanım amaçları; Mikro esaslı yöntem ve muhasebe sahipliği cevaplı",
       "recommendation": "Mikro gerçek hesap planından yetkili MUHM onaylı dar eşleme; sayılar/hesaplar örnek PDF den alınmasın.",
       "blocks": "Sınıflama/gider/maliyet düzeltmesi",
       "kind": "WHEN_PACKAGE_REACHES_GATE"
@@ -2283,9 +2775,9 @@
     },
     {
       "id": "Q-LEASING",
-      "question": "Leasing KDV eşleme eksikken davranış",
+      "question": "Gerçek leasing KDV hesap eşleme anahtarı/değeri; eşleme eksikken bekleme FNS-D97 ile zaten kararlı",
       "recommendation": "Onaylı kaynak bileşenler saklansın; fiş önerisi eşleme tamamlanana kadar kapalı kalsın; FNS-D97 ve D127 ile teyit.",
-      "blocks": "Kredi muhasebe yolu; grup onayı tekrar sorulmaz",
+      "blocks": "Yalnız ilgili fiş önerisinin açılması; grup kodu geliştirmesini bloklamaz",
       "kind": "WHEN_PACKAGE_REACHES_GATE"
     },
     {

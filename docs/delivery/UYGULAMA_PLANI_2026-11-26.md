@@ -37,11 +37,11 @@ Codex backend/DB/port ve sözleşme; Claude frontend/tarayıcı; mevcut koordina
 | Kimlik | Öncelik / risk | Durum | Bağımlılık |
 |---|---|---|---|
 | W1-YETKI/ROL-D24-PARITY | P0 / K2 | IMPLEMENTED_LOCAL | — |
-| W1-YETKI/ROLE-UX | P0 / K3 | HUMAN_ACTIVATION_REQUIRED | W1-YETKI/ROL-D24-PARITY |
-| W1-ORG/BOOTSTRAP | P0 / K3 | HUMAN_ACTIVATION_REQUIRED | — |
+| W1-YETKI/ROLE-UX | P0 / K3 | SOURCE_REVIEW_REQUIRED | W1-YETKI/ROL-D24-PARITY |
+| W1-ORG/BOOTSTRAP | P0 / K3 | SOURCE_REVIEW_REQUIRED | — |
 | W1-CARI/QUICK-CREATE | P0 / K2 | SOURCE_REVIEW_REQUIRED | — |
-| W1-URUN/UNIT-SCOPE | P0 / K3 | DECISION_REQUIRED | — |
-| W2-SATINALMA/MULTILINE | P0 / K2 | SOURCE_REVIEW_REQUIRED | — |
+| W1-URUN/UNIT-SCOPE | P0 / K3 | SOURCE_REVIEW_REQUIRED | — |
+| W2-SATINALMA/MULTILINE | P0 / K2 | SOURCE_IMPLEMENTED_LOCAL | — |
 | W2-SATINALMA/MIXED-MIN | P0 / K3 | SOURCE_REVIEW_REQUIRED | W2-SATINALMA/MULTILINE, W1-URUN/UNIT-SCOPE |
 | W2-SATINALMA/NOPO-MIN | P0 / K3 | CONTRACT_REQUIRED | — |
 | W4-MUHASEBE/CLASSIFY-MIN | P0 / K3 | CONTRACT_REQUIRED | — |
@@ -50,13 +50,13 @@ Codex backend/DB/port ve sözleşme; Claude frontend/tarayıcı; mevcut koordina
 | W2-SATIS/CLOSURE-AXES | P0 / K3 | SOURCE_REVIEW_REQUIRED | — |
 | W4-RISK/SECOND-SHIPMENT | P0 / K3 | REPRODUCTION_REQUIRED | — |
 | W2-ACIKKALEM/LEGAL-IDENTITY | P0 / K3 | REPRODUCTION_REQUIRED | — |
-| W3-URETIM/INPUT-PIECES | P0 / K3 | SOURCE_REVIEW_REQUIRED | — |
+| W3-URETIM/INPUT-PIECES | P0 / K3 | SOURCE_IMPLEMENTED_LOCAL | — |
 | W3-URETIM/FIVE-ENGINES | P0 / K3 | ACCEPTANCE_REQUIRED | W3-URETIM/INPUT-PIECES |
 | W3-URETIM/SUBCONTRACT | P0 / K3 | ACCEPTANCE_REQUIRED | — |
-| W3-LOJISTIK/EXIT-EVIDENCE | P0 / K3 | HUMAN_ACTIVATION_REQUIRED | — |
-| W2-BELGE/MIKRO-EDOC | P0 / K3 | HUMAN_ACTIVATION_REQUIRED | — |
+| W3-LOJISTIK/EXIT-EVIDENCE | P0 / K3 | SOURCE_REVIEW_REQUIRED | — |
+| W2-BELGE/MIKRO-EDOC | P0 / K3 | SOURCE_REVIEW_REQUIRED | — |
 | W5-RAPOR/WP14-COVERAGE | P0 / K2 | ACCEPTANCE_REQUIRED | — |
-| W5-MIGRASYON/CUTOVER | P0 / K3 | HUMAN_ACTIVATION_REQUIRED | W1-ORG/BOOTSTRAP, W2-ACIKKALEM/LEGAL-IDENTITY, W3-URETIM/FIVE-ENGINES, W2-BELGE/MIKRO-EDOC |
+| W5-MIGRASYON/CUTOVER | P0 / K3 | HUMAN_ACTIVATION_REQUIRED | W1-YETKI/ROLE-UX, W1-ORG/BOOTSTRAP, W1-CARI/QUICK-CREATE, W1-URUN/UNIT-SCOPE, W2-SATINALMA/MULTILINE, W2-SATINALMA/MIXED-MIN, W2-SATINALMA/NOPO-MIN, W4-MUHASEBE/CLASSIFY-MIN, W4-MUHASEBE/CORRECTION-MIN, W4-FINANS/EXPENSE-CATALOG, W2-SATIS/CLOSURE-AXES, W4-RISK/SECOND-SHIPMENT, W2-ACIKKALEM/LEGAL-IDENTITY, W3-URETIM/FIVE-ENGINES, W3-URETIM/SUBCONTRACT, W3-LOJISTIK/EXIT-EVIDENCE, W2-BELGE/MIKRO-EDOC |
 | T2/WP3 | P1 / K3 | SOURCE_REVIEW_REQUIRED | — |
 | T2/WP8 | P1 / K3 | SOURCE_REVIEW_REQUIRED | T2/WP3 |
 | T2/WP10 | P1 / K2 | DECISION_REQUIRED | — |
@@ -71,9 +71,9 @@ Codex backend/DB/port ve sözleşme; Claude frontend/tarayıcı; mevcut koordina
 | T2/WP-C7 | P1 / K2 | SOURCE_REVIEW_REQUIRED | — |
 | T2/WP-C8 | P1 / K2 | SOURCE_REVIEW_REQUIRED | — |
 | T2/WP-C9 | P1 / K2 | SOURCE_REVIEW_REQUIRED | T2/WP-B2 |
-| T2/YOL-D40 | P1 / K3 | SOURCE_REVIEW_REQUIRED | T2/WP3 |
-| T2/CREDIT-GROUPS | P1 / K3 | DECISION_REQUIRED | — |
-| T2/SMALL-GAPS | P1 / K3 | DECISION_REQUIRED | — |
+| T2/YOL-D40 | P1 / K3 | SOURCE_REVIEW_REQUIRED | T2/WP8 |
+| T2/CREDIT-GROUPS | P1 / K3 | SOURCE_REVIEW_REQUIRED | — |
+| T2/SMALL-GAPS | P1 / K3 | SOURCE_REVIEW_REQUIRED | — |
 | T2/RELEASE | P1 / K3 | DEPENDENCIES_PENDING | T2/WP3, T2/WP8, T2/WP10, T2/WP-B1, T2/WP-B2, T2/WP-B4, T2/WP-B5, T2/WP-C1-LEDGER, T2/WP-C2, T2/WP-C3, T2/WP-C5, T2/WP-C7, T2/WP-C8, T2/WP-C9, T2/YOL-D40, T2/CREDIT-GROUPS, T2/SMALL-GAPS, W5-RAPOR/WP14-COVERAGE |
 | W5-RAPOR/PROACTIVE | P1 / K3 | DECISION_REQUIRED | — |
 | W4-MUHASEBE/EQUIPMENT-LINK | P2 / K3 | DEFERRED_BY_DECISION | — |
@@ -110,3 +110,9 @@ Bu çalışmada ERP derleme/SQL/tarayıcı veya yeni CI koşulmadı. Eski CI `45
 Teslim kapıları değişmez: ilgili SQL/tarayıcı/başarısızlık senaryosu, exact-head incelemeler, zorunlu CI, main tazeliği. Açık P0/P1/P2 olan K3 onaylanmaz. Aktivasyon ve işletme kabulü insandadır.
 
 Yerel ilk kontrol: kaynak/plan/parite/64 akış haritası doğrulayıcısı exit 0; kendi 6 negatif testi başarılı; backlog doğrulayıcısı ve 64 testi başarılı; bootstrap doğrulayıcısı başarılı, 56 testin 47’si geçti ve 9’u mevcut dosya sistemi/symlink koşulları nedeniyle atlandı. Yeni skip eklenmedi; bu sonuç `skip0` kabulünün yerine geçmez. ERP işlev kodu, migration, pin veya workflow değiştirilmedi; yalnız doküman ve referans denetleme aracı hazırlandı. Bağımsız inceleme ve entegrasyon bekliyor.
+
+## Geliştirme devri — 26 Kasım
+
+Sinan’ın açık talimatıyla Claude kapasitesi yokken frontend dahil geliştirme Codex tarafından yürütülür. Mevcut 41 paket korunur; dosya adayları ile gerçek `change_files` lease’i JSON’da ayrıdır. Ana backlog’a ve grant/aktivasyona dokunulmaz.
+
+İlk teslimler: `W3-URETIM/INPUT-PIECES` (`c48f96c91`) ve `W2-SATINALMA/MULTILINE` (`c98ede21d`). Yerel hedefli kanıtlar JSON `execution` alanındadır; gerçek SQL, browser, pin, hosted CI ve bağımsız review bekler. Bunlar üretim kabulü veya tren kapanışı değildir. Son kontrolün CUTOVER, Work şema sırası, açık karar ayrımı ve sonraki kapsam bağlantıları aynı 41 pakete işlendi.

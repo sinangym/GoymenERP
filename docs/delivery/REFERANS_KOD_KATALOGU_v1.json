@@ -484,8 +484,8 @@
           "path": "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryInputIssueHost.cs",
           "line": 74,
           "anchor": "public async Task<ManufacturingInventoryInputIssueResult> IssueAsync(",
-          "sha256": "4a43e91c09e40fb989b3d5a15fea914b1150ab3afa2a21217a21271a8c7eab88",
-          "git_blob": "aa6ee85cfdeb4114548110fea8f23c895d119fb2"
+          "sha256": "e0b10c77b32bbb6e01cfb6be60ca549d66380e006f24e6ce416b1eafe9a06329",
+          "git_blob": "b2fdf8ec30026fc8aa3a8b0d7e7244651fa09b71"
         }
       ],
       "tests": [
@@ -497,10 +497,10 @@
           "git_blob": "514f4a71f3b3325c2cb799701fe4bfd3cf69ead0"
         }
       ],
-      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
-      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "source_commit": "c48f96c91412c98d05db963322275b288e22e959",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
-      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "historical_ci_url": null,
       "sql_evidence": "HISTORICAL_SUITE_ONLY_NOT_INDIVIDUAL_RESULT",
       "invariants": [
         "CompanyId ve güncel yetki",
@@ -519,7 +519,26 @@
         "URT-D21",
         "URT-D3"
       ],
-      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
+      "previous_baseline": {
+        "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+        "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+        "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956"
+      },
+      "local_validation": {
+        "status": "TARGETED_LOCAL_ONLY",
+        "source_commit": "c48f96c91412c98d05db963322275b288e22e959",
+        "manufacturing_command_service_tests": {
+          "passed": 520,
+          "failed": 0,
+          "skipped": 0
+        },
+        "api_test_project_build": {
+          "errors": 0,
+          "warnings": 0
+        },
+        "sql_acceptance": "NOT_RUN"
+      }
     },
     {
       "id": "REF-MFG-02",
@@ -532,8 +551,8 @@
           "path": "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryReturnOutputHost.cs",
           "line": 29,
           "anchor": "internal sealed class ManufacturingInventoryReturnOutputHost(",
-          "sha256": "1a624bf9d4daa7f17a52f6662ad39179641418833016a4e601f4526787a83a3f",
-          "git_blob": "dddca8616f8a6c646a17d0571a312c040233be4e"
+          "sha256": "255f074f9d2a03ea1bc46776ac202d7bf3bb3450c4e09582f4ca1297309f4aac",
+          "git_blob": "648858de8420a08d26b0bf1407ce05b78f7187e4"
         }
       ],
       "tests": [
@@ -545,10 +564,10 @@
           "git_blob": "121822b67410c396843a6b6e31b2711de970621f"
         }
       ],
-      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
-      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "source_commit": "c48f96c91412c98d05db963322275b288e22e959",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
-      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "historical_ci_url": null,
       "sql_evidence": "HISTORICAL_SUITE_ONLY_NOT_INDIVIDUAL_RESULT",
       "invariants": [
         "CompanyId ve güncel yetki",
@@ -569,7 +588,26 @@
         "URT-D62",
         "URT-D63"
       ],
-      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
+      "previous_baseline": {
+        "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+        "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+        "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956"
+      },
+      "local_validation": {
+        "status": "TARGETED_LOCAL_ONLY",
+        "source_commit": "c48f96c91412c98d05db963322275b288e22e959",
+        "manufacturing_command_service_tests": {
+          "passed": 520,
+          "failed": 0,
+          "skipped": 0
+        },
+        "api_test_project_build": {
+          "errors": 0,
+          "warnings": 0
+        },
+        "sql_acceptance": "NOT_RUN"
+      }
     },
     {
       "id": "REF-SUBCONTRACT-01",

@@ -97,6 +97,10 @@ def verify_catalog(root: Path, catalog: dict) -> list[str]:
     seen: set[str] = set()
     for entry in catalog.get("references", []):
         identity = entry.get("id", "")
+        entry_source = entry.get("source_commit", source)
+        if not re.fullmatch(r"[0-9a-f]{40}", entry_source):
+            errors.append(f"{identity}: reference source_commit must be an exact commit SHA")
+            continue
         if not identity or identity in seen:
             errors.append(f"duplicate or missing reference id: {identity}")
         seen.add(identity)
@@ -111,7 +115,7 @@ def verify_catalog(root: Path, catalog: dict) -> list[str]:
                 data = path.read_bytes()
                 if hashlib.sha256(data).hexdigest() != item.get("sha256"):
                     errors.append(f"{identity}: working source drift: {relative}")
-                if git(root, "rev-parse", f"{source}:{relative}") != item.get("git_blob"):
+                if git(root, "rev-parse", f"{entry_source}:{relative}") != item.get("git_blob"):
                     errors.append(f"{identity}: snapshot blob mismatch: {relative}")
                 lines = data.decode("utf-8-sig").splitlines()
                 line = item.get("line", 0)
