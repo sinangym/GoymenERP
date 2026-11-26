@@ -86,7 +86,7 @@ function decodeVersion(raw: unknown): WorkApprovalRuleVersion | null {
   return { version, durationClass, approverPermission, escalationPermission, recordedBy: recordedBy.toLowerCase(), recordedAtUtc, reason }
 }
 
-function decodeRule(raw: unknown): WorkApprovalRule | null {
+export function decodeWorkApprovalRule(raw: unknown): WorkApprovalRule | null {
   if (!isObject(raw) || !exact(raw, RULE_KEYS)) return null
   const {
     kind, ownerModule, approverPermission, durationClass, escalationPermission, version, versionText, isDefault, defaultBasis, state,
@@ -106,9 +106,10 @@ function decodeRule(raw: unknown): WorkApprovalRule | null {
     history.push(decoded)
   }
   if (isDefault) {
-    // The decided default: version 0, its basis named, nothing recorded, no escalation, always current.
+    // WP2 adds the registered escalation default; retain the earlier unconfigured projection too.
     if (version !== '0' || !isText(defaultBasis, 32) || recordedBy !== null || recordedAtUtc !== null || reason !== null
-      || escalationPermission !== null || state !== RULE_STATE_CURRENT || history.length !== 0) return null
+      || escalationPermission !== null && escalationPermission !== 'work.approvals.escalate'
+      || state !== RULE_STATE_CURRENT || history.length !== 0) return null
     return {
       kind, ownerModule, approverPermission, durationClass, escalationPermission, version, versionText, isDefault, defaultBasis, state,
       recordedBy, recordedAtUtc, reason, versions: history,
@@ -136,7 +137,7 @@ export function decodeWorkApprovalRuleTable(raw: unknown, companyId: string): Wo
   const rules: WorkApprovalRule[] = []
   const seen = new Set<string>()
   for (const item of raw.rules) {
-    const rule = decodeRule(item)
+    const rule = decodeWorkApprovalRule(item)
     if (rule === null || seen.has(rule.kind)) return null
     seen.add(rule.kind)
     rules.push(rule)

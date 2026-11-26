@@ -8,6 +8,7 @@ import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useScopedCommandAttempt, type AttemptStatus } from '../settings/useCommandAttempt'
 import { WorkApprovalRulesSection } from '../settings/WorkApprovalRulesSection'
+import { WorkApprovalRuleEditor } from './WorkApprovalRuleEditor'
 import { Button } from '../ui/Button'
 import { ApprovalFollowUpPage } from './ApprovalFollowUpPage'
 import { WORK_INBOX_KINDS, WORK_INBOX_CAPABILITIES } from './workInboxKinds'
@@ -32,7 +33,7 @@ function Management() {
   return <section className={styles.page}><h1>{T.title}</h1>
     <div role="group" aria-label={T.title}>{([[rules,'rules',T.rules],[delegates,'delegations',T.delegations],[followUp,'followUp',T.followUp]] as const)
       .filter(([allowed]) => allowed).map(([,id,label]) => <Button key={id} type="button" variant={tab===id?'primary':'secondary'} aria-pressed={tab===id} onClick={()=>setTab(id)}>{label}</Button>)}</div>
-    {rules ? <div hidden={tab!=='rules'}><WorkApprovalRulesSection companyId={company} namespace={contextKeyString(context)} routeEntryGeneration={shell.routeEntryGeneration} /><Link to="/ayarlar/onay-sureleri">{T.policy}</Link></div> : null}
+    {rules ? <div hidden={tab!=='rules'}><WorkApprovalRulesSection companyId={company} namespace={contextKeyString(context)} routeEntryGeneration={shell.routeEntryGeneration} /><WorkApprovalRuleEditor /><Link to="/ayarlar/onay-sureleri">{T.policy}</Link></div> : null}
     {delegates ? <div hidden={tab!=='delegations'}><Delegations company={company} namespace={contextKeyString(context)} /></div> : null}
     {followUp ? <div hidden={tab!=='followUp'}><ApprovalFollowUpPage /></div> : null}
   </section>
