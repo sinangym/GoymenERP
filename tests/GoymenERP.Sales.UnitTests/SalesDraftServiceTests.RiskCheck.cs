@@ -378,7 +378,8 @@ public sealed partial class SalesDraftServiceTests
         var created = (await world.Service().CreateDraftAsync(Priced(discount: null), Metadata($"{key}-create"))).Detail;
         var version = await ApproveDiscountChecksAsync(world, created.Draft.Id, created.Draft.Version, created.Lines[0].LineId);
         var submitted = await world.Service().SubmitDraftAsync(created.Draft.Id, Command(version), Metadata($"{key}-submit"));
-        var approved = (await world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata($"{key}-approve"))).Detail;
+        var approved = (await WithIndependentApproverAsync(world,
+            () => world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata($"{key}-approve")))).Detail;
         // F-018 / plan S1: the submission and the approval evaluated the risk for their warning record; the read-only check's own
         // order list reads start from here.
         world.Store.OpenApprovedOrderReads.Clear();

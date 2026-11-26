@@ -391,7 +391,8 @@ public sealed partial class SalesDraftServiceTests
     {
         var created = (await world.Service().CreateDraftAsync(Request(lines: 2), Metadata("k-create"))).Detail.Draft;
         await world.Service().SubmitDraftAsync(created.Id, Command("3"), Metadata("k-submit"));
-        return (await world.Service().ApproveDraftAsync(created.Id, Command("4"), Metadata("k-approve"))).Detail;
+        return (await WithIndependentApproverAsync(world,
+            () => world.Service().ApproveDraftAsync(created.Id, Command("4"), Metadata("k-approve")))).Detail;
     }
 
     /// <summary>The SAT-D5 starting ladder as SYNTHETIC Settings data (1 / 2 / 3 %, version 3, from 2026-09-01, no end).</summary>

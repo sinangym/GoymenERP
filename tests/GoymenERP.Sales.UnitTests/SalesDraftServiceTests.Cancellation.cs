@@ -459,7 +459,8 @@ public sealed partial class SalesDraftServiceTests
     {
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail.Draft;
         await world.Service().SubmitDraftAsync(created.Id, Command("2"), Metadata("k-submit"));
-        return (await world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-approve"))).Detail;
+        return (await WithIndependentApproverAsync(world,
+            () => world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-approve")))).Detail;
     }
 
     /// <summary>Both impact owners composed, answering nothing for the order.</summary>
