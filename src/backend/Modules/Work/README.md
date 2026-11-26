@@ -211,3 +211,11 @@ vekalet ve Audit sahibinin denetim olayı aynı SQL işlemindedir. Replay özgü
 `20261126183924_AddWorkApprovalDelegations` yalnız Work tablosu ekler; Down **52120** ile kayıt
 veya komut geçmişi varken veri kaybetmek yerine forward fix ister. SQL testleri yazılmıştır;
 gerçek SQL, pinler, tam CI ve bağımsız K3 incelemeleri tren kapanışında bekler.
+
+YOL-D40: EF ile üretilen `20261126223351_AddStaleCostProposalNotification`, mevcut tek `InboxNotifications` deposunun
+iki kontrol kısıtını Muhasebe'nin bayat SMM hazırlığı kapanış olayı için genişletir (kind **10**, `Digest` / özet).
+Olay hazırlayanı değişmez kimliğiyle taşır; Sales/Purchasing hedefi veya para/tutar taşımaz. Mevcut WP2 transactional
+inbox/dedup ile tekrar teslim tek hazırlayan bildirimi üretir. Yeni tablo, varsayılan bildirim saati, saklama veya yetki
+politikası eklenmez. Down önce kind 10 geçmişi varken **52142** ile geri almayı reddeder ve forward fix ister; boş depo
+geri alınabilir. Snapshot modelle eşleşir; API derlemesi ve pending-model kontrolleri exit0, testler ve gerçek SQL kabulü
+NOT_RUN durumundadır. Veritabanı uygulanmadı; dispatcher/production aktivasyonu veya SQL guard allowlist'i değiştirilmedi.

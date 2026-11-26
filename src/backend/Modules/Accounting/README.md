@@ -674,3 +674,14 @@ The strict UI decoder accepts the additive generation proof while legacy null-om
 API, Accounting.UnitTests, IntegrationTests and TypeScript source builds exit0; SQL/unit/Vitest/browser/CI runtime
 acceptance remains NOT_RUN. Generation exclusivity is serialized in Accounting; the separate Sales owner reread
 is a freshness check, not a cross-module borrowed-transaction claim.
+
+YOL-D40: EF-generated `20261126223339_AddStaleCostProposalClosure` adds the immutable proposal rowversion outbox cursor,
+its company-scoped cursor index and one stale closure per proposal, and extends the proposal state constraint with
+`Stale` (7). Approval-time stale detection for initial `SalesInvoicedShipment` and `PurchaseInvoiceDifference` appends
+"Bayatladı", audit and the idempotent conflict receipt atomically. Existing Prepare creates one fresh proposal with
+`RenewedFrom` lineage and current classification/plan/profile while preserving the old closed proposal and its event.
+No new valuation or financial movement is introduced. Component-cancellation and invoice-line classification-correction
+stale families are outside this migration. Down first refuses retained stale closure evidence with **52140** or fresh
+proposal lineage with **52141**, requiring a forward fix; empty/legacy-only stores remain rollback-safe. The generated
+snapshot matches the model. API source build and pending-model checks exit0; tests and real SQL acceptance remain NOT_RUN.
+No database migration, backfill, SQL guard allowlist, permission or activation change was applied.

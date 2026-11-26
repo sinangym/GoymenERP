@@ -53,6 +53,36 @@ public sealed class WorkNotificationPersistenceTests
     }
 
     [Fact]
+    public void Stale_cost_notification_migration_only_widens_the_event_shape_and_first_protects_preparer_delivery_history()
+    {
+        using var database = Database();
+        var row = database.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(WorkInboxNotificationRow))!;
+        var identity = row.GetCheckConstraints().Single(check => check.Name == "CK_WorkInboxNotifications_Identity").Sql;
+        var evidence = row.GetCheckConstraints().Single(check => check.Name == "CK_WorkInboxNotifications_Event").Sql;
+        Assert.Equal(WorkDbContext.InboxNotificationCheck, identity);
+        Assert.Equal(WorkDbContext.InboxNotificationEventCheck, evidence);
+        Assert.Contains("[Kind] IN (4, 5, 10) AND [Class] = 2", identity);
+        Assert.Contains("[Kind] = 10 AND [SourceName] = 'accounting.cost-proposals' AND [ReasonCode] = 'inventory_cost_preparation_stale'", evidence);
+        Assert.Contains("[Kind] NOT IN (4, 5, 10)", evidence);
+        var migration = new AddStaleCostProposalNotification();
+        Assert.Empty(migration.UpOperations.OfType<SqlOperation>());
+        Assert.Collection(migration.UpOperations,
+            operation => Assert.IsType<DropCheckConstraintOperation>(operation),
+            operation => Assert.IsType<DropCheckConstraintOperation>(operation),
+            operation => Assert.Equal(evidence, Assert.IsType<AddCheckConstraintOperation>(operation).Sql),
+            operation => Assert.Equal(identity, Assert.IsType<AddCheckConstraintOperation>(operation).Sql));
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql;
+        Assert.Contains("[work].[InboxNotifications] WHERE [Kind] = 10", guard); Assert.Contains("THROW 52142", guard);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.Equal(5, migration.DownOperations.Count);
+        Assert.Equal(2, migration.DownOperations.OfType<DropCheckConstraintOperation>().Count());
+        Assert.Equal(2, migration.DownOperations.OfType<AddCheckConstraintOperation>().Count());
+        Assert.Equal(WorkInboxNotificationClassV1.Digest, WorkInboxNotificationClassesV1.Of(WorkInboxNotificationKindV1.AccountingCostProposalStale));
+        Assert.Equal("accounting-cost-proposal-stale", WorkInboxNotificationClassesV1.Wire(WorkInboxNotificationKindV1.AccountingCostProposalStale));
+        Assert.Equal(WorkInboxNotificationKindV1.AccountingCostProposalStale, WorkNotificationStoreV1.StoredKind(WorkNotificationKindV1.AccountingCostProposalStale));
+    }
+
+    [Fact]
     public void The_WP2_migration_moves_the_old_store_before_dropping_it_and_Down_first_refuses_while_moved_or_new_rows_exist()
     {
         var migration = new Wp2SingleNotificationStoreAndApprovalFollowUp();

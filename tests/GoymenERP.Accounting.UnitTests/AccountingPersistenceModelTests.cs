@@ -201,9 +201,43 @@ public sealed class AccountingPersistenceModelTests
                 "20261117171929_WidenPostingMappingsToCogs", "20261117175214_AddInventoryCostProposals",
                 "20261117190022_AddPostedManufacturingCostAttribution", "20261117194231_AddInventoryCostComponentRounding",
                 "20261117205436_AddPostedPurchaseCostAttribution", "20261117213704_AllowCashExchangeJournalSources",
-                "20261117223234_AddInventoryCostComponentCancellations", "20261117232712_AddInvoiceCogsClaimSuccessions"],
-            context.Database.GetMigrations().TakeLast(14));
+                "20261117223234_AddInventoryCostComponentCancellations", "20261117232712_AddInvoiceCogsClaimSuccessions",
+                "20261126223339_AddStaleCostProposalClosure"],
+            context.Database.GetMigrations().TakeLast(15));
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void Stale_cost_closures_keep_one_company_proposal_outbox_cursor_and_refuse_rollback_before_any_evidence_is_dropped()
+    {
+        using var context = Context();
+        var row = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(AccountingInventoryCostProposalRow))!;
+        var cursor = row.FindProperty(nameof(AccountingInventoryCostProposalRow.OutboxPosition))!;
+        Assert.True(cursor.IsConcurrencyToken);
+        Assert.Equal(ValueGenerated.OnAddOrUpdate, cursor.ValueGenerated);
+        Assert.Equal("rowversion", cursor.GetColumnType());
+        Assert.Contains(row.GetIndexes(), index => index.Properties.Select(property => property.Name)
+            .SequenceEqual(new[] { "CompanyId", "OutboxPosition" }));
+        var closure = Assert.Single(row.GetIndexes(), index => index.GetDatabaseName() == "UX_InventoryCostProposals_StaleClosure");
+        Assert.True(closure.IsUnique); Assert.Equal("[Status] = 7", closure.GetFilter());
+        Assert.Equal(new[] { "CompanyId", "Id" }, closure.Properties.Select(property => property.Name));
+        var state = row.GetCheckConstraints().Single(check => check.Name == "CK_InventoryCostProposals_State").Sql;
+        Assert.Equal(AccountingDbContext.InventoryCostProposalStateCheck, state);
+        Assert.Contains("([Status] = 7 AND [Version] > 2 AND [PreparedBy] IS NOT NULL AND [PeriodId] IS NOT NULL AND [ApprovedBy] IS NULL AND [JournalId] IS NULL)", state);
+        var migration = new GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations.AddStaleCostProposalClosure();
+        Assert.Empty(migration.UpOperations.OfType<SqlOperation>());
+        Assert.Collection(migration.UpOperations,
+            operation => Assert.IsType<DropCheckConstraintOperation>(operation),
+            operation => { var column = Assert.IsType<AddColumnOperation>(operation); Assert.Equal("OutboxPosition", column.Name); Assert.True(column.IsRowVersion); },
+            operation => Assert.IsType<CreateIndexOperation>(operation),
+            operation => Assert.IsType<CreateIndexOperation>(operation),
+            operation => Assert.Equal(state, Assert.IsType<AddCheckConstraintOperation>(operation).Sql));
+        var guard = Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql;
+        Assert.Contains("[accounting].[InventoryCostProposals] WHERE [Status] = 7", guard);
+        Assert.Contains("THROW 52140", guard); Assert.Contains("$.renewedFrom", guard); Assert.Contains("THROW 52141", guard);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.Equal(6, migration.DownOperations.Count);
+        Assert.Equal("OutboxPosition", Assert.Single(migration.DownOperations.OfType<DropColumnOperation>()).Name);
     }
 
     [Fact]
