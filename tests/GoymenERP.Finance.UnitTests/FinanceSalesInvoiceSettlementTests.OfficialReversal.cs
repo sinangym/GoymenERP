@@ -101,7 +101,7 @@ public sealed partial class FinanceSalesInvoiceSettlementTests
             case "inconsistent-released-source-state": proof.States[0].UnallocatedAmountText = "0"; break;
             case "excess-released-allocation": proof.Allocations[0].AmountText = "11"; break;
             case "foreign-released-source-assignment": proof = proof with { Assignments = [new()
-                { CompanyId = Guid.NewGuid(), Kind = FinanceBalanceAssignmentKinds.Receipt, SourceId = proof.Sources[0].Id }] }; break;
+                { CompanyId = Guid.NewGuid(), Kind = FinanceBalanceAssignmentKinds.Receipt, SourceId = proof.Sources[0].Id, AvailableAmountText = "0" }] }; break;
         }
         var result = Project(proof);
         Assert.Equal(FinanceSalesInvoiceSettlementStatusV1.Unknown, result.Status);
