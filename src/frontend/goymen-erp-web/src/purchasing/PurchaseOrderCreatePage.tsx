@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
+import { CariQuickCreate } from '../cari/CariQuickCreate'
+import { findQuickCreatedOffer } from '../cari/quickCreateSelection'
+import { PARTY_ROLE_FLAG } from '../cari/contract'
 import { createPurchaseOrder, fetchPurchasingCurrencyCandidates, fetchPurchasingProductCandidates, fetchPurchasingSupplierOptions, type CreatePurchaseOrderOutcome } from './api'
 import { PURCHASING_CAPABILITY, PURCHASING_ROUTE, purchaseOrderDetailPath } from './capabilities'
 import type { CreatePurchaseOrderLinePriceRequest, CreatePurchaseOrderLineRequest, CreatePurchaseOrderRequest, ProductPurchaseCandidates, PurchasingCurrencyCandidates, PurchasingSupplierOffer } from './contract'
@@ -102,6 +105,7 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
   const [attempt, setAttempt] = useState<Attempt>(() => recalled === null
     ? { phase: 'idle' }
     : { phase: 'unknown', snapshot: recalled, reason: F.previousUnknown })
+  const [quickUnresolved, setQuickUnresolved] = useState(false)
   const [supplierSearch, setSupplierSearch] = useState('')
   const [productSearch, setProductSearch] = useState('')
   const [effectiveOn, setEffectiveOn] = useState('')
@@ -252,6 +256,7 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
 
   function submit(event: FormEvent) {
     event.preventDefault()
+    if (quickUnresolved) return
     if (attempt.phase === 'submitting' || attempt.phase === 'unknown' || (attempt.phase === 'failed' && attempt.unresolvedSince !== undefined) || companyId === null || actorId === null) return
     const supplier = suppliers.type === 'ready' ? suppliers.data.items.find((item) => `${item.supplierPartyId}|${item.companyAccountId}` === supplierId) : undefined
     if (supplier === undefined || !isDateOnly(effectiveOn)) return setFormError(T.fieldsRequired)
@@ -287,6 +292,20 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
     {formError === null ? null : <p role="alert" className={styles.error}>{formError}</p>}
     <form className={styles.createForm} onSubmit={submit} noValidate>
       <fieldset disabled={frozen}><legend>{T.supplierLegend}</legend><div className={styles.searchRow}><label htmlFor="supplier-search">{T.supplierSearch}</label><input id="supplier-search" value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} /><Button type="button" onClick={() => void readSuppliers()}>{F.search}</Button></div>{suppliers.type === 'loading' ? <p role="status">{T.suppliersLoading}</p> : suppliers.type === 'failed' ? <p role="alert">{suppliers.message}</p> : <><label htmlFor="supplier">{T.supplierAccount}</label><select id="supplier" value={supplierId} onChange={(event) => setSupplierId(event.target.value)}><option value="">{F.choose}</option>{suppliers.type === 'ready' ? suppliers.data.items.map((item) => <option key={`${item.supplierPartyId}|${item.companyAccountId}`} value={`${item.supplierPartyId}|${item.companyAccountId}`}>{item.label}</option>) : null}</select>{suppliers.type === 'ready' && suppliers.data.nextCursor !== null ? <Button type="button" onClick={() => void readSuppliers(suppliers.data.nextCursor ?? undefined, true)}>{T.moreSuppliers}</Button> : null}</>}
+      <CariQuickCreate onUnresolvedChange={setQuickUnresolved} initialRoles={PARTY_ROLE_FLAG.Supplier} disabled={frozen} onCreated={async (record, signal) => {
+        if (companyId === null || record.account.companyId !== companyId) return false
+        const security = boundary.capture()
+        const found = await findQuickCreatedOffer(signal, async cursor => {
+          const result = await fetchPurchasingSupplierOptions(companyId, { q: record.code, cursor }, signal)
+          if (result.type === 'http' && (result.status === 401 || result.status === 403)) boundary.report(result.status, security)
+          return result.type === 'ok-single' ? result.data : null
+        }, item => item.supplierPartyId === record.id && item.companyAccountId === record.account.id)
+        if (found === null || signal.aborted) return false
+        supplierFence.current.invalidate()
+        setSuppliers(current => ({ type: 'ready', data: { items: [...(current.type === 'ready' ? current.data.items.filter(item => item.companyAccountId !== found.companyAccountId) : []), found], nextCursor: current.type === 'ready' ? current.data.nextCursor : null } }))
+        setSupplierId(`${found.supplierPartyId}|${found.companyAccountId}`)
+        return true
+      }} />
       </fieldset>
       <fieldset disabled={frozen}><legend>{T.lineLegend}</legend><div className={styles.formGrid}><label htmlFor="effective-on">{F.businessDate}</label><input id="effective-on" type="date" disabled={queuedLines.length > 0} value={effectiveOn} onChange={(event) => { productFence.current.invalidate(); setEffectiveOn(event.target.value); setProductId(''); setProducts({ type: 'idle' }) }} /><label htmlFor="product-search">{F.productSearch}</label><div className={styles.searchRow}><input id="product-search" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} /><Button type="button" onClick={() => void readProducts()}>{F.search}</Button></div><label htmlFor="product">{T.product}</label>{products.type === 'loading' ? <p role="status">{F.productsLoading}</p> : products.type === 'failed' ? <p role="alert">{products.message}</p> : <select id="product" value={productId} onChange={(event) => setProductId(event.target.value)}><option value="">{F.choose}</option>{products.type === 'ready' ? products.data.items.map((item) => <option key={item.productId} value={item.productId}>{F.productOption(item.code, item.name, item.unitCode)}</option>) : null}</select>} {products.type === 'ready' && products.data.searchWindowFull ? <p className={styles.note}>{T.searchWindowFull}</p> : null}<label htmlFor="quantity">{F.quantity}</label><input id="quantity" inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} placeholder={T.quantityPlaceholder} /></div></fieldset>
       <fieldset disabled={frozen} data-testid="purchase-order-price"><legend>{P.legend}</legend><p className={styles.note}>{P.note}</p>{priceCleared ? <p role="status" data-testid="purchase-order-price-cleared">{P.priceCleared}</p> : null}<div className={styles.formGrid}>
@@ -308,7 +327,7 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
               onClick={() => setQueuedLines(current => current.filter(row => row.line.lineId !== item.line.lineId))}>{T.removeLine}</Button></td>
           </tr>)}</tbody></table></div>
       </section> : null}
-      <div className={styles.actions}><Button type="submit" variant="primary" disabled={frozen}>{attempt.phase === 'submitting' ? F.saving : T.submit}</Button></div>
+      <div className={styles.actions}><Button type="submit" variant="primary" disabled={frozen || quickUnresolved}>{attempt.phase === 'submitting' ? F.saving : T.submit}</Button></div>
     </form>
   </main>
 }

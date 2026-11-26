@@ -34,7 +34,10 @@
 
 import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { createDraft, type AccountOption, type ProductOffer, type ProductOption } from './api'
+import { CariQuickCreate } from '../cari/CariQuickCreate'
+import { findQuickCreatedOffer } from '../cari/quickCreateSelection'
+import { PARTY_ROLE_FLAG } from '../cari/contract'
+import { createDraft, fetchAccountOptions, type AccountOption, type ProductOffer, type ProductOption } from './api'
 import { SALES_DRAFT_PATH, SALES_PROBLEM_CODE } from './contract'
 import {
   abandon,
@@ -181,6 +184,7 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
   // the choice (no extra read), so the select keeps showing it and the submit is validated against the list shown.
   const [accountSearchInput, setAccountSearchInput] = useState('')
   const [accountSearch, setAccountSearch] = useState('')
+  const [quickUnresolved, setQuickUnresolved] = useState(false)
   const [chosenAccount, setChosenAccount] = useState<AccountOption | null>(null)
   const [productSearchInput, setProductSearchInput] = useState('')
   const [productSearch, setProductSearch] = useState('')
@@ -379,6 +383,7 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
 
   function onSubmit(event: React.FormEvent) {
     event.preventDefault()
+    if (quickUnresolved) return
     if (options === null) return
     // The same list the select renders from, the chosen account merged in: screen and payload never disagree.
     const validation = validateOrderDraft(
@@ -589,6 +594,19 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
                   </select>
                 )}
               </Field>
+              <CariQuickCreate onUnresolvedChange={setQuickUnresolved} initialRoles={PARTY_ROLE_FLAG.Customer} disabled={frozen} onCreated={async (record, signal) => {
+                if (record.account.companyId !== companyId) return false
+                const security = boundary.capture()
+                const found = await findQuickCreatedOffer(signal, async cursor => {
+                  const result = await fetchAccountOptions(companyId, signal, { q: record.code, cursor })
+                  if (result.type === 'http' && (result.status === 401 || result.status === 403)) boundary.report(result.status, security)
+                  return result.type === 'ready' ? { items: result.accounts, nextCursor: result.nextCursor } : null
+                }, item => item.partyId === record.id && item.companyAccountId === record.account.id)
+                if (found === null || signal.aborted) return false
+                setChosenAccount(found)
+                setValues(current => setAccount(current, found.partyId, found.companyAccountId))
+                return true
+              }} />
               </div>
               {accountsOffer !== null ? (
                 <p className={styles.readStatus} data-testid="sales-customer-more-status">
@@ -937,7 +955,7 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
 
           {options === null ? null : (
             <div className={styles.actions}>
-              <Button type="submit" variant="primary" disabled={frozen} aria-busy={frozen}>
+              <Button type="submit" variant="primary" disabled={frozen || quickUnresolved} aria-busy={frozen}>
                 {T.save}
               </Button>
             </div>

@@ -104,3 +104,27 @@ describe('manual bank payment start page', () => {
     expect(onContinue).not.toHaveBeenCalled()
   })
 })
+
+// Native Cari form/attempt behavior is covered by CariQuickCreate.test; these cases exercise the caller's owner read.
+vi.mock('../cari/CariQuickCreate', () => ({ CariQuickCreate: ({ initialRoles, onCreated }: { initialRoles: number; onCreated: (record: import('../cari/mutationContract').CounterpartyMutationResult, signal: AbortSignal) => Promise<boolean> }) =>
+  <button type="button" onClick={() => void onCreated({
+    id: 'aaaabbbb-1111-4111-8111-111111111111', code: 'CAR-NEW', kind: 1, legalName: 'Yeni Cari', tradeName: null, isActive: true, version: '1',
+    account: { id: 'aaaabbbb-2222-4222-8222-222222222222', companyId: COMPANY_A, roles: initialRoles, isActive: true, version: '1' },
+  }, new AbortController().signal)}>Quick test create</button> }))
+
+describe('inline payment party creation owner selection', () => {
+  it.each([true, false])('selects only the active eligible native owner result and preserves bank/date: %s', async eligible => {
+    installCounterpartyRead()
+    const original = globalThis.fetch
+    const owner = vi.fn(async () => new Response(JSON.stringify({ items: eligible ? [{ id: 'aaaabbbb-1111-4111-8111-111111111111', code: 'CAR-NEW', kind: 1, legalName: 'Yeni Cari', tradeName: null, isActive: true, version: 1, companyAccounts: [{ id: 'aaaabbbb-2222-4222-8222-222222222222', companyId: COMPANY_A, roles: 0, isActive: true, version: 1 }] }] : [], nextCursor: null, hasMore: false, totalCount: null, countScope: null }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => String(input).includes('q=CAR-NEW') ? owner() : original(input, init)))
+    renderFinance(<ManualBankPaymentStartPage companyId={COMPANY_A} onContinue={vi.fn()} />, { port: startPort(), shell: shellFor(COMPANY_A) })
+    await screen.findByRole('option', { name: 'C-100 - SENTETIK Alici' })
+    chooseContext()
+    fireEvent.click(screen.getByRole('button', { name: 'Quick test create' }))
+    await waitFor(() => expect(owner).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect((screen.getByLabelText('Cari hesabı') as HTMLSelectElement).value).toBe(eligible ? 'aaaabbbb-1111-4111-8111-111111111111' : PARTY))
+    expect((screen.getByLabelText('Banka hesabı') as HTMLSelectElement).value).toBe(BANK)
+    expect((screen.getByLabelText('İşlem tarihi') as HTMLInputElement).value).toBe('2026-09-24')
+  })
+})

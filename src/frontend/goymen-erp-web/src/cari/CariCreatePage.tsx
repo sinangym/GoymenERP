@@ -68,14 +68,19 @@ const CREATE_OPERATION = 'counterparty.create'
  * carried over. `confirming-switch` keeps the same key on purpose: nothing has
  * changed yet, and "Kal" must find the form as it was.
  */
-export function CariCreatePage() {
+interface InlineCreate {
+  readonly initialRoles: number
+  readonly onCreated: (result: CounterpartyMutationResult) => void
+  readonly onUnresolvedChange?: (unresolved: boolean) => void
+}
+export function CariCreatePage({ inline }: { readonly inline?: InlineCreate } = {}) {
   const shell = useShellState()
   const key = contextKey(shell)
   const namespace = key === null ? null : contextKeyString(key)
-  return <CariCreateForm key={namespace ?? 'no-context'} namespace={namespace} />
+  return <CariCreateForm key={namespace ?? 'no-context'} namespace={namespace} inline={inline} />
 }
 
-function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
+function CariCreateForm({ namespace, inline }: { readonly namespace: string | null; readonly inline?: InlineCreate }) {
   const shell = useShellState()
   const dispatch = useShellDispatch()
   const navigate = useNavigate()
@@ -87,13 +92,14 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
   const singleCompanyContext = shell.activeContext?.scopeMode === 'single' && activeCompanyId !== null
   // The detail is a SEPARATE grant (#182). Success navigates there only when held;
   // otherwise the record is summarised here, with no link the route would refuse.
-  const canOpenDetail = hasCapability(shell, CAPABILITY.cariPartiesDetail)
+  const canOpenDetail = inline === undefined && hasCapability(shell, CAPABILITY.cariPartiesDetail)
   // The "look it up in the list instead" advice is only advice if the list EXISTS. C-02 is published
   // ahead of C-01, so a creator without the detail grant would otherwise be sent to a screen the shell
   // has not mounted — the same defect as the two back links, reached through a sentence rather than a
   // link, and found by the same enumeration. Suppressed rather than reworded: no user-facing text is
   // invented here, and the sentence returns unchanged when C-01 publishes.
   const canOpenList = hasCapability(shell, CAPABILITY.cariPartiesList)
+  const canCreate = inline === undefined || hasCapability(shell, CAPABILITY.cariPartiesCreate)
   const activeCompany = useMemo(
     () => directory.find((company) => company.id === activeCompanyId) ?? null,
     [directory, activeCompanyId],
@@ -123,7 +129,7 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
   const boundary = useAuthBoundary()
   const probe = useQuery({
     queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'cari-contract-probe'],
-    enabled: namespace !== null && singleCompanyContext,
+    enabled: namespace !== null && singleCompanyContext && canCreate,
     queryFn: async ({ signal }) => {
       /**
        * Captured BEFORE the request, exactly as in api.ts/detailApi.ts. Deriving the
@@ -186,7 +192,7 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
   const probeFailed = probeAnswered && !probeSucceeded
   const incompatibleServer = probeAnswered && probeSucceeded && !writeReady
 
-  const [values, setValues] = useState<CreateFormValues>(EMPTY_CREATE_FORM)
+  const [values, setValues] = useState<CreateFormValues>(() => ({ ...EMPTY_CREATE_FORM, roles: inline?.initialRoles ?? 0 }))
   const [showErrors, setShowErrors] = useState(false)
   // Focus targets: the validation summary (UX-AC-001: it — not the first invalid
   // field — receives focus on an invalid submit) and the abandoned-attempt box.
@@ -198,12 +204,16 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
 
   const phase = attempt.state.phase
   const frozen = isAttemptFrozen(attempt.state)
+  const inlineUnresolved = frozen || phase === 'abandoned'
+  const onUnresolvedChange = inline?.onUnresolvedChange
+  useEffect(() => { onUnresolvedChange?.(inlineUnresolved) }, [inlineUnresolved, onUnresolvedChange])
+  useEffect(() => () => onUnresolvedChange?.(false), [onUnresolvedChange])
   /**
    * A new attempt may start from `idle` or from an ABANDONED (unfrozen) one — and
    * only once compatibility has been proven here. `writeReady` is checked again in
    * the transport; this one is so the button never invites a submit that cannot go.
    */
-  const canSubmit = canBeginAttempt(attempt.state) && writeReady
+  const canSubmit = canBeginAttempt(attempt.state) && writeReady && canCreate
   const completed = attempt.state.phase === 'completed' ? attempt.state : null
   const failure = attempt.state.phase === 'failed' ? attempt.state.failure : null
 
@@ -233,7 +243,7 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
   // Dirty scope (§4.2): from the first user change until success or an explicit
   // reset. A frozen attempt is dirty even if the fields were somehow pristine —
   // the pending write is the thing a silent switch must not carry.
-  const dirty = frozen || (completed === null && !isCreateFormPristine(values))
+  const dirty = frozen || (completed === null && (!isCreateFormPristine({ ...values, roles: 0 }) || values.roles !== (inline?.initialRoles ?? 0)))
   useEffect(() => {
     dispatch({ type: dirty ? 'DIRTY_SET' : 'DIRTY_CLEAR', scope: CARI_CREATE_DIRTY_SCOPE })
   }, [dirty, dispatch])
@@ -291,8 +301,9 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
       void queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === namespace })
     }
     // The canonical detail route, from the VERIFIED id — never the Location header.
+    if (inline !== undefined) { inline.onCreated(completed.result); return }
     if (canOpenDetail) void navigate(`/cari/${completed.result.id}`)
-  }, [completed, canOpenDetail, namespace, navigate, queryClient])
+  }, [completed, canOpenDetail, namespace, navigate, queryClient, inline])
 
   const announcement = completed === null ? '' : TEXT.announceCreated(completed.result.code)
 
@@ -312,7 +323,7 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
     return (
       <section aria-labelledby="cari-create-heading" className={styles.page}>
         <h1 id="cari-create-heading">{TEXT.title}</h1>
-        <CariBackLink label={TEXT.backToList} />
+        {inline === undefined ? <CariBackLink label={TEXT.backToList} /> : null}
         <StateBlock state={{ kind: failure }} subject={TEXT.subject} />
       </section>
     )
@@ -323,7 +334,7 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
     return (
       <section aria-labelledby="cari-create-heading" className={styles.page}>
         <h1 id="cari-create-heading">{TEXT.title}</h1>
-        <CariBackLink label={TEXT.backToList} />
+        {inline === undefined ? <CariBackLink label={TEXT.backToList} /> : null}
         <div role="status" aria-live="polite" className={styles.announce}>
           {announcement}
         </div>
@@ -344,8 +355,8 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
                 .join(', ')}
             />
           </dl>
-          {canOpenList ? <p className={styles.successNote}>{TEXT.successNoDetail}</p> : null}
-          <button
+          {canOpenList && inline === undefined ? <p className={styles.successNote}>{TEXT.successNoDetail}</p> : null}
+          {inline === undefined ? <button
             type="button"
             className={styles.secondary}
             onClick={() => {
@@ -355,7 +366,7 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
             }}
           >
             {TEXT.createAnother}
-          </button>
+          </button> : null}
         </div>
       </section>
     )
@@ -367,7 +378,7 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
   return (
     <section aria-labelledby="cari-create-heading" className={styles.page}>
       <h1 id="cari-create-heading">{TEXT.title}</h1>
-      <CariBackLink label={TEXT.backToList} />
+      {inline === undefined ? <CariBackLink label={TEXT.backToList} /> : null}
       <div role="status" aria-live="polite" className={styles.announce}>
         {announcement}
       </div>
@@ -537,6 +548,7 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
                * reverted and still resolve, so the recorded-read counter has to
                * have MOVED: that is the only evidence a read actually landed.
                */
+              if (!canCreate) return false
               const before = contractReadSeq()
               await probe.refetch()
               return contractReadSeq() > before && isCommandContractReady(contractContext)

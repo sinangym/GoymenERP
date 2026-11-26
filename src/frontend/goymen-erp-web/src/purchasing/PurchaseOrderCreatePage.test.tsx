@@ -316,3 +316,35 @@ describe('P-04 purchase order create form', () => {
     expect(api.create).toHaveBeenCalledTimes(1)
   })
 })
+
+// Native Cari form/attempt behavior is covered by CariQuickCreate.test; these cases exercise the caller's owner read.
+vi.mock('../cari/CariQuickCreate', () => ({ CariQuickCreate: ({ initialRoles, onCreated }: { initialRoles: number; onCreated: (record: import('../cari/mutationContract').CounterpartyMutationResult, signal: AbortSignal) => Promise<boolean> }) =>
+  <button type="button" onClick={() => void onCreated({
+    id: 'aaaabbbb-1111-4111-8111-111111111111', code: 'CAR-NEW', kind: 1, legalName: 'Yeni Cari', tradeName: null, isActive: true, version: '1',
+    account: { id: 'aaaabbbb-2222-4222-8222-222222222222', companyId: COMPANY, roles: initialRoles, isActive: true, version: '1' },
+  }, new AbortController().signal)}>Quick test create</button> }))
+
+describe('inline supplier creation owner selection', () => {
+  it('selects only the exact eligible supplier from later owner pages while retaining typed order values', async () => {
+    render(<MemoryRouter><PurchaseOrderCreatePage /></MemoryRouter>)
+    const user = userEvent.setup()
+    await fillDraft(user)
+    api.suppliers.mockResolvedValueOnce({ type: 'ok-single', data: { items: [], nextCursor: 'next' } }).mockResolvedValueOnce({ type: 'ok-single', data: { items: [{ supplierPartyId: 'aaaabbbb-1111-4111-8111-111111111111', companyAccountId: 'aaaabbbb-2222-4222-8222-222222222222', label: 'Yeni tedarikçi' }], nextCursor: null } })
+    await user.click(screen.getByRole('button', { name: 'Quick test create' }))
+    await waitFor(() => expect((screen.getByLabelText('Tedarikçi cari hesabı') as HTMLSelectElement).value).toBe('aaaabbbb-1111-4111-8111-111111111111|aaaabbbb-2222-4222-8222-222222222222'))
+    expect(api.suppliers.mock.calls.at(-1)?.[1]).toEqual({ q: 'CAR-NEW', cursor: 'next' })
+    expect((screen.getByLabelText('Miktar') as HTMLInputElement).value).toBe('12,5')
+    expect((screen.getByLabelText('İş tarihi') as HTMLInputElement).value).toBe('2026-09-23')
+    expect(api.create).not.toHaveBeenCalled()
+  })
+  it('does not inject the mutation account when the supplier owner refuses or returns another account', async () => {
+    render(<MemoryRouter><PurchaseOrderCreatePage /></MemoryRouter>)
+    const user = userEvent.setup()
+    await fillDraft(user)
+    api.suppliers.mockResolvedValue({ type: 'ok-single', data: { items: [], nextCursor: null } })
+    await user.click(screen.getByRole('button', { name: 'Quick test create' }))
+    await waitFor(() => expect(api.suppliers.mock.calls.at(-1)?.[1]).toEqual({ q: 'CAR-NEW', cursor: undefined }))
+    expect((screen.getByLabelText('Tedarikçi cari hesabı') as HTMLSelectElement).value).toBe(`${PARTY}|${ACCOUNT}`)
+    expect(screen.queryByRole('option', { name: 'Yeni tedarikçi' })).toBeNull()
+  })
+})

@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchCounterparties } from '../cari/api'
+import { CariQuickCreate } from '../cari/CariQuickCreate'
+import { findQuickCreatedOffer } from '../cari/quickCreateSelection'
 import type { CounterpartyListItem } from '../cari/contract'
+import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StateBlock } from '../shell/StateBlock'
 import { decodeBankAccountMasterPage, type BankAccountMasterItem } from './bankAccountContract'
 import { draftContextRequestFor } from './draftContext'
@@ -23,7 +26,10 @@ export function ManualBankPaymentStartPage({
   readonly companyId: string
   readonly onContinue: (entry: ManualBankPaymentEntryContext) => void
 }) {
+  const boundary = useAuthBoundary()
+  const [quickUnresolved, setQuickUnresolved] = useState(false)
   const [partyId, setPartyId] = useState('')
+  const [createdParty, setCreatedParty] = useState<{ companyId: string; item: CounterpartyListItem } | null>(null)
   const [treasuryAccountId, setTreasuryAccountId] = useState('')
   const [occurredOn, setOccurredOn] = useState('')
   const counterparties = useQuery({
@@ -47,9 +53,12 @@ export function ManualBankPaymentStartPage({
     decodeBankAccountMasterPage,
   )
 
-  const partyItems = counterparties.data?.type === 'ok-single'
+  const listedPartyItems = counterparties.data?.type === 'ok-single'
     ? counterparties.data.data.items.filter(activePartyAccount)
     : []
+  const partyItems = createdParty?.companyId === companyId
+    ? [...listedPartyItems.filter(item => item.id !== createdParty.item.id), createdParty.item]
+    : listedPartyItems
   const bankItems = banks.state.kind === 'ready'
     ? banks.state.data.items.filter(eligibleTreasuryAccount)
     : []
@@ -67,7 +76,7 @@ export function ManualBankPaymentStartPage({
   const canonical = useDraftContext(request)
 
   const submit = () => {
-    if (canonical.state.kind !== 'ready') return
+    if (quickUnresolved || canonical.state.kind !== 'ready') return
     const value = canonical.state.context
     onContinue({
       partyId: value.party.partyId,
@@ -108,6 +117,22 @@ export function ManualBankPaymentStartPage({
             ))}
           </select>
         </p>
+        <CariQuickCreate onUnresolvedChange={setQuickUnresolved} initialRoles={0} onCreated={async (record, signal) => {
+          if (record.account.companyId !== companyId) return false
+          const security = boundary.capture()
+          const found = await findQuickCreatedOffer(signal, async cursor => {
+            const result = await fetchCounterparties({ mode: 'single', companyId }, {
+              partyState: 'active', accountState: 'active', sort: 'legalName', direction: 'asc', pageSize: 100,
+              q: record.code, cursor,
+            }, signal)
+            if (result.type === 'http' && (result.status === 401 || result.status === 403)) boundary.report(result.status, security)
+            return result.type === 'ok-single' ? result.data : null
+          }, item => activePartyAccount(item) && item.id === record.id && item.companyAccounts[0].id === record.account.id)
+          if (found === null || signal.aborted) return false
+          setCreatedParty({ companyId, item: found })
+          setPartyId(found.id)
+          return true
+        }} />
         <p>
           <label htmlFor="manual-payment-bank">Banka hesabı</label>{' '}
           <select id="manual-payment-bank" value={treasuryAccountId}
@@ -128,7 +153,7 @@ export function ManualBankPaymentStartPage({
         {request !== null && canonical.state.kind !== 'loading' && canonical.state.kind !== 'ready' ? (
           <p role="alert">Seçilen ödeme bağlamı doğrulanamadı; kayıt formu açılmadı.</p>
         ) : null}
-        <button type="submit" disabled={canonical.state.kind !== 'ready'}>Ödeme formuna devam et</button>
+        <button type="submit" disabled={quickUnresolved || canonical.state.kind !== 'ready'}>Ödeme formuna devam et</button>
       </form>
     </section>
   )

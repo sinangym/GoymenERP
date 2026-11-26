@@ -992,3 +992,29 @@ describe('SAT-D123 — due terms ("vade") typed at create', () => {
     expect(JSON.parse(call.body as string).dueTerms).toBeNull()
   })
 })
+
+// Native Cari form/attempt behavior is covered by CariQuickCreate.test; these cases exercise the caller's owner read.
+vi.mock('../cari/CariQuickCreate', () => ({ CariQuickCreate: ({ initialRoles, onCreated }: { initialRoles: number; onCreated: (record: import('../cari/mutationContract').CounterpartyMutationResult, signal: AbortSignal) => Promise<boolean> }) =>
+  <button type="button" onClick={() => void onCreated({
+    id: 'aaaabbbb-1111-4111-8111-111111111111', code: 'CAR-NEW', kind: 1, legalName: 'Yeni Cari', tradeName: null, isActive: true, version: '1',
+    account: { id: 'aaaabbbb-2222-4222-8222-222222222222', companyId: COMPANY_A, roles: initialRoles, isActive: true, version: '1' },
+  }, new AbortController().signal)}>Quick test create</button> }))
+
+describe('inline customer creation owner selection', () => {
+  it.each([true, false])('keeps the sales form and selects the created account only when the owner confirms eligibility: %s', async eligible => {
+    installFetch()
+    const original = globalThis.fetch
+    const offers = vi.fn(async () => json({ companyId: COMPANY_A, accounts: eligible ? [{ partyId: 'aaaabbbb-1111-4111-8111-111111111111', companyAccountId: 'aaaabbbb-2222-4222-8222-222222222222', label: 'Yeni müşteri' }] : [], nextCursor: null }))
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => String(input).includes('/sales/references/accounts') ? offers() : original(input, init)))
+    renderSalesApp(PATH)
+    await formVisible()
+    await userEvent.selectOptions(screen.getByLabelText(T.field.customer), `${PARTY}|${ACCOUNT}`)
+    fireEvent.change(screen.getByLabelText(T.field.businessDate), { target: { value: '2026-09-13' } })
+    await userEvent.type(screen.getByLabelText(T.field.quantity), '420')
+    await userEvent.click(screen.getByRole('button', { name: 'Quick test create' }))
+    await waitFor(() => expect(offers).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect((screen.getByLabelText(T.field.customer) as HTMLSelectElement).value).toBe(eligible ? 'aaaabbbb-1111-4111-8111-111111111111|aaaabbbb-2222-4222-8222-222222222222' : `${PARTY}|${ACCOUNT}`))
+    expect((screen.getByLabelText(T.field.businessDate) as HTMLInputElement).value).toBe('2026-09-13')
+    expect((screen.getByLabelText(T.field.quantity) as HTMLInputElement).value).toBe('420')
+  })
+})
