@@ -71,7 +71,7 @@ Codex backend/DB/port ve sözleşme; Claude frontend/tarayıcı; mevcut koordina
 | T2/WP-C7 | P1 / K2 | SOURCE_REVIEW_REQUIRED | — |
 | T2/WP-C8 | P1 / K2 | SOURCE_REVIEW_REQUIRED | — |
 | T2/WP-C9 | P1 / K2 | SOURCE_REVIEW_REQUIRED | T2/WP-B2 |
-| T2/YOL-D40 | P1 / K3 | SOURCE_REVIEW_REQUIRED | T2/WP8 |
+| T2/YOL-D40 | P1 / K3 | SOURCE_PARTIALLY_IMPLEMENTED_LOCAL | T2/WP8 |
 | T2/CREDIT-GROUPS | P1 / K3 | SOURCE_REVIEW_REQUIRED | — |
 | T2/SMALL-GAPS | P1 / K3 | SOURCE_PARTIALLY_IMPLEMENTED_LOCAL | — |
 | T2/RELEASE | P1 / K3 | DEPENDENCIES_PENDING | T2/WP3, T2/WP8, T2/WP10, T2/WP-B1, T2/WP-B2, T2/WP-B4, T2/WP-B5, T2/WP-C1-LEDGER, T2/WP-C2, T2/WP-C3, T2/WP-C5, T2/WP-C7, T2/WP-C8, T2/WP-C9, T2/YOL-D40, T2/CREDIT-GROUPS, T2/SMALL-GAPS, W5-RAPOR/WP14-COVERAGE |
@@ -150,3 +150,7 @@ C: dolu olduğu için yeni çalışma ve build çıktıları D: üzerindeki ayr�
 CUTOVER mevcut bağımlılıklarına ilk kullanım Work kabulünü temsil eden `T2/WP8` eklendi (`WP3` zaten onun ön koşulu). Genel sohbet ve ileri AI, canlı geçiş ön koşulu değildir.
 
 WP8 Sales kaynak eklemesi: `8882e4ecb` (`6405e21db` agent kaynağı). Sipariş ve fatura native onay/ret, terminal kayıt metadata/replay ve approve-only purpose okuma bağlıdır. YOL-D23 creator/submitter yasağı eski native istisnanın yerine uygulanır; yalnız editöre ek dışlama yoktur. Yeni izin/grant yok. Agent frontend kaynağında 25/25 test, tsc ve scoped lint geçti; shell mount kayıt düzeltmesi ve backend geniş Sales regresyonu bekler. Bu kaynak eklemesi 64 akışın runtime kabulü değildir.
+
+27 Kasım ek kabul ayrımı: Sales mevcut birim testlerinin tamamı `f4ccda30f` kaynağında 2440/2440 geçti (0 skip). WP8 native karar ve shell mount bağlantısı yazıldı; yetkili gerçek API/tarayıcı, SQL, pin ve CI kabulü bekler. YOL-D40 `a30b3ee9f`/`cb9119f7d`/`481fc3e72`: eski öneri Bayatladı olarak immutable kapanır, aynı işlemde outbox/audit/komut makbuzu oluşur, mevcut Work özetinde hazırlayana türü belli bildirim gider. 62 hedefli frontend testi (0 skip), tsc/lint agent kaynağında geçti; yeni hazırlama UI eki sürüyor. EF migration’ları araçla üretildi; gerçek SQL/CI/K3 hâlâ NOT_RUN/PENDING.
+
+LOJ-D21 kısmi kaynak teslimi `e719f413f`/`7e3faaaa3`: şirket+ShareId filtresiz SQL tekilliği, iptal sonrası kimliğin korunması ve terminal replay yarışı mevcut altyapıya bağlandı. EF10.0.8 ile üretilen migration, eski çakışmada 52350 ile durur; geçmiş hareket varken Down 52351 ile reddedilir. Model testleri 24/24 geçti (0 skip); beş SQL senaryosu kaynakta, gerçek SQL ve geçmiş kayıt kontrolü NOT_RUN. YOL-D40 yenileme UI eki `92bdc40fb`: mevcut komutla yeni öneri, eski kapanışın korunması, aynı belirsiz isteğin güvenli tekrarı; değişen ekran dosyasının tüm 29 testi agent kaynağında geçti (0 skip).

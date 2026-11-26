@@ -1834,7 +1834,9 @@
           "inventory.opening-cost.v1",
           "finance.cash-account.v1",
           "finance.cash-account-passivation.v1",
-          "finance.cash-account-reactivation.v1"
+          "finance.cash-account-reactivation.v1",
+          "sales.order-draft.v1",
+          "sales.invoice.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -1847,8 +1849,8 @@
           "new_SQL_facts": "2 written and compiled; NOT_RUN",
           "delegation_display_frontend": "Agent source b61a351b0: 66 passed, 0 skipped; tsc/lint passed; one pre-existing Fast Refresh warning",
           "delegation_display_HTTP": "6 attempted, 6 host-start failures: shell authority pins deferred by train policy; NOT_ACCEPTED",
-          "Sales decision frontend": "Agent source 6405e21db: 25 tests across 5 files passed, 0 skipped; tsc and scoped lint passed. Shell route registry correction still pending.",
-          "Sales backend": "NOT_RUN; native maker/submitter fence now applies YOL-D23; broader old self-approve fixtures require regression verification."
+          "Sales decision frontend": "Agent source 005184 (integrated 60a3b7998): shell registry, mount and access checks 35 passed, 0 skipped; tsc/lint passed. Hosted shell authority pins remain deferred.",
+          "Sales backend": "Sales.UnitTests at f4ccda30f: 2440 passed, 0 failed, 0 skipped. Existing native approval fixtures now use independent maker/checker actors under YOL-D23; negative fences preserved."
         },
         "reuse": [
           "existing FinanceCashAccountService commands and durable receipts",
@@ -1862,11 +1864,7 @@
         ],
         "remaining": [
           "Other owner decision adapters and all 64 flow acceptance evidence",
-          "Delegation history display-name enrichment and complete incoming-delegation paging UX",
-          "Actual SQL, HTTP/runtime browser acceptance, shell/OpenAPI/guard/recovery pins, full CI and two independent exact-head K3 reviews",
-          "Sales invoice/order native decision family implementation in progress; shell authority must be regenerated before host acceptance",
-          "Complete Sales purpose route shell registry/mount parity; must not grant Sales browse access",
-          "Verify full Sales unit regression against YOL-D23; source-only changes not accepted without relevant checks"
+          "Actual SQL, HTTP/runtime browser acceptance, shell/OpenAPI/guard/recovery pins, full CI and two independent exact-head K3 reviews"
         ],
         "sql": "NOT_RUN",
         "browser": "NOT_RUN",
@@ -1914,7 +1912,10 @@
         ],
         "source_commits": [
           "19cec31b5",
-          "8882e4ecb"
+          "8882e4ecb",
+          "60a3b7998",
+          "e6acbdaca",
+          "f4ccda30f"
         ]
       }
     },
@@ -2684,7 +2685,7 @@
       "backlog_parent": "W4-MUHASEBE",
       "title": "Bayat SMM önerisi kapanışı",
       "group": "TREN2",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P1",
       "risk": "K3",
       "scope": "Accounting kaynağı değişen öneriyi bayatladı ile kapatır; audit ve Work bildirimi.",
@@ -2707,7 +2708,8 @@
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
         "Devir belgesinde kalan iş; listedeki mevcut kaynak/testler bulundu.",
-        "Tam davranış ve runtime kabulü: NOT_RUN."
+        "Tam davranış ve runtime kabulü: NOT_RUN.",
+        "Immutable Prepared-to-Stale closure, audit/version/receipt and outbox share one Accounting transaction. Work Digest notification targets only the recorded preparer. Typed costKind reaches legacy and unified feeds; owner screen validates closure evidence. Native explicit fresh successor preparation retains old closure."
       ],
       "decisions": [
         "YOL-D40"
@@ -2742,7 +2744,52 @@
         "tests/GoymenERP.Api.IntegrationTests/WorkNotificationSqlServerRelationalAcceptanceTests.cs",
         "tests/GoymenERP.Work.UnitTests/WorkOutboxDispatcherTests.cs"
       ],
-      "change_files": []
+      "change_files": [],
+      "execution": {
+        "source_commits": [
+          "a30b3ee9f",
+          "c1e06dc87",
+          "cb9119f7d",
+          "481fc3e72",
+          "92bdc40fb"
+        ],
+        "reuse": [
+          "Existing AccountingInventoryCostStoreV1 atomic transaction/preparation command and immutable proposal history",
+          "Existing committed outbox cursor, Work notification inbox/dedup/digest, existing Accounting owner routes and list",
+          "Existing frontend scoped command journal, strict decoders and synthetic fixtures"
+        ],
+        "local_checks": {
+          "frontend": "Agent 143b0240468c156a72fc9cc8384c31cc9f89d3ca: 62 passed, 0 skipped; tsc/scoped lint passed. All 15 changed frontend files match integrated source. Later explicit renewal UI is a separate pending increment.",
+          "API_build_and_EF": "Agent 7b094764: API build 0 errors/0 warnings; EF10.0.8 generated additional Work migration; Work/Accounting has-pending-model-changes both exit0. Root integrated build/test compile pending.",
+          "explicit renewal UI": "Agent 1bd77957ed56e7af40428802e18918b821ead578: complete changed Accounting page test file 29/29 passed, 0 skipped; tsc/scoped lint passed. Existing native preparation form/command and stable unknown-result retry reused; successor receipt and authorized list selection verified."
+        },
+        "migrations": [
+          "20261126223339_AddStaleCostProposalClosure",
+          "20261126223351_AddStaleCostProposalNotification",
+          "20261126224759_AddStaleCostNotificationCostKind"
+        ],
+        "throw_codes": [
+          52140,
+          52141,
+          52142,
+          52143
+        ],
+        "sql": "NOT_RUN",
+        "browser": "NOT_RUN",
+        "hosted_ci": "NOT_RUN",
+        "independent_review": "PENDING",
+        "remaining": [
+          "Root integrated model/unit/consumer tests and real SQL acceptance",
+          "Component cancellation and invoice-line correction families are separate existing workflows; this increment covers shipment COGS and purchase difference proposals",
+          "Train pins, full CI, browser and two exact-head independent K3 reviews"
+        ],
+        "new_permissions": [],
+        "measurements": {
+          "token": "NOT_AVAILABLE",
+          "test_time": "Agent frontend scoped suite about seconds; exact duration in local test log",
+          "development_duration": "NOT_SEPARATELY_MEASURED"
+        }
+      }
     },
     {
       "id": "T2/CREDIT-GROUPS",
@@ -2936,25 +2983,31 @@
         "source_commit": "26497594319c23cd8a98689200d7ce67ec81dbfa",
         "source_commits": [
           "69ffd6ccb",
-          "264975943"
+          "264975943",
+          "e719f413f",
+          "7e3faaaa3"
         ],
         "reuse": [
           "Existing immutable PartyBalanceTransferCommands.ResultJson and replay authorization/payload fence",
-          "Existing balance transfer unit/HTTP/SQL acceptance fixtures"
+          "Existing balance transfer unit/HTTP/SQL acceptance fixtures",
+          "Existing Logistics domain DuplicateShareId and terminal receipt/replay",
+          "EF generated snapshot/index, existing Logistics SQL fixture and cross-module shipment rollback"
         ],
         "local_checks": {
-          "Finance replay tests": "5 passed, 0 skipped; original and retry correlation differ; legacy missing metadata preserved without fabrication; public JSON shape unchanged"
+          "Finance replay tests": "5 passed, 0 skipped; original and retry correlation differ; legacy missing metadata preserved without fabrication; public JSON shape unchanged",
+          "ShareId model": "LogisticsPersistenceModelTests: 24 passed, 0 failed, 0 skipped, at 7e3faaaa3 source. First --no-restore invocation produced no tests because assets were absent; only the restored invocation counts."
         },
         "sql": "NOT_RUN",
         "browser": "NOT_RUN",
         "hosted_ci": "NOT_RUN",
         "independent_review": "PENDING",
-        "migration": null,
+        "migration": "20261126225736_AddCompanyWideLoadingShareIdentity; EF10.0.8 generation exit0; Up preflight52350, Down forward-fix52351",
         "new_permissions": [],
         "remaining": [
           "Legacy receipts without original correlation remain replayable without a fabricated original header",
-          "ShareId and plan-excess rejection/unused text gaps remain separate outstanding work",
-          "SQL/HTTP host acceptance, train pins, hosted CI and K3"
+          "SQL/HTTP host acceptance, train pins, hosted CI and K3",
+          "Plan-excess rejection/unused text gaps are a separate in-progress UI increment",
+          "Five ShareId SQL facts are written; real existing records and live migration acceptance NOT_RUN; downstream shipment/delivery/invoice/cost identity E2E remains required"
         ],
         "measurements": {
           "token": "NOT_AVAILABLE",

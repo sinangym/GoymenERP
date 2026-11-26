@@ -286,11 +286,11 @@
           "path": "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.Status.cs",
           "line": 18,
           "anchor": "public async Task The_seven_axes_are_answered_separately_and_the_realization_is_judged_with_the_settings_tolerance()",
-          "sha256": "bcd6d34aeb1a0bf7e59f7dee85c481fe506e3bbd7e4bc85fe24020ba097af3ce",
-          "git_blob": "995e61af29e26467c10a20410ff33d6d0b80c882"
+          "sha256": "1c159ddc8bc2eb628f51690bbecd9d964b25c31372509b1c2e944c6bc00922b3",
+          "git_blob": "5a61383b239bb4c9d6b7a884da8da09213022e87"
         }
       ],
-      "source_commit": "0577612d44a05f4c517f094ae056dde28484fca6",
+      "source_commit": "f4ccda30fa7ba8b5e30fd730fd9d377a67e94b2d",
       "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
@@ -1172,8 +1172,8 @@
           "path": "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkNotificationStoreV1.cs",
           "line": 21,
           "anchor": "public async Task DeliverAsync(DeliverWorkNotificationV1 command, CancellationToken cancellationToken = default)",
-          "sha256": "63e8a8dd79e289632efc47942ab9beecc5cdc78a94b8d581e08f4ee87a88cc2c",
-          "git_blob": "8bf01ba7d9d1f9d70e4c67065bc4256c35cc27ca"
+          "sha256": "d53bc55bcba49d007794ad2cb4e4dfc35f9f9923ac92fc929270bd4b28acba60",
+          "git_blob": "780a741430963abb2c606a78e45ff11d584eb247"
         }
       ],
       "tests": [
@@ -1185,7 +1185,7 @@
           "git_blob": "29688a6e218e9d4c4699333c7012cb661d58a855"
         }
       ],
-      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "source_commit": "f4ccda30fa7ba8b5e30fd730fd9d377a67e94b2d",
       "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": null,
@@ -1205,7 +1205,9 @@
       "decision_refs": [
         "AI-D29"
       ],
-      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
+      "previous_source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "previous_historical_evidence": "SOURCE_AND_TEST_ONLY"
     },
     {
       "id": "REF-WORK-03",
@@ -1218,8 +1220,8 @@
           "path": "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Collaboration/WorkCollaborationServiceV1.cs",
           "line": 228,
           "anchor": "public async Task<WorkTaskResponseV1> CreateTaskAsync(CreateWorkTaskRequestV1 request, WorkCommandMetadataV1 metadata,",
-          "sha256": "341b367ae28c579a0eaf5e7cc2dee13132e8af0f7079f1f877f5cf6ef7de5edc",
-          "git_blob": "87389362a516cfe846370ba116a2c4c22053ee83"
+          "sha256": "5318543b722e3349b2198df925657f2fd66af1fb54c74c243391d3f24a1ddc42",
+          "git_blob": "d5bcbde48162b291331c9186f31ffc05c45046fe"
         }
       ],
       "tests": [
@@ -1231,7 +1233,7 @@
           "git_blob": "869374e3cee8e775bdc042160cee1d313d0d3ce9"
         }
       ],
-      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "source_commit": "f4ccda30fa7ba8b5e30fd730fd9d377a67e94b2d",
       "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": null,
@@ -1252,7 +1254,9 @@
         "AI-D20",
         "AI-D29"
       ],
-      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
+      "previous_source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "previous_historical_evidence": "SOURCE_AND_TEST_ONLY"
     },
     {
       "id": "REF-EVENT-01",

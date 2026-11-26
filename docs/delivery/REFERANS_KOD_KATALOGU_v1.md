@@ -70,3 +70,5 @@ Yeni oturum bütün kataloğu bağlama almaz: paketin `references` kimliklerinde
 27 Kasım: REF-CLOSE-01 güncel `0577612d4` kaynağına bağlandı. Eski CI eşliği geçmiş baseline olarak tutulur; yeni owner bağlantısının SQL/CI kabulü değildir. Katalog 50 referans olarak korunur.
 
 REF-CARRY-01 test bağlantısı, dönem açılış devri yerine gerçek cari bakiye aktarımı SQL ve birim testlerine düzeltildi (`69ffd6ccb`). Eski makbuzda olmayan correlation kimliği uydurulmaz.
+
+27 Kasım: REF-CLOSE-01 test fixture’ları YOL-D23 ile uyumlu farklı onaycı kullanacak biçimde güncellendi; REF-WORK-02/03 yeni stale bildirim kaynağına bağlandı. Güncel hash/commit kanıtları JSON’dadır; eski CI sonucu yeni kaynaklara aktarılmaz. Sales birim testleri 2440/2440 (0 skip), yeni Work bildirim arayüzü agent kaynağında 62/62 (0 skip); SQL/CI/runtime kabulü bekler.
