@@ -277,8 +277,8 @@
           "path": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.Status.cs",
           "line": 34,
           "anchor": "public async Task<SalesOrderDraftStatusResponse> GetDraftStatusAsync(Guid draftId, CancellationToken cancellationToken = default)",
-          "sha256": "1473261cdccdce7411365c42f6680dc4a2fbb391a45525302fd79a4780a217e0",
-          "git_blob": "41190b0f7d57aad90c49f49c82eba23c61bdce9d"
+          "sha256": "1354e7afa7d8931819d44d68d5b0f459e4793070a5e9185673ef27d35119b5f5",
+          "git_blob": "1242408a96953c37ef7f499ce211fc14cc208144"
         }
       ],
       "tests": [
@@ -290,8 +290,8 @@
           "git_blob": "995e61af29e26467c10a20410ff33d6d0b80c882"
         }
       ],
-      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
-      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "source_commit": "0577612d44a05f4c517f094ae056dde28484fca6",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
       "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
@@ -302,7 +302,7 @@
         "Eski test sonucu yeni kullanım kabulü değildir"
       ],
       "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
-      "adaptations": "NoSource ve Unreadable sıfır/tamam sayılmaz; owner axes bağlı değilse kapanış açılamaz.",
+      "adaptations": "SAT-D478/479 owner composition preserves all axes and native close. Normal invoices use actual claims/settlement; subcontract remains NoSource pending its own proof family.",
       "limitations": [
         "NoSource ve Unreadable sıfır/tamam sayılmaz; owner axes bağlı değilse kapanış açılamaz.",
         "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
@@ -324,9 +324,13 @@
         "SAT-D30",
         "SAT-D32",
         "SAT-D33",
-        "SAT-D5"
+        "SAT-D5",
+        "SAT-D478",
+        "SAT-D479"
       ],
-      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
+      "previous_source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "previous_historical_evidence": "HISTORICAL_CI_TREE_MATCH"
     },
     {
       "id": "REF-RISK-01",
@@ -923,24 +927,31 @@
           "path": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinancePartyBalanceTransferServiceV1.cs",
           "line": 13,
           "anchor": "public sealed class FinancePartyBalanceTransferServiceV1(FinanceDbContext database, ICompanyContext company,",
-          "sha256": "9932e46c2469f62b7042a6deb8cb0a1a7394696856db3920f8a10a5f430fe9f0",
-          "git_blob": "1d1bc2d213750861a1c8f7404406abc0823e3c20"
+          "sha256": "13532be00ce87355d6f780fa8ae8919be1a98bc646eb2126856d26e317963bce",
+          "git_blob": "07c294d1ab6d752cc3eb766ffee904f4c87c5666"
         }
       ],
       "tests": [
         {
-          "path": "tests/GoymenERP.Api.IntegrationTests/FinanceExpensePaymentSqlServerRelationalAcceptanceTests.PartyCarryLedger.cs",
-          "line": 20,
-          "anchor": "public async Task Approved_party_opening_is_carried_into_the_next_ledger_without_new_facts_and_reopening_removes_only_the_carry()",
-          "sha256": "2219434b5d9bf60a429559b21e6007d3347d95b01bf2e71b78e5d0a486d4b144",
-          "git_blob": "500093ed15e8639c89ad6eea2a041959a2b42b42"
+          "path": "tests/GoymenERP.Api.IntegrationTests/FinancePartyBalanceTransferSqlServerRelationalAcceptanceTests.cs",
+          "anchor": "public async Task Full_balance_and_allocation_positions_survive_reopen_replay_and_other_company_reads()",
+          "sha256": "04f53e1274285ce9cf3759dd576e88ecb689b0e3fcf687518caf9d49d87f5f34",
+          "git_blob": "2ce49340f44dfcc13f82e2d282dd3a1d9ac8b29c",
+          "line": 28
+        },
+        {
+          "path": "tests/GoymenERP.Finance.UnitTests/FinancePartyBalanceTransferServiceTests.cs",
+          "anchor": "public async Task Legacy_receipt_without_correlation_is_replayed_without_inventing_a_retry_correlation()",
+          "sha256": "5b8176480c9706e87abfe0e86df5a99c7290f72c2c1344e81154d9591ed8b43d",
+          "git_blob": "b2603b50593f6072ede689f0fc8477bdc23d2630",
+          "line": 47
         }
       ],
-      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
-      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "source_commit": "26497594319c23cd8a98689200d7ce67ec81dbfa",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
-      "sql_evidence": "HISTORICAL_SUITE_ONLY_NOT_INDIVIDUAL_RESULT",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
       "invariants": [
         "CompanyId ve güncel yetki",
         "Owner modül veri sahipliği",
@@ -951,12 +962,15 @@
       "adaptations": "Virman yeni gider değildir; devir replay correlation kimliğini ayrıca doğrula.",
       "limitations": [
         "Virman yeni gider değildir; devir replay correlation kimliğini ayrıca doğrula.",
-        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı.",
+        "Existing immutable receipt JSON now retains original correlation without schema changes. Legacy receipts with no correlation are replayable but cannot truthfully provide that header."
       ],
       "decision_refs": [
         "KLN-D38"
       ],
-      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
+      "previous_source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "previous_historical_evidence": "HISTORICAL_CI_TREE_MATCH"
     },
     {
       "id": "REF-BANK-01",

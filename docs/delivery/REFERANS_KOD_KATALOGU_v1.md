@@ -2,7 +2,7 @@
 
 Bu katalog çalışan yeni fonksiyonların kabul listesi değildir. 50 kaynak/test giriş noktasıdır. Her kayıtta gerçek yol, sembol/satır, SHA-256, Git blob, karar ilişkisi, uyarlama sınırı ve yeni kullanım testi bulunur.
 
-**Kaynak:** `claude/tren-2` `c24706af4de4300d4a171eca11459098d87cd14f`. 32 kaydın kaynak ve test blobları geçmiş başarılı CI ağacıyla aynıdır; 18 kayıt yalnız kaynak/test kanıtına sahiptir. Tek tek test sonuçları bu çalışmada okunmadı. Yeni kullanım için SQL, tarayıcı ve işletme kabulü yapılmadı.
+**Kaynak:** `claude/tren-2` `c24706af4de4300d4a171eca11459098d87cd14f`. 29 kaydın kaynak ve test blobları geçmiş başarılı CI ağacıyla aynıdır; 21 kayıt yalnız kaynak/test kanıtına sahiptir. Tek tek test sonuçları bu çalışmada okunmadı. Yeni kullanım için SQL, tarayıcı ve işletme kabulü yapılmadı.
 
 Makine kaynağı: [REFERANS_KOD_KATALOGU_v1.json](REFERANS_KOD_KATALOGU_v1.json). Doğrulayıcı: `python3 -I -S -B tools/verify_delivery_reference_catalog.py`. Windows’ta kurulu Python yürütücüsü kullanılabilir.
 
@@ -15,7 +15,7 @@ Makine kaynağı: [REFERANS_KOD_KATALOGU_v1.json](REFERANS_KOD_KATALOGU_v1.json)
 | REF-POLICY-01 | Şirket politikası ve yürürlük sürümü | REFERENCE_PATTERN | Eski CI ağacı eşleşiyor |
 | REF-ORDER-01 | Çok satırlı alış ve belge onayı | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |
 | REF-INVOICE-01 | Alış faturası kaynağı ve kabul eşleştirme testleri | REFERENCE_PATTERN | Eski CI ağacı eşleşiyor |
-| REF-CLOSE-01 | Satış normal kapanış eksenleri | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |
+| REF-CLOSE-01 | Satış normal kapanış eksenleri | SMALL_EXTENSION | Güncel kaynak/test; yeni owner kompozisyonu hedefli doğrulandı, SQL/CI bekler |
 | REF-RISK-01 | Sevkte deterministik risk kapısı | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
 | REF-STOCK-01 | Tek stok defteri ve adet/kg tutarlılığı | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
 | REF-COST-01 | Şirket ortalama maliyet hesabı | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
@@ -27,7 +27,7 @@ Makine kaynağı: [REFERANS_KOD_KATALOGU_v1.json](REFERANS_KOD_KATALOGU_v1.json)
 | REF-ALLOCATE-01 | Ödeme dağıtımı ve tek para hareketi | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
 | REF-EXPENSE-01 | Masraf ödemesi ve audit/idempotency | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |
 | REF-CREDIT-01 | Kredi hareketi öneri ve karar | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |
-| REF-CARRY-01 | Cari bakiye virman kaynağı | REFERENCE_PATTERN | Eski CI ağacı eşleşiyor |
+| REF-CARRY-01 | Cari bakiye virman kaynağı | REFERENCE_PATTERN | Güncel kaynak/test; replay için 5 hedefli test geçti, SQL/CI bekler |
 | REF-BANK-01 | Ekstre import ve tekilleştirme | DIRECT_REUSE | Kaynak/test var |
 | REF-JOURNAL-01 | Kaynaklı fiş taslağı ve farklı kişi onayı | REFERENCE_PATTERN | Kaynak/test var |
 | REF-JOURNAL-02 | Kesin fişe bağlı ters kayıt | REFERENCE_PATTERN | Eski CI ağacı eşleşiyor |
@@ -66,3 +66,7 @@ Yeni oturum bütün kataloğu bağlama almaz: paketin `references` kimliklerinde
 Ölçüm: token sayacı yoksa UNKNOWN; tasarruf yüzdesi vaat edilmez. Değişen kod, süre, tekrar çalışma ve bulgu sayısı ilk teslimatlardan ölçülür.
 
 26 Kasım geliştirmesi: REF-MFG-01/02 kendi yeni kaynak commit’ine bağlandı. Önceki CI eşliği geçmiş baseline olarak saklandı; yeni kod için SQL/CI kabulü iddia edilmedi.
+
+27 Kasım: REF-CLOSE-01 güncel `0577612d4` kaynağına bağlandı. Eski CI eşliği geçmiş baseline olarak tutulur; yeni owner bağlantısının SQL/CI kabulü değildir. Katalog 50 referans olarak korunur.
+
+REF-CARRY-01 test bağlantısı, dönem açılış devri yerine gerçek cari bakiye aktarımı SQL ve birim testlerine düzeltildi (`69ffd6ccb`). Eski makbuzda olmayan correlation kimliği uydurulmaz.

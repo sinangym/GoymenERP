@@ -56,7 +56,7 @@ Codex backend/DB/port ve sözleşme; Claude frontend/tarayıcı; mevcut koordina
 | W3-LOJISTIK/EXIT-EVIDENCE | P0 / K3 | SOURCE_REVIEW_REQUIRED | — |
 | W2-BELGE/MIKRO-EDOC | P0 / K3 | SOURCE_REVIEW_REQUIRED | — |
 | W5-RAPOR/WP14-COVERAGE | P0 / K2 | ACCEPTANCE_REQUIRED | — |
-| W5-MIGRASYON/CUTOVER | P0 / K3 | HUMAN_ACTIVATION_REQUIRED | W1-YETKI/ROLE-UX, W1-ORG/BOOTSTRAP, W1-CARI/QUICK-CREATE, W1-URUN/UNIT-SCOPE, W2-SATINALMA/MULTILINE, W2-SATINALMA/MIXED-MIN, W2-SATINALMA/NOPO-MIN, W4-MUHASEBE/CLASSIFY-MIN, W4-MUHASEBE/CORRECTION-MIN, W4-FINANS/EXPENSE-CATALOG, W2-SATIS/CLOSURE-AXES, W4-RISK/SECOND-SHIPMENT, W2-ACIKKALEM/LEGAL-IDENTITY, W3-URETIM/FIVE-ENGINES, W3-URETIM/SUBCONTRACT, W3-LOJISTIK/EXIT-EVIDENCE, W2-BELGE/MIKRO-EDOC |
+| W5-MIGRASYON/CUTOVER | P0 / K3 | HUMAN_ACTIVATION_REQUIRED | W1-YETKI/ROLE-UX, W1-ORG/BOOTSTRAP, W1-CARI/QUICK-CREATE, W1-URUN/UNIT-SCOPE, W2-SATINALMA/MULTILINE, W2-SATINALMA/MIXED-MIN, W2-SATINALMA/NOPO-MIN, W4-MUHASEBE/CLASSIFY-MIN, W4-MUHASEBE/CORRECTION-MIN, W4-FINANS/EXPENSE-CATALOG, W2-SATIS/CLOSURE-AXES, W4-RISK/SECOND-SHIPMENT, W2-ACIKKALEM/LEGAL-IDENTITY, W3-URETIM/FIVE-ENGINES, W3-URETIM/SUBCONTRACT, W3-LOJISTIK/EXIT-EVIDENCE, W2-BELGE/MIKRO-EDOC, T2/WP8 |
 | T2/WP3 | P1 / K3 | SOURCE_IMPLEMENTED_LOCAL | — |
 | T2/WP8 | P1 / K3 | SOURCE_PARTIALLY_IMPLEMENTED_LOCAL | T2/WP3 |
 | T2/WP10 | P1 / K2 | DECISION_REQUIRED | — |
@@ -73,7 +73,7 @@ Codex backend/DB/port ve sözleşme; Claude frontend/tarayıcı; mevcut koordina
 | T2/WP-C9 | P1 / K2 | SOURCE_REVIEW_REQUIRED | T2/WP-B2 |
 | T2/YOL-D40 | P1 / K3 | SOURCE_REVIEW_REQUIRED | T2/WP8 |
 | T2/CREDIT-GROUPS | P1 / K3 | SOURCE_REVIEW_REQUIRED | — |
-| T2/SMALL-GAPS | P1 / K3 | SOURCE_REVIEW_REQUIRED | — |
+| T2/SMALL-GAPS | P1 / K3 | SOURCE_PARTIALLY_IMPLEMENTED_LOCAL | — |
 | T2/RELEASE | P1 / K3 | DEPENDENCIES_PENDING | T2/WP3, T2/WP8, T2/WP10, T2/WP-B1, T2/WP-B2, T2/WP-B4, T2/WP-B5, T2/WP-C1-LEDGER, T2/WP-C2, T2/WP-C3, T2/WP-C5, T2/WP-C7, T2/WP-C8, T2/WP-C9, T2/YOL-D40, T2/CREDIT-GROUPS, T2/SMALL-GAPS, W5-RAPOR/WP14-COVERAGE |
 | W5-RAPOR/PROACTIVE | P1 / K3 | DECISION_REQUIRED | — |
 | W4-MUHASEBE/EQUIPMENT-LINK | P2 / K3 | DEFERRED_BY_DECISION | — |
@@ -138,3 +138,15 @@ WP8 **kısmi kaynak teslimidir**: diğer owner türleri ve 64 akış kanıtı, v
 `W2-SATIS/CLOSURE-AXES` kısmi backend teslimi: `01697d4f7`. Finance, bütün fatura taksitlerinin geçerli kayıt/mahsup/ters kayıt/iade ve mevcut bakiye devri kanıtını salt okunur porttan sunar; yeni para hareketi üretmez. Finans 1898/1898 test geçti, atlanan 0. İki SQL testi yazıldı ve API integration projesi 0 hata/0 uyarıyla derlendi; gerçek SQL **NOT_RUN**. Sales fatura/sevk kaynak kümesi ve eksen kompozisyonu henüz bağlı değildir; `NoSource` kapanış engeli korunur. Kaynak ekseninde henüz siparişleşmemiş talep ve ortak belgenin sipariş payı özellikle kapsanacaktır.
 
 SQL, gerçek API ile tarayıcı, pinler, tam hosted CI ve iki bağımsız K3 incelemesi bekler. Bu teslimler tren/main kabulü değildir. 41 paket ve 50 referans korunmuştur; yeni paralel backlog oluşturulmamıştır.
+
+27 Kasım devamı — satış kapanışı: `8e4d4cb12`, `0577612d4` ve `345c427b6`. Yukarıdaki önceki kısmi teslimin aksine normal siparişin kaynak/fatura/finans kompozisyonu artık bağlıdır. Mevcut Sales fatura/sevk claim'leri, Logistics fiziksel sevk kanıtı, Inventory kaynak hareketi/tahsis, Manufacturing açık plan ve Finance mahsup portu yeniden kullanılır. Purchasing portu, henüz siparişleşmemiş talep payını da okur; ortak alış belgesinin başka sipariş payı kapanışı bekletmez. Kaynak kompozisyonunun 21 ve Purchasing portunun 12 hedefli testi geçti (0 skip). Fason hizmet faturasının ayrı kanıt ailesi hâlâ `NoSource`; paket bütünü kabul edilmiş değildir. Dört ek kapanış ve iki Purchasing SQL senaryosu kaynakta yazıldı; SQL **NOT_RUN**. Kapanış SQL kaynağında gerçek Sales/Finance/Purchasing ile açıkça sentetik downstream sınırları ayrılır; tam uçtan uca kabul iddiası yoktur.
+
+WP8 vekâlet görünümü: `19cec31b5`, mevcut yetkili sayfadaki kişilere sınırlı Identity ad çözümü ve gelen vekâletlerde tam sayfalama ekler. Agent'ın `b61a351b0` frontend kaynağında 66/66 test, TypeScript ve scoped lint geçti; gerçek tarayıcı kabulü değildir. Altı HTTP testi denendi ancak shell authority pinleri henüz kapanışta yenilenmediğinden host başlayamadı. Gate gevşetilmedi; bu testler **kabul edilmedi**. Satışın mevcut onay/ret komutlarına WP8 bağlantısı devam ediyor; YOL-D23 maker/submitter ayrılığı korunuyor.
+
+Cari bakiye devri replay: `69ffd6ccb` ve `264975943`. Özgün correlation kimliği mevcut immutable komut makbuzunun JSON'una eklendi; replay başlığı buradan döner. Yeni tablo, migration, ikinci finansal hareket veya frontend response alanı yoktur. Eski makbuzda olmayan kimlik tahmin edilmez. Hedefli 5/5 test geçti (0 skip); HTTP/SQL kabulü ve diğer SMALL-GAPS işleri bekler. Eski “migration gerekir” varsayımı bu somut uygulama için geçerli değildir.
+
+C: dolu olduğu için yeni çalışma ve build çıktıları D: üzerindeki ayrı checkout'ta sürer. C: çalışma alanları ve birleşmemiş WIP silinmedi. Ağır işler tek kaynak kilidiyle yürütülür; pinler, gerçek SQL, hosted CI, tarayıcı ve bağımsız K3 kabulü kapanış kapısında kalır.
+
+CUTOVER mevcut bağımlılıklarına ilk kullanım Work kabulünü temsil eden `T2/WP8` eklendi (`WP3` zaten onun ön koşulu). Genel sohbet ve ileri AI, canlı geçiş ön koşulu değildir.
+
+WP8 Sales kaynak eklemesi: `8882e4ecb` (`6405e21db` agent kaynağı). Sipariş ve fatura native onay/ret, terminal kayıt metadata/replay ve approve-only purpose okuma bağlıdır. YOL-D23 creator/submitter yasağı eski native istisnanın yerine uygulanır; yalnız editöre ek dışlama yoktur. Yeni izin/grant yok. Agent frontend kaynağında 25/25 test, tsc ve scoped lint geçti; shell mount kayıt düzeltmesi ve backend geniş Sales regresyonu bekler. Bu kaynak eklemesi 64 akışın runtime kabulü değildir.

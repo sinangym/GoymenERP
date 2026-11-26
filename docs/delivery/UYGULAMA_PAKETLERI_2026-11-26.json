@@ -779,11 +779,11 @@
       ],
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
-        "ISalesOrderOwnerAxesSourceV1 tüketimi var; src/backend içinde somut kayıt/implementasyon bulunmadı; NoSource ReadyToClose=false bırakır.",
-        "SAT-D478/479: 27 Kasım doğrudan kullanıcı cevabı kaydedildi; banka mutabakatı bağımsız, yalnız ilgili sipariş kaynak payı esas.",
-        "Purchasing mevcut linked-supply reader kendi Sales kaynaklı request satırının kalanını hesaplıyor; bütün ortak sipariş kapanışını beklemiyor. Ancak yalnız onaylı alış siparişi satırlarını okuması, henüz siparişleşmemiş talebi tek başına kanıtlamaz.",
-        "Manufacturing mevcut linked-supply reader tek SalesOrderLine bağlantılı planın açık emrini okuyor. Gerçek sevk kaynak kanıtı ve kaynak yükümlülüklerinin eksiksiz kapsamı aggregate bağlanmadan Completed sayılmayacak.",
-        "Finance salt okunur settlement portu kaynakta kayıtlı; Sales owner axes kompozisyonu henüz bağlı değil, mevcut NoSource kapanış engeli korunur."
+        "Normal sales owner axes now composed by SalesOrderOwnerAxesHostV1; subcontract invoice proof family remains NoSource, not full package completion.",
+        "SAT-D478/479 recorded; native all-axes readiness and explicit human close command retained; bank matching is independent.",
+        "Purchasing reads unconverted request obligations and each sales order share in shared orders; ALS-D68 cancelled purchase quantities retain used request shares.",
+        "Actual posted shipment coverage must equal Sales realization; immutable Logistics, Inventory and finalized Sales invoice claims are checked. Unknown cost does not block the physical source proof.",
+        "Finance validates all installments of every related finalized invoice using existing recorded payment/allocation evidence; unknown or unrealized payment is not settlement."
       ],
       "decisions": [
         "SAT-D32",
@@ -795,7 +795,10 @@
       "open_decisions": [],
       "existing_tests": [
         "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.Status.cs",
-        "tests/GoymenERP.Api.IntegrationTests/FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests.cs"
+        "tests/GoymenERP.Api.IntegrationTests/FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/SalesOrderOwnerAxesHostTests.cs",
+        "tests/GoymenERP.Purchasing.UnitTests/PurchaseSalesOrderObligationReadTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/SalesOrderUserCloseSqlServerRelationalAcceptanceTests.OwnerAxes.cs"
       ],
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
@@ -809,7 +812,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Finance owner portunu doğrula; Sales içindeki kesinleşmiş fatura/sevk kanıtını ve tam kaynak yükümlülüğü okumasını bağla. Eksik owner kanıtında NoSource/Unreadable; bütün eksenler ve insan normal kapatma komutu korunur.",
+      "next_action": "Run existing and added SQL acceptance at train closure, add remaining subcontract proof family in this same package, then browser/full CI/two independent K3. Missing proof remains fail-closed.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -823,20 +826,40 @@
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceSalesInvoiceSettlementReaderV1.cs",
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceModuleExtensions.cs",
         "tests/GoymenERP.Finance.UnitTests/FinanceSalesInvoiceSettlementTests.cs",
-        "tests/GoymenERP.Api.IntegrationTests/FinanceSalesInvoiceSettlementSqlServerTests.cs"
+        "tests/GoymenERP.Api.IntegrationTests/FinanceSalesInvoiceSettlementSqlServerTests.cs",
+        "src/backend/GoymenERP.Api/Endpoints/WorkDelegationEndpoints.cs",
+        "src/backend/GoymenERP.Api/Program.cs",
+        "src/backend/GoymenERP.Api/SalesRuntime/SalesOrderOwnerAxesHostV1.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsSalesDispatchReadPorts.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/Contracts/IPurchaseSalesOrderObligationReadPortV1.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseSalesOrderObligationReadPortV1.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/PurchasingModuleExtensions.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/Contracts/SalesDraftUserCloseContractsV1.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.Status.cs",
+        "tests/GoymenERP.Api.IntegrationTests/PurchasingSqlServerRelationalAcceptanceTests.SalesOrderObligations.cs",
+        "tests/GoymenERP.Api.IntegrationTests/SalesOrderOwnerAxesHostTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/SalesOrderUserCloseSqlServerRelationalAcceptanceTests.OwnerAxes.cs",
+        "tests/GoymenERP.Api.IntegrationTests/SalesOrderUserCloseSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Purchasing.UnitTests/PurchaseSalesOrderObligationReadTests.cs"
       ],
       "execution": {
-        "source_commit": "01697d4f7be72c945aa4184cdf623d7b9dade6cc",
+        "source_commit": "0577612d44a05f4c517f094ae056dde28484fca6",
         "source_commits": [
           "54332b9c8",
           "6c3b010c5",
           "6c2ab25a1",
-          "01697d4f7"
+          "01697d4f7",
+          "8e4d4cb12",
+          "0577612d4",
+          "345c427b6"
         ],
         "local_checks": {
           "Finance.UnitTests": "1898 passed, 0 skipped; includes 22 new owner evidence tests",
           "Api.IntegrationTests build": "0 errors, 0 warnings; OpenApiGenerateDocumentsOnBuild=false",
-          "new_SQL_facts": "2 written and compiled; NOT_RUN"
+          "new_SQL_facts": "8 written (2 Finance, 2 Purchasing, 4 closure); latest added closure compilation pending",
+          "Sales owner composition": "21 passed, 0 skipped; synthetic owner proofs, not SQL acceptance",
+          "Purchasing owner obligations": "12 passed, 0 skipped"
         },
         "reuse": [
           "FinanceExactDecimalText exact arithmetic",
@@ -845,10 +868,9 @@
           "existing admission/allocation/release commands in SQL source"
         ],
         "remaining": [
-          "Sales-owned authoritative finalized invoice set and invoicing axis",
-          "Full actual-shipment source evidence and all order-share supply obligations, including unconverted linked requests",
-          "API/Sales owner axes composition with caller fresh authorization fence",
-          "Real SQL, browser, train pins, full CI and two independent K3 reviews"
+          "Subcontract service invoice proof family is not composed yet; remains NoSource",
+          "Added SQL compilation and actual SQL execution",
+          "Native browser acceptance, train pins, full hosted CI and two independent K3 reviews"
         ],
         "sql": "NOT_RUN",
         "browser": "NOT_RUN",
@@ -859,7 +881,9 @@
         "limitations": [
           "State-only read: 128 invoice IDs, 4096 rows per table query, double snapshot; no amount/currency disclosure",
           "Unsupported or ambiguous collection proof remains Unknown; old successful CI is not acceptance of this port",
-          "SourceVersion identifies admitted invoice, not a durable settlement concurrency token"
+          "SourceVersion identifies admitted invoice, not a durable settlement concurrency token",
+          "Normal closure composition is bounded to 128 posted shares; larger or truncated results fail closed; no new business quantity cap is imposed.",
+          "The closure SQL source uses real Sales/Finance/Purchasing owners but explicit synthetic Logistics/Inventory/Manufacturing downstream seams; it is not full end-to-end acceptance."
         ],
         "measurements": {
           "token": "NOT_AVAILABLE",
@@ -1481,7 +1505,8 @@
         "W3-URETIM/FIVE-ENGINES",
         "W3-URETIM/SUBCONTRACT",
         "W3-LOJISTIK/EXIT-EVIDENCE",
-        "W2-BELGE/MIKRO-EDOC"
+        "W2-BELGE/MIKRO-EDOC",
+        "T2/WP8"
       ],
       "open_decisions": [
         "Q-CUTOVER"
@@ -1494,7 +1519,8 @@
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
         "K3 mutation/migration: gerçek SQL; ilgili UI: gerçek owner API ile tarayıcı ve erişim iptali.",
-        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
+        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı.",
+        "First-use Work approval list/owner decisions/delegation and orphan handling must be accepted with real roles; generic AI chat and advanced AI are not cutover prerequisites."
       ],
       "business_acceptance": [
         "İki prova, gerçek rol UAT, SQL+object store restore ve outbox replay; geçiş sonrası işlemleri kaybetmeyen geri dönüş.",
@@ -1685,7 +1711,8 @@
         "Four YOL-D41 screenless kinds dispatch the existing owner commands; no Work approval store or impersonation.",
         "Work management mounts existing rules and follow-up sections plus WP3 create/revoke UI; separate management permission is not assigned.",
         "Cash owner gained an optional post-flush/pre-commit fence in the existing transaction helper; existing native command receipts remain authoritative.",
-        "64-flow acceptance, remaining owner adapters and rule editing are not complete."
+        "64-flow acceptance, remaining owner adapters and rule editing are not complete.",
+        "Sales invoice/order native commands and terminal decision metadata connected; approve-only purpose read avoids adding DraftsRead. Invoice command also requires existing price-read authority. Optional native reject reasons retained."
       ],
       "decisions": [
         "YOL-D41"
@@ -1769,7 +1796,29 @@
         "src/frontend/goymen-erp-web/src/settings/workApprovalRulesContract.ts",
         "src/frontend/goymen-erp-web/src/work/WorkApprovalRuleEditor.tsx",
         "src/frontend/goymen-erp-web/src/work/WorkApprovalRuleEditor.test.tsx",
-        "src/frontend/goymen-erp-web/src/work/WorkApprovalRuleEditorText.ts"
+        "src/frontend/goymen-erp-web/src/work/WorkApprovalRuleEditorText.ts",
+        "src/backend/GoymenERP.Api/WorkRuntime/NativeApprovalWorkInboxSourceV1.cs",
+        "src/backend/GoymenERP.Api/WorkRuntime/SalesOrderDraftPendingApprovalAdapterV1.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.WorkDecisions.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/SalesModuleExtensions.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Shell/SalesShellCapabilityProvider.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesInvoiceWorkInboxSourceV1.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesOrderWorkDecisionReadV1.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesWorkInboxApprovalStoreV1.Decisions.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesWorkInboxApprovalStoreV1.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesWorkInboxSourceBaseV1.cs",
+        "src/frontend/goymen-erp-web/src/sales/capabilities.ts",
+        "src/frontend/goymen-erp-web/src/work/WorkSalesDecisionPage.test.tsx",
+        "src/frontend/goymen-erp-web/src/work/inboxKinds/sales.test.ts",
+        "src/frontend/goymen-erp-web/src/work/inboxKinds/sales.ts",
+        "tests/GoymenERP.Api.IntegrationTests/WorkSalesDecisionHostTests.cs",
+        "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.WorkDecisions.cs",
+        "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.cs",
+        "tests/GoymenERP.Sales.UnitTests/SalesInvoiceWorkDecisionSourceV1Tests.cs",
+        "tests/GoymenERP.Sales.UnitTests/SalesOrderWorkDecisionReadV1Tests.cs",
+        "tests/GoymenERP.Sales.UnitTests/SalesRemainingApprovalWorkInboxSourcesV1Tests.cs",
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs"
       ],
       "ownership_lease": {
         "branch": "codex/erp-completion-20261126",
@@ -1795,7 +1844,11 @@
           "frontend tsc": "exit 0",
           "frontend lint": "exit 0",
           "bounded staged secret scan": "exit 0; redacted; no findings",
-          "new_SQL_facts": "2 written and compiled; NOT_RUN"
+          "new_SQL_facts": "2 written and compiled; NOT_RUN",
+          "delegation_display_frontend": "Agent source b61a351b0: 66 passed, 0 skipped; tsc/lint passed; one pre-existing Fast Refresh warning",
+          "delegation_display_HTTP": "6 attempted, 6 host-start failures: shell authority pins deferred by train policy; NOT_ACCEPTED",
+          "Sales decision frontend": "Agent source 6405e21db: 25 tests across 5 files passed, 0 skipped; tsc and scoped lint passed. Shell route registry correction still pending.",
+          "Sales backend": "NOT_RUN; native maker/submitter fence now applies YOL-D23; broader old self-approve fixtures require regression verification."
         },
         "reuse": [
           "existing FinanceCashAccountService commands and durable receipts",
@@ -1810,7 +1863,10 @@
         "remaining": [
           "Other owner decision adapters and all 64 flow acceptance evidence",
           "Delegation history display-name enrichment and complete incoming-delegation paging UX",
-          "Actual SQL, HTTP/runtime browser acceptance, shell/OpenAPI/guard/recovery pins, full CI and two independent exact-head K3 reviews"
+          "Actual SQL, HTTP/runtime browser acceptance, shell/OpenAPI/guard/recovery pins, full CI and two independent exact-head K3 reviews",
+          "Sales invoice/order native decision family implementation in progress; shell authority must be regenerated before host acceptance",
+          "Complete Sales purpose route shell registry/mount parity; must not grant Sales browse access",
+          "Verify full Sales unit regression against YOL-D23; source-only changes not accepted without relevant checks"
         ],
         "sql": "NOT_RUN",
         "browser": "NOT_RUN",
@@ -1855,6 +1911,10 @@
               "rework": "WP2 escalation default decoder and fresh success receipt exact payload/version matching fixed"
             }
           }
+        ],
+        "source_commits": [
+          "19cec31b5",
+          "8882e4ecb"
         ]
       }
     },
@@ -2805,7 +2865,7 @@
       "backlog_parent": "W4-FINANS",
       "title": "Devir replay, ShareId ve kalan küçük açıklar",
       "group": "TREN2",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P1",
       "risk": "K3",
       "scope": "Devir özgün correlation başlığı; ShareId çapraz talimat tekilliği; frontend red metni. Ayrı owner dosyaları, ortak paket kararı değil.",
@@ -2829,7 +2889,8 @@
       "source_findings": [
         "Devir belgesinde kalan iş; listedeki mevcut kaynak/testler bulundu.",
         "Tam davranış ve runtime kabulü: NOT_RUN.",
-        "ShareId kararı yalnız ilgili stok/maliyet değişikliğini bekletir; replay başlığı ve Türkçe metin bağımsızdır."
+        "ShareId kararı yalnız ilgili stok/maliyet değişikliğini bekletir; replay başlığı ve Türkçe metin bağımsızdır.",
+        "Party balance transfer original correlation persists additively inside existing immutable command ResultJson; no schema migration or extra ledger is needed. Prior handoff migration assumption is not applicable to this implementation."
       ],
       "decisions": [],
       "depends_on": [],
@@ -2851,7 +2912,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "Finish targeted replay checks and native HTTP/SQL acceptance at train closure; continue independent ShareId/source decision search and remaining logistics text scope.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2862,7 +2923,44 @@
         "tests/GoymenERP.Api.IntegrationTests/LogisticsInstructionSqlServerRelationalAcceptanceTests.ShipmentRiskGate.cs",
         "tests/GoymenERP.Manufacturing.UnitTests/ProductionLineageShareCalculatorTests.cs"
       ],
-      "change_files": []
+      "change_files": [
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Contracts/FinancePartyBalanceTransferV1.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinancePartyBalanceTransferServiceV1.cs",
+        "src/backend/GoymenERP.Api/Endpoints/FinanceEndpoints.PartyBalanceTransfers.cs",
+        "tests/GoymenERP.Finance.UnitTests/FinancePartyBalanceTransferServiceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/FinancePartyBalanceTransferHttpAcceptanceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/FinancePartyBalanceTransferSqlServerRelationalAcceptanceTests.cs"
+      ],
+      "execution": {
+        "source_commit": "26497594319c23cd8a98689200d7ce67ec81dbfa",
+        "source_commits": [
+          "69ffd6ccb",
+          "264975943"
+        ],
+        "reuse": [
+          "Existing immutable PartyBalanceTransferCommands.ResultJson and replay authorization/payload fence",
+          "Existing balance transfer unit/HTTP/SQL acceptance fixtures"
+        ],
+        "local_checks": {
+          "Finance replay tests": "5 passed, 0 skipped; original and retry correlation differ; legacy missing metadata preserved without fabrication; public JSON shape unchanged"
+        },
+        "sql": "NOT_RUN",
+        "browser": "NOT_RUN",
+        "hosted_ci": "NOT_RUN",
+        "independent_review": "PENDING",
+        "migration": null,
+        "new_permissions": [],
+        "remaining": [
+          "Legacy receipts without original correlation remain replayable without a fabricated original header",
+          "ShareId and plan-excess rejection/unused text gaps remain separate outstanding work",
+          "SQL/HTTP host acceptance, train pins, hosted CI and K3"
+        ],
+        "measurements": {
+          "token": "NOT_AVAILABLE",
+          "development_duration": "NOT_SEPARATELY_MEASURED",
+          "rework": "Legacy fixture corrected to preserve immutable command history"
+        }
+      }
     },
     {
       "id": "T2/RELEASE",
