@@ -68,9 +68,9 @@ public static class AiRuntimeServiceCollectionExtensions
         services.TryAddScoped<IAiDocumentSourceStoreV1, ObjectStoreAiDocumentSourceStore>();
         services.AddScoped<AiDocumentDraftService>();
         // WP-C1: the approved write pipeline. Closed: Ai:Commands:Enabled is false, no command tool is allowlisted, the
-        // ledger is unconfigured (no durable store yet). YOL-D27: second approval by another person with password re-entry.
+        // SQL ledger persists state, but no command is enabled. YOL-D27: second approval with password re-entry.
         services.AddOptions<AiCommandOptions>().Bind(configuration.GetSection(AiCommandOptions.SectionName));
-        services.TryAddScoped<IAiCommandLedgerV1, UnconfiguredAiCommandLedger>();
+        services.TryAddScoped<IAiCommandLedgerV1, SqlAiCommandLedger>();
         services.TryAddScoped<IAiStepUpVerifierV1, AiLocalAccountStepUpVerifier>();
         services.AddScoped<AiCommandToolCatalog>();
         services.AddScoped<AiCommandPipeline>();

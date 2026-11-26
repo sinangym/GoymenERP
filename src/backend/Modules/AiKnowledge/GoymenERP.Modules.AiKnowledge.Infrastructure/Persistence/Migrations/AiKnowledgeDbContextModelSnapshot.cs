@@ -22,6 +22,115 @@ namespace GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiCommandEventRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid?>("ApprovalId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PreviewHash")
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .IsFixedLength();
+
+                    b.Property<Guid?>("PreviewId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ReasonCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ResultVersion")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ToolId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ToolVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("CompanyId", "EventId");
+
+                    b.HasIndex("CompanyId", "PreviewId", "OccurredAtUtc", "EventId");
+
+                    b.ToTable("CommandEvents", "ai", t =>
+                        {
+                            t.HasCheckConstraint("CK_AiCommandEvents_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [EventId] <> '00000000-0000-0000-0000-000000000000' AND LEN(LTRIM(RTRIM([ActorId]))) > 0 AND [Kind] BETWEEN 1 AND 10 AND LEN(LTRIM(RTRIM([CorrelationId]))) > 0 AND ([PreviewId] IS NULL OR [PreviewId] <> '00000000-0000-0000-0000-000000000000') AND ([PreviewHash] IS NULL OR (DATALENGTH([PreviewHash]) = 64 AND [PreviewHash] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%'))");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiCommandRecordRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PreviewId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("BindingSha256")
+                        .IsRequired()
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .IsFixedLength();
+
+                    b.Property<string>("RecordJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("State")
+                        .HasColumnType("int");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "PreviewId");
+
+                    b.ToTable("CommandRecords", "ai", t =>
+                        {
+                            t.HasCheckConstraint("CK_AiCommandRecords_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PreviewId] <> '00000000-0000-0000-0000-000000000000' AND LEN(LTRIM(RTRIM([ActorId]))) > 0 AND [State] BETWEEN 1 AND 9 AND [Version] > 0 AND ISJSON([RecordJson]) = 1 AND DATALENGTH([BindingSha256]) = 64 AND [BindingSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%'");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiKnowledgeApprovalRow", b =>
                 {
                     b.Property<Guid>("Id")
@@ -329,6 +438,29 @@ namespace GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.Migrations
                         {
                             t.ExcludeFromMigrations();
                         });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiCommandEventRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiKnowledgeCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiCommandRecordRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "PreviewId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiCommandRecordRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiKnowledgeCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiKnowledgeApprovalRow", b =>

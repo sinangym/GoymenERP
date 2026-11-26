@@ -45,6 +45,7 @@ public static class AiKnowledgeModuleExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<IAiKnowledgeApprovalServiceV1, AiKnowledgeApprovalServiceV1>();
         services.AddScoped<IAiKnowledgeApprovalReaderV1, AiKnowledgeApprovalReaderV1>();
+        services.AddScoped<IAiCommandPersistenceV1, AiCommandPersistenceV1>();
         return services;
     }
 

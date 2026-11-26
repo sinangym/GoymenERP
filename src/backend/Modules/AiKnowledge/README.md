@@ -18,3 +18,15 @@ Kurallar: onay, onaylayanın gördüğü paket baytlarının SHA-256'sına bağl
 düzenlenmez/silinmez; geri alma bir sürüm adımıdır (gerekçe zorunlu) ve aynı baytların yeni onayı yeni kayıttır. Araçlar
 `IAiKnowledgeApprovalReaderV1` ile okur; okunamazsa `Unavailable` (fail-closed). Modül kurulmamış bir host'ta varsayılan okuyucu
 da `Unavailable` döner.
+
+## WP-C1 kalıcı komut defteri
+
+Mevcut bağlam ve bağlantı kullanılır; komut kayıtları ayrı `ai` şemasındadır. `CommandRecords` ve içerik taşımayan
+`CommandEvents`, şirket filtresi ve şirket yabancı anahtarı taşır. API yalnız `IAiCommandPersistenceV1` sahiplik portunu
+kullanır. Önizleme, bağlam ve komutun parmak izi değişmez; durum bir sürüm ilerlerken olay aynı `SaveChanges` işleminde
+yazılır. SQL `rowversion` ve beklenen sürüm birlikte yarışan yazmayı engeller. Yeniden başlatmada mevcut donmuş istek
+yüklenir; yürütülüyor/belirsiz sonucu için mevcut sahip komut sorgusu kullanılır, tekrar yürütme yapılmaz.
+
+`20261126175933_AddAiCommandLedger`: EF üretimi, Down kayıt veya olay varken `THROW 52200` ile durur (forward fix).
+Silme ve otomatik imha yolu eklenmez. SQL kapalı/okunamazsa komut yürütülmez. Sağlayıcı, araç listesi ve AI bayrakları
+bu bağlantıyla açılmaz. Gerçek SQL yarış/geri alma testleri kapanışta koşulacaktır; kaynak/model testleri SQL kanıtı değildir.

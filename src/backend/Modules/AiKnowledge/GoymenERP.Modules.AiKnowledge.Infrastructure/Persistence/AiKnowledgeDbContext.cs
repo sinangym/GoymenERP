@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence;
 /// request records of the origin company (CompanyId + query filter). Approvals are never deleted (Approved → Withdrawn by one
 /// version step); attempts are append-only.
 /// </summary>
-public sealed class AiKnowledgeDbContext(
+public sealed partial class AiKnowledgeDbContext(
     DbContextOptions<AiKnowledgeDbContext> options,
     ICompanyContext companyContext) : DbContext(options)
 {
@@ -81,6 +81,7 @@ public sealed class AiKnowledgeDbContext(
         attempt.HasOne<AiKnowledgeCompanyReference>().WithMany().HasForeignKey(row => row.CompanyId).OnDelete(DeleteBehavior.Restrict);
         attempt.HasQueryFilter(row => row.CompanyId == companyContext.CompanyId);
 
+        ConfigureCommands(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>().HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
@@ -116,6 +117,8 @@ public sealed class AiKnowledgeDbContext(
                 AiKnowledgeApprovalRow { WithdrawnOriginCompanyId: { } withdrawnIn } when entry.State == EntityState.Modified => withdrawnIn,
                 AiKnowledgeApprovalRow row => row.OriginCompanyId,
                 AiKnowledgeCommandAttemptRow row => row.CompanyId,
+                AiCommandRecordRow row => row.CompanyId,
+                AiCommandEventRow row => row.CompanyId,
                 _ => throw new InvalidOperationException("Unknown AI knowledge record."),
             };
             if (!companyContext.IsResolved || companyId != companyContext.CompanyId)
@@ -124,6 +127,16 @@ public sealed class AiKnowledgeDbContext(
                 throw new InvalidOperationException("AI knowledge records cannot be deleted.");
             if (entry.Entity is AiKnowledgeCommandAttemptRow && entry.State != EntityState.Added)
                 throw new InvalidOperationException("AI knowledge attempts are append-only.");
+            if (entry.Entity is AiCommandEventRow && entry.State != EntityState.Added)
+                throw new InvalidOperationException("AI command events are append-only.");
+            if (entry.Entity is AiCommandRecordRow command && entry.State == EntityState.Modified)
+            {
+                if (!Equals(entry.Property(nameof(command.ActorId)).OriginalValue, command.ActorId)
+                    || !Equals(entry.Property(nameof(command.BindingSha256)).OriginalValue, command.BindingSha256)
+                    || entry.Property(nameof(command.Version)).OriginalValue is not long version
+                    || command.Version != checked(version + 1))
+                    throw new InvalidOperationException("AI command replacement must keep its actor and advance one version.");
+            }
             if (entry.Entity is AiKnowledgeApprovalRow approval && entry.State == EntityState.Modified)
             {
                 if (!Equals(entry.Property(nameof(approval.SourceKind)).OriginalValue, approval.SourceKind)

@@ -4,6 +4,7 @@ using System.Text.Json;
 using GoymenERP.Api.Ai.External;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Ai;
+using GoymenERP.Modules.AiKnowledge.Domain;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
@@ -37,7 +38,7 @@ namespace GoymenERP.Api.Ai.Commands;
 /// (<c>ai.tool.called</c> Started is fail-closed).</item>
 /// </list>
 /// Closed by default: <c>Ai:Enabled</c> and <c>Ai:Commands:Enabled</c> are false, no command tool is allowlisted, no
-/// durable ledger is configured.
+/// command family is enabled. SQL persistence does not open any of those gates.
 /// </summary>
 public sealed class AiCommandPipeline(
     IOptions<AiRuntimeOptions> runtimeOptions,
@@ -57,7 +58,30 @@ public sealed class AiCommandPipeline(
 {
     private const string CompanyArgumentName = "companyId";
 
-    public async Task<AiCommandPipelineResultV1> ProposeAsync(AiCommandProposalRequestV1? request, CancellationToken cancellationToken = default)
+    public Task<AiCommandPipelineResultV1> ProposeAsync(AiCommandProposalRequestV1? request, CancellationToken cancellationToken = default) =>
+        WithLedgerAsync(() => ProposeCoreAsync(request, cancellationToken));
+    public Task<AiCommandPipelineResultV1> ApproveAsync(Guid previewId, string? previewHash, CancellationToken cancellationToken = default) =>
+        WithLedgerAsync(() => ApproveCoreAsync(previewId, previewHash, cancellationToken));
+    public Task<AiCommandPipelineResultV1> RejectAsync(Guid previewId, string? previewHash, CancellationToken cancellationToken = default) =>
+        WithLedgerAsync(() => RejectCoreAsync(previewId, previewHash, cancellationToken));
+    public Task<AiCommandPipelineResultV1> ExecuteAsync(Guid previewId, string? previewHash, Guid approvalId, CancellationToken cancellationToken = default) =>
+        WithLedgerAsync(() => ExecuteCoreAsync(previewId, previewHash, approvalId, cancellationToken));
+    public Task<AiCommandPipelineResultV1> ReviewAsync(Guid previewId, CancellationToken cancellationToken = default) =>
+        WithLedgerAsync(() => ReviewCoreAsync(previewId, cancellationToken));
+    public Task<AiCommandPipelineResultV1> SecondApproveAsync(Guid previewId, string? previewHash, Guid approvalId,
+        string? password, CancellationToken cancellationToken = default) =>
+        WithLedgerAsync(() => SecondApproveCoreAsync(previewId, previewHash, approvalId, password, cancellationToken));
+
+    private static async Task<AiCommandPipelineResultV1> WithLedgerAsync(Func<Task<AiCommandPipelineResultV1>> action)
+    {
+        try { return await action(); }
+        catch (AiCommandPersistenceUnavailableException)
+        {
+            return AiCommandPipelineResultV1.Of(AiCommandStatusV1.Unavailable, AiCommandReasonCodesV1.PipelineUnavailable);
+        }
+    }
+
+    private async Task<AiCommandPipelineResultV1> ProposeCoreAsync(AiCommandProposalRequestV1? request, CancellationToken cancellationToken = default)
     {
         var (caller, failure) = await GateAsync(cancellationToken);
         if (caller is null)
@@ -197,7 +221,7 @@ public sealed class AiCommandPipeline(
         return new AiCommandPipelineResultV1(AiCommandStatusV1.Previewed, Preview: View(record));
     }
 
-    public async Task<AiCommandPipelineResultV1> ApproveAsync(Guid previewId, string? previewHash, CancellationToken cancellationToken = default)
+    private async Task<AiCommandPipelineResultV1> ApproveCoreAsync(Guid previewId, string? previewHash, CancellationToken cancellationToken = default)
     {
         var (caller, failure) = await GateAsync(cancellationToken);
         if (caller is null)
@@ -264,7 +288,7 @@ public sealed class AiCommandPipeline(
         return new AiCommandPipelineResultV1(AiCommandStatusV1.Approved, Preview: View(approved), ApprovalId: approvalId);
     }
 
-    public async Task<AiCommandPipelineResultV1> RejectAsync(Guid previewId, string? previewHash, CancellationToken cancellationToken = default)
+    private async Task<AiCommandPipelineResultV1> RejectCoreAsync(Guid previewId, string? previewHash, CancellationToken cancellationToken = default)
     {
         var (caller, failure) = await GateAsync(cancellationToken);
         if (caller is null)
@@ -303,7 +327,7 @@ public sealed class AiCommandPipeline(
         return AiCommandPipelineResultV1.Of(AiCommandStatusV1.Rejected);
     }
 
-    public async Task<AiCommandPipelineResultV1> ExecuteAsync(Guid previewId, string? previewHash, Guid approvalId, CancellationToken cancellationToken = default)
+    private async Task<AiCommandPipelineResultV1> ExecuteCoreAsync(Guid previewId, string? previewHash, Guid approvalId, CancellationToken cancellationToken = default)
     {
         var (caller, failure) = await GateAsync(cancellationToken);
         if (caller is null)
@@ -405,7 +429,7 @@ public sealed class AiCommandPipeline(
     /// The preview as an authorized second approver sees it (YOL-D27): same company, the tool's permissions held now,
     /// first approval recorded. The preparer and the first approver get it from their own preview/approval results.
     /// </summary>
-    public async Task<AiCommandPipelineResultV1> ReviewAsync(Guid previewId, CancellationToken cancellationToken = default)
+    private async Task<AiCommandPipelineResultV1> ReviewCoreAsync(Guid previewId, CancellationToken cancellationToken = default)
     {
         var (caller, failure) = await GateAsync(cancellationToken);
         if (caller is null)
@@ -441,7 +465,7 @@ public sealed class AiCommandPipeline(
     /// bound to the same digest and approval id, with the record previewed again under their authority and their
     /// password typed again (LocalAccount verification, login lockout). The same person is refused.
     /// </summary>
-    public async Task<AiCommandPipelineResultV1> SecondApproveAsync(
+    private async Task<AiCommandPipelineResultV1> SecondApproveCoreAsync(
         Guid previewId, string? previewHash, Guid approvalId, string? password, CancellationToken cancellationToken = default)
     {
         var (caller, failure) = await GateAsync(cancellationToken);

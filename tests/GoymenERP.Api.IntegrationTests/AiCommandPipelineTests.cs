@@ -6,6 +6,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Security.Events;
+using GoymenERP.Modules.AiKnowledge.Domain;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
@@ -21,6 +22,30 @@ namespace GoymenERP.Api.IntegrationTests;
 /// </summary>
 public sealed class AiCommandPipelineTests
 {
+    [Fact]
+    public async Task A_ledger_failure_returns_unavailable_without_executing_an_owner_command()
+    {
+        var harness = new Harness { LedgerOverride = new BrokenLedger() };
+        var proposed = await harness.Service().ProposeAsync(Proposal());
+        var reviewed = await harness.Service().ReviewAsync(Guid.NewGuid());
+        var executed = await harness.Service().ExecuteAsync(Guid.NewGuid(), new string('a', 64), Guid.NewGuid());
+        Assert.All(new[] { proposed, reviewed, executed }, answer =>
+            Assert.Equal((AiCommandStatusV1.Unavailable, AiCommandReasonCodesV1.PipelineUnavailable),
+                (answer.Status, answer.ReasonCode)));
+        Assert.Equal(1, harness.Provider.Calls); // Proposal generation precedes durable preview storage; nothing may execute.
+        Assert.Empty(harness.Tool.Executions);
+    }
+
+    private sealed class BrokenLedger : IAiCommandLedgerV1
+    {
+        public bool IsAvailable => true;
+        private static Exception Unavailable() => new AiCommandPersistenceUnavailableException(new IOException("SENTETIK unavailable"));
+        public Task<bool> TryAddAsync(AiCommandRecordV1 record, IReadOnlyList<AiCommandLedgerEventV1> events, CancellationToken cancellationToken = default) => throw Unavailable();
+        public Task<AiCommandRecordV1?> GetAsync(Guid companyId, Guid previewId, CancellationToken cancellationToken = default) => throw Unavailable();
+        public Task<bool> TryReplaceAsync(AiCommandRecordV1 next, long expectedVersion, AiCommandLedgerEventV1 auditEvent, CancellationToken cancellationToken = default) => throw Unavailable();
+        public Task<bool> AppendAsync(AiCommandLedgerEventV1 auditEvent, CancellationToken cancellationToken = default) => throw Unavailable();
+    }
+
     private const string ToolId = "test.item-rename.v1";
     private const string ToolVersion = "1";
     private const string ToolPermission = "test.items.write";

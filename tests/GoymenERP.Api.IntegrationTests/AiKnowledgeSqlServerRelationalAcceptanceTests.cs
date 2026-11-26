@@ -16,7 +16,7 @@ namespace GoymenERP.Api.IntegrationTests;
 
 // WP-A4 real-SQL evidence for the AI knowledge approvals (schema aiknowledge). The user, authority, package catalog, audit
 // collector and correlation are SENTETIK test doubles: this is storage, constraint, atomicity, race and forward-fix evidence.
-public sealed class AiKnowledgeSqlServerRelationalAcceptanceTests
+public sealed partial class AiKnowledgeSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid Approver = Guid.Parse("b4000000-0000-4000-8000-0000000000a4");
     private static readonly string PackageSha = new('a', 64);
