@@ -153,6 +153,7 @@ public static class FinanceModuleExtensions
         services.AddScoped<IFinancePaymentAllocationService>(CreatePaymentAllocationService);
         services.AddScoped<IFinancePaymentAllocationReadService, FinancePaymentAllocationReadService>();
         services.AddScoped<IFinanceOpenItemReadServiceV1, FinanceOpenItemReadService>();
+        services.AddScoped<IFinanceSalesInvoiceSettlementPortV1, FinanceSalesInvoiceSettlementReaderV1>();
         // MOD-01: the Sales-declared customer risk-input port, answered from Finance's own open items, (API-85a) the
         // effective credit limit record and (API-85b) the held received collaterals weighted by the Settings type rate
         // at read time. It carries no authority; the Sales risk read measures its own.
