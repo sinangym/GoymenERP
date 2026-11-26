@@ -6,6 +6,7 @@ using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Work.Infrastructure.Delegations;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Purchasing.Application.Contracts;
 
 namespace GoymenERP.Api.WorkRuntime;
 
@@ -80,13 +81,14 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
     IErpAuthorityRevalidationService authority, IEnumerable<IWorkInboxSourceV1> sources,
     IWorkDelegationReaderV1 delegations, WorkDecisionExecutionFenceV1 executionFence,
     IFinanceCashAccountMaster cash, IInventoryOpeningCostCommandV1 openingCost,
-    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null)
+    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null)
 {
     public const string OpeningCost = "inventory.opening-cost.v1";
     public const string SalesOrder = "sales.order-draft.v1";
     public const string SalesInvoice = "sales.invoice.v1";
+    public const string PurchaseRequest = "purchasing.request.v1";
     public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([OpeningCost, "finance.cash-account.v1",
-        "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice], StringComparer.Ordinal);
+        "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, PurchaseRequest], StringComparer.Ordinal);
 
     private async Task RequireDecisionAuthorityAsync(string kind,string permission,Guid companyId,string actor,CancellationToken token)
     {
@@ -157,12 +159,29 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
         if (user.UserId != actor) throw new WorkDecisionException(403);
         if (string.IsNullOrWhiteSpace(request.ExpectedVersion) || request.ExpectedVersion.Length > 128
             || (kind == OpeningCost && request.ExpectedVersion != snapshot.SourceVersion)
-            || ((kind == OpeningCost || !request.Approve && kind is not (SalesOrder or SalesInvoice)) && (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 500))
+            || ((kind == OpeningCost || !request.Approve && kind is not (SalesOrder or SalesInvoice or PurchaseRequest)) && (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 500))
             || (kind != OpeningCost && request.Approve && request.Reason is not null)) throw new WorkDecisionException(400, "work_decision_invalid");
         async Task<bool> Verify(CancellationToken ct) => request.DelegationId is not { } delegation
             || await delegations.FindForActorAsync(delegation, snapshot.Item, ct) is not null;
         if (!await Verify(token)) throw new WorkDecisionException(403);
         using var lease = executionFence.Enter(Verify);
+        if (kind == PurchaseRequest)
+        {
+            if (purchasing is null) throw new WorkDecisionException(503);
+            var purchasingMetadata = new PurchasingCommandMetadata(key, correlation.CorrelationId, correlation.CausationId, DateTimeOffset.UtcNow);
+            try
+            {
+                // Native validation retains its 4000-character reason limit, terminal state/version refusals,
+                // maker/submitter exclusion and original receipt. Never reinterpret cancellation as rejection.
+                var answer = request.Approve
+                    ? await purchasing.ApproveRequestAsync(id, new(request.ExpectedVersion), purchasingMetadata, token)
+                    : await purchasing.RejectRequestAsync(id, new(request.ExpectedVersion, request.Reason!), purchasingMetadata, token);
+                if (answer.Detail.Request.Id != id || answer.Detail.Request.CompanyId != snapshot.CompanyId) throw new WorkDecisionException(503);
+                return new(snapshot.CompanyId, kind, id, answer.Detail.Request.Status, answer.IsReplay, answer.OriginalCorrelationId);
+            }
+            catch (PurchasingServiceException error)
+            { throw new WorkDecisionException(error.Status, error.Code, error.IsReplay, error.OriginalCorrelationId); }
+        }
         if(kind is SalesOrder or SalesInvoice)
         {
             var salesMetadata=new SalesCommandMetadata(key,correlation.CorrelationId,correlation.CausationId,DateTimeOffset.UtcNow);

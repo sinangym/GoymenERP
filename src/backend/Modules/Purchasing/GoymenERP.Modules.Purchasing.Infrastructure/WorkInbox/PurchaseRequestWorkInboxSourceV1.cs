@@ -21,7 +21,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.WorkInbox;
 /// </summary>
 internal sealed class PurchaseRequestWorkInboxSourceV1(
     PurchasingDbContext dbContext,
-    PurchasingWorkInboxFence fence) : IWorkInboxSourceV1
+    PurchasingWorkInboxFence fence) : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "purchasing";
     public const string KindName = "purchasing.request.v1";
@@ -34,6 +34,23 @@ internal sealed class PurchaseRequestWorkInboxSourceV1(
     public string Kind => KindName;
 
     public string ApproverPermission => PurchasingPermissionManifestV1.RequestsApprove;
+
+    /// <summary>WP8 approval-only purpose read. No general request browse grant, lines, quantities or prices.
+    /// Decided rows remain readable to let the native command return its immutable replay/refusal.</summary>
+    public async Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context, Guid itemId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (itemId == Guid.Empty || await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+        var row = await dbContext.Requests.AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.CompanyId == context.CompanyId && candidate.Id == itemId, cancellationToken);
+        if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null || row is null) return null;
+        if (row.Version < 1 || !Enum.IsDefined((PurchaseRequestStatus)row.Status) || !TryItem(context, row, out var item))
+            throw new InvalidOperationException("Talep karar kaynağı geçersiz.");
+        return new(context.CompanyId, item, row.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            row.Status == (int)PurchaseRequestStatus.Submitted);
+    }
 
     public async Task<WorkInboxSourceResultV1> ListPendingAsync(
         WorkInboxSourceContextV1 context,

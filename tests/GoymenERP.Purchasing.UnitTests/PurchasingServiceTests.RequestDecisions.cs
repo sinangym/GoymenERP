@@ -215,6 +215,27 @@ public sealed partial class PurchasingServiceTests
             PurchasingRequestHash.Compute(PurchasingCommands.RequestRejectV1, Guid.Empty, new RejectPurchaseRequestRequest("3", "b")));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Request_decisions_revalidate_at_the_stores_last_read_boundary_before_any_native_effect(bool approve)
+    {
+        var world = new World();
+        var id = await SubmittedRequestAsync(world);
+        var transitions = world.Store.Transitions.Count;
+        var audits = world.Store.Audits.Count;
+        world.Store.BeforeRequestDecisionFence = () => world.Authority.Granted = false;
+        var denied = await world.AsApprover(() => Assert.ThrowsAsync<PurchasingServiceException>(() => approve
+            ? world.Service().ApproveRequestAsync(id, new("3"), Metadata("late-authority"))
+            : world.Service().RejectRequestAsync(id, new("3", "SENTETIK"), Metadata("late-authority"))));
+        Assert.Equal(403, denied.Status);
+        Assert.Equal(transitions, world.Store.Transitions.Count);
+        Assert.Equal(audits, world.Store.Audits.Count);
+        Assert.DoesNotContain(world.Store.Envelopes, envelope => envelope.IdempotencyKey == "late-authority");
+        world.Authority.Granted = true;
+        Assert.Equal("Submitted", (await world.Service().GetRequestDetailAsync(id)).Request.Status);
+    }
+
     private static async Task<Guid> SubmittedRequestAsync(World world)
     {
         var id = (await world.Service().CreateRequestAsync(RequestOf("5"), Metadata("k-req"))).Detail.Request.Id;

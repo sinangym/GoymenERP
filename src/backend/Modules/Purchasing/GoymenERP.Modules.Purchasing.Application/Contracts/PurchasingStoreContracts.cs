@@ -237,6 +237,14 @@ public interface IPurchasingStore
         Guid requestId, Action<PurchaseRequest, PurchaseRequestBindingFacts, DateTimeOffset> mutate, PurchasingMutationAudit audit,
         CancellationToken cancellationToken = default);
 
+    /// <summary>The same native transition with a fresh caller authority fence after all owner reads, before staging
+    /// the row, attempt and audit. The fence also guards a replay found by the store after the service's initial miss.
+    /// It is checked again after the save, before the owned transaction commits: a failed fence rolls back
+    /// row, attempt and audit. The callback is request-local and never part of the wire/hash or a grant.</summary>
+    Task<PurchasingRequestStoreResult?> MutateRequestGuardedAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
+        Guid requestId, Action<PurchaseRequest, PurchaseRequestBindingFacts, DateTimeOffset> mutate, PurchasingMutationAudit audit,
+        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
+
     Task<StoredPurchaseRequest?> FindRequestAsync(Guid requestId, CancellationToken cancellationToken = default);
 
     /// <summary>The company's requests, newest first, by opaque company-bound cursor; <paramref name="status"/> narrows to one status.</summary>

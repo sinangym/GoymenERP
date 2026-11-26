@@ -74,8 +74,9 @@ public sealed partial class PurchasingService
         PurchasingRequestStoreResult? result;
         try
         {
-            result = await store.MutateRequestAsync(envelope, requestHash, commandName, requestId,
-                (target, facts, now) => decide(target, facts, actor, expectedVersion, now), audit, cancellationToken);
+            result = await store.MutateRequestGuardedAsync(envelope, requestHash, commandName, requestId,
+                (target, facts, now) => decide(target, facts, actor, expectedVersion, now), audit,
+                token => RequireStillAsync(scope, permission, token), cancellationToken);
         }
         catch (PurchasingVersionConflictException)
         {

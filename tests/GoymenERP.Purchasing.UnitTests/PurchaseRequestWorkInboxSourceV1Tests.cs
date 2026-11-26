@@ -112,6 +112,49 @@ public sealed class PurchaseRequestWorkInboxSourceV1Tests
         Assert.Null(PurchaseRequest.DeciderExclusions(" ", Submitter));
     }
 
+    [Fact]
+    public async Task Decision_purpose_read_preserves_makers_and_version_after_completion_without_a_browse_permission()
+    {
+        var world = new PurchasingWorkInboxTestWorld();
+        var row = Approved(Request(CompanyA, PurchaseRequestStatus.Approved, Start));
+        world.Withheld.Add(PurchasingPermissionManifestV1.OrdersRead);
+        await world.SeedAsync(CompanyA, db => db.Requests.Add(row));
+        var answer = await Source(world).ReadDecisionAsync(world.Caller(CompanyA), row.Id, default);
+        Assert.NotNull(answer);
+        Assert.Equal((CompanyA, row.Id, "3", false), (answer.CompanyId, answer.Item.ItemId, answer.SourceVersion, answer.Pending));
+        Assert.True(answer.Item.Excludes(Maker));
+        Assert.True(answer.Item.Excludes(Submitter));
+        Assert.False(answer.Item.Excludes(Approver));
+        Assert.All(world.AskedPermissions, permission => Assert.Equal(PurchasingPermissionManifestV1.RequestsApprove, permission));
+    }
+
+    [Fact]
+    public async Task Decision_purpose_read_hides_foreign_missing_and_denied_records()
+    {
+        var world = new PurchasingWorkInboxTestWorld();
+        var foreign = Request(CompanyB, PurchaseRequestStatus.Submitted, Start);
+        await world.SeedAsync(CompanyB, db => db.Requests.Add(foreign));
+        var source = Source(world);
+        Assert.Null(await source.ReadDecisionAsync(world.Caller(CompanyA), foreign.Id, default));
+        Assert.Null(await source.ReadDecisionAsync(world.Caller(CompanyA), Guid.NewGuid(), default));
+        Assert.Null(await source.ReadDecisionAsync(world.Caller(CompanyB), foreign.Id, default));
+        world.Granted = false;
+        Assert.Null(await source.ReadDecisionAsync(world.Caller(CompanyA), foreign.Id, default));
+    }
+
+    [Fact]
+    public async Task Decision_purpose_read_refuses_unknown_maker_metadata_and_invalid_versions()
+    {
+        foreach (var corruptVersion in new[] { false, true })
+        {
+            var world = new PurchasingWorkInboxTestWorld();
+            var row = Request(CompanyA, PurchaseRequestStatus.Submitted, Start);
+            if (corruptVersion) row.Version = 0; else row.SubmittedBy = null;
+            await world.SeedAsync(CompanyA, db => db.Requests.Add(row));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => Source(world).ReadDecisionAsync(world.Caller(CompanyA), row.Id, default));
+        }
+    }
+
     private static PurchaseRequestWorkInboxSourceV1 Source(PurchasingWorkInboxTestWorld world) =>
         new(world.Context(CompanyA), world.Fence(CompanyA));
 

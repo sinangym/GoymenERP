@@ -124,9 +124,39 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             PurchasingWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
-    public async Task<PurchasingRequestStoreResult?> MutateRequestAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
+    public Task<PurchasingRequestStoreResult?> MutateRequestAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
         Guid requestId, Action<PurchaseRequest, PurchaseRequestBindingFacts, DateTimeOffset> mutate, PurchasingMutationAudit audit,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        MutateRequestCoreAsync(envelope, requestHash, commandName, requestId, mutate, audit, null, cancellationToken);
+
+    public async Task<PurchasingRequestStoreResult?> MutateRequestGuardedAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
+        Guid requestId, Action<PurchaseRequest, PurchaseRequestBindingFacts, DateTimeOffset> mutate, PurchasingMutationAudit audit,
+        Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(beforeWrite);
+        // The same owned-transaction pattern as incoming invoice commands: a revocation while SQL
+        // saves must still roll back the request, receipt and audit. No borrowed/ambient transaction.
+        if (dbContext.Database.CurrentTransaction is not null || System.Transactions.Transaction.Current is not null)
+            throw new InvalidOperationException("Talep kararı kendi işlemini tamamlar; başka bir transaction'a katılmaz.");
+        await beforeWrite(cancellationToken);
+        await using var owned = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var result = await MutateRequestCoreAsync(envelope, requestHash, commandName, requestId, mutate, audit, beforeWrite, cancellationToken);
+            await beforeWrite(cancellationToken);
+            await owned.CommitAsync(cancellationToken);
+            return result;
+        }
+        catch
+        {
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    private async Task<PurchasingRequestStoreResult?> MutateRequestCoreAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
+        Guid requestId, Action<PurchaseRequest, PurchaseRequestBindingFacts, DateTimeOffset> mutate, PurchasingMutationAudit audit,
+        Func<CancellationToken, Task>? beforeWrite, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         RequireEnvelope(envelope);
@@ -151,6 +181,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             }
 
             var stored = await FindRequestAsync(recordedId, cancellationToken) ?? throw new InvalidOperationException("Kayıtlı denemenin talebi bulunamadı.");
+            if (beforeWrite is not null) await beforeWrite(cancellationToken);
             return new PurchasingRequestStoreResult(stored, PurchasingWriteOutcome.Replayed, attempt.CorrelationId);
         }
 
@@ -184,6 +215,9 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             throw new InvalidOperationException("Bir komut tam olarak bir sürüm ilerletir ve satır eklemez.");
         }
 
+        // WP8/WP3: all awaited owner reads are finished. The detached domain object may have changed,
+        // but no tracked header, attempt or audit is staged until the caller's fresh fence passes.
+        if (beforeWrite is not null) await beforeWrite(cancellationToken);
         row.Status = (int)request.Status;
         row.Version = request.Version;
         row.UpdatedAtUtc = request.UpdatedAtUtc;

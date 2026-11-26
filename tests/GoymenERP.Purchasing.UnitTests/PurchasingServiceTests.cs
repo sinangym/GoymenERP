@@ -777,6 +777,18 @@ public sealed partial class PurchasingServiceTests
 
         public List<PurchasingMutationAudit> Audits { get; } = [];
 
+        public Action? BeforeRequestDecisionFence { get; set; }
+
+        public async Task<PurchasingRequestStoreResult?> MutateRequestGuardedAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
+            Guid requestId, Action<PurchaseRequest, PurchaseRequestBindingFacts, DateTimeOffset> mutate, PurchasingMutationAudit audit,
+            Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
+        {
+            // Synthetic service orchestration only; the actual post-save rollback is a real SQL test.
+            BeforeRequestDecisionFence?.Invoke();
+            await beforeWrite(cancellationToken);
+            return await MutateRequestAsync(envelope, requestHash, commandName, requestId, mutate, audit, cancellationToken);
+        }
+
         public Task<PurchasingRequestStoreResult?> MutateRequestAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName, Guid requestId,
             Action<PurchaseRequest, PurchaseRequestBindingFacts, DateTimeOffset> mutate, PurchasingMutationAudit audit, CancellationToken cancellationToken = default)
         {
