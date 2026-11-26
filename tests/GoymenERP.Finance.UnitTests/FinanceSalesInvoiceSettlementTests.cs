@@ -46,6 +46,10 @@ public sealed class FinanceSalesInvoiceSettlementTests
     [InlineData("projection-only")]
     [InlineData("bad-receipt")]
     [InlineData("unknown-kind")]
+    [InlineData("wrong-source-party")]
+    [InlineData("wrong-source-account")]
+    [InlineData("overallocated-other-invoice")]
+    [InlineData("missing-source-state")]
     public void Ambiguous_or_invalid_owner_evidence_never_settles(string fault)
     {
         var proof = Proof("0");
@@ -64,10 +68,39 @@ public sealed class FinanceSalesInvoiceSettlementTests
             case "projection-only": proof = proof with { Allocations = [] }; break;
             case "bad-receipt": proof.Admissions[0].ResultJson = "{}"; break;
             case "unknown-kind": proof.Items[0].SourceKind = "unrecognized.v1"; break;
+            case "wrong-source-party": proof.Sources[0].PartyId = Guid.NewGuid(); proof.Events[0].PartyId = proof.Sources[0].PartyId; break;
+            case "wrong-source-account": proof.Sources[0].CompanyAccountId = Guid.NewGuid(); proof.Events[0].CompanyAccountId = proof.Sources[0].CompanyAccountId; break;
+            case "overallocated-other-invoice": proof = proof with { Allocations = [.. proof.Allocations,
+                new() { Id = Guid.NewGuid(), CompanyId = Company, SourceId = proof.Sources[0].Id, OpenItemId = Guid.NewGuid(),
+                    CurrencyId = Currency, AmountText = "1", Status = FinanceAllocationStatuses.Active, Version = 1 }] }; break;
+            case "missing-source-state": proof = proof with { States = [] }; break;
         }
         var result = Project(proof);
         Assert.Equal(FinanceSalesInvoiceSettlementStatusV1.Unknown, result.Status);
         Assert.Null(result.ScopeId);
+    }
+
+    [Fact]
+    public void Explicit_existing_balance_transfer_resolves_both_captured_beneficiaries()
+    {
+        var proof = Proof("0");
+        var priorParty = Guid.NewGuid();
+        var priorAccount = Guid.NewGuid();
+        proof.Sources[0].PartyId = priorParty;
+        proof.Sources[0].CompanyAccountId = priorAccount;
+        proof.Events[0].PartyId = priorParty;
+        proof.Events[0].CompanyAccountId = priorAccount;
+        proof.Allocations[0].AllocationPartyId = Party;
+        proof.Allocations[0].AllocationAccountId = Account;
+        var assignment = new FinancePartyBalanceAssignmentRow
+        {
+            CompanyId = Company, Kind = FinanceBalanceAssignmentKinds.Receipt, SourceId = proof.Sources[0].Id,
+            OriginalPartyId = priorParty, OriginalAccountId = priorAccount, CurrentPartyId = Party, CurrentAccountId = Account,
+            CurrencyId = Currency, AvailableAmountText = "0", LastTransferId = Guid.NewGuid(), Version = 2,
+        };
+        Assert.Equal(FinanceSalesInvoiceSettlementStatusV1.Settled,
+            Project(proof with { Assignments = [assignment] }).Status);
+        Assert.Equal(FinanceSalesInvoiceSettlementStatusV1.Unknown, Project(proof).Status);
     }
 
     [Fact]
@@ -169,7 +202,12 @@ public sealed class FinanceSalesInvoiceSettlementTests
             ResultJson = JsonSerializer.Serialize(new FinanceOpenItemAdmissionResult(CommandOutcome.Succeeded,
                 items.Select(x => x.Id).ToArray(), false, "SENTETIK", []), Json),
         };
-        return new(items, [admission], allocations, sources, events, [], [], [], []);
+        var states = sources.Select(source => new FinanceSourceAllocationStateRow
+        {
+            CompanyId = Company, SourceId = source.Id, CurrencyId = Currency, OriginalAmountText = "10",
+            UnallocatedAmountText = "0", Version = 1,
+        }).ToArray();
+        return new(items, [admission], allocations, sources, events, [], [], [], [], states, []);
     }
 
     private sealed class User : ICurrentUser

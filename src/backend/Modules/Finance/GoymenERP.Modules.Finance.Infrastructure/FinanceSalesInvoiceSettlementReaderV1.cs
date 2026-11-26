@@ -69,6 +69,15 @@ public sealed class FinanceSalesInvoiceSettlementReaderV1(
             var allocations = await Rows(db.Allocations.AsNoTracking().Where(x => x.CompanyId == companyId
                 && itemIds.Contains(x.OpenItemId)).OrderBy(x => x.Id));
             var sourceIds = allocations.Select(x => x.SourceId).Distinct().ToArray();
+            // A receipt may settle other invoices too. Validate its entire allocation aggregate, not this subset.
+            allocations = await Rows(db.Allocations.AsNoTracking().Where(x => x.CompanyId == companyId
+                && sourceIds.Contains(x.SourceId)).OrderBy(x => x.Id));
+            var states = await Rows(db.SourceAllocationStates.AsNoTracking().Where(x => x.CompanyId == companyId
+                && sourceIds.Contains(x.SourceId)).OrderBy(x => x.SourceId));
+            var assignments = await Rows(db.PartyBalanceAssignments.AsNoTracking().Where(x => x.CompanyId == companyId
+                && (x.Kind == FinanceBalanceAssignmentKinds.Receipt && sourceIds.Contains(x.SourceId)
+                    || x.Kind == FinanceBalanceAssignmentKinds.OpenItem && itemIds.Contains(x.SourceId)))
+                .OrderBy(x => x.Kind).ThenBy(x => x.SourceId).ThenBy(x => x.CurrentAccountId));
             var sources = await Rows(db.ReceiptDrafts.AsNoTracking().Where(x => x.CompanyId == companyId
                 && sourceIds.Contains(x.Id)).OrderBy(x => x.Id));
             var events = await Rows(db.MoneyEvents.AsNoTracking().Where(x => x.CompanyId == companyId
@@ -84,7 +93,8 @@ public sealed class FinanceSalesInvoiceSettlementReaderV1(
                 .OrderBy(x => x.CreditId).ThenBy(x => x.OpenItemId));
             var cancellations = await Rows(db.InvoiceCancellations.AsNoTracking().Where(x => x.CompanyId == companyId
                 && ids.Contains(x.InvoiceId)).OrderBy(x => x.Id));
-            return new(items, admissions, allocations, sources, events, reversals, credits, reductions, cancellations);
+            return new(items, admissions, allocations, sources, events, reversals, credits, reductions, cancellations,
+                states, assignments);
         }
     }
 
@@ -95,7 +105,8 @@ public sealed class FinanceSalesInvoiceSettlementReaderV1(
     internal sealed record Snapshot(FinanceOpenItemRow[] Items, FinanceOpenItemSourceBatchRow[] Admissions,
         FinanceAllocationRow[] Allocations, ReceiptDraftRow[] Sources, MoneyEventRow[] Events,
         ReversalProposalRow[] Reversals, FinanceCustomerReturnCreditRow[] Credits,
-        FinanceCustomerReturnCreditItemRow[] Reductions, FinanceInvoiceCancellationRow[] Cancellations);
+        FinanceCustomerReturnCreditItemRow[] Reductions, FinanceInvoiceCancellationRow[] Cancellations,
+        FinanceSourceAllocationStateRow[] States, FinancePartyBalanceAssignmentRow[] Assignments);
 
     internal static FinanceSalesInvoiceSettlementV1 Project(Guid companyId, Guid invoiceId, Snapshot proof)
     {
@@ -168,6 +179,33 @@ public sealed class FinanceSalesInvoiceSettlementReaderV1(
                     if (allocation.Status == FinanceAllocationStatuses.Released) continue;
                     var source = proof.Sources.Single(x => x.Id == allocation.SourceId);
                     var money = proof.Events.Single(x => x.SourceId == source.Id);
+                    var state = proof.States.Single(x => x.SourceId == source.Id);
+                    if (state.CompanyId != companyId || state.CurrencyId != source.CurrencyId || state.Version < 1
+                        || !FinanceExactDecimalText.Equal(state.OriginalAmountText, source.AmountText)
+                        || !FinanceExactDecimalText.TryParseNonNegative(state.UnallocatedAmountText, out var unallocated)) return unknown;
+                    var allocatedTotal = zero;
+                    foreach (var sibling in proof.Allocations.Where(x => x.SourceId == source.Id))
+                    {
+                        if (sibling.CompanyId != companyId || sibling.CurrencyId != source.CurrencyId
+                            || sibling.Status is not (FinanceAllocationStatuses.Active or FinanceAllocationStatuses.Released)) return unknown;
+                        if (sibling.Status == FinanceAllocationStatuses.Released) continue;
+                        if (!FinanceExactDecimalText.TryParsePositive(sibling.AmountText, out var siblingAmount)) return unknown;
+                        allocatedTotal = allocatedTotal.Add(siblingAmount);
+                    }
+                    if (!FinanceExactDecimalText.Equal(unallocated.Add(allocatedTotal).Text, source.AmountText)) return unknown;
+                    // Reuse the command's beneficiary resolver: explicit amount-scoped transfers may legitimately
+                    // give the receipt and item different historical original accounts. Zero available is valid here:
+                    // the allocation already spent this beneficiary's amount; this read does not allocate it again.
+                    FinanceAllocationPosition Position(int kind, Guid id, Guid partyId, Guid accountId, string available) =>
+                        new FinanceAllocationPositions(partyId, accountId, source.CurrencyId, available,
+                            proof.Assignments.Where(x => x.Kind == kind && x.SourceId == id && x.CompanyId == companyId).ToArray())
+                            .Select(allocation.AllocationPartyId, allocation.AllocationAccountId);
+                    var sourceOwner = Position(FinanceBalanceAssignmentKinds.Receipt, source.Id, source.PartyId,
+                        source.CompanyAccountId, state.UnallocatedAmountText);
+                    var itemOwner = Position(FinanceBalanceAssignmentKinds.OpenItem, item.Id, item.PartyId,
+                        item.CompanyAccountId, item.OutstandingAmountText);
+                    if (sourceOwner.PartyId != itemOwner.PartyId || sourceOwner.CompanyAccountId != itemOwner.CompanyAccountId)
+                        return unknown;
                     if (source.CompanyId != companyId || source.Stage != ReceiptStages.Recorded
                         || source.RecordedAtUtc is null || string.IsNullOrWhiteSpace(source.RecordedBy)
                         || source.CurrencyId != item.CurrencyId || allocation.ReleasedAtUtc is not null
@@ -188,7 +226,8 @@ public sealed class FinanceSalesInvoiceSettlementReaderV1(
             return new(invoiceId, settled ? FinanceSalesInvoiceSettlementStatusV1.Settled : FinanceSalesInvoiceSettlementStatusV1.Open,
                 first.SourceBatchId, first.SourceVersion);
         }
-        catch (Exception exception) when (exception is JsonException or InvalidOperationException or ArgumentException or FormatException)
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException or ArgumentException
+            or FormatException or FinanceAllocationPolicyException)
         { return unknown; }
     }
 }
