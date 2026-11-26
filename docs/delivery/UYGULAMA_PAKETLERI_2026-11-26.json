@@ -1869,7 +1869,7 @@
       "backlog_parent": "W5-AIGATEWAY",
       "title": "Kalıcı AI işlem defteri",
       "group": "TREN2",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_IMPLEMENTED_LOCAL",
       "priority": "P1",
       "risk": "K3",
       "scope": "Mevcut pipeline/ledger arayüzünü kalıcı AI şemasıyla uygula; CompanyId, version CAS; durum/olay aynı işlemde; restart/replay.",
@@ -1916,7 +1916,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "Tren kapanışında dört gerçek SQL kabulü, migration guard/recovery pinleri, tam CI ve iki bağımsız exact-head K3 incelemesi.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -1927,7 +1927,44 @@
         "tests/GoymenERP.Api.IntegrationTests/WorkApprovalRuleSqlServerRelationalAcceptanceTests.cs",
         "tests/GoymenERP.Idempotency.UnitTests/CommandExecutionTests.cs"
       ],
-      "change_files": []
+      "change_files": [
+        "src/backend/GoymenERP.Api/Ai/AiRuntimeServiceCollectionExtensions.cs",
+        "src/backend/GoymenERP.Api/Ai/Commands/AiCommandPipeline.cs",
+        "src/backend/GoymenERP.Api/Ai/Commands/SqlAiCommandLedger.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Domain/AiCommandPersistenceV1.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/AiCommandPersistenceV1.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/AiKnowledgeModuleExtensions.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/Persistence/AiCommandRows.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/Persistence/AiKnowledgeDbContext.Commands.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/Persistence/AiKnowledgeDbContext.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/Persistence/Migrations/20261126175933_AddAiCommandLedger.Designer.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/Persistence/Migrations/20261126175933_AddAiCommandLedger.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/Persistence/Migrations/AiKnowledgeDbContextModelSnapshot.cs",
+        "src/backend/Modules/AiKnowledge/README.md",
+        "tests/GoymenERP.Api.IntegrationTests/AiCommandLedgerPersistenceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiCommandLedgerSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiCommandPipelineTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiKnowledgeSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/SqlAiCommandLedgerTests.cs",
+        "tools/relational_inventory/platform.txt"
+      ],
+      "execution": {
+        "source_commit": "b3742be0864282878ab017c3489a4257b1773ba9",
+        "reuse": "Existing AI context, owner persistence port, approved command pipeline and SQL fixture; ai schema separate from Work",
+        "token_consumption": "UNKNOWN; client has no per-package counter",
+        "development_duration": "NOT_SEPARATELY_MEASURED; sequential shared session",
+        "sql": "NOT_RUN; four facts added",
+        "browser": "NOT_RUN",
+        "hosted_ci": "NOT_RUN",
+        "independent_review": "PENDING",
+        "integration_pins": "DEFERRED_TO_TRAIN_CLOSE",
+        "migration": "20261126175933_AddAiCommandLedger; Down THROW 52200",
+        "checks": [
+          "91 targeted pipeline/adapter/model/knowledge tests passed, 0 skipped",
+          "3 existing knowledge HTTP acceptance tests passed, 0 skipped",
+          "EF has-pending-model-changes exit 0; git diff --check exit 0"
+        ]
+      }
     },
     {
       "id": "T2/WP-C2",

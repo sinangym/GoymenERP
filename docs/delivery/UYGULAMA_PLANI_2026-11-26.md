@@ -116,3 +116,5 @@ Yerel ilk kontrol: kaynak/plan/parite/64 akış haritası doğrulayıcısı exit
 Sinan’ın açık talimatıyla Claude kapasitesi yokken frontend dahil geliştirme Codex tarafından yürütülür. Mevcut 41 paket korunur; dosya adayları ile gerçek `change_files` lease’i JSON’da ayrıdır. Ana backlog’a ve grant/aktivasyona dokunulmaz.
 
 İlk teslimler: `W3-URETIM/INPUT-PIECES` (`c48f96c91`) ve `W2-SATINALMA/MULTILINE` (`c98ede21d`). Yerel hedefli kanıtlar JSON `execution` alanındadır; gerçek SQL, browser, pin, hosted CI ve bağımsız review bekler. Bunlar üretim kabulü veya tren kapanışı değildir. Son kontrolün CUTOVER, Work şema sırası, açık karar ayrımı ve sonraki kapsam bağlantıları aynı 41 pakete işlendi.
+
+`T2/WP-C1-LEDGER` kaynak teslimi: `b3742be08`. Mevcut AI bağlamında ayrı `ai` şeması, atomik durum/olay ve sürüm CAS bağlandı. 94 hedefli test geçti (0 skip); EF model farkı yok. Dört SQL kabulü yazıldı, koşulmadı. Pin/tam CI/K3 kapanışta bekler; AI kapalıdır.

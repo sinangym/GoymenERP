@@ -1327,22 +1327,22 @@
       "sources": [
         {
           "path": "src/backend/GoymenERP.Api/Ai/Commands/AiCommandPipeline.cs",
-          "line": 306,
-          "anchor": "public async Task<AiCommandPipelineResultV1> ExecuteAsync(Guid previewId, string? previewHash, Guid approvalId, CancellationToken cancellationToken = default)",
-          "sha256": "52fe94ac27d18cf8bfd23359d8f6a9595b3e205fb6dd7cd9b35c13481bff9c20",
-          "git_blob": "a7b261532aa0a1d1cfeaca87560f84cf6c390b74"
+          "line": 67,
+          "anchor": "public Task<AiCommandPipelineResultV1> ExecuteAsync(Guid previewId, string? previewHash, Guid approvalId, CancellationToken cancellationToken = default) =>",
+          "sha256": "ce8b3020b40188f149956e55433fa1c9da7f687c20c8b3a5f6abdfdf9281c5bb",
+          "git_blob": "dc4669f93a546fbfe3312fda7155436272ca9775"
         }
       ],
       "tests": [
         {
           "path": "tests/GoymenERP.Api.IntegrationTests/AiCommandPipelineTests.cs",
-          "line": 35,
+          "line": 60,
           "anchor": "public async Task Preview_approval_and_execution_run_the_owner_command_once_with_the_frozen_request()",
-          "sha256": "99cc22d7f1204049c3f1415767ef966ea1875da53b7afced6c463b138888b82f",
-          "git_blob": "60fe61bd8c446393a209b05d31f94b27bbf9e2b3"
+          "sha256": "cf4a231a8d04c541170bf7f37b1e079a4dc4f17e86fb2981167ab71f58e71898",
+          "git_blob": "50bfb433809873f65ac08ef6c85c35b4368146d4"
         }
       ],
-      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "source_commit": "b3742be0864282878ab017c3489a4257b1773ba9",
       "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": null,
@@ -1354,10 +1354,10 @@
         "Eski test sonucu yeni kullanım kabulü değildir"
       ],
       "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
-      "adaptations": "Kalıcı defter yok; kapalı liste onay/ret/ödeme/atama/yayım için aşılamaz.",
+      "adaptations": "Kalıcı SQL owner defteri yerel kaynak/model testleriyle bağlandı; yeni komut ailesi mevcut kapalı listeyi ve insan kapılarını korur.",
       "limitations": [
-        "Kalıcı defter yok; kapalı liste onay/ret/ödeme/atama/yayım için aşılamaz.",
-        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+        "Gerçek SQL/restart/race kabulü ve exact-head CI/K3 bekler; AI bayrakları kapalıdır.",
+        "Geçmiş kaynak/test kanıtı yeni kullanım kabulü değildir."
       ],
       "decision_refs": [
         "AI-D25",
@@ -1365,7 +1365,19 @@
         "DEC-AI-002",
         "YOL-D27"
       ],
-      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
+      "previous_baseline": {
+        "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+        "historical_evidence": "SOURCE_AND_TEST_ONLY",
+        "historical_ci_url": null
+      },
+      "local_validation": {
+        "status": "TARGETED_LOCAL_ONLY",
+        "source_commit": "b3742be0864282878ab017c3489a4257b1773ba9",
+        "targeted_tests_passed": 94,
+        "skipped": 0,
+        "sql_acceptance": "NOT_RUN"
+      }
     },
     {
       "id": "REF-AI-03",
@@ -2279,13 +2291,13 @@
       "tests": [
         {
           "path": "tests/GoymenERP.Api.IntegrationTests/AiCommandPipelineTests.cs",
-          "line": 35,
+          "line": 60,
           "anchor": "public async Task Preview_approval_and_execution_run_the_owner_command_once_with_the_frozen_request()",
-          "sha256": "99cc22d7f1204049c3f1415767ef966ea1875da53b7afced6c463b138888b82f",
-          "git_blob": "60fe61bd8c446393a209b05d31f94b27bbf9e2b3"
+          "sha256": "cf4a231a8d04c541170bf7f37b1e079a4dc4f17e86fb2981167ab71f58e71898",
+          "git_blob": "50bfb433809873f65ac08ef6c85c35b4368146d4"
         }
       ],
-      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "source_commit": "b3742be0864282878ab017c3489a4257b1773ba9",
       "runtime_acceptance": "NOT_RUN",
       "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
       "invariants": [
@@ -2304,7 +2316,19 @@
       "decision_refs": [
         "AGENTS.md: Mimari değişmezler; owner iş kararını ayrıca seç"
       ],
-      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
+      "previous_baseline": {
+        "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+        "historical_evidence": "SOURCE_AND_TEST_ONLY",
+        "historical_ci_url": null
+      },
+      "local_validation": {
+        "status": "TARGETED_LOCAL_ONLY",
+        "source_commit": "b3742be0864282878ab017c3489a4257b1773ba9",
+        "targeted_tests_passed": 94,
+        "skipped": 0,
+        "sql_acceptance": "NOT_RUN"
+      }
     },
     {
       "id": "REF-RESTORE-01",
