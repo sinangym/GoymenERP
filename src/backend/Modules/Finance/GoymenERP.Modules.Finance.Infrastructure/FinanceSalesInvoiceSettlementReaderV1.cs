@@ -93,8 +93,12 @@ public sealed class FinanceSalesInvoiceSettlementReaderV1(
                 .OrderBy(x => x.CreditId).ThenBy(x => x.OpenItemId));
             var cancellations = await Rows(db.InvoiceCancellations.AsNoTracking().Where(x => x.CompanyId == companyId
                 && ids.Contains(x.InvoiceId)).OrderBy(x => x.Id));
+            var cancellationIds = cancellations.Select(x => x.Id).ToArray();
+            var cancellationItems = await Rows(db.InvoiceCancellationItems.AsNoTracking().Where(x => x.CompanyId == companyId
+                && (cancellationIds.Contains(x.CancellationId) || itemIds.Contains(x.OpenItemId)))
+                .OrderBy(x => x.CancellationId).ThenBy(x => x.OpenItemId));
             return new(items, admissions, allocations, sources, events, reversals, credits, reductions, cancellations,
-                states, assignments);
+                states, assignments, cancellationItems);
         }
     }
 
@@ -106,7 +110,8 @@ public sealed class FinanceSalesInvoiceSettlementReaderV1(
         FinanceAllocationRow[] Allocations, ReceiptDraftRow[] Sources, MoneyEventRow[] Events,
         ReversalProposalRow[] Reversals, FinanceCustomerReturnCreditRow[] Credits,
         FinanceCustomerReturnCreditItemRow[] Reductions, FinanceInvoiceCancellationRow[] Cancellations,
-        FinanceSourceAllocationStateRow[] States, FinancePartyBalanceAssignmentRow[] Assignments);
+        FinanceSourceAllocationStateRow[] States, FinancePartyBalanceAssignmentRow[] Assignments,
+        FinanceInvoiceCancellationItemRow[]? CancellationItems = null);
 
     internal static FinanceSalesInvoiceSettlementV1 Project(Guid companyId, Guid invoiceId, Snapshot proof)
     {
@@ -114,7 +119,7 @@ public sealed class FinanceSalesInvoiceSettlementReaderV1(
         try
         {
             var items = proof.Items.Where(x => x.SourceId == invoiceId).ToArray();
-            if (items.Length == 0 || proof.Cancellations.Any(x => x.InvoiceId == invoiceId)) return unknown;
+            if (items.Length == 0) return unknown;
             var first = items[0];
             if (first.SourceBatchId == Guid.Empty || string.IsNullOrWhiteSpace(first.SourceVersion)
                 || items.Select(x => x.Id).Distinct().Count() != items.Length
@@ -126,6 +131,11 @@ public sealed class FinanceSalesInvoiceSettlementReaderV1(
                 || admission.PayloadHash != admission.SourceChecksum || admission.SourceChecksum.Length != 64
                 || receipt is null || receipt.Outcome != CommandOutcome.Succeeded
                 || receipt.OpenItemIds is null || !receipt.OpenItemIds.Order().SequenceEqual(items.Select(x => x.Id).Order())) return unknown;
+            if (proof.Cancellations.Any(x => x.InvoiceId == invoiceId) || items.Any(x => x.Status == FinanceOpenItemStatuses.Cancelled)
+                || proof.CancellationItems?.Any(x => items.Any(item => item.Id == x.OpenItemId)) == true)
+                return FinanceOfficialSalesInvoiceReversalProofV1.IsComplete(companyId, invoiceId, items, admission, proof)
+                    ? new(invoiceId, FinanceSalesInvoiceSettlementStatusV1.OfficiallyReversed, first.SourceBatchId, first.SourceVersion)
+                    : unknown;
             var zero = new FinanceExactDecimalText();
             var reduced = items.ToDictionary(x => x.Id, _ => zero);
             foreach (var credit in proof.Credits.Where(x => x.OriginalInvoiceId == invoiceId))

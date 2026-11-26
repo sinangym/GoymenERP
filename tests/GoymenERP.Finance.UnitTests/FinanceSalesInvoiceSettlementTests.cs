@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Finance.UnitTests;
 
-public sealed class FinanceSalesInvoiceSettlementTests
+public sealed partial class FinanceSalesInvoiceSettlementTests
 {
     private static readonly Guid Company = Guid.NewGuid();
     private static readonly Guid Invoice = Guid.NewGuid();

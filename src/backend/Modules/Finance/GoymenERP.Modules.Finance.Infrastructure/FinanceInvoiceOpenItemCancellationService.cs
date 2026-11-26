@@ -370,7 +370,7 @@ public sealed class FinanceInvoiceOpenItemCancellationService(
             envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent,
             context.CorrelationId, context.CausationId, metadata.IdempotencyKey));
 
-    private static string PayloadHash(FinanceInvoiceOpenItemCancellationV1 cancellation) =>
+    internal static string PayloadHash(FinanceInvoiceOpenItemCancellationV1 cancellation) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
             CommandName + "|" + JsonSerializer.Serialize(cancellation, Json)))).ToLowerInvariant();
 

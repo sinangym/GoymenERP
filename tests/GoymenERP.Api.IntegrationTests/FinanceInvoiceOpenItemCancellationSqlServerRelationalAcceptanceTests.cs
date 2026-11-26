@@ -19,7 +19,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// invoice never admitted, another version, an active allocation or a missing authority cancels nothing; the
 /// migration's Down refuses while a cancellation is stored. Party, authority and ledger grants are SENTETIK inputs.
 /// </summary>
-public sealed class FinanceInvoiceOpenItemCancellationSqlServerRelationalAcceptanceTests
+public sealed partial class FinanceInvoiceOpenItemCancellationSqlServerRelationalAcceptanceTests
 {
     private const string Actor = "SENTETIK-invoice-canceller";
     private const string BeforeCancellations = "20261102220923_AddOpenItemInvoiceExchange";
@@ -355,7 +355,7 @@ public sealed class FinanceInvoiceOpenItemCancellationSqlServerRelationalAccepta
     private static FinanceInvoiceOpenItemCancellationV1 Cancellation(FinanceInvoiceOpenItemAdmissionV1 invoice) =>
         new(Guid.NewGuid(), invoice.Producer, invoice.InvoiceId, invoice.InvoiceVersion, "SENTETIK e-Fatura RED");
 
-    private sealed class Run : IAsyncDisposable
+    private sealed partial class Run : IAsyncDisposable
     {
         private readonly string baseConnectionString;
 
