@@ -30,7 +30,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// currency is SENTETIK / NOT_ENV test data. This is not a finance delivery and claims no user outcome.
 /// </para>
 /// </summary>
-public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
+public sealed partial class FinanceRecordSqlServerRelationalAcceptanceTests
 {
     private const string Operation = "SENTETIK-operation";
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
@@ -1570,7 +1570,7 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
 
     private sealed record SavedOpenItem(Guid Id, string Version);
 
-    private sealed class Run : IAsyncDisposable
+    private sealed partial class Run : IAsyncDisposable
     {
         private readonly string baseConnectionString;
 
