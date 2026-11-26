@@ -1,0 +1,2408 @@
+{
+  "version": "1.0",
+  "status": "SOURCE_VERIFIED_RUNTIME_NOT_RUN",
+  "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+  "historical_ci": {
+    "source_commit": "9e6107ff3cb38f11f17d1185db550d05f752f70b",
+    "run_id": 45164205956,
+    "conclusion": "success",
+    "checked_at": "2026-11-26",
+    "scope": "GitHub run ve 22 job sonucu okundu; tek tek test yürütme kaydı incelenmedi."
+  },
+  "evidence_policy": [
+    "Kaynak/test blobları aynı eski CI ağacındaysa yalnız HISTORICAL_CI_TREE_MATCH.",
+    "T2-only kaynak test dosyasıyla SOURCE_AND_TEST_ONLY; doğrulanmış runtime değildir.",
+    "Her yeni kullanım kendi fark, yetki, şirket ve entegrasyon kabulünü gerektirir."
+  ],
+  "references": [
+    {
+      "id": "REF-CARD-01",
+      "function": "Cari oluşturma, şirket hesabı ve tekrar güvenliği",
+      "module": "Counterparty",
+      "backlog_parent": "W1-CARI",
+      "reuse_mode": "SMALL_EXTENSION",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.cs",
+          "line": 44,
+          "anchor": "public async Task<CounterpartyCommandExecution> CreateAsync(",
+          "sha256": "3af5d7ae9896ccb1bf74bf045a8b30dba71d65ff81481a7067b35b2db24049b1",
+          "git_blob": "30f5a865d4a824c45f01a870a5d4460066fac803"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Api.IntegrationTests/CounterpartyCompanyScopedIdempotencySqlServerRelationalAcceptanceTests.cs",
+          "line": 14,
+          "anchor": "public async Task SameIdempotencyKey_InDifferentCompanies_IsIndependent()",
+          "sha256": "d7bd508e3afa6ad7a16284231c7242582fb97496c7226f76e526fe9334081f66",
+          "git_blob": "7e8e61b7a71a2d1230778f8bf2dc5623bad3b156"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": null,
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Yeni ekipman domainini Counterparty tablosuna yazma; hızlı cari normal yetkiyi aşamaz.",
+      "limitations": [
+        "Yeni ekipman domainini Counterparty tablosuna yazma; hızlı cari normal yetkiyi aşamaz.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "ALS-D100",
+        "ALS-D99",
+        "KLN-D38",
+        "SAT-D119",
+        "SAT-D57"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-CATALOG-01",
+      "function": "Sürümlü referans liste ve pasifleştirme",
+      "module": "Settings",
+      "backlog_parent": "W1-SETTINGS",
+      "reuse_mode": "DIRECT_REUSE",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsReferenceListAdministration.cs",
+          "line": 66,
+          "anchor": "public async Task<SettingsReferenceListCommandResultV1> CreateAsync(SettingsReferenceListKindV1 kind,",
+          "sha256": "768ea2caf3f70c9edeb0d82981f3304b30797ad4f01e20e57631bd6d4171c159",
+          "git_blob": "96a7d14ac713d843e98e1a0e4c033d4a17ae9ca8"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Api.IntegrationTests/SettingsReferenceListSqlServerRelationalAcceptanceTests.cs",
+          "line": 33,
+          "anchor": "public async Task Reference_lists_preserve_company_latest_version_replay_authority_and_audit_on_real_sql()",
+          "sha256": "04adc797a44b1c1c16ac8a7c7a8a054cbe7c32fe7adf59fb4db8875faa3dfb70",
+          "git_blob": "2bf9ecd453fa3cb84044f191306f5f42fbd99d90"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "HISTORICAL_SUITE_ONLY_NOT_INDIVIDUAL_RESULT",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "KIM-D49 listeleri boş başlar; ortak mali eşleme politikası bu katalogdan türetilmez.",
+      "limitations": [
+        "KIM-D49 listeleri boş başlar; ortak mali eşleme politikası bu katalogdan türetilmez.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "ALS-D79",
+        "KIM-D49",
+        "KIM-D51",
+        "SAT-D68"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-POLICY-01",
+      "function": "Şirket politikası ve yürürlük sürümü",
+      "module": "Settings",
+      "backlog_parent": "W1-SETTINGS",
+      "reuse_mode": "REFERENCE_PATTERN",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsCompanyPolicyAdministration.cs",
+          "line": 98,
+          "anchor": "public async Task<CompanyPolicyCommandResultV1> RecordSalesContractDiscountLimitAsync(RecordSalesContractDiscountLimitRequestV1 request,",
+          "sha256": "a59209665ef9fd722f3975ba41e393bb362810bf1877e505da1be9129ac6f94b",
+          "git_blob": "290b098fcde0c21ea71f6b4afd30f4099dcb7001"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Settings.UnitTests/CompanyPolicyRulesV1Tests.cs",
+          "line": 17,
+          "anchor": "public void A_due_date_buffer_of_zero_or_more_whole_working_days_is_valid(int days)",
+          "sha256": "74f101cf82b09ed906339cccb4759180f781e0e28933501ecb169f23b60a507c",
+          "git_blob": "83004ac10a1f0743da7da961800375c79f9a6135"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Farklı politikaya satış eşiğini kopyalama; yalnız onaylı alan ve yetkiyi kullan.",
+      "limitations": [
+        "Farklı politikaya satış eşiğini kopyalama; yalnız onaylı alan ve yetkiyi kullan.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "ALS-D105",
+        "SAT-D381",
+        "SAT-D395",
+        "SAT-D469",
+        "URT-D100",
+        "URT-D96"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-ORDER-01",
+      "function": "Çok satırlı alış ve belge onayı",
+      "module": "Purchasing",
+      "backlog_parent": "W2-SATINALMA",
+      "reuse_mode": "SMALL_EXTENSION",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchasingService.cs",
+          "line": 263,
+          "anchor": "public async Task<PurchaseOrderResponse> CreateOrderAsync(CreatePurchaseOrderRequest request, PurchasingCommandMetadata metadata,",
+          "sha256": "d52ca29ce9d2eeaf17751a2085dec14719d5133b788db5e4fe36b66fb3c35558",
+          "git_blob": "06cefb000de10082dca0349a0556ac9e3bc5c266"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Purchasing.UnitTests/PurchasingServiceTests.cs",
+          "line": 36,
+          "anchor": "public async Task A_request_and_an_order_bound_to_it_are_stored_once_with_the_owners_product_version_and_the_fences_measured()",
+          "sha256": "a14a6b4c466733a13b960ba321430ac4c898dbc84708aa1dcaabf25d8f89d53c",
+          "git_blob": "e0f1ef1044da7050af9a05f41920cd3fec81bd3d"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Mevcut satır desteği karma mal/hizmet belgesinin tamamlandığı anlamına gelmez; ALS-D129.",
+      "limitations": [
+        "Mevcut satır desteği karma mal/hizmet belgesinin tamamlandığı anlamına gelmez; ALS-D129.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "ALS-D16",
+        "ALS-D18",
+        "ALS-D2",
+        "ALS-D3",
+        "FNS-D79",
+        "FNS-D80",
+        "SAT-D219",
+        "SAT-D220",
+        "SAT-D437",
+        "SAT-D54"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-INVOICE-01",
+      "function": "Alış faturası kaynağı ve kabul eşleştirme testleri",
+      "module": "Purchasing",
+      "backlog_parent": "W2-SATINALMA",
+      "reuse_mode": "REFERENCE_PATTERN",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchaseIncomingInvoiceWorkflow.cs",
+          "line": 38,
+          "anchor": "public async Task<PurchaseIncomingInvoiceOperationResultV1> MatchAsync(Guid invoiceId,",
+          "sha256": "d7842e446c9c0ad02efcf16689ad4dafadd1b55f9618bcf76828dad367de930b",
+          "git_blob": "ca07aee7f83977274bd81af685744afd75426ba8"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Purchasing.UnitTests/PurchaseIncomingInvoiceWorkflowTests.cs",
+          "line": 16,
+          "anchor": "public async Task Matching_reads_owner_facts_under_the_selected_order_locks_and_replays_without_reading_them_again()",
+          "sha256": "6a164a13e1e283fd84af21106716e41177404d240bac586bb92bf2570aaf78fc",
+          "git_blob": "5866c0ba4046bcade34b1924b83b94b9102a60eb"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Mevcut kabul eşleştirmesi PO/kabul kimliği ister; siparişsiz kaynak türü ayrı sözleşme gerektirir.",
+      "limitations": [
+        "Mevcut kabul eşleştirmesi PO/kabul kimliği ister; siparişsiz kaynak türü ayrı sözleşme gerektirir.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "ALS-D8"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-CLOSE-01",
+      "function": "Satış normal kapanış eksenleri",
+      "module": "Sales",
+      "backlog_parent": "W2-SATIS",
+      "reuse_mode": "SMALL_EXTENSION",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.Status.cs",
+          "line": 34,
+          "anchor": "public async Task<SalesOrderDraftStatusResponse> GetDraftStatusAsync(Guid draftId, CancellationToken cancellationToken = default)",
+          "sha256": "1473261cdccdce7411365c42f6680dc4a2fbb391a45525302fd79a4780a217e0",
+          "git_blob": "41190b0f7d57aad90c49f49c82eba23c61bdce9d"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.Status.cs",
+          "line": 18,
+          "anchor": "public async Task The_seven_axes_are_answered_separately_and_the_realization_is_judged_with_the_settings_tolerance()",
+          "sha256": "bcd6d34aeb1a0bf7e59f7dee85c481fe506e3bbd7e4bc85fe24020ba097af3ce",
+          "git_blob": "995e61af29e26467c10a20410ff33d6d0b80c882"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "NoSource ve Unreadable sıfır/tamam sayılmaz; owner axes bağlı değilse kapanış açılamaz.",
+      "limitations": [
+        "NoSource ve Unreadable sıfır/tamam sayılmaz; owner axes bağlı değilse kapanış açılamaz.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "DEC-SAL-001",
+        "SAT-D103",
+        "SAT-D104",
+        "SAT-D105",
+        "SAT-D114",
+        "SAT-D115",
+        "SAT-D12",
+        "SAT-D121",
+        "SAT-D15",
+        "SAT-D17",
+        "SAT-D211",
+        "SAT-D213",
+        "SAT-D29",
+        "SAT-D30",
+        "SAT-D32",
+        "SAT-D33",
+        "SAT-D5"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-RISK-01",
+      "function": "Sevkte deterministik risk kapısı",
+      "module": "Sales",
+      "backlog_parent": "W4-RISK",
+      "reuse_mode": "DIRECT_REUSE",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.ShipmentRiskGate.cs",
+          "line": 21,
+          "anchor": "public async Task<SalesShipmentRiskGateDecisionV1> EvaluateShipmentRiskGateAsync(Guid orderId,",
+          "sha256": "49b5c6aff3de0ef292b8c50d5177bec1d4631b4948a60323bb8c531c892dba64",
+          "git_blob": "55fbcf386142698c572b8be2875b8cfe1985e385"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.ShipmentRiskGate.cs",
+          "line": 17,
+          "anchor": "public async Task F018_S2_the_gate_read_measures_no_sales_permission_writes_nothing_and_maps_a_missing_credit_limit_to_credit_limit_not_set()",
+          "sha256": "052a6e95f4959562c0c5a6dd65819d611368fe857ed74562a77c54d8ab039a81",
+          "git_blob": "f626157064a662cfb435ba6b9741889acda5c1d1"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Yeni risk hesabı yazma; owner açık kalem ve faturalanmamış sevk kaynaklarını doğrula.",
+      "limitations": [
+        "Yeni risk hesabı yazma; owner açık kalem ve faturalanmamış sevk kaynaklarını doğrula.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "FNS-D30",
+        "SAT-D310"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-STOCK-01",
+      "function": "Tek stok defteri ve adet/kg tutarlılığı",
+      "module": "Inventory",
+      "backlog_parent": "W3-STOK",
+      "reuse_mode": "DIRECT_REUSE",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Domain/Balances/StockLedger.cs",
+          "line": 137,
+          "anchor": "public void Apply(StockMovement movement)",
+          "sha256": "fb6c21e33e1eed6f209e77f20af162670ef9106554d030b38ddbcab374def1c8",
+          "git_blob": "d3810fafb17e90f7678c8575ed8bc5406280ac91"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Inventory.UnitTests/StockLedgerTests.PieceCounts.cs",
+          "line": 14,
+          "anchor": "public void A_piece_receipt_then_issues_keep_pieces_and_kilograms_together_and_the_last_piece_empties_the_label()",
+          "sha256": "1f0415c74cf885a3a40cb34e0dc18d9a96f5e215c5c8a182ca58db12c4e82a13",
+          "git_blob": "b630bd7c705eea6dd658c05c08638ef41b01ee97"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Mali sınıflama fiziksel hareket değildir; üretim portu adet taşımazsa bu motoru gevşetme.",
+      "limitations": [
+        "Mali sınıflama fiziksel hareket değildir; üretim portu adet taşımazsa bu motoru gevşetme.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "KLN-D119",
+        "SAT-D318"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-COST-01",
+      "function": "Şirket ortalama maliyet hesabı",
+      "module": "Inventory",
+      "backlog_parent": "W3-STOK",
+      "reuse_mode": "DIRECT_REUSE",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Domain/Costing/CompanyWideAverageCostCalculator.cs",
+          "line": 7,
+          "anchor": "public sealed record CompanyWideAverageCostLocation(Guid LocationId, decimal OnHandKg, AverageCostPosition? Position);",
+          "sha256": "9a2b4b010a4056646a1e54352fea584efa3cfdd3da323735bf020bc470b46030",
+          "git_blob": "4ecd6b52c810e572c7e49f8219543e0651b2f2ba"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Inventory.UnitTests/InventoryCompanyWideAverageCostCalculatorTests.cs",
+          "line": 25,
+          "anchor": "public void No_location_with_stock_is_no_source_with_no_figure()",
+          "sha256": "fe548be75d0c6137c882726dfa85e84e7a249efce33c0938783320ee5921de71",
+          "git_blob": "13cbd2a92db8ee75abb256798b4a92d5b1439de7"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Tam üretim maliyeti veya landed-cost politikası değildir; ALS-D80/SAT-D302 korunur.",
+      "limitations": [
+        "Tam üretim maliyeti veya landed-cost politikası değildir; ALS-D80/SAT-D302 korunur.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "KLN-D83",
+        "KLN-D84",
+        "SAT-D265",
+        "SAT-D272",
+        "SAT-D347",
+        "SAT-D350"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-MFG-01",
+      "function": "Üretim ve stok atomik sarfı",
+      "module": "Manufacturing",
+      "backlog_parent": "W3-URETIM",
+      "reuse_mode": "SMALL_EXTENSION",
+      "sources": [
+        {
+          "path": "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryInputIssueHost.cs",
+          "line": 74,
+          "anchor": "public async Task<ManufacturingInventoryInputIssueResult> IssueAsync(",
+          "sha256": "4a43e91c09e40fb989b3d5a15fea914b1150ab3afa2a21217a21271a8c7eab88",
+          "git_blob": "aa6ee85cfdeb4114548110fea8f23c895d119fb2"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Api.IntegrationTests/InventoryManufacturingRealizationParticipantSqlServerRelationalAcceptanceTests.cs",
+          "line": 25,
+          "anchor": "public async Task Manufacturing_issue_return_and_output_commit_once_replay_and_keep_exact_physical_trace()",
+          "sha256": "3e9a62a68693f9f64d6c210f8ad1962f8656c8f7e644f9c54188646368f69cda",
+          "git_blob": "514f4a71f3b3325c2cb799701fe4bfd3cf69ead0"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "HISTORICAL_SUITE_ONLY_NOT_INDIVIDUAL_RESULT",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Port/host/DTO adet zinciri eksik; bu referans adetli ardışık üretim kabulü değildir.",
+      "limitations": [
+        "Port/host/DTO adet zinciri eksik; bu referans adetli ardışık üretim kabulü değildir.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "SAT-D318",
+        "URT-D21",
+        "URT-D3"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-MFG-02",
+      "function": "Üretim iadesi ve çıktı portu",
+      "module": "Manufacturing",
+      "backlog_parent": "W3-URETIM",
+      "reuse_mode": "SMALL_EXTENSION",
+      "sources": [
+        {
+          "path": "src/backend/GoymenERP.Api/ManufacturingRuntime/ManufacturingInventoryReturnOutputHost.cs",
+          "line": 29,
+          "anchor": "internal sealed class ManufacturingInventoryReturnOutputHost(",
+          "sha256": "1a624bf9d4daa7f17a52f6662ad39179641418833016a4e601f4526787a83a3f",
+          "git_blob": "dddca8616f8a6c646a17d0571a312c040233be4e"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Api.IntegrationTests/InventoryManufacturingOutputReversalSqlServerRelationalAcceptanceTests.cs",
+          "line": 21,
+          "anchor": "public async Task Manufacturing_output_reversal_takes_free_output_kg_once_replays_and_never_exceeds_the_output()",
+          "sha256": "7437b1a7cc0895063adfc60c1fabd6d223531630816d000621bebf2832cdb588",
+          "git_blob": "121822b67410c396843a6b6e31b2711de970621f"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "HISTORICAL_SUITE_ONLY_NOT_INDIVIDUAL_RESULT",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Çıktı adedi ile girdi/iade adedini karıştırma; aynı kaynak sarf ve kullanılmayan iade izlenir.",
+      "limitations": [
+        "Çıktı adedi ile girdi/iade adedini karıştırma; aynı kaynak sarf ve kullanılmayan iade izlenir.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "KLN-D119",
+        "URT-D112",
+        "URT-D43",
+        "URT-D62",
+        "URT-D63"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-SUBCONTRACT-01",
+      "function": "Gelen fason tamamlama kaynağı",
+      "module": "Manufacturing",
+      "backlog_parent": "W3-URETIM",
+      "reuse_mode": "DIRECT_REUSE",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingSubcontractCompletionReadPortV2.cs",
+          "line": 11,
+          "anchor": "public sealed class ManufacturingSubcontractCompletionReadPortV2 : IManufacturingSubcontractCompletionReadPortV2",
+          "sha256": "eee85ac1e9fb67a06066f10cb6a00ee6121db7b9021e5ea6b077e0493c78dfd8",
+          "git_blob": "0b40b286a8ecb3e85ce9ec53aec5cad35c8689aa"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommandServiceTests.SubcontractCompletionV2.cs",
+          "line": 12,
+          "anchor": "public async Task Completion_V2_preserves_real_plan_link_revision_output_identity_and_exact_remaining_kg(bool completed)",
+          "sha256": "e52fdc58d38c6df0609f19e321de7f6d7798374d8ad36309309fae4da8daa7a2",
+          "git_blob": "19ba362b752a21c6d1d25ad1b13d8c73d926e45f"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Müşteri malı şirket stok değerine girmez; hizmet faturası ayrı.",
+      "limitations": [
+        "Müşteri malı şirket stok değerine girmez; hizmet faturası ayrı.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "AGENTS.md: Mimari değişmezler; owner iş kararını ayrıca seç"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-LOGISTICS-01",
+      "function": "Yükleme/sevk owner servisi",
+      "module": "Logistics",
+      "backlog_parent": "W3-LOJISTIK",
+      "reuse_mode": "SMALL_EXTENSION",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Application/LogisticsInstructionService.cs",
+          "line": 30,
+          "anchor": "public sealed partial class LogisticsInstructionService(",
+          "sha256": "926472cb9c91183a2170c9a5aaab4b9fc7c353ece6e2bcf8f061ce07a10be6d4",
+          "git_blob": "c5d248c7daffc3235a20f1bad381907279a772a9"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Api.IntegrationTests/LogisticsInstructionSqlServerRelationalAcceptanceTests.ShipmentRiskGate.cs",
+          "line": 31,
+          "anchor": "public async Task A_hosted_shipment_within_the_risk_limit_ships_with_one_outbox_event_in_the_same_save_and_its_replay_writes_nothing_more()",
+          "sha256": "bceb65cba38a0b09f1f13073a3c672412149ed69849031d012d912b486e6fdb3",
+          "git_blob": "04f50de958afa8f1388c79caf26cc1d0e1bf9cec"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": null,
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Resmi belge kanıtı ve fiili kapı çıkışı ayrı; stok çıkışını tekrar üretme.",
+      "limitations": [
+        "Resmi belge kanıtı ve fiili kapı çıkışı ayrı; stok çıkışını tekrar üretme.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "KLN-D119",
+        "ROL-D14"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-OPENITEM-01",
+      "function": "Faturadan tek açık kalem",
+      "module": "Finance",
+      "backlog_parent": "W2-ACIKKALEM",
+      "reuse_mode": "DIRECT_REUSE",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemAdmissionService.cs",
+          "line": 41,
+          "anchor": "public async Task<FinanceOpenItemAdmissionResult> AdmitAsync(",
+          "sha256": "a2c5dcae6c456d691639780401714b000dcbbbb9c27de5aef978b6c343153174",
+          "git_blob": "c3e80807f1cacdbac16e52c0bcedb51506b5fa32"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Api.IntegrationTests/FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests.cs",
+          "line": 34,
+          "anchor": "public async Task A_sales_invoice_becomes_receivables_and_the_same_admission_replays_once()",
+          "sha256": "d5a34682a0ef42e0dd9581d7feb9758a1944a2e34040a5db99ce7dcb90e877ea",
+          "git_blob": "4f5fc472aa94cacaaffc595ab4d8ff882faa8bd0"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "HISTORICAL_SUITE_ONLY_NOT_INDIVIDUAL_RESULT",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Fatura ID bazlı tekillik farklı CSV kaynak kimliğinin aynı hukuki faturayı tekrar üretmesini tek başına engellemez.",
+      "limitations": [
+        "Fatura ID bazlı tekillik farklı CSV kaynak kimliğinin aynı hukuki faturayı tekrar üretmesini tek başına engellemez.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "ALS-D24",
+        "SAT-D208",
+        "SAT-D86"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-ALLOCATE-01",
+      "function": "Ödeme dağıtımı ve tek para hareketi",
+      "module": "Finance",
+      "backlog_parent": "W4-FINANS",
+      "reuse_mode": "DIRECT_REUSE",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceAllocationService.cs",
+          "line": 16,
+          "anchor": "public sealed class FinanceAllocationService(",
+          "sha256": "38a75b25f2435bd7fefa4fa45225f656205f7662bec7904f5d080c578bdcbb52",
+          "git_blob": "3ae8bc5aa6c6d1186411dfd647d3310d3056f5a4"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Finance.UnitTests/FinanceAllocationServicePriorityTests.cs",
+          "line": 19,
+          "anchor": "public async Task Global_balance_codes_and_transferred_capacity_refuse_without_business_changes_and_replay_once(",
+          "sha256": "ff9fb3fa8e5a4d7e5952db87de06315414808f415802100aeba7c73a2f8da7c6",
+          "git_blob": "59de7a6b29b9c067a3293b76352053c9b2ee9e26"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Test kaynağı masraf/para yoluna aittir; yeni çoktan çoğa dağıtım için ilgili ek acceptance seçilir.",
+      "limitations": [
+        "Yeni kullanımda kaynak para hareketi ve hedef açık kalemin izin, şirket ve kalan tutarını yeniden kontrol et.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "AGENTS.md: Mimari değişmezler; owner iş kararını ayrıca seç"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-EXPENSE-01",
+      "function": "Masraf ödemesi ve audit/idempotency",
+      "module": "Finance",
+      "backlog_parent": "W4-FINANS",
+      "reuse_mode": "SMALL_EXTENSION",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ExpensePaymentService.cs",
+          "line": 217,
+          "anchor": "public async Task<ExpensePaymentCommandResult> RecordAsync(",
+          "sha256": "ecc74c3309d07a7ccfebf43080f17a6eee0fba64f1f7a3f004767dfbd921cc32",
+          "git_blob": "009b61d9f98fc311c1c9800771e9fa378ba0bc77"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Api.IntegrationTests/FinanceExpensePaymentSqlServerRelationalAcceptanceTests.cs",
+          "line": 45,
+          "anchor": "public async Task Draft_approval_and_record_each_save_once_with_their_attempt_and_audit_and_write_no_movement_row()",
+          "sha256": "f5d6e8ee84883d544a6e22af599041c56e6eeefb8a281dbfca36c4a14afecf2c",
+          "git_blob": "1ec8e63fd005e1a6494fa6569192e1ee7d6772da"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "HISTORICAL_SUITE_ONLY_NOT_INDIVIDUAL_RESULT",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "SingleExpenseItemCatalog halen bağlı; katalog değiştirmek gider/muhasebe politikasını seçmez.",
+      "limitations": [
+        "SingleExpenseItemCatalog halen bağlı; katalog değiştirmek gider/muhasebe politikasını seçmez.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "FNS-D11",
+        "FNS-D118",
+        "FNS-D22",
+        "FNS-D25",
+        "FNS-D50",
+        "FNS-D65",
+        "YOL-D23"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-CREDIT-01",
+      "function": "Kredi hareketi öneri ve karar",
+      "module": "Finance",
+      "backlog_parent": "W4-RISK",
+      "reuse_mode": "SMALL_EXTENSION",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditMovementServiceV1.cs",
+          "line": 29,
+          "anchor": "public async Task<CreditMovementResultV1> ProposeAsync(FinanceContext context, CommandMetadata metadata,",
+          "sha256": "2eae72eaab44e0091b86c5963c700cbbf6cf88ef38509d9ebd23862946660ec5",
+          "git_blob": "4f7a052ee6e5f6b7a71fe61848284246840bc897"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Api.IntegrationTests/FinanceCreditMovementHttpAcceptanceTests.cs",
+          "line": 24,
+          "anchor": "public async Task Anonymous_missing_company_and_foreign_company_never_reach_the_credit_movement_owner()",
+          "sha256": "f7a14a50ecf49e17659e57c4f56a5f6dfee54ad7e69f0905ad689a8cab33062f",
+          "git_blob": "db61f67f5655e3f1908e9d2e65e22f8e6bd56b44"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Host NoneApproved; dört alan listesi onaylıdır ama leasing KDV eşlemesi ayrıca tamamlanır.",
+      "limitations": [
+        "Host NoneApproved; dört alan listesi onaylıdır ama leasing KDV eşlemesi ayrıca tamamlanır.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "FNS-D106",
+        "FNS-D108",
+        "FNS-D116",
+        "FNS-D97",
+        "FNS-D99"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-CARRY-01",
+      "function": "Cari bakiye virman kaynağı",
+      "module": "Finance",
+      "backlog_parent": "W4-FINANS",
+      "reuse_mode": "REFERENCE_PATTERN",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinancePartyBalanceTransferServiceV1.cs",
+          "line": 13,
+          "anchor": "public sealed class FinancePartyBalanceTransferServiceV1(FinanceDbContext database, ICompanyContext company,",
+          "sha256": "9932e46c2469f62b7042a6deb8cb0a1a7394696856db3920f8a10a5f430fe9f0",
+          "git_blob": "1d1bc2d213750861a1c8f7404406abc0823e3c20"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Api.IntegrationTests/FinanceExpensePaymentSqlServerRelationalAcceptanceTests.PartyCarryLedger.cs",
+          "line": 20,
+          "anchor": "public async Task Approved_party_opening_is_carried_into_the_next_ledger_without_new_facts_and_reopening_removes_only_the_carry()",
+          "sha256": "2219434b5d9bf60a429559b21e6007d3347d95b01bf2e71b78e5d0a486d4b144",
+          "git_blob": "500093ed15e8639c89ad6eea2a041959a2b42b42"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "HISTORICAL_SUITE_ONLY_NOT_INDIVIDUAL_RESULT",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Virman yeni gider değildir; devir replay correlation kimliğini ayrıca doğrula.",
+      "limitations": [
+        "Virman yeni gider değildir; devir replay correlation kimliğini ayrıca doğrula.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "KLN-D38"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-BANK-01",
+      "function": "Ekstre import ve tekilleştirme",
+      "module": "Finance",
+      "backlog_parent": "W4-FINANS",
+      "reuse_mode": "DIRECT_REUSE",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceBankStatementImportServiceV1.cs",
+          "line": 34,
+          "anchor": "public sealed class FinanceBankStatementImportServiceV1(FinanceDbContext database, ICompanyContext company,",
+          "sha256": "db237e32e9081a678b3a89f38755196b917ffb514ed60341ae221b77cbbf008c",
+          "git_blob": "ef95cf00d20d8505cb26bdea0cdc79fb33e4e859"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Finance.UnitTests/FinanceBankStatementImportServiceTests.cs",
+          "line": 28,
+          "anchor": "public async Task Reserve_then_parse_stores_lines_once_audits_twice_and_creates_no_money_fact()",
+          "sha256": "1499a1896748677a4e6e017b111e1a67f93ca1c815841c6119ffae12eda83f62",
+          "git_blob": "cc8beaeb82291122aa6a988f4c770c9f22193993"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": null,
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Ekstre satırı mevcut banka hareketini ikinci kez üretmez; hesap ve belge yetkileri ayrı.",
+      "limitations": [
+        "Ekstre satırı mevcut banka hareketini ikinci kez üretmez; hesap ve belge yetkileri ayrı.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "FNS-D113",
+        "FNS-D114",
+        "FNS-D119",
+        "FNS-D13",
+        "FNS-D52"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-JOURNAL-01",
+      "function": "Kaynaklı fiş taslağı ve farklı kişi onayı",
+      "module": "Accounting",
+      "backlog_parent": "W4-MUHASEBE",
+      "reuse_mode": "REFERENCE_PATTERN",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/NormalJournalDraftLifecycleV1.cs",
+          "line": 155,
+          "anchor": "Task<AccountingApiResult<NormalJournalDraftViewV1>> ApproveAsync(",
+          "sha256": "ac2a2bace7af99255d3671477d470f2815e2f9b13bf1fc27c89b9845248d57c9",
+          "git_blob": "5e1a5829cf10ec1e1986bace6a81360360c106e2"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Accounting.UnitTests/NormalJournalDraftLifecycleV1Tests.cs",
+          "line": 16,
+          "anchor": "public async Task Create_only_authority_never_approves_a_normal_draft()",
+          "sha256": "0b37aebacdc15f929d23268f3f3f44e9e49139ed7d7ef6d8d76ad3e8bd9eccff",
+          "git_blob": "c54daaecc5c365c303cc4ffd7121f5ce5db24c3f"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": null,
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Yeni sınıflama fişinin hesaplarını buradan tahmin etme; ROL-D26 farklı MUHM şartı.",
+      "limitations": [
+        "Yeni sınıflama fişinin hesaplarını buradan tahmin etme; ROL-D26 farklı MUHM şartı.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "ROL-D14"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-JOURNAL-02",
+      "function": "Kesin fişe bağlı ters kayıt",
+      "module": "Accounting",
+      "backlog_parent": "W4-MUHASEBE",
+      "reuse_mode": "REFERENCE_PATTERN",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/AccountingJournalReversalLifecycleV1.cs",
+          "line": 113,
+          "anchor": "Task<AccountingApiResult<AccountingJournalReversalProposalViewV1>> ApproveAsync(",
+          "sha256": "b528f3742ad406096b220756d4f493f994327a721d365f39151ffc6ad7cfde0a",
+          "git_blob": "b98ff49144f81736de647df1f16ca7a53bd2d104"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Accounting.UnitTests/AccountingJournalReversalLifecycleV1Tests.cs",
+          "line": 18,
+          "anchor": "public async Task Proposal_is_persisted_as_pending_and_same_command_replays_without_a_second_effect()",
+          "sha256": "99fbeabf2ca176797e712dcfb3a2e7575b23364b8373eb6689046487ba4263b3",
+          "git_blob": "5b40e4876f341d8950489cbac465fb8f56c8b075"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Kesin fişi sessiz güncelleme; kapalı dönem veya Mikro sonucu atlanmaz.",
+      "limitations": [
+        "Kesin fişi sessiz güncelleme; kapalı dönem veya Mikro sonucu atlanmaz.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "AGENTS.md: Mimari değişmezler; owner iş kararını ayrıca seç"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-WORK-01",
+      "function": "Onay kuralı sürümü ve owner izni",
+      "module": "Work",
+      "backlog_parent": "W1-YETKI",
+      "reuse_mode": "DIRECT_REUSE",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/ApprovalRules/WorkApprovalRuleServiceV1.cs",
+          "line": 60,
+          "anchor": "public async Task<WorkApprovalRuleCommandResultV1> RecordAsync(string kind, RecordWorkApprovalRuleRequestV1 request,",
+          "sha256": "aaac32f4061fbadacc111b06d121bf985492842a31bd8065d7c716c5ce3bde07",
+          "git_blob": "ef74db0bab8197373801a56964b0d53b5023449b"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs",
+          "line": 29,
+          "anchor": "public void The_YOL_D18_default_puts_exactly_the_four_decided_kinds_in_the_hour_class()",
+          "sha256": "914fa452e2da51c96d3ad09be976da06caed1bc0d41847ea5a26529686561921",
+          "git_blob": "7b669376b1c87c3a10f401dd963f480a902b5db1"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": null,
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Work owner yerine karar vermez; WP8 owner komutu adaptörü eksik.",
+      "limitations": [
+        "Work owner yerine karar vermez; WP8 owner komutu adaptörü eksik.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "YOL-D17",
+        "YOL-D18"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-WORK-02",
+      "function": "Tek bildirim deposu",
+      "module": "Work",
+      "backlog_parent": "W1-YETKI",
+      "reuse_mode": "DIRECT_REUSE",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkNotificationStoreV1.cs",
+          "line": 21,
+          "anchor": "public async Task DeliverAsync(DeliverWorkNotificationV1 command, CancellationToken cancellationToken = default)",
+          "sha256": "63e8a8dd79e289632efc47942ab9beecc5cdc78a94b8d581e08f4ee87a88cc2c",
+          "git_blob": "8bf01ba7d9d1f9d70e4c67065bc4256c35cc27ca"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Api.IntegrationTests/WorkNotificationSqlServerRelationalAcceptanceTests.cs",
+          "line": 20,
+          "anchor": "public async Task Notification_Down_allows_an_empty_store_and_preserves_delivery_dedup_and_passivation_history()",
+          "sha256": "32325bb4b092818c22f0eb47d4720c96d60a51685efb4520460f8a3fd47d4a96",
+          "git_blob": "29688a6e218e9d4c4699333c7012cb661d58a855"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": null,
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Yeni proaktif kural kayıt/alıcı/olay tekilliğini ve güncel yetkiyi korur.",
+      "limitations": [
+        "Yeni proaktif kural kayıt/alıcı/olay tekilliğini ve güncel yetkiyi korur.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "AI-D29"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-WORK-03",
+      "function": "Kayda bağlı not ve görev",
+      "module": "Work",
+      "backlog_parent": "W1-YETKI",
+      "reuse_mode": "DIRECT_REUSE",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Collaboration/WorkCollaborationServiceV1.cs",
+          "line": 228,
+          "anchor": "public async Task<WorkTaskResponseV1> CreateTaskAsync(CreateWorkTaskRequestV1 request, WorkCommandMetadataV1 metadata,",
+          "sha256": "341b367ae28c579a0eaf5e7cc2dee13132e8af0f7079f1f877f5cf6ef7de5edc",
+          "git_blob": "87389362a516cfe846370ba116a2c4c22053ee83"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Work.UnitTests/WorkCollaborationServiceTests.Wp9.cs",
+          "line": 14,
+          "anchor": "public async Task A_reader_marks_a_note_read_once_the_first_time_wins_and_every_record_reader_sees_who_read_it()",
+          "sha256": "2318b04990da5a96f50d105b76ab11493a4df30cd1ac45b345a8a6ca10acc62c",
+          "git_blob": "869374e3cee8e775bdc042160cee1d313d0d3ce9"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": null,
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "İkinci görev sistemi kurma; owner okuma portu, saklama ve pasifleştirme korunur.",
+      "limitations": [
+        "İkinci görev sistemi kurma; owner okuma portu, saklama ve pasifleştirme korunur.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "AI-D20",
+        "AI-D29"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-EVENT-01",
+      "function": "Outbox kiralama, tekrar ve teslim",
+      "module": "Work",
+      "backlog_parent": "W0-OUTBOX",
+      "reuse_mode": "REFERENCE_PATTERN",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Outbox/WorkOutboxDispatcher.cs",
+          "line": 66,
+          "anchor": "public async Task<WorkOutboxDispatchSummary> RunOnceAsync(CancellationToken cancellationToken)",
+          "sha256": "298f6a269c2eab1827bc5bf6afdea08e2dda08d7f02a06234c4ad1e44b18aec5",
+          "git_blob": "82d99401c197063ed4862c40dae1d1b447f7a800"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Work.UnitTests/WorkOutboxDispatcherTests.cs",
+          "line": 34,
+          "anchor": "public void The_dispatcher_is_off_by_default_and_refuses_an_enabled_section_without_explicit_values()",
+          "sha256": "ec3376fb9534ad305fbdcd1f0fe1b921bd7a7bd66a898239c5f8322e37eee934",
+          "git_blob": "5a4ed4e438aa396ea976963d016e1e67f3a622af"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Modülün kendi outbox sahipliğini koru; harici e-Belge sonucu belirsizken yeniden belge yaratma.",
+      "limitations": [
+        "Modülün kendi outbox sahipliğini koru; harici e-Belge sonucu belirsizken yeniden belge yaratma.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "AGENTS.md: Mimari değişmezler; owner iş kararını ayrıca seç"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-AI-01",
+      "function": "Veri sınıfı ve bütçe kapılı gateway",
+      "module": "Ai",
+      "backlog_parent": "W5-AIGATEWAY",
+      "reuse_mode": "DIRECT_REUSE",
+      "sources": [
+        {
+          "path": "src/backend/GoymenERP.Api/Ai/Gateway/AiGateway.cs",
+          "line": 37,
+          "anchor": "public async Task<AiGatewayResultV1> ComposeAsync(AiGatewayRequestV1 request, CancellationToken cancellationToken = default)",
+          "sha256": "8be4d87cd7a1081a4eae0bffb50b889ab00a24ef356f70bf3ca85241d520fe7b",
+          "git_blob": "53d7ff935f1a4018be99bff7dee03593fbc96e53"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Api.IntegrationTests/AiGatewayTests.cs",
+          "line": 22,
+          "anchor": "public async Task A_sourced_answer_restates_only_tool_numbers_cites_the_source_and_records_the_used_units()",
+          "sha256": "19d94c5b31f281e86e939ac4ff2fcf04a084709b8245591e583777e8d7b86ab9",
+          "git_blob": "cf03dda86a21790af6d3deb0e6a6a9ed15384fe1"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": null,
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Fake/NoEgress gerçek sağlayıcı değildir; para ve gizli veri politikası gevşetilmez.",
+      "limitations": [
+        "Fake/NoEgress gerçek sağlayıcı değildir; para ve gizli veri politikası gevşetilmez.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "AGENTS.md: Mimari değişmezler; owner iş kararını ayrıca seç"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-AI-02",
+      "function": "Somut önizlemeye bağlı işlem hattı",
+      "module": "Ai",
+      "backlog_parent": "W5-AIGATEWAY",
+      "reuse_mode": "SMALL_EXTENSION",
+      "sources": [
+        {
+          "path": "src/backend/GoymenERP.Api/Ai/Commands/AiCommandPipeline.cs",
+          "line": 306,
+          "anchor": "public async Task<AiCommandPipelineResultV1> ExecuteAsync(Guid previewId, string? previewHash, Guid approvalId, CancellationToken cancellationToken = default)",
+          "sha256": "52fe94ac27d18cf8bfd23359d8f6a9595b3e205fb6dd7cd9b35c13481bff9c20",
+          "git_blob": "a7b261532aa0a1d1cfeaca87560f84cf6c390b74"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Api.IntegrationTests/AiCommandPipelineTests.cs",
+          "line": 35,
+          "anchor": "public async Task Preview_approval_and_execution_run_the_owner_command_once_with_the_frozen_request()",
+          "sha256": "99cc22d7f1204049c3f1415767ef966ea1875da53b7afced6c463b138888b82f",
+          "git_blob": "60fe61bd8c446393a209b05d31f94b27bbf9e2b3"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": null,
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Kalıcı defter yok; kapalı liste onay/ret/ödeme/atama/yayım için aşılamaz.",
+      "limitations": [
+        "Kalıcı defter yok; kapalı liste onay/ret/ödeme/atama/yayım için aşılamaz.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "AI-D25",
+        "AI-D34",
+        "DEC-AI-002",
+        "YOL-D27"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-AI-03",
+      "function": "Bilgi paketi sürümü ve onay",
+      "module": "AiKnowledge",
+      "backlog_parent": "W5-AIGATEWAY",
+      "reuse_mode": "DIRECT_REUSE",
+      "sources": [
+        {
+          "path": "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/AiKnowledgeApprovalServiceV1.cs",
+          "line": 64,
+          "anchor": "public async Task<AiKnowledgeApprovalResponseV1> ApproveAsync(ApproveAiKnowledgePackageRequestV1 request,",
+          "sha256": "f1b26d92284fce9a3a536170ea5ad7dbf98a57a6aae02f1e0622e4ed5069e7c1",
+          "git_blob": "84cdb4b3405a0d2736ad5262442e180e951e697c"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Api.IntegrationTests/AiKnowledgeApprovalTests.cs",
+          "line": 44,
+          "anchor": "public void The_approve_permission_is_registered_company_wide_not_critical_and_spelled_as_the_module_manifest()",
+          "sha256": "ef066871c473811acda1bba593abb182d3a5c70d068fab0cbd74e18afd80babd",
+          "git_blob": "01551da031154c6acdec52f0b2b168866c9556c7"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": null,
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Grup genelinde tek onay; kullanıcıya grant vermez; bilgi kaynağı yeni politika yayımlamaz.",
+      "limitations": [
+        "Grup genelinde tek onay; kullanıcıya grant vermez; bilgi kaynağı yeni politika yayımlamaz.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "AI-D32",
+        "AI-D46"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-AI-04",
+      "function": "Belgeden alan doğrulamalı taslak",
+      "module": "Ai",
+      "backlog_parent": "W2-BELGE",
+      "reuse_mode": "DIRECT_REUSE",
+      "sources": [
+        {
+          "path": "src/backend/GoymenERP.Api/Ai/DocumentDrafts/AiDocumentDraftService.cs",
+          "line": 45,
+          "anchor": "public async Task<AiDocumentDraftResultV1> DraftAsync(AiDocumentDraftRequestV1? request, CancellationToken cancellationToken = default)",
+          "sha256": "f86e52b67a9466fca1bc133305705aa93df8468aa70b8f8e7c8ff6ec849fc2f8",
+          "git_blob": "f8ad6c5e411260218971a0a4578c0a2061407176"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Api.IntegrationTests/AiDocumentDraftServiceTests.cs",
+          "line": 35,
+          "anchor": "public async Task An_e_invoice_is_read_from_its_fields_by_the_owner_reader_matched_and_creates_no_record()",
+          "sha256": "2105487706f6f844af4faa1d42ad91d7febe8e1ef1e310c60e2912bdc5125b6a",
+          "git_blob": "ab4276122c6436aa669e9de01db7d209f8507df6"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": null,
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "OCR unavailable ve yerel model kapalıdır; port varlığı okuma başarısı değildir.",
+      "limitations": [
+        "OCR unavailable ve yerel model kapalıdır; port varlığı okuma başarısı değildir.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "AI-D22",
+        "AI-D34",
+        "AI-D40",
+        "AI-D41"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-DOC-01",
+      "function": "Belge sürümü, bağlama ve yetkili indirme",
+      "module": "Documents",
+      "backlog_parent": "W0-DOCVAULT",
+      "reuse_mode": "DIRECT_REUSE",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Application/DocumentService.cs",
+          "line": 66,
+          "anchor": "public async Task<DocumentUploadResponse> UploadAsync(UploadDocumentRequest request, DocumentCommandMetadata metadata,",
+          "sha256": "eedbe8a2d87c3deae1e208b63bd67d3356e8e013fb477919dab6e49ea2f2c67b",
+          "git_blob": "e8a0c603bba3e4a0c5c39e608e43cf19c9203501"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Documents.UnitTests/DocumentServiceTests.cs",
+          "line": 20,
+          "anchor": "public async Task An_upload_stores_the_object_once_and_one_document_linked_to_the_party_and_it_downloads_byte_for_byte()",
+          "sha256": "022228c894936aeda75399aa5c7b3c966ed5af5a197d1a4fb0925d60da13375e",
+          "git_blob": "fac8e83a4626bca93682138ce8b7c5d780e3a612"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Yeni e-Belge arşivi kurma; orijinal imzalı içerik politikası ve owner linki ayrıca gerekir.",
+      "limitations": [
+        "Yeni e-Belge arşivi kurma; orijinal imzalı içerik politikası ve owner linki ayrıca gerekir.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "DEC-DOC-002",
+        "DEC-DOC-009",
+        "FNS-D36",
+        "FNS-D52",
+        "KLN-D33",
+        "KLN-D49",
+        "KLN-D50",
+        "KLN-D60"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-PDF-01",
+      "function": "Sipariş PDF üretimi",
+      "module": "DocumentGeneration",
+      "backlog_parent": "W0-PDF",
+      "reuse_mode": "REFERENCE_PATTERN",
+      "sources": [
+        {
+          "path": "src/backend/GoymenERP.Api/SalesRuntime/SalesOrderPdfComposer.cs",
+          "line": 20,
+          "anchor": "public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer> texts, TimeZoneInfo? businessTimeZone)",
+          "sha256": "c599b2393ad1480d09d989c2232ede039b3b862a41e6db685f87e83bd8b162e2",
+          "git_blob": "3ce165853a47c1602a766393d7943ab3b8cc887f"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Api.IntegrationTests/SalesOrderPdfHttpAcceptanceTests.cs",
+          "line": 32,
+          "anchor": "public async Task The_priced_order_is_a_pdf_attachment_with_the_stored_line_prices_and_the_calculators_net_tax_and_totals()",
+          "sha256": "6e994c84f6dcce665dc5be10c5952e801bee88f272e7462b978e264d2bbac7d1",
+          "git_blob": "ca99c011bbe2173df92c7cde1e1edf6bba9cebfa"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": null,
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "PDF resmi e-belge değildir; metin/font/şirket ve indirme yetkisi korunur.",
+      "limitations": [
+        "PDF resmi e-belge değildir; metin/font/şirket ve indirme yetkisi korunur.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "DEC-DOC-004",
+        "SAT-D10",
+        "SAT-D11",
+        "SAT-D113",
+        "SAT-D115",
+        "SAT-D165",
+        "SAT-D56",
+        "SAT-D75",
+        "YOL-D11"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-REPORT-01",
+      "function": "Rapor, dışa aktarım ve kayıtlı görünüm",
+      "module": "Reporting",
+      "backlog_parent": "W5-RAPOR",
+      "reuse_mode": "DIRECT_REUSE",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Reporting/GoymenERP.Modules.Reporting.Infrastructure/ReportingServiceV1.cs",
+          "line": 332,
+          "anchor": "public async Task<ReportingFileV1> ExportAsync(string reportId, ReportingExportRequestV1 request, CancellationToken cancellationToken = default)",
+          "sha256": "09e37e7a1fedaa194514ce648a522c82fcd38e84a933e9ef2311d57b9009ea63",
+          "git_blob": "9f83200a6a4028d4c2574fcf5f6ae69f3c23f7e5"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Reporting.UnitTests/ReportingServiceTests.cs",
+          "line": 41,
+          "anchor": "public async Task The_catalogue_lists_only_reports_whose_every_owner_permission_is_held_now()",
+          "sha256": "ae39d6e539331be7217243fe8d66b8e848a3a5e6f07269af53f7ce6949c6c878",
+          "git_blob": "9b52d6495a635e479a3a354f83ba068fa5d99c58"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": null,
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Rapor kayıtlı görünümü her operasyonel listedeki kayıtlı görünüm demek değildir.",
+      "limitations": [
+        "Rapor kayıtlı görünümü her operasyonel listedeki kayıtlı görünüm demek değildir.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "ROL-D13",
+        "ROL-D15",
+        "YOL-D13",
+        "YOL-D30"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-UI-01",
+      "function": "Yetkili sekmeli çalışma alanı",
+      "module": "Frontend",
+      "backlog_parent": "W2-SATIS",
+      "reuse_mode": "REFERENCE_PATTERN",
+      "sources": [
+        {
+          "path": "src/frontend/goymen-erp-web/src/sales/SalesOrderTabs.tsx",
+          "line": 15,
+          "anchor": "export function SalesOrderTabs({",
+          "sha256": "3119ed377b7d742ede8c18124d43db4d6b0f88f1d5339f2d4eee26d4133f8f91",
+          "git_blob": "b554158dedb88c0ca4e0294f6c35a8aa5dc24722"
+        }
+      ],
+      "tests": [
+        {
+          "path": "src/frontend/goymen-erp-web/src/sales/SalesOrderTabs.test.tsx",
+          "line": 46,
+          "anchor": "it('shows the six tabs in the locked order, the lines tab open first, the others hidden but mounted', () => {",
+          "sha256": "41ea3151aebfd6ed050c09a990baf0d2033b166df8b76cd1e0d60219ffc855ff",
+          "git_blob": "ee40c92619f4474ffaafa87da6f2c874285cebda"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Claude sahipliği; eski adresler, klavye/odak ve her sekmenin kendi capability kapısı korunur.",
+      "limitations": [
+        "Claude sahipliği; eski adresler, klavye/odak ve her sekmenin kendi capability kapısı korunur.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "AGENTS.md: Mimari değişmezler; owner iş kararını ayrıca seç"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-UI-02",
+      "function": "Loading/error/empty durum bileşeni",
+      "module": "Frontend",
+      "backlog_parent": "W0-SHELL",
+      "reuse_mode": "DIRECT_REUSE",
+      "sources": [
+        {
+          "path": "src/frontend/goymen-erp-web/src/shell/StateBlock.tsx",
+          "line": 56,
+          "anchor": "export function StateBlock({",
+          "sha256": "2061886a5b883424cca23d3af957dd33bebb23f1c3e5454c2ff5741995cda33e",
+          "git_blob": "550859bb31c569093f2668cdf26c40eea5357ced"
+        }
+      ],
+      "tests": [
+        {
+          "path": "src/frontend/goymen-erp-web/src/shell/StateBlock.test.tsx",
+          "line": 39,
+          "anchor": "it('omits the subject suffix when the subject is empty', () => {",
+          "sha256": "6bd52af553fc986e12f091103b8d1b35dbea0b790b2ae75d7c2c0ccebc11afa8",
+          "git_blob": "8429ff685418fdcd3e841022d997c168b9a44b2d"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Bileşen erişim denetimi değildir; sunucu yetkisi ve conflict durumu ayrıca gerekir.",
+      "limitations": [
+        "Bileşen erişim denetimi değildir; sunucu yetkisi ve conflict durumu ayrıca gerekir.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "AGENTS.md: Mimari değişmezler; owner iş kararını ayrıca seç"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-UI-03",
+      "function": "Onaylı erişim talebi paneli",
+      "module": "Frontend",
+      "backlog_parent": "W1-YETKI",
+      "reuse_mode": "SMALL_EXTENSION",
+      "sources": [
+        {
+          "path": "src/frontend/goymen-erp-web/src/identity/AccessGrantPanel.tsx",
+          "line": 18,
+          "anchor": "export function AccessGrantPanel({ company, user, roles, changed }: { readonly company: string; readonly user: AccessUserDetail; readonly roles: readonly AccessRoleSummary[]; readonly changed: () => void }) {",
+          "sha256": "69c568c81ab228c9c6be5f768a7f93e8f8db6642668b39e7647ed4d85531f5b2",
+          "git_blob": "6ad33ee29d3eec8a91076d3f706e17356b4a764e"
+        }
+      ],
+      "tests": [
+        {
+          "path": "src/frontend/goymen-erp-web/src/identity/AccessGrantPanel.test.tsx",
+          "line": 21,
+          "anchor": "it('uses the server critical flag to open a request instead of directly assigning a role', async () => {",
+          "sha256": "0b69d21bfc20ee31236dbc5cf8809f2177fac2d193a66e2dfa428bd8ba20864e",
+          "git_blob": "e7369b74918cf1ee446367b7b724aec6723466b7"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Rol şablonu UX mevcut grant kontrollerini aşamaz; gerçek atama insan kapısı.",
+      "limitations": [
+        "Rol şablonu UX mevcut grant kontrollerini aşamaz; gerçek atama insan kapısı.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "AGENTS.md: Mimari değişmezler; owner iş kararını ayrıca seç"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-MIGRATION-01",
+      "function": "Work migration ve model örüntüsü",
+      "module": "Work",
+      "backlog_parent": "W1-YETKI",
+      "reuse_mode": "REFERENCE_PATTERN",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261122201654_AddWorkApprovalRuleVersions.cs",
+          "line": 9,
+          "anchor": "public partial class AddWorkApprovalRuleVersions : Migration",
+          "sha256": "446e6ccca4b27345da3b671437c48636df966b5fe6da6e6f52235ff11df06948",
+          "git_blob": "745fab7baf30cefaea258362b0c926604e5d43ec"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Api.IntegrationTests/WorkApprovalRuleSqlServerRelationalAcceptanceTests.cs",
+          "line": 23,
+          "anchor": "public async Task Approval_rule_Down_allows_an_empty_store_refuses_with_52100_while_a_version_exists_and_a_same_version_race_keeps_one()",
+          "sha256": "6be3ef8317f802757c570f8c0da08a672b57d68f53c5f89e802d747df6f885ae",
+          "git_blob": "49ddca26441acade25817992a9246063b1155cc8"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
+      "runtime_acceptance": "NOT_RUN",
+      "historical_ci_url": null,
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId ve güncel yetki",
+        "Owner modül veri sahipliği",
+        "Expected version/idempotency/audit gerektiği yerde",
+        "Eski test sonucu yeni kullanım kabulü değildir"
+      ],
+      "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
+      "adaptations": "Migration elle kopyalanmaz; EF ile üret, boş aralık doğrula, Down veri varken güvenli reddet.",
+      "limitations": [
+        "Migration elle kopyalanmaz; EF ile üret, boş aralık doğrula, Down veri varken güvenli reddet.",
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+      ],
+      "decision_refs": [
+        "AGENTS.md: Mimari değişmezler; owner iş kararını ayrıca seç"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-MOTOR-01",
+      "function": "Dilme ve sarım golden hesapları",
+      "module": "W3-URETIM",
+      "reuse_mode": "DIRECT_REUSE",
+      "backlog_parent": "W3-URETIM",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/Engines/Slitting/SlittingEngineV1.cs",
+          "line": 4,
+          "anchor": "public sealed record SlitLineInputV1(decimal? BandWidthMm, int? Count);",
+          "sha256": "e5f906dcd02aff385fd7a445fd62501188b8cc826e0dcbdb44d256f75254b359",
+          "git_blob": "4e750969704a47321af29840722f79c5511a3e61"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Manufacturing.UnitTests/Engines/SlittingWindingGoldenTests.cs",
+          "line": 26,
+          "anchor": "public void Slitting_master_golden_28_750_kg_on_1500_mm_as_150x4_and_240x3()",
+          "sha256": "1cbbfc495c7cd7110c34a538282870e2c89f678ee71189043c4c384ae343517a",
+          "git_blob": "6f3a0f8f50ff9e4d58aec352b0cbb910158c3d0c"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "runtime_acceptance": "NOT_RUN",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId/yetki/owner sınırı",
+        "Formül sürümü ve golden korunur",
+        "Yeni kullanım ayrıca kabul edilir"
+      ],
+      "directly_reusable": "Mevcut public sözleşme veya fixture; domain tablolarına çapraz yazma yok.",
+      "adaptations": "Yeni işin veri/izin ve fiziksel etkileri ayrıca bağlanır.",
+      "limitations": [
+        "Bu dosyanın bulunması gerçek işletme akışının tamamlandığını kanıtlamaz.",
+        "Test dosyasının ilk metodu navigasyon çapasıdır; tek tek test sonucu bu çalışmada okunmadı."
+      ],
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "decision_refs": [
+        "DEC-PRDCT-004",
+        "DEC-PRDCT-008",
+        "DEC-SET-001"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-MOTOR-02",
+      "function": "Soğuk hadde motoru",
+      "module": "W3-URETIM",
+      "reuse_mode": "DIRECT_REUSE",
+      "backlog_parent": "W3-URETIM",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/Engines/ColdRolling/ColdRollingEngineV1.cs",
+          "line": 7,
+          "anchor": "public sealed record ColdRollingInputV1(",
+          "sha256": "2e02b0e99802851bdaff4f92fea41a8bcba251b5770bb2315c5f28c0f82a7d02",
+          "git_blob": "04e4a3f1c3d82fbd8411b52b48bdcfb09c11bb38"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Manufacturing.UnitTests/Engines/ColdRollingEngineTests.cs",
+          "line": 20,
+          "anchor": "public void Master_golden_28_750_kg_1500_mm_from_2_00_to_1_50_mm()",
+          "sha256": "a2c1fb9abebb8534a3015cf11481a6ef884998b73852d0b934434d892bd7003e",
+          "git_blob": "85b2079a503fb8f8b765a29d1519503dd89d81b7"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "runtime_acceptance": "NOT_RUN",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId/yetki/owner sınırı",
+        "Formül sürümü ve golden korunur",
+        "Yeni kullanım ayrıca kabul edilir"
+      ],
+      "directly_reusable": "Mevcut public sözleşme veya fixture; domain tablolarına çapraz yazma yok.",
+      "adaptations": "Yeni işin veri/izin ve fiziksel etkileri ayrıca bağlanır.",
+      "limitations": [
+        "Bu dosyanın bulunması gerçek işletme akışının tamamlandığını kanıtlamaz.",
+        "Test dosyasının ilk metodu navigasyon çapasıdır; tek tek test sonucu bu çalışmada okunmadı."
+      ],
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "decision_refs": [
+        "DEC-PRDCT-001",
+        "DEC-SET-001"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-MOTOR-03",
+      "function": "ERW boru/profil motoru",
+      "module": "W3-URETIM",
+      "reuse_mode": "DIRECT_REUSE",
+      "backlog_parent": "W3-URETIM",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/Engines/TubeProfile/TubeProfileEngineV1.cs",
+          "line": 4,
+          "anchor": "public sealed record TubeRunInputV1(",
+          "sha256": "265459870951665d14cf2b15c422f47b94fc8604f5806d1eb790682a85768021",
+          "git_blob": "fd4336e0cb439cc961b4fa6d523d89b1d0eca190"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Manufacturing.UnitTests/Engines/TubeProfileAndPaintingEngineTests.cs",
+          "line": 17,
+          "anchor": "public void Tube_master_golden_20_packages_of_50_at_6_m_and_30_m_per_minute()",
+          "sha256": "03945768fad8d86e87586d61f97967329c12e0e2b44ca497700fa3c411158307",
+          "git_blob": "d231642d97f7a25dfe42bd94acb3b79c7e0e0985"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "runtime_acceptance": "NOT_RUN",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId/yetki/owner sınırı",
+        "Formül sürümü ve golden korunur",
+        "Yeni kullanım ayrıca kabul edilir"
+      ],
+      "directly_reusable": "Mevcut public sözleşme veya fixture; domain tablolarına çapraz yazma yok.",
+      "adaptations": "Yeni işin veri/izin ve fiziksel etkileri ayrıca bağlanır.",
+      "limitations": [
+        "Bu dosyanın bulunması gerçek işletme akışının tamamlandığını kanıtlamaz.",
+        "Test dosyasının ilk metodu navigasyon çapasıdır; tek tek test sonucu bu çalışmada okunmadı."
+      ],
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "decision_refs": [
+        "DEC-PRDCT-001"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-MOTOR-04",
+      "function": "Boyama motoru",
+      "module": "W3-URETIM",
+      "reuse_mode": "DIRECT_REUSE",
+      "backlog_parent": "W3-URETIM",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/Engines/Painting/PaintingEngineV1.cs",
+          "line": 4,
+          "anchor": "public sealed record PaintRunInputV1(",
+          "sha256": "2dfb10ac2e9371384469457a40662a1f32c1611f7bcb594b73c2f04598cf2672",
+          "git_blob": "22042aa4b188835e765083fd027e5e06047c43f0"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Manufacturing.UnitTests/Engines/TubeProfileAndPaintingEngineTests.cs",
+          "line": 17,
+          "anchor": "public void Tube_master_golden_20_packages_of_50_at_6_m_and_30_m_per_minute()",
+          "sha256": "03945768fad8d86e87586d61f97967329c12e0e2b44ca497700fa3c411158307",
+          "git_blob": "d231642d97f7a25dfe42bd94acb3b79c7e0e0985"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "runtime_acceptance": "NOT_RUN",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId/yetki/owner sınırı",
+        "Formül sürümü ve golden korunur",
+        "Yeni kullanım ayrıca kabul edilir"
+      ],
+      "directly_reusable": "Mevcut public sözleşme veya fixture; domain tablolarına çapraz yazma yok.",
+      "adaptations": "Yeni işin veri/izin ve fiziksel etkileri ayrıca bağlanır.",
+      "limitations": [
+        "Bu dosyanın bulunması gerçek işletme akışının tamamlandığını kanıtlamaz.",
+        "Test dosyasının ilk metodu navigasyon çapasıdır; tek tek test sonucu bu çalışmada okunmadı."
+      ],
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "decision_refs": [
+        "DEC-PRDCT-001"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-MOTOR-05",
+      "function": "Boy kesme motoru",
+      "module": "W3-URETIM",
+      "reuse_mode": "DIRECT_REUSE",
+      "backlog_parent": "W3-URETIM",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/Engines/CutToLength/CutToLengthEngineV1.cs",
+          "line": 4,
+          "anchor": "public sealed record CutLineInputV1(decimal? TargetLengthMm, int? Count);",
+          "sha256": "adfe1032dbe0e0f16495532817cd3972bc01d6c0479c6ede81dc3bce95dfeb51",
+          "git_blob": "ddbc0759e23feadba26e287e32f045d08369eeb8"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Manufacturing.UnitTests/Engines/CutToLengthEngineTests.cs",
+          "line": 20,
+          "anchor": "public void Master_golden_28_750_kg_3x1500_as_3000x50_6000x55_4500x10()",
+          "sha256": "0317f7748a9959d5c96263f7f43680f0c70313dd0fe872a9151989ec417df3d9",
+          "git_blob": "c7f9bfe30ebf088f1e9ad34b36a2825b0964fecc"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "runtime_acceptance": "NOT_RUN",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId/yetki/owner sınırı",
+        "Formül sürümü ve golden korunur",
+        "Yeni kullanım ayrıca kabul edilir"
+      ],
+      "directly_reusable": "Mevcut public sözleşme veya fixture; domain tablolarına çapraz yazma yok.",
+      "adaptations": "Yeni işin veri/izin ve fiziksel etkileri ayrıca bağlanır.",
+      "limitations": [
+        "Bu dosyanın bulunması gerçek işletme akışının tamamlandığını kanıtlamaz.",
+        "Test dosyasının ilk metodu navigasyon çapasıdır; tek tek test sonucu bu çalışmada okunmadı."
+      ],
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "decision_refs": [
+        "DEC-PRDCT-001"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-BALANCE-01",
+      "function": "Kütle dengesi",
+      "module": "W3-URETIM",
+      "reuse_mode": "DIRECT_REUSE",
+      "backlog_parent": "W3-URETIM",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/Engines/Balance/MassBalanceEngineV1.cs",
+          "line": 8,
+          "anchor": "public sealed record MassDifferenceInputV1(",
+          "sha256": "eec3448f1545928352844f6c01f73d4d00cbd78ae7099cf1e30ce570aefd795a",
+          "git_blob": "0554e0e23af37542f0f40250faf137ff2bf690b8"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Manufacturing.UnitTests/Engines/MassBalanceEngineTests.cs",
+          "line": 16,
+          "anchor": "public void Bal003_reconciles_every_category_and_keeps_the_differences_sign()",
+          "sha256": "bf4e81d75782e9c8f8fd92c9b2030f06fe8bc51f67f89950e06c4751f66977ea",
+          "git_blob": "43f3cff9e97b563c7dd3d9c17ad2a814345b091f"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "runtime_acceptance": "NOT_RUN",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId/yetki/owner sınırı",
+        "Formül sürümü ve golden korunur",
+        "Yeni kullanım ayrıca kabul edilir"
+      ],
+      "directly_reusable": "Mevcut public sözleşme veya fixture; domain tablolarına çapraz yazma yok.",
+      "adaptations": "Yeni işin veri/izin ve fiziksel etkileri ayrıca bağlanır.",
+      "limitations": [
+        "Bu dosyanın bulunması gerçek işletme akışının tamamlandığını kanıtlamaz.",
+        "Test dosyasının ilk metodu navigasyon çapasıdır; tek tek test sonucu bu çalışmada okunmadı."
+      ],
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "decision_refs": [
+        "URT-D6"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-DUEDATE-01",
+      "function": "Üretim termin önerisi",
+      "module": "W3-URETIM",
+      "reuse_mode": "DIRECT_REUSE",
+      "backlog_parent": "W3-URETIM",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/Plans/ProductionDueDateSuggestionCalculatorV1.cs",
+          "line": 23,
+          "anchor": "public sealed record DueDateCalendarShiftV1(DayOfWeek Day, TimeOnly Start, TimeOnly End);",
+          "sha256": "d8966636aa5a7224df20f45b9b75f50384e653209c88c8e757a3654d99894718",
+          "git_blob": "4dad204a38103a4128439a6b900184c62ce1296a"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Manufacturing.UnitTests/ProductionDueDateSuggestionCalculatorTests.cs",
+          "line": 40,
+          "anchor": "public void The_rest_of_the_running_shift_counts_from_now()",
+          "sha256": "4e31972de399b46ee2bbc455f66c908f1f4af15a0557d2a1b4e91a423736793c",
+          "git_blob": "c8f3244904b1ffb388781a4a23a854180b657684"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "runtime_acceptance": "NOT_RUN",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId/yetki/owner sınırı",
+        "Formül sürümü ve golden korunur",
+        "Yeni kullanım ayrıca kabul edilir"
+      ],
+      "directly_reusable": "Mevcut public sözleşme veya fixture; domain tablolarına çapraz yazma yok.",
+      "adaptations": "Yeni işin veri/izin ve fiziksel etkileri ayrıca bağlanır.",
+      "limitations": [
+        "Bu dosyanın bulunması gerçek işletme akışının tamamlandığını kanıtlamaz.",
+        "Test dosyasının ilk metodu navigasyon çapasıdır; tek tek test sonucu bu çalışmada okunmadı."
+      ],
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "decision_refs": [
+        "URT-D29",
+        "URT-D86",
+        "URT-D87",
+        "URT-D88",
+        "URT-D89"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-LINEAGE-01",
+      "function": "Üretim soy ağacı maliyet payı",
+      "module": "W3-URETIM",
+      "reuse_mode": "DIRECT_REUSE",
+      "backlog_parent": "W3-URETIM",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/Lineage/ProductionLineageShareCalculatorV1.cs",
+          "line": 9,
+          "anchor": "public sealed record ProductionLineageShareInput(Guid InputLabelId, Kilograms ConsumedKg);",
+          "sha256": "ec2db28a9189da60562981e64f3d5a7d865c4d5ee8077ae226a68b4ae21bb7a8",
+          "git_blob": "2352e11fab4d24667dac1f81d3c58ef0ed507a03"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Manufacturing.UnitTests/ProductionLineageShareCalculatorTests.cs",
+          "line": 20,
+          "anchor": "public void Each_input_label_carries_its_share_in_proportion_to_its_consumed_kg()",
+          "sha256": "b359b63612e61d7d4e6a7b08f901b97d66ae7a98607a58162a9521e689b61e61",
+          "git_blob": "51cd1b753fba0119abde516b3ab9ee2be2ef44fa"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "runtime_acceptance": "NOT_RUN",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId/yetki/owner sınırı",
+        "Formül sürümü ve golden korunur",
+        "Yeni kullanım ayrıca kabul edilir"
+      ],
+      "directly_reusable": "Mevcut public sözleşme veya fixture; domain tablolarına çapraz yazma yok.",
+      "adaptations": "Yeni işin veri/izin ve fiziksel etkileri ayrıca bağlanır.",
+      "limitations": [
+        "Bu dosyanın bulunması gerçek işletme akışının tamamlandığını kanıtlamaz.",
+        "Test dosyasının ilk metodu navigasyon çapasıdır; tek tek test sonucu bu çalışmada okunmadı."
+      ],
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "decision_refs": [
+        "URT-D62",
+        "URT-D63"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-IDEMPOTENCY-01",
+      "function": "Komut tekrar kimliği",
+      "module": "W0-OUTBOX",
+      "reuse_mode": "REFERENCE_PATTERN",
+      "backlog_parent": "W0-OUTBOX",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Domain/Executions/CommandExecution.cs",
+          "line": 5,
+          "anchor": "public sealed class CommandExecution",
+          "sha256": "50d1ba564cdb378b9576bb5368f4210644ebefd05b1fb9bce61643c15861e1a7",
+          "git_blob": "eb61d5236a1fa306c6618c6498d112f043c5ee28"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Idempotency.UnitTests/CommandExecutionTests.cs",
+          "line": 8,
+          "anchor": "public void KeyHash_UsesCanonicalValueAndNeverReturnsRawKey()",
+          "sha256": "1bdb79b9c295d639c2502c10612dcdda6c0f3b756e776c1300d237c64364e715",
+          "git_blob": "fb9f7a87564ac1fcfcdaac914e7c79528d8b1084"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "runtime_acceptance": "NOT_RUN",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId/yetki/owner sınırı",
+        "Formül sürümü ve golden korunur",
+        "Yeni kullanım ayrıca kabul edilir"
+      ],
+      "directly_reusable": "Mevcut public sözleşme veya fixture; domain tablolarına çapraz yazma yok.",
+      "adaptations": "Yeni işin veri/izin ve fiziksel etkileri ayrıca bağlanır.",
+      "limitations": [
+        "Bu dosyanın bulunması gerçek işletme akışının tamamlandığını kanıtlamaz.",
+        "Test dosyasının ilk metodu navigasyon çapasıdır; tek tek test sonucu bu çalışmada okunmadı."
+      ],
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "decision_refs": [
+        "AGENTS.md: Mimari değişmezler; owner iş kararını ayrıca seç"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-AUTHORITY-01",
+      "function": "Güncel yetki yeniden kontrol sözleşmesi",
+      "module": "W1-YETKI",
+      "reuse_mode": "DIRECT_REUSE",
+      "backlog_parent": "W1-YETKI",
+      "sources": [
+        {
+          "path": "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/IErpAuthorityRevalidationService.cs",
+          "line": 46,
+          "anchor": "public interface IErpAuthorityRevalidationService",
+          "sha256": "b7f47b3d7e240887e2828ab36a563a1f8dfdfa8ed59ba3d0164595561be7a218",
+          "git_blob": "42da763f2bca56ce323ed0ec5f1b1a534a252e70"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Identity.UnitTests/ErpAuthorityRevalidationServiceTests.cs",
+          "line": 23,
+          "anchor": "public async Task A_revocation_during_the_request_is_measured_and_the_request_view_moves_with_it()",
+          "sha256": "820d144205fefbc62087be3c9b25beb0f052e1506e760d470bbd46197dbbc507",
+          "git_blob": "5ae46be767cdd64f1ef7890fb492992831d8d5fd"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "runtime_acceptance": "NOT_RUN",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId/yetki/owner sınırı",
+        "Formül sürümü ve golden korunur",
+        "Yeni kullanım ayrıca kabul edilir"
+      ],
+      "directly_reusable": "Mevcut public sözleşme veya fixture; domain tablolarına çapraz yazma yok.",
+      "adaptations": "Yeni işin veri/izin ve fiziksel etkileri ayrıca bağlanır.",
+      "limitations": [
+        "Bu dosyanın bulunması gerçek işletme akışının tamamlandığını kanıtlamaz.",
+        "Test dosyasının ilk metodu navigasyon çapasıdır; tek tek test sonucu bu çalışmada okunmadı."
+      ],
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "decision_refs": [
+        "AGENTS.md: Mimari değişmezler; owner iş kararını ayrıca seç"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-FIXTURE-01",
+      "function": "API kabul fabrikası",
+      "module": "W5-AIGATEWAY",
+      "reuse_mode": "REFERENCE_PATTERN",
+      "backlog_parent": "W5-AIGATEWAY",
+      "sources": [
+        {
+          "path": "tests/GoymenERP.Api.IntegrationTests/GoymenErpApiFactory.cs",
+          "line": 32,
+          "anchor": "public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>",
+          "sha256": "23c30129788e641f493e16396016692fcff97fcd5af8ae3019821c579c763694",
+          "git_blob": "f1e7b17e2cbe3fb96bc15905eec0e115d014db78"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Api.IntegrationTests/AiCommandPipelineTests.cs",
+          "line": 35,
+          "anchor": "public async Task Preview_approval_and_execution_run_the_owner_command_once_with_the_frozen_request()",
+          "sha256": "99cc22d7f1204049c3f1415767ef966ea1875da53b7afced6c463b138888b82f",
+          "git_blob": "60fe61bd8c446393a209b05d31f94b27bbf9e2b3"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "runtime_acceptance": "NOT_RUN",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId/yetki/owner sınırı",
+        "Formül sürümü ve golden korunur",
+        "Yeni kullanım ayrıca kabul edilir"
+      ],
+      "directly_reusable": "Mevcut public sözleşme veya fixture; domain tablolarına çapraz yazma yok.",
+      "adaptations": "Yeni işin veri/izin ve fiziksel etkileri ayrıca bağlanır.",
+      "limitations": [
+        "Bu dosyanın bulunması gerçek işletme akışının tamamlandığını kanıtlamaz.",
+        "Test dosyasının ilk metodu navigasyon çapasıdır; tek tek test sonucu bu çalışmada okunmadı."
+      ],
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
+      "historical_ci_url": null,
+      "decision_refs": [
+        "AGENTS.md: Mimari değişmezler; owner iş kararını ayrıca seç"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-RESTORE-01",
+      "function": "Yedek/restore kanıtı doğrulayıcı",
+      "module": "W0-RESTORE",
+      "reuse_mode": "REFERENCE_PATTERN",
+      "backlog_parent": "W0-RESTORE",
+      "sources": [
+        {
+          "path": "tools/verify_backup_restore.py",
+          "line": 142,
+          "anchor": "class InputError(Exception):",
+          "sha256": "6f39dcbddfbc8010700212f5eeb5aa1dd0846c8f1aa56ace08a620db3a756cd4",
+          "git_blob": "3864e1dbde97980ac9c1b33f28183492cb584723"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/backup_restore_verifier/test_verify_backup_restore.py",
+          "line": 132,
+          "anchor": "def test_repository_policy_carries_the_kln_d36_target(self) -> None:",
+          "sha256": "44dd11462871a8652c3421f0a39ee4d934875c784be0aab7837c30a2d77b25d3",
+          "git_blob": "f79b8a00e6051813435414beca9194ae777650dc"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "runtime_acceptance": "NOT_RUN",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId/yetki/owner sınırı",
+        "Formül sürümü ve golden korunur",
+        "Yeni kullanım ayrıca kabul edilir"
+      ],
+      "directly_reusable": "Mevcut public sözleşme veya fixture; domain tablolarına çapraz yazma yok.",
+      "adaptations": "Yeni işin veri/izin ve fiziksel etkileri ayrıca bağlanır.",
+      "limitations": [
+        "Bu dosyanın bulunması gerçek işletme akışının tamamlandığını kanıtlamaz.",
+        "Test dosyasının ilk metodu navigasyon çapasıdır; tek tek test sonucu bu çalışmada okunmadı."
+      ],
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "decision_refs": [
+        "KLN-D36"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-EDOC-01",
+      "function": "Satış resmi iptal kanıtı sözleşmesi",
+      "module": "W2-BELGE",
+      "reuse_mode": "REFERENCE_PATTERN",
+      "backlog_parent": "W2-BELGE",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/Contracts/SalesOfficialInvoiceCancellationV1.cs",
+          "line": 13,
+          "anchor": "public sealed record SalesOfficialCancellationEvidenceAnswerV1(SalesOfficialCancellationEvidenceOutcomeV1 Outcome,",
+          "sha256": "5b3543fc8b12b23aa169f3a6af9125efb2c371d62ff974441b28e0165966873b",
+          "git_blob": "34dc64124ed64627184d796551a8c959db66a1db"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Sales.UnitTests/SalesSubcontractServiceInvoiceTests.OfficialCancellation.cs",
+          "line": 7,
+          "anchor": "public void Official_subcontract_cancellation_retains_original_weighing_match_amounts_approval_and_finalization()",
+          "sha256": "775c9cbf9beb28085ea6c290fda514d6609120768c2c8acedd48e186a090bbaa",
+          "git_blob": "eee1bf96f52768b4f53c934bb8dafe9401df1292"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "runtime_acceptance": "NOT_RUN",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId/yetki/owner sınırı",
+        "Formül sürümü ve golden korunur",
+        "Yeni kullanım ayrıca kabul edilir"
+      ],
+      "directly_reusable": "Mevcut public sözleşme veya fixture; domain tablolarına çapraz yazma yok.",
+      "adaptations": "Yeni işin veri/izin ve fiziksel etkileri ayrıca bağlanır.",
+      "limitations": [
+        "Bu dosyanın bulunması gerçek işletme akışının tamamlandığını kanıtlamaz.",
+        "Test dosyasının ilk metodu navigasyon çapasıdır; tek tek test sonucu bu çalışmada okunmadı."
+      ],
+      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "decision_refs": [
+        "AGENTS.md: Mimari değişmezler; owner iş kararını ayrıca seç"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    },
+    {
+      "id": "REF-IMPORT-01",
+      "function": "Yapılı alış faturası içe aktarımı",
+      "module": "W2-BELGE",
+      "reuse_mode": "REFERENCE_PATTERN",
+      "backlog_parent": "W2-BELGE",
+      "sources": [
+        {
+          "path": "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchaseInvoiceImportAdmission.cs",
+          "line": 14,
+          "anchor": "public sealed partial class PurchaseInvoiceImportAdmission(ICompanyContext company, ICurrentUser user,",
+          "sha256": "e0bea5e646c2a7cb815b170b126b587255411a1ffcd027e7c7e95a81ba153445",
+          "git_blob": "025f1322763af6d4e254c1e066be5071c8d847b5"
+        }
+      ],
+      "tests": [
+        {
+          "path": "tests/GoymenERP.Purchasing.UnitTests/PurchaseInvoiceImportAdmissionTests.cs",
+          "line": 18,
+          "anchor": "public async Task ALS_D125_without_a_duplicate_match_the_record_needs_no_reason_and_writes_no_note()",
+          "sha256": "47a4ed128d2482d2f746d420ae452ed8c8df5c2ea025c30b7c84e04487aa9988",
+          "git_blob": "b00b2cf88e931a9742b5fd080ec22b8c1b6e894e"
+        }
+      ],
+      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "runtime_acceptance": "NOT_RUN",
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "invariants": [
+        "CompanyId/yetki/owner sınırı",
+        "Formül sürümü ve golden korunur",
+        "Yeni kullanım ayrıca kabul edilir"
+      ],
+      "directly_reusable": "Mevcut public sözleşme veya fixture; domain tablolarına çapraz yazma yok.",
+      "adaptations": "Yeni işin veri/izin ve fiziksel etkileri ayrıca bağlanır.",
+      "limitations": [
+        "Bu dosyanın bulunması gerçek işletme akışının tamamlandığını kanıtlamaz.",
+        "Test dosyasının ilk metodu navigasyon çapasıdır; tek tek test sonucu bu çalışmada okunmadı."
+      ],
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
+      "historical_ci_url": null,
+      "decision_refs": [
+        "ALS-D125",
+        "ALS-D7"
+      ],
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+    }
+  ]
+}

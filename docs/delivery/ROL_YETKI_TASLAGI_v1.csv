@@ -305,3 +305,8 @@ settings.legal-deadlines.read,settings,hayır,evet,+,,,,,,,,,,,,+,+,+,,ÖNERİ,R
 ai.document-drafts.prepare,ai,hayır,evet,,+,,+,,,,,,,,,,+,,,ÖNERİ,ROL-D24; `ai.panel.use` ve belge türünün sahip modül izni ayrıca gerekir; taslak kayıt yaratmaz.
 ai.document-drafts.supplier-confirmation,ai,hayır,evet,,,,,+,,,,,,,,,,,,ÖNERİ,ROL-D24; `ai.panel.use` + `ai.document-drafts.prepare` ayrıca gerekir; taslak kayıt yaratmaz.
 accounting.periods.reopen,accounting,hayır,evet,+,,,,,,,,,,,,,,,,KARARLI,"ROL-D12: dönem yeniden açma ayrı izin, yalnız GM (§3.1 akış 48'in kayıtlı adı). ROL-D24 kapsamında değil; tren-2'de kayıtlı bulunduğu için v1.4'te eklendi."
+work.approvals.escalate,work,hayır,evet,+,,,,,,,,,,,,,,,,ÖNERİ,ROL-D24: yalnız rol taslağı önerisi; hiçbir role/seed veya kişiye atanmaz.
+finance.treasury-balance.read,finance,hayır,evet,+,,,,,,,,,,,+,+,,,,ÖNERİ,ROL-D24: yalnız rol taslağı önerisi; hiçbir role/seed veya kişiye atanmaz.
+counterparty.party-ibans.read,counterparty,hayır,evet,,,,,,,,,,,,+,+,+,+,,ÖNERİ,ROL-D24: yalnız rol taslağı önerisi; hiçbir role/seed veya kişiye atanmaz.
+counterparty.party-ibans.manage,counterparty,hayır,evet,,,,,,,,,,,,+,,,,,ÖNERİ,ROL-D24: yalnız rol taslağı önerisi; hiçbir role/seed veya kişiye atanmaz.
+counterparty.parties.group-company-link.update,counterparty,hayır,evet,,,,,,,,,,,,,,,+,,ÖNERİ,ROL-D24: yalnız rol taslağı önerisi; hiçbir role/seed veya kişiye atanmaz.

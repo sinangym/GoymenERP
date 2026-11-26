@@ -1,0 +1,1824 @@
+{
+  "version": "1.0",
+  "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+  "status": "NAVIGATION_ONLY_NOT_ACCEPTANCE",
+  "source_matrix": "docs/delivery/ROL_YETKI_TASLAGI_v1.md",
+  "target_flows": 64,
+  "verified_runtime_flows": 0,
+  "flows": [
+    {
+      "flow": 1,
+      "name": "Sipariş taslağı iç onayı",
+      "permission_cell": "`sales.orders.approve`",
+      "registered_permission_candidates": [
+        "sales.orders.approve"
+      ],
+      "source_row": 626,
+      "preparer_proposal": "SAT, SATM, GM",
+      "approver_proposal": "SATM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "KARARLI (SAT-D6). P6 kayıtta.",
+      "candidate_inbox_sources": [
+        "src/backend/GoymenERP.Api/WorkRuntime/NativeApprovalWorkInboxSourceV1.cs:49"
+      ],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/NativeApprovalWorkInboxSourceV1Tests.cs:23",
+        "tests/GoymenERP.Api.IntegrationTests/SalesDraftPermissionAndShellRegistrationTests.cs:26",
+        "tests/GoymenERP.Api.IntegrationTests/SalesDraftPermissionAndShellRegistrationTests.cs:27",
+        "tests/GoymenERP.Api.IntegrationTests/SalesShellCapabilityProviderTests.cs:71",
+        "tests/GoymenERP.Api.IntegrationTests/SettingsCompanyPolicySqlServerRelationalAcceptanceTests.SubcontractTax.cs:14",
+        "tests/GoymenERP.Api.IntegrationTests/SettingsShellAuthorityTests.cs:107",
+        "tests/GoymenERP.Api.IntegrationTests/SettingsShellAuthorityTests.cs:109",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:169",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:174",
+        "tests/GoymenERP.BrowserSuiteFixtureTool/Suites/FIN01/Fin01BrowserSeed.cs:62",
+        "tests/GoymenERP.BrowserSuiteFixtureTool/Suites/S04/S04BrowserSeed.cs:147",
+        "tests/GoymenERP.Purchasing.UnitTests/PurchasingServiceTests.SubcontractTax.cs:16",
+        "tests/GoymenERP.Purchasing.UnitTests/PurchasingServiceTests.SubcontractTax.cs:24",
+        "tests/GoymenERP.Sales.UnitTests/SalesReadAiToolsTests.cs:41",
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs:450",
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs:92",
+        "tests/e2e/sales-s04/specs/s04-cancellation.spec.ts:193",
+        "tests/e2e/sales-s04/specs/s04-delivery-schedule.spec.ts:251",
+        "tests/e2e/sales-s04/specs/s04-remainder-changes.spec.ts:215"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 2,
+      "name": "Taban fiyat altı istisnası",
+      "permission_cell": "`sales.orders.price-floor-exception.approve`",
+      "registered_permission_candidates": [
+        "sales.orders.price-floor-exception.approve"
+      ],
+      "source_row": 627,
+      "preparer_proposal": "SAT",
+      "approver_proposal": "SATM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "KARARLI (SAT-D1). 🔴 SATM'nin kendi açtığı taslakta kayıt kuralı doğrulanmadı.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/SalesShellCapabilityProviderTests.cs:94",
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs:107",
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs:456",
+        "tests/e2e/sales-s04/specs/s04-price-list.spec.ts:243",
+        "tests/e2e/sales-s04/specs/s04-price-list.spec.ts:244",
+        "tests/e2e/sales-s04/specs/s04-price-list.spec.ts:246"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 3,
+      "name": "İskonto istisnası",
+      "permission_cell": "`sales.orders.discount-exception.approve`",
+      "registered_permission_candidates": [
+        "sales.orders.discount-exception.approve"
+      ],
+      "source_row": 628,
+      "preparer_proposal": "SAT",
+      "approver_proposal": "SATM; kendi limitini aşanı GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "KARARLI (SAT-D37/D67).",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/SalesDiscountExceptionSqlServerRelationalAcceptanceTests.cs:145",
+        "tests/GoymenERP.Api.IntegrationTests/SalesDraftPermissionAndShellRegistrationTests.cs:66",
+        "tests/GoymenERP.Api.IntegrationTests/SalesDraftPermissionAndShellRegistrationTests.cs:67",
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs:480"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 4,
+      "name": "Fazla teslim",
+      "permission_cell": "`sales.orders.over-delivery.approve`",
+      "registered_permission_candidates": [
+        "sales.orders.over-delivery.approve"
+      ],
+      "source_row": 629,
+      "preparer_proposal": "DEPO (sevk)",
+      "approver_proposal": "SAT (K), SATM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "KARARLI (SAT-D168). SAT-D216 kendi sevki/talebi yasak, SAT-D222.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/SalesDraftPermissionAndShellRegistrationTests.cs:53",
+        "tests/GoymenERP.Api.IntegrationTests/SalesDraftPermissionAndShellRegistrationTests.cs:54",
+        "tests/GoymenERP.Api.IntegrationTests/SalesOrderOverDeliveryApprovalSqlServerRelationalAcceptanceTests.cs:111",
+        "tests/GoymenERP.Api.IntegrationTests/SalesShellCapabilityProviderTests.cs:92",
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs:165",
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs:498"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 5,
+      "name": "Risk istisnası",
+      "permission_cell": "`sales.orders.risk-exception.approve`",
+      "registered_permission_candidates": [
+        "sales.orders.risk-exception.approve"
+      ],
+      "source_row": 630,
+      "preparer_proposal": "SAT, SATM, DEPO",
+      "approver_proposal": "SAT (K), SATM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "KARARLI (SAT-D153). 🟡 kabul edildi (SAT-D153): aynı rol talep eder ve onaylar, ayrım kayıt kuralıyla.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/SalesDraftPermissionAndShellRegistrationTests.cs:60",
+        "tests/GoymenERP.Api.IntegrationTests/SalesShellCapabilityProviderTests.cs:102",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:90",
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs:197",
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs:506"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 6,
+      "name": "Kalan miktar değişikliği",
+      "permission_cell": "doğrulanmadı",
+      "registered_permission_candidates": [],
+      "source_row": 631,
+      "preparer_proposal": "SAT",
+      "approver_proposal": "ÖNERİ: SATM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "İzin adı teknik doğrulama ister.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 7,
+      "name": "Satış talebi",
+      "permission_cell": "`sales.requests.approve`",
+      "registered_permission_candidates": [
+        "sales.requests.approve"
+      ],
+      "source_row": 632,
+      "preparer_proposal": "SAT",
+      "approver_proposal": "SATM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/SalesDraftPermissionAndShellRegistrationTests.cs:80",
+        "tests/GoymenERP.Api.IntegrationTests/SalesShellCapabilityProviderTests.cs:125",
+        "tests/GoymenERP.Api.IntegrationTests/SalesShellCapabilitySqlServerRelationalAcceptanceTests.cs:169",
+        "tests/GoymenERP.Api.IntegrationTests/SalesShellCapabilitySqlServerRelationalAcceptanceTests.cs:176",
+        "tests/GoymenERP.Sales.UnitTests/SalesReferenceReadHandlerTests.SatD27.cs:65",
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs:251",
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs:475"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 8,
+      "name": "Süresi dolmuş tekliften sipariş",
+      "permission_cell": "`sales.quotes.expired-conversion.approve`",
+      "registered_permission_candidates": [
+        "sales.quotes.expired-conversion.approve"
+      ],
+      "source_row": 633,
+      "preparer_proposal": "SAT",
+      "approver_proposal": "SATM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "KARARLI (SAT-D24/D44). 🔴 SAT-D44 bilinçli istisna: hazırlayan da onaylayabilir.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/SalesDraftPermissionAndShellRegistrationTests.cs:72",
+        "tests/GoymenERP.Api.IntegrationTests/SalesDraftPermissionAndShellRegistrationTests.cs:73",
+        "tests/GoymenERP.Api.IntegrationTests/SalesQuoteSqlServerRelationalAcceptanceTests.cs:875",
+        "tests/GoymenERP.Api.IntegrationTests/SalesShellCapabilityProviderTests.cs:117",
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs:260",
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs:482"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 9,
+      "name": "Satış faturası",
+      "permission_cell": "`sales.invoices.approve`",
+      "registered_permission_candidates": [
+        "sales.invoices.approve"
+      ],
+      "source_row": 634,
+      "preparer_proposal": "MUH",
+      "approver_proposal": "MUH (başka kişi), MUHM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "KARARLI (SAT-D88/D204; `CK_Invoices_MakerChecker`).",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/SalesDraftPermissionAndShellRegistrationTests.cs:85",
+        "tests/GoymenERP.Api.IntegrationTests/SalesInvoiceSqlServerRelationalAcceptanceTests.cs:321",
+        "tests/GoymenERP.Api.IntegrationTests/SalesShellCapabilityProviderTests.cs:61",
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs:323",
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs:350",
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs:488"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 10,
+      "name": "Müşteri iadesi (satış)",
+      "permission_cell": "`sales.returns.approve`",
+      "registered_permission_candidates": [
+        "sales.returns.approve"
+      ],
+      "source_row": 635,
+      "preparer_proposal": "SAT",
+      "approver_proposal": "SATM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs:510"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 11,
+      "name": "Sözleşme iskontosu",
+      "permission_cell": "`sales.contracts.discount.approve`",
+      "registered_permission_candidates": [
+        "sales.contracts.discount.approve"
+      ],
+      "source_row": 636,
+      "preparer_proposal": "SAT, SATM",
+      "approver_proposal": "SATM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ; hazırlayan onaylayamaz (doğrulanmadı 🔴).",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs:515"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 12,
+      "name": "Fason hizmet faturası",
+      "permission_cell": "doğrulanmadı (servis `sales.invoices.write/read` kullanıyor)",
+      "registered_permission_candidates": [],
+      "source_row": 637,
+      "preparer_proposal": "MUH",
+      "approver_proposal": "ÖNERİ: MUHM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "🔴 ayrı onay izni görülmedi.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 13,
+      "name": "Alış talebi",
+      "permission_cell": "`purchasing.requests.approve`",
+      "registered_permission_candidates": [
+        "purchasing.requests.approve"
+      ],
+      "source_row": 638,
+      "preparer_proposal": "ALM, SAT",
+      "approver_proposal": "ALMM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "KARARLI (ALS-D2).",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/AiSecurityTechWatchToolTests.cs:292",
+        "tests/GoymenERP.Api.IntegrationTests/AuditAcceptanceTests.cs:341",
+        "tests/GoymenERP.Api.IntegrationTests/AuditOutcomeFilterSqlServerRelationalAcceptanceTests.cs:165",
+        "tests/GoymenERP.Api.IntegrationTests/PurchasingPermissionAndShellRegistrationTests.cs:33",
+        "tests/GoymenERP.Api.IntegrationTests/SecurityEventsReadAcceptanceTests.cs:263",
+        "tests/GoymenERP.Api.IntegrationTests/SecurityEventsSqlServerRelationalAcceptanceTests.AiSummary.cs:140",
+        "tests/GoymenERP.Api.IntegrationTests/SecurityEventsSqlServerRelationalAcceptanceTests.cs:100",
+        "tests/GoymenERP.Api.IntegrationTests/SecurityEventsSqlServerRelationalAcceptanceTests.cs:405",
+        "tests/GoymenERP.Audit.UnitTests/RefusedAttemptAggregationTests.cs:381",
+        "tests/GoymenERP.Audit.UnitTests/RefusedAttemptRecorderTests.cs:431",
+        "tests/GoymenERP.Audit.UnitTests/RefusedAttemptRecorderTests.cs:69",
+        "tests/GoymenERP.BrowserSuiteFixtureTool/Suites/PUR01/Pur01BrowserSeed.cs:47",
+        "tests/GoymenERP.Identity.UnitTests/PurchasingPermissionRegistrationTests.cs:30",
+        "tests/GoymenERP.Identity.UnitTests/PurchasingPermissionRegistrationTests.cs:47",
+        "tests/GoymenERP.Purchasing.UnitTests/PurchasingPersistenceModelTests.cs:180",
+        "tests/GoymenERP.Purchasing.UnitTests/PurchasingPersistenceModelTests.cs:265",
+        "tests/GoymenERP.SecurityEvents.UnitTests/SecurityEventFixtures.cs:27",
+        "tests/GoymenERP.SecurityEvents.UnitTests/SecurityEventFixtures.cs:43",
+        "tests/GoymenERP.SecurityEvents.UnitTests/SecurityEventWriterTests.cs:181",
+        "tests/GoymenERP.SecurityEvents.UnitTests/SecurityEventsSummaryAiToolTests.cs:201",
+        "tests/e2e/purchasing-pur01/specs/pur01-approval-journey.spec.ts:217"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 14,
+      "name": "Alış siparişi",
+      "permission_cell": "`purchasing.orders.approve`",
+      "registered_permission_candidates": [
+        "purchasing.orders.approve"
+      ],
+      "source_row": 639,
+      "preparer_proposal": "ALM, SAT",
+      "approver_proposal": "ALMM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "KARARLI (ALS-D3).",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/PurchasingPermissionAndShellRegistrationTests.cs:31",
+        "tests/GoymenERP.Api.IntegrationTests/SettingsCompanyPolicySqlServerRelationalAcceptanceTests.SubcontractTax.cs:15",
+        "tests/GoymenERP.Api.IntegrationTests/SettingsShellAuthorityTests.cs:107",
+        "tests/GoymenERP.Api.IntegrationTests/SettingsShellAuthorityTests.cs:109",
+        "tests/GoymenERP.BrowserSuiteFixtureTool/Suites/PUR01/Pur01BrowserSeed.cs:43",
+        "tests/GoymenERP.Identity.UnitTests/PurchasingPermissionRegistrationTests.cs:29",
+        "tests/GoymenERP.Identity.UnitTests/PurchasingPermissionRegistrationTests.cs:46",
+        "tests/GoymenERP.Identity.UnitTests/SettingsPurchaseInvoiceVariancePolicyPermissionRegistrationTests.cs:39",
+        "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.SubcontractTax.cs:51",
+        "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.SubcontractTax.cs:58",
+        "tests/e2e/purchasing-pur01/specs/pur01-goods-receipt-journey.spec.ts:362"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 15,
+      "name": "Mal kabul partisi",
+      "permission_cell": "`purchasing.goods-receipts.approve-variance` / `-overdelivery` (eşleme doğrulanmadı)",
+      "registered_permission_candidates": [
+        "purchasing.goods-receipts.approve-variance"
+      ],
+      "source_row": 640,
+      "preparer_proposal": "DEPO",
+      "approver_proposal": "ALMM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ. Kabulü kaydeden onaylayamaz.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/PurchasingPermissionAndShellRegistrationTests.cs:39",
+        "tests/GoymenERP.Identity.UnitTests/PurchasingPermissionRegistrationTests.cs:36",
+        "tests/GoymenERP.Identity.UnitTests/PurchasingPermissionRegistrationTests.cs:53",
+        "tests/GoymenERP.Purchasing.UnitTests/PurchasingPersistenceModelTests.cs:227"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 16,
+      "name": "Gelen fatura farkı",
+      "permission_cell": "`purchasing.invoices.approve-variance`",
+      "registered_permission_candidates": [
+        "purchasing.invoices.approve-variance"
+      ],
+      "source_row": 641,
+      "preparer_proposal": "MUH",
+      "approver_proposal": "MUHM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "KARARLI (ROL-D10); Satınalma Müdürü onaylamaz.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/PurchasingPermissionAndShellRegistrationTests.cs:46",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:364"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 17,
+      "name": "Tedarikçi iadesi maliyet istisnası",
+      "permission_cell": "doğrulanmadı",
+      "registered_permission_candidates": [],
+      "source_row": 642,
+      "preparer_proposal": "ALM",
+      "approver_proposal": "ÖNERİ: MUHM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "SAT-D454 \"farklı kişi onayı\".",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 18,
+      "name": "Hizmet siparişi",
+      "permission_cell": "doğrulanmadı (servis `purchasing.orders.approve` kullanıyor)",
+      "registered_permission_candidates": [
+        "purchasing.orders.approve"
+      ],
+      "source_row": 643,
+      "preparer_proposal": "ALM",
+      "approver_proposal": "ALMM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/PurchasingPermissionAndShellRegistrationTests.cs:31",
+        "tests/GoymenERP.Api.IntegrationTests/SettingsCompanyPolicySqlServerRelationalAcceptanceTests.SubcontractTax.cs:15",
+        "tests/GoymenERP.Api.IntegrationTests/SettingsShellAuthorityTests.cs:107",
+        "tests/GoymenERP.Api.IntegrationTests/SettingsShellAuthorityTests.cs:109",
+        "tests/GoymenERP.BrowserSuiteFixtureTool/Suites/PUR01/Pur01BrowserSeed.cs:43",
+        "tests/GoymenERP.Identity.UnitTests/PurchasingPermissionRegistrationTests.cs:29",
+        "tests/GoymenERP.Identity.UnitTests/PurchasingPermissionRegistrationTests.cs:46",
+        "tests/GoymenERP.Identity.UnitTests/SettingsPurchaseInvoiceVariancePolicyPermissionRegistrationTests.cs:39",
+        "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.SubcontractTax.cs:51",
+        "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.SubcontractTax.cs:58",
+        "tests/e2e/purchasing-pur01/specs/pur01-goods-receipt-journey.spec.ts:362"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 19,
+      "name": "Sayım farkı",
+      "permission_cell": "`inventory.stock-count.approve`",
+      "registered_permission_candidates": [
+        "inventory.stock-count.approve"
+      ],
+      "source_row": 644,
+      "preparer_proposal": "DEPO",
+      "approver_proposal": "OPM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "KARARLI (ROL-D5). Sayımı giren onaylayamaz.",
+      "candidate_inbox_sources": [
+        "src/backend/GoymenERP.Api/WorkRuntime/NativeApprovalWorkInboxSourceV1.cs:47"
+      ],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/NativeApprovalWorkInboxSourceV1Tests.cs:21",
+        "tests/GoymenERP.BrowserSuiteFixtureTool/Suites/R14/R14BrowserSeed.cs:91",
+        "tests/GoymenERP.Identity.UnitTests/InventoryReadPermissionRegistrationTests.cs:42",
+        "tests/GoymenERP.Identity.UnitTests/InventoryReadPermissionRegistrationTests.cs:63",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryShellCapabilityProviderTests.cs:246",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryStockCountTests.cs:394",
+        "tests/e2e/inventory-r14/specs/d05-inventory-work-approvals.spec.ts:33",
+        "tests/e2e/inventory-r14/specs/r21-stock-count.spec.ts:35",
+        "tests/e2e/inventory-r14/specs/r23-stock-row-actions.spec.ts:96"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 20,
+      "name": "Hurda",
+      "permission_cell": "`inventory.stock-scrap.approve`",
+      "registered_permission_candidates": [
+        "inventory.stock-scrap.approve"
+      ],
+      "source_row": 645,
+      "preparer_proposal": "DEPO, UOP",
+      "approver_proposal": "OPM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "KARARLI (ROL-D5); Kalite pasif (ROL-D20).",
+      "candidate_inbox_sources": [
+        "src/backend/GoymenERP.Api/WorkRuntime/NativeApprovalWorkInboxSourceV1.cs:48"
+      ],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/NativeApprovalWorkInboxSourceV1Tests.cs:22",
+        "tests/GoymenERP.BrowserSuiteFixtureTool/Suites/R14/R14BrowserSeed.cs:93",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryShellCapabilityProviderTests.cs:248",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryStockScrapTests.cs:352",
+        "tests/e2e/inventory-r14/specs/d05-inventory-work-approvals.spec.ts:35",
+        "tests/e2e/inventory-r14/specs/r22-stock-scrap.spec.ts:36",
+        "tests/e2e/inventory-r14/specs/r23-stock-row-actions.spec.ts:89"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 21,
+      "name": "Transfer fazlası",
+      "permission_cell": "`inventory.stock-transfer.overage-approve`",
+      "registered_permission_candidates": [
+        "inventory.stock-transfer.overage-approve"
+      ],
+      "source_row": 646,
+      "preparer_proposal": "DEPO",
+      "approver_proposal": "OPM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "KARARLI (ROL-D5).",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/InventoryTransferReceiptHttpAcceptanceTests.cs:104",
+        "tests/GoymenERP.Api.IntegrationTests/InventoryTransferReceiptHttpAcceptanceTests.cs:34",
+        "tests/GoymenERP.Api.IntegrationTests/InventoryTransferReceiptHttpAcceptanceTests.cs:80",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryShellCapabilityProviderTests.cs:83",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryTransferOverageWorkInboxSourceTests.cs:27",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryTransferOverageWorkInboxSourceTests.cs:30",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryTransferTests.Receipt.cs:197",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryTransferTests.Receipt.cs:203",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryTransferTests.Receipt.cs:269"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 22,
+      "name": "Transfer kaybı",
+      "permission_cell": "`inventory.stock-transfer.loss-approve`",
+      "registered_permission_candidates": [
+        "inventory.stock-transfer.loss-approve"
+      ],
+      "source_row": 647,
+      "preparer_proposal": "DEPO",
+      "approver_proposal": "OPM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "KARARLI (ROL-D5).",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/InventoryTransferReceiptHttpAcceptanceTests.cs:36",
+        "tests/GoymenERP.Api.IntegrationTests/InventoryTransferReceiptHttpAcceptanceTests.cs:82",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryShellCapabilityProviderTests.cs:85",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryTransferLossWorkInboxSourceTests.cs:137",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryTransferLossWorkInboxSourceTests.cs:27",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryTransferLossWorkInboxSourceTests.cs:30",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryTransferTests.Receipt.cs:199",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryTransferTests.Receipt.cs:204",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryTransferTests.Receipt.cs:271"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 23,
+      "name": "Açılış maliyeti",
+      "permission_cell": "`inventory.opening-cost.approve`",
+      "registered_permission_candidates": [
+        "inventory.opening-cost.approve"
+      ],
+      "source_row": 648,
+      "preparer_proposal": "MUH",
+      "approver_proposal": "MUHM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Identity.UnitTests/InventoryReadPermissionRegistrationTests.cs:46",
+        "tests/GoymenERP.Identity.UnitTests/InventoryReadPermissionRegistrationTests.cs:65",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryOpeningCostTests.cs:252",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryOpeningCostTests.cs:254",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryOpeningCostWorkInboxSourceTests.cs:27"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 24,
+      "name": "İrsaliye onayı",
+      "permission_cell": "`logistics.dispatch-notes.approve`",
+      "registered_permission_candidates": [
+        "logistics.dispatch-notes.approve"
+      ],
+      "source_row": 649,
+      "preparer_proposal": "DEPO",
+      "approver_proposal": "OPM veya SATM; GM yedek",
+      "duration_cell": "**4 saat**",
+      "decision_note": "KARARLI (ROL-D14). 🔴 Hazırlayan ≠ onaylayan kodda doğrulanmadı; Satış Müdürü kendi siparişinin irsaliyesini onaylayabilir (SoD-18).",
+      "candidate_inbox_sources": [
+        "src/frontend/goymen-erp-web/src/work/WorkInbox.test.tsx:70",
+        "src/frontend/goymen-erp-web/src/work/WorkInbox.test.tsx:85"
+      ],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsPermissionAndShellRegistrationTests.cs:36",
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsTransferWorkflowEndpointContractTests.cs:18",
+        "tests/GoymenERP.Api.IntegrationTests/WorkWp2SqlServerRelationalAcceptanceTests.cs:64",
+        "tests/GoymenERP.Identity.UnitTests/LogisticsPermissionRegistrationTests.cs:35",
+        "tests/GoymenERP.Identity.UnitTests/LogisticsPermissionRegistrationTests.cs:56",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryShellCapabilityProviderTests.cs:140",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryShellCapabilityProviderTests.cs:152",
+        "tests/GoymenERP.Logistics.UnitTests/LogisticsDispatchNoteWorkInboxSourceTests.cs:25",
+        "tests/GoymenERP.Logistics.UnitTests/LogisticsPersistenceModelTests.cs:906",
+        "tests/GoymenERP.Work.UnitTests/WorkApprovalFollowUpTests.cs:112",
+        "tests/GoymenERP.Work.UnitTests/WorkApprovalFollowUpTests.cs:279",
+        "tests/GoymenERP.Work.UnitTests/WorkApprovalFollowUpTests.cs:310"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 25,
+      "name": "Plan üstü sevk",
+      "permission_cell": "`logistics.shipments.plan-excess.approve`",
+      "registered_permission_candidates": [
+        "logistics.shipments.plan-excess.approve"
+      ],
+      "source_row": 650,
+      "preparer_proposal": "DEPO",
+      "approver_proposal": "OPM, GM",
+      "duration_cell": "**4 saat**",
+      "decision_note": "KARARLI (ROL-D5).",
+      "candidate_inbox_sources": [
+        "src/frontend/goymen-erp-web/src/work/WorkInbox.test.tsx:76",
+        "src/frontend/goymen-erp-web/src/work/WorkInbox.test.tsx:86"
+      ],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsPermissionAndShellRegistrationTests.cs:32",
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsSubcontractShellAuthorityTests.cs:22",
+        "tests/GoymenERP.Identity.UnitTests/LogisticsPermissionRegistrationTests.cs:31",
+        "tests/GoymenERP.Identity.UnitTests/LogisticsPermissionRegistrationTests.cs:52",
+        "tests/GoymenERP.Logistics.UnitTests/LogisticsPersistenceModelTests.cs:893",
+        "tests/GoymenERP.Logistics.UnitTests/LogisticsPersistenceModelTests.cs:930",
+        "tests/GoymenERP.Logistics.UnitTests/LogisticsPlanExcessWorkInboxSourceTests.cs:26"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 26,
+      "name": "Tartım farkı",
+      "permission_cell": "`logistics.weighing-differences.approve`",
+      "registered_permission_candidates": [
+        "logistics.weighing-differences.approve"
+      ],
+      "source_row": 651,
+      "preparer_proposal": "DEPO, UOP, KNT (hazırlayan)",
+      "approver_proposal": "OPM, GM",
+      "duration_cell": "**4 saat**",
+      "decision_note": "KARARLI (ROL-D14). 🟡 kabul edildi (ROL-D14): tartımı hazırlayan girer; onay OPM.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsPermissionAndShellRegistrationTests.cs:45",
+        "tests/GoymenERP.Identity.UnitTests/LogisticsPermissionRegistrationTests.cs:41",
+        "tests/GoymenERP.Identity.UnitTests/LogisticsPermissionRegistrationTests.cs:62",
+        "tests/GoymenERP.Logistics.UnitTests/LogisticsWeighingDifferenceWorkInboxSourceTests.cs:26"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 27,
+      "name": "Müşteri iadesi kabul kararı",
+      "permission_cell": "`logistics.customer-returns.decision`",
+      "registered_permission_candidates": [
+        "logistics.customer-returns.decision"
+      ],
+      "source_row": 652,
+      "preparer_proposal": "SAT, DEPO",
+      "approver_proposal": "SATM, OPM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsPermissionAndShellRegistrationTests.cs:41",
+        "tests/GoymenERP.Logistics.UnitTests/LogisticsCustomerReturnWorkInboxSourceTests.cs:102",
+        "tests/GoymenERP.Logistics.UnitTests/LogisticsCustomerReturnWorkInboxSourceTests.cs:25"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 28,
+      "name": "Üretim planı",
+      "permission_cell": "`manufacturing.plans.approve`",
+      "registered_permission_candidates": [
+        "manufacturing.plans.approve"
+      ],
+      "source_row": 653,
+      "preparer_proposal": "UPL",
+      "approver_proposal": "OPM, GM",
+      "duration_cell": "**4 saat**",
+      "decision_note": "KARARLI (URT-D2, ROL-D5).",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/ManufacturingApiSqlServerRelationalAcceptanceTests.cs:640",
+        "tests/GoymenERP.Api.IntegrationTests/ManufacturingApiSqlServerRelationalAcceptanceTests.cs:80",
+        "tests/GoymenERP.Api.IntegrationTests/ManufacturingShellRegistrationTests.cs:70",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryManufacturingPlanAllocationContractTests.cs:147",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommandServiceTests.CustomerGoodsOrderRecheck.cs:40",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommandServiceTests.CustomerGoodsOrderRecheck.cs:62",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommandServiceTests.CustomerGoodsOrderRecheck.cs:69",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommandServiceTests.ManualQueue.cs:22",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommandServiceTests.PlanAllocationShortfall.cs:27",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommandServiceTests.PlanPriority.cs:21",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommandServiceTests.PlanPriority.cs:22",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommandServiceTests.Reapproval.cs:26",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommandServiceTests.Reapproval.cs:29",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommandServiceTests.cs:2439",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommandServiceTests.cs:2467",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommandServiceTests.cs:2496",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommandServiceTests.cs:2520",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommandServiceTests.cs:2545",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommandServiceTests.cs:2563",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingPlanWorkInboxSourceTests.cs:39",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingPlanWorkInboxSourceTests.cs:42",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingShellCapabilityProviderContractTests.cs:120",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingShellCapabilityProviderContractTests.cs:121",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingShellCapabilityProviderContractTests.cs:132",
+        "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingShellCapabilityProviderContractTests.cs:135",
+        "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs:158",
+        "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs:239",
+        "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs:51"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 29,
+      "name": "Resmî fatura içe aktarma partisi",
+      "permission_cell": "`finance.official-invoice-import.approve`",
+      "registered_permission_candidates": [
+        "finance.official-invoice-import.approve"
+      ],
+      "source_row": 654,
+      "preparer_proposal": "FIN, MUH",
+      "approver_proposal": "FINM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ.",
+      "candidate_inbox_sources": [
+        "src/backend/GoymenERP.Api/WorkRuntime/NativeApprovalWorkInboxSourceV1.cs:46",
+        "src/frontend/goymen-erp-web/src/work/WorkInbox.test.tsx:413",
+        "src/frontend/goymen-erp-web/src/work/WorkInbox.test.tsx:421"
+      ],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/FinanceOfficialInvoiceImportPermissionRegistrationTests.cs:12",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceShellCapabilityRegistryTests.cs:86",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceShellCapabilitySqlServerRelationalAcceptanceTests.cs:107",
+        "tests/GoymenERP.Api.IntegrationTests/NativeApprovalWorkInboxSourceV1Tests.cs:20",
+        "tests/GoymenERP.BrowserSuiteFixtureTool/Suites/FIN01/Fin01BrowserSeed.cs:61",
+        "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs:84"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 30,
+      "name": "Resmî satış faturası",
+      "permission_cell": "`finance.official-sales-invoices.approve`",
+      "registered_permission_candidates": [
+        "finance.official-sales-invoices.approve"
+      ],
+      "source_row": 655,
+      "preparer_proposal": "FIN",
+      "approver_proposal": "FINM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ (SAT-D196/D197 deseni).",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/FinanceOfficialSalesInvoiceHttpAcceptanceTests.cs:851",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceOfficialSalesInvoicePermissionRegistrationTests.cs:18",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTests.cs:54",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceShellCapabilityRegistryTests.cs:23",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceShellCapabilityRegistryTests.cs:88",
+        "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs:53"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 31,
+      "name": "Elle banka ödemesi",
+      "permission_cell": "`finance.manual-bank-payment.approve`",
+      "registered_permission_candidates": [
+        "finance.manual-bank-payment.approve"
+      ],
+      "source_row": 656,
+      "preparer_proposal": "FIN",
+      "approver_proposal": "FINM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ. 🔴 Banka hesabı/IBAN öneren kişi ödeme onaylamamalı (SoD-08).",
+      "candidate_inbox_sources": [
+        "src/frontend/goymen-erp-web/src/work/WorkInbox.test.tsx:365",
+        "src/frontend/goymen-erp-web/src/work/WorkInbox.test.tsx:376",
+        "src/frontend/goymen-erp-web/src/work/WorkInbox.test.tsx:64",
+        "src/frontend/goymen-erp-web/src/work/WorkInbox.test.tsx:84"
+      ],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/AiWpA3cReadToolsTests.cs:40",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceManualBankPaymentPermissionRegistrationTests.cs:12",
+        "tests/GoymenERP.Api.IntegrationTests/WorkApprovalRuleSqlServerRelationalAcceptanceTests.cs:44",
+        "tests/GoymenERP.Api.IntegrationTests/WorkApprovalRuleSqlServerRelationalAcceptanceTests.cs:51",
+        "tests/GoymenERP.Api.IntegrationTests/WorkApprovalRuleSqlServerRelationalAcceptanceTests.cs:98",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:105",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:128",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:149",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:167",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:168",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:191",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:209",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:264",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:310",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:317",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:332",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:34",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:352",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:404",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:438",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:460",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:485",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:486",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:49",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:67",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:85",
+        "tests/GoymenERP.Finance.UnitTests/ManualBankPaymentContractTests.cs:110",
+        "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs:178",
+        "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs:217",
+        "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs:240",
+        "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs:76"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 32,
+      "name": "Banka ödemesi ters kaydı",
+      "permission_cell": "`finance.manual-bank-payment.reverse.approve`",
+      "registered_permission_candidates": [
+        "finance.manual-bank-payment.reverse.approve"
+      ],
+      "source_row": 657,
+      "preparer_proposal": "FIN",
+      "approver_proposal": "FINM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/FinanceManualBankPaymentPermissionRegistrationTests.cs:16",
+        "tests/GoymenERP.Finance.UnitTests/ManualBankPaymentContractTests.cs:113"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 33,
+      "name": "Tahsilat ters kaydı",
+      "permission_cell": "`finance.manual-receipt.reverse.approve`",
+      "registered_permission_candidates": [
+        "finance.manual-receipt.reverse.approve"
+      ],
+      "source_row": 658,
+      "preparer_proposal": "FIN",
+      "approver_proposal": "FINM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Finance.UnitTests/FinancePermissionPortTests.cs:61"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 34,
+      "name": "Masraf ödemesi",
+      "permission_cell": "`finance.expense-payment.approve`",
+      "registered_permission_candidates": [
+        "finance.expense-payment.approve"
+      ],
+      "source_row": 659,
+      "preparer_proposal": "FIN",
+      "approver_proposal": "FINM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Finance.UnitTests/ExpensePaymentPermissionMappingTests.cs:23"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 35,
+      "name": "Banka hesabı",
+      "permission_cell": "`finance.bank-account.approve` **(Critical)**",
+      "registered_permission_candidates": [
+        "finance.bank-account.approve"
+      ],
+      "source_row": 660,
+      "preparer_proposal": "FIN (Critical aday)",
+      "approver_proposal": "FINM (Critical aday)",
+      "duration_cell": "2 iş günü",
+      "decision_note": "IK.",
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceBankAccountIbanChangeWorkInboxSourceV1.cs:36",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceBankAccountWorkInboxSourceV1.cs:36"
+      ],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCommandApiSqlServerRelationalAcceptanceTests.cs:216",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCommandApiSqlServerRelationalAcceptanceTests.cs:49",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCommandApiSqlServerRelationalAcceptanceTests.cs:51",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceShellCapabilitySqlServerRelationalAcceptanceTests.cs:72",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceShellCapabilitySqlServerRelationalAcceptanceTests.cs:94",
+        "tests/GoymenERP.Finance.UnitTests/FinanceBankAccountIbanChangeWorkInboxSourceV1Tests.cs:20",
+        "tests/GoymenERP.Finance.UnitTests/FinanceBankAccountTests.cs:354",
+        "tests/GoymenERP.Finance.UnitTests/FinanceBankAccountWorkInboxSourceV1Tests.cs:19",
+        "tests/GoymenERP.Finance.UnitTests/FinancePermissionPortTests.cs:29",
+        "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs:93",
+        "tests/GoymenERP.Identity.UnitTests/FinanceBankAccountPermissionRegistrationTests.cs:101",
+        "tests/GoymenERP.Identity.UnitTests/FinanceBankAccountPermissionRegistrationTests.cs:29",
+        "tests/GoymenERP.Identity.UnitTests/FinanceBankAccountPermissionRegistrationTests.cs:39",
+        "tests/GoymenERP.Identity.UnitTests/FinanceBankAccountPermissionRegistrationTests.cs:60"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 36,
+      "name": "IBAN değişikliği",
+      "permission_cell": "doğrulanmadı (servis `finance.bank-account.propose/approve` kullanıyor; Critical)",
+      "registered_permission_candidates": [],
+      "source_row": 661,
+      "preparer_proposal": "FIN",
+      "approver_proposal": "FINM (IK)",
+      "duration_cell": "2 iş günü",
+      "decision_note": "🔴 SoD-08.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 37,
+      "name": "Kasa hesabı",
+      "permission_cell": "`finance.cash-account.approve` **(Critical)**",
+      "registered_permission_candidates": [
+        "finance.cash-account.approve"
+      ],
+      "source_row": 662,
+      "preparer_proposal": "FIN",
+      "approver_proposal": "FINM (IK)",
+      "duration_cell": "2 iş günü",
+      "decision_note": "IK.",
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceCashAccountWorkInboxSourcesV1.cs:89"
+      ],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.cs:1353",
+        "tests/GoymenERP.Finance.UnitTests/FinanceCashAccountTests.cs:1033",
+        "tests/GoymenERP.Finance.UnitTests/FinanceCashAccountWorkInboxSourcesV1Tests.cs:17",
+        "tests/GoymenERP.Finance.UnitTests/FinancePermissionPortTests.cs:32",
+        "tests/GoymenERP.Identity.UnitTests/FinanceCashAccountPermissionRegistrationTests.cs:114",
+        "tests/GoymenERP.Identity.UnitTests/FinanceCashAccountPermissionRegistrationTests.cs:30",
+        "tests/GoymenERP.Identity.UnitTests/FinanceCashAccountPermissionRegistrationTests.cs:44",
+        "tests/GoymenERP.Identity.UnitTests/FinanceCashAccountPermissionRegistrationTests.cs:69"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 38,
+      "name": "Kasa pasifleştirme",
+      "permission_cell": "`finance.cash-account.passivation.approve` **(Critical)**",
+      "registered_permission_candidates": [
+        "finance.cash-account.passivation.approve"
+      ],
+      "source_row": 663,
+      "preparer_proposal": "FIN",
+      "approver_proposal": "FINM (IK)",
+      "duration_cell": "2 iş günü",
+      "decision_note": "IK.",
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceCashAccountWorkInboxSourcesV1.cs:115"
+      ],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.cs:1355",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.cs:757",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.cs:763",
+        "tests/GoymenERP.Finance.UnitTests/FinanceCashAccountTests.cs:1034",
+        "tests/GoymenERP.Finance.UnitTests/FinanceCashAccountTests.cs:771",
+        "tests/GoymenERP.Finance.UnitTests/FinanceCashAccountTests.cs:840",
+        "tests/GoymenERP.Finance.UnitTests/FinanceCashAccountWorkInboxSourcesV1Tests.cs:63",
+        "tests/GoymenERP.Finance.UnitTests/FinancePermissionPortTests.cs:35",
+        "tests/GoymenERP.Identity.UnitTests/FinanceCashAccountPermissionRegistrationTests.cs:32",
+        "tests/GoymenERP.Identity.UnitTests/FinanceCashAccountPermissionRegistrationTests.cs:46",
+        "tests/GoymenERP.Identity.UnitTests/FinanceCashAccountPermissionRegistrationTests.cs:71"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 39,
+      "name": "Kasa yeniden etkinleştirme",
+      "permission_cell": "`finance.cash-account.reactivation.approve` **(Critical)**",
+      "registered_permission_candidates": [
+        "finance.cash-account.reactivation.approve"
+      ],
+      "source_row": 664,
+      "preparer_proposal": "FIN",
+      "approver_proposal": "FINM (IK)",
+      "duration_cell": "2 iş günü",
+      "decision_note": "IK.",
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceCashAccountWorkInboxSourcesV1.cs:143"
+      ],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.cs:1357",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.cs:768",
+        "tests/GoymenERP.Finance.UnitTests/FinanceCashAccountTests.cs:1035",
+        "tests/GoymenERP.Finance.UnitTests/FinanceCashAccountTests.cs:775",
+        "tests/GoymenERP.Finance.UnitTests/FinanceCashAccountWorkInboxSourcesV1Tests.cs:115",
+        "tests/GoymenERP.Finance.UnitTests/FinancePermissionPortTests.cs:39",
+        "tests/GoymenERP.Identity.UnitTests/FinanceCashAccountPermissionRegistrationTests.cs:34",
+        "tests/GoymenERP.Identity.UnitTests/FinanceCashAccountPermissionRegistrationTests.cs:48",
+        "tests/GoymenERP.Identity.UnitTests/FinanceCashAccountPermissionRegistrationTests.cs:73"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 40,
+      "name": "Cari kredi limiti",
+      "permission_cell": "`finance.credit-limits.approve` **(Critical)**",
+      "registered_permission_candidates": [
+        "finance.credit-limits.approve"
+      ],
+      "source_row": 665,
+      "preparer_proposal": "FIN",
+      "approver_proposal": "FINM veya GM (IK)",
+      "duration_cell": "2 iş günü",
+      "decision_note": "IK.",
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinancePartyCreditLimitWorkInboxSourceV1.cs:47",
+        "src/frontend/goymen-erp-web/src/work/WorkInbox.test.tsx:364",
+        "src/frontend/goymen-erp-web/src/work/WorkInbox.test.tsx:420",
+        "src/frontend/goymen-erp-web/src/work/WorkInbox.test.tsx:48",
+        "src/frontend/goymen-erp-web/src/work/WorkInbox.test.tsx:83"
+      ],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCreditLimitSqlServerRelationalAcceptanceTests.cs:467",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceShellCapabilityRegistryTests.cs:66",
+        "tests/GoymenERP.Finance.UnitTests/FinancePartyCreditLimitTests.cs:418",
+        "tests/GoymenERP.Finance.UnitTests/FinancePartyCreditLimitTests.cs:461",
+        "tests/GoymenERP.Finance.UnitTests/FinancePartyCreditLimitTests.cs:739",
+        "tests/GoymenERP.Finance.UnitTests/FinancePartyCreditLimitWorkInboxSourceV1Tests.cs:90",
+        "tests/GoymenERP.Finance.UnitTests/FinancePermissionPortTests.cs:44",
+        "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs:152",
+        "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs:154",
+        "tests/GoymenERP.Identity.UnitTests/FinanceCreditLimitPermissionRegistrationTests.cs:103",
+        "tests/GoymenERP.Identity.UnitTests/FinanceCreditLimitPermissionRegistrationTests.cs:28",
+        "tests/GoymenERP.Identity.UnitTests/FinanceCreditLimitPermissionRegistrationTests.cs:38",
+        "tests/GoymenERP.Identity.UnitTests/FinanceCreditLimitPermissionRegistrationTests.cs:60"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 41,
+      "name": "Kredi hesabı",
+      "permission_cell": "`finance.credits.approve` **(Critical)**",
+      "registered_permission_candidates": [
+        "finance.credits.approve"
+      ],
+      "source_row": 666,
+      "preparer_proposal": "FIN",
+      "approver_proposal": "FINM veya GM (IK)",
+      "duration_cell": "2 iş günü",
+      "decision_note": "IK.",
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceBankCreditLimitWorkInboxSourceV1.cs:36",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceCreditAccountWorkInboxSourceV1.cs:35",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceCreditMovementWorkInboxSourceV1.cs:48"
+      ],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCreditAccountSqlServerRelationalAcceptanceTests.Limits.cs:69",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCreditAccountSqlServerRelationalAcceptanceTests.Movements.cs:189",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCreditAccountSqlServerRelationalAcceptanceTests.cs:271",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceShellCapabilityRegistryTests.cs:22",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceShellCapabilityRegistryTests.cs:69",
+        "tests/GoymenERP.Finance.UnitTests/FinanceBankCreditLimitWorkInboxSourceV1Tests.cs:19",
+        "tests/GoymenERP.Finance.UnitTests/FinanceCreditAccountTests.cs:295",
+        "tests/GoymenERP.Finance.UnitTests/FinanceCreditAccountTests.cs:681",
+        "tests/GoymenERP.Finance.UnitTests/FinanceCreditAccountWorkInboxSourceV1Tests.cs:20",
+        "tests/GoymenERP.Finance.UnitTests/FinanceCreditMovementWorkInboxSourceV1Tests.cs:20",
+        "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs:61",
+        "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs:62",
+        "tests/GoymenERP.Identity.UnitTests/FinanceCreditPermissionRegistrationTests.cs:27",
+        "tests/GoymenERP.Identity.UnitTests/FinanceCreditPermissionRegistrationTests.cs:37",
+        "tests/GoymenERP.Identity.UnitTests/FinanceCreditPermissionRegistrationTests.cs:57",
+        "tests/GoymenERP.Identity.UnitTests/FinanceCreditPermissionRegistrationTests.cs:91",
+        "tests/GoymenERP.Identity.UnitTests/FinanceCreditPermissionRegistrationTests.cs:94"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 42,
+      "name": "Banka kredi limiti",
+      "permission_cell": "doğrulanmadı",
+      "registered_permission_candidates": [],
+      "source_row": 667,
+      "preparer_proposal": "FIN",
+      "approver_proposal": "ÖNERİ: FINM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "İzin adı teknik doğrulama ister.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 43,
+      "name": "Kredi hareketi",
+      "permission_cell": "doğrulanmadı (servis `finance.credits.propose/approve` kullanıyor; Critical)",
+      "registered_permission_candidates": [],
+      "source_row": 668,
+      "preparer_proposal": "FIN",
+      "approver_proposal": "FINM veya GM (IK)",
+      "duration_cell": "2 iş günü",
+      "decision_note": "—",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 44,
+      "name": "Açılış bakiyesi",
+      "permission_cell": "`finance.opening-balances.approve`",
+      "registered_permission_candidates": [
+        "finance.opening-balances.approve"
+      ],
+      "source_row": 669,
+      "preparer_proposal": "FIN",
+      "approver_proposal": "FINM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ.",
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceOpeningBalanceReversalWorkInboxSourceV1.cs:37",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceOpeningBalanceWorkInboxSourceV1.cs:36"
+      ],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/FinanceExpensePaymentSqlServerRelationalAcceptanceTests.PartyCarryLedger.cs:143",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceExpensePaymentSqlServerRelationalAcceptanceTests.TreasuryLedger.cs:277",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceOpeningBalanceSqlServerRelationalAcceptanceTests.cs:366",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceShellCapabilityRegistryTests.cs:94",
+        "tests/GoymenERP.Finance.UnitTests/FinanceOpeningBalanceReversalWorkInboxSourceV1Tests.cs:18",
+        "tests/GoymenERP.Finance.UnitTests/FinanceOpeningBalanceTests.cs:269",
+        "tests/GoymenERP.Finance.UnitTests/FinanceOpeningBalanceTests.cs:701",
+        "tests/GoymenERP.Finance.UnitTests/FinanceOpeningBalanceTests.cs:997",
+        "tests/GoymenERP.Finance.UnitTests/FinanceOpeningBalanceWorkInboxSourceV1Tests.cs:20",
+        "tests/GoymenERP.Finance.UnitTests/FinancePermissionPortTests.cs:52",
+        "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs:167",
+        "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs:169",
+        "tests/GoymenERP.Identity.UnitTests/FinanceOpeningBalancePermissionRegistrationTests.cs:27",
+        "tests/GoymenERP.Identity.UnitTests/FinanceOpeningBalancePermissionRegistrationTests.cs:37",
+        "tests/GoymenERP.Identity.UnitTests/FinanceOpeningBalancePermissionRegistrationTests.cs:91",
+        "tests/GoymenERP.Identity.UnitTests/FinanceOpeningBalancePermissionRegistrationTests.cs:94"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 45,
+      "name": "Açılış bakiyesi ters kaydı",
+      "permission_cell": "doğrulanmadı (servisteki dizge kayıtlı izin listesinde yok)",
+      "registered_permission_candidates": [],
+      "source_row": 670,
+      "preparer_proposal": "FIN",
+      "approver_proposal": "ÖNERİ: FINM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "🔴 teknik doğrulama.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 46,
+      "name": "Döviz bozdurma defter değeri",
+      "permission_cell": "doğrulanmadı (servis `accounting.normal-journal.draft.approve` kullanıyor)",
+      "registered_permission_candidates": [
+        "accounting.normal-journal.draft.approve"
+      ],
+      "source_row": 671,
+      "preparer_proposal": "FIN",
+      "approver_proposal": "ÖNERİ: MUHM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "—",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/AccountingPermissionRegistrationTests.cs:21",
+        "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs:41",
+        "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:34",
+        "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:51"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 47,
+      "name": "Muhasebe dönem onayı",
+      "permission_cell": "`accounting.periods.approve`",
+      "registered_permission_candidates": [
+        "accounting.periods.approve"
+      ],
+      "source_row": 672,
+      "preparer_proposal": "MUHM",
+      "approver_proposal": "MUHM (başka kişi), GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "KARARLI (SAT-D191; P6). Tek Muhasebe Müdürü varsa onaycı GM (ROL-D3).",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Accounting.UnitTests/AccountingShellCapabilityProviderTests.cs:116",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingPermissionRegistrationTests.cs:15",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingShellRegistrationTests.cs:113",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingShellRegistrationTests.cs:73",
+        "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:28",
+        "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:45"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 48,
+      "name": "Dönem yeniden açma",
+      "permission_cell": "`accounting.periods.reopen` (ROL-D12; kaynakta kayıtlı; gerçek komut kontrolü ayrıca doğrulanır)",
+      "registered_permission_candidates": [
+        "accounting.periods.reopen"
+      ],
+      "source_row": 673,
+      "preparer_proposal": "MUHM",
+      "approver_proposal": "yalnız GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "KARARLI (ROL-D12). İzin adı kaynakta kayıtlıdır; SoD-09 uygulama/kabul kontrolü ayrı kalır.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Accounting.UnitTests/AccountingApiFenceTests.cs:209",
+        "tests/GoymenERP.Accounting.UnitTests/AccountingShellCapabilityProviderTests.cs:120",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingPermissionRegistrationTests.cs:16",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingShellRegistrationTests.cs:117",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingShellRegistrationTests.cs:74",
+        "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:30",
+        "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:47"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 49,
+      "name": "Normal fiş taslağı",
+      "permission_cell": "`accounting.normal-journal.draft.approve`",
+      "registered_permission_candidates": [
+        "accounting.normal-journal.draft.approve"
+      ],
+      "source_row": 674,
+      "preparer_proposal": "MUH",
+      "approver_proposal": "MUHM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ; KLN-D17.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/AccountingPermissionRegistrationTests.cs:21",
+        "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs:41",
+        "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:34",
+        "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:51"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 50,
+      "name": "Fiş ters kaydı",
+      "permission_cell": "`accounting.journal.reverse.approve`",
+      "registered_permission_candidates": [
+        "accounting.journal.reverse.approve"
+      ],
+      "source_row": 675,
+      "preparer_proposal": "MUH",
+      "approver_proposal": "MUHM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/AccountingPermissionRegistrationTests.cs:23",
+        "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:36",
+        "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:53"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 51,
+      "name": "Onaylı kaynak kataloğu",
+      "permission_cell": "`accounting.approved-source-catalog.activate`",
+      "registered_permission_candidates": [
+        "accounting.approved-source-catalog.activate"
+      ],
+      "source_row": 676,
+      "preparer_proposal": "MUH",
+      "approver_proposal": "MUHM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/AccountingApprovedSourceCatalogSqlServerRelationalAcceptanceTests.cs:60",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingPermissionRegistrationTests.cs:25"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 52,
+      "name": "Hesap eşleme etkinleştirme",
+      "permission_cell": "`accounting.posting-mappings.activate`",
+      "registered_permission_candidates": [
+        "accounting.posting-mappings.activate"
+      ],
+      "source_row": 677,
+      "preparer_proposal": "MUH",
+      "approver_proposal": "MUHM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Accounting.UnitTests/AccountingShellCapabilityProviderTests.cs:95",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingPermissionRegistrationTests.cs:28",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingShellRegistrationTests.cs:118"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 53,
+      "name": "Üretim maliyet farkı",
+      "permission_cell": "doğrulanmadı",
+      "registered_permission_candidates": [],
+      "source_row": 678,
+      "preparer_proposal": "sistem",
+      "approver_proposal": "ÖNERİ: MUHM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "—",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 54,
+      "name": "Fatura satırı SMM düzeltmesi",
+      "permission_cell": "doğrulanmadı",
+      "registered_permission_candidates": [],
+      "source_row": 679,
+      "preparer_proposal": "MUH",
+      "approver_proposal": "ÖNERİ: MUHM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "—",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 55,
+      "name": "Stok maliyet teklifleri",
+      "permission_cell": "doğrulanmadı",
+      "registered_permission_candidates": [],
+      "source_row": 680,
+      "preparer_proposal": "sistem, MUH",
+      "approver_proposal": "ÖNERİ: MUHM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "—",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 56,
+      "name": "Maliyet bileşeni iptali",
+      "permission_cell": "doğrulanmadı",
+      "registered_permission_candidates": [],
+      "source_row": 681,
+      "preparer_proposal": "MUH",
+      "approver_proposal": "ÖNERİ: MUHM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "—",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 57,
+      "name": "Kaynak fiş",
+      "permission_cell": "doğrulanmadı",
+      "registered_permission_candidates": [],
+      "source_row": 682,
+      "preparer_proposal": "sistem, MUH",
+      "approver_proposal": "ÖNERİ: MUHM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "KLN-D17: kaynağı kesinleştiren kendi fişini onaylayamaz.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 58,
+      "name": "Kritik rol erişim talebi",
+      "permission_cell": "`identity.access.approve` **(Critical)**",
+      "registered_permission_candidates": [
+        "identity.access.approve"
+      ],
+      "source_row": 683,
+      "preparer_proposal": "herkes (`identity.access.request`); kurgulayan Sistem Yöneticisi",
+      "approver_proposal": "Sistem Yöneticisi (IK)",
+      "duration_cell": "2 iş günü",
+      "decision_note": "🟡 kabul edildi (ROL-D17): şimdilik aynı kişi kurgular ve onaylar; geçici istisna.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Identity.UnitTests/IdentityAccessAssignmentServiceTests.cs:108"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 59,
+      "name": "Şirket VKN değişikliği",
+      "permission_cell": "`organization.company.tax-id.approve`",
+      "registered_permission_candidates": [
+        "organization.company.tax-id.approve"
+      ],
+      "source_row": 684,
+      "preparer_proposal": "MUHM",
+      "approver_proposal": "GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Identity.UnitTests/OrganizationCompanyTaxIdPermissionRegistrationTests.cs:23",
+        "tests/GoymenERP.Identity.UnitTests/OrganizationCompanyTaxIdPermissionRegistrationTests.cs:32",
+        "tests/GoymenERP.Identity.UnitTests/OrganizationCompanyTaxIdPermissionRegistrationTests.cs:52",
+        "tests/GoymenERP.Identity.UnitTests/OrganizationCompanyTaxIdPermissionRegistrationTests.cs:54"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 60,
+      "name": "Cari vergi kimliği değişikliği",
+      "permission_cell": "`counterparty.parties.tax-identity.approve` **(Critical)**",
+      "registered_permission_candidates": [
+        "counterparty.parties.tax-identity.approve"
+      ],
+      "source_row": 685,
+      "preparer_proposal": "MUH, MUHM",
+      "approver_proposal": "MUHM veya GM (IK)",
+      "duration_cell": "2 iş günü",
+      "decision_note": "IK.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/FounderBootstrapAuditSqlServerRelationalAcceptanceTests.cs:44",
+        "tests/GoymenERP.Api.IntegrationTests/FounderBootstrapAuditSqlServerRelationalAcceptanceTests.cs:45",
+        "tests/GoymenERP.Identity.UnitTests/CounterpartyPartySuccessionPermissionRegistrationTests.cs:33",
+        "tests/GoymenERP.Identity.UnitTests/CounterpartyTaxIdentityPermissionRegistrationTests.cs:22",
+        "tests/GoymenERP.Identity.UnitTests/CounterpartyTaxIdentityPermissionRegistrationTests.cs:31",
+        "tests/GoymenERP.Identity.UnitTests/CounterpartyTaxIdentityPermissionRegistrationTests.cs:47",
+        "tests/GoymenERP.Identity.UnitTests/FounderBootstrapServiceTests.cs:391"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 61,
+      "name": "Cari unvan değişikliği",
+      "permission_cell": "`counterparties.legal_name.approve`",
+      "registered_permission_candidates": [
+        "counterparties.legal_name.approve"
+      ],
+      "source_row": 686,
+      "preparer_proposal": "MUH, MUHM",
+      "approver_proposal": "MUHM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "ÖNERİ.",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/WorkInboxReadQueryV1Tests.cs:465",
+        "tests/GoymenERP.Counterparty.UnitTests/CounterpartyPermissionTests.cs:25",
+        "tests/GoymenERP.Counterparty.UnitTests/CounterpartyPermissionTests.cs:27",
+        "tests/GoymenERP.Counterparty.UnitTests/CounterpartyPermissionTests.cs:53",
+        "tests/GoymenERP.Identity.UnitTests/CounterpartyLegalNamePermissionRegistrationTests.cs:24",
+        "tests/GoymenERP.Identity.UnitTests/CounterpartyLegalNamePermissionRegistrationTests.cs:33",
+        "tests/GoymenERP.Identity.UnitTests/CounterpartyPartyMergePermissionRegistrationTests.cs:32"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 62,
+      "name": "Cari birleştirme",
+      "permission_cell": "`counterparty.parties.merge.approve`",
+      "registered_permission_candidates": [
+        "counterparty.parties.merge.approve"
+      ],
+      "source_row": 687,
+      "preparer_proposal": "ayrı hazırlama izni yok",
+      "approver_proposal": "MUHM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "🔴 Hazırlayan izni olmadığı için tek kişilik işlem olabilir (SoD-16).",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Api.IntegrationTests/CounterpartyPartyMergeSqlServerRelationalAcceptanceTests.cs:506",
+        "tests/GoymenERP.Api.IntegrationTests/CounterpartyPartyMergeSqlServerRelationalAcceptanceTests.cs:509",
+        "tests/GoymenERP.Api.IntegrationTests/CounterpartyPartyMergeSqlServerRelationalAcceptanceTests.cs:574",
+        "tests/GoymenERP.Counterparty.UnitTests/CounterpartyPermissionTests.cs:48",
+        "tests/GoymenERP.Identity.UnitTests/CounterpartyPartyMergePermissionRegistrationTests.cs:22",
+        "tests/GoymenERP.Identity.UnitTests/CounterpartyPartyMergePermissionRegistrationTests.cs:30",
+        "tests/GoymenERP.Identity.UnitTests/CounterpartyPartyMergePermissionRegistrationTests.cs:31",
+        "tests/GoymenERP.Identity.UnitTests/CounterpartyPartyMergePermissionRegistrationTests.cs:32",
+        "tests/GoymenERP.Identity.UnitTests/CounterpartyPartyMergePermissionRegistrationTests.cs:33"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 63,
+      "name": "Paket standardı sürümü",
+      "permission_cell": "`product.package-standards.approve`",
+      "registered_permission_candidates": [
+        "product.package-standards.approve"
+      ],
+      "source_row": 688,
+      "preparer_proposal": "UPL",
+      "approver_proposal": "OPM, GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "KISMEN (ROL-D5).",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Counterparty.UnitTests/CounterpartyProductPackageStandardCustomerSourceV1Tests.cs:23",
+        "tests/GoymenERP.Counterparty.UnitTests/CounterpartyProductPackageStandardCustomerSourceV1Tests.cs:48",
+        "tests/GoymenERP.Product.UnitTests/ProductPackageStandardTests.cs:238",
+        "tests/GoymenERP.Product.UnitTests/ProductPackageStandardTests.cs:239"
+      ],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    },
+    {
+      "flow": 64,
+      "name": "Fiyat listesi yayımı",
+      "permission_cell": "`product.price-lists.publish`",
+      "registered_permission_candidates": [
+        "product.price-lists.publish"
+      ],
+      "source_row": 689,
+      "preparer_proposal": "SATM (`write`)",
+      "approver_proposal": "SATM (aynı kişi olabilir), GM",
+      "duration_cell": "2 iş günü",
+      "decision_note": "KARARLI (ROL-D18). 🟡 kabul edildi (ROL-D18).",
+      "candidate_inbox_sources": [],
+      "candidate_tests": [],
+      "inbox_read_semantics": "NOT_VERIFIED",
+      "owner_decision_semantics": "NOT_VERIFIED",
+      "company_scope_and_sod": "NOT_VERIFIED",
+      "idempotency_and_version": "NOT_VERIFIED",
+      "runtime_acceptance": "NOT_RUN",
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+    }
+  ],
+  "closure": "For each flow verify real inbox listing, owner decision, company/scope, maker-checker exceptions, expected version, replay and audit. Do not replace owner rules with proposal cells."
+}

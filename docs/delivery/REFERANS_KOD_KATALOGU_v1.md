@@ -1,0 +1,66 @@
+# Doğrulanmış kaynak referansları — v1
+
+Bu katalog çalışan yeni fonksiyonların kabul listesi değildir. 50 kaynak/test giriş noktasıdır. Her kayıtta gerçek yol, sembol/satır, SHA-256, Git blob, karar ilişkisi, uyarlama sınırı ve yeni kullanım testi bulunur.
+
+**Kaynak:** `claude/tren-2` `c24706af4de4300d4a171eca11459098d87cd14f`. 34 kaydın kaynak ve test blobları geçmiş başarılı CI ağacıyla aynıdır; 16 kayıt yalnız kaynak/test kanıtına sahiptir. Tek tek test sonuçları bu çalışmada okunmadı. Yeni kullanım için SQL, tarayıcı ve işletme kabulü yapılmadı.
+
+Makine kaynağı: [REFERANS_KOD_KATALOGU_v1.json](REFERANS_KOD_KATALOGU_v1.json). Doğrulayıcı: `python3 -I -S -B tools/verify_delivery_reference_catalog.py`. Windows’ta kurulu Python yürütücüsü kullanılabilir.
+
+Öncelik: doğrudan kullan → küçük geriye uyumlu genişlet → mevcut ortak altyapı → domaini ayrı tutarak referans desen → gerçekten yeni davranış. Kopyala/adını değiştir yaklaşımı kullanılmaz.
+
+| Kimlik | İşlev | Yöntem | Kanıt |
+|---|---|---|---|
+| REF-CARD-01 | Cari oluşturma, şirket hesabı ve tekrar güvenliği | SMALL_EXTENSION | Kaynak/test var |
+| REF-CATALOG-01 | Sürümlü referans liste ve pasifleştirme | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
+| REF-POLICY-01 | Şirket politikası ve yürürlük sürümü | REFERENCE_PATTERN | Eski CI ağacı eşleşiyor |
+| REF-ORDER-01 | Çok satırlı alış ve belge onayı | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |
+| REF-INVOICE-01 | Alış faturası kaynağı ve kabul eşleştirme testleri | REFERENCE_PATTERN | Eski CI ağacı eşleşiyor |
+| REF-CLOSE-01 | Satış normal kapanış eksenleri | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |
+| REF-RISK-01 | Sevkte deterministik risk kapısı | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
+| REF-STOCK-01 | Tek stok defteri ve adet/kg tutarlılığı | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
+| REF-COST-01 | Şirket ortalama maliyet hesabı | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
+| REF-MFG-01 | Üretim ve stok atomik sarfı | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |
+| REF-MFG-02 | Üretim iadesi ve çıktı portu | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |
+| REF-SUBCONTRACT-01 | Gelen fason tamamlama kaynağı | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
+| REF-LOGISTICS-01 | Yükleme/sevk owner servisi | SMALL_EXTENSION | Kaynak/test var |
+| REF-OPENITEM-01 | Faturadan tek açık kalem | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
+| REF-ALLOCATE-01 | Ödeme dağıtımı ve tek para hareketi | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
+| REF-EXPENSE-01 | Masraf ödemesi ve audit/idempotency | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |
+| REF-CREDIT-01 | Kredi hareketi öneri ve karar | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |
+| REF-CARRY-01 | Cari bakiye virman kaynağı | REFERENCE_PATTERN | Eski CI ağacı eşleşiyor |
+| REF-BANK-01 | Ekstre import ve tekilleştirme | DIRECT_REUSE | Kaynak/test var |
+| REF-JOURNAL-01 | Kaynaklı fiş taslağı ve farklı kişi onayı | REFERENCE_PATTERN | Kaynak/test var |
+| REF-JOURNAL-02 | Kesin fişe bağlı ters kayıt | REFERENCE_PATTERN | Eski CI ağacı eşleşiyor |
+| REF-WORK-01 | Onay kuralı sürümü ve owner izni | DIRECT_REUSE | Kaynak/test var |
+| REF-WORK-02 | Tek bildirim deposu | DIRECT_REUSE | Kaynak/test var |
+| REF-WORK-03 | Kayda bağlı not ve görev | DIRECT_REUSE | Kaynak/test var |
+| REF-EVENT-01 | Outbox kiralama, tekrar ve teslim | REFERENCE_PATTERN | Eski CI ağacı eşleşiyor |
+| REF-AI-01 | Veri sınıfı ve bütçe kapılı gateway | DIRECT_REUSE | Kaynak/test var |
+| REF-AI-02 | Somut önizlemeye bağlı işlem hattı | SMALL_EXTENSION | Kaynak/test var |
+| REF-AI-03 | Bilgi paketi sürümü ve onay | DIRECT_REUSE | Kaynak/test var |
+| REF-AI-04 | Belgeden alan doğrulamalı taslak | DIRECT_REUSE | Kaynak/test var |
+| REF-DOC-01 | Belge sürümü, bağlama ve yetkili indirme | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
+| REF-PDF-01 | Sipariş PDF üretimi | REFERENCE_PATTERN | Kaynak/test var |
+| REF-REPORT-01 | Rapor, dışa aktarım ve kayıtlı görünüm | DIRECT_REUSE | Kaynak/test var |
+| REF-UI-01 | Yetkili sekmeli çalışma alanı | REFERENCE_PATTERN | Eski CI ağacı eşleşiyor |
+| REF-UI-02 | Loading/error/empty durum bileşeni | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
+| REF-UI-03 | Onaylı erişim talebi paneli | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |
+| REF-MIGRATION-01 | Work migration ve model örüntüsü | REFERENCE_PATTERN | Kaynak/test var |
+| REF-MOTOR-01 | Dilme ve sarım golden hesapları | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
+| REF-MOTOR-02 | Soğuk hadde motoru | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
+| REF-MOTOR-03 | ERW boru/profil motoru | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
+| REF-MOTOR-04 | Boyama motoru | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
+| REF-MOTOR-05 | Boy kesme motoru | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
+| REF-BALANCE-01 | Kütle dengesi | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
+| REF-DUEDATE-01 | Üretim termin önerisi | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
+| REF-LINEAGE-01 | Üretim soy ağacı maliyet payı | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
+| REF-IDEMPOTENCY-01 | Komut tekrar kimliği | REFERENCE_PATTERN | Eski CI ağacı eşleşiyor |
+| REF-AUTHORITY-01 | Güncel yetki yeniden kontrol sözleşmesi | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
+| REF-FIXTURE-01 | API kabul fabrikası | REFERENCE_PATTERN | Kaynak/test var |
+| REF-RESTORE-01 | Yedek/restore kanıtı doğrulayıcı | REFERENCE_PATTERN | Eski CI ağacı eşleşiyor |
+| REF-EDOC-01 | Satış resmi iptal kanıtı sözleşmesi | REFERENCE_PATTERN | Eski CI ağacı eşleşiyor |
+| REF-IMPORT-01 | Yapılı alış faturası içe aktarımı | REFERENCE_PATTERN | Kaynak/test var |
+
+Yeni oturum bütün kataloğu bağlama almaz: paketin `references` kimliklerinden ilgili kayıtları seçer, yalnız bunların kaynak ve testlerini açar. `adaptations` ve `limitations` işletme kuralı yerine geçmez. Kaynak değişince doğrulayıcı katalog güncellenene kadar drift verir.
+
+Ölçüm: token sayacı yoksa UNKNOWN; tasarruf yüzdesi vaat edilmez. Değişen kod, süre, tekrar çalışma ve bulgu sayısı ilk teslimatlardan ölçülür.
