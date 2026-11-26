@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router'
 import { InventoryCostProposalsPage } from './InventoryCostProposalsPage'
 import { INVENTORY_COST_TEXT as T } from './inventoryCostText'
 import { reversalProposal } from './testHarness'
-import { decodeInventoryCost } from './inventoryCostApi'
+import { decodeInventoryCost, sendInventoryCost, type InventoryCostAttempt } from './inventoryCostApi'
 
 const state = vi.hoisted(() => ({ company: 'e0431000-0000-4000-8000-000000000001', actor: 'e0431000-0000-4000-8000-000000000002',
   capabilityGeneration: 'SENTETIK-cap-1', committedContextRevision: 1, sessionEpoch: 0 }))
@@ -43,13 +43,92 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); state.actor = 'e0431000-0000
 describe('inventory cost human approval flow', () => {
   const stale = () => ({ ...row({ status: 'Stale', version: 3 }), staleClosure: { eventId: counter, preparedVersion: 2, preparedBy: maker,
     closedAtUtc: '2026-11-17T09:02:00Z', reasonCode: 'inventory_cost_preparation_stale', reasonText: 'Bayatladı', correlationId: 'SENTETIK-D40', causationId: null } })
-  it('opens a linked immutable stale proposal without offering a fresh command or reading options', async () => {
+  it('opens a linked immutable stale proposal without opening a preparation form or reading options automatically', async () => {
     const fetch = vi.fn(async () => json({ companyId: state.company, items: [stale()] })); vi.stubGlobal('fetch', fetch)
     mount(true, true, false, false, `/?proposalId=${source}`)
     expect(await screen.findByText(T.staleClosed)).toBeTruthy()
     expect(screen.getByRole('heading', { level: 2, name: /Bayatladı/ })).toBeTruthy()
     expect(screen.queryByRole('button', { name: T.prepare })).toBeNull()
     expect(screen.queryByRole('button', { name: T.approve })).toBeNull()
+    expect(fetch.mock.calls).toHaveLength(1)
+  })
+  const successorId = 'e0431000-0000-4000-8000-000000000900'
+  const renewalRequest = { expectedVersion: 3, periodId: source, accountingDate: '2026-11-18', transactionDate: '2026-11-18', counterAccountId: counter, reason: 'SENTETIK güncel hazırlık' }
+  const successor = () => row({ proposalId: successorId, version: 4, officialInvoiceNumber: 'SENTETIK-SUCCESSOR',
+    preparation: { ...row().preparation, preparedBy: state.actor, periodId: source, accountingDate: renewalRequest.accountingDate,
+      transactionDate: renewalRequest.transactionDate, reason: renewalRequest.reason },
+    renewedFrom: { previousProposalId: source, previousClosedVersion: 3, closureEventId: counter } })
+  const options = () => json({ companyId: state.company, accounts: [{ accountId: counter, code: '153', name: 'SENTETIK karşı hesap' }],
+    openPeriods: [{ periodId: source, startsOn: '2026-01-01', endsOn: '2026-12-31' }] })
+  async function fillRenewal() {
+    fireEvent.click(await screen.findByRole('button', { name: T.prepareRenewal }))
+    await screen.findByRole('combobox', { name: T.counter })
+    fireEvent.change(screen.getByLabelText(T.date), { target: { value: renewalRequest.accountingDate } })
+    fireEvent.change(screen.getByLabelText(T.transactionDate), { target: { value: renewalRequest.transactionDate } })
+    fireEvent.change(screen.getByRole('combobox', { name: T.period }), { target: { value: source } })
+    fireEvent.change(screen.getByRole('combobox', { name: T.counter }), { target: { value: counter } })
+    fireEvent.change(screen.getByLabelText(T.reason), { target: { value: renewalRequest.reason } })
+    fireEvent.click(screen.getByRole('button', { name: T.prepareRenewal }))
+  }
+  it('explicitly prepares a successor through the native stale id and selects it from the refreshed list while retaining the closure', async () => {
+    const writes: { url: string; init: RequestInit }[] = []; let optionReads = 0
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') { writes.push({ url, init }); return json(successor()) }
+      if (url.endsWith('/options')) { optionReads++; return options() }
+      return json({ companyId: state.company, items: writes.length ? [stale(), successor()] : [stale()] })
+    }))
+    mount(false, true, false, false, `/?proposalId=${source}`)
+    await screen.findByText(T.staleClosed); expect(optionReads).toBe(0); expect(writes).toHaveLength(0)
+    await fillRenewal()
+    await screen.findByRole('heading', { level: 2, name: /SENTETIK-SUCCESSOR/ })
+    expect(writes).toHaveLength(1)
+    expect(writes[0].url).toContain(`/1/${source}/preparation`)
+    expect(JSON.parse(writes[0].init.body as string)).toEqual(renewalRequest)
+    expect((writes[0].init.headers as Record<string, string>)['Idempotency-Key']).toBeTruthy()
+    fireEvent.click(screen.getAllByRole('button', { name: T.choose })[0])
+    expect(await screen.findByText(T.staleClosed)).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 2, name: /Bayatladı/ })).toBeTruthy()
+  })
+  it('retains the same renewal id key body and closure evidence through unknown remount and lost preparation authority', async () => {
+    state.actor = 'e0431000-0000-4000-8000-000000000901'
+    const writes: { url: string; init: RequestInit }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') { writes.push({ url, init }); return writes.length === 1 ? json({}, 503) : json(successor()) }
+      return url.endsWith('/options') ? options() : json({ companyId: state.company, items: writes.length > 1 ? [stale(), successor()] : [stale()] })
+    }))
+    const first = mount(false, true, false, false, `/?proposalId=${source}`)
+    await fillRenewal(); await screen.findByText(T.unknown)
+    first.unmount()
+    const second = mount(false, false, false, false, `/?proposalId=${source}`)
+    expect(await screen.findByText(T.unknown)).toBeTruthy()
+    expect((screen.getByRole('button', { name: T.resend }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: T.prepareRenewal })).toBeNull()
+    second.updateAuthority(false, true)
+    fireEvent.click(await screen.findByRole('button', { name: T.resend }))
+    await screen.findByRole('heading', { level: 2, name: /SENTETIK-SUCCESSOR/ })
+    expect(writes).toHaveLength(2); expect(writes[1]).toEqual(writes[0])
+  })
+  it('rejects an unbound successor receipt and preserves same-id preparation semantics for other attempts', async () => {
+    const attempt: InventoryCostAttempt = { id: source, kind: 1, actor: state.actor, key: 'SENTETIK-renewal-key', operation: 'prepare',
+      renewalClosureEventId: counter, request: renewalRequest }
+    const valid = successor()
+    for (const patch of [{ proposalId: source }, { version: 5 }, { renewedFrom: undefined },
+      { renewedFrom: { previousProposalId: maker, previousClosedVersion: 3, closureEventId: counter } },
+      { renewedFrom: { previousProposalId: source, previousClosedVersion: 2, closureEventId: counter } },
+      { renewedFrom: { previousProposalId: source, previousClosedVersion: 3, closureEventId: maker } }]) {
+      vi.stubGlobal('fetch', vi.fn(async () => json({ ...valid, ...patch })))
+      expect((await sendInventoryCost(state.company, attempt)).type).toBe('unknown')
+    }
+    vi.stubGlobal('fetch', vi.fn(async () => json(valid)))
+    expect((await sendInventoryCost(state.company, attempt)).type).toBe('applied')
+    const { renewalClosureEventId: _removed, ...ordinary } = attempt
+    expect((await sendInventoryCost(state.company, ordinary)).type).toBe('unknown')
+  })
+  it('keeps stale renewal unavailable to an approver without preparation authority', async () => {
+    const fetch = vi.fn(async () => json({ companyId: state.company, items: [stale()] })); vi.stubGlobal('fetch', fetch)
+    mount(true, false, false, false, `/?proposalId=${source}`)
+    await screen.findByText(T.staleClosed)
+    expect(screen.queryByRole('button', { name: T.prepareRenewal })).toBeNull()
     expect(fetch.mock.calls).toHaveLength(1)
   })
   it('validates immutable stale closure and renewal lineage without accepting evidence on legacy statuses', () => {

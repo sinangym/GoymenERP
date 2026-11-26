@@ -49,7 +49,7 @@ export interface InventoryCostProposal {
   readonly componentCancellation?: InventoryCostCancellation | null
 }
 export type InventoryCostAttempt = { readonly id: string; readonly kind: InventoryCostKind; readonly key: string; readonly actor: string } & (
-  { readonly operation: 'prepare'; readonly request: { readonly expectedVersion: number; readonly periodId: string; readonly accountingDate: string
+  { readonly operation: 'prepare'; readonly renewalClosureEventId?: string; readonly request: { readonly expectedVersion: number; readonly periodId: string; readonly accountingDate: string
     readonly transactionDate: string; readonly counterAccountId: string; readonly reason: string } }
   | { readonly operation: 'approve'; readonly request: { readonly expectedVersion: number } }
   | { readonly operation: 'approve-cancellation'; readonly request: { readonly expectedVersion: number; readonly expectedCancellationVersion: number } }
@@ -267,7 +267,13 @@ export async function sendInventoryCost(company: string, attempt: InventoryCostA
     const body: unknown = await response.json().catch(() => null)
     if (response.status === 200) {
       const value = decodeInventoryCost(body, company, attempt.kind)
-      if (value === null || !same(value.proposalId, attempt.id)) return { type: 'unknown' }
+      if (value === null) return { type: 'unknown' }
+      const identityMatches = attempt.operation === 'prepare' && attempt.renewalClosureEventId !== undefined
+        ? !same(value.proposalId, attempt.id) && value.renewedFrom !== undefined
+          && same(value.renewedFrom.previousProposalId, attempt.id) && value.renewedFrom.previousClosedVersion === attempt.request.expectedVersion
+          && same(value.renewedFrom.closureEventId, attempt.renewalClosureEventId)
+        : same(value.proposalId, attempt.id)
+      if (!identityMatches) return { type: 'unknown' }
       const valid = attempt.operation === 'prepare' ? value.status === 'Prepared' && value.version === attempt.request.expectedVersion + 1
         && value.preparation !== null && same(value.preparation.preparedBy, attempt.actor) && same(value.preparation.periodId, attempt.request.periodId)
         && value.preparation.accountingDate === attempt.request.accountingDate && value.preparation.transactionDate === attempt.request.transactionDate

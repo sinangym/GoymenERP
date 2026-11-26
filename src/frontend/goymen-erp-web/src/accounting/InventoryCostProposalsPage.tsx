@@ -33,6 +33,7 @@ function Page({ kind, canPrepare, canApprove, canProposeReversal, canApproveCanc
   // identity within this session, actor and company; the query namespace still fences every fresh read.
   const slot = JSON.stringify([shell.sessionEpoch, actor, company, kind]); const held = pending.get(slot) ?? null
   const [selected, setSelected] = useState<string | null>(held?.id ?? linkedProposalId)
+  const [renewalFor, setRenewalFor] = useState<string | null>(null)
   const [attempt, setAttempt] = useState<InventoryCostAttempt | null>(held)
   const [outcome, setOutcome] = useState<InventoryCostOutcome | null>(held ? { type: 'unknown' } : null)
   const [sending, setSending] = useState(false); const inFlight = useRef(false); const mounted = useRef(true)
@@ -52,7 +53,13 @@ function Page({ kind, canPrepare, canApprove, canProposeReversal, canApproveCanc
       if (response.type === 'refused' && [401, 403].includes(response.status)) boundary.report(response.status as 401 | 403, security)
       const result = retry && response.type === 'refused' && [401, 403].includes(response.status) ? { type: 'unknown' as const } : response
       if (result.type !== 'unknown') pending.delete(slot)
-      if (mounted.current) { setOutcome(result); if (result.type === 'applied' || result.type === 'refused' && result.status === 409) void query.refetch() }
+      if (mounted.current) {
+        setOutcome(result)
+        if (result.type === 'applied' && next.operation === 'prepare' && next.renewalClosureEventId !== undefined) {
+          await query.refetch()
+          if (mounted.current) { setSelected(result.value.proposalId); setRenewalFor(null) }
+        } else if (result.type === 'applied' || result.type === 'refused' && result.status === 409) void query.refetch()
+      }
     } finally { inFlight.current = false; if (mounted.current) setSending(false) }
   }
   const state = (!single ? { kind: 'no-authorized-company' } : query.isPending ? { kind: 'loading' }
@@ -67,7 +74,7 @@ function Page({ kind, canPrepare, canApprove, canProposeReversal, canApproveCanc
         <tbody>{state.data.map(value => <tr key={value.proposalId}>
           <td>{value.officialInvoiceNumber ?? T.sourceNumberMissing}<br />{value.invoiceDate}</td><td>{value.component.invoiceLineNumber ?? '—'}</td>
           <td>{value.exactTlAmount}</td><td>{T.statuses[value.status]}</td><td><button type="button" disabled={frozen}
-            onClick={() => { setSelected(value.proposalId); setOutcome(null); setAttempt(null) }}>{T.choose}</button></td>
+            onClick={() => { setSelected(value.proposalId); setRenewalFor(null); setOutcome(null); setAttempt(null) }}>{T.choose}</button></td>
         </tr>)}</tbody></table></div>}
       {selected !== null && row === undefined ? <><StateBlock state={{ kind: 'not-found' }} subject={T.subject} />{selected === linkedProposalId ? <p role="status">{T.linkedProposalMissing}</p> : null}</> : null}
       {row !== undefined ? <>
@@ -96,7 +103,8 @@ function Page({ kind, canPrepare, canApprove, canProposeReversal, canApproveCanc
             <dt>{T.moneyScale}</dt><dd>{row.preparation.moneyScale}</dd><dt>{T.moneyProfileVersion}</dt><dd>{row.preparation.moneyProfileVersion}</dd></> : null}</dl> : null}
         {row.status === 'Stale' ? <p role="status">{T.staleClosed}</p> : null}
         {row.status === 'RoundedNoCost' || row.status === 'RoundedNoCostCancelled' ? <p>{T.roundedZero}</p> : null}
-        {canPrepare && ['AwaitingPreparation', 'Prepared'].includes(row.status) ? <Preparation key={`${row.proposalId}:${row.version}:prepare`}
+        {canPrepare && row.status === 'Stale' && renewalFor !== row.proposalId ? <button type="button" disabled={frozen} onClick={() => setRenewalFor(row.proposalId)}>{T.prepareRenewal}</button> : null}
+        {canPrepare && (['AwaitingPreparation', 'Prepared'].includes(row.status) || row.status === 'Stale' && renewalFor === row.proposalId) ? <Preparation key={`${row.proposalId}:${row.version}:prepare`}
           row={row} company={company} namespace={namespace!} actor={actor} frozen={frozen} reverse={false} send={next => void send(next)} /> : null}
         {canApprove && row.status === 'Prepared' ? row.preparation?.preparedBy.toLowerCase() === actor.toLowerCase() ? <p>{T.own}</p>
           : <button type="button" disabled={frozen} onClick={() => void send({ id: row.proposalId, kind, actor, operation: 'approve', key: crypto.randomUUID(), request: { expectedVersion: row.version } })}>{T.approve}</button> : null}
@@ -149,7 +157,7 @@ function Preparation({ row, company, namespace, actor, frozen, reverse, send }: 
     const common = { id: row.proposalId, kind: row.kind, actor, key: crypto.randomUUID() }
     const request = { expectedVersion: row.version, periodId: form.periodId, accountingDate: form.accountingDate, transactionDate: form.transactionDate, reason: form.reason.trim() }
     send(reverse ? { ...common, operation: 'reverse', request: { ...request, proposalId: crypto.randomUUID(), expectedCancellationVersion: row.componentCancellation?.version ?? 0 } }
-      : { ...common, operation: 'prepare', request: { ...request, counterAccountId: form.counterAccountId } })
+      : { ...common, operation: 'prepare', ...(row.status === 'Stale' ? { renewalClosureEventId: row.staleClosure!.eventId } : {}), request: { ...request, counterAccountId: form.counterAccountId } })
   }
   if (state.kind !== 'ready') return <StateBlock state={state} subject={T.period} onRetry={() => void options.refetch()} />
   return <form className={styles.form} onSubmit={submit}>
@@ -163,6 +171,6 @@ function Preparation({ row, company, namespace, actor, frozen, reverse, send }: 
     {!reverse ? <label>{T.counter}<select disabled={frozen} value={form.counterAccountId} onChange={e => setForm({ ...form, counterAccountId: e.target.value })}>
       <option value="">{T.select}</option>{state.data.accounts.map(a => <option key={a.accountId} value={a.accountId}>{a.code} · {a.name}</option>)}</select></label> : null}
     <label>{T.reason}<textarea disabled={frozen} maxLength={1000} value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} /></label>
-    {invalid ? <p role="alert">{T.invalid}</p> : null}<button disabled={frozen || state.data.openPeriods.length === 0} type="submit">{reverse ? T.reverse : T.prepare}</button>
+    {invalid ? <p role="alert">{T.invalid}</p> : null}<button disabled={frozen || state.data.openPeriods.length === 0} type="submit">{reverse ? T.reverse : row.status === 'Stale' ? T.prepareRenewal : T.prepare}</button>
   </form>
 }

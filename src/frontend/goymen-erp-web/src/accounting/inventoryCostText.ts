@@ -17,6 +17,7 @@ export const INVENTORY_COST_TEXT = {
   componentApprove: 'Maliyet paylarının iptalini onayla', componentReverseJournal: 'Pay ters kayıt fişi',
   reversalApproval: 'Ters kayıt onayına git', existingReversal: 'Ters kayıt önerisi mevcut.',
   denied: 'Bu işlem için yetkiniz yok.', sourceNumberMissing: 'Resmî numarası bulunmayan kaynak fatura',
+  prepareRenewal: 'Güncel verilerle yeni öneri hazırla',
   staleClosed: 'Bu maliyet önerisi bayatladığı için kapatıldı. Hazırlık ve kaynak kanıtları geçmiş kayıt olarak korunur.',
   statuses: { Stale: 'Bayatladı', AwaitingPreparation: 'Hazırlık bekliyor', Prepared: 'Onay bekliyor', Posted: 'Fiş kaydedildi', NoCost: 'Kaynak maliyeti sıfır',
     RoundedNoCost: 'Sıfıra yuvarlanan tutar onaylandı; fiş yok', RoundedNoCostCancelled: 'Fatura iptal edildi; onaylı sıfır tutarın fişi yok',
