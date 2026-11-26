@@ -2011,6 +2011,22 @@
               "SQL/real HTTP/browser, pins/full CI/two K3 train acceptance"
             ],
             "evidence_scope": "Integrated Purchasing source, WorkDecisionHost and changed tests match the agent source at delivery. Subsequent purpose-link/shell UI increment requires its own changed-source checks."
+          },
+          {
+            "source_commit": "4dc4136b3",
+            "agent_source_commit": "1ba6ab4d69d56c6998527cf07485cb43a3f56b0c",
+            "scope": "Purchasing request purpose route and inbox/shell parity; generic Work page and durable journal reused, native required max4000 reason retained.",
+            "local_checks": {
+              "frontend": "55/55 passed, 0 skipped in six affected files; complete integrated frontend tree matches agent source.",
+              "tsc": "exit 0",
+              "scoped_lint": "exit 0; 0 warnings"
+            },
+            "backend_checks": "Purchasing source link/provider and three C# test sources changed; compilation/tests for this increment NOT_RUN. Previous native backend1241/host27 evidence is for84b4d2343, not new declarations.",
+            "new_permissions": [],
+            "remaining": [
+              "Changed C# unit/declaration checks",
+              "Real HTTP/browser, SQL/full CI/two K3 and train pins"
+            ]
           }
         ],
         "source_commits": [
@@ -2019,7 +2035,8 @@
           "60a3b7998",
           "e6acbdaca",
           "f4ccda30f",
-          "25835fe7a"
+          "25835fe7a",
+          "4dc4136b3"
         ]
       }
     },
