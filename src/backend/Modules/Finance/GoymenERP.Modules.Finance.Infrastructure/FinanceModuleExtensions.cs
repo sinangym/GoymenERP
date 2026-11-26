@@ -363,7 +363,7 @@ public static class FinanceModuleExtensions
             new FinanceCreditAccountEnvelopes(Envelope(provider, ErpPermissions.FinanceCreditsPropose, permissions, FinanceAction.ProposeCredit),
                 Envelope(provider, ErpPermissions.FinanceCreditsApprove, permissions, FinanceAction.ApproveCredit)),
             provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<IAuditTransactionWriterV1>(),
-            FinanceCreditGroupGateV1.NoneApproved);
+            FinanceCreditGroupGateV1.ApprovedFieldListsV12);
     }
 
     private static FinanceCreditLimitServiceV1 CreateCreditLimitService(IServiceProvider provider)

@@ -13,6 +13,32 @@ namespace GoymenERP.Finance.UnitTests;
 
 public sealed partial class FinanceCreditAccountTests
 {
+    [Theory]
+    [InlineData(CreditAccountGroup.Cash)]
+    [InlineData(CreditAccountGroup.NonCash)]
+    [InlineData(CreditAccountGroup.InstrumentAndFactoring)]
+    [InlineData(CreditAccountGroup.Leasing)]
+    public async Task Approved_field_lists_allow_actual_proposal_but_never_approve_the_preparers_own_movement(CreditAccountGroup group)
+    {
+        await using var run = new Run();
+        var proposedAccount = (await run.ProposeAsync(Maker, Request() with {
+            Group = group, Profile = Profile(group), Installments = group == CreditAccountGroup.NonCash ? [] : Plan()
+        })).Resource!;
+        var account = (await run.ApproveAsync(Checker, new(proposedAccount.Id, "1"))).Resource!;
+        var proposed = await run.Movement(Maker, service => service.ProposeAsync(Ctx(Maker), new("approved-field-list"),
+            Movement(account), default), gate: FinanceCreditGroupGateV1.ApprovedFieldListsV12);
+        Assert.Equal(CommandOutcome.Succeeded, proposed.Outcome);
+        var selfApproval = await run.Movement(Maker, service => service.DecideAsync(Ctx(Maker), new("self-approval"),
+            new(proposed.Resource!.Id, "1", true, null), default), gate: FinanceCreditGroupGateV1.ApprovedFieldListsV12);
+        Assert.Equal(CommandOutcome.ValidationFailed, selfApproval.Outcome);
+        Assert.Equal(("actor", "credit_movement_maker_cannot_approve"),
+            (Assert.Single(selfApproval.Issues).Field, selfApproval.Issues[0].Code));
+        await using var db = run.Memory(CompanyA);
+        Assert.Empty(await db.OutboxMessages.ToArrayAsync());
+        Assert.Equal(1, (await db.CreditMovements.SingleAsync()).Status);
+        Assert.False(FinanceCreditGroupGateV1.ApprovedFieldListsV12.MovementsOpen(int.MaxValue));
+    }
+
     [Fact]
     public async Task Planned_credit_does_not_move_money_and_actual_approval_emits_once_with_unknown_TL_kept_null()
     {
