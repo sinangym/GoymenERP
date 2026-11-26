@@ -169,7 +169,7 @@ public sealed class LogisticsPersistenceModelTests
             && check.Sql == LogisticsDbContext.ShareQuantityKgCheck);
         Assert.Contains(lines.GetCheckConstraints(), check => check.Name == "CK_DispatchNoteLines_QuantityKg"
             && check.Sql == LogisticsDbContext.DispatchNoteLineQuantityKgCheck);
-        Assert.EndsWith("_AddLogisticsPieceLineKilograms", context.Database.GetMigrations().Last(), StringComparison.Ordinal);
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddLogisticsPieceLineKilograms", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
 
         var migration = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddLogisticsPieceLineKilograms();
@@ -179,6 +179,32 @@ public sealed class LogisticsPersistenceModelTests
         Assert.Contains("[QuantityKg] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("THROW 52052,", guard.Sql, StringComparison.Ordinal);
         Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+    }
+
+    [Fact]
+    public void Company_share_identity_migration_preflights_existing_collisions_and_refuses_history_losing_rollback()
+    {
+        using var context = Context();
+        Assert.EndsWith("_AddCompanyWideLoadingShareIdentity", context.Database.GetMigrations().Last(), StringComparison.Ordinal);
+        Assert.False(context.Database.HasPendingModelChanges());
+        var migration = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddCompanyWideLoadingShareIdentity();
+        var up = migration.UpOperations;
+        var preflight = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(up[0]);
+        Assert.Contains("GROUP BY [CompanyId], [ShareId]", preflight.Sql, StringComparison.Ordinal);
+        Assert.Contains("HAVING COUNT_BIG(*) > 1", preflight.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 52350,", preflight.Sql, StringComparison.Ordinal);
+        Assert.Single(up.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        var index = Assert.Single(up.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateIndexOperation>());
+        Assert.Equal("UX_LoadingShares_CompanyId_ShareId", index.Name);
+        Assert.Equal(["CompanyId", "ShareId"], index.Columns);
+        Assert.True(index.IsUnique);
+        Assert.Null(index.Filter);
+        var down = migration.DownOperations;
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("THROW 52351,", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("FROM [logistics].[LoadingShares]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(down.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropIndexOperation>(down[1]);
     }
 
     [Fact]

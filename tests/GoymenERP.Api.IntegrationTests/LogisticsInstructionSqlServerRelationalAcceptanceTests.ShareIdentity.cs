@@ -14,6 +14,41 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTests
 {
     [SqlServerFact]
+    public async Task Share_identity_migration_guards_refuse_legacy_collisions_and_history_loss_without_rewriting_rows()
+    {
+        await using var run = await Run.StartAsync();
+        var migration = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddCompanyWideLoadingShareIdentity();
+        var up = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.UpOperations[0]).Sql;
+        var down = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]).Sql;
+        await run.ExecuteAsync(up);
+        await run.ExecuteAsync(down); // Empty history may safely roll back.
+        var first = await ShareIdentityInstructionAsync(run, CompanyA, "legacy-collision-first");
+        var second = await ShareIdentityInstructionAsync(run, CompanyA, "legacy-collision-second");
+        var shareId = Guid.NewGuid();
+        await using (var writer = run.Store(CompanyA))
+        {
+            await writer.Store.MutateInstructionAsync(run.Envelope("legacy-load-first"), Hash("legacy-load-first"),
+                LogisticsCommands.RecordLoadV1, first.Id,
+                (value, now) => value.RecordLoad(3, shareId, first.Line, Kg(1m), MeasurementKind.Measured, now), Loaded);
+            await writer.Store.MutateInstructionAsync(run.Envelope("legacy-load-second"), Hash("legacy-load-second"),
+                LogisticsCommands.RecordLoadV1, second.Id,
+                (value, now) => value.RecordLoad(3, Guid.NewGuid(), second.Line, Kg(2m), MeasurementKind.Measured, now), Loaded);
+        }
+        Assert.Equal(52351, (await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(down))).Number);
+        await run.ExecuteAsync(up);
+        // Isolated synthetic fixture: reconstruct the old schema's allowed collision. This is not a migration repair.
+        await run.ExecuteAsync("DROP INDEX [UX_LoadingShares_CompanyId_ShareId] ON [logistics].[LoadingShares]");
+        await run.ExecuteAsync("UPDATE [logistics].[LoadingShares] SET ShareId=@share WHERE CompanyId=@company AND InstructionId=@instruction",
+            ("@share", shareId), ("@company", CompanyA), ("@instruction", second.Id));
+        Assert.Equal(52350, (await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(up))).Number);
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.LoadingShares WHERE CompanyId=@company AND ShareId=@share",
+            ("@company", CompanyA), ("@share", shareId)));
+        Assert.Equal(3m, await run.ScalarAsync<decimal>("SELECT SUM(Quantity) FROM logistics.LoadingShares"));
+        Assert.Equal(8L, await run.ScalarAsync<long>("SELECT SUM(Version) FROM logistics.LoadingInstructions"));
+        Assert.Equal(52351, (await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(down))).Number);
+    }
+
+    [SqlServerFact]
     public async Task Only_unique_errors_naming_the_exact_company_share_index_become_duplicate_share_refusals()
     {
         await using var run = await Run.StartAsync();

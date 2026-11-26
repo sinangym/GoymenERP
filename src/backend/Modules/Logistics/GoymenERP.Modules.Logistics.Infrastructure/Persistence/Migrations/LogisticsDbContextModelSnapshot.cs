@@ -840,6 +840,10 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
 
                     b.HasKey("CompanyId", "InstructionId", "ShareNo");
 
+                    b.HasIndex("CompanyId", "ShareId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LoadingShares_CompanyId_ShareId");
+
                     b.HasIndex("CompanyId", "InstructionId", "ShareId")
                         .IsUnique()
                         .HasDatabaseName("UX_LoadingShares_ShareId");

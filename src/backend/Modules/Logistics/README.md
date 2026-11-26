@@ -183,3 +183,7 @@ weighing, the weighing difference and the dispatch kilogram allocation compare k
 dispatch note line copies the shipment kg; the definite shipment sends that kg and the `PieceCount` to Inventory. EF-generated
 `20261122101040_AddLogisticsPieceLineKilograms` adds nullable `QuantityKg` to `LoadingShares` and `DispatchNoteLines` with checks;
 Down first refuses with **THROW 52052** while any piece-line kg exists (forward fix). Real-SQL acceptance is not run locally.
+
+## LOJ-D21 — company-wide movement share identity
+
+`20261126225736_AddCompanyWideLoadingShareIdentity` was generated with EF Core 10.0.8. The unfiltered unique index `UX_LoadingShares_CompanyId_ShareId` reserves a share within its company even after cancellation; the existing instruction-scoped index remains for its foreign keys. Up first checks company/share collisions and refuses with THROW 52350 without rewriting history. Down first refuses with THROW 52351 while any share history exists (forward fix). Existing same-key receipts and exact-index race handling are reused; other companies stay independent. Five relational facts, including the legacy-collision/Down guards and real shipment race, are in the existing Logistics SQL inventory. Real SQL, downstream end-to-end acceptance, train pins, CI and K3 remain pending.
