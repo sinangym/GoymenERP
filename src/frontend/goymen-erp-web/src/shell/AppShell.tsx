@@ -66,6 +66,7 @@ function visibleCurrentEntry(sidebar: HTMLElement | null): HTMLElement | null {
 
 /** UX v1.2 icons: decorative, so they are hidden from assistive technology. */
 const ICON_PATHS: Record<NavGroupId | 'home' | 'menu' | 'close' | 'chevron', string> = {
+  work: 'M5 3.5h10.5L19 7v13.5H5zM15 3.5V7h4M8.5 11h7M8.5 14.5h7M8.5 18h4',
   home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
   sales: 'M3 4h2l2.2 10.2a1 1 0 0 0 1 .8h8.6a1 1 0 0 0 1-.8L20 7H6.3M8.1 19a1.4 1.4 0 1 0 2.8 0a1.4 1.4 0 1 0-2.8 0M15.1 19a1.4 1.4 0 1 0 2.8 0a1.4 1.4 0 1 0-2.8 0',
   purchasing: 'M4 13h4l1.5 2.5h5L16 13h4M5.5 5h13L20 13v6H4v-6z',

@@ -34,7 +34,7 @@ describe('WP5 Finance and Accounting inbox kinds', () => {
       expect(entry.kind.startsWith(`${entry.module}.`)).toBe(true)
       expect(entry.kind).toMatch(/\.v1$/)
       expect(inboxKindText(entry.kind)).not.toBe(entry.kind)
-      if (NO_SCREEN.includes(entry.kind)) expect(entry.capability).toBeNull()
+      if (NO_SCREEN.includes(entry.kind)) expect(entry.capability).toBe(entry.kind.replace('.v1', '.work-decision'))
       else expect(WORK_INBOX_CAPABILITIES).toContain(entry.capability)
     }
     expect(FINANCE_INBOX_KINDS).toHaveLength(18)
@@ -42,9 +42,9 @@ describe('WP5 Finance and Accounting inbox kinds', () => {
     expect(inboxModuleText('accounting')).toBe('Muhasebe')
   })
 
-  it('lists the Inventory opening-cost decision without a capability (YOL-D41)', () => {
+  it('lists the Inventory opening-cost decision with its WP8 owner capability (YOL-D41)', () => {
     const entry = WORK_INBOX_KINDS.find((candidate) => candidate.kind === 'inventory.opening-cost.v1')
-    expect(entry).toEqual({ kind: 'inventory.opening-cost.v1', module: 'inventory', capability: null })
+    expect(entry).toEqual({ kind: 'inventory.opening-cost.v1', module: 'inventory', capability: 'inventory.opening-cost.work-decision' })
     expect(inboxKindText('inventory.opening-cost.v1')).toBe('Stok açılış maliyeti onayı')
     expect(inboxRuleText('inventory.opening-cost-approval-required')).not.toBeNull()
     expect(inboxPermissionText('inventory.opening-cost.approve')).toBe('Stok açılış maliyeti onayı')

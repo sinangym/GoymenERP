@@ -22,7 +22,7 @@ namespace GoymenERP.Modules.Work.Infrastructure.Shell;
 public sealed class WorkShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "WORK";
-    public const string OwnerContractVersion = "1.1";
+    public const string OwnerContractVersion = "1.2";
     public const string MyTasksCapabilityId = "work.tasks.mine";
     public const string MyTasksRouteId = "work.tasks-mine";
     public const string MyTasksRoutePath = "/gorevlerim";
@@ -68,6 +68,9 @@ public sealed class WorkShellCapabilityProvider : IShellCapabilityProvider
                 ShellCapabilityScopeRequirement.CompanyWide,
                 [WorkPermissionManifestV1.ApprovalsEscalate],
                 ImplementationAvailable: true),
+            new ShellCapabilityDeclaration("work.delegations.manage", "work.management", "/calisma-yonetimi", "W-MANAGEMENT-01",
+                ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide, [WorkPermissionManifestV1.DelegationsManage], ImplementationAvailable: true),
         ];
     }
 }

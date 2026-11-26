@@ -29,6 +29,7 @@ import type { PriceListCapabilityId } from '../product/priceLists/capabilities'
  */
 /** Exported for `navEntryPointInvariant.test.ts`: the nav list and the label table must agree. */
 export const NAV_CAPABILITIES: readonly CapabilityId[] = [
+  'work.delegations.manage',
   'finance.credits.workspace',
   'finance.official-sales-invoices.record',
   'finance.official-sales-invoices.approve',
@@ -236,6 +237,7 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
 export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
+  'work.delegations.manage': 'Work yönetimi',
   'cari.parties.list': 'Cari Kartlar',
   // No nav entry, and this one is a DECISION rather than the usual "reached from a row": K5 (Sinan,
   // 20 Eylül 2026, #66 5748258299) puts creation inside the relevant list as a single authorised
@@ -456,6 +458,7 @@ export const NAV_PURPOSE_CAPABILITIES: Readonly<Partial<Record<NavEntryId, reado
 }
 
 export type NavGroupId =
+  | 'work'
   | 'sales'
   | 'purchasing'
   | 'manufacturing'
@@ -482,7 +485,7 @@ export interface NavGroup {
  * The sidebar's work-area groups, in drawn order. KLN-D1/D2 (Sinan, 3 November 2026,
  * `docs/decisions/SINAN_KARARLARI_2026-11-03_MENU.md`) replaced the UX v1.2 order: Satış · Satın Alma · Üretim ·
  * Stok & Lojistik · Ürün & Hizmet · Cari · Finans & Hazine · Muhasebe · Ayarlar (Ana Veriler / Sistem Yönetimi).
- * Çalışma Merkezi, Belgeler and Raporlar are menu headings in KLN-D1 too, but no published entry belongs to them
+ * Belgeler and Raporlar are menu headings in KLN-D1 too, but no published entry belongs to them
  * yet, so they are not drawn (below). "Ana sayfa" is not a group: it is the single `NAV_HOME` link above them.
  * Only WHERE entries are drawn changed; every capability, route and leaf label is the same.
  *
@@ -497,6 +500,7 @@ export interface NavGroup {
  * "Satış siparişleri", "Stok durumu") belong to their pages and are not this package's to change.
  */
 export const NAV_GROUPS: readonly NavGroup[] = [
+  { id: 'work', label: 'Çalışma Merkezi', entries: ['work.delegations.manage'] },
   {
     id: 'sales',
     label: 'Satış',

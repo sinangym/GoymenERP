@@ -130,6 +130,35 @@ public sealed class InventoryOpeningCostWorkInboxSourceTests
         Assert.Contains("[CompanyId]", sql, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Decision_preview_requires_its_separate_cost_permission_and_never_exposes_another_company()
+    {
+        var fixture = new F(); var row = Submission(fixture, F.Id(77), 1);
+        var source = new InventoryOpeningCostWorkInboxSourceV1(fixture.Rows, fixture.Fence);
+        fixture.Authority.Answer = (permission, _) => permission == ErpPermissions.InventoryAverageCostRead
+            ? PermissionScope.Denied : InventoryWorkInboxTestAuthority.CompanyWide;
+        var hidden = await source.ReadDecisionAsync(fixture.Context(), row.Id, default);
+        Assert.NotNull(hidden); Assert.True(hidden.Pending);
+        Assert.Equal("submission/" + row.Id.ToString("D"), hidden.SourceVersion);
+        Assert.DoesNotContain(hidden.Item.Rules, rule => rule.RuleCode == "inventory.opening-cost-unit-cost");
+        fixture.Authority.Answer = (_, _) => InventoryWorkInboxTestAuthority.CompanyWide;
+        var visible = await source.ReadDecisionAsync(fixture.Context(), row.Id, default);
+        Assert.Equal("12.5", Assert.Single(visible!.Item.Rules, rule => rule.RuleCode == "inventory.opening-cost-unit-cost").Actual);
+        Assert.Null(await source.ReadDecisionAsync(fixture.Context(companyId: F.CompanyB), row.Id, default));
+    }
+
+    [Fact]
+    public async Task Decision_preview_strips_cost_when_cost_authority_changes_during_the_read()
+    {
+        var fixture = new F(); var row = Submission(fixture, F.Id(78), 1); var costChecks = 0;
+        fixture.Authority.Answer = (permission, _) => permission == ErpPermissions.InventoryAverageCostRead && ++costChecks > 1
+            ? PermissionScope.Denied : InventoryWorkInboxTestAuthority.CompanyWide;
+        var snapshot = await new InventoryOpeningCostWorkInboxSourceV1(fixture.Rows, fixture.Fence)
+            .ReadDecisionAsync(fixture.Context(), row.Id, default);
+        Assert.NotNull(snapshot); Assert.Equal(2, costChecks);
+        Assert.DoesNotContain(snapshot.Item.Rules, rule => rule.RuleCode == "inventory.opening-cost-unit-cost");
+    }
+
     private static OpeningCostRow Submission(F fixture, Guid id, int minutes, string recordedBy = F.Requester, Guid? companyId = null)
     {
         var row = new OpeningCostRow

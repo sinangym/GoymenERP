@@ -10,6 +10,8 @@
  * capabilities (`WORK_INBOX_CAPABILITIES`, which include the "Onaylarım" ones); the server re-authorizes every source.
  */
 
+import { WORK_MANAGEMENT_TEXT } from './workManagementText'
+import { WORK_MANAGEMENT_ROUTE } from './WorkManagementPage'
 import { Link } from 'react-router'
 import { WORK_QUEUE_TEXT as Q, WORK_ROUTE } from './workText'
 import { WORK_INBOX_CAPABILITIES } from './workInboxKinds'
@@ -28,6 +30,7 @@ export function WorkQueuePage() {
   const inboxEnabled = WORK_INBOX_CAPABILITIES.some((capability) => hasCapability(shell, capability))
   return <section className={styles.page} aria-labelledby="work-queue-heading" data-testid="work-queue">
     <Link className={styles.backLink} to={WORK_ROUTE.approvals}>← {Q.backToInbox}</Link>
+    <Link to={WORK_MANAGEMENT_ROUTE}>{WORK_MANAGEMENT_TEXT.title}</Link>
     <header className={styles.header}>
       <h1 id="work-queue-heading">{I.heading}</h1>
       <div className={styles.scope}>

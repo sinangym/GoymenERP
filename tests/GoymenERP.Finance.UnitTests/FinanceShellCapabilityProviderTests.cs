@@ -17,7 +17,7 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(51, declarations.Count);
+        Assert.Equal(54, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             !declaration.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)
             && !declaration.CapabilityId.StartsWith("finance.official-sales-invoices.", StringComparison.Ordinal)
@@ -32,9 +32,15 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.18", provider.ContractVersion);
+        Assert.Equal("1.19", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
+            ("finance.cash-account.work-decision", "finance.cash-account-work-decision", "/onaylarim/finance.cash-account.v1/:approvalId", "W-FIN-CASH-ACCOUNT-01",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCashAccountApprove]),
+            ("finance.cash-account-passivation.work-decision", "finance.cash-account-passivation-work-decision", "/onaylarim/finance.cash-account-passivation.v1/:approvalId", "W-FIN-CASH-ACCOUNT-PASSIVATION-01",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCashAccountPassivationApprove]),
+            ("finance.cash-account-reactivation.work-decision", "finance.cash-account-reactivation-work-decision", "/onaylarim/finance.cash-account-reactivation.v1/:approvalId", "W-FIN-CASH-ACCOUNT-REACTIVATION-01",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCashAccountReactivationApprove]),
             ("finance.cash-exchange-book-values.prepare", "finance.cash-exchange-book-values.prepare", "/finans/doviz-defter-degeri-hazirla", "F-32-EXCHANGE-BOOK-PREPARE",
                 ShellCapabilityRoutePrecedence.Static, [ErpPermissions.AccountingNormalJournalDraftCreate]),
             ("finance.cash-exchange-book-values.approve", "finance.cash-exchange-book-values.approve", "/finans/doviz-defter-degeri-onaylari", "F-32-EXCHANGE-BOOK-APPROVE",
@@ -331,7 +337,8 @@ public sealed class FinanceShellCapabilityProviderTests
                 "F-02-PAYMENTS", "F-02-REVERSAL-APPROVAL", "F-03", "F-03-OPEN-ITEM-DETAIL",
                 "F-03-OPEN-ITEMS", "F-04", "F-04-NEW", "F-13-BANK-STATEMENT", "F-18-COLLATERALS", "F-18-CREDIT-LIMITS", "F-23-OPENING-BALANCES",
                 "F-25-EXPENSE-PAYMENTS", "F-32-CASH-TRANSFERS", "F-32-EXCHANGE-BOOK-APPROVE", "F-32-EXCHANGE-BOOK-PREPARE",
-                "F-32-PARTY-BALANCE-TRANSFER", "F-47-CREDITS", "M-03"],
+                "F-32-PARTY-BALANCE-TRANSFER", "F-47-CREDITS", "M-03", "W-FIN-CASH-ACCOUNT-01",
+                "W-FIN-CASH-ACCOUNT-PASSIVATION-01", "W-FIN-CASH-ACCOUNT-REACTIVATION-01"],
             routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
 }

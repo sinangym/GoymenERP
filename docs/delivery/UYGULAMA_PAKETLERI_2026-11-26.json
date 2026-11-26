@@ -1605,7 +1605,7 @@
       "backlog_parent": "W1-YETKI",
       "title": "Kutudan karar ve Work yönetimi",
       "group": "TREN2",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P1",
       "risk": "K3",
       "scope": "Owner modülün komutu, expected version ve idempotency; ayrı karar motoru yok; ekransız açılış maliyeti/kasa onayları dahil.",
@@ -1625,8 +1625,10 @@
       ],
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
-        "Devir belgesinde kalan iş; listedeki mevcut kaynak/testler bulundu.",
-        "Tam davranış ve runtime kabulü: NOT_RUN."
+        "Four YOL-D41 screenless kinds dispatch the existing owner commands; no Work approval store or impersonation.",
+        "Work management mounts existing rules and follow-up sections plus WP3 create/revoke UI; separate management permission is not assigned.",
+        "Cash owner gained an optional post-flush/pre-commit fence in the existing transaction helper; existing native command receipts remain authoritative.",
+        "64-flow acceptance, remaining owner adapters and rule editing are not complete."
       ],
       "decisions": [
         "YOL-D41"
@@ -1642,23 +1644,79 @@
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
         "K3 mutation/migration: gerçek SQL; ilgili UI: gerçek owner API ile tarayıcı ve erişim iptali.",
-        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
+        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı.",
+        "Explicit delegation is checked again by the owner fresh-authority fence, including post-flush pre-commit; no impersonation or authority widening."
       ],
       "business_acceptance": [
         "Kurallar/vekâlet/geciken/sahipsiz ekranı; her kararda owner yetkisi; 64 tür kapsama tablosu."
       ],
-      "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
+      "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "Continue remaining owner adapters against the 64-flow map, per-kind rule editing and delegation name/paging UX; then train SQL/browser/pins/full CI/two K3 reviews.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCashAccountService.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceTreasuryTransaction.cs",
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/InventoryOpeningCostCommandService.cs",
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/ApprovalRules/WorkApprovalRuleServiceV1.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Delegations/WorkDelegationServiceV1.cs",
         "src/frontend/goymen-erp-web/src/sales/SalesOrderTabs.test.tsx",
         "src/frontend/goymen-erp-web/src/sales/SalesOrderTabs.tsx",
+        "src/frontend/goymen-erp-web/src/settings/WorkApprovalRulesSection.tsx",
+        "src/frontend/goymen-erp-web/src/settings/useCommandAttempt.ts",
+        "src/frontend/goymen-erp-web/src/work/ApprovalFollowUpPage.tsx",
         "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs"
       ],
-      "change_files": []
+      "change_files": [
+        "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Work/WorkApprovalDecisionSourceV1.cs",
+        "src/backend/GoymenERP.Api/Endpoints/WorkDecisionEndpoints.cs",
+        "src/backend/GoymenERP.Api/Endpoints/WorkDelegationEndpoints.cs",
+        "src/backend/GoymenERP.Api/Program.cs",
+        "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCashAccountService.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceTreasuryTransaction.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Shell/FinanceShellCapabilityProvider.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceCashAccountWorkInboxSourcesV1.cs",
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Shell/InventoryShellCapabilityProvider.cs",
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/WorkInbox/InventoryOpeningCostWorkInboxSourceV1.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Shell/WorkShellCapabilityProvider.cs",
+        "src/frontend/goymen-erp-web/src/finance/capabilities.ts",
+        "src/frontend/goymen-erp-web/src/shell/AppShell.navigation.test.tsx",
+        "src/frontend/goymen-erp-web/src/shell/AppShell.tsx",
+        "src/frontend/goymen-erp-web/src/shell/capabilities.ts",
+        "src/frontend/goymen-erp-web/src/shell/navigation.ts",
+        "src/frontend/goymen-erp-web/src/work/WorkDecisionPage.test.tsx",
+        "src/frontend/goymen-erp-web/src/work/WorkDecisionPage.tsx",
+        "src/frontend/goymen-erp-web/src/work/WorkManagementPage.tsx",
+        "src/frontend/goymen-erp-web/src/work/WorkQueuePage.tsx",
+        "src/frontend/goymen-erp-web/src/work/collaborationApi.ts",
+        "src/frontend/goymen-erp-web/src/work/inboxKinds/finance.ts",
+        "src/frontend/goymen-erp-web/src/work/inboxKinds/financeAccounting.test.ts",
+        "src/frontend/goymen-erp-web/src/work/inboxKinds/inventory.ts",
+        "src/frontend/goymen-erp-web/src/work/workDecisionApi.test.ts",
+        "src/frontend/goymen-erp-web/src/work/workDecisionApi.ts",
+        "src/frontend/goymen-erp-web/src/work/workDecisionText.ts",
+        "src/frontend/goymen-erp-web/src/work/workDelegationApi.ts",
+        "src/frontend/goymen-erp-web/src/work/workManagementText.ts",
+        "src/frontend/goymen-erp-web/src/work/workRoutes.tsx",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.WorkDecisions.cs",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkDecisionHostTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkShellCapabilityProviderTests.cs",
+        "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryOpeningCostWorkInboxSourceTests.cs",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryShellCapabilityProviderTests.cs",
+        "tools/relational_inventory/finance.txt"
+      ],
+      "ownership_lease": {
+        "branch": "codex/erp-completion-20261126",
+        "base_head": "5d6949865b356049e55f1eb669ac73851a2b39f8",
+        "writer": "Codex",
+        "scope": "WP8 screenless owner decisions, delegation execution fence, then Work management UI",
+        "schema": "Work exclusive; no migration planned",
+        "activation": "No grants/flags/provider changes"
+      }
     },
     {
       "id": "T2/WP10",

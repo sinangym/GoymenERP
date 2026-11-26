@@ -27,7 +27,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// the registered balance reading answers zero and a SENTETIK reading stands in for any other answer.
 /// </para>
 /// </summary>
-public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
+public sealed partial class FinanceCashAccountSqlServerRelationalAcceptanceTests
 {
     private const string Proposer = "SENTETIK-proposer";
     private const string Approver = "SENTETIK-approver";
@@ -1305,7 +1305,7 @@ public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
 
         /// <summary>The same scope over another SENTETIK authority and candidate source.</summary>
         public Scope OpenWithPermissions(Guid company, string actor, IFinancePermissionPort permissions,
-            ISettingsMoneyCandidateReader currencies) => Open(company, actor, permissions, currencies, []);
+            ISettingsMoneyCandidateReader currencies, params IInterceptor[] extra) => Open(company, actor, permissions, currencies, extra);
 
         /// <summary>The same scope over Settings' own fail-closed adapter, which has no currency source.</summary>
         public Scope OpenWithUnavailableSettings(Guid company, string actor)
@@ -1413,6 +1413,7 @@ public sealed class FinanceCashAccountSqlServerRelationalAcceptanceTests
     private sealed class Scope(FinanceDbContext dbContext, FinanceCashAccountService accounts, FinanceContext context)
         : IAsyncDisposable
     {
+        public FinanceDbContext Database => dbContext;
         public FinanceCashAccountService Accounts => accounts;
         public FinanceContext Context => context;
 

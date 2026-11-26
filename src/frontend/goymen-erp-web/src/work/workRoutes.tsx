@@ -6,7 +6,10 @@
  * owner's capability. The server re-authorizes every read regardless.
  */
 
+import { WorkManagementPage, WORK_MANAGEMENT_CAPABILITIES, WORK_MANAGEMENT_ROUTE } from './WorkManagementPage'
 import type { RouteObject } from 'react-router'
+import { WorkDecisionPage } from './WorkDecisionPage'
+import { WORK_DECISION_KINDS } from './workDecisionApi'
 import { CapabilityRoute } from '../shell/CapabilityRoute'
 import { ApprovalInboxDetailPage, ApprovalInboxPage } from './ApprovalInboxPages'
 import { WorkQueuePage } from './WorkQueuePage'
@@ -30,6 +33,9 @@ import { APPROVAL_FOLLOW_UP_ROUTE } from './approvalFollowUpContract'
 const WORK_INBOX_ROUTE_CAPABILITIES: readonly string[] = [...new Set([...WORK_APPROVALS_CAPABILITIES, ...WORK_INBOX_CAPABILITIES])]
 
 export const workRoutes: RouteObject[] = [
+  { path: WORK_MANAGEMENT_ROUTE.slice(1), element: <CapabilityRoute capability={WORK_MANAGEMENT_CAPABILITIES}><WorkManagementPage /></CapabilityRoute> },
+  ...WORK_DECISION_KINDS.map(kind => ({ path: `onaylarim/${kind}/:approvalId`,
+    element: <CapabilityRoute capability={[kind.replace('.v1', '.work-decision')]}><WorkDecisionPage kind={kind} /></CapabilityRoute> })),
   // Personal recipient-only inbox; backend refreshes active membership and accepts no recipient override.
   { path: NOTIFICATIONS_ROUTE.slice(1), element: <NotificationsPage /> },
   // W1-C "Bana atanan": own tasks only; the server accepts no assignee override. WP9: behind Work's own `work.tasks.mine`

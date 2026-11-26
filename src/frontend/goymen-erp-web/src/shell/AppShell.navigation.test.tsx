@@ -226,7 +226,7 @@ describe('navigation groups are headings, never permissions', () => {
 
   it('use the approved work-area order, with no Raporlar or Belgeler group while nothing is published there', () => {
     expect(NAV_GROUPS.map((group) => group.label)).toEqual([
-      'Satış', 'Satın Alma', 'Üretim', 'Stok & Lojistik', 'Ürün & Hizmet', 'Cari', 'Finans & Hazine', 'Muhasebe', 'Ayarlar',
+      'Çalışma Merkezi', 'Satış', 'Satın Alma', 'Üretim', 'Stok & Lojistik', 'Ürün & Hizmet', 'Cari', 'Finans & Hazine', 'Muhasebe', 'Ayarlar',
     ])
     expect(NAV_HOME).toEqual({ label: 'Ana sayfa', path: '/' })
   })

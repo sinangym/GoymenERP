@@ -1,4 +1,6 @@
 using GoymenERP.BuildingBlocks.Work;
+using GoymenERP.BuildingBlocks.Security;
+using System.Globalization;
 using GoymenERP.Modules.Inventory.Application;
 
 namespace GoymenERP.Modules.Inventory.Infrastructure.WorkInbox;
@@ -16,7 +18,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.WorkInbox;
 /// permission); the card names the position (location and product) and why it waits. The free-text reason is not copied.
 /// </para>
 /// </summary>
-internal sealed class InventoryOpeningCostWorkInboxSourceV1 : IWorkInboxSourceV1
+internal sealed class InventoryOpeningCostWorkInboxSourceV1 : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "inventory";
     public const string KindName = "inventory.opening-cost.v1";
@@ -118,4 +120,30 @@ internal sealed class InventoryOpeningCostWorkInboxSourceV1 : IWorkInboxSourceV1
     }
 
     private sealed record Pending(Guid Id, Guid LocationId, Guid ProductId, string RecordedBy, DateTimeOffset RecordedAtUtc);
+
+    public async Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context, Guid itemId,
+        CancellationToken cancellationToken)
+    {
+        if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+        var costVisible = await fence.CheckAsync(context, ErpPermissions.InventoryAverageCostRead, cancellationToken) is null;
+        var found = await rows.ListAsync(rows.OpeningCosts.Where(row => row.CompanyId == context.CompanyId && row.Id == itemId)
+            .Select(row => new { row.Id, row.LocationId, row.ProductId, row.RecordedBy, row.RecordedAtUtc,
+                Cost = costVisible ? (decimal?)row.UnitCostPerKg : null,
+                Pending = !rows.OpeningCostDecisions.Any(decision => decision.CompanyId == context.CompanyId && decision.OpeningCostId == row.Id) }), cancellationToken);
+        if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+        var value = found.SingleOrDefault();
+        if (value is null) return null;
+        costVisible = costVisible && await fence.CheckAsync(context, ErpPermissions.InventoryAverageCostRead, cancellationToken) is null;
+        var rules = new List<WorkApprovalRuleResultV1> { new(ApprovalRequiredRule, null, null, null, null) };
+        if (costVisible && value.Cost is { } cost)
+            rules.Add(new("inventory.opening-cost-unit-cost", null, cost.ToString("0.############################", CultureInfo.InvariantCulture), null, null));
+        var item = new WorkInboxItemV1(ModuleName, KindName, value.Id, InventoryWorkInboxFence.Id(value.Id)[..8],
+            value.RecordedAtUtc.ToUniversalTime(), InboxDetailPath + "/" + KindName + "/" + InventoryWorkInboxFence.Id(value.Id), value.RecordedBy,
+            rules,
+            [new("location", InventoryWorkInboxFence.Id(value.LocationId)[..8], value.LocationId, null),
+             new("product", InventoryWorkInboxFence.Id(value.ProductId)[..8], value.ProductId, null)],
+            null, new(null, value.LocationId, null));
+        // Owner submissions are append-only; the exact submission ID is already the decision's immutable CAS key.
+        return new(context.CompanyId, item, "submission/" + value.Id.ToString("D"), value.Pending);
+    }
 }

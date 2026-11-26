@@ -44,7 +44,8 @@ internal static class FinanceTreasuryTransaction
 
     internal static async Task<T> ExecuteAsync<T>(
         FinanceDbContext dbContext, Func<Task<T>> operation, Func<Task<T>> unavailable,
-        IAuditTransactionWriterV1? auditOwner, CancellationToken cancellationToken, Func<T, bool>? successful = null)
+        IAuditTransactionWriterV1? auditOwner, CancellationToken cancellationToken, Func<T, bool>? successful = null,
+        Func<T, Task<bool>>? canCommit = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (dbContext.ChangeTracker.HasChanges() || auditOwner is { HasPendingDrafts: true })
@@ -84,6 +85,14 @@ internal static class FinanceTreasuryTransaction
                 await RollbackAsync();
                 completed = true;
                 return result;
+            }
+            // Optional owner fence for a request-scoped authority that can expire during SaveChanges.
+            // The normal callers retain their existing contract when no fence is supplied.
+            if (canCommit is not null && !await canCommit(result))
+            {
+                await RollbackAsync();
+                completed = true;
+                return await unavailable();
             }
             if (ownsTransaction) await transaction!.CommitAsync(cancellationToken);
             completed = true;

@@ -186,3 +186,10 @@ export const partyLedgerPath = (
   }
   return `${base}?${params.toString()}`
 }
+
+/** WP8: owner-published approval-only routes; declared by Finance, rendered by Work. No read/report grant is implied. */
+export const FINANCE_WORK_DECISION_CAPABILITIES = [
+  ['finance.cash-account.work-decision', '/onaylarim/finance.cash-account.v1/:approvalId'],
+  ['finance.cash-account-passivation.work-decision', '/onaylarim/finance.cash-account-passivation.v1/:approvalId'],
+  ['finance.cash-account-reactivation.work-decision', '/onaylarim/finance.cash-account-reactivation.v1/:approvalId'],
+] as const

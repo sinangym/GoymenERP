@@ -173,6 +173,22 @@ public sealed class FinanceCashAccountService(
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(request);
+        if (await StartAsync(context, metadata, FinanceAction.ApproveCashAccount, request.AccountId, cancellationToken) is { } refused) return refused;
+        if (IdentityRefusal(context, request.AccountId, request.ExpectedVersion) is { } malformed) return malformed;
+        return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
+            () => ApproveCoreAsync(context, metadata, request, cancellationToken),
+            async () => await FenceAsync(context, FinanceAction.ApproveCashAccount, request.AccountId, cancellationToken)
+                ?? Refused(context, CommandOutcome.Unavailable, Issue("request", TreasuryBalanceAnswer.UnavailableCode)),
+            auditOwner, cancellationToken,
+            canCommit: async result => result.Outcome != CommandOutcome.Succeeded || await FenceAsync(context, FinanceAction.ApproveCashAccount, request.AccountId, cancellationToken) is null);
+    }
+
+    private async Task<CashAccountCommandResult> ApproveCoreAsync(FinanceContext context, CommandMetadata metadata,
+        CashAccountApproveRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
         if (await StartAsync(context, metadata, FinanceAction.ApproveCashAccount, request.AccountId, cancellationToken)
             is { } refused)
@@ -216,6 +232,24 @@ public sealed class FinanceCashAccountService(
     /// approve authority — a rejection is the other answer of the same decision.
     /// </summary>
     public async Task<CashAccountCommandResult> RejectAsync(FinanceContext context, CommandMetadata metadata,
+        CashAccountRejectRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
+        if (await StartAsync(context, metadata, FinanceAction.ApproveCashAccount, request.AccountId, cancellationToken) is { } refused) return refused;
+        if (IdentityRefusal(context, request.AccountId, request.ExpectedVersion) is { } malformed) return malformed;
+        if (!IsCanonical(request.Reason)) return Refused(context, CommandOutcome.ValidationFailed, Issue("reason", "reason_invalid"));
+        if (request.Reason.Length > ReasonMaximumLength) return Refused(context, CommandOutcome.ValidationFailed, Issue("reason", "finance_value_does_not_fit"));
+        return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
+            () => RejectCoreAsync(context, metadata, request, cancellationToken),
+            async () => await FenceAsync(context, FinanceAction.ApproveCashAccount, request.AccountId, cancellationToken)
+                ?? Refused(context, CommandOutcome.Unavailable, Issue("request", TreasuryBalanceAnswer.UnavailableCode)),
+            auditOwner, cancellationToken,
+            canCommit: async result => result.Outcome != CommandOutcome.Succeeded || await FenceAsync(context, FinanceAction.ApproveCashAccount, request.AccountId, cancellationToken) is null);
+    }
+
+    private async Task<CashAccountCommandResult> RejectCoreAsync(FinanceContext context, CommandMetadata metadata,
         CashAccountRejectRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -376,7 +410,8 @@ public sealed class FinanceCashAccountService(
         return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
             () => ApproveStateChangeTreasuryCoreAsync(context, metadata, change, request, cancellationToken),
             async () => await FenceAsync(context, kind.Approve, request.AccountId, cancellationToken)
-                ?? Refused(context, CommandOutcome.Unavailable, Issue("balance", TreasuryBalanceAnswer.UnavailableCode)), auditOwner, cancellationToken);
+                ?? Refused(context, CommandOutcome.Unavailable, Issue("balance", TreasuryBalanceAnswer.UnavailableCode)), auditOwner, cancellationToken,
+            canCommit: async result => result.Outcome != CommandOutcome.Succeeded || await FenceAsync(context, kind.Approve, request.AccountId, cancellationToken) is null);
     }
 
     private async Task<CashAccountCommandResult> ApproveStateChangeTreasuryCoreAsync(FinanceContext context, CommandMetadata metadata,
@@ -450,7 +485,8 @@ public sealed class FinanceCashAccountService(
             () => RejectStateChangeTreasuryCoreAsync(context, metadata, change, request, cancellationToken),
             async () => await FenceAsync(context, kind.Approve, request.AccountId, cancellationToken)
                 ?? Refused(context, CommandOutcome.Unavailable, Issue("balance", TreasuryBalanceAnswer.UnavailableCode)),
-            auditOwner, cancellationToken);
+            auditOwner, cancellationToken,
+            canCommit: async result => result.Outcome != CommandOutcome.Succeeded || await FenceAsync(context, kind.Approve, request.AccountId, cancellationToken) is null);
     }
 
     private async Task<CashAccountCommandResult> RejectStateChangeTreasuryCoreAsync(FinanceContext context, CommandMetadata metadata,

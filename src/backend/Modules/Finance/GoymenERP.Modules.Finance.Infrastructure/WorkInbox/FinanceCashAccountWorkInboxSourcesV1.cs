@@ -19,7 +19,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// </summary>
 internal abstract class FinanceCashAccountWorkInboxSourceBaseV1(
     FinanceDbContext dbContext,
-    FinanceWorkInboxFence fence) : IWorkInboxSourceV1
+    FinanceWorkInboxFence fence) : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "finance";
 
@@ -31,6 +31,19 @@ internal abstract class FinanceCashAccountWorkInboxSourceBaseV1(
     public abstract string Kind { get; }
 
     public abstract string ApproverPermission { get; }
+
+    public async Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context, Guid itemId,
+        CancellationToken cancellationToken)
+    {
+        if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+        var row = await dbContext.CashAccounts.AsNoTracking().SingleOrDefaultAsync(row => row.CompanyId == context.CompanyId && row.Id == itemId, cancellationToken);
+        var pending = row is not null && await Pending(dbContext.CashAccounts.AsNoTracking(), context.CompanyId)
+            .AnyAsync(row => row.Id == itemId, cancellationToken);
+        if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null || row is null) return null;
+        var (maker, since) = Waiting(row);
+        if (string.IsNullOrWhiteSpace(maker) || since is null) return null;
+        return Item(row, false) is { } item ? new(context.CompanyId, item, row.Version.ToString(CultureInfo.InvariantCulture), pending) : null;
+    }
 
     private protected abstract string RuleCode { get; }
 

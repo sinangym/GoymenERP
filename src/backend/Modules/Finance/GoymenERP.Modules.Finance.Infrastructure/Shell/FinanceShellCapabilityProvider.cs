@@ -85,7 +85,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.18";
+    public const string OwnerContractVersion = "1.19";
     public const string BankStatementCapabilityId = "finance.bank-statements.read";
     public const string BankStatementImportCapabilityId = "finance.bank-statements.import";
     public const string BankStatementMatchCapabilityId = "finance.bank-statements.match";
@@ -476,6 +476,15 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
                     ErpPermissions.AccountingPeriodsRead,
                 ],
             },
+            Declaration("finance.cash-account.work-decision", "finance.cash-account-work-decision",
+                "/onaylarim/finance.cash-account.v1/:approvalId", "W-FIN-CASH-ACCOUNT-01",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCashAccountApprove]),
+            Declaration("finance.cash-account-passivation.work-decision", "finance.cash-account-passivation-work-decision",
+                "/onaylarim/finance.cash-account-passivation.v1/:approvalId", "W-FIN-CASH-ACCOUNT-PASSIVATION-01",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCashAccountPassivationApprove]),
+            Declaration("finance.cash-account-reactivation.work-decision", "finance.cash-account-reactivation-work-decision",
+                "/onaylarim/finance.cash-account-reactivation.v1/:approvalId", "W-FIN-CASH-ACCOUNT-REACTIVATION-01",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCashAccountReactivationApprove]),
         ];
     }
 

@@ -20,8 +20,8 @@ export const FINANCE_INBOX_KINDS: readonly WorkInboxKind[] = [
   { kind: 'finance.opening-balance.v1', module: 'finance', capability: FINANCE_CAPABILITY.openingBalancesApprove },
   { kind: 'finance.opening-balance-reversal.v1', module: 'finance', capability: FINANCE_CAPABILITY.openingBalancesApprove },
   { kind: 'finance.cash-exchange-book-value.v1', module: 'finance', capability: FINANCE_CAPABILITY.exchangeBookValuesApprove },
-  // YOL-D41: the cash-account approvals have no screen; the inbox detail carries the decision (WP8), no capability opens a route.
-  { kind: 'finance.cash-account.v1', module: 'finance', capability: null },
-  { kind: 'finance.cash-account-passivation.v1', module: 'finance', capability: null },
-  { kind: 'finance.cash-account-reactivation.v1', module: 'finance', capability: null },
+  // YOL-D41 / WP8: owner-authorized decision routes live in Work; no separate Finance page.
+  { kind: 'finance.cash-account.v1', module: 'finance', capability: 'finance.cash-account.work-decision' },
+  { kind: 'finance.cash-account-passivation.v1', module: 'finance', capability: 'finance.cash-account-passivation.work-decision' },
+  { kind: 'finance.cash-account-reactivation.v1', module: 'finance', capability: 'finance.cash-account-reactivation.work-decision' },
 ]

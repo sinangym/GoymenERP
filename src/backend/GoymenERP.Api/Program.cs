@@ -595,6 +595,7 @@ builder.Services.AddSingleton<IShellCapabilityProvider, ProductPaintMembershipSh
 builder.Services.AddSingleton<IShellCapabilityProvider, SettingsShellCapabilityProvider>();
 // WP9: Work's own "Bana atanan" route and assign control (work.tasks.complete / work.tasks.assign, granted to no role).
 builder.Services.AddSingleton<IShellCapabilityProvider, WorkShellCapabilityProvider>();
+builder.Services.AddWorkDecisionHostV1();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
     builder.Services,
     builder.Environment,
@@ -672,6 +673,7 @@ app.MapWorkQueueEndpoints();
 app.MapWorkInboxEndpoints();
 app.MapWorkApprovalRuleEndpoints();
 app.MapWorkDelegationEndpoints();
+app.MapWorkDecisionEndpoints();
 app.MapWorkDeadlineEndpoints();
 app.MapWorkNotificationEndpoints();
 app.MapWorkCollaborationEndpoints();

@@ -11,6 +11,7 @@
  */
 
 export const CAPABILITY = {
+  workManagement: 'work.delegations.manage',
   /** C-01 Cari Kartlar list. Route `/cari`, owner CHATGPT-BUSINESS/CARI. */
   cariPartiesList: 'cari.parties.list',
   /**
@@ -449,6 +450,7 @@ export type CapabilityId = (typeof CAPABILITY)[keyof typeof CAPABILITY]
 
 /** Route path per capability, mirroring the backend route declaration. */
 export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
+  [CAPABILITY.workManagement]: '/calisma-yonetimi',
   [CAPABILITY.cariPartiesList]: '/cari',
   [CAPABILITY.cariPartiesCreate]: '/cari/yeni',
   [CAPABILITY.cariAccountsLink]: '/cari/sirkete-bagla',

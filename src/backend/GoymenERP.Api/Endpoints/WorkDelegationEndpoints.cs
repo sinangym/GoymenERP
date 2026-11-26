@@ -5,6 +5,11 @@ using GoymenERP.Api.OpenApi;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.Modules.Work.Domain;
 using GoymenERP.Modules.Work.Infrastructure.Delegations;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Work;
+using GoymenERP.Modules.Identity.Application.Contracts;
+using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GoymenERP.Api.Endpoints;
@@ -17,6 +22,37 @@ public static class WorkDelegationEndpoints
     public static IEndpointRouteBuilder MapWorkDelegationEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v1/work/delegations").WithTags("Work").RequireAuthorization().RequireCompanyContext();
+        group.MapGet("/people", async (string kind, string? q, HttpContext http, ICompanyContext company, ICurrentUser user,
+            IErpAuthorityRevalidationService authority, IUserDirectoryReadPortV1 directory,
+            IEnumerable<IWorkInboxSourceV1> sources, IOptions<WorkDelegationOptionsV1> options, CancellationToken token) =>
+        {
+            NoStore(http);
+            if (!user.IsAuthenticated || string.IsNullOrWhiteSpace(user.UserId)) return Results.Problem(statusCode: 401);
+            if (!company.IsResolved || !user.CanAccessCompany(company.CompanyId)) return Results.Problem(statusCode: 403);
+            if (!options.Value.Enabled) return Results.Problem(statusCode: 503);
+            var matches = sources.Where(source => source.Kind == kind).ToArray();
+            if (matches.Length != 1 || q?.Length > UserDirectoryLimitsV1.MaximumQueryLength) return Results.Problem(statusCode: 400);
+            var source = matches[0];
+            if (!ErpPermissions.IsKnown(source.ApproverPermission)) return Results.Problem(statusCode: 503);
+            var companyId = company.CompanyId; var actor = user.UserId;
+            async Task<bool> Granted()
+            {
+                var approve = await authority.RevalidatePermissionScopeAsync(source.ApproverPermission, companyId, token);
+                var allowed = approve.IsGranted && (approve.IsCompanyWide || source.AcceptsScopedApprovers);
+                if (!allowed) { var manage = await authority.RevalidatePermissionScopeAsync(ErpPermissions.WorkDelegationsManage, companyId, token); allowed = manage.IsGranted && manage.IsCompanyWide; }
+                return allowed && options.Value.Enabled && company.IsResolved && company.CompanyId == companyId
+                    && user.IsAuthenticated && user.UserId == actor && user.CanAccessCompany(companyId);
+            }
+            if (!await Granted()) return Results.Problem(statusCode: 403);
+            var people = await directory.SearchActiveAsync(new(companyId, actor, q?.Trim(), UserDirectoryLimitsV1.MaximumSearchLimit,
+                source.ApproverPermission), token);
+            if (!await Granted() || people.Outcome == UserDirectoryOutcomeV1.Denied) return Results.Problem(statusCode: 403);
+            if (people.Outcome != UserDirectoryOutcomeV1.Found) return Results.Problem(statusCode: 503);
+            // Picker eligibility is a hint. Creation remeasures exact scopes and ROL-D4 manager eligibility.
+            return Results.Json(new WorkDelegationPeopleV1(companyId, kind,
+                people.Items.Where(person => person.IsActiveInCompany).Select(person => new WorkDelegationPersonV1(person.UserId, person.DisplayName)).ToArray(), people.HasMore));
+        }).WithName("GetWorkDelegationPeopleV1").Produces<WorkDelegationPeopleV1>().ProducesErpCodeLessBadRequest()
+            .AllowsCodeLessErpBadRequestBody().ProducesErpAuthenticatedProblems().ProducesErpServiceUnavailable();
         group.MapGet("", async (bool? all, int? page, HttpContext http, ICorrelationContext correlation,
                 [FromServices] IWorkDelegationServiceV1 service, CancellationToken token) =>
             {
@@ -93,3 +129,6 @@ public static class WorkDelegationEndpoints
         http.Response.Headers.Pragma = "no-cache";
     }
 }
+
+public sealed record WorkDelegationPersonV1(Guid UserId, string DisplayName);
+public sealed record WorkDelegationPeopleV1(Guid CompanyId, string Kind, IReadOnlyList<WorkDelegationPersonV1> Items, bool HasMore);

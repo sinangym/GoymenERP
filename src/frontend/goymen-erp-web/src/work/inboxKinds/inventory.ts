@@ -15,6 +15,6 @@ export const INVENTORY_INBOX_KINDS: readonly WorkInboxKind[] = [
   { kind: 'inventory.stock-scrap.v1', module: 'inventory', capability: INVENTORY_STOCK_SCRAP_SOURCE.capability },
   { kind: 'inventory.transfer-overage.v1', module: 'inventory', capability: OVERAGE_APPROVE },
   { kind: 'inventory.transfer-loss.v1', module: 'inventory', capability: LOSS_APPROVE },
-  // WP5 (YOL-D41): the opening-cost decision has no screen; the inbox detail carries it (WP8), no capability opens a route.
-  { kind: 'inventory.opening-cost.v1', module: 'inventory', capability: null },
+  // WP8 / YOL-D41: the decision is on the owner-authorized Work detail route.
+  { kind: 'inventory.opening-cost.v1', module: 'inventory', capability: 'inventory.opening-cost.work-decision' },
 ]

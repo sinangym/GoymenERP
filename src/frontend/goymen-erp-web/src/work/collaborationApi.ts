@@ -46,7 +46,7 @@ export type WorkCommandOutcome<T> =
   /** May or may not have been applied: retry with the SAME key. */
   | { readonly type: 'unknown'; readonly reason: 'offline' | 'network-error' | 'server' | 'unexpected' }
 
-async function post<T>(path: string, companyId: string, idempotencyKey: string | null, body: object | null, success: number,
+export async function postWorkCommand<T>(path: string, companyId: string, idempotencyKey: string | null, body: object | null, success: number,
   decode: (raw: unknown) => T | null): Promise<WorkCommandOutcome<T>> {
   let response: Response
   try {
@@ -79,40 +79,40 @@ async function post<T>(path: string, companyId: string, idempotencyKey: string |
 
 export interface AddNoteBody { readonly body: string; readonly mentionedUserIds: readonly string[]; readonly correctsNoteId: string | null }
 export const addRecordNote = (companyId: string, key: string, type: WorkRecordType, recordId: string, body: AddNoteBody): Promise<WorkCommandOutcome<WorkNote>> =>
-  post(workRecordNotesPath(type, recordId), companyId, key, body, 201, (raw) => decodeWorkNote(raw, companyId, recordId))
+  postWorkCommand(workRecordNotesPath(type, recordId), companyId, key, body, 201, (raw) => decodeWorkNote(raw, companyId, recordId))
 
 export const passivateNote = (companyId: string, key: string, noteId: string, reason: string): Promise<WorkCommandOutcome<WorkNote>> =>
-  post(workNotePassivationPath(noteId), companyId, key, { reason }, 200, (raw) => {
+  postWorkCommand(workNotePassivationPath(noteId), companyId, key, { reason }, 200, (raw) => {
     const note = decodeWorkNote(raw, companyId)
     return note !== null && note.id === noteId && note.passivatedAtUtc !== null ? note : null
   })
 
 export interface CreateTaskBody { readonly title: string; readonly details: string | null; readonly assigneeUserId: string; readonly dueAtUtc: string; readonly recordType: WorkRecordType | null; readonly recordId: string | null }
 export const createTask = (companyId: string, key: string, body: CreateTaskBody): Promise<WorkCommandOutcome<WorkTask>> =>
-  post(WORK_TASKS_PATH, companyId, key, body, 201, (raw) => {
+  postWorkCommand(WORK_TASKS_PATH, companyId, key, body, 201, (raw) => {
     const task = decodeWorkTask(raw, companyId)
     return task !== null && task.status === 'open' && task.assigneeUserId === body.assigneeUserId ? task : null
   })
 
 export const completeTask = (companyId: string, key: string, taskId: string, expectedVersion: string): Promise<WorkCommandOutcome<WorkTask>> =>
-  post(workTaskCompletionPath(taskId), companyId, key, { expectedVersion }, 200, (raw) => {
+  postWorkCommand(workTaskCompletionPath(taskId), companyId, key, { expectedVersion }, 200, (raw) => {
     const task = decodeWorkTask(raw, companyId, taskId)
     return task !== null && task.status === 'completed' ? task : null
   })
 
 export const cancelTask = (companyId: string, key: string, taskId: string, expectedVersion: string, reason: string): Promise<WorkCommandOutcome<WorkTask>> =>
-  post(workTaskCancellationPath(taskId), companyId, key, { expectedVersion, reason }, 200, (raw) => {
+  postWorkCommand(workTaskCancellationPath(taskId), companyId, key, { expectedVersion, reason }, 200, (raw) => {
     const task = decodeWorkTask(raw, companyId, taskId)
     return task !== null && task.status === 'cancelled' ? task : null
   })
 
 /** Marking read is naturally idempotent on the server (the first read time is kept), so it carries no key. */
 export const markInboxRead = (companyId: string, id: string): Promise<WorkCommandOutcome<WorkInboxRead>> =>
-  post(workInboxReadPath(id), companyId, null, null, 200, (raw) => decodeWorkInboxRead(raw, id))
+  postWorkCommand(workInboxReadPath(id), companyId, null, null, 200, (raw) => decodeWorkInboxRead(raw, id))
 
 /** WP9 note read receipt: idempotent on the server by (note, reader) — the first read time is kept — so it carries no key. */
 export const markNoteRead = (companyId: string, noteId: string): Promise<WorkCommandOutcome<WorkNoteReadReceipt>> =>
-  post(workNoteReadPath(noteId), companyId, null, null, 200, (raw) => decodeWorkNoteReadReceipt(raw, noteId))
+  postWorkCommand(workNoteReadPath(noteId), companyId, null, null, 200, (raw) => decodeWorkNoteReadReceipt(raw, noteId))
 
 /**
  * Pending idempotency keys survive a reload in sessionStorage, scoped to session epoch, actor, company and target, so an
