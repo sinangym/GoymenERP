@@ -183,6 +183,7 @@ public sealed partial class FinanceCreditAccountService(
             InterestText = line.Interest,
             BsmvText = line.Bsmv,
             KkdfText = line.Kkdf,
+            VatText = line.Vat,
             ChargesJson = line.Charges is null ? null : JsonSerializer.Serialize(line.Charges, Json),
         }).ToList();
         dbContext.CreditAccounts.Add(row);
@@ -807,7 +808,7 @@ public sealed partial class FinanceCreditAccountService(
             string.Equals(row.ProposedBy, actorId, StringComparison.Ordinal), row.ProposedAtUtc, row.DecidedAtUtc,
             row.RejectionReason, VersionText(row.Version), totals,
             [.. ordered.Select(line => new CreditPlanInstallmentView(line.Sequence, line.DueDate, line.InstallmentText,
-                line.PrincipalText, line.InterestText, line.BsmvText, line.KkdfText, Charges(line)))], profile, Snapshot(row));
+                line.PrincipalText, line.InterestText, line.BsmvText, line.KkdfText, Charges(line), line.VatText))], profile, Snapshot(row));
     }
 
     private static List<CreditAccountInstallmentRow> Ordered(IEnumerable<CreditAccountInstallmentRow> lines) =>
@@ -815,7 +816,7 @@ public sealed partial class FinanceCreditAccountService(
 
     private static List<CreditPlanInstallmentInput> Inputs(IEnumerable<CreditAccountInstallmentRow> lines) =>
         [.. Ordered(lines).Select(line => new CreditPlanInstallmentInput(line.Sequence, line.DueDate, line.InstallmentText,
-            line.PrincipalText, line.InterestText, line.BsmvText, line.KkdfText, Charges(line)))];
+            line.PrincipalText, line.InterestText, line.BsmvText, line.KkdfText, Charges(line), line.VatText))];
 
     internal static int GroupCode(CreditAccountGroup group) => group switch
     {

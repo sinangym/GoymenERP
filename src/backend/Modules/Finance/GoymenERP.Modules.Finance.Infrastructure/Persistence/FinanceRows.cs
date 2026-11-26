@@ -633,6 +633,7 @@ internal sealed class CreditAccountInstallmentRow : IFinanceTenantRow
     public string BsmvText { get; set; } = string.Empty;
     public string KkdfText { get; set; } = string.Empty;
     public string? ChargesJson { get; set; }
+    public string? VatText { get; set; }
 }
 
 /// <summary>ADR-011: the idempotency record of a credit account command (a terminal refusal included).</summary>

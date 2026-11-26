@@ -75,6 +75,8 @@ internal static class FinanceCreditPlanCalculator
         var totalInterest = zero;
         var totalBsmv = zero;
         var totalKkdf = zero;
+        var totalVat = zero;
+        var hasVat = false;
         var totalIncludedCharges = zero;
         var totalSeparateCharges = zero;
         var hasCharges = false;
@@ -101,13 +103,19 @@ internal static class FinanceCreditPlanCalculator
             readable &= TryRead(line.Interest, prefix + "interest", issues, out var interest);
             readable &= TryRead(line.Bsmv, prefix + "bsmv", issues, out var bsmv);
             readable &= TryRead(line.Kkdf, prefix + "kkdf", issues, out var kkdf);
+            var vat = zero;
+            if (line.Vat is not null)
+            {
+                hasVat = true;
+                readable &= TryRead(line.Vat, prefix + "vat", issues, out vat);
+            }
             if (!readable)
             {
                 everyLineReadable = false;
                 continue;
             }
 
-            var components = principal.Add(interest).Add(bsmv).Add(kkdf);
+            var components = principal.Add(interest).Add(bsmv).Add(kkdf).Add(vat);
             if (line.Charges is { } charges)
             {
                 if (charges.Count > 100)
@@ -153,6 +161,7 @@ internal static class FinanceCreditPlanCalculator
             totalInterest = totalInterest.Add(interest);
             totalBsmv = totalBsmv.Add(bsmv);
             totalKkdf = totalKkdf.Add(kkdf);
+            totalVat = totalVat.Add(vat);
         }
 
         if (!everyLineReadable)
@@ -167,7 +176,7 @@ internal static class FinanceCreditPlanCalculator
 
         return new Result(issues, new CreditPlanTotalsView(totalInstallment.Text, totalPrincipal.Text,
             totalInterest.Text, totalBsmv.Text, totalKkdf.Text,
-            hasCharges ? new(totalIncludedCharges.Text, totalSeparateCharges.Text) : null));
+            hasCharges ? new(totalIncludedCharges.Text, totalSeparateCharges.Text) : null, hasVat ? totalVat.Text : null));
     }
 
     private static bool Canonical(string? text, int maximum) => !string.IsNullOrWhiteSpace(text)

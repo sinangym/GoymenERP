@@ -8,7 +8,7 @@ import { decodeCustomerInstrumentPage, type CustomerInstrumentPage } from './cus
 
 export type CreditGroup = 'Cash' | 'NonCash' | 'InstrumentAndFactoring' | 'Leasing'
 export interface CreditCharge { readonly description: string; readonly amount: string; readonly treatment: 'IncludedInInstallment' | 'CollectedSeparately'; readonly sourceDocumentReference: string }
-export interface CreditInstallment { readonly sequence: number; readonly dueDate: string; readonly installment: string; readonly principal: string; readonly interest: string; readonly bsmv: string; readonly kkdf: string; readonly charges?: readonly CreditCharge[] }
+export interface CreditInstallment { readonly sequence: number; readonly dueDate: string; readonly installment: string; readonly principal: string; readonly interest: string; readonly bsmv: string; readonly kkdf: string; readonly charges?: readonly CreditCharge[]; readonly vat?: string }
 export interface CreditProfile {
   readonly lenderPartyId: string; readonly lenderCompanyPartyAccountId: string
   readonly sourceDocument: { readonly reference: string; readonly documentDate: string; readonly revision: string }
@@ -27,7 +27,7 @@ export interface CreditAccount extends Omit<CreditProposal, 'profile'> {
   readonly isOwnProposal: boolean; readonly proposedAtUtc: string; readonly decidedAtUtc: string | null; readonly rejectionReason: string | null
   readonly profile: CreditProfile | null
   readonly tolerance: { readonly profileId: string; readonly profileVersion: number; readonly currencyScale: number; readonly smallestCurrencyUnit: string } | null
-  readonly planTotals: { readonly installment: string; readonly principal: string; readonly interest: string; readonly bsmv: string; readonly kkdf: string; readonly charges?: { readonly includedInInstallment: string; readonly collectedSeparately: string } } | null
+  readonly planTotals: { readonly vat?: string; readonly installment: string; readonly principal: string; readonly interest: string; readonly bsmv: string; readonly kkdf: string; readonly charges?: { readonly includedInInstallment: string; readonly collectedSeparately: string } } | null
 }
 export interface CreditCurrency { readonly currencyId: string; readonly code: string; readonly displayLabel: string }
 export type CreditAttempt = { readonly operation: 'propose'; readonly key: string; readonly request: CreditProposal }
@@ -87,8 +87,9 @@ export function decodeCreditProfile(value: unknown, group: CreditGroup): CreditP
   return value as unknown as CreditProfile
 }
 function installment(value: unknown, index: number): value is CreditInstallment {
-  return record(value) && hasExactKeys(value, INSTALLMENT_REQUIRED, ['charges']) && value.sequence === index + 1 && date(value.dueDate)
+  return record(value) && hasExactKeys(value, INSTALLMENT_REQUIRED, ['charges', 'vat']) && value.sequence === index + 1 && date(value.dueDate)
     && AMOUNT_FIELDS.every(key => isNonNegativeDecimalText(value[key]))
+    && (value.vat === undefined || isNonNegativeDecimalText(value.vat))
     && (value.charges === undefined || Array.isArray(value.charges) && value.charges.every(charge => record(charge)
       && hasExactKeys(charge, CHARGE_FIELDS) && text(charge.description) && isNonNegativeDecimalText(charge.amount) && text(charge.sourceDocumentReference)
       && inSet(charge.treatment, ['IncludedInInstallment', 'CollectedSeparately'])))
@@ -107,8 +108,9 @@ export function decodeCreditAccount(value: unknown, company: string): CreditAcco
   const profile = value.profile === undefined || value.profile === null ? null : decodeCreditProfile(value.profile, value.group as CreditGroup)
   if (value.profile !== undefined && value.profile !== null && profile === null) return null
   if (profile?.planNature === 'SourceMovements' && (value.installments.length !== 0 || value.planTotals !== null)) return null
-  if (value.planTotals !== null && (!record(value.planTotals) || !hasExactKeys(value.planTotals, AMOUNT_FIELDS, ['charges'])
+  if (value.planTotals !== null && (!record(value.planTotals) || !hasExactKeys(value.planTotals, AMOUNT_FIELDS, ['charges', 'vat'])
     || !AMOUNT_FIELDS.every(key => isNonNegativeDecimalText((value.planTotals as Record<string, unknown>)[key]))
+    || value.planTotals.vat !== undefined && !isNonNegativeDecimalText(value.planTotals.vat)
     || value.planTotals.charges !== undefined && (!record(value.planTotals.charges) || !hasExactKeys(value.planTotals.charges, CHARGE_TOTAL_FIELDS)
       || !isNonNegativeDecimalText(value.planTotals.charges.includedInInstallment) || !isNonNegativeDecimalText(value.planTotals.charges.collectedSeparately)))) return null
   if (profile?.planNature === 'Installments' && (value.installments.length === 0 || value.planTotals === null)) return null
@@ -181,8 +183,9 @@ export async function fetchCreditInstruments(company: string, cursor: string | n
 export const CREDIT_PLAN_HEADER = 'sira;vade;taksit;anapara;faiz;bsmv;kkdf'
 export function parseCreditPlanFile(contents: string): readonly CreditInstallment[] | null {
   const lines = contents.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\n+$/, '').split('\n')
-  if (lines[0] !== CREDIT_PLAN_HEADER || lines.length < 2 || lines.length > 601) return null
-  const result = lines.slice(1).map(line => { const cells = line.split(';'); return cells.length === 7 && /^[1-9][0-9]*$/.test(cells[0]!)
-    ? { sequence: Number(cells[0]), dueDate: cells[1]!, installment: cells[2]!, principal: cells[3]!, interest: cells[4]!, bsmv: cells[5]!, kkdf: cells[6]! } : null })
+  const hasVat = lines[0] === CREDIT_PLAN_HEADER + ';kdv'
+  if ((!hasVat && lines[0] !== CREDIT_PLAN_HEADER) || lines.length < 2 || lines.length > 601) return null
+  const result = lines.slice(1).map(line => { const cells = line.split(';'); return cells.length === (hasVat ? 8 : 7) && /^[1-9][0-9]*$/.test(cells[0]!)
+    ? { sequence: Number(cells[0]), dueDate: cells[1]!, installment: cells[2]!, principal: cells[3]!, interest: cells[4]!, bsmv: cells[5]!, kkdf: cells[6]!, ...(hasVat ? { vat: cells[7]! } : {}) } : null })
   return result.every((line, index) => line !== null && installment(line, index)) ? result as CreditInstallment[] : null
 }

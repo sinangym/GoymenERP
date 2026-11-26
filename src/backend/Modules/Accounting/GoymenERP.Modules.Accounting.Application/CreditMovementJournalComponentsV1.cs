@@ -18,11 +18,11 @@ public static class CreditMovementJournalComponentsV1
         NormalJournalPostingRuleV1 rule, int scale)
     {
         if (source.ReversesMovementId is not null || Purpose(source.Kind) is not { } purpose || rule.PostingPurpose != purpose
-            || scale is < 0 or > Money.MaximumScale || source.Components is not { Count: > 0 and <= 6 }) return null;
+            || scale is < 0 or > Money.MaximumScale || source.Components is not { Count: > 0 and <= 7 }) return null;
         var amounts = new Dictionary<string, decimal>(StringComparer.Ordinal);
         foreach (var component in source.Components)
         {
-            if (component.Kind is not ("principal" or "interest" or "bsmv" or "kkdf" or "commission" or "fee")
+            if (component.Kind is not ("principal" or "interest" or "bsmv" or "kkdf" or "commission" or "fee" or "vat")
                 || !Read(component.Amount, scale, out var amount) || amounts.ContainsKey(ComponentKey(component.Kind))) return null;
             amounts.Add(ComponentKey(component.Kind), amount);
         }

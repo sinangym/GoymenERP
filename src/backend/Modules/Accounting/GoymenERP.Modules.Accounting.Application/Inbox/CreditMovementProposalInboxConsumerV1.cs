@@ -24,10 +24,10 @@ public sealed class CreditMovementProposalInboxConsumerV1(ICreditMovementProposa
             || value.Kind is not ("Drawdown" or "Repayment" or "InterestAccrual" or "OpeningBalance")
             || value.SourceDocument is not { } source || !Text(source.Reference, 200) || !Text(source.Revision, 100) || source.DocumentDate == default
             || value.TransactionDate == default || value.AccountingDate == default || !Text(value.ApprovedBy, 128) || !Text(value.Reason, 1000)
-            || value.Components is not { Count: > 0 and <= 6 } || value.Components.Any(x => x is null)) throw Invalid();
+            || value.Components is not { Count: > 0 and <= 7 } || value.Components.Any(x => x is null)) throw Invalid();
         if (value.Components.Select(x => x.Kind).Distinct(StringComparer.Ordinal).Count() != value.Components.Count) throw Invalid();
         foreach (var part in value.Components)
-            if (part.Kind is not ("principal" or "interest" or "bsmv" or "kkdf" or "commission" or "fee") || !Amount(part.Amount)
+            if (part.Kind is not ("principal" or "interest" or "bsmv" or "kkdf" or "commission" or "fee" or "vat") || !Amount(part.Amount)
                 || part.FunctionalAmount is { } functional && !Amount(functional)) throw Invalid();
         if (!value.Components.Any(x => x.Amount.Any(c => c is >= '1' and <= '9'))
             || value.Kind is "Drawdown" or "OpeningBalance" && !value.Components.Any(x => x.Kind == "principal" && x.Amount.Any(c => c is >= '1' and <= '9'))

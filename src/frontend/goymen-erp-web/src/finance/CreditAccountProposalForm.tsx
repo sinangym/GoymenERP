@@ -111,6 +111,11 @@ function Form({ company, namespace, frozen, send, group }: Props & { readonly gr
       {lines.map((line, index) => <fieldset key={index}><legend>{T.columns[0]} {line.sequence}</legend>
         {input(T.columns[1], line.dueDate, value => update(index, { dueDate: value }), 'date')}
         {(['installment', 'principal', 'interest', 'bsmv', 'kkdf'] as const).map((key, position) => <label key={key}>{T.columns[position + 2]}<input required inputMode="decimal" value={line[key]} onChange={event => update(index, { [key]: event.target.value })} /></label>)}
+        {group === 'Leasing' ? <><p>{T.leasingTaxNotice}</p><label>{T.vat}<input inputMode="decimal" value={line.vat ?? ''} onChange={event => {
+          const value = event.target.value
+          if (value === '') setLines(previous => previous.map((item, i) => { if (i !== index) return item; const next = { ...item }; delete next.vat; return next }))
+          else update(index, { vat: value })
+        }} /></label></> : null}
         {line.charges?.map((charge, chargeIndex) => <fieldset key={chargeIndex}><legend>{T.fee}</legend>
           {input(T.feeDescription, charge.description, value => update(index, { charges: line.charges!.map((item, i) => i === chargeIndex ? { ...item, description: value } : item) }))}
           {input(T.feeAmount, charge.amount, value => update(index, { charges: line.charges!.map((item, i) => i === chargeIndex ? { ...item, amount: value } : item) }))}

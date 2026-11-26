@@ -926,3 +926,12 @@ which links to the match once (version 1 → 2); nothing is deleted. FNS-D119: t
 **Screen.** `/finans/banka-ekstresi` (`F-13-BANK-STATEMENT`, Finance shell 1.18): route `finance.bank-statements.read`,
 controls `finance.bank-statements.import` and `.match` inside it; declarations grant nothing. Pins (OpenAPI, guard fingerprints, relational fingerprint, recovery, release manifest)
 are produced at the tren-2 head. Real SQL facts are written and **NOT_RUN** locally.
+
+## FNS-D124–D127 kredi alan listesi bağlantısı
+
+Host, v1.2 onaylı dört grubun alan kapısını kullanır. Bir izin/grant, muhasebe eşlemesi veya canlı aktivasyon eklenmez.
+FNS-D127 leasing planında kaynaktaki KDV ayrı nullable `VatText` alanıdır; eski BSMV/KKDF dönüştürülmez. Leasing'de bu iki
+vergi yerine belgede verilen KDV girilir; hesaplayıcı yalnız tam tutarları toplar. Hareketin `vat` bileşeni mevcut muhasebe
+kaynağına geçer; `credit.component.vat` için onaylı eşleme yoksa mevcut fiş kaynağı hazır olmaz. Hesap/oran seçilmez.
+`20261126181654_AddLeasingInstallmentVat` EF üretimidir; Down KDV kaynağı varken `THROW 52360` ile durur (forward fix).
+SQL/pin/tam CI/K3 ve grup alanlarının bütünleşik işletme kabulü tren kapanışında bekler.

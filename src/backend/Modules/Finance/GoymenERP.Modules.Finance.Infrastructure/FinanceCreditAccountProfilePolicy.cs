@@ -57,6 +57,15 @@ internal static class FinanceCreditAccountProfilePolicy
         }
         if (profile.PlanNature == CreditPlanNatureV1.SourceMovements && request.Installments.Count != 0)
             Invalid("installments");
+        // FNS-D127: source VAT replaces BSMV/KKDF for leasing; never infer VAT from a tax or a description.
+        foreach (var line in request.Installments.Where(line => line is not null))
+        {
+            if (request.Group != CreditAccountGroup.Leasing && line.Vat is not null) Invalid("installments.vat");
+            if (request.Group == CreditAccountGroup.Leasing
+                && (!FinanceExactDecimalText.TryParseNonNegative(line.Bsmv, out var bsmv) || bsmv.Text.Any(c => c is >= '1' and <= '9')
+                    || !FinanceExactDecimalText.TryParseNonNegative(line.Kkdf, out var kkdf) || kkdf.Text.Any(c => c is >= '1' and <= '9')))
+                Invalid("installments.leasingTax");
+        }
         if (request.StartDate == default) Invalid("startDate");
         return issues;
     }

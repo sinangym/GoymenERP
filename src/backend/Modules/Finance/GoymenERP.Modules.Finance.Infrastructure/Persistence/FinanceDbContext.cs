@@ -2104,9 +2104,11 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
             table.HasCheckConstraint("CK_CreditAccountInstallments_Sequence", "[Sequence] >= 1");
             table.HasCheckConstraint("CK_CreditAccountInstallments_Amounts", CreditAccountInstallmentAmountsCheck);
             table.HasCheckConstraint("CK_CreditAccountInstallments_Charges", CreditAccountInstallmentChargesCheck);
+            table.HasCheckConstraint("CK_CreditAccountInstallments_Vat", CreditAccountInstallmentVatCheck);
         });
         installment.HasKey(x => new { x.CompanyId, x.CreditAccountId, x.Sequence });
         installment.Property(x => x.ChargesJson).HasColumnType("nvarchar(max)");
+        installment.Property(x => x.VatText).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation);
         installment.Property(x => x.DueDate).HasColumnType("date");
         installment.Property(x => x.InstallmentText).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation)
             .IsRequired();
@@ -2176,6 +2178,10 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
         + "AND [MoneyProfileId] IS NOT NULL AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000' "
         + "AND [MoneyProfileVersion] IS NOT NULL AND [MoneyProfileVersion] > 0 "
         + "AND [CurrencyScale] IS NOT NULL AND [CurrencyScale] BETWEEN 0 AND 28)";
+
+    internal const string CreditAccountInstallmentVatCheck = "[VatText] IS NULL OR (LEN([VatText]) > 0"
+        + " AND [VatText] NOT LIKE '%[^0-9.]%' AND [VatText] NOT LIKE '%.%.%'"
+        + " AND [VatText] NOT LIKE '.%' AND [VatText] NOT LIKE '%.' )";
 
     internal const string CreditAccountInstallmentChargesCheck = "[ChargesJson] IS NULL OR ISJSON([ChargesJson]) = 1";
 

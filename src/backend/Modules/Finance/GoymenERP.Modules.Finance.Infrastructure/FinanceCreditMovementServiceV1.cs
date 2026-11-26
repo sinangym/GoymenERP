@@ -149,6 +149,13 @@ public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompany
     {
         var shape = FinanceCreditMovementPolicyV1.Validate(source);
         if (shape.Count != 0) return (Failure(context, CommandOutcome.ValidationFailed, [.. shape]), null, null);
+        if (source.Components.Any(component => component.Kind == "vat")
+            && account.CreditGroup != FinanceCreditAccountService.LeasingGroup)
+            return (Failure(context, CommandOutcome.ValidationFailed, new ValidationIssue("components", "credit_vat_requires_leasing")), null, null);
+        if (account.CreditGroup == FinanceCreditAccountService.LeasingGroup
+            && source.Components.Any(component => component.Kind is "bsmv" or "kkdf"
+                && component.Amount.Any(value => value is >= '1' and <= '9')))
+            return (Failure(context, CommandOutcome.ValidationFailed, new ValidationIssue("components", "credit_leasing_uses_vat")), null, null);
         if (account.SourceProfileJson is null) return (Failure(context, CommandOutcome.Unavailable, new ValidationIssue("creditAccountId", "credit_source_profile_required")), null, null);
         var profile = JsonSerializer.Deserialize<CreditAccountProfileV1>(account.SourceProfileJson, Json);
         if (profile is null || (account.CreditGroup == FinanceCreditAccountService.NonCashGroup && source.BankEffect is not null))

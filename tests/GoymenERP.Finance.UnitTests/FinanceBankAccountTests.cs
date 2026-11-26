@@ -138,7 +138,8 @@ public sealed class FinanceBankAccountTests
         // FNS-D113 then appends the confirmed matches and their reversal records.
         const string bankStatementMatches = "20261122220335_AddBankStatementMatches";
         Assert.True(Array.IndexOf(migrations, bankStatementImports) < Array.IndexOf(migrations, bankStatementMatches));
-        Assert.Equal(bankStatementMatches, migrations.Last());
+        const string leasingVat = "20261126181654_AddLeasingInstallmentVat";
+        Assert.Equal(new[] { bankStatementMatches, leasingVat }, migrations.TakeLast(2));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

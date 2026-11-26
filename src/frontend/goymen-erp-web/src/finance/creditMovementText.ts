@@ -2,7 +2,7 @@ export const CREDIT_MOVEMENT_TEXT = {
   title: 'Gerçek kredi hareketleri', intro: 'Banka / kurum belgesindeki gerçek hareketi girin. Plan satırı ödeme sayılmaz; bilinmeyen TL karşılığı boş kalır.',
   add: 'Hareket öner', kind: 'Hareket türü', kinds: { Drawdown: 'Kredi kullanımı', Repayment: 'Geri ödeme', InterestAccrual: 'Faiz tahakkuku', OpeningBalance: 'Açılış bakiyesi' },
   reference: 'Kaynak belge / hareket referansı', revision: 'Kaynak revizyonu', documentDate: 'Belge tarihi', date: 'İşlem tarihi', accountingDate: 'Düzeltmenin açık dönem tarihi',
-  reason: 'Gerekçe', component: 'Belgedeki kalem', components: { principal: 'Anapara', interest: 'Faiz', bsmv: 'BSMV', kkdf: 'KKDF', commission: 'Komisyon', fee: 'Masraf' },
+  reason: 'Gerekçe', component: 'Belgedeki kalem', components: { principal: 'Anapara', interest: 'Faiz', bsmv: 'BSMV', kkdf: 'KKDF', commission: 'Komisyon', fee: 'Masraf', vat: 'KDV' },
   amount: 'Kaynak para birimi tutarı', tl: 'Belgedeki TL karşılığı (bilinmiyorsa boş)', bank: 'Belgede gerçek banka giriş / çıkışı var', bankAccount: 'Banka hesabı',
   bankAmount: 'Belgedeki gerçek banka tutarı', bankReference: 'Banka hareket referansı', select: 'Seçiniz', propose: 'Onaya gönder', approve: 'Onayla', reject: 'Reddet',
   correction: 'Açılışı ters kayıt + yeni kayıt ile düzelt', correctionNotice: 'Özgün açılış korunur. Seçilen açık dönem tarihinde ters kayıt ve yeni kaynak birlikte oluşur.',

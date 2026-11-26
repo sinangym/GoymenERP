@@ -14,6 +14,37 @@ namespace GoymenERP.Finance.UnitTests;
 public sealed partial class FinanceCreditAccountTests
 {
     [Theory]
+    [InlineData(CreditAccountGroup.Leasing, true)]
+    [InlineData(CreditAccountGroup.Cash, false)]
+    public async Task Actual_VAT_is_carried_only_by_a_leasing_movement(CreditAccountGroup group, bool allowed)
+    {
+        await using var run = new Run();
+        var proposedAccount = (await run.ProposeAsync(Maker, Request() with {
+            Group = group, Profile = Profile(group), Installments = PlanFor(group)
+        })).Resource!;
+        var account = (await run.ApproveAsync(Checker, new(proposedAccount.Id, "1"))).Resource!;
+        var proposed = await run.Movement(Maker, service => service.ProposeAsync(Ctx(Maker), new("vat-actual"),
+            Movement(account) with { Kind = CreditMovementKindV1.Repayment,
+                Components = [new("principal", "100", null), new("vat", "20.00", null)] }, default),
+            gate: FinanceCreditGroupGateV1.ApprovedFieldListsV12);
+        if (!allowed)
+        {
+            Assert.Equal(CommandOutcome.ValidationFailed, proposed.Outcome);
+            Assert.Equal("credit_vat_requires_leasing", Assert.Single(proposed.Issues).Code);
+            return;
+        }
+        Assert.Equal(CommandOutcome.Succeeded, proposed.Outcome);
+        var approved = await run.Movement(Checker, service => service.DecideAsync(Ctx(Checker), new("vat-actual-approve"),
+            new(proposed.Resource!.Id, "1", true, null), default), gate: FinanceCreditGroupGateV1.ApprovedFieldListsV12);
+        Assert.Equal(CommandOutcome.Succeeded, approved.Outcome);
+        await using var db = run.Memory(CompanyA);
+        var message = Assert.Single(await db.OutboxMessages.ToArrayAsync());
+        var recorded = JsonSerializer.Deserialize<FinanceCreditMovementRecordedV1>(message.PayloadJson, FinanceJson.CreateOptions())!;
+        Assert.Equal("20.00", Assert.Single(recorded.Components, part => part.Kind == "vat").Amount);
+        Assert.Null(recorded.BankEffect);
+    }
+
+    [Theory]
     [InlineData(CreditAccountGroup.Cash)]
     [InlineData(CreditAccountGroup.NonCash)]
     [InlineData(CreditAccountGroup.InstrumentAndFactoring)]
@@ -22,7 +53,7 @@ public sealed partial class FinanceCreditAccountTests
     {
         await using var run = new Run();
         var proposedAccount = (await run.ProposeAsync(Maker, Request() with {
-            Group = group, Profile = Profile(group), Installments = group == CreditAccountGroup.NonCash ? [] : Plan()
+            Group = group, Profile = Profile(group), Installments = PlanFor(group)
         })).Resource!;
         var account = (await run.ApproveAsync(Checker, new(proposedAccount.Id, "1"))).Resource!;
         var proposed = await run.Movement(Maker, service => service.ProposeAsync(Ctx(Maker), new("approved-field-list"),

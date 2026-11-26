@@ -83,6 +83,7 @@ public sealed class FinanceBankStatementPersistenceModelTests
         Assert.Contains("[finance].[BankStatementMatchReversals]", guard);
         Assert.Single(migration.DownOperations.OfType<SqlOperation>());
         Assert.False(db.Database.HasPendingModelChanges());
-        Assert.Equal("20261122220335_AddBankStatementMatches", db.Database.GetMigrations().Last());
+        Assert.Equal(new[] { "20261122220335_AddBankStatementMatches", "20261126181654_AddLeasingInstallmentVat" },
+            db.Database.GetMigrations().TakeLast(2));
     }
 }

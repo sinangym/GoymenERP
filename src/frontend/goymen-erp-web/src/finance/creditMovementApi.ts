@@ -7,7 +7,7 @@ import type { ViewOutcome } from '../shell/uiState'
 import { decodeBankAccountMasterPage } from './bankAccountContract'
 
 export type CreditMovementKind = 'Drawdown' | 'Repayment' | 'InterestAccrual' | 'OpeningBalance'
-export type CreditComponentKind = 'principal' | 'interest' | 'bsmv' | 'kkdf' | 'commission' | 'fee'
+export type CreditComponentKind = 'principal' | 'interest' | 'bsmv' | 'kkdf' | 'commission' | 'fee' | 'vat'
 export interface CreditMovementInput {
   readonly creditAccountId: string; readonly expectedCreditVersion: string; readonly kind: CreditMovementKind
   readonly sourceDocument: { readonly reference: string; readonly documentDate: string; readonly revision: string }
@@ -58,8 +58,8 @@ export function decodeCreditMovement(value: unknown, company: string, accountId:
     || !record(source.sourceDocument) || !hasExactKeys(source.sourceDocument, DOCUMENT_FIELDS) || !text(source.sourceDocument.reference) || !date(source.sourceDocument.documentDate)
     || !text(source.sourceDocument.revision) || !date(source.transactionDate) || !date(source.accountingDate) || !text(source.reason)
     || !nullableId(source.replacesOpeningMovementId) || source.expectedOpeningMovementVersion !== null && !isOpaqueVersion(source.expectedOpeningMovementVersion)
-    || !Array.isArray(source.components) || source.components.length === 0 || source.components.length > 6
-    || source.components.some(x => !record(x) || !hasExactKeys(x, COMPONENT_FIELDS) || !['principal', 'interest', 'bsmv', 'kkdf', 'commission', 'fee'].includes(x.kind as string)
+    || !Array.isArray(source.components) || source.components.length === 0 || source.components.length > 7
+    || source.components.some(x => !record(x) || !hasExactKeys(x, COMPONENT_FIELDS) || !['principal', 'interest', 'bsmv', 'kkdf', 'commission', 'fee', 'vat'].includes(x.kind as string)
       || !isNonNegativeDecimalText(x.amount) || x.functionalAmount !== null && !isNonNegativeDecimalText(x.functionalAmount))
     || new Set(source.components.map(x => x.kind)).size !== source.components.length) return null
   if (source.bankEffect !== null && (!record(source.bankEffect) || !hasExactKeys(source.bankEffect, BANK_EFFECT_FIELDS) || !isBoundUuid(source.bankEffect.bankAccountId)

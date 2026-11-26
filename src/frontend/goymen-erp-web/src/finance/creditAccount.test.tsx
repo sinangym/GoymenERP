@@ -35,6 +35,27 @@ beforeEach(() => { shell.generation++; boundary.report.mockClear() })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe('source backed credit account workflow', () => {
+  it('transports and displays optional source VAT without filling or converting legacy plan values', async () => {
+    const source = `${CREDIT_PLAN_HEADER};kdv\n1;2026-12-17;130.000;100;10;0;0;20.000\n`
+    const lines = parseCreditPlanFile(source)!
+    expect(lines[0]?.vat).toBe('20.000')
+    expect(lines[0]?.bsmv).toBe('0')
+    expect(lines[0]?.kkdf).toBe('0')
+    expect(parseCreditPlanFile(source.replace('20.000', '-20'))).toBeNull()
+    expect(parseCreditPlanFile(source.replace('20.000', '20,00'))).toBeNull()
+    expect(parseCreditPlanFile(`${CREDIT_PLAN_HEADER}\n1;2026-12-17;130;100;10;0;0`)?.[0]).not.toHaveProperty('vat')
+    const leasing = fixture({ group: 'Leasing', profile: { lenderPartyId: Party, lenderCompanyPartyAccountId: Account,
+      sourceDocument: { reference: 'SENTETIK lease', documentDate: '2026-11-16', revision: '1' }, planNature: 'Installments',
+      leasing: { assetReference: 'SENTETIK asset', leaseStartDate: '2026-11-17', leaseEndDate: '2027-11-17' } }, installments: lines,
+      planTotals: { installment: '130.000', principal: '100', interest: '10', bsmv: '0', kkdf: '0', vat: '20.000' } })
+    expect(decodeCreditAccount(leasing, Company)?.planTotals?.vat).toBe('20.000')
+    expect(decodeCreditAccount({ ...leasing, installments: [{ ...lines[0], vat: 20 }] }, Company)).toBeNull()
+    vi.stubGlobal('fetch', vi.fn(async () => json({ companyId: Company, items: [leasing] })))
+    mount(); fireEvent.click(await screen.findByRole('button', { name: 'İncele' }))
+    expect(await screen.findByRole('cell', { name: '20.000' })).toBeTruthy()
+    expect(screen.getByRole('columnheader', { name: 'Taksit içindeki KDV' })).toBeTruthy()
+  })
+
   it('keeps source amount text and rejects another company, numeric money or a mismatched group profile', () => {
     expect(decodeCreditAccount(fixture(), Company)?.principalAmount).toBe('1000.00')
     expect(decodeCreditAccount(fixture({ companyId: Id }), Company)).toBeNull()

@@ -79,11 +79,12 @@ function Workspace({ namespace }: { readonly namespace: string | null }) {
               {row.tolerance ? <><dt>{T.tolerance}</dt><dd>{row.tolerance.smallestCurrencyUnit}</dd></> : null}
             </dl>
             {row.profile === null ? <p>{T.legacy}</p> : null}
-            {row.installments.length > 0 ? <div className={styles.tableWrap}><table aria-label={`${T.installments} · ${row.contractReference}`} className={styles.table}><thead><tr>{T.columns.map(label => <th scope="col" key={label}>{label}</th>)}<th scope="col">{T.fee}</th></tr></thead>
+            {row.installments.length > 0 ? <div className={styles.tableWrap}><table aria-label={`${T.installments} · ${row.contractReference}`} className={styles.table}><thead><tr>{T.columns.map(label => <th scope="col" key={label}>{label}</th>)}<th scope="col">{T.vat}</th><th scope="col">{T.fee}</th></tr></thead>
               <tbody>{row.installments.map(line => <tr key={line.sequence}><td>{line.sequence}</td><td>{line.dueDate}</td>
                 {['installment', 'principal', 'interest', 'bsmv', 'kkdf'].map(key => <td key={key}>{line[key as 'installment']}</td>)}
-                <td>{line.charges?.map((charge, index) => <p key={index}>{charge.description}: {charge.amount} · {charge.treatment === 'IncludedInInstallment' ? T.included : T.separate} · {charge.sourceDocumentReference}</p>)}</td></tr>)}</tbody></table></div> : null}
+                <td>{line.vat ?? '—'}</td><td>{line.charges?.map((charge, index) => <p key={index}>{charge.description}: {charge.amount} · {charge.treatment === 'IncludedInInstallment' ? T.included : T.separate} · {charge.sourceDocumentReference}</p>)}</td></tr>)}</tbody></table></div> : null}
             {row.planTotals ? <p>{T.totals}: {row.planTotals.installment} / {row.planTotals.principal} / {row.planTotals.interest} / {row.planTotals.bsmv} / {row.planTotals.kkdf}
+              {row.planTotals.vat !== undefined ? <> · {T.vat}: {row.planTotals.vat}</> : null}
               {row.planTotals.charges ? <> · {T.feesIncluded}: {row.planTotals.charges.includedInInstallment} · {T.feesSeparate}: {row.planTotals.charges.collectedSeparately}</> : null}</p> : null}
             {row.status === 'Proposed' && hasCapability(shell, 'finance.credits.approve') ? row.isOwnProposal ? <p>{T.own}</p> : <fieldset disabled={frozen}>
               <button type="button" disabled={row.profile === null} onClick={() => void send({ operation: 'approve', key: crypto.randomUUID(), id: row.id, request: { expectedVersion: row.version } })}>{T.approve}</button>

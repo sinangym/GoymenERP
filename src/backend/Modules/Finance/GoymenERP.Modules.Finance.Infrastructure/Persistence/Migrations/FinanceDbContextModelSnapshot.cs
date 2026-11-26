@@ -914,6 +914,12 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         .HasColumnType("varchar(64)")
                         .UseCollation("Latin1_General_100_BIN2");
 
+                    b.Property<string>("VatText")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
                     b.HasKey("CompanyId", "CreditAccountId", "Sequence");
 
                     b.ToTable("CreditAccountInstallments", "finance", t =>
@@ -925,6 +931,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_CreditAccountInstallments_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CreditAccountId] <> '00000000-0000-0000-0000-000000000000'");
 
                             t.HasCheckConstraint("CK_CreditAccountInstallments_Sequence", "[Sequence] >= 1");
+
+                            t.HasCheckConstraint("CK_CreditAccountInstallments_Vat", "[VatText] IS NULL OR (LEN([VatText]) > 0 AND [VatText] NOT LIKE '%[^0-9.]%' AND [VatText] NOT LIKE '%.%.%' AND [VatText] NOT LIKE '.%' AND [VatText] NOT LIKE '%.' )");
                         });
                 });
 

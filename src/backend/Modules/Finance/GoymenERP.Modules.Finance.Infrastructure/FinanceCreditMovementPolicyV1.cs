@@ -5,7 +5,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// <summary>Source shape only. It calculates neither interest nor tax, bank net, exchange rate or installment settlement.</summary>
 public static class FinanceCreditMovementPolicyV1
 {
-    private static readonly HashSet<string> Kinds = ["principal", "interest", "bsmv", "kkdf", "commission", "fee"];
+    private static readonly HashSet<string> Kinds = ["principal", "interest", "bsmv", "kkdf", "commission", "fee", "vat"];
     public static IReadOnlyList<ValidationIssue> Validate(CreditMovementProposeV1 value)
     {
         var issues = new List<ValidationIssue>();
@@ -18,7 +18,7 @@ public static class FinanceCreditMovementPolicyV1
         if (value.ReplacesOpeningMovementId is null && value.AccountingDate != value.TransactionDate)
             Issue("accountingDate", "credit_movement_date_must_equal_transaction_date");
         if (!Text(value.Reason, 1000)) Issue("reason", "credit_movement_reason_required");
-        if (value.Components is null || value.Components.Count is < 1 or > 6 || value.Components.Any(x => x is null))
+        if (value.Components is null || value.Components.Count is < 1 or > 7 || value.Components.Any(x => x is null))
             Issue("components", "credit_movement_components_required");
         else
         {

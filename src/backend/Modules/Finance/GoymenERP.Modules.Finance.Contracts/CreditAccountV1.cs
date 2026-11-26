@@ -34,7 +34,8 @@ public enum CreditAccountStatus { Proposed, Approved, Rejected }
 // non-negative decimal text in the credit's currency.
 public sealed record CreditPlanInstallmentInput(int Sequence, DateOnly DueDate, string Installment, string Principal,
     string Interest, string Bsmv, string Kkdf,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<CreditPlanChargeInputV1>? Charges = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<CreditPlanChargeInputV1>? Charges = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Vat = null);
 
 // A new credit account proposal. LenderName: the bank or institution as written on the contract (there is no lender master
 // yet). ContractReference: the bank's contract or credit number. PrincipalAmount: the credit amount (exact positive text).
@@ -53,11 +54,13 @@ public sealed record CreditAccountRejectBody(string ExpectedVersion, string Reas
 
 // The plan totals the calculator derived from the lines (exact sums, never rounded).
 public sealed record CreditPlanTotalsView(string Installment, string Principal, string Interest, string Bsmv,
-    string Kkdf, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CreditPlanChargeTotalsV1? Charges = null);
+    string Kkdf, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CreditPlanChargeTotalsV1? Charges = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Vat = null);
 
 public sealed record CreditPlanInstallmentView(int Sequence, DateOnly DueDate, string Installment, string Principal,
     string Interest, string Bsmv, string Kkdf,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<CreditPlanChargeInputV1>? Charges = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<CreditPlanChargeInputV1>? Charges = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Vat = null);
 
 // One credit account. IsOwnProposal: the caller proposed it (the approve control is not offered on it). No actor id is
 // disclosed.

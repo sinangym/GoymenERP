@@ -89,11 +89,11 @@ function MovementForm({ account, namespace, original, frozen, submit }: { readon
     <label>{T.date}<input required type="date" value={date} onChange={event => setDate(event.target.value)} /></label>
     {original !== null ? <><p>{T.correctionNotice}</p><label>{T.accountingDate}<input required type="date" value={accountingDate} onChange={event => setAccountingDate(event.target.value)} /></label></> : null}
     {parts.map((part, index) => <div key={index}><label>{T.component}<select required value={part.kind} onChange={event => setParts(value => value.map((x, i) => i === index ? { ...x, kind: event.target.value as CreditComponentKind } : x))}><option value="">{T.select}</option>
-      {Object.entries(T.components).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      {Object.entries(T.components).filter(([value]) => value !== 'vat' || account.group === 'Leasing').map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <label>{T.amount}<input required inputMode="decimal" value={part.amount} onChange={event => setParts(value => value.map((x, i) => i === index ? { ...x, amount: event.target.value } : x))} /></label>
       <label>{T.tl}<input inputMode="decimal" value={part.functionalAmount} onChange={event => setParts(value => value.map((x, i) => i === index ? { ...x, functionalAmount: event.target.value } : x))} /></label>
       <button type="button" disabled={parts.length === 1} onClick={() => setParts(value => value.filter((_, i) => i !== index))}>{T.remove}</button></div>)}
-    <button type="button" disabled={parts.length >= 6} onClick={() => setParts(value => [...value, { kind: '', amount: '', functionalAmount: '' }])}>{T.addComponent}</button>
+    <button type="button" disabled={parts.length >= 7} onClick={() => setParts(value => [...value, { kind: '', amount: '', functionalAmount: '' }])}>{T.addComponent}</button>
     {bankAllowed ? <><label><input type="checkbox" checked={hasBank} onChange={event => setHasBank(event.target.checked)} />{T.bank}</label>
       {hasBank ? bankState.kind !== 'ready' ? <StateBlock state={bankState} subject={T.bankAccount} onRetry={() => void banks.refetch()} /> : eligible.length === 0 ? <p>{T.noBanks}</p> : <>
         <label>{T.bankAccount}<select required value={bankId} onChange={event => setBankId(event.target.value)}><option value="">{T.select}</option>{eligible.map(item => <option key={item.account.id} value={item.account.id}>{item.account.displayName}</option>)}</select></label>

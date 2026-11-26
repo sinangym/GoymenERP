@@ -6,6 +6,20 @@ namespace GoymenERP.Accounting.UnitTests;
 
 public sealed class CreditMovementJournalComponentsV1Tests
 {
+    [Fact]
+    public void Source_VAT_requires_its_own_approved_mapping_and_is_not_inferred_from_a_tax_rate()
+    {
+        var source = Source("Repayment") with { Components = [new("principal", "100", null),
+            new("interest", "10", null), new("vat", "20", null)], BankEffect = new(Guid.NewGuid(), "130", "SENTETIK payment") };
+        var rule = Rule(source.Kind, ("credit.bank", PostingSide.Credit), ("credit.component.principal", PostingSide.Debit),
+            ("credit.component.interest", PostingSide.Debit), ("credit.component.vat", PostingSide.Debit));
+        Assert.Equal("20", CreditMovementJournalComponentsV1.TryCreate(source, rule, 2)!
+            .Single(line => line.MappingKey == "credit.component.vat").Amount);
+        var incomplete = new NormalJournalPostingRuleV1(rule.Mirror, rule.PostingPurpose, rule.Version,
+            rule.ApprovedByUserId, rule.ApprovedAtUtc, rule.Mappings.Where(mapping => mapping.MappingKey != "credit.component.vat"));
+        Assert.Null(CreditMovementJournalComponentsV1.TryCreate(source, incomplete, 2));
+    }
+
     private static readonly Guid Company = Guid.NewGuid();
     internal static CreditMovementSourceV1 Source(string kind = "Drawdown") => new(Guid.NewGuid(), Company, Guid.NewGuid(), Guid.NewGuid(),
         Guid.NewGuid(), kind, new("SENTETIK statement", new(2026, 11, 18), "1"), new(2026, 11, 18), new(2026, 11, 18),

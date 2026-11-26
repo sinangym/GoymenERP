@@ -318,7 +318,7 @@ public sealed partial class FinanceCreditAccountTests
         await using var run = new Run();
 
         var proposed = await run.ProposeAsync(Maker, Request() with { Group = group, Profile = Profile(group),
-            Installments = group == CreditAccountGroup.NonCash ? [] : Plan() });
+            Installments = PlanFor(group) });
 
         Assert.Equal(group, proposed.Resource!.Group);
         Assert.Equal(code, (await run.RowAsync(proposed.Resource.Id)).CreditGroup);
@@ -654,6 +654,15 @@ public sealed partial class FinanceCreditAccountTests
         new(1, new DateOnly(2026, 12, 15), "541.2345", "500.00", "33.0000", "1.6500", "6.5845"),
         new(2, new DateOnly(2027, 1, 15), "530.917", "500.00", "25.000", "1.250", "4.667"),
     ];
+
+    private static List<CreditPlanInstallmentInput> PlanFor(CreditAccountGroup group) => group switch
+    {
+        CreditAccountGroup.NonCash => [],
+        CreditAccountGroup.Leasing => [
+            new(1, new(2026, 12, 15), "541.2345", "500.00", "33.0000", "0", "0", Vat: "8.2345"),
+            new(2, new(2027, 1, 15), "530.917", "500.00", "25.000", "0", "0", Vat: "5.917")],
+        _ => Plan()
+    };
 
     private static CreditAccountProposeRequest Request() =>
         new(CreditAccountGroup.Cash, Lender, Contract, Currency, "1000.00", Start, Plan(), Profile(CreditAccountGroup.Cash));
