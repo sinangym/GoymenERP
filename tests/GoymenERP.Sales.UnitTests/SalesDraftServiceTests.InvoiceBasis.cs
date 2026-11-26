@@ -31,16 +31,16 @@ public sealed partial class SalesDraftServiceTests
         switch (scenario)
         {
             case "accepted-archive":
-                await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(draftId, Command(await VersionAsync()), Metadata("k-basis-approve")));
+                await WithIndependentApproverAsync(world, async () => await world.Service().ApproveDraftAsync(draftId, Command(await VersionAsync()), Metadata("k-basis-approve")));
                 await world.Service().RecordCustomerRejectionAsync(draftId, Command(await VersionAsync(), "SENTETIK musteri istemedi"),
                     Metadata("k-basis-customer-reject"));
                 break;
             case "current":
-                await WithIndependentApproverAsync(world, () => world.Service().ApproveDraftAsync(draftId, Command(await VersionAsync()), Metadata("k-basis-approve")));
+                await WithIndependentApproverAsync(world, async () => await world.Service().ApproveDraftAsync(draftId, Command(await VersionAsync()), Metadata("k-basis-approve")));
                 await world.Service().RecordCustomerAcceptanceAsync(draftId, Command(await VersionAsync()), Metadata("k-basis-accept"));
                 break;
             default:
-                await WithIndependentApproverAsync(world, () => world.Service().RejectDraftAsync(draftId, Command(await VersionAsync(), "SENTETIK ic ret"), Metadata("k-basis-reject")));
+                await WithIndependentApproverAsync(world, async () => await world.Service().RejectDraftAsync(draftId, Command(await VersionAsync(), "SENTETIK ic ret"), Metadata("k-basis-reject")));
                 break;
         }
 
