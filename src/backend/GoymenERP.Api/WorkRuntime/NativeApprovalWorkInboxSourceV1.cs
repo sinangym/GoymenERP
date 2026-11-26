@@ -13,7 +13,14 @@ namespace GoymenERP.Api.WorkRuntime;
 /// existing Work approval detail screen where the owner's own decision command applies, and the rule and numbers are the
 /// owner's recorded values (nothing is computed here). The kind's duration class is the rule table's, never this class's.
 /// </summary>
-internal sealed class NativeApprovalWorkInboxSourceV1 : IWorkInboxSourceV1
+internal interface INativeApprovalDecisionReadAdapterV1
+{
+    bool HasDecisionRead { get; }
+    Task<WorkInboxSourceResultV1> ListDecisionPendingAsync(WorkInboxSourceContextV1 context,int maxCount,CancellationToken token);
+    Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context,Guid id,CancellationToken token);
+}
+
+internal sealed class NativeApprovalWorkInboxSourceV1 : IWorkApprovalDecisionSourceV1
 {
     public const string SalesOrderDraftRule = "sales.order-draft-approval";
     public const string OfficialInvoiceImportRule = "finance.official-invoice-import-approval";
@@ -40,6 +47,10 @@ internal sealed class NativeApprovalWorkInboxSourceV1 : IWorkInboxSourceV1
 
     public string ApproverPermission { get; }
 
+    public Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context,Guid itemId,CancellationToken cancellationToken) =>
+        inner is INativeApprovalDecisionReadAdapterV1 decision ? decision.ReadDecisionAsync(context,itemId,cancellationToken)
+            : Task.FromResult<WorkApprovalDecisionSnapshotV1?>(null);
+
     /// <summary>The owner's approve permission of each native kind (the name its own read and decision check).</summary>
     internal static string? ApproverPermissionOf(string kind) => kind switch
     {
@@ -58,6 +69,8 @@ internal sealed class NativeApprovalWorkInboxSourceV1 : IWorkInboxSourceV1
         ArgumentNullException.ThrowIfNull(context);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCount);
         cancellationToken.ThrowIfCancellationRequested();
+        if(inner is INativeApprovalDecisionReadAdapterV1 { HasDecisionRead:true } decision)
+            return await decision.ListDecisionPendingAsync(context,maxCount,cancellationToken);
         if (context.GrantScope is not null || !NativeApprovalKindsV1.IsKnown(Kind))
         {
             // Native owners decide company-wide only; a scoped caller is never asked (AcceptsScopedApprovers is false).

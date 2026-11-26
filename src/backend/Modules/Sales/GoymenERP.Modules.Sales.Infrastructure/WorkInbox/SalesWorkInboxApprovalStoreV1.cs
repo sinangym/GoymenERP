@@ -86,6 +86,8 @@ internal sealed record SalesWorkInboxOverDeliveryRequestV1(
 /// </summary>
 internal interface ISalesWorkInboxApprovalStoreV1
 {
+    Task<SalesWorkInboxInvoiceDecisionV1?> FindInvoiceDecisionAsync(Guid companyId, Guid invoiceId, CancellationToken cancellationToken)
+        => Task.FromResult<SalesWorkInboxInvoiceDecisionV1?>(null);
     Task<IReadOnlyList<SalesWorkInboxRequestV1>> ListSubmittedRequestsAsync(Guid companyId, int take,
         CancellationToken cancellationToken);
 
@@ -108,7 +110,7 @@ internal interface ISalesWorkInboxApprovalStoreV1
         CancellationToken cancellationToken);
 }
 
-internal sealed class SalesWorkInboxApprovalStoreV1(SalesDbContext dbContext) : ISalesWorkInboxApprovalStoreV1
+internal sealed partial class SalesWorkInboxApprovalStoreV1(SalesDbContext dbContext) : ISalesWorkInboxApprovalStoreV1
 {
     private const int RequestSubmitted = (int)SalesRequestState.Submitted;
     private const int InvoicePending = (int)SalesInvoiceState.PendingApproval;

@@ -13,6 +13,16 @@ namespace GoymenERP.Sales.UnitTests;
 /// </summary>
 public sealed class SalesShellCapabilityProviderContractTests
 {
+    [Fact]
+    public void Work_decision_routes_publish_native_decision_permissions_without_browsing_grants()
+    {
+        var declarations=new SalesShellCapabilityProvider().GetDeclarations();
+        var order=Assert.Single(declarations,item=>item.CapabilityId==SalesShellCapabilityProvider.OrderWorkDecisionCapabilityId);
+        var invoice=Assert.Single(declarations,item=>item.CapabilityId==SalesShellCapabilityProvider.InvoiceWorkDecisionCapabilityId);
+        Assert.Equal([SalesPermissionManifestV1.OrdersApprove],order.RequiredPermissions);
+        Assert.Equal([SalesPermissionManifestV1.InvoicesApprove,SalesPermissionManifestV1.OrdersPriceRead],invoice.RequiredPermissions);
+        Assert.All(new[]{order,invoice},item=>Assert.Equal(ShellCapabilityContextRequirement.SingleCompany,item.ContextRequirement));
+    }
     private const string FrontendCapabilities = "src/frontend/goymen-erp-web/src/sales/capabilities.ts";
 
     [Fact]
@@ -56,8 +66,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         // API-40 / UI-70b / SAT-D288..SAT-D294 (1.25, merged after API-07 1.24): registers the four return names (manifest v30), the S-10
         // return list, create and detail screens and the detail's submission, approval and finalisation controls.
         // API-33 / API-36 (1.27): the four invoice controls of the S-09 list (write, approve, match, finalize); no new name.
-        Assert.Equal(("SALES", "1.27"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(43, declarations.Count);
+        // WP8 1.28 adds two native decision routes without a browsing read permission or a new grant.
+        Assert.Equal(("SALES", "1.28"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(45, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);

@@ -17,7 +17,7 @@ internal sealed class SalesInvoiceWorkInboxSourceV1(
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     IErpAuthorityRevalidationService authority)
-    : SalesWorkInboxSourceBaseV1(companyContext, currentUser, authority)
+    : SalesWorkInboxSourceBaseV1(companyContext, currentUser, authority), IWorkApprovalDecisionSourceV1
 {
     public const string KindName = "sales.invoice.v1";
     public const string ApprovalRule = "sales.invoice-approval-required";
@@ -27,6 +27,15 @@ internal sealed class SalesInvoiceWorkInboxSourceV1(
     public override string ApproverPermission => SalesPermissionManifestV1.InvoicesApprove;
 
     protected override IReadOnlyList<string> DecisionCoPermissions => [SalesPermissionManifestV1.OrdersPriceRead];
+
+    public async Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context, Guid itemId, CancellationToken cancellationToken)
+    {
+        if (itemId == Guid.Empty || !await DecisionAllowedAsync(context, cancellationToken)) return null;
+        var row = await store.FindInvoiceDecisionAsync(context.CompanyId, itemId, cancellationToken);
+        if (!await DecisionAllowedAsync(context, cancellationToken) || row is null || row.Version < 1) return null;
+        var item = Project(context.CompanyId, [row.Invoice], 1).Items.Single();
+        return new(context.CompanyId, item, row.Version.ToString(System.Globalization.CultureInfo.InvariantCulture), row.Pending);
+    }
 
     protected override async Task<(IReadOnlyList<WorkInboxItemV1> Items, bool HasMore)> ReadAsync(Guid companyId, int take,
         bool disclosePrices, CancellationToken cancellationToken) =>
@@ -53,7 +62,7 @@ internal sealed class SalesInvoiceWorkInboxSourceV1(
                 invoice.Id,
                 documentNo,
                 SalesWorkInboxItemsV1.RequireTime(invoice.SubmittedAtUtc),
-                SalesWorkInboxItemsV1.InvoicesLink,
+                $"/onaylarim/{KindName}/{invoice.Id:D}",
                 maker,
                 [new WorkApprovalRuleResultV1(ApprovalRule, null, null, null, null)],
                 [new WorkApprovalReferenceV1(SalesWorkInboxItemsV1.InvoiceRole, documentNo, invoice.Id,

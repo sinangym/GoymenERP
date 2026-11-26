@@ -84,7 +84,7 @@ public sealed class SalesRemainingApprovalWorkInboxSourcesV1Tests
         var result = await source.ListPendingAsync(Context(), 10, default);
 
         var item = Assert.Single(result.Items!);
-        Assert.Equal(("FTR-SNT-0001", "/satis/faturalar"), (item.DocumentLabel, item.Link));
+        Assert.Equal(("FTR-SNT-0001", $"/onaylarim/sales.invoice.v1/{item.ItemId:D}"), (item.DocumentLabel, item.Link));
         Assert.Equal(T0.AddHours(2).ToUniversalTime(), item.WaitingSinceUtc);
         Assert.Equal(Maker, item.PreparedBy);
         Assert.Equal([Submitter], item.ExcludedDeciders);

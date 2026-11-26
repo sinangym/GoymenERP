@@ -95,6 +95,10 @@ internal abstract class SalesWorkInboxSourceBaseV1(
     protected abstract Task<(IReadOnlyList<WorkInboxItemV1> Items, bool HasMore)> ReadAsync(Guid companyId, int take,
         bool disclosePrices, CancellationToken cancellationToken);
 
+    protected async Task<bool> DecisionAllowedAsync(WorkInboxSourceContextV1 context, CancellationToken cancellationToken) =>
+        context.GrantScope is null && await AllowedAsync(context, ApproverPermission, cancellationToken)
+        && await CoPermissionsAllowedAsync(context, cancellationToken);
+
     private async Task<bool> CoPermissionsAllowedAsync(WorkInboxSourceContextV1 context, CancellationToken cancellationToken)
     {
         foreach (var coPermission in DecisionCoPermissions)

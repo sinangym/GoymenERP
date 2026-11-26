@@ -44,6 +44,10 @@ export const SALES_CAPABILITY = {
   customerReturnsDetail: 'sales.customer-returns.detail',
 } as const
 
+/** WP8 purpose routes: native decision permissions only, no invoice/draft browsing grant. */
+export const SALES_WORK_DECISION_CAPABILITY = { order: 'sales.order-draft.work-decision', invoice: 'sales.invoice.work-decision' } as const
+export const SALES_WORK_DECISION_ROUTE = { order: '/onaylarim/sales.order-draft.v1/:approvalId', invoice: '/onaylarim/sales.invoice.v1/:approvalId' } as const
+
 /**
  * API-40 / SAT-D290 / SAT-D291: the three CONTROLS of the S-10 return detail (submission, approval, finalisation), each published
  * only beside its own name (`sales.returns.write` / `sales.returns.approve` / `sales.returns.finalize`). The preparer never

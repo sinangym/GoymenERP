@@ -1,14 +1,22 @@
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Infrastructure.WorkInbox;
+using GoymenERP.BuildingBlocks.Work;
 
 namespace GoymenERP.Api.WorkRuntime;
 
 internal sealed class SalesOrderDraftPendingApprovalAdapterV1(
-    ISalesOrderDraftPendingApprovalReadServiceV1 owner)
-    : INativeApprovalReadAdapterV1
+    ISalesOrderDraftPendingApprovalReadServiceV1 owner, SalesOrderWorkDecisionReadV1? decisions = null)
+    : INativeApprovalReadAdapterV1, INativeApprovalDecisionReadAdapterV1
 {
     private const string PendingApproval = "PendingApproval";
 
     public string Kind => NativeApprovalKindsV1.SalesOrderDraft;
+    public bool HasDecisionRead => decisions is not null;
+    public Task<WorkInboxSourceResultV1> ListDecisionPendingAsync(WorkInboxSourceContextV1 context,int maxCount,CancellationToken token) =>
+        decisions?.ListPendingAsync(context,maxCount,token)??Task.FromResult(WorkInboxSourceResultV1.Unavailable());
+
+    public Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context,Guid id,CancellationToken token) =>
+        decisions?.ReadAsync(context,id,token)??Task.FromResult<WorkApprovalDecisionSnapshotV1?>(null);
 
     public async Task<NativeApprovalReadResultV1<NativeApprovalReadPageV1>> ListAsync(
         NativeApprovalReadContextV1 context,

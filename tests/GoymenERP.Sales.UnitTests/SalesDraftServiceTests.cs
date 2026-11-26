@@ -718,11 +718,11 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal((503, SalesDraftProblemCodesV1.PermissionUnregistered), (gap.Status, gap.Code));
     }
 
-    /// <summary>D2: a SalesSupport creator, including a dual-role creator, cannot approve or reject; another actor and a non-SalesSupport creator retain main behavior.</summary>
+    /// <summary>YOL-D23: the newer maker/checker decision removes the older non-SalesSupport self-decision exception.</summary>
     [Theory]
     [InlineData("approve")]
     [InlineData("reject")]
-    public async Task A_sales_support_creator_cannot_decide_and_other_personas_keep_main_behavior(string decision)
+    public async Task YOL_D23_preserves_the_sales_support_creator_ban_and_removes_the_other_persona_exception(string decision)
     {
         var world = new World();
         world.ActiveRoleCodes.Codes.UnionWith([ErpPersonaRoleCodes.SalesSupport, "SALES_MANAGER"]);
@@ -750,20 +750,18 @@ public sealed partial class SalesDraftServiceTests
         world.User.Id = Actor;
         var second = (await world.Service().CreateDraftAsync(Request(), Metadata("k-2"))).Detail;
         await world.Service().SubmitDraftAsync(second.Draft.Id, Command("2"), Metadata("k-submit-2"));
-        var own = await world.Service().ApproveDraftAsync(second.Draft.Id, Command("3"), Metadata("k-own"));
-        Assert.Equal(("Approved", Actor, Actor, true, false),
-            (own.Detail.Draft.ApprovalState, own.Detail.Approval.SubmittedBy, own.Detail.Approval.DecidedBy,
-                own.Detail.IsOwnDraft, own.Detail.IsOwnDecisionRestricted));
+        // YOL-D23 supersedes the old D2md1 exception: clearing SALES_SUPPORT never permits self-decision.
+        var own = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveDraftAsync(second.Draft.Id, Command("3"), Metadata("k-own")));
+        Assert.Equal((403, "forbidden"), (own.Status, own.Code));
     }
 
     /// <summary>
-    /// D2md1: creator identity alone is not an own-decision ban. With no active SalesSupport persona,
-    /// the creator keeps the existing approve/reject path under the ordinary approve authority.
+    /// YOL-D23 supersedes D2md1: the creator cannot approve/reject even with no active SalesSupport persona.
     /// </summary>
     [Theory]
     [InlineData("approve")]
     [InlineData("reject")]
-    public async Task A_non_sales_support_creator_keeps_the_existing_decision_behavior(string decision)
+    public async Task YOL_D23_replaces_the_older_D2md1_non_sales_support_self_decision_exception(string decision)
     {
         var world = new World();
         Assert.Empty(world.ActiveRoleCodes.Codes);
@@ -772,15 +770,13 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-md1-submit"));
         world.Authority.Measured.Clear();
 
-        var decided = decision == "approve"
-            ? await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-md1-decide"))
-            : await world.Service().RejectDraftAsync(created.Draft.Id, Command("3", "SENTETIK md1"), Metadata("k-md1-decide"));
-
-        Assert.Equal((decision == "approve" ? "Approved" : "Rejected", Actor, Actor, true, false),
-            (decided.Detail.Draft.ApprovalState, decided.Detail.Approval.SubmittedBy, decided.Detail.Approval.DecidedBy,
-                decided.Detail.IsOwnDraft, decided.Detail.IsOwnDecisionRestricted));
-        Assert.Contains(ApprovePermission, world.Authority.Measured);
-        Assert.All(world.Authority.Measured, permission => Assert.Contains(permission, new[] { ApprovePermission, PriceReadPermission }));
+        // The newer YOL-D23 denies the creator in every persona, before a transition or durable refusal.
+        var transitions=world.Store.Transitions.Count;
+        var refused=await Assert.ThrowsAsync<SalesDraftServiceException>(()=>decision=="approve"
+            ? world.Service().ApproveDraftAsync(created.Draft.Id,Command("3"),Metadata("k-md1-decide"))
+            : world.Service().RejectDraftAsync(created.Draft.Id,Command("3","SENTETIK md1"),Metadata("k-md1-decide")));
+        Assert.Equal((403,"forbidden",transitions),(refused.Status,refused.Code,world.Store.Transitions.Count));
+        Assert.Contains(ApprovePermission,world.Authority.Measured);
     }
 
     /// <summary>
@@ -813,16 +809,12 @@ public sealed partial class SalesDraftServiceTests
     }
 
     /// <summary>
-    /// D2 (Sinan 5750987986 points 1–2): "own order" is the order the actor PREPARED (the stored creator), not the one
-    /// they submitted. A creates, an authorized B submits: A holding the general approve name is still fenced (the own
-    /// name is asked and refused); B — the submitter, not the preparer — decides it exactly as on main: only the approve
-    /// name and the disclosure name are asked, nothing new enters, the transition is recorded. No persona D2 did not name
-    /// gains a silent new self-approval policy.
+    /// YOL-D23 (2026-11-22) supersedes the earlier submitter exception: A creates, B submits, an independent C decides.
     /// </summary>
     [Theory]
     [InlineData("approve")]
     [InlineData("reject")]
-    public async Task Ownership_is_the_preparer_not_the_submitter_and_an_authorized_non_preparer_behaves_as_on_main(string decision)
+    public async Task YOL_D23_excludes_both_preparer_and_submitter_but_an_independent_authorized_reviewer_decides(string decision)
     {
         var world = new World();
         world.ActiveRoleCodes.Codes.Add(ErpPersonaRoleCodes.SalesSupport);
@@ -843,15 +835,16 @@ public sealed partial class SalesDraftServiceTests
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(Decide);
         Assert.Equal((403, "forbidden", transitions, 0), (refused.Status, refused.Code, world.Store.Transitions.Count, world.Store.Refusals.Count));
 
-        // The submitter — authorized, not the preparer — decides it as on main: the same names main's path asked, no other.
-        world.User.Id = "synthetic-submitter";
+        // YOL-D23 also excludes the submitter, irrespective of persona; an independent authorized reviewer remains allowed.
+        world.User.Id="synthetic-submitter";
         world.ActiveRoleCodes.Codes.Clear();
-        world.Authority.Measured.Clear();
-        var decided = await Decide();
-        Assert.Equal(decision == "approve" ? "Approved" : "Rejected", decided.Detail.Draft.ApprovalState);
-        Assert.Equal(("synthetic-submitter", "synthetic-submitter"), (decided.Detail.Approval.SubmittedBy, decided.Detail.Approval.DecidedBy));
-        Assert.Equal(transitions + 1, world.Store.Transitions.Count);
-        Assert.All(world.Authority.Measured, name => Assert.Contains(name, new[] { ApprovePermission, PriceReadPermission }));
+        var submitter=await Assert.ThrowsAsync<SalesDraftServiceException>(Decide);
+        Assert.Equal((403,"forbidden",transitions),(submitter.Status,submitter.Code,world.Store.Transitions.Count));
+        world.User.Id="synthetic-independent-reviewer";
+        var decided=await Decide();
+        Assert.Equal(decision=="approve"?"Approved":"Rejected",decided.Detail.Draft.ApprovalState);
+        Assert.Equal(("synthetic-submitter","synthetic-independent-reviewer"),(decided.Detail.Approval.SubmittedBy,decided.Detail.Approval.DecidedBy));
+        Assert.Equal(transitions+1,world.Store.Transitions.Count);
     }
 
     /// <summary>

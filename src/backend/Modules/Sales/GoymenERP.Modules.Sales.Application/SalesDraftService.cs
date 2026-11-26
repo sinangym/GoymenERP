@@ -1026,8 +1026,8 @@ public sealed partial class SalesDraftService(
 
         // D2 (Sinan 5749046401): the persona fences are AUTHORITY questions about THIS draft, so the draft is read first
         // and the fence is asked before the transition — the price-write fence's shape: a refusal is 403, never recorded,
-        // code-less on the wire. Approve/Reject of one's OWN draft (the one the actor CREATED) needs the separate
-        // own-decision name (registered to nobody); Withdraw is the CREATOR's alone. A draft another company owns is
+        // code-less on the wire. YOL-D23 (2026-11-22) excludes the creator AND submitter from Approve/Reject in every
+        // persona; merely contributing edits adds no exclusion. Withdraw is the CREATOR's alone. A draft another company owns is
         // null under the tenant filter and stays a 404, never a 403.
         //
         // What this pre-read asks and what it does not confer (measured on main before D2, this file :458/:466/:482/:531):
@@ -1224,10 +1224,8 @@ public sealed partial class SalesDraftService(
     }
 
     /// <summary>
-    /// D2's two persona fences use the stored creator (<c>CreatedBy</c>), never the submitter. Approve/Reject is refused
-    /// only when that creator's fresh Identity role set contains <c>SALES_SUPPORT</c>; a dual role does not bypass it and
-    /// personas D2 did not name retain main behavior. Withdraw remains creator-only. Both are server fences; the screen
-    /// only mirrors the resulting relationship flags.
+    /// YOL-D23 (2026-11-22) supersedes the older D2 persona exception for decisions: the stored creator and current
+    /// submitter cannot approve/reject in any persona. Merely editing a record adds no exclusion. Withdraw remains creator-only.
     /// </summary>
     private static Task RequirePersonaFenceAsync(Scope scope, string commandName, SalesOrderDraft current, CancellationToken cancellationToken)
     {
@@ -1235,7 +1233,7 @@ public sealed partial class SalesDraftService(
         switch (commandName)
         {
             case SalesDraftCommands.ApproveV1 or SalesDraftCommands.RejectV1
-                when IsOwn(scope, current) && scope.IsSalesSupport:
+                when IsMakerOrSubmitter(scope, current):
                 throw new SalesDraftServiceException(403, "forbidden");
             case SalesDraftCommands.WithdrawV1 when !IsOwn(scope, current):
                 throw new SalesDraftServiceException(403, "forbidden");

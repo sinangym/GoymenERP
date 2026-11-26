@@ -49,11 +49,14 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 /// (<see cref="InvoiceMatchCapabilityId"/>) and finalizing / re-sending it to Finance (<see cref="InvoiceFinalizeCapabilityId"/>). Each
 /// control needs the invoice read, the price read (every invoice command measures it and answers amounts) and its own existing name.
 /// No new name is registered, nothing is granted and no name becomes Critical (SAT-D249: finalize is a normal permission).</para>
+/// <para>1.28 (WP8): two purpose decision routes use only the native command permissions; no browse permission or grant is added.</para>
 /// </summary>
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.27";
+    public const string OwnerContractVersion = "1.28";
+    public const string OrderWorkDecisionCapabilityId = "sales.order-draft.work-decision";
+    public const string InvoiceWorkDecisionCapabilityId = "sales.invoice.work-decision";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -296,6 +299,15 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             ImplementationAvailable: true);
         return
         [
+        // WP8: purpose decision routes require the native command names, with no browse/read grant added.
+        new ShellCapabilityDeclaration(OrderWorkDecisionCapabilityId,"sales-order-draft-work-decision",
+            "/onaylarim/sales.order-draft.v1/:approvalId","W-SALES-ORDER-01",ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleCompany,ShellCapabilityScopeRequirement.CompanyWide,
+            [SalesPermissionManifestV1.OrdersApprove],ImplementationAvailable:true),
+        new ShellCapabilityDeclaration(InvoiceWorkDecisionCapabilityId,"sales-invoice-work-decision",
+            "/onaylarim/sales.invoice.v1/:approvalId","W-SALES-INVOICE-01",ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleCompany,ShellCapabilityScopeRequirement.CompanyWide,
+            [SalesPermissionManifestV1.InvoicesApprove,SalesPermissionManifestV1.OrdersPriceRead],ImplementationAvailable:true),
         new ShellCapabilityDeclaration(
             ListCapabilityId,
             ListRouteId,

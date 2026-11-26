@@ -5,6 +5,7 @@ using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Work.Infrastructure.Delegations;
+using GoymenERP.Modules.Sales.Application.Contracts;
 
 namespace GoymenERP.Api.WorkRuntime;
 
@@ -78,11 +79,24 @@ public static class WorkDecisionRegistrationV1
 public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser user, ICorrelationContext correlation,
     IErpAuthorityRevalidationService authority, IEnumerable<IWorkInboxSourceV1> sources,
     IWorkDelegationReaderV1 delegations, WorkDecisionExecutionFenceV1 executionFence,
-    IFinanceCashAccountMaster cash, IInventoryOpeningCostCommandV1 openingCost)
+    IFinanceCashAccountMaster cash, IInventoryOpeningCostCommandV1 openingCost,
+    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null)
 {
     public const string OpeningCost = "inventory.opening-cost.v1";
+    public const string SalesOrder = "sales.order-draft.v1";
+    public const string SalesInvoice = "sales.invoice.v1";
     public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([OpeningCost, "finance.cash-account.v1",
-        "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1"], StringComparer.Ordinal);
+        "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice], StringComparer.Ordinal);
+
+    private async Task RequireDecisionAuthorityAsync(string kind,string permission,Guid companyId,string actor,CancellationToken token)
+    {
+        foreach(var required in kind==SalesInvoice?new[]{permission,SalesPermissionManifestV1.OrdersPriceRead}:new[]{permission})
+        {
+            var scope=await authority.RevalidatePermissionScopeAsync(required,companyId,token);
+            if(!scope.IsGranted||!scope.IsCompanyWide||!user.IsAuthenticated||user.UserId!=actor
+                ||!company.IsResolved||company.CompanyId!=companyId||!user.CanAccessCompany(companyId))throw new WorkDecisionException(403);
+        }
+    }
 
     private async Task<WorkApprovalDecisionSnapshotV1> SnapshotAsync(string kind, Guid id, CancellationToken token)
     {
@@ -96,9 +110,7 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
         var companyId = company.CompanyId; var actor = user.UserId;
         async Task Fence()
         {
-            var scope = await authority.RevalidatePermissionScopeAsync(source.ApproverPermission, companyId, token);
-            if (!scope.IsGranted || !scope.IsCompanyWide || !user.IsAuthenticated || user.UserId != actor
-                || !company.IsResolved || company.CompanyId != companyId || !user.CanAccessCompany(companyId)) throw new WorkDecisionException(403);
+            await RequireDecisionAuthorityAsync(kind,source.ApproverPermission,companyId,actor,token);
         }
         await Fence();
         var context = new WorkInboxSourceContextV1(companyId, actor, correlation.CorrelationId, correlation.CausationId);
@@ -132,9 +144,7 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
             if (!user.IsAuthenticated || user.UserId != actor || !company.IsResolved || company.CompanyId != snapshot.CompanyId || !user.CanAccessCompany(snapshot.CompanyId))
                 throw new WorkDecisionException(403);
         }
-        var finalScope = await authority.RevalidatePermissionScopeAsync(sources.Single(source => source.Kind == kind).ApproverPermission, snapshot.CompanyId, token);
-        if (!finalScope.IsGranted || !finalScope.IsCompanyWide || !user.IsAuthenticated || user.UserId != actor
-            || !company.IsResolved || company.CompanyId != snapshot.CompanyId || !user.CanAccessCompany(snapshot.CompanyId)) throw new WorkDecisionException(403);
+        await RequireDecisionAuthorityAsync(kind,sources.Single(source => source.Kind == kind).ApproverPermission,snapshot.CompanyId,actor!,token);
         return new(snapshot.CompanyId, kind, id, snapshot.Item.DocumentLabel, snapshot.SourceVersion, snapshot.Pending,
             kind == OpeningCost, snapshot.Item.References, rules);
     }
@@ -147,12 +157,32 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
         if (user.UserId != actor) throw new WorkDecisionException(403);
         if (string.IsNullOrWhiteSpace(request.ExpectedVersion) || request.ExpectedVersion.Length > 128
             || (kind == OpeningCost && request.ExpectedVersion != snapshot.SourceVersion)
-            || ((kind == OpeningCost || !request.Approve) && (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 500))
+            || ((kind == OpeningCost || !request.Approve && kind is not (SalesOrder or SalesInvoice)) && (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 500))
             || (kind != OpeningCost && request.Approve && request.Reason is not null)) throw new WorkDecisionException(400, "work_decision_invalid");
         async Task<bool> Verify(CancellationToken ct) => request.DelegationId is not { } delegation
             || await delegations.FindForActorAsync(delegation, snapshot.Item, ct) is not null;
         if (!await Verify(token)) throw new WorkDecisionException(403);
         using var lease = executionFence.Enter(Verify);
+        if(kind is SalesOrder or SalesInvoice)
+        {
+            var metadata=new SalesCommandMetadata(key,correlation.CorrelationId,correlation.CausationId,DateTimeOffset.UtcNow);
+            var body=new SalesDraftStateCommandRequest(request.ExpectedVersion,request.Reason);
+            try
+            {
+                if(kind==SalesOrder)
+                {
+                    if(salesOrders is null)throw new WorkDecisionException(503);
+                    var answer=request.Approve?await salesOrders.ApproveDraftAsync(id,body,metadata,token):await salesOrders.RejectDraftAsync(id,body,metadata,token);
+                    if(answer.Detail.Draft.Id!=id||answer.Detail.Draft.CompanyId!=snapshot.CompanyId)throw new WorkDecisionException(503);
+                    return new(snapshot.CompanyId,kind,id,answer.Detail.Draft.ApprovalState,answer.IsReplay,answer.OriginalCorrelationId);
+                }
+                if(salesInvoices is null)throw new WorkDecisionException(503);
+                var invoice=request.Approve?await salesInvoices.ApproveInvoiceAsync(id,body,metadata,token):await salesInvoices.RejectInvoiceAsync(id,body,metadata,token);
+                if(invoice.Invoice.Id!=id)throw new WorkDecisionException(503);
+                return new(snapshot.CompanyId,kind,id,invoice.Invoice.State,invoice.IsReplay,invoice.OriginalCorrelationId);
+            }
+            catch(SalesDraftServiceException error){throw new WorkDecisionException(error.Status,error.Code,error.IsReplay,error.OriginalCorrelationId);}
+        }
         if (kind == OpeningCost)
         {
             var value = await openingCost.DecideAsync(id,

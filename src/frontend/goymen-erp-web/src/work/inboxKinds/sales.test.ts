@@ -10,6 +10,7 @@ import {
   SALES_INVOICE_APPROVE_CAPABILITY,
   SALES_OVER_DELIVERY_APPROVE_CAPABILITY,
   SALES_POOL_CAPABILITY_ID,
+  SALES_WORK_DECISION_CAPABILITY,
 } from '../../sales/capabilities'
 import { WORK_INBOX_CAPABILITIES, WORK_INBOX_KINDS } from '../workInboxKinds'
 import {
@@ -23,7 +24,7 @@ import { SALES_INBOX_KINDS } from './sales'
 
 const WP4_KINDS = {
   'sales.request.v1': SALES_POOL_CAPABILITY_ID.requestsDecide,
-  'sales.invoice.v1': SALES_INVOICE_APPROVE_CAPABILITY,
+  'sales.invoice.v1': SALES_WORK_DECISION_CAPABILITY.invoice,
   'sales.subcontract-invoice.v1': SALES_INVOICE_APPROVE_CAPABILITY,
   'sales.customer-return.v1': SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
   'sales.contract-discount.v1': null,

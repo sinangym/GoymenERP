@@ -85,6 +85,7 @@ public static class SalesModuleExtensions
         services.AddScoped<ISalesOrderPrintReadServiceV1>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesOrderDraftPendingApprovalReadServiceV1,
             SalesOrderDraftPendingApprovalReadServiceV1>();
+        services.AddScoped<SalesOrderWorkDecisionReadV1>();
         // WP-A3a: Sales owner READ tools over the owner's own measured reads (registration only; Ai:AllowedTools stays
         // empty, so the catalog admits none).
         services.AddScoped<IAiOwnerToolV1, SalesPendingApprovalsAiTool>();
