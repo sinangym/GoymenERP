@@ -104,6 +104,7 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IAiOwnerToolV1, PurchasingInvoiceVariancesAiTool>();
         // A4 / MOD-03: the open purchase lines serving a Sales order (the host adapts it to Sales's linked-supply read contract).
         services.AddScoped<IPurchaseSalesLinkedSupplyReadPortV1, PurchaseSalesLinkedSupplyReadPort>();
+        services.AddScoped<IPurchaseSalesOrderObligationReadPortV1, PurchaseSalesOrderObligationReadPortV1>();
         services.AddScoped<IPurchaseNotificationRecipientsV1, PurchaseNotificationRecipients>();
         // W1-A (AI-D31/AI-D32): the read-only Work inbox sources of Purchasing's pending approvals; they decide nothing.
         services.AddScoped<PurchasingWorkInboxFence>();

@@ -872,7 +872,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
 
             var requestLine = requestLines.SingleOrDefault(candidate => candidate.LineId == sourceLineId)
                 ?? throw new InvalidOperationException("Siparişin bağlı olduğu talep satırı bulunamadı.");
-            var sum = approvedShares.Where(share => share.SourceRequestLineId == sourceLineId).Sum(share => share.Ordered) + line.Quantity.Value;
+            var sum = RequestLineOrderedShare(approvedShares, sourceLineId) + line.Quantity.Value;
             if (sum > requestLine.Quantity)
             {
                 errors.Add(new PurchasingFieldError($"lines[{index}].sourceRequestLineId", PurchasingStoreCodes.RequestLineOverSourced));
@@ -887,6 +887,12 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
 
         requestRow.SourcingVersion = checked(requestRow.SourcingVersion + 1);
     }
+
+    /// <summary>The existing ALS-D68 request-use rule, shared with the price-free obligation observation.
+    /// Callers supply Approved/Cancelled orders only; technical slices are already within their general line.</summary>
+    internal static decimal RequestLineOrderedShare(IEnumerable<PurchaseOrderLineRow> shares, Guid requestLineId) =>
+        shares.Where(share => share.Kind == (int)PurchaseOrderLineKind.General
+            && share.SourceRequestLineId == requestLineId).Sum(share => share.Ordered);
 
     public async Task<StoredPurchaseOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
     {
@@ -1055,7 +1061,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
     /// version and status must be the ones the rebuild reaches. A submission recorded without its actor (before A1-1) is
     /// rebuilt without one, so the domain refuses any decision on it (fail-closed).
     /// </summary>
-    private static PurchaseRequest RestoreRequest(PurchaseRequestRow row, IReadOnlyList<PurchaseRequestLineRow> lines)
+    internal static PurchaseRequest RestoreRequest(PurchaseRequestRow row, IReadOnlyList<PurchaseRequestLineRow> lines)
     {
         var request = PurchaseRequest.Create(row.Id, row.CompanyId, row.CreatedBy, row.CreatedAtUtc);
         foreach (var line in lines)
