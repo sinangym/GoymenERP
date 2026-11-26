@@ -49,8 +49,8 @@ function NotificationsBody() {
     {page === null ? <StateBlock state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>} subject={T.subject} onRetry={() => void query.refetch()} />
       : page.items.length === 0 ? <StateBlock state={{ kind: 'empty-no-data' }} subject={T.subject} />
         : <><div className={styles.tableWrap} role="region" aria-label={T.heading} tabIndex={0}><table className={styles.table}><caption>{T.heading}</caption>
-          <thead><tr><th scope="col">{T.heading}</th><th scope="col">{T.line}</th><th scope="col">{T.reason}</th><th scope="col">{T.time}</th><th scope="col">{T.status}</th></tr></thead>
-          <tbody>{page.items.map((item) => <tr key={item.id}><td>{item.kind === 'allocation-released' ? T.released : T.revived}</td><td>{item.salesOrderLineId ?? item.purchaseOrderLineId}
+          <thead><tr><th scope="col">{T.heading}</th><th scope="col">{T.source}</th><th scope="col">{T.reason}</th><th scope="col">{T.time}</th><th scope="col">{T.status}</th></tr></thead>
+          <tbody>{page.items.map((item) => <tr key={item.id}><td>{item.kind === 'allocation-released' ? T.released : item.kind === 'purchase-supply-revived' ? T.revived : T.staleCost}</td><td>{item.kind === 'accounting-cost-proposal-stale' ? <>{T.costProposal}: {item.sourceEntityId}<p>{T.staleCostNextStep}</p></> : item.salesOrderLineId ?? item.purchaseOrderLineId}
             {item.salesOrderId !== null && hasCapability(shell, SALES_CAPABILITY.draftsDetail) ? <> <Link to={SALES_ROUTE.detail.replace(':draftId', item.salesOrderId)}>{T.order}</Link></> : null}
             {item.purchaseOrderId !== null && hasCapability(shell, PURCHASING_CAPABILITY.orderDetail) ? <> <Link to={purchaseOrderDetailPath(item.purchaseOrderId)}>{T.order}</Link></> : null}</td>
             <td>{item.reasonText}</td><td><time dateTime={item.recordedAtUtc}>{new Date(item.recordedAtUtc).toLocaleString('tr-TR')}</time></td><td>{item.passivatedAtUtc === null ? T.active : T.passive}</td></tr>)}</tbody>

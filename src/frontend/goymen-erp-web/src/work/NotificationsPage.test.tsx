@@ -17,6 +17,25 @@ function mount() {
 }
 const item = { id: 'bbbbbbbb-0000-4000-8000-000000000001', companyId: COMPANY_A, kind: 'allocation-released', salesOrderId: 'cccccccc-0000-4000-8000-000000000001', salesOrderLineId: 'dddddddd-0000-4000-8000-000000000001', sourceEntityId: 'eeeeeeee-0000-4000-8000-000000000001', sourceVersion: '2', reasonCode: 'acceptance-link-failed', reasonText: 'SENTETIK ayrım bırakıldı', occurredAtUtc: '2026-11-17T00:00:00Z', recordedAtUtc: '2026-11-17T00:00:01Z', passivatedAtUtc: null, purchaseOrderId: null, purchaseOrderLineId: null }
 describe('personal notification inbox', () => {
+  it('shows a stale cost proposal beside 99 old records with an Accounting next step and no guessed owner link', async () => {
+    const stale = { ...item, kind: 'accounting-cost-proposal-stale', salesOrderId: null, salesOrderLineId: null,
+      sourceVersion: '3', reasonCode: 'inventory_cost_preparation_stale', reasonText: 'Bayatladı' }
+    const items = [...Array.from({ length: 99 }, (_, index) => ({ ...item,
+      id: `bbbbbbbb-0000-4000-8000-${(index + 2).toString().padStart(12, '0')}` })), stale]
+    const calls = installFetch({ capabilities: ['sales.drafts.detail', 'purchasing.orders.detail'], respond: (url) => url.includes('/work/notifications?')
+      ? json({ companyId: COMPANY_A, items, hasMore: true, nextCursor: stale.id }) : undefined })
+    mount()
+    expect(await screen.findByText(T.staleCost)).toBeTruthy()
+    expect(screen.getByText(T.staleCostNextStep)).toBeTruthy()
+    expect(screen.getByText(`${T.costProposal}: ${stale.sourceEntityId}`)).toBeTruthy()
+    expect(screen.getAllByText(item.reasonText)).toHaveLength(99)
+    const staleRow = screen.getByText(T.staleCost).closest('tr')!
+    expect(staleRow.querySelector('a')).toBeNull()
+    expect(staleRow.textContent).not.toContain(T.revived)
+    expect(calls.filter(call => call.url.includes('/work/notifications?')).every(call => call.headers['X-Company-Id'] === COMPANY_A)).toBe(true)
+    expect(calls.some(call => /\/api\/v1\/(?:accounting|sales|purchasing)\//.test(call.url))).toBe(false)
+    expect(screen.getByRole('button', { name: T.more })).toBeTruthy()
+  })
   it('shows a revived purchase source without granting access to the purchase order', async () => {
     const purchase = { ...item, kind: 'purchase-supply-revived', salesOrderId: null, salesOrderLineId: null,
       purchaseOrderId: item.salesOrderId, purchaseOrderLineId: item.salesOrderLineId, reasonText: 'SENTETIK tedarik yeniden açıldı' }
