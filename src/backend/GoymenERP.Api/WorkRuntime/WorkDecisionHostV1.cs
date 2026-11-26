@@ -165,19 +165,19 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
         using var lease = executionFence.Enter(Verify);
         if(kind is SalesOrder or SalesInvoice)
         {
-            var metadata=new SalesCommandMetadata(key,correlation.CorrelationId,correlation.CausationId,DateTimeOffset.UtcNow);
+            var salesMetadata=new SalesCommandMetadata(key,correlation.CorrelationId,correlation.CausationId,DateTimeOffset.UtcNow);
             var body=new SalesDraftStateCommandRequest(request.ExpectedVersion,request.Reason);
             try
             {
                 if(kind==SalesOrder)
                 {
                     if(salesOrders is null)throw new WorkDecisionException(503);
-                    var answer=request.Approve?await salesOrders.ApproveDraftAsync(id,body,metadata,token):await salesOrders.RejectDraftAsync(id,body,metadata,token);
+                    var answer=request.Approve?await salesOrders.ApproveDraftAsync(id,body,salesMetadata,token):await salesOrders.RejectDraftAsync(id,body,salesMetadata,token);
                     if(answer.Detail.Draft.Id!=id||answer.Detail.Draft.CompanyId!=snapshot.CompanyId)throw new WorkDecisionException(503);
                     return new(snapshot.CompanyId,kind,id,answer.Detail.Draft.ApprovalState,answer.IsReplay,answer.OriginalCorrelationId);
                 }
                 if(salesInvoices is null)throw new WorkDecisionException(503);
-                var invoice=request.Approve?await salesInvoices.ApproveInvoiceAsync(id,body,metadata,token):await salesInvoices.RejectInvoiceAsync(id,body,metadata,token);
+                var invoice=request.Approve?await salesInvoices.ApproveInvoiceAsync(id,body,salesMetadata,token):await salesInvoices.RejectInvoiceAsync(id,body,salesMetadata,token);
                 if(invoice.Invoice.Id!=id)throw new WorkDecisionException(503);
                 return new(snapshot.CompanyId,kind,id,invoice.Invoice.State,invoice.IsReplay,invoice.OriginalCorrelationId);
             }
