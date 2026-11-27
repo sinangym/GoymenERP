@@ -85,15 +85,22 @@ public sealed partial class PurchasingServiceTests
     private sealed class ServiceCommandStore : IPurchaseServiceOrderStoreV1
     {
         public PurchaseServiceOrderState? Saved { get; private set; }
+        public Action? BeforeDecisionFence, AfterSyntheticSave;
+        public PurchaseServiceOrderWriteV1? ReplayResult;
+        public int Writes { get; private set; }
         public void Seed(PurchaseServiceOrderState value) => Saved = value;
         public Task<PurchaseServiceOrderState?> ReadAsync(Guid id, CancellationToken token) => Task.FromResult(Saved);
         public Task<IReadOnlyList<PurchaseServiceOrderState>> ListAsync(CancellationToken token) => throw new NotSupportedException();
         public Task<PurchaseServiceOrderWriteV1?> ReplayAsync(string command, PurchasingWriteEnvelope envelope, string hash, CancellationToken token) =>
-            Task.FromResult<PurchaseServiceOrderWriteV1?>(null);
+            Task.FromResult(ReplayResult);
         public async Task<PurchaseServiceOrderWriteV1?> WriteAsync(Guid id, string command, PurchasingWriteEnvelope envelope, string hash, string reason,
             Func<PurchaseServiceOrderState?, CancellationToken, Task<PurchaseServiceOrderState>> mutate, Func<CancellationToken, Task> fence, CancellationToken token)
         {
-            var value = await mutate(Saved, token); await fence(token); Saved = value with { DocumentNumber = "SENTETIK-number-fixture" };
+            var value = await mutate(Saved, token);
+            BeforeDecisionFence?.Invoke(); await fence(token);
+            // Synthetic Save boundary only; real transaction rollback is exercised by the SQL source tests.
+            if (AfterSyntheticSave is not null) { AfterSyntheticSave(); await fence(token); }
+            Saved = value with { DocumentNumber = "SENTETIK-number-fixture" }; Writes++;
             return new(Saved, null, false, envelope.CorrelationId);
         }
     }

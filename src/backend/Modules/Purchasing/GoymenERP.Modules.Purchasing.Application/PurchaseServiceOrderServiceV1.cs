@@ -166,8 +166,15 @@ public sealed partial class PurchaseServiceOrderServiceV1(ICompanyContext compan
             var cleanReason = PurchaseServiceOrder.RequireReason(reason);
             var result = await ReadAsync(scope, permission, () => store.ReplayAsync(command, envelope, hash, token), token);
             var disclosure = await DiscloseAsync(scope, token);
+            if (command == PurchaseServiceOrderCommandsV1.Approve) await StillAsync(scope, permission, token);
             result ??= await store.WriteAsync(id, command, envelope, hash, cleanReason,
-                (old, ct) => mutate(scope, old, ct), async ct => { await StillAsync(scope, permission, ct); disclosure = await DiscloseAsync(scope, ct); }, token) ?? throw Failure(404);
+                (old, ct) => mutate(scope, old, ct), async ct =>
+                {
+                    await StillAsync(scope, permission, ct);
+                    disclosure = await DiscloseAsync(scope, ct);
+                    // Price disclosure is another owner await; approval authority must still be fresh after it.
+                    if (command == PurchaseServiceOrderCommandsV1.Approve) await StillAsync(scope, permission, ct);
+                }, token) ?? throw Failure(404);
             if (result.Refusal is { } refusal) throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors,
                 result.IsReplay, result.OriginalCorrelationId);
             return new(View(result.Order ?? throw Failure(503), disclosure), result.IsReplay, result.OriginalCorrelationId);

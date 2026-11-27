@@ -104,7 +104,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         PurchaseServiceOrderKind.ServicePurchase, PurchaseServiceOrderStatus.Draft, Guid.NewGuid(), Guid.NewGuid(), "1", "1", Day,
         run.Actor, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, new(Guid.NewGuid(), "TRY", Guid.NewGuid(), 1, 2, 4),
         [new(Guid.NewGuid(), Guid.NewGuid(), 1, "SENTETIK hizmet", Guid.NewGuid(), "kg", Guid.NewGuid(), 1, 3, 10m, 2m, 0m)], [], [], []));
-    private static ServiceSqlScope ServiceScope(Run run, Guid company, bool failAudit = false)
+    private static ServiceSqlScope ServiceScope(Run run, Guid company, bool failAudit = false, Action? afterAudit = null)
     {
         var scope = run.Factory.Services.CreateAsyncScope();
         scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(company);
@@ -113,7 +113,8 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         var numbers = new PurchaseDocumentNumberSqlTestOwner(run.Factory.Services, company,
             new PurchaseDocumentNumberSqlTestOwner.FixedActor(company, run.Actor), new PurchaseDocumentNumberSqlTestOwner.DirectStoreAuthority());
         return new(scope, database, numbers, new(database, scope.ServiceProvider.GetRequiredService<ICompanyContext>(),
-            scope.ServiceProvider.GetRequiredService<IAuditEventCollector>(), failAudit ? new ServiceFailingAudit(writer) : writer, numbers.Numbers));
+            scope.ServiceProvider.GetRequiredService<IAuditEventCollector>(), failAudit ? new ServiceFailingAudit(writer)
+                : afterAudit is null ? writer : new ServiceDecisionAuditWriter(writer, afterAudit), numbers.Numbers));
     }
     private sealed class ServiceSqlScope(AsyncServiceScope scope, PurchasingDbContext database, PurchaseDocumentNumberSqlTestOwner numbers,
         PurchaseServiceOrderStoreV1 store) : IAsyncDisposable
