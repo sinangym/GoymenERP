@@ -163,10 +163,6 @@ function isSourceKind(value: unknown): value is ExpensePaymentSourceKind {
   return typeof value === 'string' && (EXPENSE_SOURCE_KINDS as readonly string[]).includes(value)
 }
 
-function isWireDate(value: unknown): value is string {
-  return typeof value === 'string' && isDateOnly(value)
-}
-
 function decodeProfile(value: unknown): ProfileReference | null {
   if (!isRecord(value) || !hasExactKeys(value, ['profileId', 'version'])) return null
   if (!isBoundUuid(value.profileId) || !isPositiveInt64Text(value.version)) return null
@@ -185,7 +181,7 @@ const PREPARATION_KEYS = [
   'description',
 ] as const
 
-function decodePreparation(value: unknown): ExpensePaymentPreparation | null {
+function decodePreparation(value: unknown, dateValidator: (value: string) => boolean = isDateOnly): ExpensePaymentPreparation | null {
   if (!isRecord(value) || !hasExactKeys(value, PREPARATION_KEYS)) return null
   const profile = decodeProfile(value.profile)
   if (
@@ -197,8 +193,8 @@ function decodePreparation(value: unknown): ExpensePaymentPreparation | null {
     || !isPositiveDecimalText(value.money.amount)
     || !isBoundUuid(value.money.currencyId)
     || profile === null
-    || !isWireDate(value.occurredOn)
-    || !(value.valueOn === null || isWireDate(value.valueOn))
+    || typeof value.occurredOn !== 'string' || !dateValidator(value.occurredOn)
+    || !(value.valueOn === null || typeof value.valueOn === 'string' && dateValidator(value.valueOn))
     || !(value.reference === null || (typeof value.reference === 'string' && value.reference.trim().length > 0
       && value.reference.length <= EXPENSE_REFERENCE_MAX_LENGTH))
     // FNS-D25: the description is mandatory on every stored payment.
@@ -235,11 +231,11 @@ const VIEW_KEYS = [
   'version',
 ] as const
 
-export function decodeExpensePaymentView(value: unknown, companyId: string): Decoded<ExpensePaymentView> {
+export function decodeExpensePaymentView(value: unknown, companyId: string, dateValidator: (value: string) => boolean = isDateOnly): Decoded<ExpensePaymentView> {
   if (!isRecord(value) || !hasExactKeys(value, Object.hasOwn(value, 'documentNumber') ? [...VIEW_KEYS, 'documentNumber'] : VIEW_KEYS)) return FAIL
   const documentNumber = decodeFinanceDocumentNumber(value.documentNumber)
   if (documentNumber === null || documentNumber !== undefined && value.status !== 'Recorded') return FAIL
-  const preparation = decodePreparation(value.preparation)
+  const preparation = decodePreparation(value.preparation, dateValidator)
   if (
     !isBoundUuid(value.id)
     || value.companyId !== companyId

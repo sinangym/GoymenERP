@@ -1538,7 +1538,7 @@ it('mounts dispatch as the 25th native purpose under its exact standalone capabi
  expect(route?.path).toBe(`onaylarim/${dispatchKind}/:approvalId`)
  const element=route?.element as ReactElement<{capability:readonly string[];children:ReactElement<{kind:string}>}>
  expect(element.props.capability).toEqual([dispatchCap]);expect(element.props.children.type).toBe(WorkDecisionPage);expect(element.props.children.props.kind).toBe(dispatchKind)
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(35)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(36)
 })
 it.each([{companyId:COMPANY_B},{logisticsDispatchNote:{...dispatchProof,dispatchNoteId:COMPANY_A}},{rejectionSupported:true}])('does not expose malformed/foreign dispatch proof %j',async(delta)=>{
  installFetch({capabilities:[dispatchCap],respond:url=>url.includes(dispatchPath)?json({...dispatchPreview,...delta}):undefined});mountDispatchPurpose()
@@ -1612,7 +1612,7 @@ it('mounts the customer return purpose under its exact standalone capability amo
  expect(route?.path).toBe(`onaylarim/${customerKind}/:approvalId`)
  expect(route).toBeDefined()
  expect((route!.element as ReactElement<{capability:readonly string[]}>).props.capability).toEqual([customerCap])
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(35)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(36)
 })
 it('does not restore a customer-return unknown attempt under another authentication session',async()=>{
  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-return-old'})
@@ -2437,4 +2437,88 @@ it.each(reversalKinds)('does not carry original reversal command or human proof 
  mount(`/onaylarim/${k}/${id}`,true);await screen.findByRole('region',{name:T.reversalProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
  await userEvent.setup().selectOptions(screen.getByRole('combobox',{name:'Şirket'}),COMPANY_B)
  await screen.findByText('SENTETIK company B bank');expect(screen.queryByText('SENTETIK company A bank')).toBeNull();expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+})
+
+const expenseKind='finance.expense-payment.v1' as const,expenseCap='finance.expense-payment.work-decision'
+function expensePreview(companyId:string,itemId:string,version='9007199254740993') {
+ return {companyId,kind:expenseKind,itemId,documentLabel:'SENTETIK expense draft',sourceVersion:version,pending:true,approvalReasonRequired:false,rejectionSupported:false,
+ references:[{role:'bank-account',recordId:reversalBank,label:'SENTETIK expense bank',link:null},{role:'expense-item',recordId:reversalParty,label:'SENTETIK expense item',link:null},{role:'currency',recordId:reversalCurrency,label:'SENTETIK currency',link:null}],
+ rules:[{ruleCode:'finance.expense-payment-approval-required',threshold:null,actual:'123.45',deviation:null,unit:null}],
+ expensePayment:{payment:{id:itemId,companyId,status:'Draft',preparation:{sourceKind:'Bank',treasuryAccountId:reversalBank,expenseItemId:reversalParty,money:{amount:'000123.4500',currencyId:reversalCurrency},profile:{profileId:reversalAccount,version:'3'},occurredOn:'0001-01-01',valueOn:'9999-12-31',reference:'SENTETIK expense reference',description:'SENTETIK private expense description'},preparedBy:'SENTETIK expense preparer',preparedAtUtc:'0001-01-01T00:00:00Z',approvedBy:null,approvedAtUtc:null,recordedBy:null,recordedAtUtc:null,paymentConfirmed:false,version},treasuryAccountLabel:'SENTETIK named expense bank',revisers:['SENTETIK expense editor'],draftFactsDigest:'b'.repeat(64)}}
+}
+
+describe('expense payment native approval-only Work purpose',()=>{
+ it('shows full native preparation/profile and human timestamps but no digest or payment/record action',async()=>{
+  const ownerPath=`/work/decisions/${expenseKind}/${id}`,value=expensePreview(COMPANY_A,id)
+  const calls=installFetch({capabilities:[expenseCap],respond:(url,init)=>url.includes(ownerPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:expenseKind,itemId:id,state:'Approved',replayed:false,originalCorrelationId:'SENTETIK expense'}):json(value):undefined})
+  mount(`/onaylarim/${expenseKind}/${id}`,true);const region=await screen.findByRole('region',{name:T.expenseProposal})
+  for(const text of ['000123.4500','SENTETIK named expense bank','SENTETIK expense editor','SENTETIK private expense description','SENTETIK expense reference','0001-01-01','9999-12-31',reversalBank,reversalParty,reversalCurrency,reversalAccount,'0001-01-01T00:00:00Z'])expect(within(region).getAllByText(text).length).toBeGreaterThan(0)
+  expect(screen.queryByText('b'.repeat(64))).toBeNull();expect(screen.queryByRole('textbox',{name:T.reason})).toBeNull();expect(screen.queryByRole('button',{name:T.reject})).toBeNull();expect(screen.queryByRole('button',{name:'Kesin kayda al'})).toBeNull();expect(screen.queryByRole('checkbox')).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done)
+  const sent=calls.filter(call=>call.url.includes(ownerPath)&&call.method==='POST');expect(sent).toHaveLength(1);expect(sent[0]!.body).toEqual({expectedVersion:'9007199254740993',approve:true,reason:null,delegationId:null})
+  expect(calls.some(call=>call.url.includes('/finance/expense-payments'))).toBe(false);expect(screen.queryByRole('region',{name:T.expenseProposal})).toBeNull()
+ })
+ it('restores only the same original N/key/body without reading current recorded N+2 facts',async()=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK expense retry'});let posts=0
+  const ownerPath=`/work/decisions/${expenseKind}/${id}`,value=expensePreview(COMPANY_A,id)
+  const calls=installFetch({capabilities:[expenseCap],respond:(url,init)=>url.includes(ownerPath)?init?.method==='POST'?++posts===1?problem(503):json({companyId:COMPANY_A,kind:expenseKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'SENTETIK-expense-original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK-expense-original'}):posts?problem(503):json(value):undefined})
+  mount(`/onaylarim/${expenseKind}/${id}`,true);await screen.findByRole('region',{name:T.expenseProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+  for(const secret of ['SENTETIK private expense description','000123.4500','SENTETIK named expense bank','draftFactsDigest','expensePayment'])expect(JSON.stringify(sessionStorage)).not.toContain(secret)
+  cleanup();mount(`/onaylarim/${expenseKind}/${id}`,true);await screen.findByText(T.unknown);await screen.findByText(T.expenseRetained)
+  expect(screen.queryByRole('region',{name:T.expenseProposal})).toBeNull();expect(screen.getByText(`${T.version}: 9007199254740993`)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+  const sent=calls.filter(call=>call.url.includes(ownerPath)&&call.method==='POST');expect(sent).toHaveLength(2);expect(sent[1]!.body).toEqual(sent[0]!.body);expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key']);expect(calls.filter(call=>call.url.includes(ownerPath)&&call.method==='GET')).toHaveLength(1)
+ })
+ it('suppresses cached and in-flight later Recorded facts throughout approval reconciliation',async()=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK expense late'})
+  const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}});let gets=0,posts=0,release!:(reply:Response)=>void
+  const late=new Promise<Response>(resolve=>{release=resolve}),ownerPath=`/work/decisions/${expenseKind}/${id}`,value=expensePreview(COMPANY_A,id)
+  const calls=installFetch({capabilities:[expenseCap],respond:(url,init)=>{if(!url.includes(ownerPath))return undefined;if(init?.method==='POST')return ++posts===1?problem(503):json({companyId:COMPANY_A,kind:expenseKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'SENTETIK-expense-original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK-expense-original'});return ++gets===1?json(value):late}})
+  mount(`/onaylarim/${expenseKind}/${id}`,true,client);await screen.findByRole('region',{name:T.expenseProposal})
+  const matching=(query:{readonly queryKey:readonly unknown[]})=>query.queryKey.includes('work-decision')
+  let refetch!:Promise<void>;act(()=>{refetch=client.refetchQueries({predicate:matching})});await waitFor(()=>expect(gets).toBe(2))
+  fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+  const payment={...value.expensePayment.payment,status:'Recorded',version:'9007199254740995',approvedBy:'SENTETIK reviewer',approvedAtUtc:'0001-01-01T00:00:00Z',recordedBy:'SENTETIK recorder',recordedAtUtc:'0001-01-01T00:00:00Z',paymentConfirmed:true}
+  await act(async()=>{release(json({...value,pending:false,sourceVersion:payment.version,expensePayment:{...value.expensePayment,payment}}));await refetch})
+  expect(client.getQueryCache().findAll({predicate:matching})[0]?.state.data).toMatchObject({type:'ok-single',data:{sourceVersion:'9007199254740995',expensePayment:{payment:{status:'Recorded'}}}})
+  expect(screen.queryByRole('region',{name:T.expenseProposal})).toBeNull();expect(screen.getByText(`${T.version}: 9007199254740993`)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done);expect(gets).toBe(2)
+  const sent=calls.filter(call=>call.url.includes(ownerPath)&&call.method==='POST');expect(sent[1]!.body).toEqual(sent[0]!.body);expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key']);client.clear()
+ })
+ it.each([{capabilities:[]},{capabilities:['finance.expense-payments.approve']},{capabilities:['finance.expense-payments.workspace']},{capabilities:['finance.manual-bank-payment.work-decision']}])('does not fetch owner data with missing or unrelated purpose: %j',async({capabilities})=>{
+  const calls=installFetch({capabilities,respond:url=>url.includes(`/work/decisions/${expenseKind}/`)?json(expensePreview(COMPANY_A,id)):undefined})
+  mount(`/onaylarim/${expenseKind}/${id}`,true);await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(calls.some(call=>call.url.includes(`/work/decisions/${expenseKind}/`))).toBe(false)
+ })
+ it.each([401,403])('preserves expense approval authority boundary %s',async status=>{
+  const capabilities=[expenseCap],ownerPath=`/work/decisions/${expenseKind}/${id}`
+  const calls=installFetch({capabilities,respond:(url,init)=>{if(!url.includes(ownerPath))return undefined;if(init?.method==='POST'){capabilities.splice(0);return problem(status)}return json(expensePreview(COMPANY_A,id))}})
+  mount(`/onaylarim/${expenseKind}/${id}`,true);await screen.findByRole('region',{name:T.expenseProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}))
+  await waitFor(()=>expect(document.querySelector(`[data-state="${status===401?'unauthenticated':'not-found'}"]`)).not.toBeNull());expect(screen.queryByRole('region',{name:T.expenseProposal})).toBeNull();expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+ })
+})
+
+it.each([{companyId:COMPANY_B},{expensePayment:null},{sourceVersion:'1'}])('does not display foreign, absent or mismatched expense proof %j',async change=>{
+ installFetch({capabilities:[expenseCap],respond:url=>url.includes(`/work/decisions/${expenseKind}/`)?json({...expensePreview(COMPANY_A,id),...change}):undefined})
+ mount(`/onaylarim/${expenseKind}/${id}`,true);await waitFor(()=>expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull());expect(screen.queryByRole('region',{name:T.expenseProposal})).toBeNull();expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+})
+it('never restores an expense approval across authentication sessions or a revoked purpose',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK expense old'})
+ const capabilities=[expenseCap],ownerPath=`/work/decisions/${expenseKind}/${id}`
+ const calls=installFetch({capabilities,respond:(url,init)=>url.includes(ownerPath)?init?.method==='POST'?problem(503):json(expensePreview(COMPANY_A,id)):undefined})
+ mount(`/onaylarim/${expenseKind}/${id}`,true);await screen.findByRole('region',{name:T.expenseProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ cleanup();capabilities.splice(0);mount(`/onaylarim/${expenseKind}/${id}`,true);await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(screen.queryByRole('button',{name:T.retry})).toBeNull()
+ cleanup();capabilities.push(expenseCap);Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK expense new'});mount(`/onaylarim/${expenseKind}/${id}`,true);await screen.findByRole('region',{name:T.expenseProposal});expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+})
+it('does not carry frozen expense approval or private description to another company',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK expense company'})
+ const ownerPath=`/work/decisions/${expenseKind}/${id}`
+ const calls=installFetch({capabilities:[expenseCap],respond:(url,init)=>{
+  if(!url.includes(ownerPath))return undefined
+  const company=(init?.headers as Record<string,string>)?.['X-Company-Id']??COMPANY_A,value=expensePreview(company,id)
+  value.expensePayment.payment.preparation.description=company===COMPANY_A?'SENTETIK company A expense':'SENTETIK company B expense'
+  return init?.method==='POST'?problem(503):json(value)
+ }})
+ mount(`/onaylarim/${expenseKind}/${id}`,true);await screen.findByRole('region',{name:T.expenseProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ await userEvent.setup().selectOptions(screen.getByRole('combobox',{name:'Şirket'}),COMPANY_B);await screen.findByText('SENTETIK company B expense')
+ expect(screen.queryByText('SENTETIK company A expense')).toBeNull();expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
 })

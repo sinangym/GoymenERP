@@ -314,3 +314,14 @@ it.each([
  expect(native).not.toBe(capability);expect(CAPABILITY_ROUTE[nativeGate]).toBe(nativePath);expect(nativePath).not.toBe(path)
  expect(financeRoutes.filter(route=>route.path===nativePath.slice(1))).toHaveLength(1)
 })
+
+it('mounts one expense approval purpose without opening its native workspace or Record control',()=>{
+ const capability=CAPABILITY.financeExpensePaymentWorkDecision,path='/onaylarim/finance.expense-payment.v1/:approvalId'
+ expect(capability).toBe('finance.expense-payment.work-decision');expect(CAPABILITY_ROUTE[capability]).toBe(path);expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
+ expect(FINANCE_WORK_DECISION_CAPABILITIES).toContainEqual([capability,path])
+ expect(WORK_INBOX_KINDS.filter(row=>row.kind==='finance.expense-payment.v1')).toEqual([{kind:'finance.expense-payment.v1',module:'finance',capability}])
+ const mounted=workRoutes.filter(route=>route.path===path.slice(1));expect(mounted).toHaveLength(1)
+ expect(matchRoutes(shellRoutes,path.replace(':approvalId','cccccccc-0000-4000-8000-0000000000f1'))?.at(-1)?.route).toBe(mounted[0])
+ expect(FINANCE_CAPABILITY.expensePaymentsApprove).toBe('finance.expense-payments.approve')
+ expect(financeRoutes.some(route=>route.path===FINANCE_ROUTE.expensePayments.slice(1))).toBe(true)
+})

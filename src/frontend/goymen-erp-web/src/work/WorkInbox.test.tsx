@@ -675,3 +675,12 @@ it.each(['finance.manual-bank-payment-reversal.v1','finance.manual-receipt-rever
 it.each(['finance.manual-bank-payment.reverse.approve','finance.manual-receipt.reverse.approve'])('does not grant Work inbox reads from native reversal-only control: %s',async native=>{
  const api=installFetch({granted:[native]});await renderAt('/onaylarim/kuyruk');await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(api.inboxReads()).toHaveLength(0)
 })
+
+it.each([{granted:['finance.expense-payment.work-decision'],visible:true},{granted:[],visible:false},{granted:[FINANCE_CAPABILITY.expensePaymentsApprove],visible:false}])('uses only expense Work purpose authority for the primary link %j',async({granted,visible})=>{
+ const kind='finance.expense-payment.v1',permission='finance.expense-payment.approve',link=`/onaylarim/${kind}/${LEGACY_ID}`
+ const item={...limitItem,kind,itemId:LEGACY_ID,documentLabel:'SENTETIK expense',link,awaitingPermission:permission,ruleVersion:RV(kind),explanation:{rules:[{ruleCode:'finance.expense-payment-approval-required',threshold:null,actual:'123.45',deviation:null,unit:null}],references:[{role:'bank-account',recordId:PAYMENT_ID,label:'SENTETIK expense bank',link:null},{role:'expense-item',recordId:PARTY_ID,label:'SENTETIK item',link:null},{role:'currency',recordId:PARTY_ID,label:'SENTETIK currency',link:null}]}}
+ const api=installFetch({granted,inbox:()=>json(inbox({items:[item],sources:[src('finance',kind,permission,'BusinessDays')]}))})
+ await renderAt('/onaylarim/kuyruk')
+ if(visible){await screen.findByTestId('work-inbox-item');const card=cardOf(kind);expect(within(card).getByRole('link').getAttribute('href')).toBe(link);await userEvent.setup().click(within(card).getByRole('button',{name:T.explanationToggle}));expect(within(card).getByText('SENTETIK expense bank')).toBeTruthy();expect(api.inboxReads()).toHaveLength(1)}
+ else{await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(api.inboxReads()).toHaveLength(0)}
+})

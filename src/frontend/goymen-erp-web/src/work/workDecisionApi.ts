@@ -1,3 +1,4 @@
+import { decodeExpensePaymentView, type ExpensePaymentView } from '../finance/expensePaymentContract'
 import { decodePaymentReversalProposal, type PaymentReversalProposalView } from '../finance/paymentReversalContract'
 import { decodeReversalProposal, type ReversalProposalView, type PosCommissionBearer } from '../finance/contract'
 import { decodePriceListLine, decodePriceListScope, type PriceListLine, type PriceListScope } from '../product/priceLists/contract'
@@ -17,7 +18,7 @@ import { hasExactKeys, replayHeadersAgree } from '../finance/wireShape'
 import { readJson, type CommandOutcome } from '../settings/discountLimitApi'
 
 export const WORK_DECISION_KINDS = ['inventory.opening-cost.v1', 'finance.cash-account.v1',
-  'finance.credit-account.v1', 'finance.cash-account-passivation.v1', 'finance.cash-account-reactivation.v1','sales.order-draft.v1','sales.invoice.v1','sales.subcontract-invoice.v1','purchasing.request.v1','purchasing.order.v1','purchasing.service-order.v1','purchasing.incoming-invoice-variance.v1','purchasing.goods-receipt-batch.v1','manufacturing.plan.v1','inventory.transfer-loss.v1','counterparty.tax-identity-change.v1','counterparty.legal-name-change.v1','logistics.plan-excess.v1','inventory.transfer-overage.v1','logistics.weighing-difference.v1','purchasing.supplier-return-cost-exception.v1','inventory.stock-count.v1','finance.bank-account.v1','inventory.stock-scrap.v1','logistics.dispatch-note.v1','logistics.customer-return.v1','finance.manual-bank-payment.v1','finance.bank-account-iban-change.v1','product.package-standard-version.v1','product.price-list-version.v1','finance.party-credit-limit.v1','finance.official-invoice-import.v1','finance.official-sales-invoice.v1','finance.manual-bank-payment-reversal.v1','finance.manual-receipt-reversal.v1'] as const
+  'finance.credit-account.v1', 'finance.cash-account-passivation.v1', 'finance.cash-account-reactivation.v1','sales.order-draft.v1','sales.invoice.v1','sales.subcontract-invoice.v1','purchasing.request.v1','purchasing.order.v1','purchasing.service-order.v1','purchasing.incoming-invoice-variance.v1','purchasing.goods-receipt-batch.v1','manufacturing.plan.v1','inventory.transfer-loss.v1','counterparty.tax-identity-change.v1','counterparty.legal-name-change.v1','logistics.plan-excess.v1','inventory.transfer-overage.v1','logistics.weighing-difference.v1','purchasing.supplier-return-cost-exception.v1','inventory.stock-count.v1','finance.bank-account.v1','inventory.stock-scrap.v1','logistics.dispatch-note.v1','logistics.customer-return.v1','finance.manual-bank-payment.v1','finance.bank-account-iban-change.v1','product.package-standard-version.v1','product.price-list-version.v1','finance.party-credit-limit.v1','finance.official-invoice-import.v1','finance.official-sales-invoice.v1','finance.manual-bank-payment-reversal.v1','finance.manual-receipt-reversal.v1','finance.expense-payment.v1'] as const
 // Native owner purposes: kind prefixes do not define their actual capability ids.
 export const COUNTERPARTY_WORK_DECISION_CAPABILITY = {
   'counterparty.tax-identity-change.v1': 'cari.tax-identity-change.work-decision',
@@ -30,6 +31,7 @@ export const REVERSAL_WORK_DECISION_CAPABILITY = {
 } as const
 export type WorkReversalKind = keyof typeof REVERSAL_WORK_DECISION_CAPABILITY
 export const isWorkReversalKind = (kind: string): kind is WorkReversalKind => Object.hasOwn(REVERSAL_WORK_DECISION_CAPABILITY, kind)
+export const EXPENSE_PAYMENT_WORK_DECISION_CAPABILITY = 'finance.expense-payment.work-decision'
 export const DISPATCH_NOTE_WORK_DECISION_CAPABILITY = 'logistics.dispatch-note.work-decision'
 export const BANK_IBAN_WORK_DECISION_CAPABILITY = 'finance.bank-account-iban-change.work-decision'
 export const MANUAL_BANK_PAYMENT_WORK_DECISION_CAPABILITY = 'finance.manual-bank-payment.work-decision'
@@ -137,7 +139,11 @@ export interface WorkReceiptReversalOriginal {
 export interface WorkReceiptReversalPreview {
   readonly companyId: string; readonly proposal: ReversalProposalView; readonly originalReceipt: WorkReceiptReversalOriginal; readonly treasuryAccountLabel: string
 }
+export interface WorkExpensePaymentPreview {
+  readonly payment: ExpensePaymentView; readonly treasuryAccountLabel: string; readonly revisers: readonly string[]; readonly draftFactsDigest: string
+}
 export interface WorkDecisionPreview {
+  readonly expensePayment?: WorkExpensePaymentPreview
   readonly manualBankPaymentReversal?: WorkPaymentReversalPreview
   readonly manualReceiptReversal?: WorkReceiptReversalPreview
   readonly officialSalesInvoice?: OfficialInvoice
@@ -224,6 +230,8 @@ export const isWorkDecisionRequest = (value: unknown, kind?: WorkDecisionKind): 
   if (!record(value) || !hasExactKeys(value, ['expectedVersion', 'approve', 'reason', 'delegationId'], kind === 'product.package-standard-version.v1' ? ['productPackageStandard'] : kind === 'logistics.customer-return.v1' ? ['logisticsCustomerReturn'] : kind === 'purchasing.supplier-return-cost-exception.v1' ? ['supplierReturnCostException'] : kind === 'inventory.transfer-overage.v1' ? ['inventoryTransferOverage'] : kind === 'logistics.plan-excess.v1' ? ['logisticsPlanExcess'] : kind === 'inventory.transfer-loss.v1' ? ['inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['manufacturingPlanReapproval'] : [])
     || !text(value.expectedVersion) || (kind === 'inventory.transfer-overage.v1' || kind === 'logistics.plan-excess.v1' || kind === 'manufacturing.plan.v1' || kind === 'inventory.transfer-loss.v1' || kind !== undefined && isCounterpartyWorkDecisionKind(kind)) && !isPositiveInt64Text(value.expectedVersion) || typeof value.approve !== 'boolean' || !nullableText(value.reason)
     || value.delegationId !== null && !isBoundUuid(value.delegationId)) return false
+  if (kind === 'finance.expense-payment.v1') return value.approve && value.reason === null && dispatchVersion(value.expectedVersion) && value.expectedVersion !== '9223372036854775807'
+    && (value.delegationId === null || dispatchGuid(value.delegationId))
   if ((kind !== undefined && isWorkReversalKind(kind)) || kind === 'finance.official-sales-invoice.v1') return value.expectedVersion === '1'
     && (value.delegationId === null || dispatchGuid(value.delegationId))
     && (value.approve ? value.reason === null : typeof value.reason === 'string' && value.reason === value.reason.trim() && value.reason.length > 0 && value.reason.length <= 1000)
@@ -275,11 +283,11 @@ export const isWorkDecisionRequest = (value: unknown, kind?: WorkDecisionKind): 
     && (selection.selectedLabelIds === undefined || selection.selectedLabelIds === null || labelIds(selection.selectedLabelIds))
 }
 export function decodeWorkDecisionPreview(value: unknown, company: string, kind: WorkDecisionKind, id: string): WorkDecisionPreview | null {
-  if (!record(value) || !hasExactKeys(value, ['companyId', 'kind', 'itemId', 'documentLabel', 'sourceVersion', 'pending', 'approvalReasonRequired', 'references', 'rules'], kind === 'finance.manual-bank-payment-reversal.v1' ? ['rejectionSupported','manualBankPaymentReversal'] : kind === 'finance.manual-receipt-reversal.v1' ? ['rejectionSupported','manualReceiptReversal'] : kind === 'finance.official-sales-invoice.v1' ? ['rejectionSupported','officialSalesInvoice'] : kind === 'finance.official-invoice-import.v1' ? ['rejectionSupported','officialInvoiceImport'] : kind === 'finance.party-credit-limit.v1' ? ['rejectionSupported','partyCreditLimit'] : kind === 'product.price-list-version.v1' ? ['rejectionSupported','productPriceList'] : kind === 'product.package-standard-version.v1' ? ['rejectionSupported','productPackageStandard'] : kind === 'logistics.customer-return.v1' ? ['rejectionSupported','approvalSupported','logisticsCustomerReturn'] : kind === 'logistics.dispatch-note.v1' ? ['rejectionSupported', 'logisticsDispatchNote'] : kind === 'inventory.stock-scrap.v1' ? ['rejectionSupported', 'inventoryStockScrap'] : kind === 'finance.bank-account-iban-change.v1' ? ['rejectionSupported', 'bankAccountIbanChange'] : kind === 'finance.bank-account.v1' ? ['rejectionSupported', 'bankAccount'] : kind === 'inventory.stock-count.v1' ? ['rejectionSupported', 'inventoryStockCount'] : kind === 'purchasing.supplier-return-cost-exception.v1' ? ['rejectionSupported', 'supplierReturnCostException'] : kind === 'logistics.weighing-difference.v1' ? ['rejectionSupported', 'logisticsWeighingDifference'] : kind === 'inventory.transfer-overage.v1' ? ['rejectionSupported', 'inventoryTransferOverage'] : kind === 'logistics.plan-excess.v1' ? ['rejectionSupported', 'logisticsPlanExcess'] : kind === 'inventory.transfer-loss.v1' ? ['rejectionSupported', 'inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['rejectionSupported', 'manufacturingPlanReapproval'] : kind === 'counterparty.tax-identity-change.v1' ? ['rejectionSupported', 'counterpartyTaxIdentityChange'] : kind === 'counterparty.legal-name-change.v1' ? ['rejectionSupported', 'counterpartyLegalNameChange'] : ['rejectionSupported'])
+  if (!record(value) || !hasExactKeys(value, ['companyId', 'kind', 'itemId', 'documentLabel', 'sourceVersion', 'pending', 'approvalReasonRequired', 'references', 'rules'], kind === 'finance.expense-payment.v1' ? ['rejectionSupported','expensePayment'] : kind === 'finance.manual-bank-payment-reversal.v1' ? ['rejectionSupported','manualBankPaymentReversal'] : kind === 'finance.manual-receipt-reversal.v1' ? ['rejectionSupported','manualReceiptReversal'] : kind === 'finance.official-sales-invoice.v1' ? ['rejectionSupported','officialSalesInvoice'] : kind === 'finance.official-invoice-import.v1' ? ['rejectionSupported','officialInvoiceImport'] : kind === 'finance.party-credit-limit.v1' ? ['rejectionSupported','partyCreditLimit'] : kind === 'product.price-list-version.v1' ? ['rejectionSupported','productPriceList'] : kind === 'product.package-standard-version.v1' ? ['rejectionSupported','productPackageStandard'] : kind === 'logistics.customer-return.v1' ? ['rejectionSupported','approvalSupported','logisticsCustomerReturn'] : kind === 'logistics.dispatch-note.v1' ? ['rejectionSupported', 'logisticsDispatchNote'] : kind === 'inventory.stock-scrap.v1' ? ['rejectionSupported', 'inventoryStockScrap'] : kind === 'finance.bank-account-iban-change.v1' ? ['rejectionSupported', 'bankAccountIbanChange'] : kind === 'finance.bank-account.v1' ? ['rejectionSupported', 'bankAccount'] : kind === 'inventory.stock-count.v1' ? ['rejectionSupported', 'inventoryStockCount'] : kind === 'purchasing.supplier-return-cost-exception.v1' ? ['rejectionSupported', 'supplierReturnCostException'] : kind === 'logistics.weighing-difference.v1' ? ['rejectionSupported', 'logisticsWeighingDifference'] : kind === 'inventory.transfer-overage.v1' ? ['rejectionSupported', 'inventoryTransferOverage'] : kind === 'logistics.plan-excess.v1' ? ['rejectionSupported', 'logisticsPlanExcess'] : kind === 'inventory.transfer-loss.v1' ? ['rejectionSupported', 'inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['rejectionSupported', 'manufacturingPlanReapproval'] : kind === 'counterparty.tax-identity-change.v1' ? ['rejectionSupported', 'counterpartyTaxIdentityChange'] : kind === 'counterparty.legal-name-change.v1' ? ['rejectionSupported', 'counterpartyLegalNameChange'] : ['rejectionSupported'])
     || !same(value.companyId, company) || value.kind !== kind || !same(value.itemId, id) || !text(value.documentLabel)
     || (kind === 'inventory.opening-cost.v1' ? value.sourceVersion !== `submission/${id}` : !isPositiveInt64Text(value.sourceVersion))
     || typeof value.pending !== 'boolean' || value.approvalReasonRequired !== (kind === 'product.package-standard-version.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'inventory.transfer-overage.v1' || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.opening-cost.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1')
-    || (kind === 'manufacturing.plan.v1' ? typeof value.rejectionSupported !== 'boolean' : isWorkReversalKind(kind) || kind === 'finance.official-sales-invoice.v1' || kind === 'finance.party-credit-limit.v1' || kind === 'product.package-standard-version.v1' || kind === 'logistics.customer-return.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'purchasing.supplier-return-cost-exception.v1' || kind === 'purchasing.goods-receipt-batch.v1' || kind === 'inventory.transfer-overage.v1' || kind === 'inventory.transfer-loss.v1' || isCounterpartyWorkDecisionKind(kind) ? value.rejectionSupported !== true : kind === 'finance.official-invoice-import.v1' || kind === 'product.price-list-version.v1' || kind === 'finance.bank-account-iban-change.v1' || kind === 'finance.manual-bank-payment.v1' || kind === 'logistics.dispatch-note.v1' || kind === 'finance.bank-account.v1' || kind === 'logistics.weighing-difference.v1' || kind === 'logistics.plan-excess.v1' || kind === 'purchasing.order.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? value.rejectionSupported !== false : value.rejectionSupported !== undefined && value.rejectionSupported !== true)
+    || (kind === 'manufacturing.plan.v1' ? typeof value.rejectionSupported !== 'boolean' : isWorkReversalKind(kind) || kind === 'finance.official-sales-invoice.v1' || kind === 'finance.party-credit-limit.v1' || kind === 'product.package-standard-version.v1' || kind === 'logistics.customer-return.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'purchasing.supplier-return-cost-exception.v1' || kind === 'purchasing.goods-receipt-batch.v1' || kind === 'inventory.transfer-overage.v1' || kind === 'inventory.transfer-loss.v1' || isCounterpartyWorkDecisionKind(kind) ? value.rejectionSupported !== true : kind === 'finance.expense-payment.v1' || kind === 'finance.official-invoice-import.v1' || kind === 'product.price-list-version.v1' || kind === 'finance.bank-account-iban-change.v1' || kind === 'finance.manual-bank-payment.v1' || kind === 'logistics.dispatch-note.v1' || kind === 'finance.bank-account.v1' || kind === 'logistics.weighing-difference.v1' || kind === 'logistics.plan-excess.v1' || kind === 'purchasing.order.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? value.rejectionSupported !== false : value.rejectionSupported !== undefined && value.rejectionSupported !== true)
     || !Array.isArray(value.references) || value.references.length > 12 || !value.references.every(ref => record(ref)
       && hasExactKeys(ref, ['role', 'label', 'recordId', 'link']) && text(ref.role) && text(ref.label)
       && (ref.recordId === null || isBoundUuid(ref.recordId)) && nullableText(ref.link))
@@ -410,6 +418,7 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
       || value.rules.length !== 1 || !record(value.rules[0]) || value.rules[0].ruleCode !== 'finance.bank-account-approval-required'
       || [value.rules[0].threshold,value.rules[0].actual,value.rules[0].deviation,value.rules[0].unit].some(field => field !== null)) return null
   }
+  if (kind === 'finance.expense-payment.v1' && !validWorkExpensePaymentPreview(value,company,id)) return null
   if (isWorkReversalKind(kind) && !validWorkReversalPreview(value, company, kind, id)) return null
   if (kind === 'finance.official-sales-invoice.v1') {
     const references: readonly unknown[] = value.references
@@ -578,6 +587,29 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
   }
   return value as unknown as WorkDecisionPreview
 }
+function validWorkExpensePaymentPreview(value: Record<string,unknown>, company: string, id: string): boolean {
+  const human=value.expensePayment
+  if (!record(human) || !hasExactKeys(human,['payment','treasuryAccountLabel','revisers','draftFactsDigest']) || !record(human.payment)
+    || !text(human.treasuryAccountLabel) || typeof human.draftFactsDigest !== 'string' || human.draftFactsDigest.length !== 64 || !/^[0-9a-f]+$/.test(human.draftFactsDigest)
+    || !Array.isArray(human.revisers) || !human.revisers.every(actor=>canonicalOwnerText(actor,128)) || new Set(human.revisers).size !== human.revisers.length) return false
+  const payment=human.payment
+  if (!dispatchGuid(payment.companyId) || !same(payment.companyId,company) || !dispatchGuid(payment.id) || !same(payment.id,id)
+    || !dispatchVersion(payment.version) || payment.version !== value.sourceVersion || value.pending !== (payment.status === 'Draft')
+    || value.pending && payment.version === '9223372036854775807' || !officialSalesUtc(payment.preparedAtUtc)
+    || payment.approvedAtUtc !== null && !officialSalesUtc(payment.approvedAtUtc) || payment.recordedAtUtc !== null && !officialSalesUtc(payment.recordedAtUtc)
+    || !canonicalOwnerText(payment.preparedBy,128) || payment.approvedBy !== null && !canonicalOwnerText(payment.approvedBy,128)
+    || payment.recordedBy !== null && !canonicalOwnerText(payment.recordedBy,128) || !record(payment.preparation)) return false
+  const p=payment.preparation
+  if (!reversalGuidFields(p,['treasuryAccountId','expenseItemId']) || !record(p.money) || !dispatchGuid(p.money.currencyId) || !reversalAmount(p.money.amount)
+    || !record(p.profile) || !dispatchGuid(p.profile.profileId) || !dispatchVersion(p.profile.version)) return false
+  const decoded=decodeExpensePaymentView(payment,payment.companyId,isWorkPackageEffectiveDate)
+  if (!decoded.ok || value.approvalReasonRequired !== false || value.rejectionSupported !== false) return false
+  const refs=value.references,rules=value.rules
+  if (!Array.isArray(refs) || refs.length!==3 || !Array.isArray(rules) || rules.length!==1 || !record(rules[0])
+    || rules[0].ruleCode!=='finance.expense-payment-approval-required' || rules[0].threshold!==null || rules[0].deviation!==null || rules[0].unit!==null || !reversalAmount(rules[0].actual,false)) return false
+  const targets=[[p.sourceKind==='Bank'?'bank-account':'cash-account',p.treasuryAccountId],['expense-item',p.expenseItemId],['currency',p.money.currencyId]] as const
+  return targets.every(([role,target])=>refs.filter(ref=>record(ref) && ref.role===role && same(ref.recordId,target as string) && ref.link===null).length===1)
+}
 // Both owner views retain arbitrary-precision money text. No Number/CLR-range conversion or POS arithmetic.
 const reversalAmount = (value: unknown, positive = true): value is string => typeof value === 'string' && value === value.trim()
   && !nativeControls(value) && (positive ? isPositiveDecimalText(value) : isNonNegativeDecimalText(value))
@@ -683,7 +715,7 @@ export async function sendWorkDecision(company: string, kind: WorkDecisionKind, 
     // the draft, and lawful cancellation can close its remaining shares. Neither is a rejection.
     const currentPurchaseOrder = kind === 'purchasing.order.v1' && request.approve && record(body) && body.replayed === true
       && (body.state === 'Draft' || body.state === 'Cancelled')
-    return (kind !== 'purchasing.order.v1' && kind !== 'purchasing.service-order.v1' && kind !== 'purchasing.incoming-invoice-variance.v1' || request.approve) && record(body) && hasExactKeys(body, ['companyId', 'kind', 'itemId', 'state', 'replayed', 'originalCorrelationId'])
+    return (kind !== 'finance.expense-payment.v1' && kind !== 'purchasing.order.v1' && kind !== 'purchasing.service-order.v1' && kind !== 'purchasing.incoming-invoice-variance.v1' || request.approve) && record(body) && hasExactKeys(body, ['companyId', 'kind', 'itemId', 'state', 'replayed', 'originalCorrelationId'])
       && same(body.companyId, company) && body.kind === kind && same(body.itemId, id) && (body.state === state || currentPurchaseRejection || currentInvoiceApproval || currentOrderDecision || currentPurchaseOrder)
       && typeof body.replayed === 'boolean' && text(body.originalCorrelationId) && replayHeadersAgree(response.headers, body.replayed, body.originalCorrelationId)
       ? { type: 'applied', data: body as unknown as WorkDecisionResult, replayed: body.replayed } : { type: 'unknown', reason: 'unexpected' }

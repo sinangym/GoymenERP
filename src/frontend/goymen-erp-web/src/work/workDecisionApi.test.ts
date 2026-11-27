@@ -340,7 +340,7 @@ it('decodes exact loss options among the mounted owner kinds without changing ot
  const value={...preview,kind:lossKind,approvalReasonRequired:true,rejectionSupported:true,inventoryTransferLoss:lossOptions}
  expect(isWorkDecisionKind(lossKind)).toBe(true)
  expect(WORK_DECISION_KINDS.filter(kind=>kind===lossKind)).toHaveLength(1)
- expect(WORK_DECISION_KINDS).toHaveLength(35)
+ expect(WORK_DECISION_KINDS).toHaveLength(36)
  expect(decodeWorkDecisionPreview(value,company,lossKind,id)).not.toBeNull()
  for(const delta of [{companyId:id},{itemId:company},{sourceVersion:'0'},{approvalReasonRequired:false},{rejectionSupported:false},
   {inventoryTransferLoss:null},{inventoryTransferLoss:{...lossOptions,requestNumber:0}},{inventoryTransferLoss:{...lossOptions,requestNumber:1.5}},
@@ -390,7 +390,7 @@ it('mounts both Counterparty purposes once among seventeen and pins their actual
   'counterparty.tax-identity-change.v1':'cari.tax-identity-change.work-decision',
   'counterparty.legal-name-change.v1':'cari.legal-name-change.work-decision',
  })
- expect(WORK_DECISION_KINDS).toHaveLength(35)
+ expect(WORK_DECISION_KINDS).toHaveLength(36)
  for(const cp of cpKinds){
   expect(isWorkDecisionKind(cp)).toBe(true);expect(isCounterpartyWorkDecisionKind(cp)).toBe(true)
   expect(WORK_DECISION_KINDS.filter(kind=>kind===cp)).toEqual([cp])
@@ -525,7 +525,7 @@ const overageRequest={...request,reason:'İnsan karar gerekçesi',inventoryTrans
 it.each([null,0,2147483647])('keeps the exact nine-field human overage proposal and nullable pieces=%s',pieceCount=>{
  const value={...overagePreview,inventoryTransferOverage:{...overageProposal,pieceCount}}
  expect(WORK_DECISION_KINDS.filter(kind=>kind===overageKind)).toEqual([overageKind])
- expect(WORK_DECISION_KINDS).toHaveLength(35)
+ expect(WORK_DECISION_KINDS).toHaveLength(36)
  expect(decodeWorkDecisionPreview(value,company,overageKind,id)).toEqual(value)
 })
 it('refuses malformed, foreign, unbound or hidden overage proof instead of rendering a partial proposal',()=>{
@@ -576,7 +576,7 @@ const weighingEvaluation={dispatchNoteId:weighingNote,instructionId:weighingInst
 const weighingPreview={...preview,kind:weighingKind,sourceVersion:'1',rejectionSupported:false,
  references:[{role:'dispatch-note',label:'SENTETIK irsaliye',recordId:weighingNote,link:null},{role:'loading-instruction',label:'SENTETIK talimat',recordId:weighingInstruction,link:null}],logisticsWeighingDifference:weighingEvaluation}
 it('keeps exactly seventeen immutable evaluation fields and eight native product fields without numeric coercion',()=>{
- expect(WORK_DECISION_KINDS.filter(kind=>kind===weighingKind)).toEqual([weighingKind]);expect(WORK_DECISION_KINDS).toHaveLength(35)
+ expect(WORK_DECISION_KINDS.filter(kind=>kind===weighingKind)).toEqual([weighingKind]);expect(WORK_DECISION_KINDS).toHaveLength(36)
  expect(Object.keys(weighingEvaluation)).toHaveLength(17);expect(Object.keys(weighingEvaluation.products[0]!)).toHaveLength(8)
  expect(decodeWorkDecisionPreview(weighingPreview,company,weighingKind,id)).toEqual(weighingPreview)
  for(const bandLevel of ['NotEvaluated','None','Warning','Approval','Block'])
@@ -870,7 +870,7 @@ const customerRequest={expectedVersion:'1',approve:true,reason:null,delegationId
 it('publishes customer-return among the exact 27 purposes and preserves all native human fields and the minimum occurrence instant',()=>{
  const decoded=decodeWorkDecisionPreview(customerPreview,company,customerKind,id)
  expect(decoded?.logisticsCustomerReturn).toEqual(customerFacts);expect(Object.keys(decoded!.logisticsCustomerReturn!)).toHaveLength(15)
- expect(isWorkDecisionKind(customerKind)).toBe(true);expect(WORK_DECISION_KINDS.filter(kind=>kind===customerKind)).toEqual([customerKind]);expect(WORK_DECISION_KINDS).toHaveLength(35)
+ expect(isWorkDecisionKind(customerKind)).toBe(true);expect(WORK_DECISION_KINDS.filter(kind=>kind===customerKind)).toEqual([customerKind]);expect(WORK_DECISION_KINDS).toHaveLength(36)
  expect(workDecisionReasonLimit(customerKind)).toBeUndefined()
  for(const status of ['Approved','Rejected'])expect(decodeWorkDecisionPreview({...customerPreview,pending:false,sourceVersion:'2',logisticsCustomerReturn:{...customerFacts,status}},company,customerKind,id)).not.toBeNull()
  expect(decodeWorkDecisionPreview({...preview,logisticsCustomerReturn:customerFacts},company,kind,id)).toBeNull()
@@ -938,7 +938,7 @@ const manualPaymentPreview={...preview,kind:manualPaymentKind,rejectionSupported
  {role:'bank-account',recordId:id,label:'SENTETIK banka hesabı',link:null},{role:'currency',recordId:id,label:'SENTETIK döviz',link:null}],
  rules:[{ruleCode:'finance.manual-bank-payment-approval-required',threshold:null,actual:'125.25',deviation:null,unit:null}]}
 it('publishes the 27th manual payment purpose with the existing generic owner-authorized preview and no new typed body',()=>{
- expect(WORK_DECISION_KINDS).toHaveLength(35);expect(WORK_DECISION_KINDS.filter(kind=>kind===manualPaymentKind)).toEqual([manualPaymentKind])
+ expect(WORK_DECISION_KINDS).toHaveLength(36);expect(WORK_DECISION_KINDS.filter(kind=>kind===manualPaymentKind)).toEqual([manualPaymentKind])
  expect(decodeWorkDecisionPreview(manualPaymentPreview,company,manualPaymentKind,id)).not.toBeNull()
  expect(decodeWorkDecisionPreview({...manualPaymentPreview,pending:false},company,manualPaymentKind,id)).not.toBeNull()
  for(const delta of [{companyId:id},{itemId:company},{kind:'finance.cash-account.v1'},{sourceVersion:'0'},{sourceVersion:'01'},{sourceVersion:'7\n'},
@@ -969,7 +969,7 @@ const ibanPreview={...preview,kind:ibanKind,rejectionSupported:false,bankAccount
  references:[{role:'bank-account',recordId:id,label:'SENTETIK banka hesabı',link:null}],
  rules:[{ruleCode:'finance.bank-account-iban-change-approval-required',threshold:null,actual:null,deviation:null,unit:null}]}
 it('accepts the exact eight-field human IBAN proposal and leaves historical current values unchanged',()=>{
- expect(WORK_DECISION_KINDS).toHaveLength(35)
+ expect(WORK_DECISION_KINDS).toHaveLength(36)
  expect(decodeWorkDecisionPreview(ibanPreview,company,ibanKind,id)?.bankAccountIbanChange).toEqual(ibanHuman)
  const current='SENTETIK eski değer'
  expect(decodeWorkDecisionPreview({...ibanPreview,bankAccountIbanChange:{...ibanHuman,currentIban:current}},company,ibanKind,id)?.bankAccountIbanChange?.currentIban).toBe(current)
@@ -1009,7 +1009,7 @@ const packagePreview={...preview,kind:packageKind,documentLabel:'v7',approvalRea
 const packageRequest={...request,reason:'SENTETIK karar',productPackageStandard:{effectiveFrom:'2026-12-01'}}
 describe('Product package standard native purpose',()=>{
  it('binds the exact version id and full human table without changing the native header version',()=>{
-  expect(WORK_DECISION_KINDS).toHaveLength(35)
+  expect(WORK_DECISION_KINDS).toHaveLength(36)
   expect(decodeWorkDecisionPreview(packagePreview,company,packageKind,id)).toEqual(packagePreview)
   expect(decodeWorkDecisionPreview({...packagePreview,pending:false},company,packageKind,id)).not.toBeNull()
   expect(decodeWorkDecisionPreview({...packagePreview,sourceVersion:'9223372036854775807',documentLabel:'v9223372036854775807'},company,packageKind,id)).not.toBeNull()
@@ -1107,7 +1107,7 @@ describe('WP8 party credit limit native purpose',()=>{
   expect(decodeWorkDecisionPreview({...value,partyCreditLimit:{...human,amount}},company,limitKind,id)).toBeNull()
  })
  it('decodes exactly nine human fields and preserves native Set text and Remove nulls',()=>{
-  expect(WORK_DECISION_KINDS).toHaveLength(35);expect(WORK_DECISION_KINDS.filter(item=>item===limitKind)).toEqual([limitKind])
+  expect(WORK_DECISION_KINDS).toHaveLength(36);expect(WORK_DECISION_KINDS.filter(item=>item===limitKind)).toEqual([limitKind])
   expect(decodeWorkDecisionPreview(value,company,limitKind,id)?.partyCreditLimit).toEqual(human)
   expect(decodeWorkDecisionPreview({...value,pending:false,sourceVersion:'3',partyCreditLimit:{...human,currentRevision:'4'}},company,limitKind,id)?.partyCreditLimit?.amount).toBe('00123.4500')
   expect(decodeWorkDecisionPreview({...value,references:refs.slice(0,2),partyCreditLimit:{...human,kind:'Remove',currencyId:null,amount:null}},company,limitKind,id)?.partyCreditLimit?.amount).toBeNull()
@@ -1158,7 +1158,7 @@ describe('WP8 official invoice import immutable human preview', () => {
  const value={...preview,kind:importKind,sourceVersion:'1',rejectionSupported:false,officialInvoiceImport:human,rules:[{ruleCode:'finance.official-invoice-import-approval',threshold:null,actual:null,deviation:null,unit:null}]}
  const body={expectedVersion:'1',approve:true,reason:null,delegationId:null}
  it('accepts exact Pending1 and terminal Approved2 while retaining native amount text',()=>{
-  expect(isWorkDecisionKind(importKind)).toBe(true);expect(WORK_DECISION_KINDS).toHaveLength(35)
+  expect(isWorkDecisionKind(importKind)).toBe(true);expect(WORK_DECISION_KINDS).toHaveLength(36)
   expect(decodeWorkDecisionPreview(value,company,importKind,id)).toEqual(value)
   const approved={...value,pending:false,sourceVersion:'2',officialInvoiceImport:{...human,batch:{...batch,status:'Approved',version:'2',approvedBy:'SENTETIK checker',approvedAtUtc:'2026-11-27T09:00:00Z'}}}
   expect(decodeWorkDecisionPreview(approved,company,importKind,id)).toEqual(approved)
@@ -1203,7 +1203,7 @@ describe('WP8 official sales invoice native decision proof',()=>{
  const value={...preview,kind:officialKind,documentLabel:invoice.officialNo,sourceVersion:'1',rejectionSupported:true,references:refs,rules:[rule],officialSalesInvoice:invoice}
  const body={expectedVersion:'1',approve:true,reason:null,delegationId:null}
  it('reuses the native decoder, binds case-insensitive GUID context and retains raw exact amounts',()=>{
-  expect(WORK_DECISION_KINDS).toHaveLength(35);expect(isWorkDecisionKind(officialKind)).toBe(true);expect(workDecisionReasonLimit(officialKind)).toBe(1000)
+  expect(WORK_DECISION_KINDS).toHaveLength(36);expect(isWorkDecisionKind(officialKind)).toBe(true);expect(workDecisionReasonLimit(officialKind)).toBe(1000)
   expect(decodeWorkDecisionPreview(value,company.toUpperCase(),officialKind,id.toUpperCase())).toBe(value)
   expect(decodeWorkDecisionPreview(value,company,officialKind,id)?.officialSalesInvoice?.payableAmount).toBe('00123.4500')
  })
@@ -1339,4 +1339,63 @@ it.each(reversalKinds)('keeps amount, full source references and optional POS sh
   expect(decodeWorkDecisionPreview({...value,manualReceiptReversal:{...human,originalReceipt:{...human.originalReceipt,posCommissionAmountText:null}}},company,k,id)).toBeNull()
   expect(decodeWorkDecisionPreview({...value,manualReceiptReversal:{...human,originalReceipt:{...human.originalReceipt,posCommissionAmountText:null,posBankNetAmountText:null,posCommissionBearer:null}}},company,k,id)).not.toBeNull()
  }
+})
+
+const expenseKind='finance.expense-payment.v1' as const,expenseCap='finance.expense-payment.work-decision'
+function expensePreview(companyId:string,itemId:string,version='9007199254740993') {
+ return {companyId,kind:expenseKind,itemId,documentLabel:'SENTETIK expense draft',sourceVersion:version,pending:true,approvalReasonRequired:false,rejectionSupported:false,
+ references:[{role:'bank-account',recordId:reversalBank,label:'SENTETIK expense bank',link:null},{role:'expense-item',recordId:reversalParty,label:'SENTETIK expense item',link:null},{role:'currency',recordId:reversalCurrency,label:'SENTETIK currency',link:null}],
+ rules:[{ruleCode:'finance.expense-payment-approval-required',threshold:null,actual:'123.45',deviation:null,unit:null}],
+ expensePayment:{payment:{id:itemId,companyId,status:'Draft',preparation:{sourceKind:'Bank',treasuryAccountId:reversalBank,expenseItemId:reversalParty,money:{amount:'000123.4500',currencyId:reversalCurrency},profile:{profileId:reversalAccount,version:'3'},occurredOn:'0001-01-01',valueOn:'9999-12-31',reference:'SENTETIK expense reference',description:'SENTETIK private expense description'},preparedBy:'SENTETIK expense preparer',preparedAtUtc:'0001-01-01T00:00:00Z',approvedBy:null,approvedAtUtc:null,recordedBy:null,recordedAtUtc:null,paymentConfirmed:false,version},treasuryAccountLabel:'SENTETIK named expense bank',revisers:['SENTETIK expense editor'],draftFactsDigest:'b'.repeat(64)}}
+}
+
+describe('native expense Work approval',()=>{
+ it('reuses native13/preparation9 without money conversion, fixed version1 or a new calendar policy',()=>{
+  const value=expensePreview(company,id);expect(decodeWorkDecisionPreview(value,company,expenseKind,id)).toEqual(value)
+  expect(WORK_DECISION_KINDS.filter(kind=>kind===expenseKind)).toEqual([expenseKind]);expect(WORK_DECISION_KINDS).toHaveLength(36)
+  for(const version of ['1','9007199254740993','9223372036854775806'])expect(decodeWorkDecisionPreview(expensePreview(company,id,version),company,expenseKind,id)).not.toBeNull()
+  value.expensePayment.payment.preparation.money.amount='000'+'9'.repeat(70)+'.'+'0'.repeat(70)+'1';expect(decodeWorkDecisionPreview(value,company,expenseKind,id)).not.toBeNull()
+ })
+ it('rejects scope, missing human proof, source-version drift and unsupported decision shape',()=>{
+  const value=expensePreview(company,id)
+  for(const change of [{companyId:id},{itemId:company},{sourceVersion:'2'},{sourceVersion:'9007199254740993\n'},{approvalReasonRequired:true},{rejectionSupported:true},{expensePayment:null},{expensePayment:undefined},{manualBankPaymentReversal:{}},{references:[]},{rules:[{...value.rules[0],unit:'TRY'}]}])expect(decodeWorkDecisionPreview({...value,...change},company,expenseKind,id)).toBeNull()
+  for(const change of [{extra:true},{treasuryAccountLabel:''},{draftFactsDigest:'B'.repeat(64)},{revisers:['same','same']},{revisers:[' x ']},{payment:{...value.expensePayment.payment,companyId:id}},{payment:{...value.expensePayment.payment,id:company}}])expect(decodeWorkDecisionPreview({...value,expensePayment:{...value.expensePayment,...change}},company,expenseKind,id)).toBeNull()
+ })
+ it.each(['\n','\r','\r\n'])('rejects noncanonical owner scalar suffix %j without loosening the native decoder',tail=>{
+  for(const field of ['id','version','preparedAtUtc']){
+   const value=expensePreview(company,id);const payment={...value.expensePayment.payment,[field]:value.expensePayment.payment[field as 'id'|'version'|'preparedAtUtc']+tail}
+   expect(decodeWorkDecisionPreview({...value,expensePayment:{...value.expensePayment,payment}},company,expenseKind,id)).toBeNull()
+  }
+  const value=expensePreview(company,id);value.expensePayment.payment.preparation.money.amount+=tail
+  expect(decodeWorkDecisionPreview(value,company,expenseKind,id)).toBeNull()
+ })
+ it('accepts current terminal owner data read-only while keeping the original approval receipt state immutable',()=>{
+  const value=expensePreview(company,id),payment=value.expensePayment.payment
+  const approved={...payment,status:'Approved',version:'9007199254740994',approvedBy:'SENTETIK reviewer',approvedAtUtc:'0001-01-01T00:00:00Z'}
+  expect(decodeWorkDecisionPreview({...value,pending:false,sourceVersion:approved.version,expensePayment:{...value.expensePayment,payment:approved}},company,expenseKind,id)).not.toBeNull()
+  const recorded={...approved,status:'Recorded',version:'9007199254740995',recordedBy:'SENTETIK recorder',recordedAtUtc:'0001-01-01T00:00:00Z',paymentConfirmed:true}
+  expect(decodeWorkDecisionPreview({...value,pending:false,sourceVersion:recorded.version,expensePayment:{...value.expensePayment,payment:recorded}},company,expenseKind,id)).not.toBeNull()
+ })
+ it('sends only canonical N/null approval and trusts only exact Approved original receipt identity',async()=>{
+  const input={expectedVersion:'9007199254740993',approve:true,reason:null,delegationId:null}
+  expect(isWorkDecisionRequest(input,expenseKind)).toBe(true)
+  for(const change of [{expectedVersion:'0'},{expectedVersion:'01'},{expectedVersion:'9007199254740993\n'},{expectedVersion:'9223372036854775807'},{expectedVersion:'9223372036854775808'},{approve:false},{reason:'note'},{expensePayment:{}}])expect(isWorkDecisionRequest({...input,...change},expenseKind)).toBe(false)
+  const body={companyId:company,kind:expenseKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'SENTETIK-expense-original'},headers={'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK-expense-original'}
+  const fetch=vi.fn(async(_input:RequestInfo|URL,_init?:RequestInit)=>new Response(JSON.stringify(body),{status:200,headers}));vi.stubGlobal('fetch',fetch)
+  expect((await sendWorkDecision(company,expenseKind,id,input,'original-expense-key')).type).toBe('applied')
+  expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string)).toEqual(input)
+  for(const change of [{companyId:id},{itemId:company},{kind:'finance.manual-bank-payment.v1'},{state:'Recorded'},{state:'Rejected'},{originalCorrelationId:'other'},{extra:true}]){
+   fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,...change}),{status:200,headers}));expect((await sendWorkDecision(company,expenseKind,id,input,'original-expense-key')).type).toBe('unknown')
+  }
+  expect((await sendWorkDecision(company,expenseKind,id,{...input,approve:false},'reject-must-not-send')).type).toBe('unknown');expect(fetch.mock.calls).toHaveLength(8)
+ })
+})
+
+it('requires the native treasury-source role and complete preparation while accepting Cash without adding a read grant',()=>{
+ const value=expensePreview(company,id)
+ const cash={...value,expensePayment:{...value.expensePayment,payment:{...value.expensePayment.payment,preparation:{...value.expensePayment.payment.preparation,sourceKind:'Cash'}}},references:value.references.map(ref=>ref.role==='bank-account'?{...ref,role:'cash-account'}:ref)}
+ expect(decodeWorkDecisionPreview(cash,company,expenseKind,id)).not.toBeNull()
+ expect(decodeWorkDecisionPreview({...cash,references:value.references},company,expenseKind,id)).toBeNull()
+ expect(decodeWorkDecisionPreview({...value,expensePayment:{...value.expensePayment,payment:{...value.expensePayment.payment,preparation:{...value.expensePayment.payment.preparation,extra:true}}}},company,expenseKind,id)).toBeNull()
+ expect(decodeWorkDecisionPreview(expensePreview(company,id,'9223372036854775807'),company,expenseKind,id)).toBeNull()
 })

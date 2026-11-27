@@ -10,7 +10,7 @@ export const FINANCE_INBOX_KINDS: readonly WorkInboxKind[] = [
   { kind: 'finance.official-sales-invoice.v1', module: 'finance', capability: 'finance.official-sales-invoice.work-decision' },
   { kind: 'finance.manual-bank-payment-reversal.v1', module: 'finance', capability: 'finance.manual-bank-payment-reversal.work-decision' },
   { kind: 'finance.manual-receipt-reversal.v1', module: 'finance', capability: 'finance.manual-receipt-reversal.work-decision' },
-  { kind: 'finance.expense-payment.v1', module: 'finance', capability: FINANCE_CAPABILITY.expensePaymentsApprove },
+  { kind: 'finance.expense-payment.v1', module: 'finance', capability: 'finance.expense-payment.work-decision' },
   { kind: 'finance.bank-account.v1', module: 'finance', capability: 'finance.bank-account.work-decision' },
   { kind: 'finance.bank-account-iban-change.v1', module: 'finance', capability: 'finance.bank-account-iban-change.work-decision' },
   { kind: 'finance.credit-account.v1', module: 'finance', capability: 'finance.credit-account.work-decision' },

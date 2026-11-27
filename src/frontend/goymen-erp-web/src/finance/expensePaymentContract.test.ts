@@ -222,3 +222,10 @@ describe('Q7 actual recorded document number', () => {
     expect(decodeExpensePaymentView(recorded({ companyId: '99999999-9999-4999-8999-999999999999', documentNumber: number }), COMPANY).ok).toBe(false)
   })
 })
+
+it('preserves the native calendar default while accepting an explicit caller-owned DateOnly validator',()=>{
+ const value=draft({preparation:preparation({occurredOn:'0001-01-01',valueOn:'0001-01-02'})})
+ expect(decodeExpensePaymentView(value,COMPANY).ok).toBe(false)
+ expect(decodeExpensePaymentView(value,COMPANY,date=>date==='0001-01-01'||date==='0001-01-02').ok).toBe(true)
+ expect(decodeExpensePaymentView({...value,unexpected:true},COMPANY,()=>true).ok).toBe(false)
+})
