@@ -113,7 +113,8 @@ public sealed class WorkAccountingPeriodDecisionHostTests
     }
 
     [Theory] [InlineData("missing")] [InlineData("company")] [InlineData("maker")] [InlineData("version")]
-    [InlineData("source")] [InlineData("preview")] [InlineData("rule")] [InlineData("reference")] [InlineData("cross-proof")]
+    [InlineData("preview")] [InlineData("rule")] [InlineData("reference")] [InlineData("cross-proof")]
+    [InlineData("caption")] [InlineData("link")] [InlineData("reference-role")] [InlineData("reference-label")] [InlineData("date")]
     public async Task Private_scalar_identity_rules_and_references_must_match_the_native_owner(string fault)
     {
         foreach (var reopen in new[] { false, true })
@@ -121,23 +122,52 @@ public sealed class WorkAccountingPeriodDecisionHostTests
             using var rig = new Rig(reopen); rig.Source.Change = s =>
             {
                 var altered = s with { Item = s.Item with { Rules = fault == "rule" ? [s.Item.Rules[0] with { Actual = "1" }] : s.Item.Rules,
-                    References = fault == "reference" ? s.Item.References.Select(x => x with { RecordId = Guid.NewGuid() }).ToArray() : s.Item.References } };
+                    DocumentLabel = fault == "caption" ? "SENTETIK wrong period caption" : s.Item.DocumentLabel,
+                    Link = fault == "link" ? "/SENTETIK-wrong-period" : s.Item.Link,
+                    References = fault switch {
+                        "reference" => s.Item.References.Select(x => x with { RecordId = Guid.NewGuid() }).ToArray(),
+                        "reference-role" => s.Item.References.Select(x => x with { Role = "wrong-period-role" }).ToArray(),
+                        "reference-label" => s.Item.References.Select(x => x with { Label = "SENTETIK wrong reference" }).ToArray(), _ => s.Item.References } } };
                 if (reopen)
                 {
                     var p = s.AccountingPeriodReopeningProof!; return altered with { AccountingPeriodReopeningProof = fault switch
                     { "missing" => null, "company" => p with { CompanyId = Guid.NewGuid() }, "maker" => p with { PreparedBy = Actor },
-                        "version" => p with { Version = 7 }, "source" => p with { SourceFactsDigest = new string('B', 64) },
+                        "version" => p with { Version = 7 }, "date" => p with { StartsOn = p.StartsOn.AddDays(1) },
                         "preview" => p with { PreviewDigest = "wrong" }, _ => p },
                         AccountingPeriodOpeningProof = fault == "cross-proof" ? new(Company, Period, Maker, At, new(2026, 11, 1), new(2026, 11, 30), "Proposed", 1, new('A',64), new('A',64)) : null };
                 }
                 var o = s.AccountingPeriodOpeningProof!; return altered with { AccountingPeriodOpeningProof = fault switch
                 { "missing" => null, "company" => o with { CompanyId = Guid.NewGuid() }, "maker" => o with { PreparedBy = Actor },
-                    "version" => o with { Version = 7 }, "source" => o with { SourceFactsDigest = new string('B',64) },
+                    "version" => o with { Version = 7 }, "date" => o with { StartsOn = o.StartsOn.AddDays(1) },
                     "preview" => o with { PreviewDigest = "wrong" }, _ => o },
                     AccountingPeriodReopeningProof = fault == "cross-proof" ? new(Company, Proposal, Period, Closure, Maker, At, new(2026,11,1),new(2026,11,30),1,3,3,"Closed",false,true,false,new('A',64),new('A',64)) : null };
             };
             Assert.Equal(503, (await Assert.ThrowsAsync<WorkDecisionException>(() => rig.Decide())).Status); Assert.Equal(0, rig.Port.Approvals);
         }
+    }
+
+    [Fact]
+    public async Task Opening_source_digest_is_recomputed_from_all_six_retained_identity_facts_before_native_effect()
+    {
+        using var rig = new Rig(); rig.Source.Change = s => s with
+        { AccountingPeriodOpeningProof = s.AccountingPeriodOpeningProof! with { SourceFactsDigest = new string('B', 64) } };
+        Assert.Equal(503, (await Assert.ThrowsAsync<WorkDecisionException>(() => rig.Decide())).Status);
+        Assert.Equal(0, rig.Port.Approvals); Assert.Empty(rig.Port.Commands);
+    }
+
+    [Fact]
+    public async Task Reopening_full_source_digest_mismatch_suppresses_release_and_same_key_reconciles_one_completed_decision()
+    {
+        using var rig = new Rig(true); rig.Source.Change = s => s with
+        { AccountingPeriodReopeningProof = s.AccountingPeriodReopeningProof! with { SourceFactsDigest = new string('B', 64) } };
+        // The private scalar proof omits closure/reason hash inputs. Their semantic comparison occurs only
+        // against the genuine native receipt after the command, without a second human read or a rollback claim.
+        Assert.Equal(503, (await Assert.ThrowsAsync<WorkDecisionException>(() => rig.Decide())).Status);
+        Assert.Equal(1, rig.Port.Approvals); var original = Assert.Single(rig.Port.Commands);
+        rig.Source.Change = null;
+        var replay = await rig.Decide(); Assert.True(replay.Replayed); Assert.Equal("Approved", replay.State);
+        Assert.Equal(Correlation, replay.OriginalCorrelationId); Assert.Equal(1, rig.Port.Approvals);
+        Assert.Equal(original, Assert.Single(rig.Port.Commands)); Assert.Equal(2, rig.Port.Reopening.Version);
     }
 
     [Theory] [InlineData("missing")] [InlineData("key")] [InlineData("payload")] [InlineData("actor")] [InlineData("company")]
@@ -254,6 +284,7 @@ public sealed class WorkAccountingPeriodDecisionHostTests
     {
         using var rig=new Rig(true);rig.Port.LaterClosed=laterClosed;var p=await rig.Preview();
         Assert.Equal(laterClosed,p.AccountingPeriodReopening!.LaterPeriodClosed);
+        Assert.Equal(!laterClosed,p.ApprovalSupported);
         var human=JsonSerializer.SerializeToElement(p,Json).GetProperty("accountingPeriodReopening");
         Assert.Equal(6,human.EnumerateObject().Count());Assert.Equal(laterClosed,human.GetProperty("laterPeriodClosed").GetBoolean());
         Assert.Equal(laterClosed?2:1,p.Rules.Count);Assert.Empty(rig.Port.Commands);

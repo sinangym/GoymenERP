@@ -36,8 +36,7 @@ public sealed partial class WorkDecisionHostV1
                 && p.StartsOn <= p.EndsOn && p.Version > 0 && snapshot.SourceVersion == p.Version.ToString(CultureInfo.InvariantCulture)
                 && p.Status is "Proposed" or "Open" or "Closed" && snapshot.Pending == (p.Status == "Proposed")
                 && NormalJournalDigest(p.SourceFactsDigest) && NormalJournalDigest(p.PreviewDigest)
-                && snapshot.Item.References.Count == 1 && snapshot.Item.Rules.Count == 1
-                && snapshot.Item.Rules[0].RuleCode == AccountingPeriodOpeningWorkInboxSourceV1.OpeningApprovalRequiredRule;
+                && AccountingPeriodOpeningDecisionBindingV1.MatchesDecisionProof(snapshot.Item, p);
         return snapshot.AccountingPeriodOpeningProof is null && snapshot.AccountingPeriodReopeningProof is { } r
             && r.CompanyId == snapshot.CompanyId && r.ProposalId == snapshot.Item.ItemId && r.ProposalId != Guid.Empty
             && r.PeriodId != Guid.Empty && r.ClosureId != Guid.Empty && r.PreparedBy != Guid.Empty
@@ -47,9 +46,7 @@ public sealed partial class WorkDecisionHostV1
             && snapshot.SourceVersion == r.Version.ToString(CultureInfo.InvariantCulture) && snapshot.Pending == r.Pending
             && r.PeriodStatus is "Proposed" or "Open" or "Closed" && !(r.Pending && r.Approved)
             && NormalJournalDigest(r.SourceFactsDigest) && NormalJournalDigest(r.PreviewDigest)
-            && snapshot.Item.References.Count == 2 && snapshot.Item.Rules.Count == (r.LaterPeriodClosed ? 2 : 1)
-            && snapshot.Item.Rules[0].RuleCode == AccountingPeriodReopeningWorkInboxSourceV1.ReopeningRequestedRule
-            && (!r.LaterPeriodClosed || snapshot.Item.Rules[1].RuleCode == AccountingPeriodReopeningWorkInboxSourceV1.LaterPeriodClosedRule);
+            && AccountingPeriodReopeningDecisionBindingV1.MatchesDecisionProof(snapshot.Item, r);
     }
     private async Task AccountingPeriodFenceAsync(string kind, WorkApprovalDecisionSnapshotV1 snapshot, string actor, CancellationToken token)
     {
