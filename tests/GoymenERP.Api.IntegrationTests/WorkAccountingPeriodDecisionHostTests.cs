@@ -353,9 +353,9 @@ public sealed class WorkAccountingPeriodDecisionHostTests
             catch (NormalJournalAuthorityDeniedException) { return new(AccountingApiStatus.Denied,null,false,null); }
         }
         public async Task<AccountingPeriodRecord?> ReadOpeningDecisionAsync(Guid id, Func<CancellationToken,Task> fence, CancellationToken token = default)
-        { await fence(token); ChangeRead?.Invoke(++Reads); await fence(token); return id == Period ? Record : null; }
+        { await fence(token); Reads++; ChangeRead?.Invoke(Reads); await fence(token); return id == Period ? Record : null; }
         public async Task<AccountingPeriodReopeningDecisionSourceV1?> ReadReopeningDecisionAsync(Guid id, Func<CancellationToken,Task> fence, CancellationToken token = default)
-        { await fence(token); ChangeRead?.Invoke(++Reads); await fence(token); return id == Proposal ? new(Record, Reopening, Close) { LaterPeriodClosed = LaterClosed } : null; }
+        { await fence(token); Reads++; ChangeRead?.Invoke(Reads); await fence(token); return id == Proposal ? new(Record, Reopening, Close) { LaterPeriodClosed = LaterClosed } : null; }
         public async Task<AccountingPeriodRecord> ApprovePeriodAsync(Guid id, long expected, Guid actor, AccountingCommandMetadata m, CancellationToken token = default)
         {
             BeforeApprove?.Invoke(); await executionFence!(token); Expected = expected; Key = m.IdempotencyKey;
