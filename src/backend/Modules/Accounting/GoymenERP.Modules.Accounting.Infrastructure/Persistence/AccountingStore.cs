@@ -479,18 +479,22 @@ public sealed partial class AccountingStore(
 
         var requestHash = ReverseHash(reversedJournalId, dates);
         var replay = await ReplayAsync(consumer, messageId, requestHash, cancellationToken);
+        await JournalReversalApprovalFenceAsync(cancellationToken);
         if (replay is not null)
         {
             return replay;
         }
 
         var (periodRow, period) = await LoadPeriodAsync(periodId, cancellationToken);
+        await JournalReversalApprovalFenceAsync(cancellationToken);
         var rows = await dbContext.Journals.AsNoTracking()
             .Where(row => row.Id == reversedJournalId
                 || (row.Kind == (int)JournalKind.Reversal && row.LinkedJournalId == reversedJournalId))
             .ToListAsync(cancellationToken);
+        await JournalReversalApprovalFenceAsync(cancellationToken);
         var ledger = SourcePostingLedger.FromStored(companyId, await RestoreJournalsAsync(rows, cancellationToken), [], [], []);
 
+        await JournalReversalApprovalFenceAsync(cancellationToken);
         var outcome = ledger.Reverse(consumer, messageId, reversedJournalId, reversalJournalId, dates, period);
 
         if (outcome.Kind == PostingOutcomeKind.Posted)
@@ -587,13 +591,16 @@ public sealed partial class AccountingStore(
             throw new ArgumentException("Teklif, sürüm ve onaylayan kimliği zorunludur.", nameof(proposalId));
         }
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var owned = IsOwnedJournalReversalApproval;
+        await using var transaction = owned ? null : await dbContext.Database.BeginTransactionAsync(cancellationToken);
         try
         {
+            await JournalReversalApprovalFenceAsync(cancellationToken);
             var row = await dbContext.JournalReversalProposals
                 .SingleOrDefaultAsync(candidate => candidate.Id == proposalId, cancellationToken)
                 ?? throw Refused(AccountingJournalReversalStoreCodesV1.NotFound,
                     "Bu şirketin böyle bir ters kayıt teklifi yok.");
+            await JournalReversalApprovalFenceAsync(cancellationToken);
             if (row.Version != expectedVersion)
             {
                 throw new AccountingVersionConflictException(expectedVersion, row.Version);
@@ -606,6 +613,7 @@ public sealed partial class AccountingStore(
                 voucher.Status == 2 && voucher.JournalId == before.SourceJournalId && voucher.SourceActorId == checkerId
                 && dbContext.SourceInvoiceCancellations.Any(cancellation => cancellation.SourceDocumentId == voucher.SourceDocumentId
                     && cancellation.InvoiceId == voucher.InvoiceId && cancellation.FinalizedVersion == voucher.FinalizedVersion), cancellationToken);
+            await JournalReversalApprovalFenceAsync(cancellationToken);
             if (ownCancelledInvoice)
                 throw new AccountingJournalReversalPolicyExceptionV1(AccountingJournalReversalPolicyCodesV1.MakerCheckerRequired, "checkerId");
             var reversalJournalId = Guid.NewGuid();
@@ -641,12 +649,13 @@ public sealed partial class AccountingStore(
                 "Muhasebe fişi ters kayıt teklifi başka kullanıcı tarafından onaylandı");
             Complete(metadata, companyId, approved);
             await SaveAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
             return approved;
         }
         catch
         {
-            await transaction.RollbackAsync(CancellationToken.None);
+            if (owned) throw; // Only the command boundary owns rollback/dispose and cleanup.
+            await transaction!.RollbackAsync(CancellationToken.None);
             dbContext.ChangeTracker.Clear();
             throw;
         }
@@ -809,6 +818,7 @@ public sealed partial class AccountingStore(
     {
         var delivery = await dbContext.Deliveries.AsNoTracking()
             .SingleOrDefaultAsync(row => row.Consumer == consumer && row.MessageId == messageId, cancellationToken);
+        await JournalReversalApprovalFenceAsync(cancellationToken);
         if (delivery is null)
         {
             return null;
@@ -824,6 +834,7 @@ public sealed partial class AccountingStore(
         if (delivery.JournalId is { } journalId)
         {
             var rows = await dbContext.Journals.AsNoTracking().Where(row => row.Id == journalId).ToListAsync(cancellationToken);
+            await JournalReversalApprovalFenceAsync(cancellationToken);
             journal = (await RestoreJournalsAsync(rows, cancellationToken)).Single();
         }
 
@@ -907,6 +918,7 @@ public sealed partial class AccountingStore(
         var ids = rows.Select(row => row.Id).Distinct().ToArray();
         var lines = await dbContext.JournalLines.AsNoTracking().Where(line => ids.Contains(line.JournalId))
             .ToListAsync(cancellationToken);
+        await JournalReversalApprovalFenceAsync(cancellationToken);
         return [.. rows.DistinctBy(row => row.Id).Select(row => Journal.Restore(
             row.Id,
             (JournalKind)row.Kind,
@@ -1001,7 +1013,9 @@ public sealed partial class AccountingStore(
     private async Task AddJournalAsync(Journal journal, PeriodRow periodRow, Guid? correctionId,
         AccountingCommandMetadata metadata, CancellationToken cancellationToken)
     {
-        if (await dbContext.Journals.AsNoTracking().AnyAsync(row => row.Id == journal.Id, cancellationToken))
+        var journalExists = await dbContext.Journals.AsNoTracking().AnyAsync(row => row.Id == journal.Id, cancellationToken);
+        await JournalReversalApprovalFenceAsync(cancellationToken);
+        if (journalExists)
         {
             throw Refused(AccountingStoreCodes.JournalIdTaken, "Bu fiş kimliği şirketin başka bir fişinde kullanılıyor.");
         }

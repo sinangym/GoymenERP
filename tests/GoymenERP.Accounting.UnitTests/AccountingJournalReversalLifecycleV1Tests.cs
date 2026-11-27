@@ -6,7 +6,7 @@ using GoymenERP.Modules.Accounting.Domain;
 
 namespace GoymenERP.Accounting.UnitTests;
 
-public sealed class AccountingJournalReversalLifecycleV1Tests
+public sealed partial class AccountingJournalReversalLifecycleV1Tests
 {
     private static readonly Guid Company = Guid.Parse("a1000000-0000-4000-8000-000000000001");
     private static readonly Guid Maker = Guid.Parse("a1000000-0000-4000-8000-000000000002");
@@ -234,6 +234,20 @@ public sealed class AccountingJournalReversalLifecycleV1Tests
     private sealed class MemoryStore(AccountingJournalReversalProposalV1? proposal = null)
         : IAccountingJournalReversalProposalStoreV1, IAccountingCommandLog
     {
+        // Synthetic lifecycle protocol only; actual relational rollback is covered separately.
+        public async Task<AccountingApiResult<AccountingJournalReversalProposalViewV1>> RunApprovalAsync(
+            Func<bool, Task<AccountingApiResult<AccountingJournalReversalProposalViewV1>>> attempt,
+            Func<CancellationToken, Task> fence, CancellationToken cancellationToken = default)
+        {
+            try { await fence(cancellationToken); return await attempt(false); }
+            catch (NormalJournalAuthorityDeniedException) { return new(AccountingApiStatus.Denied, null, false, null); }
+            catch (NormalJournalApprovalRaceException race)
+            {
+                var answer = await attempt(true);
+                return answer.Status == AccountingApiStatus.Conflict && !answer.IsReplay
+                    ? answer with { Code = race.NoWinnerCode } : answer;
+            }
+        }
         private readonly List<AccountingCommandRecord> commands = [];
         public AccountingJournalReversalProposalV1? Proposal { get; private set; } = proposal;
         public int ProposalsWritten { get; private set; }

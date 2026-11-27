@@ -206,8 +206,8 @@ public sealed class AccountingJournalReversalStoreFollowUpV1Tests
         var winnerKey = race == "other-key" ? "racing-approval-b" : loserKey;
         var winnerActor = race == "same-key" ? Checker : SecondChecker;
 
-        // Calls 1 and 2 are the lifecycle's own revalidations; call 3 is the store's fence after it read the proposal.
-        var gate = new GatedAuthority(gateAtCall: 3);
+        // Calls 1/2/3 are native entry, original-command release and pre-write; call 4 follows the proposal read.
+        var gate = new GatedAuthority(gateAtCall: 4);
         var parked = book.ApproveAsync(Checker, proposalId, 1, loserKey, gate);
         await gate.Reached.Task.WaitAsync(GateTimeout);
         var winner = await book.ApproveAsync(winnerActor, proposalId, 1, winnerKey, correlation: "racing-winner");
@@ -399,6 +399,32 @@ public sealed class AccountingJournalReversalStoreFollowUpV1Tests
         new HashSet<Guid>());
 
     /// <summary>One company's Accounting database, with an open September period, shared by every request scope.</summary>
+    // Explicit InMemory business/protocol golden seam. No actual transaction/Audit/SQL acceptance.
+    private sealed class SyntheticReversalProtocolStore(AccountingStore core) : IAccountingJournalReversalProposalStoreV1
+    {
+        public async Task<AccountingApiResult<AccountingJournalReversalProposalViewV1>> RunApprovalAsync(
+            Func<bool, Task<AccountingApiResult<AccountingJournalReversalProposalViewV1>>> attempt,
+            Func<CancellationToken, Task> fence, CancellationToken token = default)
+        {
+            try { return await attempt(false); }
+            catch (AccountingJournalReversalAuthorityDeniedException) { return new(AccountingApiStatus.Denied, null, false, null); }
+            catch (NormalJournalAuthorityDeniedException) { return new(AccountingApiStatus.Denied, null, false, null); }
+            catch (NormalJournalApprovalRaceException race)
+            {
+                var replay = await attempt(true);
+                return replay.Status == AccountingApiStatus.Conflict && !replay.IsReplay
+                    ? replay with { Code = race.NoWinnerCode } : replay;
+            }
+        }
+        public Task<(AccountingJournalReversalProposalV1 Proposal, AccountingWriteOutcome Outcome)> CreateAsync(
+            AccountingJournalReversalProposalV1 proposal, Func<CancellationToken, Task> fence,
+            AccountingCommandMetadata metadata, CancellationToken token = default) => core.CreateAsync(proposal, fence, metadata, token);
+        public Task<AccountingJournalReversalProposalV1?> FindAsync(Guid id, CancellationToken token = default) => core.FindAsync(id, token);
+        public Task<AccountingJournalReversalProposalV1> ApproveAndReverseAsync(Guid id, int version, Guid actor,
+            Func<CancellationToken, Task> fence, AccountingCommandMetadata metadata, CancellationToken token = default)
+            => core.ApproveAndReverseAsync(id, version, actor, fence, metadata, token);
+    }
+
     private sealed class Book
     {
         private readonly InMemoryDatabaseRoot root = new();
@@ -434,7 +460,7 @@ public sealed class AccountingJournalReversalStoreFollowUpV1Tests
             var store = new AccountingStore(dbContext, companyContext, Audit, clock,
                 new AccountingAmountScaleVerifier(SyntheticSettings.Scale(Company, 2)));
             var lifecycle = new AccountingJournalReversalServiceV1(
-                store,
+                new SyntheticReversalProtocolStore(store),
                 store,
                 authority ?? new FixedAuthority(),
                 companyContext,

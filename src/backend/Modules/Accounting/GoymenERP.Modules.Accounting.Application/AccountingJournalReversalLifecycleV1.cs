@@ -77,6 +77,13 @@ public sealed record AccountingJournalReversalProposalViewV1(
 
 public interface IAccountingJournalReversalProposalStoreV1
 {
+    // Only an owner implementation with a real clean transaction/audit scope may execute approval.
+    Task<AccountingApiResult<AccountingJournalReversalProposalViewV1>> RunApprovalAsync(
+        Func<bool, Task<AccountingApiResult<AccountingJournalReversalProposalViewV1>>> attempt,
+        Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken = default)
+        => Task.FromResult(new AccountingApiResult<AccountingJournalReversalProposalViewV1>(
+            AccountingApiStatus.Unavailable, null, false, null));
+
     Task<(AccountingJournalReversalProposalV1 Proposal, AccountingWriteOutcome Outcome)> CreateAsync(
         AccountingJournalReversalProposalV1 proposal,
         Func<CancellationToken, Task> freshAuthorityFence,
@@ -117,7 +124,7 @@ public interface IAccountingJournalReversalLifecycleV1
         CancellationToken cancellationToken = default);
 }
 
-public sealed class AccountingJournalReversalServiceV1(
+public sealed partial class AccountingJournalReversalServiceV1(
     IAccountingJournalReversalProposalStoreV1 proposals,
     IAccountingCommandLog commands,
     IErpAuthorityRevalidationService authority,
@@ -177,7 +184,13 @@ public sealed class AccountingJournalReversalServiceV1(
             return Task.FromResult(Invalid("expectedVersion"));
         }
 
-        return RunAsync(
+        if (string.IsNullOrWhiteSpace(idempotencyKey)) return Task.FromResult(Invalid("idempotencyKey"));
+        if (!HasContext() || ActorGuid() is not { } capturedActor) return Task.FromResult(Denied<AccountingJournalReversalProposalViewV1>());
+        var capturedCompany = companyContext.CompanyId;
+        var capturedActorId = currentUser.UserId!;
+        return proposals.RunApprovalAsync(async replayOnly =>
+        {
+            try { return await RunAsync(
             AccountingJournalReversalPermissionNamesV1.Approve,
             AccountingJournalReversalCommandNamesV1.Approve,
             idempotencyKey,
@@ -197,7 +210,14 @@ public sealed class AccountingJournalReversalServiceV1(
                     AccountingApiStatus.Ok, View(stored), false, null);
             },
             stored => View((AccountingJournalReversalProposalV1)stored),
-            cancellationToken);
+            cancellationToken, capturedCompany, capturedActor, capturedActorId, replayOnly); }
+            catch (AccountingJournalReversalAuthorityDeniedException) { throw new NormalJournalAuthorityDeniedException(); }
+        },
+            async token =>
+            {
+                try { await FenceAsync(AccountingJournalReversalPermissionNamesV1.Approve, capturedCompany, capturedActor, capturedActorId, token); }
+                catch (AccountingJournalReversalAuthorityDeniedException) { throw new NormalJournalAuthorityDeniedException(); }
+            }, cancellationToken);
     }
 
     private async Task<AccountingApiResult<T>> RunAsync<T>(
@@ -208,7 +228,8 @@ public sealed class AccountingJournalReversalServiceV1(
         AccountingApiStatus successStatus,
         Func<AccountingCommandMetadata, Guid, Guid, string, Task<AccountingApiResult<T>>> write,
         Func<object, T> view,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, Guid? approvalCompany = null, Guid? approvalActor = null,
+        string? approvalActorId = null, bool replayOnly = false)
         where T : class
     {
         if (string.IsNullOrWhiteSpace(idempotencyKey))
@@ -222,14 +243,17 @@ public sealed class AccountingJournalReversalServiceV1(
             return Denied<T>();
         }
 
-        var companyId = companyContext.CompanyId;
-        var actorId = currentUser.UserId!;
+        var companyId = approvalCompany ?? companyContext.CompanyId;
+        if (approvalActor is { } captured && captured != actor) return Denied<T>();
+        var actorId = approvalActorId ?? currentUser.UserId!;
         if (!ContextMatches(companyId, actor, actorId))
         {
             return Denied<T>();
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         if (!scope.IsGranted || !scope.IsCompanyWide || !ContextMatches(companyId, actor, actorId))
         {
             return Denied<T>();
@@ -244,12 +268,16 @@ public sealed class AccountingJournalReversalServiceV1(
             return Denied<T>();
         }
 
+        if (approvalCompany is not null)
+            await FenceAsync(permission, companyId, actor, actorId, cancellationToken);
         if (prior is not null)
         {
             return Answer<T>(prior, actorId, requestHash);
         }
 
+        if (replayOnly) return new(AccountingApiStatus.Conflict, null, false, AccountingStoreCodes.ConcurrentChange);
         var second = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
+        if (approvalCompany is not null) cancellationToken.ThrowIfCancellationRequested();
         if (!second.IsGranted || !second.IsCompanyWide || !ContextMatches(companyId, actor, actorId))
         {
             return Denied<T>();
@@ -285,6 +313,7 @@ public sealed class AccountingJournalReversalServiceV1(
         }
         catch (AccountingJournalReversalAuthorityDeniedException)
         {
+            if (approvalCompany is not null) throw new NormalJournalAuthorityDeniedException();
             return Denied<T>();
         }
         catch (AccountingVersionConflictException exception)
@@ -319,6 +348,7 @@ public sealed class AccountingJournalReversalServiceV1(
         }
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ConcurrentChange)
         {
+            if (approvalCompany is not null) throw new NormalJournalApprovalRaceException(exception.Code, exception);
             return await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
                 ? Answer<T>(winner, actorId, requestHash)
                 : new AccountingApiResult<T>(AccountingApiStatus.Conflict, null, false, exception.Code);
@@ -327,6 +357,7 @@ public sealed class AccountingJournalReversalServiceV1(
             exception.Code == AccountingJournalReversalStoreCodesV1.PostingConflict
             && string.Equals(commandName, AccountingJournalReversalCommandNamesV1.Approve, StringComparison.Ordinal))
         {
+            if (approvalCompany is not null) throw new NormalJournalApprovalRaceException(exception.Code, exception);
             // An approval that read the proposal pending while a racing approval of it committed is refused by the
             // store (nothing of it is saved). When that winner answered under THIS key with the same actor and request,
             // its recorded answer is this key's replay (ADR-011), exactly as for a lost save; otherwise it stays 409.
@@ -374,6 +405,7 @@ public sealed class AccountingJournalReversalServiceV1(
         }
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ConcurrentChange)
         {
+            if (approvalCompany is not null) throw new NormalJournalApprovalRaceException(exception.Code, exception);
             return await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
                 ? Answer<T>(winner, actorId, requestHash)
                 : result;
@@ -387,7 +419,9 @@ public sealed class AccountingJournalReversalServiceV1(
         string actorId,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         if (!scope.IsGranted || !scope.IsCompanyWide || !ContextMatches(companyId, actor, actorId))
         {
             throw new AccountingJournalReversalAuthorityDeniedException();

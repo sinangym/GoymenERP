@@ -42,7 +42,7 @@ public sealed partial class AccountingStore
                 await NormalApprovalFence(token);
                 var result = await nativeAttempt(replayOnly);
                 if (replayOnly && !result.IsReplay && result.Status == AccountingApiStatus.Conflict && (result.Code == AccountingStoreCodes.ConcurrentChange
-                        || noWinnerCode == NormalJournalDraftStoreCodesV1.PostingConflict && result.Code == AccountingApiCodes.IdempotencyConflict))
+                        || (noWinnerCode == NormalJournalDraftStoreCodesV1.PostingConflict || noWinnerCode == AccountingJournalReversalStoreCodesV1.PostingConflict) && result.Code == AccountingApiCodes.IdempotencyConflict))
                     result = result with { Code = noWinnerCode ?? AccountingStoreCodes.ConcurrentChange };
                 if (result.Status == AccountingApiStatus.Denied)
                 {
