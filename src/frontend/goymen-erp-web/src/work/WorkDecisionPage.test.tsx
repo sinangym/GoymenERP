@@ -1,3 +1,6 @@
+import { CapabilityRoute } from '../shell/CapabilityRoute'
+import { customerReturnText as CUSTOMER_RETURN } from '../logistics/customerReturnText'
+import { CUSTOMER_RETURN_WORK_DECISION_CAPABILITY } from './workDecisionApi'
 import { DISPATCH_NOTE_WORK_DECISION_CAPABILITY } from './workDecisionApi'
 import { CAPABILITY, CAPABILITY_ROUTE, CAPABILITY_NAV_LABEL } from '../shell/capabilities'
 import { COUNTERPARTY_WORK_DECISION_CAPABILITY } from './workDecisionApi'
@@ -1549,4 +1552,69 @@ it('keeps a native dispatch 403 refusal separate from success without retrying a
  mountDispatchPurpose();await screen.findByRole('region',{name:T.dispatchProposal});await userEvent.setup().click(screen.getByRole('button',{name:T.approve}))
  // Fresh 403 invalidates the current authority and the guarded route becomes not-found.
  await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(screen.queryByText(T.done)).toBeNull();expect(calls.filter(call=>call.url.includes(dispatchPath)&&call.method==='POST')).toHaveLength(1)
+})
+
+const customerKind='logistics.customer-return.v1' as const,customerCap=CUSTOMER_RETURN_WORK_DECISION_CAPABILITY,customerPath=`/work/decisions/${customerKind}/${id}`
+const customerFacts={loadingInstructionId:COMPANY_A,loadingInstructionLineId:id,sourceDeliveryId:id,sourceShipmentId:id,sourceOrderId:COMPANY_A,sourceOrderLineId:id,unitId:id,
+ quantityUnit:'Kilogram',quantity:'1.250',sourceDeliveredQuantity:'100.000',reason:'SENTETIK privatehuman iade nedeni',requestedBy:'SENTETIK iade hazırlayan',occurredAtUtc:'0001-01-01T00:00:00+00:00',requestedAtUtc:'2026-11-27T08:00:00Z',status:'Pending'}
+const customerPreview={...preview,kind:customerKind,sourceVersion:'1',rejectionSupported:true,approvalSupported:true,logisticsCustomerReturn:customerFacts,
+ references:[{role:'loading-instruction',label:'Talimat',recordId:COMPANY_A,link:'/lojistik/yukleme-talimatlari/'+COMPANY_A}],rules:[{ruleCode:'logistics.customer-return-request',threshold:'100',actual:'1.25',deviation:null,unit:'kg'}]}
+function mountCustomerCandidate(){
+ const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[{path:`onaylarim/${customerKind}/:approvalId`,element:<CapabilityRoute capability={[customerCap]}><WorkDecisionPage kind={customerKind}/></CapabilityRoute>}]}],{initialEntries:[`/onaylarim/${customerKind}/${id}`]})
+ render(<ShellProvider queryClient={new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})}><RouterProvider router={router}/></ShellProvider>)
+ return router
+}
+it.each([true,false])('shows all 15 native return facts and submits an optional unbounded trimmed note; approve=%s',async approve=>{
+ const calls=installFetch({capabilities:[customerCap],respond:(url,init)=>url.includes(customerPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:customerKind,itemId:id,state:approve?'Approved':'Rejected',replayed:false,originalCorrelationId:'SENTETIK'}):json(customerPreview):undefined})
+ mountCustomerCandidate();const region=await screen.findByRole('region',{name:T.customerReturnProposal})
+ expect(region.querySelectorAll('dt')).toHaveLength(15);expect(within(region).getByText(customerFacts.reason)).toBeTruthy();expect(within(region).getByText(customerFacts.occurredAtUtc)).toBeTruthy();expect(within(region).getByText('1.250')).toBeTruthy();expect(within(region).getByText('100.000')).toBeTruthy()
+ const note=screen.getByRole('textbox',{name:CUSTOMER_RETURN.note});expect(note.hasAttribute('maxlength')).toBe(false)
+ fireEvent.change(note,{target:{value:'  '+ 'x'.repeat(5001)+'  '}});fireEvent.click(screen.getByRole('button',{name:approve?T.approve:T.reject}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.url.includes(customerPath)&&call.method==='POST');expect(sent).toHaveLength(1)
+ expect(sent[0]!.body).toMatchObject({expectedVersion:'1',approve,reason:'x'.repeat(5001),delegationId:null})
+ const body=sent[0]!.body as {logisticsCustomerReturn?:{inventoryMovementId:string}}
+ if(approve)expect(body.logisticsCustomerReturn?.inventoryMovementId).toMatch(/^[0-9a-f-]{36}$/i);else expect(Object.hasOwn(body,'logisticsCustomerReturn')).toBe(false)
+ expect(calls.some(call=>call.url.includes('/logistics/customer-returns/'))).toBe(false)
+})
+it('keeps Piece approval disabled while an empty-note rejection remains native and omits movement selection',async()=>{
+ const value={...customerPreview,approvalSupported:false,logisticsCustomerReturn:{...customerFacts,quantityUnit:'Piece',quantity:'1.000',sourceDeliveredQuantity:'2.000'},rules:[{...customerPreview.rules[0],actual:'1',threshold:'2',unit:'adet'}]}
+ const calls=installFetch({capabilities:[customerCap],respond:(url,init)=>url.includes(customerPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:customerKind,itemId:id,state:'Rejected',replayed:false,originalCorrelationId:'SENTETIK'}):json(value):undefined})
+ mountCustomerCandidate();await screen.findByRole('region',{name:T.customerReturnProposal});expect(screen.getByText(T.customerReturnPieceUnavailable)).toBeTruthy()
+ expect((screen.getByRole('button',{name:T.approve}) as HTMLButtonElement).disabled).toBe(true);expect((screen.getByRole('button',{name:T.reject}) as HTMLButtonElement).disabled).toBe(false)
+ fireEvent.click(screen.getByRole('button',{name:T.reject}));await screen.findByText(T.done)
+ expect(calls.filter(call=>call.url.includes(customerPath)&&call.method==='POST')[0]!.body).toEqual({expectedVersion:'1',approve:false,reason:null,delegationId:null})
+})
+it.each([true,false])('freezes the original return selection/body/key through unknown remount and terminal version2, approve=%s',async approve=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-return-session'});let posts=0
+ const calls=installFetch({capabilities:[customerCap],respond:(url,init)=>{
+  if(!url.includes(customerPath))return undefined
+  if(init?.method==='POST')return ++posts===1?problem(503):json({companyId:COMPANY_A,kind:customerKind,itemId:id,state:approve?'Approved':'Rejected',replayed:true,originalCorrelationId:'original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'})
+  return json(posts===0?customerPreview:{...customerPreview,pending:false,sourceVersion:'2',logisticsCustomerReturn:{...customerFacts,status:approve?'Approved':'Rejected'}})
+ }})
+ mountCustomerCandidate();await screen.findByRole('region',{name:T.customerReturnProposal});fireEvent.change(screen.getByRole('textbox',{name:CUSTOMER_RETURN.note}),{target:{value:'SENTETIK karar notu'}});fireEvent.click(screen.getByRole('button',{name:approve?T.approve:T.reject}));await screen.findByText(T.unknown)
+ expect(JSON.stringify(sessionStorage)).not.toContain(customerFacts.reason);expect(JSON.stringify(sessionStorage)).not.toContain('loadingInstructionId')
+ cleanup();mountCustomerCandidate();await screen.findByText(T.unknown);await screen.findByText(T.closed);expect(screen.getByText(`${T.version}: 1`)).toBeTruthy()
+ fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.url.includes(customerPath)&&call.method==='POST');expect(sent).toHaveLength(2);expect(sent[0]!.body).toEqual(sent[1]!.body);expect(sent[0]!.headers['Idempotency-Key']).toBe(sent[1]!.headers['Idempotency-Key'])
+ const body=sent[0]!.body as Record<string,unknown>;expect(Object.keys(body).sort()).toEqual((approve?['approve','delegationId','expectedVersion','logisticsCustomerReturn','reason']:['approve','delegationId','expectedVersion','reason']).sort())
+})
+it.each([{companyId:COMPANY_B},{approvalSupported:undefined},{approvalSupported:false},{logisticsCustomerReturn:{...customerFacts,unitId:''}},{logisticsCustomerReturn:{...customerFacts,quantity:'1.250\n'}}])('does not expose malformed customer return evidence %j',async delta=>{
+ const calls=installFetch({capabilities:[customerCap],respond:url=>url.includes(customerPath)?json({...customerPreview,...delta}):undefined});mountCustomerCandidate()
+ await waitFor(()=>expect(calls.some(call=>call.url.includes(customerPath))).toBe(true));expect(screen.queryByRole('region',{name:T.customerReturnProposal})).toBeNull();expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+})
+it.each([{capabilities:[]},{capabilities:['logistics.customer-returns.approve']},{capabilities:['logistics.customer-returns.decision']},{capabilities:['logistics.instructions.detail']}])('never reads a return purpose through native controls/browse or missing capability %j',async({capabilities})=>{
+ const calls=installFetch({capabilities,respond:url=>url.includes(customerPath)?json(customerPreview):undefined});mountCustomerCandidate()
+ await waitFor(()=>expect(calls.some(call=>call.url.endsWith('/shell/capabilities'))).toBe(true));expect(calls.some(call=>call.url.includes(customerPath))).toBe(false)
+})
+it('keeps the return candidate out of the 25 public decision mounts until its paired publication',()=>{
+ const route=matchRoutes(workRoutes,`/onaylarim/${customerKind}/${id}`)?.at(-1)?.route
+ expect(route?.path).toBe('onaylarim/:kind/:approvalId')
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(25)
+})
+it('does not restore a customer-return unknown attempt under another authentication session',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-return-old'})
+ const calls=installFetch({capabilities:[customerCap],respond:(url,init)=>url.includes(customerPath)?init?.method==='POST'?problem(503):json(customerPreview):undefined})
+ mountCustomerCandidate();await screen.findByRole('region',{name:T.customerReturnProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-return-new'});mountCustomerCandidate();await screen.findByRole('region',{name:T.customerReturnProposal})
+ expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.url.includes(customerPath)&&call.method==='POST')).toHaveLength(1)
 })

@@ -858,3 +858,54 @@ it.each(['\n','\r','\r\n'])('rejects dispatch trailing line endings across nativ
  expect(isWorkDecisionRequest({...request,expectedVersion:'7'+ending},dispatchKind)).toBe(false)
  expect(isWorkDecisionRequest({...request,delegationId:id+ending},dispatchKind)).toBe(false)
 })
+
+const customerKind='logistics.customer-return.v1' as const
+const customerFacts={loadingInstructionId:company,loadingInstructionLineId:id,sourceDeliveryId:id,sourceShipmentId:id,sourceOrderId:company,sourceOrderLineId:id,unitId:id,
+ quantityUnit:'Kilogram',quantity:'1.250',sourceDeliveredQuantity:'100.000',reason:'SENTETIK değişmez iade gerekçesi',requestedBy:'SENTETIK hazırlayan',occurredAtUtc:'0001-01-01T00:00:00+00:00',requestedAtUtc:'2026-11-27T08:00:00Z',status:'Pending'}
+const customerPreview={...preview,kind:customerKind,sourceVersion:'1',rejectionSupported:true,approvalSupported:true,logisticsCustomerReturn:customerFacts,
+ references:[{role:'loading-instruction',label:'Talimat',recordId:company,link:'/lojistik/yukleme-talimatlari/'+company}],
+ rules:[{ruleCode:'logistics.customer-return-request',threshold:'100',actual:'1.25',deviation:null,unit:'kg'}]}
+const customerRequest={expectedVersion:'1',approve:true,reason:null,delegationId:null,logisticsCustomerReturn:{inventoryMovementId:id}}
+it('keeps customer-return staged outside the 25 live purposes, preserves all native human fields and the minimum occurrence instant',()=>{
+ const decoded=decodeWorkDecisionPreview(customerPreview,company,customerKind,id)
+ expect(decoded?.logisticsCustomerReturn).toEqual(customerFacts);expect(Object.keys(decoded!.logisticsCustomerReturn!)).toHaveLength(15)
+ expect(isWorkDecisionKind(customerKind)).toBe(true);expect(WORK_DECISION_KINDS).not.toContain(customerKind);expect(WORK_DECISION_KINDS).toHaveLength(25)
+ expect(workDecisionReasonLimit(customerKind)).toBeUndefined()
+ for(const status of ['Approved','Rejected'])expect(decodeWorkDecisionPreview({...customerPreview,pending:false,sourceVersion:'2',logisticsCustomerReturn:{...customerFacts,status}},company,customerKind,id)).not.toBeNull()
+ expect(decodeWorkDecisionPreview({...preview,logisticsCustomerReturn:customerFacts},company,kind,id)).toBeNull()
+ expect(decodeWorkDecisionPreview({...preview,approvalSupported:true},company,kind,id)).toBeNull()
+})
+it('validates Piece without converting its units and advertises approval unsupported while preserving rejection',()=>{
+ const value={...customerPreview,approvalSupported:false,logisticsCustomerReturn:{...customerFacts,quantityUnit:'Piece',quantity:'1.000',sourceDeliveredQuantity:'2.000'},rules:[{...customerPreview.rules[0],actual:'1',threshold:'2',unit:'adet'}]}
+ expect(decodeWorkDecisionPreview(value,company,customerKind,id)?.approvalSupported).toBe(false)
+ expect(decodeWorkDecisionPreview({...value,approvalSupported:true},company,customerKind,id)).toBeNull()
+ expect(decodeWorkDecisionPreview({...value,logisticsCustomerReturn:{...value.logisticsCustomerReturn,quantity:'1.250'}},company,customerKind,id)).toBeNull()
+})
+it.each([
+ {approvalSupported:undefined},{approvalSupported:false},{rejectionSupported:false},{approvalReasonRequired:true},{sourceVersion:'2'},{companyId:id},{itemId:company},
+ ...[{loadingInstructionId:id},{unitId:''},{quantityUnit:'Litre'},{quantity:'0'},{quantity:'100.001'},{quantity:'1.250\n'},{sourceDeliveredQuantity:'100.000\r'},
+ {reason:''},{requestedBy:'x'.repeat(129)},{occurredAtUtc:'2026-02-30T08:00:00Z'},{occurredAtUtc:'0001-01-01T00:00:00Z\n'},{requestedAtUtc:'0001-01-01T00:00:00Z'},
+ {status:'Future'},{price:'100'}].map(delta=>({logisticsCustomerReturn:{...customerFacts,...delta}}))
+])('refuses malformed or foreign customer-return proof %j',delta=>{
+ expect(decodeWorkDecisionPreview({...customerPreview,...delta},company,customerKind,id)).toBeNull()
+})
+it.each([true,false])('sends only native customer-return selection and optional unbounded notes, approve=%s',async approve=>{
+ const reason='x'.repeat(5001),body={expectedVersion:'1',approve,reason,delegationId:null,...(approve?{logisticsCustomerReturn:{inventoryMovementId:id}}:{})}
+ expect(isWorkDecisionRequest(body,customerKind)).toBe(true);expect(isWorkDecisionRequest({...body,reason:null},customerKind)).toBe(true)
+ const result={companyId:company,kind:customerKind,itemId:id,state:approve?'Approved':'Rejected',replayed:true,originalCorrelationId:'original'}
+ const headers={'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}
+ const fetch=vi.fn(async(_input:RequestInfo|URL,_init?:RequestInit)=>new Response(JSON.stringify(result),{status:200,headers}));vi.stubGlobal('fetch',fetch)
+ expect((await sendWorkDecision(company,customerKind,id,body,'same-key')).type).toBe('applied');expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string)).toEqual(body)
+ for(const delta of [{state:'Pending'},{state:approve?'Rejected':'Approved'},{companyId:id},{kind},{itemId:company},{replayed:false},{originalCorrelationId:'wrong'},{extra:true}]){
+  fetch.mockResolvedValue(new Response(JSON.stringify({...result,...delta}),{status:200,headers}));expect((await sendWorkDecision(company,customerKind,id,body,'same-key')).type).toBe('unknown')
+ }
+})
+it.each([{logisticsCustomerReturn:undefined},{logisticsCustomerReturn:{inventoryMovementId:''}},{logisticsCustomerReturn:{inventoryMovementId:id+'\n'}},{logisticsCustomerReturn:{inventoryMovementId:id,other:true}},
+ {expectedVersion:'2'},{expectedVersion:'01'},{expectedVersion:'1\n'},{inventoryTransferLoss:{requestNumber:1,decidedAtUtc:'2026-11-27T08:00:00Z'}}])('rejects a changed customer-return command shape %j',delta=>{
+ expect(isWorkDecisionRequest({...customerRequest,...delta},customerKind)).toBe(false)
+})
+it('requires customer-return movement identity only on approve and excludes it from every other kind',()=>{
+ expect(isWorkDecisionRequest({...customerRequest,approve:false},customerKind)).toBe(false)
+ expect(isWorkDecisionRequest({...customerRequest,approve:false,logisticsCustomerReturn:null},customerKind)).toBe(false)
+ expect(isWorkDecisionRequest({...request,logisticsCustomerReturn:{inventoryMovementId:id}},kind)).toBe(false)
+})

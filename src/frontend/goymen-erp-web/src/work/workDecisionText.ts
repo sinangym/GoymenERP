@@ -1,4 +1,12 @@
 export const WORK_DECISION_TEXT = {
+  customerReturnProposal:'Karar verilecek müşteri iadesi', customerReturnInstruction:'Yükleme talimatı', customerReturnLine:'Talimat satırı',
+  customerReturnDelivery:'Kaynak teslimat',customerReturnShipment:'Kaynak sevk',customerReturnOrder:'Satış siparişi',customerReturnOrderLine:'Sipariş satırı',customerReturnUnit:'Birim kaydı',
+  customerReturnUnitKind:'Miktar birimi',customerReturnQuantity:'İade miktarı',customerReturnDelivered:'Kaynak teslim edilen miktar',customerReturnRequestedBy:'İadeyi hazırlayan',
+  customerReturnRequestedAt:'Talep zamanı (UTC)',customerReturnOccurredAt:'İade zamanı (UTC)',customerReturnStatus:'İade durumu',
+  customerReturnNoteHelp:'Onay ve ret için karar notu isteğe bağlıdır. Girilen notun başındaki ve sonundaki boşluklar kaldırılır.',
+  customerReturnPieceUnavailable:'Adet birimli iadenin onayı, doğrulanmış kg kaynağı olmadan kullanılamaz. Ret işlemi kullanılabilir.',
+  customerReturnUnits:{Kilogram:'Kilogram',Piece:'Adet'},
+
   dispatchProposal: 'Karar verilecek irsaliye', dispatchInstruction: 'Yükleme talimatı', dispatchCustomer: 'Müşteri cari kaydı', dispatchAccount: 'Şirket cari hesabı',
   dispatchEffectiveOn: 'Belge tarihi', dispatchStatus: 'İrsaliye durumu', dispatchProduct: 'Ürün', dispatchUnit: 'Birim', dispatchKg: 'Kaydedilen miktar (kg)',
   dispatchApprovalOnly: 'Bu irsaliye için yalnız onay verilebilir. Onayda karar gerekçesi kaydedilmez; iptal ve e-İrsaliye işlemleri ayrı işlemlerdir.',
