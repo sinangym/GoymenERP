@@ -49,9 +49,9 @@ internal sealed partial class AccountingJournalReversalWorkInboxSourceV1(
                         && row.Status == (int)AccountingJournalReversalProposalStatusV1.Pending)
                     .OrderBy(row => row.ProposedAtUtc).ThenBy(row => row.Id)
                     .Take(maxCount + 1).ToListAsync(token);
-                await FreshReadFence(token);
                 var journals = rows.Take(maxCount).Select(row => row.SourceJournalId).Distinct().ToArray();
                 if (journals.Length == 0) return new PendingPage(rows, []);
+                await FreshReadFence(token);
                 // Same company-bound KLN-D17 predicate as native approval; one bulk read, never N+1 human reads.
                 var actors = await dbContext.SourceDocumentVoucherDrafts.AsNoTracking()
                     .Where(voucher => voucher.CompanyId == context.CompanyId && voucher.Status == 2
