@@ -1,3 +1,4 @@
+import { DISPATCH_NOTE_TEXT as DISPATCH } from '../logistics/logisticsText'
 import { BANK_COLUMN, BANK_MASTER_NOTICE, currencyFallback } from '../finance/bankAccountText'
 import { SUPPLIER_RETURN_TEXT as SUPPLIER_RETURN, SUPPLIER_RETURN_SOURCE_BLOCK_TEXT } from '../purchasing/supplierReturnText'
 import { KIND_LABEL, TAX_IDENTITY_TEXT } from '../cari/taxIdentity'
@@ -125,7 +126,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       <p>{T.lossFrozenTime}: {frozenTransferRequest?.decidedAtUtc}</p>
     </div> : <StateBlock state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
       subject={T.title} onRetry={() => void query.refetch()} /> : <>
-      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(supplierReturn || kind === 'finance.bank-account.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
+      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(supplierReturn || kind === 'logistics.dispatch-note.v1' || kind === 'finance.bank-account.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
       <section aria-label={INBOX.rulesHeading}><h3>{INBOX.rulesHeading}</h3>
         {preview.rules.length === 0 ? <p>{T.rulesUnavailable}</p> : <ul>{preview.rules.map((rule, index) => <li key={`${rule.ruleCode}:${index}`}>
           <p>{inboxRuleText(rule.ruleCode) ?? <>{INBOX.ruleUnknown} <code>{rule.ruleCode}</code></>}</p>
@@ -137,6 +138,23 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         </li>)}</ul>}
       </section>
       {kind === 'inventory.opening-cost.v1' ? <p>{cost == null ? T.hiddenCost : `${T.cost}: ${cost}`}</p> : null}
+      {preview.logisticsDispatchNote ? <section aria-label={T.dispatchProposal}><h3>{T.dispatchProposal}</h3><dl className={styles.facts}>
+        <dt>{T.dispatchInstruction}</dt><dd>{preview.logisticsDispatchNote.instructionId}</dd>
+        <dt>{DISPATCH.reference}</dt><dd>{preview.logisticsDispatchNote.dispatchNoteId}</dd>
+        <dt>{T.dispatchCustomer}</dt><dd>{preview.logisticsDispatchNote.customerPartyId}</dd>
+        <dt>{T.dispatchAccount}</dt><dd>{preview.logisticsDispatchNote.companyAccountId}</dd>
+        <dt>{T.dispatchEffectiveOn}</dt><dd>{preview.logisticsDispatchNote.effectiveOn}</dd>
+        <dt>{T.dispatchStatus}</dt><dd>{({Draft:DISPATCH.draft,Approved:DISPATCH.approved,Cancelled:DISPATCH.cancelled})[preview.logisticsDispatchNote.status]}</dd>
+        <dt>{DISPATCH.number}</dt><dd>{preview.logisticsDispatchNote.number ?? T.dispatchNoNumber}</dd>
+        <dt>{DISPATCH.eDispatchNumber}</dt><dd>{preview.logisticsDispatchNote.eDispatchNumber ?? T.dispatchNoNumber}</dd>
+        <dt>{DISPATCH.createdBy}</dt><dd>{preview.logisticsDispatchNote.createdBy}</dd>
+        <dt>{DISPATCH.createdAt}</dt><dd>{preview.logisticsDispatchNote.createdAtUtc}</dd>
+      </dl><table><caption>{DISPATCH.caption}</caption><thead><tr>
+        {[DISPATCH.lineNo,DISPATCH.shipment,DISPATCH.instructionLine,DISPATCH.order,T.dispatchProduct,T.dispatchUnit,DISPATCH.quantity,T.dispatchKg].map(label => <th key={label} scope="col">{label}</th>)}
+      </tr></thead><tbody>{preview.logisticsDispatchNote.lines.map(line => <tr key={line.shipmentId}>
+        <td>{line.lineNo}</td><td>{line.shipmentId}</td><td>{line.instructionLineId}</td><td>{line.sourceOrderId} / {line.sourceOrderLineId}</td>
+        <td>{line.productId}</td><td>{line.unitId}</td><td>{line.quantity}</td><td>{line.quantityKg ?? T.dispatchNoKg}</td>
+      </tr>)}</tbody></table></section> : null}
       {preview.bankAccount ? <section aria-label={T.bankProposal}><h3>{T.bankProposal}</h3><dl className={styles.facts}>
         <dt>{BANK_COLUMN.name}</dt><dd>{preview.bankAccount.account.displayName}</dd>
         <dt>{BANK_COLUMN.currency}</dt><dd>{currencyFallback(preview.bankAccount.account.currencyId)}</dd>
@@ -247,7 +265,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         {frozen && frozenTransferRequest ? <p>{T.lossFrozenTime}: {frozenTransferRequest.decidedAtUtc}</p>
           : <p>{T.lossRequestedAt}: {transferRequest?.requestedAtUtc}</p>}
       </div> : null}
-      {preview.pending && !reconciledHistorical ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{kind === 'finance.bank-account.v1' ? T.bankApprovalOnly : kind === 'logistics.weighing-difference.v1' ? T.weighingApprovalOnly : kind === 'logistics.plan-excess.v1' ? T.planExcessApprovalOnly : kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
+      {preview.pending && !reconciledHistorical ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{kind === 'logistics.dispatch-note.v1' ? T.dispatchApprovalOnly : kind === 'finance.bank-account.v1' ? T.bankApprovalOnly : kind === 'logistics.weighing-difference.v1' ? T.weighingApprovalOnly : kind === 'logistics.plan-excess.v1' ? T.planExcessApprovalOnly : kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
         {preview.rejectionSupported !== false || preview.approvalReasonRequired ? <label>{counterparty ? T.optionalNote : kind === 'manufacturing.plan.v1' ? T.manufacturingRejectReason : T.reason}<textarea value={lossReason} maxLength={reasonLimit} onChange={event => setReason(event.target.value)} /></label> : null}
         {kind === 'inventory.stock-count.v1' || stockScrap ? <p>{T.countReasonHelp}</p> : null}
         {kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? <p>{T.approvalReasonRequired(reasonLimit)}</p> : null}

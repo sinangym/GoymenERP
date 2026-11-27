@@ -807,3 +807,40 @@ describe('native stock scrap Work evidence',()=>{
   }
  })
 })
+
+const dispatchKind='logistics.dispatch-note.v1' as const
+const dispatchLine={lineNo:1,shipmentId:'bbbbbbbb-0000-4000-8000-000000000001',instructionLineId:id,sourceOrderId:id,sourceOrderLineId:id,productId:id,unitId:id,quantity:'10.000'}
+const dispatchProof={instructionId:company,dispatchNoteId:id,customerPartyId:company,companyAccountId:id,effectiveOn:'2026-11-27',status:'Draft',number:null,eDispatchNumber:null,createdBy:'SENTETIK hazırlayan',createdAtUtc:'2026-11-27T08:00:00Z',lines:[dispatchLine]}
+const dispatchPreview={...preview,kind:dispatchKind,rejectionSupported:false,logisticsDispatchNote:dispatchProof,references:[{role:'loading-instruction',label:'Talimat',recordId:company,link:'/lojistik/talimatlar/'+company}]}
+it.each([1,500,501])('preserves all %i native dispatch lines, raw quantity and optional kg without a Work reference cap',count=>{
+ const lines=Array.from({length:count},(_,i)=>({...dispatchLine,lineNo:i+1,shipmentId:`bbbbbbbb-0000-4000-8000-${(i+1).toString().padStart(12,'0')}`,...(i%2?{quantityKg:'0.125'}:{})}))
+ const decoded=decodeWorkDecisionPreview({...dispatchPreview,logisticsDispatchNote:{...dispatchProof,lines}},company,dispatchKind,id)
+ expect(decoded?.logisticsDispatchNote?.lines).toEqual(lines)
+ expect(WORK_DECISION_KINDS).not.toContain(dispatchKind)
+ expect(isWorkDecisionKind(dispatchKind)).toBe(true)
+})
+it.each([
+ {logisticsDispatchNote:undefined},{rejectionSupported:true},{rejectionSupported:undefined},{approvalReasonRequired:true},{companyId:id},{itemId:company},
+ ...[{dispatchNoteId:company},{instructionId:id},{createdBy:''},{effectiveOn:'2026-02-30'},{effectiveOn:'2026-99-99'},{status:'Future'},
+ {number:'IRS-1'},{eDispatchNumber:'GYM2026000000001'},{lines:[]},{lines:[{...dispatchLine,unitId:''}]},
+ {lines:[dispatchLine,{...dispatchLine,lineNo:2}]},{lines:[{...dispatchLine,quantity:'0'}]},{lines:[{...dispatchLine,quantity:'1.0001'}]},
+ {lines:[{...dispatchLine,quantityKg:null}]},{lines:[{...dispatchLine,quantityKg:'0'}]},{lines:[{...dispatchLine,price:'5'}]}].map(delta=>({logisticsDispatchNote:{...dispatchProof,...delta}}))
+])('rejects malformed or foreign dispatch preview %j',delta=>{
+ expect(decodeWorkDecisionPreview({...dispatchPreview,...delta},company,dispatchKind,id)).toBeNull()
+})
+it('keeps historical dispatch metadata readable and accepts only strict original Approved receipt identity',async()=>{
+ expect(decodeWorkDecisionPreview({...dispatchPreview,pending:false,sourceVersion:'9223372036854775807',logisticsDispatchNote:{...dispatchProof,status:'Cancelled',number:'IRS-1',eDispatchNumber:'GYM2026000000001'}},company,dispatchKind,id)).not.toBeNull()
+ const response={companyId:company,kind:dispatchKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'original'}
+ const headers={'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}
+ const fetch=vi.fn(async(_input:RequestInfo|URL,_init?:RequestInit)=>new Response(JSON.stringify(response),{status:200,headers}));vi.stubGlobal('fetch',fetch)
+ expect((await sendWorkDecision(company,dispatchKind,id,request,'same-key')).type).toBe('applied')
+ expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string)).toEqual(request)
+ for(const delta of [{state:'Cancelled'},{state:'Rejected'},{companyId:id},{itemId:company},{kind},{replayed:false},{originalCorrelationId:'other'},{extra:true}]) {
+  fetch.mockResolvedValue(new Response(JSON.stringify({...response,...delta}),{status:200,headers}))
+  expect((await sendWorkDecision(company,dispatchKind,id,request,'same-key')).type).toBe('unknown')
+ }
+ for(const delta of [{approve:false},{reason:'İnsan gerekçesi'},{expectedVersion:'9223372036854775807'},{expectedVersion:'01'},{manufacturingPlanReapproval:{selectedLabelIds:[id]}}]) {
+  fetch.mockClear();expect((await sendWorkDecision(company,dispatchKind,id,{...request,...delta},'same-key')).type).toBe('unknown');expect(fetch).not.toHaveBeenCalled()
+ }
+ expect(decodeWorkDecisionPreview({...preview,logisticsDispatchNote:dispatchProof},company,kind,id)).toBeNull()
+})

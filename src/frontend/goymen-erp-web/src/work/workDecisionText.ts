@@ -1,4 +1,9 @@
 export const WORK_DECISION_TEXT = {
+  dispatchProposal: 'Karar verilecek irsaliye', dispatchInstruction: 'Yükleme talimatı', dispatchCustomer: 'Müşteri cari kaydı', dispatchAccount: 'Şirket cari hesabı',
+  dispatchEffectiveOn: 'Belge tarihi', dispatchStatus: 'İrsaliye durumu', dispatchProduct: 'Ürün', dispatchUnit: 'Birim', dispatchKg: 'Kaydedilen miktar (kg)',
+  dispatchApprovalOnly: 'Bu irsaliye için yalnız onay verilebilir. Onayda karar gerekçesi kaydedilmez; iptal ve e-İrsaliye işlemleri ayrı işlemlerdir.',
+  dispatchNoNumber: 'Henüz numara verilmedi', dispatchNoKg: 'Kg miktarı kaydedilmedi',
+
   rulesUnavailable: 'Bu kayıt için kural sonucu iletilmedi.',
   weighingEvaluation: 'Karar verilecek tartım değerlendirmesi', weighingNote: 'İrsaliye', weighingTheoretical: 'Teorik toplam (kg)',
   weighingBand: 'Raporlama bandı', weighingWarningBand: 'Uyarı bandı (%)', weighingApprovalBand: 'Onay bandı (%)', weighingBlockBand: 'Blok bandı (%)',
