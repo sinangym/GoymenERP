@@ -19,9 +19,10 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// Unavailable.
 /// </para>
 /// </summary>
-internal sealed class FinanceManualBankPaymentReversalWorkInboxSourceV1(
+internal sealed partial class FinanceManualBankPaymentReversalWorkInboxSourceV1(
     FinanceDbContext dbContext,
-    FinanceWorkInboxFence fence) : IWorkInboxSourceV1
+    FinanceWorkInboxFence fence,
+    IPaymentReversalProposalService? owner = null) : IWorkInboxSourceV1
 {
     public const string ModuleName = "finance";
     public const string KindName = "finance.manual-bank-payment-reversal.v1";

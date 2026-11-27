@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Finance.Contracts;
 
 // API-23: maker-checker reversal of one RECORDED manual outgoing bank payment. The recorded payment and its outgoing
@@ -38,7 +40,27 @@ public sealed record PaymentReversalProposalCommandResult(
     PaymentReversalProposalView? Resource,
     bool IsReplay,
     string OriginalCorrelationId,
-    IReadOnlyList<ValidationIssue> Issues);
+    IReadOnlyList<ValidationIssue> Issues)
+{
+    // Owner-only provenance; neither the existing five-field wire nor persisted native hashes change.
+    [JsonIgnore] public PaymentReversalDecisionReceiptV1? DecisionReceipt { get; init; }
+}
+
+public sealed record PaymentReversalDecisionReceiptV1(Guid CompanyId, Guid ProposalId, Guid PaymentId,
+    string CommandName, string IdempotencyKeyHash, string PayloadHash, string ActorId, string ExpectedVersion,
+    string ResultVersion, string OriginalCorrelationId, DateTimeOffset RecordedAtUtc, string RecordedFactsDigest);
+
+/// <summary>Purpose-only human facts. No bank card, IBAN, balance or general payment-read authority.</summary>
+public sealed record PaymentReversalDecisionPreviewV1(Guid CompanyId, PaymentReversalProposalView Proposal,
+    string? PaymentDocumentNumber, Guid PartyId, Guid CompanyAccountId, Guid TreasuryAccountId, Guid CurrencyId,
+    string Amount, DateOnly PaymentOccurredOn, DateOnly? PaymentValueOn, Guid OriginalEventId,
+    string PaymentRecordedBy, DateTimeOffset PaymentRecordedAtUtc, string RecordedFactsDigest, string TreasuryAccountLabel);
+
+public interface IPaymentReversalDecisionPreviewReadV1
+{
+    Task<ReadResult<PaymentReversalDecisionPreviewV1>> ReadDecisionPreviewAsync(FinanceContext context, Guid proposalId,
+        Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken);
+}
 
 public sealed record PaymentReversalProposalPage(IReadOnlyList<PaymentReversalProposalView> Items);
 

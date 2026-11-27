@@ -37,6 +37,9 @@ public sealed partial class PaymentReversalProposalService
                 var result = approve ? await ApproveCoreAsync(context, metadata, new(proposalId, expectedVersion), token)
                     : await RejectAsync(context, metadata, new(proposalId, expectedVersion, reason!), token);
                 if (result.Outcome is CommandOutcome.Denied or CommandOutcome.Unavailable) throw new PaymentDecisionRefusal(result);
+                if (result.Outcome == CommandOutcome.Succeeded && (state.Saved || result.IsReplay))
+                    result = result with { DecisionReceipt = await ReadDecisionReceiptAsync(context, metadata,
+                        proposalId, expectedVersion, reason, state.Command, result, token) };
                 await RequireFence(); RequireFlushed();
                 if (result.Outcome == CommandOutcome.Succeeded && !result.IsReplay && !state.Saved)
                     throw new InvalidOperationException("Payment reversal decision has no saved native receipt.");
@@ -116,7 +119,7 @@ public sealed partial class PaymentReversalProposalService
     private sealed class PaymentDecisionRace : Exception;
 }
 
-internal sealed class GuardedPaymentReversalProposalService(PaymentReversalProposalService core) : IPaymentReversalProposalService, IPaymentReversalDecisionReadV1
+internal sealed class GuardedPaymentReversalProposalService(PaymentReversalProposalService core) : IPaymentReversalProposalService, IPaymentReversalDecisionReadV1, IPaymentReversalDecisionPreviewReadV1
 {
     public Task<PaymentReversalProposalCommandResult> ApproveAsync(FinanceContext c, CommandMetadata m, ApprovePaymentReversalRequest r, CancellationToken t)
     { ArgumentNullException.ThrowIfNull(r); return core.RunOwnedDecisionAsync(c, m, r.ProposalId, r.ExpectedVersion, null, true, t); }
@@ -126,4 +129,5 @@ internal sealed class GuardedPaymentReversalProposalService(PaymentReversalPropo
     public Task<ReadResult<PaymentReversalProposalView>> DetailAuthorizedAsync(FinanceContext c, Guid id, CancellationToken t) => core.DetailAuthorizedAsync(c, id, t);
     public Task<ReadResult<PaymentReversalProposalPage>> PendingAuthorizedAsync(FinanceContext c, CancellationToken t) => core.PendingAuthorizedAsync(c, t);
     public Task<ReadResult<PaymentReversalProposalView>> ReadDecisionAsync(FinanceContext c, Guid id, Func<CancellationToken, Task> fence, CancellationToken t) => core.ReadDecisionAsync(c, id, fence, t);
+    public Task<ReadResult<PaymentReversalDecisionPreviewV1>> ReadDecisionPreviewAsync(FinanceContext c, Guid id, Func<CancellationToken, Task> fence, CancellationToken t) => core.ReadDecisionPreviewAsync(c, id, fence, t);
 }
