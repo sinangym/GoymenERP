@@ -30,7 +30,7 @@ public sealed partial class WorkDecisionHostV1
             || string.IsNullOrWhiteSpace(facts.RequestedBy) || facts.RequestedBy.Trim() != facts.RequestedBy || facts.RequestedBy.Length > 128
             || facts.RequestedBy != snapshot.Item.PreparedBy || facts.RequestedAtUtc != snapshot.Item.WaitingSinceUtc
             || facts.RequestedAtUtc == default || facts.RequestedAtUtc.Offset != TimeSpan.Zero
-            || facts.OccurredAtUtc == default || facts.OccurredAtUtc.Offset != TimeSpan.Zero
+            || facts.OccurredAtUtc.Offset != TimeSpan.Zero
             || snapshot.Pending != (facts.Status == "Pending") || snapshot.SourceVersion != (snapshot.Pending ? "1" : "2")
             || facts.Status is not ("Pending" or "Approved" or "Rejected") || snapshot.Item.ExcludedDeciders is { Count: > 0 }
             || snapshot.Item.References.Count != 1 || snapshot.Item.References[0].Role != "loading-instruction"

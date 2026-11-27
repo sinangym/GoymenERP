@@ -95,6 +95,17 @@ public sealed class WorkLogisticsCustomerReturnDecisionHostTests
         Assert.DoesNotContain("approvalSupported", JsonSerializer.Serialize(other, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
     }
 
+    [Fact]
+    public async Task Native_minimum_supplied_occurrence_date_remains_visible_and_rejectable_in_Work()
+    {
+        var r = new Rig(); r.Source.Facts = r.Source.Facts with { OccurredAtUtc = DateTimeOffset.MinValue };
+        var preview = await r.Host.PreviewAsync(r.Source.Kind, Return, default);
+        Assert.Equal(DateTimeOffset.MinValue, preview.LogisticsCustomerReturn!.OccurredAtUtc);
+        Assert.True(preview.Pending);
+        Assert.Equal("Rejected", (await r.Host.DecideAsync(r.Source.Kind, Return, Request(false), "minimum-date", default)).State);
+        Assert.Equal(1, r.Calls);
+    }
+
     private static WorkDecisionRequestV1 Request(bool approve, string? note = null) => new("1", approve, note,
         LogisticsCustomerReturn: approve ? new(Movement) : null);
     private sealed class Rig

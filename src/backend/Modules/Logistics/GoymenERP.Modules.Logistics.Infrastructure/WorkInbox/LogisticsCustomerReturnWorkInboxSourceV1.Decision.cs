@@ -47,7 +47,7 @@ internal sealed partial class LogisticsCustomerReturnWorkInboxSourceV1
             || row.QuantityUnit == (int)QuantityUnit.Piece && (decimal.Truncate(row.Quantity) != row.Quantity || decimal.Truncate(row.SourceDeliveredQuantity) != row.SourceDeliveredQuantity)
             || string.IsNullOrWhiteSpace(row.Reason) || row.Reason != row.Reason.Trim()
             || string.IsNullOrWhiteSpace(row.RequestedBy) || row.RequestedBy != row.RequestedBy.Trim() || row.RequestedBy.Length > 128
-            || !Utc(row.OccurredAtUtc) || !Utc(row.RequestedAtUtc)) return false;
+            || row.OccurredAtUtc.Offset != TimeSpan.Zero || !Utc(row.RequestedAtUtc)) return false;
         if (row.Status == (int)CustomerReturnStatus.Pending)
             return row.Version == 1 && row.DecidedBy is null && row.DecidedAtUtc is null && row.DecisionNote is null
                 && row.InventoryMovementId is null && row.OriginalLabelId is null && row.OriginalShipmentMovementId is null;

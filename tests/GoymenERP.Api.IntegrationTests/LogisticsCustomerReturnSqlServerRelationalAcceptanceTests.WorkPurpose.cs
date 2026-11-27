@@ -61,6 +61,31 @@ public sealed partial class LogisticsCustomerReturnSqlServerRelationalAcceptance
         Assert.Empty(frame.Db.ChangeTracker.Entries()); Assert.False(frame.Writer.HasPendingDrafts);
     }
 
+    [SqlServerFact]
+    public async Task Customer_return_minimum_supplied_occurrence_date_survives_real_native_request_Work_rejection_and_replay()
+    {
+        await using var run = await Run.StartAsync(); var delivery = await run.CreateDeliveredSourceAsync(100);
+        var execution = new WorkDecisionExecutionFenceV1(); IErpAuthorityRevalidationService? nativeAuthority = null;
+        await using var frame = run.DecisionFrame(decorate: inner => nativeAuthority = new WorkDecisionAuthorityV1(inner, execution));
+        var id = Guid.NewGuid();
+        var requested = await frame.Service.RequestAsync(delivery.InstructionId, delivery.LineId,
+            new(id, delivery.DeliveryId, "6", "5", "SYNTHETIC minimum supplied date", DateTimeOffset.MinValue), ReturnMetadata("minimum-date-request"));
+        Assert.Equal(DateTimeOffset.MinValue, requested.Return.OccurredAtUtc);
+        Assert.Equal("Pending", requested.Return.Status);
+        frame.User.Actor = "other-decider";
+        var source = new LogisticsCustomerReturnWorkInboxSourceV1(frame.Db, new LogisticsWorkInboxFence(frame.Company, frame.User, nativeAuthority!));
+        var correlation = new CorrelationContext(); correlation.Set("return-safety-correlation", null, "Web", null, null);
+        var host = new WorkDecisionHostV1(frame.Company, frame.User, correlation, nativeAuthority!, [source], new ReturnPurposeDelegations(),
+            execution, null!, null!, logisticsCustomerReturns: frame.Service);
+        Assert.Equal(DateTimeOffset.MinValue, (await host.PreviewAsync(source.Kind, id, default)).LogisticsCustomerReturn!.OccurredAtUtc);
+        var rejected = await host.DecideAsync(source.Kind, id, new("1", false, null), "minimum-date-reject", default);
+        Assert.Equal("Rejected", rejected.State); Assert.False(rejected.Replayed);
+        var terminal = await host.PreviewAsync(source.Kind, id, default);
+        Assert.False(terminal.Pending); Assert.Equal(DateTimeOffset.MinValue, terminal.LogisticsCustomerReturn!.OccurredAtUtc);
+        Assert.Equal(rejected with { Replayed = true }, await host.DecideAsync(source.Kind, id, new("1", false, null), "minimum-date-reject", default));
+        Assert.Equal((1, 2), await run.CountsAsync()); Assert.Equal(2, await run.DecisionAuditCount());
+    }
+
     // Controlled live WP3 seam, not the actual delegation reader/database acceptance. The native
     // command, Work authority decorator, source, SQL receipt and both runtime fences are real.
     private sealed class ReturnPurposeDelegations : IWorkDelegationReaderV1

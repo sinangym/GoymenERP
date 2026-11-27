@@ -50,6 +50,19 @@ public sealed class LogisticsCustomerReturnDecisionSourceTests
         if (fault == "permission") Assert.Equal(0, f.Rows.Reads);
     }
 
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task Native_minimum_supplied_occurrence_date_is_preserved_for_pending_and_rejected_returns(bool rejected)
+    {
+        var f = Fixture(); var row = f.Rows.CustomerReturnRows[0];
+        row.OccurredAtUtc = DateTimeOffset.MinValue;
+        if (rejected) { row.Status = 3; row.Version = 2; row.DecidedBy = F.Approver; row.DecidedAtUtc = F.T0.ToUniversalTime(); }
+        var snapshot = await new LogisticsCustomerReturnWorkInboxSourceV1(f.Rows, f.Fence)
+            .ReadDecisionAsync(f.Context(), row.CustomerReturnId, default);
+        Assert.NotNull(snapshot); Assert.Equal(!rejected, snapshot.Pending);
+        Assert.Equal(DateTimeOffset.MinValue, snapshot.LogisticsCustomerReturnProof!.Return.OccurredAtUtc);
+    }
+
     private static F Fixture()
     {
         var f = new F();
