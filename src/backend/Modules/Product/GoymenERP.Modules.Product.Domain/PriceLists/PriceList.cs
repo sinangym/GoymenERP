@@ -178,11 +178,8 @@ public sealed class PriceList
             throw new PriceListRuleException(PriceListRuleCodes.VersionNotDraft, "versionNo", "Yalnız taslak sürüm yayımlanır.");
         }
 
-        if (target.PreparerActorIds.Contains(actor, StringComparer.Ordinal))
-        {
-            throw new PriceListRuleException(PriceListRuleCodes.PublisherPreparedVersion, "actor",
-                "Bu sürümü oluşturan veya düzenleyen kullanıcı aynı sürümü yayımlayamaz.");
-        }
+        // ROL-D18 (22 Nov 2026) supersedes the earlier D4 maker prohibition for price-list publication only.
+        // Current company-wide Publish authority is enforced by the owner; preparer history remains immutable and auditable.
 
         if (target.Lines.Count == 0)
         {
@@ -424,7 +421,7 @@ public sealed class PriceListVersion
         RequireValidity(validFrom, validThrough);
         var creator = PriceList.RequireActor(createdBy);
         return new PriceListVersion(id, versionNo, validFrom, validThrough, PriceListVersionState.Draft, BuildLines(inputs),
-            creator, createdAtUtc, null, null, BuildPreparers(creator, preparerActorIds, null));
+            creator, createdAtUtc, null, null, BuildPreparers(creator, preparerActorIds));
     }
 
     internal PriceListVersion Published(string actorId, DateTimeOffset now) =>
@@ -456,15 +453,14 @@ public sealed class PriceListVersion
         var creator = PriceList.RequireActor(createdBy);
         var publisher = publishedBy is null ? null : PriceList.RequireActor(publishedBy);
         return new PriceListVersion(id, versionNo, validFrom, validThrough, state, rebuilt, creator,
-            createdAtUtc, publisher, publishedAtUtc, BuildPreparers(creator, preparerActorIds, publisher));
+            createdAtUtc, publisher, publishedAtUtc, BuildPreparers(creator, preparerActorIds));
     }
 
-    private static List<string> BuildPreparers(string creator, IReadOnlyCollection<string>? stored, string? publisher)
+    private static List<string> BuildPreparers(string creator, IReadOnlyCollection<string>? stored)
     {
         List<string> candidates = stored is null ? [creator] : stored.Select(PriceList.RequireActor).ToList();
         if (candidates.Count == 0 || !candidates.Contains(creator, StringComparer.Ordinal)
-            || candidates.Distinct(StringComparer.Ordinal).Count() != candidates.Count
-            || (publisher is not null && candidates.Contains(publisher, StringComparer.Ordinal)))
+            || candidates.Distinct(StringComparer.Ordinal).Count() != candidates.Count)
         {
             throw new InvalidOperationException("Kayıtlı fiyat sürümünün hazırlayan/yayımlayan aktör geçmişi tutarsız.");
         }

@@ -86,10 +86,16 @@ public sealed class WorkProductPriceListDecisionHostTests
     }
     [Theory]
     [InlineData(Maker)] [InlineData(Editor)]
-    public async Task All_original_preparers_remain_excluded(string actor)
+    public async Task Rol_D18_authorized_creator_and_editor_can_read_and_publish_but_revocation_still_denies(string actor)
     {
         var rig = new Rig(); rig.User.Value = actor;
-        Assert.Equal(403, (await Assert.ThrowsAsync<WorkDecisionException>(() => rig.Host.PreviewAsync(WorkDecisionHostV1.ProductPriceList, Target, default))).Status);
+        var preview = await rig.Host.PreviewAsync(WorkDecisionHostV1.ProductPriceList, Target, default);
+        Assert.True(preview.Pending); Assert.Equal(Maker, rig.Source.Snapshot().Item.PreparedBy);
+        Assert.Equal([Editor], rig.Source.Snapshot().Item.ExcludedDeciders);
+        Assert.Equal("Published", (await rig.Host.DecideAsync(WorkDecisionHostV1.ProductPriceList, Target, new("7", true, null), "key", default)).State);
+        rig.Authority.Denied = ProductPriceListPermissionsV1.Publish;
+        Assert.Equal(403, (await Assert.ThrowsAsync<WorkDecisionException>(() => rig.Host.DecideAsync(WorkDecisionHostV1.ProductPriceList, Target, new("7", true, null), "other-key", default))).Status);
+        Assert.Equal(1, rig.Owner.Publishes);
     }
     private sealed class Rig
     {
@@ -114,27 +120,28 @@ public sealed class WorkProductPriceListDecisionHostTests
     }
     public class Owner : DispatchProxy
     {
-        public int Gets, Publishes; public bool Replay; public Action? AfterGet; public string? Fault; public Guid Id; public PublishPriceListVersionRequestV1? Body;
+        public int Gets, Publishes; public bool Replay; public Action? AfterGet; public string? Fault; public Guid Id; private string currentActor = Actor; public PublishPriceListVersionRequestV1? Body;
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
             if (method?.Name == "GetAsync") { Gets++; AfterGet?.Invoke(); return Task.FromResult(View(false)); }
             if (method?.Name != "PublishAsync") throw new NotSupportedException();
             Publishes++; Id = (Guid)args![0]!; Body = (PublishPriceListVersionRequestV1)args[1]!;
-            return Task.FromResult(Answer(((ProductPriceListCommandMetadata)args[2]!).IdempotencyKey));
+            var metadata = (ProductPriceListCommandMetadata)args[2]!; currentActor = metadata.ActorId;
+            return Task.FromResult(Answer(metadata.IdempotencyKey));
         }
         public PriceListResultV1 Answer(string key)
         {
-            PriceListPublishReceiptV1? proof = new(Company, List, Target, 2, "7", "8", ProductPriceListCommandsV1.PublishV1, Actor,
-                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key))), ProductPriceListWire.PublishRequestHash(List, new("7", 2)), At.AddHours(1), Actor, Replay ? "original-corr" : "corr");
+            PriceListPublishReceiptV1? proof = new(Company, List, Target, 2, "7", "8", ProductPriceListCommandsV1.PublishV1, currentActor,
+                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key))), ProductPriceListWire.PublishRequestHash(List, new("7", 2)), At.AddHours(1), currentActor, Replay ? "original-corr" : "corr");
             proof = Fault switch { "missing" => null, "company" => proof with { CompanyId = Guid.NewGuid() }, "list" => proof with { PriceListId = Guid.NewGuid() },
                 "target" => proof with { VersionId = Guid.NewGuid() }, "number" => proof with { VersionNo = 3 }, "header" => proof with { HeaderVersion = "9" },
                 "expected" => proof with { ExpectedHeaderVersion = "6" }, "actor" => proof with { ActorId = Maker }, "key" => proof with { IdempotencyKeyHash = "wrong" },
                 "hash" => proof with { RequestHash = "wrong" }, "command" => proof with { CommandName = ProductPriceListCommandsV1.CreateV1 }, "correlation" => proof with { OriginalCorrelationId = "wrong" }, _ => proof };
-            return new(Fault == "snapshot" ? View(true) with { Version = "400" } : View(true), Replay, Replay ? "original-corr" : "corr", proof);
+            return new(Fault == "snapshot" ? View(true, currentActor) with { Version = "400" } : View(true, currentActor), Replay, Replay ? "original-corr" : "corr", proof);
         }
-        private static PriceListViewV1 View(bool published) => new(List, "SENTETIK list", "TRY", "Sales", "ExcludingVat", published ? "8" : "7", At, At,
+        private static PriceListViewV1 View(bool published, string publisher = Actor) => new(List, "SENTETIK list", "TRY", "Sales", "ExcludingVat", published ? "8" : "7", At, At,
             null, published ? null : 2, [new(Target, 2, published ? "Published" : "Draft", published ? "Planned" : "Draft", "2026-12-01", null, At, Maker,
-                published ? At.AddHours(1) : null, published ? Actor : null, [new(Guid.NewGuid(), 1, Product, "SENTETIK", "SENTETIK product", Unit, "42000.5", "40000", "0", "10")])], PriceListScopeViewV1.Company);
+                published ? At.AddHours(1) : null, published ? publisher : null, [new(Guid.NewGuid(), 1, Product, "SENTETIK", "SENTETIK product", Unit, "42000.5", "40000", "0", "10")])], PriceListScopeViewV1.Company);
     }
     private sealed class CompanyContextProbe : ICompanyContext { public Guid Value = Company; public Guid CompanyId => Value; public bool IsResolved => true; public void Set(Guid id) => Value = id; }
     private sealed class User : ICurrentUser { public string Value = Actor; public bool IsAuthenticated => true; public string UserId => Value; public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { Company }; public bool CanAccessCompany(Guid id) => id == Company; }

@@ -149,8 +149,9 @@ public sealed class PriceListDomainTests
         Assert.Equal(PriceListVersionStatus.Ended, list.StatusOf(list.Versions[0], Today.AddDays(10)));
     }
 
-    [Fact]
-    public void Every_creator_or_editor_of_the_exact_version_is_barred_from_publishing_and_another_actor_may_publish()
+    [Theory]
+    [InlineData("user-1")] [InlineData("editor-1")] [InlineData("publisher-1")]
+    public void Rol_D18_allows_creator_editor_or_another_authorized_publisher_without_erasing_preparer_history(string publisher)
     {
         var list = NewList();
         var line = list.DraftVersion!.Lines[0];
@@ -160,13 +161,25 @@ public sealed class PriceListDomainTests
             [new PriceListLineInput(line.LineId, line.ProductId, line.PriceUnitId, 40000m, null)], "editor-1", Now.AddMinutes(2));
 
         Assert.Equal(["user-1", "editor-1"], list.DraftVersion!.PreparerActorIds);
-        Assert.Equal(PriceListRuleCodes.PublisherPreparedVersion,
-            Assert.Throws<PriceListRuleException>(() => list.Publish(3, 1, Today, "user-1", Now.AddMinutes(3))).Code);
-        Assert.Equal(PriceListRuleCodes.PublisherPreparedVersion,
-            Assert.Throws<PriceListRuleException>(() => list.Publish(3, 1, Today, "editor-1", Now.AddMinutes(3))).Code);
+        list.Publish(3, 1, Today, publisher, Now.AddMinutes(3));
+        Assert.Equal(publisher, list.Versions[0].PublishedBy);
+        Assert.Equal(["user-1", "editor-1"], list.Versions[0].PreparerActorIds);
+        var version = list.Versions[0];
+        var restored = PriceListVersion.Restore(version.Id, version.VersionNo, version.ValidFrom, version.ValidThrough,
+            version.State, version.Lines, version.CreatedBy, version.CreatedAtUtc, version.PublishedBy,
+            version.PublishedAtUtc, version.PreparerActorIds);
+        Assert.Equal(publisher, restored.PublishedBy);
+        Assert.Equal(version.PreparerActorIds, restored.PreparerActorIds);
 
-        list.Publish(3, 1, Today, "publisher-1", Now.AddMinutes(3));
-        Assert.Equal("publisher-1", list.Versions[0].PublishedBy);
+    }
+
+    [Fact]
+    public void Rol_D18_does_not_allow_missing_creator_or_duplicate_preparer_history_on_restore()
+    {
+        var line = new PriceListLine(Guid.NewGuid(), 1, ProductA, Kg, 5m, null);
+        foreach (var preparers in new string[][] { [], ["editor"], ["creator", "creator"] })
+            Assert.Throws<InvalidOperationException>(() => PriceListVersion.Restore(Guid.NewGuid(), 1, Today, null,
+                PriceListVersionState.Published, [line], "creator", Now, "creator", Now, preparers));
     }
 
     [Fact]

@@ -41,7 +41,7 @@ public sealed partial class ProductPriceListSqlServerRelationalAcceptanceTests
         var listId = Guid.NewGuid();
         var keptLine = Guid.NewGuid();
         var editorActor = Guid.NewGuid();
-        var publisherActor = Guid.NewGuid();
+        var publisherActor = run.CreatorActorId; // ROL-D18: the authorized preparer may publish.
         var create = new CreatePriceListRequestV1(listId, Guid.NewGuid(), "SENTETIK yurt içi", "TRY", "Sales", "ExcludingVat",
             ProductPriceListWire.FormatDate(today), null, [new PriceListLineRequestV1(keptLine, ProductId, Kg, "42000.50", "40000")]);
 
@@ -87,23 +87,21 @@ public sealed partial class ProductPriceListSqlServerRelationalAcceptanceTests
             Assert.Equal(("2", "41000"), (revised.PriceList.Version, revised.PriceList.Versions[0].Lines[0].UnitPrice));
         }
 
+        // ROL-D18 removes the former preparer prohibition, not native version fencing or immutable terminal replay.
         await using (var creatorScope = run.Request())
         {
             var refused = await Assert.ThrowsAsync<ProductPriceListException>(() => creatorScope.Service.PublishAsync(listId,
-                new PublishPriceListVersionRequestV1("2", 1), Metadata("publish-creator")));
-            Assert.Equal((409, ProductPriceListCodesV1.StateConflict, PriceListRuleCodes.PublisherPreparedVersion),
-                (refused.Status, refused.Code, Assert.Single(refused.Errors).Code));
+                new PublishPriceListVersionRequestV1("99", 1), Metadata("publish-creator-stale")));
+            Assert.Equal((409, ProductPriceListCodesV1.VersionConflict), (refused.Status, refused.Code));
             var replay = await Assert.ThrowsAsync<ProductPriceListException>(() => creatorScope.Service.PublishAsync(listId,
-                new PublishPriceListVersionRequestV1("2", 1), Metadata("publish-creator") with { CorrelationId = "retry" }));
-            Assert.Equal(PriceListRuleCodes.PublisherPreparedVersion, Assert.Single(replay.Errors).Code);
+                new PublishPriceListVersionRequestV1("99", 1), Metadata("publish-creator-stale") with { CorrelationId = "retry" }));
+            Assert.Equal(ProductPriceListCodesV1.VersionConflict, replay.Code);
         }
-
         await using (var editorScope = run.Request(actor: editorActor))
         {
             var refused = await Assert.ThrowsAsync<ProductPriceListException>(() => editorScope.Service.PublishAsync(listId,
-                new PublishPriceListVersionRequestV1("2", 1), Metadata("publish-editor")));
-            Assert.Equal((409, ProductPriceListCodesV1.StateConflict, PriceListRuleCodes.PublisherPreparedVersion),
-                (refused.Status, refused.Code, Assert.Single(refused.Errors).Code));
+                new PublishPriceListVersionRequestV1("99", 1), Metadata("publish-editor-stale")));
+            Assert.Equal((409, ProductPriceListCodesV1.VersionConflict), (refused.Status, refused.Code));
         }
 
         await using (var scope = run.Request(actor: publisherActor))

@@ -119,8 +119,8 @@ internal sealed partial class ProductPackageStandardWorkInboxSourceV1(
 /// WP7-2 (AI-D31, AI-D32, YOL-D18): the price list versions waiting for publication, as Product lists them for the Work inbox. A
 /// version waits while it is a Draft — what <c>PublishPriceListVersionV1</c> accepts; it is published on the price list's own
 /// screen by a holder of <c>product.price-lists.publish</c> granted company-wide ("write never implies publish"). The owner's
-/// rule (<see cref="PriceList.Publish"/>): no one who created or edited the version may publish it — its creator is the maker and
-/// every other recorded preparer is in the "may not decide" set (D4).
+/// ROL-D18 supersedes the earlier D4 maker prohibition for price-list publication. Creator/editor metadata remains intact;
+/// <see cref="WorkInboxItemV1.Excludes"/> applies the exact-kind exception without granting permission.
 /// </summary>
 internal sealed partial class ProductPriceListVersionWorkInboxSourceV1(
     ProductPriceListDbContext database,

@@ -72,7 +72,7 @@ public sealed partial class ProductWorkInboxSourcesV1Tests
     }
 
     [Fact]
-    public async Task Draft_price_list_versions_wait_and_every_editor_besides_the_creator_may_not_publish()
+    public async Task Draft_price_list_versions_keep_creator_editor_history_but_ROL_D18_does_not_exclude_authorized_preparers()
     {
         var list = PriceList(CompanyA, "SENTETIK Liste");
         var draft = Version(CompanyA, list.Id, 2, PriceListVersionState.Draft, Start, """["SENTETIK-maker","SENTETIK-editor"]""");
@@ -96,7 +96,8 @@ public sealed partial class ProductWorkInboxSourcesV1Tests
         Assert.Equal("/fiyat-listeleri/" + list.Id.ToString("D"), item.Link);
         Assert.Equal("SENTETIK-maker", item.PreparedBy);
         Assert.Equal(["SENTETIK-editor"], item.ExcludedDeciders);
-        Assert.True(item.Excludes("SENTETIK-editor"));
+        Assert.False(item.Excludes("SENTETIK-editor"));
+        Assert.False(item.Excludes("SENTETIK-maker"));
         Assert.Equal([ProductPriceListVersionWorkInboxSourceV1.PublicationRequiredRule, ProductPriceListVersionWorkInboxSourceV1.NextVersionRule],
             item.Rules.Select(rule => rule.RuleCode));
         Assert.Contains(ProductPriceListPermissionsV1.Publish, asked);

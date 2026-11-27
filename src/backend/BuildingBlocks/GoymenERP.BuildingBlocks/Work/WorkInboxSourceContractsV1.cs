@@ -102,8 +102,10 @@ public sealed record WorkInboxItemV1(
 {
     /// <summary>True when the owner's rule refuses <paramref name="userId"/> as a decider of this record.</summary>
     public bool Excludes(string userId) =>
-        WorkInboxRulesV1.SameUser(PreparedBy, userId)
-        || ExcludedDeciders is { } excluded && excluded.Any(candidate => WorkInboxRulesV1.SameUser(candidate, userId));
+        // ROL-D18: this exact owner kind permits an authorized preparer to publish. Keep preparer metadata for audit/My requests.
+        !(Module == "product" && Kind == "product.price-list-version.v1")
+        && (WorkInboxRulesV1.SameUser(PreparedBy, userId)
+            || ExcludedDeciders is { } excluded && excluded.Any(candidate => WorkInboxRulesV1.SameUser(candidate, userId)));
 }
 
 /// <summary>

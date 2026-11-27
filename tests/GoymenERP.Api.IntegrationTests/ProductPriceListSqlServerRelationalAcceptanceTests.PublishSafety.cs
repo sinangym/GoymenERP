@@ -132,22 +132,24 @@ public sealed partial class ProductPriceListSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
-    public async Task Price_list_publish_guarded_runtime_keeps_creator_and_all_editors_excluded_with_original_terminal_receipts()
+    public async Task Rol_D18_guarded_publish_accepts_authorized_creator_and_editor_but_still_requires_current_permission()
     {
-        await using var run = await Run.StartAsync(); var id = await PublishSafetyPrepare(run); var editor = Guid.NewGuid();
-        await using (var revision = run.Request(actor: editor))
-            await revision.Service.ReviseDraftAsync(id, new("1", "SENTETIK revised", ProductPriceListWire.FormatDate(
-                ProductPriceBusinessDayV2.DateOf(DateTimeOffset.UtcNow)), null, [new(Guid.NewGuid(), ProductId, Kg, "41000", null)]), Metadata("revise-before-publish"));
-        foreach (var maker in new[] { run.CreatorActorId, editor })
+        foreach (var creator in new[] { true, false })
         {
-            await using var scope = new PublishSafetyScope(run, maker);
-            var error = await Assert.ThrowsAsync<ProductPriceListException>(() => scope.Publish(id, "maker-" + maker, "2"));
-            Assert.Equal(ProductPriceListCodesV1.StateConflict, error.Code);
-            Assert.Equal(GoymenERP.Modules.Product.Domain.PriceLists.PriceListRuleCodes.PublisherPreparedVersion, Assert.Single(error.Errors).Code);
-            var replay = await Assert.ThrowsAsync<ProductPriceListException>(() => scope.Publish(id, "maker-" + maker, "2"));
-            Assert.Equal(error.Code, replay.Code); scope.AssertClean();
+            await using var run = await Run.StartAsync(); var id = await PublishSafetyPrepare(run); var editor = Guid.NewGuid();
+            await using (var revision = run.Request(actor: editor))
+                await revision.Service.ReviseDraftAsync(id, new("1", "SENTETIK revised", ProductPriceListWire.FormatDate(
+                    ProductPriceBusinessDayV2.DateOf(DateTimeOffset.UtcNow)), null, [new(Guid.NewGuid(), ProductId, Kg, "41000", null)]), Metadata("revise-before-publish"));
+            await using var scope = new PublishSafetyScope(run, creator ? run.CreatorActorId : editor);
+            scope.Authority.Granted = false;
+            Assert.Equal(403, (await Assert.ThrowsAsync<ProductPriceListException>(() => scope.Publish(id, "maker-key", "2"))).Status);
+            await PublishSafetyDurable(run, id, false, 0, 0); scope.Reset();
+            var original = await scope.Publish(id, "maker-key", "2");
+            Assert.False(original.IsReplay); Assert.Equal(scope.User.Actor, Assert.Single(original.PriceList.Versions).PublishedBy);
+            Assert.Equal("41000", Assert.Single(Assert.Single(original.PriceList.Versions).Lines).UnitPrice);
+            Assert.True((await scope.Publish(id, "maker-key", "2")).IsReplay);
+            await PublishSafetyDurable(run, id, true, 1, 1);
         }
-        await PublishSafetyDurable(run, id, false, 2, 0);
     }
 
     [SqlServerFact]
