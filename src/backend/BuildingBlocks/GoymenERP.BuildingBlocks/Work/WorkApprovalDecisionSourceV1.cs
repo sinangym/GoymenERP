@@ -52,7 +52,20 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkOpeningBalanceProofV1? OpeningBalanceProof = null,
     [property: JsonIgnore] WorkCreditMovementProofV1? CreditMovementProof = null,
     [property: JsonIgnore] WorkCashExchangeBookValueProofV1? CashExchangeBookValueProof = null,
-    [property: JsonIgnore] WorkNormalJournalDraftProofV1? NormalJournalDraftProof = null);
+    [property: JsonIgnore] WorkNormalJournalDraftProofV1? NormalJournalDraftProof = null,
+    [property: JsonIgnore] WorkAccountingPeriodOpeningProofV1? AccountingPeriodOpeningProof = null,
+    [property: JsonIgnore] WorkAccountingPeriodReopeningProofV1? AccountingPeriodReopeningProof = null);
+
+/// <summary>Private owner evidence; a later close does not replace an original opening approval result.</summary>
+public sealed record WorkAccountingPeriodOpeningProofV1(Guid CompanyId, Guid PeriodId, Guid PreparedBy,
+    DateTimeOffset PreparedAtUtc, DateOnly StartsOn, DateOnly EndsOn, string Status, long Version,
+    string SourceFactsDigest, string PreviewDigest);
+
+/// <summary>Private reopening evidence. ClosedPeriodVersion is retained; PeriodVersion is the current owner projection.</summary>
+public sealed record WorkAccountingPeriodReopeningProofV1(Guid CompanyId, Guid ProposalId, Guid PeriodId,
+    Guid ClosureId, Guid PreparedBy, DateTimeOffset PreparedAtUtc, DateOnly StartsOn, DateOnly EndsOn,
+    long Version, long ClosedPeriodVersion, long PeriodVersion, string PeriodStatus, bool Approved,
+    bool Pending, bool LaterPeriodClosed, string SourceFactsDigest, string PreviewDigest);
 
 /// <summary>Private normal journal identity; full lines and amounts belong to the authorized human purpose GET.</summary>
 public sealed record WorkNormalJournalDraftProofV1(Guid CompanyId, Guid DraftId, Guid PreparedBy,
