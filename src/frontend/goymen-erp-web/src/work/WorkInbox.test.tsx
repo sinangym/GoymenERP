@@ -588,7 +588,7 @@ it.each([['logistics.dispatch-notes.approve'],[LOGISTICS_CAPABILITY.instructions
 
 const returnKind='logistics.customer-return.v1',returnPermission='logistics.customer-returns.decision',returnId='d1000000-0000-4000-8000-000000000005'
 const returnLink=`/onaylarim/${returnKind}/${returnId}`
-const returnItem={...dispatchItem,kind:returnKind,itemId:returnId,documentLabel:'SENTETIK iade',link:returnLink,awaitingPermission:returnPermission,ruleVersion:RV(returnKind),
+const returnItem={...dispatchItem,kind:returnKind,itemId:returnId,documentLabel:'SENTETIK iade',link:returnLink,awaitingPermission:returnPermission,duration:none('BusinessDays','Undefined'),ruleVersion:RV(returnKind),
  explanation:{rules:[{ruleCode:'logistics.customer-return-request',threshold:'2',actual:'1',deviation:null,unit:'kg'}],references:[{role:'loading-instruction',label:'SENTETIK talimat',recordId:PARTY_ID,link:`/lojistik/yukleme-talimatlari/${PARTY_ID}`}]}}
 const returnSource={module:'logistics',kind:returnKind,awaitingPermission:returnPermission,durationClass:'BusinessDays',ruleVersion:RV(returnKind),state:'Ready',hasMore:false}
 it('opens customer return inbox only through its Work purpose and preserves its native instruction reference',async()=>{

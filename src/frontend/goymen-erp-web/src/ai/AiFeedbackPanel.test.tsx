@@ -5,6 +5,7 @@ import { QueryClient,QueryObserver } from '@tanstack/react-query'
 import { createMemoryRouter,RouterProvider } from 'react-router'
 import { ShellProvider } from '../shell/ShellProvider'
 import { AppShell } from '../shell/AppShell'
+import { CapabilityRoute } from '../shell/CapabilityRoute'
 import { COMPANY_A,COMPANY_B,IDENTITY,installFetch,json,problem } from '../settings/testHarness'
 import { AiFeedbackPanel } from './AiFeedbackPanel'
 import { AI_PANEL_CAPABILITY } from './aiCapabilities'
@@ -13,7 +14,7 @@ const id='cccccccc-0000-4000-8000-000000000001',path=`/ai/answers/${id}/feedback
 const view={answerId:id,version:'0',kind:null,reasonCode:null}
 const receipt={answerId:id,version:'1',kind:'Accepted',reasonCode:null,originalCorrelationId:'original',replayed:false}
 function mount(company=COMPANY_A,answerId=id,client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}})){
- const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[{path:'feedback-test',element:<AiFeedbackPanel companyId={company} answerId={answerId}/>},{path:'feedback-away',element:<p>SENTETIK başka ekran</p>}]}],{initialEntries:['/feedback-test']})
+ const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[{path:'feedback-test',element:<CapabilityRoute capability={[AI_PANEL_CAPABILITY]}><AiFeedbackPanel companyId={company} answerId={answerId}/></CapabilityRoute>},{path:'feedback-away',element:<p>SENTETIK başka ekran</p>}]}],{initialEntries:['/feedback-test']})
  render(<ShellProvider queryClient={client}><RouterProvider router={router}/></ShellProvider>)
  return router
 }
