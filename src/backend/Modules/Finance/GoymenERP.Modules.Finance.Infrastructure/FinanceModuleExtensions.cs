@@ -135,7 +135,7 @@ public static class FinanceModuleExtensions
         // each outgoing record in a serializable Finance transaction; unavailable never means sufficient.
         services.TryAddScoped<IFinanceExpenseItemCatalog, SingleExpenseItemCatalog>();
         services.TryAddScoped<IFinanceTreasuryBalanceGuard, InternalLedgerTreasuryBalanceGuard>();
-        services.AddScoped<IExpensePaymentService>(CreateExpensePaymentService);
+        services.AddScoped<IExpensePaymentService>(provider => CreateExpensePaymentService(provider).WithApprovalSafety());
         // FNS-D24 (API-32/34): the transfer between two treasury accounts, one record for both legs. The currency
         // exchange is fail-closed until its rate rule is decided (NEEDS-SINAN); every commit needs the treasury
         // balance guard above to answer Sufficient (FNS-D11).

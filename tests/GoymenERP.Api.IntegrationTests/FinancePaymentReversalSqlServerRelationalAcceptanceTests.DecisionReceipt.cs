@@ -1,6 +1,7 @@
 using System.Text.Json;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
+using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Api.IntegrationTests;
