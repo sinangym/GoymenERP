@@ -23,7 +23,6 @@ public sealed class AccountingShellCapabilityProviderTests
         Assert.Equal(
             [
                 AccountingShellCapabilityProvider.ApprovedSourceCatalogWorkDecisionCapabilityId,
-                AccountingShellCapabilityProvider.PostingMappingWorkDecisionCapabilityId,
                 AccountingShellCapabilityProvider.JournalReversalWorkDecisionCapabilityId,
                 AccountingShellCapabilityProvider.JournalDetailCapabilityId,
                 AccountingShellCapabilityProvider.JournalListCapabilityId,
@@ -38,6 +37,7 @@ public sealed class AccountingShellCapabilityProviderTests
                 AccountingShellCapabilityProvider.PeriodListCapabilityId,
                 AccountingShellCapabilityProvider.PeriodProposeCapabilityId,
                 AccountingShellCapabilityProvider.PeriodReopenCapabilityId,
+                AccountingShellCapabilityProvider.PostingMappingWorkDecisionCapabilityId,
                 AccountingShellCapabilityProvider.PostingQueuesCapabilityId,
                 AccountingShellCapabilityProvider.TrialBalanceCapabilityId,
             ],
