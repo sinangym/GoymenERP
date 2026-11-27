@@ -1,12 +1,13 @@
 using System.Text;
 using System.Text.Json;
+using GoymenERP.Api.Ai.Tools;
 using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.Modules.Counterparty.Infrastructure.Ai;
 using GoymenERP.Modules.Logistics.Application.Ai;
 
 namespace GoymenERP.Api.Ai;
 
-/// <summary>B1's initial two exact-record READ families. The context constrains both the untrusted hint/plan
+/// <summary>B1's exact-record READ families. The context constrains both the untrusted hint/plan
 /// and the owner's returned source; it never authorizes a read, changes the catalogue or creates grounding.</summary>
 internal sealed record AiOpenRecordContextBindingV1(AiOpenRecordContextV1 Context, string ToolId, string ToolVersion, string IdField)
 {
@@ -16,6 +17,8 @@ internal sealed record AiOpenRecordContextBindingV1(AiOpenRecordContextV1 Contex
         if (context.TargetId == Guid.Empty || context.ExpectedSourceVersion is { } version && !IsSourceVersion(version)) return false;
         binding = context.TargetKind switch
         {
+            SalesDraftSummaryAiToolV1.TargetKind => new(context, SalesDraftSummaryAiToolV1.ToolId,
+                SalesDraftSummaryAiToolV1.ToolVersion, SalesDraftSummaryAiToolV1.DraftIdField),
             CounterpartyPartySummaryAiTool.TargetKind => new(context, CounterpartyPartySummaryAiTool.ToolId,
                 CounterpartyPartySummaryAiTool.ToolVersion, CounterpartyPartySummaryAiTool.PartyIdField),
             LogisticsInstructionShipmentStatusAiTool.TargetKind => new(context, LogisticsInstructionShipmentStatusAiTool.ToolId,
@@ -25,7 +28,7 @@ internal sealed record AiOpenRecordContextBindingV1(AiOpenRecordContextV1 Contex
         return binding is not null;
     }
 
-    // Both owners use AiReadToolArgumentsV1.SourceVersion: SHA256 of their own identity/version lines.
+    // Owner source versions are SHA256 digests of their released facts, never UI row versions.
     private static bool IsSourceVersion(string? value) => value is { Length: 71 } && value.StartsWith("sha256:", StringComparison.Ordinal)
         && value[7..].All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
 
