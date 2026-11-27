@@ -300,7 +300,7 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
     || !Array.isArray(value.rules) || value.rules.length > 8 || !value.rules.every(rule => record(rule)
       && hasExactKeys(rule, ['ruleCode', 'threshold', 'actual', 'deviation', 'unit']) && text(rule.ruleCode)
       && [rule.threshold, rule.actual, rule.deviation, rule.unit].every(nullableText))) return null
-  if (isNativeFinanceDecisionKind(kind) && !validNativeFinancePreview(value,company,kind,id,isWorkPackageEffectiveDate)) return null
+  if (isNativeFinanceDecisionKind(kind) && !validNativeFinancePreview(value,company,kind,id,isWorkPackageEffectiveDate,creditLimitAmount)) return null
   if (kind === 'product.price-list-version.v1') {
     const table = value.productPriceList
     if (!dispatchGuid(value.companyId) || !dispatchGuid(value.itemId) || !dispatchVersion(value.sourceVersion) || value.pending && value.sourceVersion === '9223372036854775807'

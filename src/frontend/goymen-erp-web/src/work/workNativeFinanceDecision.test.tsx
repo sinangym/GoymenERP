@@ -63,6 +63,19 @@ describe('three native Finance Work human contracts',()=>{
       expect(decodeWorkDecisionPreview(value,COMPANY_A,kind,id)).toBeNull()
     }
   })
+  it('preserves native CLR opening amounts and independent BigInteger bank-limit money without conversion',()=>{
+    for(const kind of ['finance.opening-balance.v1','finance.opening-balance-reversal.v1'] as const){
+      const value=preview(kind),human=value.openingBalance!
+      for(const amount of ['79228162514264337593543950336','9'.repeat(30),'0.'+'0'.repeat(28)+'1','1'.repeat(65)])
+        expect(decodeWorkDecisionPreview({...value,openingBalance:{openingBalance:{...human.openingBalance,amount}}},COMPANY_A,kind,id)).toBeNull()
+      for(const amount of ['79228162514264337593543950335','0001250.5000','0.'+'0'.repeat(27)+'1','0000000000000000000000000000000000000001.00000000000000000000000'])
+        expect(decodeWorkDecisionPreview({...value,openingBalance:{openingBalance:{...human.openingBalance,amount}}},COMPANY_A,kind,id)).not.toBeNull()
+    }
+    const kind='finance.bank-credit-limit.v1', value=preview(kind),human=value.bankCreditLimit!
+    const raw='9'.repeat(70)+'.00001'
+    const result=decodeWorkDecisionPreview({...value,bankCreditLimit:{...human,limit:{...human.limit,source:{...human.limit.source,amount:raw}}}},COMPANY_A,kind,id)
+    expect(result?.bankCreditLimit?.limit.source.amount).toBe(raw)
+  })
   it('accepts normal opening Reversed3 without inventing a latest reversal and retained rejected A under Reversed3',()=>{
     const kind='finance.opening-balance.v1', value=preview(kind), v=value.openingBalance!.openingBalance
     expect(decodeWorkDecisionPreview({...value,pending:false,sourceVersion:'3',openingBalance:{openingBalance:{...v,status:'Reversed',version:'3',decidedAtUtc:'0001-01-01T00:00:00Z'}}},COMPANY_A,kind,id)).not.toBeNull()

@@ -24,7 +24,7 @@ const amount = (v: unknown): v is string => typeof v === 'string' && v === v.tri
 const digest = (v: unknown) => typeof v === 'string' && v.length === 64 && /^[0-9a-f]+$/.test(v)
 // The server owner matcher remains the authority for the native formatter's rule amount; raw money is never recomputed.
 export function validNativeFinancePreview(value: Record<string, unknown>, company: string, kind: NativeFinanceDecisionKind,
-  id: string, dateValidator: (value: string) => boolean): boolean {
+  id: string, dateValidator: (value: string) => boolean, openingAmountValidator: (value: unknown) => boolean): boolean {
   if (value.approvalReasonRequired !== false || value.rejectionSupported !== true || !Array.isArray(value.rules)
     || value.rules.length !== 1 || !record(value.rules[0]) || !Array.isArray(value.references)) return false
   const rule = value.rules[0], refs = value.references
@@ -60,7 +60,7 @@ export function validNativeFinancePreview(value: Record<string, unknown>, compan
     const decoded = decodeOpeningBalance(human.openingBalance,company,dateValidator,reversal ? 'retained-reversal-decision' : 'opening-decision')
     if (!decoded.ok) return false
     const v = decoded.value, target = reversal ? v.reversal : v
-    if (target === null || !amount(v.amount) || !guid(v.companyId) || !guid(v.id) || !guid(v.targetId) || !guid(v.currencyId)
+    if (target === null || !amount(v.amount) || !openingAmountValidator(v.amount) || !guid(v.companyId) || !guid(v.id) || !guid(v.targetId) || !guid(v.currencyId)
       || v.partyId !== null && !guid(v.partyId) || !same(target.id,id) || !utc(v.proposedAtUtc)
       || v.decidedAtUtc !== null && !utc(v.decidedAtUtc) || !utc(target.proposedAtUtc)
       || target.decidedAtUtc !== null && !utc(target.decidedAtUtc) || target.isOwnProposal
