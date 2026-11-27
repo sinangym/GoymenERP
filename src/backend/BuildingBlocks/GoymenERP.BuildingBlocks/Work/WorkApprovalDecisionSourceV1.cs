@@ -51,7 +51,12 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkBankCreditLimitProofV1? BankCreditLimitProof = null,
     [property: JsonIgnore] WorkOpeningBalanceProofV1? OpeningBalanceProof = null,
     [property: JsonIgnore] WorkCreditMovementProofV1? CreditMovementProof = null,
-    [property: JsonIgnore] WorkCashExchangeBookValueProofV1? CashExchangeBookValueProof = null);
+    [property: JsonIgnore] WorkCashExchangeBookValueProofV1? CashExchangeBookValueProof = null,
+    [property: JsonIgnore] WorkNormalJournalDraftProofV1? NormalJournalDraftProof = null);
+
+/// <summary>Private normal journal identity; full lines and amounts belong to the authorized human purpose GET.</summary>
+public sealed record WorkNormalJournalDraftProofV1(Guid CompanyId, Guid DraftId, Guid PreparedBy,
+    DateTimeOffset PreparedAtUtc, string Status, long Version, string SourceFactsDigest, string PreviewDigest);
 
 /// <summary>Scalar native source bindings only; full money facts stay in the authorized human purpose GET.</summary>
 public sealed record WorkCreditMovementProofV1(Guid CompanyId, Guid MovementId, string ProposedBy,

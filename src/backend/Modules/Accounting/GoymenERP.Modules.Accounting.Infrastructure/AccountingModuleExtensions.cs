@@ -78,6 +78,8 @@ public static class AccountingModuleExtensions
             FinanceFinancialMovementNormalJournalSourceProviderV1>();
         services.AddScoped<NormalJournalDraftApprovalPolicyV1>();
         services.AddScoped<NormalJournalDraftServiceV1>();
+        services.AddScoped<INormalJournalDraftDecisionReadV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<NormalJournalDraftServiceV1>());
         services.AddScoped<INormalJournalDraftLifecycleV1>(serviceProvider =>
             serviceProvider.GetRequiredService<NormalJournalDraftServiceV1>());
         services.AddScoped<NormalJournalDraftPublicServiceV1>();
