@@ -62,7 +62,7 @@ async function fill() {
   fireEvent.change(screen.getByRole('textbox', { name: /^Tutar/ }), { target: { value: '1000' } })
   fireEvent.change(screen.getByLabelText(FIELD_LABEL.occurredOn), { target: { value: '2026-09-13' } })
   fireEvent.change(screen.getByLabelText(FIELD_LABEL.description), { target: { value: 'SENTETIK/NOT_ENV' } })
-  await waitFor(() => expect(screen.getByRole('button', { name: SAVE_DRAFT })).toBeEnabled())
+  await waitFor(() => expect(screen.getByRole('button', { name: SAVE_DRAFT }).matches(':disabled')).toBe(false))
 }
 beforeEach(() => { vi.clearAllMocks(); quick.result = null; quick.signal = null; quick.company = null
   vi.mocked(fetchCounterparties).mockResolvedValue(page()) })
@@ -72,7 +72,7 @@ describe('independent receipt entry shared quick Cari', () => {
   it('uses the editable Customer preselection and all owner pages before the native version-bound draft-context/save', async () => {
     vi.mocked(fetchCounterparties).mockResolvedValueOnce(page([], 'SENTETIK-next')).mockResolvedValueOnce(page())
     const { commands, reads } = mount()
-    expect(screen.getByTestId('roles')).toHaveTextContent(String(PARTY_ROLE_FLAG.Customer))
+    expect(screen.getByTestId('roles').textContent).toBe(String(PARTY_ROLE_FLAG.Customer))
     expect(screen.queryByRole('button', { name: SAVE_DRAFT })).toBeNull()
     await selectCreated(); await fill()
     expect(fetchCounterparties).toHaveBeenNthCalledWith(2, { mode: 'single', companyId: COMPANY_A },
@@ -98,7 +98,7 @@ describe('independent receipt entry shared quick Cari', () => {
     fireEvent.change(await screen.findByLabelText(FIELD_LABEL.treasuryAccountId), { target: { value: EXAMPLE_BANK } })
     fireEvent.change(screen.getByLabelText(FIELD_LABEL.occurredOn), { target: { value: '2026-09-13' } })
     await waitFor(() => expect(reads.some(read => read.method === 'draftContext')).toBe(true))
-    const save = screen.getByRole('button', { name: SAVE_DRAFT }); expect(save).toBeDisabled()
+    const save = screen.getByRole('button', { name: SAVE_DRAFT }); expect(save.matches(':disabled')).toBe(true)
     const form = save.closest('form'); if (form === null) throw new Error('missing native receipt form')
     fireEvent.submit(form); expect(commands).toHaveLength(0)
   })
@@ -110,10 +110,10 @@ describe('independent receipt entry shared quick Cari', () => {
     const { commands } = mount(); await selectCreated(); await fill()
     fireEvent.click(screen.getByRole('button', { name: 'SENTETIK unresolved' }))
     const save = screen.getByRole('button', { name: SAVE_DRAFT })
-    expect(save).toBeDisabled(); const form = save.closest('form'); expect(form).not.toBeNull()
+    expect(save.matches(':disabled')).toBe(true); const form = save.closest('form'); expect(form).not.toBeNull()
     if (form === null) throw new Error('missing native receipt form')
     fireEvent.submit(form); expect(commands).toHaveLength(0)
-    expect(screen.getByRole('textbox', { name: /^Tutar/ })).toHaveValue('1000')
+    expect((screen.getByRole('textbox', { name: /^Tutar/ }) as HTMLInputElement).value).toBe('1000')
     fireEvent.click(screen.getByRole('button', { name: 'SENTETIK resolved' })); fireEvent.click(save)
     expect(commands).toHaveLength(1)
     fireEvent.submit(form); expect(commands).toHaveLength(1)
@@ -175,12 +175,12 @@ describe('independent receipt entry shared quick Cari', () => {
   it('retains the original URL account entry and does not offer independent quick create there', async () => {
     mount(`?partyId=${EXAMPLE_PARTY}&companyAccountId=${EXAMPLE_ACCOUNT}`)
     expect(screen.queryByRole('button', { name: 'SENTETIK quick create' })).toBeNull()
-    expect(await screen.findByRole('button', { name: SAVE_DRAFT })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: SAVE_DRAFT })).not.toBeNull()
     expect(fetchCounterparties).not.toHaveBeenCalled()
   })
   it('keeps a malformed or partial URL account entry closed rather than replacing it with an independent create', () => {
     mount(`?partyId=${EXAMPLE_PARTY}`)
-    expect(screen.getByText(RECEIPT_DRAFT_NEEDS_PARTY)).toBeInTheDocument()
+    expect(screen.getByText(RECEIPT_DRAFT_NEEDS_PARTY)).not.toBeNull()
     expect(screen.queryByRole('button', { name: 'SENTETIK quick create' })).toBeNull()
   })
 })
