@@ -1453,7 +1453,7 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native owner safety/read/original receipt and full authorized Work human/source/command adapter implemented and compiled at0046. Finance2516/controlledHost1198PASS0skip atsamehead; paired frontend/standalone publication pending. ActualSQL/HTTP/browser/CI/K3 NOT_RUN; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN."
+      "limitation": "Native/source/shared Work host, paired human UI and standalone capability publication integrated at39a. Finance2518 at2985, controlledHost1199/frontend1154 at39a passed0skip; separate exact-head checks. ActualSQL/normalHTTP/browser/fullCI/K3 pending. Semantic flags remainNOT_VERIFIED; runtimeNOT_RUN."
     },
     {
       "flow": 44,
@@ -1539,7 +1539,7 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native owner safety/read/original receipt and full authorized Work human/source/command adapter implemented and compiled at0046. Finance2516/controlledHost1198PASS0skip atsamehead; paired frontend/standalone publication pending. ActualSQL/HTTP/browser/CI/K3 NOT_RUN; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN."
+      "limitation": "Native/source/shared Work host, paired human UI and standalone capability publication integrated at39a. Finance2518 at2985, controlledHost1199/frontend1154 at39a passed0skip; separate exact-head checks. ActualSQL/normalHTTP/browser/fullCI/K3 pending. Semantic flags remainNOT_VERIFIED; runtimeNOT_RUN."
     },
     {
       "flow": 47,
@@ -1622,7 +1622,7 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Native normal-journal whole approval bound to guarded AccountingStore with same scoped real Audit writer. Accounting808 at90df and real-module composition included in controlledHost1199 at39a.8 SQL sources compiled, actualSQLNOT_RUN. New owner-read/receipt/Work adapter branches not yet integrated; this is a native prerequisite, not runtime flow acceptance."
     },
     {
       "flow": 50,
@@ -2256,5 +2256,72 @@
     "sql": "417 unique ordinal Finance SQL source names;5 added real SQL Fact sources compiled, actual SQL NOT_RUN. No new migration in this increment.",
     "limits": "Actual SQL/normal HTTP/browser/full CI/pins/two independent exact-head K3 pending. All64 semanticsNOT_VERIFIED/runtimeNOT_RUN;41packages/50references unchanged.",
     "reference": "UYGULAMA_PAKETLERI_2026-11-26.json -> T2/WP8.execution.credit_movement_and_book_value_backend_checkpoint"
+  },
+  "paired_finance_and_normal_guard_checkpoint": {
+    "source_commit": "39a0f3e5552cb48d2f788bc08d76da29ff32390f",
+    "scope": "Flow43/46 native owner commands, original receipts, authorized full human GET, paired Work UI and standalone capability publication. Native normal-journal whole-command safety is a prerequisite only; Flow49 Work adapter not yet integrated. NOPO typed admission is not an operational receipt/matching path.",
+    "source_kinds": {
+      "backend": 41,
+      "paired_frontend": 41,
+      "staged": [],
+      "scope": "Kinds, not count of the64 approval-flow rows"
+    },
+    "checks": {
+      "api_full": {
+        "source_commit": "2985d54def216258e383181c91f8227de4804a11",
+        "exit": 0,
+        "errors": 0,
+        "warnings": 0,
+        "seconds": 186.439902,
+        "mode": "Release all references; OpenAPI generation disabled"
+      },
+      "finance_unit": {
+        "source_commit": "2985d54def216258e383181c91f8227de4804a11",
+        "passed": 2518,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": 17.6598759
+      },
+      "purchasing_unit": {
+        "source_commit": "90df96db2129b759f4acd869f027ecd982b861c3",
+        "passed": 1359,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": 14.162623
+      },
+      "accounting_unit": {
+        "source_commit": "90df96db2129b759f4acd869f027ecd982b861c3",
+        "passed": 808,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": 12.538338
+      },
+      "controlled_host": {
+        "source_commit": "39a0f3e5552cb48d2f788bc08d76da29ff32390f",
+        "passed": 1199,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": 64.2051896,
+        "scope": "Controlled decision/registry/authority/SqlWrapper/C7/C8 ports plus real DI composition without opening SQL; complete integration-source compiled, actual SQL NOT_RUN"
+      },
+      "frontend": {
+        "source_commit": "39a0f3e5552cb48d2f788bc08d76da29ff32390f",
+        "tsc_exit": 0,
+        "tsc_seconds": 57.8459593,
+        "lint_exit": 0,
+        "lint_files": 21,
+        "lint_seconds": 0.6834015,
+        "test_files": 9,
+        "passed": 1154,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": 90.6578995
+      },
+      "original_failures": "2883 frontend1071 total:1062PASS9FAIL, invalid native documentNumber fixture; two requested filenames did not exist and were NOT_RUN. Corrected complete9-file cohort1154 at39a. Purchasing2985 test-source CS8852 init callback; corrected90df without assertion change. ControlledHost90df1198PASS1FAIL because registry still expected67 instead of actual69; corrected39a. Original artifacts retained."
+    },
+    "reuse": "Existing native Finance commands/formatters/decoders and frozen Work retry journal; existing AccountingStore/Audit collector+writer and native lifecycle; existing Purchasing invoice/acceptance fixtures. No second approval, stock, financial or calculation engine.",
+    "peers": "Full bounded independent owner/source/UI/publication/guard/DI and fixture delta reads completed; no reported open P0/P1/P2 within these scopes. These are not the two final K3 reviews.",
+    "sql": "Finance417 and Accounting154 unique SQL source names, including8 new normal approval facts. Sources compiled; actual SQL NOT_RUN. Normal guard added no schema migration.",
+    "limits": "ActualSQL/normalHTTP/browser/fullCI/pins/two exact-head K3 and business acceptance remain pending; all64 semantic flags NOT_VERIFIED/runtimeNOT_RUN, verified_runtime_flows0. Own branches with new owner work are not counted as integrated."
   }
 }
