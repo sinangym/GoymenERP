@@ -2175,7 +2175,8 @@
         "Product package-standard purpose uses the immutable native table version, human effective date and required native reason; approval/rejection does not increment that version. Exact command/key/actor/company/receipt binds original replay, not a later pending table.",
         "Atb1cacee89f805a05959b5b79af034270b80b8103 source-derived sets:30native/29paired frontend; only product.price-list-version.v1 staged, no unknown frontend kind. Historicalcc379 exact29/29 remains valid only at that head. verified_runtime_flows=0; all64 semantics/runtime remain NOT_VERIFIED/NOT_RUN.",
         "Native staged product.price-list-version.v1 source8cd6de9d5bf837328fdce4040fff542e082e1849/rootb7d807ce1; facade4arg compile correction6deaa242358f95ab091c589c29032e37a28a1516/roota04ec0ebc; ROL-D18 correction1819933ac010da8c6f2a84bbb33c5391da23f9f1/root272cc4727. Human11field price preview requires existing companywide Read+Publish; inbox/private proof remain price-free, and the private in-process PublishReceipt is omitted from public JSON. Authorized human GET and native result/view keep their existing price-bearing contracts. Authorized creator/editor publication is permitted; preparer history and immutable prior terminal409 receipts remain unchanged. Earlier creator/all-editor prohibition tests are superseded by ROL-D18, not silently removed. Exact-kind Work Excludes exception does not affect package-standard SAT-D416 or other kinds. No frontend publication or grant.",
-        "Native PartyCreditLimit approve/reject safety5080752e0637a77b2364d0c9df9dcacaccfa052c/root2b0b99f05: existing owned Serializable/Audit/fresh company-actor-permission fences, clean-entry caller preservation, owned cleanup and one readonly original-key winner read reused. FNS-D27a maker rule and FNS-D56/57 single-step Set/Remove unchanged. Flow40 Work purpose/UI is not implemented by this prerequisite."
+        "Native PartyCreditLimit approve/reject safety5080752e0637a77b2364d0c9df9dcacaccfa052c/root2b0b99f05: existing owned Serializable/Audit/fresh company-actor-permission fences, clean-entry caller preservation, owned cleanup and one readonly original-key winner read reused. FNS-D27a maker rule and FNS-D56/57 single-step Set/Remove unchanged. Flow40 Work purpose/UI is not implemented by this prerequisite.",
+        "Flow47/48 period and Flow50 journal reversal purposes paired in source45/45/0; exact-head local checks and retained failures: docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#journal_reversal_paired_checkpoint. ActualSQL/HTTP/browser/fullCI/K3/business acceptance pending; no new policy/grant/activation."
       ],
       "decisions": [
         "YOL-D41",
@@ -2319,8 +2320,9 @@
         "activation": "No grants/flags/provider changes"
       },
       "execution": {
-        "source_commit": "59e09117e6652e42deaf6e3a1721c35e7ba68724",
+        "source_commit": "bc4755a19190bca665f34965d9067023fe19f774",
         "implemented_kinds": [
+          "accounting.journal-reversal.v1",
           "accounting.period-opening.v1",
           "accounting.period-reopening.v1",
           "accounting.normal-journal-draft.v1",
@@ -2443,7 +2445,7 @@
           "existing Work post transport and SQL fixtures"
         ],
         "remaining": [
-          "Remaining owner adapters and purpose/UI bindings; Flow47/48 backend read/receipt/source/host implemented, paired frontend/publication pending. Native links remain unchanged until pairing.",
+          "Remaining owner adapters and purpose/UI bindings outside the45 integrated kinds; current paired source does not establish acceptance for all64 flow rows.",
           "All64 actual SQL, normal HTTP/runtime browser acceptance, shell/OpenAPI/guard/recovery pins, full CI and two independent exact-head K3 reviews"
         ],
         "sql": "NOT_RUN",
@@ -3506,11 +3508,8 @@
           "7898cc30397ab51d38464c5ac674de2422890d07",
           "9f9442c4e9382033ea97f54e62d7238ab50e91c4"
         ],
-        "kind_count_scope": "Source sets44 backend/42 paired frontend/2 staged period kinds; no unknown frontend kind. Runtime acceptance remains0/64.",
-        "staged_kinds": [
-          "accounting.period-opening.v1",
-          "accounting.period-reopening.v1"
-        ],
+        "kind_count_scope": "Source sets45 backend/45 paired frontend/0 staged kinds. Runtime acceptance remains0/64.",
+        "staged_kinds": [],
         "historical_kind_count_scope": "29 paired source kinds/29 native kinds with exact set equality atcc379ff28f74d5810ed51ad537ebece821440d72, including Product package-standard; staged0. Native price-list publish safety is a prerequisite, not a30th Work purpose. All64 runtime flows remain NOT_VERIFIED/NOT_RUN; source pairing is not acceptance.",
         "historical_kind_count_scopes": [
           "Atb1cacee89f805a05959b5b79af034270b80b8103 source-derived sets:30native/29paired frontend; only product.price-list-version.v1 staged, no unknown frontend kind. Historicalcc379 exact29/29 remains valid only at that head. verified_runtime_flows=0; all64 semantics/runtime remain NOT_VERIFIED/NOT_RUN.",
@@ -3744,10 +3743,7 @@
           "sql": "Finance389 unique test source names,15 new native SQL Facts (opening9/banklimit6) compiled; actual SQL NOT_RUN. No new migration in this increment.",
           "limits": "ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 pending;41packages/50references/64flows;verified_runtime_flows=0, all64 semantics NOT_VERIFIED/runtimeNOT_RUN."
         },
-        "staged_native_kinds": [
-          "accounting.period-opening.v1",
-          "accounting.period-reopening.v1"
-        ],
+        "staged_native_kinds": [],
         "native_finance_paired_checkpoint": {
           "source_commit": "8046fd301ca682a4dda01eb4dbdd71cfc9735b42",
           "scope": "Flow42 bank limit and Flow44/45 opening/reversal now have private scalar proofs, original native receipts, complete purpose-only human GET, paired Work UI and Finance provider1.32/67 declarations. Existing owner commands and permissions reused; no grant, new permission, policy or activation.",
@@ -4079,6 +4075,16 @@
           "nopo": "Unchanged7c master composite/persistent two-table source; no actual document-line/businessDate owner adapter, therefore503. No stock/Finance/commercial matching effects.",
           "sql": "Accounting162/Finance418/Purchasing203 unique SQL source names; compiled sources are not actual SQL. ActualSQL NOT_RUN.",
           "limits": "ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 and business acceptance pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows0;41packages/50references unchanged."
+        },
+        "journal_reversal_paired_checkpoint": {
+          "source_commit": "bc4755a19190bca665f34965d9067023fe19f774",
+          "source_kinds": {
+            "backend": 45,
+            "paired_frontend": 45,
+            "staged": []
+          },
+          "evidence_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#journal_reversal_paired_checkpoint",
+          "runtime_acceptance": "NOT_RUN"
         }
       }
     },

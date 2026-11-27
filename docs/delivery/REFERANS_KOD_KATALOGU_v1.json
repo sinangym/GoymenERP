@@ -1294,10 +1294,10 @@
       "sources": [
         {
           "path": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/AccountingJournalReversalLifecycleV1.cs",
-          "line": 113,
+          "line": 123,
           "anchor": "Task<AccountingApiResult<AccountingJournalReversalProposalViewV1>> ApproveAsync(",
-          "sha256": "b528f3742ad406096b220756d4f493f994327a721d365f39151ffc6ad7cfde0a",
-          "git_blob": "b98ff49144f81736de647df1f16ca7a53bd2d104"
+          "sha256": "52d112c28f65708c9fc59d650e5d99a4f2a4c2594b97fa4096b9d66c4819e6cd",
+          "git_blob": "e90ddab050e85346de356997a001161c69309534"
         }
       ],
       "tests": [
@@ -1305,14 +1305,14 @@
           "path": "tests/GoymenERP.Accounting.UnitTests/AccountingJournalReversalLifecycleV1Tests.cs",
           "line": 18,
           "anchor": "public async Task Proposal_is_persisted_as_pending_and_same_command_replays_without_a_second_effect()",
-          "sha256": "99fbeabf2ca176797e712dcfb3a2e7575b23364b8373eb6689046487ba4263b3",
-          "git_blob": "5b40e4876f341d8950489cbac465fb8f56c8b075"
+          "sha256": "f57683394faa91f2bc359524027f409695a16137c6a8ad06b5672e8193ce183f",
+          "git_blob": "bd96458bc4f5942d1606465c20cc28949ceb7710"
         }
       ],
-      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
-      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "source_commit": "bc4755a19190bca665f34965d9067023fe19f774",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
-      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+      "historical_ci_url": null,
       "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
       "invariants": [
         "CompanyId ve güncel yetki",
@@ -1324,12 +1324,41 @@
       "adaptations": "Kesin fişi sessiz güncelleme; kapalı dönem veya Mikro sonucu atlanmaz.",
       "limitations": [
         "Kesin fişi sessiz güncelleme; kapalı dönem veya Mikro sonucu atlanmaz.",
-        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı.",
+        "Current Flow50 source paired45/45/0; immutable native command receipt and narrow human read reused. Exact-head local checks do not transfer historical CI or establish actual SQL/runtime/K3 acceptance."
       ],
       "decision_refs": [
         "AGENTS.md: Mimari değişmezler; owner iş kararını ayrıca seç"
       ],
-      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
+      "previous_source_checkpoint": {
+        "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+        "sources": [
+          {
+            "path": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/AccountingJournalReversalLifecycleV1.cs",
+            "line": 113,
+            "anchor": "Task<AccountingApiResult<AccountingJournalReversalProposalViewV1>> ApproveAsync(",
+            "sha256": "b528f3742ad406096b220756d4f493f994327a721d365f39151ffc6ad7cfde0a",
+            "git_blob": "b98ff49144f81736de647df1f16ca7a53bd2d104"
+          }
+        ],
+        "tests": [
+          {
+            "path": "tests/GoymenERP.Accounting.UnitTests/AccountingJournalReversalLifecycleV1Tests.cs",
+            "line": 18,
+            "anchor": "public async Task Proposal_is_persisted_as_pending_and_same_command_replays_without_a_second_effect()",
+            "sha256": "99fbeabf2ca176797e712dcfb3a2e7575b23364b8373eb6689046487ba4263b3",
+            "git_blob": "5b40e4876f341d8950489cbac465fb8f56c8b075"
+          }
+        ],
+        "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+        "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956"
+      },
+      "local_validation": {
+        "source_commit": "bc4755a19190bca665f34965d9067023fe19f774",
+        "evidence_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#journal_reversal_paired_checkpoint",
+        "runtime_acceptance": "NOT_RUN"
+      }
     },
     {
       "id": "REF-WORK-01",

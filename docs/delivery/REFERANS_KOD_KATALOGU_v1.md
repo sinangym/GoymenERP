@@ -30,7 +30,7 @@ Makine kaynağı: [REFERANS_KOD_KATALOGU_v1.json](REFERANS_KOD_KATALOGU_v1.json)
 | REF-CARRY-01 | Cari bakiye virman kaynağı | REFERENCE_PATTERN | Güncel kaynak/test; replay için 5 hedefli test geçti, SQL/CI bekler |
 | REF-BANK-01 | Ekstre import ve tekilleştirme | DIRECT_REUSE | Kaynak/test var |
 | REF-JOURNAL-01 | Kaynaklı fiş taslağı ve farklı kişi onayı | REFERENCE_PATTERN | Kaynak/test var |
-| REF-JOURNAL-02 | Kesin fişe bağlı ters kayıt | REFERENCE_PATTERN | Eski CI ağacı eşleşiyor |
+| REF-JOURNAL-02 | Kesin fişe bağlı ters kayıt | REFERENCE_PATTERN | Güncel kaynak/yerel kanıt; eski CI ayrı |
 | REF-WORK-01 | Onay kuralı sürümü ve owner izni | DIRECT_REUSE | Kaynak/test var |
 | REF-WORK-02 | Tek bildirim deposu | DIRECT_REUSE | Kaynak/test var |
 | REF-WORK-03 | Kayda bağlı not ve görev | DIRECT_REUSE | Kaynak/test var |
@@ -84,3 +84,5 @@ REF-CARD-01, native kimlik kararı güvenlik artımının `cdc4aac0c` kaynağın
 27 Kasım `a1c45b30f`: REF-JOURNAL-01 güncel native kaynak hash/blob/anchor’una bağlandı; Flow49 native owner/özgün makbuz/insan önizlemesi ve Work arayüzü42/42 kaynağına dahildir. `21d1fecbb` Muhasebe859/Host1262 ve `7c944b060`9UI1144/TSC0/lint20dosya0hata0uyarı ayrı exact-head kanıtlarıdır. Dönem47/48 native güvenlik önkoşulunun a1c45 Muhasebe867/Finans2518/Host1262PASS0skip makbuzları ayrıdır; references=false API yenilemesi tam all-reference build sayılmaz. `c247` previous_source_checkpoint ve `39a` tarihsel kaynak/test yerel kanıtları derin kopyayla ayrı tutuldu; eski CI yeni kaynağa aktarılmadı. GerçekSQL/normalHTTP/tarayıcı/tamCI/pin/K3/işletme kabulü bekler; katalog50/plan41 ve runtime0 korunur.
 
 `59e09117e` REF-JOURNAL-01 mevcut kaynak/test hash/blob/anchor’u canlıdan yeniden doğrulandı; gövdeler değişmedi. Dönem47/48 aynı Accounting owner altyapısının dar yeniden kullanımıdır:44backend/42frontend/2staged; normal fiş dahil önceki42 eşli UI değişmez.224/b432,3d996 ve1fbd derleme/test kanıtları ayrı exact head’lerde korunur;59e Muhasebe949/Host1335PASS0skip (71yeni dönem vakası1335’e dahil); API yenilemesi references=false0/0, yeni tam all-reference build değildir. Bu yerel kanıt işletme kabulü değildir. c247/39a checkpoint’leri aynen, a1c45 yerel kanıtı ayrı derin kopyayla saklandı; eski CI aktarılmadı. SQL/HTTP/tarayıcı/CI/K3/runtime kabulü bekler, katalog50 korunur.
+
+`bc4755a19` yalnız **REF-JOURNAL-02** kaynak/test hash/blob/anchor pointer’larını günceller; Flow50 özgün makbuz ve kaynak eşliğiyle45/45/0 kaynağa dahildir. Ayrı-head yerel kanıtlar harita JSON’undaki `journal_reversal_paired_checkpoint` kaydındadır; ilkfb13 UI1338PASS2FAIL0skip ayrı tutulur, sonbc475 aynı17tam dosya1340/1340PASS0skip ve27dosyalint0hata/0uyarıdır. TSC0 yalnızfb13’teki kanıttır. Eski c247 kaynak/test/CI beş alanı `previous_source_checkpoint` içinde derin kopyayla korunur, eski CI yeni kullanıma aktarılmaz. REF-JOURNAL-01 ve diğer49 referans değişmez; katalog50, gerçekSQL/runtime/CI/K3 kabulü bekler.

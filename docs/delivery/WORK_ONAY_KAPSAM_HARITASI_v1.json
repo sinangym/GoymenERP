@@ -1576,10 +1576,11 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native safety plus purpose owner read/genuine receipt/private scalar/source/shared host now implemented; staged backend kind, no paired UI or purpose publication yet. Native links/permissions/hash/public numeric versions/carry policy unchanged. Work human versions are canonical text; current period version cannot replace original receipt. Actual LaterPeriodClosed supports the existing reopening block; Opening maker is excluded for opening; only the reopening maker is excluded for reopening. 1fbdAccounting949PASS but controlledHost1332PASS/3FAIL0skip retained.75b9 native ownership source fix and59e fixture counter fix: final59eAccounting949/controlledHost1335PASS0skip, including71period-host cases. API59e refresh0errors0warnings is references=false, not a new all-reference build. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 and business acceptance pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows0;41packages/50references unchanged.",
+      "limitation": "Paired native owner/source/host/human Work UI and narrow purpose capability in current45/45/0 source. Native permissions/hash/wire and maker/business rules unchanged. Exact-head controlled/local evidence and historical failures are recorded once in journal_reversal_paired_checkpoint; these are not runtime/business acceptance. ActualSQL/normalHTTP/browser/fullCI/pins/two independent K3 pending; semantic flags remainNOT_VERIFIED/runtimeNOT_RUN.",
       "latest_source_evidence": {
-        "source_commit": "59e09117e6652e42deaf6e3a1721c35e7ba68724",
-        "scope": "Backend owner/source/host implemented; frontend/publication pending",
+        "source_commit": "bc4755a19190bca665f34965d9067023fe19f774",
+        "scope": "Paired source; not64 runtime acceptance",
+        "evidence_ref": "#journal_reversal_paired_checkpoint",
         "sql": "NOT_RUN",
         "runtime_acceptance": "NOT_RUN"
       }
@@ -1620,10 +1621,11 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native safety plus purpose owner read/genuine receipt/private scalar/source/shared host now implemented; staged backend kind, no paired UI or purpose publication yet. Native links/permissions/hash/public numeric versions/carry policy unchanged. Work human versions are canonical text; current period version cannot replace original receipt. Actual LaterPeriodClosed supports the existing reopening block; Opening maker is excluded for opening; only the reopening maker is excluded for reopening. 1fbdAccounting949PASS but controlledHost1332PASS/3FAIL0skip retained.75b9 native ownership source fix and59e fixture counter fix: final59eAccounting949/controlledHost1335PASS0skip, including71period-host cases. API59e refresh0errors0warnings is references=false, not a new all-reference build. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 and business acceptance pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows0;41packages/50references unchanged.",
+      "limitation": "Paired native owner/source/host/human Work UI and narrow purpose capability in current45/45/0 source. Native permissions/hash/wire and maker/business rules unchanged. Exact-head controlled/local evidence and historical failures are recorded once in journal_reversal_paired_checkpoint; these are not runtime/business acceptance. ActualSQL/normalHTTP/browser/fullCI/pins/two independent K3 pending; semantic flags remainNOT_VERIFIED/runtimeNOT_RUN.",
       "latest_source_evidence": {
-        "source_commit": "59e09117e6652e42deaf6e3a1721c35e7ba68724",
-        "scope": "Backend owner/source/host implemented; frontend/publication pending",
+        "source_commit": "bc4755a19190bca665f34965d9067023fe19f774",
+        "scope": "Paired source; not64 runtime acceptance",
+        "evidence_ref": "#journal_reversal_paired_checkpoint",
         "sql": "NOT_RUN",
         "runtime_acceptance": "NOT_RUN"
       }
@@ -1679,18 +1681,34 @@
       "approver_proposal": "MUHM, GM",
       "duration_cell": "2 iş günü",
       "decision_note": "ÖNERİ.",
-      "candidate_inbox_sources": [],
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingJournalReversalWorkInboxSourceV1.cs",
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingJournalReversalWorkInboxSourceV1.Decision.cs"
+      ],
       "candidate_tests": [
         "tests/GoymenERP.Api.IntegrationTests/AccountingPermissionRegistrationTests.cs:23",
         "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:36",
-        "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:53"
+        "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:53",
+        "tests/GoymenERP.Accounting.UnitTests/AccountingJournalReversalLifecycleV1Tests.ApprovalSafety.cs",
+        "tests/GoymenERP.Accounting.UnitTests/AccountingJournalReversalLifecycleV1Tests.DecisionReceipt.cs",
+        "tests/GoymenERP.Accounting.UnitTests/AccountingJournalReversalDecisionWorkSourceTests.cs",
+        "tests/GoymenERP.Accounting.UnitTests/AccountingJournalReversalDecisionWorkSourceTests.PendingList.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkJournalReversalDecisionHostTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingSqlServerRelationalAcceptanceTests.JournalReversalPendingWorkSource.cs"
       ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Paired native owner/source/host/human Work UI and narrow purpose capability in current45/45/0 source. Native permissions/hash/wire and maker/business rules unchanged. Exact-head controlled/local evidence and historical failures are recorded once in journal_reversal_paired_checkpoint; these are not runtime/business acceptance. ActualSQL/normalHTTP/browser/fullCI/pins/two independent K3 pending; semantic flags remainNOT_VERIFIED/runtimeNOT_RUN.",
+      "latest_source_evidence": {
+        "source_commit": "bc4755a19190bca665f34965d9067023fe19f774",
+        "scope": "Paired source; not64 runtime acceptance",
+        "evidence_ref": "#journal_reversal_paired_checkpoint",
+        "sql": "NOT_RUN",
+        "runtime_acceptance": "NOT_RUN"
+      }
     },
     {
       "flow": 51,
@@ -2064,13 +2082,14 @@
     }
   ],
   "closure": "For each flow verify real inbox listing, owner decision, company/scope, maker-checker exceptions, expected version, replay and audit. Do not replace owner rules with proposal cells.",
-  "source_extension": "At59e09117e6652e42deaf6e3a1721c35e7ba68724:44 backend/42 paired frontend/2 staged accounting.period-opening.v1 and accounting.period-reopening.v1; no unknown frontend kind. Native links retained until paired UI. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 and business acceptance pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows0;41packages/50references unchanged.",
+  "source_extension": "Atbc4755a19190bca665f34965d9067023fe19f774:45 backend/45 paired frontend/0 staged kinds. Flow47/48 and Flow50 paired; Flow49 normal journal separate. See journal_reversal_paired_checkpoint for separate-head evidence; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN, verified_runtime_flows0.",
   "historical_source_extension": "Atcc379ff28f74d5810ed51ad537ebece821440d72 exact source sets match29native/29paired frontend kinds, including Product package-standard; staged0. Native Product Publish safety is not a30th purpose. verified_runtime_flows stays0; all64 actualSQL/HTTP/browser/CI/K3 acceptances remain NOT_RUN. Earlier exact-head evidence stays separate; new Node batch751PASS/1FAIL is not752PASS.",
   "historical_source_extensions": [
     "Atb1cacee89f805a05959b5b79af034270b80b8103 source-derived sets:30native/29paired frontend; only product.price-list-version.v1 staged, no unknown frontend kind. Historicalcc379 exact29/29 remains valid only at that head. verified_runtime_flows=0; all64 semantics/runtime remain NOT_VERIFIED/NOT_RUN.",
     "At43ebf5ec240e23f7e3c56443e5a2b10c68e2adf4 live WorkDecisionRegistrationV1.Kinds and WORK_DECISION_KINDS derive31native/30paired; only finance.party-credit-limit.v1 staged, no unknown frontend kind. Price-list purpose is now paired. Historical b1 30native/29paired/1staged and cc379 29/29 remain exact-head records. verified_runtime_flows=0; all64 semantics/runtime stay NOT_VERIFIED/NOT_RUN;41packages/50references unchanged. Corrected checkpointc42ed290f5c20a59065f79b70718e98adae926b3 retains31/30/1; staged constant is not a mounted capability.",
     "At0046bc8947740b963b7d7a88885de6b8dab97b87:41 native/39 paired frontend/2 staged CreditMovement/CashExchangeBookValue; no unknown frontend kind. All64 semanticsNOT_VERIFIED/runtimeNOT_RUN;verified_runtime_flows0;41packages/50references unchanged.",
-    "Ata1c45b30fdb0d74b38e21007d655c36c9209d61a:42 native/42 paired frontend/0 staged, exact source sets equal including Flow49 normal-journal. Flow47/48 native safety prerequisites do not add a Work kind. Gerçek SQL/normal HTTP/tarayıcı/tam CI/pinler/iki bağımsız exact-head K3 ve işletme kabulü bekler. 64 semantik NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows=0; 41 paket/50 referans korunur."
+    "Ata1c45b30fdb0d74b38e21007d655c36c9209d61a:42 native/42 paired frontend/0 staged, exact source sets equal including Flow49 normal-journal. Flow47/48 native safety prerequisites do not add a Work kind. Gerçek SQL/normal HTTP/tarayıcı/tam CI/pinler/iki bağımsız exact-head K3 ve işletme kabulü bekler. 64 semantik NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows=0; 41 paket/50 referans korunur.",
+    "At59e09117e6652e42deaf6e3a1721c35e7ba68724:44 backend/42 paired frontend/2 staged accounting.period-opening.v1 and accounting.period-reopening.v1; no unknown frontend kind. Native links retained until paired UI. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 and business acceptance pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows0;41packages/50references unchanged."
   ],
   "historical_checkpoint_c42": {
     "source_commit": "c42ed290f5c20a59065f79b70718e98adae926b3",
@@ -2566,5 +2585,99 @@
     },
     "limits": "ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 and business acceptance pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows0;41packages/50references unchanged.",
     "reference": "UYGULAMA_PAKETLERI_2026-11-26.json -> T2/WP8.execution.accounting_period_backend_checkpoint"
+  },
+  "journal_reversal_paired_checkpoint": {
+    "source_commit": "bc4755a19190bca665f34965d9067023fe19f774",
+    "scope": "Flow47/48 period purposes and Flow50 journal reversal now paired;45 backend/45 frontend/0 staged kinds. Flow49 normal journal is separate. Existing native permissions, routes, numeric DTO/hash and business policies preserved; no grant or activation.",
+    "source_kinds": {
+      "backend": 45,
+      "paired_frontend": 45,
+      "staged": [],
+      "scope": "Kinds, not64 acceptance rows"
+    },
+    "source_provenance": {
+      "journal_owner": "070eda816dcf04ebc9bd6a9df023731b2d500b74..129d2ae7a25e6820317aacd81f7880615ceab65c",
+      "journal_source": "cd8d9a5857a73b8dfc64d0232ca0f8cdd2eef62a +d5efde5a79415b28dcd1049e75b7bf4e3a0fd823; empty-page redundant fence corrected167ebf55c",
+      "journal_host": "b66cd33a39185c8f1e93b8e3cba0f75b5150ecd7",
+      "journal_frontend": "55cda48277831d8f517caaa48de0bfe1128d8c9f +52f01d8c8a7e464f92d5acfc6813bcfe9ac83c76 +f48844d2855bff9a8d3c1829bdea5e283b4f77b0",
+      "publication": "Period2f1825f25; journal32dd3f479; Accounting provider1.14/34 declarations, standalone existing approve permission"
+    },
+    "checks": {
+      "full_api_and_owner_host": {
+        "source_commit": "de5b0a7034f5dedc5ff348fad03b3fddf5dc978c",
+        "artifact": "period-paired-journal-owner-full-20261127",
+        "api_all_references": "exit0/0errors/0warnings215.4996728s",
+        "accounting": "1029/1029PASS0skip13.4121841s",
+        "controlled_host": "1335/1335PASS0skip73.8962443s",
+        "tsc": "exit2/60.5030685s; readonly tuple fixture typing, correctedf488; lint/UI NOT_RUN at this head"
+      },
+      "empty_page_fixed": {
+        "source_commit": "167ebf55c2cbff49ed45bfbfafffaca94b496ad8",
+        "artifact": "journal-reversal-paired-fixed-20261127",
+        "accounting": "1047/1047PASS0skip34.0705542s",
+        "api_refresh": "exit0/0errors/0warnings21.2863539s; references=false, not a new full all-reference API build",
+        "host_compile": "exit1/43.1124064s; two xUnit2031 SQL-source assertion-style errors, correctedfb13 without changing predicates/assertions; tests NOT_RUN"
+      },
+      "host_and_frontend": {
+        "source_commit": "fb13dcfa3b8e3e10f1c570581c0e6713d428bb06",
+        "artifact": "journal-reversal-paired-host-fixed-20261127",
+        "controlled_host": "1412/1412PASS0skip63.9657592s; complete integration-source compiled, actual SQL NOT_RUN",
+        "tsc": "exit0/50.3355s",
+        "lint_whole_frontend": "exit0/0errors/228warnings1.55505s; empty selected-files pathspec caused whole frontend scan, not scoped clean lint. Original log retained; no historical-warning claim without blob proof.",
+        "frontend": {
+          "actual_test_files": 17,
+          "total": 1340,
+          "passed": 1338,
+          "failed": 2,
+          "skipped": 0,
+          "exit": 1,
+          "seconds": 121.9572758,
+          "failure_scope": "Two WorkDecisionPage mount tests still expected42 while actual45; correctedbc475 rerun recorded separately below. No tests/assertions skipped or weakened."
+        },
+        "targeted_lint": "Correct scoped rerun recorded separately atbc475; whole-frontend228warnings retained atfb13."
+      },
+      "corrected_frontend": {
+        "source_commit": "bc4755a19190bca665f34965d9067023fe19f774",
+        "artifact": "journal-reversal-paired-ui-fixed-20261127",
+        "fixture_fix": "Only two exact mount-count expectations42=>45; all original assertions preserved.",
+        "lint": "27 explicit TS/TSX files, exit0/0errors/0warnings0.2115177s; recorded nonempty file list, no suppressions",
+        "frontend": {
+          "actual_test_files": 17,
+          "total": 1340,
+          "passed": 1340,
+          "failed": 0,
+          "skipped": 0,
+          "exit": 0,
+          "seconds": 109.1103573
+        },
+        "tsc": "Not repeated after numeric test-only delta; fb13 exit0 retained at its own head."
+      }
+    },
+    "retained_failures": [
+      {
+        "source_commit": "29f1eca35717a21283a14567aaea6bb3e1abb4ee",
+        "artifact": "period-paired-journal-owner-20261127",
+        "result": "Accounting compileFAIL2CS0117; tests NOT_RUN"
+      },
+      {
+        "source_commit": "c48880ecd1d5899ed65afc47bcc0c7f360a94f6c",
+        "artifact": "period-paired-journal-owner-fixed-20261127",
+        "result": "Accounting987PASS0skip37.1159071s/APIrefresh0/0 29.8445832s; integration compile missing Audit namespace, host NOT_RUN"
+      },
+      {
+        "source_commit": "4964b22f0c26069d4a5da5a88a0a439b138a82e8",
+        "artifact": "period-paired-journal-owner-host-fixed-20261127",
+        "result": "Host1335total1168PASS167FAIL0skip74.5027756s, old BuildingBlocks ABI; corrected by de5 all-reference build"
+      },
+      {
+        "source_commit": "32dd3f4791b7f44fd556218382fdab1b147d385e",
+        "artifact": "journal-reversal-paired-20261127",
+        "result": "Accounting1047total1046PASS1FAIL0skip35.2983195s; empty inbox had redundant third authority read.167 moves intermediate fence below empty early return; nonempty fences and exact assertions preserved"
+      }
+    ],
+    "boundaries": "Native journal proposal16/result8 retain Int32/numeric wire; human GET carries proposal plus source/preview digests, no private actor proof. Owner/source formatter identity, native immutable original receipt, actor/company/authority and frozen original-key command bind decisions; no second human POST read. Period native13/11/13 numeric wire retained, Work long versions canonical text and actual LaterPeriodClosed controls existing approval availability. Post-native503 release suppression is unknown outcome, not a rollback claim; same-key replay reconciles without a second mutation.",
+    "nopo": "Unchanged: actual document-line/businessDate owner bridge absent =>503; no stock/Finance/commercial matching effects.",
+    "sql": "Accounting168/Finance418/Purchasing203 unique SQL source names. Integration-source compilation is not actual SQL; actualSQL NOT_RUN.",
+    "limits": "All64 semanticsNOT_VERIFIED/runtimeNOT_RUN; verified_runtime_flows0;41packages/50references unchanged. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 and business acceptance pending. Later unintegrated Flow51 work excluded."
   }
 }
