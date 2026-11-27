@@ -38,6 +38,20 @@ public sealed class FinanceBankAccountIbanReceiptTests
         Assert.Equal(command.ResultJson, JsonSerializer.Serialize(FinanceBankAccountService.RestoreBankCommandResult(command), FinanceJson.CreateOptions()));
     }
 
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void Private_receipt_binding_does_not_add_an_active_account_precondition_to_the_native_iban_decision(bool approval)
+    {
+        var command = Command(approval); var original = Result(approval ? "4" : "3");
+        var result = original with { Resource = original.Resource! with { IsActive = false } };
+        var proof = Proof(approval);
+        command.ResultJson = FinanceBankAccountService.SerializeIbanChangeReceipt(result, proof);
+        Assert.Equal(proof, FinanceBankAccountService.ReadIbanChangeReceiptProof(command));
+        var restored = FinanceBankAccountService.RestoreBankCommandResult(command);
+        Assert.False(restored.Resource!.IsActive);
+        Assert.Equal(JsonSerializer.Serialize(result, FinanceJson.CreateOptions()), JsonSerializer.Serialize(restored, FinanceJson.CreateOptions()));
+    }
+
     [Fact]
     public void Facts_digest_normalizes_iban_only_and_binds_old_new_and_exact_reason_without_retaining_them()
     {

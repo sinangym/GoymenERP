@@ -76,7 +76,7 @@ public sealed partial class FinanceBankAccountService
     {
         if (proof is null || result.Outcome != CommandOutcome.Succeeded || result.IsReplay || result.Resource is not { } resource
             || result.Issues is null || result.Issues.Count != 0 || proof.CompanyId == Guid.Empty || proof.AccountId == Guid.Empty
-            || resource.CompanyId != proof.CompanyId || resource.Id != proof.AccountId || !resource.IsActive
+            || resource.CompanyId != proof.CompanyId || resource.Id != proof.AccountId
             || string.IsNullOrWhiteSpace(proof.ChangeProposedBy) || proof.ChangeProposedAtUtc.Offset != TimeSpan.Zero
             || proof.ProposalVersion <= 1 || !IsDigest(proof.PayloadHash) || !IsDigest(proof.FactsDigest)
             || (proof.CommandName == ProposeIbanChangeCommand
