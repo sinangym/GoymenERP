@@ -3,6 +3,7 @@ using System.Transactions;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
+using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
@@ -128,7 +129,7 @@ public sealed partial class FinanceBankAccountSqlServerRelationalAcceptanceTests
             new("SENTETIK safety",Currency,"SENTETIK bank","SENTETIK term",false),default);Assert.Equal(CommandOutcome.Succeeded,answer.Outcome);return answer.Resource!.Id;
     }
     private static AuditEventDraft BankSafetyDraft(Run run,Guid id)=>new(CompanyA,"finance.bank-account.approved.v1","Finance.BankAccount",id.ToString("D"),"Approve",1,2,
-        "User",Approver,"finance.bank-account.approve",[],"{}","{}","SENTETIK caller draft",null,GoymenERP.Modules.Audit.Domain.Events.AuditAiInvolvement.None,null,"Web",null,null,run.Correlation,null,"SENTETIK caller");
+        "User",Approver,"finance.bank-account.approve",[],"{}","{}","SENTETIK caller draft",null,AuditAiInvolvement.None,null,"Web",null,null,run.Correlation,null,"SENTETIK caller");
 
     // Real Finance SQL/store/writer/audit; only permission/currency ports and the concurrency/rollback faults are controlled.
     private sealed class BankSafetyScope:IAsyncDisposable
