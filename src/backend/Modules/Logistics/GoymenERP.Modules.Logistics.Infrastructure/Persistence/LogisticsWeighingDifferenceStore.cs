@@ -8,6 +8,7 @@ using GoymenERP.Modules.Logistics.Domain.Loading;
 using GoymenERP.Modules.Logistics.Domain.WeighingDifferences;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 
@@ -21,7 +22,8 @@ public sealed class LogisticsWeighingDifferenceStore(
     LogisticsDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IAuditTransactionWriterV1? auditWriter = null)
     : ILogisticsWeighingDifferenceStoreV1, ILogisticsWeighingDifferenceReadPortV1
 {
     private const string EntityType = "Logistics.WeighingDifference";
@@ -63,27 +65,33 @@ public sealed class LogisticsWeighingDifferenceStore(
             || !string.Equals(record.RecordedBy, envelope.ActorId.Trim(), StringComparison.Ordinal))
             throw Refused(LogisticsStoreCodes.CompanyContextMismatch, "Kantar farki kaydi aktif sirketin yeni kaydi degil.");
 
+        RequireOwnedEntry();
+        Task Fence(CancellationToken token) => FenceAsync(companyId, beforeCommit, token);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         try
         {
+            await Fence(cancellationToken);
             var keyHash = LogisticsStore.IdempotencyKeyHash(envelope.IdempotencyKey);
             var replay = await FindAttemptAsync(LogisticsWeighingDifferenceCommandsV1.Record, keyHash, cancellationToken);
+            await Fence(cancellationToken);
             if (replay is not null)
             {
                 RequireSameAttempt(replay, envelope.ActorId.Trim(), requestHash);
                 var restored = RestoreResult(replay.ResultJson);
-                await beforeCommit(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
+                await CompleteOwnedAsync(transaction, Fence, cancellationToken);
                 return new(restored, LogisticsWriteOutcome.Replayed, replay.CorrelationId);
             }
 
-            if (await dbContext.WeighingDifferences.AsNoTracking()
+            var exists = await dbContext.WeighingDifferences.AsNoTracking()
                 .AnyAsync(item => item.DispatchNoteId == record.DispatchNoteId || item.RecordId == record.RecordId,
-                    cancellationToken))
+                    cancellationToken);
+            await Fence(cancellationToken);
+            if (exists)
                 throw Refused(LogisticsWeighingDifferenceCodesV1.AlreadyRecorded,
                     "Irsaliye icin kantar farki kaydi zaten var.");
 
             var current = await ReadSourceCoreAsync(record.DispatchNoteId, cancellationToken);
+            await Fence(cancellationToken);
             if (current is null || !SameSource(current, expectedSource))
                 throw Refused(LogisticsStoreCodes.ConcurrentChange,
                     "Irsaliye kantar farki degerlendirmesinden sonra degisti; hicbir sey kaydedilmedi.");
@@ -103,16 +111,14 @@ public sealed class LogisticsWeighingDifferenceStore(
                     ? "Kantar farki kaydedildi; onay bekliyor, stok etkisi uretilmedi"
                     : "Kantar farki kaydedildi; onay gerekmiyor, stok etkisi uretilmedi");
 
-            await beforeCommit(cancellationToken);
+            await Fence(cancellationToken);
             await SaveAsync(cancellationToken);
-            await beforeCommit(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            await CompleteOwnedAsync(transaction, Fence, cancellationToken);
             return new(record, LogisticsWriteOutcome.Recorded, envelope.CorrelationId);
         }
         catch (Exception exception)
         {
-            await RollbackAsync(transaction, cancellationToken);
-            dbContext.ChangeTracker.Clear();
+            await AbortOwnedAsync(transaction);
             if (IsDeadlockVictim(exception)) throw LostSerializationRead(exception);
             throw;
         }
@@ -131,24 +137,29 @@ public sealed class LogisticsWeighingDifferenceStore(
         ArgumentNullException.ThrowIfNull(beforeCommit);
         var companyId = RequireCompany();
 
+        RequireOwnedEntry();
+        Task Fence(CancellationToken token) => FenceAsync(companyId, beforeCommit, token);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         try
         {
+            await Fence(cancellationToken);
             var keyHash = LogisticsStore.IdempotencyKeyHash(envelope.IdempotencyKey);
             var replay = await FindAttemptAsync(command, keyHash, cancellationToken);
+            await Fence(cancellationToken);
             if (replay is not null)
             {
                 RequireSameAttempt(replay, envelope.ActorId.Trim(), requestHash);
                 var restored = RestoreResult(replay.ResultJson);
-                await beforeCommit(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
+                await CompleteOwnedAsync(transaction, Fence, cancellationToken);
                 return new(restored, LogisticsWriteOutcome.Replayed, replay.CorrelationId);
             }
 
             var row = await dbContext.WeighingDifferences.SingleOrDefaultAsync(item => item.RecordId == recordId,
-                    cancellationToken)
-                ?? throw Refused(LogisticsWeighingDifferenceCodesV1.NotFound, "Kantar farki kaydi bulunamadi.");
+                    cancellationToken);
+            await Fence(cancellationToken);
+            if (row is null) throw Refused(LogisticsWeighingDifferenceCodesV1.NotFound, "Kantar farki kaydi bulunamadi.");
             var record = await RestoreAsync(row, cancellationToken);
+            await Fence(cancellationToken);
             var beforeVersion = record.Version;
             mutate(record, timeProvider.GetUtcNow());
             row.Status = (int)record.Status;
@@ -159,16 +170,14 @@ public sealed class LogisticsWeighingDifferenceStore(
             Audit(envelope, record, "logistics.weighing-difference.approved.v1", "Approve", beforeVersion,
                 "Kantar farki onaylandi; stok etkisi uretilmedi");
 
-            await beforeCommit(cancellationToken);
+            await Fence(cancellationToken);
             await SaveAsync(cancellationToken);
-            await beforeCommit(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            await CompleteOwnedAsync(transaction, Fence, cancellationToken);
             return new(record, LogisticsWriteOutcome.Recorded, envelope.CorrelationId);
         }
         catch (Exception exception)
         {
-            await RollbackAsync(transaction, cancellationToken);
-            dbContext.ChangeTracker.Clear();
+            await AbortOwnedAsync(transaction);
             if (IsDeadlockVictim(exception)) throw LostSerializationRead(exception);
             throw;
         }
@@ -402,11 +411,45 @@ public sealed class LogisticsWeighingDifferenceStore(
         }
     }
 
-    private static async Task RollbackAsync(Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction,
-        CancellationToken cancellationToken)
+    // Refuse before owning cleanup: another caller's transaction, changes and audit drafts are untouched.
+    private void RequireOwnedEntry()
     {
-        try { await transaction.RollbackAsync(cancellationToken); }
-        catch { }
+        if (auditWriter is null || System.Transactions.Transaction.Current is not null
+            || !dbContext.Database.IsRelational() || dbContext.Database.CurrentTransaction is not null
+            || dbContext.ChangeTracker.HasChanges() || auditWriter.HasPendingDrafts)
+            throw Refused(LogisticsWeighingDifferenceCodesV1.Unavailable,
+                "Kantar farki komutu temiz, sahipli bir islem gerektirir.");
+    }
+
+    private async Task FenceAsync(Guid companyId, Func<CancellationToken, Task> freshAuthority, CancellationToken token)
+    {
+        if (RequireCompany() != companyId) throw Refused(LogisticsStoreCodes.CompanyContextMismatch, "Aktif sirket degisti.");
+        await freshAuthority(token);
+        if (RequireCompany() != companyId) throw Refused(LogisticsStoreCodes.CompanyContextMismatch, "Aktif sirket degisti.");
+    }
+
+    private async Task CompleteOwnedAsync(IDbContextTransaction transaction, Func<CancellationToken, Task> fence,
+        CancellationToken token)
+    {
+        await fence(token); // SaveChanges may already have flushed the same scoped collector through its interceptor.
+        if (auditWriter!.HasPendingDrafts)
+        {
+            await auditWriter.WritePendingAsync(transaction.GetDbTransaction(), token);
+            await fence(token);
+        }
+        if (auditWriter.HasPendingDrafts) throw new InvalidOperationException("Pending weighing-difference audit drafts.");
+        await fence(token);
+        await transaction.CommitAsync(token);
+    }
+
+    private async Task AbortOwnedAsync(IDbContextTransaction transaction)
+    {
+        try { await transaction.RollbackAsync(CancellationToken.None); }
+        finally
+        {
+            try { await transaction.DisposeAsync(); }
+            finally { dbContext.ChangeTracker.Clear(); auditWriter!.DiscardPending(); }
+        }
     }
 
     private static bool IsDeadlockVictim(Exception exception) =>

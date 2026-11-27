@@ -2,6 +2,7 @@ using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Logistics.Domain.Loading;
 using GoymenERP.Modules.Logistics.Domain.WeighingDifferences;
@@ -10,6 +11,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -66,10 +68,15 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             var source = (await scope.Store.ReadSourceAsync(note))!;
             var record = KilogramRecord(run, source);
             recordId = record.RecordId;
-            var calls = 0;
+            var saved = false;
             await Assert.ThrowsAsync<InvalidOperationException>(() => scope.Store.StoreAsync(run.Envelope("kg-proof-loss"), Hash("kg-source"), record, source,
-                _ => ++calls == 2 ? throw new InvalidOperationException("SENTETIK proof lost after save") : Task.CompletedTask));
-            Assert.Equal(2, calls);
+                _ =>
+                {
+                    saved = scope.Context.ChangeTracker.Entries<WeighingDifferenceRecordRow>().Any(row => row.State == EntityState.Unchanged);
+                    return saved ? throw new InvalidOperationException("SENTETIK proof lost after save") : Task.CompletedTask;
+                }));
+            Assert.True(saved);
+            Assert.Empty(scope.Context.ChangeTracker.Entries()); Assert.False(scope.Writer.HasPendingDrafts);
         }
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.WeighingDifferences WHERE RecordId=@id", ("@id", recordId)));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.WeighingDifferenceAttempts WHERE RecordId=@id", ("@id", recordId)));
@@ -129,19 +136,25 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             source.EnteredBy.Append(run.Actor), source.EnteredByComplete, run.Actor, DateTimeOffset.UtcNow, allocation);
     }
 
-    private static KilogramStoreScope KilogramStore(Run run, Guid companyId)
+    private static KilogramStoreScope KilogramStore(Run run, Guid companyId, bool interceptAudit = true)
     {
-        var company = new CompanyContext(); company.Set(companyId);
-        var collector = new AuditEventCollector();
-        var context = new LogisticsDbContext(new DbContextOptionsBuilder<LogisticsDbContext>()
-            .UseSqlServer(run.Factory.DatabaseConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", LogisticsDbContext.Schema))
-            .AddInterceptors(new AuditSaveChangesInterceptor(collector, company)).Options, company);
-        return new(context, new LogisticsWeighingDifferenceStore(context, company, collector, TimeProvider.System));
+        var auditScope = run.Factory.Services.CreateScope();
+        var company = auditScope.ServiceProvider.GetRequiredService<ICompanyContext>(); company.Set(companyId);
+        var collector = auditScope.ServiceProvider.GetRequiredService<AuditEventCollector>();
+        var writer = auditScope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
+        var options = new DbContextOptionsBuilder<LogisticsDbContext>()
+            .UseSqlServer(run.Factory.DatabaseConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", LogisticsDbContext.Schema));
+        if (interceptAudit) options.AddInterceptors(new AuditSaveChangesInterceptor(collector, company));
+        var context = new LogisticsDbContext(options.Options, company);
+        return new(context, new LogisticsWeighingDifferenceStore(context, company, collector, TimeProvider.System, writer), auditScope);
     }
-    private sealed class KilogramStoreScope(LogisticsDbContext context, LogisticsWeighingDifferenceStore store) : IAsyncDisposable
+    private sealed class KilogramStoreScope(LogisticsDbContext context, LogisticsWeighingDifferenceStore store, IServiceScope auditScope) : IAsyncDisposable
     {
         public LogisticsDbContext Context => context;
         public LogisticsWeighingDifferenceStore Store => store;
-        public ValueTask DisposeAsync() => context.DisposeAsync();
+        public IAuditTransactionWriterV1 Writer => auditScope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
+        public AuditEventCollector Collector => auditScope.ServiceProvider.GetRequiredService<AuditEventCollector>();
+        public ICompanyContext Company => auditScope.ServiceProvider.GetRequiredService<ICompanyContext>();
+        public async ValueTask DisposeAsync() { await context.DisposeAsync(); auditScope.Dispose(); }
     }
 }
