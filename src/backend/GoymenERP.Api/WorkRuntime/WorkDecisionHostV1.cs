@@ -42,7 +42,9 @@ public sealed record WorkDecisionPreviewV1(Guid CompanyId, string Kind, Guid Ite
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     WorkLogisticsPlanExcessPreviewV1? LogisticsPlanExcess = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    WorkInventoryTransferOveragePreviewV1? InventoryTransferOverage = null);
+    WorkInventoryTransferOveragePreviewV1? InventoryTransferOverage = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    WorkLogisticsWeighingDifferencePreviewV1? LogisticsWeighingDifference = null);
 public sealed record WorkDecisionResultV1(Guid CompanyId, string Kind, Guid ItemId, string State, bool Replayed, string OriginalCorrelationId);
 public sealed class WorkDecisionException(int status, string? code = null, bool replayed = false, string? original = null) : Exception(code)
 {
@@ -227,7 +229,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
                 && !(kind == ManufacturingPlan && rules.Any(rule => rule.RuleCode == "manufacturing.plan-reapproval-after-order-cancel")),
             snapshot.ManufacturingPlanReapproval, snapshot.InventoryTransferLoss,
             snapshot.CounterpartyTaxIdentityChange, snapshot.CounterpartyLegalNameChange, logisticsPreview,
-            kind == InventoryTransferOverage ? OveragePreview(snapshot) : null);
+            kind == InventoryTransferOverage ? OveragePreview(snapshot) : null,
+            kind == LogisticsWeighingDifference ? WeighingHumanPreview(snapshot.LogisticsWeighingDifferenceProof!) : null);
     }
 
     public async Task<WorkDecisionResultV1> DecideAsync(string kind, Guid id, WorkDecisionRequestV1 request, string key, CancellationToken token)

@@ -2,13 +2,36 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using GoymenERP.BuildingBlocks.Work;
+using GoymenERP.Api.Endpoints;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Logistics.Domain.WeighingDifferences;
 
 namespace GoymenERP.Api.WorkRuntime;
 
+/// <summary>Stored owner facts for this authorized human GET only. Decimal text follows the native weighing wire.</summary>
+public sealed record WorkLogisticsWeighingDifferencePreviewV1(Guid DispatchNoteId, Guid InstructionId,
+    string TheoreticalKg, string ScaleKg, string DifferenceKg, string BandLevel, string? WarningBandPercent,
+    string? ApprovalBandPercent, string? BlockBandPercent, string TotalExcessKg, string? ApprovalRatePercent,
+    string Decision, IReadOnlyList<DispatchProductKilogramsWire> Products, IReadOnlyList<string> EnteredBy,
+    bool EnteredByComplete, string RecordedBy, DateTimeOffset RecordedAtUtc);
+
 public sealed partial class WorkDecisionHostV1
 {
+    // Format the validated stored proof; no live owner read, valuation or recalculation enters the preview.
+    private static WorkLogisticsWeighingDifferencePreviewV1 WeighingHumanPreview(WorkLogisticsWeighingDifferenceProofV1 proof)
+    {
+        static string? Optional(decimal? value) => value is { } number ? WorkInboxRulesV1.Decimal(number) : null;
+        return new(proof.DispatchNoteId, proof.InstructionId, WorkInboxRulesV1.Decimal(proof.TheoreticalKg),
+            WorkInboxRulesV1.Decimal(proof.ScaleKg), WorkInboxRulesV1.Decimal(proof.DifferenceKg), proof.BandLevel,
+            Optional(proof.WarningBandPercent), Optional(proof.ApprovalBandPercent), Optional(proof.BlockBandPercent),
+            WorkInboxRulesV1.Decimal(proof.TotalExcessKg), Optional(proof.ApprovalRatePercent), proof.Decision,
+            proof.Products.Select(product => new DispatchProductKilogramsWire(product.ProductId, WorkInboxRulesV1.Decimal(product.NoteKg),
+                WorkInboxRulesV1.Decimal(product.ScaleKg), WorkInboxRulesV1.Decimal(product.DifferenceKg),
+                WorkInboxRulesV1.Decimal(product.RemainingPhysicalKg), WorkInboxRulesV1.Decimal(product.PhysicallyCoveredKg),
+                WorkInboxRulesV1.Decimal(product.ExcessKg), product.TargetLineNo)).ToArray(),
+            proof.EnteredBy.ToArray(), proof.EnteredByComplete, proof.RecordedBy, proof.RecordedAtUtc);
+    }
+
     private static bool PositiveWeighingVersion(string? value) => int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var version)
         && version > 0 && version.ToString(CultureInfo.InvariantCulture) == value;
 

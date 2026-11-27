@@ -110,6 +110,52 @@ public sealed class WorkLogisticsWeighingDifferenceDecisionHostTests
         Assert.DoesNotContain("logisticsWeighingDifferenceProof", JsonSerializer.Serialize(await run.Host.PreviewAsync(run.Source.Kind, Record, default), options));
     }
 
+    [Fact]
+    public async Task Authorized_human_preview_exposes_exact_stored_totals_bands_products_and_complete_actors_as_native_decimal_text()
+    {
+        var run = new Rig();
+        run.Source.Proof = Proof() with { BandLevel = "Warning", WarningBandPercent = 1.25m, ApprovalBandPercent = 2.5m, BlockBandPercent = 5m };
+        var preview = await run.Host.PreviewAsync(run.Source.Kind, Record, default);
+        var human = Assert.IsType<WorkLogisticsWeighingDifferencePreviewV1>(preview.LogisticsWeighingDifference);
+        Assert.Equal((Note, Instruction, "100", "110", "10", "Warning", "1.25", "2.5", "5", "10", "5", "ApprovalRequired"),
+            (human.DispatchNoteId, human.InstructionId, human.TheoreticalKg, human.ScaleKg, human.DifferenceKg, human.BandLevel,
+                human.WarningBandPercent, human.ApprovalBandPercent, human.BlockBandPercent, human.TotalExcessKg, human.ApprovalRatePercent, human.Decision));
+        var product = Assert.Single(human.Products);
+        Assert.Equal((Product, "100", "110", "10", "0", "0", "10", (int?)1),
+            (product.ProductId, product.NoteKg, product.ScaleKg, product.DifferenceKg, product.RemainingPhysicalKg,
+                product.PhysicallyCoveredKg, product.ExcessKg, product.TargetLineNo));
+        Assert.Equal([Enterer, Maker], human.EnteredBy); Assert.True(human.EnteredByComplete);
+        Assert.Equal((Maker, At), (human.RecordedBy, human.RecordedAtUtc)); Assert.Null(run.Owner.Captured);
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(preview, options));
+        var wire = document.RootElement.GetProperty("logisticsWeighingDifference");
+        Assert.Equal(17, wire.EnumerateObject().Count()); Assert.Equal(8, wire.GetProperty("products")[0].EnumerateObject().Count());
+        Assert.Equal(JsonValueKind.String, wire.GetProperty("theoreticalKg").ValueKind);
+        Assert.DoesNotContain("kilogramAllocationJson", wire.GetRawText());
+        Assert.DoesNotContain("logisticsWeighingDifferenceProof", JsonSerializer.Serialize(preview, options));
+        var snapshotWire = JsonSerializer.Serialize(await run.Source.ReadDecisionAsync(new(Company, Actor, "SENTETIK", null), Record, default), options);
+        Assert.DoesNotContain("logisticsWeighingDifference", snapshotWire);
+    }
+
+    [Fact]
+    public async Task Human_projection_is_omitted_for_legacy_foreign_kinds_and_cannot_be_injected_by_a_foreign_source()
+    {
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var oldPreview = new WorkDecisionPreviewV1(Company, WorkDecisionHostV1.OpeningCost, Record, "SENTETIK", "1", true, true, [], []);
+        Assert.DoesNotContain("logisticsWeighingDifference", JsonSerializer.Serialize(oldPreview, options));
+        Assert.DoesNotContain("logisticsWeighingDifference", JsonSerializer.Serialize(new WorkDecisionRequestV1("1", true, null), options));
+        var run = new Rig(); run.Source.Kind = WorkDecisionHostV1.OpeningCost;
+        Assert.Equal(503, (await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.PreviewAsync(run.Source.Kind, Record, default))).Status);
+        Assert.Null(run.Owner.Captured);
+        run.Source.Kind = WorkDecisionHostV1.LogisticsWeighingDifference;
+        var preview = await run.Host.PreviewAsync(run.Source.Kind, Record, default);
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(preview, options));
+        var human = document.RootElement.GetProperty("logisticsWeighingDifference");
+        Assert.Equal(JsonValueKind.Null, human.GetProperty("warningBandPercent").ValueKind);
+        Assert.Equal(JsonValueKind.Null, human.GetProperty("approvalBandPercent").ValueKind);
+        Assert.Equal(JsonValueKind.Null, human.GetProperty("blockBandPercent").ValueKind);
+    }
+
     private sealed class Rig
     {
         public readonly Source Source = new(); public readonly Delegations Delegations = new(); public readonly Owner Owner;
@@ -126,7 +172,7 @@ public sealed class WorkLogisticsWeighingDifferenceDecisionHostTests
     private sealed class Source : IWorkApprovalDecisionSourceV1
     {
         public string Version = "1"; public bool Pending = true; public WorkLogisticsWeighingDifferenceProofV1? Proof = WorkLogisticsWeighingDifferenceDecisionHostTests.Proof();
-        public string Module => "logistics"; public string Kind => WorkDecisionHostV1.LogisticsWeighingDifference;
+        public string Module => "logistics"; public string Kind { get; set; } = WorkDecisionHostV1.LogisticsWeighingDifference;
         public string ApproverPermission => LogisticsPermissionManifestV1.WeighingDifferencesApprove;
         public Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context, Guid itemId, CancellationToken token) =>
             Task.FromResult<WorkApprovalDecisionSnapshotV1?>(new(Company, new(Module, Kind, Record, "SENTETIK-note", At,
