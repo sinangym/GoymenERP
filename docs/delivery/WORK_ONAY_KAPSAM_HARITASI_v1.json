@@ -1274,7 +1274,17 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command. Native safety prerequisite source now present; Work purpose/UI still absent; b1 API/unit and b4 controlled host terminal evidence are recorded separately, not runtime acceptance.",
+      "latest_native_safety_evidence": {
+        "scope": "Native PartyCreditLimit approve/reject safety5080752e0637a77b2364d0c9df9dcacaccfa052c/root2b0b99f05: existing owned Serializable/Audit/fresh company-actor-permission fences, clean-entry caller preservation, owned cleanup and one readonly original-key winner read reused. FNS-D27a maker rule and FNS-D56/57 single-step Set/Remove unchanged. Flow40 Work purpose/UI is not implemented by this prerequisite.",
+        "review": "Full6-file bounded independent source review: no concrete P0/P1/P2; notK3.",
+        "tests": [
+          "tests/GoymenERP.Finance.UnitTests/FinancePartyCreditLimitApprovalSafetyTests.cs",
+          "tests/GoymenERP.Api.IntegrationTests/FinanceCreditLimitSqlServerRelationalAcceptanceTests.ApprovalSafety.cs"
+        ],
+        "local_verification": "Exactb1cacee89f805a05959b5b79af034270b80b8103: API Release build0errors/0warnings199.2839662s; Product1185/1185PASS0skip18.5318384s, Finance2063/2063PASS0skip18.2867623s, Work187/187PASS0skip10.6533415s. Root independently parsed TRX XML counters; Finance11new native safety cases and Price owner/ROL-D18 cases included. b1 integration-source compile failed xUnit2029; original failure retained. Exactb4b79ec816e7525f8fd69960bbf6b72d63b7230d: complete API integration-source build and controlled DecisionHost/FinanceShell/package-purpose filter551/551PASS0skip75.7390616s, including29PriceList host cases; root independently parsed TRX XML counters. Distinct fromb1 API/unit evidence and its retained xUnit2029 compile failure. Native and new SQL test sources compiled; actualSQL/HTTP/browser/fullCI/K3 NOT_RUN. ActualSQL NOT_RUN.",
+        "sql": "7new Facts source-registered, actualSQL NOT_RUN"
+      }
     },
     {
       "flow": 41,
@@ -1868,8 +1878,9 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Product package-standard purpose/UI source paired atcc379/agent2f6, not an accepted flow. Explicit human date and native mandatory4000 reason; unchanged native version and full5000+5000 evidence. New Node batch751PASS/1FAIL0skip (collapsed-reference fixture); correction/rerun/tsc/lint and C# publication warm checks pending. ActualSQL/HTTP/browser/fullCI/K3 remain pending.",
-      "source_evidence": "Root2852361f4/agent406a48718ffcd6dee6dcc8b619935d1a59de9a9e adds exact immutable table source and private command/key/actor/company/decision/attempt/header receipt; old keys do not remap to later pending versions. Full12-file bounded peer found no concrete P0/P1/P2, notK3. Root3dd66 API0/0 and Product1161PASS0skip; separatebe282 full integration-source warm compile/521DecisionHost/FinanceRegistryPASS0skip includes23Product cases, not added to Product1161. Native6+postcommit2+purpose1 SQL Facts NOT_RUN. Paired19-file2f6 source peer has no concrete P0/P1/P2, notK3; PRODUCT-PRICE-LISTS1.1 standalone CompanyWide approve preserves native links and no grants/activation. Source count29native=29frontend, staged0 atcc379; runtime NOT_RUN."
+      "limitation": "Paired package purpose source, not accepted runtime. Agent ad41b1926b91d33f52dcff6db9fcd38411c7ec83 (root98c8aa9da308aa4812f9aa73b4a7207ef02f179a) changes only the new Inbox fixture: open the existing explanation toggle; native reference assertion unchanged. Full Inbox48/48PASS0skip17.15s, fulltsc0/50.49s,13explicitlint0/0diagnostics. Original2f6 batch751PASS/1FAIL/7520skip retained; six unchanged files704PASS at2f6 are separate-head evidence, not752PASS atad41. At2f6 fulltsc0/51.38s and13lint0 also terminal. Exact98c8aa9da308aa4812f9aa73b4a7207ef02f179a: Product1174/1174PASS0skip and selected DecisionHost/registry522/522PASS0skip, API/integration-source builds0errors/0warnings. This is before staged price-list purpose/ROL-D18 and Finance limit safety, not evidence for their later code. ActualSQL/HTTP/browser/fullCI/K3 remain pending.",
+      "source_evidence": "Root2852361f4/agent406a48718ffcd6dee6dcc8b619935d1a59de9a9e adds exact immutable table source and private command/key/actor/company/decision/attempt/header receipt; old keys do not remap to later pending versions. Full12-file bounded peer found no concrete P0/P1/P2, notK3. Root3dd66 API0/0 and Product1161PASS0skip; separatebe282 full integration-source warm compile/521DecisionHost/FinanceRegistryPASS0skip includes23Product cases, not added to Product1161. Native6+postcommit2+purpose1 SQL Facts NOT_RUN. Paired19-file2f6 source peer has no concrete P0/P1/P2, notK3; PRODUCT-PRICE-LISTS1.1 standalone CompanyWide approve preserves native links and no grants/activation. Source count29native=29frontend, staged0 atcc379; runtime NOT_RUN.",
+      "historical_limitation": "Product package-standard purpose/UI source paired atcc379/agent2f6, not an accepted flow. Explicit human date and native mandatory4000 reason; unchanged native version and full5000+5000 evidence. New Node batch751PASS/1FAIL0skip (collapsed-reference fixture); correction/rerun/tsc/lint and C# publication warm checks pending. ActualSQL/HTTP/browser/fullCI/K3 remain pending."
     },
     {
       "flow": 64,
@@ -1883,19 +1894,35 @@
       "approver_proposal": "SATM (aynı kişi olabilir), GM",
       "duration_cell": "2 iş günü",
       "decision_note": "KARARLI (ROL-D18). 🟡 kabul edildi (ROL-D18).",
-      "candidate_inbox_sources": [],
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/WorkInbox/ProductWorkInboxSourcesV1.cs",
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/WorkInbox/ProductPriceListVersionWorkInboxSourceV1.Decision.cs",
+        "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.ProductPriceList.cs"
+      ],
       "candidate_tests": [
         "tests/GoymenERP.Product.UnitTests/ProductPriceListPublishSafetyTests.cs",
-        "tests/GoymenERP.Api.IntegrationTests/ProductPriceListSqlServerRelationalAcceptanceTests.PublishSafety.cs"
+        "tests/GoymenERP.Api.IntegrationTests/ProductPriceListSqlServerRelationalAcceptanceTests.PublishSafety.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkProductPriceListDecisionHostTests.cs",
+        "tests/GoymenERP.Product.UnitTests/ProductWorkInboxSourcesV1Tests.PriceDecision.cs",
+        "tests/GoymenERP.Work.UnitTests/WorkPriceListMakerExceptionTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/ProductPriceListSqlServerRelationalAcceptanceTests.WorkPurpose.cs",
+        "tests/GoymenERP.Api.IntegrationTests/ProductPriceListSqlServerRelationalAcceptanceTests.RolD18.cs"
       ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native Publish safety source only; this does not add a30th paired Work purpose. Exact3b8cc API0/0, Product1174PASS0skip (13new cases), integration-source build0/0;7SQL Facts compiled NOT_RUN. P2 unresolved401/403 and caller-preserving await entry source-closed. ActualSQL/HTTP/browser/fullCI/K3 remain pending."
+      "limitation": "Staged native Work purpose, not paired frontend or accepted runtime. Native staged product.price-list-version.v1 source8cd6de9d5bf837328fdce4040fff542e082e1849/rootb7d807ce1; facade4arg compile correction6deaa242358f95ab091c589c29032e37a28a1516/roota04ec0ebc; ROL-D18 correction1819933ac010da8c6f2a84bbb33c5391da23f9f1/root272cc4727. Human11field price preview requires existing companywide Read+Publish; prices remain absent from inbox/private proof/public native receipt JSON. Authorized creator/editor publication is permitted; preparer history and immutable prior terminal409 receipts remain unchanged. Earlier creator/all-editor prohibition tests are superseded by ROL-D18, not silently removed. Exact-kind Work Excludes exception does not affect package-standard SAT-D416 or other kinds. No frontend publication or grant. b1 API/unit and b4 controlled host terminal evidence remain separate heads; actualSQL/HTTP/browser/fullCI/K3 NOT_RUN.",
+      "historical_limitation": "Native Publish safety source only; this does not add a30th paired Work purpose. Exact3b8cc API0/0, Product1174PASS0skip (13new cases), integration-source build0/0;7SQL Facts compiled NOT_RUN. P2 unresolved401/403 and caller-preserving await entry source-closed. ActualSQL/HTTP/browser/fullCI/K3 remain pending.",
+      "latest_source_evidence": {
+        "scope": "Native staged product.price-list-version.v1 source8cd6de9d5bf837328fdce4040fff542e082e1849/rootb7d807ce1; facade4arg compile correction6deaa242358f95ab091c589c29032e37a28a1516/roota04ec0ebc; ROL-D18 correction1819933ac010da8c6f2a84bbb33c5391da23f9f1/root272cc4727. Human11field price preview requires existing companywide Read+Publish; prices remain absent from inbox/private proof/public native receipt JSON. Authorized creator/editor publication is permitted; preparer history and immutable prior terminal409 receipts remain unchanged. Earlier creator/all-editor prohibition tests are superseded by ROL-D18, not silently removed. Exact-kind Work Excludes exception does not affect package-standard SAT-D416 or other kinds. No frontend publication or grant.",
+        "sql": "7native PublishSafety existingFacts (one maker assertion renamed for ROL-D18)+3new WorkPurpose/RolD18 Facts; actualSQL NOT_RUN",
+        "local_verification": "Exactb1cacee89f805a05959b5b79af034270b80b8103: API Release build0errors/0warnings199.2839662s; Product1185/1185PASS0skip18.5318384s, Finance2063/2063PASS0skip18.2867623s, Work187/187PASS0skip10.6533415s. Root independently parsed TRX XML counters; Finance11new native safety cases and Price owner/ROL-D18 cases included. b1 integration-source compile failed xUnit2029; original failure retained. Exactb4b79ec816e7525f8fd69960bbf6b72d63b7230d: complete API integration-source build and controlled DecisionHost/FinanceShell/package-purpose filter551/551PASS0skip75.7390616s, including29PriceList host cases; root independently parsed TRX XML counters. Distinct fromb1 API/unit evidence and its retained xUnit2029 compile failure. Native and new SQL test sources compiled; actualSQL/HTTP/browser/fullCI/K3 NOT_RUN. ActualSQL NOT_RUN."
+      }
     }
   ],
   "closure": "For each flow verify real inbox listing, owner decision, company/scope, maker-checker exceptions, expected version, replay and audit. Do not replace owner rules with proposal cells.",
-  "source_extension": "Atcc379ff28f74d5810ed51ad537ebece821440d72 exact source sets match29native/29paired frontend kinds, including Product package-standard; staged0. Native Product Publish safety is not a30th purpose. verified_runtime_flows stays0; all64 actualSQL/HTTP/browser/CI/K3 acceptances remain NOT_RUN. Earlier exact-head evidence stays separate; new Node batch751PASS/1FAIL is not752PASS."
+  "source_extension": "Atb1cacee89f805a05959b5b79af034270b80b8103 source-derived sets:30native/29paired frontend; only product.price-list-version.v1 staged, no unknown frontend kind. Historicalcc379 exact29/29 remains valid only at that head. verified_runtime_flows=0; all64 semantics/runtime remain NOT_VERIFIED/NOT_RUN.",
+  "historical_source_extension": "Atcc379ff28f74d5810ed51ad537ebece821440d72 exact source sets match29native/29paired frontend kinds, including Product package-standard; staged0. Native Product Publish safety is not a30th purpose. verified_runtime_flows stays0; all64 actualSQL/HTTP/browser/CI/K3 acceptances remain NOT_RUN. Earlier exact-head evidence stays separate; new Node batch751PASS/1FAIL is not752PASS."
 }
