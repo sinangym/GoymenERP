@@ -53,6 +53,7 @@ public static class TrainCompletionHostComposition
         services.AddScoped<IPostedPurchaseShipmentCostReaderV1, PurchasePostedCostAttributionStoreV1>();
         services.AddScoped<IAccountingInventoryCostStoreV1, AccountingInventoryCostStoreV1>();
         services.AddScoped<AccountingInventoryCostServiceV1>();
+        services.AddScoped<IAccountingInventoryCostDecisionReadV1>(provider => provider.GetRequiredService<AccountingInventoryCostServiceV1>());
         services.AddWorkInboxConsumer<AccountingInventoryCostInboxConsumerV1>(AccountingInventoryCostInboxV1.ConsumerName,
             AccountingInventoryCostInboxV1.Subscriptions.ToArray());
         services.AddInventoryPurchaseInvoiceCostsV1();
