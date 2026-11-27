@@ -1228,7 +1228,7 @@
       "business_acceptance": [
         "Ticari fatura ve CSV sırası ters olsa da bir borç/alacak; uyuşmayan tutar sessiz birleşmez; iade/iptal bir kez."
       ],
-      "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
+      "migration_owner": "Codex sales_finance_settlement; sole Finance schema writer. Reserved THROW51373 Up missing shared source receipt /51374 Down native-holder forward-fix; EF tool generation waits for heavy-check lease. No hand-written snapshot.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
       "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
       "planned_owner": "Codex backend; Claude frontend",
@@ -1239,7 +1239,28 @@
         "tests/GoymenERP.Api.IntegrationTests/FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests.cs",
         "tests/GoymenERP.Purchasing.UnitTests/PurchaseInvoiceImportAdmissionTests.cs"
       ],
-      "change_files": []
+      "change_files": [],
+      "ownership_lease": {
+        "branch": "codex/legal-open-item-identity-20261127",
+        "base_commit": "c17047bd33fa3f1051e2e6f45bfe9b4b6749a56c",
+        "scope": "Existing Finance contract/adapter/two admissions/shared legal claim policy/model and EF-generated migration/tests; no Purchasing ALS-D125 policy or money/formula changes.",
+        "throw_codes": [
+          51373,
+          51374
+        ],
+        "heavy_checks": "ROOT lease; .NET/SQL/EF not authorized to run concurrently"
+      },
+      "execution": {
+        "source_commit": "35355bd271ffee8529e0ec569ac5c0afcd927159",
+        "scope": "Four normative SQL reproduction facts: both Sales-native/CSV orders, unequal amounts and cancellation/replay/generation. Existing claim policy reused in planned fix; official number/ETTN already present in Sales native offer but not forwarded by current API adapter.",
+        "local_checks": "Test source only; RED_EXPECTED / NOT_RUN, not acceptance. No production fix or migration integrated yet.",
+        "sql": "NOT_RUN",
+        "remaining": [
+          "Existing shared receipt FK/model and native adapter admission implementation",
+          "EF generated migration and genuine SQL identity/cancellation/concurrency acceptance",
+          "Full CI/independent K3/business acceptance"
+        ]
+      }
     },
     {
       "id": "W3-URETIM/INPUT-PIECES",
@@ -1962,7 +1983,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Complete stock-count and bank-account Work purposes using existing native commands; pair their UI only after frozen backend contracts. Actual all64-flow SQL/HTTP/browser/CI/K3 acceptance remains required;21paired source kinds are not21 accepted flows.",
+      "next_action": "Verify latest paired publication and remaining owner adapters.24 paired source kinds do not close64-flow actual SQL/HTTP/browser/CI/K3 acceptance.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2065,7 +2086,7 @@
         "activation": "No grants/flags/provider changes"
       },
       "execution": {
-        "source_commit": "022f727828d3e42b608ae1542003362d76ebf6ee",
+        "source_commit": "4df90f171e986c7452a30932cee8e7855d5bc4f8",
         "implemented_kinds": [
           "inventory.opening-cost.v1",
           "finance.cash-account.v1",
@@ -2087,7 +2108,10 @@
           "logistics.plan-excess.v1",
           "inventory.transfer-overage.v1",
           "logistics.weighing-difference.v1",
-          "purchasing.supplier-return-cost-exception.v1"
+          "purchasing.supplier-return-cost-exception.v1",
+          "inventory.stock-count.v1",
+          "finance.bank-account.v1",
+          "inventory.stock-scrap.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -2102,21 +2126,22 @@
           "delegation_display_HTTP": "6 attempted, 6 host-start failures: shell authority pins deferred by train policy; NOT_ACCEPTED",
           "Sales decision frontend": "Agent source 005184 (integrated 60a3b7998): shell registry, mount and access checks 35 passed, 0 skipped; tsc/lint passed. Hosted shell authority pins remain deferred.",
           "Sales backend": "Sales.UnitTests at f4ccda30f: 2440 passed, 0 failed, 0 skipped. Existing native approval fixtures now use independent maker/checker actors under YOL-D23; negative fences preserved.",
-          "Finance latest full unit suite": "1992/1992 passed skip0 at022f727828d3e42b608ae1542003362d76ebf6ee; bank approval owned-boundary6 new cases included. Actual SQL NOT_RUN.",
+          "Finance latest full unit suite": "1995/1995 passed skip0 at6f72ea8fac37f236f673db44efa45b6f0e7b6c00; bank paired publication included. Actual SQL NOT_RUN.",
           "Sales latest full unit suite": "2469/2469 passed, 0 skipped at 324b9da8c; native order/invoice/subcontract guards included.",
           "Purchasing latest full unit suite": "1318/1318 passed skip0 at022f727828d3e42b608ae1542003362d76ebf6ee; supplier-return Work owner, native receipt provenance and paired source1.22 declaration included. Actual SQL NOT_RUN.",
-          "Latest owner/Work composition": "5ab6b3ea3 selected API98/98 passed skip0: PurchasingRequest65,Weighing31,nativeBoundary2. Clean/pending writer configured nonrelational refusals now passed. Earlier e6 API415:411PASS4FAIL remains retained; four normal-host Manufacturing/Logistics authority hash/registry failures await final pins, not waived. Later e0debba67 selected API96/96 passed skip0 (PurchasingRequest65,Weighing31); entire integration assembly including additional2 supplier rejection SQL race facts compiled. Earlier5ab nativeBoundary2 remains separate exact-source evidence.",
+          "Latest owner/Work composition": "406/406 Work/native-boundary passed skip0 at4df90f171e986c7452a30932cee8e7855d5bc4f8, including paired Scrap publication. Same572-case API batch had163AI pass/3AI fixture failures; retained failure logs. Test-only825b corrects explicit context-drift double and valid malformed-digest fixture; AI166/166 passed atfb4cc4d2d095157ec47372a7c8fcc7abccbd66e1 using unchanged4df compiled production references. Entire integration assembly compiled; actual Program factory/SQL/HTTP/browser/full CI acceptance still open.",
           "Prior failed runs": "83-run wrong-scope fixture corrected; later 93-run contained 91 pass and two failures (pure Sales declaration expectation corrected; normal HTTP authority pin remains NOT_ACCEPTED). New service fixture run1259 pass/1 failure correctly hit immutable history; fixture corrected without weakening native guards. Original logs retained. New SQL refusal fixture CS8619 at9bef fixed by separate await branches e5fd8ae07; no assertions changed. UI159 pass/1 failed test wrongly assumed no legacy route; corrected to exact existing fallback component/path and final160 passed.",
           "Manufacturing latest full unit suite": "1560/1560 passed, 0 skipped at 9bef612e9; publication/provider source included. Manufacturing module tree unchanged through 255453f72.",
           "Deferred host pins": "Earlier 78-case run at 6920c495e had 76 pass/2 normal-host authority-pin failures; retained NOT_ACCEPTED. Pins deferred to train close, no gate waived.",
           "Manufacturing Work UI": "170/170,0 skipped in9files atc900c99975690d5cf1ada22c48d157f742e97002; tsc/scopedlint exit0,one unchanged baseline warning. Whole frontend tree matches root1349d982c. Includes actual Manufacturing/loss capability, native route preservation, typed UTC frozen body and missing/wrong-capability refusals.",
-          "Inventory latest full unit suite": "2292/2292 passed skip0 at022f727828d3e42b608ae1542003362d76ebf6ee; stock-count owned-boundary8 new cases included. Actual SQL NOT_RUN.",
+          "Inventory latest full unit suite": "2322/2322 passed skip0 at4df90f171e986c7452a30932cee8e7855d5bc4f8; stock-scrap paired provider1.22/count26 publication included. Actual SQL NOT_RUN.",
           "Counterparty native identity decisions": "Paired source-delivered and403 unit cases passed skip0 at74c65ee95;12 native+6 Work SQL facts remain NOT_RUN. No role activation.",
           "Counterparty latest full unit suite": "403/403 passed skip0 at74c65ee95; human proof/source publication included.",
           "Logistics latest full unit suite": "588/588 passed skip0 ate0debba67; weighing paired publication included. Original failed fixture/stale tuple logs retained; no actual SQL acceptance.",
-          "Latest frontend": "Supplier agent53ada1a273a5007e831839d0449cfb8b2990fc66:5files287/287 passed skip0, fulltsc-b0, changed3file lint0errors0warnings; prior017 fivefiles285/fulltsc/9file lint0 retained. Root b8fb08c3b and022f entire frontend tree equals53ada. Actual browser NOT_RUN.",
+          "Latest frontend": "Scrap agentbd9d77c3e84c3e08b7346f48801eaff8a73cd8c9:8files517/517 passed skip0 in53.88s; fulltsc-b0;9changedfile lint0errors0warnings. Root76dbd4e01 entire frontend tree equal. Includes Count/Bank regression and native Count/Scrap/Bank contract tests; four unchanged financeAccounting cases from prior448 run were not rerun. Actual browser NOT_RUN.",
           "Historical API compile failure at2ba0032c8": "At2ba0032c8 integration assembly failed CS0246: nonexistent SqlServerTheory. Corrected by19a6351ee to12 existing SqlServerFact wrappers sharing unchanged assertion bodies. API host execution NOT_RUN for this increment; failure log retained.",
-          "API compile failure at022f72782": "Integration assembly failed CS0246: missing Security using for ICurrentUser in new bank SQL fixture. Test-only import00b72c031 corrects namespace; API host tests NOT_RUN in failed batch; rerun pending. Native assertions unchanged, failure log retained."
+          "API compile failure at022f72782": "Integration assembly failed CS0246: missing Security using for ICurrentUser in new bank SQL fixture. Test-only import00b72c031 corrects namespace; API host tests NOT_RUN in failed batch; rerun pending. Native assertions unchanged, failure log retained. Second00b72 compilation found wrong AuditAiInvolvement namespace/missing Audit.Persistence using.6f901 test-only references corrected both;135selected API passed. All original failure logs retained.",
+          "Inventory failed attempts retained": "62d run stopped on ambiguous JsonSerializerOptions overload;40fe test-only explicit options corrected it. Subsequent2301pass/1fail Count source fixture tried reassigning immutable resolved CompanyContext;1c2f fixes request-vs-server scope and adds Denied assertion, full2302 passed.6f72 full2321pass/1fail Scrap fixture hit same setup error; c170 same request-scope correction, full2322 passed. No production guards or existing assertions weakened; original logs retained."
         },
         "reuse": [
           "existing FinanceCashAccountService commands and durable receipts",
@@ -2560,12 +2585,10 @@
             "source_commit": "f5c09fbead7192598db865eae1b8602fb22a920d",
             "agent_source_commit": "bcd0f2b7b71e99c1f4eee9bcadb3cded53a3540d",
             "scope": "Native supplier-return approve/reject human Work purpose; company-wide OrdersApprove only, prices remain under existing disclosure. Measured approval requires explicit frozen purchase-order version separately from return version. Original immutable native receipt required, legacy current-row fallback fails closed. Staged capability1.21 false/native inbox link preserved.",
-            "local_checks": "Root f5c09 full Purchasing1318/1318 passed skip0 (10ownerSource+2nativeprovenance new rows). API assembly compilation failed xUnit2031 at new host assertion line131; selected host tests NOT_RUN.9bd87c7ef uses Assert.Single filtering overload with same predicate, rerun pending; failed log retained.",
+            "local_checks": "Root f5c09 full Purchasing1318/1318 passed skip0 (10ownerSource+2nativeprovenance new rows). API assembly compilation failed xUnit2031 at new host assertion line131; selected host tests NOT_RUN.9bd87c7ef uses Assert.Single filtering overload with same predicate, rerun pending; failed log retained.6f901 full integration assembly compiled and new33 supplier host cases passed in135selected skip0 run.",
             "sql": "2 additional Work SQL source facts inventoried; native rejection8 total facts including6 prerequisite source facts. Work rejection, legacy fallback and controlled post-save delegation loss use native store/audit/Identity SQL fixtures; approval stock-exit E2E and actual SQL execution not claimed.",
             "review": "Root complete14-file delta read including exact3-site native provenance change, JsonIgnore test, source projection, host malformed/outcome/selection tests and2SQL sources. No concrete P0/P1/P2 found; not full K3.",
             "remaining": [
-              "Combined API compile/host checks",
-              "Paired supplier-return UI/source publication",
               "Actual SQL and genuine approval/Inventory stock-exit E2E",
               "Final pins/full CI/two independent K3"
             ],
@@ -2591,7 +2614,7 @@
               "bc4f09ac0"
             ],
             "scope": "Native stock-count Record/Decide owned transaction and actual scoped audit writer safety; captured company/actor/current permission, retained label version, immutable key snapshot replay, no retry mutation after abort. Existing native command shape/reason limits preserved.",
-            "local_checks": "Inventory2292/2292 skip0 at022f; API compilation and four nonrelational refusal cases pending. Six SQL source facts, including rollback/dispose fault paths, written; actual SQL NOT_RUN.",
+            "local_checks": "Inventory2292/2292 skip0 at022f;6f901 full integration assembly compiled and4configured nonrelational boundary cases passed in135selected skip0. Six SQL source facts including cleanup failures compiled; actual SQL NOT_RUN.",
             "review": "Nonauthor native delta review found cleanup P1; bc4f nestedfinally closes it. Bounded followup found no remaining P0/P1/P2; not full K3. EF TransactionDisposed diagnostics injects a post-native-disposal fault, not an actual provider disposal failure.",
             "remaining": [
               "Work purpose/UI integration",
@@ -2638,7 +2661,7 @@
             ],
             "agent_source_commit": "53ada1a273a5007e831839d0449cfb8b2990fc66",
             "scope": "Paired supplier-return Work UI and owner source1.22 publication. Explicit purchase-order selection separate from return version; original frozen body/key/versions retained after unknown remount. Human cost withheld without existing price-read grant; native reference links preserved.",
-            "local_checks": "Supplier UI287/287,fulltsc0,lint0errors0warnings; entire frontend tree equal. Purchasing1318/1318 skip0 at022f. Combined API host compile/selection check pending; actual SQL/browser NOT_RUN.",
+            "local_checks": "Supplier UI287/287,fulltsc0,lint0errors0warnings; entire frontend tree equal. Purchasing1318/1318 skip0 at022f. Combined API host compile/selection check pending; actual SQL/browser NOT_RUN.6f901 new supplier33host passed;selected135skip0/entire integration assembly compiled.",
             "review": "Nonauthor full UI delta found P2 impossible replacement metadata;53ada rejects malformed true/null metadata and adds negative tests. Full3file correction and7file publication reviews found no concrete remaining P0/P1/P2; not full K3.",
             "remaining": [
               "Actual SQL including genuine approval/Inventory stock exit E2E",
@@ -2652,6 +2675,103 @@
               "frontend_test_time": "38.94s excluding TypeScript/lint",
               "reuse": "Existing Work attempt journal/capability routing/preview table/native command; no duplicate return engine",
               "rework": "Fixture it.each wrapper correction and malformed replacement metadata P2 correction; original logs retained"
+            }
+          },
+          {
+            "source_commit": "6aafe68e1",
+            "agent_source_commit": "f5d810dab2d5e82a85a54edcbc6e11f2b67ef1d1",
+            "source_commits": [
+              "6aafe68e1",
+              "a790182ad",
+              "62d957281"
+            ],
+            "scope": "Staged stock-count Work purpose uses native Decide, exact original-key receipt provenance and retained18-field price-free human view; logical1/2 independent of live label version. Native DTO and1000trim reason preserved. Existing caption/rules/reference/nullscope preserved; only legacy duplicate Work bridge removed, native read adapter retained.",
+            "local_checks": "35host cases and fullInventory2322 passed at recorded source heads;2SQL source facts compiled, NOT_RUN. Actual Program factory duplicate-registration regression source62d remains NOT_RUN until normal-host pins. Paired publication6f72 and448frontend result recorded separately.",
+            "review": "Nonauthor full14-file source review found duplicate-kind P1 requiring root Program composition fix. Exact2line a790 fix reviewed and P1 closed in source. Nonauthor shared bank/count merge-intent comparison found no lost behavior; actual factory test acceptance pending; not full K3.",
+            "remaining": [
+              "Actual Program composition acceptance after final pins",
+              "Actual SQL/HTTP/browser/full CI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null
+          },
+          {
+            "source_commit": "ba53ee11e",
+            "agent_source_commit": "e2cbceddead506a2388a880e612a9fe8c74aca5a",
+            "scope": "Staged native bank-account Work approve-only purpose; original saved/Commands.ResultJson receipt actor/company/id/version/time/correlation. Safe BankAccountView plus original proposer/time only; no card/IBAN/bankName, no new read copermission. Existing native inbox link retained, capabilityfalse.",
+            "local_checks": "23host cases and fullFinance1995 passed at recorded source heads;2SQL source facts compiled, NOT_RUN. Paired publication6f72 and448frontend result recorded separately.",
+            "review": "Nonauthor full14-file delta/call-chain review found no concrete P0/P1/P2. Root2-file integration resolution preserves both count and bank DTO/constructor/dispatch variants; Nonauthor bounded merge-intent comparison of both shared files plus Program/factory regression found no missing branch/field/permission intent; runtime remains NOT_RUN. Native25b independent acceptance outside this review. Not K3.",
+            "remaining": [
+              "Actual SQL/HTTP/browser/final pins/full CI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null
+          },
+          {
+            "source_commit": "6f72ea8fac37f236f673db44efa45b6f0e7b6c00",
+            "source_commits": [
+              "3c3dba0bf",
+              "512e2a36e",
+              "6f72ea8fa",
+              "6b83b46e8"
+            ],
+            "agent_source_commit": "454189fddbef287e49550464a0d0af3a172cb679",
+            "scope": "Paired Count/Bank purposes use shared Work preview/journal and native commands. Count immutable18fields/logical1→2; Bank safe7field view plus original proposer/time only, no bank-card/IBAN access. Count inventory provider1.21; Bank finance provider1.22; declarations26/56 unchanged. Native read routes retained; no grants/activation.",
+            "local_checks": "8frontend files448/448 skip0,fulltsc0,12filelint0; entire frontend tree equal. Finance1995 and selectedAPI406 passed at recorded source heads. FullInventory2322 atc170 after test-only fixture correction. ActualSQL/HTTP/browser NOT_RUN.",
+            "review": "Nonauthor full UI deltas and publication9files reviewed. Publication review found one P2 stale Bank host expectation(false);6b83 corrects expectation before API406 run. Source findings closed; not full K3.",
+            "remaining": [
+              "Actual SQL/HTTP/browser/final pins/full CI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null,
+            "measurements": {
+              "token": "NOT_AVAILABLE",
+              "development_duration": "NOT_SEPARATELY_MEASURED",
+              "frontend_test_time": "52.91s excluding TypeScript/lint",
+              "reuse": "Existing Count table/guards, native bank view decoder, scoped Work journal and capability routing",
+              "rework": "Stale published metadata expectation corrected6b83; failed fixture logs retained"
+            }
+          },
+          {
+            "source_commit": "15df00d895e13b459d1664933acb71c3b00cb202",
+            "source_commits": [
+              "c886b1903",
+              "15df00d89",
+              "aae22322f",
+              "c17047bd3"
+            ],
+            "agent_source_commit": "660c633b7e7a7700739ec9d29a44b4b4abb74eb8",
+            "scope": "Staged stock-scrap purpose reuses native owned transaction/Decide and exact-command receipt provenance. Immutable18field human view; no arithmetic or price proof in AI/journal. Logical1→2 and mandatory trimmed1000 reason for both decisions. Legacy duplicate Work registration removed; native read retained. Capabilityfalse pending paired UI.",
+            "local_checks": "36host cases and native4boundary cases passed within406; fullInventory2322 passed atc170 after fixture correction. Nine new native/Work SQL facts compiled and inventoried, NOT_RUN. Actual Program factory regression source added, runtime NOT_RUN.",
+            "review": "Nonauthor full native4file and purpose14file deltas/called-chain reviewed with no concrete remaining P0/P1/P2. Not independent full K3.",
+            "remaining": [
+              "Paired UI/publication",
+              "Actual Program composition and SQL/HTTP/browser/final pins/full CI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null
+          },
+          {
+            "source_commit": "4df90f171e986c7452a30932cee8e7855d5bc4f8",
+            "source_commits": [
+              "76dbd4e01",
+              "4df90f171"
+            ],
+            "agent_source_commit": "bd9d77c3e84c3e08b7346f48801eaff8a73cd8c9",
+            "scope": "Stock-scrap UI reuses shared Count18field table, pure native quantity/identity/reason guards and Work frozen journal; no remaining-kg/piece arithmetic. Mandatorytrim1000 reason for either decision; original logical1 body/key survives terminal2 preview and unknown/remount. Inventory owner1.22 publishes paired purpose;26declarations and native read guards unchanged.",
+            "local_checks": "8frontendfiles517/517 skip0,fulltsc0,9filelint0; entire frontend tree equal. FullInventory2322 and Work/native-boundary406 passed at4df90. Same API batch AI fixture failures are recorded separately; corrected AI166 pass atfb4cc. SQL/HTTP/browser NOT_RUN.",
+            "review": "Nonauthor complete9file UI delta/called-chain plus3file publication delta reviewed, no concrete P0/P1/P2; not full K3.",
+            "remaining": [
+              "Actual Program composition after pins",
+              "Actual SQL/HTTP/browser/final pins/full CI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null,
+            "measurements": {
+              "token": "NOT_AVAILABLE",
+              "development_duration": "NOT_SEPARATELY_MEASURED",
+              "frontend_test_time": "53.88s excluding TypeScript/lint",
+              "reuse": "Count immutable proof table/native pure guards/shared journal; no duplicate stock engine"
             }
           }
         ],
@@ -2742,9 +2862,26 @@
           "77dae10bf",
           "b8fb08c3b",
           "022f72782",
-          "00b72c031"
+          "00b72c031",
+          "6f9016641",
+          "6aafe68e1",
+          "a790182ad",
+          "ba53ee11e",
+          "62d957281",
+          "40fe09b3d",
+          "1c2f4832e",
+          "c886b1903",
+          "15df00d89",
+          "aae22322f",
+          "3c3dba0bf",
+          "512e2a36e",
+          "6f72ea8fa",
+          "6b83b46e8",
+          "c17047bd3",
+          "76dbd4e01",
+          "4df90f171"
         ],
-        "kind_count_scope": "21 paired source kinds; not21 accepted flows. All64-flow native SQL/HTTP/browser/CI/K3 acceptance remains open.",
+        "kind_count_scope": "24 paired source kinds; not24 accepted flows. All64 runtime/native SQL/HTTP/browser/CI/K3 acceptance remains open.",
         "staged_kinds": []
       }
     },
@@ -2813,7 +2950,7 @@
       "backlog_parent": "W5-AIGATEWAY",
       "title": "Ekran bağlamlı panel",
       "group": "TREN2",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P1",
       "risk": "K2",
       "scope": "Mevcut AiAsk/gateway ile kayıt bağlamı ve kaynaklı neden takıldı cevabı.",
@@ -2855,7 +2992,7 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "Verify integrated panel/evidence composition, then extend remaining record families and why-chain through existing owner tools. Two-family backend and panel are locally verified only; no provider activation.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2864,14 +3001,54 @@
         "tests/GoymenERP.Api.IntegrationTests/AiGatewayTests.cs",
         "tests/GoymenERP.Api.IntegrationTests/AiKnowledgeApprovalTests.cs"
       ],
-      "change_files": []
+      "change_files": [
+        "src/backend/GoymenERP.Api/Ai/AiContractsV1.cs",
+        "src/backend/GoymenERP.Api/Ai/AiAskService.cs",
+        "src/backend/GoymenERP.Api/Ai/AiOpenRecordContextBindingV1.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiAskServiceTests.OpenRecordContext.cs",
+        "src/frontend/goymen-erp-web/src/ai/AiPanel.tsx",
+        "src/frontend/goymen-erp-web/src/ai/aiApi.ts",
+        "src/frontend/goymen-erp-web/src/ai/aiContract.ts",
+        "src/frontend/goymen-erp-web/src/ai/aiText.ts",
+        "src/frontend/goymen-erp-web/src/ai/aiOpenRecordContext.ts",
+        "src/frontend/goymen-erp-web/src/shell/AppShell.tsx",
+        "src/frontend/goymen-erp-web/src/ai/AiPanel.test.tsx",
+        "src/frontend/goymen-erp-web/src/ai/aiContract.test.ts",
+        "src/frontend/goymen-erp-web/src/ai/aiOpenRecordContext.test.ts"
+      ],
+      "execution": {
+        "source_commit": "cfd9300b4",
+        "source_commits": [
+          "421632db6",
+          "f99c061db",
+          "825b4ec52",
+          "cfd9300b4"
+        ],
+        "agent_source_commit": "3f923c00615d97b8b2b012e49a0e064081eb5ee7",
+        "scope": "Initial exact-record context only counterparty.party.summary and logistics.loading-instruction.shipment-status. Typed reference constrains client hint, entire model plan and owner source; optional exact native SHA256 digest. No company/actor/title/text/amount in context. Existing permissions/catalogue/pins/schema/limits/knowledge/data-class/gateway/citations reused. General chat rejects context; omitted/null legacy requests unchanged. Paired existing panel binds only two exact native detail routes behind existing detail+exact tool capability. Route/company/session/actor/mode changes abort and discard old answers. UI sends reference only; no row-version digest guess or raw record content.",
+        "local_checks": "AI Ask/Gateway166/166 passed skip0 atfb4cc4d2d095157ec47372a7c8fcc7abccbd66e1; includes52 new context cases. Compiled production dependencies unchanged since4df90. Prior572 batch569pass/3fixturefail retained;825b changes test-only fixtures, Refused/no-owner-read/no-reservation assertions preserved. Agent1bd4frontendfiles144/144 skip0 in45.13s,fulltsc0,9filelint0 with one unchanged baseline warning. Integrated9UI files equal1bd; combined B1/B2/Scrap verification pending. Actual owner/HTTP/browser/SQL/CI NOT_RUN.",
+        "review": "Nonauthor complete4file backend delta/called-chain reviewed; root9file frontend delta and exact route/abort/wire test intentions reviewed. Nonauthor15+/4- fixture correction and Harness semantics reviewed with no concrete P0/P1/P2. Not independent full K3/provider acceptance.",
+        "remaining": [
+          "Other record families and full why-chain",
+          "Real owner/HTTP/browser and final CI/K3 acceptance"
+        ],
+        "new_permissions": [],
+        "migration": null,
+        "activation": "AI disabled, no grants/provider/secret changes",
+        "measurements": {
+          "token": "NOT_AVAILABLE",
+          "development_duration": "NOT_SEPARATELY_MEASURED",
+          "reuse": "Existing Ask/catalog/read tools/gateway/composer test harness; additive context only"
+        },
+        "agent_frontend_commit": "1bd2797f19363ddd61f06b57ed4e8dfc2725b2a8"
+      }
     },
     {
       "id": "T2/WP-B2",
       "backlog_parent": "W5-AIGATEWAY",
       "title": "Kanıt önce onay kartı",
       "group": "TREN2",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P1",
       "risk": "K2",
       "scope": "Kural/hesap/ek/geçmiş önce; öneri kapalı; katılmıyorum ve neden kodu.",
@@ -2913,7 +3090,7 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "Implement first deterministic evidence-order UI increment. Grounded model output identity and C9 feedback binding remain required before recommendation/disagreement recording; budget entry ID is not accepted output proof.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2922,7 +3099,37 @@
         "tests/GoymenERP.Api.IntegrationTests/AiGatewayTests.cs",
         "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs"
       ],
-      "change_files": []
+      "change_files": [
+        "src/frontend/goymen-erp-web/src/work/WorkDecisionPage.tsx",
+        "src/frontend/goymen-erp-web/src/work/workDecisionText.ts",
+        "src/frontend/goymen-erp-web/src/work/WorkDecisionPage.test.tsx"
+      ],
+      "ownership_lease": {
+        "branch": "codex/wpb2-readiness-20261127",
+        "base_commit": "76dbd4e0183d9809ef86c6385363fccfc4ef5e9d",
+        "change_files": [
+          "src/frontend/goymen-erp-web/src/work/WorkDecisionPage.tsx",
+          "src/frontend/goymen-erp-web/src/work/workDecisionText.ts",
+          "src/frontend/goymen-erp-web/src/work/WorkDecisionPage.test.tsx"
+        ],
+        "scope": "Initial deterministic evidence order only; actual owner rules/human proofs/references precede form. No fabricated AI summary, attachment/history/calculation proof or feedback/output identity."
+      },
+      "execution": {
+        "source_commit": "fb4cc4d2d095157ec47372a7c8fcc7abccbd66e1",
+        "agent_source_commit": "845a8361c020ef84a0e9d58bdfef9f11f06d189a",
+        "scope": "Initial deterministic evidence order only: existing owner rules, immutable human facts, actual reference labels and existing decision controls. Count/Scrap rules displayed once. Supplier version selection stays explicit after readonly sources. No unsupported attachment/history/calculation/AI-summary claim.",
+        "local_checks": "Six new source test cases and existing assertions retained. Root full3file delta/test intentions plus owner cost-mask source reviewed, no concrete P0/P1/P2; combined4file frontend run/TypeScript/lint in progress, not acceptance.",
+        "remaining": [
+          "Combined current UI verification",
+          "Grounded model output identity and actual AI evidence summary",
+          "C9-linked disagreement/reason-code recording",
+          "Real browser/owner/full CI/K3 acceptance"
+        ],
+        "new_permissions": [],
+        "migration": null,
+        "activation": "No recommendations/provider/flags/grants enabled",
+        "reuse": "Existing WorkDecisionPreview rules/human facts/references, inbox rule text/number formatting and command test harness"
+      }
     },
     {
       "id": "T2/WP-B4",
