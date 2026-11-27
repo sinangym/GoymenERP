@@ -844,3 +844,17 @@ it('keeps historical dispatch metadata readable and accepts only strict original
  }
  expect(decodeWorkDecisionPreview({...preview,logisticsDispatchNote:dispatchProof},company,kind,id)).toBeNull()
 })
+
+it.each(['\n','\r','\r\n'])('rejects dispatch trailing line endings across native strings %j',ending=>{
+ for(const field of ['quantity','quantityKg']) {
+  const line={...dispatchLine,[field]:'1.250'+ending}
+  expect(decodeWorkDecisionPreview({...dispatchPreview,logisticsDispatchNote:{...dispatchProof,lines:[line]}},company,dispatchKind,id)).toBeNull()
+ }
+ for(const delta of [{status:'Approved',number:'IRS-1',eDispatchNumber:'GYM2026000000001'+ending},{instructionId:company+ending},
+  {customerPartyId:company+ending},{companyAccountId:id+ending},{createdAtUtc:dispatchProof.createdAtUtc+ending},{effectiveOn:dispatchProof.effectiveOn+ending},
+  {lines:[{...dispatchLine,shipmentId:dispatchLine.shipmentId+ending}]},{lines:[{...dispatchLine,unitId:id+ending}]}])
+  expect(decodeWorkDecisionPreview({...dispatchPreview,logisticsDispatchNote:{...dispatchProof,...delta}},company,dispatchKind,id)).toBeNull()
+ expect(decodeWorkDecisionPreview({...dispatchPreview,sourceVersion:'7'+ending},company,dispatchKind,id)).toBeNull()
+ expect(isWorkDecisionRequest({...request,expectedVersion:'7'+ending},dispatchKind)).toBe(false)
+ expect(isWorkDecisionRequest({...request,delegationId:id+ending},dispatchKind)).toBe(false)
+})

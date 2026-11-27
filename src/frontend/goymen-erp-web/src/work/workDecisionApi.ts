@@ -96,6 +96,9 @@ const text = (value: unknown): value is string => typeof value === 'string' && v
 const nullableText = (value: unknown) => value === null || typeof value === 'string'
 const same = (value: unknown, expected: string) => typeof value === 'string' && value.toLowerCase() === expected.toLowerCase()
 const path = (kind: WorkDecisionKind, id: string) => `/work/decisions/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`
+// Dispatch native Guid/Int64 parsers require the entire string, including its final character.
+const dispatchGuid = (value: unknown): value is string => typeof value === 'string' && value.length === 36 && isBoundUuid(value)
+const dispatchVersion = (value: unknown): value is string => typeof value === 'string' && value === value.trim() && isPositiveInt64Text(value)
 const requestNumber = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 2147483647
 const positiveInt32Text = (value: unknown): value is string => typeof value === 'string' && /^[1-9][0-9]*$/.test(value)
   && (value.length < 10 || value.length === 10 && value <= '2147483647')
@@ -125,7 +128,8 @@ export const isWorkDecisionRequest = (value: unknown, kind?: WorkDecisionKind): 
   if (!record(value) || !hasExactKeys(value, ['expectedVersion', 'approve', 'reason', 'delegationId'], kind === 'purchasing.supplier-return-cost-exception.v1' ? ['supplierReturnCostException'] : kind === 'inventory.transfer-overage.v1' ? ['inventoryTransferOverage'] : kind === 'logistics.plan-excess.v1' ? ['logisticsPlanExcess'] : kind === 'inventory.transfer-loss.v1' ? ['inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['manufacturingPlanReapproval'] : [])
     || !text(value.expectedVersion) || (kind === 'inventory.transfer-overage.v1' || kind === 'logistics.plan-excess.v1' || kind === 'manufacturing.plan.v1' || kind === 'inventory.transfer-loss.v1' || kind !== undefined && isCounterpartyWorkDecisionKind(kind)) && !isPositiveInt64Text(value.expectedVersion) || typeof value.approve !== 'boolean' || !nullableText(value.reason)
     || value.delegationId !== null && !isBoundUuid(value.delegationId)) return false
-  if (kind === 'logistics.dispatch-note.v1' || kind === 'finance.bank-account.v1') return value.approve && value.reason === null && isPositiveInt64Text(value.expectedVersion) && value.expectedVersion !== '9223372036854775807'
+  if (kind === 'logistics.dispatch-note.v1') return value.approve && value.reason === null && dispatchVersion(value.expectedVersion) && value.expectedVersion !== '9223372036854775807' && (value.delegationId === null || dispatchGuid(value.delegationId))
+  if (kind === 'finance.bank-account.v1') return value.approve && value.reason === null && isPositiveInt64Text(value.expectedVersion) && value.expectedVersion !== '9223372036854775807'
   if (kind === 'inventory.stock-count.v1' || kind === 'inventory.stock-scrap.v1') return value.expectedVersion === '1' && isWorkStockCountReason(value.reason)
   if (kind === 'purchasing.supplier-return-cost-exception.v1') {
     const selected = value.supplierReturnCostException
@@ -170,19 +174,20 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
     const note = value.logisticsDispatchNote
     // Native decimal(18,3) display preserves trailing zeroes. Never convert quantities or derive kilograms.
     const quantity = (field: unknown): field is string => typeof field === 'string'
-      && /^(?:0|[1-9]\d{0,14})(?:\.\d{1,3})?$/.test(field) && /[1-9]/.test(field)
-    const dateOnly = (field: unknown) => typeof field === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(field)
+      && field === field.trim() && /^(?:0|[1-9]\d{0,14})(?:\.\d{1,3})?$/.test(field) && /[1-9]/.test(field)
+    const dateOnly = (field: unknown) => typeof field === 'string' && field.length === 10 && /^\d{4}-\d{2}-\d{2}$/.test(field)
       && field >= '0001-01-01' && field <= '9999-12-31' && Number.isFinite(Date.parse(field + 'T00:00:00Z')) && new Date(field + 'T00:00:00Z').toISOString().slice(0,10) === field
     if (!record(note) || !hasExactKeys(note, ['instructionId','dispatchNoteId','customerPartyId','companyAccountId','effectiveOn','status','number','eDispatchNumber','createdBy','createdAtUtc','lines'])
-      || !isBoundUuid(note.instructionId) || !same(note.dispatchNoteId,id) || !isBoundUuid(note.customerPartyId) || !isBoundUuid(note.companyAccountId)
+      || !dispatchGuid(value.companyId) || !dispatchGuid(value.itemId) || !dispatchVersion(value.sourceVersion)
+      || !dispatchGuid(note.instructionId) || !dispatchGuid(note.dispatchNoteId) || !same(note.dispatchNoteId,id) || !dispatchGuid(note.customerPartyId) || !dispatchGuid(note.companyAccountId)
       || !dateOnly(note.effectiveOn) || typeof note.status !== 'string' || !['Draft','Approved','Cancelled'].includes(note.status) || value.pending && (note.status !== 'Draft' || value.sourceVersion === '9223372036854775807')
-      || !text(note.createdBy) || note.createdBy.length > 128 || !transferDispatchUtc(note.createdAtUtc)
+      || !text(note.createdBy) || note.createdBy.length > 128 || !transferDispatchUtc(note.createdAtUtc) || note.createdAtUtc !== note.createdAtUtc.trim()
       || note.number !== null && (!text(note.number) || note.number.length > 28)
-      || note.eDispatchNumber !== null && (typeof note.eDispatchNumber !== 'string' || !/^[A-Z0-9]{3}[0-9]{13}$/.test(note.eDispatchNumber) || note.number === null)
+      || note.eDispatchNumber !== null && (typeof note.eDispatchNumber !== 'string' || note.eDispatchNumber.length !== 16 || !/^[A-Z0-9]{3}[0-9]{13}$/.test(note.eDispatchNumber) || note.number === null)
       || note.status === 'Draft' && (note.number !== null || note.eDispatchNumber !== null) || note.status === 'Approved' && note.number === null
       || !Array.isArray(note.lines) || note.lines.length === 0 || !note.lines.every((line,index) => record(line)
         && hasExactKeys(line,['lineNo','shipmentId','instructionLineId','sourceOrderId','sourceOrderLineId','productId','unitId','quantity'],['quantityKg'])
-        && line.lineNo === index + 1 && [line.shipmentId,line.instructionLineId,line.sourceOrderId,line.sourceOrderLineId,line.productId,line.unitId].every(isBoundUuid)
+        && line.lineNo === index + 1 && [line.shipmentId,line.instructionLineId,line.sourceOrderId,line.sourceOrderLineId,line.productId,line.unitId].every(dispatchGuid)
         && quantity(line.quantity) && (line.quantityKg === undefined || quantity(line.quantityKg)))
       || new Set(note.lines.map(line => ((line as Record<string,unknown>).shipmentId as string).toLowerCase())).size !== note.lines.length
       || value.references.length !== 1 || !record(value.references[0]) || value.references[0].role !== 'loading-instruction' || !same(value.references[0].recordId,note.instructionId)) return null
