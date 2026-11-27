@@ -21,7 +21,7 @@ import { WORK_INBOX_TEXT as T, INBOX_FILTER_PARAM } from './workInboxText'
 
 const USER = '11111111-1111-1111-1111-111111111111'
 const DIRECTORY = [{ id: COMPANY, code: 'GDC', legalName: 'Göymen A', isPlaceholder: false }]
-const INBOX_CAP = FINANCE_CAPABILITY.creditLimitsApprove
+const INBOX_CAP = CAPABILITY.financePartyCreditLimitWorkDecision
 const LEGACY_CAP = CAPABILITY.financeOfficialInvoiceImportApprove
 
 const LIMIT_KIND = 'finance.party-credit-limit.v1'
@@ -44,7 +44,7 @@ const definedDays = (isOverdue: boolean, holidayCalendar = 'Defined') => ({
 })
 
 const limitItem = {
-  module: 'finance', kind: LIMIT_KIND, itemId: LIMIT_ID, documentLabel: 'LIM-0001', link: `/finans/kredi-limitleri?oneri=${LIMIT_ID}`,
+  module: 'finance', kind: LIMIT_KIND, itemId: LIMIT_ID, documentLabel: 'LIM-0001', link: `/onaylarim/${LIMIT_KIND}/${LIMIT_ID}`,
   waitingSinceUtc: '2026-11-01T07:00:00+00:00', awaitingPermission: 'finance.credit-limits.approve', duration: definedDays(true),
   ruleVersion: RV(LIMIT_KIND),
   explanation: {
@@ -182,7 +182,7 @@ describe('/onaylarim/kuyruk — Benden karar bekleyen', () => {
     expect(within(limit).getByText('LIM-0001')).toBeTruthy()
     expect(within(limit).getByTestId('work-inbox-awaiting').textContent).toBe(T.awaitingText('Cari kredi limiti onayı'))
     const owner = within(limit).getByRole('link', { name: T.openOwnerLabel('Cari kredi limiti teklifi', 'LIM-0001') })
-    expect(owner.getAttribute('href')).toBe(`/finans/kredi-limitleri?oneri=${LIMIT_ID}`)
+    expect(owner.getAttribute('href')).toBe(`/onaylarim/${LIMIT_KIND}/${LIMIT_ID}`)
     expect(owner.textContent).toBe(T.openOwner)
     // A bare GUID label is shortened; the full value stays in the title.
     const shortened = within(cardOf(PAYMENT_KIND)).getByText(`…${PAYMENT_ID.slice(-8)}`)
@@ -289,7 +289,7 @@ describe('/onaylarim/kuyruk — Benden karar bekleyen', () => {
     const router = await renderAt('/onaylarim/kuyruk')
     await screen.findByTestId('work-inbox-list')
     await userEvent.setup().click(within(cardOf(LIMIT_KIND)).getByRole('link', { name: T.openOwnerLabel('Cari kredi limiti teklifi', 'LIM-0001') }))
-    await waitFor(() => expect(router.state.location.pathname).toBe('/finans/kredi-limitleri'))
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/onaylarim/${LIMIT_KIND}/${LIMIT_ID}`))
     expect(router.state.location.search).toBe(`?oneri=${LIMIT_ID}`)
     await waitFor(() => expect(api.events()).toHaveLength(1))
     expect((api.events()[0].body as { eventType: string }).eventType).toBe('OwnerScreenOpened')
@@ -450,6 +450,14 @@ describe('/onaylarim/kuyruk — Benden karar bekleyen', () => {
 
   it('an actor with no inbox or queue capability gets the neutral not-found page and nothing is read', async () => {
     const api = installFetch({ granted: [CAPABILITY.cariPartiesList] })
+    await renderAt('/onaylarim/kuyruk')
+    await waitFor(() => expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+    expect(api.inboxReads()).toEqual([])
+    expect(api.queueReads()).toEqual([])
+  })
+
+  it('the native credit-limit browse control alone does not replace the dedicated decision capability', async () => {
+    const api = installFetch({ granted: [FINANCE_CAPABILITY.creditLimitsApprove] })
     await renderAt('/onaylarim/kuyruk')
     await waitFor(() => expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
     expect(api.inboxReads()).toEqual([])
