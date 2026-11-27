@@ -1,5 +1,6 @@
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Work;
+using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,9 +19,10 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// re-derived here (the owner checks it when the decision is given).
 /// </para>
 /// </summary>
-internal sealed class FinanceBankCreditLimitWorkInboxSourceV1(
+internal sealed partial class FinanceBankCreditLimitWorkInboxSourceV1(
     FinanceDbContext dbContext,
-    FinanceWorkInboxFence fence) : IWorkInboxSourceV1
+    FinanceWorkInboxFence fence,
+    IFinanceCreditLimitServiceV1? owner = null) : IWorkInboxSourceV1
 {
     public const string ModuleName = "finance";
     public const string KindName = "finance.bank-credit-limit.v1";
