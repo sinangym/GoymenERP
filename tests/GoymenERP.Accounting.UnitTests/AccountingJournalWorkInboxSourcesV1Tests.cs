@@ -35,7 +35,7 @@ public sealed class AccountingNormalJournalDraftWorkInboxSourceV1Tests
         Assert.True(first.Excludes(Kit.CallerText));
         Assert.Equal(Kit.Maker.ToString("D"), result.Items![1].PreparedBy);
         Assert.Equal(older.Id.ToString("D")[..8], first.DocumentLabel);
-        Assert.Equal("/muhasebe/normal-fis-onay/" + older.Id.ToString("D"), first.Link);
+        Assert.Equal("/onaylarim/accounting.normal-journal-draft.v1/" + older.Id.ToString("D"), first.Link);
         Assert.Equal(Kit.Start.ToUniversalTime(), first.WaitingSinceUtc);
         Assert.Equal([AccountingNormalJournalDraftWorkInboxSourceV1.ApprovalRequiredRule], first.Rules.Select(rule => rule.RuleCode));
         Assert.Equal(["source-record", "currency"], first.References.Select(reference => reference.Role));

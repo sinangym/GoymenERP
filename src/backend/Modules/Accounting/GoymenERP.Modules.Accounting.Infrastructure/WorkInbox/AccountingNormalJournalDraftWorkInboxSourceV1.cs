@@ -23,7 +23,7 @@ internal sealed partial class AccountingNormalJournalDraftWorkInboxSourceV1(
 {
     public const string ModuleName = "accounting";
     public const string KindName = "accounting.normal-journal-draft.v1";
-    public const string ScreenPath = "/muhasebe/normal-fis-onay";
+    public const string ScreenPath = "/onaylarim/accounting.normal-journal-draft.v1";
 
     /// <summary>A normal journal draft is posted only with the approve grant, by someone other than its preparer (ROL-D14).</summary>
     public const string ApprovalRequiredRule = "accounting.normal-journal-draft-approval-required";

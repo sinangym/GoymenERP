@@ -47,8 +47,9 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     /// 1.11 (ROL-D12, K3-B finding 2): the period reopening approval is its own control on the period list under
     /// <see cref="AccountingPermissionManifestV1.PeriodsReopen"/>, apart from the opening approval control.
     /// </para>
+    /// <para>1.12 (WP8): a standalone normal journal approval-purpose route, without general draft read access.</para>
     /// </summary>
-    public const string OwnerContractVersion = "1.11";
+    public const string OwnerContractVersion = "1.12";
 
     public const string InvoicedShipmentPrepareCapabilityId = "accounting.invoiced-shipment-costs.prepare";
     public const string InvoicedShipmentPrepareRoutePath = "/muhasebe/sevk-smm-hazirla";
@@ -130,6 +131,10 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     public const string NormalDraftApproveCapabilityId = "accounting.normal-journal-drafts.approve";
     public const string NormalDraftApproveRouteId = "accounting.normal-journal-drafts.approve";
     public const string NormalDraftApproveRoutePath = "/muhasebe/normal-fis-onay/:draftId";
+    public const string NormalDraftWorkDecisionCapabilityId = "accounting.normal-journal-draft.work-decision";
+    public const string NormalDraftWorkDecisionRouteId = "accounting-normal-journal-draft-work-decision";
+    public const string NormalDraftWorkDecisionRoutePath = "/onaylarim/accounting.normal-journal-draft.v1/:approvalId";
+    public const string NormalDraftWorkDecisionScreenId = "M-NORMAL-JOURNAL-DRAFT-WORK-DECISION";
 
     // ACC-V1 journal reversal (#66/5827281417): propose and approve are two actions of two people.
     public const string JournalReversalApproveScreenId = "M-04-REVERSAL-APPROVE";
@@ -230,6 +235,11 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
                 [NormalJournalPermissionNamesV1.DraftCreate], available: true),
             Declaration(NormalDraftApproveCapabilityId, NormalDraftApproveRouteId, NormalDraftApproveRoutePath,
                 NormalDraftApproveScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                [NormalJournalPermissionNamesV1.DraftApprove], available: true),
+            // WP8's standalone purpose view reuses the native approval permission, not its general list/read surface.
+            // Source publication does not replace the train's real SQL/browser/CI/K3 acceptance.
+            Declaration(NormalDraftWorkDecisionCapabilityId, NormalDraftWorkDecisionRouteId, NormalDraftWorkDecisionRoutePath,
+                NormalDraftWorkDecisionScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
                 [NormalJournalPermissionNamesV1.DraftApprove], available: true),
             Declaration(PostingQueuesCapabilityId, PostingQueuesRouteId, PostingQueuesRoutePath, PostingQueuesScreenId,
                 ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.PostingQueuesRead], available: true),

@@ -17,13 +17,14 @@ public sealed class AccountingShellCapabilityProviderTests
     {
         var declarations = new AccountingShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(30, declarations.Count);
+        Assert.Equal(31, declarations.Count);
         // ACC-V0c published what acc01 walked; the ACC-V1 reversal slice adds the journal DETAIL and M-06, whose real
         // read routes exist and which acc01 ACC01-09 walks over the synthetic posted-journal fixture.
         Assert.Equal(
             [
                 AccountingShellCapabilityProvider.JournalDetailCapabilityId,
                 AccountingShellCapabilityProvider.JournalListCapabilityId,
+                AccountingShellCapabilityProvider.NormalDraftWorkDecisionCapabilityId,
                 AccountingShellCapabilityProvider.NormalDraftApproveCapabilityId,
                 AccountingShellCapabilityProvider.NormalDraftCreateCapabilityId,
                 AccountingShellCapabilityProvider.NormalDraftDetailCapabilityId,
@@ -72,7 +73,7 @@ public sealed class AccountingShellCapabilityProviderTests
 
         // 1.3: the reversal slice changed the declaration set (detail and M-06 published, reversal actions declared staged).
         // 1.4: FIN-S16 declares the staged M-05 account plan route.
-        Assert.Equal(("ACCOUNTING", "1.11"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(("ACCOUNTING", "1.12"), (provider.Owner, provider.ContractVersion));
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("accounting.invoiced-shipment-costs.prepare", "accounting.invoiced-shipment-costs.prepare", "/muhasebe/sevk-smm-hazirla",
@@ -128,6 +129,8 @@ public sealed class AccountingShellCapabilityProviderTests
             ("accounting.normal-journal-drafts.detail", "accounting.normal-journal-drafts.detail", "/muhasebe/normal-fisler/:draftId", "M-04-DRAFT",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [NormalJournalPermissionNamesV1.DraftCreate]),
             ("accounting.normal-journal-drafts.approve", "accounting.normal-journal-drafts.approve", "/muhasebe/normal-fis-onay/:draftId", "M-04-APPROVE",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [NormalJournalPermissionNamesV1.DraftApprove]),
+            ("accounting.normal-journal-draft.work-decision", "accounting-normal-journal-draft-work-decision", "/onaylarim/accounting.normal-journal-draft.v1/:approvalId", "M-NORMAL-JOURNAL-DRAFT-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [NormalJournalPermissionNamesV1.DraftApprove]),
             ("accounting.posting-queues", "accounting.posting-queues", "/muhasebe/kontrol", "M-01",
                 ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.PostingQueuesRead]),
