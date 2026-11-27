@@ -247,6 +247,7 @@ public sealed partial class SalesStore(
             // Core's owned transaction has rolled back header, participant work, attempt and audit together.
             // A reused context must not return post-Save values after a refused precommit fence.
             dbContext.ChangeTracker.Clear();
+            officialCancellationAuditWriter?.DiscardPending();
             throw;
         }
     }

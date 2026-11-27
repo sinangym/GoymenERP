@@ -233,6 +233,43 @@ public sealed partial class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         writer.DiscardPending(); // The caller owns its own pending audit, not the refused command.
     }
 
+    [SqlServerFact]
+    public async Task Guarded_order_decision_discards_its_own_pending_audit_after_a_refused_owner_fence()
+    {
+        await using var run = await Run.StartAsync();
+        var id = await PrepareDecisionPendingAsync(run);
+        await using var context = run.Context(CompanyA);
+        await using var ownerScope = run.Factory.Services.CreateAsyncScope();
+        var company = ownerScope.ServiceProvider.GetRequiredService<ICompanyContext>(); company.Set(CompanyA);
+        var collector = ownerScope.ServiceProvider.GetRequiredService<IAuditEventCollector>();
+        var writer = ownerScope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
+        Assert.False(writer.HasPendingDrafts);
+        var store = new SalesStore(context, company, collector, TimeProvider.System, officialCancellationAuditWriter: writer);
+        var calls = 0;
+        await Assert.ThrowsAsync<SalesDraftServiceException>(() => store.UpdateDraftDecisionWithFenceAsync(
+            run.Envelope("guard-owned-audit"), Hash("guard-owned-audit"), SalesDraftCommands.ApproveV1, id,
+            (draft, now) => draft.Approve(3, "SENTETIK-independent", now), Approved, (_, _) =>
+            {
+                // Synthetic participant failure after native owner reads; the collector and writer are real.
+                if (++calls == 2)
+                {
+                    collector.Enqueue(new AuditEventDraft(CompanyA, "sales.synthetic-owner.v1", "Sales.SyntheticOwner", id.ToString("D"),
+                        "prepared", null, 1, AuditActorTypes.User, run.Actor, SalesPermissionManifestV1.OrdersApprove,
+                        [], "{}", "{}", "SENTETIK refused owner audit", null, AuditAiInvolvement.None, null,
+                        "Web", null, null, run.Correlation, null, "guard-owned-audit"));
+                    throw new SalesDraftServiceException(403, "forbidden");
+                }
+                return Task.CompletedTask;
+            }));
+        Assert.Equal(2, calls);
+        Assert.False(writer.HasPendingDrafts);
+        Assert.Equal(3L, (await store.FindDraftAsync(id))!.Version);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE DraftId=@id AND CommandName=@command",
+            ("@id", id), ("@command", SalesDraftCommands.ApproveV1)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId=@id AND EventType=N'sales.synthetic-owner.v1'",
+            ("@id", id.ToString("D"))));
+    }
+
     private static SalesStore GuardStore(SalesDbContext context)
     {
         var company = new CompanyContext(); company.Set(CompanyA);
