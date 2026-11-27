@@ -901,11 +901,32 @@ it.each([true,false])('sends only native customer-return selection and optional 
  }
 })
 it.each([{logisticsCustomerReturn:undefined},{logisticsCustomerReturn:{inventoryMovementId:''}},{logisticsCustomerReturn:{inventoryMovementId:id+'\n'}},{logisticsCustomerReturn:{inventoryMovementId:id,other:true}},
- {expectedVersion:'2'},{expectedVersion:'01'},{expectedVersion:'1\n'},{inventoryTransferLoss:{requestNumber:1,decidedAtUtc:'2026-11-27T08:00:00Z'}}])('rejects a changed customer-return command shape %j',delta=>{
+ {expectedVersion:'0'},{expectedVersion:'9223372036854775807'},{expectedVersion:'01'},{expectedVersion:'1\n'},{inventoryTransferLoss:{requestNumber:1,decidedAtUtc:'2026-11-27T08:00:00Z'}}])('rejects a changed customer-return command shape %j',delta=>{
  expect(isWorkDecisionRequest({...customerRequest,...delta},customerKind)).toBe(false)
 })
 it('requires customer-return movement identity only on approve and excludes it from every other kind',()=>{
  expect(isWorkDecisionRequest({...customerRequest,approve:false},customerKind)).toBe(false)
  expect(isWorkDecisionRequest({...customerRequest,approve:false,logisticsCustomerReturn:null},customerKind)).toBe(false)
  expect(isWorkDecisionRequest({...request,logisticsCustomerReturn:{inventoryMovementId:id}},kind)).toBe(false)
+})
+
+const returnWeighing={weighingId:id,direction:'TareFirst',firstWeighingKg:'10.125',secondWeighingKg:'14.25',netKg:'4.125',recordedBy:'SENTETIK tartımcı',recordedAtUtc:'2026-11-27T10:00:00Z'}
+const weighedReturnPreview={...customerPreview,sourceVersion:'2',logisticsCustomerReturn:{...customerFacts,quantityUnit:'Piece',quantity:'1.000',sourceDeliveredQuantity:'2.000',weighing:returnWeighing},rules:[{...customerPreview.rules[0],unit:'adet'}]}
+it('accepts retained native weighing without calculating kg and binds the owner logical version and approval support',()=>{
+ expect(decodeWorkDecisionPreview(weighedReturnPreview,company,customerKind,id)?.logisticsCustomerReturn?.weighing).toEqual(returnWeighing)
+ for(const status of ['Approved','Rejected'])expect(decodeWorkDecisionPreview({...weighedReturnPreview,pending:false,sourceVersion:'3',logisticsCustomerReturn:{...weighedReturnPreview.logisticsCustomerReturn,status}},company,customerKind,id)).not.toBeNull()
+ expect(isWorkDecisionRequest({...customerRequest,expectedVersion:'2'},customerKind)).toBe(true)
+ expect(isWorkDecisionRequest({...customerRequest,expectedVersion:'9223372036854775806'},customerKind)).toBe(true)
+ expect(decodeWorkDecisionPreview(customerPreview,company,customerKind,id)?.logisticsCustomerReturn).not.toHaveProperty('weighing')
+})
+it.each([null,{}, {...returnWeighing,companyId:company},{...returnWeighing,weighingId:id+'\n'},{...returnWeighing,direction:'Unknown'},
+ {...returnWeighing,firstWeighingKg:'10.125\n'},{...returnWeighing,secondWeighingKg:'014.25'},{...returnWeighing,netKg:'4.1250'},
+ {...returnWeighing,netKg:'0'},{...returnWeighing,netKg:'1e3'},{...returnWeighing,netKg:'1000000000000000'},
+ {...returnWeighing,recordedBy:' '},{...returnWeighing,recordedBy:'x'.repeat(129)},{...returnWeighing,recordedAtUtc:'2026-11-27T10:00:00+03:00'}])('rejects partial, foreign-shaped or noncanonical retained weighing %#',weighing=>{
+ expect(decodeWorkDecisionPreview({...weighedReturnPreview,logisticsCustomerReturn:{...weighedReturnPreview.logisticsCustomerReturn,weighing}},company,customerKind,id)).toBeNull()
+})
+it.each([{sourceVersion:'1'},{sourceVersion:'3'},{sourceVersion:'02'},{approvalSupported:false},{companyId:id},
+ {logisticsCustomerReturn:{...weighedReturnPreview.logisticsCustomerReturn,quantityUnit:'Kilogram'}},
+ {pending:false,sourceVersion:'2',logisticsCustomerReturn:{...weighedReturnPreview.logisticsCustomerReturn,status:'Approved'}}])('refuses mismatching return weighing scope/version/support %#',delta=>{
+ expect(decodeWorkDecisionPreview({...weighedReturnPreview,...delta},company,customerKind,id)).toBeNull()
 })

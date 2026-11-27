@@ -72,7 +72,12 @@ export interface LogisticsDispatchNoteLine {
   readonly lineNo: number; readonly shipmentId: string; readonly instructionLineId: string; readonly sourceOrderId: string; readonly sourceOrderLineId: string
   readonly productId: string; readonly unitId: string; readonly quantity: string; readonly quantityKg?: string
 }
+export interface CustomerReturnWeighingProof {
+  readonly weighingId: string; readonly direction: 'TareFirst' | 'GrossFirst'; readonly firstWeighingKg: string; readonly secondWeighingKg: string
+  readonly netKg: string; readonly recordedBy: string; readonly recordedAtUtc: string
+}
 export interface LogisticsCustomerReturnProof {
+  readonly weighing?: CustomerReturnWeighingProof
   readonly loadingInstructionId: string; readonly loadingInstructionLineId: string; readonly sourceDeliveryId: string; readonly sourceShipmentId: string
   readonly sourceOrderId: string; readonly sourceOrderLineId: string; readonly unitId: string; readonly quantityUnit: 'Kilogram' | 'Piece'
   readonly quantity: string; readonly sourceDeliveredQuantity: string; readonly reason: string; readonly requestedBy: string
@@ -139,7 +144,7 @@ export const isWorkDecisionRequest = (value: unknown, kind?: WorkDecisionKind): 
     || value.delegationId !== null && !isBoundUuid(value.delegationId)) return false
   if (kind === 'logistics.customer-return.v1') {
     const selected=value.logisticsCustomerReturn
-    return value.expectedVersion === '1' && (value.delegationId === null || dispatchGuid(value.delegationId))
+    return dispatchVersion(value.expectedVersion) && value.expectedVersion !== '9223372036854775807' && (value.delegationId === null || dispatchGuid(value.delegationId))
       && (value.approve ? record(selected) && hasExactKeys(selected,['inventoryMovementId']) && dispatchGuid(selected.inventoryMovementId) : selected === undefined)
   }
   if (kind === 'logistics.dispatch-note.v1') return value.approve && value.reason === null && dispatchVersion(value.expectedVersion) && value.expectedVersion !== '9223372036854775807' && (value.delegationId === null || dispatchGuid(value.delegationId))
@@ -190,7 +195,13 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
     const utc=(v: unknown): v is string => transferDispatchUtc(v) && v===v.trim()
     // Compare representations only; never convert units or derive a returned quantity.
     const quantityOrder=(v: string)=>{const [whole,fraction='']=v.split('.');return whole!.padStart(15,'0')+'.'+fraction.padEnd(3,'0')}
-    if(!record(facts) || !hasExactKeys(facts,['loadingInstructionId','loadingInstructionLineId','sourceDeliveryId','sourceShipmentId','sourceOrderId','sourceOrderLineId','unitId','quantityUnit','quantity','sourceDeliveredQuantity','reason','requestedBy','occurredAtUtc','requestedAtUtc','status'])
+    const weighing=record(facts)?facts.weighing:undefined
+    const weight=(v: unknown): v is string => quantity(v) && (!v.includes('.') || !v.endsWith('0'))
+    if(weighing!==undefined && (!record(weighing) || !hasExactKeys(weighing,['weighingId','direction','firstWeighingKg','secondWeighingKg','netKg','recordedBy','recordedAtUtc'])
+      || !dispatchGuid(weighing.weighingId) || weighing.direction!=='TareFirst' && weighing.direction!=='GrossFirst'
+      || !weight(weighing.firstWeighingKg) || !weight(weighing.secondWeighingKg) || !weight(weighing.netKg)
+      || !text(weighing.recordedBy) || weighing.recordedBy!==weighing.recordedBy.trim() || weighing.recordedBy.length>128 || !utc(weighing.recordedAtUtc)))return null
+    if(!record(facts) || !hasExactKeys(facts,['loadingInstructionId','loadingInstructionLineId','sourceDeliveryId','sourceShipmentId','sourceOrderId','sourceOrderLineId','unitId','quantityUnit','quantity','sourceDeliveredQuantity','reason','requestedBy','occurredAtUtc','requestedAtUtc','status'],['weighing'])
       || !dispatchGuid(value.companyId) || !dispatchGuid(value.itemId)
       || !dispatchGuid(facts.loadingInstructionId) || ![facts.loadingInstructionLineId,facts.sourceDeliveryId,facts.sourceShipmentId,facts.sourceOrderId,facts.sourceOrderLineId,facts.unitId].every(dispatchGuid)
       || facts.quantityUnit!=='Kilogram' && facts.quantityUnit!=='Piece' || !quantity(facts.quantity) || !quantity(facts.sourceDeliveredQuantity)
@@ -199,7 +210,9 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
       || !text(facts.reason) || facts.reason!==facts.reason.trim() || !text(facts.requestedBy) || facts.requestedBy!==facts.requestedBy.trim() || facts.requestedBy.length>128
       || !utc(facts.occurredAtUtc) || !utc(facts.requestedAtUtc) || /^0001-01-01T00:00:00(?:\.0{1,7})?(?:Z|\+00:00)$/.test(facts.requestedAtUtc)
       || typeof facts.status!=='string' || !['Pending','Approved','Rejected'].includes(facts.status) || value.pending!==(facts.status==='Pending')
-      || value.sourceVersion!==(value.pending?'1':'2') || value.approvalSupported!==(facts.quantityUnit==='Kilogram')
+      || weighing!==undefined && facts.quantityUnit!=='Piece'
+      || value.sourceVersion!==(value.pending?weighing===undefined?'1':'2':weighing===undefined?'2':'3')
+      || value.approvalSupported!==(facts.quantityUnit==='Kilogram' || weighing!==undefined)
       || value.references.length!==1 || !record(value.references[0]) || value.references[0].role!=='loading-instruction' || !same(value.references[0].recordId,facts.loadingInstructionId)
       || value.rules.length!==1 || !record(value.rules[0]) || value.rules[0].ruleCode!=='logistics.customer-return-request'
       || value.rules[0].unit!==(facts.quantityUnit==='Kilogram'?'kg':'adet'))return null

@@ -6,6 +6,10 @@ export const WORK_DECISION_TEXT = {
   customerReturnNoteHelp:'Onay ve ret için karar notu isteğe bağlıdır. Girilen notun başındaki ve sonundaki boşluklar kaldırılır.',
   customerReturnPieceUnavailable:'Adet birimli iadenin onayı, doğrulanmış kg kaynağı olmadan kullanılamaz. Ret işlemi kullanılabilir.',
   customerReturnUnits:{Kilogram:'Kilogram',Piece:'Adet'},
+  customerReturnWeighing:'Kaydedilmiş iade tartımı',customerReturnWeighingId:'Tartım kaydı',customerReturnWeighingDirection:'Tartım sırası',
+  customerReturnFirstKg:'İlk tartım (kg)',customerReturnSecondKg:'İkinci tartım (kg)',customerReturnNetKg:'Kaydedilmiş net (kg)',
+  customerReturnWeighedBy:'Tartımı kaydeden',customerReturnWeighedAt:'Tartım kayıt zamanı (UTC)',
+  customerReturnDirections:{TareFirst:'Önce dara',GrossFirst:'Önce brüt'},
 
   dispatchProposal: 'Karar verilecek irsaliye', dispatchInstruction: 'Yükleme talimatı', dispatchCustomer: 'Müşteri cari kaydı', dispatchAccount: 'Şirket cari hesabı',
   dispatchEffectiveOn: 'Belge tarihi', dispatchStatus: 'İrsaliye durumu', dispatchProduct: 'Ürün', dispatchUnit: 'Birim', dispatchKg: 'Kaydedilen miktar (kg)',

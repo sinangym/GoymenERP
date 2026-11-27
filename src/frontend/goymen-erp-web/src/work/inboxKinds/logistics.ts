@@ -7,6 +7,6 @@ export const LOGISTICS_INBOX_KINDS: readonly WorkInboxKind[] = [
   { kind: 'logistics.plan-excess.v1', module: 'logistics', capability: LOGISTICS_CAPABILITY.planExcessApprove },
   // The standalone human decision purpose uses the native weighing approval permission.
   { kind: 'logistics.weighing-difference.v1', module: 'logistics', capability: 'logistics.weighing-difference.work-decision' },
-  // WP6: no frontend capability for `logistics.customer-returns.decision` yet (the shell declares the control; no panel).
+  // The standalone return decision purpose preserves the native instruction detail and its separate controls.
   { kind: 'logistics.customer-return.v1', module: 'logistics', capability: 'logistics.customer-return.work-decision' },
 ]

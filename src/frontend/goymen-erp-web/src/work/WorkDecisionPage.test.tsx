@@ -1615,3 +1615,49 @@ it('does not restore a customer-return unknown attempt under another authenticat
  cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-return-new'});mountCustomerCandidate();await screen.findByRole('region',{name:T.customerReturnProposal})
  expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.url.includes(customerPath)&&call.method==='POST')).toHaveLength(1)
 })
+
+const retainedReturnWeighing={weighingId:id,direction:'TareFirst',firstWeighingKg:'10.125',secondWeighingKg:'14.25',netKg:'4.125',recordedBy:'SENTETIK kaydedilmiş tartımcı',recordedAtUtc:'2026-11-27T10:00:00Z'}
+const retainedPieceReturn={...customerPreview,sourceVersion:'2',logisticsCustomerReturn:{...customerFacts,quantityUnit:'Piece',quantity:'1.000',sourceDeliveredQuantity:'2.000',weighing:retainedReturnWeighing},rules:[{...customerPreview.rules[0],unit:'adet'}]}
+it.each([true,false])('shows the seven retained weighing facts without a weighing input and freezes native version2, approve=%s',async approve=>{
+ const calls=installFetch({capabilities:[customerCap],respond:(url,init)=>url.includes(customerPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:customerKind,itemId:id,state:approve?'Approved':'Rejected',replayed:false,originalCorrelationId:'SENTETIK'}):json(retainedPieceReturn):undefined})
+ mountCustomerCandidate();const region=await screen.findByRole('region',{name:T.customerReturnWeighing})
+ expect(region.querySelectorAll('dt')).toHaveLength(7)
+ for(const text of [retainedReturnWeighing.weighingId,retainedReturnWeighing.firstWeighingKg,retainedReturnWeighing.secondWeighingKg,retainedReturnWeighing.netKg,retainedReturnWeighing.recordedBy,retainedReturnWeighing.recordedAtUtc,T.customerReturnDirections.TareFirst])expect(within(region).getByText(text)).toBeTruthy()
+ expect(within(region).queryByRole('spinbutton')).toBeNull();expect(within(region).queryByRole('textbox')).toBeNull()
+ expect(screen.queryByText(T.customerReturnPieceUnavailable)).toBeNull();expect((screen.getByRole('button',{name:T.approve}) as HTMLButtonElement).disabled).toBe(false)
+ fireEvent.click(screen.getByRole('button',{name:approve?T.approve:T.reject}));await screen.findByText(T.done)
+ const body=calls.filter(call=>call.url.includes(customerPath)&&call.method==='POST')[0]!.body as Record<string,unknown>
+ expect(body).toMatchObject({expectedVersion:'2',approve,reason:null,delegationId:null});expect(Object.keys(body).sort()).toEqual((approve?['approve','delegationId','expectedVersion','logisticsCustomerReturn','reason']:['approve','delegationId','expectedVersion','reason']).sort())
+ expect(JSON.stringify(body)).not.toContain('weighing');expect(JSON.stringify(sessionStorage)).not.toContain(retainedReturnWeighing.recordedBy)
+})
+it.each([true,false])('replays original version2 and movement/body/key after weighed return becomes terminal3, approve=%s',async approve=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-piece-weighing'});let posts=0
+ const calls=installFetch({capabilities:[customerCap],respond:(url,init)=>{
+  if(!url.includes(customerPath))return undefined
+  if(init?.method==='POST')return ++posts===1?problem(503):json({companyId:COMPANY_A,kind:customerKind,itemId:id,state:approve?'Approved':'Rejected',replayed:true,originalCorrelationId:'original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'})
+  return json(posts===0?retainedPieceReturn:{...retainedPieceReturn,pending:false,sourceVersion:'3',logisticsCustomerReturn:{...retainedPieceReturn.logisticsCustomerReturn,status:approve?'Approved':'Rejected'}})
+ }})
+ mountCustomerCandidate();await screen.findByRole('region',{name:T.customerReturnWeighing});fireEvent.change(screen.getByRole('textbox',{name:CUSTOMER_RETURN.note}),{target:{value:'SENTETIK özgün karar'}});fireEvent.click(screen.getByRole('button',{name:approve?T.approve:T.reject}));await screen.findByText(T.unknown)
+ expect(JSON.stringify(sessionStorage)).not.toContain(retainedReturnWeighing.recordedBy);expect(JSON.stringify(sessionStorage)).not.toContain('firstWeighingKg')
+ cleanup();mountCustomerCandidate();await screen.findByText(T.closed);await screen.findByText(T.unknown);expect(screen.getByText(`${T.version}: 2`)).toBeTruthy()
+ fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.url.includes(customerPath)&&call.method==='POST');expect(sent).toHaveLength(2);expect(sent[0]!.body).toEqual(sent[1]!.body);expect(sent[0]!.headers['Idempotency-Key']).toBe(sent[1]!.headers['Idempotency-Key'])
+ expect(sent[1]!.body).toMatchObject({expectedVersion:'2',reason:'SENTETIK özgün karar'})
+})
+it('keeps a prior version1 rejection frozen after another native command records weighing at version2',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-piece-old-key'});let posts=0
+ const unweighed={...retainedPieceReturn,sourceVersion:'1',approvalSupported:false,logisticsCustomerReturn:{...retainedPieceReturn.logisticsCustomerReturn,weighing:undefined}}
+ const calls=installFetch({capabilities:[customerCap],respond:(url,init)=>{
+  if(!url.includes(customerPath))return undefined
+  if(init?.method==='POST')return ++posts===1?problem(503):problem(409)
+  return json(posts===0?unweighed:retainedPieceReturn)
+ }})
+ mountCustomerCandidate();await screen.findByText(T.customerReturnPieceUnavailable);fireEvent.click(screen.getByRole('button',{name:T.reject}));await screen.findByText(T.unknown)
+ cleanup();mountCustomerCandidate();await screen.findByRole('region',{name:T.customerReturnWeighing});await screen.findByText(T.unknown);expect(screen.getByText(`${T.version}: 1`)).toBeTruthy()
+ fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.refused,{exact:false})
+ const sent=calls.filter(call=>call.url.includes(customerPath)&&call.method==='POST');expect(sent).toHaveLength(2);expect(sent[0]!.body).toEqual(sent[1]!.body);expect(sent[0]!.headers['Idempotency-Key']).toBe(sent[1]!.headers['Idempotency-Key']);expect(sent[1]!.body).toEqual({expectedVersion:'1',approve:false,reason:null,delegationId:null})
+})
+it.each([{approvalSupported:false},{sourceVersion:'1'},{logisticsCustomerReturn:{...retainedPieceReturn.logisticsCustomerReturn,weighing:{...retainedReturnWeighing,netKg:'4.1250'}}}])('does not display malformed weighing/support/version proof %#',async delta=>{
+ const calls=installFetch({capabilities:[customerCap],respond:url=>url.includes(customerPath)?json({...retainedPieceReturn,...delta}):undefined});mountCustomerCandidate()
+ await waitFor(()=>expect(calls.some(call=>call.url.includes(customerPath))).toBe(true));expect(screen.queryByRole('region',{name:T.customerReturnWeighing})).toBeNull();expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+})

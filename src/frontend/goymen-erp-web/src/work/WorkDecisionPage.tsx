@@ -157,7 +157,15 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         <dt>{T.customerReturnOccurredAt}</dt><dd>{preview.logisticsCustomerReturn.occurredAtUtc}</dd>
         <dt>{T.customerReturnRequestedAt}</dt><dd>{preview.logisticsCustomerReturn.requestedAtUtc}</dd>
         <dt>{T.customerReturnStatus}</dt><dd>{({Pending:CUSTOMER_RETURN.pending,Approved:CUSTOMER_RETURN.approved,Rejected:CUSTOMER_RETURN.rejected})[preview.logisticsCustomerReturn.status]}</dd>
-      </dl></section>:null}
+      </dl>{preview.logisticsCustomerReturn.weighing?<section aria-label={T.customerReturnWeighing}><h4>{T.customerReturnWeighing}</h4><dl className={styles.facts}>
+        <dt>{T.customerReturnWeighingId}</dt><dd>{preview.logisticsCustomerReturn.weighing.weighingId}</dd>
+        <dt>{T.customerReturnWeighingDirection}</dt><dd>{T.customerReturnDirections[preview.logisticsCustomerReturn.weighing.direction]}</dd>
+        <dt>{T.customerReturnFirstKg}</dt><dd>{preview.logisticsCustomerReturn.weighing.firstWeighingKg}</dd>
+        <dt>{T.customerReturnSecondKg}</dt><dd>{preview.logisticsCustomerReturn.weighing.secondWeighingKg}</dd>
+        <dt>{T.customerReturnNetKg}</dt><dd>{preview.logisticsCustomerReturn.weighing.netKg}</dd>
+        <dt>{T.customerReturnWeighedBy}</dt><dd>{preview.logisticsCustomerReturn.weighing.recordedBy}</dd>
+        <dt>{T.customerReturnWeighedAt}</dt><dd>{preview.logisticsCustomerReturn.weighing.recordedAtUtc}</dd>
+      </dl></section>:null}</section>:null}
       {preview.logisticsDispatchNote ? <section aria-label={T.dispatchProposal}><h3>{T.dispatchProposal}</h3><dl className={styles.facts}>
         <dt>{T.dispatchInstruction}</dt><dd>{preview.logisticsDispatchNote.instructionId}</dd>
         <dt>{DISPATCH.reference}</dt><dd>{preview.logisticsDispatchNote.dispatchNoteId}</dd>
