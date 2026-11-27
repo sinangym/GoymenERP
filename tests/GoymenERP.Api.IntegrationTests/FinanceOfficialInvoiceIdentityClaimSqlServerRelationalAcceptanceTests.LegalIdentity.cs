@@ -256,7 +256,7 @@ public sealed partial class FinanceOfficialInvoiceIdentityClaimSqlServerRelation
     {
         await using var run = await Run.StartAsync();
         var csv = await LegalCsvAsync(run); // Valid immutable uploaded parent, not yet admitted to Finance.
-        await using var connection = new SqlConnection(run.Factory.DatabaseConnectionString);
+        await using var connection = new SqlConnection(run.LegalConnectionString);
         await connection.OpenAsync();
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
         try
@@ -328,6 +328,40 @@ public sealed partial class FinanceOfficialInvoiceIdentityClaimSqlServerRelation
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceIdentityClaims"));
     }
 
+    [SqlServerFact]
+    public async Task Legal_identity_legacy_129_company_candidates_refuse_before_owner_read_and_save_but_foreign_candidates_do_not_count()
+    {
+        await using var run = await Run.StartAsync();
+        // Real Finance admissions from controlled historical Sales offers. This is a bounded-query regression,
+        // not an assertion of 129 fully finalized native Sales documents or cross-owner end-to-end acceptance.
+        for (var index = 0; index < 129; index++)
+        {
+            var foreign = LegalSalesOffer("600.00") with { CompanyId = TestCompanyIds.CompanyB, InvoiceVersion = "4",
+                IdempotencyKey = $"legacy-bound-foreign-{index}", OfficialInvoiceNo = null, Ettn = null };
+            Assert.Equal(SalesFinanceAdmissionOutcomeV1.Admitted, (await run.AdmitScopedLegacyAsync(foreign)).Outcome);
+        }
+        var port = new LegalIdentityPort(new(Company, false, []));
+        var unaffected = await LegalCsvAsync(run);
+        Assert.Equal(CommandOutcome.Succeeded, (await run.AdmitAsync(unaffected, "legacy-bound-foreign-csv", port)).Outcome);
+        Assert.Equal(0, port.Calls);
+        for (var index = 0; index < 129; index++)
+        {
+            var native = LegalSalesOffer("600.00") with { InvoiceVersion = "4", IdempotencyKey = $"legacy-bound-own-{index}",
+                OfficialInvoiceNo = null, Ettn = null };
+            Assert.Equal(SalesFinanceAdmissionOutcomeV1.Admitted, (await run.AdmitScopedLegacyAsync(native)).Outcome);
+        }
+        var affected = await LegalCsvAsync(run);
+        var receipts = await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItemSourceBatches");
+        var items = await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItems");
+        var claims = await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceIdentityClaims");
+        Assert.Equal(CommandOutcome.Unavailable, (await run.AdmitAsync(affected, "legacy-bound-own-csv", port)).Outcome);
+        Assert.Equal(0, port.Calls);
+        Assert.Equal(receipts, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItemSourceBatches"));
+        Assert.Equal(items, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItems"));
+        Assert.Equal(claims, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceIdentityClaims"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItemSourceBatches WHERE Id=@id", ("@id", affected.BatchId)));
+    }
+
     private sealed class LegalIdentityPort(FinanceSalesInvoiceIdentityBatchV1 answer) : IFinanceSalesInvoiceIdentityReadPortV1
     {
         public int Calls { get; private set; }
@@ -365,6 +399,7 @@ public sealed partial class FinanceOfficialInvoiceIdentityClaimSqlServerRelation
 
     private sealed partial class Run
     {
+        public string LegalConnectionString => Factory.DatabaseConnectionString;
         public async Task<SalesFinanceAdmissionAnswerV1> AdmitScopedLegacyAsync(SalesFinanceAdmissionRequestV1 request)
         {
             var company = new CompanyContext(); company.Set(request.CompanyId);
