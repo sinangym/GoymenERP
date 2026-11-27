@@ -20,6 +20,7 @@ const guid = (v: unknown): v is string => typeof v === 'string' && v.length === 
 const same = (a: unknown,b: string) => typeof a === 'string' && a.toLowerCase() === b.toLowerCase()
 export const accountingPeriodVersion = (v: unknown): string | null => typeof v === 'string' && v === v.trim() && isPositiveInt64Text(v) ? v : null
 export const accountingPeriodIncrementable = (v: unknown) => accountingPeriodVersion(v) !== null && v !== '9223372036854775807'
+const closureHash = (v: unknown) => typeof v === 'string' && v.length === 64 && /^[0-9A-Fa-f]{64}$/.test(v)
 const digest = (v: unknown) => typeof v === 'string' && v.length === 64 && /^[0-9A-F]{64}$/.test(v)
 const utc = (v: unknown) => typeof v === 'string' && v === v.trim() && transferDispatchUtc(v)
 const optionalUtc = (v: unknown) => v === null || utc(v)
@@ -48,7 +49,7 @@ export function validAccountingPeriodPreview(value: Record<string,unknown>,compa
   if (r === null || c === null || !same(r.id,id) || !guid(r.id) || !guid(r.closureId) || !guid(r.proposedBy)
     || !utc(r.proposedAtUtc) || !optionalGuid(r.approvedBy) || !optionalUtc(r.approvedAtUtc)
     || !guid(c.id) || !guid(c.targetPeriodId) || !guid(c.carryVoucherId) || !guid(c.closedBy) || !utc(c.closedAtUtc)
-    || !optionalGuid(c.reopeningId) || !optionalGuid(c.reopenedBy) || !optionalUtc(c.reopenedAtUtc) || !digest(c.sourceHash)
+    || !optionalGuid(c.reopeningId) || !optionalGuid(c.reopenedBy) || !optionalUtc(c.reopenedAtUtc) || !closureHash(c.sourceHash)
     || c.lineCount > 2147483647 || !same(r.closureId,c.id) || r.closedPeriodVersion !== c.closedPeriodVersion
     || BigInt(c.closedPeriodVersion) > BigInt(p.version) || value.sourceVersion !== r.version
     || typeof human.laterPeriodClosed !== 'boolean' || value.approvalSupported !== !human.laterPeriodClosed) return false

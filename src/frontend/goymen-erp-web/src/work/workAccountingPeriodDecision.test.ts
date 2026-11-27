@@ -107,3 +107,12 @@ describe('Work period native projections',()=>{
   expect((await sendWorkDecision(company,kind,id,{...body,approve:false},'same-key')).type).toBe('unknown')
  })
 })
+
+it.each(['e'.repeat(64),'aB'.repeat(32)])('preserves native lower/mixed-case closure SourceHash %s',sourceHash=>{
+ const value=accountingReopeningFixture(company,id);value.accountingPeriodReopening.closure.sourceHash=sourceHash
+ expect(decodeWorkDecisionPreview(value,company,reopeningPeriodKind,id)?.accountingPeriodReopening?.closure.sourceHash).toBe(sourceHash)
+})
+it.each(['\n','\r','\r\n'])('rejects closure SourceHash replacement ending %j without normalizing it',suffix=>{
+ const value=accountingReopeningFixture(company,id);value.accountingPeriodReopening.closure.sourceHash='a'.repeat(64-suffix.length)+suffix
+ expect(decodeWorkDecisionPreview(value,company,reopeningPeriodKind,id)).toBeNull()
+})
