@@ -6,7 +6,7 @@ using GoymenERP.Modules.Accounting.Application;
 
 namespace GoymenERP.Accounting.UnitTests;
 
-public sealed class AccountingInventoryCostServiceFenceTests
+public sealed partial class AccountingInventoryCostServiceFenceTests
 {
     private static readonly Guid Company = Guid.Parse("a5193000-0000-4000-8000-000000000001");
     private static readonly Guid Actor = Guid.Parse("a5193000-0000-4000-8000-000000000002");

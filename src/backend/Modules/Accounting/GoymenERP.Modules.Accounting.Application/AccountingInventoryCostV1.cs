@@ -108,6 +108,12 @@ public sealed record ProposeAccountingInventoryCostReversalV1(long ExpectedVersi
 
 public interface IAccountingInventoryCostStoreV1
 {
+    // Whole approve command only: original-key and terminal result persistence share the native owner transaction.
+    Task<AccountingApiResult<AccountingInventoryCostProposalV1>> RunApprovalAsync(
+        Func<bool, Task<AccountingApiResult<AccountingInventoryCostProposalV1>>> attempt,
+        Func<CancellationToken, Task> freshFence, CancellationToken token = default) =>
+        Task.FromResult(new AccountingApiResult<AccountingInventoryCostProposalV1>(AccountingApiStatus.Unavailable, null, false, null));
+
     Task RecordAttemptAsync(AccountingCommandRecord record, Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken = default);
     Task AcceptAsync(WorkInboxEventV1 envelope, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AccountingInventoryCostProposalV1>> ListAsync(AccountingInventoryCostKindV1 kind, CancellationToken cancellationToken = default);

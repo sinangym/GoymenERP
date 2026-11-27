@@ -12,7 +12,7 @@ public sealed partial class AccountingInventoryCostStoreV1
     {
         AccountingInventoryCostProposalV1 view;
         AccountingInventoryCostSourceV1 source;
-        var header = await db.InventoryCostSources.AsNoTracking().SingleOrDefaultAsync(x => x.EventId == row.EventId, token)
+        var header = await ApprovalRead(() => db.InventoryCostSources.AsNoTracking().SingleOrDefaultAsync(x => x.EventId == row.EventId, token), token)
             ?? throw Refuse("inventory_cost_source_unavailable");
         try { view = Decode<AccountingInventoryCostProposalV1>(row.ViewJson); source = Decode<AccountingInventoryCostSourceV1>(header.SourceJson); }
         catch (System.Text.Json.JsonException) { throw Refuse("inventory_cost_source_unavailable"); }
@@ -40,8 +40,8 @@ public sealed partial class AccountingInventoryCostStoreV1
             throw Refuse("inventory_cost_source_unavailable");
         if (view.RenewedFrom is { } renewed)
         {
-            var previousRow = await db.InventoryCostProposals.AsNoTracking().SingleOrDefaultAsync(x =>
-                x.Id == renewed.PreviousProposalId && x.Version == renewed.PreviousClosedVersion, token);
+            var previousRow = await ApprovalRead(() => db.InventoryCostProposals.AsNoTracking().SingleOrDefaultAsync(x =>
+                x.Id == renewed.PreviousProposalId && x.Version == renewed.PreviousClosedVersion, token), token);
             AccountingInventoryCostProposalV1? previous;
             try { previous = previousRow is null ? null : Decode<AccountingInventoryCostProposalV1>(previousRow.ViewJson); }
             catch (System.Text.Json.JsonException) { throw Refuse("inventory_cost_source_unavailable"); }
@@ -69,8 +69,8 @@ public sealed partial class AccountingInventoryCostStoreV1
                 throw Refuse("inventory_cost_source_unavailable");
             foreach (var physical in claims)
             {
-                var history = await InvoiceCogsClaimHistoryV1.ReadAsync(db, view.CompanyId, physical.MovementId, physical.MovementLineNumber,
-                    () => RequireCompany(view.CompanyId), token);
+                var history = await ApprovalRead(() => InvoiceCogsClaimHistoryV1.ReadAsync(db, view.CompanyId, physical.MovementId, physical.MovementLineNumber,
+                    () => RequireCompany(view.CompanyId), token, IsOwnedApproval ? ApprovalReadFence : null), token);
                 var own = history.SingleOrDefault(x => x.Claim.SalesEventId == view.EventId && x.Claim.InvoiceLineId == component.InvoiceLineId);
                 if (own?.Succession is null || Encode(own.Succession) != Encode(succession)) throw Refuse("inventory_cost_source_unavailable");
             }
@@ -85,15 +85,15 @@ public sealed partial class AccountingInventoryCostStoreV1
         // Product is only a default. Steel/scrap and purchase/manufacturing history never supply this classification.
         if (view.Kind == AccountingInventoryCostKindV1.SalesInvoicedShipment)
         {
-            var latest = await db.InvoiceLineCogsRevisions.AsNoTracking().Where(x => x.InvoiceId == view.InvoiceId
-                && x.InvoiceLineId == view.Component.InvoiceLineId).OrderByDescending(x => x.Version).FirstOrDefaultAsync(token);
+            var latest = await ApprovalRead(() => db.InvoiceLineCogsRevisions.AsNoTracking().Where(x => x.InvoiceId == view.InvoiceId
+                && x.InvoiceLineId == view.Component.InvoiceLineId).OrderByDescending(x => x.Version).FirstOrDefaultAsync(token), token);
             if (latest is not null)
             {
                 var revision = Decode<InvoiceLineCogsRevisionViewV1>(latest.RevisionJson);
                 return new(revision.Classification, revision.AccountPlan.Account.AccountId, "InvoiceLine", null, null, null, revision.Version);
             }
         }
-        var read = await cogs.ResolveAsync(view.CompanyId, view.Component.ProductId, businessDate, token);
+        var read = await ApprovalRead(() => cogs.ResolveAsync(view.CompanyId, view.Component.ProductId, businessDate, token), token);
         RequireCompany(view.CompanyId);
         if (read.Outcome != "Available" || read.Value is not { } value || value.CompanyId != view.CompanyId
             || value.ProductId != view.Component.ProductId) throw Refuse(read.Outcome == "ClassificationMissing"
@@ -104,7 +104,7 @@ public sealed partial class AccountingInventoryCostStoreV1
     private async Task<ApprovedAccountingSourceCatalogRecordV1> Plan(CancellationToken token)
     {
         var captured = Company();
-        var plan = await plans.ReadActiveAsync(token);
+        var plan = await ApprovalRead(() => plans.ReadActiveAsync(token), token);
         RequireCompany(captured);
         if (plan is null || plan.CompanyId != captured || plan.Status != ApprovedAccountingSourceCatalogStatusV1.Active
             || plan.Package.Mirror.CompanyId != captured) throw Refuse("inventory_cost_account_plan_missing");
@@ -113,7 +113,7 @@ public sealed partial class AccountingInventoryCostStoreV1
 
     private async Task Period(Guid id, DateOnly date, CancellationToken token)
     {
-        var period = await db.Periods.SingleOrDefaultAsync(x => x.Id == id, token);
+        var period = await ApprovalRead(() => db.Periods.SingleOrDefaultAsync(x => x.Id == id, token), token);
         if (date == default || period is null || period.Status != 1 || date < period.StartsOn || date > period.EndsOn)
             throw Refuse("inventory_cost_open_period_required");
     }
@@ -121,7 +121,7 @@ public sealed partial class AccountingInventoryCostStoreV1
     private async Task<Guid> TlCurrency(CancellationToken token)
     {
         var captured = Company();
-        var candidates = MoneyCurrencyCandidatesV1.EnsureWellFormed(await currencies.GetMoneyCurrencyCandidatesAsync(token));
+        var candidates = MoneyCurrencyCandidatesV1.EnsureWellFormed(await ApprovalRead(() => currencies.GetMoneyCurrencyCandidatesAsync(token), token));
         RequireCompany(captured);
         var tl = candidates.Where(x => x.Code == "TRY").ToArray();
         return tl.Length == 1 ? tl[0].CurrencyId : throw Refuse("inventory_cost_tl_currency_unavailable");
@@ -130,7 +130,7 @@ public sealed partial class AccountingInventoryCostStoreV1
     private async Task<AccountingSourceInvoiceCancellationRow?> Cancellation(AccountingInventoryCostProposalV1 view, CancellationToken token)
     {
         if (view.Kind != AccountingInventoryCostKindV1.SalesInvoicedShipment) return null;
-        var row = await db.SourceInvoiceCancellations.AsNoTracking().SingleOrDefaultAsync(x => x.SourceDocumentId == view.AdmissionId, token);
+        var row = await ApprovalRead(() => db.SourceInvoiceCancellations.AsNoTracking().SingleOrDefaultAsync(x => x.SourceDocumentId == view.AdmissionId, token), token);
         if (row is not null && (row.CompanyId != view.CompanyId || row.InvoiceId != view.InvoiceId
             || row.FinalizedVersion != view.InvoiceVersion || row.DocumentKind != AccountingSourceDocumentKindsV1.SalesInvoice))
             throw Refuse("inventory_cost_source_conflict");

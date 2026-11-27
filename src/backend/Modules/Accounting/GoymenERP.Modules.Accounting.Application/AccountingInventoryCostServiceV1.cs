@@ -10,7 +10,7 @@ namespace GoymenERP.Modules.Accounting.Application;
 
 public sealed record ApproveAccountingInventoryCostV1(long ExpectedVersion);
 
-public sealed class AccountingInventoryCostServiceV1(IAccountingInventoryCostStoreV1 store,
+public sealed partial class AccountingInventoryCostServiceV1(IAccountingInventoryCostStoreV1 store,
     IAccountingCommandLog commands, IErpAuthorityRevalidationService authority, ICompanyContext company,
     ICurrentUser user, ICorrelationContext correlation)
 {
@@ -79,8 +79,7 @@ public sealed class AccountingInventoryCostServiceV1(IAccountingInventoryCostSto
 
     public Task<AccountingApiResult<AccountingInventoryCostProposalV1>> ApproveAsync(Guid id, AccountingInventoryCostKindV1 kind, long version,
         string key, CancellationToken cancellationToken = default) => id == Guid.Empty || version < 1 || !Enum.IsDefined(kind)
-            ? InvalidVersionOrIdentity() : Run("approve", Permission(kind, true), new { id, kind, version }, key,
-                (actor, fence, metadata) => store.ApproveAsync(id, kind, version, actor, fence, metadata, cancellationToken), cancellationToken);
+            ? InvalidVersionOrIdentity() : RunApprovalAsync(id, kind, version, key, cancellationToken);
 
     public Task<AccountingApiResult<AccountingInventoryCostProposalV1>> ProposeReversalAsync(Guid id, ProposeAccountingInventoryCostReversalV1 request,
         string key, CancellationToken cancellationToken = default) => request is null || id == Guid.Empty || request.ExpectedVersion < 1 || request.ExpectedCancellationVersion is < 0
@@ -104,55 +103,64 @@ public sealed class AccountingInventoryCostServiceV1(IAccountingInventoryCostSto
 
     private async Task<AccountingApiResult<AccountingInventoryCostProposalV1>> Run(string action, string permission, object payload,
         string key, Func<Guid, Func<CancellationToken, Task>, AccountingCommandMetadata, Task<AccountingInventoryCostProposalV1>> write,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, ApprovalCapture? approval = null, bool replayOnly = false)
     {
         if (string.IsNullOrWhiteSpace(key) || key.Length > 128 || payload is null)
             return new(AccountingApiStatus.Invalid, null, false, AccountingApiCodes.RequestInvalid);
         if (!Capture(out var companyId, out var actor, out var actorText)
-            || !await Allowed(permission, companyId, actor, actorText, cancellationToken)) return Denied<AccountingInventoryCostProposalV1>();
+            || !await AllowedRun(cancellationToken)) return Denied<AccountingInventoryCostProposalV1>();
+        if (approval is not null && !Current(approval.CompanyId, approval.ActorId, approval.ActorText)) return Denied<AccountingInventoryCostProposalV1>();
         var command = "accounting.inventory-cost." + action + ".v1";
         var keyHash = AccountingApiService.Sha256(key.Trim());
         var requestHash = AccountingApiService.Sha256(command + "|" + JsonSerializer.Serialize(payload, Json));
         var prior = await commands.FindCommandAsync(command, keyHash, cancellationToken);
-        if (!await Allowed(permission, companyId, actor, actorText, cancellationToken)) return Denied<AccountingInventoryCostProposalV1>();
+        if (!await AllowedRun(cancellationToken)) return Denied<AccountingInventoryCostProposalV1>();
         if (prior is not null) return Replay(prior, actorText, requestHash);
+        if (replayOnly) return new(AccountingApiStatus.Conflict, null, false, AccountingStoreCodes.ConcurrentChange);
         var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
-        if (!scope.IsGranted || !scope.IsCompanyWide || !Current(companyId, actor, actorText)) return Denied<AccountingInventoryCostProposalV1>();
+        if (approval is not null) cancellationToken.ThrowIfCancellationRequested();
+        if (approval is not null && scope is null) return Denied<AccountingInventoryCostProposalV1>();
+        var availableScope = scope!; // The legacy non-approval port retains its existing non-null contract.
+        if (!availableScope.IsGranted || !availableScope.IsCompanyWide || !Current(companyId, actor, actorText)) return Denied<AccountingInventoryCostProposalV1>();
         AccountingCommandRecord Complete(object value) => new(command, keyHash, actorText, requestHash,
             JsonSerializer.Serialize(Result((AccountingInventoryCostProposalV1)value), Json), correlation.CorrelationId);
-        var metadata = new AccountingCommandMetadata(actorText, permission, [.. scope.RoleCodes.Order(StringComparer.Ordinal)],
+        var metadata = new AccountingCommandMetadata(actorText, permission, [.. availableScope.RoleCodes.Order(StringComparer.Ordinal)],
             correlation.CorrelationId, correlation.CausationId, key.Trim(), correlation.SourceChannel,
             correlation.ClientIpAddress, correlation.UserAgent, Complete);
         async Task Fence(CancellationToken token)
         {
-            if (!await Allowed(permission, companyId, actor, actorText, token)) throw new DeniedException();
+            if (approval is not null) await ApprovalFenceAsync(approval, token);
+            else if (!await Allowed(permission, companyId, actor, actorText, token)) throw new DeniedException();
         }
         async Task<AccountingApiResult<AccountingInventoryCostProposalV1>> Terminal(AccountingApiResult<AccountingInventoryCostProposalV1> result)
         {
-            if (!await Allowed(permission, companyId, actor, actorText, cancellationToken)) return Denied<AccountingInventoryCostProposalV1>();
+            if (!await AllowedRun(cancellationToken)) return Denied<AccountingInventoryCostProposalV1>();
             try
             {
                 await store.RecordAttemptAsync(new(command, keyHash, actorText, requestHash,
                     JsonSerializer.Serialize(result, Json), correlation.CorrelationId), Fence, cancellationToken);
+                if (approval is not null && !await AllowedRun(cancellationToken)) return Denied<AccountingInventoryCostProposalV1>();
                 return result;
             }
             catch (DeniedException) { return Denied<AccountingInventoryCostProposalV1>(); }
             catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ConcurrentChange)
             {
+                if (approval is not null) throw new NormalJournalApprovalRaceException(exception.Code, exception);
                 var winner = await commands.FindCommandAsync(command, keyHash, cancellationToken);
-                if (!await Allowed(permission, companyId, actor, actorText, cancellationToken)) return Denied<AccountingInventoryCostProposalV1>();
+                if (!await AllowedRun(cancellationToken)) return Denied<AccountingInventoryCostProposalV1>();
                 return winner is null ? result : Replay(winner, actorText, requestHash);
             }
         }
         try
         {
             var result = await write(actor, Fence, metadata);
+            if (approval is not null && !await AllowedRun(cancellationToken)) return Denied<AccountingInventoryCostProposalV1>();
             return Result(result);
         }
         catch (DeniedException) { return Denied<AccountingInventoryCostProposalV1>(); }
         catch (AccountingVersionConflictException exception)
         {
-            if (!await Allowed(permission, companyId, actor, actorText, cancellationToken)) return Denied<AccountingInventoryCostProposalV1>();
+            if (!await AllowedRun(cancellationToken)) return Denied<AccountingInventoryCostProposalV1>();
             return await Terminal(new(AccountingApiStatus.Conflict, null, false, AccountingApiCodes.VersionConflict, "expectedVersion",
                 exception.ExpectedVersion, exception.CurrentVersion));
         }
@@ -160,16 +168,17 @@ public sealed class AccountingInventoryCostServiceV1(IAccountingInventoryCostSto
         {
             if (exception.Code == AccountingStoreCodes.ConcurrentChange)
             {
+                if (approval is not null) throw new NormalJournalApprovalRaceException(exception.Code, exception);
                 var winner = await commands.FindCommandAsync(command, keyHash, cancellationToken);
-                if (!await Allowed(permission, companyId, actor, actorText, cancellationToken)) return Denied<AccountingInventoryCostProposalV1>();
+                if (!await AllowedRun(cancellationToken)) return Denied<AccountingInventoryCostProposalV1>();
                 return winner is null ? new(AccountingApiStatus.Conflict, null, false, exception.Code) : Replay(winner, actorText, requestHash);
             }
             if (exception.Code == "inventory_cost_not_found")
             {
-                if (!await Allowed(permission, companyId, actor, actorText, cancellationToken)) return Denied<AccountingInventoryCostProposalV1>();
+                if (!await AllowedRun(cancellationToken)) return Denied<AccountingInventoryCostProposalV1>();
                 return await Terminal(new(AccountingApiStatus.NotFound, null, false, null));
             }
-            if (!await Allowed(permission, companyId, actor, actorText, cancellationToken)) return Denied<AccountingInventoryCostProposalV1>();
+            if (!await AllowedRun(cancellationToken)) return Denied<AccountingInventoryCostProposalV1>();
             var refused = new AccountingApiResult<AccountingInventoryCostProposalV1>(exception.Code switch
             {
                 AccountingStoreCodes.CompanyContextMismatch or "inventory_cost_approval_refused" or "inventory_cost_authority_denied" => AccountingApiStatus.Denied,
@@ -184,12 +193,18 @@ public sealed class AccountingInventoryCostServiceV1(IAccountingInventoryCostSto
         {
             if (exception.Code == AccountingAmountScaleCodes.ScaleExceeded)
                 return await Terminal(new(AccountingApiStatus.Unprocessable, null, false, "inventory_cost_amount_unaccepted"));
-            return await Allowed(permission, companyId, actor, actorText, cancellationToken)
+            return await AllowedRun(cancellationToken)
                 ? new(AccountingApiStatus.Unavailable, null, false, "inventory_cost_money_profile_unavailable") : Denied<AccountingInventoryCostProposalV1>();
         }
         catch (AccountingDomainException) { return await Terminal(new(AccountingApiStatus.Unprocessable, null, false, "inventory_cost_posting_refused")); }
         catch (SettingsPrerequisiteException)
-        { return await Allowed(permission, companyId, actor, actorText, cancellationToken) ? new(AccountingApiStatus.Unavailable, null, false, null) : Denied<AccountingInventoryCostProposalV1>(); }
+        { return await AllowedRun(cancellationToken) ? new(AccountingApiStatus.Unavailable, null, false, null) : Denied<AccountingInventoryCostProposalV1>(); }
+        async Task<bool> AllowedRun(CancellationToken token)
+        {
+            if (approval is null) return await Allowed(permission, companyId, actor, actorText, token);
+            try { await ApprovalFenceAsync(approval, token); return true; }
+            catch (NormalJournalAuthorityDeniedException) { return false; }
+        }
     }
 
     private static AccountingApiResult<AccountingInventoryCostProposalV1> Result(AccountingInventoryCostProposalV1 value) =>

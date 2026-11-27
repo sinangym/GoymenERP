@@ -43,8 +43,8 @@ public sealed partial class AccountingInventoryCostStoreV1
     private async Task RecordPurchaseApproval(AccountingInventoryCostProposalV1 view, Func<CancellationToken, Task> fence, CancellationToken token)
     {
         if (!AccountingInventoryCostTraceV1.IsPurchaseFirstLineComponent(view.Component.ComponentKey)) return;
-        var rows = await db.PurchaseCostAttributionSources.AsNoTracking().Where(x => x.SourceEventId == view.EventId).ToListAsync(token);
-        await fence(token); RequireCompany(view.CompanyId);
+        var rows = await ApprovalRead(() => db.PurchaseCostAttributionSources.AsNoTracking().Where(x => x.SourceEventId == view.EventId).ToListAsync(token), token);
+        await fence(token); await ApprovalReadFence(token); RequireCompany(view.CompanyId);
         var row = rows.SingleOrDefault(x => AccountingInventoryCostTraceV1.PurchaseFirstLineComponent(x.InvoiceLineId) == view.Component.ComponentKey)
             ?? throw Refuse("purchase_cost_attribution_source_missing");
         var lineage = Decode<PurchaseFirstCostLineageV1>(row.LineageJson);
@@ -57,9 +57,9 @@ public sealed partial class AccountingInventoryCostStoreV1
             || view.Status == "Posted" && view.JournalId is null || view.Status == "RoundedNoCost" && (view.JournalId is not null || prepared.SignedAmount != "0"))
             throw Refuse("purchase_cost_attribution_approval_invalid");
         var candidates = PurchaseFirstCostCandidatesV1.Build(lineage);
-        var saved = await db.PurchaseCostAttributionCandidates.AsNoTracking().Where(x => x.SourceEventId == view.EventId
-            && x.InvoiceLineId == row.InvoiceLineId).ToListAsync(token);
-        await fence(token); RequireCompany(view.CompanyId);
+        var saved = await ApprovalRead(() => db.PurchaseCostAttributionCandidates.AsNoTracking().Where(x => x.SourceEventId == view.EventId
+            && x.InvoiceLineId == row.InvoiceLineId).ToListAsync(token), token);
+        await fence(token); await ApprovalReadFence(token); RequireCompany(view.CompanyId);
         if (saved.Count != candidates.Count || candidates.Any(x => !saved.Any(y => y.AcceptanceId == x.AcceptanceId
             && y.MovementId == x.Shipment.MovementId && y.MovementLineNumber == x.Shipment.MovementLineNumber
             && y.SourceHash == x.Fingerprint && y.ViewJson == Encode(x)))) throw Refuse("purchase_cost_attribution_source_conflict");
@@ -116,6 +116,6 @@ public sealed partial class AccountingInventoryCostStoreV1
         db.PurchaseCostAttributionApprovals.Add(new() { CompanyId = view.CompanyId, SourceEventId = view.EventId,
             InvoiceLineId = row.InvoiceLineId, ProposalId = view.ProposalId, ProposalVersion = view.Version, JournalId = view.JournalId,
             Status = view.Status == "Posted" ? 3 : 6, SourceHash = approval.Fingerprint, ViewJson = Encode(proof), RecordedAtUtc = clock.GetUtcNow() });
-        await fence(token); RequireCompany(view.CompanyId);
+        await fence(token); await ApprovalReadFence(token); RequireCompany(view.CompanyId);
     }
 }

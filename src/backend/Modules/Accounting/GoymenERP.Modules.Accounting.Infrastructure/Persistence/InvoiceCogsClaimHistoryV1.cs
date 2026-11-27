@@ -12,13 +12,13 @@ internal static class InvoiceCogsClaimHistoryV1
     internal sealed record Entry(long Generation, InvoiceCogsEconomicClaimRow Claim, InventoryCostClaimSuccessionV1? Succession);
 
     internal static async Task<IReadOnlyList<Entry>> ReadAsync(AccountingDbContext db, Guid companyId, Guid movementId,
-        int line, Action fence, CancellationToken token)
+        int line, Action fence, CancellationToken token, Func<CancellationToken, Task>? approvalFence = null)
     {
         fence();
-        var anchor = await db.InvoiceCogsEconomicClaims.AsNoTracking().SingleOrDefaultAsync(x => x.MovementId == movementId
-            && x.MovementLineNumber == line, token); fence();
-        var rows = await db.InvoiceCogsEconomicClaimSuccessions.AsNoTracking().Where(x => x.MovementId == movementId
-            && x.MovementLineNumber == line).OrderBy(x => x.Generation).ToListAsync(token); fence();
+        var anchor = await ApprovalRead(approvalFence, token, () => db.InvoiceCogsEconomicClaims.AsNoTracking().SingleOrDefaultAsync(x => x.MovementId == movementId
+            && x.MovementLineNumber == line, token)); fence();
+        var rows = await ApprovalRead(approvalFence, token, () => db.InvoiceCogsEconomicClaimSuccessions.AsNoTracking().Where(x => x.MovementId == movementId
+            && x.MovementLineNumber == line).OrderBy(x => x.Generation).ToListAsync(token)); fence();
         if (anchor is null) { if (rows.Count != 0) throw Invalid(); return []; }
         if (anchor.CompanyId != companyId || anchor.SourceHash != AccountingInventoryCostSourceValidationV1.Sha256(anchor.ViewJson)) throw Invalid();
         var result = new List<Entry> { new Entry(1, anchor, null) };
@@ -44,8 +44,8 @@ internal static class InvoiceCogsClaimHistoryV1
                 || row.SalesEventId == previous.Claim.SalesEventId || row.InvoiceId == previous.Claim.InvoiceId
                 || row.SourceHash != AccountingInventoryCostSourceValidationV1.Sha256(row.ViewJson)
                 || row.SuccessionSha256 != AccountingInventoryCostSourceValidationV1.Sha256(row.SuccessionJson)) throw Invalid();
-            await VerifyRelease(db, companyId, proof, fence, token);
-            var owner = await db.InventoryCostSources.AsNoTracking().SingleOrDefaultAsync(x => x.EventId == row.SalesEventId, token); fence();
+            await VerifyRelease(db, companyId, proof, fence, token, approvalFence);
+            var owner = await ApprovalRead(approvalFence, token, () => db.InventoryCostSources.AsNoTracking().SingleOrDefaultAsync(x => x.EventId == row.SalesEventId, token)); fence();
             if (owner is null || owner.CompanyId != companyId || owner.InvoiceId != row.InvoiceId
                 || owner.InvoiceVersion != row.FinalizedVersion || owner.AdmissionId != row.AdmissionId) throw Invalid();
             AccountingInventoryCostSourceV1 source;
@@ -70,13 +70,13 @@ internal static class InvoiceCogsClaimHistoryV1
     }
 
     private static async Task VerifyRelease(AccountingDbContext db, Guid companyId, InventoryCostClaimSuccessionV1 proof,
-        Action fence, CancellationToken token)
+        Action fence, CancellationToken token, Func<CancellationToken, Task>? approvalFence)
     {
         fence();
-        var source = await db.InventoryCostSources.AsNoTracking().SingleOrDefaultAsync(x => x.EventId == proof.PreviousEventId, token); fence();
-        var proposal = await db.InventoryCostProposals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == proof.PreviousProposalId
-            && x.Version == proof.PreviousProposalVersion, token); fence();
-        var cancellation = await db.SourceInvoiceCancellations.AsNoTracking().SingleOrDefaultAsync(x => x.SourceDocumentId == proof.PreviousAdmissionId, token); fence();
+        var source = await ApprovalRead(approvalFence, token, () => db.InventoryCostSources.AsNoTracking().SingleOrDefaultAsync(x => x.EventId == proof.PreviousEventId, token)); fence();
+        var proposal = await ApprovalRead(approvalFence, token, () => db.InventoryCostProposals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == proof.PreviousProposalId
+            && x.Version == proof.PreviousProposalVersion, token)); fence();
+        var cancellation = await ApprovalRead(approvalFence, token, () => db.SourceInvoiceCancellations.AsNoTracking().SingleOrDefaultAsync(x => x.SourceDocumentId == proof.PreviousAdmissionId, token)); fence();
         if (source is null || proposal is null || cancellation is null || source.CompanyId != companyId || proposal.CompanyId != companyId
             || source.InvoiceId != proof.PreviousInvoiceId || source.InvoiceVersion != proof.PreviousFinalizedVersion
             || source.AdmissionId != proof.PreviousAdmissionId || proposal.EventId != source.EventId
@@ -97,11 +97,11 @@ internal static class InvoiceCogsClaimHistoryV1
         var expected = expectedBase;
         foreach (var component in proof.ReversedComponents)
         {
-            var row = await db.InventoryCostCancellationClaims.AsNoTracking().SingleOrDefaultAsync(x => x.InvoiceId == proof.PreviousInvoiceId
+            var row = await ApprovalRead(approvalFence, token, () => db.InventoryCostCancellationClaims.AsNoTracking().SingleOrDefaultAsync(x => x.InvoiceId == proof.PreviousInvoiceId
                 && x.InvoiceLineId == proof.PreviousInvoiceLineId && x.FinalizedVersion == proof.PreviousFinalizedVersion
-                && x.EconomicKey == component.EconomicKey, token); fence();
-            var approvedRow = row is null ? null : await db.InventoryCostCancellationVersions.AsNoTracking()
-                .SingleOrDefaultAsync(x => x.InventoryCostProposalId == row.InventoryCostProposalId && x.Version == row.CancellationVersion, token); fence();
+                && x.EconomicKey == component.EconomicKey, token)); fence();
+            var approvedRow = row is null ? null : await ApprovalRead(approvalFence, token, () => db.InventoryCostCancellationVersions.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.InventoryCostProposalId == row.InventoryCostProposalId && x.Version == row.CancellationVersion, token)); fence();
             if (row is null || approvedRow is null || row.CompanyId != companyId || row.InventoryCostProposalId != proof.PreviousProposalId
                 || row.ViewJson != JsonSerializer.Serialize(component, Json) || row.Sha256 != AccountingInventoryCostSourceValidationV1.Sha256(row.ViewJson)
                 || row.SourceJournalId != component.SourceJournalId || row.ReversingJournalId != component.ReversingJournalId
@@ -126,23 +126,32 @@ internal static class InvoiceCogsClaimHistoryV1
     }
 
     internal static async Task<IReadOnlyList<InvoiceCogsEconomicClaimRow>> CurrentForInvoiceAsync(AccountingDbContext db,
-        Guid companyId, Guid invoiceId, Guid invoiceLineId, long version, Action fence, CancellationToken token)
+        Guid companyId, Guid invoiceId, Guid invoiceLineId, long version, Action fence, CancellationToken token, Func<CancellationToken, Task>? approvalFence = null)
     {
         fence();
-        var anchors = await db.InvoiceCogsEconomicClaims.AsNoTracking().Where(x => x.InvoiceId == invoiceId
-            && x.InvoiceLineId == invoiceLineId && x.FinalizedVersion == version).Select(x => new { x.MovementId, x.MovementLineNumber }).ToListAsync(token); fence();
-        var later = await db.InvoiceCogsEconomicClaimSuccessions.AsNoTracking().Where(x => x.InvoiceId == invoiceId
-            && x.InvoiceLineId == invoiceLineId && x.FinalizedVersion == version).Select(x => new { x.MovementId, x.MovementLineNumber }).ToListAsync(token); fence();
+        var anchors = await ApprovalRead(approvalFence, token, () => db.InvoiceCogsEconomicClaims.AsNoTracking().Where(x => x.InvoiceId == invoiceId
+            && x.InvoiceLineId == invoiceLineId && x.FinalizedVersion == version).Select(x => new { x.MovementId, x.MovementLineNumber }).ToListAsync(token)); fence();
+        var later = await ApprovalRead(approvalFence, token, () => db.InvoiceCogsEconomicClaimSuccessions.AsNoTracking().Where(x => x.InvoiceId == invoiceId
+            && x.InvoiceLineId == invoiceLineId && x.FinalizedVersion == version).Select(x => new { x.MovementId, x.MovementLineNumber }).ToListAsync(token)); fence();
         var result = new List<InvoiceCogsEconomicClaimRow>();
         foreach (var key in anchors.Concat(later).Distinct())
         {
-            var history = await ReadAsync(db, companyId, key.MovementId, key.MovementLineNumber, fence, token);
+            var history = await ReadAsync(db, companyId, key.MovementId, key.MovementLineNumber, fence, token, approvalFence);
             var current = history.LastOrDefault()?.Claim;
             if (current is null || current.InvoiceId != invoiceId || current.InvoiceLineId != invoiceLineId || current.FinalizedVersion != version)
                 throw Invalid();
             result.Add(current);
         }
         fence(); return result;
+    }
+
+    private static async Task<T> ApprovalRead<T>(Func<CancellationToken, Task>? approvalFence, CancellationToken token, Func<Task<T>> read)
+    {
+        if (approvalFence is null) return await read();
+        token.ThrowIfCancellationRequested(); await approvalFence(token); token.ThrowIfCancellationRequested();
+        var value = await read();
+        await approvalFence(token); token.ThrowIfCancellationRequested();
+        return value;
     }
 
     internal static AccountingStoreException Invalid() => new AccountingStoreException("inventory_cost_claim_generation_invalid", "Maliyet payının güncel sahiplik nesli doğrulanamadı.");

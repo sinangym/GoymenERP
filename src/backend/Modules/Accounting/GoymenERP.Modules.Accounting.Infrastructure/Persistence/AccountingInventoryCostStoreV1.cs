@@ -29,7 +29,9 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public Task RecordAttemptAsync(AccountingCommandRecord record, Func<CancellationToken, Task> freshFence,
-        CancellationToken cancellationToken = default) => Atomic(new AccountingCommandMetadata(record.ActorId, "", [], record.OriginalCorrelationId,
+        CancellationToken cancellationToken = default) => IsOwnedApproval
+        ? posting.RecordOwnedInventoryCostRefusalAsync(this, db, audit, auditWriter, record, cancellationToken)
+        : Atomic(new AccountingCommandMetadata(record.ActorId, "", [], record.OriginalCorrelationId,
             null, record.IdempotencyKeyHash, SourceChannels.System), freshFence, () =>
         {
             db.Commands.Add(new AccountingCommandRow() { CompanyId = Company(), CommandName = record.CommandName, IdempotencyKeyHash = record.IdempotencyKeyHash,
@@ -183,17 +185,18 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
         Atomic(metadata, freshFence, async () =>
         {
             Actor(actorId, metadata);
-            var view = await Load(proposalId, kind, expectedVersion, cancellationToken);
+            var view = await ApprovalRead(() => Load(proposalId, kind, expectedVersion, cancellationToken), cancellationToken);
             var prepared = view.Preparation;
             if (view.Status != "Prepared" || prepared is null || prepared.PreparedBy == actorId) throw Refuse("inventory_cost_approval_refused");
             await Period(prepared.PeriodId, prepared.AccountingDate, cancellationToken);
-            var classification = await Classification(view, prepared.AccountingDate, cancellationToken);
-            var plan = await Plan(cancellationToken);
-            var moneyProfile = await amounts.ReadProfileAsync(Company(), prepared.CurrencyId, prepared.AccountingDate, cancellationToken);
+            await ApprovalReadFence(cancellationToken);
+            var classification = await ApprovalRead(() => Classification(view, prepared.AccountingDate, cancellationToken), cancellationToken);
+            var plan = await ApprovalRead(() => Plan(cancellationToken), cancellationToken);
+            var moneyProfile = await ApprovalRead(() => amounts.ReadProfileAsync(Company(), prepared.CurrencyId, prepared.AccountingDate, cancellationToken), cancellationToken);
             if (classification != prepared.Classification || plan.PackageId != prepared.AccountPlanPackageId
                 || plan.Version != prepared.AccountPlanPackageVersion || plan.CatalogVersion != prepared.AccountPlanCatalogVersion
                 || plan.AccountPlanSourceVersion != prepared.AccountPlanSourceVersion || plan.AccountsSourceSha256 != prepared.AccountPlanSha256
-                || await TlCurrency(cancellationToken) != prepared.CurrencyId || moneyProfile.Profile.ProfileId != prepared.MoneyProfileId
+                || await ApprovalRead(() => TlCurrency(cancellationToken), cancellationToken) != prepared.CurrencyId || moneyProfile.Profile.ProfileId != prepared.MoneyProfileId
                 || moneyProfile.Profile.Version != prepared.MoneyProfileVersion || moneyProfile.Scale != prepared.MoneyScale)
                 return CloseStale(view, metadata);
             decimal signed;
@@ -211,6 +214,7 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
                 || signed.ToString("0.############################", CultureInfo.InvariantCulture) != prepared.SignedAmount)
                 throw Refuse("inventory_cost_source_conflict"); // An old exact preparation retains its original semantics.
             await freshFence(cancellationToken);
+            if (IsOwnedApproval) cancellationToken.ThrowIfCancellationRequested();
             if (signed == 0)
             {
                 if (prepared.Rounding is null) throw Refuse("inventory_cost_source_conflict");
@@ -218,6 +222,7 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
                     ApprovedAtUtc = clock.GetUtcNow() };
                 Add(zeroResult);
                 await RecordPurchaseApproval(zeroResult, freshFence, cancellationToken);
+                await ApprovalReadFence(cancellationToken);
                 Audit(zeroResult, metadata, "approved-zero-without-journal", view);
                 return zeroResult;
             }
@@ -234,11 +239,13 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
                  new ProposedLine("selected-counter", new AccountRef(Company(), prepared.CounterAccount.AccountId), counterSide, Math.Abs(signed))]);
             var posted = await posting.ReceiveAsync(request, prepared.PeriodId,
                 metadata with { Completion = null, FreshAuthorityFence = freshFence }, cancellationToken);
+            await ApprovalReadFence(cancellationToken);
             if (posted.Kind != PostingOutcomeKind.Posted || posted.Journal is null) throw Refuse("inventory_cost_posting_conflict");
             var result = view with { Version = checked(view.Version + 1), Status = "Posted", ApprovedBy = actorId,
                 ApprovedAtUtc = clock.GetUtcNow(), JournalId = posted.Journal.Id };
             Add(result);
             await RecordPurchaseApproval(result, freshFence, cancellationToken);
+            await ApprovalReadFence(cancellationToken);
             Audit(result, metadata, "approved", view);
             return result;
         }, cancellationToken);
@@ -246,15 +253,15 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
     private async Task<AccountingInventoryCostProposalV1> Load(Guid id, AccountingInventoryCostKindV1 kind, long version, CancellationToken token)
     {
         // First resolve immutable identity, then use the same cancellation -> proposal order as the revenue voucher owner.
-        var identity = await db.InventoryCostProposals.AsNoTracking().Where(x => x.Id == id).OrderBy(x => x.Version)
-            .FirstOrDefaultAsync(token) ?? throw Refuse("inventory_cost_not_found");
-        var first = await ReadStored(identity, token);
+        var identity = await ApprovalRead(() => db.InventoryCostProposals.AsNoTracking().Where(x => x.Id == id).OrderBy(x => x.Version)
+            .FirstOrDefaultAsync(token), token) ?? throw Refuse("inventory_cost_not_found");
+        var first = await ApprovalRead(() => ReadStored(identity, token), token);
         if (first.Kind != kind) throw Refuse("inventory_cost_not_found");
-        var cancellation = await Cancellation(first, token);
-        var row = await db.InventoryCostProposals.AsNoTracking().Where(x => x.Id == id).OrderByDescending(x => x.Version).FirstAsync(token);
+        var cancellation = await ApprovalRead(() => Cancellation(first, token), token);
+        var row = await ApprovalRead(() => db.InventoryCostProposals.AsNoTracking().Where(x => x.Id == id).OrderByDescending(x => x.Version).FirstAsync(token), token);
         if (version < 1 || row.Version != version) throw new AccountingVersionConflictException(version, row.Version);
         if (cancellation is not null) throw Refuse("inventory_cost_source_cancelled");
-        return await ReadStored(row, token);
+        return await ApprovalRead(() => ReadStored(row, token), token);
     }
 
     private void Add(AccountingInventoryCostProposalV1 view) => db.InventoryCostProposals.Add(new AccountingInventoryCostProposalRow()
@@ -270,6 +277,7 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
     private async Task<T> Atomic<T>(AccountingCommandMetadata metadata, Func<CancellationToken, Task>? fence,
         Func<Task<T>> operation, CancellationToken token)
     {
+        if (IsOwnedApproval) return await AtomicApproval(metadata, fence, operation, token);
         var captured = Company();
         if (db.Database.CurrentTransaction is not null || System.Transactions.Transaction.Current is not null
             || db.ChangeTracker.HasChanges() || auditWriter.HasPendingDrafts) throw Refuse("inventory_cost_source_unavailable");
