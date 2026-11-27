@@ -1,10 +1,16 @@
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Work;
+using GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 using GoymenERP.Modules.Finance.Contracts;
 
 namespace GoymenERP.Modules.Finance.Infrastructure;
 
 public sealed partial class FinanceOfficialSalesInvoiceServiceV1 : IFinanceOfficialSalesInvoiceDecisionReadV1
 {
+    public static bool MatchesDecisionRule(FinanceOfficialSalesInvoiceViewV1 view, IReadOnlyList<WorkApprovalRuleResultV1> rules) =>
+        rules is { Count: 1 } && FinanceWorkInboxRead.Amount(view.PayableAmount) is { } amount
+        && rules[0] == new WorkApprovalRuleResultV1(FinanceOfficialSalesInvoiceWorkInboxSourceV1.ApprovalRequiredRule, null, amount, null, null);
+
     public static string ApprovePayloadHash(FinanceOfficialSalesInvoiceApproveRequestV1 request) => Hash(JsonSerializer.Serialize(request, Json));
     public static string RejectPayloadHash(FinanceOfficialSalesInvoiceRejectRequestV1 request) => Hash(JsonSerializer.Serialize(request, Json));
     public static string DecisionPreviewDigest(FinanceOfficialSalesInvoiceViewV1 view) => Hash(JsonSerializer.Serialize(view, Json));

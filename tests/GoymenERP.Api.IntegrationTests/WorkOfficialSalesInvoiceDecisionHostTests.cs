@@ -100,6 +100,21 @@ public sealed class WorkOfficialSalesInvoiceDecisionHostTests
         Assert.Equal(503, (await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.PreviewAsync(WorkDecisionHostV1.OfficialSalesInvoice, Id, default))).Status);
     }
 
+    [Theory]
+    [InlineData("actual")] [InlineData("threshold")] [InlineData("unit")] [InlineData("deviation")]
+    public async Task Human_preview_rejects_misleading_rule_facts_even_when_the_full_native_view_is_correct(string fault)
+    {
+        using var run = new Rig(); run.Source.Change = snapshot =>
+        {
+            var rule = snapshot.Item.Rules.Single();
+            rule = fault switch { "actual" => rule with { Actual = "999" }, "threshold" => rule with { Threshold = "1" },
+                "unit" => rule with { Unit = "kg" }, _ => rule with { Deviation = "1" } };
+            return snapshot with { Item = snapshot.Item with { Rules = [rule] } };
+        };
+        Assert.Equal(503, (await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.PreviewAsync(WorkDecisionHostV1.OfficialSalesInvoice, Id, default))).Status);
+        Assert.Equal(0, run.Owner.Commands);
+    }
+
     [Fact]
     public async Task Dynamic_import_differences_do_not_replace_or_invalidate_the_original_recorded_facts_receipt()
     {

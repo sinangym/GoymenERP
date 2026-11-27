@@ -26,6 +26,7 @@ public sealed partial class WorkDecisionHostV1
                 : (p.Status is "Approved" or "Rejected" or "Withdrawn") && snapshot.SourceVersion == "2")
             && snapshot.Item.Scope is null && snapshot.Item.ExcludedDeciders is not { Count: > 0 }
             && snapshot.Item.Rules.Count == 1 && snapshot.Item.Rules[0].RuleCode == "finance.official-sales-invoice-approval-required"
+            && snapshot.Item.Rules[0].Threshold is null && snapshot.Item.Rules[0].Deviation is null && snapshot.Item.Rules[0].Unit is null
             && snapshot.Item.References.Count == 3
             && snapshot.Item.References.Count(x => x.Role == "customer" && x.RecordId == p.CustomerPartyId) == 1
             && snapshot.Item.References.Count(x => x.Role == "currency" && x.RecordId == p.CurrencyId) == 1
@@ -44,7 +45,8 @@ public sealed partial class WorkDecisionHostV1
         await Fence(token);
         if (result.Outcome == ReadOutcome.Denied && result.Resource is null) throw new WorkDecisionException(403);
         if (result.Outcome != ReadOutcome.Found || !FinanceOfficialSalesInvoiceServiceV1.ValidDecisionView(snapshot.CompanyId, snapshot.Item.ItemId, result.Resource)
-            || !OfficialSalesRecordedMatches(snapshot, result.Resource!) || result.Resource!.Version != snapshot.SourceVersion
+            || !OfficialSalesRecordedMatches(snapshot, result.Resource!)
+            || !FinanceOfficialSalesInvoiceServiceV1.MatchesDecisionRule(result.Resource!, snapshot.Item.Rules) || result.Resource!.Version != snapshot.SourceVersion
             || result.Resource.Status.ToString() != snapshot.OfficialSalesInvoiceProof!.Status
             || FinanceOfficialSalesInvoiceServiceV1.DecisionPreviewDigest(result.Resource) != snapshot.OfficialSalesInvoiceProof.PreviewDigest)
             throw new WorkDecisionException(503);
@@ -83,6 +85,7 @@ public sealed partial class WorkDecisionHostV1
         var state = request.Approve ? FinanceOfficialSalesInvoiceStatusV1.Approved : FinanceOfficialSalesInvoiceStatusV1.Rejected;
         if (result.Resource is not { } r || result.DecisionReceipt is not { } receipt || result.Issues.Count != 0 || result.ExistingOfficialNo is not null
             || !FinanceOfficialSalesInvoiceServiceV1.ValidDecisionView(snapshot.CompanyId, id, r) || !OfficialSalesRecordedMatches(snapshot, r)
+            || !FinanceOfficialSalesInvoiceServiceV1.MatchesDecisionRule(r, snapshot.Item.Rules)
             || r.Status != state || r.Version != "2" || (request.Approve ? r.ApprovedBy : r.RejectedBy) != actor
             || !request.Approve && r.RejectionReason != request.Reason
             || !snapshot.Pending && snapshot.OfficialSalesInvoiceProof!.Status != state.ToString()

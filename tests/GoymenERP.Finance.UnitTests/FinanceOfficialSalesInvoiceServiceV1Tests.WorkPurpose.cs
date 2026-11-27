@@ -47,6 +47,19 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1Tests
         }
     }
 
+    [Theory]
+    [InlineData("actual")] [InlineData("threshold")] [InlineData("unit")] [InlineData("deviation")]
+    public async Task Decision_rule_matcher_reuses_the_native_canonical_amount_and_all_null_rule_facts(string fault)
+    {
+        var fixture = Fixture.Create(); await Record(fixture);
+        var view = (await fixture.Service("checker", new Documents()).GetAsync(Context("checker"), Invoice, default)).Resource!;
+        var rule = new WorkApprovalRuleResultV1(FinanceOfficialSalesInvoiceWorkInboxSourceV1.ApprovalRequiredRule, null, "1250.5", null, null);
+        Assert.True(FinanceOfficialSalesInvoiceServiceV1.MatchesDecisionRule(view, [rule]));
+        var changed = fault switch { "actual" => rule with { Actual = "999" }, "threshold" => rule with { Threshold = "1" },
+            "unit" => rule with { Unit = "kg" }, _ => rule with { Deviation = "1" } };
+        Assert.False(FinanceOfficialSalesInvoiceServiceV1.MatchesDecisionRule(view, [changed]));
+    }
+
     [Fact]
     public async Task Recorded_digest_keeps_all_native_recorded_facts_separate_from_decision_and_dynamic_import_warning_display()
     {
