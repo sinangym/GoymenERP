@@ -30,6 +30,17 @@ internal static class FinanceCreditAccountProfilePolicy
             case CreditAccountGroup.Cash:
                 if (profile.Cash is not { } cash || !Enum.IsDefined(cash.Kind)
                     || cash.MaturityDate is { } maturity && maturity < request.StartDate) Invalid("profile.cash");
+                else
+                {
+                    // FNS-D124 / approved field list v1.2: the source kind determines whether
+                    // an imported plan or actual source movements are required. No synthetic plan.
+                    var movements = cash.Kind is CreditCashKindV1.Revolving or CreditCashKindV1.Overdraft
+                        or CreditCashKindV1.CreditCard;
+                    if (profile.PlanNature != (movements ? CreditPlanNatureV1.SourceMovements : CreditPlanNatureV1.Installments))
+                        Invalid("profile.planNature");
+                    if ((cash.Kind is CreditCashKindV1.Spot or CreditCashKindV1.Installment) && cash.MaturityDate is null)
+                        Invalid("profile.cash.maturityDate");
+                }
                 break;
             case CreditAccountGroup.NonCash:
                 if (profile.NonCash is not { } nonCash || !Enum.IsDefined(nonCash.Kind)

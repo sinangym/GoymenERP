@@ -210,16 +210,19 @@ public sealed partial class FinanceCreditAccountSqlServerRelationalAcceptanceTes
     }
 
     /// <summary>A bank plan as given: each line holds and the principals sum to the credit amount.</summary>
-    private static CreditAccountProposeRequest Request() => new(CreditAccountGroup.Cash, Lender, Contract, Currency,
-        "1000.00", new DateOnly(2026, 11, 15),
-        [
+    private static CreditAccountProposeRequest Request()
+    {
+        CreditPlanInstallmentInput[] plan = [
             new CreditPlanInstallmentInput(1, new DateOnly(2026, 12, 15), "541.2345", "500.00", "33.0000", "1.6500",
                 "6.5845"),
             new CreditPlanInstallmentInput(2, new DateOnly(2027, 1, 15), "530.917", "500.00", "25.000", "1.250",
                 "4.667"),
-        ], new(Guid.Parse("f4720000-0000-4000-8000-000000000001"), Guid.Parse("f4720000-0000-4000-8000-000000000002"),
+        ];
+        return new(CreditAccountGroup.Cash, Lender, Contract, Currency, "1000.00", new DateOnly(2026, 11, 15),
+            plan, new(Guid.Parse("f4720000-0000-4000-8000-000000000001"), Guid.Parse("f4720000-0000-4000-8000-000000000002"),
             new("SENTETIK plan", new DateOnly(2026, 11, 15), "1"), CreditPlanNatureV1.Installments,
-            Cash: new(CreditCashKindV1.Installment, null)));
+            Cash: new(CreditCashKindV1.Installment, plan.Max(line => line.DueDate))));
+    }
 
     private static CommandMetadata Key(string key) => new CommandMetadata(key);
 
