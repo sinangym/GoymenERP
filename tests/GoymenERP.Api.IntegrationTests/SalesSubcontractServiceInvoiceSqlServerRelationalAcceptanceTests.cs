@@ -135,6 +135,7 @@ public sealed partial class SalesSubcontractServiceInvoiceSqlServerRelationalAcc
     private sealed class SalesScope(SalesDbContext dbContext, SalesStore store) : IAsyncDisposable
     {
         public SalesStore Store => store;
+        public SalesDbContext Context => dbContext;
         public void SetCommandTimeout(int seconds) => dbContext.Database.SetCommandTimeout(seconds);
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
     }

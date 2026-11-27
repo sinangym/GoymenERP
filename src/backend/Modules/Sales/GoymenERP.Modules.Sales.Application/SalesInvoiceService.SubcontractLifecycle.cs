@@ -147,6 +147,7 @@ public sealed partial class SalesInvoiceService : ISalesSubcontractInvoiceLifecy
         var envelope = new SalesDraftWriteEnvelope(scope.ActorId, permission, scope.RoleCodes, metadata.CorrelationId, metadata.CausationId,
             metadata.IdempotencyKey, correlation.SourceChannel, correlation.ClientIpAddress, correlation.UserAgent);
         var replay = await StoreAsync(scope, () => store.FindLifecycleReplayAsync(envelope, hash, command, token), token, permission);
+        await FreshFence(token);
         if (replay is not null) return SubcontractReplay(replay);
         try
         {
@@ -156,7 +157,7 @@ public sealed partial class SalesInvoiceService : ISalesSubcontractInvoiceLifecy
             await RequireStillAsync(scope, permission, token);
             await RequirePriceReadAsync(scope, token);
             if (requireApproval) await RequireStillAsync(scope, ApprovePermission, token);
-            var result = await store.UpdateLifecycleAsync(envelope, hash, command, invoiceId, mutate, audit, token)
+            var result = await store.UpdateLifecycleWithFenceAsync(envelope, hash, command, invoiceId, mutate, audit, FreshFence, token)
                 ?? throw new SalesDraftServiceException(404, "not_found");
             return SubcontractResult(result, result.Outcome == SalesDraftWriteOutcome.Replayed);
         }
@@ -185,19 +186,28 @@ public sealed partial class SalesInvoiceService : ISalesSubcontractInvoiceLifecy
         catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)
         {
             var winner = await StoreAsync(scope, () => store.FindLifecycleReplayAsync(envelope, hash, command, token), token, permission);
+            await FreshFence(token);
             return winner is null ? throw Store(exception) : SubcontractReplay(winner);
         }
         catch (SalesDraftStoreException exception) { throw Store(exception); }
+
+        async Task FreshFence(CancellationToken ct)
+        {
+            await RequireStillAsync(scope, permission, ct);
+            await RequirePriceReadAsync(scope, ct);
+            if (requireApproval) await RequireStillAsync(scope, ApprovePermission, ct);
+        }
 
         async Task<SalesSubcontractServiceInvoiceCommandResult> Refusal(SalesDraftTerminalRefusal refusal)
         {
             await RequireStillAsync(scope, permission, token);
             await RequirePriceReadAsync(scope, token);
             if (requireApproval) await RequireStillAsync(scope, ApprovePermission, token);
-            try { return SubcontractReplay(await store.RecordLifecycleRefusalAsync(envelope, hash, command, refusal, token)); }
+            try { return SubcontractReplay(await store.RecordLifecycleRefusalWithFenceAsync(envelope, hash, command, refusal, FreshFence, token)); }
             catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)
             {
                 var winner = await StoreAsync(scope, () => store.FindLifecycleReplayAsync(envelope, hash, command, token), token, permission);
+                await FreshFence(token);
                 return winner is null ? throw Store(exception) : SubcontractReplay(winner);
             }
         }

@@ -11,7 +11,7 @@ import { WORK_DECISION_TEXT as T } from './workDecisionText'
 import { decodeWorkDecisionPreview, sendWorkDecision } from './workDecisionApi'
 
 const id='cccccccc-0000-4000-8000-0000000000f1'
-const kinds=['sales.order-draft.v1','sales.invoice.v1'] as const
+const kinds=['sales.order-draft.v1','sales.invoice.v1','sales.subcontract-invoice.v1'] as const
 const clients:QueryClient[]=[]
 function mount(kind:typeof kinds[number]){
   const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}});clients.push(client)

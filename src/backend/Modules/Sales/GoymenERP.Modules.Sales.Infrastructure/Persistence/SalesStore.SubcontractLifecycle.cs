@@ -53,21 +53,54 @@ public sealed partial class SalesStore : ISalesSubcontractInvoiceLifecycleStoreV
     public Task<Guid?> FindOfficialClaimAsync(string officialNo, string ettn, CancellationToken cancellationToken = default) =>
         FindMatchedInvoiceIdAsync(officialNo, ettn, cancellationToken);
 
-    public async Task<SalesSubcontractServiceInvoiceStoreResult?> UpdateLifecycleAsync(SalesDraftWriteEnvelope envelope,
+    public Task<SalesSubcontractServiceInvoiceStoreResult?> UpdateLifecycleAsync(SalesDraftWriteEnvelope envelope,
         string requestHash, string commandName, Guid invoiceId, Action<SalesSubcontractServiceInvoice, DateTimeOffset> mutate,
-        SalesDraftStateAudit audit, CancellationToken cancellationToken = default)
+        SalesDraftStateAudit audit, CancellationToken cancellationToken = default) =>
+        UpdateLifecycleTransactionAsync(envelope, requestHash, commandName, invoiceId, mutate, audit, null, cancellationToken);
+
+    public Task<SalesSubcontractServiceInvoiceStoreResult?> UpdateLifecycleWithFenceAsync(SalesDraftWriteEnvelope envelope,
+        string requestHash, string commandName, Guid invoiceId, Action<SalesSubcontractServiceInvoice, DateTimeOffset> mutate,
+        SalesDraftStateAudit audit, Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(freshFence);
+        return UpdateLifecycleTransactionAsync(envelope, requestHash, commandName, invoiceId, mutate, audit, freshFence, cancellationToken);
+    }
+
+    public Task<SalesSubcontractInvoiceReplayV1> RecordLifecycleRefusalWithFenceAsync(SalesDraftWriteEnvelope envelope,
+        string requestHash, string commandName, SalesDraftTerminalRefusal refusal, Func<CancellationToken, Task> freshFence,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(freshFence);
+        return InSubcontractTransactionAsync(async () =>
+        {
+            await freshFence(cancellationToken);
+            var answer = await RecordLifecycleRefusalAsync(envelope, requestHash, commandName, refusal, cancellationToken);
+            await freshFence(cancellationToken);
+            return answer;
+        }, cancellationToken);
+    }
+
+    private async Task<SalesSubcontractServiceInvoiceStoreResult?> UpdateLifecycleTransactionAsync(SalesDraftWriteEnvelope envelope,
+        string requestHash, string commandName, Guid invoiceId, Action<SalesSubcontractServiceInvoice, DateTimeOffset> mutate,
+        SalesDraftStateAudit audit, Func<CancellationToken, Task>? freshFence, CancellationToken cancellationToken)
     {
         RequireSubcontractCommand(envelope, requestHash, commandName);
         // Locate the immutable key without taking a header lock first. Both Logistics correction and
         // Sales mutation then use the same claim-range -> owner weighing -> invoice-header lock order.
+        if (freshFence is not null) await freshFence(cancellationToken);
         var key = await dbContext.SubcontractServiceInvoices.AsNoTracking().Where(row => row.Id == invoiceId)
             .Select(row => new { row.LoadingInstructionId, row.WeighingId }).SingleOrDefaultAsync(cancellationToken);
         if (key is null) return null;
         return await InSubcontractTransactionAsync(async () =>
         {
+            if (freshFence is not null) await freshFence(cancellationToken);
             await SalesSubcontractInvoiceClaimReadSession.ReadRangeAsync(dbContext, RequireResolvedCompany(),
                 key.LoadingInstructionId, key.WeighingId, cancellationToken);
-            return await UpdateLifecycleCoreAsync(envelope, requestHash, commandName, invoiceId, mutate, audit, cancellationToken);
+            var answer = await UpdateLifecycleCoreAsync(envelope, requestHash, commandName, invoiceId, mutate, audit, cancellationToken);
+            // The save (including attempt, audit and lifecycle) is still uncommitted here.
+            // This is the same owner-transaction fence pattern as OfficialTransaction.
+            if (freshFence is not null) await freshFence(cancellationToken);
+            return answer;
         }, cancellationToken);
     }
 

@@ -81,18 +81,19 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
     IErpAuthorityRevalidationService authority, IEnumerable<IWorkInboxSourceV1> sources,
     IWorkDelegationReaderV1 delegations, WorkDecisionExecutionFenceV1 executionFence,
     IFinanceCashAccountMaster cash, IInventoryOpeningCostCommandV1 openingCost,
-    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null)
+    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null)
 {
     public const string OpeningCost = "inventory.opening-cost.v1";
     public const string SalesOrder = "sales.order-draft.v1";
     public const string SalesInvoice = "sales.invoice.v1";
+    public const string SalesSubcontractInvoice = "sales.subcontract-invoice.v1";
     public const string PurchaseRequest = "purchasing.request.v1";
     public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([OpeningCost, "finance.cash-account.v1",
-        "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, PurchaseRequest], StringComparer.Ordinal);
+        "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest], StringComparer.Ordinal);
 
     private async Task RequireDecisionAuthorityAsync(string kind,string permission,Guid companyId,string actor,CancellationToken token)
     {
-        foreach(var required in kind==SalesInvoice?new[]{permission,SalesPermissionManifestV1.OrdersPriceRead}:new[]{permission})
+        foreach(var required in (kind is SalesInvoice or SalesSubcontractInvoice)?new[]{permission,SalesPermissionManifestV1.OrdersPriceRead}:new[]{permission})
         {
             var scope=await authority.RevalidatePermissionScopeAsync(required,companyId,token);
             if(!scope.IsGranted||!scope.IsCompanyWide||!user.IsAuthenticated||user.UserId!=actor
@@ -159,7 +160,7 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
         if (user.UserId != actor) throw new WorkDecisionException(403);
         if (string.IsNullOrWhiteSpace(request.ExpectedVersion) || request.ExpectedVersion.Length > 128
             || (kind == OpeningCost && request.ExpectedVersion != snapshot.SourceVersion)
-            || ((kind == OpeningCost || !request.Approve && kind is not (SalesOrder or SalesInvoice or PurchaseRequest)) && (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 500))
+            || ((kind == OpeningCost || !request.Approve && kind is not (SalesOrder or SalesInvoice or SalesSubcontractInvoice or PurchaseRequest)) && (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 500))
             || (kind != OpeningCost && request.Approve && request.Reason is not null)) throw new WorkDecisionException(400, "work_decision_invalid");
         async Task<bool> Verify(CancellationToken ct) => request.DelegationId is not { } delegation
             || await delegations.FindForActorAsync(delegation, snapshot.Item, ct) is not null;
@@ -182,7 +183,7 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
             catch (PurchasingServiceException error)
             { throw new WorkDecisionException(error.Status, error.Code, error.IsReplay, error.OriginalCorrelationId); }
         }
-        if(kind is SalesOrder or SalesInvoice)
+        if(kind is SalesOrder or SalesInvoice or SalesSubcontractInvoice)
         {
             var salesMetadata=new SalesCommandMetadata(key,correlation.CorrelationId,correlation.CausationId,DateTimeOffset.UtcNow);
             var body=new SalesDraftStateCommandRequest(request.ExpectedVersion,request.Reason);
@@ -194,6 +195,14 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
                     var answer=request.Approve?await salesOrders.ApproveDraftAsync(id,body,salesMetadata,token):await salesOrders.RejectDraftAsync(id,body,salesMetadata,token);
                     if(answer.Detail.Draft.Id!=id||answer.Detail.Draft.CompanyId!=snapshot.CompanyId)throw new WorkDecisionException(503);
                     return new(snapshot.CompanyId,kind,id,answer.Detail.Draft.ApprovalState,answer.IsReplay,answer.OriginalCorrelationId);
+                }
+                if(kind==SalesSubcontractInvoice)
+                {
+                    if(subcontractInvoices is null)throw new WorkDecisionException(503);
+                    var answer=request.Approve?await subcontractInvoices.ApproveSubcontractInvoiceAsync(id,body,salesMetadata,token)
+                        :await subcontractInvoices.RejectSubcontractInvoiceAsync(id,body,salesMetadata,token);
+                    if(answer.Invoice.Id!=id)throw new WorkDecisionException(503);
+                    return new(snapshot.CompanyId,kind,id,answer.Invoice.State,answer.IsReplay,answer.OriginalCorrelationId);
                 }
                 if(salesInvoices is null)throw new WorkDecisionException(503);
                 var invoice=request.Approve?await salesInvoices.ApproveInvoiceAsync(id,body,salesMetadata,token):await salesInvoices.RejectInvoiceAsync(id,body,salesMetadata,token);

@@ -74,6 +74,79 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal("admitted", result.Invoice.Lifecycle!.Finalization!.FinanceStatus);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(4000)]
+    [InlineData(4001)]
+    public async Task Subcontract_rejection_keeps_its_native_optional_reason_and_exact_4000_character_limit(int length)
+    {
+        var fixture = new SubcontractLifecycleWorld(pending: true);
+        var reason = length == 0 ? null : new string('r', length);
+        var request = new SalesDraftStateCommandRequest("2", reason);
+        if (length > SalesInvoice.MaximumReasonLength)
+        {
+            var error = await Assert.ThrowsAsync<SalesDraftServiceException>(() => fixture.Service().RejectSubcontractInvoiceAsync(
+                fixture.Invoice.Id, request, Metadata("sc-work-reason")));
+            Assert.Equal(400, error.Status);
+            Assert.Equal(0, fixture.Lifecycle.Writes);
+            return;
+        }
+        var result = await fixture.Service().RejectSubcontractInvoiceAsync(fixture.Invoice.Id, request, Metadata("sc-work-reason"));
+        Assert.Equal("Rejected", result.Invoice.State);
+        Assert.Equal(reason, fixture.Reader.Stored[fixture.Invoice.Id].Decision.DecisionReason);
+        Assert.Equal(1, fixture.Lifecycle.Writes);
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("price")]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task Subcontract_native_decision_rechecks_the_service_fence_before_commit_and_records_no_late_refusal(string loss)
+    {
+        var fixture = new SubcontractLifecycleWorld(pending: true);
+        fixture.Lifecycle.OnSaved = () =>
+        {
+            if (loss == "permission") fixture.World.Authority.Denied.Add(SalesPermissionManifestV1.InvoicesApprove);
+            if (loss == "price") fixture.World.Authority.Denied.Add(SalesPermissionManifestV1.OrdersPriceRead);
+            if (loss == "actor") fixture.World.User.Id = "SENTETIK-other-actor";
+            if (loss == "company") fixture.World.User.Company = Guid.NewGuid();
+        };
+        var error = await Assert.ThrowsAsync<SalesDraftServiceException>(() => fixture.Service().ApproveSubcontractInvoiceAsync(
+            fixture.Invoice.Id, new("2"), Metadata("sc-work-late")));
+        Assert.Equal(403, error.Status);
+        Assert.Equal(0, fixture.Lifecycle.Writes);
+        Assert.Equal(0, fixture.Lifecycle.Refusals);
+        Assert.Equal(SalesSubcontractServiceInvoiceState.PendingApproval, fixture.Reader.Stored[fixture.Invoice.Id].State);
+        Assert.Equal(2, fixture.Reader.Stored[fixture.Invoice.Id].Version);
+    }
+
+    [Fact]
+    public async Task A_late_price_loss_during_a_subcontract_terminal_refusal_records_no_receipt()
+    {
+        var fixture = new SubcontractLifecycleWorld(pending: true);
+        fixture.Lifecycle.OnSaved = () => fixture.World.Authority.Denied.Add(SalesPermissionManifestV1.OrdersPriceRead);
+        var error = await Assert.ThrowsAsync<SalesDraftServiceException>(() => fixture.Service().ApproveSubcontractInvoiceAsync(
+            fixture.Invoice.Id, new("1"), Metadata("sc-work-stale")));
+        Assert.Equal(403, error.Status);
+        Assert.Equal(0, fixture.Lifecycle.Writes);
+        Assert.Equal(0, fixture.Lifecycle.Refusals);
+    }
+
+    [Fact]
+    public async Task Subcontract_native_approval_replay_requires_fresh_price_authority_before_disclosing_the_receipt()
+    {
+        var fixture = new SubcontractLifecycleWorld(pending: true);
+        var result = await fixture.Service().ApproveSubcontractInvoiceAsync(fixture.Invoice.Id, new("2"), Metadata("sc-work-replay"));
+        Assert.False(result.IsReplay);
+        Assert.Equal(1, fixture.Lifecycle.Writes);
+        fixture.Lifecycle.OnReplayRead = () => fixture.World.Authority.Denied.Add(SalesPermissionManifestV1.OrdersPriceRead);
+        var error = await Assert.ThrowsAsync<SalesDraftServiceException>(() => fixture.Service().ApproveSubcontractInvoiceAsync(
+            fixture.Invoice.Id, new("2"), Metadata("sc-work-replay")));
+        Assert.Equal(403, error.Status);
+        Assert.Equal(1, fixture.Lifecycle.Writes);
+    }
+
     private sealed class SubcontractLifecycleWorld
     {
         public World World { get; } = new();
@@ -83,7 +156,7 @@ public sealed partial class SalesDraftServiceTests
         public SubcontractOfficialReader Official { get; }
         public SubcontractLifecycleStore Lifecycle { get; }
         public MatchSalesInvoiceRequest Request => new("3", Official.Facts.OfficialNo, Official.Facts.Ettn);
-        public SubcontractLifecycleWorld()
+        public SubcontractLifecycleWorld(bool pending = false)
         {
             Invoice = SalesSubcontractServiceInvoice.Create(Guid.NewGuid(), Company, "SFH-SENTETIK",
                 new(Party, Account, Currency, Guid.NewGuid(), "1", 2, Day), new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1, 1, "10"),
@@ -92,7 +165,7 @@ public sealed partial class SalesDraftServiceTests
             var terms = SalesDueTerms.Create([new(1, SalesDueBasis.OrderDate, 30, "100")]);
             Invoice.SetDuePlan(terms, SalesDueDateCalculator.Compute(terms, Day, null).DueDates);
             Invoice.Submit(1, "SENTETIK-submitter", World.Clock.GetUtcNow());
-            Invoice.Approve(2, "SENTETIK-checker", World.Clock.GetUtcNow());
+            if (!pending) Invoice.Approve(2, "SENTETIK-checker", World.Clock.GetUtcNow());
             Reader.Stored[Invoice.Id] = Invoice;
             Official = new(new("SENTETIK-SFH-1", Guid.NewGuid().ToString("D"), Party, Currency, 30m, 1200m, 200m, 0m, Day.AddDays(3),
                 new(Company, Guid.NewGuid(), "approved-import", "1", World.Clock.GetUtcNow(), null, null, null, Guid.NewGuid(), new string('a', 64), false)));
@@ -126,6 +199,9 @@ public sealed partial class SalesDraftServiceTests
         private readonly Dictionary<(string Command, string Key), (string Hash, string Actor, SalesSubcontractInvoiceReplayV1 Result)> attempts = [];
         public int Writes { get; private set; }
         public bool ReplayConcurrentFinanceOffer { get; set; }
+        public Action? OnSaved { get; set; }
+        public Action? OnReplayRead { get; set; }
+        public int Refusals { get; private set; }
         public Task<SalesSubcontractInvoiceReplayV1?> FindLifecycleReplayAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
             CancellationToken cancellationToken = default)
         {
@@ -137,6 +213,7 @@ public sealed partial class SalesDraftServiceTests
             }
             if (!attempts.TryGetValue((commandName, envelope.IdempotencyKey), out var found)) return Task.FromResult<SalesSubcontractInvoiceReplayV1?>(null);
             if (found.Hash != requestHash || found.Actor != envelope.ActorId) throw new SalesDraftStoreException(SalesDraftStoreCodes.SameKeyPayloadMismatch, "SENTETIK");
+            OnReplayRead?.Invoke();
             return Task.FromResult<SalesSubcontractInvoiceReplayV1?>(found.Result);
         }
         public Task<SalesSubcontractServiceInvoiceStoreResult?> UpdateLifecycleAsync(SalesDraftWriteEnvelope envelope, string requestHash,
@@ -147,9 +224,34 @@ public sealed partial class SalesDraftServiceTests
             attempts[(commandName, envelope.IdempotencyKey)] = (requestHash, envelope.ActorId, new(invoice, null, envelope.CorrelationId));
             return Task.FromResult<SalesSubcontractServiceInvoiceStoreResult?>(new(invoice, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId));
         }
+        public async Task<SalesSubcontractServiceInvoiceStoreResult?> UpdateLifecycleWithFenceAsync(SalesDraftWriteEnvelope envelope, string requestHash,
+            string commandName, Guid invoiceId, Action<SalesSubcontractServiceInvoice, DateTimeOffset> mutate, SalesDraftStateAudit audit,
+            Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken = default)
+        {
+            await freshFence(cancellationToken);
+            var saved = reader.Stored[invoiceId];
+            var staged = SalesSubcontractServiceInvoice.Restore(saved.Id, saved.CompanyId, saved.DocumentNo, saved.Header, saved.Source,
+                saved.State, saved.Version, saved.CreatedBy, saved.CreatedAtUtc, saved.Lines, saved.LifecycleFacts);
+            mutate(staged, clock.GetUtcNow());
+            OnSaved?.Invoke();
+            await freshFence(cancellationToken);
+            reader.Stored[invoiceId] = staged;
+            Writes++;
+            attempts[(commandName, envelope.IdempotencyKey)] = (requestHash, envelope.ActorId, new(staged, null, envelope.CorrelationId));
+            return new(staged, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId);
+        }
+        public async Task<SalesSubcontractInvoiceReplayV1> RecordLifecycleRefusalWithFenceAsync(SalesDraftWriteEnvelope envelope, string requestHash,
+            string commandName, SalesDraftTerminalRefusal refusal, Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken = default)
+        {
+            await freshFence(cancellationToken);
+            OnSaved?.Invoke();
+            await freshFence(cancellationToken);
+            return await RecordLifecycleRefusalAsync(envelope, requestHash, commandName, refusal, cancellationToken);
+        }
         public Task<SalesSubcontractInvoiceReplayV1> RecordLifecycleRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash,
             string commandName, SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken = default)
         {
+            Refusals++;
             var result = new SalesSubcontractInvoiceReplayV1(null, refusal, envelope.CorrelationId);
             attempts[(commandName, envelope.IdempotencyKey)] = (requestHash, envelope.ActorId, result);
             return Task.FromResult(result);

@@ -88,6 +88,8 @@ internal interface ISalesWorkInboxApprovalStoreV1
 {
     Task<SalesWorkInboxInvoiceDecisionV1?> FindInvoiceDecisionAsync(Guid companyId, Guid invoiceId, CancellationToken cancellationToken)
         => Task.FromResult<SalesWorkInboxInvoiceDecisionV1?>(null);
+    Task<SalesWorkInboxInvoiceDecisionV1?> FindSubcontractInvoiceDecisionAsync(Guid companyId, Guid invoiceId, CancellationToken cancellationToken)
+        => Task.FromResult<SalesWorkInboxInvoiceDecisionV1?>(null);
     Task<IReadOnlyList<SalesWorkInboxRequestV1>> ListSubmittedRequestsAsync(Guid companyId, int take,
         CancellationToken cancellationToken);
 

@@ -157,6 +157,7 @@ export const CAPABILITY = {
   /** Sales-owned purpose routes mounted by Work; no browse grant required. */
   salesOrderWorkDecision: 'sales.order-draft.work-decision',
   salesInvoiceWorkDecision: 'sales.invoice.work-decision',
+  salesSubcontractInvoiceWorkDecision: 'sales.subcontract-invoice.work-decision',
   /** S-04 Sales order 360, one draft. Route `/satis/siparisler/:draftId`. A SEPARATE grant from the list. */
   salesDraftsDetail: 'sales.drafts.detail',
   /** S-03 new sales order draft. Route `/satis/siparisler/yeni`. A SEPARATE grant from reading. */
@@ -488,6 +489,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.salesDraftsList]: '/satis/siparisler',
   [CAPABILITY.salesOrderWorkDecision]: '/onaylarim/sales.order-draft.v1/:approvalId',
   [CAPABILITY.salesInvoiceWorkDecision]: '/onaylarim/sales.invoice.v1/:approvalId',
+  [CAPABILITY.salesSubcontractInvoiceWorkDecision]: '/onaylarim/sales.subcontract-invoice.v1/:approvalId',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a draft id.
   [CAPABILITY.salesDraftsCreate]: '/satis/siparisler/yeni',
   [CAPABILITY.salesDraftsDetail]: '/satis/siparisler/:draftId',

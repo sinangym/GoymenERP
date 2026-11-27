@@ -13,7 +13,16 @@ internal sealed class SalesWorkInboxApprovalFakeStore : ISalesWorkInboxApprovalS
     public IReadOnlyList<SalesWorkInboxQuoteConversionRequestV1> QuoteRequests { get; set; } = [];
     public IReadOnlyList<SalesWorkInboxOverDeliveryRequestV1> OverDeliveryRequests { get; set; } = [];
     public Exception? Failure { get; set; }
+    public SalesWorkInboxInvoiceDecisionV1? SubcontractDecision { get; set; }
+    public Action? OnDecisionRead { get; set; }
     public List<(string Query, Guid CompanyId, int Take)> Calls { get; } = [];
+
+    public Task<SalesWorkInboxInvoiceDecisionV1?> FindSubcontractInvoiceDecisionAsync(Guid companyId, Guid invoiceId, CancellationToken cancellationToken)
+    {
+        Calls.Add((nameof(FindSubcontractInvoiceDecisionAsync), companyId, 1));
+        OnDecisionRead?.Invoke();
+        return Task.FromResult(SubcontractDecision?.Invoice.Id == invoiceId ? SubcontractDecision : null);
+    }
 
     public Task<IReadOnlyList<SalesWorkInboxRequestV1>> ListSubmittedRequestsAsync(Guid companyId, int take,
         CancellationToken cancellationToken) => Answer(nameof(ListSubmittedRequestsAsync), companyId, take, Requests);

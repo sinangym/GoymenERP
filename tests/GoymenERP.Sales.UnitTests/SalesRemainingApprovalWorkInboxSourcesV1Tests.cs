@@ -135,7 +135,7 @@ public sealed class SalesRemainingApprovalWorkInboxSourcesV1Tests
         var result = await source.ListPendingAsync(Context(), 10, default);
 
         var item = Assert.Single(result.Items!);
-        Assert.Equal($"/satis/siparisler/{Order:D}", item.Link);
+        Assert.Equal($"/onaylarim/sales.subcontract-invoice.v1/{item.ItemId:D}", item.Link);
         Assert.Equal(["sales-subcontract-invoice", "sales-order-draft"], item.References.Select(reference => reference.Role));
         Assert.Equal(Order, item.References[1].RecordId);
         Assert.True(item.Excludes(Maker) && item.Excludes(Submitter));
@@ -269,6 +269,32 @@ public sealed class SalesRemainingApprovalWorkInboxSourcesV1Tests
             Sources.Return(store, granted),
             Sources.Contract(store, granted),
         ];
+
+    [Fact]
+    public async Task A_completed_subcontract_invoice_keeps_immutable_maker_and_version_metadata_for_native_replay()
+    {
+        var invoice = Subcontract(1, T0);
+        var store = new SalesWorkInboxApprovalFakeStore { SubcontractDecision = new(invoice, 9, false) };
+        var result = await Sources.Subcontract(store).ReadDecisionAsync(Context(), invoice.Id, default);
+        Assert.NotNull(result);
+        Assert.False(result.Pending);
+        Assert.Equal("9", result.SourceVersion);
+        Assert.Equal(Maker, result.Item.PreparedBy);
+        Assert.True(result.Item.Excludes(Submitter));
+        Assert.Equal($"/onaylarim/sales.subcontract-invoice.v1/{invoice.Id:D}", result.Item.Link);
+        Assert.Equal(T0.ToUniversalTime(), result.Item.WaitingSinceUtc);
+    }
+
+    [Fact]
+    public async Task A_subcontract_purpose_read_requires_fresh_price_authority_after_its_metadata_read()
+    {
+        var invoice = Subcontract(1, T0);
+        var allowed = true;
+        var store = new SalesWorkInboxApprovalFakeStore { SubcontractDecision = new(invoice, 9, false), OnDecisionRead = () => allowed = false };
+        var source = Sources.Subcontract(store, permission => permission != SalesPermissionManifestV1.OrdersPriceRead || allowed);
+        Assert.Null(await source.ReadDecisionAsync(Context(), invoice.Id, default));
+        Assert.Single(store.Calls);
+    }
 
     private static class Sources
     {

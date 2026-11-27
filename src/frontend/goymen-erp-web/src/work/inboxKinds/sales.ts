@@ -1,6 +1,5 @@
 import {
   SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
-  SALES_INVOICE_APPROVE_CAPABILITY,
   SALES_OVER_DELIVERY_APPROVE_CAPABILITY,
   SALES_POOL_CAPABILITY_ID,
   SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY,
@@ -20,8 +19,8 @@ export const SALES_INBOX_KINDS: readonly WorkInboxKind[] = [
   // WP4: the remaining Sales approval kinds, each with the owner's existing approve control (none is new).
   { kind: 'sales.request.v1', module: 'sales', capability: SALES_POOL_CAPABILITY_ID.requestsDecide },
   { kind: 'sales.invoice.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.invoice },
-  // The subcontract service invoice is decided under the same `sales.invoices.approve` control (on the order screen).
-  { kind: 'sales.subcontract-invoice.v1', module: 'sales', capability: SALES_INVOICE_APPROVE_CAPABILITY },
+  // Native subcontract lifecycle purpose: invoice approval + price read, with no order browse grant.
+  { kind: 'sales.subcontract-invoice.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.subcontractInvoice },
   { kind: 'sales.customer-return.v1', module: 'sales', capability: SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY },
   // S-11 is not routed: its `sales.contracts.discount-approve` control is not published by the shell yet.
   { kind: 'sales.contract-discount.v1', module: 'sales', capability: null },

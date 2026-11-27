@@ -7,7 +7,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
-  SALES_INVOICE_APPROVE_CAPABILITY,
   SALES_OVER_DELIVERY_APPROVE_CAPABILITY,
   SALES_POOL_CAPABILITY_ID,
   SALES_WORK_DECISION_CAPABILITY,
@@ -25,7 +24,7 @@ import { SALES_INBOX_KINDS } from './sales'
 const WP4_KINDS = {
   'sales.request.v1': SALES_POOL_CAPABILITY_ID.requestsDecide,
   'sales.invoice.v1': SALES_WORK_DECISION_CAPABILITY.invoice,
-  'sales.subcontract-invoice.v1': SALES_INVOICE_APPROVE_CAPABILITY,
+  'sales.subcontract-invoice.v1': SALES_WORK_DECISION_CAPABILITY.subcontractInvoice,
   'sales.customer-return.v1': SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
   'sales.contract-discount.v1': null,
   // SAT-D476 / SAT-D475: the request-based kinds.
@@ -42,7 +41,7 @@ describe('WP4 Sales inbox kinds', () => {
       expect(SALES_INBOX_KINDS).toContain(entries[0])
     }
     expect(WORK_INBOX_CAPABILITIES).toEqual(expect.arrayContaining([
-      SALES_POOL_CAPABILITY_ID.requestsDecide, SALES_INVOICE_APPROVE_CAPABILITY, SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
+      SALES_POOL_CAPABILITY_ID.requestsDecide, SALES_WORK_DECISION_CAPABILITY.invoice, SALES_WORK_DECISION_CAPABILITY.subcontractInvoice, SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
     ]))
     // S-11 is not routed: holding only the contract discount permission does not open the inbox route.
     expect(WORK_INBOX_CAPABILITIES).not.toContain('sales.contracts.discount-approve')

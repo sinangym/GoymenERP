@@ -24,6 +24,13 @@ public interface ISalesSubcontractInvoiceLifecycleStoreV1
     Task<SalesSubcontractServiceInvoiceStoreResult?> UpdateLifecycleAsync(SalesDraftWriteEnvelope envelope,
         string requestHash, string commandName, Guid invoiceId, Action<SalesSubcontractServiceInvoice, DateTimeOffset> mutate,
         SalesDraftStateAudit audit, CancellationToken cancellationToken = default);
+    /// <summary>Native service fence, checked again after Save and before the owner transaction commits.</summary>
+    Task<SalesSubcontractServiceInvoiceStoreResult?> UpdateLifecycleWithFenceAsync(SalesDraftWriteEnvelope envelope,
+        string requestHash, string commandName, Guid invoiceId, Action<SalesSubcontractServiceInvoice, DateTimeOffset> mutate,
+        SalesDraftStateAudit audit, Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken = default);
+    Task<SalesSubcontractInvoiceReplayV1> RecordLifecycleRefusalWithFenceAsync(SalesDraftWriteEnvelope envelope,
+        string requestHash, string commandName, SalesDraftTerminalRefusal refusal, Func<CancellationToken, Task> freshFence,
+        CancellationToken cancellationToken = default);
     Task<SalesSubcontractInvoiceReplayV1> RecordLifecycleRefusalAsync(SalesDraftWriteEnvelope envelope,
         string requestHash, string commandName, SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken = default);
     Task<Guid?> FindOfficialClaimAsync(string officialNo, string ettn, CancellationToken cancellationToken = default);

@@ -28,7 +28,7 @@ describe('shell ↔ Sales lane capability ids', () => {
     expect(NAV_GROUPS.find((group) => group.id === 'sales')?.entries).toContain(CAPABILITY.salesOfficialInvoiceCancellation)
   })
 
-  it.each(['order', 'invoice'] as const)('mounts the Sales %s purpose route exactly once ahead of the legacy generic detail', key => {
+  it.each(['order', 'invoice', 'subcontractInvoice'] as const)('mounts the Sales %s purpose route exactly once ahead of the legacy generic detail', key => {
     const capability = SALES_WORK_DECISION_CAPABILITY[key]
     const path = SALES_WORK_DECISION_ROUTE[key]
     expect(Object.values(CAPABILITY)).toContain(capability)

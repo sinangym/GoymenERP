@@ -19,12 +19,14 @@ public sealed class WorkSalesDecisionHostTests
     [InlineData(WorkDecisionHostV1.SalesOrder,false)]
     [InlineData(WorkDecisionHostV1.SalesInvoice,true)]
     [InlineData(WorkDecisionHostV1.SalesInvoice,false)]
+    [InlineData(WorkDecisionHostV1.SalesSubcontractInvoice,true)]
+    [InlineData(WorkDecisionHostV1.SalesSubcontractInvoice,false)]
     public async Task The_native_owner_receives_the_original_version_optional_reason_key_and_correlation_after_completion(string kind,bool approve)
     {
         var run=new Run(kind);run.Source.Pending=false;
         var result=await run.Host.DecideAsync(kind,Item,new("7",approve,null),"SENTETIK-original-key",default);
         Assert.Equal(approve?"Approved":"Rejected",result.State);Assert.True(result.Replayed);Assert.Equal("SENTETIK-original",result.OriginalCorrelationId);
-        var call=Assert.Single(run.Calls);Assert.Equal(WorkDecisionHostV1.SalesOrder==kind?(approve?"ApproveDraftAsync":"RejectDraftAsync"):(approve?"ApproveInvoiceAsync":"RejectInvoiceAsync"),call.Method);
+        var call=Assert.Single(run.Calls);Assert.Equal(WorkDecisionHostV1.SalesOrder==kind?(approve?"ApproveDraftAsync":"RejectDraftAsync"):kind==WorkDecisionHostV1.SalesSubcontractInvoice?(approve?"ApproveSubcontractInvoiceAsync":"RejectSubcontractInvoiceAsync"):(approve?"ApproveInvoiceAsync":"RejectInvoiceAsync"),call.Method);
         Assert.Equal(Item,call.Id);Assert.Equal(new SalesDraftStateCommandRequest("7",null),call.Body);
         Assert.Equal(("SENTETIK-original-key","SENTETIK-correlation"),(call.Metadata.IdempotencyKey,call.Metadata.CorrelationId));
         Assert.DoesNotContain(SalesPermissionManifestV1.DraftsRead,run.Raw.Asked);Assert.DoesNotContain(SalesPermissionManifestV1.InvoicesRead,run.Raw.Asked);
@@ -32,6 +34,7 @@ public sealed class WorkSalesDecisionHostTests
     [Theory]
     [InlineData(WorkDecisionHostV1.SalesOrder)]
     [InlineData(WorkDecisionHostV1.SalesInvoice)]
+    [InlineData(WorkDecisionHostV1.SalesSubcontractInvoice)]
     public async Task Maker_and_submitter_are_excluded_without_excluding_an_unrelated_reviewer(string kind)
     {
         var run=new Run(kind);run.Source.Maker=Actor;
@@ -41,17 +44,21 @@ public sealed class WorkSalesDecisionHostTests
         Assert.Empty(run.Calls);run.Source.Submitter="SENTETIK-submitter";
         Assert.Equal("Approved",(await run.Host.DecideAsync(kind,Item,new("7",true,null),"key",default)).State);
     }
-    [Fact]
-    public async Task Invoice_price_co_permission_is_freshly_required_before_any_owner_command()
+    [Theory]
+    [InlineData(WorkDecisionHostV1.SalesInvoice)]
+    [InlineData(WorkDecisionHostV1.SalesSubcontractInvoice)]
+    public async Task Invoice_price_co_permission_is_freshly_required_before_any_owner_command(string kind)
     {
-        var run=new Run(WorkDecisionHostV1.SalesInvoice);run.Raw.Denied=SalesPermissionManifestV1.OrdersPriceRead;
+        var run=new Run(kind);run.Raw.Denied=SalesPermissionManifestV1.OrdersPriceRead;
         Assert.Equal(403,(await Assert.ThrowsAsync<WorkDecisionException>(()=>run.Host.DecideAsync(run.Source.Kind,Item,new("7",true,null),"key",default))).Status);
         Assert.Empty(run.Calls);
     }
-    [Fact]
-    public async Task A_delegation_revoked_inside_the_native_command_is_seen_at_its_next_authority_fence()
+    [Theory]
+    [InlineData(WorkDecisionHostV1.SalesInvoice)]
+    [InlineData(WorkDecisionHostV1.SalesSubcontractInvoice)]
+    public async Task A_delegation_revoked_inside_the_native_command_is_seen_at_its_next_authority_fence(string kind)
     {
-        var run=new Run(WorkDecisionHostV1.SalesInvoice);run.BeforeFence=()=>run.Delegation.Allowed=false;
+        var run=new Run(kind);run.BeforeFence=()=>run.Delegation.Allowed=false;
         Assert.Equal(403,(await Assert.ThrowsAsync<WorkDecisionException>(()=>run.Host.DecideAsync(run.Source.Kind,Item,new("7",true,null,Guid.NewGuid()),"key",default))).Status);
         Assert.False(run.NativeEffect);Assert.True(run.Delegation.Reads>=2);
     }
@@ -65,17 +72,19 @@ public sealed class WorkSalesDecisionHostTests
             Source=new(kind);var company=new CompanyContext();company.Set(Company);var correlation=new CorrelationContext();correlation.Set("SENTETIK-correlation",null,"api",null,null);
             var fence=new WorkDecisionExecutionFenceV1();var authority=new WorkDecisionAuthorityV1(Raw,fence);
             var orders=DispatchProxy.Create<ISalesDraftService,NativeOwnerProxy>();var invoices=DispatchProxy.Create<ISalesInvoiceService,NativeOwnerProxy>();
+            var subcontract=DispatchProxy.Create<ISalesSubcontractInvoiceLifecycleServiceV1,NativeOwnerProxy>();
             async Task<T> Answer<T>(MethodInfo method,object?[] args,Func<bool,T> result)
             {
                 Calls.Add((method.Name,(Guid)args[0]!, (SalesDraftStateCommandRequest)args[1]!, (SalesCommandMetadata)args[2]!));
                 BeforeFence?.Invoke();
                 if(!(await authority.RevalidatePermissionScopeAsync(Source.ApproverPermission,Company)).IsGranted)throw new SalesDraftServiceException(403,"forbidden");
-                if(kind==WorkDecisionHostV1.SalesInvoice&&!(await authority.RevalidatePermissionScopeAsync(SalesPermissionManifestV1.OrdersPriceRead,Company)).IsGranted)throw new SalesDraftServiceException(403,"forbidden");
+                if((kind is WorkDecisionHostV1.SalesInvoice or WorkDecisionHostV1.SalesSubcontractInvoice)&&!(await authority.RevalidatePermissionScopeAsync(SalesPermissionManifestV1.OrdersPriceRead,Company)).IsGranted)throw new SalesDraftServiceException(403,"forbidden");
                 NativeEffect=true;return result(method.Name.StartsWith("Approve",StringComparison.Ordinal));
             }
             ((NativeOwnerProxy)(object)orders).Handler=(method,args)=>Answer(method,args,OrderResult);
             ((NativeOwnerProxy)(object)invoices).Handler=(method,args)=>Answer(method,args,InvoiceResult);
-            Host=new(company,new User(),correlation,authority,[Source],Delegation,fence,null!,null!,orders,invoices);
+            ((NativeOwnerProxy)(object)subcontract).Handler=(method,args)=>Answer(method,args,SubcontractResult);
+            Host=new(company,new User(),correlation,authority,[Source],Delegation,fence,null!,null!,orders,invoices,subcontractInvoices:subcontract);
         }
     }
     public class NativeOwnerProxy:DispatchProxy
@@ -88,6 +97,8 @@ public sealed class WorkSalesDecisionHostTests
         new("SENTETIK-submitter",DateTimeOffset.UtcNow,Actor,DateTimeOffset.UtcNow,null),null!,false,false),true,"SENTETIK-original");
     private static SalesInvoiceCommandResult InvoiceResult(bool approve)=>new(new(Item,"SENTETIK invoice",approve?"Approved":"Rejected","9",new DateOnly(2026,11,27),
         Company,Company,Company,2,null,null!,null,[],[],[],"SENTETIK-maker",DateTimeOffset.UtcNow),true,"SENTETIK-original");
+    private static SalesSubcontractServiceInvoiceCommandResult SubcontractResult(bool approve)=>new(new(Item,"SENTETIK subcontract",approve?"Approved":"Rejected","9",new DateOnly(2026,11,27),
+        Company,Company,Company,2,Company,Company,Company,1,"10",null!,[],"SENTETIK-maker",DateTimeOffset.UtcNow,true),true,"SENTETIK-original");
     private sealed class RawAuthority:IErpAuthorityRevalidationService
     {
         public string? Denied;public List<string> Asked=[];
