@@ -17,12 +17,12 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(60, declarations.Count);
+        Assert.Equal(61, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             !declaration.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)
             && !declaration.CapabilityId.StartsWith("finance.official-sales-invoices.", StringComparison.Ordinal)
             && declaration.CapabilityId != FinanceShellCapabilityProvider.PartyBalanceTransferCapabilityId
-            && declaration.CapabilityId != FinanceShellCapabilityProvider.OfficialInvoiceImportWorkDecisionCapabilityId
+            && declaration.CapabilityId != FinanceShellCapabilityProvider.OfficialSalesInvoiceWorkDecisionCapabilityId
             && !declaration.CapabilityId.StartsWith("finance.cash-exchange-book-values.", StringComparison.Ordinal), declaration.ImplementationAvailable));
     }
 
@@ -45,9 +45,11 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.27", provider.ContractVersion);
+        Assert.Equal("1.28", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
+            ("finance.official-sales-invoice.work-decision", "finance-official-sales-invoice-work-decision", "/onaylarim/finance.official-sales-invoice.v1/:approvalId", "F-OFFICIAL-SALES-INVOICE-WORK-DECISION",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinanceOfficialSalesInvoicePermissionNamesV1.Approve]),
             ("finance.official-invoice-import.work-decision", "finance-official-invoice-import-work-decision", "/onaylarim/finance.official-invoice-import.v1/:approvalId", "F-OFFICIAL-INVOICE-IMPORT-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinanceOfficialInvoiceImportPermissionNamesV1.Approve]),
             ("finance.party-credit-limit.work-decision", "finance-party-credit-limit-work-decision", "/onaylarim/finance.party-credit-limit.v1/:approvalId", "F-PARTY-CREDIT-LIMIT-WORK-DECISION",

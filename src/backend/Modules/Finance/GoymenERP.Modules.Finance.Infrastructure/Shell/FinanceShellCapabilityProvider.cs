@@ -86,7 +86,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.27";
+    public const string OwnerContractVersion = "1.28";
     public const string BankStatementCapabilityId = "finance.bank-statements.read";
     public const string BankStatementImportCapabilityId = "finance.bank-statements.import";
     public const string BankStatementMatchCapabilityId = "finance.bank-statements.match";
@@ -155,6 +155,7 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public const string BankAccountWorkDecisionCapabilityId = "finance.bank-account.work-decision";
     public const string PartyCreditLimitWorkDecisionCapabilityId = "finance.party-credit-limit.work-decision";
     public const string OfficialInvoiceImportWorkDecisionCapabilityId = "finance.official-invoice-import.work-decision";
+    public const string OfficialSalesInvoiceWorkDecisionCapabilityId = "finance.official-sales-invoice.work-decision";
     public const string BankAccountApproveCapabilityId = "finance.bank-accounts.approve";
 
     public const string ManualBankPaymentListScreenId = "F-02-PAYMENTS";
@@ -335,7 +336,10 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCreditLimitsApprove]),
             Declaration(OfficialInvoiceImportWorkDecisionCapabilityId, "finance-official-invoice-import-work-decision",
                 "/onaylarim/finance.official-invoice-import.v1/:approvalId", "F-OFFICIAL-INVOICE-IMPORT-WORK-DECISION",
-                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinanceOfficialInvoiceImportPermissionNamesV1.Approve]) with { ImplementationAvailable = false },
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinanceOfficialInvoiceImportPermissionNamesV1.Approve]),
+            Declaration(OfficialSalesInvoiceWorkDecisionCapabilityId, "finance-official-sales-invoice-work-decision",
+                "/onaylarim/finance.official-sales-invoice.v1/:approvalId", "F-OFFICIAL-SALES-INVOICE-WORK-DECISION",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinanceOfficialSalesInvoicePermissionNamesV1.Approve]) with { ImplementationAvailable = false },
             Declaration(ManualBankPaymentWorkDecisionCapabilityId, "finance-manual-bank-payment-work-decision",
                 "/onaylarim/finance.manual-bank-payment.v1/:approvalId", "F-MANUAL-BANK-PAYMENT-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinancePermissionNames.ManualBankPaymentApprove]),
