@@ -110,7 +110,7 @@ public sealed class AccountingPeriodOpeningWorkInboxSourceV1Tests
 /// proposer is the maker; a still closed later period is shown as a rule (approval would be refused). The source writes
 /// nothing.
 /// </summary>
-public sealed class AccountingPeriodReopeningWorkInboxSourceV1Tests
+public sealed partial class AccountingPeriodReopeningWorkInboxSourceV1Tests
 {
     [Fact]
     public async Task Only_unapproved_proposals_on_the_current_close_are_listed_oldest_first_with_the_proposer_as_maker()

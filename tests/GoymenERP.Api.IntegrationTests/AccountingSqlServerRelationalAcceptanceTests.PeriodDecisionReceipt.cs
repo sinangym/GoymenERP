@@ -24,6 +24,7 @@ public sealed partial class AccountingSqlServerRelationalAcceptanceTests
                 Assert.Equal(AccountingApiStatus.Ok, first.Status); proof = Assert.IsType<AccountingPeriodApprovalReceiptV1>(first.Resource!.ApprovalReceipt);
                 Assert.Equal(before.Resource!.SourceFactsDigest, proof.SourceFactsDigest);
                 Assert.Equal((1L, 3L, 2L), (proof.ExpectedVersion, proof.ExpectedPeriodVersion!.Value, proof.ResultVersion));
+                Assert.False(proof.LaterPeriodClosed);
                 original = JsonSerializer.Serialize(first.Resource); Assert.Equal(11, JsonSerializer.SerializeToElement(first.Resource).EnumerateObject().Count());
             }
             else
@@ -71,7 +72,7 @@ public sealed partial class AccountingSqlServerRelationalAcceptanceTests
     public async Task Period_receipt_command_and_exact_source_read_fences_roll_back_both_owners_before_releasing_the_new_receipt()
     {
         foreach (var reopen in new[] { false, true })
-        foreach (var boundary in reopen ? new[] { 3, 5, 6, 7, 8 } : new[] { 3, 5, 6 })
+        foreach (var boundary in reopen ? new[] { 3, 5, 6, 7, 8, 9 } : new[] { 3, 5, 6 })
         {
             await using var run = await Run.StartAsync(); var prepared = await PreparePeriodApproval(run, reopen);
             var save = new PeriodApprovalSave(prepared.Period); await using var scope = new PeriodApprovalScope(run, save);

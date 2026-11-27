@@ -86,7 +86,8 @@ public sealed partial class AccountingApiService
             || source.Closure.ReopeningId != proposal.Id || source.Closure.ReopenedBy != actor || source.Closure.ReopenedAtUtc != approved) return null;
         return new(proposal.CompanyId, proposal.PeriodId, proposal.Id, command!.CommandName, command.IdempotencyKeyHash,
             command.RequestHash, actor, request.ExpectedVersion, request.ExpectedPeriodVersion, original.Version,
-            command.OriginalCorrelationId, approved, PeriodReopeningSourceFactsDigest(source), Sha256(command.ResultJson));
+            command.OriginalCorrelationId, approved, PeriodReopeningSourceFactsDigest(source), Sha256(command.ResultJson))
+        { LaterPeriodClosed = source.LaterPeriodClosed };
     }
     private static bool ValidPeriodCommand(AccountingCommandRecord? command, string name, string payload, string key, Guid actor) =>
         command is not null && command.CommandName == name && command.IdempotencyKeyHash == PeriodApprovalKeyHash(key)

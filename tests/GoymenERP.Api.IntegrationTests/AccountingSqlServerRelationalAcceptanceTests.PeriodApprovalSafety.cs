@@ -26,7 +26,7 @@ public sealed partial class AccountingSqlServerRelationalAcceptanceTests
         {
             await using var run = await Run.StartAsync(); var prepared = await PreparePeriodApproval(run, reopen);
             var save = new PeriodApprovalSave(prepared.Period); await using var scope = new PeriodApprovalScope(run, save);
-            var precommitFence = reopen ? 10 : 8;
+            var precommitFence = reopen ? 11 : 8;
             var deny = true; var savedFences = 0; var observed = false; var sawPending = false;
             using var cancellation = new CancellationTokenSource();
             scope.Authority.Read = () =>
@@ -48,7 +48,7 @@ public sealed partial class AccountingSqlServerRelationalAcceptanceTests
             else Assert.Equal(AccountingApiStatus.Denied, (await scope.Approve(prepared, "period-late")).Status);
             Assert.True(observed); if (fault == "precommit") Assert.Equal(precommitFence, savedFences);
             // Save1, receipt entry2/command3/source entry4, opening row5/release6/owner7/precommit8;
-            // reopening proposal5/period6/closure7/release8/owner9/precommit10.
+            // reopening proposal5/period6/closure7/latest-closed-end8/release9/owner10/precommit11.
             scope.AssertClean(); await AssertPeriodApprovalDurable(run, prepared, false);
             deny = false; scope.User.Actor = run.Actor; scope.User.Member = true; scope.Company.Set(CompanyA); save.Saved = false;
             var success = await scope.Approve(prepared, "period-late"); var replay = await scope.Approve(prepared, "period-late");

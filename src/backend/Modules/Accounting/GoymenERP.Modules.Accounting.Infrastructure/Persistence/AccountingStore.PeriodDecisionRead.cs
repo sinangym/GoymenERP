@@ -18,7 +18,7 @@ public sealed partial class AccountingStore : IAccountingPeriodDecisionStoreV1
         Func<CancellationToken, Task> freshReadFence, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(freshReadFence);
-        await freshReadFence(cancellationToken); cancellationToken.ThrowIfCancellationRequested(); RequireResolvedCompany();
+        await freshReadFence(cancellationToken); cancellationToken.ThrowIfCancellationRequested(); var company = RequireResolvedCompany();
         var proposal = await dbContext.PeriodReopenings.AsNoTracking().SingleOrDefaultAsync(x => x.Id == proposalId, cancellationToken);
         await freshReadFence(cancellationToken); cancellationToken.ThrowIfCancellationRequested();
         if (proposal is null) return null;
@@ -28,6 +28,13 @@ public sealed partial class AccountingStore : IAccountingPeriodDecisionStoreV1
             cancellationToken);
         await freshReadFence(cancellationToken); cancellationToken.ThrowIfCancellationRequested();
         if (period is null || closure is null) throw new AccountingStoreException("accounting_period_carry_source_unavailable", "Dönem önerisinin kesin kaynak bağı bulunamadı.");
-        return new(new(RestorePeriod(period), period.Version), ReopeningView(proposal), ClosureView(closure));
+        // Match the existing Work formatter: only the latest still-closed end is needed, never a history list.
+        var latestClosedEnd = await (from close in dbContext.PeriodClosures.AsNoTracking()
+            join candidate in dbContext.Periods.AsNoTracking() on close.PeriodId equals candidate.Id
+            where close.CompanyId == company && candidate.CompanyId == company && close.ReopeningId == null
+            select (DateOnly?)candidate.EndsOn).MaxAsync(cancellationToken);
+        await freshReadFence(cancellationToken); cancellationToken.ThrowIfCancellationRequested();
+        return new(new(RestorePeriod(period), period.Version), ReopeningView(proposal), ClosureView(closure))
+        { LaterPeriodClosed = latestClosedEnd is { } end && end > period.EndsOn };
     }
 }

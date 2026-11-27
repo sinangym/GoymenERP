@@ -49,7 +49,7 @@ public sealed partial class AccountingApiService : IAccountingPeriodDecisionRead
             if (source.Reopening.ProposedBy == scope.ActorGuid) return Denied<AccountingPeriodReopeningDecisionDetailV1>();
             var view = PeriodView(source.Period, scope.ActorGuid);
             return new(AccountingApiStatus.Ok, new(source.Reopening, view, source.Closure,
-                PeriodReopeningSourceFactsDigest(source), PeriodReopeningPreviewDigest(source.Reopening, view, source.Closure)), false, null);
+                PeriodReopeningSourceFactsDigest(source), PeriodReopeningPreviewDigest(source.Reopening, view, source.Closure)) { LaterPeriodClosed = source.LaterPeriodClosed }, false, null);
         }
         catch (FreshAuthorityDeniedException) { return Denied<AccountingPeriodReopeningDecisionDetailV1>(); }
         catch (AccountingStoreException error) when (error.Code == "accounting_period_carry_source_unavailable")
@@ -68,7 +68,7 @@ public sealed partial class AccountingApiService : IAccountingPeriodDecisionRead
         && source.Reopening.Id == id && source.Reopening.CompanyId == company && source.Reopening.ProposedBy != Guid.Empty
         && source.Reopening.Version > 0 && source.Closure.CompanyId == company && source.Closure.PeriodId == source.Reopening.PeriodId
         && source.Closure.Id == source.Reopening.ClosureId && source.Closure.ClosedPeriodVersion == source.Reopening.ClosedPeriodVersion
-        && source.Closure.CarryVoucherId != Guid.Empty;
+        && source.Closure.CarryVoucherId != Guid.Empty && source.LaterPeriodClosed is not null;
     public static string PeriodOpeningSourceFactsDigest(PeriodViewV1 view) => Sha256(JsonSerializer.Serialize(new
     { view.PeriodId, view.CompanyId, view.StartsOn, view.EndsOn, view.PreparedByUserId, view.PreparedAtUtc }, Json));
     public static string PeriodOpeningPreviewDigest(PeriodViewV1 view) => Sha256(JsonSerializer.Serialize(view, Json));

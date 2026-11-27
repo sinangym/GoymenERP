@@ -20,6 +20,7 @@ public sealed partial class AccountingApiFenceTests
             var result = await service.ReadReopeningDecisionAsync(source.Reopening.Id, _ => Task.CompletedTask);
             Assert.Equal(AccountingApiStatus.Ok, result.Status); var detail = Assert.IsType<AccountingPeriodReopeningDecisionDetailV1>(result.Resource);
             Assert.Equal(source.Closure, detail.Closure); Assert.Equal(source.Reopening, detail.Reopening);
+            Assert.False(detail.LaterPeriodClosed); Assert.DoesNotContain("LaterPeriodClosed", JsonSerializer.Serialize(detail), StringComparison.OrdinalIgnoreCase);
             Assert.Equal(AccountingApiService.PeriodReopeningSourceFactsDigest(source), detail.SourceFactsDigest);
             Assert.Equal(11, JsonSerializer.SerializeToElement(detail.Reopening).EnumerateObject().Count());
         }
@@ -91,7 +92,7 @@ public sealed partial class AccountingApiFenceTests
         }
     }
 
-    [Theory] [InlineData("missing")] [InlineData("company")] [InlineData("id")] [InlineData("closure")]
+    [Theory] [InlineData("missing")] [InlineData("company")] [InlineData("id")] [InlineData("closure")] [InlineData("missing-later-proof")]
     public async Task Purpose_reads_never_release_missing_foreign_or_misbound_owner_source(string fault)
     {
         var opening = PeriodSource(); var reopening = ReopeningSource(opening);
@@ -107,9 +108,10 @@ public sealed partial class AccountingApiFenceTests
             stores.OpeningDecision = new(AccountingPeriod.Propose(Guid.NewGuid(), Company, opening.Period.StartsOn, opening.Period.EndsOn, OtherActor, PeriodDecisionAt), 1);
             stores.ReopeningDecision = reopening with { Reopening = reopening.Reopening with { Id = Guid.NewGuid() } };
         }
+        if (fault == "missing-later-proof") stores.ReopeningDecision = reopening with { LaterPeriodClosed = null };
         if (fault == "closure") stores.ReopeningDecision = reopening with { Closure = reopening.Closure with { CompanyId = OtherCompany } };
         var expected = fault == "missing" ? AccountingApiStatus.NotFound : AccountingApiStatus.Unavailable;
-        if (fault != "closure") Assert.Equal(expected, (await Service(new PeriodDecisionAuthority(AccountingPermissionManifestV1.PeriodsApprove), stores)
+        if (fault is not "closure" and not "missing-later-proof") Assert.Equal(expected, (await Service(new PeriodDecisionAuthority(AccountingPermissionManifestV1.PeriodsApprove), stores)
             .ReadOpeningDecisionAsync(opening.Period.Id, _ => Task.CompletedTask)).Status);
         Assert.Equal(expected, (await Service(new PeriodDecisionAuthority(AccountingPermissionManifestV1.PeriodsReopen), stores)
             .ReadReopeningDecisionAsync(reopening.Reopening.Id, _ => Task.CompletedTask)).Status);
@@ -166,7 +168,11 @@ public sealed partial class AccountingApiFenceTests
             Actor.ToString("D"), AccountingApiService.PeriodReopeningApprovalPayloadHash(source.Reopening.PeriodId, source.Reopening.Id, request),
             JsonSerializer.Serialize(answer, new JsonSerializerOptions(JsonSerializerDefaults.Web)), "original-correlation");
         var proof = AccountingApiService.BindPeriodReopeningApprovalReceipt(command, source, answer, request, "period-original", Actor);
-        Assert.NotNull(proof); Assert.Equal((1L, 3L, 2L), (proof.ExpectedVersion, proof.ExpectedPeriodVersion!.Value, proof.ResultVersion));
+        Assert.Null(AccountingApiService.BindPeriodReopeningApprovalReceipt(command, source with { LaterPeriodClosed = null }, answer, request, "period-original", Actor));
+        var changedFlag = source with { LaterPeriodClosed = true };
+        Assert.Equal(AccountingApiService.PeriodReopeningSourceFactsDigest(source), AccountingApiService.PeriodReopeningSourceFactsDigest(changedFlag));
+        Assert.True(AccountingApiService.BindPeriodReopeningApprovalReceipt(command, changedFlag, answer, request, "period-original", Actor)!.LaterPeriodClosed);
+        Assert.NotNull(proof); Assert.False(proof.LaterPeriodClosed); Assert.Equal((1L, 3L, 2L), (proof.ExpectedVersion, proof.ExpectedPeriodVersion!.Value, proof.ResultVersion));
         Assert.Equal(proof, AccountingApiService.BindPeriodReopeningApprovalReceipt(command,
             source with { Period = source.Period with { Version = 30 } }, answer with { IsReplay = true, OriginalCorrelationId = command.OriginalCorrelationId }, request, "period-original", Actor));
         Assert.Null(AccountingApiService.BindPeriodReopeningApprovalReceipt(command, source, answer, request with { ExpectedPeriodVersion = 4 }, "period-original", Actor));
@@ -193,7 +199,7 @@ public sealed partial class AccountingApiFenceTests
     {
         var id = Guid.Parse("a0000000-0000-4000-8000-0000000000d1"); var closure = Guid.Parse("a0000000-0000-4000-8000-0000000000d2");
         return new(period, new(id, Company, period.Period.Id, closure, 3, OtherActor, PeriodDecisionAt.AddDays(2), "SENTETIK reason", null, null, 1),
-            new(closure, Company, period.Period.Id, 3, Guid.NewGuid(), Guid.NewGuid(), new string('A', 64), 0, Actor, PeriodDecisionAt.AddDays(1), null, null, null));
+            new(closure, Company, period.Period.Id, 3, Guid.NewGuid(), Guid.NewGuid(), new string('A', 64), 0, Actor, PeriodDecisionAt.AddDays(1), null, null, null)) { LaterPeriodClosed = false };
     }
     private sealed class PeriodDecisionAuthority(string held) : IErpAuthorityRevalidationService
     {
