@@ -20,7 +20,7 @@ export function bookPreview(){
   const profile={profileId:OTHER_ID,version:'1'},sourceMoney={amount:'100',currencyId:CURRENCY_ID},targetMoney={amount:'3300',currencyId:TL_ID}
   return {...base('finance.cash-exchange-book-value.v1'),approvalSupported:true,
     references:[ref('cash-transfer',TRANSFER_ID),ref('evidence-document',OTHER_ID)],rules:[rule('finance.cash-exchange-source-book-value','3500'),rule('finance.cash-exchange-target-functional-value','3300')],
-    cashExchangeBookValue:{transfer:{id:TRANSFER_ID,companyId:COMPANY_A,documentNumber:{number:'SENTETIK-CEX-1',policyVersion:'1'},
+    cashExchangeBookValue:{transfer:{id:TRANSFER_ID,companyId:COMPANY_A,documentNumber:{number:'CEX-0001-1',formatVersion:'1'},
       preparation:{kind:'CurrencyExchange',sourceKind:'Bank',sourceAccountId:ACCOUNT_ID,sourceMoney,sourceProfile:profile,targetKind:'Cash',targetAccountId:OTHER_ID,targetMoney,targetProfile:profile,rate:'33.00',occurredOn:date,valueOn:null,reference:'SENTETIK FX reference',description:'SENTETIK full transfer description'},
       recordedBy:'SENTETIK treasurer',recordedAtUtc:at,transferConfirmed:true,version:'1',
       exchange:{companyId:COMPANY_A,occurredOn:date,sourceMoney,targetMoney,sourceProfile:profile,targetProfile:profile,transactionRate:'33.00',comparisonRate:'34.00',rateDeviation:'-1.00',
