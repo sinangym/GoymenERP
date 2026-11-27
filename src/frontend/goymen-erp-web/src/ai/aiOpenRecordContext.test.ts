@@ -9,6 +9,7 @@ describe('B1 exact supported record routes', () => {
     for (const [capability, parameter] of [
       [CAPABILITY.cariPartiesDetail, ':partyId'],
       [CAPABILITY.logisticsInstructionsDetail, ':instructionId'],
+      [CAPABILITY.salesDraftsDetail, ':draftId'],
     ] as const) {
       const path = CAPABILITY_ROUTE[capability].replace(parameter, id)
       expect(openRecordScreen(path)?.detailCapability).toBe(capability)
@@ -17,6 +18,7 @@ describe('B1 exact supported record routes', () => {
   it.each([
     [`/cari/${id}`, 'counterparty.party.summary', 'cari.parties.detail', 'counterparty.party-summary.v1'],
     [`/lojistik/yukleme-talimatlari/${id}`, 'logistics.loading-instruction.shipment-status', 'logistics.instructions.detail', 'logistics.instruction-shipment-status.v1'],
+    [`/satis/siparisler/${id}`, 'sales.order.draft-summary', 'sales.drafts.detail', 'sales.draft-summary.v1'],
   ])('binds only the native record reference for %s', (path, targetKind, detailCapability, toolId) => {
     const screen = openRecordScreen(path)
     expect(screen).toEqual({ context: { targetKind, targetId: id }, detailCapability, toolId, toolVersion: '1' })
@@ -26,8 +28,11 @@ describe('B1 exact supported record routes', () => {
   })
   it.each(['/', '/cari', '/cari/yeni', `/cari/${id}/bilgiler`, `/cari/${id}/extra`,
     '/cari/00000000-0000-0000-0000-000000000000', '/cari/not-a-guid',
-    '/lojistik/yukleme-talimatlari', '/lojistik/yukleme-talimatlari/yeni', `/onaylarim/counterparty.tax-identity-change.v1/${id}`])
-  ('preserves legacy mode outside the two exact record paths: %s', path => {
+    '/lojistik/yukleme-talimatlari', '/lojistik/yukleme-talimatlari/yeni', `/onaylarim/counterparty.tax-identity-change.v1/${id}`,
+    '/satis/siparisler', '/satis/siparisler/yeni', '/satis/siparisler/00000000-0000-0000-0000-000000000000',
+    `/satis/siparisler/${id}/kontrol`, `/satis/siparisler/${id}/extra`, `/satis/siparisler/${id}\n`,
+    `/cari/${id}\n`, `/lojistik/yukleme-talimatlari/${id}\r`])
+  ('preserves legacy mode outside exact supported record paths: %s', path => {
     expect(openRecordScreen(path)).toBeNull()
   })
 })

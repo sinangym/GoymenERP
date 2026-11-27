@@ -7,19 +7,24 @@ export interface AiOpenRecordScreen {
   readonly toolVersion: string
 }
 
-// Only these two owner READ families are supported. A route is a reference, never authorization or owner data.
+// Only explicit owner READ families are supported. A route is a reference, never authorization or owner data.
 export function openRecordScreen(pathname: string): AiOpenRecordScreen | null {
   const party = /^\/cari\/([0-9a-f-]+)$/i.exec(pathname)
   const instruction = /^\/lojistik\/yukleme-talimatlari\/([0-9a-f-]+)$/i.exec(pathname)
-  const id = (party ?? instruction)?.[1]
-  if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+  const draft = /^\/satis\/siparisler\/([0-9a-f-]+)$/i.exec(pathname)
+  const match = party ?? instruction ?? draft
+  const id = match?.[1]
+  if (match?.[0] !== pathname || !id || id.length !== 36 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
     || id === '00000000-0000-0000-0000-000000000000') return null
   return party ? {
     context: { targetKind: 'counterparty.party.summary', targetId: id },
     detailCapability: 'cari.parties.detail', toolId: 'counterparty.party-summary.v1', toolVersion: '1',
-  } : {
+  } : instruction ? {
     context: { targetKind: 'logistics.loading-instruction.shipment-status', targetId: id },
     detailCapability: 'logistics.instructions.detail', toolId: 'logistics.instruction-shipment-status.v1', toolVersion: '1',
+  } : {
+    context: { targetKind: 'sales.order.draft-summary', targetId: id },
+    detailCapability: 'sales.drafts.detail', toolId: 'sales.draft-summary.v1', toolVersion: '1',
   }
 }
 

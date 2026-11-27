@@ -58,6 +58,12 @@ public static class AiRuntimeServiceCollectionExtensions
         services.AddScoped<AiAskService>();
         services.TryAddScoped<Answers.IAiAnswerReceiptWriterV1>(provider => new Answers.AiAnswerReceiptWriterV1(
             provider.GetService<IAiAnswerReceiptPersistenceV1>(), provider.GetRequiredService<TimeProvider>()));
+        services.AddScoped<IAiOwnerToolV1>(provider => new Tools.SalesDraftSummaryAiToolV1(
+            provider.GetService<GoymenERP.Modules.Sales.Application.Contracts.ISalesDraftService>(),
+            provider.GetService<GoymenERP.BuildingBlocks.Multitenancy.ICompanyContext>(),
+            provider.GetService<GoymenERP.BuildingBlocks.Security.ICurrentUser>(),
+            provider.GetService<GoymenERP.BuildingBlocks.Security.IErpAuthorityRevalidationService>(),
+            provider.GetRequiredService<TimeProvider>()));
         services.AddScoped<IAiOwnerToolV1>(provider => new Tools.SalesLineMarginExplanationAiToolV1(
             provider.GetService<GoymenERP.Modules.Sales.Application.Contracts.ISalesDraftService>(),
             provider.GetService<GoymenERP.BuildingBlocks.Multitenancy.ICompanyContext>(),

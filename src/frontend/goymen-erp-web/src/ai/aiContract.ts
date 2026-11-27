@@ -101,7 +101,7 @@ export interface AiAskAnswer {
 }
 
 export interface AiOpenRecordContext {
-  readonly targetKind: 'counterparty.party.summary' | 'logistics.loading-instruction.shipment-status'
+  readonly targetKind: 'counterparty.party.summary' | 'logistics.loading-instruction.shipment-status' | 'sales.order.draft-summary'
   readonly targetId: string
 }
 
