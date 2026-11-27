@@ -2186,7 +2186,8 @@ public sealed partial class SalesDraftServiceTests
             Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
             Func<CancellationToken, Task>? beforeWrite, CancellationToken cancellationToken,
             Func<SalesOrderDraft, SalesDraftReplayResult?>? replayResult = null,
-            Func<SalesOrderDraft, int?, CancellationToken, Task>? withinTransaction = null)
+            Func<SalesOrderDraft, int?, CancellationToken, Task>? withinTransaction = null,
+            Func<SalesOrderDraft, CancellationToken, Task>? freshDecisionFence = null)
         {
             if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
             if (_attempts.TryGetValue((commandName, envelope.IdempotencyKey), out var attempt))
@@ -2194,12 +2195,14 @@ public sealed partial class SalesDraftServiceTests
                 if (attempt.Actor != envelope.ActorId || attempt.Hash != requestHash)
                     throw new SalesDraftStoreException(SalesDraftStoreCodes.SameKeyPayloadMismatch, "synthetic");
                 if (attempt.Draft is null) throw new SalesDraftStoreException(SalesDraftStoreCodes.ConcurrentChange, "synthetic refusal under the key");
+                if (freshDecisionFence is not null) await freshDecisionFence(attempt.Draft, cancellationToken);
                 return new SalesDraftStateResult(attempt.Draft, SalesDraftWriteOutcome.Replayed, attempt.Correlation, attempt.Result);
             }
 
             var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
             if (draft is null) return null;
             OnStore?.Invoke();
+            if (freshDecisionFence is not null) await freshDecisionFence(draft, cancellationToken);
             if (beforeWrite is not null) await beforeWrite(cancellationToken);
             if (Race == "version-at-store")
             {
@@ -2214,10 +2217,17 @@ public sealed partial class SalesDraftServiceTests
                 mutate(draft, TimeProvider.System.GetUtcNow());
                 if (withinTransaction is not null)
                     await withinTransaction(draft, savedState.CustomerAcceptance?.Revision, cancellationToken);
+                if (freshDecisionFence is not null)
+                {
+                    BeforeDecisionStage?.Invoke();
+                    await freshDecisionFence(draft, cancellationToken);
+                    AfterDecisionSave?.Invoke(); // Explicit SYNTHETIC boundary; the SQL fixture proves real post-Save rollback.
+                    await freshDecisionFence(draft, cancellationToken);
+                }
             }
             catch
             {
-                if (withinTransaction is not null)
+                if (withinTransaction is not null || freshDecisionFence is not null)
                 {
                     // SYNTHETIC store rollback of the five state-command columns; real SQL proves transactional behavior.
                     typeof(SalesOrderDraft).GetProperty(nameof(draft.ApprovalState))!.SetValue(draft, savedState.ApprovalState);

@@ -221,6 +221,31 @@ public sealed partial class SalesStore(
         CancellationToken cancellationToken = default, SalesOrderRiskAssessment? riskWarning = null) =>
         UpdateDraftStateCoreAsync(envelope, requestHash, commandName, draftId, mutate, audit, null, cancellationToken, riskWarning);
 
+    public async Task<SalesDraftStateResult?> UpdateDraftDecisionWithFenceAsync(SalesDraftWriteEnvelope envelope, string requestHash,
+        string commandName, Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, CancellationToken, Task> freshDecisionFence,
+        Func<SalesOrderDraft, int?, System.Data.IDbTransaction, CancellationToken, Task>? withinTransaction = null,
+        CancellationToken cancellationToken = default, SalesOrderRiskAssessment? riskWarning = null)
+    {
+        ArgumentNullException.ThrowIfNull(freshDecisionFence);
+        if (commandName is not (SalesDraftCommands.ApproveV1 or SalesDraftCommands.RejectV1))
+            throw new ArgumentException("Fresh decision fence is for native approval/rejection only.", nameof(commandName));
+        if (commandName == SalesDraftCommands.RejectV1 && withinTransaction is not null)
+            throw new ArgumentException("Rejection does not release future demand.", nameof(withinTransaction));
+        try
+        {
+            return await UpdateDraftStateCoreAsync(envelope, requestHash, commandName, draftId, mutate, audit, withinTransaction,
+                cancellationToken, riskWarning, freshDecisionFence: freshDecisionFence);
+        }
+        catch
+        {
+            // Core's owned transaction has rolled back header, participant work, attempt and audit together.
+            // A reused context must not return post-Save values after a refused precommit fence.
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
     public Task<SalesDraftStateResult?> UpdateDraftStateStagedAsync(SalesDraftWriteEnvelope envelope, string requestHash,
         string commandName, Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
         Func<SalesOrderDraft, int?, System.Data.IDbTransaction, CancellationToken, Task>? withinTransaction,
@@ -250,7 +275,8 @@ public sealed partial class SalesStore(
         string commandName, Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
         Func<SalesOrderDraft, int?, System.Data.IDbTransaction, CancellationToken, Task>? withinTransaction,
         CancellationToken cancellationToken, SalesOrderRiskAssessment? riskWarning,
-        Func<SalesOrderDraft, DateTimeOffset, CancellationToken, Task>? stage = null)
+        Func<SalesOrderDraft, DateTimeOffset, CancellationToken, Task>? stage = null,
+        Func<SalesOrderDraft, CancellationToken, Task>? freshDecisionFence = null)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
@@ -294,6 +320,7 @@ public sealed partial class SalesStore(
 
             var stored = await FindDraftAsync(recordedId, cancellationToken)
                 ?? throw new InvalidOperationException("Kayıtlı deneme kaydının taslağı bulunamadı.");
+            if (freshDecisionFence is not null) await freshDecisionFence(stored, cancellationToken);
             return new SalesDraftStateResult(stored, SalesDraftWriteOutcome.Replayed, attempt.CorrelationId);
         }
 
@@ -318,7 +345,9 @@ public sealed partial class SalesStore(
         var versionBefore = draft.Version;
         var linesBefore = LineRevisionStates(draft);
         var previouslyAcceptedRevision = draft.CustomerAcceptance?.Revision;
-        await using var transaction = withinTransaction is null ? null : await BeginCancellationTransactionAsync(cancellationToken);
+        if (freshDecisionFence is not null) await freshDecisionFence(draft, cancellationToken);
+        await using var transaction = withinTransaction is null && freshDecisionFence is null
+            ? null : await BeginCancellationTransactionAsync(cancellationToken);
         var now = timeProvider.GetUtcNow();
         // The domain decides: the expected version, the allowed transition and the reason bound. A
         // refusal leaves the tracked row untouched (nothing below has run) and is the caller's to answer.
@@ -335,8 +364,8 @@ public sealed partial class SalesStore(
             throw new InvalidOperationException("Onay geçişi tam olarak bir sürüm ilerletir ve taslağı değiştirmez.");
         }
 
-        if (transaction is not null)
-            await withinTransaction!(draft, previouslyAcceptedRevision, transaction.GetDbTransaction(), cancellationToken);
+        if (withinTransaction is not null)
+            await withinTransaction(draft, previouslyAcceptedRevision, transaction!.GetDbTransaction(), cancellationToken);
 
         // SAT-D211 (EK36): only an internal rejection moves lines — it reverts the rejected revision's removals.
         var reverted = RequireLineRevisionChanges(draft, linesBefore, lineRevision: null,
@@ -344,8 +373,10 @@ public sealed partial class SalesStore(
         if (reverted.Count > 0)
         {
             var revertedRows = await dbContext.DraftLines.Where(line => line.DraftId == draftId).ToListAsync(cancellationToken);
+            if (freshDecisionFence is not null) await freshDecisionFence(draft, cancellationToken);
             WriteLineRevisionColumns(draft, revertedRows);
         }
+        else if (freshDecisionFence is not null) await freshDecisionFence(draft, cancellationToken);
 
         AppendMarginCosts(draft, marginCostsBefore);
         AppendKilogramsPerUnit(draft, kilogramsPerUnitBefore);
@@ -437,6 +468,7 @@ public sealed partial class SalesStore(
         }
 
         await SaveAsync(cancellationToken);
+        if (freshDecisionFence is not null) await freshDecisionFence(draft, cancellationToken);
         if (transaction is not null)
             await transaction.CommitAsync(cancellationToken);
         return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());

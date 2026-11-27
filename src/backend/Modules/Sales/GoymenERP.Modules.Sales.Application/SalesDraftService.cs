@@ -1087,9 +1087,15 @@ public sealed partial class SalesDraftService(
             ? await PrepareKilogramsPerUnitAsync(scope, permission, current, cancellationToken)
             : [];
 
-        // The last fence that can still prevent the write; none after the commit (ORG #321 P3-1).
+        // Repeated inside the native decision transaction as well; none after commit (ORG #321 P3-1).
         scope = await RequireStillAsync(scope, permission, cancellationToken);
         await RequirePersonaFenceAsync(scope, commandName, current, cancellationToken);
+        async Task FreshDecisionFence(SalesOrderDraft actual, CancellationToken token)
+        {
+            scope = await RequireStillAsync(scope, permission, token); // Revalidates the active Work delegation when present.
+            if (actual.Id != draftId || actual.CompanyId != scope.CompanyId) throw new SalesDraftServiceException(403, "forbidden");
+            await RequirePersonaFenceAsync(scope, commandName, actual, token);
+        }
         SalesDraftStateResult? result;
         try
         {
@@ -1134,14 +1140,20 @@ public sealed partial class SalesDraftService(
                                 SalesOrderFutureDemandReductionTextsV1.AcceptedRevision, envelope), token);
                         scope = await RequireStillAsync(scope, permission, token);
                     };
-                result = stage is null
+                result = commandName is SalesDraftCommands.ApproveV1 or SalesDraftCommands.RejectV1
+                    ? await store.UpdateDraftDecisionWithFenceAsync(envelope, requestHash, commandName, draftId,
+                        mutate, audit, FreshDecisionFence, within, cancellationToken, riskWarning)
+                    : stage is null
                     ? await store.UpdateDraftStateWithTransactionAsync(envelope, requestHash, commandName, draftId,
                         mutate, audit, within, cancellationToken, riskWarning)
                     : await store.UpdateDraftStateStagedAsync(envelope, requestHash, commandName, draftId, mutate, audit, within,
                         stage, cancellationToken);
             }
             else
-                result = stage is null
+                result = commandName is SalesDraftCommands.ApproveV1 or SalesDraftCommands.RejectV1
+                    ? await store.UpdateDraftDecisionWithFenceAsync(envelope, requestHash, commandName, draftId,
+                        mutate, audit, FreshDecisionFence, cancellationToken: cancellationToken, riskWarning: riskWarning)
+                    : stage is null
                     ? await store.UpdateDraftStateAsync(envelope, requestHash, commandName, draftId,
                         mutate, audit, cancellationToken, riskWarning)
                     : await store.UpdateDraftStateStagedAsync(envelope, requestHash, commandName, draftId, mutate, audit, null,

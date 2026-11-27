@@ -257,6 +257,16 @@ public interface ISalesOrderDraftStore
         Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
         CancellationToken cancellationToken = default, SalesOrderRiskAssessment? riskWarning = null);
 
+    /// <summary>Native Approve/Reject with the caller's real fresh permission/persona fence on the restored draft,
+    /// after owner reads before staging, and after Save before the store-owned transaction commits. An optional
+    /// owner participant joins that SAME transaction. Unsupported stores fail closed; legacy commands are unchanged.</summary>
+    Task<SalesDraftStateResult?> UpdateDraftDecisionWithFenceAsync(SalesDraftWriteEnvelope envelope, string requestHash,
+        string commandName, Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, CancellationToken, Task> freshDecisionFence,
+        Func<SalesOrderDraft, int?, System.Data.IDbTransaction, CancellationToken, Task>? withinTransaction = null,
+        CancellationToken cancellationToken = default, SalesOrderRiskAssessment? riskWarning = null) =>
+        throw new SalesDraftStoreException(SalesDraftProblemCodesV1.OwnerReferenceUnavailable, "Guarded decision is not supported.");
+
     /// <summary>KLN-D105: validates the domain transition first, then calls the owner participant inside this store's
     /// SQL transaction before the single save/commit. The old customer-accepted revision is captured before the transition
     /// replaces its acceptance fact. A refusal rolls back owner writes and leaves Sales unchanged; replay calls no participant.
