@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Infrastructure.WorkInbox;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 
 namespace GoymenERP.Manufacturing.UnitTests;
 
@@ -77,9 +78,45 @@ public sealed partial class ManufacturingPlanWorkInboxSourceTests
     }
 
     [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public async Task Revision_during_projection_cannot_mix_the_first_source_version_with_a_later_maker(int changedAfterRead)
+    {
+        Plan(Id(1), 1, 0);
+        var racing = new ChangingDecisionRows(rows, read =>
+        {
+            if (read != changedAfterRead) return;
+            rows.PlanRows.Single().Version = 2;
+            Revision(Id(1), 1, 2, 10);
+        });
+        var source = new ManufacturingPlanWorkInboxSourceV1(racing, Fence());
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => source.ReadDecisionAsync(Context(), Id(1), default));
+        Assert.Equal("Manufacturing decision changed while reading.", error.Message);
+        Assert.Equal(4, racing.Reads); // One bounded final read; no retry or mutation.
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_changed_status_or_missing_native_plan_invalidates_the_purpose_projection(bool missing)
+    {
+        Plan(Id(1), 1, 0);
+        var racing = new ChangingDecisionRows(rows, read =>
+        {
+            if (read != 3) return;
+            if (missing) rows.PlanRows.Clear(); else rows.PlanRows.Single().Status = 2;
+        });
+        var source = new ManufacturingPlanWorkInboxSourceV1(racing, Fence());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => source.ReadDecisionAsync(Context(), Id(1), default));
+        Assert.Equal(4, racing.Reads);
+    }
+
+    [Theory]
     [InlineData(2)]
     [InlineData(3)]
     [InlineData(4)]
+    [InlineData(5)]
     public async Task Fresh_authority_loss_after_any_purpose_query_discloses_no_snapshot(int revokedAt)
     {
         Plan(Id(1), 1, 0);
@@ -87,4 +124,20 @@ public sealed partial class ManufacturingPlanWorkInboxSourceTests
             ? ManufacturingWorkInboxTestAuthority.CompanyWide : PermissionScope.Denied;
         Assert.Null(await Source().ReadDecisionAsync(Context(), Id(1), default));
     }
+    private sealed class ChangingDecisionRows(ManufacturingWorkInboxRows inner, Action<int> afterRead) : ManufacturingWorkInboxRows
+    {
+        public int Reads { get; private set; }
+        public override IQueryable<PlanRow> Plans => inner.Plans;
+        public override IQueryable<PlanRevisionRow> PlanRevisions => inner.PlanRevisions;
+        public override IQueryable<PlanRejectionRow> PlanRejections => inner.PlanRejections;
+        public override IQueryable<PlanReapprovalRow> PlanReapprovals => inner.PlanReapprovals;
+        public override IQueryable<OrderRow> Orders => inner.Orders;
+        public override async Task<List<T>> ListAsync<T>(IQueryable<T> query, CancellationToken cancellationToken)
+        {
+            var result = await inner.ListAsync(query, cancellationToken);
+            afterRead(++Reads);
+            return result;
+        }
+    }
+
 }

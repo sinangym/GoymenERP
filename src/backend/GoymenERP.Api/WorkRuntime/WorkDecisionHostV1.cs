@@ -181,8 +181,8 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
         using var lease = executionFence.Enter(Verify);
         if (kind == ManufacturingPlan)
         {
-            // Approval's shared Inventory transaction currently has no final fresh fence, and re-approval
-            // requires an explicit selected-label request absent from this purpose DTO. Never infer either.
+            // This partial delivery opens only guarded rejection. Approval awaits the allocation final-fence
+            // dependency and its acceptance; re-approval also needs explicit selected labels absent here.
             if (request.Approve || manufacturingPlans is null) throw new WorkDecisionException(503);
             if (!long.TryParse(request.ExpectedVersion, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var expected)
                 || expected < 1 || expected.ToString(System.Globalization.CultureInfo.InvariantCulture) != request.ExpectedVersion)

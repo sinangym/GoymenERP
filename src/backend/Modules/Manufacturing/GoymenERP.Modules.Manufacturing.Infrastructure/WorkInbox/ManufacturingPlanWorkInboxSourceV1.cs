@@ -78,12 +78,16 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkApprovalDecision
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
         if (itemId == Guid.Empty || await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
-        var found = await rows.ListAsync(rows.Plans.Where(plan => plan.CompanyId == context.CompanyId && plan.Id == itemId).Take(2), cancellationToken);
+        var found = await rows.ListAsync(rows.Plans.Where(plan => plan.CompanyId == context.CompanyId && plan.Id == itemId)
+            .Select(plan => new { plan.Version, plan.Status, plan.WorkCenterId, plan.CreatedBy, plan.CreatedAtUtc }).Take(2), cancellationToken);
         if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
         if (found.Count == 0) return null;
         if (found.Count != 1 || found[0].Version < 1 || found[0].WorkCenterId == Guid.Empty || !Enum.IsDefined((PlanStatus)found[0].Status))
             throw new InvalidOperationException("Manufacturing decision projection is invalid.");
         var row = found[0];
+        // Capture scalars, not a tracked/mutable entity reference, before projecting later revision/release metadata.
+        var capturedVersion = row.Version;
+        var capturedStatus = row.Status;
         var drafts = await ReadDraftsAsync(context.CompanyId, 2, cancellationToken, itemId);
         if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
         var released = await ReadReleasedAsync(context.CompanyId, 2, cancellationToken, itemId);
@@ -98,14 +102,20 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkApprovalDecision
         else
         {
             var revisions = await rows.ListAsync(rows.PlanRevisions.Where(revision => revision.CompanyId == context.CompanyId
-                && revision.PlanId == itemId && revision.PlanVersion <= row.Version).OrderByDescending(revision => revision.RevisionNo).Take(1), cancellationToken);
+                && revision.PlanId == itemId && revision.PlanVersion <= capturedVersion).OrderByDescending(revision => revision.RevisionNo).Take(1), cancellationToken);
             if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
             var maker = revisions.FirstOrDefault()?.RevisedBy ?? row.CreatedBy;
             item = new(ModuleName, KindName, itemId, ManufacturingWorkInboxFence.Id(itemId), row.CreatedAtUtc.ToUniversalTime(),
                 PurposeLink(itemId), string.IsNullOrWhiteSpace(maker) ? null : maker.Trim(), [], [],
                 Scope: new WorkInboxItemScopeV1(null, null, row.WorkCenterId));
         }
-        return new(context.CompanyId, item, row.Version.ToString(System.Globalization.CultureInfo.InvariantCulture), pending.Length == 1);
+        var final = await rows.ListAsync(rows.Plans.Where(plan => plan.CompanyId == context.CompanyId && plan.Id == itemId)
+            .Select(plan => new { plan.CompanyId, plan.Id, plan.Version, plan.Status }).Take(2), cancellationToken);
+        if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+        if (final.Count != 1 || final[0].CompanyId != context.CompanyId || final[0].Id != itemId
+            || final[0].Version != capturedVersion || final[0].Status != capturedStatus)
+            throw new InvalidOperationException("Manufacturing decision changed while reading.");
+        return new(context.CompanyId, item, capturedVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), pending.Length == 1);
     }
 
     public async Task<WorkInboxSourceResultV1> ListPendingAsync(
