@@ -313,6 +313,7 @@ builder.Services.AddIdentityModule(
     builder.Configuration,
     enableAuthorizationSnapshotDatabaseReadiness:
         databaseStartupMode == DatabaseStartupMode.Initialize);
+builder.Services.AddIdentityAccessRequestImpactV1();
 builder.Services.AddProductRuntime(builder.Configuration, builder.Environment);
 // AT-018: company-scoped price-list persistence, its two Sales reference readers and owner service.
 builder.Services.AddProductPriceListHost(

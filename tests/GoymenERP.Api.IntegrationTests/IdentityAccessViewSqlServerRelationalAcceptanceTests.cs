@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using GoymenERP.Api.Contracts;
 using GoymenERP.Api.Security;
@@ -27,6 +28,39 @@ namespace GoymenERP.Api.IntegrationTests;
 /// </summary>
 public sealed class IdentityAccessViewSqlServerRelationalAcceptanceTests
 {
+    [SqlServerFact]
+    public async Task Role_request_code_impact_reads_native_company_facts_and_never_creates_a_grant_or_audit()
+    {
+        await WithDatabaseAsync(async factory =>
+        {
+            await GrantAsync(factory, TestUsers.NoAssignment, TestCompanyIds.CompanyA);
+            var before = await ReadEffectsAsync(factory);
+            using var client = CreateClient(factory, TestUsers.NoAssignment, TestCompanyIds.CompanyA);
+            const string path = "/api/v1/identity/access/role-request-impact";
+            using var response = await client.PostAsJsonAsync(path, new IdentityRoleRequestImpactQueryV1(CompanyAUser, OrganizationOperatorRole));
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.True(response.Headers.CacheControl!.Private); Assert.True(response.Headers.CacheControl.NoStore);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(TestCompanyIds.CompanyA, body.RootElement.GetProperty("companyId").GetGuid());
+            Assert.Equal(CompanyAUser, body.RootElement.GetProperty("userId").GetGuid());
+            Assert.Equal(OrganizationOperatorRole, body.RootElement.GetProperty("roleId").GetGuid());
+            Assert.Empty(body.RootElement.GetProperty("addedPermissionCodes").EnumerateArray());
+            Assert.Contains(body.RootElement.GetProperty("alreadyHeldCodes").EnumerateArray(), value => value.GetString() == ErpPermissions.OrganizationLocationsStatusUpdate);
+            Assert.Equal(JsonValueKind.Null, body.RootElement.GetProperty("hasSegregationOfDutiesConflict").ValueKind);
+            Assert.Equal(JsonValueKind.Null, body.RootElement.GetProperty("expandsScope").ValueKind);
+            foreach (var target in new[] { CompanyBUser, Guid.NewGuid() })
+            {
+                using var missing = await client.PostAsJsonAsync(path, new IdentityRoleRequestImpactQueryV1(target, OrganizationOperatorRole));
+                Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+                Assert.DoesNotContain(target.ToString("D"), await missing.Content.ReadAsStringAsync());
+            }
+            using var overrideCompany = await client.PostAsJsonAsync(path + "?companyId=" + TestCompanyIds.CompanyB,
+                new IdentityRoleRequestImpactQueryV1(CompanyAUser, OrganizationOperatorRole));
+            Assert.Equal(HttpStatusCode.BadRequest, overrideCompany.StatusCode);
+            Assert.Equal(before, await ReadEffectsAsync(factory));
+        });
+    }
+
     private const string UsersRoute = "/api/v1/identity/access/users";
     private const string RolesRoute = "/api/v1/identity/access/roles";
 

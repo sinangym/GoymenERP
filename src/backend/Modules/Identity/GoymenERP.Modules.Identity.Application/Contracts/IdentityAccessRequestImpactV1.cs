@@ -1,7 +1,10 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Identity.Application.Contracts;
 
 /// <summary>A request preview, never a grant. Direct permission assignment has no native command and is not invented here.</summary>
-public sealed record IdentityRoleRequestImpactQueryV1(Guid UserId, Guid RoleId);
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record IdentityRoleRequestImpactQueryV1([property: JsonRequired] Guid UserId, [property: JsonRequired] Guid RoleId);
 
 public enum IdentityAccessRequestImpactOutcomeV1 { Unavailable = 0, Available = 1, Denied = 2, NotFound = 3 }
 

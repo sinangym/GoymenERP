@@ -51,6 +51,7 @@ public static partial class IdentityEndpoints
             .ProducesErpAuthenticatedProblems();
 
         MapAccessView(group);
+        MapAccessRequestImpact(group);
         MapAccessAssignments(group);
         MapUserManagement(group);
         MapLocalTwoFactor(group);
