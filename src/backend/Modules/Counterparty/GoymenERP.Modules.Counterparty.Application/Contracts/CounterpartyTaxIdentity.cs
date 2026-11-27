@@ -21,6 +21,13 @@ public interface ICounterpartyTaxIdentityService
     Task<CounterpartyTaxIdentityView?> GetTaxIdentityAsync(Guid partyId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Pre-create warning using the same active-company-only lookup and read/update permissions. No party or
+    /// company account is created, excluded, selected or linked. A duplicate remains a warning, never a refusal.
+    /// </summary>
+    Task<CounterpartyTaxIdentityDuplicateCheck> CheckCreateTaxIdentityDuplicatesAsync(
+        string taxIdentityNumber, CancellationToken cancellationToken);
+
+    /// <summary>
     /// The duplicate warning for a candidate number: the OTHER Cari cards of the active company already carrying it.
     /// Null when the party has no account in the active company. The number must already be valid.
     /// </summary>

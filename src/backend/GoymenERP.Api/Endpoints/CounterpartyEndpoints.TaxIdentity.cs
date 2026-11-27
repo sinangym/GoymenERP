@@ -12,6 +12,8 @@ namespace GoymenERP.Api.Endpoints;
 /// AT-009 VKN/TCKN on the Cari card (user decision 2026-09-30). Under the Counterparty group, so the client-contract
 /// filter, company context and private no-store apply as for every Cari route.
 /// <list type="bullet">
+/// <item><c>POST …/tax-identity/duplicates</c> — the same active-company warning before a party exists;
+/// no party, account, tax entry, merge or selection is produced.</item>
 /// <item><c>GET …/{partyId}/tax-identity</c> — the number, its kind, the duplicate WARNING (other cards of the active
 /// company with the same number), the pending change and the last decided one, and what this reader may do.</item>
 /// <item><c>POST …/{partyId}/tax-identity/duplicates</c> — the same warning for a candidate before saving; the number
@@ -37,6 +39,41 @@ public static partial class CounterpartyEndpoints
 
     private static void MapTaxIdentityEndpoints(RouteGroupBuilder group)
     {
+        group.MapPost("/tax-identity/duplicates", async (
+            CheckCounterpartyTaxIdentityDuplicates command, ICounterpartyTaxIdentityService service,
+            HttpContext context, CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(context.Response.Headers);
+            if (context.Request.Query.Count != 0)
+            {
+                return ValidationProblem("Cari vergi/kimlik kontrolü geçersiz.",
+                    "Vergi/kimlik numarası yalnız JSON gövdesinde kabul edilir; sorgu parametresi kabul edilmez.");
+            }
+
+            try
+            {
+                return Results.Ok(await service.CheckCreateTaxIdentityDuplicatesAsync(command.TaxIdentityNumber, cancellationToken));
+            }
+            catch (CounterpartyTaxIdentityInvalidException exception)
+            {
+                return TaxIdentityInvalid(exception.Message);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.Problem(statusCode: StatusCodes.Status403Forbidden);
+            }
+        })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.CounterpartyPartiesRead)
+            .RequireAuthorization(CounterpartyTaxIdentityPermissionsV1.Update)
+            .WithName("CheckCreateCounterpartyTaxIdentityDuplicatesV1")
+            .Accepts<CheckCounterpartyTaxIdentityDuplicates>("application/json")
+            .Produces<CounterpartyTaxIdentityDuplicateCheck>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(CounterpartyProblemCodesV1.ValidationFailed, CounterpartyProblemCodesV1.TaxIdentityInvalid)
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(CounterpartyClientContract.RequiredCode, CounterpartyClientContract.UnsupportedCode)
+            .ProducesErpAuthenticatedProblems();
+
         group.MapGet("/{partyId:guid}/tax-identity", async (
             Guid partyId, ICounterpartyTaxIdentityService service,
             HttpContext context, CancellationToken cancellationToken) =>

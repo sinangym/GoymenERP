@@ -80,6 +80,21 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
                 pending is not null && pending.IsRequestedBy(actorId)));
     }
 
+    public async Task<CounterpartyTaxIdentityDuplicateCheck> CheckCreateTaxIdentityDuplicatesAsync(
+        string taxIdentityNumber, CancellationToken cancellationToken)
+    {
+        var fence = CounterpartyContactInformationAuthorityFence.Capture(currentUser, companyContext);
+        await RequireCompanyWidePermissionAsync(CounterpartyTaxIdentityPermissionsV1.Update, cancellationToken);
+        await RequireCompanyWidePermissionAsync(ErpPermissions.CounterpartyPartiesRead, cancellationToken);
+        var number = ParseTaxIdentity(taxIdentityNumber);
+        // A pre-create probe has no existing party to exclude. Empty identity is never a persisted Party id.
+        var result = new CounterpartyTaxIdentityDuplicateCheck(number.Value, KindOf(number),
+            await FindDuplicatesAsync(fence.CompanyId, Guid.Empty, number.Value, cancellationToken));
+        await fence.RequireStillAsync(currentUser, companyContext, authorityRevalidationService,
+            [ErpPermissions.CounterpartyPartiesRead, CounterpartyTaxIdentityPermissionsV1.Update], cancellationToken);
+        return result;
+    }
+
     public async Task<CounterpartyTaxIdentityDuplicateCheck?> CheckDuplicatesAsync(
         Guid partyId, string taxIdentityNumber, CancellationToken cancellationToken)
     {
