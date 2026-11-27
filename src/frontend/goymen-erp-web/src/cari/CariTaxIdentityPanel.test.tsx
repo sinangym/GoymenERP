@@ -1,5 +1,6 @@
+import type { ComponentProps } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter } from 'react-router'
@@ -109,18 +110,19 @@ function install(handler: Handler) {
   return calls
 }
 
-function renderPanel() {
+type Callbacks = Pick<ComponentProps<typeof CariTaxIdentityPanel>, 'onApplied' | 'onUnresolvedChange'>
+function renderPanel(props: Callbacks = {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
   const router = createMemoryRouter(
     [
       {
         path: '*',
-        element: <TaxIdentityPanelHarness />,
+        element: <TaxIdentityPanelHarness {...props} />,
       },
     ],
     { initialEntries: [`/cari/${PARTY}`] },
   )
-  render(
+  return render(
     <QueryClientProvider client={queryClient}>
       <ShellDispatchContext.Provider value={() => undefined}>
         <RouterProvider router={router} />
@@ -129,13 +131,14 @@ function renderPanel() {
   )
 }
 
-function TaxIdentityPanelHarness() {
+function TaxIdentityPanelHarness(props: Callbacks) {
   return (
     <CariTaxIdentityPanel
       partyId={PARTY}
       companyId={COMPANY}
       namespace={NAMESPACE}
       contractContext={CONTRACT}
+      {...props}
     />
   )
 }
@@ -381,4 +384,30 @@ describe('AT-009 VKN/TCKN on the Cari card', () => {
     expect(await screen.findByText('Girilmemiş')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Kaydet' })).toBeNull()
   })
+})
+
+
+it('reports only a definite applied command to its caller and clears unresolved after the native acknowledgement',async()=>{
+ const onApplied=vi.fn(),onUnresolvedChange=vi.fn()
+ const calls=install(call=>call.method==='GET'?json(taxView()):call.method==='POST'
+  ?json({taxIdentityNumber:'1234567890',kind:'vkn',duplicates:[]}):noContent())
+ renderPanel({onApplied,onUnresolvedChange});await screen.findByText('Girilmemiş')
+ expect(onApplied).not.toHaveBeenCalled()
+ await userEvent.type(screen.getByLabelText(TAX_IDENTITY_TEXT.inputLabel),'1234567890')
+ await userEvent.click(screen.getByRole('button',{name:TAX_IDENTITY_TEXT.save}));await screen.findByText(TAX_IDENTITY_TEXT.saved)
+ expect(puts(calls)).toHaveLength(1);expect(onApplied).toHaveBeenCalledTimes(1)
+ expect(onUnresolvedChange).toHaveBeenCalledWith(true)
+ await waitFor(()=>expect(onUnresolvedChange).toHaveBeenLastCalledWith(false))
+})
+
+it('retains the native result but never calls a departed caller after unmount while the command is in flight',async()=>{
+ let resolve!: (response:Response)=>void
+ const response=new Promise<Response>(done=>{resolve=done}),onApplied=vi.fn()
+ const calls=install(call=>call.method==='GET'?json(taxView()):call.method==='POST'
+  ?json({taxIdentityNumber:'1234567890',kind:'vkn',duplicates:[]}):response)
+ const mounted=renderPanel({onApplied});await screen.findByText('Girilmemiş')
+ await userEvent.type(screen.getByLabelText(TAX_IDENTITY_TEXT.inputLabel),'1234567890')
+ await userEvent.click(screen.getByRole('button',{name:TAX_IDENTITY_TEXT.save}));await waitFor(()=>expect(puts(calls)).toHaveLength(1))
+ mounted.unmount();await act(async()=>{resolve(noContent());await response})
+ expect(onApplied).not.toHaveBeenCalled()
 })

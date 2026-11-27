@@ -56,6 +56,9 @@ interface Props {
   readonly companyId: string
   readonly namespace: string
   readonly contractContext: ContractContext | null
+  readonly onUnresolvedChange?: (unresolved: boolean) => void
+  readonly onApplied?: () => void
+  readonly unavailableUpdateText?: string
 }
 
 interface Notice {
@@ -94,7 +97,7 @@ function canRetryWithFreshView(attempt: FrozenTaxIdentityAttempt, view: TaxIdent
     : view.viewer.canApprove
 }
 
-export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractContext }: Props) {
+export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractContext, onUnresolvedChange, onApplied, unavailableUpdateText }: Props) {
   const queryClient = useQueryClient()
   const boundary = useAuthBoundary()
   const shellDispatch = useShellDispatch()
@@ -106,6 +109,7 @@ export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractCo
   const bindingRef = useRef(binding)
   useEffect(() => {
     bindingRef.current = binding
+    return () => { bindingRef.current = '' }
   }, [binding])
   const queryKey = [namespace, 'counterparty-tax-identity', partyId, companyId]
   const query = useQuery({
@@ -127,6 +131,7 @@ export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractCo
     attemptRef.current = attempt
   }, [attempt])
   const unresolved = attempt.phase === 'submitting' || attempt.phase === 'unknown' || attempt.phase === 'abandoned'
+  useEffect(() => { onUnresolvedChange?.(unresolved) }, [onUnresolvedChange, unresolved])
   const dirtyScope = `cari.tax-identity:${partyId}`
   useEffect(() => {
     shellDispatch({ type: unresolved ? 'DIRTY_SET' : 'DIRTY_CLEAR', scope: dirtyScope })
@@ -163,6 +168,7 @@ export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractCo
     attemptRef.current = inFlight
     rememberTaxIdentityAttempt(attemptBinding, inFlight)
     setAttempt(inFlight)
+    onUnresolvedChange?.(true)
     setNotice(null)
     const security = boundary.capture()
     const currentContract = contractContext?.origin === frozen.contract.origin ? contractContext : null
@@ -175,12 +181,14 @@ export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractCo
       boundary.report(outcome.status, security)
     }
     if (bindingRef.current !== frozen.binding) return false
+    onUnresolvedChange?.(next.phase === 'submitting' || next.phase === 'unknown' || next.phase === 'abandoned')
     attemptRef.current = next
     setAttempt(next)
     if (next.phase === 'completed') {
       setNotice({ tone: 'ok', text: frozen.okText })
       setFormKey((value) => value + 1)
       refresh()
+      onApplied?.()
       return true
     }
     if (next.phase === 'unknown') {
@@ -322,6 +330,8 @@ export function CariTaxIdentityPanel({ partyId, companyId, namespace, contractCo
           }
         />
       ) : null}
+
+      {!view.viewer.canUpdate && unavailableUpdateText !== undefined ? <p>{unavailableUpdateText}</p> : null}
 
       {view.viewer.canUpdate && pending === null ? (
         view.taxIdentityNumber === null ? (
