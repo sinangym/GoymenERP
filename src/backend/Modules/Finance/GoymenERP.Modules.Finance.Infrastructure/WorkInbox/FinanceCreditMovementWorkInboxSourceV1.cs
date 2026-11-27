@@ -129,6 +129,6 @@ internal sealed partial class FinanceCreditMovementWorkInboxSourceV1(
         }
 
         return new WorkInboxItemV1(ModuleName, KindName, row.Id, FinanceWorkInboxFence.ShortReference(row.Id),
-            row.ProposedAtUtc.ToUniversalTime(), ScreenPath, row.ProposedBy, [rule], references);
+            row.ProposedAtUtc.ToUniversalTime(), $"/onaylarim/finance.credit-movement.v1/{row.Id:D}", row.ProposedBy, [rule], references);
     }
 }

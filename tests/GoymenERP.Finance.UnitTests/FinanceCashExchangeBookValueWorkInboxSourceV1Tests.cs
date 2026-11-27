@@ -94,7 +94,8 @@ public sealed class FinanceCashExchangeBookValueWorkInboxSourceV1Tests : Finance
             ],
             items[current.Id].Rules);
         Assert.Equal("SENTETIK-VRM-1", items[current.Id].DocumentLabel);
-        Assert.Equal("/finans/doviz-defter-degeri-onaylari", items[current.Id].Link);
+        Assert.Equal($"/onaylarim/finance.cash-exchange-book-value.v1/{current.Id:D}", items[current.Id].Link);
+        Assert.Equal("/finans/doviz-defter-degeri-onaylari", FinanceCashExchangeBookValueWorkInboxSourceV1.ScreenPath);
         Assert.Contains(items[current.Id].References, reference => reference.Role == "cash-transfer" && reference.RecordId == transfer);
         Assert.Contains(items[current.Id].References, reference => reference.Role == "evidence-document");
         Assert.Equal(

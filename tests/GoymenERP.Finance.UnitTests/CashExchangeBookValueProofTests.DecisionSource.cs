@@ -25,7 +25,8 @@ public sealed partial class CashExchangeBookValueProofTests
         var snapshot = await source.ReadDecisionAsync(context, row.Id, default); Assert.NotNull(snapshot);
         var queued = FinanceCashExchangeBookValueWorkInboxSourceV1.Item(row, new Dictionary<Guid, string?> { [row.TransferId] = "SENTETIK-CEX-1" }); Assert.NotNull(queued);
         Assert.Equal(queued.DocumentLabel, snapshot.Item.DocumentLabel); Assert.Equal(queued.Rules, snapshot.Item.Rules); Assert.Equal(queued.References, snapshot.Item.References);
-        Assert.Equal("SENTETIK-CEX-1", snapshot.Item.DocumentLabel); Assert.Equal(FinanceCashExchangeBookValueWorkInboxSourceV1.ScreenPath, snapshot.Item.Link);
+        Assert.Equal("SENTETIK-CEX-1", snapshot.Item.DocumentLabel); Assert.Equal($"/onaylarim/finance.cash-exchange-book-value.v1/{row.Id:D}", snapshot.Item.Link);
+        Assert.Equal("/finans/doviz-defter-degeri-onaylari", FinanceCashExchangeBookValueWorkInboxSourceV1.ScreenPath);
         Assert.Equal(status == 1, snapshot.Pending); Assert.Equal(status == 1 ? "1" : "2", snapshot.SourceVersion);
         Assert.True(CashExchangeBookValueServiceV1.MatchesDecisionItem(snapshot.Item, detail)); var forwarded = Assert.IsType<FinanceContext>(owner.Context);
         Assert.Equal(context.CorrelationId, forwarded.CorrelationId); Assert.Equal(context.CausationId, forwarded.CausationId); Assert.Equal(0, owner.Decisions); Assert.False(db.ChangeTracker.HasChanges());

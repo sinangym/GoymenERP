@@ -17,7 +17,7 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(67, declarations.Count);
+        Assert.Equal(69, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             !declaration.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)
             && !declaration.CapabilityId.StartsWith("finance.official-sales-invoices.", StringComparison.Ordinal)
@@ -38,6 +38,8 @@ public sealed class FinanceShellCapabilityProviderTests
     }
 
     [Theory]
+    [InlineData("finance.credit-movement.work-decision", ErpPermissions.FinanceCreditsApprove)]
+    [InlineData("finance.cash-exchange-book-value.work-decision", CashExchangeBookValuePermissionsV1.Approve)]
     [InlineData("finance.bank-credit-limit.work-decision", ErpPermissions.FinanceCreditsApprove)]
     [InlineData("finance.opening-balance.work-decision", ErpPermissions.FinanceOpeningBalancesApprove)]
     [InlineData("finance.opening-balance-reversal.work-decision", ErpPermissions.FinanceOpeningBalancesApprove)]
@@ -63,6 +65,10 @@ public sealed class FinanceShellCapabilityProviderTests
         Assert.Equal("1.32", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
+            ("finance.credit-movement.work-decision", "finance-credit-movement-work-decision", "/onaylarim/finance.credit-movement.v1/:approvalId", "F-CREDIT-MOVEMENT-WORK-DECISION",
+                new[] { ErpPermissions.FinanceCreditsApprove }),
+            ("finance.cash-exchange-book-value.work-decision", "finance-cash-exchange-book-value-work-decision", "/onaylarim/finance.cash-exchange-book-value.v1/:approvalId", "F-CASH-EXCHANGE-BOOK-VALUE-WORK-DECISION",
+                new[] { CashExchangeBookValuePermissionsV1.Approve }),
             ("finance.bank-credit-limit.work-decision", "finance-bank-credit-limit-work-decision", "/onaylarim/finance.bank-credit-limit.v1/:approvalId", "F-BANK-CREDIT-LIMIT-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCreditsApprove]),
             ("finance.opening-balance.work-decision", "finance-opening-balance-work-decision", "/onaylarim/finance.opening-balance.v1/:approvalId", "F-OPENING-BALANCE-WORK-DECISION",
@@ -406,7 +412,7 @@ public sealed class FinanceShellCapabilityProviderTests
                 "F-03-OPEN-ITEMS", "F-04", "F-04-NEW", "F-13-BANK-STATEMENT", "F-18-COLLATERALS", "F-18-CREDIT-LIMITS", "F-23-OPENING-BALANCES",
                 "F-25-EXPENSE-PAYMENTS", "F-32-CASH-TRANSFERS", "F-32-EXCHANGE-BOOK-APPROVE", "F-32-EXCHANGE-BOOK-PREPARE",
                 "F-32-PARTY-BALANCE-TRANSFER", "F-47-CREDITS", "F-BANK-ACCOUNT-IBAN-CHANGE-WORK-DECISION", "F-BANK-ACCOUNT-WORK-DECISION", "F-BANK-CREDIT-LIMIT-WORK-DECISION",
-                "F-EXPENSE-PAYMENT-WORK-DECISION", "F-MANUAL-BANK-PAYMENT-REVERSAL-WORK-DECISION", "F-MANUAL-BANK-PAYMENT-WORK-DECISION", "F-MANUAL-RECEIPT-REVERSAL-WORK-DECISION",
+                "F-CASH-EXCHANGE-BOOK-VALUE-WORK-DECISION", "F-CREDIT-MOVEMENT-WORK-DECISION", "F-EXPENSE-PAYMENT-WORK-DECISION", "F-MANUAL-BANK-PAYMENT-REVERSAL-WORK-DECISION", "F-MANUAL-BANK-PAYMENT-WORK-DECISION", "F-MANUAL-RECEIPT-REVERSAL-WORK-DECISION",
                 "F-OFFICIAL-INVOICE-IMPORT-WORK-DECISION", "F-OFFICIAL-SALES-INVOICE-WORK-DECISION", "F-OPENING-BALANCE-REVERSAL-WORK-DECISION", "F-OPENING-BALANCE-WORK-DECISION", "F-PARTY-CREDIT-LIMIT-WORK-DECISION", "M-03", "W-FIN-CASH-ACCOUNT-01",
                 "W-FIN-CASH-ACCOUNT-PASSIVATION-01", "W-FIN-CASH-ACCOUNT-REACTIVATION-01", "W-FIN-CREDIT-ACCOUNT-01"],
             routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));

@@ -65,7 +65,8 @@ public sealed class FinanceCreditMovementWorkInboxSourceV1Tests : FinanceWorkInb
         Assert.Contains(items[repayment.Id].References, reference => reference.Role == "credit-account"
             && reference.RecordId == repayment.CreditAccountId);
         Assert.Contains(items[repayment.Id].References, reference => reference.Role == "currency" && reference.RecordId == Try);
-        Assert.Equal("/finans/krediler", items[repayment.Id].Link);
+        Assert.Equal($"/onaylarim/finance.credit-movement.v1/{repayment.Id:D}", items[repayment.Id].Link);
+        Assert.Equal("/finans/krediler", FinanceCreditMovementWorkInboxSourceV1.ScreenPath);
     }
 
     private static FinanceCreditMovementRow Movement(Guid company, DateTimeOffset at, string proposedBy,

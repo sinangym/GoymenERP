@@ -102,6 +102,7 @@ public sealed class FinanceShellCapabilityRegistryTests
                 ("finance.cash-account-passivation.work-decision", "W-FIN-CASH-ACCOUNT-PASSIVATION-01", null),
                 ("finance.cash-account-reactivation.work-decision", "W-FIN-CASH-ACCOUNT-REACTIVATION-01", null),
                 ("finance.cash-account.work-decision", "W-FIN-CASH-ACCOUNT-01", null),
+                ("finance.cash-exchange-book-value.work-decision", "F-CASH-EXCHANGE-BOOK-VALUE-WORK-DECISION", null),
                 ("finance.cash-exchange-book-values.approve", "F-32-EXCHANGE-BOOK-APPROVE", null),
                 ("finance.cash-exchange-book-values.prepare", "F-32-EXCHANGE-BOOK-PREPARE", null),
                 // FNS-D24 (Finance 1.11): one transfer is one transaction; the commit is a control of the workspace.
@@ -115,6 +116,7 @@ public sealed class FinanceShellCapabilityRegistryTests
                 ("finance.credit-limits.approve", "F-18-CREDIT-LIMITS", "finance.credit-limits.list"),
                 ("finance.credit-limits.list", "F-18-CREDIT-LIMITS", null),
                 ("finance.credit-limits.propose", "F-18-CREDIT-LIMITS", "finance.credit-limits.list"),
+                ("finance.credit-movement.work-decision", "F-CREDIT-MOVEMENT-WORK-DECISION", null),
                 ("finance.credits.approve", "F-47-CREDITS", "finance.credits.workspace"),
                 ("finance.credits.propose", "F-47-CREDITS", "finance.credits.workspace"),
                 ("finance.credits.workspace", "F-47-CREDITS", null),

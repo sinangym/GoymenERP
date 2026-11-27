@@ -86,7 +86,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.32";
+    public const string OwnerContractVersion = "1.33";
     public const string BankStatementCapabilityId = "finance.bank-statements.read";
     public const string BankStatementImportCapabilityId = "finance.bank-statements.import";
     public const string BankStatementMatchCapabilityId = "finance.bank-statements.match";
@@ -157,6 +157,8 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public const string OfficialInvoiceImportWorkDecisionCapabilityId = "finance.official-invoice-import.work-decision";
     public const string OfficialSalesInvoiceWorkDecisionCapabilityId = "finance.official-sales-invoice.work-decision";
     public const string ManualBankPaymentReversalWorkDecisionCapabilityId = "finance.manual-bank-payment-reversal.work-decision";
+    public const string CreditMovementWorkDecisionCapabilityId = "finance.credit-movement.work-decision";
+    public const string CashExchangeBookValueWorkDecisionCapabilityId = "finance.cash-exchange-book-value.work-decision";
     public const string BankCreditLimitWorkDecisionCapabilityId = "finance.bank-credit-limit.work-decision";
     public const string OpeningBalanceWorkDecisionCapabilityId = "finance.opening-balance.work-decision";
     public const string OpeningBalanceReversalWorkDecisionCapabilityId = "finance.opening-balance-reversal.work-decision";
@@ -355,6 +357,12 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
             Declaration(ManualReceiptReversalWorkDecisionCapabilityId, "finance-manual-receipt-reversal-work-decision",
                 "/onaylarim/finance.manual-receipt-reversal.v1/:approvalId", "F-MANUAL-RECEIPT-REVERSAL-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinancePermissionNames.ReverseApprove]),
+            Declaration(CreditMovementWorkDecisionCapabilityId, "finance-credit-movement-work-decision",
+                "/onaylarim/finance.credit-movement.v1/:approvalId", "F-CREDIT-MOVEMENT-WORK-DECISION",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCreditsApprove]),
+            Declaration(CashExchangeBookValueWorkDecisionCapabilityId, "finance-cash-exchange-book-value-work-decision",
+                "/onaylarim/finance.cash-exchange-book-value.v1/:approvalId", "F-CASH-EXCHANGE-BOOK-VALUE-WORK-DECISION",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [CashExchangeBookValuePermissionsV1.Approve]),
             Declaration(BankCreditLimitWorkDecisionCapabilityId, "finance-bank-credit-limit-work-decision",
                 "/onaylarim/finance.bank-credit-limit.v1/:approvalId", "F-BANK-CREDIT-LIMIT-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCreditsApprove]),

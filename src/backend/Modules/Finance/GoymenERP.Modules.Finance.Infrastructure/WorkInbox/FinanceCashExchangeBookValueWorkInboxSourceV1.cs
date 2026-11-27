@@ -101,7 +101,7 @@ internal sealed partial class FinanceCashExchangeBookValueWorkInboxSourceV1(
 
         var documentNumber = transfers.GetValueOrDefault(row.TransferId);
         return new WorkInboxItemV1(ModuleName, KindName, row.Id, FinanceWorkInboxRead.Label(documentNumber, row.Id),
-            row.PreparedAtUtc.ToUniversalTime(), ScreenPath, row.PreparedBy, rules,
+            row.PreparedAtUtc.ToUniversalTime(), $"/onaylarim/finance.cash-exchange-book-value.v1/{row.Id:D}", row.PreparedBy, rules,
             [
                 FinanceWorkInboxRead.Reference("cash-transfer", row.TransferId,
                     FinanceWorkInboxRead.Label(documentNumber, row.TransferId)),

@@ -25,7 +25,7 @@ public sealed partial class FinanceCreditAccountTests
         var snapshot = await source.ReadDecisionAsync(context, id, default); Assert.NotNull(snapshot);
         Assert.Equal(!terminal, snapshot.Pending); Assert.Equal(terminal ? "2" : "1", snapshot.SourceVersion);
         Assert.Equal(Maker, snapshot.Item.PreparedBy); Assert.True(snapshot.Item.Excludes(Maker)); Assert.Null(snapshot.Item.ExcludedDeciders);
-        Assert.Equal("/finans/krediler", snapshot.Item.Link);
+        Assert.Equal($"/onaylarim/finance.credit-movement.v1/{id:D}", snapshot.Item.Link);
         Assert.Equal("/finans/krediler", FinanceCreditMovementWorkInboxSourceV1.ScreenPath);
         var human = await core.ReadDecisionAsync(Ctx(Checker), id, _ => Task.CompletedTask, default); Assert.Equal(ReadOutcome.Found, human.Outcome);
         Assert.True(FinanceCreditMovementServiceV1.MatchesDecisionItem(snapshot.Item, human.Resource));
