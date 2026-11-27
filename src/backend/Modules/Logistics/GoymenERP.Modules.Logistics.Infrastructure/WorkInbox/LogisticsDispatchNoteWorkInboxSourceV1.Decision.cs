@@ -16,11 +16,11 @@ internal sealed partial class LogisticsDispatchNoteWorkInboxSourceV1
         await Fence();
         if (itemId == Guid.Empty) return null;
         var companyId = context.CompanyId;
-        var query = from note in rows.DispatchNotes
-                    join instruction in rows.Instructions on new { note.CompanyId, Id = note.InstructionId }
-                        equals new { instruction.CompanyId, instruction.Id }
-                    where note.CompanyId == companyId && instruction.CompanyId == companyId && note.DispatchNoteId == itemId
-                    select new { Note = note, Instruction = instruction };
+        var query = from documentRow in rows.DispatchNotes
+                    join instructionRow in rows.Instructions on new { documentRow.CompanyId, Id = documentRow.InstructionId }
+                        equals new { instructionRow.CompanyId, instructionRow.Id }
+                    where documentRow.CompanyId == companyId && instructionRow.CompanyId == companyId && documentRow.DispatchNoteId == itemId
+                    select new { Note = documentRow, Instruction = instructionRow };
         var found = await rows.ListAsync(query.Take(2), token);
         await Fence();
         if (found.Count == 0) return null;
