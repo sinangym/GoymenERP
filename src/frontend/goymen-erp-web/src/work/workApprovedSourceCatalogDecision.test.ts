@@ -5,14 +5,14 @@ import { decodeWorkDecisionPreview, isWorkDecisionKind, isWorkDecisionRequest, s
 const company = 'aaaaaaaa-0000-4000-8000-000000000001',id = 'cccccccc-0000-4000-8000-000000000051'
 const request = {expectedVersion:'1',approve:true,reason:null,delegationId:null,approvedSourceCatalogSelection:{expectedActiveCatalogVersion:'0'}}
 afterEach(()=>vi.unstubAllGlobals())
-describe('staged approved source catalog Work transport',()=>{
-  it('preserves the full six/fifteen header and whole flat package without publishing another mounted kind',()=>{
+describe('approved source catalog Work transport',()=>{
+  it('preserves the full six/fifteen header and whole flat package with exactly one paired mounted kind',()=>{
     const value = fixture(company,id)
     expect(decodeWorkDecisionPreview(value,company,kind,id)?.approvedSourceCatalog).toEqual(value.approvedSourceCatalog)
     expect(Object.keys(value.approvedSourceCatalog)).toHaveLength(6);expect(Object.keys(value.approvedSourceCatalog.catalog)).toHaveLength(15)
     expect(value.approvedSourceCatalog.package.accounts).toHaveLength(13);expect(value.approvedSourceCatalog.package.bindings[0]!.mappings).toHaveLength(13)
-    expect(isWorkDecisionKind(kind)).toBe(true);expect(WORK_DECISION_KINDS).toHaveLength(45)
-    expect(WORK_DECISION_KINDS.some(k=>String(k)===kind)).toBe(false)
+    expect(isWorkDecisionKind(kind)).toBe(true);expect(WORK_DECISION_KINDS).toHaveLength(46)
+    expect(WORK_DECISION_KINDS.filter(k=>String(k)===kind)).toEqual([kind])
     expect(decodeWorkDecisionPreview(value,company.toUpperCase(),kind,id.toUpperCase())).not.toBeNull()
   })
   it.each(['9007199254740993','9223372036854775806'])('freezes both incrementable Int64 strings exactly: %s',version=>{
@@ -77,7 +77,7 @@ describe('staged approved source catalog Work transport',()=>{
     for(const extra of [{approve:false},{reason:''},{approvedSourceCatalogSelection:null},{approvedSourceCatalogSelection:{}},
       {delegationId:'00000000-0000-0000-0000-000000000000'},{approvedSourceCatalogSelection:{expectedActiveCatalogVersion:'0',previewDigest:'A'.repeat(64)}},{approvedSourceCatalog:{}},{normalJournalDraft:{periodId:id}}])
       expect(isWorkDecisionRequest({...request,...extra},kind)).toBe(false)
-    for(const k of WORK_DECISION_KINDS)expect(isWorkDecisionRequest(request,k)).toBe(false)
+    for(const k of WORK_DECISION_KINDS.filter(k=>k!==kind))expect(isWorkDecisionRequest(request,k)).toBe(false)
   })
   it('accepts only the native original Active six-field receipt with matching replay headers',async()=>{
     const body={companyId:company,kind,itemId:id,state:'Active',replayed:true,originalCorrelationId:'SENTETIK original'}

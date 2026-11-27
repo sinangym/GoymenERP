@@ -137,3 +137,17 @@ it('publishes one exact Work reversal purpose before the legacy reader without c
  expect(ACCOUNTING_CAPABILITY.journalReversalApprove).toBe('accounting.journal-reversals.approve')
  expect(ACCOUNTING_ROUTE.journalsDetail).toBe('/muhasebe/fisler/:journalId')
 })
+
+it('mounts only the catalog Work purpose without publishing another account-plan or mapping reader',()=>{
+ const kind='accounting.approved-source-catalog.v1',capability=CAPABILITY.accountingApprovedSourceCatalogWorkDecision
+ const path=`/onaylarim/${kind}/:approvalId`
+ expect(capability).toBe('accounting.approved-source-catalog.work-decision')
+ expect(ACCOUNTING_CAPABILITY.approvedSourceCatalogWorkDecision).toBe(capability)
+ expect(ACCOUNTING_ROUTE.approvedSourceCatalogWorkDecision).toBe(path)
+ expect(CAPABILITY_ROUTE[capability]).toBe(path);expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
+ expect(WORK_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'accounting',capability}])
+ const mounted=workRoutes.filter(route=>route.path===path.slice(1));expect(mounted).toHaveLength(1)
+ expect(matchRoutes(shellRoutes,path.replace(':approvalId','cccccccc-0000-4000-8000-000000000051'))?.at(-1)?.route).toBe(mounted[0])
+ expect(ACCOUNTING_ROUTE.accountPlan).toBe('/muhasebe/hesap-plani')
+ expect(ACCOUNTING_CAPABILITY.postingMappingsRead).toBe('accounting.posting-mappings.read')
+})

@@ -27,6 +27,7 @@ public sealed class AccountingWorkInboxSourcesV1Tests
         { AccountingNormalJournalDraftWorkInboxSourceV1.KindName, NormalJournalPermissionNamesV1.DraftApprove },
         { AccountingJournalReversalWorkInboxSourceV1.KindName, AccountingJournalReversalPermissionNamesV1.Approve },
         { AccountingApprovedSourceCatalogWorkInboxSourceV1.KindName, ApprovedAccountingSourceCatalogPermissionNamesV1.Activate },
+        { AccountingPostingAccountMappingWorkInboxSourceV1.KindName, AccountingPostingAccountMappingPermissionNamesV1.Activate },
         { AccountingManufacturingCostDifferenceWorkInboxSourceV1.KindName, AccountingJournalReversalPermissionNamesV1.Approve },
         { AccountingInvoiceLineCogsCorrectionWorkInboxSourceV1.KindName, AccountingJournalReversalPermissionNamesV1.Approve },
         { AccountingInvoicedShipmentCostWorkInboxSourceV1.KindName, NormalJournalPermissionNamesV1.DraftApprove },
@@ -75,6 +76,7 @@ public sealed class AccountingWorkInboxSourcesV1Tests
                 typeof(AccountingNormalJournalDraftWorkInboxSourceV1),
                 typeof(AccountingJournalReversalWorkInboxSourceV1),
                 typeof(AccountingApprovedSourceCatalogWorkInboxSourceV1),
+                typeof(AccountingPostingAccountMappingWorkInboxSourceV1),
                 typeof(AccountingManufacturingCostDifferenceWorkInboxSourceV1),
                 typeof(AccountingInvoiceLineCogsCorrectionWorkInboxSourceV1),
                 typeof(AccountingInvoicedShipmentCostWorkInboxSourceV1),
@@ -195,6 +197,7 @@ public sealed class AccountingWorkInboxSourcesV1Tests
             AccountingNormalJournalDraftWorkInboxSourceV1.KindName => new AccountingNormalJournalDraftWorkInboxSourceV1(db, fence),
             AccountingJournalReversalWorkInboxSourceV1.KindName => new AccountingJournalReversalWorkInboxSourceV1(db, fence),
             AccountingApprovedSourceCatalogWorkInboxSourceV1.KindName => new AccountingApprovedSourceCatalogWorkInboxSourceV1(db, fence),
+            AccountingPostingAccountMappingWorkInboxSourceV1.KindName => new AccountingPostingAccountMappingWorkInboxSourceV1(db, fence),
             AccountingManufacturingCostDifferenceWorkInboxSourceV1.KindName =>
                 new AccountingManufacturingCostDifferenceWorkInboxSourceV1(db, fence),
             AccountingInvoiceLineCogsCorrectionWorkInboxSourceV1.KindName =>

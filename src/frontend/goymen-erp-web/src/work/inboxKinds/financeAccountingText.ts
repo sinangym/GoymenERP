@@ -28,6 +28,7 @@ export const FINANCE_ACCOUNTING_KIND_TEXT: Readonly<Record<string, string>> = {
   'accounting.period-reopening.v1': 'Kapalı dönemi yeniden açma',
   'accounting.normal-journal-draft.v1': 'Normal fiş taslağı',
   'accounting.journal-reversal.v1': 'Fiş ters kaydı',
+  'accounting.approved-source-catalog.v1': 'Muhasebe kaynak paketi',
   'accounting.manufacturing-cost-difference.v1': 'Üretim maliyet farkı',
   'accounting.invoice-line-cogs-correction.v1': 'Fatura satırı SMM düzeltmesi',
   'accounting.invoiced-shipment-cost.v1': 'Faturalı sevk SMM kaydı',
@@ -37,6 +38,7 @@ export const FINANCE_ACCOUNTING_KIND_TEXT: Readonly<Record<string, string>> = {
 }
 
 export const FINANCE_ACCOUNTING_RULE_TEXT: Readonly<Record<string, string>> = {
+  'accounting.approved-source-catalog-activation-required': 'Muhasebe kaynak paketi etkinleştirme onayı bekliyor',
   'finance.official-sales-invoice-approval-required': 'Resmî satış faturası kaydı, kaydedenden farklı bir kişinin onayını bekliyor',
   'finance.manual-bank-payment-reversal-approval-required': 'Banka ödemesinin ters kaydı, önerenden farklı bir kişinin onayını bekliyor',
   'finance.manual-receipt-reversal-approval-required': 'Tahsilatın ters kaydı, önerenden farklı bir kişinin onayını bekliyor',
@@ -74,6 +76,7 @@ export const FINANCE_ACCOUNTING_RULE_TEXT: Readonly<Record<string, string>> = {
 }
 
 export const FINANCE_ACCOUNTING_ROLE_TEXT: Readonly<Record<string, string>> = {
+  'approved-source-catalog-package': 'Muhasebe kaynak paketi',
   'cash-account': 'Kasa hesabı',
   'cash-transfer': 'Kasa/banka aktarımı',
   'credit-account': 'Kredi hesabı',
@@ -102,6 +105,7 @@ export const FINANCE_ACCOUNTING_ROLE_TEXT: Readonly<Record<string, string>> = {
 }
 
 export const FINANCE_ACCOUNTING_PERMISSION_TEXT: Readonly<Record<string, string>> = {
+  'accounting.approved-source-catalog.activate': 'Muhasebe kaynak paketi etkinleştirme',
   'finance.official-sales-invoices.approve': 'Resmî satış faturası onayı',
   'finance.manual-bank-payment.reverse.approve': 'Banka ödemesi ters kayıt onayı',
   'finance.manual-receipt.reverse.approve': 'Tahsilat ters kayıt onayı',

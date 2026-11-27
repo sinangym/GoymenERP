@@ -2,12 +2,12 @@ import { isBoundUuid } from '../finance/contract'
 import { hasExactKeys } from '../finance/wireShape'
 import { transferDispatchUtc } from '../inventory/transferDispatchApi'
 
-// Staged core only; publication belongs to the paired shell capability/route change.
-export const STAGED_APPROVED_SOURCE_CATALOG_PURPOSE = {
+// Paired human Work purpose; capability availability remains controlled by the server shell.
+export const APPROVED_SOURCE_CATALOG_PURPOSE = {
   kind: 'accounting.approved-source-catalog.v1', capabilityId: 'accounting.approved-source-catalog.work-decision',
   routePath: '/onaylarim/accounting.approved-source-catalog.v1/:approvalId',
 } as const
-export const APPROVED_SOURCE_CATALOG_KIND = STAGED_APPROVED_SOURCE_CATALOG_PURPOSE.kind
+export const APPROVED_SOURCE_CATALOG_KIND = APPROVED_SOURCE_CATALOG_PURPOSE.kind
 export interface WorkCatalogAccount { readonly accountId: string; readonly code: string; readonly name: string }
 export interface WorkCatalogMapping { readonly mappingKey: string; readonly side: 'Debit' | 'Credit'; readonly accountId: string }
 export interface WorkCatalogBinding {

@@ -10,7 +10,7 @@ import { COMPANY_A, COMPANY_B, IDENTITY, installFetch, json, problem } from '../
 import { WorkDecisionPage } from './WorkDecisionPage'
 import { WORK_DECISION_TEXT as T } from './workDecisionText'
 import { WORK_CATALOG_TEXT as C } from './workApprovedSourceCatalogText'
-import { STAGED_APPROVED_SOURCE_CATALOG_PURPOSE as staged } from './workApprovedSourceCatalogDecision'
+import { APPROVED_SOURCE_CATALOG_PURPOSE as staged } from './workApprovedSourceCatalogDecision'
 import { approvedSourceCatalogFixture as fixture } from './approvedSourceCatalogDecisionFixture'
 import { workRoutes } from './workRoutes'
 const kind=staged.kind,cap=staged.capabilityId,id='cccccccc-0000-4000-8000-000000000051',path=`/work/decisions/${kind}/${id}`
@@ -21,7 +21,7 @@ function mount(client = new QueryClient({defaultOptions:{queries:{retry:false,gc
     element:<CapabilityRoute capability={[cap]}><WorkDecisionPage kind={kind}/></CapabilityRoute>}]}],{initialEntries:[staged.routePath.replace(':approvalId',id)]})
   render(<ShellProvider queryClient={client}><RouterProvider router={router}/></ShellProvider>);return {router,client}
 }
-describe('staged Work catalog candidate',()=>{
+describe('paired Work catalog purpose',()=>{
   it('shows the complete package before approve-only action, including the native self-activation exception and no extra reads',async()=>{
     const value=fixture(COMPANY_A,id);Object.assign(value.approvedSourceCatalog.catalog,{preparedByUserId:IDENTITY.userId})
     const calls=installFetch({capabilities:[cap],respond:(url,init)=>url.includes(path)?init?.method==='POST'?
@@ -37,8 +37,8 @@ describe('staged Work catalog candidate',()=>{
     fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done)
     expect(calls.filter(c=>c.method==='POST').map(c=>c.body)).toEqual([{expectedVersion:'1',approve:true,reason:null,delegationId:null,approvedSourceCatalogSelection:{expectedActiveCatalogVersion:'0'}}])
     expect(calls.some(c=>c.url.includes('/accounting/'))).toBe(false);expect(screen.queryByRole('region',{name:C.title})).toBeNull()
-    expect(workRoutes.filter(r=>r.path?.startsWith('onaylarim/')&&r.path.endsWith('/:approvalId')&&r.path!=='onaylarim/:kind/:approvalId')).toHaveLength(45)
-    expect(workRoutes.some(r=>r.path===staged.routePath.slice(1))).toBe(false)
+    expect(workRoutes.filter(r=>r.path?.startsWith('onaylarim/')&&r.path.endsWith('/:approvalId')&&r.path!=='onaylarim/:kind/:approvalId')).toHaveLength(46)
+    expect(workRoutes.some(r=>r.path===staged.routePath.slice(1))).toBe(true)
   })
   it('restores only the original two versions/body/key after unknown remount, without current GET or human data in storage',async()=>{
     Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK catalog original session'});let posts=0

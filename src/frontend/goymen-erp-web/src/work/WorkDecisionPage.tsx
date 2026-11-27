@@ -1,4 +1,4 @@
-import { APPROVED_SOURCE_CATALOG_KIND, STAGED_APPROVED_SOURCE_CATALOG_PURPOSE, catalogIncrementable } from './workApprovedSourceCatalogDecision'
+import { APPROVED_SOURCE_CATALOG_KIND, APPROVED_SOURCE_CATALOG_PURPOSE, catalogIncrementable } from './workApprovedSourceCatalogDecision'
 import { WorkApprovedSourceCatalogFacts } from './WorkApprovedSourceCatalogFacts'
 import { WORK_CATALOG_TEXT as CATALOG } from './workApprovedSourceCatalogText'
 import { JOURNAL_REVERSAL_WORK_KIND, JOURNAL_REVERSAL_WORK_CAPABILITY } from './workJournalReversalDecision'
@@ -98,7 +98,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const officialSales = kind === 'finance.official-sales-invoice.v1'
   const nativeFinance = isNativeFinanceDecisionKind(kind)
   const catalog = kind === APPROVED_SOURCE_CATALOG_KIND
-  const catalogAllowed = !catalog || hasCapability(shell,STAGED_APPROVED_SOURCE_CATALOG_PURPOSE.capabilityId)
+  const catalogAllowed = !catalog || hasCapability(shell,APPROVED_SOURCE_CATALOG_PURPOSE.capabilityId)
   const journalReversal = kind === JOURNAL_REVERSAL_WORK_KIND
   const journalReversalAllowed = !journalReversal || hasCapability(shell,JOURNAL_REVERSAL_WORK_CAPABILITY)
   const accountingPeriod = isAccountingPeriodWorkKind(kind)

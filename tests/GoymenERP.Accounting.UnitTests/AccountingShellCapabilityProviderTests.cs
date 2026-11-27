@@ -17,11 +17,12 @@ public sealed class AccountingShellCapabilityProviderTests
     {
         var declarations = new AccountingShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(34, declarations.Count);
+        Assert.Equal(35, declarations.Count);
         // ACC-V0c published what acc01 walked; the ACC-V1 reversal slice adds the journal DETAIL and M-06, whose real
         // read routes exist and which acc01 ACC01-09 walks over the synthetic posted-journal fixture.
         Assert.Equal(
             [
+                AccountingShellCapabilityProvider.ApprovedSourceCatalogWorkDecisionCapabilityId,
                 AccountingShellCapabilityProvider.JournalReversalWorkDecisionCapabilityId,
                 AccountingShellCapabilityProvider.JournalDetailCapabilityId,
                 AccountingShellCapabilityProvider.JournalListCapabilityId,
@@ -76,7 +77,7 @@ public sealed class AccountingShellCapabilityProviderTests
 
         // 1.3: the reversal slice changed the declaration set (detail and M-06 published, reversal actions declared staged).
         // 1.4: FIN-S16 declares the staged M-05 account plan route.
-        Assert.Equal(("ACCOUNTING", "1.14"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(("ACCOUNTING", "1.15"), (provider.Owner, provider.ContractVersion));
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("accounting.invoiced-shipment-costs.prepare", "accounting.invoiced-shipment-costs.prepare", "/muhasebe/sevk-smm-hazirla",
@@ -135,6 +136,8 @@ public sealed class AccountingShellCapabilityProviderTests
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [NormalJournalPermissionNamesV1.DraftApprove]),
             ("accounting.normal-journal-draft.work-decision", "accounting-normal-journal-draft-work-decision", "/onaylarim/accounting.normal-journal-draft.v1/:approvalId", "M-NORMAL-JOURNAL-DRAFT-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [NormalJournalPermissionNamesV1.DraftApprove]),
+            ("accounting.approved-source-catalog.work-decision", "accounting-approved-source-catalog-work-decision", "/onaylarim/accounting.approved-source-catalog.v1/:approvalId", "M-APPROVED-SOURCE-CATALOG-WORK-DECISION",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ApprovedAccountingSourceCatalogPermissionNamesV1.Activate]),
             ("accounting.period-opening.work-decision", "accounting-period-opening-work-decision", "/onaylarim/accounting.period-opening.v1/:approvalId", "M-PERIOD-OPENING-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [AccountingPermissionManifestV1.PeriodsApprove]),
             ("accounting.period-reopening.work-decision", "accounting-period-reopening-work-decision", "/onaylarim/accounting.period-reopening.v1/:approvalId", "M-PERIOD-REOPENING-WORK-DECISION",
@@ -161,6 +164,7 @@ public sealed class AccountingShellCapabilityProviderTests
             .Concat([AccountingJournalReversalPermissionNamesV1.Propose, AccountingJournalReversalPermissionNamesV1.Approve])
             .Concat(AccountPlanPermissionNamesV1.All)
             .Concat(AccountingPostingAccountMappingPermissionNamesV1.All)
+            .Concat([ApprovedAccountingSourceCatalogPermissionNamesV1.Activate])
             .ToHashSet(StringComparer.Ordinal);
 
         foreach (var item in expected)
