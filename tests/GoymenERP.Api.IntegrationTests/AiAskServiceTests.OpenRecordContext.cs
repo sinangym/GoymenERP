@@ -1,6 +1,7 @@
 using System.Text.Json;
 using GoymenERP.Api.Ai;
 using GoymenERP.Api.Ai.Gateway;
+using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Infrastructure.Ai;
