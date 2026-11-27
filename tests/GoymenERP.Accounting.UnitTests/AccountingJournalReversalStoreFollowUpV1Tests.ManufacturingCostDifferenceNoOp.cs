@@ -1,5 +1,6 @@
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Domain.Journals;
+using GoymenERP.Modules.Accounting.Domain.Posting;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Accounting.UnitTests;
