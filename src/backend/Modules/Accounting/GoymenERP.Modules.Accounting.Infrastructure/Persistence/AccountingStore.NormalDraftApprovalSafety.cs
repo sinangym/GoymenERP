@@ -16,19 +16,24 @@ public sealed partial class AccountingStore
     private async Task<AccountingApiResult<NormalJournalDraftViewV1>> RunOwnedNormalApprovalAsync(
         Func<bool, Task<AccountingApiResult<NormalJournalDraftViewV1>>> nativeAttempt,
         Func<CancellationToken, Task> freshFence, CancellationToken token)
+        => await RunOwnedAccountingApprovalAsync(NormalJournalCommandNamesV1.ApproveDraft, nativeAttempt, freshFence, token);
+
+    private async Task<AccountingApiResult<T>> RunOwnedAccountingApprovalAsync<T>(string commandName,
+        Func<bool, Task<AccountingApiResult<T>>> nativeAttempt,
+        Func<CancellationToken, Task> freshFence, CancellationToken token) where T : class
     {
         ArgumentNullException.ThrowIfNull(nativeAttempt); ArgumentNullException.ThrowIfNull(freshFence);
         token.ThrowIfCancellationRequested();
         try { return await Run(false); }
         catch (NormalApprovalRace race) { return await Run(true, race.NoWinnerCode); }
-        async Task<AccountingApiResult<NormalJournalDraftViewV1>> Run(bool replayOnly, string? noWinnerCode = null)
+        async Task<AccountingApiResult<T>> Run(bool replayOnly, string? noWinnerCode = null)
         {
             var cleanBefore = CleanEntry();
             try { await freshFence(token); token.ThrowIfCancellationRequested(); }
             catch (NormalJournalAuthorityDeniedException) { return Denied(); }
             if (!cleanBefore || !CleanEntry()) return Unavailable(); // Caller state stays outside cleanup ownership.
             var company = companyContext.IsResolved ? companyContext.CompanyId : Guid.Empty;
-            var state = new OwnedNormalApproval(company, normalApprovalAuditWriter!, freshFence, replayOnly);
+            var state = new OwnedNormalApproval(company, normalApprovalAuditWriter!, freshFence, replayOnly, commandName);
             IDbContextTransaction? transaction = null; var committed = false; ownedNormalApproval = state;
             try
             {
@@ -52,7 +57,8 @@ public sealed partial class AccountingStore
             }
             catch (Exception failure)
             {
-                var deadlock = failure is SqlException { Number: 1205 } or DbUpdateException { InnerException: SqlException { Number: 1205 } };
+                var deadlock = failure is SqlException { Number: 1205 } or DbUpdateException { InnerException: SqlException { Number: 1205 } }
+                    || commandName != NormalJournalCommandNamesV1.ApproveDraft && IsPeriodTransactionDeadlock(failure);
                 var faults = new List<Exception>();
                 if (transaction is not null)
                 {
@@ -82,8 +88,8 @@ public sealed partial class AccountingStore
         bool CleanEntry() => normalApprovalAuditWriter is not null && ownedNormalApproval is null
             && System.Transactions.Transaction.Current is null && dbContext.Database.IsRelational()
             && dbContext.Database.CurrentTransaction is null && !dbContext.ChangeTracker.HasChanges() && !normalApprovalAuditWriter.HasPendingDrafts;
-        static AccountingApiResult<NormalJournalDraftViewV1> Denied() => new(AccountingApiStatus.Denied, null, false, AccountingApiCodes.AuthorityDenied);
-        static AccountingApiResult<NormalJournalDraftViewV1> Unavailable() => new(AccountingApiStatus.Unavailable, null, false, null);
+        static AccountingApiResult<T> Denied() => new(AccountingApiStatus.Denied, null, false, AccountingApiCodes.AuthorityDenied);
+        static AccountingApiResult<T> Unavailable() => new(AccountingApiStatus.Unavailable, null, false, null);
     }
 
     private async Task NormalApprovalFence(CancellationToken token)
@@ -107,7 +113,7 @@ public sealed partial class AccountingStore
         await dbContext.SaveChangesAsync(token); state.Saved = true;
         await NormalApprovalFence(token);
     }
-    private sealed record OwnedNormalApproval(Guid CompanyId, IAuditTransactionWriterV1 Writer, Func<CancellationToken, Task> Fence, bool ReplayOnly)
+    private sealed record OwnedNormalApproval(Guid CompanyId, IAuditTransactionWriterV1 Writer, Func<CancellationToken, Task> Fence, bool ReplayOnly, string CommandName)
     { internal bool Saved; internal AccountingCommandRecord? Command; }
     private sealed class NormalApprovalRace(string noWinnerCode) : Exception { internal string NoWinnerCode { get; } = noWinnerCode; }
     private sealed class NormalApprovalUnavailable : Exception;

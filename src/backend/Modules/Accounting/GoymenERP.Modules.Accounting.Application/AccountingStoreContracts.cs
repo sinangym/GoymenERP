@@ -140,6 +140,12 @@ public sealed class AccountingStoreException(string code, string message, Except
 /// </summary>
 public interface IAccountingPeriodStore
 {
+    // Unsupported stores cannot silently run either approval without its owner boundary.
+    Task<AccountingApiResult<T>> RunPeriodApprovalAsync<T>(string commandName,
+        Func<bool, Task<AccountingApiResult<T>>> attempt, Func<CancellationToken, Task> freshFence,
+        CancellationToken cancellationToken = default) where T : class =>
+        Task.FromResult(new AccountingApiResult<T>(AccountingApiStatus.Unavailable, null, false, null));
+
     /// <summary>
     /// Stores a new PROPOSED period. The same id with the same dates and preparer is a replay; with other
     /// dates, another preparer, or overlapping another period of the company (proposed, open or closed),

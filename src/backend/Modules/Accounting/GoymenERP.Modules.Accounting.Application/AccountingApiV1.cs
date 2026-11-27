@@ -382,15 +382,27 @@ public sealed partial class AccountingApiService(
     private async Task<AccountingApiResult<T>> RunAsync<T>(string permission, string idempotencyKey, string commandName,
         object canonicalRequest, AccountingApiStatus successStatus,
         Func<AccountingCommandMetadata, Guid, Task<AccountingApiResult<T>>> write, Func<object, Guid, T> view,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, AccessScope? approvalScope = null, bool replayOnly = false)
         where T : class
     {
-        var scope = await RequireAsync(permission, cancellationToken);
+        var scope = approvalScope ?? await RequireAsync(permission, cancellationToken);
         if (scope is null)
         {
             return Denied<T>();
         }
 
+        if (approvalScope is null && commandName is AccountingCommandNames.ApprovePeriod or "accounting.period.reopening.approve.v1")
+        {
+            return await periods.RunPeriodApprovalAsync(commandName,
+                onlyReplay => RunAsync(permission, idempotencyKey, commandName, canonicalRequest, successStatus, write, view,
+                    cancellationToken, scope, onlyReplay), async token =>
+                {
+                    token.ThrowIfCancellationRequested();
+                    try { await RequireStillAsync(scope, permission, token); }
+                    catch (FreshAuthorityDeniedException) { throw new NormalJournalAuthorityDeniedException(); }
+                    token.ThrowIfCancellationRequested();
+                }, cancellationToken);
+        }
         var actor = scope.ActorGuid;
         var actorId = scope.ActorId;
         var keyHash = Sha256(idempotencyKey.Trim());
@@ -412,6 +424,8 @@ public sealed partial class AccountingApiService(
         {
             return Answer<T>(prior, actorId, requestHash);
         }
+
+        if (replayOnly) return new(AccountingApiStatus.Conflict, null, false, AccountingStoreCodes.ConcurrentChange);
 
         AccountingApiResult<T>? completed = null;
         AccountingCommandRecord Complete(object stored)
@@ -449,6 +463,7 @@ public sealed partial class AccountingApiService(
         }
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ConcurrentChange)
         {
+            if (approvalScope is not null) throw new NormalJournalApprovalRaceException(exception.Code, exception);
             // §8: the same key's other attempt may have won; then its record is the answer.
             try
             {
@@ -526,6 +541,7 @@ public sealed partial class AccountingApiService(
         }
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ConcurrentChange)
         {
+            if (approvalScope is not null) throw new NormalJournalApprovalRaceException(exception.Code, exception);
             try
             {
                 var winner = await GuardedAsync(scope, permission,

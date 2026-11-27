@@ -132,6 +132,7 @@ public sealed partial class AccountingStore(
         var companyId = RequireResolvedCompany();
         var row = await dbContext.Periods.SingleOrDefaultAsync(candidate => candidate.Id == periodId, cancellationToken)
             ?? throw Refused(AccountingStoreCodes.PeriodNotFound, "Bu şirketin böyle bir dönemi yok.");
+        if (ownedNormalApproval is not null) await NormalApprovalFence(cancellationToken);
         RequireVersion(row, expectedVersion);
         var period = RestorePeriod(row);
         var before = PeriodAudit(period);
@@ -851,7 +852,7 @@ public sealed partial class AccountingStore(
     {
         if (ownedNormalApproval is { } owner)
         {
-            if (owner.ReplayOnly || companyId != owner.CompanyId || record.CommandName != NormalJournalCommandNamesV1.ApproveDraft)
+            if (owner.ReplayOnly || companyId != owner.CompanyId || record.CommandName != owner.CommandName)
                 throw new InvalidOperationException("Normal approval boundary cannot record another command.");
             owner.Command = record;
         }

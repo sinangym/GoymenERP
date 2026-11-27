@@ -10,7 +10,7 @@ using GoymenERP.Modules.Accounting.Domain.Posting;
 
 namespace GoymenERP.Accounting.UnitTests;
 
-public sealed class AccountingApiFenceTests
+public sealed partial class AccountingApiFenceTests
 {
     private static readonly Guid Company = Guid.Parse("a0000000-0000-4000-8000-0000000000a1");
     private static readonly Guid OtherCompany = Guid.Parse("a0000000-0000-4000-8000-0000000000a2");
@@ -264,6 +264,10 @@ public sealed class AccountingApiFenceTests
 
     private sealed class Stores : IAccountingPeriodStore, IAccountingPostingStore, IAccountingCommandLog, IAccountingPeriodReopeningStoreV1
     {
+        // Synthetic lifecycle protocol fixture: real owned transaction behavior has separate SQL coverage.
+        public Task<AccountingApiResult<T>> RunPeriodApprovalAsync<T>(string commandName,
+            Func<bool, Task<AccountingApiResult<T>>> attempt, Func<CancellationToken, Task> fence,
+            CancellationToken token = default) where T : class => attempt(false);
         public List<string> Calls { get; } = [];
         public string? ReopeningPermission { get; private set; }
 

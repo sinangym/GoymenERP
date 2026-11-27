@@ -98,13 +98,16 @@ public sealed partial class AccountingStore
     {
         var periodRow = await dbContext.Periods.SingleOrDefaultAsync(x => x.Id == periodId, cancellationToken)
             ?? throw Refused(AccountingStoreCodes.PeriodNotFound, "Bu şirketin böyle bir dönemi yok.");
+        await PeriodFenceAsync(companyId, actor, metadata, cancellationToken);
         RequireVersion(periodRow, request.ExpectedPeriodVersion);
         var close = await dbContext.PeriodClosures.SingleOrDefaultAsync(x => x.PeriodId == periodId
             && x.ClosedPeriodVersion == periodRow.Version && x.ReopeningId == null, cancellationToken)
             ?? throw Refused("accounting_period_closure_proof_required", "Geri alınacak kapanış ve devir fişi kanıtı bulunamadı.");
+        await PeriodFenceAsync(companyId, actor, metadata, cancellationToken);
         var row = await dbContext.PeriodReopenings.SingleOrDefaultAsync(x => x.Id == proposalId && x.PeriodId == periodId
             && x.ClosureId == close.Id, cancellationToken)
             ?? throw Refused(AccountingStoreCodes.PeriodNotFound, "Bu şirketin böyle bir önerisi yok.");
+        await PeriodFenceAsync(companyId, actor, metadata, cancellationToken);
         if (row.Version != request.ExpectedVersion) throw new AccountingVersionConflictException(request.ExpectedVersion, row.Version);
         var period = RestorePeriod(periodRow);
         var proposal = AccountingPeriodReopening.Restore(row.Id, period, close.Id, row.ClosedPeriodVersion,
@@ -147,7 +150,9 @@ public sealed partial class AccountingStore
     {
         if (RequireResolvedCompany() != companyId || !Guid.TryParse(metadata.ActorId, out var metadataActor) || actor != metadataActor)
             throw Refused(AccountingStoreCodes.CompanyContextMismatch, "Dönem işleminin şirket veya aktörü değişti.");
+        if (ownedNormalApproval is not null) token.ThrowIfCancellationRequested();
         if (metadata.FreshAuthorityFence is { } fence) await fence(token);
+        if (ownedNormalApproval is not null) token.ThrowIfCancellationRequested();
         if (RequireResolvedCompany() != companyId) throw Refused(AccountingStoreCodes.CompanyContextMismatch, "Şirket değişti.");
     }
 
@@ -157,6 +162,18 @@ public sealed partial class AccountingStore
         RequireMetadata(metadata);
         var companyId = RequireResolvedCompany();
         await PeriodFenceAsync(companyId, actor, metadata, cancellationToken);
+        if (ownedNormalApproval is { CommandName: "accounting.period.reopening.approve.v1", ReplayOnly: false })
+        {
+            await NormalApprovalFence(cancellationToken);
+            try { return await operation(companyId); }
+            catch (AccountingStoreException error) when (error.InnerException is { } inner && IsPeriodTransactionDeadlock(inner))
+            {
+                // The existing Finance bridge wraps unavailable source failures. A known 1205 remains
+                // a lost owned transaction, not a reason to replay the mutation inside that transaction.
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error.InnerException!).Throw();
+                throw;
+            }
+        }
         if (!dbContext.Database.IsRelational() || dbContext.Database.CurrentTransaction is not null || dbContext.ChangeTracker.HasChanges())
             throw Refused("accounting_period_carry_source_unavailable", "Dönem işlemi temiz, gerçek bir ilişkisel işlem gerektirir.");
         await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
