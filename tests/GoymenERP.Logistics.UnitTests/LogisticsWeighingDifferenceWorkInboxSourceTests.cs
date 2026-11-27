@@ -14,7 +14,7 @@ namespace GoymenERP.Logistics.UnitTests;
 /// context company, oldest recording first, the recorder's own included; its rule numbers are the record's stored evaluation
 /// (rate, note/scale kg, uncovered excess). SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class LogisticsWeighingDifferenceWorkInboxSourceTests
+public sealed partial class LogisticsWeighingDifferenceWorkInboxSourceTests
 {
     [Fact]
     public void The_source_declares_its_kind_the_approve_permission_and_the_module_registers_it()

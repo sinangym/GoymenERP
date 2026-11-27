@@ -20,6 +20,8 @@ internal abstract class LogisticsWorkInboxRows
 
     public abstract IQueryable<WeighingDifferenceRecordRow> WeighingDifferences { get; }
 
+    public abstract IQueryable<WeighingDifferenceProductRow> WeighingDifferenceProducts { get; }
+
     /// <summary>WP6 D4: who entered the weighing or a shipment of a weighing-difference record (the owner's "may not approve" set).</summary>
     public abstract IQueryable<WeighingDifferenceEnteredByRow> WeighingDifferenceEnteredBy { get; }
 
@@ -41,6 +43,8 @@ internal sealed class LogisticsWorkInboxDbRows(LogisticsDbContext dbContext) : L
     public override IQueryable<LogisticsPlanExcessRow> PlanExcessExceptions => dbContext.PlanExcessExceptions.AsNoTracking();
 
     public override IQueryable<WeighingDifferenceRecordRow> WeighingDifferences => dbContext.WeighingDifferences.AsNoTracking();
+
+    public override IQueryable<WeighingDifferenceProductRow> WeighingDifferenceProducts => dbContext.WeighingDifferenceProducts.AsNoTracking();
 
     public override IQueryable<WeighingDifferenceEnteredByRow> WeighingDifferenceEnteredBy =>
         dbContext.WeighingDifferenceEnteredBy.AsNoTracking();

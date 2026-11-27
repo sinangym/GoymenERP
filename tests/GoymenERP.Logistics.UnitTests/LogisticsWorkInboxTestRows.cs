@@ -20,6 +20,7 @@ internal sealed class LogisticsInMemoryWorkInboxRows : LogisticsWorkInboxRows
     public List<DispatchNoteRow> DispatchNoteRows { get; } = [];
     public List<LogisticsPlanExcessRow> PlanExcessRows { get; } = [];
     public List<WeighingDifferenceRecordRow> WeighingDifferenceRows { get; } = [];
+    public List<WeighingDifferenceProductRow> WeighingDifferenceProductRows { get; } = [];
     public List<WeighingDifferenceEnteredByRow> WeighingDifferenceEnteredByRows { get; } = [];
     public List<CustomerReturnRow> CustomerReturnRows { get; } = [];
     public bool FailReads { get; set; }
@@ -30,6 +31,7 @@ internal sealed class LogisticsInMemoryWorkInboxRows : LogisticsWorkInboxRows
     public override IQueryable<DispatchNoteRow> DispatchNotes => DispatchNoteRows.AsQueryable();
     public override IQueryable<LogisticsPlanExcessRow> PlanExcessExceptions => PlanExcessRows.AsQueryable();
     public override IQueryable<WeighingDifferenceRecordRow> WeighingDifferences => WeighingDifferenceRows.AsQueryable();
+    public override IQueryable<WeighingDifferenceProductRow> WeighingDifferenceProducts => WeighingDifferenceProductRows.AsQueryable();
     public override IQueryable<WeighingDifferenceEnteredByRow> WeighingDifferenceEnteredBy => WeighingDifferenceEnteredByRows.AsQueryable();
     public override IQueryable<CustomerReturnRow> CustomerReturns => CustomerReturnRows.AsQueryable();
 
@@ -62,6 +64,7 @@ internal sealed class LogisticsSqlTranslatingWorkInboxRows : LogisticsWorkInboxR
     public override IQueryable<DispatchNoteRow> DispatchNotes => inner.DispatchNotes;
     public override IQueryable<LogisticsPlanExcessRow> PlanExcessExceptions => inner.PlanExcessExceptions;
     public override IQueryable<WeighingDifferenceRecordRow> WeighingDifferences => inner.WeighingDifferences;
+    public override IQueryable<WeighingDifferenceProductRow> WeighingDifferenceProducts => inner.WeighingDifferenceProducts;
     public override IQueryable<WeighingDifferenceEnteredByRow> WeighingDifferenceEnteredBy => inner.WeighingDifferenceEnteredBy;
     public override IQueryable<CustomerReturnRow> CustomerReturns => inner.CustomerReturns;
 

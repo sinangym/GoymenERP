@@ -906,11 +906,11 @@ public sealed class LogisticsPersistenceModelTests
         var provider = new LogisticsShellCapabilityProvider();
         var declarations = provider.GetDeclarations().Where(item =>
             !item.CapabilityId.StartsWith("logistics.subcontract-deliveries.", StringComparison.Ordinal)).ToList();
-        Assert.Equal("1.8", provider.ContractVersion);
-        Assert.Equal(15, declarations.Count);
+        Assert.Equal("1.9", provider.ContractVersion);
+        Assert.Equal(16, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             declaration.CapabilityId is not (LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId
-                or LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId), declaration.ImplementationAvailable));
+                or LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId or "logistics.weighing-difference.work-decision"), declaration.ImplementationAvailable));
         var excessPrepare = Assert.Single(declarations, item => item.CapabilityId == LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId);
         Assert.Equal(LogisticsShellCapabilityProvider.DetailCapabilityId, excessPrepare.ParentCapabilityId);
         Assert.Equal([LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.LoadsRecord], excessPrepare.RequiredPermissions);
@@ -925,6 +925,7 @@ public sealed class LogisticsPersistenceModelTests
                 ("logistics.plan-excess.work-decision", "/onaylarim/logistics.plan-excess.v1/:approvalId", LogisticsPermissionManifestV1.ShipmentPlanExcessApprove),
                 ("logistics.shipments.plan-excess.approve", "/lojistik/plan-ustu-sevk-onay", LogisticsPermissionManifestV1.ShipmentPlanExcessApprove),
                 ("logistics.transfer-departures.record", "/lojistik/transfer-cikislari", LogisticsPermissionManifestV1.TransferDeparturesRecord),
+                ("logistics.weighing-difference.work-decision", "/onaylarim/logistics.weighing-difference.v1/:approvalId", LogisticsPermissionManifestV1.WeighingDifferencesApprove),
             ],
             declarations.Where(declaration => declaration.ParentCapabilityId is null)
                 .Select(declaration => (declaration.CapabilityId, declaration.RoutePath, declaration.RequiredPermissions.Single()))
@@ -965,6 +966,7 @@ public sealed class LogisticsPersistenceModelTests
                 ("logistics.shipments.plan-excess.prepare", "L-02-DETAIL"),
                 ("logistics.shipments.record", "L-02-DETAIL"),
                 ("logistics.transfer-departures.record", "STK-S8-DEPARTURE"),
+                ("logistics.weighing-difference.work-decision", "L-WEIGHING-DIFFERENCE-WORK-DECISION"),
             ],
             declarations.OrderBy(declaration => declaration.CapabilityId, StringComparer.Ordinal)
                 .Select(declaration => (declaration.CapabilityId, declaration.ScreenId)).ToArray());

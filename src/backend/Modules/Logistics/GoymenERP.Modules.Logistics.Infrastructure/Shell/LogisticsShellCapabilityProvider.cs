@@ -34,7 +34,7 @@ public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityP
     public const string OwnerId = "LOGISTICS";
     // WP8: the paired Work decision implementation; native screen availability and grants are unchanged.
     // Source availability is not SQL/browser/CI acceptance or environment activation.
-    public const string OwnerContractVersion = "1.8";
+    public const string OwnerContractVersion = "1.9";
     public const string TransferDeparturesCapabilityId = LogisticsPermissionManifestV1.TransferDeparturesRecord;
     public const string PlanExcessPrepareCapabilityId = "logistics.shipments.plan-excess.prepare";
     public const string PlanExcessApproveCapabilityId = "logistics.shipments.plan-excess.approve";
@@ -133,6 +133,10 @@ public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityP
             [LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.CustomerReturnsRead,
                 LogisticsPermissionManifestV1.CustomerReturnsDecision],
             ImplementationAvailable: true, ParentCapabilityId: DetailCapabilityId),
+        new ShellCapabilityDeclaration("logistics.weighing-difference.work-decision", "logistics.weighing-difference-work-decision",
+            "/onaylarim/logistics.weighing-difference.v1/:approvalId", "L-WEIGHING-DIFFERENCE-WORK-DECISION",
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPermissionManifestV1.WeighingDifferencesApprove], ImplementationAvailable: false),
         new ShellCapabilityDeclaration(SalesWorkCapabilityId, SalesWorkCapabilityId, SalesWorkRoutePath, SalesWorkScreenId,
             ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,
             ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPermissionManifestV1.OperationsSalesWorkRead], ImplementationAvailable: true),

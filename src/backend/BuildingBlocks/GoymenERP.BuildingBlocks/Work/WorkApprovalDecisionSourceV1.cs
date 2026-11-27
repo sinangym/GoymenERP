@@ -23,7 +23,8 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkCounterpartyLegalNameChangePreviewV1? CounterpartyLegalNameChange = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkLogisticsPlanExcessOptionsV1? LogisticsPlanExcess = null,
     [property: JsonIgnore] WorkLogisticsPlanExcessProofV1? LogisticsPlanExcessProof = null,
-    [property: JsonIgnore] WorkInventoryTransferOverageProofV1? InventoryTransferOverageProof = null);
+    [property: JsonIgnore] WorkInventoryTransferOverageProofV1? InventoryTransferOverageProof = null,
+    [property: JsonIgnore] WorkLogisticsWeighingDifferenceProofV1? LogisticsWeighingDifferenceProof = null);
 
 /// <summary>Approval-purpose identities from the current plan revision, never an implicit user selection.</summary>
 public sealed record WorkManufacturingPlanReapprovalOptionsV1(IReadOnlyList<Guid> ParentRollIds);
@@ -60,3 +61,13 @@ public sealed record WorkInventoryTransferOverageProofV1(Guid TransferId, Guid L
     IReadOnlyList<WorkInventoryTransferOverageRequestProofV1> Requests);
 public sealed record WorkInventoryTransferOverageRequestProofV1(int RequestNumber, DateTimeOffset RequestedAtUtc,
     string PreparedBy, string Status, string Kilograms, int? PieceCount, string Reason);
+
+/// <summary>Immutable owner evaluation, for receipt binding only; never serialized as Inbox/AI context.</summary>
+public sealed record WorkLogisticsWeighingDifferenceProofV1(Guid CompanyId, Guid RecordId, Guid DispatchNoteId,
+    Guid InstructionId, decimal TheoreticalKg, decimal ScaleKg, decimal DifferenceKg, string BandLevel,
+    decimal? WarningBandPercent, decimal? ApprovalBandPercent, decimal? BlockBandPercent, decimal TotalExcessKg,
+    decimal? ApprovalRatePercent, string Decision, IReadOnlyList<WorkLogisticsWeighingDifferenceProductProofV1> Products,
+    IReadOnlyList<string> EnteredBy, bool EnteredByComplete, string RecordedBy, DateTimeOffset RecordedAtUtc,
+    string? KilogramAllocationJson);
+public sealed record WorkLogisticsWeighingDifferenceProductProofV1(Guid ProductId, decimal NoteKg, decimal ScaleKg,
+    decimal DifferenceKg, decimal RemainingPhysicalKg, decimal PhysicallyCoveredKg, decimal ExcessKg, int? TargetLineNo);

@@ -23,7 +23,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.WorkInbox;
 /// never the reason for an approval, so they are not listed.
 /// </para>
 /// </summary>
-internal sealed class LogisticsWeighingDifferenceWorkInboxSourceV1 : IWorkInboxSourceV1
+internal sealed partial class LogisticsWeighingDifferenceWorkInboxSourceV1 : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "logistics";
     public const string KindName = "logistics.weighing-difference.v1";

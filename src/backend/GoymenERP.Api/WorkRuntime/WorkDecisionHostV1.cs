@@ -110,8 +110,9 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
     IErpAuthorityRevalidationService authority, IEnumerable<IWorkInboxSourceV1> sources,
     IWorkDelegationReaderV1 delegations, WorkDecisionExecutionFenceV1 executionFence,
     IFinanceCashAccountMaster cash, IInventoryOpeningCostCommandV1 openingCost,
-    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null, IPurchaseGoodsReceiptBatchServiceV1? goodsReceiptBatches = null, ManufacturingCommandService? manufacturingPlans = null, IInventoryTransferReceiptCommandV1? inventoryTransferReceipts = null, ICounterpartyTaxIdentityService? counterpartyTaxIdentity = null, ICounterpartyLegalNameService? counterpartyLegalName = null, ILogisticsPlanExcessServiceV1? logisticsPlanExcess = null)
+    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null, IPurchaseGoodsReceiptBatchServiceV1? goodsReceiptBatches = null, ManufacturingCommandService? manufacturingPlans = null, IInventoryTransferReceiptCommandV1? inventoryTransferReceipts = null, ICounterpartyTaxIdentityService? counterpartyTaxIdentity = null, ICounterpartyLegalNameService? counterpartyLegalName = null, ILogisticsPlanExcessServiceV1? logisticsPlanExcess = null, ILogisticsWeighingDifferenceServiceV1? logisticsWeighingDifferences = null)
 {
+    public const string LogisticsWeighingDifference = "logistics.weighing-difference.v1";
     public const string LogisticsPlanExcess = "logistics.plan-excess.v1";
     public const string CounterpartyTaxIdentity = "counterparty.tax-identity-change.v1";
     public const string CounterpartyLegalName = "counterparty.legal-name-change.v1";
@@ -128,7 +129,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
     public const string PurchaseInvoiceVariance = "purchasing.incoming-invoice-variance.v1";
     public const string PurchaseServiceOrder = "purchasing.service-order.v1";
     public const string PurchaseOrder = "purchasing.order.v1";
-    public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([InventoryTransferOverage, LogisticsPlanExcess, CounterpartyTaxIdentity, CounterpartyLegalName, InventoryTransferLoss, OpeningCost, "finance.cash-account.v1",
+    public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([LogisticsWeighingDifference, InventoryTransferOverage, LogisticsPlanExcess, CounterpartyTaxIdentity, CounterpartyLegalName, InventoryTransferLoss, OpeningCost, "finance.cash-account.v1",
         "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest, PurchaseOrder, PurchaseServiceOrder, PurchaseInvoiceVariance, PurchaseGoodsReceiptBatch, ManufacturingPlan, CreditAccount], StringComparer.Ordinal);
 
     private async Task RequireDecisionAuthorityAsync(string kind,string permission,Guid companyId,string actor,CancellationToken token)
@@ -167,6 +168,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         if (snapshot is null) throw new WorkDecisionException(404);
         if (kind is (CounterpartyTaxIdentity or CounterpartyLegalName) && source.Module != "counterparty"
             || kind == InventoryTransferOverage && (source.Module != "inventory" || source.ApproverPermission != InventoryPermissionManifestV1.StockTransferOverageApprove)
+            || kind == LogisticsWeighingDifference && (source.Module != "logistics" || source.ApproverPermission != LogisticsPermissionManifestV1.WeighingDifferencesApprove)
             || kind == LogisticsPlanExcess && (source.Module != "logistics" || source.ApproverPermission != LogisticsPlanExcessV1.ApprovePermission)
             || kind == CounterpartyTaxIdentity && source.ApproverPermission != CounterpartyTaxIdentityPermissionsV1.Approve
             || kind == CounterpartyLegalName && source.ApproverPermission != CounterpartyLegalNamePermissionsV1.Approve)
@@ -183,6 +185,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || snapshot.Item.Rules.Any(rule => !WorkInboxRulesV1.IsValidRule(source.Module, rule))
             || !ValidCounterpartyIdentityProof(kind, snapshot)
             || !ValidLogisticsPlanExcessProof(kind, snapshot)
+            || !ValidLogisticsWeighingProof(kind, snapshot)
             || (kind == InventoryTransferOverage ? !ValidInventoryTransferOverageProof(snapshot) : snapshot.InventoryTransferOverageProof is not null)
             || (kind == InventoryTransferLoss ? !ValidInventoryTransferLossProof(snapshot)
                 : snapshot.InventoryTransferLoss is not null || snapshot.InventoryTransferLossProof is not null)
@@ -220,7 +223,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
                 proposal.Quantity, proposal.Reason, proposal.ProposedBy, proposal.ProposedAtUtc)
             : null;
         return new(snapshot.CompanyId, kind, id, snapshot.Item.DocumentLabel, snapshot.SourceVersion, snapshot.Pending,
-            kind is OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance or InventoryTransferLoss or InventoryTransferOverage, snapshot.Item.References, rules, kind is not (PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance or LogisticsPlanExcess)
+            kind is OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance or InventoryTransferLoss or InventoryTransferOverage, snapshot.Item.References, rules, kind is not (PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance or LogisticsPlanExcess or LogisticsWeighingDifference)
                 && !(kind == ManufacturingPlan && rules.Any(rule => rule.RuleCode == "manufacturing.plan-reapproval-after-order-cancel")),
             snapshot.ManufacturingPlanReapproval, snapshot.InventoryTransferLoss,
             snapshot.CounterpartyTaxIdentityChange, snapshot.CounterpartyLegalNameChange, logisticsPreview,
@@ -233,7 +236,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         var actor = user.UserId;
         var snapshot = await SnapshotAsync(kind, id, token, request.InventoryTransferLoss?.RequestNumber, request.InventoryTransferOverage?.RequestNumber);
         if (user.UserId != actor) throw new WorkDecisionException(403);
-        if (request.InventoryTransferOverage is not null && kind != InventoryTransferOverage
+        if (kind == LogisticsWeighingDifference && (!request.Approve || request.Reason is not null || !PositiveWeighingVersion(request.ExpectedVersion))
+            || request.InventoryTransferOverage is not null && kind != InventoryTransferOverage
             || kind == InventoryTransferOverage && request.InventoryTransferOverage is null
             || request.LogisticsPlanExcess is not null && kind != LogisticsPlanExcess
             || kind == LogisticsPlanExcess && (request.LogisticsPlanExcess is null || !request.Approve || request.Reason is not null
@@ -260,6 +264,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || await delegations.FindForActorAsync(delegation, verificationItem, ct) is not null;
         if (!await Verify(token)) throw new WorkDecisionException(403);
         using var lease = executionFence.Enter(Verify);
+        if (kind == LogisticsWeighingDifference)
+            return await DecideLogisticsWeighingDifferenceAsync(id, request, key, snapshot, actor!, token);
         if (kind == LogisticsPlanExcess)
             return await DecideLogisticsPlanExcessAsync(id, request, key, snapshot, actor!, token);
         if (kind is CounterpartyTaxIdentity or CounterpartyLegalName)
