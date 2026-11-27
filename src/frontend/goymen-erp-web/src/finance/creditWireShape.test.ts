@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { decodeCreditAccount, decodeCreditProfile, sendCreditAccount, type CreditAccount, type CreditGroup } from './creditAccountApi'
 import { decodeCreditMovement, sendCreditMovement } from './creditMovementApi'
-import { decodeCreditLimitWorkspace, sendCreditLimit } from './creditLimitApi'
+import { decodeCreditLimit, decodeCreditLimitWorkspace, sendCreditLimit } from './creditLimitApi'
 import { decideOfficialInvoice, decodeOfficialInvoice } from './officialSalesInvoiceApi'
 
 // K3 P2-3: credit and official sales invoice decoders are exact-key and trust a 200 only when the replay headers agree.
@@ -180,4 +180,15 @@ describe('official sales invoice decoder and decision (exact keys, replay header
     respond(envelope(approved, false))
     expect(await decideOfficialInvoice(Company, 'SENTETIK-checker', attempt)).toEqual({ type: 'unknown' })
   })
+})
+
+
+it('keeps the default native credit-limit calendar and exact parent bindings while accepting an explicit Work owner binding', () => {
+  const value=limit(), source={...value.source,sourceDocument:{...value.source.sourceDocument,documentDate:'0001-01-02'}}
+  const raw={...value,source}, binding={companyId:Company,currencyId:Currency,group:'Cash' as const,lenderPartyId:Party,lenderCompanyPartyAccountId:Company}
+  expect(decodeCreditLimit(raw,limitAccount)).toBeNull()
+  expect(decodeCreditLimit(raw,binding,date=>date==='0001-01-02')).not.toBeNull()
+  expect(decodeCreditLimit(raw,{...binding,lenderPartyId:Id},()=>true)).toBeNull()
+  expect(decodeCreditLimit(raw,binding,()=>false)).toBeNull()
+  expect(decodeCreditLimit(raw,limitAccount)).toBeNull()
 })

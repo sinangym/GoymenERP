@@ -159,3 +159,25 @@ describe('decodeOpeningBalanceCurrencyCandidates', () => {
     expect(decodeOpeningBalanceCurrencyCandidates(currencyCandidates(OB_OTHER_COMPANY), OB_COMPANY).ok).toBe(false)
   })
 })
+
+
+describe('Work opening projection seam preserves native defaults', () => {
+  it('keeps the native latest-reversal requirement while allowing only named owner projections', () => {
+    const current = { ...reversed(), reversal: null }
+    expect(decodeOpeningBalance(current, OB_COMPANY).ok).toBe(false)
+    expect(decodeOpeningBalance(current, OB_COMPANY, () => true, 'opening-decision').ok).toBe(true)
+    expect(decodeOpeningBalance(current, OB_COMPANY, () => true, 'retained-reversal-decision').ok).toBe(false)
+    const retained = { ...reversed(), reversal: { ...reversalProposed(), status: 'Rejected', version: '2',
+      decidedAtUtc: '2026-11-15T09:00:00Z', rejectionReason: 'SENTETIK old rejection' } }
+    expect(decodeOpeningBalance(retained, OB_COMPANY).ok).toBe(false)
+    expect(decodeOpeningBalance(retained, OB_COMPANY, () => true, 'retained-reversal-decision').ok).toBe(true)
+    expect(decodeOpeningBalance(retained, OB_COMPANY, () => true, 'opening-decision').ok).toBe(false)
+  })
+  it('uses an explicit date validator only for that decode invocation', () => {
+    const value = { ...proposed(), asOfDate: '0001-01-01' }
+    expect(decodeOpeningBalance(value, OB_COMPANY).ok).toBe(false)
+    expect(decodeOpeningBalance(value, OB_COMPANY, date => date === '0001-01-01', 'opening-decision').ok).toBe(true)
+    expect(decodeOpeningBalance(value, OB_COMPANY, () => false, 'opening-decision').ok).toBe(false)
+    expect(decodeOpeningBalance(value, OB_COMPANY).ok).toBe(false)
+  })
+})

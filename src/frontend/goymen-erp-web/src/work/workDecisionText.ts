@@ -1,4 +1,12 @@
 export const WORK_DECISION_TEXT = {
+  nativeFinanceRetained: 'Önceki kararınız yeniden doğrulanıyor. Karar verdiğiniz sürüm korunuyor; güncel finans bilgileri bu isteğin yerine kullanılmıyor.',
+  bankLimitProposal: 'Karar verilecek banka kredi limiti', openingProposal: 'Karar verilecek açılış bakiyesi', openingReversalProposal: 'Karar verilecek açılış bakiyesi ters kaydı',
+  nativeFinanceReadOnly: 'Kayıtlı bilgiler salt okunurdur. Karar, mevcut finans komutuyla işlenir.', nativeFinanceSource: 'Kayıtlı öneri ve kaynak belge',
+  nativeFinanceFields: { id: 'Kayıt kimliği', companyId: 'Şirket', lenderPartyId: 'Banka / finans kurumu cari kimliği', lenderCompanyPartyAccountId: 'Banka / finans kurumu şirket hesabı',
+    group: 'Kredi grubu', currencyId: 'Para birimi', version: 'Sürüm', status: 'Durum', isOwnProposal: 'Sizin öneriniz', proposedBy: 'Öneren', proposedAtUtc: 'Öneri zamanı (UTC)',
+    decidedAtUtc: 'Karar zamanı (UTC)', rejectionReason: 'Ret gerekçesi', supersededById: 'Yerine geçen limit', creditAccountId: 'Kredi hesabı', expectedCreditVersion: 'Dayanak kredi hesabı sürümü',
+    expectedCurrentLimitId: 'Dayanak limit', expectedCurrentLimitVersion: 'Dayanak limit sürümü', amount: 'Kayıtlı tutar', reference: 'Kaynak belge referansı', documentDate: 'Kaynak belge tarihi', revision: 'Kaynak belge revizyonu',
+    reason: 'Kayıtlı gerekçe', targetKind: 'Hedef türü', targetId: 'Hedef kimliği', partyId: 'Cari', direction: 'Yön', asOfDate: 'Bakiye tarihi', openingPeriodVersion: 'Açılış dönemi sürümü' },
   officialSalesProposal: 'Karar verilecek resmî satış faturası', officialSalesId: 'Fatura kaydı', officialSalesPdfId: 'Sabitlenen PDF belgesi', officialSalesPdfHash: 'PDF özeti (SHA-256)',
   officialSalesRecordedBy: 'Kaydeden', officialSalesRecordedAt: 'Kayıt zamanı (UTC)', officialSalesRejectedBy: 'Reddeden', officialSalesRejectedAt: 'Ret zamanı (UTC)',
   officialSalesWithdrawnBy: 'Geri çeken', officialSalesWithdrawnAt: 'Geri çekme zamanı (UTC)', officialSalesAbsent: 'Kayıtlı değil',

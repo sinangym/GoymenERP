@@ -27,9 +27,17 @@ const WORKSPACE_FIELDS = ['assessment', 'companyId', 'creditAccountId', 'items']
 const ASSESSMENT_FIELDS = ['exceedsLimit', 'proposedMovements', 'recordedPrincipalNet']
 const MOVEMENT_ASSESSMENT_FIELDS = ['exceedsLimit', 'movementId', 'projectedRecordedPrincipalNet', 'sourceReference']
 const ISSUE_FIELDS = ['code', 'field']
-export function decodeCreditLimit(value: unknown, account: CreditAccount): CreditLimit | null {
+/** Actual owner bindings only; a Work decision does not construct or read a credit-account workspace. */
+export interface CreditLimitDecisionBinding {
+  readonly companyId: string; readonly currencyId: string; readonly group: CreditGroup
+  readonly lenderPartyId: string; readonly lenderCompanyPartyAccountId: string
+}
+export function decodeCreditLimit(value: unknown,
+  account: Pick<CreditAccount, 'companyId' | 'currencyId' | 'group' | 'profile'> | CreditLimitDecisionBinding,
+  dateValidator: (value: string) => boolean = isDateOnly): CreditLimit | null {
+  const lender = 'profile' in account ? account.profile : account
   if (!record(value) || !hasExactKeys(value, LIMIT_FIELDS) || !isBoundUuid(value.id) || value.companyId !== account.companyId || value.currencyId !== account.currencyId || value.group !== account.group
-    || value.lenderPartyId !== account.profile?.lenderPartyId || value.lenderCompanyPartyAccountId !== account.profile?.lenderCompanyPartyAccountId
+    || value.lenderPartyId !== lender?.lenderPartyId || value.lenderCompanyPartyAccountId !== lender?.lenderCompanyPartyAccountId
     || !isOpaqueVersion(value.version) || !['Proposed', 'Approved', 'Rejected'].includes(value.status as string) || typeof value.isOwnProposal !== 'boolean'
     || !isInstant(value.proposedAtUtc) || value.decidedAtUtc !== null && !isInstant(value.decidedAtUtc) || !nullableId(value.supersededById)
     || value.rejectionReason !== null && !text(value.rejectionReason)) return null
@@ -39,7 +47,7 @@ export function decodeCreditLimit(value: unknown, account: CreditAccount): Credi
   if (!record(s) || !hasExactKeys(s, SOURCE_FIELDS) || !isBoundUuid(s.creditAccountId) || !isOpaqueVersion(s.expectedCreditVersion) || !nullableId(s.expectedCurrentLimitId)
     || (s.expectedCurrentLimitId === null ? s.expectedCurrentLimitVersion !== null : !isOpaqueVersion(s.expectedCurrentLimitVersion))
     || !isNonNegativeDecimalText(s.amount) || !text(s.reason) || !record(s.sourceDocument) || !hasExactKeys(s.sourceDocument, DOCUMENT_FIELDS) || !text(s.sourceDocument.reference)
-    || !text(s.sourceDocument.revision) || typeof s.sourceDocument.documentDate !== 'string' || !isDateOnly(s.sourceDocument.documentDate)) return null
+    || !text(s.sourceDocument.revision) || typeof s.sourceDocument.documentDate !== 'string' || !dateValidator(s.sourceDocument.documentDate)) return null
   return value as unknown as CreditLimit
 }
 export function decodeCreditLimitWorkspace(body: unknown, account: CreditAccount): CreditLimitWorkspace | null {

@@ -188,7 +188,9 @@ function decodeReversal(value: unknown): OpeningBalanceReversalView | null {
   }
 }
 
-function decodeView(value: unknown, companyId: string): OpeningBalanceView | null {
+export type OpeningBalanceProjection = 'native-latest' | 'opening-decision' | 'retained-reversal-decision'
+function decodeView(value: unknown, companyId: string, dateValidator: (value: string) => boolean = isDateOnly,
+  projection: OpeningBalanceProjection = 'native-latest'): OpeningBalanceView | null {
   if (!isRecord(value) || !hasExactKeys(value, VIEW_FIELDS)) return null
   if (
     !isBoundUuid(value.id) ||
@@ -197,7 +199,7 @@ function decodeView(value: unknown, companyId: string): OpeningBalanceView | nul
     !isBoundUuid(value.targetId) ||
     !isBoundUuid(value.currencyId) ||
     !isPositiveDecimalText(value.amount) ||
-    typeof value.asOfDate !== 'string' || !isDateOnly(value.asOfDate) ||
+    typeof value.asOfDate !== 'string' || !dateValidator(value.asOfDate) ||
     typeof value.status !== 'string' || !STATUSES.includes(value.status) ||
     !isCanonicalText(value.openingPeriodVersion) ||
     typeof value.isOwnProposal !== 'boolean' ||
@@ -230,8 +232,13 @@ function decodeView(value: unknown, companyId: string): OpeningBalanceView | nul
     reversal = decodeReversal(value.reversal)
     if (reversal === null) return null
   }
-  if (value.status === 'Reversed' ? reversal?.status !== 'Approved'
-    : value.status === 'Approved' ? reversal?.status === 'Approved' : reversal !== null) {
+  const invalidReversal = projection === 'opening-decision' ? reversal !== null
+    : projection === 'retained-reversal-decision' ? reversal === null
+      || (value.status === 'Reversed' ? reversal.status !== 'Approved' && reversal.status !== 'Rejected'
+        : value.status === 'Approved' ? reversal.status === 'Approved' : true)
+    : value.status === 'Reversed' ? reversal?.status !== 'Approved'
+      : value.status === 'Approved' ? reversal?.status === 'Approved' : reversal !== null
+  if (invalidReversal) {
     return null
   }
   return {
@@ -255,8 +262,10 @@ function decodeView(value: unknown, companyId: string): OpeningBalanceView | nul
   }
 }
 
-export function decodeOpeningBalance(value: unknown, companyId: string): Decoded<OpeningBalanceView> {
-  const view = decodeView(value, companyId)
+export function decodeOpeningBalance(value: unknown, companyId: string,
+  dateValidator: (value: string) => boolean = isDateOnly,
+  projection: OpeningBalanceProjection = 'native-latest'): Decoded<OpeningBalanceView> {
+  const view = decodeView(value, companyId, dateValidator, projection)
   return view === null ? FAIL : ok(view)
 }
 

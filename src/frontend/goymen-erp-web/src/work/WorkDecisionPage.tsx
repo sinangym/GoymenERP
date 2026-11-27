@@ -1,3 +1,5 @@
+import { isNativeFinanceDecisionKind, NATIVE_FINANCE_WORK_CAPABILITY } from './workNativeFinanceDecision'
+import { WorkNativeFinanceFacts } from './WorkNativeFinanceFacts'
 import { EXPENSE_PAYMENT_TEXT as EXPENSE, SOURCE_KIND_LABEL as EXPENSE_SOURCE, STATUS_LABEL as EXPENSE_STATUS } from '../finance/expensePaymentText'
 import { FinanceDocumentNumberFacts } from '../finance/FinanceDocumentNumberFacts'
 import { OFFICIAL_AMOUNT_FIELDS } from '../finance/officialSalesInvoiceApi'
@@ -79,21 +81,24 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const partyCreditLimit = kind === 'finance.party-credit-limit.v1'
   const officialImport = kind === 'finance.official-invoice-import.v1'
   const officialSales = kind === 'finance.official-sales-invoice.v1'
+  const nativeFinance = isNativeFinanceDecisionKind(kind)
+  const nativeFinanceAllowed = !nativeFinance || hasCapability(shell,NATIVE_FINANCE_WORK_CAPABILITY[kind])
   const expensePayment = kind === 'finance.expense-payment.v1'
   const reversal = isWorkReversalKind(kind)
-  const receiptRetryKind = expensePayment || reversal || officialSales || officialImport || partyCreditLimit || priceList || ibanChange || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.transfer-overage.v1'
+  const receiptRetryKind = nativeFinance || expensePayment || reversal || officialSales || officialImport || partyCreditLimit || priceList || ibanChange || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.transfer-overage.v1'
   const historicalRetry = receiptRetryKind && attempt.hasPendingRetry
   const [reconcilingHistorical, setReconcilingHistorical] = useState(historicalRetry)
   const query = useQuery({ queryKey: [namespace, shell.routeEntryGeneration, 'work-decision', kind, id],
-    enabled: company !== null && namespace !== null && !capabilityFailClosed(shell) && !historicalRetry && !reconcilingHistorical, queryFn: async ({ signal }) => {
+    enabled: company !== null && namespace !== null && !capabilityFailClosed(shell) && nativeFinanceAllowed && !historicalRetry && !reconcilingHistorical, queryFn: async ({ signal }) => {
       const captured = boundary.capture(); const result = await fetchWorkDecision(company!, kind, id, signal)
       if (result.type === 'http') boundary.report(result.status, captured)
       return result
     } })
   if (company === null || capabilityFailClosed(shell)) return <StateBlock state={{ kind: 'no-authorized-company' }} subject={T.title} />
+  if (!nativeFinanceAllowed) return <StateBlock state={{kind:'not-found'}} subject={T.title} />
   // Disabling a query does not erase cached data or a refetch already in flight.
   // A receipt retry must never display current proposal/revision facts as its original human evidence.
-  const suppressReceiptPreview = (expensePayment || reversal || officialSales || officialImport || partyCreditLimit || priceList || ibanChange) && (attempt.hasPendingRetry || reconcilingHistorical || attempt.status.kind === 'applied')
+  const suppressReceiptPreview = (nativeFinance || expensePayment || reversal || officialSales || officialImport || partyCreditLimit || priceList || ibanChange) && (attempt.hasPendingRetry || reconcilingHistorical || attempt.status.kind === 'applied')
   const preview = !suppressReceiptPreview && query.data?.type === 'ok-single' ? query.data.data : null
   const frozen = attempt.status.kind === 'busy' || attempt.hasPendingRetry
   const reconciledHistorical = reconcilingHistorical && !attempt.hasPendingRetry && (attempt.status.kind === 'applied' || attempt.status.kind === 'refused')
@@ -111,7 +116,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const transferRequest = overage ? preview?.inventoryTransferOverage : preview?.inventoryTransferLoss
   const frozenTransferRequest = overage ? attempt.pendingPayload?.inventoryTransferOverage : attempt.pendingPayload?.inventoryTransferLoss
   const lossRequest = frozen ? frozenTransferRequest?.requestNumber : transferRequest?.requestNumber
-  const lossReason = (reversal || officialSales || packageStandard || customerReturn || timedTransfer || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'purchasing.supplier-return-cost-exception.v1') && frozen ? attempt.pendingPayload?.reason ?? '' : reason
+  const lossReason = (nativeFinance || reversal || officialSales || packageStandard || customerReturn || timedTransfer || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'purchasing.supplier-return-cost-exception.v1') && frozen ? attempt.pendingPayload?.reason ?? '' : reason
   const currentLossBinding = transferRequest === undefined ? null : `${preview?.sourceVersion}:${transferRequest.requestNumber}`
   const selectedUtc = workDecisionLocalUtc(decisionTime)
   const invalidLossTime = timedTransfer && (currentLossBinding === null || lossTimeBinding !== currentLossBinding || selectedUtc === null
@@ -140,7 +145,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       ...(loss ? { inventoryTransferLoss: { requestNumber: preview.inventoryTransferLoss!.requestNumber, decidedAtUtc: workDecisionLocalUtc(decisionTime)! } } : {}),
       ...(kind === 'manufacturing.plan.v1' && options !== undefined ? { manufacturingPlanReapproval: { selectedLabelIds: [...selectedLabels] } } : {}) })
     if (answer.type === 'applied') {
-      if (expensePayment || reversal || officialSales || officialImport || partyCreditLimit || ibanChange || priceList) setReconcilingHistorical(true)
+      if (nativeFinance || expensePayment || reversal || officialSales || officialImport || partyCreditLimit || ibanChange || priceList) setReconcilingHistorical(true)
       else void query.refetch()
     }
   }
@@ -156,11 +161,11 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
     <Link to="/onaylarim/kuyruk">{T.back}</Link>
     {preview === null ? reconciledHistorical ? <p>{T.priorDecisionResolved}</p> : historicalRetry ? <div><p>{T.priorDecisionPending}</p>
       <p>{T.version}: {attempt.pendingPayload?.expectedVersion}</p>
-      {expensePayment ? <p>{T.expenseRetained}</p> : reversal ? <p>{T.reversalRetained}</p> : officialSales ? <p>{T.officialSalesRetained}</p> : officialImport ? <p>{T.importRetained}</p> : partyCreditLimit ? <p>{T.creditLimitRetained}</p> : priceList ? <p>{T.priceListRetained}</p> : ibanChange ? <p>{T.ibanRetained}</p> : <><p>{overage ? T.overageRequestNumber : T.lossRequestNumber}: {frozenTransferRequest?.requestNumber}</p>
+      {nativeFinance ? <p>{T.nativeFinanceRetained}</p> : expensePayment ? <p>{T.expenseRetained}</p> : reversal ? <p>{T.reversalRetained}</p> : officialSales ? <p>{T.officialSalesRetained}</p> : officialImport ? <p>{T.importRetained}</p> : partyCreditLimit ? <p>{T.creditLimitRetained}</p> : priceList ? <p>{T.priceListRetained}</p> : ibanChange ? <p>{T.ibanRetained}</p> : <><p>{overage ? T.overageRequestNumber : T.lossRequestNumber}: {frozenTransferRequest?.requestNumber}</p>
       <p>{T.lossFrozenTime}: {frozenTransferRequest?.decidedAtUtc}</p></>}
     </div> : <StateBlock state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
       subject={T.title} onRetry={() => void query.refetch()} /> : <>
-      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(expensePayment || reversal || officialSales || priceList || packageStandard || ibanChange || customerReturn || supplierReturn || kind === 'logistics.dispatch-note.v1' || kind === 'finance.manual-bank-payment.v1' || kind === 'finance.bank-account.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
+      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(nativeFinance || expensePayment || reversal || officialSales || priceList || packageStandard || ibanChange || customerReturn || supplierReturn || kind === 'logistics.dispatch-note.v1' || kind === 'finance.manual-bank-payment.v1' || kind === 'finance.bank-account.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
       <section aria-label={INBOX.rulesHeading}><h3>{INBOX.rulesHeading}</h3>
         {preview.rules.length === 0 ? <p>{T.rulesUnavailable}</p> : <ul>{preview.rules.map((rule, index) => <li key={`${rule.ruleCode}:${index}`}>
           <p>{inboxRuleText(rule.ruleCode) ?? <>{INBOX.ruleUnknown} <code>{rule.ruleCode}</code></>}</p>
@@ -406,6 +411,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         <h4>{T.reversalRequest}</h4><dl className={styles.facts}>{Object.entries((preview.manualBankPaymentReversal ?? preview.manualReceiptReversal!).proposal).map(([key,value]) => <div key={key}><dt>{T.reversalFields[key as keyof typeof T.reversalFields]}</dt><dd>{key === 'status' ? T.reversalStatuses[value as keyof typeof T.reversalStatuses] : value ?? T.reversalAbsent}</dd></div>)}</dl>
         {preview.manualReceiptReversal ? <><h4>{T.reversalOriginal}</h4><dl className={styles.facts}>{Object.entries(preview.manualReceiptReversal.originalReceipt).map(([key,value]) => <div key={key}><dt>{T.reversalFields[key as keyof typeof T.reversalFields]}</dt><dd>{key === 'posCommissionBearer' && value !== null ? T.reversalBearers[value as keyof typeof T.reversalBearers] : value ?? T.reversalAbsent}</dd></div>)}</dl></> : null}
       </section> : null}
+      {preview.bankCreditLimit || preview.openingBalance ? <WorkNativeFinanceFacts bank={preview.bankCreditLimit} opening={preview.openingBalance} reversal={kind === 'finance.opening-balance-reversal.v1'} /> : null}
       {preview.expensePayment ? <section aria-label={T.expenseProposal}><h3>{T.expenseProposal}</h3><p>{T.expenseApprovalOnly}</p><dl className={styles.facts}>
         <dt>{T.expensePaymentId}</dt><dd>{preview.expensePayment.payment.id}</dd><dt>{T.importCompany}</dt><dd>{preview.expensePayment.payment.companyId}</dd>
         <dt>{EXPENSE.columnStatus}</dt><dd>{EXPENSE_STATUS[preview.expensePayment.payment.status]}</dd><dt>{T.version}</dt><dd>{preview.expensePayment.payment.version}</dd>
