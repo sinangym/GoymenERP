@@ -29,7 +29,7 @@ public sealed partial class ManufacturingCostDifferenceSqlServerRelationalAccept
         Assert.True(AccountingManufacturingCostDifferenceDecisionBindingV1.MatchesDecisionProof(snapshot.Item, snapshot.ManufacturingCostDifferenceProof));
         var full = await scope.Service.ReadDecisionAsync(listed.ItemId, _ => Task.CompletedTask);
         Assert.True(AccountingManufacturingCostDifferenceDecisionBindingV1.MatchesDecisionItem(snapshot.Item, full.Resource));
-        Assert.Equal(AccountingManufacturingCostDifferenceWorkInboxSourceV1.ScreenPath, snapshot.Item.Link);
+        Assert.Equal(AccountingWorkInboxFence.Link(AccountingManufacturingCostDifferenceWorkInboxSourceV1.WorkDecisionPath, snapshot.Item.ItemId), snapshot.Item.Link);
         Assert.Equal(0, scope.CurrentPlan.Reads); Assert.Equal(0, scope.Currencies.Reads); Assert.Equal(before, await SafetyCounts(run)); scope.AssertClean();
     }
 
