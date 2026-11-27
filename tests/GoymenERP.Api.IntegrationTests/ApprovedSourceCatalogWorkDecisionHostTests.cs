@@ -7,6 +7,7 @@ using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Domain.Journals;
 using GoymenERP.Modules.Accounting.Domain.Posting;
+using GoymenERP.Modules.Accounting.Infrastructure;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using GoymenERP.Modules.Accounting.Infrastructure.WorkInbox;
 using GoymenERP.Modules.Work.Infrastructure.Delegations;

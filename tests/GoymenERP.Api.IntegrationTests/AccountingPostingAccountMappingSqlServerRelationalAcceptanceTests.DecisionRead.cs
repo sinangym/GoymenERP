@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.Accounting.Infrastructure;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 
 namespace GoymenERP.Api.IntegrationTests;
