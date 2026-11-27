@@ -2497,6 +2497,25 @@
             ],
             "new_permissions": [],
             "migration": null
+          },
+          {
+            "source_commit": "afc3dfd4f",
+            "source_commits": [
+              "48157273c",
+              "afc3dfd4f",
+              "e70ac369a"
+            ],
+            "scope": "Weighing approve-only native owner purpose with complete immutable evaluation/product/actor/kilogram receipt proof and authorized17-field human preview. Native integer version and decimal text wire reused; false capability and existing inbox link preserved until UI pairing.",
+            "local_checks": "Source complete;31 host/7 owner-source/3 SQL and one configured-nonrelational boundary fact written. Compilation/tests for this increment pending. Inventory full2284/2284 passed skip0 at8435fae61. Earlier Logistics580PASS1FAIL used an unconfigured context as a nonrelational fixture; log retained, e70ac369a uses real configured InMemory only to prove refusal, not SQL acceptance, plus ambient/missing-writer unit boundaries.",
+            "sql": "3 Work SQL facts inventoried. Native4 SQL facts plus prior kernel SQL acceptance remain NOT_RUN.",
+            "review": "Bounded root full14-file source review; missing human context fixed byafc3dfd4f. Full independent K3 pending.",
+            "remaining": [
+              "Compile and selected local cohort",
+              "Weighing paired UI/source publication",
+              "Real SQL/HTTP/browser,final pins/full CI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null
           }
         ],
         "source_commits": [
@@ -2564,10 +2583,15 @@
           "842209abe",
           "da4c23289",
           "702e17473",
-          "0528e81cd"
+          "0528e81cd",
+          "48157273c",
+          "afc3dfd4f",
+          "e70ac369a"
         ],
-        "kind_count_scope": "19 paired source kinds; not19 accepted flows. All64 runtime acceptances remain open.",
-        "staged_kinds": []
+        "kind_count_scope": "19 paired source kinds plus1 staged weighing backend; not20 accepted flows. All64 runtime acceptances remain open.",
+        "staged_kinds": [
+          "logistics.weighing-difference.v1"
+        ]
       }
     },
     {
