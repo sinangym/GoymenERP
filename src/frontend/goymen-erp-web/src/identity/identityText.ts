@@ -72,6 +72,13 @@ export const ACCESS_GRANT_TEXT = {
   currentPermissionsUnavailable: 'Kullanıcının bu şirkette geçerli izinleri bu ekranda okunamadı. Kullanıcı kaydı veya rol seçim taslağı, şirket erişimi ya da etkin yetki kanıtı değildir.',
   requiresApproval: 'Critical / ikinci onay', prepareRole: 'Bu rolün işlemini hazırla', remainingRoles: 'İşlemi kaydedilmemiş seçili rol',
   roleStepRecorded: 'Bu oturumda rol işlemi kaydedildi. Talep veya atama sonucu, güncel sunucu kaydından izlenir.',
+  codeImpactRead: 'Güncel izin farkını oku', codeImpact: 'Bu rolün güncel izin kodu farkı',
+  codeImpactNotice: 'Bu bilgi yalnız seçilen tek rol içindir; atama veya kapsam ve görev ayrılığı onayı değildir.',
+  codeImpactUnavailable: 'Bu kullanıcı ve rol için güncel izin farkı değerlendirilemiyor. Bu sonuç boş izin veya güvenli atama anlamına gelmez.',
+  codeImpactSingle: 'Güncel izin farkını görmek için tek rol seçin.', codeImpactAdded: 'Kullanıcıda bulunmayan rol izin kodları', codeImpactHeld: 'Kullanıcıda zaten bulunan izin kodları',
+  codeImpactRequested: 'Rolün izin kodları', codeImpactCurrent: 'Bu okuma anındaki kullanıcı izin kodları', codeImpactNone: 'Sunucu bu listede izin kodu bildirmedi.',
+  codeImpactSoD: 'Görev ayrılığı çatışması', codeImpactScope: 'Kapsam genişlemesi', codeImpactUnknown: 'Değerlendirilmedi', codeImpactYes: 'Var', codeImpactNo: 'Yok',
+  codeImpactCritical: 'Rol Critical izin içeriyor',
   previewUnavailable: 'Rol ayrıntısı okuma yetkisi olmadan izin önizlemesi gösterilemez.',
 } as const
 

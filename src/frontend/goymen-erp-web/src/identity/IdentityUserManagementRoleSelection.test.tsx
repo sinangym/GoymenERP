@@ -115,3 +115,16 @@ describe('ROLE-UX first-role management path', () => {
     expect(calls.filter(call => call.method === 'POST')).toEqual([])
   })
 })
+
+it('keeps the first-role wizard available when the native code impact cannot assess an unassigned user',async()=>{
+ const calls=installFetch({capabilities,respond:url=>url.endsWith('/identity/access/role-request-impact')?json({},404):response(url)})
+ renderAt(IDENTITY_ROUTE[IDENTITY_CAPABILITY.userManagement]);const user=userEvent.setup()
+ await user.click(await screen.findByRole('button',{name:T.assign}));await user.click(await screen.findByRole('checkbox',{name:'SENTETIK normal'}))
+ await within(await screen.findByRole('region',{name:G.selectedPermissions})).findByText('SENTETIK.read')
+ await user.click(screen.getByRole('button',{name:G.codeImpactRead}));await screen.findByText(G.codeImpactUnavailable)
+ expect(screen.queryByText(G.noCurrentPermissions)).toBeNull();expect(screen.queryByRole('heading',{name:G.codeImpactAdded})).toBeNull()
+ const prepare=screen.getByRole('button',{name:`${G.prepareRole} · SENTETIK normal`}) as HTMLButtonElement;expect(prepare.disabled).toBe(false)
+ await user.click(prepare);expect(screen.getByLabelText(G.role)).toHaveProperty('disabled',true)
+ const posts=calls.filter(call=>call.method==='POST');expect(posts).toHaveLength(1);expect(posts[0].url.endsWith('/identity/access/role-request-impact')).toBe(true)
+ expect(posts[0].body).toEqual({userId:USER_ALICE,roleId:ROLE_OPERATOR});expect(posts[0].headers['Idempotency-Key']).toBeUndefined()
+})

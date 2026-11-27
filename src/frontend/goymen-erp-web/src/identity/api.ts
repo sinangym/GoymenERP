@@ -2,13 +2,15 @@
  * Identity access-view read transport (AT-004). Thin and hand-written like `../organization/api.ts`; when the
  * generated client lands (Issue #122) the fetch calls move and the decoders in ./contract.ts survive.
  *
- * GETs only. There is no write function in this file and there must not be one: assigning or revoking a grant is
- * blocked (NEEDS-SINAN #66 5738113623, OPEN-013). No client-contract header (a Counterparty mechanism), no paging
+ * GETs and the C3 code-impact POST read only. Assignment and revocation commands remain in accessGrantApi.ts;
+ * this file does not issue them. No client-contract header (a Counterparty mechanism), no paging
  * (the lists are unpaged on the server) and no search parameter the server does not have.
  */
 
 import {
   decodeRoleDetail,
+  decodeRoleRequestImpact,
+  type AccessRoleRequestImpact,
   decodeRoleSummaries,
   decodeUserDetail,
   decodeUserSummaries,
@@ -38,11 +40,13 @@ async function read(
   path: string,
   companyId: string,
   signal?: AbortSignal,
+  requestBody?: { readonly userId: string; readonly roleId: string },
 ): Promise<RawResult | 'aborted' | 'offline' | 'unreachable'> {
   let response: Response
   try {
     response = await fetch(`${API_BASE}${path}`, {
-      headers: { ...devHeaders(), 'X-Company-Id': companyId },
+      headers: { ...devHeaders(), 'X-Company-Id': companyId, ...(requestBody === undefined ? {} : { 'Content-Type': 'application/json' }) },
+      ...(requestBody === undefined ? {} : { method: 'POST', body: JSON.stringify(requestBody) }),
       signal,
     })
   } catch {
@@ -117,4 +121,13 @@ export async function fetchAccessRole(
   const role = decodeRoleDetail(result.body, roleId)
   if (role === null) return { type: 'malformed' }
   return { type: 'ok-single', data: role }
+}
+
+/** C3 POST is an authorized native read; no command key, assignment or policy mutation. */
+export async function fetchRoleRequestImpact(companyId: string, userId: string, roleId: string, signal?: AbortSignal): Promise<ViewOutcome<AccessRoleRequestImpact>> {
+  const result=await read('/identity/access/role-request-impact',companyId,signal,{userId,roleId})
+  if(typeof result==='string')return transportOutcome(result)
+  if(!result.isOk200)return {type:'http',status:result.status,body:result.body}
+  const impact=decodeRoleRequestImpact(result.body,companyId,userId,roleId)
+  return impact===null?{type:'malformed'}:{type:'ok-single',data:impact}
 }

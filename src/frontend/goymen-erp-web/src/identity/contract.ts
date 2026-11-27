@@ -359,3 +359,34 @@ export function decodeRoleDetail(raw: unknown, requestedRoleId: string): AccessR
   }
   return { roleId, code, name, isSystem, isActive, permissions, holders }
 }
+
+/** C3 is a code-only native read, not a proposed assignment or a scope/SoD decision. */
+export interface AccessRoleRequestImpact {
+  readonly companyId: string; readonly userId: string; readonly roleId: string
+  readonly currentPermissionCodes: readonly AccessPermission[]; readonly requestedRolePermissionCodes: readonly AccessPermission[]
+  readonly addedPermissionCodes: readonly string[]; readonly alreadyHeldCodes: readonly string[]
+  readonly roleHasCriticalPermissions: boolean; readonly hasSegregationOfDutiesConflict: boolean | null; readonly expandsScope: boolean | null
+}
+const impactId = (value: unknown): value is string => typeof value === 'string' && value.length === 36 && isUuid(value) && value !== '00000000-0000-0000-0000-000000000000'
+const impactKeys = (value: Record<string,unknown>, keys: readonly string[]) => Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value,key))
+const impactCode = (value: unknown): value is string => isNonEmptyString(value) && value === value.trim()
+const impactCodes = (value: unknown): value is string[] => Array.isArray(value) && value.every(impactCode) && new Set(value).size === value.length
+function impactPermissions(value: unknown): value is AccessPermission[] {
+  return Array.isArray(value) && value.every(row => isRecord(row) && impactKeys(row,['code','isCritical']) && impactCode(row.code) && typeof row.isCritical === 'boolean')
+    && new Set(value.map(row => row.code)).size === value.length
+}
+export function decodeRoleRequestImpact(raw: unknown, company: string, userId: string, roleId: string): AccessRoleRequestImpact | null {
+  if (!isRecord(raw) || !impactKeys(raw,['companyId','userId','roleId','currentPermissionCodes','requestedRolePermissionCodes','addedPermissionCodes','alreadyHeldCodes','roleHasCriticalPermissions','hasSegregationOfDutiesConflict','expandsScope'])
+    || !impactId(raw.companyId) || !impactId(raw.userId) || !impactId(raw.roleId)
+    || raw.companyId.toLowerCase() !== company.toLowerCase() || raw.userId.toLowerCase() !== userId.toLowerCase() || raw.roleId.toLowerCase() !== roleId.toLowerCase()
+    || !impactPermissions(raw.currentPermissionCodes) || !impactPermissions(raw.requestedRolePermissionCodes) || !impactCodes(raw.addedPermissionCodes) || !impactCodes(raw.alreadyHeldCodes)
+    || typeof raw.roleHasCriticalPermissions !== 'boolean' || raw.roleHasCriticalPermissions !== raw.requestedRolePermissionCodes.some(permission => permission.isCritical)
+    || raw.hasSegregationOfDutiesConflict !== null && typeof raw.hasSegregationOfDutiesConflict !== 'boolean'
+    || raw.expandsScope !== null && typeof raw.expandsScope !== 'boolean') return null
+  const current=raw.currentPermissionCodes, added=raw.addedPermissionCodes, already=raw.alreadyHeldCodes
+  const requested = new Set(raw.requestedRolePermissionCodes.map(permission => permission.code))
+  // Validate source membership only; never manufacture a replacement delta or scope assessment.
+  if (added.length + already.length !== requested.size || added.some(code => !requested.has(code) || already.includes(code))
+    || already.some(code => !requested.has(code) || !current.some(permission => permission.code === code))) return null
+  return raw as unknown as AccessRoleRequestImpact
+}

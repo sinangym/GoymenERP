@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   decodeRoleDetail,
+  decodeRoleRequestImpact,
   decodeRoleSummaries,
   decodeUserDetail,
   decodeUserSummaries,
@@ -59,4 +60,22 @@ describe('identity access-view contract', () => {
       `/ayarlar/kullanicilar-ve-yetkiler/roller/${ROLE_OPERATOR}?kullanici=${USER_ALICE}`,
     )
   })
+})
+
+const impactCompany='10000000-0000-4000-8000-000000000001'
+const codeImpact={companyId:impactCompany,userId:USER_ALICE,roleId:ROLE_OPERATOR,
+ currentPermissionCodes:[{code:'identity.profile.read',isCritical:false}],requestedRolePermissionCodes:[{code:'identity.profile.read',isCritical:false},{code:'identity.assignments.read',isCritical:true}],
+ addedPermissionCodes:['identity.assignments.read'],alreadyHeldCodes:['identity.profile.read'],roleHasCriticalPermissions:true,hasSegregationOfDutiesConflict:null,expandsScope:null}
+it('decodes the exact code-only native impact while preserving unassessed scope and SoD',()=>{
+ expect(decodeRoleRequestImpact(codeImpact,impactCompany,USER_ALICE,ROLE_OPERATOR)).toEqual(codeImpact)
+ expect(decodeRoleRequestImpact({...codeImpact,hasSegregationOfDutiesConflict:false,expandsScope:true},impactCompany,USER_ALICE,ROLE_OPERATOR)).toMatchObject({hasSegregationOfDutiesConflict:false,expandsScope:true})
+})
+it.each([{companyId:ROLE_OPERATOR},{userId:ROLE_OPERATOR},{roleId:USER_ALICE},{companyId:impactCompany+'\n'},{extra:true},{currentPermissionCodes:null},
+ {currentPermissionCodes:[{code:'identity.profile.read',isCritical:false,scope:'Company'}]},{requestedRolePermissionCodes:[{code:'identity.assignments.read',isCritical:'true'}]},
+ {requestedRolePermissionCodes:[{code:'identity.assignments.read',isCritical:true},{code:'identity.assignments.read',isCritical:true}]},
+ {addedPermissionCodes:['identity.assignments.read','identity.assignments.read']},{alreadyHeldCodes:['identity.profile.read','identity.profile.read']},
+ {addedPermissionCodes:['foreign.permission']},{alreadyHeldCodes:['identity.assignments.read']},{roleHasCriticalPermissions:false},{roleHasCriticalPermissions:null},
+ {hasSegregationOfDutiesConflict:undefined},{hasSegregationOfDutiesConflict:'false'},{expandsScope:undefined},{expandsScope:0},
+ {requestedRolePermissionCodes:[{code:'  ',isCritical:false}]},{addedPermissionCodes:null},{addedPermissionCodes:[]}])('refuses malformed or foreign native code impact without a safe partial fallback %j',delta=>{
+ expect(decodeRoleRequestImpact({...codeImpact,...delta},impactCompany,USER_ALICE,ROLE_OPERATOR)).toBeNull()
 })

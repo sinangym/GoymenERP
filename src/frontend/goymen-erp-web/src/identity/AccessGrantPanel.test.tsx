@@ -228,3 +228,63 @@ describe('existing role selection preview and explicit native commands', () => {
     if (target === 'company') expect(screen.getByText(`${T.company}: GSP · Göymen Sac Profil`)).toBeTruthy()
   })
 })
+
+const impactPath='/identity/access/role-request-impact'
+const impactFacts={companyId:COMPANY_A,userId:USER_ALICE,roleId:ROLE_OPERATOR,
+ currentPermissionCodes:[{code:'identity.profile.read',isCritical:false}],requestedRolePermissionCodes:[{code:'identity.profile.read',isCritical:false},{code:'identity.assignments.read',isCritical:true}],
+ addedPermissionCodes:['identity.assignments.read'],alreadyHeldCodes:['identity.profile.read'],roleHasCriticalPermissions:true,hasSegregationOfDutiesConflict:null,expandsScope:null}
+async function selectOneImpactRole(){
+ const user=userEvent.setup();await user.click(await screen.findByRole('checkbox',{name:'SENTETIK maker'}))
+ await within(await screen.findByRole('region',{name:T.selectedPermissions})).findByText('SENTETIK.propose')
+ return user
+}
+it('reads the single selected native role delta only on a human read action, keeps server code facts and unassessed scope/SoD distinct from a grant',async()=>{
+ const calls=installFetch({capabilities:selectionCapabilities,respond:(url,init)=>url.endsWith(impactPath)?json(impactFacts):selectionResponse(url)})
+ renderAtSelected();const user=await selectOneImpactRole();expect(calls.filter(call=>call.method==='POST')).toEqual([])
+ await user.click(screen.getByRole('button',{name:T.codeImpactRead}));const region=await screen.findByRole('region',{name:T.codeImpact})
+ await within(region).findByRole('heading',{name:T.codeImpactAdded});expect(within(region).getAllByText(T.codeImpactUnknown)).toHaveLength(2)
+ expect(within(region).getAllByText('identity.assignments.read').length).toBeGreaterThan(0);expect(within(region).queryByText('organization.locations.read')).toBeNull()
+ const posts=calls.filter(call=>call.method==='POST');expect(posts).toHaveLength(1);expect(posts[0].url.endsWith(impactPath)).toBe(true)
+ expect(posts[0].body).toEqual({userId:USER_ALICE,roleId:ROLE_OPERATOR});expect(posts[0].headers['X-Company-Id']).toBe(COMPANY_A)
+ expect(posts[0].headers['Idempotency-Key']).toBeUndefined();expect((screen.getByRole('button',{name:`${T.prepareRole} · SENTETIK maker`}) as HTMLButtonElement).disabled).toBe(false)
+ await user.click(screen.getByRole('checkbox',{name:`SENTETIK reviewer · ${T.requiresApproval}`}))
+ expect(screen.queryByRole('region',{name:T.codeImpact})).toBeNull();expect(screen.queryByRole('button',{name:T.codeImpactRead})).toBeNull();expect(screen.getAllByText(T.codeImpactSingle).length).toBeGreaterThan(0)
+ expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+})
+it.each([{companyId:COMPANY_B},{userId:USER_BORA},{roleId:ROLE_AUDITOR},{roleHasCriticalPermissions:undefined},{hasSegregationOfDutiesConflict:undefined}])('hides malformed or foreign impact without disabling the native role preparation %j',async delta=>{
+ installFetch({capabilities:selectionCapabilities,respond:url=>url.endsWith(impactPath)?json({...impactFacts,...delta}):selectionResponse(url)})
+ renderAtSelected();const user=await selectOneImpactRole();await user.click(screen.getByRole('button',{name:T.codeImpactRead}));await screen.findByText(T.codeImpactUnavailable)
+ expect(screen.queryByRole('heading',{name:T.codeImpactAdded})).toBeNull();expect((screen.getByRole('button',{name:`${T.prepareRole} · SENTETIK maker`}) as HTMLButtonElement).disabled).toBe(false)
+})
+it('does not expose a late old-selection impact or combine two native role effects',async()=>{
+ let release!:(response:Response)=>void
+ const calls=installFetch({capabilities:selectionCapabilities,respond:url=>url.endsWith(impactPath)?new Promise<Response>(resolve=>{release=resolve}):selectionResponse(url)})
+ renderAtSelected();const user=await selectOneImpactRole();await user.click(screen.getByRole('button',{name:T.codeImpactRead}));await waitFor(()=>expect(calls.some(call=>call.url.endsWith(impactPath))).toBe(true))
+ await user.click(screen.getByRole('checkbox',{name:`SENTETIK reviewer · ${T.requiresApproval}`}));release(json(impactFacts))
+ await waitFor(()=>expect(screen.queryByRole('region',{name:T.codeImpact})).toBeNull());expect(calls.filter(call=>call.url.endsWith(impactPath))).toHaveLength(1)
+})
+it('does not retain old-company impact when the current shell namespace changes',async()=>{
+ let release!:(response:Response)=>void
+ const calls=installFetch({capabilities:selectionCapabilities,respond:url=>url.endsWith(impactPath)?new Promise<Response>(resolve=>{release=resolve}):selectionResponse(url)})
+ renderAtSelected();const user=await selectOneImpactRole();await user.click(screen.getByRole('button',{name:T.codeImpactRead}));await waitFor(()=>expect(calls.some(call=>call.url.endsWith(impactPath))).toBe(true))
+ await user.selectOptions(screen.getByRole('combobox',{name:'Şirket'}),COMPANY_B);release(json(impactFacts))
+ await waitFor(()=>expect(screen.queryByRole('region',{name:T.codeImpact})).toBeNull());expect(screen.queryByRole('heading',{name:T.codeImpactAdded})).toBeNull()
+})
+it('removes a measured impact after fresh 403 instead of keeping the earlier authorized codes',async()=>{
+ const capabilities=[...selectionCapabilities];let reads=0
+ installFetch({capabilities,respond:url=>{if(!url.endsWith(impactPath))return selectionResponse(url);if(++reads===1)return json(impactFacts);capabilities.splice(capabilities.indexOf(IDENTITY_CAPABILITY.roleDetail),1);return json({},403)}})
+ renderAtSelected();const user=await selectOneImpactRole();await user.click(screen.getByRole('button',{name:T.codeImpactRead}));await screen.findByRole('heading',{name:T.codeImpactAdded})
+ await user.click(screen.getByRole('button',{name:T.codeImpactRead}));await waitFor(()=>expect(screen.queryByRole('region',{name:T.codeImpact})).toBeNull())
+ expect(screen.queryByRole('heading',{name:T.codeImpactAdded})).toBeNull();expect(reads).toBe(2)
+})
+it('does not restore a late old-session code impact into a new authenticated selection',async()=>{
+ let release!:(response:Response)=>void
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-impact-old-session'})
+ try{
+  const calls=installFetch({capabilities:selectionCapabilities,respond:url=>url.endsWith(impactPath)?new Promise<Response>(resolve=>{release=resolve}):selectionResponse(url)})
+  renderAtSelected();const user=await selectOneImpactRole();await user.click(screen.getByRole('button',{name:T.codeImpactRead}));await waitFor(()=>expect(calls.some(call=>call.url.endsWith(impactPath))).toBe(true))
+  cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-impact-new-session'});renderAtSelected();await selectOneImpactRole();release(json(impactFacts))
+  await waitFor(()=>expect(screen.queryByRole('region',{name:T.codeImpact})).toBeNull());expect(calls.filter(call=>call.url.endsWith(impactPath))).toHaveLength(1)
+  expect(screen.queryByRole('heading',{name:T.codeImpactAdded})).toBeNull()
+ }finally{Object.assign(IDENTITY,{authenticationSessionBinding:null})}
+})
