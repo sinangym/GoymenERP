@@ -5,13 +5,13 @@ import {decodeWorkDecisionPreview,isWorkDecisionRequest,isWorkDecisionKind,sendW
 const company='aaaaaaaa-0000-4000-8000-000000000001'
 const request={expectedVersion:'9007199254740993',approve:true,reason:null,delegationId:null}
 afterEach(()=>vi.unstubAllGlobals())
-describe('staged manufacturing cost Work purpose',()=>{
- it('retains exact native detail4/header20/output11/plan7 and leaves all 47 public kinds unchanged',()=>{
+describe('paired manufacturing cost Work purpose',()=>{
+ it('retains exact native detail4/header20/output11/plan7 and pairs the 48th public Work kind',()=>{
   const v=fixture(company),h=v.manufacturingCostDifference
   expect(decodeWorkDecisionPreview(v,company,kind,id)?.manufacturingCostDifference).toEqual(h)
   expect(Object.keys(h)).toHaveLength(4);expect(Object.keys(h.proposal)).toHaveLength(20);expect(Object.keys(h.proposal.outputs[0]!)).toHaveLength(11);expect(Object.keys(h.proposal.accountPlan)).toHaveLength(7)
-  expect(h.proposal.outputs).toHaveLength(13);expect(isWorkDecisionKind(kind)).toBe(true);expect(WORK_DECISION_KINDS).toHaveLength(47)
-  expect(WORK_DECISION_KINDS.some(k=>String(k)===kind)).toBe(false)
+  expect(h.proposal.outputs).toHaveLength(13);expect(isWorkDecisionKind(kind)).toBe(true);expect(WORK_DECISION_KINDS).toHaveLength(48)
+  expect(WORK_DECISION_KINDS.filter(k=>String(k)===kind)).toHaveLength(1)
   expect(decodeWorkDecisionPreview(v,company.toUpperCase(),kind,id.toUpperCase())).not.toBeNull()
  })
  it.each(['2','7','9007199254740993','9223372036854775807'])('decodes complete native version %s without narrowing to safe JS number',version=>{

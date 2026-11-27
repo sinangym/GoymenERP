@@ -17,7 +17,7 @@ public sealed class AccountingShellCapabilityProviderTests
     {
         var declarations = new AccountingShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(36, declarations.Count);
+        Assert.Equal(37, declarations.Count);
         // ACC-V0c published what acc01 walked; the ACC-V1 reversal slice adds the journal DETAIL and M-06, whose real
         // read routes exist and which acc01 ACC01-09 walks over the synthetic posted-journal fixture.
         Assert.Equal(
@@ -26,6 +26,7 @@ public sealed class AccountingShellCapabilityProviderTests
                 AccountingShellCapabilityProvider.JournalReversalWorkDecisionCapabilityId,
                 AccountingShellCapabilityProvider.JournalDetailCapabilityId,
                 AccountingShellCapabilityProvider.JournalListCapabilityId,
+                AccountingShellCapabilityProvider.ManufacturingCostDifferenceWorkDecisionCapabilityId,
                 AccountingShellCapabilityProvider.NormalDraftWorkDecisionCapabilityId,
                 AccountingShellCapabilityProvider.NormalDraftApproveCapabilityId,
                 AccountingShellCapabilityProvider.NormalDraftCreateCapabilityId,
@@ -78,7 +79,7 @@ public sealed class AccountingShellCapabilityProviderTests
 
         // 1.3: the reversal slice changed the declaration set (detail and M-06 published, reversal actions declared staged).
         // 1.4: FIN-S16 declares the staged M-05 account plan route.
-        Assert.Equal(("ACCOUNTING", "1.16"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(("ACCOUNTING", "1.17"), (provider.Owner, provider.ContractVersion));
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("accounting.invoiced-shipment-costs.prepare", "accounting.invoiced-shipment-costs.prepare", "/muhasebe/sevk-smm-hazirla",
@@ -137,6 +138,8 @@ public sealed class AccountingShellCapabilityProviderTests
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [NormalJournalPermissionNamesV1.DraftApprove]),
             ("accounting.normal-journal-draft.work-decision", "accounting-normal-journal-draft-work-decision", "/onaylarim/accounting.normal-journal-draft.v1/:approvalId", "M-NORMAL-JOURNAL-DRAFT-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [NormalJournalPermissionNamesV1.DraftApprove]),
+            ("accounting.manufacturing-cost-difference.work-decision", "accounting-manufacturing-cost-difference-work-decision", "/onaylarim/accounting.manufacturing-cost-difference.v1/:approvalId", "M-MANUFACTURING-COST-DIFFERENCE-WORK-DECISION",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [AccountingJournalReversalPermissionNamesV1.Approve]),
             ("accounting.posting-mapping.work-decision", "accounting-posting-mapping-work-decision", "/onaylarim/accounting.posting-mapping.v1/:approvalId", "M-POSTING-MAPPING-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [AccountingPostingAccountMappingPermissionNamesV1.Activate]),
             ("accounting.approved-source-catalog.work-decision", "accounting-approved-source-catalog-work-decision", "/onaylarim/accounting.approved-source-catalog.v1/:approvalId", "M-APPROVED-SOURCE-CATALOG-WORK-DECISION",
@@ -257,6 +260,7 @@ public sealed class AccountingShellCapabilityProviderTests
     [InlineData("accounting.period-reopening.work-decision", AccountingPermissionManifestV1.PeriodsReopen)]
     [InlineData("accounting.journal-reversal.work-decision", AccountingJournalReversalPermissionNamesV1.Approve)]
     [InlineData("accounting.approved-source-catalog.work-decision", ApprovedAccountingSourceCatalogPermissionNamesV1.Activate)]
+    [InlineData("accounting.manufacturing-cost-difference.work-decision", AccountingJournalReversalPermissionNamesV1.Approve)]
     [InlineData("accounting.posting-mapping.work-decision", AccountingPostingAccountMappingPermissionNamesV1.Activate)]
     public void Work_approval_routes_are_standalone_and_do_not_require_general_period_read(string capability, string permission)
     {

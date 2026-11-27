@@ -4,7 +4,7 @@ import { hasExactKeys } from '../finance/wireShape'
 import { transferDispatchUtc } from '../inventory/transferDispatchApi'
 import { catalogVersion, catalogIncrementable } from './workApprovedSourceCatalogDecision'
 
-// Candidate only. Shell availability and the public mount list remain separately paired by the owner.
+// Paired standalone Work purpose; it grants no general Accounting read capability.
 export const MANUFACTURING_COST_WORK_PURPOSE = {
   kind:'accounting.manufacturing-cost-difference.v1', capabilityId:'accounting.manufacturing-cost-difference.work-decision',
   routePath:'/onaylarim/accounting.manufacturing-cost-difference.v1/:approvalId',

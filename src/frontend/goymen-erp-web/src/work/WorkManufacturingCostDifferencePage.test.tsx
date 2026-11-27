@@ -14,12 +14,12 @@ import {manufacturingCostFixture as fixture,manufacturingCostId as id} from './m
 import {workRoutes} from './workRoutes'
 const kind=staged.kind,cap=staged.capabilityId,path=`/work/decisions/${kind}/${id}`
 afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks();sessionStorage.clear();Object.assign(IDENTITY,{authenticationSessionBinding:null})})
-// Candidate-only real AppShell/auth/CapabilityRoute harness; no production route is added by this core slice.
+// Real shell entry gate with separate exact paired-route assertions.
 function mount(client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})){
  const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[{path:staged.routePath.slice(1),element:<CapabilityRoute capability={[cap]}><WorkDecisionPage kind={kind}/></CapabilityRoute>}]}],{initialEntries:[staged.routePath.replace(':approvalId',id)]})
  render(<ShellProvider queryClient={client}><RouterProvider router={router}/></ShellProvider>);return {router,client}
 }
-describe('staged manufacturing cost Work human decision',()=>{
+describe('paired manufacturing cost Work human decision',()=>{
  it('shows every complete output and retained plan with raw amounts/reason, approve only and no owner browse',async()=>{
   const value=fixture(COMPANY_A)
   const calls=installFetch({capabilities:[cap],respond:(url,init)=>url.includes(path)?init?.method==='POST'?json({companyId:COMPANY_A,kind,itemId:id,state:'Posted',replayed:false,originalCorrelationId:'SENTETIK posted'}):json(value):undefined})
@@ -34,7 +34,7 @@ describe('staged manufacturing cost Work human decision',()=>{
   fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done)
   expect(calls.filter(c=>c.method==='POST').map(c=>c.body)).toEqual([{expectedVersion:'9007199254740993',approve:true,reason:null,delegationId:null}])
   expect(calls.some(c=>c.url.includes('/accounting/'))).toBe(false);expect(screen.queryByRole('region',{name:T.manufacturingCostTitle})).toBeNull()
-  expect(workRoutes.some(r=>r.path===staged.routePath.slice(1))).toBe(false)
+  expect(workRoutes.filter(r=>r.path===staged.routePath.slice(1))).toHaveLength(1)
  })
  it('keeps exact original body/key on unknown remount without GET, human journal data or new selection',async()=>{
   Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK cost retained'});let posts=0

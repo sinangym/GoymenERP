@@ -51,8 +51,9 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     /// <para>1.13 (WP8): standalone period opening and reopening purpose routes under their native approval permissions.</para>
     /// <para>1.14 (WP8): the native journal reversal approval gains its paired standalone Work purpose route.</para>
     /// <para>1.15/1.16 (WP8): standalone catalog and account mapping decisions use their existing activation permissions.</para>
+    /// <para>1.17 (WP8): a standalone manufacturing cost difference decision uses the existing journal approval permission.</para>
     /// </summary>
-    public const string OwnerContractVersion = "1.16";
+    public const string OwnerContractVersion = "1.17";
 
     public const string InvoicedShipmentPrepareCapabilityId = "accounting.invoiced-shipment-costs.prepare";
     public const string InvoicedShipmentPrepareRoutePath = "/muhasebe/sevk-smm-hazirla";
@@ -135,6 +136,10 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     public const string NormalDraftApproveRouteId = "accounting.normal-journal-drafts.approve";
     public const string NormalDraftApproveRoutePath = "/muhasebe/normal-fis-onay/:draftId";
     public const string NormalDraftWorkDecisionCapabilityId = "accounting.normal-journal-draft.work-decision";
+    public const string ManufacturingCostDifferenceWorkDecisionCapabilityId = "accounting.manufacturing-cost-difference.work-decision";
+    public const string ManufacturingCostDifferenceWorkDecisionRouteId = "accounting-manufacturing-cost-difference-work-decision";
+    public const string ManufacturingCostDifferenceWorkDecisionRoutePath = "/onaylarim/accounting.manufacturing-cost-difference.v1/:approvalId";
+    public const string ManufacturingCostDifferenceWorkDecisionScreenId = "M-MANUFACTURING-COST-DIFFERENCE-WORK-DECISION";
     public const string PostingMappingWorkDecisionCapabilityId = "accounting.posting-mapping.work-decision";
     public const string PostingMappingWorkDecisionRouteId = "accounting-posting-mapping-work-decision";
     public const string PostingMappingWorkDecisionRoutePath = "/onaylarim/accounting.posting-mapping.v1/:approvalId";
@@ -265,6 +270,9 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
             Declaration(NormalDraftWorkDecisionCapabilityId, NormalDraftWorkDecisionRouteId, NormalDraftWorkDecisionRoutePath,
                 NormalDraftWorkDecisionScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
                 [NormalJournalPermissionNamesV1.DraftApprove], available: true),
+            Declaration(ManufacturingCostDifferenceWorkDecisionCapabilityId, ManufacturingCostDifferenceWorkDecisionRouteId, ManufacturingCostDifferenceWorkDecisionRoutePath,
+                ManufacturingCostDifferenceWorkDecisionScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                [AccountingJournalReversalPermissionNamesV1.Approve], available: true),
             Declaration(PostingMappingWorkDecisionCapabilityId, PostingMappingWorkDecisionRouteId, PostingMappingWorkDecisionRoutePath,
                 PostingMappingWorkDecisionScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
                 [AccountingPostingAccountMappingPermissionNamesV1.Activate], available: true),
