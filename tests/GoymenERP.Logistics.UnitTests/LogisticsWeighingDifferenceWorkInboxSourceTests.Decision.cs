@@ -22,7 +22,7 @@ public sealed partial class LogisticsWeighingDifferenceWorkInboxSourceTests
         Assert.False(terminal.Pending); Assert.Equal("2", terminal.SourceVersion);
         Assert.Equal(snapshot.LogisticsWeighingDifferenceProof.RecordedBy, terminal.LogisticsWeighingDifferenceProof!.RecordedBy);
         Assert.DoesNotContain("LogisticsWeighingDifferenceProof", JsonSerializer.Serialize(terminal));
-        Assert.Equal(snapshot.Item.Link, terminal.Item.Link); // purpose capability remains staged; native link stays.
+        Assert.Equal(snapshot.Item.Link, terminal.Item.Link); // The same paired purpose remains readable after approval; native reference stays.
     }
 
     [Theory]

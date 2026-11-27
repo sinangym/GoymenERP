@@ -111,6 +111,7 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
             "logistics.plan-excess.work-decision",
             "logistics.shipments.record",
             "logistics.transfer-departures.record",
+            "logistics.weighing-difference.work-decision",
         ];
         Assert.Equal(published, logistics.Where(item => item.Declaration.ImplementationAvailable)
             .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());

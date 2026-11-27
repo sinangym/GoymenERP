@@ -27,6 +27,8 @@ internal sealed partial class LogisticsWeighingDifferenceWorkInboxSourceV1 : IWo
 {
     public const string ModuleName = "logistics";
     public const string KindName = "logistics.weighing-difference.v1";
+    internal const string DecisionScreenPath = "/onaylarim/logistics.weighing-difference.v1/:approvalId";
+    private static string DecisionLink(Guid id) => "/onaylarim/logistics.weighing-difference.v1/" + id.ToString("D");
 
     /// <summary>The uncovered excess is at or above the approval rate: threshold = the rate, actual = the excess ratio (%).</summary>
     public const string ExcessRateRule = "logistics.weighing-excess-rate";
@@ -229,7 +231,7 @@ internal sealed partial class LogisticsWeighingDifferenceWorkInboxSourceV1 : IWo
         }
 
         var link = LogisticsWorkInboxFence.InstructionLink(row.InstructionId);
-        item = new WorkInboxItemV1(ModuleName, KindName, row.RecordId, noteLabel, row.RecordedAtUtc.ToUniversalTime(), link,
+        item = new WorkInboxItemV1(ModuleName, KindName, row.RecordId, noteLabel, row.RecordedAtUtc.ToUniversalTime(), DecisionLink(row.RecordId),
             row.RecordedBy, rules,
             [
                 new WorkApprovalReferenceV1("dispatch-note", noteLabel, row.DispatchNoteId, link),

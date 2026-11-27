@@ -32,7 +32,7 @@ public sealed partial class LogisticsWeighingDifferenceWorkInboxSourceTests
     }
 
     [Fact]
-    public async Task Only_pending_approval_records_are_listed_oldest_first_with_the_note_label_and_instruction_link()
+    public async Task Only_pending_approval_records_are_listed_with_the_note_label_paired_decision_link_and_native_instruction_reference()
     {
         var fixture = new F();
         fixture.Instruction(F.Id(1));
@@ -51,10 +51,12 @@ public sealed partial class LogisticsWeighingDifferenceWorkInboxSourceTests
         F.AssertContractShape(result, "logistics", "logistics.weighing-difference.v1");
         Assert.Equal([F.Id(22), F.Id(21)], result.Items!.Select(item => item.ItemId));
         var link = "/lojistik/yukleme-talimatlari/" + F.Id(1).ToString("D");
-        Assert.Equal(("IRS-000042", F.Id(11).ToString("D"), link, F.T0.AddMinutes(10).ToUniversalTime()),
+        Assert.Equal(("IRS-000042", F.Id(11).ToString("D"), "/onaylarim/logistics.weighing-difference.v1/" + F.Id(22).ToString("D"), F.T0.AddMinutes(10).ToUniversalTime()),
             (result.Items![0].DocumentLabel, result.Items![1].DocumentLabel, result.Items![0].Link, result.Items![0].WaitingSinceUtc));
         Assert.Equal(["dispatch-note", "loading-instruction"], result.Items![0].References.Select(reference => reference.Role));
         Assert.Equal(F.Id(12), result.Items![0].References[0].RecordId);
+        Assert.Equal(link, result.Items[0].References[0].Link);
+        Assert.Equal(link, result.Items[0].References[1].Link);
     }
 
     [Fact]
