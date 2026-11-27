@@ -87,7 +87,7 @@ describe('shell ↔ Inventory opening-stock contract', () => {
       expect(CAPABILITY_ROUTE[capability as keyof typeof CAPABILITY_ROUTE]).toBe(path)
       const route = matchRoutes(inventoryRoutes, path)?.at(-1)?.route
       expect(route?.path).toBe(path.slice(1))
-      expect((route?.element as { props?: { capability?: string } }).props?.capability).toBe(capability)
+      expect((route?.element as { props?: { capability?: string } } | undefined)?.props?.capability).toBe(capability)
       expect(NAV_CAPABILITIES.filter(item => item === capability)).toHaveLength(1)
       expect(NAV_GROUPS.find(group => group.id === 'stock-logistics')?.entries).toContain(capability)
     }
@@ -134,7 +134,7 @@ it('mounts overage Work purpose independently of its unchanged native approval s
  expect(CAPABILITY_NAV_LABEL[CAPABILITY.inventoryTransferOverageWorkDecision]).toBe('')
  const route=matchRoutes(workRoutes,'/onaylarim/inventory.transfer-overage.v1/cccccccc-0000-4000-8000-000000000001')?.at(-1)?.route
  expect(route?.path).toBe('onaylarim/inventory.transfer-overage.v1/:approvalId')
- expect((route?.element as {props?:{capability?:readonly string[]}}).props?.capability).toEqual(['inventory.transfer-overage.work-decision'])
+ expect((route?.element as {props?:{capability?:readonly string[]}} | undefined)?.props?.capability).toEqual(['inventory.transfer-overage.work-decision'])
  expect(CAPABILITY.inventoryTransferOverageApproval).toBe('inventory.stock-transfer.overage-approve')
  expect(CAPABILITY_ROUTE[CAPABILITY.inventoryTransferOverageApproval]).toBe('/stok/transferler/fazla-kabul-onaylari')
  expect(inventoryRoutes).toHaveLength(16)
