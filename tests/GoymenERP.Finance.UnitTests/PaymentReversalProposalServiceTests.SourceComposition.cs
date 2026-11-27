@@ -3,7 +3,6 @@ using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Audit.Application.Contracts;
-using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
@@ -31,7 +30,7 @@ public sealed partial class PaymentReversalProposalServiceTests
         Assert.Equal(2, targetDescriptors.Length); Assert.All(targetDescriptors, d => Assert.Equal(ServiceLifetime.Scoped, d.Lifetime));
         foreach (var descriptor in services.Where(d => d.ServiceType == typeof(IWorkInboxSourceV1) && !targetDescriptors.Contains(d)).ToArray())
             services.Remove(descriptor);
-        var authority = new SourceCompositionAuthority(); var writer = new DecisionEntryWriter(); var collector = new AuditEventCollector();
+        var authority = new SourceCompositionAuthority(); var writer = new DecisionEntryWriter(); var collector = new SourceCompositionCollector();
         services.AddSingleton<ICompanyContext>(company); services.AddSingleton<ICurrentUser>(new User("checker"));
         services.AddSingleton<IErpAuthorityRevalidationService>(authority); services.AddSingleton(db);
         services.AddSingleton<ICorrelationContext>(new CorrelationContext()); services.AddSingleton<IAuditEventCollector>(collector);
@@ -70,8 +69,14 @@ public sealed partial class PaymentReversalProposalServiceTests
             Assert.Equal(CommandOutcome.Unavailable, (await owner.ApproveAsync(nativeContext, Key("di-entry"), new(id, "1"), default)).Outcome);
         }
         // Configured nonrelational refusal is NOT successful SQL/Audit/treasury acceptance.
-        Assert.False(db.ChangeTracker.HasChanges()); Assert.Empty(await db.Commands.ToArrayAsync()); Assert.Empty(collector.Pending);
+        Assert.False(db.ChangeTracker.HasChanges()); Assert.Empty(await db.Commands.ToArrayAsync()); Assert.Empty(collector.Entries);
         Assert.False(writer.HasPendingDrafts); Assert.Equal(0, writer.Writes); Assert.Equal(0, writer.Discards);
+    }
+
+    private sealed class SourceCompositionCollector : IAuditEventCollector
+    {
+        public List<AuditEventDraft> Entries { get; } = [];
+        public void Enqueue(AuditEventDraft auditEvent) => Entries.Add(auditEvent);
     }
 
     private sealed class SourceCompositionAuthority : IErpAuthorityRevalidationService
