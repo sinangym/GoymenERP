@@ -31,7 +31,10 @@ public sealed partial class ManufacturingCommandServiceTests
         var fixture = new Fixture(); var plan = AvailabilityPlan(fixture); plan.WithDueDate();
         if (reapproval)
         {
-            plan.Approve(plan.Version, OtherActor, At);
+            // URT-D39: null/null is intentionally not matching Settings proof. Reuse the existing
+            // captured-profile/owner-provider fixture so this case reaches the authority boundary.
+            var profile = CapturedProfile(new PlanParameterValueV1("densityKgPerCubicMetre", "kg/m3", 7850m, null));
+            plan.Approve(plan.Version, OtherActor, At, null, profile);
             var order = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
             order.Cancel(order.Version, Actor, At, "Synthetic cancelled order");
             plan.ReleaseCancelledOrder(order.Id);
@@ -42,7 +45,7 @@ public sealed partial class ManufacturingCommandServiceTests
             if (fault == "actor") fixture.User.ActorId = OtherActor;
             if (fault == "company") fixture.CompanyContext.SwitchForTest(OtherCompany);
         });
-        var service = AllocationFenceService(fixture, owner);
+        var service = AllocationFenceService(fixture, owner, plan.ParameterSnapshot);
         var answer = reapproval
             ? await service.ReapprovePlanAsync(plan.Id, new(plan.Version, [Roll]), "fresh-reapproval", ErpPermissions.ManufacturingPlansApprove, CancellationToken.None)
             : await service.ApprovePlanAsync(plan.Id, new(plan.Version), "fresh-approval", ErpPermissions.ManufacturingPlansApprove, CancellationToken.None);
@@ -52,10 +55,12 @@ public sealed partial class ManufacturingCommandServiceTests
         Assert.Empty(fixture.Store.Commands); Assert.Empty(fixture.Store.Writes);
     }
 
-    private static ManufacturingCommandService AllocationFenceService(Fixture fixture, IManufacturingPlanAllocationPortV1 owner) =>
+    private static ManufacturingCommandService AllocationFenceService(Fixture fixture, IManufacturingPlanAllocationPortV1 owner,
+        PlanParameterSnapshotV1? profile = null) =>
         new(fixture.Store, fixture.Store, fixture.Store, new ManufacturingMassVerifier(fixture.Settings), fixture.Authority,
             fixture.CompanyContext, fixture.User, fixture.Correlation, new FixedTime(), planAllocations: owner,
-            planReapprovals: new ReapprovalMustNotSave(), labelDetails: new AllocationLabelDetails());
+            planReapprovals: new ReapprovalMustNotSave(), labelDetails: new AllocationLabelDetails(),
+            manufacturingParameters: profile is null ? null : new At044ParameterPort(profile));
 
     private class LegacyOnlyAllocationAdapter : IManufacturingPlanAllocationPortV1
     {
