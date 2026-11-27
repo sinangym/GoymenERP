@@ -1,5 +1,7 @@
 # Göymen ERP Karar Sicili v1.0
 
+Son tarihli müşteri iadesi kararı: [LOJ-D22 — gerçek adet, fiilî net tartım ve bekleyen kabul](SINAN_KARARLARI_2026-11-27_MUSTERI_IADESI.md). Sinan'ın bu oturumdaki doğrudan cevabıdır; tartımsız kesin stok girişi veya yeni tolerans politikası açılmaz.
+
 Son tarihli ek karar: [LOJ-D21 — şirket genelinde hareket payı kimliği ve geçmiş çakışma kapısı](SINAN_KARARLARI_2026-11-27_LOJISTIK_SHARE_ID.md). Sinan'ın 27 Kasım doğrudan cevabıdır; aşağıdaki kaynak önceliğine göre uygulanır.
 
 Son tarihli AI ek kararı: [AI-D51/D52 — geri bildirim nedenleri ve tekil aylık sayım](SINAN_KARARLARI_2026-11-27_AI_GERI_BILDIRIM.md). Sinan’ın bu oturumdaki iki doğrudan cevabıdır; AI veya rol aktivasyonu değildir.
