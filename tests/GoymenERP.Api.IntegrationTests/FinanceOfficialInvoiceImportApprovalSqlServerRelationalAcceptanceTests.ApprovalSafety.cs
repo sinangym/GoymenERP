@@ -144,7 +144,7 @@ public sealed partial class FinanceOfficialInvoiceImportApprovalSqlServerRelatio
             await using var run = await Run.StartAsync(); await UploadForSafety(run);
             var bothRead = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             var winnerCommitted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var ready = 0; var calls = new int[2]; var deadlocks = new bool[2]; var resumed = new bool[2];
+            var ready = 0; var calls = new int[2]; var deadlocks = new bool[2]; var serverAborted = new bool[2]; var resumed = new bool[2];
             Scope?[] scopes = new Scope?[2];
             var transactions = new[] { new HashSet<Guid>(), new HashSet<Guid>() };
             var probes = new[] { new ApprovalSafetySaveProbe(), new ApprovalSafetySaveProbe() };
@@ -168,7 +168,8 @@ public sealed partial class FinanceOfficialInvoiceImportApprovalSqlServerRelatio
                         if (Interlocked.Increment(ref ready) == 2) bothRead.TrySetResult(true);
                         await bothRead.Task.WaitAsync(TimeSpan.FromSeconds(30));
                         await using var command = scope.Database.Database.GetDbConnection().CreateCommand();
-                        command.Transaction = scope.Database.Database.CurrentTransaction!.GetDbTransaction();
+                        var sqlTransaction = Assert.IsType<SqlTransaction>(scope.Database.Database.CurrentTransaction!.GetDbTransaction());
+                        command.Transaction = sqlTransaction;
                         command.CommandTimeout = 20;
                         command.CommandText = "SELECT Id FROM finance.OfficialInvoiceImportBatches WITH (XLOCK, ROWLOCK) WHERE CompanyId=@company AND Id=@id";
                         var company = command.CreateParameter(); company.ParameterName = "@company"; company.Value = Company; command.Parameters.Add(company);
@@ -177,6 +178,8 @@ public sealed partial class FinanceOfficialInvoiceImportApprovalSqlServerRelatio
                         catch (SqlException error) when (error.Number == 1205)
                         {
                             deadlocks[slot] = true;
+                            Assert.Null(sqlTransaction.Connection); // Actual SQL victim, not a synthetic 1205 on a live transaction.
+                            serverAborted[slot] = true;
                             if (wrapped) throw new DbUpdateException("SENTETIK wrapper around the real SQL deadlock", error);
                             throw;
                         }
@@ -189,7 +192,7 @@ public sealed partial class FinanceOfficialInvoiceImportApprovalSqlServerRelatio
             var results = await Task.WhenAll(Decide(0), Decide(1));
             Assert.Single(results, result => result.Outcome == CommandOutcome.Succeeded);
             Assert.Single(results, result => result.Outcome == CommandOutcome.VersionConflict);
-            Assert.Single(deadlocks, value => value); Assert.Single(resumed, value => value);
+            Assert.Single(deadlocks, value => value); Assert.Single(serverAborted, value => value); Assert.Single(resumed, value => value);
             Assert.Equal(1, probes.Sum(probe => probe.Attempts)); // Loser never reached Save or retried mutation.
             for (var index = 0; index < 2; index++)
             {

@@ -61,10 +61,19 @@ public sealed partial class FinanceOfficialInvoiceImportApprovalServiceV1
             }
             catch (Exception failure)
             {
+                var deadlock = failure is SqlException { Number: 1205 }
+                    or DbUpdateException { InnerException: SqlException { Number: 1205 } };
                 var faults = new List<Exception>();
                 if (transaction is not null)
                 {
-                    if (!committed) try { await transaction.RollbackAsync(CancellationToken.None); } catch (Exception error) { faults.Add(error); }
+                    if (!committed) try
+                    {
+                        // SQL1205 already aborts its victim. Only the real provider's invalidated transaction
+                        // proves that a second Rollback is redundant; all other rollback failures remain fatal.
+                        var serverAborted = deadlock && transaction.GetDbTransaction() is SqlTransaction { Connection: null };
+                        if (!serverAborted) await transaction.RollbackAsync(CancellationToken.None);
+                    }
+                    catch (Exception error) { faults.Add(error); }
                     try { await transaction.DisposeAsync(); } catch (Exception error) { faults.Add(error); }
                 }
                 try { dbContext.ChangeTracker.Clear(); } catch (Exception error) { faults.Add(error); }
@@ -74,8 +83,6 @@ public sealed partial class FinanceOfficialInvoiceImportApprovalServiceV1
                 if (failure is ApprovalRefusal refusal) return refusal.Result;
                 // Serializable read/insert conversions can lose before Save (including the Audit owner write).
                 // Only a fully cleaned, uncommitted attempt may inspect the original key once; never rerun mutation.
-                var deadlock = failure is SqlException { Number: 1205 }
-                    or DbUpdateException { InnerException: SqlException { Number: 1205 } };
                 var saveRace = state.SaveAttempted && !state.Saved && failure is DbUpdateException update
                     && (update is DbUpdateConcurrencyException || update.InnerException is SqlException { Number: 2601 or 2627 });
                 if (!replayOnly && !committed && (deadlock || saveRace))
