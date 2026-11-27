@@ -164,3 +164,59 @@ describe('WP8 native Purchasing request purpose',()=>{
   expect(calls.some(call=>call.url.includes(purchasePath))).toBe(false)
  })
 })
+
+
+const orderKind='purchasing.order.v1',orderCap='purchasing.order.work-decision'
+const orderPath=`/work/decisions/${orderKind}/${id}`,orderRoute=`/onaylarim/${orderKind}/${id}`
+const orderPreview={...preview,kind:orderKind,documentLabel:'SENTETIK siparis',rejectionSupported:false}
+
+describe('WP8 native purchase order approve-only purpose',()=>{
+ it('shows approval alone for a purpose-only approver and grants no order browse or create access',async()=>{
+  const calls=installFetch({capabilities:[orderCap],respond:url=>url.includes(orderPath)?json(orderPreview):undefined})
+  const router=mount(orderRoute,true);await screen.findByText('SENTETIK siparis',{exact:false})
+  expect(screen.getByRole('button',{name:T.approve})).toBeTruthy()
+  expect(screen.getByText(T.approvalOnly)).toBeTruthy()
+  expect(screen.queryByRole('button',{name:T.reject})).toBeNull()
+  expect(screen.queryByRole('textbox',{name:T.reason})).toBeNull()
+  for(const route of ['/satinalma/siparisler','/satinalma/siparisler/yeni',`/satinalma/siparisler/${id}`]) {
+   await act(async()=>{await router.navigate(route)})
+   await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+  }
+  expect(calls.some(call=>call.url.includes('/purchasing/')||call.method==='POST')).toBe(false)
+ })
+ it.each(['Draft','Cancelled'])('retries unknown approval with the same key and body after remount at current %s',async state=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-order-decision'})
+  let posts=0
+  const calls=installFetch({capabilities:[orderCap],respond:(url,init)=>{
+   if(!url.includes(orderPath))return undefined
+   if(init?.method==='POST')return ++posts===1?problem(503):new Response(JSON.stringify({companyId:COMPANY_A,kind:orderKind,itemId:id,state,replayed:true,originalCorrelationId:'original'}),{status:200,headers:{'Content-Type':'application/json','Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}})
+   return json(posts?{...orderPreview,pending:false,sourceVersion:'9'}:orderPreview)
+  }})
+  mount(orderRoute);await screen.findByText('SENTETIK siparis',{exact:false})
+  await userEvent.setup().click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+  cleanup();mount(orderRoute);await screen.findByText(T.closed);await screen.findByText(T.unknown)
+  await userEvent.setup().click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+  const sent=calls.filter(call=>call.method==='POST');expect(sent).toHaveLength(2)
+  expect(sent[1].body).toEqual(sent[0].body);expect(sent[1].body).toEqual({expectedVersion:'7',approve:true,reason:null,delegationId:null})
+  expect(sent[1].headers['Idempotency-Key']).toBe(sent[0].headers['Idempotency-Key'])
+  expect(calls.filter(call=>call.url.includes(orderPath)&&call.method==='GET').length).toBeGreaterThanOrEqual(3)
+ })
+ it.each([{companyId:COMPANY_B},{rejectionSupported:true},{rejectionSupported:undefined}])('rejects an untrusted order preview %j before any decision',async delta=>{
+  const calls=installFetch({capabilities:[orderCap],respond:url=>url.includes(orderPath)?json({...orderPreview,...delta}):undefined})
+  mount(orderRoute);await waitFor(()=>expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
+  expect(screen.queryByText('SENTETIK siparis',{exact:false})).toBeNull()
+  expect(calls.some(call=>call.method==='POST')).toBe(false)
+ })
+ it('never reads the owner for a browse-dependent control without the purpose capability',async()=>{
+  const calls=installFetch({capabilities:['purchasing.orders.approve'],respond:url=>url.includes(orderPath)?json(orderPreview):undefined})
+  mount(orderRoute,true);await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+  expect(calls.some(call=>call.url.includes(orderPath))).toBe(false)
+ })
+ it('closes after fresh owner denial without displaying success',async()=>{
+  const calls=installFetch({capabilities:[orderCap],respond:(url,init)=>url.includes(orderPath)?init?.method==='POST'?problem(403):json(orderPreview):undefined})
+  mount(orderRoute);await screen.findByText('SENTETIK siparis',{exact:false})
+  await userEvent.setup().click(screen.getByRole('button',{name:T.approve}))
+  await waitFor(()=>expect(screen.queryByRole('button',{name:T.approve})).toBeNull())
+  expect(screen.queryByText(T.done)).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+ })
+})

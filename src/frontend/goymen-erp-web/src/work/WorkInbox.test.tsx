@@ -472,6 +472,21 @@ it('opens the request inbox for the approve-only purpose capability and follows 
   expect(api.queueReads()).toHaveLength(0)
 })
 
+it('opens the order inbox for the approve-only purpose capability and follows the owner purpose link', async () => {
+  const kind='purchasing.order.v1',permission='purchasing.orders.approve',id='cccccccc-0000-4000-8000-0000000000f1'
+  const link=`/onaylarim/${kind}/${id}`
+  const item={...limitItem,module:'purchasing',kind,itemId:id,documentLabel:'SENTETIK talep',link,awaitingPermission:permission,ruleVersion:RV(kind),
+    explanation:{rules:[{ruleCode:'purchasing.order-approval-required',threshold:null,actual:null,deviation:null,unit:null}],references:[]}}
+  const api=installFetch({granted:[CAPABILITY.purchasingOrderWorkDecision],inbox:()=>json({companyId:COMPANY,view:'awaiting-my-decision',generatedAtUtc:'2026-11-26T08:00:00Z',items:[item],
+    sources:[{module:'purchasing',kind,awaitingPermission:permission,durationClass:'BusinessDays',ruleVersion:RV(kind),state:'Ready',hasMore:false}]})})
+  await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-list')
+  const card=cardOf(kind)
+  expect(within(card).getByRole('link',{name:T.openOwnerLabel('Alış siparişi onayı','SENTETIK talep')}).getAttribute('href')).toBe(link)
+  expect(api.inboxReads()).toHaveLength(1)
+  expect(api.inboxReads()[0].companyId).toBe(COMPANY)
+  expect(api.queueReads()).toHaveLength(0)
+})
+
 it('opens the credit inbox under the narrow purpose capability and retains the owner decision link', async () => {
  const kind='finance.credit-account.v1',permission='finance.credits.approve',id='cccccccc-0000-4000-8000-0000000000f2'
  const link=`/onaylarim/${kind}/${id}`

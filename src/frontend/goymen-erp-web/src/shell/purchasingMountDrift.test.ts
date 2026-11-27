@@ -15,9 +15,11 @@ import { NAV_CAPABILITIES } from './navigation'
 import { purchasingRoutes } from '../purchasing/purchasingRoutes'
 
 describe('shell ↔ Purchasing lane route catalogue', () => {
-  it('mounts the approve-only request purpose route once ahead of legacy generic detail without a menu entry', () => {
-    const capability = CAPABILITY.purchasingRequestWorkDecision
-    const path = '/onaylarim/purchasing.request.v1/:approvalId'
+  it.each([
+    [CAPABILITY.purchasingRequestWorkDecision, 'purchasing.request.v1'],
+    [CAPABILITY.purchasingOrderWorkDecision, 'purchasing.order.v1'],
+  ] as const)('mounts %s once ahead of legacy generic detail without a menu entry', (capability, kind) => {
+    const path = `/onaylarim/${kind}/:approvalId`
     expect(CAPABILITY_ROUTE[capability]).toBe(path)
     expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
     expect(NAV_CAPABILITIES).not.toContain(capability)

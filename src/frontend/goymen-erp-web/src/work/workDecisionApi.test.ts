@@ -145,3 +145,40 @@ it.each([true,false])('accepts only reachable current SalesOrder states for reco
   expect((await sendWorkDecision(company,orderKind,id,command,'original-key')).type).toBe('unknown')
  }
 })
+
+
+it('requires the purchase order approve-only preview flag without weakening other owner previews', () => {
+ const kind='purchasing.order.v1'
+ const value={...preview,kind,rejectionSupported:false}
+ expect(decodeWorkDecisionPreview(value,company,kind,id)).not.toBeNull()
+ for(const delta of [{rejectionSupported:undefined},{rejectionSupported:true},{rejectionSupported:null},{companyId:id},{itemId:company},{sourceVersion:'0'},{extra:true}])
+  expect(decodeWorkDecisionPreview({...value,...delta},company,kind,id)).toBeNull()
+ expect(decodeWorkDecisionPreview({...preview,rejectionSupported:false},company,preview.kind,id)).toBeNull()
+})
+
+it.each(['Approved','Draft','Cancelled'])('accepts purchase order approval %s only within the native receipt contract and never accepts a rejection', async state => {
+ const kind='purchasing.order.v1'
+ const body={companyId:company,kind,itemId:id,state,replayed:true,originalCorrelationId:'original'}
+ const headers={'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}
+ const fetch=vi.fn(async()=>new Response(JSON.stringify(body),{status:200,headers}))
+ vi.stubGlobal('fetch',fetch)
+ expect((await sendWorkDecision(company,kind,id,request,'original-key')).type).toBe('applied')
+ for(const delta of [{companyId:id},{itemId:company},{kind:'purchasing.request.v1'},{originalCorrelationId:'other'},{extra:true},
+  ...['Rejected','Submitted','PendingApproval','Unknown'].map(state=>({state}))]) {
+  fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,...delta}),{status:200,headers}))
+  expect((await sendWorkDecision(company,kind,id,request,'original-key')).type).toBe('unknown')
+ }
+ const invalidReceiptHeaders: Record<string,string>[]=[{}, {'Idempotency-Replayed':'true'}, {...headers,'Idempotency-Original-Correlation-Id':'other'}]
+ for(const invalidHeaders of invalidReceiptHeaders) {
+  fetch.mockImplementation(async()=>new Response(JSON.stringify(body),{status:200,headers:invalidHeaders}))
+  expect((await sendWorkDecision(company,kind,id,request,'original-key')).type).toBe('unknown')
+ }
+ fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,replayed:false}),{status:200}))
+ expect((await sendWorkDecision(company,kind,id,request,'original-key')).type).toBe(state==='Approved'?'applied':'unknown')
+ for(const rejectedState of ['Approved','Rejected','Draft','Cancelled']) {
+  for(const replayed of [true,false]) {
+   fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,state:rejectedState,replayed}),{status:200,headers:replayed?headers:{}}))
+   expect((await sendWorkDecision(company,kind,id,{...request,approve:false,reason:'Ret'},'original-key')).type).toBe('unknown')
+  }
+ }
+})

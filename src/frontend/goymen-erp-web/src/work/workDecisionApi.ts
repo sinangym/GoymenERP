@@ -70,7 +70,7 @@ export async function sendWorkDecision(company: string, kind: WorkDecisionKind, 
     // the draft, and lawful cancellation can close its remaining shares. Neither is a rejection.
     const currentPurchaseOrder = kind === 'purchasing.order.v1' && request.approve && record(body) && body.replayed === true
       && (body.state === 'Draft' || body.state === 'Cancelled')
-    return record(body) && hasExactKeys(body, ['companyId', 'kind', 'itemId', 'state', 'replayed', 'originalCorrelationId'])
+    return (kind !== 'purchasing.order.v1' || request.approve) && record(body) && hasExactKeys(body, ['companyId', 'kind', 'itemId', 'state', 'replayed', 'originalCorrelationId'])
       && same(body.companyId, company) && body.kind === kind && same(body.itemId, id) && (body.state === state || currentPurchaseRejection || currentInvoiceApproval || currentOrderDecision || currentPurchaseOrder)
       && typeof body.replayed === 'boolean' && text(body.originalCorrelationId) && replayHeadersAgree(response.headers, body.replayed, body.originalCorrelationId)
       ? { type: 'applied', data: body as unknown as WorkDecisionResult, replayed: body.replayed } : { type: 'unknown', reason: 'unexpected' }
