@@ -1,5 +1,5 @@
 export const WORK_DECISION_TEXT = {
-  priceListRetained: 'Fiyat listesi yayımı, ilk isteğin sürümü, gövdesi ve işlem anahtarıyla yeniden doğrulanır. Güncel fiyatlar bu isteğin yerine kullanılmaz.',
+  priceListRetained: 'Önceki yayın isteğiniz yeniden doğrulanıyor. Karar verdiğiniz sürüm korunuyor; güncel fiyatlar bu isteğin yerine kullanılmıyor.',
   priceListRecord: 'Fiyat listesi kaydı', priceLineNumber: 'Satır no',
   packageProposal: 'Karar verilecek paket standardı sürümü', packageVersionId: 'Sürüm kaydı', packageSourceKind: 'Kaynak türü',
   packageSourceKinds: { Import: 'Dosyadan aktarım', Edit: 'Düzenleme' }, packageSourceLabel: 'Kaynak etiketi', packageFileName: 'Dosya adı',
