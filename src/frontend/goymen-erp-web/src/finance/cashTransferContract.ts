@@ -180,8 +180,8 @@ function isTransferKind(value: unknown): value is CashTransferKind {
   return typeof value === 'string' && (CASH_TRANSFER_KINDS as readonly string[]).includes(value)
 }
 
-function isWireDate(value: unknown): value is string {
-  return typeof value === 'string' && isDateOnly(value)
+function isWireDate(value: unknown, dateValidator: (value: string) => boolean = isDateOnly): value is string {
+  return typeof value === 'string' && dateValidator(value)
 }
 
 /** The server's rate grammar: an exact positive decimal within the storage bounds; never rounded or re-written. */
@@ -231,7 +231,7 @@ const PREPARATION_KEYS = [
  * the two legs never name the same account; a same-currency transfer carries the same amount text in the same
  * currency and no rate; a currency exchange names two currencies and a rate.
  */
-export function decodeCashTransferPreparation(value: unknown, computedRate = false): CashTransferPreparation | null {
+export function decodeCashTransferPreparation(value: unknown, computedRate = false, dateValidator: (value: string) => boolean = isDateOnly): CashTransferPreparation | null {
   if (!isRecord(value) || !hasExactKeys(value, PREPARATION_KEYS)) return null
   const sourceMoney = decodeMoney(value.sourceMoney)
   const targetMoney = decodeMoney(value.targetMoney)
@@ -248,8 +248,8 @@ export function decodeCashTransferPreparation(value: unknown, computedRate = fal
     || targetMoney === null
     || targetProfile === null
     || !(value.rate === null || isRateText(value.rate) || computedRate && value.rate === '0.00')
-    || !isWireDate(value.occurredOn)
-    || !(value.valueOn === null || (isWireDate(value.valueOn) && value.valueOn >= value.occurredOn))
+    || !isWireDate(value.occurredOn,dateValidator)
+    || !(value.valueOn === null || (isWireDate(value.valueOn,dateValidator) && value.valueOn >= value.occurredOn))
     || !isOptionalText(value.reference, CASH_TRANSFER_REFERENCE_MAX_LENGTH)
     || !isOptionalText(value.description, CASH_TRANSFER_DESCRIPTION_MAX_LENGTH)
   ) return null
@@ -280,7 +280,7 @@ export function decodeCashTransferPreparation(value: unknown, computedRate = fal
 
 const VIEW_KEYS = ['id', 'companyId', 'preparation', 'recordedBy', 'recordedAtUtc', 'transferConfirmed', 'version'] as const
 
-function decodeExchange(value: unknown, preparation: CashTransferPreparation): CashTransferExchangeSnapshot | null {
+function decodeExchange(value: unknown, preparation: CashTransferPreparation, dateValidator: (value: string) => boolean = isDateOnly): CashTransferExchangeSnapshot | null {
   const keys = ['companyId', 'occurredOn', 'sourceMoney', 'targetMoney', 'sourceProfile', 'targetProfile',
     'transactionRate', 'exactTransactionRate', 'comparisonRate', 'exactComparisonRate', 'rateDeviation', 'sourceComparison', 'targetComparison']
   if (!isRecord(value)) return null
@@ -310,7 +310,7 @@ function decodeExchange(value: unknown, preparation: CashTransferPreparation): C
     if (raw.source === 'FunctionalCurrency') {
       if (raw.sellingRate !== '1' || raw.recordId !== null || raw.recordVersion !== null || raw.bulletinDate !== null) return null
     } else if (raw.source === 'Tcmb') {
-      if (!isBoundUuid(raw.recordId) || !isOpaqueVersion(raw.recordVersion) || !isWireDate(raw.bulletinDate)
+      if (!isBoundUuid(raw.recordId) || !isOpaqueVersion(raw.recordVersion) || !isWireDate(raw.bulletinDate,dateValidator)
         || raw.bulletinDate >= preparation.occurredOn) return null
     } else return null
     return raw as unknown as CashTransferComparisonSource
@@ -340,13 +340,13 @@ export function decodeCashTransferTlReference(value: unknown): CashTransferTlRef
   return value as unknown as CashTransferTlReference
 }
 
-export function decodeCashTransferView(value: unknown, companyId: string): Decoded<CashTransferView> {
+export function decodeCashTransferView(value: unknown, companyId: string, dateValidator: (value: string) => boolean = isDateOnly): Decoded<CashTransferView> {
   if (!isRecord(value)) return FAIL
   const keys = Object.hasOwn(value, 'exchange') ? [...VIEW_KEYS, 'exchange'] : [...VIEW_KEYS]
   if (!hasExactKeys(value, Object.hasOwn(value, 'documentNumber') ? [...keys, 'documentNumber'] : keys)) return FAIL
   const documentNumber = decodeFinanceDocumentNumber(value.documentNumber)
   if (documentNumber === null) return FAIL
-  const preparation = decodeCashTransferPreparation(value.preparation, Object.hasOwn(value, 'exchange'))
+  const preparation = decodeCashTransferPreparation(value.preparation, Object.hasOwn(value, 'exchange'), dateValidator)
   if (
     !isBoundUuid(value.id)
     || value.companyId !== companyId
@@ -358,7 +358,7 @@ export function decodeCashTransferView(value: unknown, companyId: string): Decod
     || !isOpaqueVersion(value.version)
   ) return FAIL
   if (preparation.kind === 'CurrencyExchange' && preparation.rate === null) return FAIL
-  const exchange = Object.hasOwn(value, 'exchange') ? decodeExchange(value.exchange, preparation) : undefined
+  const exchange = Object.hasOwn(value, 'exchange') ? decodeExchange(value.exchange, preparation, dateValidator) : undefined
   if (exchange === null || exchange !== undefined && (exchange.companyId !== companyId || exchange.transactionRate !== preparation.rate)) return FAIL
   return ok({
     id: value.id,

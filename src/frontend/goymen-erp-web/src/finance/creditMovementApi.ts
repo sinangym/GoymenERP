@@ -29,7 +29,6 @@ export type MovementOutcome = { readonly type: 'applied'; readonly value: Credit
   | { readonly type: 'refused'; readonly status: number; readonly codes: readonly string[] }
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 const text = (value: unknown): value is string => typeof value === 'string' && value.trim() !== ''
-const date = (value: unknown): value is string => typeof value === 'string' && isDateOnly(value)
 const nullableId = (value: unknown) => value === null || isBoundUuid(value)
 const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical) : record(value)
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value
@@ -44,7 +43,8 @@ const BANK_EFFECT_FIELDS = ['amount', 'bankAccountId', 'sourceReference']
 const PROFILE_FIELDS = ['currencyScale', 'profileId', 'profileVersion', 'smallestCurrencyUnit']
 const PAGE_FIELDS = ['companyId', 'items']
 const ISSUE_FIELDS = ['code', 'field']
-export function decodeCreditMovement(value: unknown, company: string, accountId: string): CreditMovement | null {
+export function decodeCreditMovement(value: unknown, company: string, accountId: string, dateValidator: (value: string) => boolean = isDateOnly): CreditMovement | null {
+  const date = (value: unknown): value is string => typeof value === 'string' && dateValidator(value)
   if (!record(value) || !hasExactKeys(value, MOVEMENT_FIELDS) || !isBoundUuid(value.id) || value.companyId !== company || !isOpaqueVersion(value.version)
     || !['Proposed', 'Approved', 'Rejected'].includes(value.status as string) || !isBoundUuid(value.currencyId)
     || typeof value.isOwnProposal !== 'boolean' || !isInstant(value.proposedAtUtc)

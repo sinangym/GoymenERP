@@ -32,7 +32,7 @@ const exact = (x: Record<string, unknown>, keys: readonly string[]) => Object.ke
 const text = (x: unknown, max: number): x is string => typeof x === 'string' && x.length > 0 && x.length <= max && x === x.trim() && !/[\u0000-\u001f\u007f]/.test(x)
 const positive = (x: unknown): x is string => text(x, 128) && /^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(x) && /[1-9]/.test(x)
 
-export function decodeBookValue(value: unknown, companyId: string, transferId?: string): CashExchangeBookValue | null {
+export function decodeBookValue(value: unknown, companyId: string, transferId?: string, allowLegacyNullTarget = false): CashExchangeBookValue | null {
   if (!object(value)) return null
   const keys = ['id', 'companyId', 'transferId', 'transferVersion', 'transferSourceHash', 'sourceBookValueTl', 'evidence', 'reason',
     'preparedBy', 'preparedAtUtc', 'status', 'version', 'decidedBy', 'decidedAtUtc', 'decisionReason']
@@ -40,7 +40,7 @@ export function decodeBookValue(value: unknown, companyId: string, transferId?: 
   if (!exact(value, hasTarget ? [...keys, 'targetFunctionalValueTl'] : keys)
     || !isBoundUuid(value.id) || value.companyId !== companyId || !isBoundUuid(value.transferId) || transferId !== undefined && transferId !== value.transferId
     || value.transferVersion !== '1' || typeof value.transferSourceHash !== 'string' || !HASH.test(value.transferSourceHash)
-    || !positive(value.sourceBookValueTl) || hasTarget && !positive(value.targetFunctionalValueTl)
+    || !positive(value.sourceBookValueTl) || hasTarget && !(allowLegacyNullTarget && value.targetFunctionalValueTl === null) && !positive(value.targetFunctionalValueTl)
     || !text(value.reason, 1000) || !text(value.preparedBy, 128) || !isInstant(value.preparedAtUtc)) return null
   const e = value.evidence
   if (!object(e) || !exact(e, ['documentId', 'versionNo', 'sha256']) || !isBoundUuid(e.documentId)

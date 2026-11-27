@@ -1,3 +1,4 @@
+import { validMovementBookPreview } from './workMovementBookDecision'
 import { decodeCreditLimit, type CreditLimit } from '../finance/creditLimitApi'
 import { decodeOpeningBalance, type OpeningBalanceView } from '../finance/OpeningBalanceContract'
 import { hasExactKeys } from '../finance/wireShape'
@@ -6,6 +7,8 @@ import { isNonNegativeDecimalText } from '../finance/decimalText'
 import { transferDispatchUtc } from '../inventory/transferDispatchApi'
 
 export const NATIVE_FINANCE_WORK_CAPABILITY = {
+  'finance.credit-movement.v1': 'finance.credit-movement.work-decision',
+  'finance.cash-exchange-book-value.v1': 'finance.cash-exchange-book-value.work-decision',
   'finance.bank-credit-limit.v1': 'finance.bank-credit-limit.work-decision',
   'finance.opening-balance.v1': 'finance.opening-balance.work-decision',
   'finance.opening-balance-reversal.v1': 'finance.opening-balance-reversal.work-decision',
@@ -25,6 +28,7 @@ const digest = (v: unknown) => typeof v === 'string' && v.length === 64 && /^[0-
 // The server owner matcher remains the authority for the native formatter's rule amount; raw money is never recomputed.
 export function validNativeFinancePreview(value: Record<string, unknown>, company: string, kind: NativeFinanceDecisionKind,
   id: string, dateValidator: (value: string) => boolean, openingAmountValidator: (value: unknown) => boolean): boolean {
+  if(kind==='finance.credit-movement.v1'||kind==='finance.cash-exchange-book-value.v1')return validMovementBookPreview(value,company,kind,id,dateValidator)
   if (value.approvalReasonRequired !== false || value.rejectionSupported !== true || !Array.isArray(value.rules)
     || value.rules.length !== 1 || !record(value.rules[0]) || !Array.isArray(value.references)) return false
   const rule = value.rules[0], refs = value.references

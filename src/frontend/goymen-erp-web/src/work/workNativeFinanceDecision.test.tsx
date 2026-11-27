@@ -8,7 +8,7 @@ import { NATIVE_FINANCE_WORK_CAPABILITY, type NativeFinanceDecisionKind } from '
 import { WORK_DECISION_TEXT as T } from './workDecisionText'
 const id='de420000-0000-4000-8000-000000000001', openingId='de420000-0000-4000-8000-000000000002', account='de420000-0000-4000-8000-000000000003',
   party='de420000-0000-4000-8000-000000000004', currency='de420000-0000-4000-8000-000000000005'
-const kinds=Object.keys(NATIVE_FINANCE_WORK_CAPABILITY) as NativeFinanceDecisionKind[]
+const kinds=['finance.bank-credit-limit.v1','finance.opening-balance.v1','finance.opening-balance-reversal.v1'] as const
 function preview(kind:NativeFinanceDecisionKind) {
   const bank=kind==='finance.bank-credit-limit.v1', reversal=kind==='finance.opening-balance-reversal.v1'
   const limit={id,companyId:COMPANY_A,lenderPartyId:party,lenderCompanyPartyAccountId:account,group:'Cash',currencyId:currency,version:'1',status:'Proposed',

@@ -1,3 +1,4 @@
+import { WorkMovementBookFacts } from './WorkMovementBookFacts'
 import { isNativeFinanceDecisionKind, NATIVE_FINANCE_WORK_CAPABILITY } from './workNativeFinanceDecision'
 import { WorkNativeFinanceFacts } from './WorkNativeFinanceFacts'
 import { EXPENSE_PAYMENT_TEXT as EXPENSE, SOURCE_KIND_LABEL as EXPENSE_SOURCE, STATUS_LABEL as EXPENSE_STATUS } from '../finance/expensePaymentText'
@@ -411,6 +412,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         <h4>{T.reversalRequest}</h4><dl className={styles.facts}>{Object.entries((preview.manualBankPaymentReversal ?? preview.manualReceiptReversal!).proposal).map(([key,value]) => <div key={key}><dt>{T.reversalFields[key as keyof typeof T.reversalFields]}</dt><dd>{key === 'status' ? T.reversalStatuses[value as keyof typeof T.reversalStatuses] : value ?? T.reversalAbsent}</dd></div>)}</dl>
         {preview.manualReceiptReversal ? <><h4>{T.reversalOriginal}</h4><dl className={styles.facts}>{Object.entries(preview.manualReceiptReversal.originalReceipt).map(([key,value]) => <div key={key}><dt>{T.reversalFields[key as keyof typeof T.reversalFields]}</dt><dd>{key === 'posCommissionBearer' && value !== null ? T.reversalBearers[value as keyof typeof T.reversalBearers] : value ?? T.reversalAbsent}</dd></div>)}</dl></> : null}
       </section> : null}
+      {preview.creditMovement || preview.cashExchangeBookValue ? <WorkMovementBookFacts movement={preview.creditMovement} book={preview.cashExchangeBookValue} /> : null}
       {preview.bankCreditLimit || preview.openingBalance ? <WorkNativeFinanceFacts bank={preview.bankCreditLimit} opening={preview.openingBalance} reversal={kind === 'finance.opening-balance-reversal.v1'} /> : null}
       {preview.expensePayment ? <section aria-label={T.expenseProposal}><h3>{T.expenseProposal}</h3><p>{T.expenseApprovalOnly}</p><dl className={styles.facts}>
         <dt>{T.expensePaymentId}</dt><dd>{preview.expensePayment.payment.id}</dd><dt>{T.importCompany}</dt><dd>{preview.expensePayment.payment.companyId}</dd>
