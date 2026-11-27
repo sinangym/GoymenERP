@@ -178,7 +178,8 @@ public sealed partial class LogisticsCustomerReturnSqlServerRelationalAcceptance
     private sealed partial class Run
     {
         public Task<int> DecisionAuditCount() => ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType LIKE N'logistics.customer-return.%'");
-        public ReturnDecisionFrame DecisionFrame(IInterceptor? extra = null, ReturnCleanupFault? cleanup = null)
+        public ReturnDecisionFrame DecisionFrame(IInterceptor? extra = null, ReturnCleanupFault? cleanup = null,
+            Func<IErpAuthorityRevalidationService, IErpAuthorityRevalidationService>? decorate = null)
         {
             var scope = factory.Services.CreateScope(); var company = scope.ServiceProvider.GetRequiredService<ICompanyContext>(); company.Set(Company);
             var collector = scope.ServiceProvider.GetRequiredService<AuditEventCollector>(); var writer = scope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
@@ -188,10 +189,11 @@ public sealed partial class LogisticsCustomerReturnSqlServerRelationalAcceptance
             if (cleanup is not null) { options.AddInterceptors(cleanup); cleanup.Configure(options); }
             var db = new LogisticsDbContext(options.Options, company); var user = new LogisticsCustomerReturnDecisionSafetyTests.SafetyUser();
             var authority = new LogisticsCustomerReturnDecisionSafetyTests.SafetyAuthority();
-            var runner = new LogisticsCustomerReturnTransactionRunner(db, scope.ServiceProvider, company, user, authority, TimeProvider.System);
+            var nativeAuthority = decorate?.Invoke(authority) ?? authority;
+            var runner = new LogisticsCustomerReturnTransactionRunner(db, scope.ServiceProvider, company, user, nativeAuthority, TimeProvider.System);
             var store = new LogisticsCustomerReturnStore(db, company, collector, TimeProvider.System);
             var correlation = new CorrelationContext(); correlation.Set("return-safety-correlation", null, "Web", null, null);
-            var service = new LogisticsCustomerReturnService(new LogisticsCustomerReturnScope(company, user, authority),
+            var service = new LogisticsCustomerReturnService(new LogisticsCustomerReturnScope(company, user, nativeAuthority),
                 new LogisticsCustomerReturnSourceReader(db, company), store, runner,
                 new(LogisticsPermissionManifestV1.CustomerReturnsRequest, LogisticsPermissionManifestV1.CustomerReturnsDecision,
                     LogisticsPermissionManifestV1.CustomerReturnsRead, ErpPermissions.InventoryPhysicalAllocationWrite), correlation, TimeProvider.System);

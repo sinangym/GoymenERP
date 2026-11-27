@@ -29,7 +29,16 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkInventoryStockCountProofV1? InventoryStockCountProof = null,
     [property: JsonIgnore] WorkBankAccountProofV1? BankAccountProof = null,
     [property: JsonIgnore] WorkInventoryStockScrapProofV1? InventoryStockScrapProof = null,
-    [property: JsonIgnore] WorkLogisticsDispatchNoteProofV1? LogisticsDispatchNoteProof = null);
+    [property: JsonIgnore] WorkLogisticsDispatchNoteProofV1? LogisticsDispatchNoteProof = null,
+    [property: JsonIgnore] WorkLogisticsCustomerReturnProofV1? LogisticsCustomerReturnProof = null);
+
+/// <summary>Recorded physical-return facts for the authorized human only; no price or current master lookup.</summary>
+public sealed record WorkLogisticsCustomerReturnPreviewV1(Guid LoadingInstructionId, Guid LoadingInstructionLineId,
+    Guid SourceDeliveryId, Guid SourceShipmentId, Guid SourceOrderId, Guid SourceOrderLineId, Guid UnitId,
+    string QuantityUnit, string Quantity, string SourceDeliveredQuantity, string Reason, string RequestedBy,
+    DateTimeOffset OccurredAtUtc, DateTimeOffset RequestedAtUtc, string Status);
+/// <summary>Owner-bound identity, distinct from the immutable native command receipt.</summary>
+public sealed record WorkLogisticsCustomerReturnProofV1(Guid CompanyId, Guid CustomerReturnId, WorkLogisticsCustomerReturnPreviewV1 Return);
 
 /// <summary>Immutable, price-free native count evidence, exposed only by the authorized human purpose GET.</summary>
 public sealed record WorkInventoryStockCountPreviewV1(Guid LabelId, string LabelVersion,

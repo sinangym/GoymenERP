@@ -24,7 +24,10 @@ public sealed record WorkDecisionRequestV1(string ExpectedVersion, bool Approve,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     WorkInventoryTransferOverageSelectionV1? InventoryTransferOverage = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    WorkSupplierReturnCostExceptionSelectionV1? SupplierReturnCostException = null);
+    WorkSupplierReturnCostExceptionSelectionV1? SupplierReturnCostException = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    WorkLogisticsCustomerReturnSelectionV1? LogisticsCustomerReturn = null);
+public sealed record WorkLogisticsCustomerReturnSelectionV1(Guid InventoryMovementId);
 public sealed record WorkSupplierReturnCostExceptionSelectionV1([property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExpectedPurchaseOrderVersion = null);
 public sealed record WorkInventoryTransferOverageSelectionV1(int RequestNumber, DateTimeOffset DecidedAtUtc);
 public sealed record WorkLogisticsPlanExcessSelectionV1(string ExpectedInstructionVersion);
@@ -57,7 +60,10 @@ public sealed record WorkDecisionPreviewV1(Guid CompanyId, string Kind, Guid Ite
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     WorkInventoryStockScrapPreviewV1? InventoryStockScrap = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    WorkLogisticsDispatchNotePreviewV1? LogisticsDispatchNote = null);
+    WorkLogisticsDispatchNotePreviewV1? LogisticsDispatchNote = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    WorkLogisticsCustomerReturnPreviewV1? LogisticsCustomerReturn = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? ApprovalSupported = null);
 public sealed record WorkDecisionResultV1(Guid CompanyId, string Kind, Guid ItemId, string State, bool Replayed, string OriginalCorrelationId);
 public sealed class WorkDecisionException(int status, string? code = null, bool replayed = false, string? original = null) : Exception(code)
 {
@@ -125,8 +131,9 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
     IErpAuthorityRevalidationService authority, IEnumerable<IWorkInboxSourceV1> sources,
     IWorkDelegationReaderV1 delegations, WorkDecisionExecutionFenceV1 executionFence,
     IFinanceCashAccountMaster cash, IInventoryOpeningCostCommandV1 openingCost,
-    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null, IPurchaseGoodsReceiptBatchServiceV1? goodsReceiptBatches = null, ManufacturingCommandService? manufacturingPlans = null, IInventoryTransferReceiptCommandV1? inventoryTransferReceipts = null, ICounterpartyTaxIdentityService? counterpartyTaxIdentity = null, ICounterpartyLegalNameService? counterpartyLegalName = null, ILogisticsPlanExcessServiceV1? logisticsPlanExcess = null, ILogisticsWeighingDifferenceServiceV1? logisticsWeighingDifferences = null, IPurchaseSupplierReturnServiceV1? supplierReturns = null, IInventoryStockCountCommandV1? stockCounts = null, IFinanceBankAccountMaster? bankAccounts = null, IInventoryStockScrapCommandV1? stockScraps = null, ILogisticsInstructionService? logisticsInstructions = null)
+    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null, IPurchaseGoodsReceiptBatchServiceV1? goodsReceiptBatches = null, ManufacturingCommandService? manufacturingPlans = null, IInventoryTransferReceiptCommandV1? inventoryTransferReceipts = null, ICounterpartyTaxIdentityService? counterpartyTaxIdentity = null, ICounterpartyLegalNameService? counterpartyLegalName = null, ILogisticsPlanExcessServiceV1? logisticsPlanExcess = null, ILogisticsWeighingDifferenceServiceV1? logisticsWeighingDifferences = null, IPurchaseSupplierReturnServiceV1? supplierReturns = null, IInventoryStockCountCommandV1? stockCounts = null, IFinanceBankAccountMaster? bankAccounts = null, IInventoryStockScrapCommandV1? stockScraps = null, ILogisticsInstructionService? logisticsInstructions = null, ILogisticsCustomerReturnServiceV1? logisticsCustomerReturns = null)
 {
+    public const string LogisticsCustomerReturn = "logistics.customer-return.v1";
     public const string LogisticsDispatchNote = "logistics.dispatch-note.v1";
     public const string InventoryStockScrap = "inventory.stock-scrap.v1";
     public const string InventoryStockCount = "inventory.stock-count.v1";
@@ -149,7 +156,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
     public const string PurchaseInvoiceVariance = "purchasing.incoming-invoice-variance.v1";
     public const string PurchaseServiceOrder = "purchasing.service-order.v1";
     public const string PurchaseOrder = "purchasing.order.v1";
-    public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([LogisticsDispatchNote, InventoryStockScrap, InventoryStockCount, BankAccount, SupplierReturnCostException, LogisticsWeighingDifference, InventoryTransferOverage, LogisticsPlanExcess, CounterpartyTaxIdentity, CounterpartyLegalName, InventoryTransferLoss, OpeningCost, "finance.cash-account.v1",
+    public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([LogisticsCustomerReturn, LogisticsDispatchNote, InventoryStockScrap, InventoryStockCount, BankAccount, SupplierReturnCostException, LogisticsWeighingDifference, InventoryTransferOverage, LogisticsPlanExcess, CounterpartyTaxIdentity, CounterpartyLegalName, InventoryTransferLoss, OpeningCost, "finance.cash-account.v1",
         "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest, PurchaseOrder, PurchaseServiceOrder, PurchaseInvoiceVariance, PurchaseGoodsReceiptBatch, ManufacturingPlan, CreditAccount], StringComparer.Ordinal);
 
     private async Task RequireDecisionAuthorityAsync(string kind,string permission,Guid companyId,string actor,CancellationToken token)
@@ -186,7 +193,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         catch { await Fence(); throw new WorkDecisionException(503); }
         await Fence();
         if (snapshot is null) throw new WorkDecisionException(404);
-        if (kind == LogisticsDispatchNote && (source.Module != "logistics" || source.ApproverPermission != LogisticsPermissionManifestV1.DispatchNotesApprove)
+        if (kind == LogisticsCustomerReturn && (source.Module != "logistics" || source.ApproverPermission != LogisticsPermissionManifestV1.CustomerReturnsDecision)
+            || kind == LogisticsDispatchNote && (source.Module != "logistics" || source.ApproverPermission != LogisticsPermissionManifestV1.DispatchNotesApprove)
             || kind == InventoryStockScrap && (source.Module != "inventory" || source.ApproverPermission != InventoryPermissionManifestV1.StockScrapApprove)
             || kind == InventoryStockCount && (source.Module != "inventory" || source.ApproverPermission != InventoryPermissionManifestV1.StockCountApprove)
             || kind == BankAccount && (source.Module != "finance" || source.ApproverPermission != ErpPermissions.FinanceBankAccountApprove)
@@ -216,6 +224,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || !ValidLogisticsPlanExcessProof(kind, snapshot)
             || !ValidLogisticsWeighingProof(kind, snapshot)
             || !ValidLogisticsDispatchNoteProof(kind, snapshot)
+            || !ValidLogisticsCustomerReturnProof(kind, snapshot)
             || (kind == InventoryTransferOverage ? !ValidInventoryTransferOverageProof(snapshot) : snapshot.InventoryTransferOverageProof is not null)
             || (kind == InventoryTransferLoss ? !ValidInventoryTransferLossProof(snapshot)
                 : snapshot.InventoryTransferLoss is not null || snapshot.InventoryTransferLossProof is not null)
@@ -277,7 +286,9 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             kind == InventoryStockCount ? snapshot.InventoryStockCountProof!.Count : null,
             kind == BankAccount ? BankAccountHumanPreview(snapshot) : null,
             kind == InventoryStockScrap ? snapshot.InventoryStockScrapProof!.Scrap : null,
-            kind == LogisticsDispatchNote ? snapshot.LogisticsDispatchNoteProof!.Note : null);
+            kind == LogisticsDispatchNote ? snapshot.LogisticsDispatchNoteProof!.Note : null,
+            kind == LogisticsCustomerReturn ? snapshot.LogisticsCustomerReturnProof!.Return : null,
+            kind == LogisticsCustomerReturn ? snapshot.LogisticsCustomerReturnProof!.Return.QuantityUnit == "Kilogram" : null);
     }
 
     public async Task<WorkDecisionResultV1> DecideAsync(string kind, Guid id, WorkDecisionRequestV1 request, string key, CancellationToken token)
@@ -286,7 +297,9 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         var actor = user.UserId;
         var snapshot = await SnapshotAsync(kind, id, token, request.InventoryTransferLoss?.RequestNumber, request.InventoryTransferOverage?.RequestNumber);
         if (user.UserId != actor) throw new WorkDecisionException(403);
-        if (kind == LogisticsDispatchNote && (!request.Approve || request.Reason is not null || !DispatchVersion(request.ExpectedVersion, increment: true))
+        if (request.LogisticsCustomerReturn is not null && kind != LogisticsCustomerReturn
+            || kind == LogisticsCustomerReturn && !ValidLogisticsCustomerReturnRequest(request)
+            || kind == LogisticsDispatchNote && (!request.Approve || request.Reason is not null || !DispatchVersion(request.ExpectedVersion, increment: true))
             || kind == BankAccount && (!request.Approve || request.Reason is not null || !BankAccountVersion(request.ExpectedVersion))
             || request.SupplierReturnCostException is not null && kind != SupplierReturnCostException
             || kind == SupplierReturnCostException && !ValidSupplierReturnRequest(snapshot, request)
@@ -303,8 +316,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || kind is (PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance) && !request.Approve
             || string.IsNullOrWhiteSpace(request.ExpectedVersion) || request.ExpectedVersion.Length > 128
             || (kind == OpeningCost && request.ExpectedVersion != snapshot.SourceVersion)
-            || ((kind is OpeningCost or InventoryTransferLoss || !request.Approve && kind is not (SalesOrder or SalesInvoice or SalesSubcontractInvoice or PurchaseRequest or PurchaseGoodsReceiptBatch or ManufacturingPlan or CounterpartyTaxIdentity or CounterpartyLegalName or InventoryTransferOverage or InventoryStockCount or InventoryStockScrap)) && (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 500))
-            || (kind is not (InventoryStockScrap or InventoryStockCount or OpeningCost or SupplierReturnCostException or PurchaseServiceOrder or PurchaseInvoiceVariance or PurchaseGoodsReceiptBatch or InventoryTransferLoss or InventoryTransferOverage or CounterpartyTaxIdentity or CounterpartyLegalName) && request.Approve && request.Reason is not null)) throw new WorkDecisionException(400, "work_decision_invalid");
+            || ((kind is OpeningCost or InventoryTransferLoss || !request.Approve && kind is not (SalesOrder or SalesInvoice or SalesSubcontractInvoice or PurchaseRequest or PurchaseGoodsReceiptBatch or ManufacturingPlan or LogisticsCustomerReturn or CounterpartyTaxIdentity or CounterpartyLegalName or InventoryTransferOverage or InventoryStockCount or InventoryStockScrap)) && (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 500))
+            || (kind is not (InventoryStockScrap or InventoryStockCount or OpeningCost or SupplierReturnCostException or PurchaseServiceOrder or PurchaseInvoiceVariance or PurchaseGoodsReceiptBatch or InventoryTransferLoss or InventoryTransferOverage or LogisticsCustomerReturn or CounterpartyTaxIdentity or CounterpartyLegalName) && request.Approve && request.Reason is not null)) throw new WorkDecisionException(400, "work_decision_invalid");
         if (kind is InventoryStockCount or InventoryStockScrap && (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Trim().Length > 1000))
             throw new WorkDecisionException(400, "work_decision_invalid");
         if (kind is InventoryStockCount or InventoryStockScrap && request.ExpectedVersion != "1")
@@ -322,6 +335,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || await delegations.FindForActorAsync(delegation, verificationItem, ct) is not null;
         if (!await Verify(token)) throw new WorkDecisionException(403);
         using var lease = executionFence.Enter(Verify);
+        if (kind == LogisticsCustomerReturn)
+            return await DecideLogisticsCustomerReturnAsync(id, request, key, snapshot, actor!, token);
         if (kind == LogisticsDispatchNote)
             return await DecideLogisticsDispatchNoteAsync(id, request, key, snapshot, actor!, token);
         if (kind == InventoryStockScrap)

@@ -21,7 +21,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.WorkInbox;
 /// is not copied. Returns carry no document number, so the label is the return's identity.
 /// </para>
 /// </summary>
-internal sealed class LogisticsCustomerReturnWorkInboxSourceV1 : IWorkInboxSourceV1
+internal sealed partial class LogisticsCustomerReturnWorkInboxSourceV1 : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "logistics";
     public const string KindName = "logistics.customer-return.v1";
