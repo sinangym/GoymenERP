@@ -42,7 +42,7 @@ Bu bölüm başlangıç anıdır; güncel teslim ve kalan kabul kanıtları aşa
 | W1-YETKI/ROLE-UX | P0 / K3 | SOURCE_PARTIALLY_IMPLEMENTED_LOCAL | W1-YETKI/ROL-D24-PARITY |
 | W1-ORG/BOOTSTRAP | P0 / K3 | SOURCE_REVIEW_REQUIRED | — |
 | W1-CARI/QUICK-CREATE | P0 / K2 | SOURCE_PARTIALLY_IMPLEMENTED_LOCAL | — |
-| W1-URUN/UNIT-SCOPE | P0 / K3 | SOURCE_REVIEW_REQUIRED | — |
+| W1-URUN/UNIT-SCOPE | P0 / K3 | SOURCE_PARTIALLY_IMPLEMENTED_LOCAL | — |
 | W2-SATINALMA/MULTILINE | P0 / K2 | SOURCE_IMPLEMENTED_LOCAL | — |
 | W2-SATINALMA/MIXED-MIN | P0 / K3 | SOURCE_REVIEW_REQUIRED | W2-SATINALMA/MULTILINE, W1-URUN/UNIT-SCOPE |
 | W2-SATINALMA/NOPO-MIN | P0 / K3 | CONTRACT_REQUIRED | — |
@@ -185,3 +185,5 @@ Bootstrap kontrolü (`b067dac5f`): 56 vakadan 47'si geçti, 9'u atlandı, hata y
 27 Kasım karar/owner artımı: gelen fatura farkı ve mal kabul partisi Work kaynak/arayüzleri native komutlara bağlandı. 13 bağlı kind, 64 akışın kabul sayısı değildir. Purchasing **1296/1296** (f1e7d5269), Manufacturing **1551/1551** ve hedefli Work owner kompozisyonu **115/115** (c56d32a45) geçti, skip0. Yeni SQL kaynakları derlendi; gerçek SQL **NOT_RUN**. Önceki hatalı fixture ve authority-pin koşuları saklandı; normal HTTP pin kabul eksiği kapanmadı. Manufacturing purpose/native ret hazırlık kaynağı vardır; capability=false, Work onay/yeniden onay ve gerekli açık etiket seçimi henüz bağlı değildir. Tam CI, pinler, tarayıcı ve iki K3 bekler.
 
 Hızlı cari vergi kimliği artımı f3ebf4963: mevcut ayrı EnterTaxIdentity komutu ve native mükerrer uyarı/teyidi kullanılır; yeni atomic create-with-tax veya kesin tekillik iddiası yoktur. Yedi dosyada **120/120**, tsc/scoped lint temiz; altı mevcut uyarı. Önceden mükerrer kontrolü, yabancı kimlik ve yetkisiz oluşturma talebi dahil paket bütünü açıktır. UNIT-SCOPE dar incelemesi kg’siz stok/kabul bağlantısının henüz tamamlanmadığını doğruladı; birim kimlikleri, şirket profili ve fiziksel stok desteği ayrı kabul edilir. Gayrinakdi tazmin/geri ödeme olay yönü için dar kullanıcı sorusu beklenir; Drawdown banka girişi bu amaçla körlemesine kullanılmaz. Yeni paket veya paralel backlog oluşturulmadı.
+
+UNIT-SCOPE ilk kaynak artımı `ee9b40393`: mevcut Settings kataloğuna litre, takım, set, saat, gün ve hizmet kimlikleri eklendi. Eski dört kimlik ve şirket profilleri korundu. Yeni kimlikler fiziksel adet dönüşümüne düşmez; desteklenmeyen fiziksel anlam açıkça Unavailable kalır. Şirket profili, ölçek, aile varsayılanı veya dönüşüm etkinleştirilmedi. Settings **886/886** yerel test geçti (skip0); 34 yeni senaryo dahildir. Product/Purchasing/Inventory sahip bağlantıları, gerçek aile/birim kurulum verileri ve ilk kullanım kabulü hâlâ bekler; bu artım kg’siz fiziksel stok desteğinin tamamı değildir.

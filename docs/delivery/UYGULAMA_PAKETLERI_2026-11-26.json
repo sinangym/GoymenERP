@@ -389,7 +389,7 @@
       "backlog_parent": "W1-URUN",
       "title": "Çelik dışı mal/hizmet birim kapsamı",
       "group": "FIRST_USE",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P0",
       "risk": "K3",
       "scope": "Çelik kg/adet golden larını koru; sarf/motor/hizmet örneklerinde mevcut unit ve role desteğini doğrula. Desteklenmeyen aile için yalnız gerekli genişletmeyi planla. Yön cevaplıdır: aile bazlı kg/ton/adet/metre/litre/takım/set/saat/gün/hizmet uygunluğu; yalnız tanımlı teknik dönüşüm. Gerçek aile/birim verisi ve katsayıları ayrı kurulum girdisidir.",
@@ -401,7 +401,13 @@
       "files": [
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Domain/Balances/StockLedger.cs",
         "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsReferenceListAdministration.cs",
-        "src/backend/Modules/Product/GoymenERP.Modules.Product.Domain/UnitConversion/ProductUnitConversionCalculatorV1.cs"
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Domain/UnitConversion/ProductUnitConversionCalculatorV1.cs",
+        "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/ApprovedSettingsPhysicalUnitSemanticsV1.cs",
+        "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/ApprovedSettingsUnitIdentityCatalog.cs",
+        "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/Contracts/V1/SettingsUnitIdentitiesV1.cs",
+        "tests/GoymenERP.Settings.UnitTests/ApprovedUnitIdentityCatalogTests.cs",
+        "tests/GoymenERP.Settings.UnitTests/ApprovedUnitProfileProviderTests.cs",
+        "tests/GoymenERP.Settings.UnitTests/SettingsPhysicalUnitSemanticsTests.cs"
       ],
       "proposed_files": [],
       "references": [
@@ -447,7 +453,49 @@
         "tests/GoymenERP.Api.IntegrationTests/SettingsReferenceListSqlServerRelationalAcceptanceTests.cs",
         "tests/GoymenERP.Inventory.UnitTests/StockLedgerTests.PieceCounts.cs"
       ],
-      "change_files": []
+      "change_files": [
+        "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/ApprovedSettingsPhysicalUnitSemanticsV1.cs",
+        "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/ApprovedSettingsUnitIdentityCatalog.cs",
+        "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/Contracts/V1/SettingsUnitIdentitiesV1.cs",
+        "tests/GoymenERP.Settings.UnitTests/ApprovedUnitIdentityCatalogTests.cs",
+        "tests/GoymenERP.Settings.UnitTests/ApprovedUnitProfileProviderTests.cs",
+        "tests/GoymenERP.Settings.UnitTests/SettingsPhysicalUnitSemanticsTests.cs"
+      ],
+      "execution": {
+        "source_commit": "ee9b403934600f75a8e5695e4a7c36f306ab092b",
+        "agent_source_commit": "50e2726de9447eebe36df30c869b1880cb67b81c",
+        "scope": "Identity-only litre/kit/set/hour/day/service catalog entries with the existing stable UUIDv5 recipe. Exact four original physical meanings remain; added identities return Unavailable physical semantics instead of inheriting Piece.",
+        "reuse": [
+          "SettingsUnitIdentitiesV1.Standard",
+          "ApprovedSettingsUnitIdentityCatalog",
+          "ApprovedSettingsPhysicalUnitSemanticsV1",
+          "ApprovedUnitProfileProvider and existing three-company fixtures"
+        ],
+        "local_checks": {
+          "Settings.UnitTests": "886/886 passed, 0 skipped at ee9b40393; 34 new identity/profile/physical-meaning cases included. Restore/test actual terminal result captured.",
+          "source_impact": "Bounded read-only non-author source check found dynamic Settings/Product decoders/dropdowns and Standard-derived API test expectations; no runtime claim."
+        },
+        "new_company_profiles": false,
+        "new_conversion_rules": false,
+        "migration": null,
+        "new_permissions": [],
+        "sql": "NOT_RUN",
+        "browser": "NOT_RUN",
+        "hosted_ci": "NOT_RUN",
+        "independent_review": "PENDING",
+        "remaining": [
+          "Company/date/family unit profile values require actual approved setup data; no inferred scales or conversions.",
+          "Product stock-role/technical-family eligibility and Purchasing typed quantities still need non-steel owner contracts.",
+          "Inventory receipt and stock ledger still require kg; no fabricated kg or complete non-steel physical stock claim.",
+          "Full mixed/no-PO purchasing and first-use acceptance remain dependent on owner integration."
+        ],
+        "measurements": {
+          "token": "NOT_AVAILABLE",
+          "development_duration": "NOT_SEPARATELY_MEASURED",
+          "source_delta": "6 files; 99 added/6 removed including 3 existing test files",
+          "test_duration": "2s test runtime excluding restore/build; full log retained"
+        }
+      }
     },
     {
       "id": "W2-SATINALMA/MULTILINE",
