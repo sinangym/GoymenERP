@@ -294,6 +294,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // `NAV_CAPABILITIES` gains exactly ONE Manufacturing entry.
   'manufacturing.orders.detail': '',
   // K5: creation is reached from the order list; detail is reached from the saved plan result.
+  'manufacturing.plan.work-decision': '',
   'manufacturing.plans.create': '',
   'manufacturing.plans.detail': '',
   // MFG-PLAN-LIST: reached from the order list and plan detail, so the sidebar keeps ONE Manufacturing entry.

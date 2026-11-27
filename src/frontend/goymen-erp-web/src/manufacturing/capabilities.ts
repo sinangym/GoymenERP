@@ -82,6 +82,7 @@ export const MANUFACTURING_CAPABILITY = {
   /** URT-D32/D77: enabled once the real enlisted Inventory cost-generation participant is connected. */
   orderReopen: 'manufacturing.orders.reopen',
   /** Create a Draft plan from authorized work-center and Inventory candidate reads. */
+  planWorkDecision: 'manufacturing.plan.work-decision',
   planCreate: 'manufacturing.plans.create',
   /** Reopen one stored plan through `manufacturing.plans.read`. */
   planDetail: 'manufacturing.plans.detail',
@@ -116,6 +117,7 @@ export type ManufacturingCapabilityId =
 
 /** Route path per routed capability, as handed to the shell owner. */
 export const MANUFACTURING_ROUTE: Record<string, string> = {
+  [MANUFACTURING_CAPABILITY.planWorkDecision]: '/onaylarim/manufacturing.plan.v1/:approvalId',
   [MANUFACTURING_CAPABILITY.planCreate]: '/uretim/plan/yeni',
   [MANUFACTURING_CAPABILITY.planDetail]: '/uretim/plan/:planId',
   [MANUFACTURING_CAPABILITY.orderDetail]: '/uretim/emir/:orderId',
@@ -130,6 +132,7 @@ export const MANUFACTURING_ROUTE: Record<string, string> = {
  * is reached from the order list and from the plan screens, so the sidebar keeps its one entry.
  */
 export const MANUFACTURING_NAV_LABEL: Record<string, string> = {
+  [MANUFACTURING_CAPABILITY.planWorkDecision]: '',
   [MANUFACTURING_CAPABILITY.orderDetail]: '',
   [MANUFACTURING_CAPABILITY.orderList]: 'Üretim emirleri',
   [MANUFACTURING_CAPABILITY.planCreate]: '',

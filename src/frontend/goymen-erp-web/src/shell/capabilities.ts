@@ -195,6 +195,7 @@ export const CAPABILITY = {
    */
   manufacturingOrdersDetail: 'manufacturing.orders.detail',
   /** Create a Draft plan. Route `/uretim/plan/yeni`; reached from the order list under K5. */
+  manufacturingPlanWorkDecision: 'manufacturing.plan.work-decision',
   manufacturingPlansCreate: 'manufacturing.plans.create',
   /** Reopen one stored plan. Route `/uretim/plan/:planId`; reached after create or by record link. */
   manufacturingPlansDetail: 'manufacturing.plans.detail',
@@ -520,6 +521,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.manufacturingOrdersList]: '/uretim/emirler',
   [CAPABILITY.manufacturingOrdersDetail]: '/uretim/emir/:orderId',
   // Static before the parameter route: `yeni` must never be read as a plan id.
+  [CAPABILITY.manufacturingPlanWorkDecision]: '/onaylarim/manufacturing.plan.v1/:approvalId',
   [CAPABILITY.manufacturingPlansCreate]: '/uretim/plan/yeni',
   [CAPABILITY.manufacturingPlansDetail]: '/uretim/plan/:planId',
   // Its own static segment: `planlar` is never read as `/uretim/plan/:planId`.

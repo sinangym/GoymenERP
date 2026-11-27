@@ -50,6 +50,9 @@ describe('WP7 inbox kinds', () => {
   })
 
   it('opens request decisions for their approve-only purpose route; other existing approve controls and Ayarlar publication has no capability yet', () => {
+    expect(WORK_INBOX_CAPABILITIES).toContain('manufacturing.plan.work-decision')
+    expect(WORK_INBOX_KINDS.filter(entry => entry.kind === 'manufacturing.plan.v1')).toHaveLength(1)
+    expect(WORK_INBOX_KINDS.find(entry => entry.kind === 'manufacturing.plan.v1')?.capability).toBe('manufacturing.plan.work-decision')
     expect(WORK_INBOX_CAPABILITIES).toContain('purchasing.invoice-variance.work-decision')
     expect(WORK_INBOX_KINDS.find(entry => entry.kind === 'purchasing.incoming-invoice-variance.v1')?.capability).toBe('purchasing.invoice-variance.work-decision')
     expect(WORK_INBOX_CAPABILITIES).toContain('purchasing.goods-receipt-batch.work-decision')

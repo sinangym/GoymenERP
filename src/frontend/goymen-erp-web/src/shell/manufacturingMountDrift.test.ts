@@ -12,6 +12,7 @@
  * lane's `capabilities.ts` in `ManufacturingShellCapabilityProviderContractTests`.
  */
 
+import { workRoutes } from '../work/workRoutes'
 import { describe, expect, it } from 'vitest'
 import { matchPath, matchRoutes } from 'react-router'
 import { CAPABILITY, CAPABILITY_ROUTE, CAPABILITY_NAV_LABEL } from './capabilities'
@@ -154,4 +155,15 @@ describe('shell ↔ Manufacturing lane capability ids', () => {
     expect(match).not.toBeNull()
     expect(match?.params.orderId).toBe(orderId)
   })
+})
+
+
+it('mounts the staged Manufacturing purpose independently from native browse routes', () => {
+ const capability=MANUFACTURING_CAPABILITY.planWorkDecision
+ expect(CAPABILITY.manufacturingPlanWorkDecision).toBe(capability)
+ expect(CAPABILITY_ROUTE[capability]).toBe(MANUFACTURING_ROUTE[capability])
+ expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
+ expect(matchRoutes(workRoutes,'/onaylarim/manufacturing.plan.v1/cccccccc-0000-4000-8000-000000000001')?.at(-1)?.route.path)
+  .toBe('onaylarim/manufacturing.plan.v1/:approvalId')
+ expect(matchPath(MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.planDetail],'/onaylarim/manufacturing.plan.v1/id')).toBeNull()
 })

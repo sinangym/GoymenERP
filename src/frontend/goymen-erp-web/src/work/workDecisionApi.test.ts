@@ -293,3 +293,38 @@ it.each([true,false])('accepts only the immutable batch receipt for approve=%s w
  fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,replayed:false}),{status:200}))
  expect((await sendWorkDecision(company,kind,id,command,'original-key')).type).toBe('applied')
 })
+
+
+it('decodes only scoped Manufacturing full explicit reapproval options and keeps other owners unchanged', () => {
+ const mfg='manufacturing.plan.v1'
+ const rule={ruleCode:'manufacturing.plan-reapproval-after-order-cancel',threshold:null,actual:null,deviation:null,unit:null}
+ const value={...preview,kind:mfg,rejectionSupported:false,rules:[rule],manufacturingPlanReapproval:{parentRollIds:[id,company]}}
+ expect(decodeWorkDecisionPreview(value,company,mfg,id)).not.toBeNull()
+ expect(workDecisionReasonLimit(mfg)).toBe(256)
+ for(const delta of [{companyId:id},{sourceVersion:'0'},{pending:false},{rejectionSupported:true},{rules:[]},
+  {manufacturingPlanReapproval:null},{manufacturingPlanReapproval:{parentRollIds:[]}},
+  {manufacturingPlanReapproval:{parentRollIds:[id,id]}},{manufacturingPlanReapproval:{parentRollIds:['bad']}},
+  {manufacturingPlanReapproval:{parentRollIds:[id],extra:true}}])
+  expect(decodeWorkDecisionPreview({...value,...delta},company,mfg,id)).toBeNull()
+ expect(decodeWorkDecisionPreview({...preview,manufacturingPlanReapproval:null},company,kind,id)).toBeNull()
+ expect(isWorkDecisionRequest(request,mfg)).toBe(true)
+ const typed={...request,manufacturingPlanReapproval:{selectedLabelIds:[id]}}
+ expect(isWorkDecisionRequest(typed,mfg)).toBe(true)
+ expect(isWorkDecisionRequest(typed,kind)).toBe(false)
+ for(const selection of [{selectedLabelIds:[id,id]},{selectedLabelIds:['bad']},{selectedLabelIds:[]},{selectedLabelIds:[id],extra:true}])
+  expect(isWorkDecisionRequest({...request,manufacturingPlanReapproval:selection},mfg)).toBe(false)
+ expect(isWorkDecisionRequest({...typed,approve:false},mfg)).toBe(false)
+})
+
+it.each([true,false])('keeps Manufacturing immutable decision states strict (approve=%s)', async approve => {
+ const mfg='manufacturing.plan.v1'
+ const body={companyId:company,kind:mfg,itemId:id,state:approve?'Approved':'Draft',replayed:false,originalCorrelationId:'original'}
+ const fetch=vi.fn(async()=>new Response(JSON.stringify(body),{status:200}))
+ vi.stubGlobal('fetch',fetch)
+ const command={...request,approve,reason:approve?null:'Ret gerekçesi'}
+ expect((await sendWorkDecision(company,mfg,id,command,'key')).type).toBe('applied')
+ for(const delta of [{state:approve?'Draft':'Approved'},{state:'Released'},{state:'Rejected'},{companyId:id},{itemId:company},{extra:true},{replayed:true}]) {
+  fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,...delta}),{status:200}))
+  expect((await sendWorkDecision(company,mfg,id,command,'key')).type).toBe('unknown')
+ }
+})

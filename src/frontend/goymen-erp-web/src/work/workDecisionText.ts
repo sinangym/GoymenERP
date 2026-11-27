@@ -1,4 +1,10 @@
 export const WORK_DECISION_TEXT = {
+  manufacturingReapprovalOnly: 'Bu plan yeniden onay bekliyor. Etiketleri seçerek yeniden onaylayabilirsiniz.',
+  manufacturingRejectReason: 'Ret gerekçesi',
+  manufacturingRejectHelp: 'Ret gerekçesi zorunludur ve en fazla 256 karakterdir. Bu alan yalnız ret işleminde kaydedilir.',
+  reapprovalLabels: 'Yeniden onaylanacak etiketler',
+  reapprovalHelp: 'Plandaki etiketlerin tamamını kendiniz seçin. Belirsiz sonuçta ilk seçim ve komut korunur.',
+  clearLabels: 'Etiket seçimini temizle',
   title: 'İş kutusundan karar', intro: 'Kararınızı inceleyip verin. İşlem ilgili modülün mevcut kurallarıyla yürütülür.',
   version: 'Kayıt sürümü', reason: 'Karar gerekçesi', approve: 'Onayla', reject: 'Reddet', done: 'Karar kaydedildi.',
   closed: 'Bu kayıt artık karar beklemiyor.', unknown: 'Sonuç doğrulanamadı. Aynı isteği yeniden gönderin.',

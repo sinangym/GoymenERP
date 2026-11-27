@@ -29,6 +29,8 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const shell = useShellState(); const context = contextKey(shell); const boundary = useAuthBoundary()
   const company = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const namespace = context === null ? null : contextKeyString(context)
+  const [selectedLabels, setSelectedLabels] = useState<readonly string[]>([])
+  const [selectionVersion, setSelectionVersion] = useState<string | null>(null)
   const [reason, setReason] = useState('')
   const [useDelegation, setUseDelegation] = useState(false); const [delegationId, setDelegationId] = useState('')
   const delegations = useInfiniteQuery<DelegationPage,DelegationReadFailure,InfiniteData<DelegationPage>,readonly unknown[],number>({ queryKey: [namespace, shell.routeEntryGeneration, 'work-decision-delegations'],
@@ -51,18 +53,23 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       return result
     } })
   const attempt = useScopedCommandAttempt(`work-decision:${kind}:${id}`,
-    (payload, key) => sendWorkDecision(company!, kind, id, payload, key), isWorkDecisionRequest)
+    (payload, key) => sendWorkDecision(company!, kind, id, payload, key), payload => isWorkDecisionRequest(payload, kind))
   if (company === null || capabilityFailClosed(shell)) return <StateBlock state={{ kind: 'no-authorized-company' }} subject={T.title} />
   const preview = query.data?.type === 'ok-single' ? query.data.data : null
   const frozen = attempt.status.kind === 'busy' || attempt.hasPendingRetry
+  const options = preview?.manufacturingPlanReapproval?.parentRollIds
+  const selected = frozen ? attempt.pendingPayload?.manufacturingPlanReapproval?.selectedLabelIds ?? [] : selectionVersion === preview?.sourceVersion ? selectedLabels : []
+  const selectionInvalid = options !== undefined && (selectionVersion !== preview?.sourceVersion || selectedLabels.length !== options.length
+    || selectedLabels.some(id => !options.includes(id)))
   const reasonLimit = workDecisionReasonLimit(kind)
   const batch = kind === 'purchasing.goods-receipt-batch.v1'
   const reasonRequired = (approve: boolean) => preview?.approvalReasonRequired || !approve && !isSalesWorkDecisionKind(kind)
   const invalidReason = (approve: boolean) => reasonRequired(approve) && reason.trim() === '' || (preview?.approvalReasonRequired || !approve || batch) && (batch ? reason.length : reason.trim().length) > reasonLimit
   const submit = async (approve: boolean) => {
-    if (preview === null || !approve && preview.rejectionSupported === false || frozen || invalidReason(approve) || useDelegation && !delegationId) return
+    if (preview === null || !approve && preview.rejectionSupported === false || frozen || approve && selectionInvalid || invalidReason(approve) || useDelegation && !delegationId) return
     const answer = await attempt.run({ expectedVersion: preview.sourceVersion, approve,
-      reason: batch ? reason === '' ? null : reason : preview.approvalReasonRequired || !approve ? reason.trim() || null : null, delegationId: useDelegation ? delegationId : null })
+      reason: batch ? reason === '' ? null : reason : preview.approvalReasonRequired || !approve ? reason.trim() || null : null, delegationId: useDelegation ? delegationId : null,
+      ...(kind === 'manufacturing.plan.v1' && options !== undefined ? { manufacturingPlanReapproval: { selectedLabelIds: [...selectedLabels] } } : {}) })
     if (answer.type === 'applied') void query.refetch()
   }
   const retry = async () => {
@@ -77,9 +84,18 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {preview.sourceVersion}</p>
       {kind === 'inventory.opening-cost.v1' ? <p>{cost == null ? T.hiddenCost : `${T.cost}: ${cost}`}</p> : null}
       <h3>{T.reference}</h3><ul>{preview.references.map((ref, i) => <li key={i}>{inboxRoleText(ref.role) ?? T.reference}: {ref.label}</li>)}</ul>
-      {preview.pending ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
-        {preview.rejectionSupported !== false || preview.approvalReasonRequired ? <label>{T.reason}<textarea value={reason} maxLength={reasonLimit} onChange={event => setReason(event.target.value)} /></label> : null}
+      {(options !== undefined || frozen && selected.length > 0) ? <fieldset disabled={frozen}><legend>{T.reapprovalLabels}</legend><p>{T.reapprovalHelp}</p>
+        {(frozen ? selected : options ?? []).map(labelId => <label key={labelId}><input type="checkbox" checked={selected.includes(labelId)}
+          onChange={event => {
+            setSelectionVersion(preview.sourceVersion)
+            setSelectedLabels(event.target.checked ? [...selected, labelId] : selected.filter(id => id !== labelId))
+          }} />{labelId}</label>)}
+        <Button type="button" onClick={() => { setSelectedLabels([]); setSelectionVersion(null) }}>{T.clearLabels}</Button>
+      </fieldset> : null}
+      {preview.pending ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
+        {preview.rejectionSupported !== false || preview.approvalReasonRequired ? <label>{kind === 'manufacturing.plan.v1' ? T.manufacturingRejectReason : T.reason}<textarea value={reason} maxLength={reasonLimit} onChange={event => setReason(event.target.value)} /></label> : null}
         {kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? <p>{T.approvalReasonRequired(reasonLimit)}</p> : null}
+        {kind === 'manufacturing.plan.v1' && preview.rejectionSupported ? <p>{T.manufacturingRejectHelp}</p> : null}
         {kind === 'purchasing.request.v1' ? <p>{T.rejectionReasonRequired(reasonLimit)}</p> : null}
         {batch ? <p>{T.batchReason(reasonLimit)}</p> : null}
         <label><input type="checkbox" checked={useDelegation} onChange={event => { setUseDelegation(event.target.checked); setDelegationId('') }} />{T.delegation}</label>
@@ -91,7 +107,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
             : candidates.length === 0 ? <p>{delegations.hasNextPage ? T.delegationNoMatchesYet : T.delegationEmpty}</p> : null}
           {delegations.hasNextPage ? <><p>{T.delegationMoreAvailable}</p><Button type="button" disabled={delegations.isFetchingNextPage}
             onClick={() => void delegations.fetchNextPage()}>{T.delegationMore}</Button></> : null}</> : null}
-        <div className={styles.actions}><Button type="button" disabled={useDelegation && !delegationId || invalidReason(true)} onClick={() => void submit(true)}>{T.approve}</Button>
+        <div className={styles.actions}><Button type="button" disabled={selectionInvalid || useDelegation && !delegationId || invalidReason(true)} onClick={() => void submit(true)}>{T.approve}</Button>
           {preview.rejectionSupported !== false ? <Button type="button" variant="secondary" disabled={useDelegation && !delegationId || invalidReason(false)} onClick={() => void submit(false)}>{T.reject}</Button> : null}</div></fieldset> : <p>{T.closed}</p>}
     </>}
     {attempt.status.kind === 'unknown' ? <div role="alert"><p>{T.unknown}</p><Button type="button" onClick={() => void retry()}>{T.retry}</Button></div> : null}

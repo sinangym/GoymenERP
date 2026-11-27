@@ -497,3 +497,118 @@ describe('WP8 native goods receipt batch purpose',()=>{
   expect(screen.queryByText(T.done)).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
  })
 })
+
+
+const mfgKind='manufacturing.plan.v1', mfgCap='manufacturing.plan.work-decision'
+const labels=['aaaaaaaa-0000-4000-8000-000000000071','aaaaaaaa-0000-4000-8000-000000000072']
+const mfgPreview={...preview,kind:mfgKind,documentLabel:'SENTETIK üretim planı',rejectionSupported:false,
+ rules:[{ruleCode:'manufacturing.plan-reapproval-after-order-cancel',threshold:null,actual:null,deviation:null,unit:null}],
+ manufacturingPlanReapproval:{parentRollIds:labels}}
+
+it('starts Manufacturing selection empty, requires the full options beyond references, and allows clearing', async () => {
+ const calls=installFetch({capabilities:[mfgCap],respond:(url,init)=>{
+  if(!url.includes(`/work/decisions/${mfgKind}/${id}`))return undefined
+  return init?.method==='POST'?problem(503):json(mfgPreview)
+ }})
+ mount(`/onaylarim/${mfgKind}/${id}`)
+ await screen.findByText('SENTETIK üretim planı',{exact:false})
+ expect((screen.getByRole('button',{name:T.approve}) as HTMLButtonElement).disabled).toBe(true)
+ expect(screen.queryByRole('button',{name:T.reject})).toBeNull()
+ for(const label of labels) expect((screen.getByRole('checkbox',{name:label}) as HTMLInputElement).checked).toBe(false)
+ fireEvent.click(screen.getByRole('checkbox',{name:labels[0]}))
+ expect((screen.getByRole('button',{name:T.approve}) as HTMLButtonElement).disabled).toBe(true)
+ fireEvent.click(screen.getByRole('button',{name:T.clearLabels}))
+ expect((screen.getByRole('checkbox',{name:labels[0]}) as HTMLInputElement).checked).toBe(false)
+ for(const label of labels) fireEvent.click(screen.getByRole('checkbox',{name:label}))
+ fireEvent.click(screen.getByRole('button',{name:T.approve}))
+ await screen.findByText(T.unknown)
+ const sent=calls.filter(call=>call.method==='POST'&&call.url.includes(`/work/decisions/${mfgKind}/`))
+ expect(sent).toHaveLength(1)
+ expect(sent[0]!.body).toEqual({expectedVersion:'7',approve:true,reason:null,delegationId:null,manufacturingPlanReapproval:{selectedLabelIds:labels}})
+ for(const label of labels) expect((screen.getByRole('checkbox',{name:label}) as HTMLInputElement).disabled).toBe(true)
+})
+
+it.each(['closed','changed-options','initial-approval'] as const)('replays the original Manufacturing journal after %s preview drift', async scenario => {
+ let posts=0,reads=0
+ const calls=installFetch({capabilities:[mfgCap],respond:(url,init)=>{
+  if(!url.includes(`/work/decisions/${mfgKind}/${id}`))return undefined
+  if(init?.method==='POST') {posts++;return posts===1?problem(503):json({companyId:COMPANY_A,kind:mfgKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'})}
+  reads++
+  if(reads===1) return json(scenario==='initial-approval'?{...preview,kind:mfgKind,rejectionSupported:true}:mfgPreview)
+  if(scenario==='closed') return json({...preview,kind:mfgKind,pending:false,rejectionSupported:true,sourceVersion:'8'})
+  return json({...mfgPreview,sourceVersion:'9',manufacturingPlanReapproval:{parentRollIds:[COMPANY_B]}})
+ }})
+ const baseFetch=globalThis.fetch
+ vi.stubGlobal('fetch',vi.fn((input:RequestInfo|URL,init?:RequestInit)=>String(input).endsWith('/identity/me')
+  ? Promise.resolve(json({userId:'99999999-9999-4999-8999-999999999999',displayName:'SENTETIK',email:null,allowedCompanyIds:[COMPANY_A],mustChangePassword:false,localCredentialVersion:null,authenticationSessionBinding:'SENTETIK-mfg-session'}))
+  : baseFetch(input,init)))
+ mount(`/onaylarim/${mfgKind}/${id}`)
+ await screen.findByText(scenario==='initial-approval'?'SENTETIK kasa':'SENTETIK üretim planı',{exact:false})
+ if(scenario!=='initial-approval') for(const label of labels) fireEvent.click(screen.getByRole('checkbox',{name:label}))
+ fireEvent.click(screen.getByRole('button',{name:T.approve}))
+ await screen.findByText(T.unknown)
+ cleanup();mount(`/onaylarim/${mfgKind}/${id}`)
+ await screen.findByText(T.unknown)
+ fireEvent.click(screen.getByRole('button',{name:T.retry}))
+ await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.method==='POST'&&call.url.includes(`/work/decisions/${mfgKind}/`))
+ expect(sent).toHaveLength(2)
+ expect(sent[1]!.body).toEqual(sent[0]!.body)
+ expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key'])
+ expect((sent[1]!.body as {expectedVersion:string}).expectedVersion).toBe('7')
+ expect(Object.hasOwn(sent[0]!.body as object,'manufacturingPlanReapproval')).toBe(scenario!=='initial-approval')
+})
+
+it('does not fetch the Manufacturing owner with only native browse/control capabilities', async () => {
+ const calls=installFetch({capabilities:['manufacturing.plans.detail','manufacturing.plans.approve'],respond:url=>url.includes(`/work/decisions/${mfgKind}/`)?json(mfgPreview):undefined})
+ mount(`/onaylarim/${mfgKind}/${id}`)
+ await waitFor(()=>expect(calls.some(call=>call.url.endsWith('/shell/capabilities'))).toBe(true))
+ expect(calls.some(call=>call.url.includes(`/work/decisions/${mfgKind}/`))).toBe(false)
+})
+
+
+it('labels the native 256-character reason as rejection-only and sends no reason on initial approval', async () => {
+ const calls=installFetch({capabilities:[mfgCap],respond:(url,init)=>{
+  if(!url.includes(`/work/decisions/${mfgKind}/${id}`))return undefined
+  return init?.method==='POST'?problem(503):json({...preview,kind:mfgKind,rejectionSupported:true})
+ }})
+ mount(`/onaylarim/${mfgKind}/${id}`)
+ const input=await screen.findByLabelText(T.manufacturingRejectReason)
+ expect((input as HTMLTextAreaElement).maxLength).toBe(256)
+ expect(screen.getByText(T.manufacturingRejectHelp)).toBeTruthy()
+ fireEvent.change(input,{target:{value:'Yalnız ret için insan gerekçesi'}})
+ fireEvent.click(screen.getByRole('button',{name:T.approve}))
+ await screen.findByText(T.unknown)
+ const sent=calls.filter(call=>call.method==='POST'&&call.url.includes(`/work/decisions/${mfgKind}/`))
+ expect(sent).toHaveLength(1)
+ expect(sent[0]!.body).toEqual({expectedVersion:'7',approve:true,reason:null,delegationId:null})
+})
+
+
+it.each([{companyId:COMPANY_B},{sourceVersion:'0'},{manufacturingPlanReapproval:{parentRollIds:[]}},
+ {manufacturingPlanReapproval:{parentRollIds:[labels[0],labels[0]]}}])('refuses untrusted Manufacturing preview %j before selection or mutation', async delta => {
+ const calls=installFetch({capabilities:[mfgCap],respond:url=>url.includes(`/work/decisions/${mfgKind}/${id}`)?json({...mfgPreview,...delta}):undefined})
+ mount(`/onaylarim/${mfgKind}/${id}`)
+ await waitFor(()=>expect(calls.some(call=>call.url.includes(`/work/decisions/${mfgKind}/`))).toBe(true))
+ expect(screen.queryByRole('checkbox',{name:labels[0]})).toBeNull()
+ expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+ expect(calls.some(call=>call.method==='POST')).toBe(false)
+})
+
+it('retains the complete 256-character Manufacturing rejection and rejects an overlong human reason', async () => {
+ const calls=installFetch({capabilities:[mfgCap],respond:(url,init)=>{
+  if(!url.includes(`/work/decisions/${mfgKind}/${id}`))return undefined
+  return init?.method==='POST'?json({companyId:COMPANY_A,kind:mfgKind,itemId:id,state:'Draft',replayed:false,originalCorrelationId:'original'}):json({...preview,kind:mfgKind,rejectionSupported:true})
+ }})
+ mount(`/onaylarim/${mfgKind}/${id}`)
+ const input=await screen.findByLabelText(T.manufacturingRejectReason)
+ fireEvent.change(input,{target:{value:'R'.repeat(257)}})
+ expect((screen.getByRole('button',{name:T.reject}) as HTMLButtonElement).disabled).toBe(true)
+ const reason='R'.repeat(256)
+ fireEvent.change(input,{target:{value:`  ${reason}  `}})
+ fireEvent.click(screen.getByRole('button',{name:T.reject}))
+ await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.method==='POST'&&call.url.includes(`/work/decisions/${mfgKind}/`))
+ expect(sent).toHaveLength(1)
+ expect(sent[0]!.body).toEqual({expectedVersion:'7',approve:false,reason,delegationId:null})
+})
