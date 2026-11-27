@@ -87,6 +87,7 @@ public static class AccountingModuleExtensions
         services.AddScoped<NormalJournalDraftAccountReadServiceV1>();
         services.AddScoped<NormalJournalDraftSourceReadServiceV1>();
         services.AddScoped<AccountingJournalReversalServiceV1>();
+        services.AddScoped<IAccountingJournalReversalDecisionReadV1>(provider => provider.GetRequiredService<AccountingJournalReversalServiceV1>());
         services.AddScoped<IAccountingJournalReversalLifecycleV1>(serviceProvider =>
             serviceProvider.GetRequiredService<AccountingJournalReversalServiceV1>());
         services.AddScoped<AccountingJournalReversalPublicServiceV1>();

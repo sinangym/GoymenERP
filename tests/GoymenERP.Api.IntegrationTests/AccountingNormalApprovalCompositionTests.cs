@@ -59,6 +59,7 @@ public sealed class AccountingNormalApprovalCompositionTests
         Assert.Same(core, periods);
         var api = scope.GetRequiredService<AccountingApiService>();
         Assert.Same(api, scope.GetRequiredService<IAccountingPeriodDecisionReadV1>());
+        Assert.Same(scope.GetRequiredService<AccountingJournalReversalServiceV1>(), scope.GetRequiredService<IAccountingJournalReversalDecisionReadV1>());
         var collector = scope.GetRequiredService<AuditEventCollector>();
         Assert.Same(collector, scope.GetRequiredService<IAuditEventCollector>());
         var writer = scope.GetRequiredService<IAuditTransactionWriterV1>();

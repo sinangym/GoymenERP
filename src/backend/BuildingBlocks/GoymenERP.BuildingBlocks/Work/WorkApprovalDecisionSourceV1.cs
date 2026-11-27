@@ -54,7 +54,13 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkCashExchangeBookValueProofV1? CashExchangeBookValueProof = null,
     [property: JsonIgnore] WorkNormalJournalDraftProofV1? NormalJournalDraftProof = null,
     [property: JsonIgnore] WorkAccountingPeriodOpeningProofV1? AccountingPeriodOpeningProof = null,
-    [property: JsonIgnore] WorkAccountingPeriodReopeningProofV1? AccountingPeriodReopeningProof = null);
+    [property: JsonIgnore] WorkAccountingPeriodReopeningProofV1? AccountingPeriodReopeningProof = null,
+    [property: JsonIgnore] WorkJournalReversalProofV1? JournalReversalProof = null);
+
+/// <summary>Private journal reversal identity. Full native proposal and reason stay in the authorized purpose read.</summary>
+public sealed record WorkJournalReversalProofV1(Guid CompanyId, Guid ProposalId, Guid SourceJournalId,
+    Guid PeriodId, Guid ProposedBy, DateTimeOffset ProposedAtUtc, string Status, int Version,
+    Guid? CancellationSourceActorId, string SourceFactsDigest, string PreviewDigest);
 
 /// <summary>Private owner evidence; a later close does not replace an original opening approval result.</summary>
 public sealed record WorkAccountingPeriodOpeningProofV1(Guid CompanyId, Guid PeriodId, Guid PreparedBy,
