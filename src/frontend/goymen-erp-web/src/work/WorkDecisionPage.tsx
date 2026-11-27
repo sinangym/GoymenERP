@@ -1,3 +1,5 @@
+import { MANUFACTURING_COST_WORK_KIND, MANUFACTURING_COST_WORK_PURPOSE, costDecisionIncrementable } from './workManufacturingCostDifferenceDecision'
+import { WorkManufacturingCostDifferenceFacts } from './WorkManufacturingCostDifferenceFacts'
 import { POSTING_MAPPING_KIND, POSTING_MAPPING_PURPOSE, mappingIncrementable, mappingVersion } from './workPostingAccountMappingDecision'
 import { WorkPostingAccountMappingFacts } from './WorkPostingAccountMappingFacts'
 import { WORK_MAPPING_TEXT as MAPPING } from './workPostingAccountMappingText'
@@ -100,6 +102,8 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const officialImport = kind === 'finance.official-invoice-import.v1'
   const officialSales = kind === 'finance.official-sales-invoice.v1'
   const nativeFinance = isNativeFinanceDecisionKind(kind)
+  const manufacturingCost = kind === MANUFACTURING_COST_WORK_KIND
+  const manufacturingCostAllowed = !manufacturingCost || hasCapability(shell,MANUFACTURING_COST_WORK_PURPOSE.capabilityId)
   const mapping = kind === POSTING_MAPPING_KIND
   const mappingAllowed = !mapping || hasCapability(shell,POSTING_MAPPING_PURPOSE.capabilityId)
   const catalog = kind === APPROVED_SOURCE_CATALOG_KIND
@@ -113,20 +117,20 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const nativeFinanceAllowed = !nativeFinance || hasCapability(shell,NATIVE_FINANCE_WORK_CAPABILITY[kind])
   const expensePayment = kind === 'finance.expense-payment.v1'
   const reversal = isWorkReversalKind(kind)
-  const receiptRetryKind = mapping || catalog || journalReversal || accountingPeriod || normalJournal || nativeFinance || expensePayment || reversal || officialSales || officialImport || partyCreditLimit || priceList || ibanChange || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.transfer-overage.v1'
+  const receiptRetryKind = manufacturingCost || mapping || catalog || journalReversal || accountingPeriod || normalJournal || nativeFinance || expensePayment || reversal || officialSales || officialImport || partyCreditLimit || priceList || ibanChange || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.transfer-overage.v1'
   const historicalRetry = receiptRetryKind && attempt.hasPendingRetry
   const [reconcilingHistorical, setReconcilingHistorical] = useState(historicalRetry)
   const query = useQuery({ queryKey: [namespace, shell.routeEntryGeneration, 'work-decision', kind, id],
-    enabled: company !== null && namespace !== null && !capabilityFailClosed(shell) && nativeFinanceAllowed && normalJournalAllowed && accountingPeriodAllowed && journalReversalAllowed && catalogAllowed && mappingAllowed && !historicalRetry && !reconcilingHistorical, queryFn: async ({ signal }) => {
+    enabled: company !== null && namespace !== null && !capabilityFailClosed(shell) && nativeFinanceAllowed && normalJournalAllowed && accountingPeriodAllowed && journalReversalAllowed && catalogAllowed && mappingAllowed && manufacturingCostAllowed && !historicalRetry && !reconcilingHistorical, queryFn: async ({ signal }) => {
       const captured = boundary.capture(); const result = await fetchWorkDecision(company!, kind, id, signal)
       if (result.type === 'http') boundary.report(result.status, captured)
       return result
     } })
   if (company === null || capabilityFailClosed(shell)) return <StateBlock state={{ kind: 'no-authorized-company' }} subject={T.title} />
-  if (!nativeFinanceAllowed || !normalJournalAllowed || !accountingPeriodAllowed || !journalReversalAllowed || !catalogAllowed || !mappingAllowed) return <StateBlock state={{kind:'not-found'}} subject={T.title} />
+  if (!manufacturingCostAllowed || !nativeFinanceAllowed || !normalJournalAllowed || !accountingPeriodAllowed || !journalReversalAllowed || !catalogAllowed || !mappingAllowed) return <StateBlock state={{kind:'not-found'}} subject={T.title} />
   // Disabling a query does not erase cached data or a refetch already in flight.
   // A receipt retry must never display current proposal/revision facts as its original human evidence.
-  const suppressReceiptPreview = (mapping || catalog || journalReversal || accountingPeriod || normalJournal || nativeFinance || expensePayment || reversal || officialSales || officialImport || partyCreditLimit || priceList || ibanChange) && (attempt.hasPendingRetry || reconcilingHistorical || attempt.status.kind === 'applied')
+  const suppressReceiptPreview = (manufacturingCost || mapping || catalog || journalReversal || accountingPeriod || normalJournal || nativeFinance || expensePayment || reversal || officialSales || officialImport || partyCreditLimit || priceList || ibanChange) && (attempt.hasPendingRetry || reconcilingHistorical || attempt.status.kind === 'applied')
   const preview = !suppressReceiptPreview && query.data?.type === 'ok-single' ? query.data.data : null
   const frozen = attempt.status.kind === 'busy' || attempt.hasPendingRetry
   const reconciledHistorical = reconcilingHistorical && !attempt.hasPendingRetry && (attempt.status.kind === 'applied' || attempt.status.kind === 'refused')
@@ -137,6 +141,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const packageStandard = kind === 'product.package-standard-version.v1'
   const displayedPackageDate = frozen ? attempt.pendingPayload?.productPackageStandard?.effectiveFrom ?? '' : packageDateVersion === preview?.sourceVersion ? packageDate : ''
   const selectedJournalPeriod = frozen ? attempt.pendingPayload?.normalJournalDraft?.periodId ?? '' : journalPeriodVersion === preview?.sourceVersion ? journalPeriod : ''
+  const invalidManufacturingCostVersion = manufacturingCost && !costDecisionIncrementable(preview?.sourceVersion)
   const invalidMappingVersions = mapping && (!mappingIncrementable(preview?.sourceVersion) || !mappingVersion(preview?.postingAccountMapping?.expectedActiveMappingVersion,false))
   const invalidCatalogVersions = catalog && (!catalogIncrementable(preview?.sourceVersion) || !catalogIncrementable(preview?.approvedSourceCatalog?.expectedActiveCatalogVersion,false))
   const invalidJournalReversalVersion = journalReversal && !isWorkDecisionRequest({expectedVersion:preview?.sourceVersion,approve:true,reason:null,delegationId:null},kind)
@@ -167,7 +172,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const reasonRequired = (approve: boolean) => preview?.approvalReasonRequired || !approve && !isSalesWorkDecisionKind(kind) && !counterparty && !customerReturn
   const invalidReason = (approve: boolean) => !customerReturn && ((kind === 'inventory.stock-count.v1' || kind === 'inventory.stock-scrap.v1') && !isWorkStockCountReason(reason.trim()) || supplierReturn && !approve && !isWorkSupplierReturnReason(reason.trim()) || overage && !isWorkTransferOverageReason(reason) || reasonRequired(approve) && reason.trim() === '' || (preview?.approvalReasonRequired || !approve || batch || counterparty) && (batch ? reason.length : reason.trim().length) > reasonLimit)
   const submit = async (approve: boolean) => {
-    if (preview === null || approve && preview.approvalSupported === false || !approve && preview.rejectionSupported === false || frozen || approve && (selectionInvalid || invalidSupplierVersion || invalidPackageDate || invalidJournalPeriod || invalidJournalReversalVersion || invalidCatalogVersions || invalidMappingVersions) || invalidLossTime || invalidReason(approve) || useDelegation && !delegationId) return
+    if (preview === null || approve && preview.approvalSupported === false || !approve && preview.rejectionSupported === false || frozen || approve && (selectionInvalid || invalidSupplierVersion || invalidPackageDate || invalidJournalPeriod || invalidJournalReversalVersion || invalidCatalogVersions || invalidMappingVersions || invalidManufacturingCostVersion) || invalidLossTime || invalidReason(approve) || useDelegation && !delegationId) return
     const answer = await attempt.run({ expectedVersion: preview.sourceVersion, approve,
       reason: batch ? reason === '' ? null : reason : preview.approvalReasonRequired || !approve || counterparty || customerReturn ? reason.trim() || null : null, delegationId: useDelegation ? delegationId : null,
       ...(mapping && approve ? {postingAccountMappingSelection:{expectedActiveMappingVersion:preview.postingAccountMapping!.expectedActiveMappingVersion}} : {}),
@@ -183,7 +188,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       ...(kind === 'manufacturing.plan.v1' && options !== undefined ? { manufacturingPlanReapproval: { selectedLabelIds: [...selectedLabels] } } : {}) })
     if (normalJournal && answer.type === 'refused') { setJournalPeriod('');setJournalPeriodVersion(null);setPeriodReadRevision(value=>value+1) }
     if (answer.type === 'applied') {
-      if (mapping || catalog || journalReversal || accountingPeriod || normalJournal || nativeFinance || expensePayment || reversal || officialSales || officialImport || partyCreditLimit || ibanChange || priceList) setReconcilingHistorical(true)
+      if (manufacturingCost || mapping || catalog || journalReversal || accountingPeriod || normalJournal || nativeFinance || expensePayment || reversal || officialSales || officialImport || partyCreditLimit || ibanChange || priceList) setReconcilingHistorical(true)
       else void query.refetch()
     }
   }
@@ -199,14 +204,14 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
     <Link to="/onaylarim/kuyruk">{T.back}</Link>
     {preview === null ? reconciledHistorical ? <p>{T.priorDecisionResolved}</p> : historicalRetry ? <div><p>{T.priorDecisionPending}</p>
       <p>{T.version}: {attempt.pendingPayload?.expectedVersion}</p>
-      {mapping ? <><p>{MAPPING.retained}</p><p>{MAPPING.activeVersion}: {attempt.pendingPayload?.postingAccountMappingSelection?.expectedActiveMappingVersion}</p></> : catalog ? <><p>{CATALOG.retained}</p><p>{CATALOG.expectedActiveVersion}: {attempt.pendingPayload?.approvedSourceCatalogSelection?.expectedActiveCatalogVersion}</p></> : journalReversal ? <p>{T.journalReversalRetained}</p> : accountingPeriod ? <p>{T.accountingPeriodRetained}</p> : normalJournal ? <p>{T.normalJournalRetained}</p> : nativeFinance ? <p>{T.nativeFinanceRetained}</p> : expensePayment ? <p>{T.expenseRetained}</p> : reversal ? <p>{T.reversalRetained}</p> : officialSales ? <p>{T.officialSalesRetained}</p> : officialImport ? <p>{T.importRetained}</p> : partyCreditLimit ? <p>{T.creditLimitRetained}</p> : priceList ? <p>{T.priceListRetained}</p> : ibanChange ? <p>{T.ibanRetained}</p> : <><p>{overage ? T.overageRequestNumber : T.lossRequestNumber}: {frozenTransferRequest?.requestNumber}</p>
+      {manufacturingCost ? <p>{T.manufacturingCostRetained}</p> : mapping ? <><p>{MAPPING.retained}</p><p>{MAPPING.activeVersion}: {attempt.pendingPayload?.postingAccountMappingSelection?.expectedActiveMappingVersion}</p></> : catalog ? <><p>{CATALOG.retained}</p><p>{CATALOG.expectedActiveVersion}: {attempt.pendingPayload?.approvedSourceCatalogSelection?.expectedActiveCatalogVersion}</p></> : journalReversal ? <p>{T.journalReversalRetained}</p> : accountingPeriod ? <p>{T.accountingPeriodRetained}</p> : normalJournal ? <p>{T.normalJournalRetained}</p> : nativeFinance ? <p>{T.nativeFinanceRetained}</p> : expensePayment ? <p>{T.expenseRetained}</p> : reversal ? <p>{T.reversalRetained}</p> : officialSales ? <p>{T.officialSalesRetained}</p> : officialImport ? <p>{T.importRetained}</p> : partyCreditLimit ? <p>{T.creditLimitRetained}</p> : priceList ? <p>{T.priceListRetained}</p> : ibanChange ? <p>{T.ibanRetained}</p> : <><p>{overage ? T.overageRequestNumber : T.lossRequestNumber}: {frozenTransferRequest?.requestNumber}</p>
       <p>{T.lossFrozenTime}: {frozenTransferRequest?.decidedAtUtc}</p></>}
     </div> : <StateBlock state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
       subject={T.title} onRetry={() => void query.refetch()} /> : <>
-      <h2>{mapping ? MAPPING.title : catalog ? CATALOG.title : inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(nativeFinance || expensePayment || reversal || officialSales || priceList || packageStandard || ibanChange || customerReturn || supplierReturn || kind === 'logistics.dispatch-note.v1' || kind === 'finance.manual-bank-payment.v1' || kind === 'finance.bank-account.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
+      <h2>{manufacturingCost ? T.manufacturingCostTitle : mapping ? MAPPING.title : catalog ? CATALOG.title : inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(nativeFinance || expensePayment || reversal || officialSales || priceList || packageStandard || ibanChange || customerReturn || supplierReturn || kind === 'logistics.dispatch-note.v1' || kind === 'finance.manual-bank-payment.v1' || kind === 'finance.bank-account.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
       <section aria-label={INBOX.rulesHeading}><h3>{INBOX.rulesHeading}</h3>
         {preview.rules.length === 0 ? <p>{T.rulesUnavailable}</p> : <ul>{preview.rules.map((rule, index) => <li key={`${rule.ruleCode}:${index}`}>
-          <p>{mapping ? MAPPING.rule : catalog ? CATALOG.activationRule : inboxRuleText(rule.ruleCode) ?? <>{INBOX.ruleUnknown} <code>{rule.ruleCode}</code></>}</p>
+          <p>{manufacturingCost ? T.manufacturingCostRule : mapping ? MAPPING.rule : catalog ? CATALOG.activationRule : inboxRuleText(rule.ruleCode) ?? <>{INBOX.ruleUnknown} <code>{rule.ruleCode}</code></>}</p>
           {rule.threshold !== null || rule.actual !== null || rule.deviation !== null ? <dl className={styles.facts}>
             {rule.threshold !== null ? <><dt>{INBOX.threshold}</dt><dd>{formatWithUnit(rule.threshold, rule.unit)}</dd></> : null}
             {rule.actual !== null ? <><dt>{INBOX.actual}</dt><dd>{formatWithUnit(rule.actual, rule.unit)}</dd></> : null}
@@ -450,6 +455,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         {preview.manualReceiptReversal ? <><h4>{T.reversalOriginal}</h4><dl className={styles.facts}>{Object.entries(preview.manualReceiptReversal.originalReceipt).map(([key,value]) => <div key={key}><dt>{T.reversalFields[key as keyof typeof T.reversalFields]}</dt><dd>{key === 'posCommissionBearer' && value !== null ? T.reversalBearers[value as keyof typeof T.reversalBearers] : value ?? T.reversalAbsent}</dd></div>)}</dl></> : null}
       </section> : null}
       {preview.accountingJournalReversal ? <WorkJournalReversalFacts human={preview.accountingJournalReversal} /> : null}
+      {preview.manufacturingCostDifference ? <WorkManufacturingCostDifferenceFacts human={preview.manufacturingCostDifference} /> : null}
       {preview.postingAccountMapping ? <WorkPostingAccountMappingFacts human={preview.postingAccountMapping} /> : null}
       {preview.approvedSourceCatalog ? <WorkApprovedSourceCatalogFacts human={preview.approvedSourceCatalog} /> : null}
       {preview.accountingPeriodOpening || preview.accountingPeriodReopening ? <WorkAccountingPeriodFacts opening={preview.accountingPeriodOpening} reopening={preview.accountingPeriodReopening} /> : null}
@@ -495,7 +501,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       {preview.pending && !reconciledHistorical ? <fieldset disabled={frozen}>
         {mapping ? <p>{MAPPING.versions}</p> : null}
         {catalog ? <p>{CATALOG.versions}</p> : null}
-        {normalJournal && preview.normalJournalDraft && !frozen ? <NormalJournalApprovalPeriod key={periodReadRevision} namespace={namespace!} companyId={company} accountingDate={preview.normalJournalDraft.draft.accountingDate} value={selectedJournalPeriod} disabled={frozen} reloadToken={periodReadRevision} autoSelect={false} onChange={period => {setJournalPeriod(period);setJournalPeriodVersion(preview.sourceVersion)}} /> : null}{preview.rejectionSupported === false ? <p>{expensePayment ? T.expenseApprovalOnly : officialImport ? T.importApprovalOnly : kind === 'logistics.dispatch-note.v1' ? T.dispatchApprovalOnly : kind === 'finance.bank-account.v1' ? T.bankApprovalOnly : kind === 'logistics.weighing-difference.v1' ? T.weighingApprovalOnly : kind === 'logistics.plan-excess.v1' ? T.planExcessApprovalOnly : kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
+        {normalJournal && preview.normalJournalDraft && !frozen ? <NormalJournalApprovalPeriod key={periodReadRevision} namespace={namespace!} companyId={company} accountingDate={preview.normalJournalDraft.draft.accountingDate} value={selectedJournalPeriod} disabled={frozen} reloadToken={periodReadRevision} autoSelect={false} onChange={period => {setJournalPeriod(period);setJournalPeriodVersion(preview.sourceVersion)}} /> : null}{preview.rejectionSupported === false ? <p>{manufacturingCost ? T.manufacturingCostApprovalOnly : expensePayment ? T.expenseApprovalOnly : officialImport ? T.importApprovalOnly : kind === 'logistics.dispatch-note.v1' ? T.dispatchApprovalOnly : kind === 'finance.bank-account.v1' ? T.bankApprovalOnly : kind === 'logistics.weighing-difference.v1' ? T.weighingApprovalOnly : kind === 'logistics.plan-excess.v1' ? T.planExcessApprovalOnly : kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
         {preview.rejectionSupported !== false || preview.approvalReasonRequired ? <label>{customerReturn ? CUSTOMER_RETURN.note : counterparty ? T.optionalNote : kind === 'manufacturing.plan.v1' ? T.manufacturingRejectReason : T.reason}<textarea value={lossReason} maxLength={customerReturn?undefined:reasonLimit} onChange={event => setReason(event.target.value)} /></label> : null}
         {packageStandard ? <><label>{T.packageEffectiveFrom}<input type="date" value={displayedPackageDate}
           onChange={event => { setPackageDate(event.target.value); setPackageDateVersion(preview.sourceVersion) }} /></label><p>{T.packageDecisionHelp}</p></> : null}
@@ -516,7 +522,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
             : candidates.length === 0 ? <p>{delegations.hasNextPage ? T.delegationNoMatchesYet : T.delegationEmpty}</p> : null}
           {delegations.hasNextPage ? <><p>{T.delegationMoreAvailable}</p><Button type="button" disabled={delegations.isFetchingNextPage}
             onClick={() => void delegations.fetchNextPage()}>{T.delegationMore}</Button></> : null}</> : null}
-        <div className={styles.actions}><Button type="button" disabled={invalidMappingVersions || invalidCatalogVersions || invalidJournalReversalVersion || invalidJournalPeriod || invalidPackageDate || preview.approvalSupported===false || invalidLossTime || selectionInvalid || invalidSupplierVersion || useDelegation && !delegationId || invalidReason(true)} onClick={() => void submit(true)}>{T.approve}</Button>
+        <div className={styles.actions}><Button type="button" disabled={invalidManufacturingCostVersion || invalidMappingVersions || invalidCatalogVersions || invalidJournalReversalVersion || invalidJournalPeriod || invalidPackageDate || preview.approvalSupported===false || invalidLossTime || selectionInvalid || invalidSupplierVersion || useDelegation && !delegationId || invalidReason(true)} onClick={() => void submit(true)}>{T.approve}</Button>
           {preview.rejectionSupported !== false ? <Button type="button" variant="secondary" disabled={invalidLossTime || useDelegation && !delegationId || invalidReason(false)} onClick={() => void submit(false)}>{T.reject}</Button> : null}</div></fieldset> : <p>{reconciledHistorical ? T.priorDecisionResolved : T.closed}</p>}
     </>}
     {attempt.status.kind === 'unknown' ? <div role="alert"><p>{T.unknown}</p><Button type="button" onClick={() => void retry()}>{T.retry}</Button></div> : null}
