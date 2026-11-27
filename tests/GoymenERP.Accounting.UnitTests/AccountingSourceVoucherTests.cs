@@ -8,7 +8,7 @@ using GoymenERP.Modules.Accounting.Application.Inbox;
 
 namespace GoymenERP.Accounting.UnitTests;
 
-public sealed class AccountingSourceVoucherTests
+public sealed partial class AccountingSourceVoucherTests
 {
     private static readonly Guid Company = Guid.Parse("b0438000-0000-4000-8000-000000000001");
     private static readonly Guid Actor = Guid.Parse("b0438000-0000-4000-8000-000000000002");
@@ -150,12 +150,22 @@ public sealed class AccountingSourceVoucherTests
     private sealed class Fixture
     {
         public MutableCompanyContextForFenceTests Company { get; } = new(AccountingSourceVoucherTests.Company); public User User { get; } = new(); public Authority Authority { get; } = new();
-        public Commands Commands { get; } = new(); public Store Store { get; } public AccountingSourceVoucherServiceV1 Service { get; }
+        public Commands Commands { get; } = new(); public SyntheticSourceVoucherProtocolStore Store { get; } public AccountingSourceVoucherServiceV1 Service { get; }
         public Fixture() { Company.Set(AccountingSourceVoucherTests.Company); Store = new(Commands); Service = new(Store, Commands, Authority, Company, User, new Correlation()); }
     }
-    private sealed class Store(Commands commands) : IAccountingSourceVoucherStoreV1
+    private sealed class SyntheticSourceVoucherProtocolStore(Commands commands) : IAccountingSourceVoucherStoreV1
     {
-        public int Writes; public Action? BeforeFence; public Exception? Error;
+        public int Writes; public Action? BeforeFence; public Exception? Error; public bool ReplayOnly;
+        // Explicit synthetic protocol seam: preserves native Application golden tests, not SQL/Audit/transaction evidence.
+        public async Task<AccountingApiResult<AccountingSourceVoucherViewV1>> RunApprovalAsync(
+            Func<bool,Task<AccountingApiResult<AccountingSourceVoucherViewV1>>> attempt,Func<CancellationToken,Task> fence,CancellationToken token=default)
+        {
+            try{await fence(token);var answer=await attempt(ReplayOnly);await fence(token);return answer;}
+            catch(NormalJournalAuthorityDeniedException){return new(AccountingApiStatus.Denied,null,false,null);}
+        }
+        public async Task RecordApprovalAttemptAsync(AccountingCommandRecord record,Func<CancellationToken,Task> fence,CancellationToken token=default)
+        {await fence(token);commands.Record=record;}
+
         public Task<IReadOnlyList<AccountingSourceVoucherViewV1>> ListAsync(CancellationToken token) => Task.FromResult<IReadOnlyList<AccountingSourceVoucherViewV1>>([]);
         public Task<AccountingSourceVoucherViewV1?> FindAsync(Guid id, CancellationToken token) => Task.FromResult<AccountingSourceVoucherViewV1?>(null);
         public Task<AccountingSourceVoucherViewV1> ProposeCancellationReversalAsync(Guid id,
@@ -173,9 +183,9 @@ public sealed class AccountingSourceVoucherTests
     }
     private sealed class Commands : IAccountingCommandLog
     {
-        public AccountingCommandRecord? Record; public int Reads;
+        public AccountingCommandRecord? Record; public int Reads; public Action? AfterFind;
         public Task<AccountingCommandRecord?> FindCommandAsync(string command, string key, CancellationToken token)
-        { Reads++; return Task.FromResult(Record); }
+        { Reads++; AfterFind?.Invoke(); return Task.FromResult(Record); }
         public Task RecordCommandAsync(AccountingCommandRecord record, CancellationToken token) { Record = record; return Task.CompletedTask; }
     }
     private sealed class User : ICurrentUser

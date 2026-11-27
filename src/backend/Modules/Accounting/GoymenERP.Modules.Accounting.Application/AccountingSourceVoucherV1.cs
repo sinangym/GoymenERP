@@ -24,6 +24,15 @@ public sealed record ProposeAccountingSourceVoucherReversalV1(long ExpectedVersi
 
 public interface IAccountingSourceVoucherStoreV1
 {
+    // Whole approval only; a legacy provider cannot claim transaction/audit ownership.
+    Task<AccountingApiResult<AccountingSourceVoucherViewV1>> RunApprovalAsync(
+        Func<bool, Task<AccountingApiResult<AccountingSourceVoucherViewV1>>> attempt,
+        Func<CancellationToken, Task> freshFence, CancellationToken token = default) =>
+        Task.FromResult(new AccountingApiResult<AccountingSourceVoucherViewV1>(AccountingApiStatus.Unavailable, null, false, null));
+    Task RecordApprovalAttemptAsync(AccountingCommandRecord record, Func<CancellationToken, Task> freshFence,
+        CancellationToken token = default) => Task.FromException(new AccountingStoreException(
+            "source_voucher_source_unavailable", "Kaynak fiþ onay sýnýrý kullanýlamýyor."));
+
     Task<IReadOnlyList<AccountingSourceVoucherViewV1>> ListAsync(CancellationToken cancellationToken = default);
     Task<AccountingSourceVoucherViewV1?> FindAsync(Guid id, CancellationToken cancellationToken = default);
     Task<AccountingSourceVoucherViewV1> ApproveAsync(Guid id, long expectedVersion, Guid actorId,

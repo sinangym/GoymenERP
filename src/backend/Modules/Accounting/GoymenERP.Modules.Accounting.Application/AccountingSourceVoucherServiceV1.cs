@@ -7,7 +7,7 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Accounting.Application;
 
-public sealed class AccountingSourceVoucherServiceV1(IAccountingSourceVoucherStoreV1 store,
+public sealed partial class AccountingSourceVoucherServiceV1(IAccountingSourceVoucherStoreV1 store,
     IAccountingCommandLog commands, IErpAuthorityRevalidationService authority, ICompanyContext company,
     ICurrentUser user, ICorrelationContext correlation)
 {
@@ -30,8 +30,7 @@ public sealed class AccountingSourceVoucherServiceV1(IAccountingSourceVoucherSto
 
     public Task<AccountingApiResult<AccountingSourceVoucherViewV1>> ApproveAsync(Guid id, long version,
         string key, CancellationToken cancellationToken = default) => id == Guid.Empty || version < 1
-            ? InvalidVersionOrIdentity() : Run("approve", NormalJournalPermissionNamesV1.DraftApprove,
-            new { id, version }, key, (actor, fence, metadata) => store.ApproveAsync(id, version, actor, fence, metadata, cancellationToken), cancellationToken);
+            ? InvalidVersionOrIdentity() : RunApprovalAsync(id, version, key, cancellationToken);
 
     private static Task<AccountingApiResult<AccountingSourceVoucherViewV1>> InvalidVersionOrIdentity() => Task.FromResult(
         new AccountingApiResult<AccountingSourceVoucherViewV1>(AccountingApiStatus.Invalid, null, false,
@@ -53,20 +52,24 @@ public sealed class AccountingSourceVoucherServiceV1(IAccountingSourceVoucherSto
 
     private async Task<AccountingApiResult<AccountingSourceVoucherViewV1>> Run(string action, string permission, object payload,
         string key, Func<Guid, Func<CancellationToken, Task>, AccountingCommandMetadata, Task<AccountingSourceVoucherViewV1>> write,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, ApprovalCapture? approval = null, bool replayOnly = false)
     {
         if (string.IsNullOrWhiteSpace(key) || key.Length > 128 || payload is null)
             return new(AccountingApiStatus.Invalid, null, false, AccountingApiCodes.RequestInvalid);
         if (!Capture(out var companyId, out var actor, out var actorText)
-            || !await Allowed(permission, companyId, actor, actorText, cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
+            || !await AllowedRun(cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
+        if (approval is not null && !Current(approval.CompanyId, approval.ActorId, approval.ActorText)) return Denied<AccountingSourceVoucherViewV1>();
         var command = "accounting.source-voucher." + action + ".v1";
         var keyHash = AccountingApiService.Sha256(key.Trim());
         var requestHash = AccountingApiService.Sha256(command + "|" + JsonSerializer.Serialize(payload, Json));
         var prior = await commands.FindCommandAsync(command, keyHash, cancellationToken);
-        if (!await Allowed(permission, companyId, actor, actorText, cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
+        if (!await AllowedRun(cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
         if (prior is not null) return Replay(prior, actorText, requestHash);
+        if (replayOnly) return new(AccountingApiStatus.Conflict, null, false, AccountingStoreCodes.ConcurrentChange);
         var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
-        if (!scope.IsGranted || !scope.IsCompanyWide || !Current(companyId, actor, actorText)) return Denied<AccountingSourceVoucherViewV1>();
+        if (approval is not null) cancellationToken.ThrowIfCancellationRequested();
+        if (approval is not null && scope is null) return Denied<AccountingSourceVoucherViewV1>();
+        if (!scope!.IsGranted || !scope.IsCompanyWide || !Current(companyId, actor, actorText)) return Denied<AccountingSourceVoucherViewV1>();
         AccountingCommandRecord Complete(object value) => new(command, keyHash, actorText, requestHash,
             JsonSerializer.Serialize(new AccountingApiResult<AccountingSourceVoucherViewV1>(AccountingApiStatus.Ok,
                 (AccountingSourceVoucherViewV1)value, false, null), Json), correlation.CorrelationId);
@@ -75,48 +78,55 @@ public sealed class AccountingSourceVoucherServiceV1(IAccountingSourceVoucherSto
             correlation.ClientIpAddress, correlation.UserAgent, Complete);
         async Task Fence(CancellationToken token)
         {
-            if (!await Allowed(permission, companyId, actor, actorText, token)) throw new DeniedException();
+            if (approval is not null) await ApprovalFenceAsync(approval, token);
+            else if (!await Allowed(permission, companyId, actor, actorText, token)) throw new DeniedException();
         }
         async Task<AccountingApiResult<AccountingSourceVoucherViewV1>> Terminal(AccountingApiResult<AccountingSourceVoucherViewV1> result)
         {
-            if (!await Allowed(permission, companyId, actor, actorText, cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
+            if (!await AllowedRun(cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
             try
             {
-                await commands.RecordCommandAsync(new(command, keyHash, actorText, requestHash,
-                    JsonSerializer.Serialize(result, Json), correlation.CorrelationId), cancellationToken);
+                var record = new AccountingCommandRecord(command, keyHash, actorText, requestHash,
+                    JsonSerializer.Serialize(result, Json), correlation.CorrelationId);
+                if (approval is not null) await store.RecordApprovalAttemptAsync(record, Fence, cancellationToken);
+                else await commands.RecordCommandAsync(record, cancellationToken);
+                if (approval is not null && !await AllowedRun(cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
                 return result;
             }
             catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ConcurrentChange)
             {
+                if (approval is not null) throw new NormalJournalApprovalRaceException(exception.Code, exception);
                 var winner = await commands.FindCommandAsync(command, keyHash, cancellationToken);
-                if (!await Allowed(permission, companyId, actor, actorText, cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
+                if (!await AllowedRun(cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
                 return winner is null ? result : Replay(winner, actorText, requestHash);
             }
         }
         try
         {
             var result = await write(actor, Fence, metadata);
+            if (approval is not null && !await AllowedRun(cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
             return new(AccountingApiStatus.Ok, result, false, null);
         }
         catch (DeniedException) { return Denied<AccountingSourceVoucherViewV1>(); }
         catch (AccountingVersionConflictException exception)
         {
-            if (!await Allowed(permission, companyId, actor, actorText, cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
+            if (!await AllowedRun(cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
             return await Terminal(new(AccountingApiStatus.Conflict, null, false, AccountingApiCodes.VersionConflict, "expectedVersion",
                 exception.ExpectedVersion, exception.CurrentVersion));
         }
         catch (AccountingStoreException exception)
         {
-            if (!await Allowed(permission, companyId, actor, actorText, cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
+            if (!await AllowedRun(cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
             if (exception.Code == AccountingStoreCodes.ConcurrentChange)
             {
+                if (approval is not null) throw new NormalJournalApprovalRaceException(exception.Code, exception);
                 var winner = await commands.FindCommandAsync(command, keyHash, cancellationToken);
-                if (!await Allowed(permission, companyId, actor, actorText, cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
+                if (!await AllowedRun(cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
                 return winner is null ? new(AccountingApiStatus.Conflict, null, false, exception.Code) : Replay(winner, actorText, requestHash);
             }
             if (exception.Code == "source_voucher_not_found")
             {
-                if (!await Allowed(permission, companyId, actor, actorText, cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
+                if (!await AllowedRun(cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
                 return await Terminal(new(AccountingApiStatus.NotFound, null, false, null));
             }
             if (exception.Code is "source_voucher_not_approvable" or "source_voucher_reversal_not_proposable")
@@ -133,15 +143,21 @@ public sealed class AccountingSourceVoucherServiceV1(IAccountingSourceVoucherSto
         }
         catch (AccountingAmountScaleException)
         {
-            if (!await Allowed(permission, companyId, actor, actorText, cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
+            if (!await AllowedRun(cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
             return new(AccountingApiStatus.Unprocessable, null, false, "source_voucher_amount_unaccepted");
         }
         catch (AccountingDomainException)
         {
-            if (!await Allowed(permission, companyId, actor, actorText, cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
+            if (!await AllowedRun(cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
             return new(AccountingApiStatus.Unprocessable, null, false, "source_voucher_posting_refused");
         }
         catch (SettingsPrerequisiteException) { return new(AccountingApiStatus.Unavailable, null, false, null); }
+        async Task<bool> AllowedRun(CancellationToken token)
+        {
+            if (approval is null) return await Allowed(permission, companyId, actor, actorText, token);
+            try { await ApprovalFenceAsync(approval, token); return true; }
+            catch (NormalJournalAuthorityDeniedException) { return false; }
+        }
     }
 
     private async Task<bool> Allowed(string permission, Guid companyId, Guid actor, string actorText, CancellationToken cancellationToken)

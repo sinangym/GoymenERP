@@ -1,4 +1,3 @@
-using System.Data;
 using System.Globalization;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
@@ -7,14 +6,13 @@ using GoymenERP.Modules.Accounting.Domain.Journals;
 using GoymenERP.Modules.Accounting.Domain.Posting;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 
 public sealed partial class AccountingSourceVoucherStoreV1(AccountingDbContext db, AccountingStore posting,
     ICompanyContext company, IActiveAccountPlanReaderV1 accountPlans, ISettingsMoneyCandidateReader currencies,
-    IAuditEventCollector audit, TimeProvider clock) : IAccountingSourceVoucherStoreV1
+    IAuditEventCollector audit, TimeProvider clock, IAuditTransactionWriterV1? approvalAuditWriter = null) : IAccountingSourceVoucherStoreV1
 {
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
@@ -67,92 +65,68 @@ public sealed partial class AccountingSourceVoucherStoreV1(AccountingDbContext d
         Func<CancellationToken, Task> freshAuthorityFence, AccountingCommandMetadata metadata,
         CancellationToken cancellationToken = default)
     {
+        if (!IsOwnedApproval) throw Refuse("source_voucher_source_unavailable");
         var companyId = Company();
         if (actorId == Guid.Empty || !Guid.TryParse(metadata.ActorId, out var auditActor) || auditActor != actorId)
             throw Refuse("source_voucher_approval_refused");
         await freshAuthorityFence(cancellationToken);
-        var source = await db.SourceDocumentVoucherDrafts.AsNoTracking().Where(x => x.Id == id)
-            .Select(x => new { x.SourceDocumentId }).SingleOrDefaultAsync(cancellationToken)
+        var source = await ApprovalRead(() => db.SourceDocumentVoucherDrafts.AsNoTracking().Where(x => x.Id == id)
+            .Select(x => new { x.SourceDocumentId }).SingleOrDefaultAsync(cancellationToken), cancellationToken)
             ?? throw Refuse("source_voucher_not_found");
         RequireCompany(companyId);
         // The source-cancellation key range and the accounting period remain protected through the journal commit.
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
-        try
-        {
-            var cancelled = await db.SourceInvoiceCancellations.AnyAsync(x => x.SourceDocumentId == source.SourceDocumentId, cancellationToken);
-            var row = await db.SourceDocumentVoucherDrafts.SingleAsync(x => x.Id == id, cancellationToken);
-            if (expectedVersion < 1 || row.Version != expectedVersion) throw new AccountingVersionConflictException(expectedVersion, row.Version);
-            AccountingSourceVoucherRulesV1.RequireApproval(row.Status, row.SourceActorId, actorId, cancelled);
-            var period = await db.Periods.SingleOrDefaultAsync(x => x.Status == 1 && x.StartsOn <= row.DocumentDate
-                && x.EndsOn >= row.DocumentDate, cancellationToken);
-            if (period is null) throw Refuse("source_voucher_period_waiting");
-            var lines = await db.SourceDocumentVoucherDraftLines.AsNoTracking().Where(x => x.DraftId == id)
-                .OrderBy(x => x.LineNumber).ToListAsync(cancellationToken);
-            var plan = await accountPlans.ReadActiveAsync(cancellationToken);
-            RequireCompany(companyId);
-            if (plan is null || plan.CompanyId != companyId || plan.Status != ApprovedAccountingSourceCatalogStatusV1.Active
-                || plan.Package.Mirror.CompanyId != companyId) throw Refuse("source_voucher_account_plan_missing");
-            if (lines.Count == 0 || lines.Any(line => plan.Package.Mirror.Lookup(new AccountRef(companyId, line.AccountId)) is null))
-                throw Refuse("source_voucher_account_not_in_plan");
-            var currency = MoneyCurrencyCandidatesV1.EnsureWellFormed(await currencies.GetMoneyCurrencyCandidatesAsync(cancellationToken))
-                .Where(x => x.Code == "TRY").ToArray();
-            if (currency.Length != 1) throw Refuse("source_voucher_tl_currency_unavailable");
-            await freshAuthorityFence(cancellationToken);
-            RequireCompany(companyId);
-            var before = JsonSerializer.Serialize(View(row, lines, null), Json);
-            var request = new PostingRequest("accounting.invoice-journal", row.Id.ToString("D"), row.Id,
-                new SourceReference(companyId, row.SourceDocumentId, "invoice-source"),
-                "invoice-mapping/" + row.MappingVersion.ToString(CultureInfo.InvariantCulture), currency[0].CurrencyId,
-                new PostingDates(row.DocumentDate, row.DocumentDate, null, clock.GetUtcNow()),
-                lines.Select(line => new ProposedLine(line.MappingKey, new AccountRef(companyId, line.AccountId),
-                    (PostingSide)line.Side, line.Amount)).ToArray());
-            var outcome = await posting.ReceiveAsync(request, period.Id, metadata with { Completion = null }, cancellationToken);
-            if (outcome.Kind != PostingOutcomeKind.Posted || outcome.Journal?.Id != row.Id)
-                throw Refuse("source_voucher_posting_conflict");
-            await freshAuthorityFence(cancellationToken);
-            RequireCompany(companyId);
-            var version = row.Version;
-            row.Status = 2;
-            row.PeriodId = period.Id;
-            row.JournalId = outcome.Journal.Id;
-            row.ApprovedBy = actorId;
-            row.ApprovedAtUtc = clock.GetUtcNow();
-            row.UpdatedAtUtc = row.ApprovedAtUtc.Value;
-            row.Version = checked(version + 1);
-            var result = View(row, lines, null);
-            audit.Enqueue(new AuditEventDraft(companyId, "accounting.source-voucher.approved.v1", "Accounting.SourceVoucher",
-                row.Id.ToString("D"), "Approve", version, row.Version, AuditActorTypes.User, metadata.ActorId,
-                metadata.PermissionCode, metadata.RoleCodes, before, JsonSerializer.Serialize(result, Json),
-                "Kesinleşmiş kaynak faturanın taslak fişi ayrı muhasebe yetkilisince onaylandı.", null,
-                AuditAiInvolvement.None, null, metadata.SourceChannel, metadata.ClientIpAddress, metadata.UserAgent,
-                metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
-            if (metadata.Completion?.Invoke(result) is { } command)
-                db.Commands.Add(new AccountingCommandRow { CompanyId = companyId, CommandName = command.CommandName,
-                    IdempotencyKeyHash = command.IdempotencyKeyHash, ActorId = command.ActorId, PayloadHash = command.RequestHash,
-                    ResultJson = command.ResultJson, CorrelationId = command.OriginalCorrelationId, RecordedAtUtc = clock.GetUtcNow() });
-            await db.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            return result;
-        }
-        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
-            || exception.InnerException is SqlException { Number: 2601 or 2627 })
-        {
-            await transaction.RollbackAsync(CancellationToken.None);
-            db.ChangeTracker.Clear();
-            throw Refuse(AccountingStoreCodes.ConcurrentChange);
-        }
-        catch (Exception exception) when (exception is SqlException { Number: 1205 }
-            || exception is DbUpdateException { InnerException: SqlException { Number: 1205 } })
-        {
-            db.ChangeTracker.Clear();
-            throw Refuse(AccountingStoreCodes.ConcurrentChange);
-        }
-        catch
-        {
-            await transaction.RollbackAsync(CancellationToken.None);
-            db.ChangeTracker.Clear();
-            throw;
-        }
+        var cancelled = await ApprovalRead(() => db.SourceInvoiceCancellations.AnyAsync(x => x.SourceDocumentId == source.SourceDocumentId, cancellationToken), cancellationToken);
+        var row = await ApprovalRead(() => db.SourceDocumentVoucherDrafts.SingleAsync(x => x.Id == id, cancellationToken), cancellationToken);
+        if (expectedVersion < 1 || row.Version != expectedVersion) throw new AccountingVersionConflictException(expectedVersion, row.Version);
+        AccountingSourceVoucherRulesV1.RequireApproval(row.Status, row.SourceActorId, actorId, cancelled);
+        var period = await ApprovalRead(() => db.Periods.SingleOrDefaultAsync(x => x.Status == 1 && x.StartsOn <= row.DocumentDate
+            && x.EndsOn >= row.DocumentDate, cancellationToken), cancellationToken);
+        if (period is null) throw Refuse("source_voucher_period_waiting");
+        var lines = await ApprovalRead(() => db.SourceDocumentVoucherDraftLines.AsNoTracking().Where(x => x.DraftId == id)
+            .OrderBy(x => x.LineNumber).ToListAsync(cancellationToken), cancellationToken);
+        var plan = await ApprovalRead(() => accountPlans.ReadActiveAsync(cancellationToken), cancellationToken);
+        RequireCompany(companyId);
+        if (plan is null || plan.CompanyId != companyId || plan.Status != ApprovedAccountingSourceCatalogStatusV1.Active
+            || plan.Package.Mirror.CompanyId != companyId) throw Refuse("source_voucher_account_plan_missing");
+        if (lines.Count == 0 || lines.Any(line => plan.Package.Mirror.Lookup(new AccountRef(companyId, line.AccountId)) is null))
+            throw Refuse("source_voucher_account_not_in_plan");
+        var currency = MoneyCurrencyCandidatesV1.EnsureWellFormed(await ApprovalRead(() => currencies.GetMoneyCurrencyCandidatesAsync(cancellationToken), cancellationToken))
+            .Where(x => x.Code == "TRY").ToArray();
+        if (currency.Length != 1) throw Refuse("source_voucher_tl_currency_unavailable");
+        await freshAuthorityFence(cancellationToken);
+        RequireCompany(companyId);
+        var before = JsonSerializer.Serialize(View(row, lines, null), Json);
+        var request = new PostingRequest("accounting.invoice-journal", row.Id.ToString("D"), row.Id,
+            new SourceReference(companyId, row.SourceDocumentId, "invoice-source"),
+            "invoice-mapping/" + row.MappingVersion.ToString(CultureInfo.InvariantCulture), currency[0].CurrencyId,
+            new PostingDates(row.DocumentDate, row.DocumentDate, null, clock.GetUtcNow()),
+            lines.Select(line => new ProposedLine(line.MappingKey, new AccountRef(companyId, line.AccountId),
+                (PostingSide)line.Side, line.Amount)).ToArray());
+        var outcome = await ApprovalRead(() => posting.ReceiveAsync(request, period.Id, metadata with { Completion = null }, cancellationToken), cancellationToken);
+        if (outcome.Kind != PostingOutcomeKind.Posted || outcome.Journal?.Id != row.Id)
+            throw Refuse("source_voucher_posting_conflict");
+        await freshAuthorityFence(cancellationToken);
+        RequireCompany(companyId);
+        var version = row.Version;
+        row.Status = 2;
+        row.PeriodId = period.Id;
+        row.JournalId = outcome.Journal.Id;
+        row.ApprovedBy = actorId;
+        row.ApprovedAtUtc = clock.GetUtcNow();
+        row.UpdatedAtUtc = row.ApprovedAtUtc.Value;
+        row.Version = checked(version + 1);
+        var result = View(row, lines, null);
+        audit.Enqueue(new AuditEventDraft(companyId, "accounting.source-voucher.approved.v1", "Accounting.SourceVoucher",
+            row.Id.ToString("D"), "Approve", version, row.Version, AuditActorTypes.User, metadata.ActorId,
+            metadata.PermissionCode, metadata.RoleCodes, before, JsonSerializer.Serialize(result, Json),
+            "Kesinleşmiş kaynak faturanın taslak fişi ayrı muhasebe yetkilisince onaylandı.", null,
+            AuditAiInvolvement.None, null, metadata.SourceChannel, metadata.ClientIpAddress, metadata.UserAgent,
+            metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
+        if (metadata.Completion?.Invoke(result) is { } command)
+            posting.CompleteOwnedSourceVoucherApproval(this, db, audit, approvalAuditWriter!, command);
+        await posting.SaveOwnedSourceVoucherApprovalAsync(this, db, audit, approvalAuditWriter!, cancellationToken);
+        await ApprovalReadFence(cancellationToken);
+        return result;
     }
 
     internal static AccountingSourceVoucherViewV1 View(AccountingSourceDocumentVoucherDraftRow row,

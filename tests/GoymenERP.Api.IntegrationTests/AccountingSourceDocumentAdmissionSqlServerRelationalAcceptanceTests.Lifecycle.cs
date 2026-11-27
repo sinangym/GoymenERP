@@ -72,9 +72,14 @@ public sealed partial class AccountingSourceDocumentAdmissionSqlServerRelational
         await OpenVoucherPeriod(run);
         var admission = await run.AdmitAsync(CompanyA, Request(CompanyA) with { OfficialInvoiceNo = "SENTETIK-INV-1" });
         var id = admission.VoucherDraftId!.Value;
-        var fences = 0;
+        var save = new VoucherApprovalSave(); var firedAfterJournalSave = false;
         await Assert.ThrowsAsync<InvalidOperationException>(() => ApproveVoucher(run, id, _ =>
-        { if (++fences == 3) throw new InvalidOperationException("SENTETIK lost final authority"); return Task.CompletedTask; }));
+        {
+            // The first owned journal Save has completed; the next native authority fence must still roll it back.
+            if (save.JournalSaved) { firedAfterJournalSave = true; throw new InvalidOperationException("SENTETIK lost final authority"); }
+            return Task.CompletedTask;
+        }, save));
+        Assert.True(firedAfterJournalSave);
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Journals WHERE CompanyId=@c", ("@c", CompanyA)));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT Status FROM accounting.SourceDocumentVoucherDrafts WHERE CompanyId=@c", ("@c", CompanyA)));
         var posted = await ApproveVoucher(run, id, _ => Task.CompletedTask);
@@ -175,17 +180,19 @@ public sealed partial class AccountingSourceDocumentAdmissionSqlServerRelational
         var (created, _) = await periods.ProposePeriodAsync(id, new(2026, 11, 1), new(2026, 11, 30), maker, VoucherMetadata(maker));
         await periods.ApprovePeriodAsync(id, created.Version, VoucherChecker, VoucherMetadata(VoucherChecker));
     }
-    private static async Task<AccountingSourceVoucherViewV1> ApproveVoucher(Run run, Guid id, Func<CancellationToken, Task> fence)
+    private static async Task<AccountingSourceVoucherViewV1> ApproveVoucher(Run run, Guid id, Func<CancellationToken, Task> fence,
+        VoucherApprovalSave? save = null)
     {
-        await using var scope = run.Factory.Services.CreateAsyncScope(); var provider = scope.ServiceProvider;
-        var company = provider.GetRequiredService<ICompanyContext>(); company.Set(CompanyA);
-        var db = provider.GetRequiredService<AccountingDbContext>(); var audit = provider.GetRequiredService<IAuditEventCollector>();
-        var posting = new AccountingStore(db, company, audit, TimeProvider.System,
-            new AccountingAmountScaleVerifier(new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(CompanyA)));
-        var store = new AccountingSourceVoucherStoreV1(db, posting, company, provider.GetRequiredService<IActiveAccountPlanReaderV1>(),
-            new VoucherCurrencies(), audit, TimeProvider.System);
-        return await store.ApproveAsync(id, 1, VoucherChecker, fence, VoucherMetadata(VoucherChecker));
+        // Real native service -> exact owner runner, same actual collector/writer/context. No synthetic transaction port.
+        await using var owner = new VoucherApprovalScope(run, save: save);
+        owner.Authority.BeforeRead = fence;
+        var answer = await owner.Service.ApproveAsync(id, 1, Key("voucher"));
+        if (answer.Status == AccountingApiStatus.Ok && answer.Resource is { } view) return view;
+        if (answer.Code == AccountingApiCodes.VersionConflict && answer.ExpectedVersion is { } expected && answer.CurrentVersion is { } current)
+            throw new AccountingVersionConflictException(expected, current);
+        throw new AccountingStoreException(answer.Code ?? AccountingStoreCodes.ConcurrentChange, "SENTETIK native source-voucher refusal");
     }
+
     private static async Task<AccountingSourceInvoiceCancellationAnswerV1> CancelVoucherSource(Run run, AccountingSourceInvoiceCancellationV1 request)
     {
         await using var scope = run.Factory.Services.CreateAsyncScope(); scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
