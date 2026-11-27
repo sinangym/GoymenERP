@@ -218,8 +218,6 @@ builder.Services.AddWorkDelegationsV1(builder.Configuration);
 builder.Services.AddScoped<IWorkInboxSourceV1>(provider => new NativeApprovalWorkInboxSourceV1(
     ActivatorUtilities.CreateInstance<FinanceInvoiceImportPendingApprovalAdapterV1>(provider)));
 builder.Services.AddScoped<IWorkInboxSourceV1>(provider => new NativeApprovalWorkInboxSourceV1(
-    ActivatorUtilities.CreateInstance<InventoryStockCountPendingApprovalAdapterV1>(provider)));
-builder.Services.AddScoped<IWorkInboxSourceV1>(provider => new NativeApprovalWorkInboxSourceV1(
     ActivatorUtilities.CreateInstance<InventoryStockScrapPendingApprovalAdapterV1>(provider)));
 builder.Services.AddScoped<IWorkInboxSourceV1>(provider => new NativeApprovalWorkInboxSourceV1(
     ActivatorUtilities.CreateInstance<SalesOrderDraftPendingApprovalAdapterV1>(provider)));
