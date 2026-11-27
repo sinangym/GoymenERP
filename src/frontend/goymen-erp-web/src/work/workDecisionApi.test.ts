@@ -506,3 +506,9 @@ it('forwards frozen plan excess versions unchanged and accepts only the immutabl
  expect((await sendWorkDecision(company,excessKind,id,{...excessRequest,approve:false},'frozen-key')).type).toBe('unknown')
  expect(fetch.mock.calls).toHaveLength(count)
 })
+
+it('rejects native C0 and C1 controls in the exact human proposal without changing printable text',()=>{
+ for(const control of ['\u0000','\u001f','\u007f','\u0085','\u009f'])
+  expect(decodeWorkDecisionPreview({...excessPreview,logisticsPlanExcess:{...excessProposal,reason:`before${control}after`}},company,excessKind,id)).toBeNull()
+ expect(decodeWorkDecisionPreview({...excessPreview,logisticsPlanExcess:{...excessProposal,reason:'Türkçe teklif gerekçesi'}},company,excessKind,id)).not.toBeNull()
+})

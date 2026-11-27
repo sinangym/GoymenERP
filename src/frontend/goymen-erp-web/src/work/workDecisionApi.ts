@@ -101,7 +101,7 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
       || !isPositiveInt64Text(proposal.instructionVersion) || !isBoundUuid(proposal.instructionId) || !isBoundUuid(proposal.lineId)
       || instructions.length !== 1 || !record(instructions[0]) || !same(instructions[0].recordId, proposal.instructionId)
       || typeof proposal.quantity !== 'string' || !/^(?:0|[1-9]\d{0,14})(?:\.\d{0,2}[1-9])?$/.test(proposal.quantity) || proposal.quantity === '0'
-      || !text(proposal.reason) || proposal.reason.trim() !== proposal.reason || proposal.reason.length > 500 || /[\u0000-\u001f\u007f-\u009f]/.test(proposal.reason)
+      || !text(proposal.reason) || proposal.reason.trim() !== proposal.reason || proposal.reason.length > 500 || Array.from(proposal.reason).some(character => { const code = character.charCodeAt(0); return code <= 0x1f || code >= 0x7f && code <= 0x9f })
       || !text(proposal.proposedBy) || proposal.proposedBy.length > 128 || !transferDispatchUtc(proposal.proposedAtUtc)) return null
   }
   if (isCounterpartyWorkDecisionKind(kind)) {
