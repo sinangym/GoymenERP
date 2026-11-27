@@ -19,7 +19,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.WorkInbox;
 /// block is lifted) and says so in its own rule.
 /// </para>
 /// </summary>
-internal sealed class LogisticsPlanExcessWorkInboxSourceV1 : IWorkInboxSourceV1
+internal sealed class LogisticsPlanExcessWorkInboxSourceV1 : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "logistics";
     public const string KindName = "logistics.plan-excess.v1";
@@ -61,6 +61,61 @@ internal sealed class LogisticsPlanExcessWorkInboxSourceV1 : IWorkInboxSourceV1
 
     public string ApproverPermission => LogisticsPermissionManifestV1.ShipmentPlanExcessApprove;
 
+
+    /// <summary>Purpose read over the exact company's exception, including completed, blocked or stale instructions.
+    /// Native approval/replay decides whether the frozen versions are still usable. No mutable usage counter is a receipt.</summary>
+    public async Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context, Guid itemId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (itemId == Guid.Empty || await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+        var query = from exception in rows.PlanExcessExceptions
+            join instruction in rows.Instructions
+                on new { exception.CompanyId, Id = exception.InstructionId } equals new { instruction.CompanyId, instruction.Id }
+            join line in rows.Lines
+                on new { exception.CompanyId, exception.InstructionId, exception.LineId }
+                equals new { line.CompanyId, line.InstructionId, line.LineId }
+            where exception.CompanyId == context.CompanyId && exception.ExceptionId == itemId
+                && instruction.CompanyId == context.CompanyId && line.CompanyId == context.CompanyId
+            select new { exception.ExceptionId, exception.InstructionId, exception.LineId, exception.Version, exception.Status,
+                exception.Quantity, exception.Reason, exception.ProposedBy, exception.ProposedAtUtc,
+                InstructionVersion = instruction.Version, InstructionStatus = instruction.Status,
+                line.Instructed, line.ApprovedPlanExcess, line.UnitIsKilogram, line.IsBlocked };
+        var found = await rows.ListAsync(query.Take(2), cancellationToken);
+        if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+        if (found.Count == 0) return null;
+        if (found.Count != 1) throw new InvalidOperationException("Ambiguous native plan excess source.");
+        var row = found[0];
+        if (row.ExceptionId == Guid.Empty || row.InstructionId == Guid.Empty || row.LineId == Guid.Empty
+            || !(row.Status == 1 && row.Version == 1 || row.Status == 2 && row.Version == 2)
+            || row.InstructionVersion < 1 || !Enum.IsDefined((LoadingInstructionStatus)row.InstructionStatus)
+            || row.Quantity <= 0 || row.Instructed < 0 || row.ApprovedPlanExcess < 0
+            || string.IsNullOrWhiteSpace(row.Reason) || row.Reason.Trim() != row.Reason || row.Reason.Length > 500 || row.Reason.Any(char.IsControl)
+            || string.IsNullOrWhiteSpace(row.ProposedBy) || row.ProposedBy.Length > 128 || row.ProposedAtUtc == default)
+            throw new InvalidOperationException("Malformed native plan excess source.");
+        // Capture scalar metadata before the awaited final read, including for in-memory owner fixtures.
+        var version = row.Version; var status = row.Status; var instructionVersion = row.InstructionVersion;
+        var instructionStatus = row.InstructionStatus;
+        var final = await rows.ListAsync(query.Select(value => new { value.Version, value.Status,
+            value.InstructionVersion, value.InstructionStatus }).Take(2), cancellationToken);
+        if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+        if (final.Count != 1 || final[0].Version != version || final[0].Status != status
+            || final[0].InstructionVersion != instructionVersion || final[0].InstructionStatus != instructionStatus)
+            throw new InvalidOperationException("The native plan excess source changed during the read.");
+        var unit = row.UnitIsKilogram ? KilogramUnit : null;
+        var rules = new List<WorkApprovalRuleResultV1> { new(ExcessRule,
+            WorkInboxRulesV1.Decimal(row.Instructed), null, WorkInboxRulesV1.Decimal(row.Quantity), unit) };
+        if (row.ApprovedPlanExcess > 0) rules.Add(new(AlreadyApprovedRule, null, WorkInboxRulesV1.Decimal(row.ApprovedPlanExcess), null, unit));
+        if (row.IsBlocked) rules.Add(new(LineBlockedRule, null, null, null, null));
+        var item = new WorkInboxItemV1(ModuleName, KindName, row.ExceptionId, LogisticsWorkInboxFence.Id(row.ExceptionId),
+            row.ProposedAtUtc.ToUniversalTime(), ScreenPath, row.ProposedBy, rules,
+            [LogisticsWorkInboxFence.InstructionReference(row.InstructionId)]);
+        return new(context.CompanyId, item, version.ToString(System.Globalization.CultureInfo.InvariantCulture), status == 1,
+            LogisticsPlanExcess: new(instructionVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            LogisticsPlanExcessProof: new(context.CompanyId, row.ExceptionId, row.InstructionId, row.LineId,
+                LogisticsStore.PlanExcessQuantity(row.Quantity), row.Reason, row.ProposedBy, row.ProposedAtUtc));
+    }
 
     public async Task<WorkInboxSourceResultV1> ListPendingAsync(
         WorkInboxSourceContextV1 context,

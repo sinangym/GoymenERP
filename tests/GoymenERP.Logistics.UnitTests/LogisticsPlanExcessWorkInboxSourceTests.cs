@@ -3,6 +3,7 @@ using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Logistics.Infrastructure;
 using GoymenERP.Modules.Logistics.Infrastructure.Persistence;
+using GoymenERP.Modules.Logistics.Infrastructure.Shell;
 using GoymenERP.Modules.Logistics.Infrastructure.WorkInbox;
 using Microsoft.Extensions.DependencyInjection;
 using F = GoymenERP.Logistics.UnitTests.LogisticsWorkInboxTestFixture;
@@ -158,6 +159,83 @@ public sealed class LogisticsPlanExcessWorkInboxSourceTests
 
         Assert.Equal(NativeApprovalQueueOutcomeV1.Found, result.Outcome);
         Assert.Contains("[PlanExcessExceptions]", Assert.Single(rows.Sql), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(1)] [InlineData(2)]
+    public async Task Decision_purpose_keeps_the_exact_terminal_or_blocked_exception_and_both_native_versions_without_browse_permission(int state)
+    {
+        var fixture = new F(); var instruction = fixture.Instruction(F.Id(1), status: 3); instruction.Version = 99;
+        Line(fixture, F.Id(1), F.Id(31), blocked: true, approvedExcess: 20);
+        Exception(fixture, F.Id(1), F.Id(31), F.Id(41), state, 5);
+        var source = new LogisticsPlanExcessWorkInboxSourceV1(fixture.Rows, fixture.Fence);
+        var snapshot = await source.ReadDecisionAsync(fixture.Context(), F.Id(41), default);
+        Assert.NotNull(snapshot); Assert.Equal(state.ToString(), snapshot.SourceVersion); Assert.Equal(state == 1, snapshot.Pending);
+        Assert.Equal("99", snapshot.LogisticsPlanExcess!.InstructionVersion);
+        var proof = Assert.IsType<WorkLogisticsPlanExcessProofV1>(snapshot.LogisticsPlanExcessProof);
+        Assert.Equal((F.CompanyA, F.Id(41), F.Id(1), F.Id(31), "10", "SENTETIK", F.Maker, F.T0.AddMinutes(5)),
+            (proof.CompanyId, proof.ExceptionId, proof.InstructionId, proof.LineId, proof.Quantity, proof.Reason, proof.ProposedBy, proof.ProposedAtUtc));
+        Assert.Contains(snapshot.Item.Rules, rule => rule.RuleCode == LogisticsPlanExcessWorkInboxSourceV1.LineBlockedRule);
+        Assert.Equal(LogisticsPlanExcessWorkInboxSourceV1.ScreenPath, snapshot.Item.Link);
+        Assert.All(fixture.Authority.Calls, call => Assert.Equal(LogisticsPlanExcessV1.ApprovePermission, call.Permission));
+        Assert.DoesNotContain("LogisticsPlanExcessProof", System.Text.Json.JsonSerializer.Serialize(snapshot));
+    }
+
+    [Fact]
+    public async Task Decision_purpose_requires_every_company_join_and_current_companywide_authority()
+    {
+        var fixture = new F(); fixture.Instruction(F.Id(1), F.CompanyB);
+        Line(fixture, F.Id(1), F.Id(31), companyId: F.CompanyB);
+        Exception(fixture, F.Id(1), F.Id(31), F.Id(41), 1, 0);
+        var source = new LogisticsPlanExcessWorkInboxSourceV1(fixture.Rows, fixture.Fence);
+        Assert.Null(await source.ReadDecisionAsync(fixture.Context(), F.Id(41), default));
+        fixture.Rows.InstructionRows[0].CompanyId = F.CompanyA;
+        Assert.Null(await source.ReadDecisionAsync(fixture.Context(), F.Id(41), default));
+        fixture.Rows.LineRows[0].CompanyId = F.CompanyA;
+        Assert.NotNull(await source.ReadDecisionAsync(fixture.Context(), F.Id(41), default));
+        fixture.Authority.Answer = (_, _) => LogisticsWorkInboxTestAuthority.SiteOnly;
+        var reads = fixture.Rows.Reads; Assert.Null(await source.ReadDecisionAsync(fixture.Context(), F.Id(41), default)); Assert.Equal(reads, fixture.Rows.Reads);
+    }
+
+    [Theory]
+    [InlineData(true)] [InlineData(false)]
+    public async Task Decision_purpose_detects_a_changed_exception_or_instruction_in_the_final_read(bool exceptionChanged)
+    {
+        var fixture = new F(); fixture.Instruction(F.Id(1)); Line(fixture, F.Id(1), F.Id(31));
+        Exception(fixture, F.Id(1), F.Id(31), F.Id(41), 1, 0);
+        fixture.Authority.Answer = (_, _) =>
+        {
+            if (fixture.Authority.Calls.Count == 2)
+            {
+                if (exceptionChanged) { fixture.Rows.PlanExcessRows[0].Status = 2; fixture.Rows.PlanExcessRows[0].Version = 2; }
+                else fixture.Rows.InstructionRows[0].Version++;
+            }
+            return LogisticsWorkInboxTestAuthority.CompanyWide;
+        };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new LogisticsPlanExcessWorkInboxSourceV1(fixture.Rows, fixture.Fence)
+            .ReadDecisionAsync(fixture.Context(), F.Id(41), default));
+    }
+
+    [Fact]
+    public async Task Decision_purpose_query_translates_with_the_exact_exception_and_all_company_joins()
+    {
+        var fixture = new F(); using var rows = new LogisticsSqlTranslatingWorkInboxRows(F.CompanyA);
+        Assert.Null(await new LogisticsPlanExcessWorkInboxSourceV1(rows, fixture.Fence).ReadDecisionAsync(fixture.Context(), F.Id(41), default));
+        var sql = Assert.Single(rows.Sql); Assert.Contains("[PlanExcessExceptions]", sql); Assert.Contains("[LoadingInstructions]", sql);
+        Assert.Contains("[ExceptionId]", sql); Assert.Contains("[CompanyId]", sql);
+    }
+
+    [Fact]
+    public void Decision_purpose_is_standalone_staged_and_preserves_the_native_screen_and_permission()
+    {
+        var provider = new LogisticsShellCapabilityProvider(); Assert.Equal("1.7", provider.ContractVersion);
+        var purpose = Assert.Single(provider.GetDeclarations(), value => value.CapabilityId == LogisticsShellCapabilityProvider.PlanExcessWorkDecisionCapabilityId);
+        Assert.Equal("/onaylarim/logistics.plan-excess.v1/:approvalId", purpose.RoutePath); Assert.Null(purpose.ParentCapabilityId);
+        Assert.False(purpose.ImplementationAvailable); Assert.Equal([LogisticsPlanExcessV1.ApprovePermission], purpose.RequiredPermissions);
+        Assert.Equal(GoymenERP.BuildingBlocks.Shell.ShellCapabilityContextRequirement.SingleCompany, purpose.ContextRequirement);
+        Assert.Equal(GoymenERP.BuildingBlocks.Shell.ShellCapabilityScopeRequirement.CompanyWide, purpose.ScopeRequirement);
+        var native = Assert.Single(provider.GetDeclarations(), value => value.CapabilityId == LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId);
+        Assert.Equal(LogisticsPlanExcessWorkInboxSourceV1.ScreenPath, native.RoutePath); Assert.False(native.ImplementationAvailable);
     }
 
     private static void Line(F fixture, Guid instructionId, Guid lineId, decimal instructed = 100m, decimal approvedExcess = 0m,

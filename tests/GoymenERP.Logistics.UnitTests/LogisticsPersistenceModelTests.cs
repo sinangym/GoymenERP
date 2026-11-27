@@ -906,11 +906,11 @@ public sealed class LogisticsPersistenceModelTests
         var provider = new LogisticsShellCapabilityProvider();
         var declarations = provider.GetDeclarations().Where(item =>
             !item.CapabilityId.StartsWith("logistics.subcontract-deliveries.", StringComparison.Ordinal)).ToList();
-        Assert.Equal("1.6", provider.ContractVersion);
-        Assert.Equal(14, declarations.Count);
+        Assert.Equal("1.7", provider.ContractVersion);
+        Assert.Equal(15, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             declaration.CapabilityId is not (LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId
-                or LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId), declaration.ImplementationAvailable));
+                or LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId or LogisticsShellCapabilityProvider.PlanExcessWorkDecisionCapabilityId), declaration.ImplementationAvailable));
         var excessPrepare = Assert.Single(declarations, item => item.CapabilityId == LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId);
         Assert.Equal(LogisticsShellCapabilityProvider.DetailCapabilityId, excessPrepare.ParentCapabilityId);
         Assert.Equal([LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.LoadsRecord], excessPrepare.RequiredPermissions);
@@ -922,6 +922,7 @@ public sealed class LogisticsPersistenceModelTests
                 // AT-025: the operations work list's two separate sections, each behind its own read name.
                 ("logistics.operations-work.purchase", "/lojistik/operasyon-isleri/satinalma", LogisticsPermissionManifestV1.OperationsPurchaseWorkRead),
                 ("logistics.operations-work.sales", "/lojistik/operasyon-isleri/satis", LogisticsPermissionManifestV1.OperationsSalesWorkRead),
+                ("logistics.plan-excess.work-decision", "/onaylarim/logistics.plan-excess.v1/:approvalId", LogisticsPermissionManifestV1.ShipmentPlanExcessApprove),
                 ("logistics.shipments.plan-excess.approve", "/lojistik/plan-ustu-sevk-onay", LogisticsPermissionManifestV1.ShipmentPlanExcessApprove),
                 ("logistics.transfer-departures.record", "/lojistik/transfer-cikislari", LogisticsPermissionManifestV1.TransferDeparturesRecord),
             ],
@@ -959,6 +960,7 @@ public sealed class LogisticsPersistenceModelTests
                 ("logistics.instructions.list", "L-02"),
                 ("logistics.operations-work.purchase", "L-09"),
                 ("logistics.operations-work.sales", "L-01"),
+                ("logistics.plan-excess.work-decision", "/onaylarim/logistics.plan-excess.v1/:approvalId", LogisticsPermissionManifestV1.ShipmentPlanExcessApprove),
                 ("logistics.shipments.plan-excess.approve", "L-PLAN-EXCESS-APPROVE"),
                 ("logistics.shipments.plan-excess.prepare", "L-02-DETAIL"),
                 ("logistics.shipments.record", "L-02-DETAIL"),

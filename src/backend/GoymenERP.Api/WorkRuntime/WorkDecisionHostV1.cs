@@ -10,6 +10,7 @@ using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
+using GoymenERP.Modules.Logistics.Application.Contracts;
 
 namespace GoymenERP.Api.WorkRuntime;
 
@@ -17,7 +18,10 @@ public sealed record WorkDecisionRequestV1(string ExpectedVersion, bool Approve,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     WorkManufacturingPlanReapprovalSelectionV1? ManufacturingPlanReapproval = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    WorkInventoryTransferLossSelectionV1? InventoryTransferLoss = null);
+    WorkInventoryTransferLossSelectionV1? InventoryTransferLoss = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    WorkLogisticsPlanExcessSelectionV1? LogisticsPlanExcess = null);
+public sealed record WorkLogisticsPlanExcessSelectionV1(string ExpectedInstructionVersion);
 public sealed record WorkInventoryTransferLossSelectionV1(int RequestNumber, DateTimeOffset DecidedAtUtc);
 /// <summary>The human's explicit selection. Only the Manufacturing reapproval command accepts it.</summary>
 public sealed record WorkManufacturingPlanReapprovalSelectionV1(IReadOnlyList<Guid>? SelectedLabelIds = null);
@@ -31,7 +35,9 @@ public sealed record WorkDecisionPreviewV1(Guid CompanyId, string Kind, Guid Ite
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     WorkCounterpartyTaxIdentityChangePreviewV1? CounterpartyTaxIdentityChange = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    WorkCounterpartyLegalNameChangePreviewV1? CounterpartyLegalNameChange = null);
+    WorkCounterpartyLegalNameChangePreviewV1? CounterpartyLegalNameChange = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    WorkLogisticsPlanExcessOptionsV1? LogisticsPlanExcess = null);
 public sealed record WorkDecisionResultV1(Guid CompanyId, string Kind, Guid ItemId, string State, bool Replayed, string OriginalCorrelationId);
 public sealed class WorkDecisionException(int status, string? code = null, bool replayed = false, string? original = null) : Exception(code)
 {
@@ -99,8 +105,9 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
     IErpAuthorityRevalidationService authority, IEnumerable<IWorkInboxSourceV1> sources,
     IWorkDelegationReaderV1 delegations, WorkDecisionExecutionFenceV1 executionFence,
     IFinanceCashAccountMaster cash, IInventoryOpeningCostCommandV1 openingCost,
-    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null, IPurchaseGoodsReceiptBatchServiceV1? goodsReceiptBatches = null, ManufacturingCommandService? manufacturingPlans = null, IInventoryTransferReceiptCommandV1? inventoryTransferReceipts = null, ICounterpartyTaxIdentityService? counterpartyTaxIdentity = null, ICounterpartyLegalNameService? counterpartyLegalName = null)
+    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null, IPurchaseGoodsReceiptBatchServiceV1? goodsReceiptBatches = null, ManufacturingCommandService? manufacturingPlans = null, IInventoryTransferReceiptCommandV1? inventoryTransferReceipts = null, ICounterpartyTaxIdentityService? counterpartyTaxIdentity = null, ICounterpartyLegalNameService? counterpartyLegalName = null, ILogisticsPlanExcessServiceV1? logisticsPlanExcess = null)
 {
+    public const string LogisticsPlanExcess = "logistics.plan-excess.v1";
     public const string CounterpartyTaxIdentity = "counterparty.tax-identity-change.v1";
     public const string CounterpartyLegalName = "counterparty.legal-name-change.v1";
     public const string ManufacturingPlan = "manufacturing.plan.v1";
@@ -115,7 +122,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
     public const string PurchaseInvoiceVariance = "purchasing.incoming-invoice-variance.v1";
     public const string PurchaseServiceOrder = "purchasing.service-order.v1";
     public const string PurchaseOrder = "purchasing.order.v1";
-    public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([CounterpartyTaxIdentity, CounterpartyLegalName, InventoryTransferLoss, OpeningCost, "finance.cash-account.v1",
+    public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([LogisticsPlanExcess, CounterpartyTaxIdentity, CounterpartyLegalName, InventoryTransferLoss, OpeningCost, "finance.cash-account.v1",
         "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest, PurchaseOrder, PurchaseServiceOrder, PurchaseInvoiceVariance, PurchaseGoodsReceiptBatch, ManufacturingPlan, CreditAccount], StringComparer.Ordinal);
 
     private async Task RequireDecisionAuthorityAsync(string kind,string permission,Guid companyId,string actor,CancellationToken token)
@@ -153,6 +160,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         await Fence();
         if (snapshot is null) throw new WorkDecisionException(404);
         if (kind is (CounterpartyTaxIdentity or CounterpartyLegalName) && source.Module != "counterparty"
+            || kind == LogisticsPlanExcess && (source.Module != "logistics" || source.ApproverPermission != LogisticsPlanExcessV1.ApprovePermission)
             || kind == CounterpartyTaxIdentity && source.ApproverPermission != CounterpartyTaxIdentityPermissionsV1.Approve
             || kind == CounterpartyLegalName && source.ApproverPermission != CounterpartyLegalNamePermissionsV1.Approve)
             throw new WorkDecisionException(503);
@@ -167,6 +175,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || snapshot.Item.Rules is null || snapshot.Item.Rules.Count > WorkInboxRulesV1.MaxRulesPerItem
             || snapshot.Item.Rules.Any(rule => !WorkInboxRulesV1.IsValidRule(source.Module, rule))
             || !ValidCounterpartyIdentityProof(kind, snapshot)
+            || !ValidLogisticsPlanExcessProof(kind, snapshot)
             || (kind == InventoryTransferLoss ? !ValidInventoryTransferLossProof(snapshot)
                 : snapshot.InventoryTransferLoss is not null || snapshot.InventoryTransferLossProof is not null)
             || kind == ManufacturingPlan && snapshot.Pending
@@ -197,10 +206,10 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         }
         await RequireDecisionAuthorityAsync(kind,sources.Single(source => source.Kind == kind).ApproverPermission,snapshot.CompanyId,actor!,token);
         return new(snapshot.CompanyId, kind, id, snapshot.Item.DocumentLabel, snapshot.SourceVersion, snapshot.Pending,
-            kind is OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance or InventoryTransferLoss, snapshot.Item.References, rules, kind is not (PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance)
+            kind is OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance or InventoryTransferLoss, snapshot.Item.References, rules, kind is not (PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance or LogisticsPlanExcess)
                 && !(kind == ManufacturingPlan && rules.Any(rule => rule.RuleCode == "manufacturing.plan-reapproval-after-order-cancel")),
             snapshot.ManufacturingPlanReapproval, snapshot.InventoryTransferLoss,
-            snapshot.CounterpartyTaxIdentityChange, snapshot.CounterpartyLegalNameChange);
+            snapshot.CounterpartyTaxIdentityChange, snapshot.CounterpartyLegalNameChange, snapshot.LogisticsPlanExcess);
     }
 
     public async Task<WorkDecisionResultV1> DecideAsync(string kind, Guid id, WorkDecisionRequestV1 request, string key, CancellationToken token)
@@ -209,7 +218,10 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         var actor = user.UserId;
         var snapshot = await SnapshotAsync(kind, id, token, request.InventoryTransferLoss?.RequestNumber);
         if (user.UserId != actor) throw new WorkDecisionException(403);
-        if (request.InventoryTransferLoss is not null && kind != InventoryTransferLoss
+        if (request.LogisticsPlanExcess is not null && kind != LogisticsPlanExcess
+            || kind == LogisticsPlanExcess && (request.LogisticsPlanExcess is null || !request.Approve || request.Reason is not null
+                || !PositiveLogisticsPlanVersion(request.ExpectedVersion) || !PositiveLogisticsPlanVersion(request.LogisticsPlanExcess.ExpectedInstructionVersion))
+            || request.InventoryTransferLoss is not null && kind != InventoryTransferLoss
             || kind == InventoryTransferLoss && (request.InventoryTransferLoss is null || request.ManufacturingPlanReapproval is not null)
             || request.ManufacturingPlanReapproval is not null && (kind != ManufacturingPlan || !request.Approve)
             || kind is (PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance) && !request.Approve
@@ -228,6 +240,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || await delegations.FindForActorAsync(delegation, verificationItem, ct) is not null;
         if (!await Verify(token)) throw new WorkDecisionException(403);
         using var lease = executionFence.Enter(Verify);
+        if (kind == LogisticsPlanExcess)
+            return await DecideLogisticsPlanExcessAsync(id, request, key, snapshot, actor!, token);
         if (kind is CounterpartyTaxIdentity or CounterpartyLegalName)
             return await DecideCounterpartyIdentityAsync(kind, id, request, key, snapshot, actor!, token);
         if (kind == InventoryTransferLoss)

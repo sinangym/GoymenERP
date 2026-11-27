@@ -95,7 +95,7 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
             .ToArray();
         // The list, the new-instruction workspace and the detail are published; each still requires its owner permission.
         // AT-025: plus the operations work list's two separate sections (L-01 sales, L-09 purchase), each behind its own name.
-        Assert.Equal(22, logistics.Length);
+        Assert.Equal(23, logistics.Length);
         string[] published =
         [
             "logistics.customer-returns.approve",

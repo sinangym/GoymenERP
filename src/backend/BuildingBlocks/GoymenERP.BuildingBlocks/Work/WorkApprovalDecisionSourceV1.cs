@@ -20,7 +20,9 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     WorkInventoryTransferLossOptionsV1? InventoryTransferLoss = null,
     [property: JsonIgnore] WorkInventoryTransferLossProofV1? InventoryTransferLossProof = null,
     [property: JsonIgnore] WorkCounterpartyTaxIdentityChangePreviewV1? CounterpartyTaxIdentityChange = null,
-    [property: JsonIgnore] WorkCounterpartyLegalNameChangePreviewV1? CounterpartyLegalNameChange = null);
+    [property: JsonIgnore] WorkCounterpartyLegalNameChangePreviewV1? CounterpartyLegalNameChange = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkLogisticsPlanExcessOptionsV1? LogisticsPlanExcess = null,
+    [property: JsonIgnore] WorkLogisticsPlanExcessProofV1? LogisticsPlanExcessProof = null);
 
 /// <summary>Approval-purpose identities from the current plan revision, never an implicit user selection.</summary>
 public sealed record WorkManufacturingPlanReapprovalOptionsV1(IReadOnlyList<Guid> ParentRollIds);
@@ -39,3 +41,9 @@ public sealed record WorkCounterpartyTaxIdentityChangePreviewV1(Guid PartyId, Gu
 /// <summary>Native full names (up to 250), separate from the generic bounded Work caption/reference.</summary>
 public sealed record WorkCounterpartyLegalNameChangePreviewV1(Guid PartyId, Guid ChangeRequestId,
     string CurrentLegalName, string ProposedLegalName, string Reason);
+
+/// <summary>Current native instruction version for the human's frozen approval request; not a POST default.</summary>
+public sealed record WorkLogisticsPlanExcessOptionsV1(string InstructionVersion);
+/// <summary>Owner-only immutable proposal binding for validating the original native receipt.</summary>
+public sealed record WorkLogisticsPlanExcessProofV1(Guid CompanyId, Guid ExceptionId, Guid InstructionId, Guid LineId,
+    string Quantity, string Reason, string ProposedBy, DateTimeOffset ProposedAtUtc);

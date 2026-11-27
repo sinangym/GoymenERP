@@ -32,8 +32,8 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Shell;
 public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "LOGISTICS";
-    // SAT-D417: two new staged plan-excess purposes; all prior availability remains unchanged.
-    public const string OwnerContractVersion = "1.6";
+    // WP8: a standalone staged native plan-excess purpose; all prior availability remains unchanged.
+    public const string OwnerContractVersion = "1.7";
     public const string TransferDeparturesCapabilityId = LogisticsPermissionManifestV1.TransferDeparturesRecord;
     public const string PlanExcessPrepareCapabilityId = "logistics.shipments.plan-excess.prepare";
     public const string PlanExcessApproveCapabilityId = "logistics.shipments.plan-excess.approve";
@@ -62,6 +62,9 @@ public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityP
     public const string PurchaseWorkRoutePath = "/lojistik/operasyon-isleri/satinalma";
     public const string PurchaseWorkScreenId = "L-09";
 
+    public const string PlanExcessWorkDecisionCapabilityId = "logistics.plan-excess.work-decision";
+    public const string PlanExcessWorkDecisionRoutePath = "/onaylarim/logistics.plan-excess.v1/:approvalId";
+
     public string Owner => OwnerId;
 
     public string ContractVersion => OwnerContractVersion;
@@ -69,6 +72,10 @@ public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityP
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
     [
         .. SubcontractDeliveryDeclarations(),
+        new ShellCapabilityDeclaration(PlanExcessWorkDecisionCapabilityId, PlanExcessWorkDecisionCapabilityId,
+            PlanExcessWorkDecisionRoutePath, "L-PLAN-EXCESS-WORK-DECISION",
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPlanExcessV1.ApprovePermission], ImplementationAvailable: false),
         new ShellCapabilityDeclaration(PlanExcessPrepareCapabilityId, DetailCapabilityId, DetailRoutePath, DetailScreenId,
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
             ShellCapabilityScopeRequirement.CompanyWide,
