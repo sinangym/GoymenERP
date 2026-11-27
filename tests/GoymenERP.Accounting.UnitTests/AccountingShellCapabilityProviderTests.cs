@@ -253,6 +253,7 @@ public sealed class AccountingShellCapabilityProviderTests
     [InlineData("accounting.period-opening.work-decision", AccountingPermissionManifestV1.PeriodsApprove)]
     [InlineData("accounting.period-reopening.work-decision", AccountingPermissionManifestV1.PeriodsReopen)]
     [InlineData("accounting.journal-reversal.work-decision", AccountingJournalReversalPermissionNamesV1.Approve)]
+    [InlineData("accounting.approved-source-catalog.work-decision", ApprovedAccountingSourceCatalogPermissionNamesV1.Activate)]
     public void Work_approval_routes_are_standalone_and_do_not_require_general_period_read(string capability, string permission)
     {
         var route = Assert.Single(new AccountingShellCapabilityProvider().GetDeclarations(), x => x.CapabilityId == capability);
@@ -267,7 +268,7 @@ public sealed class AccountingShellCapabilityProviderTests
     {
         var routes = new AccountingShellCapabilityProvider().GetDeclarations().Where(item => item.ParentCapabilityId is null).ToArray();
 
-        Assert.Equal(["M-01", "M-01-COST-APPROVE", "M-01-COST-PREPARE", "M-04", "M-04-APPROVE", "M-04-DETAIL", "M-04-DRAFT", "M-04-INVOICEDSHIPMENTAPPROVE", "M-04-INVOICEDSHIPMENTPREPARE", "M-04-INVOICEDSHIPMENTREVERSE", "M-04-INVOICEDSHIPMENTREVERSEAPPROVE", "M-04-LINE-COGS-APPROVE", "M-04-LINE-COGS-PREPARE", "M-04-NEW", "M-04-PURCHASECOSTAPPROVE", "M-04-PURCHASECOSTPREPARE", "M-04-REVERSAL-APPROVE", "M-04-SOURCE", "M-05", "M-05-COGS-MAPPING", "M-06", "M-07", "M-07-NEW", "M-JOURNAL-REVERSAL-WORK-DECISION", "M-NORMAL-JOURNAL-DRAFT-WORK-DECISION", "M-PERIOD-OPENING-WORK-DECISION", "M-PERIOD-REOPENING-WORK-DECISION"], routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
+        Assert.Equal(["M-01", "M-01-COST-APPROVE", "M-01-COST-PREPARE", "M-04", "M-04-APPROVE", "M-04-DETAIL", "M-04-DRAFT", "M-04-INVOICEDSHIPMENTAPPROVE", "M-04-INVOICEDSHIPMENTPREPARE", "M-04-INVOICEDSHIPMENTREVERSE", "M-04-INVOICEDSHIPMENTREVERSEAPPROVE", "M-04-LINE-COGS-APPROVE", "M-04-LINE-COGS-PREPARE", "M-04-NEW", "M-04-PURCHASECOSTAPPROVE", "M-04-PURCHASECOSTPREPARE", "M-04-REVERSAL-APPROVE", "M-04-SOURCE", "M-05", "M-05-COGS-MAPPING", "M-06", "M-07", "M-07-NEW", "M-APPROVED-SOURCE-CATALOG-WORK-DECISION", "M-JOURNAL-REVERSAL-WORK-DECISION", "M-NORMAL-JOURNAL-DRAFT-WORK-DECISION", "M-PERIOD-OPENING-WORK-DECISION", "M-PERIOD-REOPENING-WORK-DECISION"], routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
 
     [Fact]

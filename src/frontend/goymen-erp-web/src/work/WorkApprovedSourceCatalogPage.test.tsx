@@ -15,7 +15,7 @@ import { approvedSourceCatalogFixture as fixture } from './approvedSourceCatalog
 import { workRoutes } from './workRoutes'
 const kind=staged.kind,cap=staged.capabilityId,id='cccccccc-0000-4000-8000-000000000051',path=`/work/decisions/${kind}/${id}`
 afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks();sessionStorage.clear();Object.assign(IDENTITY,{authenticationSessionBinding:null})})
-// Explicit candidate harness uses the real entry gate. The production route/capability remain unmounted until paired publication.
+// Explicit test harness uses the real entry gate; the paired production route is asserted separately below.
 function mount(client = new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})) {
   const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[{path:staged.routePath.slice(1),
     element:<CapabilityRoute capability={[cap]}><WorkDecisionPage kind={kind}/></CapabilityRoute>}]}],{initialEntries:[staged.routePath.replace(':approvalId',id)]})
