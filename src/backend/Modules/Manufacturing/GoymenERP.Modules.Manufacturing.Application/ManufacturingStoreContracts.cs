@@ -343,6 +343,13 @@ public interface IManufacturingPlanRevisionStore
 /// </summary>
 public interface IManufacturingPlanLifecycleStore
 {
+    /// <summary>Owns the complete native rejection protocol, including stored refusals and replay.
+    /// Unsupported adapters fail closed; this is not an allocation-participant transaction.</summary>
+    Task<ManufacturingApiResult<PlanViewV1>> ExecutePlanRejectionAsync(
+        Func<CancellationToken, Task<ManufacturingApiResult<PlanViewV1>>> execute,
+        Func<CancellationToken, Task> freshDecisionFence, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false, null));
+
     /// <summary>Records the approver's rejection of a Draft; the plan stays a Draft one version on.</summary>
     Task<ProductionPlan> RejectPlanAsync(Guid planId, long expectedVersion, Guid rejectedByUserId, DateTimeOffset rejectedAt,
         string reason, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default);

@@ -39,7 +39,8 @@ public sealed partial class ManufacturingStore(
     ManufacturingDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IAuditTransactionWriterV1? decisionAuditWriter = null)
     : IManufacturingPlanStore, IManufacturingPlanListStore, IManufacturingPlanRevisionStore, IManufacturingOrderStore,
         IManufacturingCommandLog, IManufacturingPlanLifecycleStore, IManufacturingPlanSalesOrderLinkStore, IManufacturingPlanDueDateStore,
         IManufacturingClosedOrderListStore, IManufacturingOrderDueDateStore
@@ -568,6 +569,7 @@ public sealed partial class ManufacturingStore(
         var row = await dbContext.Plans.SingleOrDefaultAsync(candidate => candidate.Id == planId, cancellationToken)
             ?? throw Refused(ManufacturingStoreCodes.PlanNotFound, "Bu şirketin böyle bir planı yok.");
         var plan = await RestorePlanAsync(row, cancellationToken);
+        await FencePlanRejectionAsync(cancellationToken);
         var before = PlanAudit(plan);
         var versionBefore = plan.Version;
 
@@ -591,7 +593,10 @@ public sealed partial class ManufacturingStore(
         Audit(metadata, companyId, PlanEntityType, plan.Id, "manufacturing.plan.rejected.v1", "Reject",
             versionBefore, plan.Version, before, PlanAudit(plan), rejection.Reason);
         Complete(metadata, companyId, plan);
+        await FencePlanRejectionAsync(cancellationToken);
         await SaveAsync(cancellationToken);
+        if (planRejectionFence is not null && metadata.Completion is not null) planRejectionReceiptSaved = true;
+        await FencePlanRejectionAsync(cancellationToken);
         return plan;
     }
 
@@ -1555,10 +1560,14 @@ public sealed partial class ManufacturingStore(
     public async Task<ManufacturingCommandRecord?> FindCommandAsync(string commandName, string idempotencyKeyHash,
         CancellationToken cancellationToken = default)
     {
+        await FencePlanRejectionAsync(cancellationToken);
         RequireResolvedCompany();
         var row = await dbContext.Commands.AsNoTracking().SingleOrDefaultAsync(
             candidate => candidate.CommandName == commandName && candidate.IdempotencyKeyHash == idempotencyKeyHash,
             cancellationToken);
+        await FencePlanRejectionAsync(cancellationToken);
+        if (planRejectionFence is not null && row is not null
+            && commandName == ManufacturingCommandNames.RejectPlan) planRejectionReceiptSaved = true;
         return row is null
             ? null
             : new ManufacturingCommandRecord(row.CommandName, row.IdempotencyKeyHash, row.ActorId, row.RequestHash,
@@ -1568,8 +1577,12 @@ public sealed partial class ManufacturingStore(
     public async Task RecordCommandAsync(ManufacturingCommandRecord record, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(record);
+        await FencePlanRejectionAsync(cancellationToken);
         AddCommand(RequireResolvedCompany(), record);
         await SaveAsync(cancellationToken);
+        if (planRejectionFence is not null && record.CommandName == ManufacturingCommandNames.RejectPlan)
+            planRejectionReceiptSaved = true;
+        await FencePlanRejectionAsync(cancellationToken);
     }
 
     /// <summary>
@@ -1581,7 +1594,10 @@ public sealed partial class ManufacturingStore(
         queueMutationMetadata = metadata;
         if (metadata.Completion is { } completion)
         {
-            AddCommand(companyId, completion(result));
+            var record = completion(result);
+            if (planRejectionFence is not null && record.CommandName != ManufacturingCommandNames.RejectPlan)
+                throw new InvalidOperationException("A rejection transaction accepts only its native command receipt.");
+            AddCommand(companyId, record);
         }
     }
 

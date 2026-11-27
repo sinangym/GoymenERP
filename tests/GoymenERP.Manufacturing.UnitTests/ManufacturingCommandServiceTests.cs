@@ -3186,6 +3186,11 @@ public sealed partial class ManufacturingCommandServiceTests
 
     private sealed class ThrowingLifecycleStore : IManufacturingPlanLifecycleStore
     {
+        public Task<ManufacturingApiResult<PlanViewV1>> ExecutePlanRejectionAsync(
+            Func<CancellationToken, Task<ManufacturingApiResult<PlanViewV1>>> execute,
+            Func<CancellationToken, Task> freshDecisionFence, CancellationToken cancellationToken = default) =>
+            execute(cancellationToken);
+
         public Task<ProductionPlan> RejectPlanAsync(Guid planId, long expectedVersion, Guid rejectedByUserId,
             DateTimeOffset rejectedAt, string reason, ManufacturingCommandMetadata metadata,
             CancellationToken cancellationToken = default) =>

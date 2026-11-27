@@ -2531,7 +2531,7 @@ public sealed partial class ManufacturingCommandService(
     private async Task<ManufacturingApiResult<T>> RunAsync<T>(string permission, string idempotencyKey, string commandName,
         object canonicalRequest, ManufacturingApiStatus successStatus,
         Func<ManufacturingCommandMetadata, Guid, Guid, Task<ManufacturingApiResult<T>>> write, Func<object, T> view,
-        CancellationToken cancellationToken, string? storedAnswerPermission = null)
+        CancellationToken cancellationToken, string? storedAnswerPermission = null, bool abortOnConcurrentChange = false)
         where T : class
     {
         if (!HasContext() || ActorGuid() is not { } actor)
@@ -2637,7 +2637,7 @@ public sealed partial class ManufacturingCommandService(
                     ? ManufacturingApiStatus.Conflict
                     : ManufacturingApiStatus.Unprocessable, null, false, exception.Code);
         }
-        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
+        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange && !abortOnConcurrentChange)
         {
             // §8: the same key's other attempt may have won; then its record is the answer.
             if (await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner)
@@ -2651,6 +2651,12 @@ public sealed partial class ManufacturingCommandService(
             }
 
             return new ManufacturingApiResult<T>(ManufacturingApiStatus.Conflict, null, false, exception.Code);
+        }
+        catch (ManufacturingStoreException exception) when (abortOnConcurrentChange
+            && exception.Code == ManufacturingStoreCodes.ConcurrentChange)
+        {
+            // A guarded decision must roll back before inspecting another writer's receipt.
+            throw;
         }
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.AuthorityDenied)
         {
@@ -2725,7 +2731,7 @@ public sealed partial class ManufacturingCommandService(
             await commands.RecordCommandAsync(Record(commandName, keyHash, actorId, requestHash, result), cancellationToken);
             return result;
         }
-        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
+        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange && !abortOnConcurrentChange)
         {
             if (await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner)
             {

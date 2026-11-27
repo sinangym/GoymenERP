@@ -34,14 +34,17 @@ public sealed partial class ManufacturingCommandService
 
         // The Draft's answer (returned AND recorded for replay) uses the profile in force today, read once before the save.
         PlanParameterSnapshotV1? live = null;
-        return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.RejectPlan,
+        return ExecuteRejectionAsync();
+
+        Task<ManufacturingApiResult<PlanViewV1>> Run(bool replayOnly) =>
+            RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.RejectPlan,
             new { planId, expectedVersion = request.ExpectedVersion, reason }, ManufacturingApiStatus.Ok,
             async (metadata, actor, companyId) =>
             {
-                if (planLifecycle is null)
-                {
-                    return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
-                }
+                // After a rolled-back save race, only inspect a possible winning receipt; never retry the mutation.
+                if (replayOnly)
+                    return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Conflict, null, false,
+                        ManufacturingStoreCodes.ConcurrentChange);
 
                 if (await plans.FindPlanAsync(planId, cancellationToken) is { } current)
                 {
@@ -61,11 +64,42 @@ public sealed partial class ManufacturingCommandService
                     }
                 }
 
-                var rejected = await planLifecycle.RejectPlanAsync(planId, request.ExpectedVersion, actor,
+                var rejected = await planLifecycle!.RejectPlanAsync(planId, request.ExpectedVersion, actor,
                     timeProvider.GetUtcNow(), reason, metadata, cancellationToken);
                 return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(rejected, live), false,
                     null);
-            }, stored => PlanView((ProductionPlan)stored, live), cancellationToken);
+            }, stored => PlanView((ProductionPlan)stored, live), cancellationToken, abortOnConcurrentChange: true);
+
+        async Task<ManufacturingApiResult<PlanViewV1>> ExecuteRejectionAsync()
+        {
+            if (!HasContext() || ActorGuid() is not { } actor) return Denied<PlanViewV1>();
+            if (planLifecycle is null)
+                return new(ManufacturingApiStatus.Unavailable, null, false, null);
+            var companyId = companyContext.CompanyId;
+            async Task Fence(CancellationToken token)
+            {
+                if (!HasCapturedContext(companyId, actor)
+                    || await FenceCapturedAsync<PlanViewV1>(permission, companyId, actor, token) is not null)
+                    throw new ManufacturingStoreException(ManufacturingStoreCodes.AuthorityDenied,
+                        "Plan rejection authority changed.");
+            }
+            try
+            {
+                try
+                {
+                    return await planLifecycle.ExecutePlanRejectionAsync(_ => Run(false), Fence, cancellationToken);
+                }
+                catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
+                {
+                    // The owner has already rolled back its transaction and discarded only its own drafts.
+                    return await planLifecycle.ExecutePlanRejectionAsync(_ => Run(true), Fence, cancellationToken);
+                }
+            }
+            catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.AuthorityDenied)
+            {
+                return Denied<PlanViewV1>();
+            }
+        }
     }
 
     /// <summary>
