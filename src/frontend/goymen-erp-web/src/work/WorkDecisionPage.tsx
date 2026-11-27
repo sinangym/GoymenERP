@@ -64,6 +64,10 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       reason: preview.approvalReasonRequired || !approve ? reason.trim() || null : null, delegationId: useDelegation ? delegationId : null })
     if (answer.type === 'applied') void query.refetch()
   }
+  const retry = async () => {
+    const answer = await attempt.retry()
+    if (answer.type === 'applied') void query.refetch()
+  }
   const cost = preview?.rules.find(rule => rule.ruleCode === 'inventory.opening-cost-unit-cost')?.actual
   return <section className={styles.page} aria-labelledby="work-decision-heading"><h1 id="work-decision-heading">{T.title}</h1><p>{T.intro}</p>
     <Link to="/onaylarim/kuyruk">{T.back}</Link>
@@ -86,7 +90,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         <div className={styles.actions}><Button type="button" disabled={useDelegation && !delegationId || invalidReason(true)} onClick={() => void submit(true)}>{T.approve}</Button>
           <Button type="button" variant="secondary" disabled={useDelegation && !delegationId || invalidReason(false)} onClick={() => void submit(false)}>{T.reject}</Button></div></fieldset> : <p>{T.closed}</p>}
     </>}
-    {attempt.status.kind === 'unknown' ? <div role="alert"><p>{T.unknown}</p><Button type="button" onClick={() => void attempt.retry()}>{T.retry}</Button></div> : null}
+    {attempt.status.kind === 'unknown' ? <div role="alert"><p>{T.unknown}</p><Button type="button" onClick={() => void retry()}>{T.retry}</Button></div> : null}
     {attempt.status.kind === 'refused' ? <p role="alert">{T.refused} ({attempt.status.status})</p> : null}
     {attempt.status.kind === 'applied' ? <p role="status">{T.done}</p> : null}
   </section>

@@ -59,8 +59,13 @@ export async function sendWorkDecision(company: string, kind: WorkDecisionKind, 
     // Subcontract receipts reconstruct their immutable lifecycle outcome instead.
     const currentInvoiceApproval = kind === 'sales.invoice.v1' && request.approve
       && record(body) && body.replayed === true && (body.state === 'Finalized' || body.state === 'OfficiallyCancelled')
+    // Orders replay their current approval axis. An approved revision can be revised,
+    // submitted and rejected again; only a never-approved Rev.0 can be withdrawn.
+    const currentOrderDecision = kind === 'sales.order-draft.v1' && record(body) && body.replayed === true
+      && (body.state === 'Preparing' || body.state === 'PendingApproval'
+        || (request.approve ? body.state === 'Rejected' : body.state === 'Approved' || body.state === 'Withdrawn'))
     return record(body) && hasExactKeys(body, ['companyId', 'kind', 'itemId', 'state', 'replayed', 'originalCorrelationId'])
-      && same(body.companyId, company) && body.kind === kind && same(body.itemId, id) && (body.state === state || currentPurchaseRejection || currentInvoiceApproval)
+      && same(body.companyId, company) && body.kind === kind && same(body.itemId, id) && (body.state === state || currentPurchaseRejection || currentInvoiceApproval || currentOrderDecision)
       && typeof body.replayed === 'boolean' && text(body.originalCorrelationId) && replayHeadersAgree(response.headers, body.replayed, body.originalCorrelationId)
       ? { type: 'applied', data: body as unknown as WorkDecisionResult, replayed: body.replayed } : { type: 'unknown', reason: 'unexpected' }
   }

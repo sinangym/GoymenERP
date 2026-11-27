@@ -36,13 +36,14 @@ describe('WP8 native Sales purpose decisions',()=>{
     let posts=0
     const calls=installFetch({capabilities:[kind.replace('.v1','.work-decision')],respond:(url,init)=>{
       if(!url.includes('/work/decisions/'))return undefined
-      if(init?.method==='POST')return ++posts===1?problem(503):new Response(JSON.stringify({companyId:COMPANY_A,kind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'SENTETIK-original'}),
+      if(init?.method==='POST')return ++posts===1?problem(503):new Response(JSON.stringify({companyId:COMPANY_A,kind,itemId:id,state:kind==='sales.order-draft.v1'?'Rejected':'Approved',replayed:true,originalCorrelationId:'SENTETIK-original'}),
         {status:200,headers:{'Content-Type':'application/json','Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK-original'}})
-      return json(posts?{...preview(kind),sourceVersion:'8',pending:false}:preview(kind))
+      return json(posts?{...preview(kind),sourceVersion:posts>=2?'9':'8',pending:false,documentLabel:posts>=2?'SENTETIK güncel karar sonrası':preview(kind).documentLabel}:preview(kind))
     }})
     mount(kind);await screen.findByText('SENTETIK sales',{exact:false});await userEvent.setup().click(screen.getByRole('button',{name:T.approve}))
     await screen.findByText(T.unknown);cleanup();mount(kind);await screen.findByText(T.unknown)
     await userEvent.setup().click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+    await screen.findByText('SENTETIK güncel karar sonrası',{exact:false})
     const sent=calls.filter(call=>call.method==='POST')
     expect(sent).toHaveLength(2);expect(sent[1].body).toEqual(sent[0].body);expect(sent[1].headers['Idempotency-Key']).toBe(sent[0].headers['Idempotency-Key'])
     expect(sent[1].body).toMatchObject({expectedVersion:'7'})
