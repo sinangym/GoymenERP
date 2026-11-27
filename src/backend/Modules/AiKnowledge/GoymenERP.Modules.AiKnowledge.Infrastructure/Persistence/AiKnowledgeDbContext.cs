@@ -83,6 +83,7 @@ public sealed partial class AiKnowledgeDbContext(
 
         ConfigureCommands(modelBuilder);
         ConfigureAnswerReceipts(modelBuilder);
+        ConfigureFeedback(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>().HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
@@ -122,6 +123,8 @@ public sealed partial class AiKnowledgeDbContext(
                 AiCommandEventRow row => row.CompanyId,
                 AiAnswerReceiptRow row => row.CompanyId,
                 AiAnswerReceiptIdentityRow row => row.CompanyId,
+                AiFeedbackEventRow row => row.CompanyId,
+                AiFeedbackIdentityRow row => row.CompanyId,
                 _ => throw new InvalidOperationException("Unknown AI knowledge record."),
             };
             if (!companyContext.IsResolved || companyId != companyContext.CompanyId)
@@ -130,7 +133,7 @@ public sealed partial class AiKnowledgeDbContext(
                 throw new InvalidOperationException("AI knowledge records cannot be deleted.");
             if (entry.Entity is AiKnowledgeCommandAttemptRow && entry.State != EntityState.Added)
                 throw new InvalidOperationException("AI knowledge attempts are append-only.");
-            if ((entry.Entity is AiAnswerReceiptRow or AiAnswerReceiptIdentityRow) && entry.State != EntityState.Added)
+            if ((entry.Entity is AiAnswerReceiptRow or AiAnswerReceiptIdentityRow or AiFeedbackEventRow or AiFeedbackIdentityRow) && entry.State != EntityState.Added)
                 throw new InvalidOperationException("Answer receipts and their separate identity bindings are immutable.");
             if (entry.Entity is AiCommandEventRow && entry.State != EntityState.Added)
                 throw new InvalidOperationException("AI command events are append-only.");

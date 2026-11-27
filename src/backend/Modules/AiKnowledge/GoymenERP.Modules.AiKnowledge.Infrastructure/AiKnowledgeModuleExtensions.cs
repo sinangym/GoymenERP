@@ -47,6 +47,7 @@ public static class AiKnowledgeModuleExtensions
         services.AddScoped<IAiKnowledgeApprovalReaderV1, AiKnowledgeApprovalReaderV1>();
         services.AddScoped<IAiCommandPersistenceV1, AiCommandPersistenceV1>();
         services.AddScoped<IAiAnswerReceiptPersistenceV1, AiAnswerReceiptPersistenceV1>();
+        services.AddScoped<IAiFeedbackPersistenceV1, AiFeedbackPersistenceV1>();
         return services;
     }
 
