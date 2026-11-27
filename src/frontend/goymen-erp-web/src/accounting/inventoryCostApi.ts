@@ -96,19 +96,19 @@ const CLASSIFICATION_KEYS = ['classification', 'accountId', 'origin', 'productVe
 const ACCOUNT_KEYS = ['accountId', 'code', 'name'] as const
 const OPTIONS_KEYS = ['companyId', 'accounts', 'openPeriods'] as const
 const PERIOD_OPTION_KEYS = ['periodId', 'startsOn', 'endsOn'] as const
-const physicalClaim = (v: unknown) => rec(v) && exactKeys(v, PHYSICAL_CLAIM_KEYS) && guid(v.shipmentId) && guid(v.movementId)
+export const physicalClaim = (v: unknown) => rec(v) && exactKeys(v, PHYSICAL_CLAIM_KEYS) && guid(v.shipmentId) && guid(v.movementId)
   && guid(v.productId) && version(v.movementLineNumber) && (typeof v.quantityKg === 'number' || typeof v.quantityKg === 'string')
-const account = (v: unknown): v is InventoryCostAccount => rec(v) && exactKeys(v, ACCOUNT_KEYS) && guid(v.accountId) && text(v.code) && text(v.name)
-const costRatio = (value: unknown): value is { numerator: string; denominator: string } => rec(value) && exactKeys(value, RATIO_KEYS)
+export const account = (v: unknown): v is InventoryCostAccount => rec(v) && exactKeys(v, ACCOUNT_KEYS) && guid(v.accountId) && text(v.code) && text(v.name)
+export const costRatio = (value: unknown): value is { numerator: string; denominator: string } => rec(value) && exactKeys(value, RATIO_KEYS)
   && typeof value.numerator === 'string' && /^-?(0|[1-9][0-9]*)$/.test(value.numerator) && value.numerator !== '-0'
   && typeof value.denominator === 'string' && /^[1-9][0-9]*$/.test(value.denominator)
 const ratioDisplay = (value: unknown, ratio: { numerator: string; denominator: string }) => canonicalDecimal(value)
   || value === `${ratio.numerator} / ${ratio.denominator}`
-const roundingProof = (value: unknown): value is InventoryCostRounding => rec(value) && exactKeys(value, ROUNDING_KEYS, ROUNDING_OPTIONAL_KEYS)
+export const roundingProof = (value: unknown): value is InventoryCostRounding => rec(value) && exactKeys(value, ROUNDING_KEYS, ROUNDING_OPTIONAL_KEYS)
   && value.ruleVersion === 'accounting.inventory-cost-component-total.v1' && costRatio(value.exactSignedAmount)
   && costRatio(value.exactSignedResidue) && canonicalDecimal(value.roundedSignedAmount)
   && ratioDisplay(value.exactSignedAmountText, value.exactSignedAmount) && ratioDisplay(value.exactSignedResidueText, value.exactSignedResidue)
-const equalRounding = (a: InventoryCostRounding, b: InventoryCostRounding) => a.ruleVersion === b.ruleVersion
+export const equalRounding = (a: InventoryCostRounding, b: InventoryCostRounding) => a.ruleVersion === b.ruleVersion
   && a.roundedSignedAmount === b.roundedSignedAmount && a.exactSignedAmountText === b.exactSignedAmountText
   && a.exactSignedResidueText === b.exactSignedResidueText
   && a.exactSignedAmount.numerator === b.exactSignedAmount.numerator && a.exactSignedAmount.denominator === b.exactSignedAmount.denominator
