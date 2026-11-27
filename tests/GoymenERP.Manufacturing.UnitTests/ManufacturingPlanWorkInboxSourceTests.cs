@@ -14,7 +14,7 @@ namespace GoymenERP.Manufacturing.UnitTests;
 /// approval) and its Approved plans released by a cancelled order and not yet re-approved (re-approval), oldest wait first,
 /// the preparer's own included, under <c>manufacturing.plans.approve</c> held company-wide. SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class ManufacturingPlanWorkInboxSourceTests
+public sealed partial class ManufacturingPlanWorkInboxSourceTests
 {
     private static readonly Guid CompanyA = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly Guid CompanyB = Guid.Parse("22222222-2222-4222-8222-222222222222");

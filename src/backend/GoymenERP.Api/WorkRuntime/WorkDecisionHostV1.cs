@@ -7,6 +7,7 @@ using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Work.Infrastructure.Delegations;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Manufacturing.Application;
 
 namespace GoymenERP.Api.WorkRuntime;
 
@@ -81,8 +82,9 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
     IErpAuthorityRevalidationService authority, IEnumerable<IWorkInboxSourceV1> sources,
     IWorkDelegationReaderV1 delegations, WorkDecisionExecutionFenceV1 executionFence,
     IFinanceCashAccountMaster cash, IInventoryOpeningCostCommandV1 openingCost,
-    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null, IPurchaseGoodsReceiptBatchServiceV1? goodsReceiptBatches = null)
+    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null, IPurchaseGoodsReceiptBatchServiceV1? goodsReceiptBatches = null, ManufacturingCommandService? manufacturingPlans = null)
 {
+    public const string ManufacturingPlan = "manufacturing.plan.v1";
     public const string OpeningCost = "inventory.opening-cost.v1";
     public const string SalesOrder = "sales.order-draft.v1";
     public const string SalesInvoice = "sales.invoice.v1";
@@ -94,7 +96,7 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
     public const string PurchaseServiceOrder = "purchasing.service-order.v1";
     public const string PurchaseOrder = "purchasing.order.v1";
     public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([OpeningCost, "finance.cash-account.v1",
-        "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest, PurchaseOrder, PurchaseServiceOrder, PurchaseInvoiceVariance, PurchaseGoodsReceiptBatch, CreditAccount], StringComparer.Ordinal);
+        "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest, PurchaseOrder, PurchaseServiceOrder, PurchaseInvoiceVariance, PurchaseGoodsReceiptBatch, ManufacturingPlan, CreditAccount], StringComparer.Ordinal);
 
     private async Task RequireDecisionAuthorityAsync(string kind,string permission,Guid companyId,string actor,CancellationToken token)
     {
@@ -131,7 +133,10 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
         if (snapshot is null) throw new WorkDecisionException(404);
         if (snapshot.Item is null || snapshot.CompanyId != companyId || snapshot.Item.ItemId != id || snapshot.Item.Kind != kind
             || snapshot.Item.Module != source.Module || string.IsNullOrWhiteSpace(snapshot.SourceVersion)
-            || string.IsNullOrWhiteSpace(snapshot.Item.PreparedBy) || string.IsNullOrWhiteSpace(snapshot.Item.DocumentLabel)
+            || (string.IsNullOrWhiteSpace(snapshot.Item.PreparedBy)
+                && !(kind == ManufacturingPlan && snapshot.Item.Module == "manufacturing"
+                    && source.ApproverPermission == ManufacturingPermissionManifestV1.PlansApprove && snapshot.Item.PreparedBy is null))
+            || string.IsNullOrWhiteSpace(snapshot.Item.DocumentLabel)
             || snapshot.Item.References is null || snapshot.Item.References.Count > WorkInboxRulesV1.MaxReferencesPerItem
             || snapshot.Item.References.Any(item => !WorkInboxRulesV1.IsValidReference(item))
             || snapshot.Item.Rules is null || snapshot.Item.Rules.Count > WorkInboxRulesV1.MaxRulesPerItem
@@ -155,7 +160,8 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
         }
         await RequireDecisionAuthorityAsync(kind,sources.Single(source => source.Kind == kind).ApproverPermission,snapshot.CompanyId,actor!,token);
         return new(snapshot.CompanyId, kind, id, snapshot.Item.DocumentLabel, snapshot.SourceVersion, snapshot.Pending,
-            kind is OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance, snapshot.Item.References, rules, kind is not (PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance));
+            kind is OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance, snapshot.Item.References, rules, kind is not (PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance)
+                && !(kind == ManufacturingPlan && rules.Any(rule => rule.RuleCode == "manufacturing.plan-reapproval-after-order-cancel")));
     }
 
     public async Task<WorkDecisionResultV1> DecideAsync(string kind, Guid id, WorkDecisionRequestV1 request, string key, CancellationToken token)
@@ -167,12 +173,40 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
         if (kind is (PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance) && !request.Approve
             || string.IsNullOrWhiteSpace(request.ExpectedVersion) || request.ExpectedVersion.Length > 128
             || (kind == OpeningCost && request.ExpectedVersion != snapshot.SourceVersion)
-            || ((kind == OpeningCost || !request.Approve && kind is not (SalesOrder or SalesInvoice or SalesSubcontractInvoice or PurchaseRequest or PurchaseGoodsReceiptBatch)) && (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 500))
+            || ((kind == OpeningCost || !request.Approve && kind is not (SalesOrder or SalesInvoice or SalesSubcontractInvoice or PurchaseRequest or PurchaseGoodsReceiptBatch or ManufacturingPlan)) && (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 500))
             || (kind is not (OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance or PurchaseGoodsReceiptBatch) && request.Approve && request.Reason is not null)) throw new WorkDecisionException(400, "work_decision_invalid");
         async Task<bool> Verify(CancellationToken ct) => request.DelegationId is not { } delegation
             || await delegations.FindForActorAsync(delegation, snapshot.Item, ct) is not null;
         if (!await Verify(token)) throw new WorkDecisionException(403);
         using var lease = executionFence.Enter(Verify);
+        if (kind == ManufacturingPlan)
+        {
+            // Approval's shared Inventory transaction currently has no final fresh fence, and re-approval
+            // requires an explicit selected-label request absent from this purpose DTO. Never infer either.
+            if (request.Approve || manufacturingPlans is null) throw new WorkDecisionException(503);
+            if (!long.TryParse(request.ExpectedVersion, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var expected)
+                || expected < 1 || expected.ToString(System.Globalization.CultureInfo.InvariantCulture) != request.ExpectedVersion)
+                throw new WorkDecisionException(400, "work_decision_invalid");
+            var answer = await manufacturingPlans.RejectPlanAsync(id, new(expected, request.Reason), key,
+                ManufacturingPermissionManifestV1.PlansApprove, token);
+            if (answer.Status != ManufacturingApiStatus.Ok)
+                throw new WorkDecisionException(answer.Status switch
+                {
+                    ManufacturingApiStatus.Invalid => 400, ManufacturingApiStatus.Denied => 403,
+                    ManufacturingApiStatus.NotFound => 404, ManufacturingApiStatus.Conflict => 409,
+                    ManufacturingApiStatus.Unprocessable => 422, _ => 503,
+                }, answer.Code, answer.IsReplay, answer.OriginalCorrelationId);
+            var plan = answer.Resource;
+            var rejections = plan is null ? null : plan.Rejections?.Where(rejection => rejection.PlanVersion == plan.Version).ToArray();
+            if (plan is null || plan.CompanyId != snapshot.CompanyId || plan.PlanId != id || plan.Status != "Draft"
+                || expected == long.MaxValue || plan.Version != expected + 1 || rejections is not { Length: 1 }
+                || !Guid.TryParse(actor, out var actorId) || rejections[0].RejectedByUserId != actorId
+                || rejections[0].Reason != request.Reason?.Trim() || rejections[0].RejectedAtUtc == default
+                || (plan.PreparedBy is not null && (string.IsNullOrWhiteSpace(plan.PreparedBy) || WorkInboxRulesV1.SameUser(plan.PreparedBy, actor))))
+                throw new WorkDecisionException(503);
+            return new(snapshot.CompanyId, kind, id, plan.Status, answer.IsReplay,
+                answer.OriginalCorrelationId ?? (answer.IsReplay ? throw new WorkDecisionException(503) : correlation.CorrelationId));
+        }
         if (kind == PurchaseGoodsReceiptBatch)
         {
             if (goodsReceiptBatches is null) throw new WorkDecisionException(503);

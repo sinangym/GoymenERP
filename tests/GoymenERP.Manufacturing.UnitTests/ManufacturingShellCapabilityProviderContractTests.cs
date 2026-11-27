@@ -25,18 +25,29 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         var provider = new ManufacturingShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
 
-        Assert.Equal(("MANUFACTURING", "1.13"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(20, declarations.Count);
+        Assert.Equal(("MANUFACTURING", "1.14"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(21, declarations.Count);
         foreach (var declaration in declarations)
         {
-            Assert.Contains($"'{declaration.CapabilityId}'", source);
-            Assert.Contains($"'{declaration.RoutePath}'", source);
+            if (declaration.CapabilityId != ManufacturingShellCapabilityProvider.PlanWorkDecisionCapabilityId)
+            {
+                Assert.Contains($"'{declaration.CapabilityId}'", source);
+                Assert.Contains($"'{declaration.RoutePath}'", source);
+            }
             Assert.Equal(
                 (ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide),
                 (declaration.ContextRequirement, declaration.ScopeRequirement));
             Assert.Null(declaration.GlobalProductOperation);
-            Assert.Equal(declaration.CapabilityId != ManufacturingShellCapabilityProvider.ReopenCapabilityId, declaration.ImplementationAvailable);
+            Assert.Equal(declaration.CapabilityId is not (ManufacturingShellCapabilityProvider.ReopenCapabilityId or ManufacturingShellCapabilityProvider.PlanWorkDecisionCapabilityId), declaration.ImplementationAvailable);
         }
+
+        var purpose = Assert.Single(declarations, item => item.CapabilityId == ManufacturingShellCapabilityProvider.PlanWorkDecisionCapabilityId);
+        Assert.Equal("/onaylarim/manufacturing.plan.v1/:approvalId", purpose.RoutePath);
+        Assert.Equal("manufacturing-plan-work-decision", purpose.RouteId);
+        Assert.Equal("W-MANUFACTURING-PLAN-01", purpose.ScreenId);
+        Assert.Null(purpose.ParentCapabilityId);
+        Assert.Equal([ErpPermissions.ManufacturingPlansApprove], purpose.RequiredPermissions);
+        Assert.False(purpose.ImplementationAvailable);
 
         var exceptionApproval = Assert.Single(declarations,
             declaration => declaration.CapabilityId ==

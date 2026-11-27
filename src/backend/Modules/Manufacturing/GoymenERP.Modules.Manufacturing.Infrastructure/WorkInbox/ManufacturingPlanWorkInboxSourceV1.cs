@@ -32,7 +32,7 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.WorkInbox;
 /// work-center scoped holder is not asked; opening scoped approval is the owner's decision, not the inbox's.
 /// </para>
 /// </summary>
-internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkInboxSourceV1
+internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "manufacturing";
     public const string KindName = "manufacturing.plan.v1";
@@ -69,6 +69,44 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkInboxSourceV1
 
     public string ApproverPermission => ManufacturingPermissionManifestV1.PlansApprove;
 
+
+    /// <summary>Decision-purpose metadata only, under the native company-wide approval permission.
+    /// A terminal/current row stays readable for the native immutable receipt replay. Legacy null maker is preserved.</summary>
+    public async Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context, Guid itemId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (itemId == Guid.Empty || await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+        var found = await rows.ListAsync(rows.Plans.Where(plan => plan.CompanyId == context.CompanyId && plan.Id == itemId).Take(2), cancellationToken);
+        if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+        if (found.Count == 0) return null;
+        if (found.Count != 1 || found[0].Version < 1 || found[0].WorkCenterId == Guid.Empty || !Enum.IsDefined((PlanStatus)found[0].Status))
+            throw new InvalidOperationException("Manufacturing decision projection is invalid.");
+        var row = found[0];
+        var drafts = await ReadDraftsAsync(context.CompanyId, 2, cancellationToken, itemId);
+        if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+        var released = await ReadReleasedAsync(context.CompanyId, 2, cancellationToken, itemId);
+        if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+        var pending = drafts.Concat(released).ToArray();
+        if (pending.Length > 1) throw new InvalidOperationException("Manufacturing decision state is ambiguous.");
+        WorkInboxItemV1 item;
+        if (pending.Length == 1)
+        {
+            item = Item(pending[0]) with { Link = PurposeLink(itemId) };
+        }
+        else
+        {
+            var revisions = await rows.ListAsync(rows.PlanRevisions.Where(revision => revision.CompanyId == context.CompanyId
+                && revision.PlanId == itemId && revision.PlanVersion <= row.Version).OrderByDescending(revision => revision.RevisionNo).Take(1), cancellationToken);
+            if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+            var maker = revisions.FirstOrDefault()?.RevisedBy ?? row.CreatedBy;
+            item = new(ModuleName, KindName, itemId, ManufacturingWorkInboxFence.Id(itemId), row.CreatedAtUtc.ToUniversalTime(),
+                PurposeLink(itemId), string.IsNullOrWhiteSpace(maker) ? null : maker.Trim(), [], [],
+                Scope: new WorkInboxItemScopeV1(null, null, row.WorkCenterId));
+        }
+        return new(context.CompanyId, item, row.Version.ToString(System.Globalization.CultureInfo.InvariantCulture), pending.Length == 1);
+    }
 
     public async Task<WorkInboxSourceResultV1> ListPendingAsync(
         WorkInboxSourceContextV1 context,
@@ -123,12 +161,12 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkInboxSourceV1
         return WorkInboxSourceResultV1.Found(context.CompanyId, items, ordered.Count > maxCount);
     }
 
-    private async Task<IReadOnlyList<Pending>> ReadDraftsAsync(Guid companyId, int take, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<Pending>> ReadDraftsAsync(Guid companyId, int take, CancellationToken cancellationToken, Guid? planId = null)
     {
         const int draft = (int)PlanStatus.Draft;
         var read = await rows.ListAsync(
             (from plan in rows.Plans
-             where plan.CompanyId == companyId && plan.Status == draft
+             where plan.CompanyId == companyId && plan.Status == draft && (planId == null || plan.Id == planId)
              select new
              {
                  plan.Id,
@@ -169,13 +207,13 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkInboxSourceV1
             plan.RejectedNotRevised, plan.RequestedDueDate is null, null, plan.WorkCenterId))];
     }
 
-    private async Task<IReadOnlyList<Pending>> ReadReleasedAsync(Guid companyId, int take, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<Pending>> ReadReleasedAsync(Guid companyId, int take, CancellationToken cancellationToken, Guid? planId = null)
     {
         const int approved = (int)PlanStatus.Approved;
         const int cancelled = (int)OrderStatus.Cancelled;
         var read = await rows.ListAsync(
             (from plan in rows.Plans
-             where plan.CompanyId == companyId && plan.Status == approved
+             where plan.CompanyId == companyId && plan.Status == approved && (planId == null || plan.Id == planId)
                  && !rows.Orders.Any(order => order.CompanyId == companyId && order.PlanId == plan.Id && order.Status != cancelled)
                  && rows.Orders.Count(order => order.CompanyId == companyId && order.PlanId == plan.Id && order.Status == cancelled
                      && order.PlanVersionAfterCancel <= plan.Version)
@@ -260,6 +298,8 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkInboxSourceV1
             string.IsNullOrWhiteSpace(candidate.PreparedBy) ? null : candidate.PreparedBy.Trim(), rules, references,
             Scope: new WorkInboxItemScopeV1(null, null, candidate.WorkCenterId));
     }
+
+    private static string PurposeLink(Guid planId) => "/onaylarim/" + KindName + "/" + planId.ToString("D");
 
     private sealed record Pending(
         Guid PlanId,

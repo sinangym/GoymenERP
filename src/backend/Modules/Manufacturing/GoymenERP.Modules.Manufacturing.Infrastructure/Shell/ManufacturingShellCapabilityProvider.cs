@@ -58,7 +58,7 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     // in the central writer's round. 1.5 -> 1.6 (TAKIP-URT-02): the plan cancel control. 1.6 -> 1.7 (URT-S13): the
     // monthly scrap price route and its record control. 1.7 -> 1.8 (URT-S23): the order termin control. 1.8 -> 1.9
     // (URT-S19): the order cost trace control. 1.10 adds correction/cancel; 1.11 stages reorder (URT-D106).
-    public const string OwnerContractVersion = "1.13";
+    public const string OwnerContractVersion = "1.14";
 
     public const string DetailCapabilityId = "manufacturing.orders.detail";
     public const string OutputCorrectionCapabilityId = "manufacturing.orders.output-correction";
@@ -84,6 +84,7 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     public const string PlanDetailRouteId = "manufacturing.plan-detail";
     public const string PlanDetailRoutePath = "/uretim/plan/:planId";
     public const string PlanDetailScreenId = "MFG-PLAN-DETAIL";
+    public const string PlanWorkDecisionCapabilityId = "manufacturing.plans.work-decision";
     public const string PlanApproveCapabilityId = "manufacturing.plans.approve";
     public const string PlanOrderCreateCapabilityId = "manufacturing.plans.order-create";
     public const string PlanEditCapabilityId = "manufacturing.plans.edit";
@@ -173,6 +174,12 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
 
         return
         [
+            // WP8 purpose metadata/rejection is staged. Approval still needs the native allocation final fence;
+            // re-approval needs explicit selected labels not represented by the generic Work request.
+            new ShellCapabilityDeclaration(PlanWorkDecisionCapabilityId, "manufacturing-plan-work-decision",
+                "/onaylarim/manufacturing.plan.v1/:approvalId", "W-MANUFACTURING-PLAN-01",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide, [ErpPermissions.ManufacturingPlansApprove], ImplementationAvailable: false),
             detail,
             detail with
             {

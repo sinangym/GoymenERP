@@ -61,7 +61,7 @@ public sealed class ManufacturingShellRegistrationTests
         // URT-S13 (1.7) adds the scrap price route (scrap-prices.read) and its record control (+ scrap-prices.write).
         // URT-S23 (1.8) adds the order-detail termin control (orders.read + orders.write).
         // URT-S19 (1.9) adds the order-detail cost trace control (orders.read + reports.read).
-        Assert.Equal(20, manufacturing.Length);
+        Assert.Equal(21, manufacturing.Length);
         string[] expected =
         [
             "manufacturing.orders.cancel", "manufacturing.orders.close", "manufacturing.orders.close-exception-approve",
@@ -69,12 +69,13 @@ public sealed class ManufacturingShellRegistrationTests
             "manufacturing.orders.list", "manufacturing.orders.output-correction", "manufacturing.orders.reopen",
             "manufacturing.plans.approve", "manufacturing.plans.cancel", "manufacturing.plans.create", "manufacturing.plans.detail",
             "manufacturing.plans.edit", "manufacturing.plans.list", "manufacturing.plans.order-create", "manufacturing.plans.reorder",
+            "manufacturing.plans.work-decision",
             "manufacturing.scrap-prices.list", "manufacturing.scrap-prices.record",
         ];
         Assert.Equal(expected,
             manufacturing.Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
         Assert.All(manufacturing, item => Assert.Equal(
-            item.Declaration.CapabilityId != ManufacturingShellCapabilityProvider.ReopenCapabilityId,
+            item.Declaration.CapabilityId is not (ManufacturingShellCapabilityProvider.ReopenCapabilityId or ManufacturingShellCapabilityProvider.PlanWorkDecisionCapabilityId),
             item.Declaration.ImplementationAvailable));
     }
 
