@@ -84,7 +84,7 @@ public sealed partial class ManufacturingCostDifferenceSqlServerRelationalAccept
                 if (save.Saved) savedFences++;
                 var reached = fault == "before-audit" ? scope.Writer.HasPendingDrafts && !save.Saved
                     : fault == "after-audit" ? pendingSeen && !scope.Writer.HasPendingDrafts && !save.Saved
-                    : fault == "after-decision-save" ? save.Saves == 2 : fault == "precommit" ? savedFences == 10
+                    : fault == "after-decision-save" ? save.Saves == 2 : fault == "precommit" ? savedFences == 16
                     : fault == "postcommit" ? commits.Commits > 0 : save.Saved;
                 if (!deny || !reached) return true; observed = true;
                 if (fault == "company") { scope.Company.Set(TestCompanyIds.CompanyB); return true; }
@@ -97,8 +97,8 @@ public sealed partial class ManufacturingCostDifferenceSqlServerRelationalAccept
             else Assert.Equal(AccountingApiStatus.Denied, (await scope.Approve(id, "fenced")).Status);
             Assert.True(observed); scope.AssertClean();
             // No lineage branch here: journal Save1/Receive2/store3/decision preSave4/postAudit5/decision Save6/
-            // store7/service8/owner9/precommit10. This is the actual final commit boundary, not an earlier saved read.
-            if (fault == "precommit") Assert.Equal(10, savedFences);
+            // store7/service8/receipt before9/command10/source-before11/source-row12/source-journal13/receipt-final14/owner15/precommit16.
+            if (fault == "precommit") Assert.Equal(16, savedFences);
             var committed = before with { Journals = before.Journals + 1, Deliveries = before.Deliveries + 1, Commands = before.Commands + 1, Audits = before.Audits + 2 };
             Assert.Equal(fault == "postcommit" ? committed : before, await SafetyCounts(run));
             deny = false; scope.Company.Set(Company); scope.User.Actor = Checker; scope.User.Member = true;

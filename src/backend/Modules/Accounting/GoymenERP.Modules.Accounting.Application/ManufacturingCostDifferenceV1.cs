@@ -48,7 +48,10 @@ public sealed record ManufacturingCostDifferenceViewV1(Guid ProposalId, Guid Com
     Guid GenerationId, string GenerationVersion, string Status, long Version, string SignedTlDifference,
     IReadOnlyList<ManufacturingCostDifferenceOutputViewV1> Outputs, DateTimeOffset SourceOccurredAtUtc,
     Guid? PeriodId, DateOnly? AccountingDate, DateOnly? TransactionDate, Guid? DebitAccountId, Guid? CreditAccountId,
-    Guid? PreparedBy, Guid? ApprovedBy, Guid? JournalId, string? Reason, ManufacturingCostDifferenceAccountPlanV1? AccountPlan = null);
+    Guid? PreparedBy, Guid? ApprovedBy, Guid? JournalId, string? Reason, ManufacturingCostDifferenceAccountPlanV1? AccountPlan = null)
+{
+    [JsonIgnore] public ManufacturingCostDifferenceApprovalReceiptV1? ApprovalReceipt { get; init; }
+}
 
 /// <summary>Both accounts and both dates are explicit human selections; no account or closed-period date is inferred.</summary>
 public sealed record PrepareManufacturingCostDifferenceV1(Guid ProposalId, long ExpectedVersion,

@@ -12,9 +12,13 @@ public sealed partial class ManufacturingCostDifferenceServiceV1
         if (!Capture(out var companyId, out var actor, out var actorText))
             return Task.FromResult(Denied<ManufacturingCostDifferenceViewV1>());
         var captured = new ApprovalCapture(companyId, actor, actorText);
-        return store.RunApprovalAsync(replayOnly => Run("approve", AccountingJournalReversalPermissionNamesV1.Approve,
-            new { id, version }, key, (userId, fence, metadata) => store.ApproveAsync(id, version, userId, fence, metadata, token),
-            token, captured, replayOnly), ct => ApprovalFenceAsync(captured, ct), token);
+        return store.RunApprovalAsync(async replayOnly =>
+        {
+            var answer = await Run("approve", AccountingJournalReversalPermissionNamesV1.Approve,
+                new { id, version }, key, (userId, fence, metadata) => store.ApproveAsync(id, version, userId, fence, metadata, token),
+                token, captured, replayOnly);
+            return await AttachCostDifferenceReceiptAsync(answer, id, version, key, captured, token);
+        }, ct => ApprovalFenceAsync(captured, ct), token);
     }
     private async Task ApprovalFenceAsync(ApprovalCapture captured, CancellationToken token)
     {

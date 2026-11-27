@@ -265,13 +265,7 @@ public sealed partial class ManufacturingCostDifferenceStoreV1(AccountingDbConte
             ?? throw new InvalidOperationException("Maliyet farkı kaynak belgesi okunamadı.");
         return new ManufacturingCostDifferenceViewV1(row.Id, row.CompanyId, row.ManufacturingOrderId, row.GenerationId, row.GenerationVersion,
             row.Status switch { 1 => "AwaitingPreparation", 2 => "Prepared", 3 => "Posted", 4 => "NoDifference", _ => throw new InvalidOperationException() },
-            row.Version, row.SignedTlDifference, source.Outputs.Select(output => new ManufacturingCostDifferenceOutputViewV1(
-                output.OutputId, output.ReceiptMovementId, output.LabelId, Text(output.NetQuantityKg),
-                ManufacturingCostDifferenceQuantityV1.Display(output.RemainingQuantityKg, output.RemainingQuantityKgRatio),
-                ManufacturingCostDifferenceQuantityV1.Display(output.ConsumedQuantityKg, output.ConsumedQuantityKgRatio),
-                Text(output.TlUnitCostPerKg!.Value), Text(output.RemainingTlValue!.Value),
-                Text(output.ConsumedTlDifference!.Value), output.UsdUnitCostPerKg is { } usd ? Text(usd) : null,
-                Text(output.OriginalTlAmount!.Value))).ToArray(), row.SourceOccurredAtUtc, row.PeriodId, row.AccountingDate,
+            row.Version, row.SignedTlDifference, ManufacturingCostDifferenceServiceV1.CostDifferenceOutputs(source), row.SourceOccurredAtUtc, row.PeriodId, row.AccountingDate,
             row.TransactionDate, row.DebitAccountId, row.CreditAccountId, row.PreparedBy, row.ApprovedBy, row.JournalId, row.Reason,
             row.AccountPlanProofJson is null ? null : JsonSerializer.Deserialize<ManufacturingCostDifferenceAccountPlanV1>(row.AccountPlanProofJson, Json));
     }
