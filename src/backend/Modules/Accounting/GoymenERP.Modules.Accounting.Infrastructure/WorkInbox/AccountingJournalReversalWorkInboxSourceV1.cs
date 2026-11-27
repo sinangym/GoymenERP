@@ -9,13 +9,15 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.WorkInbox;
 /// W1-A (AI-D31, AI-D32): the journal reversal proposals waiting for a decision (ACC-V1), as Accounting lists them for the
 /// Work inbox. A proposal waits while its status is Pending (the decision refuses anything else) since it was proposed; it
 /// is decided on the reversal approval screen by a company-wide holder of <c>accounting.journal.reverse.approve</c> other
-/// than its proposer (<c>MakerCheckerRequired</c>); no other user is refused. The reversal proposals an invoiced-shipment
+/// than its proposer (<c>MakerCheckerRequired</c>); KLN-D17 additionally excludes the actual invoice cancellation source actor.
+/// Purpose reads obtain that additional actor from the same owner predicate as the native command. The reversal proposals an invoiced-shipment
 /// cost cancellation creates are the same records and are listed here too.
 /// The decision command accepts only a company-wide grant (D11: no scoped approver).
 /// </summary>
-internal sealed class AccountingJournalReversalWorkInboxSourceV1(
+internal sealed partial class AccountingJournalReversalWorkInboxSourceV1(
     AccountingDbContext dbContext,
-    AccountingWorkInboxFence fence) : IWorkInboxSourceV1
+    AccountingWorkInboxFence fence,
+    IAccountingJournalReversalDecisionReadV1? owner = null) : IWorkInboxSourceV1
 {
     public const string ModuleName = "accounting";
     public const string KindName = "accounting.journal-reversal.v1";
@@ -53,14 +55,22 @@ internal sealed class AccountingJournalReversalWorkInboxSourceV1(
             return null;
         }
 
-        return new WorkInboxItemV1(ModuleName, KindName, row.Id, AccountingWorkInboxFence.ShortReference(row.Id),
-            row.ProposedAtUtc.ToUniversalTime(), AccountingWorkInboxFence.Link(ScreenPath, row.Id),
-            AccountingWorkInboxFence.Actor(row.ProposedByUserId),
+        return IdentityItem(row.Id, row.SourceJournalId, row.PeriodId, row.ProposedByUserId, row.ProposedAtUtc, null);
+    }
+
+    private static WorkInboxItemV1? IdentityItem(Guid proposalId, Guid sourceJournalId, Guid periodId,
+        Guid proposedBy, DateTimeOffset proposedAtUtc, Guid? cancellationActor)
+    {
+        if (proposalId == Guid.Empty || sourceJournalId == Guid.Empty || periodId == Guid.Empty || proposedBy == Guid.Empty
+            || cancellationActor == Guid.Empty) return null;
+        return new WorkInboxItemV1(ModuleName, KindName, proposalId, AccountingWorkInboxFence.ShortReference(proposalId),
+            proposedAtUtc.ToUniversalTime(), AccountingWorkInboxFence.Link(ScreenPath, proposalId),
+            AccountingWorkInboxFence.Actor(proposedBy),
             [new WorkApprovalRuleResultV1(ApprovalRequiredRule, null, null, null, null)],
             [
-                new WorkApprovalReferenceV1("journal", AccountingWorkInboxFence.ShortReference(row.SourceJournalId),
-                    row.SourceJournalId, AccountingWorkInboxFence.Link(JournalScreenPath, row.SourceJournalId)),
-                new WorkApprovalReferenceV1("period", AccountingWorkInboxFence.ShortReference(row.PeriodId), row.PeriodId, null),
-            ]);
+                new WorkApprovalReferenceV1("journal", AccountingWorkInboxFence.ShortReference(sourceJournalId),
+                    sourceJournalId, AccountingWorkInboxFence.Link(JournalScreenPath, sourceJournalId)),
+                new WorkApprovalReferenceV1("period", AccountingWorkInboxFence.ShortReference(periodId), periodId, null),
+            ], cancellationActor is { } actor ? [AccountingWorkInboxFence.Actor(actor)!] : null);
     }
 }
