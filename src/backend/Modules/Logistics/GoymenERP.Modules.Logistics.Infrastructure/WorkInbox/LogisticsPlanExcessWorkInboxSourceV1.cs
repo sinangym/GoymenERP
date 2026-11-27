@@ -27,6 +27,10 @@ internal sealed class LogisticsPlanExcessWorkInboxSourceV1 : IWorkApprovalDecisi
     /// <summary>The plan-excess approval screen (L-PLAN-EXCESS-APPROVE), where the approve button lives.</summary>
     public const string ScreenPath = "/lojistik/plan-ustu-sevk-onay";
 
+    /// <summary>The paired Work purpose; native browse and instruction references remain separate.</summary>
+    public const string DecisionScreenPath = "/onaylarim/logistics.plan-excess.v1";
+    private static string DecisionLink(Guid exceptionId) => DecisionScreenPath + "/" + LogisticsWorkInboxFence.Id(exceptionId);
+
     /// <summary>A quantity above the instructed (planned) quantity was proposed: threshold = instructed, deviation = the excess.</summary>
     public const string ExcessRule = "logistics.plan-excess-quantity";
 
@@ -109,7 +113,7 @@ internal sealed class LogisticsPlanExcessWorkInboxSourceV1 : IWorkApprovalDecisi
         if (row.ApprovedPlanExcess > 0) rules.Add(new(AlreadyApprovedRule, null, WorkInboxRulesV1.Decimal(row.ApprovedPlanExcess), null, unit));
         if (row.IsBlocked) rules.Add(new(LineBlockedRule, null, null, null, null));
         var item = new WorkInboxItemV1(ModuleName, KindName, row.ExceptionId, LogisticsWorkInboxFence.Id(row.ExceptionId),
-            row.ProposedAtUtc.ToUniversalTime(), ScreenPath, row.ProposedBy, rules,
+            row.ProposedAtUtc.ToUniversalTime(), DecisionLink(row.ExceptionId), row.ProposedBy, rules,
             [LogisticsWorkInboxFence.InstructionReference(row.InstructionId)]);
         return new(context.CompanyId, item, version.ToString(System.Globalization.CultureInfo.InvariantCulture), status == 1,
             LogisticsPlanExcess: new(instructionVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)),
@@ -198,7 +202,7 @@ internal sealed class LogisticsPlanExcessWorkInboxSourceV1 : IWorkApprovalDecisi
             }
 
             items.Add(new WorkInboxItemV1(ModuleName, KindName, row.ExceptionId, LogisticsWorkInboxFence.Id(row.ExceptionId),
-                row.ProposedAtUtc.ToUniversalTime(), ScreenPath, row.ProposedBy, rules,
+                row.ProposedAtUtc.ToUniversalTime(), DecisionLink(row.ExceptionId), row.ProposedBy, rules,
                 [LogisticsWorkInboxFence.InstructionReference(row.InstructionId)]));
         }
 

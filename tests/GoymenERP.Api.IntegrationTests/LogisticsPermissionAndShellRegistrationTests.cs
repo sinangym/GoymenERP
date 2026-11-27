@@ -108,6 +108,7 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
             "logistics.instructions.list",
             "logistics.operations-work.purchase",
             "logistics.operations-work.sales",
+            "logistics.plan-excess.work-decision",
             "logistics.shipments.record",
             "logistics.transfer-departures.record",
         ];

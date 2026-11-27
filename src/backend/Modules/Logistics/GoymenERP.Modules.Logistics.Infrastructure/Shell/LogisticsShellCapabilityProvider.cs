@@ -32,8 +32,9 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Shell;
 public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "LOGISTICS";
-    // WP8: a standalone staged native plan-excess purpose; all prior availability remains unchanged.
-    public const string OwnerContractVersion = "1.7";
+    // WP8: the paired Work decision implementation; native screen availability and grants are unchanged.
+    // Source availability is not SQL/browser/CI acceptance or environment activation.
+    public const string OwnerContractVersion = "1.8";
     public const string TransferDeparturesCapabilityId = LogisticsPermissionManifestV1.TransferDeparturesRecord;
     public const string PlanExcessPrepareCapabilityId = "logistics.shipments.plan-excess.prepare";
     public const string PlanExcessApproveCapabilityId = "logistics.shipments.plan-excess.approve";
@@ -75,7 +76,7 @@ public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityP
         new ShellCapabilityDeclaration(PlanExcessWorkDecisionCapabilityId, PlanExcessWorkDecisionCapabilityId,
             PlanExcessWorkDecisionRoutePath, "L-PLAN-EXCESS-WORK-DECISION",
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
-            ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPlanExcessV1.ApprovePermission], ImplementationAvailable: false),
+            ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPlanExcessV1.ApprovePermission], ImplementationAvailable: true),
         new ShellCapabilityDeclaration(PlanExcessPrepareCapabilityId, DetailCapabilityId, DetailRoutePath, DetailScreenId,
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
             ShellCapabilityScopeRequirement.CompanyWide,

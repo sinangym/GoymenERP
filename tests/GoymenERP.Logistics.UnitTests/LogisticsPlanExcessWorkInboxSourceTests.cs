@@ -51,9 +51,10 @@ public sealed class LogisticsPlanExcessWorkInboxSourceTests
         F.AssertContractShape(result, "logistics", "logistics.plan-excess.v1");
         Assert.Equal([F.Id(42), F.Id(41)], result.Items!.Select(item => item.ItemId));
         var first = result.Items![0];
-        Assert.Equal(("/lojistik/plan-ustu-sevk-onay", F.Id(42).ToString("D"), F.T0.AddMinutes(5).ToUniversalTime()),
+        Assert.Equal(("/onaylarim/logistics.plan-excess.v1/" + F.Id(42).ToString("D"), F.Id(42).ToString("D"), F.T0.AddMinutes(5).ToUniversalTime()),
             (first.Link, first.DocumentLabel, first.WaitingSinceUtc));
         Assert.Equal(("loading-instruction", F.Id(1)), (Assert.Single(first.References).Role, first.References[0].RecordId));
+        Assert.Equal(LogisticsWorkInboxFence.InstructionLink(F.Id(1)), first.References[0].Link);
     }
 
     [Fact]
@@ -176,7 +177,7 @@ public sealed class LogisticsPlanExcessWorkInboxSourceTests
         Assert.Equal((F.CompanyA, F.Id(41), F.Id(1), F.Id(31), "10", "SENTETIK", F.Maker, F.T0.AddMinutes(5)),
             (proof.CompanyId, proof.ExceptionId, proof.InstructionId, proof.LineId, proof.Quantity, proof.Reason, proof.ProposedBy, proof.ProposedAtUtc));
         Assert.Contains(snapshot.Item.Rules, rule => rule.RuleCode == LogisticsPlanExcessWorkInboxSourceV1.LineBlockedRule);
-        Assert.Equal(LogisticsPlanExcessWorkInboxSourceV1.ScreenPath, snapshot.Item.Link);
+        Assert.Equal(LogisticsPlanExcessWorkInboxSourceV1.DecisionScreenPath + "/" + F.Id(41).ToString("D"), snapshot.Item.Link);
         Assert.All(fixture.Authority.Calls, call => Assert.Equal(LogisticsPlanExcessV1.ApprovePermission, call.Permission));
         Assert.DoesNotContain("LogisticsPlanExcessProof", System.Text.Json.JsonSerializer.Serialize(snapshot));
     }
@@ -226,12 +227,12 @@ public sealed class LogisticsPlanExcessWorkInboxSourceTests
     }
 
     [Fact]
-    public void Decision_purpose_is_standalone_staged_and_preserves_the_native_screen_and_permission()
+    public void Decision_purpose_has_the_paired_Work_implementation_and_preserves_native_screen_availability_and_permission()
     {
-        var provider = new LogisticsShellCapabilityProvider(); Assert.Equal("1.7", provider.ContractVersion);
+        var provider = new LogisticsShellCapabilityProvider(); Assert.Equal("1.8", provider.ContractVersion);
         var purpose = Assert.Single(provider.GetDeclarations(), value => value.CapabilityId == LogisticsShellCapabilityProvider.PlanExcessWorkDecisionCapabilityId);
         Assert.Equal("/onaylarim/logistics.plan-excess.v1/:approvalId", purpose.RoutePath); Assert.Null(purpose.ParentCapabilityId);
-        Assert.False(purpose.ImplementationAvailable); Assert.Equal([LogisticsPlanExcessV1.ApprovePermission], purpose.RequiredPermissions);
+        Assert.True(purpose.ImplementationAvailable); Assert.Equal([LogisticsPlanExcessV1.ApprovePermission], purpose.RequiredPermissions);
         Assert.Equal(GoymenERP.BuildingBlocks.Shell.ShellCapabilityContextRequirement.SingleCompany, purpose.ContextRequirement);
         Assert.Equal(GoymenERP.BuildingBlocks.Shell.ShellCapabilityScopeRequirement.CompanyWide, purpose.ScopeRequirement);
         var native = Assert.Single(provider.GetDeclarations(), value => value.CapabilityId == LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId);

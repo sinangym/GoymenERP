@@ -906,11 +906,11 @@ public sealed class LogisticsPersistenceModelTests
         var provider = new LogisticsShellCapabilityProvider();
         var declarations = provider.GetDeclarations().Where(item =>
             !item.CapabilityId.StartsWith("logistics.subcontract-deliveries.", StringComparison.Ordinal)).ToList();
-        Assert.Equal("1.7", provider.ContractVersion);
+        Assert.Equal("1.8", provider.ContractVersion);
         Assert.Equal(15, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             declaration.CapabilityId is not (LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId
-                or LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId or LogisticsShellCapabilityProvider.PlanExcessWorkDecisionCapabilityId), declaration.ImplementationAvailable));
+                or LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId), declaration.ImplementationAvailable));
         var excessPrepare = Assert.Single(declarations, item => item.CapabilityId == LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId);
         Assert.Equal(LogisticsShellCapabilityProvider.DetailCapabilityId, excessPrepare.ParentCapabilityId);
         Assert.Equal([LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.LoadsRecord], excessPrepare.RequiredPermissions);
