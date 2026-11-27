@@ -93,7 +93,7 @@ internal sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1(
         }
 
         List<Pending> pending;
-        var items = new List<WorkInboxItemV1>(maxCount);
+        var items = new List<WorkInboxItemV1>();
         try
         {
             var matched = (int)PurchaseIncomingInvoiceStatus.Matched;
