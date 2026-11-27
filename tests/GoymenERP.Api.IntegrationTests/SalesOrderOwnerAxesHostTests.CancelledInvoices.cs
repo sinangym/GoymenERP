@@ -38,12 +38,13 @@ public sealed partial class SalesOrderOwnerAxesHostTests
         // Explicit SYNTHETIC Finance/owner responses exercise the consumer boundary; native Sales SQL proof is separate.
         var f = subcontract ? SubcontractFixture() : new Fixture();
         var proof = CancelledProof(f, subcontract); f.CancelledProofs = [proof];
+        var wrongScope = Guid.NewGuid(); // Stable negative identity across the two owner observations.
         f.SettlementOverride = id => id == proof.InvoiceId
             ? new(id, fault switch { "settled-cancellation" => FinanceSalesInvoiceSettlementStatusV1.Settled,
                 "open-cancellation" => FinanceSalesInvoiceSettlementStatusV1.Open,
                 "unknown-cancellation" => FinanceSalesInvoiceSettlementStatusV1.Unknown,
                 _ => FinanceSalesInvoiceSettlementStatusV1.OfficiallyReversed },
-                fault == "wrong-scope" ? Guid.NewGuid() : proof.AdmissionId,
+                fault == "wrong-scope" ? wrongScope : proof.AdmissionId,
                 fault == "wrong-original-version" ? proof.CancellationInvoiceVersion.ToString() : proof.OriginalFinalizedVersion.ToString())
             : new(id, fault == "reversed-active" ? FinanceSalesInvoiceSettlementStatusV1.OfficiallyReversed : FinanceSalesInvoiceSettlementStatusV1.Settled,
                 f.SubcontractInvoice?.Finalization?.AdmissionId ?? f.Admission, f.SubcontractInvoice?.Finalization?.FinalizedVersion.ToString() ?? "4");
@@ -53,6 +54,27 @@ public sealed partial class SalesOrderOwnerAxesHostTests
         Assert.True(answer.Invoicing.Complete);
         Assert.False(answer.FinancialClosure.Complete);
         Assert.Equal(SalesDraftStatusAxisStatesV1.Unreadable, answer.FinancialClosure.State);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Changing_Finance_cancellation_proof_invalidates_all_three_axes(bool subcontract)
+    {
+        var f = subcontract ? SubcontractFixture() : new Fixture();
+        var proof = CancelledProof(f, subcontract); f.CancelledProofs = [proof];
+        f.SettlementOverride = id => id == proof.InvoiceId
+            ? new(id, FinanceSalesInvoiceSettlementStatusV1.OfficiallyReversed, Guid.NewGuid(), proof.OriginalFinalizedVersion.ToString())
+            : new(id, FinanceSalesInvoiceSettlementStatusV1.Settled, f.SubcontractInvoice?.Finalization?.AdmissionId ?? f.Admission,
+                f.SubcontractInvoice?.Finalization?.FinalizedVersion.ToString() ?? "4");
+        var answer = await f.Host().ReadOrderOwnerAxesAsync(f.Query with { IsSubcontractService = subcontract }, f.Fence);
+        Assert.Equal(2, f.FinanceCalls);
+        Assert.Equal(SalesDraftStatusAxisStatesV1.Unreadable, answer!.Source.State);
+        Assert.Equal(SalesDraftStatusAxisStatesV1.Unreadable, answer.Invoicing.State);
+        Assert.Equal(SalesDraftStatusAxisStatesV1.Unreadable, answer.FinancialClosure.State);
+        Assert.False(answer.Source.Complete);
+        Assert.False(answer.Invoicing.Complete);
+        Assert.False(answer.FinancialClosure.Complete);
     }
 
     [Theory]
