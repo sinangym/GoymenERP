@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { decodeWorkDecisionPreview, sendWorkDecision, isWorkDecisionRequest, isWorkDecisionKind, isSalesWorkDecisionKind, workDecisionReasonLimit, workDecisionLocalUtc, WORK_DECISION_KINDS } from './workDecisionApi'
+import { decodeWorkDecisionPreview, sendWorkDecision, isWorkDecisionRequest, isWorkDecisionKind, isSalesWorkDecisionKind, workDecisionReasonLimit, workDecisionLocalUtc, WORK_DECISION_KINDS, COUNTERPARTY_WORK_DECISION_CAPABILITY, isCounterpartyWorkDecisionKind } from './workDecisionApi'
 import { decodeDelegation, decodeDelegationPage, decodePeople } from './workDelegationApi'
 const company='aaaaaaaa-0000-4000-8000-000000000001', id='cccccccc-0000-4000-8000-000000000001'
 const kind='finance.cash-account.v1' as const
@@ -371,5 +371,48 @@ it.each([true,false])('accepts only the matching immutable native loss state, ac
  for(const delta of [{state:approve?'Rejected':'Approved'},{state:'Pending'},{state:'Withdrawn'},{companyId:id},{kind},{itemId:company},{extra:true},{originalCorrelationId:'other'}]) {
   fetch.mockImplementation(async()=>new Response(JSON.stringify({...result,...delta}),{status:200,headers}))
   expect((await sendWorkDecision(company,lossKind,id,command,'frozen-key')).type).toBe('unknown')
+ }
+})
+
+
+const cpKinds=['counterparty.tax-identity-change.v1','counterparty.legal-name-change.v1'] as const
+it('keeps both staged Counterparty purposes out of the mounted fifteen and pins their actual cari capability ids', () => {
+ expect(COUNTERPARTY_WORK_DECISION_CAPABILITY).toEqual({
+  'counterparty.tax-identity-change.v1':'cari.tax-identity-change.work-decision',
+  'counterparty.legal-name-change.v1':'cari.legal-name-change.work-decision',
+ })
+ expect(WORK_DECISION_KINDS).toHaveLength(15)
+ for(const cp of cpKinds){
+  expect(isWorkDecisionKind(cp)).toBe(true);expect(isCounterpartyWorkDecisionKind(cp)).toBe(true)
+  expect(WORK_DECISION_KINDS.some(kind=>String(kind)===cp)).toBe(false)
+  expect(workDecisionReasonLimit(cp)).toBe(1000)
+ }
+})
+it.each(cpKinds)('strictly decodes scoped %s without tax-number fields or another owner typed payload', cp => {
+ const value={...preview,kind:cp,rejectionSupported:true,references:[{role:'party',label:'SENTETIK cari',recordId:id,link:null}]}
+ expect(decodeWorkDecisionPreview(value,company,cp,id)).not.toBeNull()
+ expect(decodeWorkDecisionPreview({...value,pending:false},company,cp,id)).not.toBeNull()
+ for(const delta of [{companyId:id},{itemId:company},{kind:cpKinds.find(kind=>kind!==cp)},{sourceVersion:'0'},
+  {approvalReasonRequired:true},{rejectionSupported:false},{rejectionSupported:undefined},
+  {references:[{...value.references[0],taxIdentityNumber:'SENTETIK'}]},
+  {inventoryTransferLoss:{requestNumber:1,requestedAtUtc:'2026-11-26T08:00:00Z'}},
+  {manufacturingPlanReapproval:{parentRollIds:[id]}}])
+  expect(decodeWorkDecisionPreview({...value,...delta},company,cp,id)).toBeNull()
+ expect(isWorkDecisionRequest({...request,reason:null},cp)).toBe(true)
+ expect(isWorkDecisionRequest({...request,reason:'N'.repeat(1000)},cp)).toBe(true)
+ expect(isWorkDecisionRequest({...request,reason:'N'.repeat(1001)},cp)).toBe(false)
+})
+it.each(cpKinds.flatMap(cp=>[true,false].map(approve=>({cp,approve}))))('keeps native optional note and immutable scoped result for $cp approve=$approve', async ({cp,approve}) => {
+ const result={companyId:company,kind:cp,itemId:id,state:approve?'Approved':'Rejected',replayed:true,originalCorrelationId:'original'}
+ const headers={'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}
+ const fetch=vi.fn(async(_input:RequestInfo|URL,_init?:RequestInit)=>new Response(JSON.stringify(result),{status:200,headers}))
+ vi.stubGlobal('fetch',fetch)
+ const command={...request,approve,reason:approve?null:'N'.repeat(1000)}
+ expect((await sendWorkDecision(company,cp,id,command,'same-cp-key')).type).toBe('applied')
+ expect(JSON.parse((fetch.mock.calls[0]![1] as RequestInit).body as string)).toEqual(command)
+ for(const delta of [{companyId:id},{itemId:company},{kind},{state:approve?'Rejected':'Approved'},{state:'Pending'},
+  {originalCorrelationId:'other'},{replayed:false},{resource:{}},{extra:true}]){
+  fetch.mockImplementation(async()=>new Response(JSON.stringify({...result,...delta}),{status:200,headers}))
+  expect((await sendWorkDecision(company,cp,id,command,'same-cp-key')).type).toBe('unknown')
  }
 })
