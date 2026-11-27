@@ -21,7 +21,7 @@ internal sealed partial class AccountingJournalReversalWorkInboxSourceV1(
 {
     public const string ModuleName = "accounting";
     public const string KindName = "accounting.journal-reversal.v1";
-    public const string ScreenPath = "/muhasebe/ters-kayit-onay";
+    public const string ScreenPath = "/onaylarim/accounting.journal-reversal.v1";
     public const string JournalScreenPath = "/muhasebe/fisler";
 
     /// <summary>A posted journal is reversed only with a different person's approval (maker ≠ checker).</summary>

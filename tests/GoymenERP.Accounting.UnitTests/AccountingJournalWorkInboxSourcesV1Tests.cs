@@ -162,7 +162,7 @@ public sealed class AccountingJournalReversalWorkInboxSourceV1Tests
         var first = result.Items![0];
         Assert.Equal(Kit.CallerText, first.PreparedBy);
         Assert.Null(first.ExcludedDeciders);
-        Assert.Equal("/muhasebe/ters-kayit-onay/" + older.Id.ToString("D"), first.Link);
+        Assert.Equal("/onaylarim/accounting.journal-reversal.v1/" + older.Id.ToString("D"), first.Link);
         Assert.Equal(Kit.Start.ToUniversalTime(), first.WaitingSinceUtc);
         Assert.Equal([AccountingJournalReversalWorkInboxSourceV1.ApprovalRequiredRule], first.Rules.Select(rule => rule.RuleCode));
         Assert.Equal(new WorkApprovalReferenceV1("journal", older.SourceJournalId.ToString("D")[..8], older.SourceJournalId,

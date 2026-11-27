@@ -49,8 +49,9 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     /// </para>
     /// <para>1.12 (WP8): a standalone normal journal approval-purpose route, without general draft read access.</para>
     /// <para>1.13 (WP8): standalone period opening and reopening purpose routes under their native approval permissions.</para>
+    /// <para>1.14 (WP8): the native journal reversal approval gains its paired standalone Work purpose route.</para>
     /// </summary>
-    public const string OwnerContractVersion = "1.13";
+    public const string OwnerContractVersion = "1.14";
 
     public const string InvoicedShipmentPrepareCapabilityId = "accounting.invoiced-shipment-costs.prepare";
     public const string InvoicedShipmentPrepareRoutePath = "/muhasebe/sevk-smm-hazirla";
@@ -147,6 +148,10 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     public const string PeriodReopeningWorkDecisionScreenId = "M-PERIOD-REOPENING-WORK-DECISION";
 
     // ACC-V1 journal reversal (#66/5827281417): propose and approve are two actions of two people.
+    public const string JournalReversalWorkDecisionCapabilityId = "accounting.journal-reversal.work-decision";
+    public const string JournalReversalWorkDecisionRouteId = "accounting-journal-reversal-work-decision";
+    public const string JournalReversalWorkDecisionRoutePath = "/onaylarim/accounting.journal-reversal.v1/:approvalId";
+    public const string JournalReversalWorkDecisionScreenId = "M-JOURNAL-REVERSAL-WORK-DECISION";
     public const string JournalReversalApproveScreenId = "M-04-REVERSAL-APPROVE";
     public const string JournalReversalProposeCapabilityId = "accounting.journal-reversals.propose";
     public const string JournalReversalApproveCapabilityId = "accounting.journal-reversals.approve";
@@ -257,6 +262,9 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
             Declaration(PeriodReopeningWorkDecisionCapabilityId, PeriodReopeningWorkDecisionRouteId, PeriodReopeningWorkDecisionRoutePath,
                 PeriodReopeningWorkDecisionScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
                 [AccountingPermissionManifestV1.PeriodsReopen], available: true),
+            Declaration(JournalReversalWorkDecisionCapabilityId, JournalReversalWorkDecisionRouteId, JournalReversalWorkDecisionRoutePath,
+                JournalReversalWorkDecisionScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                [AccountingJournalReversalPermissionNamesV1.Approve], available: true),
             Declaration(PostingQueuesCapabilityId, PostingQueuesRouteId, PostingQueuesRoutePath, PostingQueuesScreenId,
                 ShellCapabilityRoutePrecedence.Static, [AccountingPermissionManifestV1.PostingQueuesRead], available: true),
             // M-06 Mizan: the real read route and screen exist (#456); walked by acc01 ACC01-09 over the fixture journal.
