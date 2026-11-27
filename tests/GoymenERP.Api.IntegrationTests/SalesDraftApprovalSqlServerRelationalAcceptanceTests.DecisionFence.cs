@@ -2,6 +2,13 @@ using System.Data;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Drafts;
+using GoymenERP.Modules.Sales.Infrastructure.Persistence;
+using GoymenERP.Modules.Audit.Infrastructure.Services;
+using GoymenERP.Modules.Audit.Application.Contracts;
+using GoymenERP.Modules.Audit.Domain.Events;
+using Microsoft.Extensions.DependencyInjection;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -126,6 +133,121 @@ public sealed partial class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE DraftId=@id AND CommandName=@command", ("@id", id), ("@command", command)));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId=@id AND EventType=@event", ("@id", id.ToString("D")), ("@event", audit.EventType)));
         Assert.All(authority.Measured, x => Assert.Equal(CompanyA, x.Company));
+    }
+
+    [SqlServerFact]
+    public async Task Guarded_order_decision_refuses_ambient_transaction_for_new_key_and_replay_before_any_callback()
+    {
+        await using var run = await Run.StartAsync();
+        var id = await PrepareRecordedGuardDecisionAsync(run);
+        await using var context = run.Context(CompanyA);
+        var tracked = await context.Drafts.SingleAsync(x => x.Id == id);
+        var entries = context.ChangeTracker.Entries().Count();
+        var store = GuardStore(context);
+        var callback = 0;
+        using (var ambient = new System.Transactions.TransactionScope(System.Transactions.TransactionScopeAsyncFlowOption.Enabled))
+        {
+            foreach (var key in new[] { "guard-new-key", "guard-recorded-key" })
+                await Assert.ThrowsAsync<InvalidOperationException>(() => store.UpdateDraftDecisionWithFenceAsync(run.Envelope(key), Hash(key),
+                    SalesDraftCommands.ApproveV1, id, (_, _) => callback++, Approved, (_, _) => { callback++; return Task.CompletedTask; }));
+            Assert.Equal(System.Transactions.TransactionStatus.Active, System.Transactions.Transaction.Current!.TransactionInformation.Status);
+            Assert.Null(context.Database.CurrentTransaction);
+        }
+        Assert.Equal(0, callback);
+        Assert.Equal(entries, context.ChangeTracker.Entries().Count());
+        Assert.Same(tracked, context.ChangeTracker.Entries().Single().Entity);
+        Assert.Equal(EntityState.Unchanged, context.Entry(tracked).State);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE DraftId=@id AND CommandName=@command", ("@id", id), ("@command", SalesDraftCommands.ApproveV1)));
+    }
+
+    [SqlServerFact]
+    public async Task Guarded_order_decision_preserves_borrowed_transaction_and_tracked_state_for_new_key_and_replay()
+    {
+        await using var run = await Run.StartAsync();
+        var id = await PrepareRecordedGuardDecisionAsync(run);
+        await using var context = run.Context(CompanyA);
+        var tracked = await context.Drafts.SingleAsync(x => x.Id == id);
+        await using var borrowed = await context.Database.BeginTransactionAsync();
+        var store = GuardStore(context); var callback = 0;
+        foreach (var key in new[] { "guard-new-key", "guard-recorded-key" })
+            await Assert.ThrowsAsync<InvalidOperationException>(() => store.UpdateDraftDecisionWithFenceAsync(run.Envelope(key), Hash(key),
+                SalesDraftCommands.ApproveV1, id, (_, _) => callback++, Approved, (_, _) => { callback++; return Task.CompletedTask; }));
+        Assert.Equal(0, callback);
+        Assert.Same(borrowed, context.Database.CurrentTransaction);
+        Assert.Same(tracked, context.ChangeTracker.Entries().Single().Entity);
+        Assert.Equal(EntityState.Unchanged, context.Entry(tracked).State);
+        Assert.Equal(4L, await context.Drafts.AsNoTracking().Where(x => x.Id == id).Select(x => x.Version).SingleAsync());
+        await borrowed.RollbackAsync(); // The caller still owns and can use/dispose its transaction.
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE DraftId=@id AND CommandName=@command", ("@id", id), ("@command", SalesDraftCommands.ApproveV1)));
+    }
+
+    [SqlServerFact]
+    public async Task Guarded_order_decision_preserves_dirty_caller_values_for_new_key_and_recorded_replay()
+    {
+        await using var run = await Run.StartAsync();
+        var id = await PrepareRecordedGuardDecisionAsync(run);
+        await using var context = run.Context(CompanyA);
+        var tracked = await context.Drafts.SingleAsync(x => x.Id == id);
+        var original = tracked.UpdatedAtUtc;
+        tracked.UpdatedAtUtc = original.AddMinutes(1); // Unrelated caller work; never saved by this test.
+        Assert.True(context.ChangeTracker.HasChanges());
+        var store = GuardStore(context); var callback = 0;
+        foreach (var key in new[] { "guard-new-key", "guard-recorded-key" })
+            await Assert.ThrowsAsync<InvalidOperationException>(() => store.UpdateDraftDecisionWithFenceAsync(run.Envelope(key), Hash(key),
+                SalesDraftCommands.ApproveV1, id, (_, _) => callback++, Approved, (_, _) => { callback++; return Task.CompletedTask; }));
+        Assert.Equal(0, callback);
+        Assert.Same(tracked, context.ChangeTracker.Entries().Single().Entity);
+        Assert.Equal(EntityState.Modified, context.Entry(tracked).State);
+        Assert.Equal(original.AddMinutes(1), tracked.UpdatedAtUtc);
+        Assert.Equal(original, context.Entry(tracked).Property(x => x.UpdatedAtUtc).OriginalValue);
+        Assert.Equal(original, await run.ScalarAsync<DateTimeOffset>("SELECT UpdatedAtUtc FROM sales.Drafts WHERE Id=@id", ("@id", id)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE DraftId=@id AND CommandName=@command", ("@id", id), ("@command", SalesDraftCommands.ApproveV1)));
+    }
+
+    [SqlServerFact]
+    public async Task Guarded_order_decision_preserves_pending_caller_audit_for_new_key_and_recorded_replay()
+    {
+        await using var run = await Run.StartAsync();
+        var id = await PrepareRecordedGuardDecisionAsync(run);
+        await using var context = run.Context(CompanyA);
+        var tracked = await context.Drafts.SingleAsync(x => x.Id == id);
+        await using var ownerScope = run.Factory.Services.CreateAsyncScope();
+        var company = ownerScope.ServiceProvider.GetRequiredService<ICompanyContext>(); company.Set(CompanyA);
+        var collector = ownerScope.ServiceProvider.GetRequiredService<IAuditEventCollector>();
+        var writer = ownerScope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
+        collector.Enqueue(new AuditEventDraft(CompanyA, "sales.synthetic-caller.v1", "Sales.SyntheticCaller", id.ToString("D"),
+            "prepared", null, 1, AuditActorTypes.User, run.Actor, SalesPermissionManifestV1.OrdersApprove,
+            [], "{}", "{}", "SENTETIK caller-owned audit", null, AuditAiInvolvement.None, null,
+            "Web", null, null, run.Correlation, null, "guard-caller-audit"));
+        Assert.True(writer.HasPendingDrafts);
+        var store = new SalesStore(context, company, collector, TimeProvider.System, officialCancellationAuditWriter: writer);
+        var callback = 0;
+        foreach (var key in new[] { "guard-new-key", "guard-recorded-key" })
+            await Assert.ThrowsAsync<InvalidOperationException>(() => store.UpdateDraftDecisionWithFenceAsync(run.Envelope(key), Hash(key),
+                SalesDraftCommands.ApproveV1, id, (_, _) => callback++, Approved, (_, _) => { callback++; return Task.CompletedTask; }));
+        Assert.Equal(0, callback);
+        Assert.True(writer.HasPendingDrafts);
+        Assert.Same(tracked, context.ChangeTracker.Entries().Single().Entity);
+        Assert.Equal(EntityState.Unchanged, context.Entry(tracked).State);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId=@id AND EventType=N'sales.synthetic-caller.v1'", ("@id", id.ToString("D"))));
+        writer.DiscardPending(); // The caller owns its own pending audit, not the refused command.
+    }
+
+    private static SalesStore GuardStore(SalesDbContext context)
+    {
+        var company = new CompanyContext(); company.Set(CompanyA);
+        // Guard-only context: no audit interceptor is needed because refusal must precede every callback/read/write.
+        return new(context, company, new AuditEventCollector(), TimeProvider.System);
+    }
+
+    private static async Task<Guid> PrepareRecordedGuardDecisionAsync(Run run)
+    {
+        var id = await PrepareDecisionPendingAsync(run);
+        await using var scope = run.Store(CompanyA);
+        await scope.Store.UpdateDraftDecisionWithFenceAsync(run.Envelope("guard-recorded-key"), Hash("guard-recorded-key"),
+            SalesDraftCommands.ApproveV1, id, (draft, now) => draft.Approve(3, "SENTETIK-independent", now), Approved,
+            (_, _) => Task.CompletedTask);
+        return id;
     }
 
     private static async Task<Guid> PrepareDecisionPendingAsync(Run run)

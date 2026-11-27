@@ -232,6 +232,11 @@ public sealed partial class SalesStore(
             throw new ArgumentException("Fresh decision fence is for native approval/rejection only.", nameof(commandName));
         if (commandName == SalesDraftCommands.RejectV1 && withinTransaction is not null)
             throw new ArgumentException("Rejection does not release future demand.", nameof(withinTransaction));
+        // Own the command's clean transaction, including replay. Refuse caller state outside the clearing catch.
+        if (System.Transactions.Transaction.Current is not null || !dbContext.Database.IsRelational()
+            || dbContext.Database.CurrentTransaction is not null || dbContext.ChangeTracker.HasChanges()
+            || officialCancellationAuditWriter?.HasPendingDrafts == true)
+            throw new InvalidOperationException("A guarded order decision requires its own clean Sales transaction.");
         try
         {
             return await UpdateDraftStateCoreAsync(envelope, requestHash, commandName, draftId, mutate, audit, withinTransaction,
