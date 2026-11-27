@@ -12,6 +12,8 @@ import { useCommandAttempt } from '../settings/useCommandAttempt'
 import { IDENTITY_CAPABILITY, IDENTITY_ACCESS_CONTROL, accessListPath } from './capabilities'
 import { fetchAccessRoles } from './api'
 import { AssignmentForm } from './AccessGrantPanel'
+import { RoleSelectionPreview } from './RoleSelectionPreview'
+import { ACCESS_GRANT_TEXT as G } from './identityText'
 import { readManagedUsers, sendUserManagement, type ManagedUser } from './userManagementApi'
 import { USER_MANAGEMENT_TEXT as T } from './userManagementText'
 import type { AccessGrantOutcome } from './accessGrantContract'
@@ -45,11 +47,22 @@ function Users({ namespace }: { readonly namespace: string | null }) {
 }
 function ManagementAssignment({ company, user }: { readonly company: string; readonly user: ManagedUser }) {
   const [open, setOpen] = useState(false), [notice, setNotice] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false), [preparedRole, setPreparedRole] = useState<string | null>(null)
+  const [recordedRoles, setRecordedRoles] = useState<readonly string[]>([])
   const roles = useBoundaryRead([company, user.userId, 'management-assignable-roles'], open, (signal) => fetchAccessRoles(company, signal))
   const state = stateOf(roles.isPending, roles.data) as RemoteViewState<readonly AccessRoleSummary[]>
+  const finish = (message: string | null, applied?: boolean) => {
+    if (applied && preparedRole !== null) setRecordedRoles(previous => [...new Set([...previous, preparedRole])])
+    setEditing(false); setPreparedRole(null); setNotice(message)
+  }
   return <section><p role="status">{notice}</p>{!open ? <Button type="button" onClick={() => setOpen(true)}>{T.assign}</Button>
     : state.kind !== 'ready' ? <><StateBlock state={state} subject={T.roleSubject} onRetry={() => void roles.refetch()} /><Button type="button" onClick={() => setOpen(false)}>{T.cancel}</Button></>
-      : <AssignmentForm company={company} user={user} roles={state.data} finish={(message) => { setOpen(false); setNotice(message) }} />}</section>
+      : <><RoleSelectionPreview company={company} user={user} roles={state.data} disabled={editing} recordedRoles={recordedRoles}
+        prepare={roleId => { setPreparedRole(roleId); setEditing(true) }} />
+        {editing ? <AssignmentForm company={company} user={user} roles={state.data} initialRoleId={preparedRole ?? undefined} finish={finish} />
+          : <><Button type="button" onClick={() => { setPreparedRole(null); setEditing(true) }}>{G.assign}</Button>
+            <Button type="button" onClick={() => { setOpen(false); setRecordedRoles([]) }}>{T.cancel}</Button></>}
+      </>}</section>
 }
 function UserForm({ company, user, action, finish }: { readonly company: string; readonly user: ManagedUser | null; readonly action: string; readonly finish: (message: string | null) => void }) {
   const attempt = useCommandAttempt<AccessGrantOutcome>(), boundary = useAuthBoundary()

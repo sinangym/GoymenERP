@@ -14,7 +14,7 @@ import { ACCESS_GRANT_TEXT as T } from './identityText'
 
 /** Read-only selection basket over the live owner catalogue, never a persona seed or a batch command. */
 export function RoleSelectionPreview({ company, user, roles, disabled, recordedRoles, prepare }: {
-  readonly company: string; readonly user: AccessUserDetail; readonly roles: readonly AccessRoleSummary[]; readonly disabled: boolean
+  readonly company: string; readonly user: Pick<AccessUserDetail, 'userId' | 'displayName'> & { readonly effectivePermissions?: AccessUserDetail['effectivePermissions'] }; readonly roles: readonly AccessRoleSummary[]; readonly disabled: boolean
   readonly recordedRoles: readonly string[]; readonly prepare: (roleId: string) => void
 }) {
   const shell = useShellState(); const boundary = useAuthBoundary()
@@ -55,8 +55,9 @@ export function RoleSelectionPreview({ company, user, roles, disabled, recordedR
     {complete ? <section aria-label={T.selectedPermissions}><h5>{T.selectedPermissions}</h5>
       <ul>{[...permissions.values()].sort((left, right) => left.code.localeCompare(right.code)).map(permission => <li key={permission.code}>{permission.code}{permission.isCritical ? ` · ${T.requiresApproval}` : ''}</li>)}</ul>
     </section> : null}
-    <section aria-label={T.currentPermissions}><h5>{T.currentPermissions}</h5><p>{T.currentPermissionsNotice}</p>
-      {user.effectivePermissions.length === 0 ? <p>{T.noCurrentPermissions}</p> : <ul>{user.effectivePermissions.map(permission => <li key={permission.code}>{permission.code}{permission.isCritical ? ` · ${T.requiresApproval}` : ''}</li>)}</ul>}
+    <section aria-label={T.currentPermissions}><h5>{T.currentPermissions}</h5>
+      {user.effectivePermissions === undefined ? <p>{T.currentPermissionsUnavailable}</p> : <><p>{T.currentPermissionsNotice}</p>
+        {user.effectivePermissions.length === 0 ? <p>{T.noCurrentPermissions}</p> : <ul>{user.effectivePermissions.map(permission => <li key={permission.code}>{permission.code}{permission.isCritical ? ` · ${T.requiresApproval}` : ''}</li>)}</ul>}</>}
     </section>
   </section>
 }
