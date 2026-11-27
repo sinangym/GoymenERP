@@ -20,6 +20,8 @@ public sealed record AccountingPeriodApprovalReceiptV1(Guid CompanyId, Guid Peri
     string SourceFactsDigest, string OriginalResultDigest)
 {
     [System.Text.Json.Serialization.JsonIgnore] public bool? LaterPeriodClosed { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore] public DateOnly? PeriodStartsOn { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore] public DateOnly? PeriodEndsOn { get; init; }
 }
 public sealed record AccountingPeriodReopeningDecisionSourceV1(AccountingPeriodRecord Period,
     AccountingPeriodReopeningViewV1 Reopening, AccountingPeriodClosureViewV1 Closure)

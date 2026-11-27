@@ -5,6 +5,8 @@ namespace GoymenERP.Modules.Accounting.Application;
 
 public sealed partial class AccountingApiService
 {
+    public static string PeriodApprovalOriginalResultDigest<T>(AccountingApiResult<T> answer) where T : class =>
+        Sha256(JsonSerializer.Serialize(answer with { IsReplay = false, OriginalCorrelationId = null }, Json));
     public static string PeriodApprovalKeyHash(string key) => Sha256(key.Trim());
     public static string PeriodOpeningApprovalPayloadHash(Guid periodId, long expectedVersion) =>
         Sha256(AccountingCommandNames.ApprovePeriod + "|" + JsonSerializer.Serialize(new { periodId, expectedVersion }, Json));
@@ -64,7 +66,8 @@ public sealed partial class AccountingApiService
             || PeriodOpeningSourceFactsDigest(original) != PeriodOpeningSourceFactsDigest(PeriodView(source, actor))) return null;
         return new(source.Period.CompanyId, source.Period.Id, null, command!.CommandName, command.IdempotencyKeyHash,
             command.RequestHash, actor, expectedVersion, null, original.Version, command.OriginalCorrelationId, approved,
-            PeriodOpeningSourceFactsDigest(original), Sha256(command.ResultJson));
+            PeriodOpeningSourceFactsDigest(original), Sha256(command.ResultJson))
+        { PeriodStartsOn = source.Period.StartsOn, PeriodEndsOn = source.Period.EndsOn };
     }
 
     public static AccountingPeriodApprovalReceiptV1? BindPeriodReopeningApprovalReceipt(AccountingCommandRecord? command,
@@ -87,7 +90,7 @@ public sealed partial class AccountingApiService
         return new(proposal.CompanyId, proposal.PeriodId, proposal.Id, command!.CommandName, command.IdempotencyKeyHash,
             command.RequestHash, actor, request.ExpectedVersion, request.ExpectedPeriodVersion, original.Version,
             command.OriginalCorrelationId, approved, PeriodReopeningSourceFactsDigest(source), Sha256(command.ResultJson))
-        { LaterPeriodClosed = source.LaterPeriodClosed };
+        { LaterPeriodClosed = source.LaterPeriodClosed, PeriodStartsOn = source.Period.Period.StartsOn, PeriodEndsOn = source.Period.Period.EndsOn };
     }
     private static bool ValidPeriodCommand(AccountingCommandRecord? command, string name, string payload, string key, Guid actor) =>
         command is not null && command.CommandName == name && command.IdempotencyKeyHash == PeriodApprovalKeyHash(key)

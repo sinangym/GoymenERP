@@ -146,7 +146,9 @@ public sealed partial class AccountingApiFenceTests
     {
         var source = PeriodSource(approved: true); var answer = OpeningAnswer(source); var command = OpeningCommand(answer);
         var receipt = AccountingApiService.BindPeriodOpeningApprovalReceipt(command, source with { Version = 20 }, answer, 1, "period-original", Actor);
-        Assert.NotNull(receipt); Assert.Equal((1L, 2L), (receipt.ExpectedVersion, receipt.ResultVersion));
+        Assert.NotNull(receipt); Assert.Equal(answer.Resource!.StartsOn, receipt.PeriodStartsOn); Assert.Equal(answer.Resource.EndsOn, receipt.PeriodEndsOn);
+        Assert.Equal(AccountingApiService.PeriodApprovalOriginalResultDigest(answer), receipt.OriginalResultDigest);
+        Assert.Equal((1L, 2L), (receipt.ExpectedVersion, receipt.ResultVersion));
         var replay = answer with { IsReplay = true, OriginalCorrelationId = command.OriginalCorrelationId };
         Assert.Equal(receipt, AccountingApiService.BindPeriodOpeningApprovalReceipt(command, source with { Version = 20 }, replay, 1, "period-original", Actor));
         var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
@@ -172,7 +174,10 @@ public sealed partial class AccountingApiFenceTests
         var changedFlag = source with { LaterPeriodClosed = true };
         Assert.Equal(AccountingApiService.PeriodReopeningSourceFactsDigest(source), AccountingApiService.PeriodReopeningSourceFactsDigest(changedFlag));
         Assert.True(AccountingApiService.BindPeriodReopeningApprovalReceipt(command, changedFlag, answer, request, "period-original", Actor)!.LaterPeriodClosed);
-        Assert.NotNull(proof); Assert.False(proof.LaterPeriodClosed); Assert.Equal((1L, 3L, 2L), (proof.ExpectedVersion, proof.ExpectedPeriodVersion!.Value, proof.ResultVersion));
+        Assert.NotNull(proof); Assert.Equal(source.Period.Period.StartsOn, proof.PeriodStartsOn); Assert.Equal(source.Period.Period.EndsOn, proof.PeriodEndsOn);
+        Assert.Equal(AccountingApiService.PeriodApprovalOriginalResultDigest(answer), proof.OriginalResultDigest);
+        Assert.Equal(AccountingApiService.PeriodApprovalOriginalResultDigest(answer), AccountingApiService.PeriodApprovalOriginalResultDigest(answer with { IsReplay = true, OriginalCorrelationId = "original-correlation" }));
+        Assert.False(proof.LaterPeriodClosed); Assert.Equal((1L, 3L, 2L), (proof.ExpectedVersion, proof.ExpectedPeriodVersion!.Value, proof.ResultVersion));
         Assert.Equal(proof, AccountingApiService.BindPeriodReopeningApprovalReceipt(command,
             source with { Period = source.Period with { Version = 30 } }, answer with { IsReplay = true, OriginalCorrelationId = command.OriginalCorrelationId }, request, "period-original", Actor));
         Assert.Null(AccountingApiService.BindPeriodReopeningApprovalReceipt(command, source, answer, request with { ExpectedPeriodVersion = 4 }, "period-original", Actor));
