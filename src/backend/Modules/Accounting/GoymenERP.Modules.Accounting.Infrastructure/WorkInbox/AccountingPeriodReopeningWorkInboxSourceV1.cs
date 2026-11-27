@@ -17,9 +17,10 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.WorkInbox;
 /// only a company-wide grant (D11: no scoped approver).
 /// </para>
 /// </summary>
-internal sealed class AccountingPeriodReopeningWorkInboxSourceV1(
+internal sealed partial class AccountingPeriodReopeningWorkInboxSourceV1(
     AccountingDbContext dbContext,
-    AccountingWorkInboxFence fence) : IWorkInboxSourceV1
+    AccountingWorkInboxFence fence,
+    IAccountingPeriodDecisionReadV1? owner = null) : IWorkInboxSourceV1
 {
     public const string ModuleName = "accounting";
     public const string KindName = "accounting.period-reopening.v1";
@@ -70,7 +71,10 @@ internal sealed class AccountingPeriodReopeningWorkInboxSourceV1(
                 row => Item(row, snapshot.latestClosedEnd)),
             cancellationToken);
 
-    private static WorkInboxItemV1? Item(Pending row, DateOnly? latestClosedEnd)
+    private static WorkInboxItemV1? Item(Pending row, DateOnly? latestClosedEnd) =>
+        Item(row, latestClosedEnd is { } end && end > row.EndsOn);
+
+    private static WorkInboxItemV1? Item(Pending row, bool laterPeriodClosed)
     {
         var proposal = row.Proposal;
         if (proposal.Id == Guid.Empty || proposal.PeriodId == Guid.Empty || proposal.ClosureId == Guid.Empty
@@ -80,7 +84,7 @@ internal sealed class AccountingPeriodReopeningWorkInboxSourceV1(
         }
 
         var rules = new List<WorkApprovalRuleResultV1>(2) { new(ReopeningRequestedRule, null, null, null, null) };
-        if (latestClosedEnd is { } end && end > row.EndsOn)
+        if (laterPeriodClosed)
         {
             rules.Add(new(LaterPeriodClosedRule, null, null, null, null));
         }
