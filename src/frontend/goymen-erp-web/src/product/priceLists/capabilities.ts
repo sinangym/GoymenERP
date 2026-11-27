@@ -30,3 +30,7 @@ export const PRICE_LIST_ROUTE = {
 export function priceListDetailPath(priceListId: string): string {
   return `/fiyat-listeleri/${encodeURIComponent(priceListId)}`
 }
+
+/** Company-scoped package-standard approval purpose; no Product master or price-list browse grant. */
+export const PACKAGE_STANDARD_WORK_CAPABILITY = 'price-lists.package-standard-version.work-decision'
+export const PACKAGE_STANDARD_WORK_ROUTE = '/onaylarim/product.package-standard-version.v1/:approvalId'

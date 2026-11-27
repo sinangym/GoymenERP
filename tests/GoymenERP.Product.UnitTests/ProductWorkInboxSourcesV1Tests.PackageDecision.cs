@@ -25,7 +25,8 @@ public sealed partial class ProductWorkInboxSourcesV1Tests
         var entry = Assert.Single(snapshot.ProductPackageStandardProof!.Table.Entries);
         Assert.Equal((product, 12), (entry.ProductId, entry.PiecesPerPackage));
         Assert.DoesNotContain("productPackageStandardProof", JsonSerializer.Serialize(snapshot, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
-        Assert.Equal("/urun/" + row.EditedProductId, snapshot.Item.Link);
+        Assert.Equal("/onaylarim/product.package-standard-version.v1/" + row.VersionId, snapshot.Item.Link);
+        Assert.Equal("/urun/" + row.EditedProductId, Assert.Single(snapshot.Item.References, reference => reference.Role == "product").Link);
     }
 
     [Fact]

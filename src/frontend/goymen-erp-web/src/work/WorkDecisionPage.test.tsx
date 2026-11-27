@@ -1535,7 +1535,7 @@ it('mounts dispatch as the 25th native purpose under its exact standalone capabi
  expect(route?.path).toBe(`onaylarim/${dispatchKind}/:approvalId`)
  const element=route?.element as ReactElement<{capability:readonly string[];children:ReactElement<{kind:string}>}>
  expect(element.props.capability).toEqual([dispatchCap]);expect(element.props.children.type).toBe(WorkDecisionPage);expect(element.props.children.props.kind).toBe(dispatchKind)
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(28)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(29)
 })
 it.each([{companyId:COMPANY_B},{logisticsDispatchNote:{...dispatchProof,dispatchNoteId:COMPANY_A}},{rejectionSupported:true}])('does not expose malformed/foreign dispatch proof %j',async(delta)=>{
  installFetch({capabilities:[dispatchCap],respond:url=>url.includes(dispatchPath)?json({...dispatchPreview,...delta}):undefined});mountDispatchPurpose()
@@ -1609,7 +1609,7 @@ it('mounts the customer return purpose under its exact standalone capability amo
  expect(route?.path).toBe(`onaylarim/${customerKind}/:approvalId`)
  expect(route).toBeDefined()
  expect((route!.element as ReactElement<{capability:readonly string[]}>).props.capability).toEqual([customerCap])
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(28)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(29)
 })
 it('does not restore a customer-return unknown attempt under another authentication session',async()=>{
  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-return-old'})
@@ -1870,4 +1870,58 @@ it('suppresses cached IBAN proof and a late replacement refetch throughout the o
  expect(sent).toHaveLength(2);expect(sent[1]!.body).toEqual({expectedVersion:'7',approve:true,reason:null,delegationId:null})
  expect(sent[1]!.body).toEqual(sent[0]!.body);expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key'])
  client.clear()
+})
+
+const packageKind='product.package-standard-version.v1', packageCap='price-lists.package-standard-version.work-decision'
+const packagePath=`/work/decisions/${packageKind}/${id}`, packageRoute=`/onaylarim/${packageKind}/${id}`
+const packageTable={sourceKind:'Edit',sourceLabel:null,fileName:null,reason:'SENTETIK paket hazırlama',preparedBy:'SENTETIK-paket-maker',preparedAtUtc:'2026-11-27T08:00:00Z',entryCount:1,customerEntryCount:1,
+ entries:[{productId:id,customerId:null,piecesPerPackage:12},{productId:id,customerId:COMPANY_B,piecesPerPackage:6}]}
+const packagePreview={...preview,kind:packageKind,documentLabel:'v7',approvalReasonRequired:true,rejectionSupported:true,productPackageStandard:packageTable}
+it('shows the complete price-free package table and requires an explicitly chosen date and human reason',async()=>{
+ const calls=installFetch({capabilities:[packageCap],respond:(url,init)=>url.includes(packagePath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:packageKind,itemId:id,state:'Approved',replayed:false,originalCorrelationId:'SENTETIK'}):json(packagePreview):undefined})
+ mount(packageRoute);await screen.findByRole('region',{name:T.packageProposal})
+ const table=screen.getByRole('table',{name:T.packageEntries});expect(within(table).getAllByRole('row')).toHaveLength(3)
+ expect(screen.getByText(packageTable.reason)).toBeTruthy();expect(screen.getByText(packageTable.preparedBy)).toBeTruthy()
+ expect((screen.getByLabelText(T.packageEffectiveFrom) as HTMLInputElement).value).toBe('')
+ expect(screen.getByRole('button',{name:T.approve}).hasAttribute('disabled')).toBe(true)
+ fireEvent.change(screen.getByLabelText(T.reason),{target:{value:'  SENTETIK karar  '}})
+ expect(screen.getByRole('button',{name:T.approve}).hasAttribute('disabled')).toBe(true)
+ fireEvent.change(screen.getByLabelText(T.packageEffectiveFrom),{target:{value:'2026-12-01'}})
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done)
+ expect(calls.filter(call=>call.method==='POST').map(call=>call.body)).toEqual([{expectedVersion:'7',approve:true,reason:'SENTETIK karar',delegationId:null,productPackageStandard:{effectiveFrom:'2026-12-01'}}])
+ expect(calls.some(call=>call.url.includes('/product-package-standards')||call.url.includes('/ai/'))).toBe(false)
+})
+it('rejects a package standard with the native 4000-character reason and no effective-date payload',async()=>{
+ const calls=installFetch({capabilities:[packageCap],respond:(url,init)=>url.includes(packagePath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:packageKind,itemId:id,state:'Rejected',replayed:false,originalCorrelationId:'SENTETIK'}):json(packagePreview):undefined})
+ mount(packageRoute);await screen.findByLabelText(T.packageEffectiveFrom)
+ const reason=screen.getByLabelText(T.reason) as HTMLTextAreaElement;expect(reason.maxLength).toBe(4000)
+ fireEvent.change(screen.getByLabelText(T.packageEffectiveFrom),{target:{value:'2026-12-01'}})
+ fireEvent.change(reason,{target:{value:'x'.repeat(4000)}});fireEvent.click(screen.getByRole('button',{name:T.reject}));await screen.findByText(T.done)
+ expect(calls.filter(call=>call.method==='POST').map(call=>call.body)).toEqual([{expectedVersion:'7',approve:false,reason:'x'.repeat(4000),delegationId:null}])
+})
+it('restores the original package date, reason, version and key after unknown/remount even when a newer preview is terminal',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-package-session'});let posts=0
+ const calls=installFetch({capabilities:[packageCap],respond:(url,init)=>{
+  if(!url.includes(packagePath))return undefined
+  if(init?.method==='POST')return ++posts===1?problem(503):json({companyId:COMPANY_A,kind:packageKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'SENTETIK-original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK-original'})
+  return json({...packagePreview,pending:posts===0})
+ }})
+ mount(packageRoute);await screen.findByLabelText(T.packageEffectiveFrom)
+ fireEvent.change(screen.getByLabelText(T.reason),{target:{value:'SENTETIK karar'}});fireEvent.change(screen.getByLabelText(T.packageEffectiveFrom),{target:{value:'2026-12-01'}})
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ expect(JSON.stringify(sessionStorage)).not.toContain(packageTable.reason);expect(JSON.stringify(sessionStorage)).not.toContain(packageTable.preparedBy)
+ cleanup();mount(packageRoute);await screen.findByRole('button',{name:T.retry});await screen.findByText(T.closed)
+ fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.method==='POST');expect(sent).toHaveLength(2)
+ expect(sent[1]!.body).toEqual(sent[0]!.body);expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key'])
+})
+it.each([{capabilities:[]},{capabilities:['product.items.detail']},{capabilities:['price-lists.publish']}])('does not read package proof without the exact standalone approve purpose %j',async({capabilities})=>{
+ const calls=installFetch({capabilities,respond:url=>url.includes(packagePath)?json(packagePreview):undefined});mount(packageRoute)
+ await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(calls.some(call=>call.url.includes(packagePath))).toBe(false)
+})
+it('does not expose foreign package proof or create a decision from malformed counts',async()=>{
+ installFetch({capabilities:[packageCap],respond:url=>url.includes(packagePath)?json({...packagePreview,companyId:COMPANY_B}):undefined});mount(packageRoute)
+ await waitFor(()=>expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull());expect(screen.queryByText(packageTable.reason)).toBeNull()
+ cleanup();installFetch({capabilities:[packageCap],respond:url=>url.includes(packagePath)?json({...packagePreview,productPackageStandard:{...packageTable,entryCount:2}}):undefined});mount(packageRoute)
+ await waitFor(()=>expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull());expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
 })

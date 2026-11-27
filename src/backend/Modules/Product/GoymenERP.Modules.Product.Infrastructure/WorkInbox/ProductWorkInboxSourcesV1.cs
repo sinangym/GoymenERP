@@ -33,6 +33,7 @@ internal sealed partial class ProductPackageStandardWorkInboxSourceV1(
 
     /// <summary>The product screens (<c>PRODUCT_ROUTE productsList</c> / <c>productsDetail</c>); the approval panel is on the detail.</summary>
     internal const string ProductScreenPath = "/urun";
+    internal const string WorkDecisionPath = "/onaylarim/product.package-standard-version.v1";
 
     private static readonly IReadOnlyList<string> Permissions = [ProductPackageStandardPermissionsV3.Approve];
 
@@ -108,7 +109,7 @@ internal sealed partial class ProductPackageStandardWorkInboxSourceV1(
             new(CustomerEntryCountRule, null, pending.CustomerEntryCount.ToString(CultureInfo.InvariantCulture), null, null),
         ];
         var item = new WorkInboxItemV1(ModuleName, KindName, pending.VersionId,
-            "v" + pending.Version.ToString(CultureInfo.InvariantCulture), pending.CreatedAtUtc.ToUniversalTime(), link,
+            "v" + pending.Version.ToString(CultureInfo.InvariantCulture), pending.CreatedAtUtc.ToUniversalTime(), WorkInboxCompanyWideFenceV1.Link(WorkDecisionPath, pending.VersionId),
             pending.CreatedBy, rules, references);
         return WorkInboxSourceResultV1.Found(context.CompanyId, maxCount >= 1 ? [item] : [], false);
     }

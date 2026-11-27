@@ -626,3 +626,14 @@ it.each([{granted:['finance.bank-account-iban-change.work-decision'],visible:tru
  if(visible){await screen.findByTestId('work-inbox-item');expect(within(cardOf(kind)).getByRole('link').getAttribute('href')).toBe(link);expect(api.inboxReads()).toHaveLength(1)}
  else{await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(api.inboxReads()).toHaveLength(0)}
 })
+
+it.each([{granted:['price-lists.package-standard-version.work-decision'],visible:true},{granted:[],visible:false},
+ {granted:['product.items.detail'],visible:false},{granted:['price-lists.publish'],visible:false}])('opens the package standard Work link only for its exact standalone approval capability %j',async({granted,visible})=>{
+ const kind='product.package-standard-version.v1',permission='product.package-standards.approve',link=`/onaylarim/${kind}/${PAYMENT_ID}`
+ const item={...paymentItem,module:'product',kind,link,awaitingPermission:permission,ruleVersion:RV(kind),explanation:{rules:[{ruleCode:'product.package-standard-approval-required',threshold:null,actual:null,deviation:null,unit:null}],references:[{role:'product',label:'SENTETIK ürün',recordId:PARTY_ID,link:`/urun/${PARTY_ID}`}]}}
+ const api=installFetch({granted,inbox:()=>json(inbox({items:[item],sources:[src('product',kind,permission,'BusinessDays')]}))})
+ await renderAt('/onaylarim/kuyruk')
+ if(visible){await screen.findByTestId('work-inbox-item');expect(within(cardOf(kind)).getAllByRole('link').map(anchor=>anchor.getAttribute('href'))).toContain(link)
+  expect(within(cardOf(kind)).getByRole('link',{name:'SENTETIK ürün'}).getAttribute('href')).toBe(`/urun/${PARTY_ID}`)
+ }else{expect(api.inboxReads()).toHaveLength(0);expect(screen.queryByTestId('work-inbox-item')).toBeNull()}
+})

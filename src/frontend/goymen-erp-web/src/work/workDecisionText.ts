@@ -1,4 +1,12 @@
 export const WORK_DECISION_TEXT = {
+  packageProposal: 'Karar verilecek paket standardı sürümü', packageVersionId: 'Sürüm kaydı', packageSourceKind: 'Kaynak türü',
+  packageSourceKinds: { Import: 'Dosyadan aktarım', Edit: 'Düzenleme' }, packageSourceLabel: 'Kaynak etiketi', packageFileName: 'Dosya adı',
+  packageRecordReason: 'Hazırlama gerekçesi', packagePreparedBy: 'Hazırlayan', packagePreparedAt: 'Hazırlama zamanı (UTC)',
+  packageEntryCount: 'Ürün kaydı sayısı', packageCustomerEntryCount: 'Müşteriye özel kayıt sayısı', packageAbsent: 'Kaydedilmedi',
+  packageEntries: 'Sürümdeki tüm paket standartları', packageProduct: 'Ürün kaydı', packageCustomer: 'Müşteri cari kaydı',
+  packagePieces: 'Paket başına adet', packageDefault: 'Genel ürün standardı', packageEffectiveFrom: 'Yürürlük tarihi',
+  packageDecisionHelp: 'Onay için yürürlük tarihini seçin. Onay ve ret gerekçesi zorunludur ve en fazla 4000 karakter olabilir. Ret işleminde yürürlük tarihi gönderilmez.',
+
   customerReturnProposal:'Karar verilecek müşteri iadesi', customerReturnInstruction:'Yükleme talimatı', customerReturnLine:'Talimat satırı',
   customerReturnDelivery:'Kaynak teslimat',customerReturnShipment:'Kaynak sevk',customerReturnOrder:'Satış siparişi',customerReturnOrderLine:'Sipariş satırı',customerReturnUnit:'Birim kaydı',
   customerReturnUnitKind:'Miktar birimi',customerReturnQuantity:'İade miktarı',customerReturnDelivered:'Kaynak teslim edilen miktar',customerReturnRequestedBy:'İadeyi hazırlayan',

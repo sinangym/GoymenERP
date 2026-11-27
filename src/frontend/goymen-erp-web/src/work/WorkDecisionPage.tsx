@@ -19,7 +19,7 @@ import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useScopedCommandAttempt } from '../settings/useCommandAttempt'
 import { Button } from '../ui/Button'
 import { WORK_INBOX_TEXT as INBOX, inboxKindText, inboxRoleText, inboxRuleText, formatWithUnit } from './workInboxText'
-import { fetchWorkDecision, sendWorkDecision, workDecisionLocalUtc, isWorkDecisionRequest, isSalesWorkDecisionKind, isCounterpartyWorkDecisionKind, isWorkTransferOverageReason, isWorkStockCountReason, isWorkSupplierReturnReason, isWorkSupplierReturnVersion, workDecisionReasonLimit, type WorkDecisionKind, type WorkDecisionRequest, type WorkDecisionResult } from './workDecisionApi'
+import { fetchWorkDecision, sendWorkDecision, workDecisionLocalUtc, isWorkDecisionRequest, isSalesWorkDecisionKind, isCounterpartyWorkDecisionKind, isWorkTransferOverageReason, isWorkStockCountReason, isWorkSupplierReturnReason, isWorkSupplierReturnVersion, workDecisionReasonLimit, isWorkPackageEffectiveDate, type WorkDecisionKind, type WorkDecisionRequest, type WorkDecisionResult } from './workDecisionApi'
 import { fetchDelegations, type DelegationPage } from './workDelegationApi'
 import { delegationPersonLabel } from './delegationPersonLabel'
 import type { ViewOutcome } from '../shell/uiState'
@@ -46,6 +46,8 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const [supplierOrderVersion, setSupplierOrderVersion] = useState('')
   const [supplierVersionBinding, setSupplierVersionBinding] = useState<string | null>(null)
   const [reason, setReason] = useState('')
+  const [packageDate, setPackageDate] = useState('')
+  const [packageDateVersion, setPackageDateVersion] = useState<string | null>(null)
   const [useDelegation, setUseDelegation] = useState(false); const [delegationId, setDelegationId] = useState('')
   const delegations = useInfiniteQuery<DelegationPage,DelegationReadFailure,InfiniteData<DelegationPage>,readonly unknown[],number>({ queryKey: [namespace, shell.routeEntryGeneration, 'work-decision-delegations'],
     initialPageParam: 0, retry: false,
@@ -84,6 +86,9 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const selected = frozen ? attempt.pendingPayload?.manufacturingPlanReapproval?.selectedLabelIds ?? [] : selectionVersion === preview?.sourceVersion ? selectedLabels : []
   const selectionInvalid = options !== undefined && (selectionVersion !== preview?.sourceVersion || selectedLabels.length !== options.length
     || selectedLabels.some(id => !options.includes(id)))
+  const packageStandard = kind === 'product.package-standard-version.v1'
+  const displayedPackageDate = frozen ? attempt.pendingPayload?.productPackageStandard?.effectiveFrom ?? '' : packageDateVersion === preview?.sourceVersion ? packageDate : ''
+  const invalidPackageDate = packageStandard && !isWorkPackageEffectiveDate(displayedPackageDate)
   const customerReturn=kind === 'logistics.customer-return.v1'
   const loss = kind === 'inventory.transfer-loss.v1'
   const overage = kind === 'inventory.transfer-overage.v1'
@@ -91,7 +96,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const transferRequest = overage ? preview?.inventoryTransferOverage : preview?.inventoryTransferLoss
   const frozenTransferRequest = overage ? attempt.pendingPayload?.inventoryTransferOverage : attempt.pendingPayload?.inventoryTransferLoss
   const lossRequest = frozen ? frozenTransferRequest?.requestNumber : transferRequest?.requestNumber
-  const lossReason = (customerReturn || timedTransfer || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'purchasing.supplier-return-cost-exception.v1') && frozen ? attempt.pendingPayload?.reason ?? '' : reason
+  const lossReason = (packageStandard || customerReturn || timedTransfer || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'purchasing.supplier-return-cost-exception.v1') && frozen ? attempt.pendingPayload?.reason ?? '' : reason
   const currentLossBinding = transferRequest === undefined ? null : `${preview?.sourceVersion}:${transferRequest.requestNumber}`
   const selectedUtc = workDecisionLocalUtc(decisionTime)
   const invalidLossTime = timedTransfer && (currentLossBinding === null || lossTimeBinding !== currentLossBinding || selectedUtc === null
@@ -109,9 +114,10 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const reasonRequired = (approve: boolean) => preview?.approvalReasonRequired || !approve && !isSalesWorkDecisionKind(kind) && !counterparty && !customerReturn
   const invalidReason = (approve: boolean) => !customerReturn && ((kind === 'inventory.stock-count.v1' || kind === 'inventory.stock-scrap.v1') && !isWorkStockCountReason(reason.trim()) || supplierReturn && !approve && !isWorkSupplierReturnReason(reason.trim()) || overage && !isWorkTransferOverageReason(reason) || reasonRequired(approve) && reason.trim() === '' || (preview?.approvalReasonRequired || !approve || batch || counterparty) && (batch ? reason.length : reason.trim().length) > reasonLimit)
   const submit = async (approve: boolean) => {
-    if (preview === null || approve && preview.approvalSupported === false || !approve && preview.rejectionSupported === false || frozen || approve && (selectionInvalid || invalidSupplierVersion) || invalidLossTime || invalidReason(approve) || useDelegation && !delegationId) return
+    if (preview === null || approve && preview.approvalSupported === false || !approve && preview.rejectionSupported === false || frozen || approve && (selectionInvalid || invalidSupplierVersion || invalidPackageDate) || invalidLossTime || invalidReason(approve) || useDelegation && !delegationId) return
     const answer = await attempt.run({ expectedVersion: preview.sourceVersion, approve,
       reason: batch ? reason === '' ? null : reason : preview.approvalReasonRequired || !approve || counterparty || customerReturn ? reason.trim() || null : null, delegationId: useDelegation ? delegationId : null,
+      ...(packageStandard && approve ? { productPackageStandard: { effectiveFrom: displayedPackageDate } } : {}),
       ...(customerReturn && approve ? {logisticsCustomerReturn:{inventoryMovementId:crypto.randomUUID()}} : {}),
       ...(supplierReturn && approve && measuredSupplierReturn ? { supplierReturnCostException: { expectedPurchaseOrderVersion: supplierOrderVersion } } : {}),
       ...(kind === 'logistics.plan-excess.v1' ? { logisticsPlanExcess: { expectedInstructionVersion: preview.logisticsPlanExcess!.instructionVersion } } : {}),
@@ -139,7 +145,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       <p>{T.lossFrozenTime}: {frozenTransferRequest?.decidedAtUtc}</p></>}
     </div> : <StateBlock state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
       subject={T.title} onRetry={() => void query.refetch()} /> : <>
-      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(ibanChange || customerReturn || supplierReturn || kind === 'logistics.dispatch-note.v1' || kind === 'finance.manual-bank-payment.v1' || kind === 'finance.bank-account.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
+      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(packageStandard || ibanChange || customerReturn || supplierReturn || kind === 'logistics.dispatch-note.v1' || kind === 'finance.manual-bank-payment.v1' || kind === 'finance.bank-account.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
       <section aria-label={INBOX.rulesHeading}><h3>{INBOX.rulesHeading}</h3>
         {preview.rules.length === 0 ? <p>{T.rulesUnavailable}</p> : <ul>{preview.rules.map((rule, index) => <li key={`${rule.ruleCode}:${index}`}>
           <p>{inboxRuleText(rule.ruleCode) ?? <>{INBOX.ruleUnknown} <code>{rule.ruleCode}</code></>}</p>
@@ -192,6 +198,20 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       </tr></thead><tbody>{preview.logisticsDispatchNote.lines.map(line => <tr key={line.shipmentId}>
         <td>{line.lineNo}</td><td>{line.shipmentId}</td><td>{line.instructionLineId}</td><td>{line.sourceOrderId} / {line.sourceOrderLineId}</td>
         <td>{line.productId}</td><td>{line.unitId}</td><td>{line.quantity}</td><td>{line.quantityKg ?? T.dispatchNoKg}</td>
+      </tr>)}</tbody></table></section> : null}
+      {preview.productPackageStandard ? <section aria-label={T.packageProposal}><h3>{T.packageProposal}</h3><dl className={styles.facts}>
+        <dt>{T.packageVersionId}</dt><dd>{preview.itemId}</dd>
+        <dt>{T.packageSourceKind}</dt><dd>{T.packageSourceKinds[preview.productPackageStandard.sourceKind]}</dd>
+        <dt>{T.packageSourceLabel}</dt><dd>{preview.productPackageStandard.sourceLabel ?? T.packageAbsent}</dd>
+        <dt>{T.packageFileName}</dt><dd>{preview.productPackageStandard.fileName ?? T.packageAbsent}</dd>
+        <dt>{T.packageRecordReason}</dt><dd>{preview.productPackageStandard.reason}</dd>
+        <dt>{T.packagePreparedBy}</dt><dd>{preview.productPackageStandard.preparedBy}</dd>
+        <dt>{T.packagePreparedAt}</dt><dd>{preview.productPackageStandard.preparedAtUtc}</dd>
+        <dt>{T.packageEntryCount}</dt><dd>{preview.productPackageStandard.entryCount}</dd>
+        <dt>{T.packageCustomerEntryCount}</dt><dd>{preview.productPackageStandard.customerEntryCount}</dd>
+      </dl><table><caption>{T.packageEntries}</caption><thead><tr><th scope="col">{T.packageProduct}</th><th scope="col">{T.packageCustomer}</th><th scope="col">{T.packagePieces}</th></tr></thead>
+      <tbody>{preview.productPackageStandard.entries.map(entry => <tr key={`${entry.productId}:${entry.customerId ?? ''}`}>
+        <td>{entry.productId}</td><td>{entry.customerId ?? T.packageDefault}</td><td>{entry.piecesPerPackage}</td>
       </tr>)}</tbody></table></section> : null}
       {preview.bankAccountIbanChange ? <section aria-label={T.ibanProposal}><h3>{T.ibanProposal}</h3><dl className={styles.facts}>
         <dt>{T.ibanHolder}</dt><dd>{preview.bankAccountIbanChange.companyLegalName}</dd>
@@ -317,6 +337,8 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         ? <WorkSalesSummary companyId={preview.companyId} draftId={preview.itemId} expectedVersion={preview.sourceVersion} /> : null}
       {preview.pending && !reconciledHistorical ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{kind === 'logistics.dispatch-note.v1' ? T.dispatchApprovalOnly : kind === 'finance.bank-account.v1' ? T.bankApprovalOnly : kind === 'logistics.weighing-difference.v1' ? T.weighingApprovalOnly : kind === 'logistics.plan-excess.v1' ? T.planExcessApprovalOnly : kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
         {preview.rejectionSupported !== false || preview.approvalReasonRequired ? <label>{customerReturn ? CUSTOMER_RETURN.note : counterparty ? T.optionalNote : kind === 'manufacturing.plan.v1' ? T.manufacturingRejectReason : T.reason}<textarea value={lossReason} maxLength={customerReturn?undefined:reasonLimit} onChange={event => setReason(event.target.value)} /></label> : null}
+        {packageStandard ? <><label>{T.packageEffectiveFrom}<input type="date" value={displayedPackageDate}
+          onChange={event => { setPackageDate(event.target.value); setPackageDateVersion(preview.sourceVersion) }} /></label><p>{T.packageDecisionHelp}</p></> : null}
         {kind === 'inventory.stock-count.v1' || stockScrap ? <p>{T.countReasonHelp}</p> : null}
         {kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? <p>{T.approvalReasonRequired(reasonLimit)}</p> : null}
         {kind === 'manufacturing.plan.v1' && preview.rejectionSupported ? <p>{T.manufacturingRejectHelp}</p> : null}
@@ -334,7 +356,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
             : candidates.length === 0 ? <p>{delegations.hasNextPage ? T.delegationNoMatchesYet : T.delegationEmpty}</p> : null}
           {delegations.hasNextPage ? <><p>{T.delegationMoreAvailable}</p><Button type="button" disabled={delegations.isFetchingNextPage}
             onClick={() => void delegations.fetchNextPage()}>{T.delegationMore}</Button></> : null}</> : null}
-        <div className={styles.actions}><Button type="button" disabled={preview.approvalSupported===false || invalidLossTime || selectionInvalid || invalidSupplierVersion || useDelegation && !delegationId || invalidReason(true)} onClick={() => void submit(true)}>{T.approve}</Button>
+        <div className={styles.actions}><Button type="button" disabled={invalidPackageDate || preview.approvalSupported===false || invalidLossTime || selectionInvalid || invalidSupplierVersion || useDelegation && !delegationId || invalidReason(true)} onClick={() => void submit(true)}>{T.approve}</Button>
           {preview.rejectionSupported !== false ? <Button type="button" variant="secondary" disabled={invalidLossTime || useDelegation && !delegationId || invalidReason(false)} onClick={() => void submit(false)}>{T.reject}</Button> : null}</div></fieldset> : <p>{reconciledHistorical ? T.priorDecisionResolved : T.closed}</p>}
     </>}
     {attempt.status.kind === 'unknown' ? <div role="alert"><p>{T.unknown}</p><Button type="button" onClick={() => void retry()}>{T.retry}</Button></div> : null}

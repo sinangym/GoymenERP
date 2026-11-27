@@ -45,7 +45,7 @@ internal sealed partial class ProductPackageStandardWorkInboxSourceV1
             header.Reason, header.CreatedBy, header.CreatedAtUtc.ToUniversalTime(), header.EntryCount, header.CustomerEntryCount,
             [.. lines.Select(row => new WorkProductPackageStandardEntryV1(row.ProductId, null, row.PiecesPerPackage)),
              .. customers.Select(row => new WorkProductPackageStandardEntryV1(row.ProductId, row.CustomerId, row.PiecesPerPackage))]);
-        return new(context.CompanyId, new(ModuleName, KindName, itemId, "v" + version, table.PreparedAtUtc, link,
+        return new(context.CompanyId, new(ModuleName, KindName, itemId, "v" + version, table.PreparedAtUtc, WorkInboxCompanyWideFenceV1.Link(WorkDecisionPath, itemId),
             header.CreatedBy, rules, references), version, !decided,
             ProductPackageStandardProof: new(context.CompanyId, itemId, version, table));
 

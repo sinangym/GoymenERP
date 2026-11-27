@@ -1,5 +1,6 @@
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Accounting.Infrastructure.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using GoymenERP.Modules.Finance.Infrastructure.Shell;
@@ -14,7 +15,7 @@ using GoymenERP.Modules.Sales.Infrastructure.Shell;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-/// <summary>AT-018: the normal host with the price-list provider (PRODUCT-PRICE-LISTS 1.0) beside every published module.</summary>
+/// <summary>AT-018: the normal host with the price-list provider (PRODUCT-PRICE-LISTS 1.1) beside every published module.</summary>
 public sealed class ProductPriceListShellAuthorityTests
 {
     [Fact]
@@ -42,5 +43,31 @@ public sealed class ProductPriceListShellAuthorityTests
                 actual,
                 StringComparison.Ordinal),
             $"Price-list normal-host authority drifted. Actual: {actual}");
+    }
+    [Fact]
+    public void Package_standard_purpose_uses_company_authority_beside_the_unchanged_global_Product_routes()
+    {
+        var provider = new ProductPriceListShellCapabilityProvider();
+        Assert.Equal("1.1", provider.ContractVersion);
+        IShellCapabilityProvider[] providers = [new ProductShellCapabilityProvider(), provider];
+        var registry = new ShellCapabilityRegistry(providers,
+            new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision(providers)]));
+        Assert.Equal(8, registry.Registrations.Count(row => row.Owner == ProductShellCapabilityProvider.OwnerId));
+        Assert.All(registry.Registrations.Where(row => row.Owner == ProductShellCapabilityProvider.OwnerId),
+            row => Assert.NotNull(row.Declaration.GlobalProductOperation));
+        Assert.Equal(new[] { "price-lists.create", "price-lists.detail", "price-lists.edit", "price-lists.list",
+            "price-lists.package-standard-version.work-decision", "price-lists.publish" },
+            provider.GetDeclarations().Select(row => row.CapabilityId).Order(StringComparer.Ordinal));
+        var purpose = Assert.Single(provider.GetDeclarations(), row => row.CapabilityId == ProductPriceListShellCapabilityProvider.PackageStandardWorkCapabilityId);
+        Assert.Equal("/onaylarim/product.package-standard-version.v1/:approvalId", purpose.RoutePath);
+        Assert.Equal(purpose.CapabilityId, purpose.RouteId);
+        Assert.Equal("PRODUCT-PACKAGE-STANDARD-WORK-DECISION", purpose.ScreenId);
+        Assert.Equal(ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, purpose.RoutePrecedence);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, purpose.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, purpose.ScopeRequirement);
+        Assert.Equal([ProductPackageStandardPermissionsV3.Approve], purpose.RequiredPermissions);
+        Assert.Null(purpose.ParentCapabilityId); Assert.Null(purpose.GlobalProductOperation); Assert.True(purpose.ImplementationAvailable);
+        Assert.Equal("/fiyat-listeleri/:priceListId", Assert.Single(provider.GetDeclarations(), row => row.CapabilityId == "price-lists.detail").RoutePath);
+        Assert.Equal("/urun/:productId", Assert.Single(new ProductShellCapabilityProvider().GetDeclarations(), row => row.CapabilityId == "product.items.detail").RoutePath);
     }
 }

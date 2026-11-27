@@ -1,3 +1,7 @@
+import { matchRoutes } from 'react-router'
+import { workRoutes } from '../work/workRoutes'
+import { WORK_INBOX_KINDS } from '../work/workInboxKinds'
+import { PACKAGE_STANDARD_WORK_CAPABILITY, PACKAGE_STANDARD_WORK_ROUTE } from '../product/priceLists/capabilities'
 /**
  * The shell mounts exactly the capability ids the Product lane declares.
  *
@@ -103,4 +107,14 @@ describe('shell ↔ Product lane capability ids', () => {
     expect(NAV_CAPABILITIES).not.toContain(CAPABILITY.productItemsDetail)
     expect(NAV_CAPABILITIES).not.toContain(CAPABILITY.productItemsEdit)
   })
+})
+
+it('mounts the exact company-scoped package decision beside unchanged global Product master routes',()=>{
+ const capability=CAPABILITY.productPackageStandardWorkDecision
+ expect(capability).toBe(PACKAGE_STANDARD_WORK_CAPABILITY);expect(capability).toBe('price-lists.package-standard-version.work-decision')
+ expect(CAPABILITY_ROUTE[capability]).toBe(PACKAGE_STANDARD_WORK_ROUTE);expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
+ expect(matchRoutes(workRoutes,'/onaylarim/product.package-standard-version.v1/cccccccc-0000-4000-8000-000000000001')?.at(-1)?.route.path).toBe('onaylarim/product.package-standard-version.v1/:approvalId')
+ expect(WORK_INBOX_KINDS.filter(row=>row.kind==='product.package-standard-version.v1')).toEqual([{kind:'product.package-standard-version.v1',module:'product',capability}])
+ expect(CAPABILITY_ROUTE[CAPABILITY.productItemsList]).toBe('/urun');expect(CAPABILITY_ROUTE[CAPABILITY.productItemsDetail]).toBe('/urun/:productId')
+ expect((Object.values(CAPABILITY) as string[]).filter(value=>value.startsWith('product.')).sort()).toEqual(Object.values(PRODUCT_CAPABILITY).sort())
 })

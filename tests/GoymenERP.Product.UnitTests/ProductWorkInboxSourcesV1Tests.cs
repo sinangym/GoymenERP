@@ -42,7 +42,8 @@ public sealed partial class ProductWorkInboxSourcesV1Tests
         var item = Assert.Single((await source.ListPendingAsync(Caller(), 5, CancellationToken.None)).Items!);
 
         Assert.Equal(("product", "product.package-standard-version.v1", "v2"), (item.Module, item.Kind, item.DocumentLabel));
-        Assert.Equal("/urun/" + product.ToString("D"), item.Link);
+        Assert.Equal("/onaylarim/product.package-standard-version.v1/" + item.ItemId.ToString("D"), item.Link);
+        Assert.Equal("/urun/" + product.ToString("D"), Assert.Single(item.References, reference => reference.Role == "product").Link);
         Assert.Equal("SENTETIK-maker", item.PreparedBy);
         Assert.Equal(Start, item.WaitingSinceUtc);
         Assert.Equal("12", item.Rules.Single(rule => rule.RuleCode == ProductPackageStandardWorkInboxSourceV1.EntryCountRule).Actual);

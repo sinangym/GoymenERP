@@ -15,7 +15,11 @@ namespace GoymenERP.Modules.Product.Infrastructure.Shell;
 public sealed class ProductPriceListShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PRODUCT-PRICE-LISTS";
-    public const string OwnerContractVersion = "1.0";
+    public const string OwnerContractVersion = "1.1";
+
+    public const string PackageStandardWorkCapabilityId = "price-lists.package-standard-version.work-decision";
+    public const string PackageStandardWorkRoutePath = "/onaylarim/product.package-standard-version.v1/:approvalId";
+    public const string PackageStandardWorkScreenId = "PRODUCT-PACKAGE-STANDARD-WORK-DECISION";
 
     public const string ListCapabilityId = "price-lists.list";
     public const string ListRoutePath = "/fiyat-listeleri";
@@ -52,5 +56,9 @@ public sealed class ProductPriceListShellCapabilityProvider : IShellCapabilityPr
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
             ShellCapabilityScopeRequirement.CompanyWide, [ProductPriceListPermissionsV1.Read, ProductPriceListPermissionsV1.Publish],
             ImplementationAvailable: true, ParentCapabilityId: DetailCapabilityId),
+        new ShellCapabilityDeclaration(PackageStandardWorkCapabilityId, PackageStandardWorkCapabilityId,
+            PackageStandardWorkRoutePath, PackageStandardWorkScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [ProductPackageStandardPermissionsV3.Approve], ImplementationAvailable: true),
     ];
 }

@@ -267,6 +267,7 @@ export const CAPABILITY = {
    */
   financeOpeningBalancesList: 'finance.opening-balances.list',
   financeManualBankPaymentWorkDecision: 'finance.manual-bank-payment.work-decision',
+  productPackageStandardWorkDecision: 'price-lists.package-standard-version.work-decision',
   financeBankAccountIbanChangeWorkDecision: 'finance.bank-account-iban-change.work-decision',
   financeBankAccountWorkDecision: 'finance.bank-account.work-decision',
   financeCashAccountWorkDecision: 'finance.cash-account.work-decision',
@@ -570,6 +571,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.financeCollateralsList]: '/finans/teminatlar',
   [CAPABILITY.financeOpeningBalancesList]: '/finans/acilis-bakiyeleri',
   [CAPABILITY.financeManualBankPaymentWorkDecision]: '/onaylarim/finance.manual-bank-payment.v1/:approvalId',
+  [CAPABILITY.productPackageStandardWorkDecision]: '/onaylarim/product.package-standard-version.v1/:approvalId',
   [CAPABILITY.financeBankAccountIbanChangeWorkDecision]: '/onaylarim/finance.bank-account-iban-change.v1/:approvalId',
   [CAPABILITY.financeBankAccountWorkDecision]: '/onaylarim/finance.bank-account.v1/:approvalId',
   [CAPABILITY.financeCashAccountWorkDecision]: '/onaylarim/finance.cash-account.v1/:approvalId',
