@@ -1530,9 +1530,12 @@ it.each([{capabilities:[]},{capabilities:['logistics.dispatch-notes.approve']},{
  const calls=installFetch({capabilities,respond:url=>url.includes(dispatchPath)?json(dispatchPreview):undefined});mountDispatchCandidate()
  await waitFor(()=>expect(calls.some(call=>call.url.endsWith('/shell/capabilities'))).toBe(true));expect(calls.some(call=>call.url.includes(dispatchPath))).toBe(false)
 })
-it('keeps the dispatch candidate unmounted in the live Work registry and preserves the native instruction gate',()=>{
- const matches=matchRoutes(workRoutes,`/onaylarim/${dispatchKind}/${id}`);expect(matches).toBeNull()
- expect(workRoutes.filter(route=>route.path?.startsWith('onaylarim/')&&route.path.endsWith('/:approvalId'))).toHaveLength(24)
+it('keeps the dispatch candidate out of the 24 live purposes and preserves the native legacy detail fallthrough',()=>{
+ const route=matchRoutes(workRoutes,`/onaylarim/${dispatchKind}/${id}`)?.at(-1)?.route
+ expect(route?.path).toBe('onaylarim/:kind/:approvalId')
+ const element=route?.element as ReactElement<{children:ReactElement}>
+ expect(element.props.children.type).not.toBe(WorkDecisionPage)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(24)
 })
 it.each([{companyId:COMPANY_B},{logisticsDispatchNote:{...dispatchProof,dispatchNoteId:COMPANY_A}},{rejectionSupported:true}])('does not expose malformed/foreign dispatch proof %j',async(delta)=>{
  installFetch({capabilities:[dispatchCap],respond:url=>url.includes(dispatchPath)?json({...dispatchPreview,...delta}):undefined});mountDispatchCandidate()
@@ -1549,5 +1552,6 @@ it('does not revive a dispatch unknown command across a new authentication sessi
 it('keeps a native dispatch 403 refusal separate from success without retrying a mutation',async()=>{
  const calls=installFetch({capabilities:[dispatchCap],respond:(url,init)=>url.includes(dispatchPath)?init?.method==='POST'?problem(403):json(dispatchPreview):undefined})
  mountDispatchCandidate();await screen.findByRole('region',{name:T.dispatchProposal});await userEvent.setup().click(screen.getByRole('button',{name:T.approve}))
- await screen.findByText(T.refused+' (403)');expect(screen.queryByText(T.done)).toBeNull();expect(calls.filter(call=>call.url.includes(dispatchPath)&&call.method==='POST')).toHaveLength(1)
+ // Fresh 403 invalidates the current authority and the guarded route becomes not-found.
+ await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(screen.queryByText(T.done)).toBeNull();expect(calls.filter(call=>call.url.includes(dispatchPath)&&call.method==='POST')).toHaveLength(1)
 })
