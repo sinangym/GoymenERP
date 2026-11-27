@@ -65,7 +65,10 @@ public sealed class FinanceExpensePaymentWorkInboxSourceV1Tests : FinanceWorkInb
         Assert.Equal(
             [new WorkApprovalRuleResultV1(FinanceExpensePaymentWorkInboxSourceV1.ApprovalRequiredRule, null, "300.25", null, null)],
             items[bank.Id].Rules);
-        Assert.Equal("/finans/masraf-odemeleri", items[bank.Id].Link);
+        Assert.Equal($"/onaylarim/finance.expense-payment.v1/{bank.Id:D}", items[bank.Id].Link);
+        Assert.Equal($"/onaylarim/finance.expense-payment.v1/{cash.Id:D}", items[cash.Id].Link);
+        Assert.Equal("/finans/masraf-odemeleri", FinanceExpensePaymentWorkInboxSourceV1.ScreenPath);
+        Assert.All(items.Values.SelectMany(item => item.References), reference => Assert.Null(reference.Link));
         Assert.Equal(bank.Id.ToString("D")[..8], items[bank.Id].DocumentLabel);
         Assert.Contains(items[bank.Id].References, reference => reference.Role == "bank-account" && reference.RecordId == bank.TreasuryAccountId);
         Assert.Contains(items[bank.Id].References, reference => reference.Role == "expense-item" && reference.RecordId == bank.ExpenseItemId);

@@ -118,6 +118,7 @@ public sealed class FinanceShellCapabilityRegistryTests
                 ("finance.credits.propose", "F-47-CREDITS", "finance.credits.workspace"),
                 ("finance.credits.workspace", "F-47-CREDITS", null),
                 ("finance.customer-instruments.list", "F-02-INSTRUMENTS", null),
+                ("finance.expense-payment.work-decision", "F-EXPENSE-PAYMENT-WORK-DECISION", null),
                 // FNS-D25 (Finance 1.9): the payment not tied to a party; its commands are controls of the workspace.
                 ("finance.expense-payments.approve", "F-25-EXPENSE-PAYMENTS", "finance.expense-payments.workspace"),
                 ("finance.expense-payments.draft", "F-25-EXPENSE-PAYMENTS", "finance.expense-payments.workspace"),
@@ -180,7 +181,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(providers,
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision(providers)]));
 
-        Assert.Equal(63, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
+        Assert.Equal(64, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
     }
 
     [Fact]

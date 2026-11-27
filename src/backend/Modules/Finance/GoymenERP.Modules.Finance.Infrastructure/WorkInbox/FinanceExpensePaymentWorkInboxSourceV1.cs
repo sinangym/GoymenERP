@@ -9,7 +9,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// W1-A (AI-D31, AI-D32, YOL-D18): the expense payments (FNS-D25, API-25) waiting for approval, as Finance lists them for
 /// the Work inbox. A payment waits while its status is Draft (the approve command accepts only a draft) since it was
 /// prepared; Finance keeps no separate time for a later draft edit, so the preparation time stands. It is approved on the
-/// expense payment screen by a holder of <c>finance.expense-payment.approve</c> who neither prepared nor revised the draft
+/// Work purpose screen by a holder of <c>finance.expense-payment.approve</c> who neither prepared nor revised the draft
 /// (FNS-D118: the approve command refuses the preparer and everyone whose draft save succeeded; the first preparer is the
 /// item's maker, the other revisers are its excluded deciders). The owner's permission port answers
 /// only a company-wide grant, so scoped approvers are not accepted. Every draft of the company is returned, the caller's
@@ -94,7 +94,7 @@ internal sealed partial class FinanceExpensePaymentWorkInboxSourceV1(
         }
 
         return new WorkInboxItemV1(ModuleName, KindName, row.Id, FinanceWorkInboxRead.Label(row.DocumentNumber, row.Id),
-            row.PreparedAtUtc.ToUniversalTime(), ScreenPath, row.PreparedBy,
+            row.PreparedAtUtc.ToUniversalTime(), $"/onaylarim/{KindName}/{row.Id:D}", row.PreparedBy,
             [new WorkApprovalRuleResultV1(ApprovalRequiredRule, null, amount, null, null)],
             [
                 treasury,

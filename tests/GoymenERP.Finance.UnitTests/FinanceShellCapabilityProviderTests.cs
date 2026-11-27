@@ -17,7 +17,7 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(63, declarations.Count);
+        Assert.Equal(64, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             !declaration.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)
             && !declaration.CapabilityId.StartsWith("finance.official-sales-invoices.", StringComparison.Ordinal)
@@ -44,9 +44,11 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.30", provider.ContractVersion);
+        Assert.Equal("1.31", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
+            ("finance.expense-payment.work-decision", "finance-expense-payment-work-decision", "/onaylarim/finance.expense-payment.v1/:approvalId", "F-EXPENSE-PAYMENT-WORK-DECISION",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinancePermissionNames.ExpensePaymentApprove]),
             ("finance.manual-bank-payment-reversal.work-decision", "finance-manual-bank-payment-reversal-work-decision", "/onaylarim/finance.manual-bank-payment-reversal.v1/:approvalId", "F-MANUAL-BANK-PAYMENT-REVERSAL-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinancePermissionNames.PaymentReverseApprove]),
             ("finance.manual-receipt-reversal.work-decision", "finance-manual-receipt-reversal-work-decision", "/onaylarim/finance.manual-receipt-reversal.v1/:approvalId", "F-MANUAL-RECEIPT-REVERSAL-WORK-DECISION",
@@ -382,7 +384,7 @@ public sealed class FinanceShellCapabilityProviderTests
                 "F-03-OPEN-ITEMS", "F-04", "F-04-NEW", "F-13-BANK-STATEMENT", "F-18-COLLATERALS", "F-18-CREDIT-LIMITS", "F-23-OPENING-BALANCES",
                 "F-25-EXPENSE-PAYMENTS", "F-32-CASH-TRANSFERS", "F-32-EXCHANGE-BOOK-APPROVE", "F-32-EXCHANGE-BOOK-PREPARE",
                 "F-32-PARTY-BALANCE-TRANSFER", "F-47-CREDITS", "F-BANK-ACCOUNT-IBAN-CHANGE-WORK-DECISION", "F-BANK-ACCOUNT-WORK-DECISION",
-                "F-MANUAL-BANK-PAYMENT-REVERSAL-WORK-DECISION", "F-MANUAL-BANK-PAYMENT-WORK-DECISION", "F-MANUAL-RECEIPT-REVERSAL-WORK-DECISION",
+                "F-EXPENSE-PAYMENT-WORK-DECISION", "F-MANUAL-BANK-PAYMENT-REVERSAL-WORK-DECISION", "F-MANUAL-BANK-PAYMENT-WORK-DECISION", "F-MANUAL-RECEIPT-REVERSAL-WORK-DECISION",
                 "F-OFFICIAL-INVOICE-IMPORT-WORK-DECISION", "F-OFFICIAL-SALES-INVOICE-WORK-DECISION", "F-PARTY-CREDIT-LIMIT-WORK-DECISION", "M-03", "W-FIN-CASH-ACCOUNT-01",
                 "W-FIN-CASH-ACCOUNT-PASSIVATION-01", "W-FIN-CASH-ACCOUNT-REACTIVATION-01", "W-FIN-CREDIT-ACCOUNT-01"],
             routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
