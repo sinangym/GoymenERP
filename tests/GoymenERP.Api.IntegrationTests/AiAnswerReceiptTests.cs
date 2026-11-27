@@ -58,6 +58,15 @@ public sealed class AiAnswerReceiptTests
     }
 
     [Fact]
+    public async Task An_unconfigured_owner_never_invents_a_receipt_or_runs_a_consumer_fence()
+    {
+        var calls = 0;
+        Assert.Null(await new AiAnswerReceiptWriterV1(null, new Clock()).RecordAsync(Company, "actor", "correlation", Answer(),
+            _ => { calls++; return Task.CompletedTask; }));
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
     public async Task A_receipt_storage_collision_is_not_retried_or_presented_as_a_successful_answer()
     {
         var store = new Capture { Accepted = false };
