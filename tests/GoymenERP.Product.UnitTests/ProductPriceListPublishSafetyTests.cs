@@ -56,8 +56,8 @@ public sealed class ProductPriceListPublishSafetyTests
             var error = await Assert.ThrowsAsync<ProductPriceListException>(() => facade.PublishAsync(Guid.NewGuid(), new("1", 1),
                 new(user.UserId, ProductPriceListPermissionsV1.Publish, [], "SENTETIK", null, "key", "Web")));
             Assert.Equal(authenticated ? 403 : 401, error.Status);
-            Assert.Equal(0, authority.Calls); Assert.Equal(0, writer.Writes); Assert.False(database.ChangeTracker.HasChanges());
-            // This clean entry reached the owned scope but never opened a database transaction.
+            Assert.Equal(0, authority.Calls); Assert.Equal((0, 0), (writer.Writes, writer.Discards)); Assert.False(database.ChangeTracker.HasChanges());
+            // This initial refusal never enters the owned scope or opens a database transaction.
             Assert.Null(database.Database.CurrentTransaction);
         }
     }

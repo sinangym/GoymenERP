@@ -25,12 +25,13 @@ internal sealed partial class ProductPriceListStore
                 || System.Transactions.Transaction.Current is not null || dbContext.Database.CurrentTransaction is not null
                 || dbContext.ChangeTracker.HasChanges() || writer.HasPendingDrafts)
                 throw new ProductPriceListException(503, ProductPriceListCodesV1.Unavailable);
+            // Initial authentication/company refusal still owns nothing: do not clear or discard caller state.
+            await fence(token);
             var state = new OwnedPublish(replayOnly, writer, fence);
             IDbContextTransaction? transaction = null; var committed = false;
             try
             {
                 ownedPublish = state;
-                await fence(token);
                 transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, token);
                 await fence(token);
                 PriceListResultV1? answer = null; ProductPriceListException? refusal = null;
