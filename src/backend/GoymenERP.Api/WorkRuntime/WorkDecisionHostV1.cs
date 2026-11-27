@@ -22,7 +22,10 @@ public sealed record WorkDecisionRequestV1(string ExpectedVersion, bool Approve,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     WorkLogisticsPlanExcessSelectionV1? LogisticsPlanExcess = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    WorkInventoryTransferOverageSelectionV1? InventoryTransferOverage = null);
+    WorkInventoryTransferOverageSelectionV1? InventoryTransferOverage = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    WorkSupplierReturnCostExceptionSelectionV1? SupplierReturnCostException = null);
+public sealed record WorkSupplierReturnCostExceptionSelectionV1([property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExpectedPurchaseOrderVersion = null);
 public sealed record WorkInventoryTransferOverageSelectionV1(int RequestNumber, DateTimeOffset DecidedAtUtc);
 public sealed record WorkLogisticsPlanExcessSelectionV1(string ExpectedInstructionVersion);
 public sealed record WorkInventoryTransferLossSelectionV1(int RequestNumber, DateTimeOffset DecidedAtUtc);
@@ -44,7 +47,9 @@ public sealed record WorkDecisionPreviewV1(Guid CompanyId, string Kind, Guid Ite
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     WorkInventoryTransferOveragePreviewV1? InventoryTransferOverage = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    WorkLogisticsWeighingDifferencePreviewV1? LogisticsWeighingDifference = null);
+    WorkLogisticsWeighingDifferencePreviewV1? LogisticsWeighingDifference = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    WorkSupplierReturnCostExceptionPreviewV1? SupplierReturnCostException = null);
 public sealed record WorkDecisionResultV1(Guid CompanyId, string Kind, Guid ItemId, string State, bool Replayed, string OriginalCorrelationId);
 public sealed class WorkDecisionException(int status, string? code = null, bool replayed = false, string? original = null) : Exception(code)
 {
@@ -112,8 +117,9 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
     IErpAuthorityRevalidationService authority, IEnumerable<IWorkInboxSourceV1> sources,
     IWorkDelegationReaderV1 delegations, WorkDecisionExecutionFenceV1 executionFence,
     IFinanceCashAccountMaster cash, IInventoryOpeningCostCommandV1 openingCost,
-    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null, IPurchaseGoodsReceiptBatchServiceV1? goodsReceiptBatches = null, ManufacturingCommandService? manufacturingPlans = null, IInventoryTransferReceiptCommandV1? inventoryTransferReceipts = null, ICounterpartyTaxIdentityService? counterpartyTaxIdentity = null, ICounterpartyLegalNameService? counterpartyLegalName = null, ILogisticsPlanExcessServiceV1? logisticsPlanExcess = null, ILogisticsWeighingDifferenceServiceV1? logisticsWeighingDifferences = null)
+    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null, IPurchaseGoodsReceiptBatchServiceV1? goodsReceiptBatches = null, ManufacturingCommandService? manufacturingPlans = null, IInventoryTransferReceiptCommandV1? inventoryTransferReceipts = null, ICounterpartyTaxIdentityService? counterpartyTaxIdentity = null, ICounterpartyLegalNameService? counterpartyLegalName = null, ILogisticsPlanExcessServiceV1? logisticsPlanExcess = null, ILogisticsWeighingDifferenceServiceV1? logisticsWeighingDifferences = null, IPurchaseSupplierReturnServiceV1? supplierReturns = null)
 {
+    public const string SupplierReturnCostException = "purchasing.supplier-return-cost-exception.v1";
     public const string LogisticsWeighingDifference = "logistics.weighing-difference.v1";
     public const string LogisticsPlanExcess = "logistics.plan-excess.v1";
     public const string CounterpartyTaxIdentity = "counterparty.tax-identity-change.v1";
@@ -131,7 +137,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
     public const string PurchaseInvoiceVariance = "purchasing.incoming-invoice-variance.v1";
     public const string PurchaseServiceOrder = "purchasing.service-order.v1";
     public const string PurchaseOrder = "purchasing.order.v1";
-    public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([LogisticsWeighingDifference, InventoryTransferOverage, LogisticsPlanExcess, CounterpartyTaxIdentity, CounterpartyLegalName, InventoryTransferLoss, OpeningCost, "finance.cash-account.v1",
+    public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([SupplierReturnCostException, LogisticsWeighingDifference, InventoryTransferOverage, LogisticsPlanExcess, CounterpartyTaxIdentity, CounterpartyLegalName, InventoryTransferLoss, OpeningCost, "finance.cash-account.v1",
         "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest, PurchaseOrder, PurchaseServiceOrder, PurchaseInvoiceVariance, PurchaseGoodsReceiptBatch, ManufacturingPlan, CreditAccount], StringComparer.Ordinal);
 
     private async Task RequireDecisionAuthorityAsync(string kind,string permission,Guid companyId,string actor,CancellationToken token)
@@ -168,7 +174,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         catch { await Fence(); throw new WorkDecisionException(503); }
         await Fence();
         if (snapshot is null) throw new WorkDecisionException(404);
-        if (kind is (CounterpartyTaxIdentity or CounterpartyLegalName) && source.Module != "counterparty"
+        if (kind == SupplierReturnCostException && (source.Module != "purchasing" || source.ApproverPermission != PurchasingPermissionManifestV1.OrdersApprove)
+            || kind is (CounterpartyTaxIdentity or CounterpartyLegalName) && source.Module != "counterparty"
             || kind == InventoryTransferOverage && (source.Module != "inventory" || source.ApproverPermission != InventoryPermissionManifestV1.StockTransferOverageApprove)
             || kind == LogisticsWeighingDifference && (source.Module != "logistics" || source.ApproverPermission != LogisticsPermissionManifestV1.WeighingDifferencesApprove)
             || kind == LogisticsPlanExcess && (source.Module != "logistics" || source.ApproverPermission != LogisticsPlanExcessV1.ApprovePermission)
@@ -185,6 +192,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || snapshot.Item.References.Any(item => !WorkInboxRulesV1.IsValidReference(item))
             || snapshot.Item.Rules is null || snapshot.Item.Rules.Count > WorkInboxRulesV1.MaxRulesPerItem
             || snapshot.Item.Rules.Any(rule => !WorkInboxRulesV1.IsValidRule(source.Module, rule))
+            || !ValidSupplierReturnProof(kind, snapshot)
             || !ValidCounterpartyIdentityProof(kind, snapshot)
             || !ValidLogisticsPlanExcessProof(kind, snapshot)
             || !ValidLogisticsWeighingProof(kind, snapshot)
@@ -218,6 +226,20 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             if (!user.IsAuthenticated || user.UserId != actor || !company.IsResolved || company.CompanyId != snapshot.CompanyId || !user.CanAccessCompany(snapshot.CompanyId))
                 throw new WorkDecisionException(403);
         }
+        if (kind == SupplierReturnCostException)
+        {
+            var disclosed = false;
+            try
+            {
+                var prices = await authority.RevalidatePermissionScopeAsync(PurchasingPermissionManifestV1.OrdersPriceRead, snapshot.CompanyId, token);
+                disclosed = prices.IsGranted && prices.IsCompanyWide;
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+            catch { /* The owner's price-read failure withholds costs; it never grants or blocks a decision. */ }
+            if (!disclosed)
+                rules = rules.Select(rule => rule.RuleCode == "purchasing.supplier-return-manual-cost" ? rule with { Actual = null, Unit = null } : rule).ToArray();
+            snapshot = snapshot with { Item = snapshot.Item with { Rules = rules } };
+        }
         await RequireDecisionAuthorityAsync(kind,sources.Single(source => source.Kind == kind).ApproverPermission,snapshot.CompanyId,actor!,token);
         // SnapshotAsync validated the immutable binding; only this authorized human GET exposes the proposal.
         var logisticsPreview = snapshot.LogisticsPlanExcessProof is { } proposal && snapshot.LogisticsPlanExcess is { } logisticsOptions
@@ -230,7 +252,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             snapshot.ManufacturingPlanReapproval, snapshot.InventoryTransferLoss,
             snapshot.CounterpartyTaxIdentityChange, snapshot.CounterpartyLegalNameChange, logisticsPreview,
             kind == InventoryTransferOverage ? OveragePreview(snapshot) : null,
-            kind == LogisticsWeighingDifference ? WeighingHumanPreview(snapshot.LogisticsWeighingDifferenceProof!) : null);
+            kind == LogisticsWeighingDifference ? WeighingHumanPreview(snapshot.LogisticsWeighingDifferenceProof!) : null,
+            kind == SupplierReturnCostException ? SupplierReturnHumanPreview(snapshot) : null);
     }
 
     public async Task<WorkDecisionResultV1> DecideAsync(string kind, Guid id, WorkDecisionRequestV1 request, string key, CancellationToken token)
@@ -239,7 +262,9 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         var actor = user.UserId;
         var snapshot = await SnapshotAsync(kind, id, token, request.InventoryTransferLoss?.RequestNumber, request.InventoryTransferOverage?.RequestNumber);
         if (user.UserId != actor) throw new WorkDecisionException(403);
-        if (kind == LogisticsWeighingDifference && (!request.Approve || request.Reason is not null || !PositiveWeighingVersion(request.ExpectedVersion))
+        if (request.SupplierReturnCostException is not null && kind != SupplierReturnCostException
+            || kind == SupplierReturnCostException && !ValidSupplierReturnRequest(snapshot, request)
+            || kind == LogisticsWeighingDifference && (!request.Approve || request.Reason is not null || !PositiveWeighingVersion(request.ExpectedVersion))
             || request.InventoryTransferOverage is not null && kind != InventoryTransferOverage
             || kind == InventoryTransferOverage && request.InventoryTransferOverage is null
             || request.LogisticsPlanExcess is not null && kind != LogisticsPlanExcess
@@ -253,7 +278,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || string.IsNullOrWhiteSpace(request.ExpectedVersion) || request.ExpectedVersion.Length > 128
             || (kind == OpeningCost && request.ExpectedVersion != snapshot.SourceVersion)
             || ((kind is OpeningCost or InventoryTransferLoss || !request.Approve && kind is not (SalesOrder or SalesInvoice or SalesSubcontractInvoice or PurchaseRequest or PurchaseGoodsReceiptBatch or ManufacturingPlan or CounterpartyTaxIdentity or CounterpartyLegalName or InventoryTransferOverage)) && (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 500))
-            || (kind is not (OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance or PurchaseGoodsReceiptBatch or InventoryTransferLoss or InventoryTransferOverage or CounterpartyTaxIdentity or CounterpartyLegalName) && request.Approve && request.Reason is not null)) throw new WorkDecisionException(400, "work_decision_invalid");
+            || (kind is not (OpeningCost or SupplierReturnCostException or PurchaseServiceOrder or PurchaseInvoiceVariance or PurchaseGoodsReceiptBatch or InventoryTransferLoss or InventoryTransferOverage or CounterpartyTaxIdentity or CounterpartyLegalName) && request.Approve && request.Reason is not null)) throw new WorkDecisionException(400, "work_decision_invalid");
         if (kind is CounterpartyTaxIdentity or CounterpartyLegalName && request.Reason?.Trim().Length > 1000)
             throw new WorkDecisionException(400, "work_decision_invalid");
         // A retained receipt targets the old request's maker, not the maker of a later request
@@ -267,6 +292,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || await delegations.FindForActorAsync(delegation, verificationItem, ct) is not null;
         if (!await Verify(token)) throw new WorkDecisionException(403);
         using var lease = executionFence.Enter(Verify);
+        if (kind == SupplierReturnCostException)
+            return await DecideSupplierReturnAsync(id, request, key, snapshot, actor!, token);
         if (kind == LogisticsWeighingDifference)
             return await DecideLogisticsWeighingDifferenceAsync(id, request, key, snapshot, actor!, token);
         if (kind == LogisticsPlanExcess)

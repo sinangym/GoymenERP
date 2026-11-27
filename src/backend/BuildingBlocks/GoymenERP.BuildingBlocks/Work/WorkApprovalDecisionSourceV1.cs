@@ -24,7 +24,8 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkLogisticsPlanExcessOptionsV1? LogisticsPlanExcess = null,
     [property: JsonIgnore] WorkLogisticsPlanExcessProofV1? LogisticsPlanExcessProof = null,
     [property: JsonIgnore] WorkInventoryTransferOverageProofV1? InventoryTransferOverageProof = null,
-    [property: JsonIgnore] WorkLogisticsWeighingDifferenceProofV1? LogisticsWeighingDifferenceProof = null);
+    [property: JsonIgnore] WorkLogisticsWeighingDifferenceProofV1? LogisticsWeighingDifferenceProof = null,
+    [property: JsonIgnore] WorkSupplierReturnCostExceptionProofV1? SupplierReturnCostExceptionProof = null);
 
 /// <summary>Approval-purpose identities from the current plan revision, never an implicit user selection.</summary>
 public sealed record WorkManufacturingPlanReapprovalOptionsV1(IReadOnlyList<Guid> ParentRollIds);
@@ -71,3 +72,10 @@ public sealed record WorkLogisticsWeighingDifferenceProofV1(Guid CompanyId, Guid
     string? KilogramAllocationJson);
 public sealed record WorkLogisticsWeighingDifferenceProductProofV1(Guid ProductId, decimal NoteKg, decimal ScaleKg,
     decimal DifferenceKg, decimal RemainingPhysicalKg, decimal PhysicallyCoveredKg, decimal ExcessKg, int? TargetLineNo);
+
+/// <summary>Price-free retained native return facts. Never Inbox/AI/journal wire context.</summary>
+public sealed record WorkSupplierReturnCostExceptionProofV1(Guid CompanyId, Guid ReturnId, Guid ReturnLineId,
+    Guid PurchaseOrderId, Guid PurchaseOrderLineId, Guid GoodsAcceptanceId, Guid InventoryMovementId,
+    string SourceBlock, string QuantityKg, string CostBasis, bool ReplacementExpected, string Reason,
+    DateTimeOffset OccurredAtUtc, string RequestedBy, DateTimeOffset RequestedAtUtc,
+    string? RecordedExpectedPurchaseOrderVersion, string? CurrentPurchaseOrderVersion, string? UndoQuantity);

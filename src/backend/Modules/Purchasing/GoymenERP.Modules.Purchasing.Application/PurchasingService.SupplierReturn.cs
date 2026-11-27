@@ -162,7 +162,7 @@ public sealed partial class PurchasingService
                 }, token => RequireStillAsync(scope, permission, token), cancellationToken);
             }
 
-            return new(await DiscloseReturnAsync(scope, permission, orderId, saved, cancellationToken, commandCommitted: true), IsReplay: false, envelope.CorrelationId);
+            return new(await DiscloseReturnAsync(scope, permission, orderId, saved, cancellationToken, commandCommitted: true), IsReplay: false, envelope.CorrelationId, CommandReceiptProven: true);
         }
         catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.ConcurrentChange)
         {
@@ -352,7 +352,7 @@ public sealed partial class PurchasingService
                 }, token => RequireStillAsync(scope, permission, token), cancellationToken);
             }
 
-            return new(await DiscloseReturnAsync(scope, permission, orderId, saved, cancellationToken, commandCommitted: true), IsReplay: false, envelope.CorrelationId);
+            return new(await DiscloseReturnAsync(scope, permission, orderId, saved, cancellationToken, commandCommitted: true), IsReplay: false, envelope.CorrelationId, CommandReceiptProven: true);
         }
         catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.ConcurrentChange)
         {
@@ -480,7 +480,7 @@ public sealed partial class PurchasingService
         if (replay.Original is { } original)
         {
             if (original.Return.ReturnId != returnId) throw ReturnUnavailable();
-            return new(await DiscloseReturnAsync(scope, permission, orderId, original, cancellationToken), IsReplay: true, replay.OriginalCorrelationId);
+            return new(await DiscloseReturnAsync(scope, permission, orderId, original, cancellationToken), IsReplay: true, replay.OriginalCorrelationId, CommandReceiptProven: true);
         }
         // Legacy attempts have no immutable snapshot. They remain readable without inventing a historical response.
         var stored = await GuardedAsync(scope, permission, () => returns.FindAsync(orderId, returnId, cancellationToken), cancellationToken)

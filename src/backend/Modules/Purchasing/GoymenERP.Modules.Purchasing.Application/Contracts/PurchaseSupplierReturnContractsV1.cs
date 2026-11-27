@@ -51,7 +51,8 @@ public sealed record PurchaseSupplierReturnViewV1(
     public string PriceDisclosure { get; init; } = PurchasingPriceDisclosureV1.Withheld;
 }
 
-public sealed record PurchaseSupplierReturnResponseV1(PurchaseSupplierReturnViewV1 Return, bool IsReplay, string OriginalCorrelationId);
+public sealed record PurchaseSupplierReturnResponseV1(PurchaseSupplierReturnViewV1 Return, bool IsReplay, string OriginalCorrelationId,
+    [property: JsonIgnore] bool CommandReceiptProven = false);
 public sealed record PurchaseSupplierReturnDetailV1(PurchaseSupplierReturnViewV1 Return);
 public sealed record PurchaseSupplierReturnPageV1(IReadOnlyList<PurchaseSupplierReturnViewV1> Items, bool SearchWindowFull);
 

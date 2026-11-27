@@ -147,9 +147,9 @@ public sealed class PurchasingPersistenceModelTests
     public void The_request_and_order_screens_and_their_controls_are_published()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal("1.20", PurchasingShellCapabilityProvider.OwnerContractVersion);
-        Assert.Equal(34, declarations.Count);
-        Assert.All(declarations, declaration => Assert.Equal(!declaration.CapabilityId.StartsWith("purchasing.invoices.", StringComparison.Ordinal), declaration.ImplementationAvailable));
+        Assert.Equal("1.21", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal(35, declarations.Count);
+        Assert.All(declarations, declaration => Assert.Equal(!declaration.CapabilityId.StartsWith("purchasing.invoices.", StringComparison.Ordinal) && declaration.CapabilityId != PurchasingShellCapabilityProvider.SupplierReturnWorkDecisionCapabilityId, declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
         var variancePurpose = byId[PurchasingShellCapabilityProvider.InvoiceVarianceWorkDecisionCapabilityId];
         Assert.Null(variancePurpose.ParentCapabilityId);

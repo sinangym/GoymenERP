@@ -47,7 +47,7 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PURCHASING";
     // WP8 1.19: standalone purpose declarations preserve each native decision permission; invoice variance also requires its existing price read.
-    public const string OwnerContractVersion = "1.20";
+    public const string OwnerContractVersion = "1.21";
     public const string AdditionalCostReadCapabilityId = "purchasing.additional-costs.read";
     public const string AdditionalCostRecordCapabilityId = "purchasing.additional-costs.record";
 
@@ -68,6 +68,7 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 
     public const string RequestWorkDecisionCapabilityId = "purchasing.request.work-decision";
     public const string ServiceOrderWorkDecisionCapabilityId = "purchasing.service-order.work-decision";
+    public const string SupplierReturnWorkDecisionCapabilityId = "purchasing.supplier-return-cost-exception.work-decision";
     public const string GoodsReceiptBatchWorkDecisionCapabilityId = "purchasing.goods-receipt-batch.work-decision";
     public const string OrderWorkDecisionCapabilityId = "purchasing.order.work-decision";
     public const string RequestListCapabilityId = "purchasing.requests.list";
@@ -121,6 +122,10 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 
         return
         [
+            new ShellCapabilityDeclaration(SupplierReturnWorkDecisionCapabilityId, "purchasing-supplier-return-cost-exception-work-decision",
+                "/onaylarim/purchasing.supplier-return-cost-exception.v1/:approvalId", "W-PURCHASING-SUPPLIER-RETURN-COST-EXCEPTION-01",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide, [PurchasingPermissionManifestV1.OrdersApprove], ImplementationAvailable: false),
             new ShellCapabilityDeclaration(GoodsReceiptBatchWorkDecisionCapabilityId, "purchasing-goods-receipt-batch-work-decision",
                 "/onaylarim/purchasing.goods-receipt-batch.v1/:approvalId", "W-PURCHASING-GOODS-RECEIPT-BATCH-01",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,

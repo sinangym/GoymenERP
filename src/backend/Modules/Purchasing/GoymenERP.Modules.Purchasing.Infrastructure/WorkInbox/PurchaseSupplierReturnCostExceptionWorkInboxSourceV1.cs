@@ -20,9 +20,9 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.WorkInbox;
 /// unavailable.
 /// </para>
 /// </summary>
-internal sealed class PurchaseSupplierReturnCostExceptionWorkInboxSourceV1(
+internal sealed partial class PurchaseSupplierReturnCostExceptionWorkInboxSourceV1(
     PurchasingDbContext dbContext,
-    PurchasingWorkInboxFence fence) : IWorkInboxSourceV1
+    PurchasingWorkInboxFence fence) : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "purchasing";
     public const string KindName = "purchasing.supplier-return-cost-exception.v1";
