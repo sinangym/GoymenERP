@@ -2322,8 +2322,9 @@
         "activation": "No grants/flags/provider changes"
       },
       "execution": {
-        "source_commit": "a2b216afa3b9245bda3ab9dffd094a1a4608d547",
+        "source_commit": "c1a3809ad3fab2235f75fc5e91f671e3b557b938",
         "implemented_kinds": [
+          "accounting.manufacturing-cost-difference.v1",
           "accounting.posting-mapping.v1",
           "accounting.approved-source-catalog.v1",
           "accounting.journal-reversal.v1",
@@ -2449,7 +2450,7 @@
           "existing Work post transport and SQL fixtures"
         ],
         "remaining": [
-          "Remaining owner adapters and purpose/UI bindings outside the45 integrated kinds; current paired source does not establish acceptance for all64 flow rows.",
+          "Remaining owner adapters and purpose/UI bindings outside the48 integrated source kinds; current pairing does not establish acceptance for all64 flow rows.",
           "All64 actual SQL, normal HTTP/runtime browser acceptance, shell/OpenAPI/guard/recovery pins, full CI and two independent exact-head K3 reviews"
         ],
         "sql": "NOT_RUN",
@@ -3512,7 +3513,7 @@
           "7898cc30397ab51d38464c5ac674de2422890d07",
           "9f9442c4e9382033ea97f54e62d7238ab50e91c4"
         ],
-        "kind_count_scope": "Source sets47 backend/47 paired frontend/0 staged kinds; runtime acceptance remains0/64.",
+        "kind_count_scope": "Source48 backend/48 paired frontend/0 staged; all64 runtime acceptance remains NOT_RUN/verified0.",
         "staged_kinds": [],
         "historical_kind_count_scope": "29 paired source kinds/29 native kinds with exact set equality atcc379ff28f74d5810ed51ad537ebece821440d72, including Product package-standard; staged0. Native price-list publish safety is a prerequisite, not a30th Work purpose. All64 runtime flows remain NOT_VERIFIED/NOT_RUN; source pairing is not acceptance.",
         "historical_kind_count_scopes": [
@@ -4100,6 +4101,17 @@
           "source_commit": "a2b216afa3b9245bda3ab9dffd094a1a4608d547",
           "evidence_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#catalog_owner_mapping_native_checkpoint",
           "delivery_scope": "Flow51 catalog and Flow52 posting mapping owner/source/DTO/WorkHost/full human UI are paired in source:47 backend/47 frontend/0 staged. Flow53 native whole-approval safety integrated; owner read follow-up is frozen in its separate author branch, not yet integrated. Source pairing is not runtime acceptance.",
+          "runtime_acceptance": "NOT_RUN"
+        },
+        "current_checkpoint_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#native_cost_work_checkpoint",
+        "native_cost_work_checkpoint": {
+          "source_commit": "c1a3809ad3fab2235f75fc5e91f671e3b557b938",
+          "evidence_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#native_cost_work_checkpoint",
+          "source_kinds": {
+            "backend": 48,
+            "paired_frontend": 48,
+            "staged": []
+          },
           "runtime_acceptance": "NOT_RUN"
         }
       }

@@ -1797,19 +1797,33 @@
       "approver_proposal": "ÖNERİ: MUHM, GM",
       "duration_cell": "2 iş günü",
       "decision_note": "—",
-      "candidate_inbox_sources": [],
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingManufacturingCostDifferenceWorkInboxSourceV1.cs",
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingManufacturingCostDifferenceWorkInboxSourceV1.Decision.cs"
+      ],
       "candidate_tests": [
         "tests/GoymenERP.Accounting.UnitTests/ManufacturingCostDifferenceV1Tests.ApprovalSafety.cs",
         "tests/GoymenERP.Accounting.UnitTests/AccountingJournalReversalStoreFollowUpV1Tests.ManufacturingCostDifferenceNoOp.cs",
         "tests/GoymenERP.Api.IntegrationTests/ManufacturingCostDifferenceSqlServerRelationalAcceptanceTests.ApprovalSafety.cs",
-        "tests/GoymenERP.Api.IntegrationTests/ManufacturingCostDifferenceSqlServerRelationalAcceptanceTests.ApprovalRefusal.cs"
+        "tests/GoymenERP.Api.IntegrationTests/ManufacturingCostDifferenceSqlServerRelationalAcceptanceTests.ApprovalRefusal.cs",
+        "tests/GoymenERP.Accounting.UnitTests/ManufacturingCostDifferenceV1Tests.DecisionRead.cs",
+        "tests/GoymenERP.Accounting.UnitTests/ManufacturingCostDifferenceV1Tests.WorkSource.cs",
+        "tests/GoymenERP.Api.IntegrationTests/ManufacturingCostDifferenceWorkDecisionHostTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/ManufacturingCostDifferenceSqlServerRelationalAcceptanceTests.SavedChangesFailure.cs",
+        "src/frontend/goymen-erp-web/src/work/workManufacturingCostDifferenceDecision.test.ts",
+        "src/frontend/goymen-erp-web/src/work/WorkManufacturingCostDifferencePage.test.tsx"
       ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native approval safety integrated with existing permission/owned runner/actual scoped Audit; owner decision-read source is frozen in a separate branch, Work purpose/host/UI not yet integrated. Source-only prerequisite, actualSQL/runtime acceptance NOT_RUN. See catalog_owner_mapping_native_checkpoint."
+      "limitation": "Flow53 native owner/source/lossless DTO/WorkHost/human UI paired:48 backend/48 frontend/0 staged. Native54/55 approval safety is integrated. Native54 owner/read73bbc and Host0d72 are frozen separately, not integrated at this checkpoint. Source pairing is not runtime/business acceptance.",
+      "latest_source_evidence": {
+        "source_commit": "c1a3809ad3fab2235f75fc5e91f671e3b557b938",
+        "reference": "native_cost_work_checkpoint",
+        "scope": "Source/local controlled evidence; actualSQL/runtime/business acceptance NOT_RUN."
+      }
     },
     {
       "flow": 54,
@@ -2961,5 +2975,169 @@
       "paired_frontend": 47,
       "staged": []
     }
-  }
+  },
+  "native_cost_work_checkpoint": {
+    "source_commit": "c1a3809ad3fab2235f75fc5e91f671e3b557b938",
+    "scope": "Flow53 native owner/source/lossless DTO/WorkHost/human UI paired:48 backend/48 frontend/0 staged. Native54/55 approval safety is integrated. Native54 owner/read73bbc and Host0d72 are frozen separately, not integrated at this checkpoint. Source pairing is not runtime/business acceptance.",
+    "source_kinds": {
+      "backend": 48,
+      "paired_frontend": 48,
+      "staged": []
+    },
+    "checks": {
+      "native_bundle_accounting": {
+        "source_commit": "6d039df39c324acd52c236293b1662420edd208a",
+        "artifact": "cost-owners-and-work-host-20261128",
+        "passed": 1512,
+        "failed": 0,
+        "skipped": 0,
+        "exit": 0,
+        "seconds": 35.447852
+      },
+      "native_bundle_full_api": {
+        "artifact": "cost-owners-and-work-host-20261128",
+        "freeGiB": 3.5968360900878906,
+        "seconds": 166.4568507,
+        "exit": 0,
+        "head": "6d039df39c324acd52c236293b1662420edd208a",
+        "errors": 0,
+        "warnings": 0
+      },
+      "paired_accounting": {
+        "source_commit": "45b00c46a43a13189f80830f2651eb437dda9132",
+        "artifact": "cost-work-paired-inventory-fixed-20261128",
+        "passed": 1513,
+        "failed": 0,
+        "skipped": 0,
+        "exit": 0,
+        "seconds": 36.4546491
+      },
+      "paired_work": {
+        "source_commit": "45b00c46a43a13189f80830f2651eb437dda9132",
+        "artifact": "cost-work-paired-inventory-fixed-20261128",
+        "passed": 195,
+        "failed": 0,
+        "skipped": 0,
+        "exit": 0,
+        "seconds": 16.4643893
+      },
+      "paired_api_refresh": {
+        "artifact": "cost-work-paired-inventory-fixed-20261128",
+        "seconds": 22.775843,
+        "freeGiB": 3.7718124389648438,
+        "head": "45b00c46a43a13189f80830f2651eb437dda9132",
+        "exit": 0,
+        "mode": "BuildProjectReferences=false after updated Accounting; not a new all-reference API build"
+      },
+      "paired_host": {
+        "source_commit": "45b00c46a43a13189f80830f2651eb437dda9132",
+        "artifact": "cost-work-paired-inventory-fixed-20261128",
+        "passed": 1664,
+        "failed": 0,
+        "skipped": 0,
+        "exit": 0,
+        "seconds": 66.3705933
+      },
+      "paired_ui_initial": {
+        "source_commit": "45b00c46a43a13189f80830f2651eb437dda9132",
+        "artifact": "cost-work-paired-inventory-fixed-20261128",
+        "total": 1375,
+        "passed": 1373,
+        "failed": 2,
+        "skipped": 0,
+        "exit": 1,
+        "seconds": 106.9840149
+      },
+      "unique_inbox_host": {
+        "source_commit": "c1a3809ad3fab2235f75fc5e91f671e3b557b938",
+        "artifact": "cost-work-unique-inbox-fixed-20261128",
+        "passed": 1664,
+        "failed": 0,
+        "skipped": 0,
+        "exit": 0,
+        "seconds": 64.542027
+      },
+      "unique_inbox_ui": {
+        "source_commit": "c1a3809ad3fab2235f75fc5e91f671e3b557b938",
+        "artifact": "cost-work-unique-inbox-fixed-20261128",
+        "total": 1375,
+        "passed": 1375,
+        "failed": 0,
+        "skipped": 0,
+        "exit": 0,
+        "seconds": 97.8489014
+      },
+      "unique_inbox_tsc": {
+        "artifact": "cost-work-unique-inbox-fixed-20261128",
+        "exit": 0,
+        "seconds": 51.5199383,
+        "head": "c1a3809ad3fab2235f75fc5e91f671e3b557b938",
+        "freeGiB": 3.883563995361328
+      },
+      "unique_inbox_lint": {
+        "artifact": "cost-work-unique-inbox-fixed-20261128",
+        "exit": 0,
+        "seconds": 0.2381403,
+        "head": "c1a3809ad3fab2235f75fc5e91f671e3b557b938",
+        "freeGiB": 3.5348358154296875
+      }
+    },
+    "retained_failures": [
+      {
+        "source_commit": "6d039df39c324acd52c236293b1662420edd208a",
+        "artifact": "cost-owners-and-work-host-20261128",
+        "phase": "host",
+        "exit": 1,
+        "seconds": 45.3097949,
+        "result": "compileFAILCS1503 Inventory approval SQL fixture275: concrete Audit collector required; tests NOT_RUN. Rootab1 resolves same actual scoped collector, no assertion/production change."
+      },
+      {
+        "artifact": "cost-work-host-audit-fixture-fixed-20261128",
+        "source_commit": "ab1d04e5fc0f94a62da527b0eb4fd39a843e505f",
+        "passed": 1659,
+        "failed": 5,
+        "skipped": 0,
+        "exit": 1,
+        "seconds": 87.9098189,
+        "reason": "5 composition cases missing currency reader constructor dependency after new actual owner alias assertion; remaining1659 passed."
+      },
+      {
+        "artifact": "cost-work-host-composition-fixed-20261128",
+        "source_commit": "1a2e382283fb36d24623e717413f505da79ada2c",
+        "passed": 1659,
+        "failed": 5,
+        "skipped": 0,
+        "exit": 1,
+        "seconds": 65.1082095,
+        "reason": "Same5 composition cases then exposed missing lineage constructor dependency; remaining1659 passed. Fail-on-read fixture ports added, no assertion weakening."
+      },
+      {
+        "artifact": "cost-work-paired-20261128",
+        "source_commit": "4a6cebc28ca2aac9027b920a003dca8fe4a3966a",
+        "passed": 1512,
+        "failed": 1,
+        "skipped": 0,
+        "exit": 1,
+        "seconds": 39.7097396,
+        "reason": "Exact screen inventory omitted new M-MANUFACTURING-COST-DIFFERENCE-WORK-DECISION; later phases NOT_RUN."
+      },
+      {
+        "source_commit": "45b00c46a43a13189f80830f2651eb437dda9132",
+        "artifact": "cost-work-paired-inventory-fixed-20261128",
+        "total": 1375,
+        "passed": 1373,
+        "failed": 2,
+        "skipped": 0,
+        "exit": 1,
+        "seconds": 106.9840149,
+        "reason": "Duplicate old/native and new/purpose Inbox mapping. Existing global uniqueness and exact mount assertions caught it; c1 removes old row, Accounting Inbox stays12 unique kinds."
+      }
+    ],
+    "native_boundaries": "Existing owned approval runner, scoped Audit and13 exact-marker-only posting read fences reused for53/54/55. Accepted-save domain refusals abort partial owned work even before Saved=true; original answer returns only after successful cleanup; Aggregate cleanup faults propagate. Final55 save races use one existing readonly original-key reconciliation. Native wire/hash/formula/permission policies unchanged.",
+    "flow53": "Company-bound single scalar pending query; retained source/amount equality and genuine original Commands/Journal header receipt. VersionN→N+1 and re-preparation replay; human full20header/11output/7plan transport with canonical Int64 text. UI shows raw native quantities/money; frozen fourfield request/key, no human GET during POST/retry; private proof/digests/receipt stay off DOM/storage. Inbox primary purpose/id link and12 unique Accounting kind map source-reviewed.",
+    "sql": "Accounting227 unique source names;28 newly registered real SQLFact methods. Complete SQL sources compiled in c1 controlled host; actual SQL execution NOT_RUN. Controlled injected faults are not a natural two-session deadlock.",
+    "source_peers": "Bounded full native53 owner/source/WorkHost/UI and native54/55 safety peers, shared composition/inventory peer; publication peers found link/count/duplicate issues and source-closed finalc1. Some reviewers authored earlier native pieces; none of these are formal independent exact-head K3 acceptance.",
+    "limits": "41packages/50references/64 flow rows unchanged; all64 semantics NOT_VERIFIED/runtime NOT_RUN/verified_runtime_flows0. Old CI does not transfer. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3/business acceptance remain pending. Provider/grant/role/Critical/deployment/AI activation unchanged. Token telemetry unavailable; phase durations are measured local artifacts."
+  },
+  "current_checkpoint_ref": "native_cost_work_checkpoint"
 }
