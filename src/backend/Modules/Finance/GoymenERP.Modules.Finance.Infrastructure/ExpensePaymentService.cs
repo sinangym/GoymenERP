@@ -35,7 +35,7 @@ public sealed record ExpensePaymentAuditEnvelopes(
 /// (FNS-D65, also for a draft prepared before the proposal) and the record refuse it (<c>expense_payment_treasury_account_passivation_pending</c>) and the draft context does not offer it.
 /// A rejected passivation is no longer pending, so the account pays again. (A bank account has no passivation yet.)
 /// </summary>
-public sealed class ExpensePaymentService(
+public sealed partial class ExpensePaymentService(
     FinanceDbContext dbContext,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
@@ -167,6 +167,9 @@ public sealed class ExpensePaymentService(
         var payloadHash = Hash(request);
         if (await PriorAsync(context, ApproveCommand, action, keyHash, payloadHash, cancellationToken) is { } prior)
             return prior;
+        // A collision winner pass may only release the original native receipt; it cannot stage a refusal or retry mutation.
+        if (ownedApproval?.ReplayOnly == true)
+            return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
         var row = await dbContext.ExpensePayments.SingleOrDefaultAsync(candidate => candidate.Id == request.PaymentId,
             cancellationToken);
         if (await FenceAsync(context, action, request.PaymentId, cancellationToken) is { } afterRead) return afterRead;
@@ -607,6 +610,12 @@ public sealed class ExpensePaymentService(
         string payloadHash,
         CancellationToken cancellationToken)
     {
+        if (ownedApproval is not null)
+        {
+            if (command != ApproveCommand) throw new InvalidOperationException("Expense approval ownership cannot save another command.");
+            await SaveOwnedApprovalAsync(context, cancellationToken);
+            return null;
+        }
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);

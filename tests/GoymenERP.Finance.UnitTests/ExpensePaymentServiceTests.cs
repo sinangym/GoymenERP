@@ -14,7 +14,7 @@ namespace GoymenERP.Finance.UnitTests;
 
 /// <summary>FNS-D25 (and the FNS-D50 cash passivation gate) service behavior in memory. SENTETIK / NOT_ENV; not SQL or
 /// browser evidence.</summary>
-public sealed class ExpensePaymentServiceTests
+public sealed partial class ExpensePaymentServiceTests
 {
     private static readonly Guid Company = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly Guid Currency = Guid.Parse("22222222-2222-4222-8222-222222222222");
