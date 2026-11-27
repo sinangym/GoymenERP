@@ -44,7 +44,7 @@ public sealed partial class ManufacturingCostDifferenceServiceV1 : IManufacturin
             source.Proposal.CreditAccountId, source.Proposal.PreparedBy, source.Proposal.Reason, source.Proposal.AccountPlan,
         }, Json));
     public static string CostDifferencePreviewDigest(ManufacturingCostDifferenceDecisionSourceV1 source) =>
-        AccountingApiService.Sha256(JsonSerializer.Serialize(new { source.Proposal, source.PreparedAtUtc }, Json));
+        CostDifferencePreviewDigest(source.Proposal, source.PreparedAtUtc);
 
     // The native View's existing literal projection, shared with the purpose proof. No amounts are recalculated.
     public static IReadOnlyList<ManufacturingCostDifferenceOutputViewV1> CostDifferenceOutputs(ManufacturingCostDifferenceEventV1 source) =>
