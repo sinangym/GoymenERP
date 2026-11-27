@@ -20,11 +20,14 @@ function preview(kind:NativeFinanceDecisionKind) {
     proposedAtUtc:'0001-01-01T00:00:00Z',decidedAtUtc:reversal?'0001-01-01T00:00:00Z':null,rejectionReason:null,version:reversal?'2':'1',
     reversal:reversal?{id,status:'Proposed',reason:'SENTETIK immutable reversal reason',openingPeriodVersion:'SENTETIK reversal period',isOwnProposal:false,
       proposedAtUtc:'0001-01-01T00:00:00Z',decidedAtUtc:null,rejectionReason:null,version:'1'}:null}
-  return {companyId:COMPANY_A,kind,itemId:id,documentLabel:'SENTETIK owner caption',sourceVersion:'1',pending:true,approvalReasonRequired:false,rejectionSupported:true,
+  const bankCreditLimit={limit,proposedBy:'SENTETIK maker',sourceFactsDigest:'a'.repeat(64)}, openingBalance={openingBalance:opening}
+  const base={companyId:COMPANY_A,kind,itemId:id,documentLabel:'SENTETIK owner caption',sourceVersion:'1',pending:true,approvalReasonRequired:false,rejectionSupported:true,
     references:(bank?[['credit-account',account],['lender-party',party],['company-account',account],['currency',currency]]:
       [...(reversal?[['opening-balance',openingId]]:[]),['company-account',account],['party',party],['currency',currency]]).map(([role,recordId])=>({role,recordId,label:'SENTETIK '+role,link:null})),
-    rules:[{ruleCode:bank?'finance.bank-credit-limit-approval-required':reversal?'finance.opening-balance-reversal-approval-required':'finance.opening-balance-approval-required',threshold:null,actual:'1250.5',deviation:null,unit:null}],
-    ...(bank?{bankCreditLimit:{limit,proposedBy:'SENTETIK maker',sourceFactsDigest:'a'.repeat(64)}}:{openingBalance:{openingBalance:opening}})}
+    rules:[{ruleCode:bank?'finance.bank-credit-limit-approval-required':reversal?'finance.opening-balance-reversal-approval-required':'finance.opening-balance-approval-required',threshold:null,actual:'1250.5',deviation:null,unit:null}]}
+  const value:typeof base & {bankCreditLimit?:typeof bankCreditLimit;openingBalance?:typeof openingBalance}={
+    ...base,...(bank?{bankCreditLimit}:{openingBalance})}
+  return value
 }
 const input={expectedVersion:'1',approve:true,reason:null,delegationId:null}
 afterEach(()=>{cleanup();vi.unstubAllGlobals();sessionStorage.clear()})
@@ -115,7 +118,7 @@ describe('candidate native Finance Work decisions',()=>{
     if(kind==='finance.bank-credit-limit.v1')expect(within(region).getByText('SENTETIK immutable source')).toBeTruthy()
     const reason=screen.getByRole('textbox',{name:T.reason}) as HTMLTextAreaElement
     expect(reason.maxLength).toBe(kind==='finance.bank-credit-limit.v1'?1000:500)
-    expect(screen.getByRole('button',{name:T.reject})).toBeDisabled()
+    expect(screen.getByRole('button',{name:T.reject}).matches(':disabled')).toBe(true)
     fireEvent.change(reason,{target:{value:'  SENTETIK rejection  '}})
     fireEvent.click(screen.getByRole('button',{name:approve?T.approve:T.reject}));await screen.findByText(T.done)
     expect(posts).toHaveLength(1);expect(JSON.parse(String(posts[0].body))).toEqual({...input,approve,reason:approve?null:'SENTETIK rejection'})
