@@ -31,7 +31,8 @@ public sealed partial class FinancePartyCreditLimitService
     {
         using var json = JsonDocument.Parse(row.ResultJson);
         if (!Exact(json.RootElement, "outcome", "resource", "isReplay", "originalCorrelationId", "issues")
-            || !Exact(json.RootElement.GetProperty("resource"), "id", "companyId", "partyId", "companyAccountId", "kind",
+            || !json.RootElement.TryGetProperty("resource", out var resourceJson)
+            || !Exact(resourceJson, "id", "companyId", "partyId", "companyAccountId", "kind",
                 "currencyId", "amount", "status", "isDirect", "revision", "rejectionReason", "proposedAtUtc", "decidedAtUtc", "supersededAtUtc", "version"))
             throw new InvalidOperationException("Credit limit native receipt shape is invalid.");
         var stored = JsonSerializer.Deserialize<PartyCreditLimitCommandResult>(row.ResultJson, Json);
