@@ -873,11 +873,17 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command. Native decision safety prerequisite now source-implemented and bounded-peer reviewed; staged purpose adapter/UI remain NOT_IMPLEMENTED. No new Work kind or runtime acceptance.",
+      "limitation": "Native Work backend source implemented and controlled tests passed at0ac; purpose remains staged, legacy link unchanged and paired UI absent. ActualSQL/normalHTTP/browser/fullCI/K3 pending; semantics NOT_VERIFIED/runtimeNOT_RUN.",
       "native_prerequisite_reference": {
         "source_commit": "9f9442c4e9382033ea97f54e62d7238ab50e91c4",
         "evidence": "UYGULAMA_PAKETLERI_2026-11-26.json → T2/WP8.execution.native_prerequisite_checkpoint",
         "sql_source_facts": 10,
+        "actual_sql": "NOT_RUN"
+      },
+      "source_implementation": {
+        "source_commit": "0acdf2fa89d22cd1a7ad63ec211d753e34a79e64",
+        "reference": "T2/WP8.execution.latest_checkpoint",
+        "sql_source_facts": 3,
         "actual_sql": "NOT_RUN"
       }
     },
@@ -907,7 +913,7 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command. Native decision safety prerequisite now source-implemented and bounded-peer reviewed; staged purpose adapter/UI remain NOT_IMPLEMENTED. No new Work kind or runtime acceptance.",
+      "limitation": "Native receipt and narrow decision-read owner source implemented at1981b8fa3 and bounded-peer reviewed; new22unit/3SQL source tests NOT_RUN. Work purpose/UI NOT_IMPLEMENTED; no runtime acceptance.",
       "native_prerequisite_reference": {
         "source_commit": "9f9442c4e9382033ea97f54e62d7238ab50e91c4",
         "evidence": "UYGULAMA_PAKETLERI_2026-11-26.json → T2/WP8.execution.native_prerequisite_checkpoint",
@@ -1984,7 +1990,7 @@
     "initial_source_commit": "43ebf5ec240e23f7e3c56443e5a2b10c68e2adf4",
     "initial_verification": "Exact43ebf5ec240e23f7e3c56443e5a2b10c68e2adf4: API build PASS0errors/0warnings197.3834698s. Finance2082total:2080PASS/2FAIL/0skip17.5274839s; original failures retained (missing staged frontend capability/route parity literals and new Remove-proposal fixture expected987.50 versus existing native formatter987.5). Product/Work/Host NOT_RUN after stopped batch. Narrow source/fixture correction and later-head rerun pending; no formatter/policy/assertion weakening. Earlier b1/b4 results remain separate-head evidence."
   },
-  "latest_checkpoint": {
+  "historical_checkpoint_789": {
     "source_commit": "7898cc30397ab51d38464c5ac674de2422890d07",
     "source_counts_commit": "2a3e3f5cbf519744a9064d9407862ee260976f8e",
     "source_counts": {
@@ -1998,5 +2004,11 @@
     "verified_runtime_flows": 0,
     "limits": "ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 remain pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows=0;41packages/50references unchanged.",
     "native_prerequisite_reference": "UYGULAMA_PAKETLERI_2026-11-26.json → T2/WP8.execution.native_prerequisite_checkpoint @9f9442c4e9382033ea97f54e62d7238ab50e91c4"
+  },
+  "latest_checkpoint": {
+    "source_commit": "0acdf2fa89d22cd1a7ad63ec211d753e34a79e64",
+    "reference": "UYGULAMA_PAKETLERI_2026-11-26.json -> T2/WP8.execution.latest_checkpoint",
+    "source_kinds": "32native/31paired/1staged official-invoice-import; no runtime acceptance",
+    "verified_runtime_flows": 0
   }
 }

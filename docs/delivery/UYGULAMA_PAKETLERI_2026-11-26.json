@@ -2280,7 +2280,9 @@
           "finance.manual-bank-payment.v1",
           "finance.bank-account-iban-change.v1",
           "product.package-standard-version.v1",
-          "product.price-list-version.v1"
+          "product.price-list-version.v1",
+          "finance.party-credit-limit.v1",
+          "finance.official-invoice-import.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -3394,8 +3396,10 @@
           "7898cc30397ab51d38464c5ac674de2422890d07",
           "9f9442c4e9382033ea97f54e62d7238ab50e91c4"
         ],
-        "kind_count_scope": "At2a3e3f5cbf519744a9064d9407862ee260976f8e source-derived WorkDecisionHostV1.Kinds and WORK_DECISION_KINDS are equal:31native/31paired/0staged, no unknown frontend kind. Flow40 is now paired; previous c42 31/30/1, b1 30/29/1 and cc37929/29/0 remain exact-head historical records. ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 remain pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows=0;41packages/50references unchanged.",
-        "staged_kinds": [],
+        "kind_count_scope": "At0acdf2fa89d22cd1a7ad63ec211d753e34a79e64 source-derived sets32native/31paired/1staged (official invoice import); no unknown frontend kind. Prior counts remain historical. Source pairing is not runtime acceptance; all64 flows remain NOT_VERIFIED/NOT_RUN, runtime0.",
+        "staged_kinds": [
+          "finance.official-invoice-import.v1"
+        ],
         "historical_kind_count_scope": "29 paired source kinds/29 native kinds with exact set equality atcc379ff28f74d5810ed51ad537ebece821440d72, including Product package-standard; staged0. Native price-list publish safety is a prerequisite, not a30th Work purpose. All64 runtime flows remain NOT_VERIFIED/NOT_RUN; source pairing is not acceptance.",
         "historical_kind_count_scopes": [
           "Atb1cacee89f805a05959b5b79af034270b80b8103 source-derived sets:30native/29paired frontend; only product.price-list-version.v1 staged, no unknown frontend kind. Historicalcc379 exact29/29 remains valid only at that head. verified_runtime_flows=0; all64 semantics/runtime remain NOT_VERIFIED/NOT_RUN.",
@@ -3416,21 +3420,6 @@
           "followup_source_review": "Follow-up1e563df59b10c4ac3a057ade43bfe410c7a35645 preserves native rule987.5 and additionally asserts storedAmountText987.50; formatter unchanged. A new bounded source peer found the staged literal incorrectly added to the published/mounted frontend list.67b2d599b6dae044ef8df97cabb03c23d05b42be separates STAGED_PARTY_CREDIT_LIMIT_PURPOSE and adds a negative published/cap/route/nav/mount/purposeInbox test; old exact published assertions and native F18 mapping unchanged. Full two-file delta peer source-closed this P2; no open concrete P0/P1/P2, notK3. Corrected-head terminal evidence is recorded separately below.",
           "initial_source_commit": "43ebf5ec240e23f7e3c56443e5a2b10c68e2adf4",
           "initial_verification": "Exact43ebf5ec240e23f7e3c56443e5a2b10c68e2adf4: API build PASS0errors/0warnings197.3834698s. Finance2082total:2080PASS/2FAIL/0skip17.5274839s; original failures retained (missing staged frontend capability/route parity literals and new Remove-proposal fixture expected987.50 versus existing native formatter987.5). Product/Work/Host NOT_RUN after stopped batch. Narrow source/fixture correction and later-head rerun pending; no formatter/policy/assertion weakening. Earlier b1/b4 results remain separate-head evidence."
-        },
-        "latest_checkpoint": {
-          "source_commit": "7898cc30397ab51d38464c5ac674de2422890d07",
-          "source_counts_commit": "2a3e3f5cbf519744a9064d9407862ee260976f8e",
-          "source_counts": {
-            "native": 31,
-            "paired": 31,
-            "staged": 0
-          },
-          "backend": "Exact2a3e3f5cbf519744a9064d9407862ee260976f8e: full Finance2082/2082PASS0skip and controlled Host589/589PASS0skip. FinanceInfrastructure warm build0errors/0warnings10.844s; API warm build0errors/0warnings24.837s, not a repeated full build. Exact789 one ProductPriceListShellAuthorityTests.Package_standard_purpose_uses_company_authority_beside_the_unchanged_global_Product_routes PASS0skip5.7189512s with no-build and identical2a3e compiled backend source tree; not a same-head590 Host claim.",
-          "frontend": "Exact2a3e3f5cbf519744a9064d9407862ee260976f8e: nine frontend files938total925PASS13FAIL0skip, all13 failures in old WorkInbox fixture; original logs retained,75new API/Page cases included. Other eight complete files890PASS are separate2a3e evidence. Fulltsc exit0/54.806s;10explicitlint exit0/0diagnostics0.752s. Exact9e0e79ecf39a3e1749f4277f4546006bca633478: fulltsc exit0/51.6475571s, lint exit0/0diagnostics0.694s; Inbox49total48PASS1FAIL0skip (obsolete query assertion), original logs retained. Exact7898cc30397ab51d38464c5ac674de2422890d07: complete Inbox49/49PASS0skip17.2442436s, one-filelint exit0/0diagnostics0.1208757s; root independently parsed JSON counters. TSC not repeated for the one-literal test correction. No939 same-head sum of2a3e890 and78949.",
-          "peer": "Full17-file bounded nonauthor UI peer plus a91276f3a8aac2acb554f435020b606cb6f2a9be two-file correction: CLR decimal overflow/nonzero excess-scale P2 source-closed; raw text unchanged. Root test-only9e0e79ecf39a3e1749f4277f4546006bca633478 aligns the actual purpose capability/link and adds native-F18-alone no-fetch negative. Its remaining obsolete query assertion P2 is source-closed by7898cc30397ab51d38464c5ac674de2422890d07 exact empty-query assertion; pathname/event assertions retained. Source peer is not K3.",
-          "verified_runtime_flows": 0,
-          "limits": "ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 remain pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows=0;41packages/50references unchanged.",
-          "native_prerequisite_source_commit": "9f9442c4e9382033ea97f54e62d7238ab50e91c4"
         },
         "native_prerequisite_checkpoint": {
           "source_commit": "9f9442c4e9382033ea97f54e62d7238ab50e91c4",
@@ -3472,6 +3461,30 @@
           "initial_verification": "Exact13f13045668807dab70bf52286bee19f4ab35f73: warm Finance0errors/0warnings, API0errors/0warnings; Finance2108PASS0skip. Controlled Host597total596PASS1FAIL0skip (missing mandatory synthetic Audit configuration); original failure retained.",
           "corrected_verification": "Exact9f9442c4e9382033ea97f54e62d7238ab50e91c4: warm Finance0errors/0warnings12.3332947s, API0errors/0warnings23.9552844s; full Finance2108/2108PASS0skip15.9330926s; complete integration-source compile and controlled Host/DI/helper filter618/618PASS0skip71.642513s. Existing21SqlConcurrencyWrapper cases are included in618, not additional. Root independently parsed TRX counters. Warm builds are not a full API build.",
           "limits": "Full API build/actualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 NOT_RUN. Earlier UI results remain separate-head evidence; all64 semantics NOT_VERIFIED/runtime NOT_RUN, verified_runtime_flows=0."
+        },
+        "historical_checkpoint_789": {
+          "source_commit": "7898cc30397ab51d38464c5ac674de2422890d07",
+          "source_counts_commit": "2a3e3f5cbf519744a9064d9407862ee260976f8e",
+          "source_counts": {
+            "native": 31,
+            "paired": 31,
+            "staged": 0
+          },
+          "backend": "Exact2a3e3f5cbf519744a9064d9407862ee260976f8e: full Finance2082/2082PASS0skip and controlled Host589/589PASS0skip. FinanceInfrastructure warm build0errors/0warnings10.844s; API warm build0errors/0warnings24.837s, not a repeated full build. Exact789 one ProductPriceListShellAuthorityTests.Package_standard_purpose_uses_company_authority_beside_the_unchanged_global_Product_routes PASS0skip5.7189512s with no-build and identical2a3e compiled backend source tree; not a same-head590 Host claim.",
+          "frontend": "Exact2a3e3f5cbf519744a9064d9407862ee260976f8e: nine frontend files938total925PASS13FAIL0skip, all13 failures in old WorkInbox fixture; original logs retained,75new API/Page cases included. Other eight complete files890PASS are separate2a3e evidence. Fulltsc exit0/54.806s;10explicitlint exit0/0diagnostics0.752s. Exact9e0e79ecf39a3e1749f4277f4546006bca633478: fulltsc exit0/51.6475571s, lint exit0/0diagnostics0.694s; Inbox49total48PASS1FAIL0skip (obsolete query assertion), original logs retained. Exact7898cc30397ab51d38464c5ac674de2422890d07: complete Inbox49/49PASS0skip17.2442436s, one-filelint exit0/0diagnostics0.1208757s; root independently parsed JSON counters. TSC not repeated for the one-literal test correction. No939 same-head sum of2a3e890 and78949.",
+          "peer": "Full17-file bounded nonauthor UI peer plus a91276f3a8aac2acb554f435020b606cb6f2a9be two-file correction: CLR decimal overflow/nonzero excess-scale P2 source-closed; raw text unchanged. Root test-only9e0e79ecf39a3e1749f4277f4546006bca633478 aligns the actual purpose capability/link and adds native-F18-alone no-fetch negative. Its remaining obsolete query assertion P2 is source-closed by7898cc30397ab51d38464c5ac674de2422890d07 exact empty-query assertion; pathname/event assertions retained. Source peer is not K3.",
+          "verified_runtime_flows": 0,
+          "limits": "ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 remain pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows=0;41packages/50references unchanged.",
+          "native_prerequisite_source_commit": "9f9442c4e9382033ea97f54e62d7238ab50e91c4"
+        },
+        "latest_checkpoint": {
+          "source_commit": "0acdf2fa89d22cd1a7ad63ec211d753e34a79e64",
+          "scope": "Flow29 staged backend: native approve-only Expected1 to terminal2, original-key receipt and private canonical preview digest; legacy native links/pending-only reads preserved. UI NOT_IMPLEMENTED at this head.",
+          "checks": "Full Release API build with project references0errors/0warnings205.6963478s; full Finance2114/2114PASS0skip15.9194453s; complete integration-source compile and controlled Host/DI/helper/email669/669PASS0skip72.2082283s. C7 sixteen port tests are included669, not additional. Root parsed TRX counters.",
+          "peer": "Full21-file fa934 nonauthor source peer, no open P0/P1/P2; not K3.",
+          "sql": "3 new Flow29 purpose SQL source Facts compiled; actual SQL NOT_RUN. Finance inventory336 at0ac.",
+          "next_owner_source": "Flow30 owner-only a96/root1981b8fa3: receipt and narrow read,22 unit cases/3 SQL Facts; full7-file nonauthor source peer no open P0/P1/P2. Not yet built or run; no new Work purpose. Root3094 inventory339 names, actualSQL NOT_RUN.",
+          "limits": "ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 and pins pending; verified_runtime_flows=0,64 semantics NOT_VERIFIED/runtimeNOT_RUN."
         }
       }
     },
@@ -4331,7 +4344,7 @@
       "backlog_parent": "W5-AIGATEWAY",
       "title": "Onaylı e-posta ve yanıt hattı",
       "group": "TREN2",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P1",
       "risk": "K2",
       "scope": "Kayıtlı cari alıcıları; somut alıcı/içerik onayı; gelen metin karantinası; otomatik gönderim yok.",
@@ -4364,7 +4377,9 @@
       "existing_tests": [
         "tests/GoymenERP.Api.IntegrationTests/AiCommandPipelineTests.cs",
         "tests/GoymenERP.Api.IntegrationTests/AiDocumentDraftServiceTests.cs",
-        "tests/GoymenERP.Work.UnitTests/WorkOutboxDispatcherTests.cs"
+        "tests/GoymenERP.Work.UnitTests/WorkOutboxDispatcherTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiApprovedEmailServiceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiIncomingEmailClassificationTests.cs"
       ],
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
@@ -4376,7 +4391,7 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "Reuse the staged ports when the existing approved send-authority/account and durable delivery owner are wired. Keep unknown operations readonly and email inactive; this skeleton does not complete C7.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -4387,7 +4402,26 @@
         "tests/GoymenERP.Api.IntegrationTests/AiDocumentDraftServiceTests.cs",
         "tests/GoymenERP.Work.UnitTests/WorkOutboxDispatcherTests.cs"
       ],
-      "change_files": []
+      "change_files": [
+        "src/backend/GoymenERP.Api/Ai/Email/AiApprovedEmailContractsV1.cs",
+        "src/backend/GoymenERP.Api/Ai/Email/AiApprovedEmailServiceV1.cs",
+        "src/backend/GoymenERP.Api/Ai/Email/AiEmailRecipientResolverV1.cs",
+        "src/backend/GoymenERP.Api/Ai/Email/AiIncomingEmailClassificationV1.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiApprovedEmailServiceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiIncomingEmailClassificationTests.cs"
+      ],
+      "execution": {
+        "source_commit": "c02122aef23f6b3bba5861088d736942dd5066f7",
+        "scope": "PORTS_AND_ORCHESTRATION_ONLY: registered company-account recipient/version, exact content/recipient digest, one durable admission owner contract and readonly Unknown reconciliation; incoming local-classifier/quarantine port. No second ledger or provider implementation.",
+        "reuse": "Existing contact owner, command digest/state principles and quarantine; existing command pipeline and Work outbox remain unmodified references.",
+        "checks": "Exact c021: Release API warm build0errors/0warnings21.5674656s; complete integration-source compile and16/16 targeted port tests PASS0skip62.2577985s; root independently parsed TRX. Earlier wrong Debug warm build used stale references:14 compile errors; tests NOT_RUN, original log retained. No source change was needed for configuration correction.",
+        "peer": "Root read all6 source/test files and cancellation followup; pre-admission cancellation gap source-closed. Bounded nonauthor source review, not K3.",
+        "remaining": "Durable email outbox/delivery owner, independently stored human approval/send authority, configured account and existing gateway classifier wiring remain absent. No registration/endpoint/schema/account/provider/activation or actual delivery acceptance.",
+        "sql": "NOT_RUN",
+        "browser": "NOT_RUN",
+        "hosted_ci": "NOT_RUN",
+        "runtime_acceptance": "NOT_RUN"
+      }
     },
     {
       "id": "T2/WP-C8",
