@@ -177,7 +177,8 @@ describe('/onaylarim/kuyruk — the one Work inbox for a native "Onaylarım" cap
   })
 
   it('"Onaylarım" links to the one inbox', async () => {
-    installFetch([APPROVE])
+    // The legacy approval list and the current one-inbox purpose have separate existing entry capabilities.
+    installFetch([CAPABILITY.financeOfficialInvoiceImportApprove, APPROVE])
     const router = await renderAt('/onaylarim')
     await screen.findByRole('heading', { level: 1, name: APPROVALS_TEXT.heading })
     await userEvent.setup().click(screen.getByRole('link', { name: WORK_QUEUE_TEXT.openQueue }))

@@ -1,9 +1,12 @@
 import { AppShell } from '../shell/AppShell'
 import { workRoutes } from './workRoutes'
 /**
- * D-05 "Onaylarım" in the REAL shell (router, CapabilityRoute, ShellProvider, auth boundary) over a stubbed fetch that
- * plays #639's Work read. Component evidence only: the server's authority, company fence and separation of duties are
- * proven by #639's own HTTP/SQL tests and by the real-browser acceptance, not here.
+ * D-05 list/home tests use the real shell over a stubbed #639 Work read. Tests explicitly calling
+ * renderLegacyReadAt are legacy-component evidence: their router mounts only the existing generic list/detail
+ * routes, retaining AppShell, CapabilityRoute, ShellProvider and the auth boundary. It also exercises list-to-detail
+ * navigation without the current exact native-purpose routes shadowing ApprovalInboxDetailPage.
+ * Current real route precedence and human-purpose evidence remain in WorkDecisionPage and financeMountDrift tests.
+ * Server authority, company fences and separation of duties require their own HTTP/SQL/browser evidence.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -85,16 +88,21 @@ function installFetch(granted: readonly string[], served: Served = {}) {
 }
 
 /** `staleTime`: 0 by default; 30_000 is the production ShellProvider cache timing. */
-async function renderAt(path: string, staleTime = 0, legacyDetail = false) {
-  // Explicit legacy component evidence only. The real Finance kind route now belongs to WorkDecisionPage;
-  // its exact-purpose capability/route precedence is covered by WorkDecisionPage and financeMountDrift.
-  const legacyRoute = workRoutes.find(route => route.path === 'onaylarim/:kind/:approvalId')!
-  const routes = legacyDetail ? [{ path: '/', element: <AppShell />, children: [legacyRoute] }] : shellRoutes
+async function renderAt(path: string, staleTime = 0, profile: 'current-shell' | 'legacy-read-only' = 'current-shell') {
+  const legacyReadPaths = ['onaylarim', 'onaylarim/:kind/:approvalId']
+  const routes = profile === 'legacy-read-only'
+    ? [{ path: '/', element: <AppShell />, children: workRoutes.filter(route => legacyReadPaths.includes(route.path ?? '')) }]
+    : shellRoutes
   const router = createMemoryRouter(routes, { initialEntries: [path] })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime } } })
   render(<ShellProvider queryClient={queryClient}><RouterProvider router={router} /></ShellProvider>)
   await screen.findByText('Onaycı', undefined, { timeout: 5000 })
   return router
+}
+
+/** Explicit legacy generic-read component profile; never a substitute for the current shell's purpose routes. */
+function renderLegacyReadAt(path: string) {
+  return renderAt(path, 0, 'legacy-read-only')
 }
 
 const notFound = () => document.querySelector('[data-state="not-found"]')
@@ -156,7 +164,7 @@ describe('/onaylarim — the Finance pilot inbox', () => {
 
   it('opens the record detail and from there Finance\'s own approval screen', async () => {
     installFetch([APPROVE])
-    const router = await renderAt('/onaylarim')
+    const router = await renderLegacyReadAt('/onaylarim')
     const user = userEvent.setup()
     await user.click(await screen.findByRole('link', { name: APPROVALS_TEXT.openDetail }))
     const facts = await screen.findByTestId('work-approval-facts')
@@ -296,7 +304,7 @@ describe('/onaylarim — the Finance pilot inbox', () => {
 
   it('a detail of another approval than the one asked for is not shown', async () => {
     installFetch([APPROVE], { detail: () => json({ ...detail, item: { ...item, approvalId: '22222222-2222-4222-8222-222222222222' } }) })
-    await renderAt(`/onaylarim/finance.official-invoice-import.v1/${APPROVAL}`, 0, true)
+    await renderLegacyReadAt(`/onaylarim/finance.official-invoice-import.v1/${APPROVAL}`)
     await waitFor(() => expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
     expect(screen.queryByTestId('work-approval-facts')).toBeNull()
   })
@@ -424,7 +432,7 @@ describe('/onaylarim — Sales and Finance as separate connected sources', () =>
 
   it('opens the Sales detail (item only) and from there the Sales order screen', async () => {
     const { work } = installFetch([SALES_APPROVE, SALES_DETAIL], { list: bySource(() => salesPage()), detail: () => json(salesDetail) })
-    await renderAt(`/onaylarim/sales.order-draft.v1/${DRAFT}`)
+    await renderLegacyReadAt(`/onaylarim/sales.order-draft.v1/${DRAFT}`)
     const facts = await screen.findByTestId('work-approval-facts')
     expect(screen.getByRole('heading', { level: 1, name: APPROVALS_TEXT.detailHeadingSales })).toBeTruthy()
     expect(within(facts).getByText('SO-2026-000123')).toBeTruthy()
@@ -440,7 +448,7 @@ describe('/onaylarim — Sales and Finance as separate connected sources', () =>
     ['another draft', () => json({ item: { ...salesItem, approvalId: OTHER_DRAFT } })],
   ])('a Sales detail with %s is not shown', async (_, answer) => {
     installFetch([SALES_APPROVE, SALES_DETAIL], { detail: answer })
-    await renderAt(`/onaylarim/sales.order-draft.v1/${DRAFT}`)
+    await renderLegacyReadAt(`/onaylarim/sales.order-draft.v1/${DRAFT}`)
     await waitFor(() => expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
     expect(screen.queryByTestId('work-approval-facts')).toBeNull()
   })
@@ -523,7 +531,7 @@ describe('/onaylarim — the Sales filter (SAT-D243)', () => {
 
   it('the Sales detail also links the same record on S-06', async () => {
     installFetch([SALES_APPROVE], { detail: () => json(salesDetail) })
-    await renderAt(`/onaylarim/sales.order-draft.v1/${DRAFT}`)
+    await renderLegacyReadAt(`/onaylarim/sales.order-draft.v1/${DRAFT}`)
     await screen.findByTestId('work-approval-facts')
     expect(screen.getByRole('link', { name: QUEUE_LABEL }).getAttribute('href')).toBe(`/satis/onaylar?onay=${DRAFT}`)
   })
@@ -896,7 +904,7 @@ describe('/onaylarim — Inventory stock-count and stock-scrap sources (#667)', 
 
   it('opens the count detail with every fact labelled, and from there the label\'s own screen', async () => {
     const { work } = installFetch([COUNT_APPROVE, LABEL_SCREEN], { detail: () => json(countDetail) })
-    await renderAt(`/onaylarim/inventory.stock-count.v1/${COUNT}`)
+    await renderLegacyReadAt(`/onaylarim/inventory.stock-count.v1/${COUNT}`)
     await screen.findByTestId('work-approval-facts')
     expect(screen.getByRole('heading', { level: 1, name: 'Stok sayım farkı onayı' })).toBeTruthy()
     expect(screen.getByTestId('work-approval-facts').getAttribute('data-kind')).toBe('inventory.stock-count.v1')
@@ -923,7 +931,7 @@ describe('/onaylarim — Inventory stock-count and stock-scrap sources (#667)', 
 
   it('opens the scrap detail: a Cari owner, a company holder and a blocked position in the stock screen\'s own words', async () => {
     installFetch([SCRAP_APPROVE, LABEL_SCREEN], { detail: () => json(scrapDetail) })
-    await renderAt(`/onaylarim/inventory.stock-scrap.v1/${SCRAP}`)
+    await renderLegacyReadAt(`/onaylarim/inventory.stock-scrap.v1/${SCRAP}`)
     await screen.findByTestId('work-approval-facts')
     expect(screen.getByRole('heading', { level: 1, name: 'Stok hurda çıkışı onayı' })).toBeTruthy()
     expect(Object.fromEntries(facts())).toMatchObject({
@@ -952,7 +960,7 @@ describe('/onaylarim — Inventory stock-count and stock-scrap sources (#667)', 
     ['more than { item }', () => json({ ...countDetail, history: [] })],
   ])('a count detail with %s is not shown and offers no label link', async (_, answer) => {
     installFetch([COUNT_APPROVE, LABEL_SCREEN], { detail: answer })
-    await renderAt(`/onaylarim/inventory.stock-count.v1/${COUNT}`)
+    await renderLegacyReadAt(`/onaylarim/inventory.stock-count.v1/${COUNT}`)
     await waitFor(() => expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
     expect(screen.queryByTestId('work-approval-facts')).toBeNull()
     expect(document.querySelector('a[href^="/stok/etiket"]')).toBeNull()
@@ -1091,7 +1099,7 @@ describe('/onaylarim — Inventory label code under Work approval contract 2.0 (
 
   it('selects 2.0 for an Inventory detail and for neither a Finance nor a Sales detail', async () => {
     const first = installFetch([COUNT_APPROVE, LABEL_SCREEN], { detail: () => json(countDetail) })
-    await renderAt(`/onaylarim/inventory.stock-count.v1/${COUNT}`)
+    await renderLegacyReadAt(`/onaylarim/inventory.stock-count.v1/${COUNT}`)
     await screen.findByTestId('work-approval-facts')
     expect(first.work().map((call) => [call.url, call.contract, call.method])).toEqual([[COUNT_DETAIL, '2.0', 'GET']])
   })
@@ -1101,7 +1109,7 @@ describe('/onaylarim — Inventory label code under Work approval contract 2.0 (
     ['Sales', [SALES_CAPABILITY.ordersApprove], `/onaylarim/sales.order-draft.v1/${DRAFT}`, () => json(salesDetail)],
   ])('reads a %s detail without the selector and needs no acknowledgment for it', async (_, granted, path, answer) => {
     const { work } = installFetch(granted, { detail: answer })
-    await renderAt(path, 0, path.includes('/finance.official-invoice-import.v1/'))
+    await renderLegacyReadAt(path)
     await screen.findByTestId('work-approval-facts')
     expect(work().map((call) => call.contract)).toEqual([null])
   })
@@ -1126,7 +1134,7 @@ describe('/onaylarim — Inventory label code under Work approval contract 2.0 (
 
   it('shows the label code in the detail, bound to the label id, and opens the exact label', async () => {
     const { calls, work } = installFetch([SCRAP_APPROVE, LABEL_SCREEN], { detail: () => json(scrapDetail) })
-    await renderAt(`/onaylarim/inventory.stock-scrap.v1/${SCRAP}`)
+    await renderLegacyReadAt(`/onaylarim/inventory.stock-scrap.v1/${SCRAP}`)
     const facts = await screen.findByTestId('work-approval-facts')
     const code = within(facts).getByText('Etiket kodu').nextElementSibling as HTMLElement
     expect(code.textContent).toBe(SCRAP_LABEL_CODE)
@@ -1193,7 +1201,7 @@ describe('/onaylarim — Inventory label code under Work approval contract 2.0 (
   ]
   it.each(UNSHOWN_DETAILS)('a 2.0 detail with %s is not shown and offers no label link', async (_, answer, acknowledge) => {
     const { work } = installFetch([COUNT_APPROVE, LABEL_SCREEN], { detail: answer, acknowledge })
-    await renderAt(`/onaylarim/inventory.stock-count.v1/${COUNT}`)
+    await renderLegacyReadAt(`/onaylarim/inventory.stock-count.v1/${COUNT}`)
     await waitFor(() => expect(malformed()).not.toBeNull())
     expect(screen.queryByTestId('work-approval-facts')).toBeNull()
     expect(document.querySelector('a[href^="/stok/etiket"]')).toBeNull()
