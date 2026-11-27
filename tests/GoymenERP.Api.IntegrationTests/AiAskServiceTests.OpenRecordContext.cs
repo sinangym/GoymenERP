@@ -3,6 +3,7 @@ using GoymenERP.Api.Ai;
 using GoymenERP.Api.Ai.Gateway;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Ai;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Infrastructure.Ai;
 using GoymenERP.Modules.Logistics.Application.Ai;
@@ -115,7 +116,7 @@ public sealed partial class AiAskServiceTests
             "version" => source with { SourceVersion = "sha256:" + new string('b', 64) },
             "source-tool" => source with { ToolId = "foreign.tool.v1" },
             "source-class" => source with { DataClass = AiDataClassV1.Confidential },
-            "malformed-version" => source with { SourceVersion = null! }, _ => source,
+            "malformed-version" => source with { SourceVersion = "not-a-source-digest" }, _ => source,
         };
         rig.Tool.NextResult = new(AiToolOutcomeV1.Succeeded, "{\"name\":\"SENTETIK\"}", fault == "no-source" ? null : source);
         var result = await rig.Service().AskAsync(rig.Ask(expectedVersion: true));
@@ -155,7 +156,7 @@ public sealed partial class AiAskServiceTests
     [InlineData(false)] [InlineData(true)]
     public async Task Company_or_authority_loss_during_owner_read_releases_no_context_result(bool changeCompany)
     {
-        var rig = new ContextRig(false);
+        var rig = new ContextRig(false, mutableCompany: changeCompany);
         rig.Tool.OnRead = () => { if (changeCompany) rig.Common.CompanyScope.Set(OtherCompany); else rig.Authority.Revoke(rig.Permission); };
         var result = await rig.Service().AskAsync(rig.Ask());
         Assert.Equal(AiAskStatusV1.Refused, result.Status); Assert.Null(result.Response);
@@ -165,7 +166,7 @@ public sealed partial class AiAskServiceTests
     [Fact]
     public async Task Company_change_during_planning_is_refused_before_the_bound_owner_read()
     {
-        var rig = new ContextRig(false);
+        var rig = new ContextRig(false, mutableCompany: true);
         rig.Common.Provider.Plan = request =>
         {
             rig.Common.CompanyScope.Set(OtherCompany);
@@ -235,8 +236,11 @@ public sealed partial class AiAskServiceTests
         public string Kind { get; }
         public string IdField { get; }
         public string Permission => Assert.Single(Tool.Descriptor.RequiredPermissions);
-        public ContextRig(bool logistics)
+        public ContextRig(bool logistics, bool mutableCompany = false)
         {
+            // A resolved production CompanyContext is immutable. Only race tests inject a mutable
+            // interface double to exercise the service's captured-context release fence.
+            if (mutableCompany) Common.CompanyScope = new ContextMutableCompanyScope(Company);
             var descriptor = logistics
                 ? new LogisticsInstructionShipmentStatusAiTool(null!, TimeProvider.System).Descriptor
                 : new CounterpartyPartySummaryAiTool(null!, TimeProvider.System).Descriptor;
@@ -274,5 +278,12 @@ public sealed partial class AiAskServiceTests
     private sealed class ContextMissingSession : IActorSessionBindingResolver
     {
         public Task<string?> ResolveAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
+    }
+
+    private sealed class ContextMutableCompanyScope(Guid initialCompany) : ICompanyContext
+    {
+        public bool IsResolved => CompanyId != Guid.Empty;
+        public Guid CompanyId { get; private set; } = initialCompany;
+        public void Set(Guid companyId) => CompanyId = companyId;
     }
 }
