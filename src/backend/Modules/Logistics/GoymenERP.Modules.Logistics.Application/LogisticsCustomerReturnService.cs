@@ -10,7 +10,7 @@ namespace GoymenERP.Modules.Logistics.Application;
 /// Dependency-ready customer-return orchestration. It is intentionally not registered until the
 /// Inventory participant, persistent store and central permissions/endpoints are supplied by their owners.
 /// </summary>
-public sealed class LogisticsCustomerReturnService(
+public sealed partial class LogisticsCustomerReturnService(
     ILogisticsCustomerReturnScopeV1 scopes,
     ILogisticsCustomerReturnSourceReadV1 sources,
     ILogisticsCustomerReturnStoreV1 store,
@@ -156,11 +156,13 @@ public sealed class LogisticsCustomerReturnService(
                     var pending = await RequirePendingAsync(scope, bindings.DecisionPermission, customerReturnId, token);
                     pending.RequireDecision(expectedVersion, scope.ActorId);
 
-                    // The participant consumes kilograms. A Piece value is not kilograms, and this
-                    // source contract carries no authoritative returned-kg/piece conversion proof.
-                    // Preserve read/reject and original receipt replay; never stage a guessed stock return.
-                    if (pending.Quantity.Unit != QuantityUnit.Kilogram)
+                    // LOJ-D22: piece returns use their own immutable actual weighing, never a shipment ratio.
+                    if (pending.Quantity.Unit == QuantityUnit.Piece && pending.Weighing is null)
                         throw new LogisticsCustomerReturnServiceException(503, LogisticsCustomerReturnCodesV1.InventoryUnavailable);
+                    if (pending.Quantity.Unit == QuantityUnit.Piece && pending.Quantity.Value > int.MaxValue)
+                        throw new LogisticsCustomerReturnServiceException(503, LogisticsCustomerReturnCodesV1.InventoryUnavailable);
+                    var physicalKg = pending.Weighing?.Net.Value ?? pending.Quantity.Value;
+                    int? pieces = pending.Quantity.Unit == QuantityUnit.Piece ? checked((int)pending.Quantity.Value) : null;
 
                     var source = await GuardedAsync(scope, bindings.DecisionPermission,
                         () => sources.FindDeliveryAsync(pending.LoadingInstructionId, pending.LoadingInstructionLineId,
@@ -179,12 +181,12 @@ public sealed class LogisticsCustomerReturnService(
                     var stockRequest = new LogisticsCustomerReturnStockRequestV1(scope.CompanyId, pending.Id,
                         pending.LoadingInstructionId, pending.LoadingInstructionLineId, pending.SourceDeliveryId,
                         pending.SourceShipmentId, pending.SourceOrderId, pending.SourceOrderLineId, pending.UnitId,
-                        pending.Quantity.Value, inventoryMovementId!.Value, pending.OccurredAtUtc);
+                        pending.Quantity.Value, inventoryMovementId!.Value, pending.OccurredAtUtc, pending.Weighing?.Net.Value, pieces);
                     var staged = await stock.StageAsync(stockRequest, envelope, token);
                     if (staged.CompanyId != scope.CompanyId || staged.CustomerReturnId != pending.Id
                         || staged.SourceShipmentId != pending.SourceShipmentId || staged.InventoryMovementId != inventoryMovementId
                         || staged.OriginalShipmentMovementId == Guid.Empty || staged.OriginalLabelId == Guid.Empty
-                        || staged.Quantity != pending.Quantity.Value)
+                        || staged.Quantity != physicalKg || staged.PieceCount != pieces)
                         throw new LogisticsCustomerReturnServiceException(503, LogisticsCustomerReturnCodesV1.InventoryInvalid);
 
                     pending.Approve(expectedVersion, scope.ActorId, staged.InventoryMovementId, staged.OriginalLabelId,
@@ -407,7 +409,7 @@ public sealed class LogisticsCustomerReturnService(
         item.SourceOrderId, item.SourceOrderLineId, item.UnitId, Text(item.Quantity), Text(item.SourceDeliveredQuantity),
         item.Status.ToString(), item.Version.ToString(CultureInfo.InvariantCulture), item.Reason, item.RequestedBy,
         item.OccurredAtUtc, item.RequestedAtUtc, item.DecidedBy, item.DecidedAtUtc, item.DecisionNote,
-        item.InventoryMovementId, item.OriginalLabelId, item.OriginalShipmentMovementId);
+        item.InventoryMovementId, item.OriginalLabelId, item.OriginalShipmentMovementId, WeighingView(item.Weighing));
 
     private static string Text(Quantity quantity) => quantity.Value.ToString(CultureInfo.InvariantCulture);
 }

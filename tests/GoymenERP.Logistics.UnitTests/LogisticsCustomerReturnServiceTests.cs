@@ -295,6 +295,7 @@ public sealed partial class LogisticsCustomerReturnServiceTests
 
     private sealed class FakeStock(FaultState state) : ILogisticsCustomerReturnStockV1
     {
+        public LogisticsCustomerReturnStockRequestV1? CapturedRequest { get; private set; }
         public Exception? StageFault { get; init; }
         public int StageCalls { get; private set; }
 
@@ -304,6 +305,7 @@ public sealed partial class LogisticsCustomerReturnServiceTests
             CancellationToken cancellationToken = default)
         {
             StageCalls++;
+            CapturedRequest = request;
             if (StageFault is not null)
             {
                 state.Faulted = true;
@@ -345,6 +347,9 @@ public sealed partial class LogisticsCustomerReturnServiceTests
 
     private sealed class FakeStore(FaultState state) : ILogisticsCustomerReturnStoreV1
     {
+        public Task<CustomerReturnStoreResultV1> StoreWeighingAsync(LogisticsWriteEnvelope envelope, string requestHash,
+            CustomerReturn customerReturn, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new CustomerReturnStoreResultV1(customerReturn, LogisticsWriteOutcome.Recorded, envelope.CorrelationId));
         public Exception? ReplayFault { get; init; }
         public CustomerReturn? Pending { get; init; }
         public int StoreDecisionCalls { get; private set; }

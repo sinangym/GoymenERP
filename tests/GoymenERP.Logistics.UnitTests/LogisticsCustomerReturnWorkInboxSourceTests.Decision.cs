@@ -65,6 +65,23 @@ public sealed class LogisticsCustomerReturnDecisionSourceTests
         Assert.Equal(DateTimeOffset.MinValue, snapshot.LogisticsCustomerReturnProof!.Return.OccurredAtUtc);
     }
 
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task Piece_purpose_preserves_the_append_once_actual_weighing_and_parent_version(bool rejected)
+    {
+        var f = Fixture(); var row = f.Rows.CustomerReturnRows[0]; row.QuantityUnit = 2; row.Quantity = 1;
+        row.WeighingId = F.Id(90); row.WeighingDirection = 2; row.FirstWeighingKg = 1013.125m; row.SecondWeighingKg = 1000m;
+        row.NetWeighingKg = 13.125m; row.WeighingRecordedBy = "operator"; row.WeighingRecordedAtUtc = F.T0.ToUniversalTime(); row.Version = 2;
+        if (rejected) { row.Status = 3; row.Version = 3; row.DecidedBy = F.Approver; row.DecidedAtUtc = F.T0.ToUniversalTime(); }
+        var source = new LogisticsCustomerReturnWorkInboxSourceV1(f.Rows, f.Fence);
+        var snapshot = await source.ReadDecisionAsync(f.Context(), row.CustomerReturnId, default);
+        Assert.Equal(rejected ? "3" : "2", snapshot!.SourceVersion); Assert.Equal(!rejected, snapshot.Pending);
+        Assert.Equal("13.125", snapshot.LogisticsCustomerReturnProof!.Return.Weighing!.NetKg);
+        Assert.DoesNotContain("weighing", JsonSerializer.Serialize(snapshot), StringComparison.OrdinalIgnoreCase);
+        row.NetWeighingKg = 1;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => source.ReadDecisionAsync(f.Context(), row.CustomerReturnId, default));
+    }
+
     private static F Fixture()
     {
         var f = new F();

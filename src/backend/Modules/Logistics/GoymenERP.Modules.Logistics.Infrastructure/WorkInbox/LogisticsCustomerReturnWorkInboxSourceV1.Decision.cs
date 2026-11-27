@@ -38,6 +38,7 @@ internal sealed partial class LogisticsCustomerReturnWorkInboxSourceV1
 
     private static bool ValidReturn(CustomerReturnRow row)
     {
+        var weighing = LogisticsCustomerReturnStore.ReadWeighing(row);
         bool Ids() => row.CompanyId != Guid.Empty && row.CustomerReturnId != Guid.Empty && row.LoadingInstructionId != Guid.Empty
             && row.LoadingInstructionLineId != Guid.Empty && row.SourceDeliveryId != Guid.Empty && row.SourceShipmentId != Guid.Empty
             && row.SourceOrderId != Guid.Empty && row.SourceOrderLineId != Guid.Empty && row.UnitId != Guid.Empty;
@@ -49,9 +50,9 @@ internal sealed partial class LogisticsCustomerReturnWorkInboxSourceV1
             || string.IsNullOrWhiteSpace(row.RequestedBy) || row.RequestedBy != row.RequestedBy.Trim() || row.RequestedBy.Length > 128
             || row.OccurredAtUtc.Offset != TimeSpan.Zero || !Utc(row.RequestedAtUtc)) return false;
         if (row.Status == (int)CustomerReturnStatus.Pending)
-            return row.Version == 1 && row.DecidedBy is null && row.DecidedAtUtc is null && row.DecisionNote is null
+            return row.Version == (weighing is null ? 1 : 2) && row.DecidedBy is null && row.DecidedAtUtc is null && row.DecisionNote is null
                 && row.InventoryMovementId is null && row.OriginalLabelId is null && row.OriginalShipmentMovementId is null;
-        if (row.Version != 2 || string.IsNullOrWhiteSpace(row.DecidedBy) || row.DecidedBy.Length > 128
+        if (row.Version != (weighing is null ? 2 : 3) || string.IsNullOrWhiteSpace(row.DecidedBy) || row.DecidedBy.Length > 128
             || row.DecidedBy.Trim() != row.DecidedBy || row.DecidedBy == row.RequestedBy || row.DecidedAtUtc is not { } at || !Utc(at)
             || row.DecisionNote is not null && (string.IsNullOrWhiteSpace(row.DecisionNote) || row.DecisionNote.Trim() != row.DecisionNote)) return false;
         return row.Status switch
@@ -66,5 +67,8 @@ internal sealed partial class LogisticsCustomerReturnWorkInboxSourceV1
     private static WorkLogisticsCustomerReturnPreviewV1 Human(CustomerReturnRow row) => new(row.LoadingInstructionId,
         row.LoadingInstructionLineId, row.SourceDeliveryId, row.SourceShipmentId, row.SourceOrderId, row.SourceOrderLineId, row.UnitId,
         ((QuantityUnit)row.QuantityUnit).ToString(), row.Quantity.ToString(CultureInfo.InvariantCulture), row.SourceDeliveredQuantity.ToString(CultureInfo.InvariantCulture),
-        row.Reason, row.RequestedBy, row.OccurredAtUtc, row.RequestedAtUtc, ((CustomerReturnStatus)row.Status).ToString());
+        row.Reason, row.RequestedBy, row.OccurredAtUtc, row.RequestedAtUtc, ((CustomerReturnStatus)row.Status).ToString(), HumanWeighing(row));
+
+    private static WorkCustomerReturnWeighingV1? HumanWeighing(CustomerReturnRow row) => LogisticsCustomerReturnStore.ReadWeighing(row) is { } value
+        ? new(value.WeighingId, value.Direction, value.FirstWeighingKg, value.SecondWeighingKg, value.NetKg, value.RecordedBy, value.RecordedAtUtc) : null;
 }

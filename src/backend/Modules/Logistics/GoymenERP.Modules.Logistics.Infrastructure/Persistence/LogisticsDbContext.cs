@@ -410,13 +410,22 @@ public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbConte
                 + $"AND [SourceOrderLineId] <> {EmptyGuid} AND [UnitId] <> {EmptyGuid}");
             table.HasCheckConstraint("CK_CustomerReturns_Quantity",
                 "[QuantityUnit] IN (1, 2) AND [Quantity] > 0 AND [SourceDeliveredQuantity] > 0 AND [Quantity] <= [SourceDeliveredQuantity]");
-            table.HasCheckConstraint("CK_CustomerReturns_State", "([Status] = 1 AND [Version] = 1 AND [DecidedBy] IS NULL "
+            table.HasCheckConstraint("CK_CustomerReturns_State", "([Status] = 1 AND [Version] = CASE WHEN [WeighingId] IS NULL THEN 1 ELSE 2 END AND [DecidedBy] IS NULL "
                 + "AND [DecidedAtUtc] IS NULL AND [InventoryMovementId] IS NULL AND [OriginalLabelId] IS NULL AND [OriginalShipmentMovementId] IS NULL) "
-                + "OR ([Status] = 2 AND [Version] = 2 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL "
+                + "OR ([Status] = 2 AND [Version] = CASE WHEN [WeighingId] IS NULL THEN 2 ELSE 3 END AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL "
                 + "AND [InventoryMovementId] IS NOT NULL AND [OriginalLabelId] IS NOT NULL AND [OriginalShipmentMovementId] IS NOT NULL) "
-                + "OR ([Status] = 3 AND [Version] = 2 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL "
+                + "OR ([Status] = 3 AND [Version] = CASE WHEN [WeighingId] IS NULL THEN 2 ELSE 3 END AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL "
                 + "AND [InventoryMovementId] IS NULL AND [OriginalLabelId] IS NULL AND [OriginalShipmentMovementId] IS NULL)");
             table.HasCheckConstraint("CK_CustomerReturns_Actors", "LEN([Reason]) > 0 AND LEN([RequestedBy]) > 0");
+            table.HasCheckConstraint("CK_CustomerReturns_Weighing", $"([WeighingId] IS NULL AND [WeighingDirection] IS NULL "
+                + "AND [FirstWeighingKg] IS NULL AND [SecondWeighingKg] IS NULL AND [NetWeighingKg] IS NULL "
+                + "AND [WeighingRecordedBy] IS NULL AND [WeighingRecordedAtUtc] IS NULL) OR "
+                + $"([WeighingId] IS NOT NULL AND [WeighingId] <> {EmptyGuid} AND [QuantityUnit] = 2 "
+                + "AND [WeighingDirection] IS NOT NULL AND [FirstWeighingKg] IS NOT NULL AND [FirstWeighingKg] > 0 "
+                + "AND [SecondWeighingKg] IS NOT NULL AND [SecondWeighingKg] > 0 AND [NetWeighingKg] IS NOT NULL AND [NetWeighingKg] > 0 "
+                + "AND [WeighingRecordedBy] IS NOT NULL AND LEN([WeighingRecordedBy]) > 0 AND [WeighingRecordedAtUtc] IS NOT NULL "
+                + "AND (([WeighingDirection] = 1 AND [NetWeighingKg] = [SecondWeighingKg] - [FirstWeighingKg]) "
+                + "OR ([WeighingDirection] = 2 AND [NetWeighingKg] = [FirstWeighingKg] - [SecondWeighingKg])))");
         });
         item.HasKey(x => new { x.CompanyId, x.CustomerReturnId });
         item.Property(x => x.Version).IsConcurrencyToken();
@@ -426,6 +435,12 @@ public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbConte
         item.Property(x => x.Reason).IsRequired();
         item.Property(x => x.RequestedBy).HasMaxLength(128).IsRequired();
         item.Property(x => x.DecidedBy).HasMaxLength(128);
+        item.Property(x => x.WeighingRecordedBy).HasMaxLength(128);
+        item.Property(x => x.FirstWeighingKg).HasPrecision(18, 3);
+        item.Property(x => x.SecondWeighingKg).HasPrecision(18, 3);
+        item.Property(x => x.NetWeighingKg).HasPrecision(18, 3);
+        item.HasIndex(x => new { x.CompanyId, x.WeighingId }).IsUnique().HasFilter("[WeighingId] IS NOT NULL")
+            .HasDatabaseName("UX_CustomerReturns_WeighingId");
         item.HasIndex(x => new { x.CompanyId, x.SourceDeliveryId, x.Status, x.CustomerReturnId })
             .HasDatabaseName("IX_CustomerReturns_DeliveryStatus");
         item.HasIndex(x => new { x.CompanyId, x.SourceOrderId, x.SourceOrderLineId })

@@ -52,6 +52,18 @@ public static class LogisticsCustomerReturnEndpoints
                 LogisticsCustomerReturnCodesV1.QuantityExceeded, "same_key_payload_mismatch", "concurrent_change")
             .ProducesErpUnprocessableEntity("validation_failed").ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
 
+        group.MapPost("/customer-returns/{customerReturnId:guid}/weighings",
+            (Guid customerReturnId, HttpContext context, [FromServices] ILogisticsCustomerReturnServiceV1 service,
+                ICorrelationContext correlation, CancellationToken token) => CommandAsync<RecordCustomerReturnWeighingV1>(context, correlation,
+                (request, metadata) => service.RecordWeighingAsync(customerReturnId, request, metadata, token), 200, token))
+            .WithName("RecordLogisticsCustomerReturnWeighingV1").WithIdempotencyContract(200)
+            .Accepts<RecordCustomerReturnWeighingV1>("application/json").Produces<CustomerReturnResponseV1>(200)
+            .ProducesErpBadRequest("validation_failed", "command_metadata_invalid").AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType().ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(LogisticsCustomerReturnCodesV1.VersionConflict, LogisticsCustomerReturnCodesV1.NotPending,
+                "same_key_payload_mismatch", "concurrent_change")
+            .ProducesErpUnprocessableEntity("validation_failed").ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
+
         group.MapPost("/customer-returns/{customerReturnId:guid}/approve",
             (Guid customerReturnId, HttpContext context, [FromServices] ILogisticsCustomerReturnServiceV1 service,
                 ICorrelationContext correlation, CancellationToken token) => CommandAsync<ApproveCustomerReturnV1>(context, correlation,

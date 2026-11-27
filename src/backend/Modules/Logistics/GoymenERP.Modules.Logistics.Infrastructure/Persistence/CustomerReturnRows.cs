@@ -27,6 +27,13 @@ internal sealed class CustomerReturnRow : ILogisticsTenantRow
     public Guid? InventoryMovementId { get; set; }
     public Guid? OriginalLabelId { get; set; }
     public Guid? OriginalShipmentMovementId { get; set; }
+    public Guid? WeighingId { get; set; }
+    public int? WeighingDirection { get; set; }
+    public decimal? FirstWeighingKg { get; set; }
+    public decimal? SecondWeighingKg { get; set; }
+    public decimal? NetWeighingKg { get; set; }
+    public string? WeighingRecordedBy { get; set; }
+    public DateTimeOffset? WeighingRecordedAtUtc { get; set; }
 }
 
 internal sealed class CustomerReturnAttemptRow : ILogisticsTenantRow

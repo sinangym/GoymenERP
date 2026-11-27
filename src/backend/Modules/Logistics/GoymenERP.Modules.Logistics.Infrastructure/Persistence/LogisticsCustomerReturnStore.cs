@@ -17,7 +17,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 /// Company-filtered persistence for customer returns. Every write requires the caller's already-open
 /// Serializable transaction; this store never opens a weaker transaction or commits the borrowed one.
 /// </summary>
-public sealed class LogisticsCustomerReturnStore(
+public sealed partial class LogisticsCustomerReturnStore(
     LogisticsDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
@@ -167,7 +167,7 @@ public sealed class LogisticsCustomerReturnStore(
         RequireSerializable();
         if (command is not (LogisticsCustomerReturnCommandsV1.Approve or LogisticsCustomerReturnCommandsV1.Reject))
             throw new ArgumentException("Yalniz iade onayi veya reddi karar olarak kaydedilir.", nameof(command));
-        if (customerReturn.CompanyId != companyId || customerReturn.Version != 2
+        if (customerReturn.CompanyId != companyId || customerReturn.Version != (customerReturn.Weighing is null ? 2 : 3)
             || customerReturn.Status == CustomerReturnStatus.Pending || string.IsNullOrWhiteSpace(customerReturn.DecidedBy))
             throw Refused(LogisticsStoreCodes.ConcurrentChange, "Iade karari tamamlanmis bir ileri gecis degil.");
         var expectedStatus = command == LogisticsCustomerReturnCommandsV1.Approve
@@ -188,8 +188,8 @@ public sealed class LogisticsCustomerReturnStore(
         var row = await dbContext.CustomerReturns.SingleOrDefaultAsync(item => item.CustomerReturnId == customerReturn.Id,
             cancellationToken) ?? throw Refused(LogisticsStoreCodes.ConcurrentChange, "Bekleyen iade bulunamadi.");
         var before = Restore(row);
-        if (before.Status != CustomerReturnStatus.Pending || before.Version != 1
-            || !SameImmutable(before, customerReturn))
+        if (before.Status != CustomerReturnStatus.Pending || before.Version + 1 != customerReturn.Version
+            || before.Weighing != customerReturn.Weighing || !SameImmutable(before, customerReturn))
             throw Refused(LogisticsStoreCodes.ConcurrentChange, "Iade baska bir karar veya kaynak degisikligi tasiyor.");
         await ValidateSourceAsync(customerReturn, cancellationToken);
 
@@ -209,7 +209,7 @@ public sealed class LogisticsCustomerReturnStore(
         Audit(envelope, customerReturn,
             customerReturn.Status == CustomerReturnStatus.Approved
                 ? "logistics.customer-return.approved.v1" : "logistics.customer-return.rejected.v1",
-            customerReturn.Status == CustomerReturnStatus.Approved ? "Approve" : "Reject", 1, 2,
+            customerReturn.Status == CustomerReturnStatus.Approved ? "Approve" : "Reject", before.Version, customerReturn.Version,
             customerReturn.Status == CustomerReturnStatus.Approved
                 ? "Musteri iadesi Inventory telafi hareketiyle onaylandi" : "Musteri iadesi stok etkisi olmadan reddedildi");
         await SaveAsync(cancellationToken);
@@ -284,11 +284,12 @@ public sealed class LogisticsCustomerReturnStore(
             row.SourceOrderLineId, row.UnitId, Quantity.Positive(row.Quantity, unit),
             Quantity.Positive(row.SourceDeliveredQuantity, unit), row.Reason, row.RequestedBy,
             row.OccurredAtUtc, row.RequestedAtUtc);
+        RestoreWeighing(item, ReadWeighing(row));
         if (row.Status == (int)CustomerReturnStatus.Approved)
-            item.Approve(1, row.DecidedBy!, row.InventoryMovementId!.Value, row.OriginalLabelId!.Value,
+            item.Approve(item.Version, row.DecidedBy!, row.InventoryMovementId!.Value, row.OriginalLabelId!.Value,
                 row.OriginalShipmentMovementId!.Value, row.DecidedAtUtc!.Value, row.DecisionNote);
         else if (row.Status == (int)CustomerReturnStatus.Rejected)
-            item.Reject(1, row.DecidedBy!, row.DecidedAtUtc!.Value, row.DecisionNote);
+            item.Reject(item.Version, row.DecidedBy!, row.DecidedAtUtc!.Value, row.DecisionNote);
         if (item.Version != row.Version || (int)item.Status != row.Status)
             throw new InvalidOperationException("Kalici iade satiri domain gecisiyle yeniden kurulamadi.");
         return item;
@@ -360,21 +361,27 @@ public sealed class LogisticsCustomerReturnStore(
         var request = attempt.CommandName == LogisticsCustomerReturnCommandsV1.Request;
         var approve = attempt.CommandName == LogisticsCustomerReturnCommandsV1.Approve;
         var reject = attempt.CommandName == LogisticsCustomerReturnCommandsV1.Reject;
-        if (!request && !approve && !reject)
+        var weighing = attempt.CommandName == LogisticsCustomerReturnCommandsV1.RecordWeighing;
+        if (!request && !approve && !reject && !weighing)
             throw new InvalidOperationException("Iade denemesi bilinmeyen komut sonucu tasiyor.");
         if (request && (!string.Equals(snapshot.Status, nameof(CustomerReturnStatus.Pending), StringComparison.Ordinal)
             || snapshot.Version != "1" || !string.Equals(snapshot.RequestedBy, attempt.ActorId, StringComparison.Ordinal)
             || snapshot.DecidedBy is not null || snapshot.DecidedAtUtc is not null || snapshot.DecisionNote is not null
             || snapshot.InventoryMovementId is not null || snapshot.OriginalLabelId is not null
-            || snapshot.OriginalShipmentMovementId is not null))
+            || snapshot.OriginalShipmentMovementId is not null || snapshot.Weighing is not null))
             throw new InvalidOperationException("Iade istek denemesi ozgun Pending/v1 sonucunu tasimiyor.");
+        if (weighing && (snapshot.Status != nameof(CustomerReturnStatus.Pending) || snapshot.Version != "2"
+            || snapshot.Weighing is not { } weight || weight.RecordedBy != attempt.ActorId
+            || snapshot.DecidedBy is not null || snapshot.DecidedAtUtc is not null || snapshot.DecisionNote is not null
+            || snapshot.InventoryMovementId is not null || snapshot.OriginalLabelId is not null || snapshot.OriginalShipmentMovementId is not null))
+            throw new InvalidOperationException("İade tartım denemesi özgün ölçümlü Pending/v2 sonucunu taşımıyor.");
         if (approve && (!string.Equals(snapshot.Status, nameof(CustomerReturnStatus.Approved), StringComparison.Ordinal)
-            || snapshot.Version != "2" || !string.Equals(snapshot.DecidedBy, attempt.ActorId, StringComparison.Ordinal)
+            || snapshot.Version != (snapshot.Weighing is null ? "2" : "3") || !string.Equals(snapshot.DecidedBy, attempt.ActorId, StringComparison.Ordinal)
             || snapshot.DecidedAtUtc is null || snapshot.InventoryMovementId is null || snapshot.OriginalLabelId is null
             || snapshot.OriginalShipmentMovementId is null))
             throw new InvalidOperationException("Iade onay denemesi tam Approved/v2 sonucunu tasimiyor.");
         if (reject && (!string.Equals(snapshot.Status, nameof(CustomerReturnStatus.Rejected), StringComparison.Ordinal)
-            || snapshot.Version != "2" || !string.Equals(snapshot.DecidedBy, attempt.ActorId, StringComparison.Ordinal)
+            || snapshot.Version != (snapshot.Weighing is null ? "2" : "3") || !string.Equals(snapshot.DecidedBy, attempt.ActorId, StringComparison.Ordinal)
             || snapshot.DecidedAtUtc is null || snapshot.InventoryMovementId is not null || snapshot.OriginalLabelId is not null
             || snapshot.OriginalShipmentMovementId is not null))
             throw new InvalidOperationException("Iade ret denemesi tam Rejected/v2 sonucunu tasimiyor.");
@@ -387,7 +394,7 @@ public sealed class LogisticsCustomerReturnStore(
         item.SourceDeliveredQuantity.Value.ToString(CultureInfo.InvariantCulture), item.Status.ToString(),
         item.Version.ToString(CultureInfo.InvariantCulture), item.Reason, item.RequestedBy, item.OccurredAtUtc,
         item.RequestedAtUtc, item.DecidedBy, item.DecidedAtUtc, item.DecisionNote, item.InventoryMovementId,
-        item.OriginalLabelId, item.OriginalShipmentMovementId);
+        item.OriginalLabelId, item.OriginalShipmentMovementId, WeighingView(item.Weighing));
 
     private static CustomerReturn Restore(CustomerReturnResultSnapshot snapshot)
     {
@@ -402,11 +409,12 @@ public sealed class LogisticsCustomerReturnStore(
             snapshot.SourceOrderId, snapshot.SourceOrderLineId, snapshot.UnitId, Quantity.Positive(quantity, unit),
             Quantity.Positive(delivered, unit), snapshot.Reason, snapshot.RequestedBy, snapshot.OccurredAtUtc,
             snapshot.RequestedAtUtc);
+        RestoreWeighing(item, snapshot.Weighing);
         if (status == CustomerReturnStatus.Approved)
-            item.Approve(1, snapshot.DecidedBy!, snapshot.InventoryMovementId!.Value, snapshot.OriginalLabelId!.Value,
+            item.Approve(item.Version, snapshot.DecidedBy!, snapshot.InventoryMovementId!.Value, snapshot.OriginalLabelId!.Value,
                 snapshot.OriginalShipmentMovementId!.Value, snapshot.DecidedAtUtc!.Value, snapshot.DecisionNote);
         else if (status == CustomerReturnStatus.Rejected)
-            item.Reject(1, snapshot.DecidedBy!, snapshot.DecidedAtUtc!.Value, snapshot.DecisionNote);
+            item.Reject(item.Version, snapshot.DecidedBy!, snapshot.DecidedAtUtc!.Value, snapshot.DecisionNote);
         if (item.Status != status || item.Version != version)
             throw new InvalidOperationException("Iade denemesinin durum veya surumu domain sonucu degil.");
         return item;
@@ -436,14 +444,16 @@ public sealed class LogisticsCustomerReturnStore(
         string? DecisionNote,
         Guid? InventoryMovementId,
         Guid? OriginalLabelId,
-        Guid? OriginalShipmentMovementId);
+        Guid? OriginalShipmentMovementId,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] CustomerReturnWeighingViewV1? Weighing = null);
 
     private void Audit(LogisticsWriteEnvelope envelope, CustomerReturn item, string eventType, string operation,
         long? beforeVersion, long afterVersion, string reason) => auditEvents.Enqueue(new AuditEventDraft(
         item.CompanyId, eventType, EntityType, item.Id.ToString("D"), operation, beforeVersion, afterVersion,
         AuditActorTypes.User, envelope.ActorId, envelope.PermissionCode, envelope.RoleCodes,
         beforeVersion is null ? "{}" : JsonSerializer.Serialize(new { status = CustomerReturnStatus.Pending, version = beforeVersion }),
-        JsonSerializer.Serialize(new { status = item.Status, version = afterVersion, item.SourceDeliveryId, item.Quantity.Value }),
+        item.Weighing is null ? JsonSerializer.Serialize(new { status = item.Status, version = afterVersion, item.SourceDeliveryId, item.Quantity.Value })
+            : JsonSerializer.Serialize(new { status = item.Status, version = afterVersion, item.SourceDeliveryId, item.Quantity.Value, weighing = WeighingView(item.Weighing) }),
         reason, ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null, envelope.SourceChannel,
         envelope.ClientIpAddress, envelope.UserAgent, envelope.CorrelationId, envelope.CausationId, envelope.IdempotencyKey));
 
@@ -461,7 +471,7 @@ public sealed class LogisticsCustomerReturnStore(
     private static void RequireCommand(string command)
     {
         if (command is not (LogisticsCustomerReturnCommandsV1.Request or LogisticsCustomerReturnCommandsV1.Approve
-            or LogisticsCustomerReturnCommandsV1.Reject)) throw new ArgumentException("Bilinmeyen iade komutu.", nameof(command));
+            or LogisticsCustomerReturnCommandsV1.Reject or LogisticsCustomerReturnCommandsV1.RecordWeighing)) throw new ArgumentException("Bilinmeyen iade komutu.", nameof(command));
     }
 
     private static void RequireEnvelope(LogisticsWriteEnvelope envelope)

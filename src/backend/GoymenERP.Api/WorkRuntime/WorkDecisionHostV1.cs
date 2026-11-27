@@ -288,7 +288,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             kind == InventoryStockScrap ? snapshot.InventoryStockScrapProof!.Scrap : null,
             kind == LogisticsDispatchNote ? snapshot.LogisticsDispatchNoteProof!.Note : null,
             kind == LogisticsCustomerReturn ? snapshot.LogisticsCustomerReturnProof!.Return : null,
-            kind == LogisticsCustomerReturn ? snapshot.LogisticsCustomerReturnProof!.Return.QuantityUnit == "Kilogram" : null);
+            kind == LogisticsCustomerReturn ? snapshot.LogisticsCustomerReturnProof!.Return.QuantityUnit == "Kilogram" || snapshot.LogisticsCustomerReturnProof.Return.Weighing is not null : null);
     }
 
     public async Task<WorkDecisionResultV1> DecideAsync(string kind, Guid id, WorkDecisionRequestV1 request, string key, CancellationToken token)

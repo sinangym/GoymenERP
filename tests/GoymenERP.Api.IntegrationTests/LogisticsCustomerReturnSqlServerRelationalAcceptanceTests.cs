@@ -249,7 +249,7 @@ public sealed partial class LogisticsCustomerReturnSqlServerRelationalAcceptance
         public LogisticsWriteEnvelope Envelope(string key, string actor, string correlation = "return-sql") =>
             new(actor, "SENTETIK-return", ["SENTETIK"], correlation, null, key, "Test");
 
-        public async Task<Source> CreateDeliveredSourceAsync(decimal quantity)
+        public async Task<Source> CreateDeliveredSourceAsync(decimal quantity, bool piece = false)
         {
             var company = new CompanyContext(); company.Set(Company);
             await using var context = new LogisticsDbContext(Options(company), company);
@@ -261,22 +261,23 @@ public sealed partial class LogisticsCustomerReturnSqlServerRelationalAcceptance
                 {
                     var instruction = LoadingInstruction.Create(Guid.NewGuid(), Company, Guid.NewGuid(), Guid.NewGuid(), T0);
                     instruction.AddLine(1, lineId, new SourceOrderLineRef(order, orderLine, 0), Guid.NewGuid(), unit,
-                        Guid.NewGuid(), Quantity.Positive(quantity, QuantityUnit.Kilogram), T0);
+                        Guid.NewGuid(), Quantity.Positive(quantity, piece ? QuantityUnit.Piece : QuantityUnit.Kilogram), T0);
                     return instruction;
                 });
             var id = created.Instruction.Instruction.Id;
             await store.MutateInstructionAsync(Envelope("source-issue", "seed"), Hash("source-issue"), LogisticsCommands.IssueV1,
                 id, (item, now) => item.Issue(2, now), new("seed.issue", "Issue", "seed"));
             await store.MutateInstructionAsync(Envelope("source-load", "seed"), Hash("source-load"), LogisticsCommands.RecordLoadV1,
-                id, (item, now) => item.RecordLoad(3, Guid.NewGuid(), lineId, Quantity.Positive(quantity, QuantityUnit.Kilogram),
-                    MeasurementKind.Measured, now), new("seed.load", "Load", "seed"));
+                id, (item, now) => item.RecordLoad(3, Guid.NewGuid(), lineId, Quantity.Positive(quantity, piece ? QuantityUnit.Piece : QuantityUnit.Kilogram),
+                    MeasurementKind.Measured, now, piece ? Quantity.Positive(40, QuantityUnit.Kilogram) : null), new("seed.load", "Load", "seed"));
             var shipment = Guid.NewGuid();
             await store.MutateInstructionAsync(Envelope("source-ship", "seed"), Hash("source-ship"), LogisticsCommands.RecordShipmentV1,
-                id, (item, now) => item.MarkShipped(4, shipment, lineId, Quantity.Positive(quantity, QuantityUnit.Kilogram), now),
+                id, (item, now) => item.MarkShipped(4, shipment, lineId, Quantity.Positive(quantity, piece ? QuantityUnit.Piece : QuantityUnit.Kilogram), now,
+                    piece ? Quantity.Positive(40, QuantityUnit.Kilogram) : null),
                 new("seed.ship", "Ship", "seed"));
             var delivery = Guid.NewGuid();
             await store.MutateInstructionAsync(Envelope("source-deliver", "seed"), Hash("source-deliver"), LogisticsCommands.RecordDeliveryV1,
-                id, (item, now) => item.MarkDelivered(5, delivery, lineId, shipment, Quantity.Positive(quantity, QuantityUnit.Kilogram), now),
+                id, (item, now) => item.MarkDelivered(5, delivery, lineId, shipment, Quantity.Positive(quantity, piece ? QuantityUnit.Piece : QuantityUnit.Kilogram), now),
                 new("seed.deliver", "Deliver", "seed"));
             return new(id, lineId, delivery, shipment, order, orderLine, unit, quantity);
         }

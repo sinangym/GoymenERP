@@ -8,6 +8,7 @@ public static class LogisticsCustomerReturnCommandsV1
     public const string Request = "logistics.customer-return.request.v1";
     public const string Approve = "logistics.customer-return.approve.v1";
     public const string Reject = "logistics.customer-return.reject.v1";
+    public const string RecordWeighing = "logistics.customer-return.record-weighing.v1";
 }
 
 public static class LogisticsCustomerReturnCodesV1
@@ -39,6 +40,12 @@ public sealed record ApproveCustomerReturnV1(string ExpectedVersion, Guid Invent
 
 public sealed record RejectCustomerReturnV1(string ExpectedVersion, string? Note = null);
 
+public sealed record RecordCustomerReturnWeighingV1(string ExpectedVersion, Guid WeighingId, string Direction,
+    string FirstWeighingKg, string SecondWeighingKg);
+
+public sealed record CustomerReturnWeighingViewV1(Guid WeighingId, string Direction, string FirstWeighingKg,
+    string SecondWeighingKg, string NetKg, string RecordedBy, DateTimeOffset RecordedAtUtc);
+
 public sealed record CustomerReturnViewV1(
     Guid CustomerReturnId,
     Guid CompanyId,
@@ -62,13 +69,17 @@ public sealed record CustomerReturnViewV1(
     string? DecisionNote,
     Guid? InventoryMovementId,
     Guid? OriginalLabelId,
-    Guid? OriginalShipmentMovementId);
+    Guid? OriginalShipmentMovementId,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] CustomerReturnWeighingViewV1? Weighing = null);
 
 public sealed record CustomerReturnResponseV1(CustomerReturnViewV1 Return, bool IsReplay, string OriginalCorrelationId,
     [property: System.Text.Json.Serialization.JsonIgnore] bool CommandReceiptProven = false);
 
 public interface ILogisticsCustomerReturnServiceV1
 {
+    Task<CustomerReturnResponseV1> RecordWeighingAsync(Guid customerReturnId, RecordCustomerReturnWeighingV1 request,
+        LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        throw new LogisticsCustomerReturnServiceException(503, LogisticsCustomerReturnCodesV1.InventoryUnavailable);
     Task<CustomerReturnResponseV1> RequestAsync(Guid instructionId, Guid lineId, RequestCustomerReturnV1 request,
         LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default);
 
@@ -134,6 +145,9 @@ public sealed record CustomerReturnReplayStoreResultV1(
 
 public interface ILogisticsCustomerReturnStoreV1
 {
+    Task<CustomerReturnStoreResultV1> StoreWeighingAsync(LogisticsWriteEnvelope envelope, string requestHash,
+        CustomerReturn customerReturn, CancellationToken cancellationToken = default) =>
+        throw new InvalidOperationException("Customer return weighing owner is unavailable.");
     Task<CustomerReturnReplayV1?> FindReplayAsync(LogisticsWriteEnvelope envelope, string requestHash, string command,
         CancellationToken cancellationToken = default);
     Task<CustomerReturnReplayStoreResultV1> RecordRefusalAsync(LogisticsWriteEnvelope envelope, string requestHash,
@@ -165,7 +179,8 @@ public sealed record LogisticsCustomerReturnStockRequestV1(
     Guid UnitId,
     decimal Quantity,
     Guid InventoryMovementId,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    decimal? QuantityKg = null, int? PieceCount = null);
 
 public sealed record LogisticsCustomerReturnStockResultV1(
     Guid CompanyId,
@@ -176,7 +191,7 @@ public sealed record LogisticsCustomerReturnStockResultV1(
     Guid OriginalLabelId,
     decimal Quantity,
     bool IsReplay,
-    string OriginalCorrelationId);
+    string OriginalCorrelationId, int? PieceCount = null);
 
 public interface ILogisticsCustomerReturnStockV1
 {

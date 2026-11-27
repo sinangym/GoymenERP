@@ -106,6 +106,22 @@ public sealed class WorkLogisticsCustomerReturnDecisionHostTests
         Assert.Equal(1, r.Calls);
     }
 
+    [Theory]
+    [InlineData(false, false)] [InlineData(true, false)] [InlineData(false, true)] [InlineData(true, true)]
+    public async Task Measured_piece_preview_and_native_decision_preserve_actual_weighing_and_the_original_version_increment(bool approve, bool replay)
+    {
+        var r = new Rig { Replay = replay };
+        var weighing = new WorkCustomerReturnWeighingV1(Guid.NewGuid(), "GrossFirst", "1013.125", "1000", "13.125", "operator", At);
+        r.Source.Facts = r.Source.Facts with { QuantityUnit = "Piece", Quantity = "1", SourceDeliveredQuantity = "2",
+            Weighing = weighing, Status = replay ? approve ? "Approved" : "Rejected" : "Pending" };
+        var preview = await r.Host.PreviewAsync(r.Source.Kind, Return, default);
+        Assert.True(preview.ApprovalSupported); Assert.Equal(replay ? "3" : "2", preview.SourceVersion);
+        Assert.Equal(weighing, preview.LogisticsCustomerReturn!.Weighing);
+        var result = await r.Host.DecideAsync(r.Source.Kind, Return, Request(approve) with { ExpectedVersion = "2" }, "weighed-original-key", default);
+        Assert.Equal((approve ? "Approved" : "Rejected", replay), (result.State, result.Replayed));
+        Assert.Equal("2", approve ? r.Approval!.ExpectedVersion : r.Rejection!.ExpectedVersion);
+    }
+
     private static WorkDecisionRequestV1 Request(bool approve, string? note = null) => new("1", approve, note,
         LogisticsCustomerReturn: approve ? new(Movement) : null);
     private sealed class Rig
@@ -131,13 +147,14 @@ public sealed class WorkLogisticsCustomerReturnDecisionHostTests
             BeforeFence?.Invoke();
             if (!(await authority.RevalidatePermissionScopeAsync(LogisticsPermissionManifestV1.CustomerReturnsDecision, Company)).IsGranted)
                 throw new LogisticsCustomerReturnServiceException(403, "forbidden");
-            if (approve && !Replay && Source.Facts.QuantityUnit == "Piece") throw new LogisticsCustomerReturnServiceException(503, LogisticsCustomerReturnCodesV1.InventoryUnavailable);
+            if (approve && !Replay && Source.Facts.QuantityUnit == "Piece" && Source.Facts.Weighing is null) throw new LogisticsCustomerReturnServiceException(503, LogisticsCustomerReturnCodesV1.InventoryUnavailable);
             var p = Source.Facts; var reason = approve ? Approval!.Note : Rejection!.Note;
             var note = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
             var result = new CustomerReturnViewV1(Return, Company, p.LoadingInstructionId, p.LoadingInstructionLineId, p.SourceDeliveryId,
                 p.SourceShipmentId, p.SourceOrderId, p.SourceOrderLineId, p.UnitId, p.Quantity, p.SourceDeliveredQuantity,
-                approve ? "Approved" : "Rejected", "2", p.Reason, p.RequestedBy, p.OccurredAtUtc, p.RequestedAtUtc, Actor, At.AddMinutes(1), note,
-                approve ? Movement : null, approve ? Guid.NewGuid() : null, approve ? Guid.NewGuid() : null);
+                approve ? "Approved" : "Rejected", p.Weighing is null ? "2" : "3", p.Reason, p.RequestedBy, p.OccurredAtUtc, p.RequestedAtUtc, Actor, At.AddMinutes(1), note,
+                approve ? Movement : null, approve ? Guid.NewGuid() : null, approve ? Guid.NewGuid() : null,
+                p.Weighing is { } w ? new(w.WeighingId, w.Direction, w.FirstWeighingKg, w.SecondWeighingKg, w.NetKg, w.RecordedBy, w.RecordedAtUtc) : null);
             result = Fault switch
             {
                 "id" => result with { CustomerReturnId = Guid.NewGuid() }, "company" => result with { CompanyId = Guid.NewGuid() },
@@ -158,7 +175,7 @@ public sealed class WorkLogisticsCustomerReturnDecisionHostTests
                 "/lojistik/yukleme-talimatlari/" + Facts.LoadingInstructionId, Maker,
                 [new("logistics.customer-return-request", Facts.QuantityUnit == "Piece" ? "2" : "10", Facts.QuantityUnit == "Piece" ? "1" : "1.25", null, Facts.QuantityUnit == "Piece" ? "adet" : "kg")],
                 [new("loading-instruction", "SENTETIK", Facts.LoadingInstructionId, "/lojistik/yukleme-talimatlari/" + Facts.LoadingInstructionId)]),
-                Facts.Status == "Pending" ? "1" : "2", Facts.Status == "Pending", LogisticsCustomerReturnProof: IncludeProof ? new(CompanyId, Return, Facts) : null));
+                Facts.Status == "Pending" ? Facts.Weighing is null ? "1" : "2" : Facts.Weighing is null ? "2" : "3", Facts.Status == "Pending", LogisticsCustomerReturnProof: IncludeProof ? new(CompanyId, Return, Facts) : null));
         public Task<WorkInboxSourceResultV1> ListPendingAsync(WorkInboxSourceContextV1 context, int maxCount, CancellationToken token) => throw new NotSupportedException();
     }
     private sealed class Delegations : IWorkDelegationReaderV1

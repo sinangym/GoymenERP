@@ -33,7 +33,7 @@ public sealed class CustomerReturnVersionConflictException(long expectedVersion,
 /// shipment, delivery, dispatch note or invoice. Approval only records the identity of the separate
 /// Inventory compensating movement produced by the owner participant.
 /// </summary>
-public sealed class CustomerReturn
+public sealed partial class CustomerReturn
 {
     private CustomerReturn(Guid id, Guid companyId, Guid loadingInstructionId, Guid loadingInstructionLineId,
         Guid sourceDeliveryId, Guid sourceShipmentId, Guid sourceOrderId, Guid sourceOrderLineId, Guid unitId,

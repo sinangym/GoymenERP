@@ -209,14 +209,14 @@ internal sealed class LogisticsCustomerReturnTransactionRunner(LogisticsDbContex
                 var result = await participant.StageAsync(new InventoryCustomerReturnRequestV1(
                     request.CompanyId, request.CustomerReturnId, request.SourceShipmentId,
                     request.LoadingInstructionLineId, request.InventoryMovementId,
-                    request.Quantity.ToString(System.Globalization.CultureInfo.InvariantCulture), request.OccurredAtUtc),
+                    (request.QuantityKg ?? request.Quantity).ToString(System.Globalization.CultureInfo.InvariantCulture), request.OccurredAtUtc, request.PieceCount),
                     new InventoryCommandMetadata(envelope.ActorId, ErpPermissions.InventoryPhysicalAllocationWrite,
                         roleCodes, envelope.CorrelationId, envelope.CausationId, envelope.IdempotencyKey,
                         envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent), cancellationToken);
                 return new(result.CompanyId, result.CustomerReturnId, result.SourceShipmentId,
                     result.InventoryMovementId, result.OriginalShipmentMovementId, result.OriginalLabelId,
                     decimal.Parse(result.QuantityKg, System.Globalization.CultureInfo.InvariantCulture),
-                    result.IsReplay, result.OriginalCorrelationId);
+                    result.IsReplay, result.OriginalCorrelationId, result.PieceCount);
             }
             catch (InventoryCustomerReturnException exception)
             {

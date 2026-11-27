@@ -36,7 +36,10 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
 public sealed record WorkLogisticsCustomerReturnPreviewV1(Guid LoadingInstructionId, Guid LoadingInstructionLineId,
     Guid SourceDeliveryId, Guid SourceShipmentId, Guid SourceOrderId, Guid SourceOrderLineId, Guid UnitId,
     string QuantityUnit, string Quantity, string SourceDeliveredQuantity, string Reason, string RequestedBy,
-    DateTimeOffset OccurredAtUtc, DateTimeOffset RequestedAtUtc, string Status);
+    DateTimeOffset OccurredAtUtc, DateTimeOffset RequestedAtUtc, string Status,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkCustomerReturnWeighingV1? Weighing = null);
+public sealed record WorkCustomerReturnWeighingV1(Guid WeighingId, string Direction, string FirstWeighingKg,
+    string SecondWeighingKg, string NetKg, string RecordedBy, DateTimeOffset RecordedAtUtc);
 /// <summary>Owner-bound identity, distinct from the immutable native command receipt.</summary>
 public sealed record WorkLogisticsCustomerReturnProofV1(Guid CompanyId, Guid CustomerReturnId, WorkLogisticsCustomerReturnPreviewV1 Return);
 
