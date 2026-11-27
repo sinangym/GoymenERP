@@ -94,9 +94,16 @@ internal sealed class GuardedManualBankPaymentService(ManualBankPaymentService c
             }
             catch (Exception error)
             {
+                var deadlock = IsApprovalDeadlock(error);
                 if (transaction is not null)
                 {
-                    try { await transaction.RollbackAsync(CancellationToken.None); }
+                    try
+                    {
+                        // A real 1205 victim can already be rolled back by SQL Server. Skip only this completed
+                        // SqlClient transaction; other rollback faults remain failures, and cleanup is mandatory.
+                        if (!committed && !(deadlock && transaction.GetDbTransaction() is SqlTransaction { Connection: null }))
+                            await transaction.RollbackAsync(CancellationToken.None);
+                    }
                     finally
                     {
                         try { disposed = true; await transaction.DisposeAsync(); }
@@ -110,7 +117,7 @@ internal sealed class GuardedManualBankPaymentService(ManualBankPaymentService c
                 if (error is ManualBankPaymentService.OwnedApprovalRefusal refused) return refused.Result;
                 // A Serializable deadlock can occur in owner reads/Audit before Save, or after Save before Commit.
                 // Cleanup must finish first; the only recovery is one immutable original-key read.
-                if (!replayOnly && !committed && IsApprovalDeadlock(error)) throw new ApprovalSaveRace();
+                if (!replayOnly && !committed && deadlock) throw new ApprovalSaveRace();
                 if (error is DbUpdateException update && (update is DbUpdateConcurrencyException
                     || update.InnerException is SqlException { Number: 2601 or 2627 }))
                 {

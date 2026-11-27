@@ -61,10 +61,18 @@ public sealed partial class FinancePartyCreditLimitService
             }
             catch (Exception failure)
             {
+                var deadlock = IsDecisionDeadlock(failure);
                 var faults = new List<Exception>();
                 if (transaction is not null)
                 {
-                    if (!committed) try { await transaction.RollbackAsync(CancellationToken.None); } catch (Exception error) { faults.Add(error); }
+                    if (!committed) try
+                    {
+                        // SQL Server already rolls back a 1205 victim. SqlClient exposes a completed transaction with
+                        // Connection=null; a second Rollback would itself fail. Disposal/owner cleanup still follow.
+                        if (!(deadlock && transaction.GetDbTransaction() is SqlTransaction { Connection: null }))
+                            await transaction.RollbackAsync(CancellationToken.None);
+                    }
+                    catch (Exception error) { faults.Add(error); }
                     try { await transaction.DisposeAsync(); } catch (Exception error) { faults.Add(error); }
                 }
                 try { dbContext.ChangeTracker.Clear(); } catch (Exception error) { faults.Add(error); }
@@ -74,7 +82,7 @@ public sealed partial class FinancePartyCreditLimitService
                 if (failure is DecisionRefusal refusal) return refusal.Result;
                 // Serializable 1205 can precede Save (including Audit) or follow Save before Commit.
                 // Only a successful owned abort above may enter one original-key read; never repeat mutation.
-                if (!replayOnly && !committed && (IsDecisionDeadlock(failure)
+                if (!replayOnly && !committed && (deadlock
                     || state.SaveAttempted && !state.Saved && failure is DbUpdateException update
                         && (update is DbUpdateConcurrencyException || update.InnerException is SqlException { Number: 2601 or 2627 })))
                     throw new DecisionSaveRace();

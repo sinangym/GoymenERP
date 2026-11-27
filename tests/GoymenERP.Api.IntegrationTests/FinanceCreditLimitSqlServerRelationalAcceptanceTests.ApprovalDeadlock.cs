@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore.Storage;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -14,7 +15,7 @@ public sealed partial class FinanceCreditLimitSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         foreach (var approve in new[] { true, false })
-        foreach (var phase in new[] { "direct-save", "wrapped-save", "audit-before-save", "post-save" })
+        foreach (var phase in new[] { "direct-save", "wrapped-save", "audit-before-save", "completed-provider", "post-save" })
         foreach (var publish in new[] { false, true })
         {
             var id = await LimitSafetyPrepare(run); var key = "limit-deadlock-" + id;
@@ -30,9 +31,16 @@ public sealed partial class FinanceCreditLimitSqlServerRelationalAcceptanceTests
                 if (scope.Database.ChangeTracker.Entries<PartyCreditLimitRow>().Any(row => row.Entity.Id == id && row.State == EntityState.Modified))
                     staged.Add(tx.TransactionId);
                 if (!injected && boundaries.Count == 1 && (phase == "post-save" && probe.Saved
-                    || phase == "audit-before-save" && staged.Count == 1 && !scope.Writer.HasPendingDrafts && probe.Attempts == 0))
+                    || (phase is "audit-before-save" or "completed-provider") && staged.Count == 1 && !scope.Writer.HasPendingDrafts && probe.Attempts == 0))
                 {
                     injected = true;
+                    if (phase == "completed-provider")
+                    {
+                        // Complete the actual provider transaction, leaving its EF owner handle for cleanup.
+                        // The following 1205 is controlled; this is not a simultaneous deadlock reproduction.
+                        var provider = Assert.IsType<Microsoft.Data.SqlClient.SqlTransaction>(tx.GetDbTransaction());
+                        await provider.RollbackAsync(); Assert.Null(provider.Connection);
+                    }
                     throw SqlConcurrencyWrapperPolicyTests.SqlFailure(1205);
                 }
                 if (boundaries.Count != 2 || winner is not null || !publish) return;
@@ -43,7 +51,7 @@ public sealed partial class FinanceCreditLimitSqlServerRelationalAcceptanceTests
             };
             var result = await scope.Decide(id, approve, key);
             Assert.True(injected || fault.Fired); Assert.Equal(2, boundaries.Count); Assert.Single(staged);
-            Assert.Equal(phase == "audit-before-save" ? 0 : 1, probe.Attempts);
+            Assert.Equal((phase is "audit-before-save" or "completed-provider") ? 0 : 1, probe.Attempts);
             scope.AssertClean();
             if (publish)
             {
