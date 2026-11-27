@@ -66,7 +66,7 @@ public sealed class PurchaseUnorderedAcceptanceStoreV1(PurchasingDbContext db, I
                 audit.Enqueue(new AuditEventDraft(companyId, "purchasing.unordered-acceptance.recorded.v1",
                     "Purchasing.UnorderedAcceptance", $"{request.AcceptanceId:D}:{request.AcceptanceLineId:D}", "RecordOccurrence", 0, 1,
                     AuditActorTypes.User, envelope.ActorId, envelope.PermissionCode, envelope.RoleCodes, "{}", json,
-                    null, null, AuditAiInvolvement.None, null, envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent,
+                    "Siparişsiz alış kabul olgusu kaydedildi", null, AuditAiInvolvement.None, null, envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent,
                     envelope.CorrelationId, envelope.CausationId, envelope.IdempotencyKey));
                 await auditWriter.WritePendingAsync(transaction.GetDbTransaction(), token); await Fence();
                 if (auditWriter.HasPendingDrafts) throw Failure(503);

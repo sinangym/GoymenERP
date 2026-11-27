@@ -83,7 +83,7 @@ public sealed record WorkDecisionPreviewV1(Guid CompanyId, string Kind, Guid Ite
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] OpeningBalanceDecisionDetailV1? OpeningBalance = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] FinanceCreditMovementDecisionDetailV1? CreditMovement = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CashExchangeBookValueDecisionDetailV1? CashExchangeBookValue = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NormalJournalDraftDecisionDetailV1? NormalJournalDraft = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkNormalJournalDraftPreviewV1? NormalJournalDraft = null);
 public sealed record WorkDecisionResultV1(Guid CompanyId, string Kind, Guid ItemId, string State, bool Replayed, string OriginalCorrelationId);
 public sealed class WorkDecisionException(int status, string? code = null, bool replayed = false, string? original = null) : Exception(code)
 {
