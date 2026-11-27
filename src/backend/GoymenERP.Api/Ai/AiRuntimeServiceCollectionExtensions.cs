@@ -56,6 +56,12 @@ public static class AiRuntimeServiceCollectionExtensions
         services.AddSingleton<IAiAnswerComposerV1>(_ => new FakeAiAnswerComposer(AiModelPlacementV1.OnPremises));
         services.AddScoped<IAiGatewayV1, AiGateway>();
         services.AddScoped<AiAskService>();
+        services.AddScoped<IAiOwnerToolV1>(provider => new Tools.SalesLineMarginExplanationAiToolV1(
+            provider.GetService<GoymenERP.Modules.Sales.Application.Contracts.ISalesDraftService>(),
+            provider.GetService<GoymenERP.BuildingBlocks.Multitenancy.ICompanyContext>(),
+            provider.GetService<GoymenERP.BuildingBlocks.Security.ICurrentUser>(),
+            provider.GetService<GoymenERP.BuildingBlocks.Security.IErpAuthorityRevalidationService>(),
+            provider.GetRequiredService<TimeProvider>()));
 
         // WP-B3 document drafts: off (Ai:DocumentDrafts:Enabled=false and Ai:Enabled=false). OCR and the local model are
         // closed ports (no engine, OPEN-014); counterparty matching waits for an owner tax-identity port; the product
