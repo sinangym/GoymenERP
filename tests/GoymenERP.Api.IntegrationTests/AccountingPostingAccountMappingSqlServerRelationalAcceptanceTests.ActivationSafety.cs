@@ -36,7 +36,7 @@ public sealed partial class AccountingPostingAccountMappingSqlServerRelationalAc
                 if (scope.Writer.HasPendingDrafts) pendingSeen = true;
                 if (save.Saved) savedFences++;
                 var reached = fault == "after-audit" ? pendingSeen && !scope.Writer.HasPendingDrafts && !save.Saved
-                    : fault == "precommit" ? savedFences == 5 : fault == "postcommit" ? commits.Commits > 0 : save.Saved;
+                    : fault == "precommit" ? savedFences == 11 : fault == "postcommit" ? commits.Commits > 0 : save.Saved;
                 if (!deny || !reached) return true;
                 observed = true;
                 if (fault == "company") { scope.Company.Set(CompanyB); return true; }
@@ -48,7 +48,7 @@ public sealed partial class AccountingPostingAccountMappingSqlServerRelationalAc
             if (fault == "cancel") await Assert.ThrowsAnyAsync<OperationCanceledException>(() => scope.Activate(1, "owned-mapping", cancellation.Token));
             else { var refused = await scope.Activate(1, "owned-mapping"); Assert.Equal(AccountingApiStatus.Denied, refused.Status); Assert.Null(refused.Resource); }
             Assert.True(observed);
-            if (fault == "precommit") Assert.Equal(5, savedFences); // Save1; mapping postSave2; lifecycle release3; owner4; precommit5.
+            if (fault == "precommit") Assert.Equal(11, savedFences); // Save1/store2/lifecycle3/receipt-entry4/command5/source-entry6/row7/rows8/receipt-release9/owner10/precommit11.
             scope.AssertClean();
             Assert.Equal(fault == "postcommit" ? new Counts(1, 3, before.Commands + 1, before.Audits + 1) : before, await run.CountsAsync());
             Assert.Equal(fault == "postcommit" ? 2L : 1L, (await run.VersionAsync(1)).Version);
