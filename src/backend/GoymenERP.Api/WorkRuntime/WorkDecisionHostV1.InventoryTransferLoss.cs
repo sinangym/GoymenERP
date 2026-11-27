@@ -20,6 +20,20 @@ public sealed partial class WorkDecisionHostV1
             && proof.Requests.Take(proof.Requests.Count - 1).All(row => row.Status is "Rejected" or "Withdrawn");
     }
 
+    // Only route a retained, other-maker terminal request to the native key lookup. This is not
+    // approval permission or a replay claim: the owner must still prove the exact immutable receipt.
+    private static bool MayReachHistoricalLossReceipt(WorkApprovalDecisionSnapshotV1 snapshot, int? selectedNumber, string actor)
+    {
+        if (!ValidInventoryTransferLossProof(snapshot) || selectedNumber is not > 0
+            || snapshot.InventoryTransferLoss is not { } current || selectedNumber >= current.RequestNumber
+            || !WorkInboxRulesV1.SameUser(snapshot.Item.PreparedBy, actor)
+            || snapshot.Item.ExcludedDeciders?.Any(candidate => WorkInboxRulesV1.SameUser(candidate, actor)) == true)
+            return false;
+        var selected = snapshot.InventoryTransferLossProof!.Requests.SingleOrDefault(row => row.RequestNumber == selectedNumber);
+        return selected is { Status: "Approved" or "Rejected" }
+            && !string.IsNullOrWhiteSpace(selected.PreparedBy) && !WorkInboxRulesV1.SameUser(selected.PreparedBy, actor);
+    }
+
     private async Task<WorkDecisionResultV1> DecideInventoryTransferLossAsync(Guid id, WorkDecisionRequestV1 request,
         string key, WorkApprovalDecisionSnapshotV1 snapshot, string? actor, CancellationToken token)
     {

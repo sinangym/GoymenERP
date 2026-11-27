@@ -122,7 +122,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         }
     }
 
-    private async Task<WorkApprovalDecisionSnapshotV1> SnapshotAsync(string kind, Guid id, CancellationToken token)
+    private async Task<WorkApprovalDecisionSnapshotV1> SnapshotAsync(string kind, Guid id, CancellationToken token, int? selectedLossRequestNumber = null)
     {
         if (!user.IsAuthenticated || string.IsNullOrWhiteSpace(user.UserId)) throw new WorkDecisionException(401);
         if (!company.IsResolved || company.CompanyId == Guid.Empty || !user.CanAccessCompany(company.CompanyId)) throw new WorkDecisionException(403);
@@ -164,7 +164,9 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
                 || options.ParentRollIds is not { Count: > 0 } || options.ParentRollIds.Contains(Guid.Empty)
                 || options.ParentRollIds.Distinct().Count() != options.ParentRollIds.Count))
             throw new WorkDecisionException(503);
-        if (snapshot.Item.Excludes(actor)) throw new WorkDecisionException(403);
+        if (snapshot.Item.Excludes(actor)
+            && !(kind == InventoryTransferLoss && MayReachHistoricalLossReceipt(snapshot, selectedLossRequestNumber, actor)))
+            throw new WorkDecisionException(403);
         return snapshot;
     }
 
@@ -191,7 +193,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
     {
         ArgumentNullException.ThrowIfNull(request);
         var actor = user.UserId;
-        var snapshot = await SnapshotAsync(kind, id, token);
+        var snapshot = await SnapshotAsync(kind, id, token, request.InventoryTransferLoss?.RequestNumber);
         if (user.UserId != actor) throw new WorkDecisionException(403);
         if (request.InventoryTransferLoss is not null && kind != InventoryTransferLoss
             || kind == InventoryTransferLoss && (request.InventoryTransferLoss is null || request.ManufacturingPlanReapproval is not null)
@@ -201,8 +203,13 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || (kind == OpeningCost && request.ExpectedVersion != snapshot.SourceVersion)
             || ((kind is OpeningCost or InventoryTransferLoss || !request.Approve && kind is not (SalesOrder or SalesInvoice or SalesSubcontractInvoice or PurchaseRequest or PurchaseGoodsReceiptBatch or ManufacturingPlan)) && (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 500))
             || (kind is not (OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance or PurchaseGoodsReceiptBatch or InventoryTransferLoss) && request.Approve && request.Reason is not null)) throw new WorkDecisionException(400, "work_decision_invalid");
+        // A retained receipt targets the old request's maker, not the maker of a later request
+        // on the same hashed inbox item. All other item scope/exclusions and live delegation checks remain unchanged.
+        var verificationItem = kind == InventoryTransferLoss && MayReachHistoricalLossReceipt(snapshot, request.InventoryTransferLoss?.RequestNumber, actor!)
+            ? snapshot.Item with { PreparedBy = snapshot.InventoryTransferLossProof!.Requests.Single(row => row.RequestNumber == request.InventoryTransferLoss!.RequestNumber).PreparedBy }
+            : snapshot.Item;
         async Task<bool> Verify(CancellationToken ct) => request.DelegationId is not { } delegation
-            || await delegations.FindForActorAsync(delegation, snapshot.Item, ct) is not null;
+            || await delegations.FindForActorAsync(delegation, verificationItem, ct) is not null;
         if (!await Verify(token)) throw new WorkDecisionException(403);
         using var lease = executionFence.Enter(Verify);
         if (kind == InventoryTransferLoss)

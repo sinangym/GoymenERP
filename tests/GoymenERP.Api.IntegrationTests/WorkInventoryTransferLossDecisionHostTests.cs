@@ -47,6 +47,53 @@ public sealed class WorkInventoryTransferLossDecisionHostTests
     }
 
     [Fact]
+    public async Task Original_terminal_key_replay_survives_current_request_becoming_the_checkers_own_request_without_allowing_a_new_self_decision()
+    {
+        var run = new Rig { Replayed = true }; run.Source.Renew(); run.Source.CurrentMaker = Actor;
+        Assert.Equal(403, (await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.PreviewAsync(WorkDecisionHostV1.InventoryTransferLoss, Item, default))).Status);
+        var replay = await run.Host.DecideAsync(WorkDecisionHostV1.InventoryTransferLoss, Item, Body(false), "original-terminal-key", default);
+        Assert.True(replay.Replayed); Assert.Equal(1, run.Captured!.RequestNumber);
+        Assert.Equal(403, (await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.DecideAsync(WorkDecisionHostV1.InventoryTransferLoss, Item,
+            Body(true) with { InventoryTransferLoss = new(2, At.AddHours(2)) }, "fresh-own-request", default))).Status);
+        Assert.Equal(1, run.Captured.RequestNumber);
+        run.Transform = answer => answer with { CommandReceiptProven = false };
+        Assert.Equal(503, (await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.DecideAsync(WorkDecisionHostV1.InventoryTransferLoss, Item,
+            Body(false), "different-domain-key", default))).Status);
+    }
+
+    [Fact]
+    public async Task Retained_receipt_delegation_uses_historical_maker_while_live_expiry_or_revocation_and_current_self_guards_remain()
+    {
+        var delegation = new MakerAwareDelegation(); var run = new Rig(delegation) { Replayed = true };
+        run.Source.Renew(); run.Source.CurrentMaker = Actor;
+        var request = Body(false) with { DelegationId = Guid.NewGuid() };
+        Assert.True((await run.Host.DecideAsync(WorkDecisionHostV1.InventoryTransferLoss, Item, request, "original-delegated-key", default)).Replayed);
+        Assert.Equal(Maker, Assert.Single(delegation.Items).PreparedBy);
+        Assert.Equal(Item, delegation.Items[0].ItemId); Assert.Equal(WorkDecisionHostV1.InventoryTransferLoss, delegation.Items[0].Kind);
+        delegation.Allowed = false;
+        Assert.Equal(403, (await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.DecideAsync(
+            WorkDecisionHostV1.InventoryTransferLoss, Item, request, "original-delegated-key", default))).Status);
+        delegation.Allowed = true;
+        Assert.Equal(403, (await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.DecideAsync(WorkDecisionHostV1.InventoryTransferLoss, Item,
+            request with { InventoryTransferLoss = new(2, At.AddHours(2)) }, "fresh-self", default))).Status);
+    }
+
+    [Theory]
+    [InlineData("other-exclusion", 403)] [InlineData("historical-own", 403)]
+    [InlineData("unknown-number", 403)] [InlineData("missing-proof", 503)]
+    public async Task Historical_routing_exception_never_bypasses_other_exclusions_own_history_or_invalid_proof(string fault, int status)
+    {
+        var run = new Rig { Replayed = true }; run.Source.Renew(); run.Source.CurrentMaker = Actor;
+        if (fault == "other-exclusion") run.Source.Excluded = [Actor];
+        if (fault == "historical-own") run.Source.HistoricalMaker = Actor;
+        if (fault == "missing-proof") run.Source.MissingProof = true;
+        var body = fault == "unknown-number" ? Body(false) with { InventoryTransferLoss = new(3, At.AddHours(1)) } : Body(false);
+        Assert.Equal(status, (await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.DecideAsync(
+            WorkDecisionHostV1.InventoryTransferLoss, Item, body, "not-a-bypass", default))).Status);
+        Assert.Null(run.Captured);
+    }
+
+    [Fact]
     public async Task Domain_prior_decision_with_replay_flag_but_without_key_receipt_is_never_Work_success()
     {
         var run = new Rig { Replayed = true, Transform = answer => answer with { CommandReceiptProven = false } };
@@ -142,7 +189,7 @@ public sealed class WorkInventoryTransferLossDecisionHostTests
         public DecideInventoryTransferLossV1? Captured; public bool Replayed;
         public Func<InventoryTransferReceiptResultV1, InventoryTransferReceiptResultV1>? Transform;
         public WorkDecisionHostV1 Host { get; }
-        public Rig()
+        public Rig(IWorkDelegationReaderV1? delegations = null)
         {
             var company = new CompanyContext(); company.Set(Company);
             var owner = DispatchProxy.Create<IInventoryTransferReceiptCommandV1, OwnerProxy>();
@@ -163,7 +210,7 @@ public sealed class WorkInventoryTransferLossDecisionHostTests
                 Assert.Equal(JsonSerializer.Serialize(answer with { CommandReceiptProven = false }, new JsonSerializerOptions(JsonSerializerDefaults.Web)), wire);
                 return Task.FromResult(Transform?.Invoke(answer) ?? answer);
             };
-            Host = CreateHost(company, new LossUser(Company, Actor), Raw, Source, owner);
+            Host = CreateHost(company, new LossUser(Company, Actor), Raw, Source, owner, delegations: delegations);
         }
     }
     internal static WorkDecisionHostV1 CreateHost(ICompanyContext company, ICurrentUser user, IErpAuthorityRevalidationService authority,
@@ -179,14 +226,14 @@ public sealed class WorkInventoryTransferLossDecisionHostTests
     }
     private sealed class LossSource : IWorkApprovalDecisionSourceV1
     {
-        public string CurrentMaker = Maker; private bool renewed;
+        public string CurrentMaker = Maker, HistoricalMaker = Maker; public IReadOnlyList<string>? Excluded; public bool MissingProof; private bool renewed;
         public void Renew() => renewed = true;
         public string Module => "inventory"; public string Kind => WorkDecisionHostV1.InventoryTransferLoss;
         public string ApproverPermission => InventoryPermissionManifestV1.StockTransferLossApprove;
         public Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context, Guid itemId, CancellationToken cancellationToken) =>
-            Task.FromResult<WorkApprovalDecisionSnapshotV1?>(new(Company, new(Module, Kind, Item, "SENTETIK", At, "/stok/transferler/kayip-onaylari", CurrentMaker, [], []),
-                "2", true, InventoryTransferLoss: new(renewed ? 2 : 1, At), InventoryTransferLossProof: new(Transfer, Line,
-                    renewed ? [new(1, At, Maker, "Rejected"), new(2, At, CurrentMaker, "Pending")] : [new(1, At, CurrentMaker, "Pending")])));
+            Task.FromResult<WorkApprovalDecisionSnapshotV1?>(new(Company, new(Module, Kind, Item, "SENTETIK", At, "/stok/transferler/kayip-onaylari", CurrentMaker, [], [], Excluded),
+                "2", true, InventoryTransferLoss: new(renewed ? 2 : 1, At), InventoryTransferLossProof: MissingProof ? null : new(Transfer, Line,
+                    renewed ? [new(1, At, HistoricalMaker, "Rejected"), new(2, At, CurrentMaker, "Pending")] : [new(1, At, CurrentMaker, "Pending")])));
         public Task<WorkInboxSourceResultV1> ListPendingAsync(WorkInboxSourceContextV1 context, int maxCount, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
     internal sealed class LossUser(Guid company, string actor) : ICurrentUser
@@ -200,6 +247,17 @@ public sealed class WorkInventoryTransferLossDecisionHostTests
         public bool CompanyWide = true;
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PermissionScope(true, CompanyWide, new HashSet<string>(), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
+    }
+    private sealed class MakerAwareDelegation : IWorkDelegationReaderV1
+    {
+        public bool Allowed = true; public List<WorkInboxItemV1> Items = [];
+        public Task<WorkDelegationViewV1?> FindForActorAsync(Guid id, WorkInboxItemV1 item, CancellationToken cancellationToken = default)
+        {
+            Items.Add(item);
+            return Task.FromResult<WorkDelegationViewV1?>(Allowed && !item.Excludes(Actor) ? new(id, Company, item.Kind,
+                InventoryPermissionManifestV1.StockTransferLossApprove, Guid.NewGuid(), Guid.NewGuid(), DateTimeOffset.UtcNow.AddDays(-1),
+                DateTimeOffset.UtcNow.AddDays(1), "1", Guid.NewGuid(), DateTimeOffset.UtcNow, "SENTETIK live delegation", null, null, null) : null);
+        }
     }
     private sealed class NoDelegations : IWorkDelegationReaderV1
     {

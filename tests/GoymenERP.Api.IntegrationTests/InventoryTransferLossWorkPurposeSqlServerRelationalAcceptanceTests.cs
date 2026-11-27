@@ -47,18 +47,25 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         var (plan, line) = await DispatchedLossTransferAsync(run, "SYN-WORK-LOSS-RENEW");
         await LossRequestAsync(run, plan.TransferId, line, new("2", At.AddHours(2), LossRenewalExplanation), Metadata(run));
         await using var scope = run.Store(CompanyA); var actor = LossChecker(run).ActorId;
-        var host = LossPurposeHost(scope, actor);
+        var delegationLive = true;
+        var host = LossPurposeHost(scope, actor, new LossPurposeDelegation(() => delegationLive, actor));
         var id = InventoryWorkInboxFence.TransferLineItemId(WorkDecisionHostV1.InventoryTransferLoss, plan.TransferId, line);
-        var body = new WorkDecisionRequestV1("2", false, LossRenewalReason, InventoryTransferLoss: new(1, At.AddHours(3)));
+        var body = new WorkDecisionRequestV1("2", false, LossRenewalReason, Guid.NewGuid(), InventoryTransferLoss: new(1, At.AddHours(3)));
         var key = "work-loss-reject-" + Guid.NewGuid().ToString("N");
         var rejected = await host.DecideAsync(WorkDecisionHostV1.InventoryTransferLoss, id, body, key, default);
         Assert.Equal(("Rejected", false), (rejected.State, rejected.Replayed));
-        await LossRequestAsync(run, plan.TransferId, line, new("2", At.AddHours(4), LossRenewalExplanation), Metadata(run));
-        var renewed = await host.PreviewAsync(WorkDecisionHostV1.InventoryTransferLoss, id, default);
+        await LossRequestAsync(run, plan.TransferId, line, new("2", At.AddHours(4), LossRenewalExplanation), Metadata(run) with { ActorId = actor });
+        var currentChecker = LossPurposeHost(scope, run.Actor.ToString("D"));
+        Assert.Equal(403, (await Assert.ThrowsAsync<WorkDecisionException>(() => host.PreviewAsync(WorkDecisionHostV1.InventoryTransferLoss, id, default))).Status);
+        var renewed = await currentChecker.PreviewAsync(WorkDecisionHostV1.InventoryTransferLoss, id, default);
         Assert.Equal((id, "2", 2), (renewed.ItemId, renewed.SourceVersion, renewed.InventoryTransferLoss!.RequestNumber));
         // Unknown retry retains the original request, timestamp and key even though the preview now names request 2.
         var replay = await host.DecideAsync(WorkDecisionHostV1.InventoryTransferLoss, id, body, key, default);
         Assert.Equal(rejected with { Replayed = true }, replay);
+        delegationLive = false;
+        Assert.Equal(403, (await Assert.ThrowsAsync<WorkDecisionException>(() => host.DecideAsync(
+            WorkDecisionHostV1.InventoryTransferLoss, id, body, key, default))).Status);
+        delegationLive = true;
         Assert.Equal(503, (await Assert.ThrowsAsync<WorkDecisionException>(() => host.DecideAsync(
             WorkDecisionHostV1.InventoryTransferLoss, id, body, "not-the-original-key", default))).Status);
         var nativeBody = new DecideInventoryTransferLossV1("2", InventoryTransferDecisionKindV1.Reject, At.AddHours(3), LossRenewalReason, 1);
@@ -73,7 +80,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             Assert.Single(await db.TransferLossDecisions.Where(row => row.TransferId == plan.TransferId).ToListAsync());
             Assert.Equal(2L, (await db.Transfers.SingleAsync(row => row.Id == plan.TransferId)).Version);
         }
-        var approved = await host.DecideAsync(WorkDecisionHostV1.InventoryTransferLoss, id,
+        Assert.Equal(403, (await Assert.ThrowsAsync<WorkDecisionException>(() => host.DecideAsync(WorkDecisionHostV1.InventoryTransferLoss, id,
+            new("2", true, LossRenewalReason, InventoryTransferLoss: new(2, At.AddHours(5))), "fresh-own-renewal", default))).Status);
+        var approved = await currentChecker.DecideAsync(WorkDecisionHostV1.InventoryTransferLoss, id,
             new("2", true, LossRenewalReason, InventoryTransferLoss: new(2, At.AddHours(5))), "work-loss-renew-" + Guid.NewGuid().ToString("N"), default);
         Assert.Equal("Approved", approved.State);
         await using var final = run.Context(CompanyA);
@@ -101,10 +110,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     // Controlled delegation state only; the native store, SaveChanges interceptor, audit collector and rollback are real SQL.
-    private sealed class LossPurposeDelegation(Func<bool> allowed) : IWorkDelegationReaderV1
+    private sealed class LossPurposeDelegation(Func<bool> allowed, string? actor = null) : IWorkDelegationReaderV1
     {
         public Task<WorkDelegationViewV1?> FindForActorAsync(Guid id, WorkInboxItemV1 item, CancellationToken cancellationToken = default) =>
-            Task.FromResult<WorkDelegationViewV1?>(allowed() ? new(id, CompanyA, item.Kind, InventoryPermissionManifestV1.StockTransferLossApprove,
+            Task.FromResult<WorkDelegationViewV1?>(allowed() && (actor is null || !item.Excludes(actor)) ? new(id, CompanyA, item.Kind, InventoryPermissionManifestV1.StockTransferLossApprove,
                 Guid.NewGuid(), Guid.NewGuid(), DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1), "1", Guid.NewGuid(),
                 DateTimeOffset.UtcNow, "SYNTHETIC delegated grant", null, null, null) : null);
     }
