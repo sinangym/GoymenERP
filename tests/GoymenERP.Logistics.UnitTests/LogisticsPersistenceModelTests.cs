@@ -907,12 +907,11 @@ public sealed class LogisticsPersistenceModelTests
         var provider = new LogisticsShellCapabilityProvider();
         var declarations = provider.GetDeclarations().Where(item =>
             !item.CapabilityId.StartsWith("logistics.subcontract-deliveries.", StringComparison.Ordinal)).ToList();
-        Assert.Equal("1.15", provider.ContractVersion);
+        Assert.Equal("1.16", provider.ContractVersion);
         Assert.Equal(19, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             declaration.CapabilityId is not (LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId
-                or LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId
-                or LogisticsShellCapabilityProvider.CustomerReturnsWeighingRecordCapabilityId), declaration.ImplementationAvailable));
+                or LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId), declaration.ImplementationAvailable));
         var excessPrepare = Assert.Single(declarations, item => item.CapabilityId == LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId);
         Assert.Equal(LogisticsShellCapabilityProvider.DetailCapabilityId, excessPrepare.ParentCapabilityId);
         Assert.Equal([LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.LoadsRecord], excessPrepare.RequiredPermissions);
@@ -954,7 +953,7 @@ public sealed class LogisticsPersistenceModelTests
             }
             else Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(name));
         }
-        // AT-053 remains a server command; LOJ-D22 adds a distinct staged customer-return detail control.
+        // AT-053 remains a server command; LOJ-D22 adds a distinct paired customer-return detail control.
         Assert.Equal("logistics.weighings.record", LogisticsPermissionManifestV1.WeighingsRecord);
         Assert.Equal(LogisticsShellCapabilityProvider.CustomerReturnsWeighingRecordCapabilityId,
             Assert.Single(declarations, declaration => declaration.RequiredPermissions.Contains(LogisticsPermissionManifestV1.WeighingsRecord)).CapabilityId);

@@ -101,6 +101,7 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
             "logistics.customer-return.work-decision",
             "logistics.customer-returns.approve",
             "logistics.customer-returns.read",
+            "logistics.customer-returns.record-weighing",
             "logistics.customer-returns.reject",
             "logistics.customer-returns.request",
             "logistics.deliveries.record",

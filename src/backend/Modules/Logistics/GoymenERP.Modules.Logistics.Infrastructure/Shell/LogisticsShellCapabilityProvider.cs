@@ -32,10 +32,10 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Shell;
 public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "LOGISTICS";
-    // 1.15: LOJ-D22 stages the native return-weighing control under existing authority.
+    // 1.16: LOJ-D22 pairs the native return-weighing control and entry under existing authority.
     // WP8 paired Work decisions and all existing native screen availability remain unchanged.
     // Source availability is not SQL/browser/CI acceptance or environment activation.
-    public const string OwnerContractVersion = "1.15";
+    public const string OwnerContractVersion = "1.16";
     public const string TransferDeparturesCapabilityId = LogisticsPermissionManifestV1.TransferDeparturesRecord;
     public const string PlanExcessPrepareCapabilityId = "logistics.shipments.plan-excess.prepare";
     public const string PlanExcessApproveCapabilityId = "logistics.shipments.plan-excess.approve";
@@ -137,13 +137,13 @@ public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityP
                 LogisticsPermissionManifestV1.CustomerReturnsRequest],
             ImplementationAvailable: true, ParentCapabilityId: DetailCapabilityId),
         // LOJ-D22: existing weighing authority, with the native detail/read gates for the human surface.
-        // Kept staged until paired weighing entry is integrated; this declaration grants nothing.
+        // Paired source is available; SQL/browser/CI acceptance is separate. This declaration grants nothing.
         new ShellCapabilityDeclaration(CustomerReturnsWeighingRecordCapabilityId, DetailCapabilityId, DetailRoutePath, DetailScreenId,
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
             ShellCapabilityScopeRequirement.CompanyWide,
             [LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.CustomerReturnsRead,
                 LogisticsPermissionManifestV1.WeighingsRecord],
-            ImplementationAvailable: false, ParentCapabilityId: DetailCapabilityId),
+            ImplementationAvailable: true, ParentCapabilityId: DetailCapabilityId),
         new ShellCapabilityDeclaration(CustomerReturnsApproveCapabilityId, DetailCapabilityId, DetailRoutePath, DetailScreenId,
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
             ShellCapabilityScopeRequirement.CompanyWide,

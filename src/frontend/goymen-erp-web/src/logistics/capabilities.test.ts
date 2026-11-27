@@ -179,3 +179,18 @@ describe('Logistics lane ↔ backend shell provider', () => {
     expect(LOGISTICS_NAV_LABEL[LOGISTICS_CAPABILITY.instructionsList]).not.toBe('')
   })
 })
+
+
+it('pairs the native return weighing control with existing weighing authority and no decision or stock grant', () => {
+  expect(constant('CustomerReturnsWeighingRecordCapabilityId')).toBe('logistics.customer-returns.record-weighing')
+  const weighing = declaration('CustomerReturnsWeighingRecordCapabilityId')
+  expect(weighing).toContain('DetailCapabilityId, DetailRoutePath, DetailScreenId')
+  expect(weighing).toContain('ShellCapabilityContextRequirement.SingleCompany')
+  expect(weighing).toContain('ShellCapabilityScopeRequirement.CompanyWide')
+  for (const permission of ['InstructionsRead', 'CustomerReturnsRead', 'WeighingsRecord'])
+    expect(weighing).toContain(`LogisticsPermissionManifestV1.${permission}`)
+  expect(weighing).not.toContain('CustomerReturnsDecision')
+  expect(weighing).not.toContain('InventoryPhysicalAllocationWrite')
+  expect(weighing).toContain('ImplementationAvailable: true')
+  expect(weighing).toContain('ParentCapabilityId: DetailCapabilityId')
+})
