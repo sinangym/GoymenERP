@@ -472,6 +472,8 @@ internal sealed partial class ProductPackageStandardService(
     private async Task<ProductPackageStandardResultV2> SaveVersionAsync(string commandName, string keyHash, string requestHash,
         ProductPackageStandardCommandMetadataV2 metadata, CancellationToken cancellationToken)
     {
+        if (ownedDecision is not null)
+            return await SaveOwnedDecisionAsync(commandName, NoContent(), keyHash, requestHash, metadata, cancellationToken);
         await MeasureAsync(PermissionOf(commandName), cancellationToken);
         AddAttempt(commandName, NoContent(), keyHash, requestHash, metadata);
         try
@@ -613,6 +615,8 @@ internal sealed partial class ProductPackageStandardService(
     private async Task<ProductPackageStandardResultV2> StoreAsync(string commandName, ProductPackageStandardAnswerV2 answer,
         string keyHash, string requestHash, ProductPackageStandardCommandMetadataV2 metadata, CancellationToken cancellationToken)
     {
+        if (ownedDecision is not null)
+            return await SaveOwnedDecisionAsync(commandName, answer, keyHash, requestHash, metadata, cancellationToken);
         await MeasureAsync(PermissionOf(commandName), cancellationToken);
         database.ChangeTracker.Clear();
         AddAttempt(commandName, answer, keyHash, requestHash, metadata);

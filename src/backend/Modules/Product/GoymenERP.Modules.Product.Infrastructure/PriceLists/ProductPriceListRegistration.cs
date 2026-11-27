@@ -70,16 +70,17 @@ public static class ProductPriceListRegistration
         services.TryAddScoped<IProductProfileWeightFileVaultV1, UnavailableProductProfileWeightFileVault>();
         services.AddScoped<IProductProfileWeightTableServiceV1>(CreateProfileWeightTableService);
         // B-08 / BS-10 (STK-S12): the company's package standard table and its read port for Sales and Production (same context).
-        services.AddScoped(CreatePackageStandardService);
+        services.AddScoped<GuardedProductPackageStandardService>(provider => new(CreatePackageStandardService(provider),
+            provider.GetRequiredService<IAuditTransactionWriterV1>()));
         services.AddScoped<IProductPackageStandardServiceV2>(serviceProvider =>
-            serviceProvider.GetRequiredService<ProductPackageStandardService>());
+            serviceProvider.GetRequiredService<GuardedProductPackageStandardService>());
         services.AddScoped<IProductPackageStandardReaderV2>(serviceProvider =>
-            serviceProvider.GetRequiredService<ProductPackageStandardService>());
+            serviceProvider.GetRequiredService<GuardedProductPackageStandardService>());
         // SAT-D382 / SAT-D383 (STK-SC36-c): the approval, the customer override, the kept files and the dated read port.
         services.AddScoped<IProductPackageStandardServiceV3>(serviceProvider =>
-            serviceProvider.GetRequiredService<ProductPackageStandardService>());
+            serviceProvider.GetRequiredService<GuardedProductPackageStandardService>());
         services.AddScoped<IProductPackageStandardReaderV3>(serviceProvider =>
-            serviceProvider.GetRequiredService<ProductPackageStandardService>());
+            serviceProvider.GetRequiredService<GuardedProductPackageStandardService>());
         services.AddScoped(CreatePaintMembershipReader);
         services.AddScoped<IProductPaintMembershipReaderV1>(serviceProvider => serviceProvider.GetRequiredService<ProductPaintMembershipReader>());
         services.AddScoped<IProductPaintMembershipServiceV1>(CreatePaintMembershipService);

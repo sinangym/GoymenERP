@@ -161,6 +161,7 @@ internal sealed partial class ProductPackageStandardService
             await MeasureAsync(ApprovePermission, cancellationToken);
             return Replay(existing, requestHash, metadata);
         }
+        if (ownedDecision is { ReplayOnly: true }) return Unstored(VersionConflict(), metadata);
 
         // Checked after the replay: a stored approval replays on a later day as well.
         if (effectiveFrom < Today())
@@ -196,6 +197,7 @@ internal sealed partial class ProductPackageStandardService
             await MeasureAsync(ApprovePermission, cancellationToken);
             return Replay(existing, requestHash, metadata);
         }
+        if (ownedDecision is { ReplayOnly: true }) return Unstored(VersionConflict(), metadata);
 
         return await DecideAsync(scope, RejectCommandName, version, ProductPackageStandardDecisionsV3.Rejected, null, reason,
             keyHash, requestHash, metadata, cancellationToken);
