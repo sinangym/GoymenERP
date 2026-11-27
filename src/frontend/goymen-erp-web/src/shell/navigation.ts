@@ -436,6 +436,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'accounting.normal-journal-drafts.create': '',
   'accounting.normal-journal-drafts.detail': '',
   'accounting.normal-journal-drafts.approve': '',
+  'accounting.journal-reversal.work-decision': '',
   'accounting.period-opening.work-decision': '',
   'accounting.period-reopening.work-decision': '',
   'accounting.normal-journal-draft.work-decision': '',

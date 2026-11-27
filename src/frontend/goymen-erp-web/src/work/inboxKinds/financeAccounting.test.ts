@@ -115,3 +115,9 @@ it.each(['accounting.period-opening.v1','accounting.period-reopening.v1'])('maps
  expect(ACCOUNTING_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'accounting',capability:kind.replace('.v1','.work-decision')}])
  expect(inboxPermissionText(kind==='accounting.period-opening.v1'?'accounting.periods.approve':'accounting.periods.reopen')).not.toContain('.periods.')
 })
+
+it('maps journal reversal to its standalone Work purpose while preserving native approve permission words',()=>{
+ expect(ACCOUNTING_INBOX_KINDS.filter(row=>row.kind==='accounting.journal-reversal.v1')).toEqual([{kind:'accounting.journal-reversal.v1',module:'accounting',capability:'accounting.journal-reversal.work-decision'}])
+ expect(inboxPermissionText('accounting.journal.reverse.approve')).not.toBe('accounting.journal.reverse.approve')
+ expect(inboxRuleText('accounting.journal-reversal-approval-required')).not.toBeNull()
+})

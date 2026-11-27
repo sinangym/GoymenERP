@@ -44,6 +44,7 @@ const ROUTED = [
   [CAPABILITY.accountingNormalDraftCreate, ACCOUNTING_CAPABILITY.normalDraftCreate, ACCOUNTING_ROUTE.normalDraftCreate],
   [CAPABILITY.accountingNormalDraftDetail, ACCOUNTING_CAPABILITY.normalDraftDetail, ACCOUNTING_ROUTE.normalDraftDetail],
   [CAPABILITY.accountingNormalDraftApprove, ACCOUNTING_CAPABILITY.normalDraftApprove, ACCOUNTING_ROUTE.normalDraftApprove],
+  [CAPABILITY.accountingJournalReversalWorkDecision, ACCOUNTING_CAPABILITY.journalReversalWorkDecision, ACCOUNTING_ROUTE.journalReversalWorkDecision],
   [CAPABILITY.accountingPeriodOpeningWorkDecision, ACCOUNTING_CAPABILITY.periodOpeningWorkDecision, ACCOUNTING_ROUTE.periodOpeningWorkDecision],
   [CAPABILITY.accountingPeriodReopeningWorkDecision, ACCOUNTING_CAPABILITY.periodReopeningWorkDecision, ACCOUNTING_ROUTE.periodReopeningWorkDecision],
   [CAPABILITY.accountingNormalDraftWorkDecision, ACCOUNTING_CAPABILITY.normalDraftWorkDecision, ACCOUNTING_ROUTE.normalDraftWorkDecision],
@@ -124,4 +125,15 @@ it.each([
  expect(matchRoutes(shellRoutes,path.replace(':approvalId','cccccccc-0000-4000-8000-0000000000f1'))?.at(-1)?.route).toBe(mounted[0])
  expect(ACCOUNTING_ROUTE.periodsList).toBe('/muhasebe/donemler')
  expect(ACCOUNTING_CAPABILITY.periodsApprove).toBe('accounting.periods.approve');expect(ACCOUNTING_CAPABILITY.periodsReopen).toBe('accounting.periods.reopen')
+})
+
+it('publishes one exact Work reversal purpose before the legacy reader without changing native routes',()=>{
+ const kind='accounting.journal-reversal.v1',capability=CAPABILITY.accountingJournalReversalWorkDecision,path=`/onaylarim/${kind}/:approvalId`
+ expect(capability).toBe('accounting.journal-reversal.work-decision');expect(CAPABILITY_ROUTE[capability]).toBe(path);expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
+ expect(WORK_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'accounting',capability}])
+ const mounted=workRoutes.filter(route=>route.path===path.slice(1));expect(mounted).toHaveLength(1)
+ expect(matchRoutes(shellRoutes,path.replace(':approvalId','cccccccc-0000-4000-8000-0000000000f1'))?.at(-1)?.route).toBe(mounted[0])
+ expect(ACCOUNTING_ROUTE.journalReversalApprove).toBe('/muhasebe/ters-kayit-onay/:proposalId')
+ expect(ACCOUNTING_CAPABILITY.journalReversalApprove).toBe('accounting.journal-reversals.approve')
+ expect(ACCOUNTING_ROUTE.journalsDetail).toBe('/muhasebe/fisler/:journalId')
 })

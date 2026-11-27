@@ -780,3 +780,22 @@ it.each([
  await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
  expect(api.inboxReads()).toHaveLength(0);expect(vi.mocked(globalThis.fetch).mock.calls.some(([url])=>String(url).includes(`/work/decisions/${kind}/`))).toBe(false)
 })
+
+it('opens the journal reversal Work card while keeping its source journal and period references native',async()=>{
+ const kind='accounting.journal-reversal.v1',capability='accounting.journal-reversal.work-decision',permission='accounting.journal.reverse.approve'
+ const link=`/onaylarim/${kind}/${LEGACY_ID}`,sourceLink=`/muhasebe/fisler/${PAYMENT_ID}`
+ const item={...limitItem,module:'accounting',kind,itemId:LEGACY_ID,link,awaitingPermission:permission,ruleVersion:RV(kind),explanation:{
+  rules:[{ruleCode:'accounting.journal-reversal-approval-required',threshold:null,actual:null,deviation:null,unit:null}],
+  references:[{role:'journal',recordId:PAYMENT_ID,label:'SENTETIK asıl fiş',link:sourceLink},{role:'period',recordId:LIMIT_ID,label:'SENTETIK dönem',link:null}]}}
+ const api=installFetch({granted:[capability],inbox:()=>json(inbox({items:[item],sources:[src('accounting',kind,permission,'BusinessDays')]}))})
+ await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-item');const card=cardOf(kind)
+ expect(within(card).getByRole('link').getAttribute('href')).toBe(link)
+ await userEvent.setup().click(within(card).getByRole('button',{name:T.explanationToggle}))
+ expect(within(card).getByText('SENTETIK asıl fiş')).toBeTruthy();expect(within(card).getByText('SENTETIK dönem')).toBeTruthy()
+ expect(item.explanation.references[0]!.link).toBe(sourceLink);expect(item.explanation.references[1]!.link).toBeNull();expect(api.inboxReads()).toHaveLength(1)
+})
+it.each(['accounting.journal-reversals.approve','accounting.journals.detail'])('does not read the standalone Work journal reversal using only native %s',async capability=>{
+ const kind='accounting.journal-reversal.v1',api=installFetch({granted:[capability]})
+ await renderAt(`/onaylarim/${kind}/${LEGACY_ID}`);await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+ expect(api.inboxReads()).toHaveLength(0);expect(vi.mocked(globalThis.fetch).mock.calls.some(([url])=>String(url).includes(`/work/decisions/${kind}/`))).toBe(false)
+})

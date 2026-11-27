@@ -7,11 +7,11 @@ const company='aaaaaaaa-0000-4000-8000-000000000001',id='aaaaaaaa-0000-4000-8000
 const request={expectedVersion:'1',approve:true,reason:null,delegationId:null}
 afterEach(()=>vi.unstubAllGlobals())
 describe('staged Work journal reversal native contract',()=>{
- it('keeps exact native sixteen numeric fields and full Int32 without publishing another route',()=>{
+ it('keeps exact native sixteen numeric fields and full Int32 in the paired published purpose',()=>{
   const value=journalReversalFixture(company,id,2147483647)
   expect(decodeWorkDecisionPreview(value,company,kind,id)?.accountingJournalReversal).toEqual(value.accountingJournalReversal)
   expect(Object.keys(value.accountingJournalReversal.proposal)).toHaveLength(16)
-  expect(isWorkDecisionKind(kind)).toBe(true);expect([...WORK_DECISION_KINDS]).not.toContain(kind);expect(WORK_DECISION_KINDS).toHaveLength(44)
+  expect(isWorkDecisionKind(kind)).toBe(true);expect(WORK_DECISION_KINDS.filter(value=>value===kind)).toEqual([kind]);expect(WORK_DECISION_KINDS).toHaveLength(45)
  })
  it.each(['text-version','unsafe','overflow','fraction','zero','version-LF','status','partial','source-equal','foreign','id','reason-trim','reason-over','decision-reason','date-default','bad-calendar','utc','private','cross-proof','rule','actual','caption','ref-id','ref-role','ref-label','ref-link','reject','reason-required'] as const)('rejects malformed native proof: %s',fault=>{
   const value=journalReversalFixture(company,id),p=value.accountingJournalReversal.proposal;let raw:unknown=value

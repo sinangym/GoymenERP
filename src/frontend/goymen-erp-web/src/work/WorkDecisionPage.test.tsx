@@ -1,6 +1,5 @@
 import { JOURNAL_REVERSAL_WORK_KIND as journalReversalKind, JOURNAL_REVERSAL_WORK_CAPABILITY as journalReversalCap } from './workJournalReversalDecision'
 import { journalReversalFixture } from './journalReversalDecisionFixture'
-import { CapabilityRoute } from '../shell/CapabilityRoute'
 import { accountingOpeningFixture, accountingReopeningFixture, openingPeriodKind, reopeningPeriodKind } from './accountingPeriodDecisionFixture'
 import { ACCOUNTING_PERIOD_WORK_CAPABILITY, type AccountingPeriodWorkKind } from './workAccountingPeriodDecision'
 import { normalJournalFixture } from './normalJournalDecisionFixture'
@@ -2762,13 +2761,9 @@ describe('Work period paired native decision',()=>{
  })
 })
 
-function mountJournalReversalCandidate(client?:QueryClient){
- const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[{path:`onaylarim/${journalReversalKind}/:approvalId`,
-  element:<CapabilityRoute capability={[journalReversalCap]}><WorkDecisionPage kind={journalReversalKind}/></CapabilityRoute>}]}],{initialEntries:[`/onaylarim/${journalReversalKind}/${id}`]})
- render(<ShellProvider queryClient={client??new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})}><RouterProvider router={router}/></ShellProvider>)
-}
+function mountJournalReversalCandidate(client?:QueryClient){ return mount(`/onaylarim/${journalReversalKind}/${id}`,true,client) }
 const journalReversalPath=`/work/decisions/${journalReversalKind}/${id}`
-describe('staged native journal reversal Work core',()=>{
+describe('paired native journal reversal Work purpose',()=>{
  it('shows complete native facts but no hashes, period selection, rejection or new reason',async()=>{
   const value=journalReversalFixture(COMPANY_A,id)
   const calls=installFetch({capabilities:[journalReversalCap],respond:(url,init)=>url.includes(journalReversalPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:journalReversalKind,itemId:id,state:'Approved',replayed:false,originalCorrelationId:'SENTETIK reversal'}):json(value):undefined})
@@ -2783,8 +2778,9 @@ describe('staged native journal reversal Work core',()=>{
   expect(calls.filter(c=>c.method==='POST').map(c=>c.body)).toEqual([{expectedVersion:'1',approve:true,reason:null,delegationId:null}])
   expect(calls.some(c=>c.url.includes('/accounting/'))).toBe(false);expect(screen.queryByRole('region',{name:T.journalReversalTitle})).toBeNull()
  })
- it('keeps the staged purpose outside the published shell routes',()=>{
-  expect(workRoutes.some(route=>route.path===`onaylarim/${journalReversalKind}/:approvalId`)).toBe(false)
+ it('mounts one dedicated Work decision before the legacy reader route',()=>{
+  const routes=workRoutes.filter(route=>route.path===`onaylarim/${journalReversalKind}/:approvalId`);expect(routes).toHaveLength(1)
+  expect(matchRoutes(shellRoutes,`/onaylarim/${journalReversalKind}/${id}`)?.at(-1)?.route).toBe(routes[0])
  })
  it('retains the same original four fields and key across unknown remount without another human GET',async()=>{
   Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK journal reversal session'})
