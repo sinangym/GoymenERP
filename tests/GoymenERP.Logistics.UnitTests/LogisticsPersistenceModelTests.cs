@@ -962,6 +962,7 @@ public sealed class LogisticsPersistenceModelTests
                 ("logistics.customer-returns.reject", "L-02-DETAIL"),
                 ("logistics.customer-returns.request", "L-02-DETAIL"),
                 ("logistics.deliveries.record", "L-02-DETAIL"),
+                ("logistics.dispatch-note.work-decision", "L-DISPATCH-NOTE-WORK-DECISION"),
                 ("logistics.instructions.create", "L-03"),
                 ("logistics.instructions.detail", "L-02-DETAIL"),
                 ("logistics.instructions.list", "L-02"),
