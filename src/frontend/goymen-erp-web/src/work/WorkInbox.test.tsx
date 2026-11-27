@@ -595,6 +595,7 @@ it('opens customer return inbox only through its Work purpose and preserves its 
  const api=installFetch({granted:[CAPABILITY.logisticsCustomerReturnWorkDecision],inbox:()=>json(inbox({items:[returnItem],sources:[returnSource]}))})
  await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-list')
  expect(within(cardOf(returnKind)).getByRole('link',{name:T.openOwnerLabel('Müşteri iadesi kabul kararı','SENTETIK iade')}).getAttribute('href')).toBe(returnLink)
+ await userEvent.setup().click(within(cardOf(returnKind)).getByRole('button',{name:T.explanationToggle}))
  expect(within(cardOf(returnKind)).getByRole('link',{name:'SENTETIK talimat'}).getAttribute('href')).toBe(`/lojistik/yukleme-talimatlari/${PARTY_ID}`)
  expect(api.inboxReads()).toHaveLength(1);expect(api.inboxReads()[0].companyId).toBe(COMPANY);expect(api.queueReads()).toHaveLength(0)
 })
