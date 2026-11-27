@@ -38,7 +38,8 @@ public sealed partial class FinanceCreditAccountService(
     FinanceCreditAccountEnvelopes envelopes,
     TimeProvider timeProvider,
     ISettingsPrerequisiteProvider? settings = null,
-    IFinanceCreditLenderPortV1? lenders = null) : IFinanceCreditAccountService
+    IFinanceCreditLenderPortV1? lenders = null,
+    IAuditTransactionWriterV1? auditOwner = null) : IFinanceCreditAccountService
 {
     public const string ProposeCommand = "finance.credit-account.propose";
     public const string ApproveCommand = "finance.credit-account.approve";
@@ -197,7 +198,7 @@ public sealed partial class FinanceCreditAccountService(
         return await SaveAsync(context, metadata, action, ProposeCommand, payloadHash, result, cancellationToken);
     }
 
-    public async Task<CreditAccountCommandResult> ApproveAsync(FinanceContext context, CommandMetadata metadata,
+    private async Task<CreditAccountCommandResult> ApproveCoreAsync(FinanceContext context, CommandMetadata metadata,
         CreditAccountApproveRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -232,7 +233,7 @@ public sealed partial class FinanceCreditAccountService(
             cancellationToken);
     }
 
-    public async Task<CreditAccountCommandResult> RejectAsync(FinanceContext context, CommandMetadata metadata,
+    private async Task<CreditAccountCommandResult> RejectCoreAsync(FinanceContext context, CommandMetadata metadata,
         CreditAccountRejectRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -709,6 +710,7 @@ public sealed partial class FinanceCreditAccountService(
         catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
             || exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
+            if (FinanceTreasuryTransaction.RequiresFullRollback(dbContext)) throw;
             dbContext.ChangeTracker.Clear();
             if (await PriorAsync(context, metadata, action, command, payloadHash, cancellationToken) is { } prior)
             {

@@ -353,7 +353,8 @@ public static class FinanceModuleExtensions
                 Envelope(provider, ErpPermissions.FinanceCreditsApprove, permissions, FinanceAction.ApproveCredit)),
             provider.GetRequiredService<TimeProvider>(),
             provider.GetService<ISettingsPrerequisiteProvider>(),
-            provider.GetService<IFinanceCreditLenderPortV1>());
+            provider.GetService<IFinanceCreditLenderPortV1>(),
+            provider.GetService<IAuditTransactionWriterV1>());
     }
 
     private static FinanceCreditMovementServiceV1 CreateCreditMovementService(IServiceProvider provider)

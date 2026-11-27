@@ -17,12 +17,24 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(54, declarations.Count);
+        Assert.Equal(55, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             !declaration.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)
             && !declaration.CapabilityId.StartsWith("finance.official-sales-invoices.", StringComparison.Ordinal)
             && declaration.CapabilityId != FinanceShellCapabilityProvider.PartyBalanceTransferCapabilityId
             && !declaration.CapabilityId.StartsWith("finance.cash-exchange-book-values.", StringComparison.Ordinal), declaration.ImplementationAvailable));
+    }
+
+    [Fact]
+    public void Credit_purpose_uses_only_the_native_approve_name_and_does_not_publish_the_staged_credit_workspace()
+    {
+        var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
+        var purpose = Assert.Single(declarations, row => row.CapabilityId == "finance.credit-account.work-decision");
+        Assert.Null(purpose.ParentCapabilityId); Assert.True(purpose.ImplementationAvailable);
+        Assert.Equal([ErpPermissions.FinanceCreditsApprove], purpose.RequiredPermissions);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, purpose.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, purpose.ScopeRequirement);
+        Assert.All(declarations.Where(row => row.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)), row => Assert.False(row.ImplementationAvailable));
     }
 
     [Fact]
@@ -32,9 +44,11 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.19", provider.ContractVersion);
+        Assert.Equal("1.20", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
+            ("finance.credit-account.work-decision", "finance.credit-account-work-decision", "/onaylarim/finance.credit-account.v1/:approvalId", "W-FIN-CREDIT-ACCOUNT-01",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCreditsApprove]),
             ("finance.cash-account.work-decision", "finance.cash-account-work-decision", "/onaylarim/finance.cash-account.v1/:approvalId", "W-FIN-CASH-ACCOUNT-01",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCashAccountApprove]),
             ("finance.cash-account-passivation.work-decision", "finance.cash-account-passivation-work-decision", "/onaylarim/finance.cash-account-passivation.v1/:approvalId", "W-FIN-CASH-ACCOUNT-PASSIVATION-01",
@@ -338,7 +352,7 @@ public sealed class FinanceShellCapabilityProviderTests
                 "F-03-OPEN-ITEMS", "F-04", "F-04-NEW", "F-13-BANK-STATEMENT", "F-18-COLLATERALS", "F-18-CREDIT-LIMITS", "F-23-OPENING-BALANCES",
                 "F-25-EXPENSE-PAYMENTS", "F-32-CASH-TRANSFERS", "F-32-EXCHANGE-BOOK-APPROVE", "F-32-EXCHANGE-BOOK-PREPARE",
                 "F-32-PARTY-BALANCE-TRANSFER", "F-47-CREDITS", "M-03", "W-FIN-CASH-ACCOUNT-01",
-                "W-FIN-CASH-ACCOUNT-PASSIVATION-01", "W-FIN-CASH-ACCOUNT-REACTIVATION-01"],
+                "W-FIN-CASH-ACCOUNT-PASSIVATION-01", "W-FIN-CASH-ACCOUNT-REACTIVATION-01", "W-FIN-CREDIT-ACCOUNT-01"],
             routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
 }

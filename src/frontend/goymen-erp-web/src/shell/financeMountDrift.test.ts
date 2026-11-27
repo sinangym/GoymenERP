@@ -11,9 +11,10 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { matchPath } from 'react-router'
+import { matchPath, matchRoutes } from 'react-router'
 import { CAPABILITY, CAPABILITY_ROUTE, CAPABILITY_NAV_LABEL, type CapabilityId } from './capabilities'
 import {
+  FINANCE_WORK_DECISION_CAPABILITIES,
   FINANCE_CAPABILITY,
   FINANCE_ROUTE,
   manualBankPaymentDetailPath,
@@ -22,6 +23,8 @@ import {
   receiptDraftPath,
 } from '../finance/capabilities'
 import { financeRoutes } from '../finance/financeRoutes'
+import { workRoutes } from '../work/workRoutes'
+import { shellRoutes } from './router'
 import {
   OFFICIAL_INVOICE_IMPORT_APPROVALS_ROUTE,
   OFFICIAL_INVOICE_IMPORT_UPLOAD_ROUTE,
@@ -114,6 +117,15 @@ describe('shell ↔ Finance lane capability ids', () => {
       .toHaveLength(1)
   })
 
+  it.each(FINANCE_WORK_DECISION_CAPABILITIES)('mounts the Finance purpose %s once under its own capability with static kind precedence', (id, path) => {
+    expect(Object.values(CAPABILITY)).toContain(id)
+    expect(CAPABILITY_ROUTE[id]).toBe(path)
+    expect(CAPABILITY_NAV_LABEL[id]).toBe('')
+    const mounted=workRoutes.filter(route=>route.path===path.slice(1))
+    expect(mounted).toHaveLength(1)
+    expect(matchRoutes(shellRoutes,path.replace(':approvalId','cccccccc-0000-4000-8000-0000000000f1'))?.at(-1)?.route).toBe(mounted[0])
+  })
+
   it('classifies every lane id as either routed or a control', () => {
     // Without this, an unclassified id still fails — but as a phantom MISSING MOUNT in the next
     // case, which is how finance.receipts.record read at f3800f3c: "expected 5 to equal 6", sending
@@ -138,7 +150,7 @@ describe('shell ↔ Finance lane capability ids', () => {
     const laneRoutedIds = (Object.values(FINANCE_CAPABILITY) as string[]).filter(
       (id) => !CONTROLS.includes(id),
     )
-    expect([...shellFinanceIds].sort()).toEqual([...laneRoutedIds].sort())
+    expect([...shellFinanceIds].sort()).toEqual([...laneRoutedIds, ...FINANCE_WORK_DECISION_CAPABILITIES.map(([id]) => id)].sort())
     for (const control of CONTROLS) {
       expect(Object.keys(CAPABILITY_ROUTE), `${control} is a control, so it must have no route`).not.toContain(control)
       expect(

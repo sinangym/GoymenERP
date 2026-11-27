@@ -15,7 +15,7 @@ const ROLES = [
 ]
 
 // YOL-D41: approvals without an owner screen; decided from the inbox detail (WP8).
-const NO_SCREEN = ['finance.cash-account.v1', 'finance.cash-account-passivation.v1', 'finance.cash-account-reactivation.v1']
+const NO_SCREEN = ['finance.credit-account.v1', 'finance.cash-account.v1', 'finance.cash-account-passivation.v1', 'finance.cash-account-reactivation.v1']
 
 const PERMISSIONS = [
   'finance.cash-account.approve', 'finance.cash-account.passivation.approve', 'finance.cash-account.reactivation.approve',

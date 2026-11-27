@@ -471,3 +471,15 @@ it('opens the request inbox for the approve-only purpose capability and follows 
   expect(api.inboxReads()[0].companyId).toBe(COMPANY)
   expect(api.queueReads()).toHaveLength(0)
 })
+
+it('opens the credit inbox under the narrow purpose capability and retains the owner decision link', async () => {
+ const kind='finance.credit-account.v1',permission='finance.credits.approve',id='cccccccc-0000-4000-8000-0000000000f2'
+ const link=`/onaylarim/${kind}/${id}`
+ const item={...limitItem,module:'finance',kind,itemId:id,documentLabel:'SENTETIK kredi',link,awaitingPermission:permission,ruleVersion:RV(kind),
+  explanation:{rules:[{ruleCode:'finance.credit-account-approval-required',threshold:null,actual:'1000',deviation:null,unit:null}],references:[]}}
+ const api=installFetch({granted:[CAPABILITY.financeCreditAccountWorkDecision],inbox:()=>json({companyId:COMPANY,view:'awaiting-my-decision',generatedAtUtc:'2026-11-26T08:00:00Z',items:[item],
+  sources:[{module:'finance',kind,awaitingPermission:permission,durationClass:'BusinessDays',ruleVersion:RV(kind),state:'Ready',hasMore:false}]})})
+ await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-list')
+ expect(within(cardOf(kind)).getByRole('link',{name:T.openOwnerLabel('Kredi hesabı','SENTETIK kredi')}).getAttribute('href')).toBe(link)
+ expect(api.inboxReads()).toHaveLength(1);expect(api.inboxReads()[0].companyId).toBe(COMPANY);expect(api.queueReads()).toHaveLength(0)
+})

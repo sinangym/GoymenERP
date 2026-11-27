@@ -81,15 +81,16 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
     IErpAuthorityRevalidationService authority, IEnumerable<IWorkInboxSourceV1> sources,
     IWorkDelegationReaderV1 delegations, WorkDecisionExecutionFenceV1 executionFence,
     IFinanceCashAccountMaster cash, IInventoryOpeningCostCommandV1 openingCost,
-    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null)
+    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null)
 {
     public const string OpeningCost = "inventory.opening-cost.v1";
     public const string SalesOrder = "sales.order-draft.v1";
     public const string SalesInvoice = "sales.invoice.v1";
     public const string SalesSubcontractInvoice = "sales.subcontract-invoice.v1";
+    public const string CreditAccount = "finance.credit-account.v1";
     public const string PurchaseRequest = "purchasing.request.v1";
     public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([OpeningCost, "finance.cash-account.v1",
-        "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest], StringComparer.Ordinal);
+        "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest, CreditAccount], StringComparer.Ordinal);
 
     private async Task RequireDecisionAuthorityAsync(string kind,string permission,Guid companyId,string actor,CancellationToken token)
     {
@@ -222,6 +223,19 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
         }
         var context = new FinanceContext(snapshot.CompanyId, actor!, correlation.CorrelationId, correlation.CausationId);
         var metadata = new CommandMetadata(key);
+        if (kind == CreditAccount)
+        {
+            if (credits is null) throw new WorkDecisionException(503);
+            var answer = request.Approve
+                ? await credits.ApproveAsync(context, metadata, new(id, request.ExpectedVersion), token)
+                : await credits.RejectAsync(context, metadata, new(id, request.ExpectedVersion, request.Reason!), token);
+            if (answer.Outcome != CommandOutcome.Succeeded)
+                throw new WorkDecisionException(answer.Outcome switch { CommandOutcome.Denied => 403, CommandOutcome.Unavailable => 503,
+                    CommandOutcome.VersionConflict or CommandOutcome.IdempotencyConflict => 409, _ => 422 },
+                    answer.Issues.FirstOrDefault()?.Code, answer.IsReplay, answer.OriginalCorrelationId);
+            if (answer.Resource is not { } credit || credit.CompanyId != snapshot.CompanyId || credit.Id != id) throw new WorkDecisionException(503);
+            return new(snapshot.CompanyId, kind, id, credit.Status.ToString(), answer.IsReplay, answer.OriginalCorrelationId);
+        }
         CashAccountCommandResult result;
         if (kind == "finance.cash-account.v1")
             result = request.Approve ? await cash.ApproveAsync(context, metadata, new(id, request.ExpectedVersion), token)

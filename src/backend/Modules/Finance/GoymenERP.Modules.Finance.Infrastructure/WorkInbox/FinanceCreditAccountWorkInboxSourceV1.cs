@@ -1,3 +1,4 @@
+using System.Globalization;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
@@ -8,8 +9,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// <summary>
 /// W1-A (AI-D31, AI-D32, YOL-D18): the proposed credit accounts (FIN-SC47, FNS-D87/FNS-D88/FNS-D93/FNS-D94) waiting for a
 /// decision, as Finance lists them for the Work inbox. An account waits while its status is Proposed (the approve and
-/// reject commands accept only that status) since it was proposed; a proposal is not edited. It is decided on the credits
-/// screen by a holder of <c>finance.credits.approve</c> other than the proposer (the approve command refuses only the
+/// reject commands accept only that status) since it was proposed; a proposal is not edited. It is decided on the Work
+/// purpose route by a holder of <c>finance.credits.approve</c> other than the proposer (the approve command refuses only the
 /// proposer). The owner's permission port answers only a company-wide grant, so scoped approvers are not accepted. Every
 /// proposed account of the company is returned, the caller's own included: Work hides a maker's own item.
 /// <para>
@@ -19,7 +20,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// </summary>
 internal sealed class FinanceCreditAccountWorkInboxSourceV1(
     FinanceDbContext dbContext,
-    FinanceWorkInboxFence fence) : IWorkInboxSourceV1
+    FinanceWorkInboxFence fence) : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "finance";
     public const string KindName = "finance.credit-account.v1";
@@ -39,6 +40,18 @@ internal sealed class FinanceCreditAccountWorkInboxSourceV1(
         int maxCount,
         CancellationToken cancellationToken) =>
         FinanceWorkInboxRead.ListAsync(fence, context, ApproverPermission, maxCount, ReadAsync, Item, cancellationToken);
+
+    public async Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context, Guid itemId,
+        CancellationToken cancellationToken)
+    {
+        if (itemId == Guid.Empty || await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+        var row = await dbContext.CreditAccounts.AsNoTracking().SingleOrDefaultAsync(
+            row => row.CompanyId == context.CompanyId && row.Id == itemId, cancellationToken);
+        if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null || row is null
+            || row.Version < 1 || row.Status is not (FinanceCreditAccountService.Proposed or FinanceCreditAccountService.Approved or FinanceCreditAccountService.Rejected)) return null;
+        return Item(row, false) is { } item
+            ? new(context.CompanyId, item, row.Version.ToString(CultureInfo.InvariantCulture), row.Status == FinanceCreditAccountService.Proposed) : null;
+    }
 
     private async Task<(List<CreditAccountRow> Rows, bool Lookup)> ReadAsync(
         Guid companyId, int maxCount, CancellationToken cancellationToken)
@@ -73,7 +86,7 @@ internal sealed class FinanceCreditAccountWorkInboxSourceV1(
 
         references.Add(FinanceWorkInboxRead.Reference("currency", row.CurrencyId));
         return new WorkInboxItemV1(ModuleName, KindName, row.Id, FinanceWorkInboxRead.Label(row.ContractReference, row.Id),
-            row.ProposedAtUtc.ToUniversalTime(), ScreenPath, row.ProposedBy,
+            row.ProposedAtUtc.ToUniversalTime(), $"/onaylarim/{KindName}/{row.Id:D}", row.ProposedBy,
             [new WorkApprovalRuleResultV1(ApprovalRequiredRule, null, principal, null, null)],
             references);
     }

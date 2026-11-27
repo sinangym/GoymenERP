@@ -263,6 +263,10 @@ export const CAPABILITY = {
    * FIN-S9 (FNS-D23) Açılış Bakiyeleri. Its propose and approve are CONTROLS of this list, never routes.
    */
   financeOpeningBalancesList: 'finance.opening-balances.list',
+  financeCashAccountWorkDecision: 'finance.cash-account.work-decision',
+  financeCashAccountPassivationWorkDecision: 'finance.cash-account-passivation.work-decision',
+  financeCashAccountReactivationWorkDecision: 'finance.cash-account-reactivation.work-decision',
+  financeCreditAccountWorkDecision: 'finance.credit-account.work-decision',
   financeCreditsWorkspace: 'finance.credits.workspace',
   financePartyBalanceTransfers: 'finance.party-balance-transfers.record',
   financeBankStatements: 'finance.bank-statements.read',
@@ -542,6 +546,10 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.financeCreditLimitsList]: '/finans/kredi-limitleri',
   [CAPABILITY.financeCollateralsList]: '/finans/teminatlar',
   [CAPABILITY.financeOpeningBalancesList]: '/finans/acilis-bakiyeleri',
+  [CAPABILITY.financeCashAccountWorkDecision]: '/onaylarim/finance.cash-account.v1/:approvalId',
+  [CAPABILITY.financeCashAccountPassivationWorkDecision]: '/onaylarim/finance.cash-account-passivation.v1/:approvalId',
+  [CAPABILITY.financeCashAccountReactivationWorkDecision]: '/onaylarim/finance.cash-account-reactivation.v1/:approvalId',
+  [CAPABILITY.financeCreditAccountWorkDecision]: '/onaylarim/finance.credit-account.v1/:approvalId',
   [CAPABILITY.financeCreditsWorkspace]: '/finans/krediler',
   [CAPABILITY.financePartyBalanceTransfers]: '/finans/cari-bakiye-devri',
   [CAPABILITY.financeBankStatements]: '/finans/banka-ekstresi',

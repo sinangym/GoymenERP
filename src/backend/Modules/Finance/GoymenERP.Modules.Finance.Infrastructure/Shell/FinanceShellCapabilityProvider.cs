@@ -81,11 +81,12 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 /// <c>finance.bank-statements.read</c>; importing a statement and confirming/reversing a match are controls under
 /// <c>finance.bank-statements.import</c> and <c>finance.bank-statements.match</c>. No role or user receives these names here.
 /// </para>
+/// <para>1.20 (WP8): the credit proposal decision uses only its native approve authority; staged credit workspace controls remain unchanged.</para>
 /// </summary>
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.19";
+    public const string OwnerContractVersion = "1.20";
     public const string BankStatementCapabilityId = "finance.bank-statements.read";
     public const string BankStatementImportCapabilityId = "finance.bank-statements.import";
     public const string BankStatementMatchCapabilityId = "finance.bank-statements.match";
@@ -476,6 +477,9 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
                     ErpPermissions.AccountingPeriodsRead,
                 ],
             },
+            Declaration("finance.credit-account.work-decision", "finance.credit-account-work-decision",
+                "/onaylarim/finance.credit-account.v1/:approvalId", "W-FIN-CREDIT-ACCOUNT-01",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCreditsApprove]),
             Declaration("finance.cash-account.work-decision", "finance.cash-account-work-decision",
                 "/onaylarim/finance.cash-account.v1/:approvalId", "W-FIN-CASH-ACCOUNT-01",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCashAccountApprove]),

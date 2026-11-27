@@ -54,6 +54,9 @@ public sealed class FinanceShellCapabilityRegistryTests
                 ("finance.bank-statements.import", "F-13-BANK-STATEMENT", "finance.bank-statements.read"),
                 ("finance.bank-statements.match", "F-13-BANK-STATEMENT", "finance.bank-statements.read"),
                 ("finance.bank-statements.read", "F-13-BANK-STATEMENT", null),
+                ("finance.cash-account-passivation.work-decision", "W-FIN-CASH-ACCOUNT-PASSIVATION-01", null),
+                ("finance.cash-account-reactivation.work-decision", "W-FIN-CASH-ACCOUNT-REACTIVATION-01", null),
+                ("finance.cash-account.work-decision", "W-FIN-CASH-ACCOUNT-01", null),
                 ("finance.cash-exchange-book-values.approve", "F-32-EXCHANGE-BOOK-APPROVE", null),
                 ("finance.cash-exchange-book-values.prepare", "F-32-EXCHANGE-BOOK-PREPARE", null),
                 // FNS-D24 (Finance 1.11): one transfer is one transaction; the commit is a control of the workspace.
@@ -63,6 +66,7 @@ public sealed class FinanceShellCapabilityRegistryTests
                 ("finance.collaterals.list", "F-18-COLLATERALS", null),
                 ("finance.collaterals.record", "F-18-COLLATERALS", "finance.collaterals.list"),
                 // F-018 L1 (Finance 1.10, FNS-D27 / FNS-D27a; one step, FNS-D57(3)): propose and approve are controls.
+                ("finance.credit-account.work-decision", "W-FIN-CREDIT-ACCOUNT-01", null),
                 ("finance.credit-limits.approve", "F-18-CREDIT-LIMITS", "finance.credit-limits.list"),
                 ("finance.credit-limits.list", "F-18-CREDIT-LIMITS", null),
                 ("finance.credit-limits.propose", "F-18-CREDIT-LIMITS", "finance.credit-limits.list"),
@@ -126,7 +130,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(providers,
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision(providers)]));
 
-        Assert.Equal(51, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
+        Assert.Equal(55, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
     }
 
     [Fact]
