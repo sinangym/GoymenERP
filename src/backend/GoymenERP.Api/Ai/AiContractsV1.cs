@@ -60,7 +60,8 @@ public sealed record AiAskResponseV1(string Outcome, IReadOnlyList<AiToolResultV
 
 /// <summary>WP-A1: the composed text, its cited sources and the model/policy identity that produced it.</summary>
 public sealed record AiAnswerV1(string Text, IReadOnlyList<AiAnswerCitationV1> Citations, string ModelDeployment, string PolicyVersion,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Grounded = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Grounded = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? AnswerId = null);
 
 public sealed record AiAnswerCitationV1(
     string ToolId,

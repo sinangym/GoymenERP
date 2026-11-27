@@ -1,3 +1,4 @@
+using GoymenERP.Api.Ai.Answers;
 using System.Text.Json;
 using GoymenERP.Api.Ai;
 using GoymenERP.Api.Ai.External;
@@ -830,6 +831,8 @@ public sealed partial class AiAskServiceTests
         public InMemoryAiGatewayStore GatewayStore { get; } = new(Company);
         public FakeAuthority Authority { get; } = new(ErpPermissions.AiPanelUse, ToolPermission);
         public ICompanyContext CompanyScope { get; set; } = new CompanyContext();
+        public AnswerReceiptTestStore ReceiptStore { get; } = new();
+        public IAiAnswerReceiptWriterV1 ReceiptWriter => new AiAnswerReceiptWriterV1(ReceiptStore, TimeProvider.System);
         public CorrelationContext Correlation { get; } = new();
 
         public static AiRuntimeOptions ReadyOptions() => new()
@@ -845,7 +848,7 @@ public sealed partial class AiAskServiceTests
             AllowedTools = [new AiAllowedToolOptions { ToolId = ToolId, Version = ToolVersion }],
         };
 
-        public AiAskService Service(IEnumerable<IAiAnswerComposerV1>? composers = null) => new(
+        public AiAskService Service(IEnumerable<IAiAnswerComposerV1>? composers = null, bool receiptsAvailable = true) => new(
             Options.Create(options),
             new TestHostEnvironment("Development"),
             Provider,
@@ -857,7 +860,7 @@ public sealed partial class AiAskServiceTests
             Correlation,
             Writer,
             TimeProvider.System,
-            AiGatewayTestDoubles.Gateway(options, GatewayStore, composers));
+            AiGatewayTestDoubles.Gateway(options, GatewayStore, composers), receiptsAvailable ? ReceiptWriter : null);
 
         public AiCapabilityService CapabilityService() => new(
             Options.Create(options),

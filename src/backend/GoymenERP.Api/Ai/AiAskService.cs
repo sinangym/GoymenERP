@@ -3,6 +3,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using GoymenERP.Api.Ai.External;
+using GoymenERP.Api.Ai.Answers;
+using GoymenERP.Modules.AiKnowledge.Domain;
 using GoymenERP.Api.Ai.Evaluation;
 using GoymenERP.Api.Ai.Gateway;
 using GoymenERP.Api.Shell;
@@ -39,7 +41,8 @@ public sealed class AiAskService(
     ICorrelationContext correlationContext,
     ISecurityEventWriterV1 securityEvents,
     TimeProvider timeProvider,
-    IAiGatewayV1 gateway)
+    IAiGatewayV1 gateway,
+    IAiAnswerReceiptWriterV1? answerReceipts = null)
 {
     private const string CompanyArgumentName = "companyId";
 
@@ -260,11 +263,35 @@ public sealed class AiAskService(
         switch (composed.Status)
         {
             case AiGatewayStatusV1.Answered when composed.Answer is { } answer:
+                Guid? answerId = null;
+                if (!generalChat)
+                {
+                    if (!answer.Grounded || answerReceipts is null) return AiAskResultV1.Of(AiAskStatusV1.Unavailable);
+                    async Task ReceiptFence(CancellationToken ct)
+                    {
+                        if (!await RemainsCurrentAsync(actorId, companyId, releasedTools ?? [], ct))
+                            throw new AiAnswerReceiptAuthorityLostException();
+                    }
+                    try
+                    {
+                        answerId = await answerReceipts.RecordAsync(companyId, actorId, correlationContext.CorrelationId,
+                            answer, ReceiptFence, cancellationToken);
+                    }
+                    catch (AiAnswerReceiptAuthorityLostException)
+                    {
+                        await RefuseAsync(SecurityEventTypesV1.AiAuthorizationDenied, SecurityEventReasonCodesV1.PermissionMissing,
+                            companyId, actorId, ErpPermissions.AiPanelUse, null, cancellationToken);
+                        return AiAskResultV1.Of(AiAskStatusV1.Refused);
+                    }
+                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    { return AiAskResultV1.Of(AiAskStatusV1.Unavailable); }
+                    if (answerId is null || answerId == Guid.Empty) return AiAskResultV1.Of(AiAskStatusV1.Unavailable);
+                }
                 return AiAskResultV1.Answered(new AiAskResponseV1(AiAskOutcomesV1.Answered, results,
                     new AiAnswerV1(answer.Text,
                         answer.Citations.Select(citation => new AiAnswerCitationV1(citation.ToolId, citation.ToolVersion,
                             citation.TargetKind, citation.TargetId, citation.Title, citation.SourceVersion, citation.AsOfUtc)).ToArray(),
-                        answer.ModelDeployment, answer.PolicyVersion, generalChat ? false : null), generalChat ? AiAskModesV1.GeneralChat : null));
+                        answer.ModelDeployment, answer.PolicyVersion, generalChat ? false : null, answerId), generalChat ? AiAskModesV1.GeneralChat : null));
             case AiGatewayStatusV1.CannotAnswer:
                 return AiAskResultV1.Answered(new AiAskResponseV1(AiAskOutcomesV1.CannotAnswer, results, null, generalChat ? AiAskModesV1.GeneralChat : null));
             case AiGatewayStatusV1.FeatureDisabled:

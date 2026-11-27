@@ -265,7 +265,7 @@ public sealed partial class AiAskServiceTests
             return new(Options.Create(options), new TestHostEnvironment("Development"), Common.Provider,
                 new AiToolCatalog([Tool], Options.Create(options)), new TestUser(Actor, Company), Common.CompanyScope, Authority,
                 missingSession ? new ContextMissingSession() : new FixedSessionResolver(), Common.Correlation, Common.Writer,
-                TimeProvider.System, AiGatewayTestDoubles.Gateway(options, Common.GatewayStore, composers));
+                TimeProvider.System, AiGatewayTestDoubles.Gateway(options, Common.GatewayStore, composers), Common.ReceiptWriter);
         }
     }
     private sealed class ContextWrongCitationComposer : IAiAnswerComposerV1
