@@ -1,3 +1,6 @@
+import { useEffect, useRef } from 'react'
+import type { CounterpartyMutationResult } from '../cari/mutationContract'
+import { PARTY_ROLE_FLAG } from '../cari/contract'
 /** Synthetic UI sources; real HTTP/SQL/browser runtime acceptance NOT_RUN. */
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -20,9 +23,9 @@ vi.mock('../shell/useAuthBoundary', () => ({ useAuthBoundary: () => auth }))
 vi.mock('./invoiceImportAdmissionApi', () => ({ fetchImportMappingReferences: vi.fn(), fetchImportProducts: vi.fn(), resolveImportSupplier: vi.fn(), recordInvoiceImport: vi.fn() }))
 vi.mock('./api', () => ({ fetchPurchasingSupplierOptions: vi.fn() }))
 const clients: QueryClient[] = []
-function mount() {
+function mount(binding = { company: id(2), namespace: 'synthetic-import:actor:company', entry: 1 }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0, refetchOnWindowFocus: false } } }); clients.push(client)
-  return render(<MemoryRouter><QueryClientProvider client={client}><InvoiceImportAdmissionPanel binding={{ company: id(2), namespace: 'synthetic-import:actor:company', entry: 1 }}
+  return render(<MemoryRouter><QueryClientProvider client={client}><InvoiceImportAdmissionPanel binding={binding}
     id={id(1)} source={importRequestFixture()} invoice={admissionFacts()} /></QueryClientProvider></MemoryRouter>)
 }
 async function map() {
@@ -40,7 +43,7 @@ async function map() {
   await waitFor(() => expect((screen.getByRole('button', { name: T.recordInvoice }) as HTMLButtonElement).disabled).toBe(false))
 }
 beforeEach(() => {
-  vi.clearAllMocks(); resetAdjustmentAttemptsForTests()
+  vi.clearAllMocks(); resetAdjustmentAttemptsForTests(); quick.result = null; quick.signal = null; quick.companyOverride = null
   shell = { ...initialShellState, phase: 'idle', activeContext: { companyId: id(2), userId: 'synthetic-actor', scopeMode: 'single', capabilityGeneration: 'g1',
     capabilities: ['purchasing.invoices.import'] } }
   vi.mocked(fetchImportMappingReferences).mockResolvedValue({ type: 'ok-single', data: admissionReferences() })
@@ -113,4 +116,79 @@ describe('actual-reference invoice admission workspace', () => {
     vi.mocked(fetchImportMappingReferences).mockResolvedValue({ type: kind }); mount(); fireEvent.click(screen.getByRole('button', { name: T.mapAndRecord }))
     await waitFor(() => expect(document.querySelector(`[data-state="${kind === 'malformed' ? 'malformed-response' : kind}"]`)).not.toBeNull()); expect(recordInvoiceImport).not.toHaveBeenCalled()
   })
+})
+
+// The shared Cari form/atomic/unknown engine remains covered by its own suites. This seam exercises only
+// this existing invoice workspace's owner eligibility/resolve reads and unresolved parent-submit boundary.
+const quick = vi.hoisted(()=>({result:null as boolean|null,signal:null as AbortSignal|null,companyOverride:null as string|null}))
+vi.mock('../cari/CariQuickCreate',()=>({CariQuickCreate:({initialRoles,disabled,onCreated,onUnresolvedChange}:{initialRoles:number;disabled?:boolean;onCreated:(record:CounterpartyMutationResult,signal:AbortSignal)=>Promise<boolean>;onUnresolvedChange?:(pending:boolean)=>void})=>{
+ const controller=useRef<AbortController|null>(null)
+ useEffect(()=>()=>controller.current?.abort(),[])
+ return <>
+  <button type="button" disabled={disabled} onClick={()=>{
+   controller.current?.abort();const next=new AbortController();controller.current=next;quick.signal=next.signal;onUnresolvedChange?.(true)
+   void onCreated({id:id(34),code:'SENTETIK-CAR-NEW',kind:1,legalName:'SENTETIK new supplier',tradeName:null,isActive:true,version:'2',account:{id:id(35),companyId:quick.companyOverride??id(2),roles:initialRoles,isActive:true,version:'1'}},next.signal).then(selected=>{if(!next.signal.aborted){quick.result=selected;onUnresolvedChange?.(false)}})
+  }}>SENTETIK quick create</button>
+  <button type="button" onClick={()=>onUnresolvedChange?.(true)}>SENTETIK unresolved create</button>
+  <button type="button" onClick={()=>onUnresolvedChange?.(false)}>SENTETIK create resolved</button>
+  <span data-testid="quick-initial-roles">{initialRoles}</span>
+ </>
+}}))
+const createdOffer={supplierPartyId:id(34),companyAccountId:id(35),label:'SENTETIK newly eligible supplier'}
+const createdResolution={...admissionSupplier(),supplierPartyId:id(34),companyAccountId:id(35),partyVersion:'19',accountVersion:'23'}
+describe('incoming invoice shared quick Cari entry',()=>{
+ it('re-reads all current owner option pages and document-bound eligibility before selecting the new company account',async()=>{
+  mount();await map()
+  vi.mocked(fetchPurchasingSupplierOptions).mockResolvedValueOnce({type:'ok-single',data:{items:[],nextCursor:'SENTETIK-next'}}).mockResolvedValueOnce({type:'ok-single',data:{items:[createdOffer],nextCursor:null}})
+  vi.mocked(resolveImportSupplier).mockResolvedValue({type:'ok-single',data:createdResolution})
+  const amount=screen.getByLabelText(T.amount) as HTMLInputElement,originalAmount=amount.value
+  fireEvent.click(screen.getByRole('button',{name:'SENTETIK quick create'}))
+  await waitFor(()=>expect(quick.result).toBe(true))
+  expect(fetchPurchasingSupplierOptions).toHaveBeenCalledWith(id(2),{q:'SENTETIK-CAR-NEW',cursor:'SENTETIK-next'},expect.any(AbortSignal))
+  expect(resolveImportSupplier).toHaveBeenCalledWith(id(2),id(1),importRequestFixture(),id(34),id(35),expect.any(AbortSignal))
+  expect((screen.getByLabelText(T.supplierSelection) as HTMLSelectElement).value).toBe(`${id(34)}:${id(35)}`)
+  expect(screen.getByTestId('quick-initial-roles').textContent).toBe(String(PARTY_ROLE_FLAG.Supplier))
+  expect(amount.value).toBe(originalAmount);expect((screen.getByLabelText(T.purchasePurpose) as HTMLSelectElement).value).toBe('resale')
+  await waitFor(()=>expect((screen.getByRole('button',{name:T.recordInvoice}) as HTMLButtonElement).disabled).toBe(false))
+  fireEvent.click(screen.getByRole('button',{name:T.recordInvoice}));await screen.findByText(T.unknown)
+  expect(recordInvoiceImport).toHaveBeenCalledWith(id(2),id(1),expect.objectContaining({request:expect.objectContaining({supplierPartyId:id(34),companyAccountId:id(35),expectedPartyVersion:'19',expectedAccountVersion:'23',lines:[expect.objectContaining({productId:id(16),linePurpose:'resale'})]})}),expect.any(String))
+ })
+ it.each(['missing','other-account','forbidden','malformed','unavailable'] as const)('preserves the original selection when the supplier owner cannot offer the exact created account: %s',async refusal=>{
+  mount();await map();const reads=vi.mocked(resolveImportSupplier).mock.calls.length
+  vi.mocked(fetchPurchasingSupplierOptions).mockResolvedValue(refusal==='forbidden'?{type:'http',status:403}:refusal==='unavailable'?{type:'http',status:503}:refusal==='malformed'?{type:'malformed'}:{type:'ok-single',data:{items:refusal==='other-account'?[{...createdOffer,companyAccountId:id(36)}]:[],nextCursor:null}})
+  fireEvent.click(screen.getByRole('button',{name:'SENTETIK quick create'}));await waitFor(()=>expect(quick.result).toBe(false))
+  expect((screen.getByLabelText(T.supplierSelection) as HTMLSelectElement).value).toBe(`${id(14)}:${id(15)}`);expect(resolveImportSupplier).toHaveBeenCalledTimes(reads);expect(recordInvoiceImport).not.toHaveBeenCalled()
+  if(refusal==='forbidden')expect(auth.report).toHaveBeenCalledWith(403,expect.anything())
+ })
+ it.each([403,409,503])('preserves existing data if document-specific resolution refuses the created account (%s)',async status=>{
+  mount();await map();vi.mocked(fetchPurchasingSupplierOptions).mockResolvedValue({type:'ok-single',data:{items:[createdOffer],nextCursor:null}})
+  vi.mocked(resolveImportSupplier).mockResolvedValue({type:'http',status})
+  fireEvent.click(screen.getByRole('button',{name:'SENTETIK quick create'}));await waitFor(()=>expect(quick.result).toBe(false))
+  expect((screen.getByLabelText(T.supplierSelection) as HTMLSelectElement).value).toBe(`${id(14)}:${id(15)}`);expect((screen.getByLabelText(T.purchasePurpose) as HTMLSelectElement).value).toBe('resale');expect(recordInvoiceImport).not.toHaveBeenCalled()
+  if(status===403)expect(auth.report).toHaveBeenCalledWith(403,expect.anything())
+ })
+ it('blocks the parent record handler while the shared create result is unresolved, without discarding the invoice mapping',async()=>{
+  mount();await map();fireEvent.click(screen.getByRole('button',{name:'SENTETIK unresolved create'}))
+  expect((screen.getByRole('button',{name:T.recordInvoice}) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button',{name:T.recordInvoice}));expect(recordInvoiceImport).not.toHaveBeenCalled()
+  expect((screen.getByLabelText(T.purchasePurpose) as HTMLSelectElement).value).toBe('resale')
+  fireEvent.click(screen.getByRole('button',{name:'SENTETIK create resolved'}));expect((screen.getByRole('button',{name:T.recordInvoice}) as HTMLButtonElement).disabled).toBe(false)
+ })
+ it('does not query owner eligibility for a mutation result from a foreign company',async()=>{
+  mount();await map();const reads=vi.mocked(fetchPurchasingSupplierOptions).mock.calls.length;quick.companyOverride=id(3)
+  fireEvent.click(screen.getByRole('button',{name:'SENTETIK quick create'}));await waitFor(()=>expect(quick.result).toBe(false))
+  expect(fetchPurchasingSupplierOptions).toHaveBeenCalledTimes(reads);expect((screen.getByLabelText(T.supplierSelection) as HTMLSelectElement).value).toBe(`${id(14)}:${id(15)}`);expect(recordInvoiceImport).not.toHaveBeenCalled()
+ })
+ it.each(['company','session'] as const)('aborts a late eligibility reply after %s context replacement instead of selecting it',async change=>{
+  const view=mount();await map();let release!:(value:Awaited<ReturnType<typeof fetchPurchasingSupplierOptions>>)=>void
+  const late=new Promise<Awaited<ReturnType<typeof fetchPurchasingSupplierOptions>>>(resolve=>{release=resolve})
+  vi.mocked(fetchPurchasingSupplierOptions).mockImplementation((_company,query)=>query?.q==='SENTETIK-CAR-NEW'?late:Promise.resolve<Awaited<ReturnType<typeof fetchPurchasingSupplierOptions>>>({type:'ok-single',data:{items:[],nextCursor:null}}))
+  const reads=vi.mocked(resolveImportSupplier).mock.calls.length
+  fireEvent.click(screen.getByRole('button',{name:'SENTETIK quick create'}));await waitFor(()=>expect(quick.signal).not.toBeNull())
+  view.unmount();expect(quick.signal?.aborted).toBe(true)
+  mount({company:change==='company'?id(3):id(2),namespace:`synthetic-import:new-${change}`,entry:2});fireEvent.click(screen.getByRole('button',{name:T.mapAndRecord}))
+  release({type:'ok-single',data:{items:[createdOffer],nextCursor:null}})
+  await waitFor(()=>expect(vi.mocked(fetchPurchasingSupplierOptions).mock.calls.length).toBeGreaterThan(1))
+  expect(resolveImportSupplier).toHaveBeenCalledTimes(reads);expect(screen.queryByRole('option',{name:createdOffer.label})).toBeNull();expect(recordInvoiceImport).not.toHaveBeenCalled()
+ })
 })

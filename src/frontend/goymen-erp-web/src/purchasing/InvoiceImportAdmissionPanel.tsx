@@ -1,3 +1,6 @@
+import { CariQuickCreate } from '../cari/CariQuickCreate'
+import { findQuickCreatedOffer } from '../cari/quickCreateSelection'
+import { PARTY_ROLE_FLAG } from '../cari/contract'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router'
@@ -28,7 +31,7 @@ const EMPTY = '00000000-0000-0000-0000-000000000000'
 export function InvoiceImportAdmissionPanel(props: Props) {
   const [open, setOpen] = useState(false), shell = useShellState()
   if (!hasCapability(shell, C.invoiceImport)) return null
-  return open ? <Admission {...props} /> : <Button type="button" onClick={() => setOpen(true)}>{T.mapAndRecord}</Button>
+  return open ? <Admission key={`${props.binding.namespace}:${props.binding.entry}:${props.id}:${props.source.documentId}:${props.source.documentVersion}:${props.source.documentSha256}`} {...props} /> : <Button type="button" onClick={() => setOpen(true)}>{T.mapAndRecord}</Button>
 }
 function useRead<TData>(props: Props, key: readonly unknown[], fetcher: (signal: AbortSignal) => Promise<ViewOutcome<TData>>, enabled = true) {
   const boundary = useAuthBoundary()
@@ -50,9 +53,10 @@ function plans(invoice: SourceInvoice): ImportInstallment[] {
     dueOn: item?.installmentDueOn ?? item?.dueOn ?? '', amount: item?.amount?.value ?? '', functionalAmount: null }))
 }
 function Admission(props: Props) {
-  const { binding, id, source, invoice } = props, shell = useShellState(), client = useQueryClient()
+  const { binding, id, source, invoice } = props, shell = useShellState(), client = useQueryClient(), boundary = useAuthBoundary()
   const [cursor, setCursor] = useState<string | undefined>(), [previous, setPrevious] = useState<readonly (string | undefined)[]>([])
   const [search, setSearch] = useState(''), [q, setQ] = useState(''), [supplier, setSupplier] = useState<PurchasingSupplierOption | null>(null)
+  const [quickUnresolved, setQuickUnresolved] = useState(false), [quickOffer, setQuickOffer] = useState<PurchasingSupplierOption | null>(null)
   const [currency, setCurrency] = useState(''), [mapping, setMapping] = useState<Readonly<Record<string, ImportLineMapping | undefined>>>({})
   const [installments, setInstallments] = useState<readonly ImportInstallment[]>(() => plans(invoice)), [error, setError] = useState(false)
   // ALS-D125: once the server warned about a similar invoice, recording needs the actor's reason (never blocked).
@@ -63,6 +67,7 @@ function Admission(props: Props) {
     supplier!.supplierPartyId, supplier!.companyAccountId, signal), supplier !== null)
   const choices = !refs.isFetching && refs.data?.type === 'ok-single' ? refs.data.data : null
   const offered = !suppliers.isFetching && suppliers.data?.type === 'ok-single' ? suppliers.data.data : null
+  const supplierOptions = [...(offered?.items.filter(item => item.companyAccountId !== quickOffer?.companyAccountId) ?? []), ...(quickOffer === null ? [] : [quickOffer])]
   const actualSupplier = !resolved.isFetching && resolved.data?.type === 'ok-single' ? resolved.data.data : null
   const frozenSourceAmounts = invoice.payments.some(x => x.amount !== null)
   const sourcePayments = frozenSourceAmounts ? invoice.payments.filter(x => x.amount !== null)
@@ -73,6 +78,7 @@ function Admission(props: Props) {
     () => { void client.invalidateQueries({ queryKey: [binding.namespace, 'incoming-invoices'] }) })
   function setPlan(index: number, patch: Partial<ImportInstallment>) { setInstallments(values => values.map((x, i) => i === index ? { ...x, ...patch } : x)) }
   function submit() {
+    if (attempt.locked || quickUnresolved) return
     const lines = invoice.lines.map(line => mapping[line.id])
     if (choices === null || actualSupplier === null || !choices.currencies.some(x => x.currencyId === currency) || lines.some(x => x === undefined)
       || installments.length === 0 || installments.some(x => !isDateOnly(x.dueOn) || !importAmount(x.amount)
@@ -98,8 +104,25 @@ function Admission(props: Props) {
       <ReadState value={suppliers.data} loading={suppliers.isFetching} refresh={() => void suppliers.refetch()} />
       {offered?.items.length === 0 ? <StateBlock subject={T.supplierSelection} state={{ kind: q ? 'empty-filtered' : 'empty-no-data' }} /> : null}
       <Field label={T.supplierSelection}>{p => <select {...p} value={supplier === null ? '' : `${supplier.supplierPartyId}:${supplier.companyAccountId}`}
-        onChange={e => setSupplier(offered?.items.find(x => `${x.supplierPartyId}:${x.companyAccountId}` === e.target.value) ?? null)}>
-        <option value="">{T.choose}</option>{offered?.items.map(x => <option key={x.companyAccountId} value={`${x.supplierPartyId}:${x.companyAccountId}`}>{x.label}</option>)}</select>}</Field>
+        onChange={e => setSupplier(supplierOptions.find(x => `${x.supplierPartyId}:${x.companyAccountId}` === e.target.value) ?? null)}>
+        <option value="">{T.choose}</option>{supplierOptions.map(x => <option key={x.companyAccountId} value={`${x.supplierPartyId}:${x.companyAccountId}`}>{x.label}</option>)}</select>}</Field>
+      <CariQuickCreate initialRoles={PARTY_ROLE_FLAG.Supplier} disabled={attempt.locked} onUnresolvedChange={setQuickUnresolved} onCreated={async (record, signal) => {
+        if (signal.aborted || record.account.companyId !== binding.company) return false
+        const captured = boundary.capture()
+        const found = await findQuickCreatedOffer(signal, async cursor => {
+          const result = await fetchPurchasingSupplierOptions(binding.company, { q: record.code, cursor }, signal)
+          if (result.type === 'http' && [401, 403].includes(result.status)) boundary.report(result.status, captured)
+          return result.type === 'ok-single' ? result.data : null
+        }, item => item.supplierPartyId === record.id && item.companyAccountId === record.account.id)
+        if (found === null || signal.aborted) return false
+        // Eligibility for this document is the import owner's decision; create alone supplies no invoice versions.
+        const eligibility = await resolveImportSupplier(binding.company, id, source, found.supplierPartyId, found.companyAccountId, signal)
+        if (eligibility.type === 'http' && [401, 403].includes(eligibility.status)) boundary.report(eligibility.status, captured)
+        if (signal.aborted || eligibility.type !== 'ok-single') return false
+        setQuickOffer(found); setSupplier(found)
+        // Existing supplier query re-reads the selected owner versions before the parent command is enabled.
+        return true
+      }} />
       {supplier === null ? null : <><p>{supplier.label}</p><ReadState value={resolved.data} loading={resolved.isFetching} refresh={() => void resolved.refetch()} /></>}
       <Button type="button" disabled={previous.length === 0 || suppliers.isFetching} onClick={() => { setCursor(previous.at(-1)); setPrevious(previous.slice(0, -1)) }}>{T.previous}</Button>
       <Button type="button" disabled={!offered?.nextCursor || suppliers.isFetching} onClick={() => { setPrevious([...previous, cursor]); setCursor(offered?.nextCursor ?? undefined) }}>{T.next}</Button>
@@ -126,7 +149,7 @@ function Admission(props: Props) {
         <Field label={D.importReason}>{p => <textarea {...p} required maxLength={DUPLICATE_REASON_MAXIMUM_LENGTH} value={duplicateReason}
           onChange={e => setDuplicateReason(e.target.value)} />}</Field>
         {error && duplicateReason.trim().length === 0 ? <p role="alert">{D.importReasonRequired}</p> : null}</div> : null}
-      {error ? <p role="alert">{T.admissionInvalid}</p> : null}<Button type="button" disabled={actualSupplier === null} onClick={submit}>{T.recordInvoice}</Button>
+      {error ? <p role="alert">{T.admissionInvalid}</p> : null}<Button type="button" disabled={actualSupplier === null || quickUnresolved} onClick={submit}>{T.recordInvoice}</Button>
     </fieldset>}
     {outcome?.type === 'failed' && !(outcome.status === 422 && outcome.code === DUPLICATE_REASON_REQUIRED) ? <><p role="alert">{T.rejected}</p><StateBlock subject={T.admissionHeading} state={classifyOutcome({ type: 'http', status: outcome.status })} /></> : null}
     {outcome?.type === 'unknown' ? <StateBlock subject={T.admissionHeading} state={{ kind: outcome.reason === 'malformed' ? 'malformed-response' : outcome.reason }} /> : null}
