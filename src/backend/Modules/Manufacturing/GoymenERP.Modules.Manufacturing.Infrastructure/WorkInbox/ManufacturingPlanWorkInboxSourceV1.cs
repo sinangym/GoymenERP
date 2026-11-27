@@ -8,7 +8,7 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.WorkInbox;
 
 /// <summary>
 /// W1-A (AI-D31, AI-D32, YOL-D18): the production plans waiting for an approval decision, as Manufacturing lists them for the
-/// Work inbox. Two states wait, both decided on the plan detail screen by a holder of <c>manufacturing.plans.approve</c> other
+/// Work inbox. Two states wait, both decided through the approval-only Work purpose by a holder of <c>manufacturing.plans.approve</c> other
 /// than the plan's preparer (the inbox decides nothing):
 /// <list type="bullet">
 /// <item>the first approval — a Draft plan (<c>ApproveManufacturingPlanV1</c>, URT-D2); it waits since its creation or, when
@@ -324,7 +324,7 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkApprovalDecision
             }
             : [];
         return new WorkInboxItemV1(ModuleName, KindName, candidate.PlanId, ManufacturingWorkInboxFence.Id(candidate.PlanId),
-            candidate.WaitingSinceUtc.ToUniversalTime(), ManufacturingWorkInboxFence.PlanLink(candidate.PlanId),
+            candidate.WaitingSinceUtc.ToUniversalTime(), PurposeLink(candidate.PlanId),
             string.IsNullOrWhiteSpace(candidate.PreparedBy) ? null : candidate.PreparedBy.Trim(), rules, references,
             Scope: new WorkInboxItemScopeV1(null, null, candidate.WorkCenterId));
     }

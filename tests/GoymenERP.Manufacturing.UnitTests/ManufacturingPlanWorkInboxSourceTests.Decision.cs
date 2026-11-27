@@ -24,7 +24,7 @@ public sealed partial class ManufacturingPlanWorkInboxSourceTests
         Assert.Equal(new WorkInboxItemScopeV1(null, null, Id(8001)), snapshot.Item.Scope);
         Assert.All(authority.Calls, call => Assert.Equal((ManufacturingPermissionManifestV1.PlansApprove, CompanyA), call));
         var listed = Assert.Single((await Source().ListPendingAsync(Context(), 10, default)).Items!);
-        Assert.Equal("/uretim/plan/" + Id(1).ToString("D"), listed.Link); // The partial purpose is not published yet.
+        Assert.Equal("/onaylarim/manufacturing.plan.v1/" + Id(1).ToString("D"), listed.Link);
     }
 
     [Fact]

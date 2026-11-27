@@ -25,7 +25,7 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         var provider = new ManufacturingShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
 
-        Assert.Equal(("MANUFACTURING", "1.14"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(("MANUFACTURING", "1.15"), (provider.Owner, provider.ContractVersion));
         Assert.Equal(21, declarations.Count);
         foreach (var declaration in declarations)
         {
@@ -38,7 +38,7 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
                 (ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide),
                 (declaration.ContextRequirement, declaration.ScopeRequirement));
             Assert.Null(declaration.GlobalProductOperation);
-            Assert.Equal(declaration.CapabilityId is not (ManufacturingShellCapabilityProvider.ReopenCapabilityId or ManufacturingShellCapabilityProvider.PlanWorkDecisionCapabilityId), declaration.ImplementationAvailable);
+            Assert.Equal(declaration.CapabilityId != ManufacturingShellCapabilityProvider.ReopenCapabilityId, declaration.ImplementationAvailable);
         }
 
         var purpose = Assert.Single(declarations, item => item.CapabilityId == ManufacturingShellCapabilityProvider.PlanWorkDecisionCapabilityId);
@@ -47,7 +47,7 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         Assert.Equal("W-MANUFACTURING-PLAN-01", purpose.ScreenId);
         Assert.Null(purpose.ParentCapabilityId);
         Assert.Equal([ErpPermissions.ManufacturingPlansApprove], purpose.RequiredPermissions);
-        Assert.False(purpose.ImplementationAvailable);
+        Assert.True(purpose.ImplementationAvailable);
 
         var exceptionApproval = Assert.Single(declarations,
             declaration => declaration.CapabilityId ==

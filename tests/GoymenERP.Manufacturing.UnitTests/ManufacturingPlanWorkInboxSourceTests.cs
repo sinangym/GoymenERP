@@ -61,7 +61,7 @@ public sealed partial class ManufacturingPlanWorkInboxSourceTests
         AssertContractShape(result);
         Assert.Equal([Id(1), Id(2)], result.Items!.Select(item => item.ItemId));
         var revised = result.Items![1];
-        Assert.Equal((T0.AddMinutes(40).ToUniversalTime(), Reviser, "/uretim/plan/" + Id(2).ToString("D"), Id(2).ToString("D")),
+        Assert.Equal((T0.AddMinutes(40).ToUniversalTime(), Reviser, "/onaylarim/manufacturing.plan.v1/" + Id(2).ToString("D"), Id(2).ToString("D")),
             (revised.WaitingSinceUtc, revised.PreparedBy, revised.Link, revised.DocumentLabel));
         Assert.Equal([new WorkApprovalRuleResultV1("manufacturing.plan-first-approval", null, null, null, null)], revised.Rules);
         Assert.Empty(revised.References);
@@ -282,6 +282,7 @@ public sealed partial class ManufacturingPlanWorkInboxSourceTests
         foreach (var item in result.Items!)
         {
             Assert.True(NativeApprovalQueueRulesV1.IsValidLink(item.Link), item.Link);
+            Assert.Equal("/onaylarim/manufacturing.plan.v1/" + item.ItemId.ToString("D"), item.Link);
             Assert.Equal(TimeSpan.Zero, item.WaitingSinceUtc.Offset);
             Assert.InRange(item.DocumentLabel.Length, 1, WorkInboxRulesV1.MaxDocumentLabelLength);
             Assert.All(item.Rules, rule => Assert.True(WorkInboxRulesV1.IsValidRule("manufacturing", rule), rule.RuleCode));

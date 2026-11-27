@@ -75,8 +75,23 @@ public sealed class ManufacturingShellRegistrationTests
         Assert.Equal(expected,
             manufacturing.Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
         Assert.All(manufacturing, item => Assert.Equal(
-            item.Declaration.CapabilityId is not (ManufacturingShellCapabilityProvider.ReopenCapabilityId or ManufacturingShellCapabilityProvider.PlanWorkDecisionCapabilityId),
+            item.Declaration.CapabilityId != ManufacturingShellCapabilityProvider.ReopenCapabilityId,
             item.Declaration.ImplementationAvailable));
+    }
+
+    [Fact]
+    public void Work_plan_purpose_is_a_standalone_approval_route_and_does_not_replace_native_browse_routes()
+    {
+        var provider = new ManufacturingShellCapabilityProvider();
+        Assert.Equal("1.15", provider.ContractVersion);
+        var declarations = provider.GetDeclarations();
+        var purpose = Assert.Single(declarations, item => item.CapabilityId == ManufacturingShellCapabilityProvider.PlanWorkDecisionCapabilityId);
+        Assert.True(purpose.ImplementationAvailable);
+        Assert.Null(purpose.ParentCapabilityId);
+        Assert.Equal("/onaylarim/manufacturing.plan.v1/:approvalId", purpose.RoutePath);
+        Assert.Equal([GoymenERP.BuildingBlocks.Security.ErpPermissions.ManufacturingPlansApprove], purpose.RequiredPermissions);
+        Assert.Equal("/uretim/plan/:planId", Assert.Single(declarations, item => item.CapabilityId == "manufacturing.plans.detail").RoutePath);
+        Assert.Equal("/uretim/planlar", Assert.Single(declarations, item => item.CapabilityId == "manufacturing.plans.list").RoutePath);
     }
 
     // Since Finance is host-wired (#325) the host always registers it: the earlier set without Finance

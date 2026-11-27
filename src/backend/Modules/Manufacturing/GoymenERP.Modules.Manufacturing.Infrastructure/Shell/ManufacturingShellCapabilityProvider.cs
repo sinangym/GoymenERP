@@ -58,7 +58,8 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
     // in the central writer's round. 1.5 -> 1.6 (TAKIP-URT-02): the plan cancel control. 1.6 -> 1.7 (URT-S13): the
     // monthly scrap price route and its record control. 1.7 -> 1.8 (URT-S23): the order termin control. 1.8 -> 1.9
     // (URT-S19): the order cost trace control. 1.10 adds correction/cancel; 1.11 stages reorder (URT-D106).
-    public const string OwnerContractVersion = "1.14";
+    // 1.15 publishes the approval-only Work purpose alongside the unchanged native plan routes.
+    public const string OwnerContractVersion = "1.15";
 
     public const string DetailCapabilityId = "manufacturing.orders.detail";
     public const string OutputCorrectionCapabilityId = "manufacturing.orders.output-correction";
@@ -174,12 +175,12 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
 
         return
         [
-            // WP8 purpose metadata/rejection is staged. Approval still needs the native allocation final fence;
-            // re-approval needs explicit selected labels not represented by the generic Work request.
+            // WP8 composes the native first approval, rejection and explicit-label reapproval commands.
+            // This descriptor grants nothing and does not replace the native plan list/detail routes.
             new ShellCapabilityDeclaration(PlanWorkDecisionCapabilityId, "manufacturing-plan-work-decision",
                 "/onaylarim/manufacturing.plan.v1/:approvalId", "W-MANUFACTURING-PLAN-01",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
-                ShellCapabilityScopeRequirement.CompanyWide, [ErpPermissions.ManufacturingPlansApprove], ImplementationAvailable: false),
+                ShellCapabilityScopeRequirement.CompanyWide, [ErpPermissions.ManufacturingPlansApprove], ImplementationAvailable: true),
             detail,
             detail with
             {
