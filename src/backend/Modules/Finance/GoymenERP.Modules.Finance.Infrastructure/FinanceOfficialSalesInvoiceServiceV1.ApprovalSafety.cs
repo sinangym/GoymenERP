@@ -45,6 +45,8 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1
                 await RequireFence();
                 var result = await execute(token);
                 if (result.Outcome is CommandOutcome.Denied or CommandOutcome.Unavailable) throw new InvoiceDecisionRefusal(result);
+                if (result.Outcome == CommandOutcome.Succeeded && (state.Saved || result.IsReplay))
+                    result = result with { DecisionReceipt = await ReadDecisionReceiptAsync(context, metadata, invoiceId, command, result, token) };
                 await RequireFence(); RequireFlushed();
                 if (result.Outcome == CommandOutcome.Succeeded && !result.IsReplay && !state.Saved)
                     throw new InvalidOperationException("Official sales invoice decision has no saved native receipt.");
@@ -144,7 +146,7 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1
 }
 
 internal sealed class GuardedFinanceOfficialSalesInvoiceServiceV1(FinanceOfficialSalesInvoiceServiceV1 core,
-    IAuditTransactionWriterV1? writer) : IFinanceOfficialSalesInvoiceServiceV1, IFinanceOfficialSalesInvoiceCandidatesV1
+    IAuditTransactionWriterV1? writer) : IFinanceOfficialSalesInvoiceServiceV1, IFinanceOfficialSalesInvoiceCandidatesV1, IFinanceOfficialSalesInvoiceDecisionReadV1
 {
     public Task<FinanceOfficialSalesInvoiceResultV1> ApproveAsync(FinanceContext c, CommandMetadata m,
         FinanceOfficialSalesInvoiceApproveRequestV1 r, CancellationToken t)
@@ -160,6 +162,8 @@ internal sealed class GuardedFinanceOfficialSalesInvoiceServiceV1(FinanceOfficia
         return core.RunOwnedDecisionAsync(c, m, r.InvoiceId, r.ExpectedVersion, r.Reason, FinanceOfficialSalesInvoiceServiceV1.RejectCommand,
             FinanceOfficialSalesInvoiceAuthorityActionV1.Reject, writer, token => core.RejectAsync(c, m, r, token), t);
     }
+    public Task<ReadResult<FinanceOfficialSalesInvoiceViewV1>> ReadDecisionAsync(FinanceContext c, Guid id,
+        Func<CancellationToken, Task> fence, CancellationToken t) => core.ReadDecisionAsync(c, id, fence, t);
     public Task<FinanceOfficialSalesInvoiceReservationResultV1> ReserveAsync(FinanceContext c, CommandMetadata m, FinanceOfficialSalesInvoiceReservationRequestV1 r, CancellationToken t) => core.ReserveAsync(c, m, r, t);
     public Task<FinanceOfficialSalesInvoiceResultV1> RecordAsync(FinanceContext c, CommandMetadata m, FinanceOfficialSalesInvoiceRecordRequestV1 r, CancellationToken t) => core.RecordAsync(c, m, r, t);
     public Task<FinanceOfficialSalesInvoiceResultV1> WithdrawAsync(FinanceContext c, CommandMetadata m, FinanceOfficialSalesInvoiceWithdrawRequestV1 r, CancellationToken t) => core.WithdrawAsync(c, m, r, t);

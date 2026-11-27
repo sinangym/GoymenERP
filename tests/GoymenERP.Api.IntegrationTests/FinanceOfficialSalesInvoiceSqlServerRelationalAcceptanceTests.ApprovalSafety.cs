@@ -35,11 +35,11 @@ public sealed partial class FinanceOfficialSalesInvoiceSqlServerRelationalAccept
                 var staged = scope.Database.ChangeTracker.Entries<FinanceOfficialSalesInvoiceRow>().Any(row => row.Entity.Id == id && row.Entity.Version == 2);
                 if (staged && scope.Writer.HasPendingDrafts) observedPendingAudit = true;
                 if (probe.Saved) savedReads++;
-                // Save's fence, wrapper post-execute fence, then the final precommit fence.
+                // Save fence (1), receipt-read before/after fences (2/3), post-execute (4), precommit (5).
                 var phase = fault == "before-audit" ? staged && scope.Writer.HasPendingDrafts
                     // A staged decision also exists before Audit enqueue; only a seen-and-drained draft proves the real writer ran.
                     : fault == "after-audit" ? staged && observedPendingAudit && !scope.Writer.HasPendingDrafts
-                    : fault == "precommit" ? savedReads >= 3 : probe.Saved;
+                    : fault == "precommit" ? savedReads >= 5 : probe.Saved;
                 if (!deny || !phase) return PermissionDecision.Allowed;
                 observed = true;
                 if (fault == "actor") { scope.User.Actor = "SENTETIK-changed"; return PermissionDecision.Allowed; }
@@ -50,6 +50,7 @@ public sealed partial class FinanceOfficialSalesInvoiceSqlServerRelationalAccept
             };
             Assert.Equal(CommandOutcome.Denied, (await scope.Decide(id, approve, "official-late-" + fault)).Outcome);
             if (fault == "after-audit") { Assert.True(observedPendingAudit); Assert.False(probe.Saved); }
+            if (fault == "precommit") { Assert.True(probe.Saved); Assert.Equal(5, savedReads); }
             Assert.True(observed); scope.AssertClean(); await OfficialSafetyDurable(run, id, 1, 1, 0, 0);
             deny = false; scope.User.Actor = SafetyChecker; scope.User.Member = true; scope.Company.Set(Company); probe.Saved = false;
             Assert.Equal(CommandOutcome.Succeeded, (await scope.Decide(id, approve, "official-late-" + fault)).Outcome);

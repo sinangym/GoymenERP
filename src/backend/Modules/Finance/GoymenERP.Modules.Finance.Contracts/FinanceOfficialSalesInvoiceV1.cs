@@ -128,7 +128,23 @@ public sealed record FinanceOfficialSalesInvoiceResultV1(
     bool IsReplay,
     string OriginalCorrelationId,
     IReadOnlyList<ValidationIssue> Issues,
-    string? ExistingOfficialNo);
+    string? ExistingOfficialNo)
+{
+    // In-process native provenance only; the six-field wire and persisted result remain unchanged.
+    [JsonIgnore] public FinanceOfficialSalesInvoiceDecisionReceiptV1? DecisionReceipt { get; init; }
+}
+
+public sealed record FinanceOfficialSalesInvoiceDecisionReceiptV1(Guid CompanyId, Guid InvoiceId, string Command,
+    string KeyHash, string PayloadHash, string ActorId, string ExpectedVersion, string ResultVersion,
+    string OriginalCorrelationId, DateTimeOffset RecordedAtUtc);
+
+/// <summary>Purpose-only owner read: current company-wide Approve authority, recorder excluded.
+/// Does not broaden the native general Read permission or mutate the record.</summary>
+public interface IFinanceOfficialSalesInvoiceDecisionReadV1
+{
+    Task<ReadResult<FinanceOfficialSalesInvoiceViewV1>> ReadDecisionAsync(FinanceContext context, Guid invoiceId,
+        Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken);
+}
 
 public sealed record FinanceOfficialSalesInvoicePageV1(
     Guid CompanyId,
