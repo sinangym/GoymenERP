@@ -45,7 +45,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1 : IInvoiceLineCogsD
                     && revision.ReplacementCorrectionJournalId == original.ReplacementCorrectionJournalId && Encode(revision.AttributedCorrections) == Encode(original.AttributedCorrections);
                 if (!bound) return Malformed();
             }
-            return new(prepared, original, FinalizedInvoiceLineReferenceV1.From(source), AccountingApiService.Sha256(p.SourceJson), row.CurrentLineVersion, bound);
+            return new(prepared, original, FinalizedInvoiceLineReferenceV1.From(source), AccountingInventoryCostSourceValidationV1.Sha256(p.SourceJson), row.CurrentLineVersion, bound);
         }
         catch (JsonException) { return Malformed(); }
         catch (AccountingStoreException) { return Malformed(); }
