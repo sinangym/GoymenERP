@@ -1163,6 +1163,13 @@ describe('WP8 official invoice import immutable human preview', () => {
   const approved={...value,pending:false,sourceVersion:'2',officialInvoiceImport:{...human,batch:{...batch,status:'Approved',version:'2',approvedBy:'SENTETIK checker',approvedAtUtc:'2026-11-27T09:00:00Z'}}}
   expect(decodeWorkDecisionPreview(approved,company,importKind,id)).toEqual(approved)
  })
+ it('binds uppercase company and bookmarked batch GUID context without rewriting the native payload',()=>{
+  const decoded=decodeWorkDecisionPreview(value,company.toUpperCase(),importKind,id.toUpperCase())
+  expect(decoded).toBe(value)
+  expect(decoded?.officialInvoiceImport?.batch.companyId).toBe(company)
+  expect(decoded?.officialInvoiceImport?.batch.batchId).toBe(id)
+  expect(decoded?.officialInvoiceImport?.preview.batch.rows[0]?.amount).toBe(row.amount)
+ })
  it.each([{officialInvoiceImport:null},{companyId:id},{itemId:company},{sourceVersion:'2'},{pending:false},{rejectionSupported:true},
   {references:[{role:'batch',recordId:id,label:'invented',link:null}]},{rules:[]},{rules:[{ruleCode:'finance.official-invoice-import-approval',threshold:'1',actual:null,deviation:null,unit:null}]},
   {officialInvoiceImport:{...human,batch:{...batch,companyId:id}}},{officialInvoiceImport:{...human,batch:{...batch,batchId:company}}}])('refuses missing, foreign or mixed proof %j',delta=>{

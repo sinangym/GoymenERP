@@ -377,7 +377,7 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
   }
   if (kind === 'finance.official-invoice-import.v1') {
     const decoded = decodeDecisionDetail(value.officialInvoiceImport)
-    if (!decoded.ok || decoded.value.batch.companyId !== company || decoded.value.batch.batchId !== id
+    if (!decoded.ok || !same(decoded.value.batch.companyId, company) || !same(decoded.value.batch.batchId, id)
       || value.sourceVersion !== decoded.value.batch.version || value.pending !== (decoded.value.batch.status === 'Pending')
       || value.approvalReasonRequired !== false || value.rejectionSupported !== false || value.references.length !== 0
       || value.rules.length !== 1 || !record(value.rules[0]) || value.rules[0].ruleCode !== 'finance.official-invoice-import-approval'
