@@ -37,6 +37,8 @@ public static class AiFeedbackRulesV1
         && AiFeedbackReasonsV1.Valid(value.Kind, value.ReasonCode) && value.CreatedAtUtc != default
         && value.CreatedAtUtc.Offset == TimeSpan.Zero && value.CreatedAtUtc <= DateTimeOffset.MaxValue.AddDays(-AiAnswerReceiptRulesV1.RetentionDays)
         && value.RetainUntilUtc.Offset == TimeSpan.Zero && value.RetainUntilUtc == value.CreatedAtUtc.AddDays(AiAnswerReceiptRulesV1.RetentionDays);
+    public static bool CanAppend(AiFeedbackKindV1 kind, AiFeedbackKindV1? previousKind) => Enum.IsDefined(kind)
+        && (kind != AiFeedbackKindV1.Reverted || previousKind == AiFeedbackKindV1.Accepted);
     public static string KeyHash(string key) => Hash(Encoding.UTF8.GetBytes(key));
     // Fixed ordered typed fields, no arbitrary dictionary or free text. Actor/key scope is checked separately.
     public static string Fingerprint(AiFeedbackAppendV1 value) => Hash(JsonSerializer.SerializeToUtf8Bytes(new

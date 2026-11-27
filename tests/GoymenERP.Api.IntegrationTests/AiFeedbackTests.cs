@@ -35,6 +35,14 @@ public sealed class AiFeedbackTests
             Assert.False(AiFeedbackReasonsV1.Valid(kind, code));
         Assert.False(AiFeedbackReasonsV1.Valid((AiFeedbackKindV1)0, AiFeedbackReasonsV1.Other));
     }
+    [Theory]
+    [InlineData(null, false)] [InlineData(AiFeedbackKindV1.Accepted, true)]
+    [InlineData(AiFeedbackKindV1.Corrected, false)] [InlineData(AiFeedbackKindV1.Rejected, false)] [InlineData(AiFeedbackKindV1.Reverted, false)]
+    public void Reverting_a_prior_acceptance_requires_the_immediately_previous_feedback_to_be_accepted(AiFeedbackKindV1? previous, bool allowed)
+    {
+        Assert.Equal(allowed, AiFeedbackRulesV1.CanAppend(AiFeedbackKindV1.Reverted, previous));
+        Assert.True(AiFeedbackRulesV1.CanAppend(AiFeedbackKindV1.Accepted, previous));
+    }
     [Fact]
     public void Fingerprints_bind_the_command_while_retries_keep_original_correlation_and_keys_are_not_plaintext_storage()
     {

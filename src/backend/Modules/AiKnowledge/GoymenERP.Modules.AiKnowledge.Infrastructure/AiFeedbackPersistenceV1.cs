@@ -6,6 +6,7 @@ using GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace GoymenERP.Modules.AiKnowledge.Infrastructure;
 
@@ -22,6 +23,7 @@ public sealed partial class AiFeedbackPersistenceV1(AiKnowledgeDbContext databas
         if (!CleanEntry()) return new(AiFeedbackWriteStatusV1.Unavailable);
         var keyHash = AiFeedbackRulesV1.KeyHash(request.IdempotencyKey); var hash = AiFeedbackRulesV1.Fingerprint(request);
         var transaction = await database.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        var cleanupAttempted = false; var committed = false;
         try
         {
             await Fence(request.CompanyId, request.ActorId, freshConsumerFence, cancellationToken);
@@ -37,6 +39,8 @@ public sealed partial class AiFeedbackPersistenceV1(AiKnowledgeDbContext databas
                 && row.AnswerId == request.AnswerId).OrderByDescending(row => row.Version).FirstOrDefaultAsync(cancellationToken);
             if (previous is not null && !AiFeedbackRulesV1.Valid(Event(previous))) throw new InvalidOperationException("Invalid feedback history.");
             if ((previous?.Version ?? 0) != request.ExpectedVersion) return new(AiFeedbackWriteStatusV1.VersionConflict);
+            if (!AiFeedbackRulesV1.CanAppend(request.Kind, previous is null ? null : (AiFeedbackKindV1)previous.Kind))
+                return new(AiFeedbackWriteStatusV1.Invalid);
             var now = clock.GetUtcNow();
             if (now.Offset != TimeSpan.Zero || now == default || now > DateTimeOffset.MaxValue.AddDays(-AiAnswerReceiptRulesV1.RetentionDays)
                 || (previous is not null && now < previous.CreatedAtUtc)) return new(AiFeedbackWriteStatusV1.Unavailable);
@@ -53,12 +57,13 @@ public sealed partial class AiFeedbackPersistenceV1(AiKnowledgeDbContext databas
             if (auditWriter.HasPendingDrafts) throw new InvalidOperationException("Feedback cannot flush caller audit.");
             await Fence(request.CompanyId, request.ActorId, freshConsumerFence, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+            committed = true;
             return new(AiFeedbackWriteStatusV1.Recorded, Event(next), request.CorrelationId);
         }
         catch (Exception exception)
         {
-            try { await transaction.RollbackAsync(CancellationToken.None); }
-            finally { try { await transaction.DisposeAsync(); } finally { database.ChangeTracker.Clear(); } }
+            cleanupAttempted = true; // Set before cleanup so even a disposal fault never schedules a second disposal.
+            await CleanupOwnedAsync(transaction, rollback: !committed, clear: true);
             // One clean read-only winner check; never rerun a mutation after a constraint/deadlock race.
             if (IsConstraintRace(exception))
             {
@@ -78,7 +83,36 @@ public sealed partial class AiFeedbackPersistenceV1(AiKnowledgeDbContext databas
             }
             throw;
         }
-        finally { await transaction.DisposeAsync(); }
+        finally
+        {
+            if (!cleanupAttempted)
+            {
+                cleanupAttempted = true;
+                await CleanupOwnedAsync(transaction, rollback: !committed, clear: false);
+            }
+        }
+    }
+
+    private async Task CleanupOwnedAsync(IDbContextTransaction transaction, bool rollback, bool clear)
+    {
+        var failures = new List<Exception>();
+        if (rollback)
+        {
+            try { await transaction.RollbackAsync(CancellationToken.None); }
+            catch (Exception error) { failures.Add(error); }
+        }
+        try { await transaction.DisposeAsync(); }
+        catch (Exception error) { failures.Add(error); }
+        if (clear || failures.Count > 0)
+        {
+            try { database.ChangeTracker.Clear(); }
+            catch (Exception error) { failures.Add(error); }
+        }
+        // Entry was clean and borrowed/pending callers were refused outside this owned boundary.
+        // Always discard this attempt's drafts, including after rollback/disposal faults.
+        try { auditWriter.DiscardPending(); }
+        catch (Exception error) { failures.Add(error); }
+        if (failures.Count > 0) throw new AggregateException("Feedback owned transaction cleanup failed.", failures);
     }
 
     public async Task<AiFeedbackCurrentV1?> GetOwnCurrentAsync(Guid companyId, Guid answerId, Guid actorId,

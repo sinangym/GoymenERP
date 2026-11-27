@@ -8,7 +8,7 @@ public sealed partial class AiKnowledgeDbContext
     internal DbSet<AiFeedbackIdentityRow> FeedbackIdentities => Set<AiFeedbackIdentityRow>();
     internal const string FeedbackEventCheck = "[CompanyId] <> " + EmptyGuid + " AND [AnswerId] <> " + EmptyGuid
         + " AND [Version] > 0 AND (([Version] = 1 AND [PriorVersion] IS NULL) OR ([Version] > 1 AND [PriorVersion] IS NOT NULL AND [PriorVersion] = [Version] - 1))"
-        + " AND [Kind] BETWEEN 1 AND 4 AND (([Kind] = 1 AND [ReasonCode] IS NULL) OR ([ReasonCode] IS NOT NULL AND DATALENGTH([ReasonCode]) = DATALENGTH(RTRIM([ReasonCode])) AND [ReasonCode] COLLATE Latin1_General_100_BIN2 IN"
+        + " AND [Kind] BETWEEN 1 AND 4 AND ([Kind] <> 4 OR [PriorVersion] IS NOT NULL) AND (([Kind] = 1 AND [ReasonCode] IS NULL) OR ([ReasonCode] IS NOT NULL AND DATALENGTH([ReasonCode]) = DATALENGTH(RTRIM([ReasonCode])) AND [ReasonCode] COLLATE Latin1_General_100_BIN2 IN"
         + " ('incorrect_information','incorrect_or_missing_source','incomplete_answer','outdated_information','other')))"
         + " AND DATEPART(TZOFFSET,[CreatedAtUtc]) = 0 AND DATEPART(TZOFFSET,[RetainUntilUtc]) = 0"
         + " AND [RetainUntilUtc] = DATEADD(day,90,[CreatedAtUtc])";

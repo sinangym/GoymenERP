@@ -68,7 +68,7 @@ public sealed partial class AiKnowledgeSqlServerRelationalAcceptanceTests
             var store = new AiFeedbackPersistenceV1(db, company, new SqlUser(), audit, new AnswerClock(AnswerAt.AddHours(1)));
             await Assert.ThrowsAsync<AiFeedbackAuthorityLostException>(() => store.AppendAsync(FeedbackCommand(answer),
                 _ => probe.Saved ? throw new AiFeedbackAuthorityLostException() : Task.CompletedTask));
-            Assert.Equal(1, probe.Saves); Assert.Empty(db.ChangeTracker.Entries()); Assert.False(audit.Discarded);
+            Assert.Equal(1, probe.Saves); Assert.Empty(db.ChangeTracker.Entries()); Assert.True(audit.Discarded);
             await using (var check = Db(connection, answer.CompanyId))
             { Assert.Empty(await check.FeedbackEvents.ToArrayAsync()); Assert.Empty(await check.FeedbackIdentities.ToArrayAsync()); Assert.Single(await check.AnswerReceipts.ToArrayAsync()); }
             Assert.Equal(AiFeedbackWriteStatusV1.Recorded, (await store.AppendAsync(FeedbackCommand(answer), _ => Task.CompletedTask)).Status);
