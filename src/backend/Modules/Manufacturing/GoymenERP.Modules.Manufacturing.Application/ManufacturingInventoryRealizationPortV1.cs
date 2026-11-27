@@ -269,7 +269,18 @@ public interface IManufacturingPlanAllocationPortV1
     /// </summary>
     Task<T> ApproveAndAllocateAsync<T>(Guid planId, IReadOnlyDictionary<Guid, long> labelVersions,
         Func<CancellationToken, Task<T>> approve, ManufacturingCommandMetadata metadata,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken) =>
+        Task.FromException<T>(new ManufacturingInventoryRealizationPortException(ManufacturingApiStatus.Unavailable,
+            ManufacturingPlanAllocationCodesV1.Incomplete));
+
+    /// <summary>The native approval requires the captured consumer authority fence inside the owner's
+    /// transaction, after business/Inventory/audit persistence and immediately before commit.
+    /// Older adapters cannot silently delegate to an unfenced approval implementation.</summary>
+    Task<T> ApproveAndAllocateAsync<T>(Guid planId, IReadOnlyDictionary<Guid, long> labelVersions,
+        Func<CancellationToken, Task<T>> approve, ManufacturingCommandMetadata metadata,
+        Func<CancellationToken, Task> freshDecisionFence, CancellationToken cancellationToken) =>
+        Task.FromException<T>(new ManufacturingInventoryRealizationPortException(ManufacturingApiStatus.Unavailable,
+            ManufacturingPlanAllocationCodesV1.Incomplete));
 
     /// <summary>
     /// Runs <paramref name="write"/>, then releases every active allocation of <paramref name="planId"/>. A plan

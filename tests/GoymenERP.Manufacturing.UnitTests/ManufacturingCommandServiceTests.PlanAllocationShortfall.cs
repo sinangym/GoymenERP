@@ -46,7 +46,8 @@ public sealed partial class ManufacturingCommandServiceTests
     private sealed class RefusedAllocationPort(Func<ManufacturingInventoryRealizationPortException> refusal) : IManufacturingPlanAllocationPortV1
     {
         public Task<T> ApproveAndAllocateAsync<T>(Guid planId, IReadOnlyDictionary<Guid, long> labelVersions,
-            Func<CancellationToken, Task<T>> approve, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken) =>
+            Func<CancellationToken, Task<T>> approve, ManufacturingCommandMetadata metadata,
+            Func<CancellationToken, Task> freshDecisionFence, CancellationToken cancellationToken) =>
             Task.FromException<T>(refusal());
         public Task<T> WriteAndReleaseAsync<T>(Guid planId, ManufacturingPlanAllocationReleaseReasonV1 reason,
             Func<CancellationToken, Task<T>> write, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken) =>

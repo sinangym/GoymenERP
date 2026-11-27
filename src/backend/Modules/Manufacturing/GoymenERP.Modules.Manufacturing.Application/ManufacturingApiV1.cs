@@ -1478,7 +1478,7 @@ public sealed partial class ManufacturingCommandService(
                 var approved = planAllocations is null
                     ? await Approve(cancellationToken)
                     : await planAllocations.ApproveAndAllocateAsync(planId, labelVersions, Approve, metadata,
-                        cancellationToken);
+                        token => RequirePlanAllocationDecisionAuthorityAsync(permission, companyId, actor, token), cancellationToken);
                 return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(approved), false, null);
             }, stored => PlanView((ProductionPlan)stored), cancellationToken);
     }

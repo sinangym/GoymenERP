@@ -2,6 +2,7 @@ using System.Data;
 using System.Globalization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
@@ -27,15 +28,23 @@ internal sealed class ManufacturingPlanAllocationHost(
     ISettingsPrerequisiteProvider settings,
     TimeProvider timeProvider,
     IInventoryManufacturingPlanAllocationReadPortV1? allocationState = null,
-    ManufacturingCostGenerationHost? costGenerations = null)
+    ManufacturingCostGenerationHost? costGenerations = null,
+    IAuditTransactionWriterV1? decisionAuditWriter = null)
     : IManufacturingPlanAllocationPortV1
 {
     public const string AllocationReason = "manufacturing.plan-approved";
 
     public Task<T> ApproveAndAllocateAsync<T>(Guid planId, IReadOnlyDictionary<Guid, long> labelVersions,
         Func<CancellationToken, Task<T>> approve, ManufacturingCommandMetadata metadata,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        Task.FromException<T>(new ManufacturingInventoryRealizationPortException(ManufacturingApiStatus.Unavailable,
+            ManufacturingPlanAllocationCodesV1.Incomplete));
+
+    public Task<T> ApproveAndAllocateAsync<T>(Guid planId, IReadOnlyDictionary<Guid, long> labelVersions,
+        Func<CancellationToken, Task<T>> approve, ManufacturingCommandMetadata metadata,
+        Func<CancellationToken, Task> freshDecisionFence, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(freshDecisionFence);
         ArgumentNullException.ThrowIfNull(labelVersions);
         async Task<T> ApproveWithAllocationHistory(CancellationToken token)
         {
@@ -102,7 +111,7 @@ internal sealed class ManufacturingPlanAllocationHost(
             }
 
             await plans.RecordPlanInputAllocationsAsync(plan.Id, plan.Version, recorded, timeProvider.GetUtcNow(), token);
-        }, cancellationToken);
+        }, cancellationToken, freshDecisionFence: freshDecisionFence);
     }
 
     public Task<T> WriteReleasedPlanAsync<T>(Guid planId, Func<CancellationToken, Task<T>> write,
@@ -218,7 +227,8 @@ internal sealed class ManufacturingPlanAllocationHost(
         ManufacturingCommandMetadata metadata,
         Func<Guid, Modules.Manufacturing.Domain.Plans.ProductionPlan, IInventoryManufacturingPlanAllocationParticipantV1,
             InventoryCommandMetadata, CancellationToken, Task> stage,
-        CancellationToken cancellationToken, IsolationLevel isolation = IsolationLevel.ReadCommitted)
+        CancellationToken cancellationToken, IsolationLevel isolation = IsolationLevel.ReadCommitted,
+        Func<CancellationToken, Task>? freshDecisionFence = null)
     {
         ArgumentNullException.ThrowIfNull(write);
         ArgumentNullException.ThrowIfNull(metadata);
@@ -227,19 +237,45 @@ internal sealed class ManufacturingPlanAllocationHost(
             throw new ArgumentException("Plan kimliği boş olamaz.", nameof(planId));
         }
 
+        // Approval owns clean handles. Keep the existing release/closure participant semantics unchanged.
+        // Refuse before callbacks/reads and outside this attempt's cleanup so caller work survives.
+        if (freshDecisionFence is not null)
+        {
+            if (decisionAuditWriter is null)
+                throw new ManufacturingInventoryRealizationPortException(ManufacturingApiStatus.Unavailable,
+                    ManufacturingPlanAllocationCodesV1.Incomplete);
+            if (System.Transactions.Transaction.Current is not null || !manufacturing.Database.IsRelational()
+                || manufacturing.Database.CurrentTransaction is not null || manufacturing.ChangeTracker.HasChanges()
+                || decisionAuditWriter.HasPendingDrafts)
+                throw new InvalidOperationException("Plan approval requires its own clean Manufacturing transaction.");
+        }
+
         var companyId = companyContext.IsResolved && companyContext.CompanyId != Guid.Empty
             ? companyContext.CompanyId
             : throw new ManufacturingInventoryRealizationPortException(ManufacturingApiStatus.Denied,
                 ManufacturingApiCodes.AuthorityDenied);
+
+        async Task Fence()
+        {
+            if (freshDecisionFence is null) return;
+            if (!companyContext.IsResolved || companyContext.CompanyId != companyId)
+                throw new ManufacturingStoreException(ManufacturingStoreCodes.AuthorityDenied, "Company changed.");
+            await freshDecisionFence(cancellationToken);
+            if (!companyContext.IsResolved || companyContext.CompanyId != companyId)
+                throw new ManufacturingStoreException(ManufacturingStoreCodes.AuthorityDenied, "Company changed.");
+        }
 
         await using var transaction = await manufacturing.Database.BeginTransactionAsync(
             isolation, cancellationToken);
         var committed = false;
         try
         {
+            await Fence();
             var answer = await write(cancellationToken);
+            await Fence();
             var plan = await plans.FindPlanAsync(planId, cancellationToken)
                 ?? throw new ManufacturingPlanAllocationHostException(ManufacturingPlanAllocationCodesV1.Incomplete);
+            await Fence();
             var inventoryMetadata = new InventoryCommandMetadata(
                 metadata.ActorId,
                 metadata.PermissionCode,
@@ -258,8 +294,18 @@ internal sealed class ManufacturingPlanAllocationHost(
                 InventoryManufacturingRealizationParticipant.EnlistAsync(
                     manufacturing.Database.GetDbConnection(), transaction.GetDbTransaction(), companyId,
                     settings, cancellationToken));
+            await Fence();
             await stage(companyId, plan, inventory, inventoryMetadata, cancellationToken);
 
+            await Fence(); // Inventory participant Save and Manufacturing allocation-proof Save both completed.
+            if (freshDecisionFence is not null && decisionAuditWriter!.HasPendingDrafts)
+            {
+                await decisionAuditWriter.WritePendingAsync(transaction.GetDbTransaction(), cancellationToken);
+                await Fence();
+            }
+            if (freshDecisionFence is not null && decisionAuditWriter!.HasPendingDrafts)
+                throw new InvalidOperationException("Plan approval cannot commit pending audit drafts.");
+            await Fence();
             await transaction.CommitAsync(cancellationToken);
             committed = true;
             return answer;
@@ -291,6 +337,7 @@ internal sealed class ManufacturingPlanAllocationHost(
         finally
         {
             manufacturing.ChangeTracker.Clear();
+            if (freshDecisionFence is not null) decisionAuditWriter!.DiscardPending();
         }
     }
 

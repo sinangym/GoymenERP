@@ -1,3 +1,5 @@
+using GoymenERP.Modules.Audit.Application.Contracts;
+using Microsoft.Extensions.DependencyInjection;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations;
@@ -20,13 +22,15 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         var (plan, orderId) = await run.ApprovedOrderAsync(CompanyA);
         await using (var store = run.Store(CompanyA))
             await store.Corrections.CancelOrderAsync(orderId, 1, run.Actor, At.AddHours(1), "SENTETIK legacy plan", Metadata(run));
-        await using var context = run.Context(CompanyA);
-        var company = new CompanyContext(); company.Set(CompanyA);
-        var storeOwner = new ManufacturingStore(context, company, new AuditEventCollector(), TimeProvider.System);
-        var host = new ManufacturingPlanAllocationHost(context, storeOwner, company, ManufacturingSettings(run), TimeProvider.System);
+        await using var services = run.Factory.Services.CreateAsyncScope();
+        var company = services.ServiceProvider.GetRequiredService<ICompanyContext>(); company.Set(CompanyA);
+        var context = services.ServiceProvider.GetRequiredService<ManufacturingDbContext>();
+        var storeOwner = services.ServiceProvider.GetRequiredService<ManufacturingStore>();
+        var host = new ManufacturingPlanAllocationHost(context, storeOwner, company, ManufacturingSettings(run), TimeProvider.System,
+            decisionAuditWriter: services.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>());
         var called = false;
         await Assert.ThrowsAsync<ManufacturingInventoryRealizationPortException>(() => host.ApproveAndAllocateAsync(plan.Id,
-            new Dictionary<Guid, long>(), _ => { called = true; return Task.FromResult(true); }, Metadata(run), CancellationToken.None));
+            new Dictionary<Guid, long>(), _ => { called = true; return Task.FromResult(true); }, Metadata(run), _ => Task.CompletedTask, CancellationToken.None));
         Assert.False(called);
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.PlanReapprovals WHERE PlanId = @id", ("@id", plan.Id)));
     }

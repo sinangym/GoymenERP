@@ -3220,10 +3220,15 @@ public sealed partial class ManufacturingCommandServiceTests
             return written;
         }
 
-        public Task<T> ApproveAndAllocateAsync<T>(Guid planId, IReadOnlyDictionary<Guid, long> labelVersions,
+        public async Task<T> ApproveAndAllocateAsync<T>(Guid planId, IReadOnlyDictionary<Guid, long> labelVersions,
             Func<CancellationToken, Task<T>> approve, ManufacturingCommandMetadata metadata,
-            CancellationToken cancellationToken) =>
-            approve(cancellationToken);
+            Func<CancellationToken, Task> freshDecisionFence, CancellationToken cancellationToken)
+        {
+            await freshDecisionFence(cancellationToken);
+            var result = await approve(cancellationToken);
+            await freshDecisionFence(cancellationToken);
+            return result;
+        }
 
         public async Task<T> WriteAndReleaseAsync<T>(Guid planId, ManufacturingPlanAllocationReleaseReasonV1 reason,
             Func<CancellationToken, Task<T>> write, ManufacturingCommandMetadata metadata,

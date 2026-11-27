@@ -13,6 +13,15 @@ namespace GoymenERP.Modules.Manufacturing.Application;
 
 public sealed partial class ManufacturingCommandService
 {
+    private async Task RequirePlanAllocationDecisionAuthorityAsync(string permission, Guid companyId, Guid actor,
+        CancellationToken token)
+    {
+        if (!HasCapturedContext(companyId, actor)
+            || await FenceCapturedAsync<PlanViewV1>(permission, companyId, actor, token) is not null)
+            throw new ManufacturingStoreException(ManufacturingStoreCodes.AuthorityDenied,
+                "Plan allocation decision authority changed.");
+    }
+
     /// <summary>
     /// <c>POST /plans/{planId}/rejection</c> (URT-D2, API-10) under <c>manufacturing.plans.approve</c>: instead of approving
     /// a Draft, its approver rejects it with a reason. The plan stays a Draft (no "Kontrolde" step), one version on, with

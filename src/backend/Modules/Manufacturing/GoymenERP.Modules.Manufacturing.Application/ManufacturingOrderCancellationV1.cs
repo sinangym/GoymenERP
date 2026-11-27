@@ -195,7 +195,7 @@ public sealed partial class ManufacturingCommandService
                 Task<ProductionPlan> Reapprove(CancellationToken token) => planReapprovals.ReapprovePlanAsync(planId,
                     request.ExpectedVersion, actor, reapprovedAt, snapshot, labelUsable, metadata, token);
                 var reapproved = await planAllocations.ApproveAndAllocateAsync(planId, labelVersions, Reapprove,
-                    metadata, cancellationToken);
+                    metadata, token => RequirePlanAllocationDecisionAuthorityAsync(permission, companyId, actor, token), cancellationToken);
                 return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(reapproved), false, null);
             }, stored => PlanView((ProductionPlan)stored), cancellationToken);
     }
