@@ -74,7 +74,10 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       return result
     } })
   if (company === null || capabilityFailClosed(shell)) return <StateBlock state={{ kind: 'no-authorized-company' }} subject={T.title} />
-  const preview = query.data?.type === 'ok-single' ? query.data.data : null
+  // Disabling a query does not erase cached data or a refetch already in flight.
+  // An IBAN receipt retry must never display a replacement proposal as its human evidence.
+  const suppressIbanPreview = ibanChange && (attempt.hasPendingRetry || reconcilingHistorical || attempt.status.kind === 'applied')
+  const preview = !suppressIbanPreview && query.data?.type === 'ok-single' ? query.data.data : null
   const frozen = attempt.status.kind === 'busy' || attempt.hasPendingRetry
   const reconciledHistorical = reconcilingHistorical && !attempt.hasPendingRetry && (attempt.status.kind === 'applied' || attempt.status.kind === 'refused')
   const options = preview?.manufacturingPlanReapproval?.parentRollIds

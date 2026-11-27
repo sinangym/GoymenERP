@@ -25,9 +25,9 @@ const id='cccccccc-0000-4000-8000-0000000000f1',kind='finance.cash-account.v1',c
 const path=`/work/decisions/${kind}/${id}`
 const preview={companyId:COMPANY_A,kind,itemId:id,documentLabel:'SENTETIK kasa',sourceVersion:'7',pending:true,approvalReasonRequired:false,references:[],rules:[]}
 afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks();sessionStorage.clear();Object.assign(IDENTITY,{authenticationSessionBinding:null})})
-function mount(route=`/onaylarim/${kind}/${id}`, fullShell=false){
+function mount(route=`/onaylarim/${kind}/${id}`, fullShell=false, client?: QueryClient){
  const router=createMemoryRouter(fullShell?shellRoutes:[{path:'/',element:<AppShell/>,children:workRoutes}],{initialEntries:[route]})
- render(<ShellProvider queryClient={new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})}><RouterProvider router={router}/></ShellProvider>)
+ render(<ShellProvider queryClient={client ?? new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})}><RouterProvider router={router}/></ShellProvider>)
  return router
 }
 describe('WP8 screenless owner decision',()=>{
@@ -1835,4 +1835,39 @@ it('does not carry an unknown IBAN command or its private preview into a differe
  await waitFor(()=>expect(calls.some(call=>call.url.includes(ibanPath)&&call.method==='GET'&&call.headers['X-Company-Id']===COMPANY_B)).toBe(true))
  expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(screen.queryByText(ibanHuman.proposedIban)).toBeNull()
  const sent=calls.filter(call=>call.url.includes(ibanPath)&&call.method==='POST');expect(sent).toHaveLength(1);expect(sent[0]!.headers['X-Company-Id']).toBe(COMPANY_A)
+})
+
+
+it('suppresses cached IBAN proof and a late replacement refetch throughout the original receipt retry',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-iban-inflight-session'})
+ const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})
+ let gets=0,posts=0,release!: (response:Response)=>void
+ const late=new Promise<Response>(resolve=>{release=resolve})
+ const calls=installFetch({capabilities:[ibanCap],respond:(url,init)=>{
+  if(!url.includes(ibanPath))return undefined
+  if(init?.method==='POST')return ++posts===1?problem(503):json({companyId:COMPANY_A,kind:ibanKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'SENTETIK-original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK-original'})
+  return ++gets===1?json(ibanPreview):late
+ }})
+ mount(`/onaylarim/${ibanKind}/${id}`,true,client)
+ await screen.findByRole('region',{name:T.ibanProposal})
+ const matching=(query:{readonly queryKey:readonly unknown[]})=>query.queryKey.includes('work-decision')
+ let refetch!:Promise<void>
+ act(()=>{refetch=client.refetchQueries({predicate:matching})})
+ await waitFor(()=>expect(gets).toBe(2))
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ // Even the previously cached human proof is hidden once the command is frozen.
+ expect(screen.queryByRole('region',{name:T.ibanProposal})).toBeNull()
+ const replacement={...ibanPreview,sourceVersion:'9',bankAccountIbanChange:{...ibanHuman,proposedBy:'SENTETIK replacement maker',proposedIban:'TR330006100519786457841326'}}
+ await act(async()=>{release(json(replacement));await refetch})
+ expect(client.getQueryCache().findAll({predicate:matching})[0]?.state.data).toMatchObject({type:'ok-single',data:{sourceVersion:'9'}})
+ expect(screen.queryByRole('region',{name:T.ibanProposal})).toBeNull()
+ expect(screen.queryByText(replacement.bankAccountIbanChange.proposedBy)).toBeNull()
+ expect(screen.queryByText(replacement.bankAccountIbanChange.proposedIban)).toBeNull()
+ expect(screen.getByText(`${T.version}: 7`)).toBeTruthy()
+ fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+ expect(screen.queryByRole('region',{name:T.ibanProposal})).toBeNull()
+ const sent=calls.filter(call=>call.url.includes(ibanPath)&&call.method==='POST')
+ expect(sent).toHaveLength(2);expect(sent[1]!.body).toEqual({expectedVersion:'7',approve:true,reason:null,delegationId:null})
+ expect(sent[1]!.body).toEqual(sent[0]!.body);expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key'])
+ client.clear()
 })
