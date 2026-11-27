@@ -54,13 +54,21 @@ internal sealed partial class AccountingPeriodOpeningWorkInboxSourceV1 : IWorkAp
         view.StartsOn, view.EndsOn, view.PreparedByUserId, view.PreparedAtUtc, view.ApprovedByUserId, view.ApprovedAtUtc,
         view.ClosedByUserId, view.ClosedAtUtc), view.Version);
     internal static WorkInboxItemV1? DecisionItem(PeriodViewV1 view) => !ValidView(view) ? null
-        : Item(new PeriodRow { Id = view.PeriodId, CompanyId = view.CompanyId, StartsOn = view.StartsOn, EndsOn = view.EndsOn,
-            PreparedByUserId = view.PreparedByUserId, PreparedAtUtc = view.PreparedAtUtc });
+        : IdentityItem(view.PeriodId, view.StartsOn, view.EndsOn, view.PreparedByUserId, view.PreparedAtUtc);
+    internal static WorkInboxItemV1? ProofItem(WorkAccountingPeriodOpeningProofV1 proof) =>
+        IdentityItem(proof.PeriodId, proof.StartsOn, proof.EndsOn, proof.PreparedBy, proof.PreparedAtUtc);
 }
 
 /// <summary>Owner formatter equivalence for actual native opening views, never snapshot self-certification.</summary>
 public static class AccountingPeriodOpeningDecisionBindingV1
 {
+    public static bool MatchesDecisionProof(WorkInboxItemV1? item, WorkAccountingPeriodOpeningProofV1? proof) =>
+        item is not null && proof is not null && proof.CompanyId != Guid.Empty && proof.Version > 0
+        && proof.Status is "Proposed" or "Open" or "Closed"
+        && proof.SourceFactsDigest == AccountingApiService.PeriodOpeningSourceFactsDigest(proof.PeriodId, proof.CompanyId,
+            proof.StartsOn, proof.EndsOn, proof.PreparedBy, proof.PreparedAtUtc)
+        && AccountingPeriodOpeningWorkInboxSourceV1.ProofItem(proof) is { } expected && SameItem(item, expected);
+
     public static bool MatchesDecisionItem(WorkInboxItemV1? item, AccountingPeriodOpeningDecisionDetailV1? detail) =>
         detail is not null && AccountingPeriodOpeningWorkInboxSourceV1.ValidDetail(detail) && MatchesDecisionItem(item, detail.Period);
     public static bool MatchesDecisionItem(WorkInboxItemV1? item, PeriodViewV1? view) => view is not null

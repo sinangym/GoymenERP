@@ -55,10 +55,16 @@ internal sealed partial class AccountingPeriodOpeningWorkInboxSourceV1(
             return null;
         }
 
-        var label = AccountingWorkInboxFence.PeriodLabel(row.StartsOn, row.EndsOn);
-        return new WorkInboxItemV1(ModuleName, KindName, row.Id, label, row.PreparedAtUtc.ToUniversalTime(), ScreenPath,
-            AccountingWorkInboxFence.Actor(row.PreparedByUserId),
+        return IdentityItem(row.Id, row.StartsOn, row.EndsOn, row.PreparedByUserId, row.PreparedAtUtc);
+    }
+
+    private static WorkInboxItemV1? IdentityItem(Guid id, DateOnly startsOn, DateOnly endsOn, Guid preparedBy, DateTimeOffset preparedAt)
+    {
+        if (id == Guid.Empty || preparedBy == Guid.Empty || endsOn < startsOn) return null;
+        var label = AccountingWorkInboxFence.PeriodLabel(startsOn, endsOn);
+        return new WorkInboxItemV1(ModuleName, KindName, id, label, preparedAt.ToUniversalTime(), ScreenPath,
+            AccountingWorkInboxFence.Actor(preparedBy),
             [new WorkApprovalRuleResultV1(OpeningApprovalRequiredRule, null, null, null, null)],
-            [new WorkApprovalReferenceV1("period", label, row.Id, ScreenPath)]);
+            [new WorkApprovalReferenceV1("period", label, id, ScreenPath)]);
     }
 }

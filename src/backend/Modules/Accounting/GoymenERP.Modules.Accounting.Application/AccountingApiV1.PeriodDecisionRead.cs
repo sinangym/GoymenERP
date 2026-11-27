@@ -69,8 +69,12 @@ public sealed partial class AccountingApiService : IAccountingPeriodDecisionRead
         && source.Reopening.Version > 0 && source.Closure.CompanyId == company && source.Closure.PeriodId == source.Reopening.PeriodId
         && source.Closure.Id == source.Reopening.ClosureId && source.Closure.ClosedPeriodVersion == source.Reopening.ClosedPeriodVersion
         && source.Closure.CarryVoucherId != Guid.Empty && source.LaterPeriodClosed is not null;
-    public static string PeriodOpeningSourceFactsDigest(PeriodViewV1 view) => Sha256(JsonSerializer.Serialize(new
-    { view.PeriodId, view.CompanyId, view.StartsOn, view.EndsOn, view.PreparedByUserId, view.PreparedAtUtc }, Json));
+    public static string PeriodOpeningSourceFactsDigest(PeriodViewV1 view) => PeriodOpeningSourceFactsDigest(view.PeriodId,
+        view.CompanyId, view.StartsOn, view.EndsOn, view.PreparedByUserId, view.PreparedAtUtc);
+    public static string PeriodOpeningSourceFactsDigest(Guid periodId, Guid companyId, DateOnly startsOn, DateOnly endsOn,
+        Guid preparedByUserId, DateTimeOffset preparedAtUtc) => Sha256(JsonSerializer.Serialize(new
+        { PeriodId = periodId, CompanyId = companyId, StartsOn = startsOn, EndsOn = endsOn,
+            PreparedByUserId = preparedByUserId, PreparedAtUtc = preparedAtUtc }, Json));
     public static string PeriodOpeningPreviewDigest(PeriodViewV1 view) => Sha256(JsonSerializer.Serialize(view, Json));
     public static string PeriodReopeningSourceFactsDigest(AccountingPeriodReopeningDecisionSourceV1 source) => Sha256(JsonSerializer.Serialize(new
     {

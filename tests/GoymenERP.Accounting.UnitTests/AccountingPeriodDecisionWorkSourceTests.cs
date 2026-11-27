@@ -57,6 +57,45 @@ public sealed class AccountingPeriodDecisionWorkSourceTests
         Assert.False(snapshot.Item.Excludes(Kit.CallerText));
     }
 
+    [Theory] [InlineData("valid")] [InlineData("caption")] [InlineData("reference")] [InlineData("maker")]
+    [InlineData("dates")] [InlineData("later")]
+    public async Task Precommand_scalar_matchers_certify_only_the_existing_formatter_facts_the_carrier_actually_contains(string fault)
+    {
+        await using var kit = new Kit(); var owner = new Owner { Opening = Opening(), Reopening = Reopening(false, true) }; var fence = kit.Fence();
+        var opening = (await new AccountingPeriodOpeningWorkInboxSourceV1(kit.Db, fence, owner)
+            .ReadDecisionAsync(Kit.Context(), owner.Opening.Period.PeriodId, default))!;
+        var reopening = (await new AccountingPeriodReopeningWorkInboxSourceV1(kit.Db, fence, owner)
+            .ReadDecisionAsync(Kit.Context(), owner.Reopening.Reopening.Id, default))!;
+        var op = opening.AccountingPeriodOpeningProof!; var rp = reopening.AccountingPeriodReopeningProof!;
+        WorkInboxItemV1 Change(WorkInboxItemV1 item) => fault switch
+        {
+            "caption" => item with { DocumentLabel = "wrong" },
+            "reference" => item with { References = item.References.Select(x => x with { RecordId = Guid.NewGuid() }).ToArray() },
+            "maker" => item with { PreparedBy = Kit.CallerText }, _ => item,
+        };
+        if (fault == "dates") { op = op with { StartsOn = op.StartsOn.AddDays(1) }; rp = rp with { StartsOn = rp.StartsOn.AddDays(1) }; }
+        if (fault == "later") rp = rp with { LaterPeriodClosed = false };
+        Assert.Equal(fault is "valid" or "later", AccountingPeriodOpeningDecisionBindingV1.MatchesDecisionProof(Change(opening.Item), op));
+        Assert.Equal(fault == "valid", AccountingPeriodReopeningDecisionBindingV1.MatchesDecisionProof(Change(reopening.Item), rp));
+        Assert.False(AccountingPeriodOpeningDecisionBindingV1.MatchesDecisionProof(opening.Item, opening.AccountingPeriodOpeningProof! with { SourceFactsDigest = new string('B', 64) }));
+        // Reopening's reason/closure facts are absent from the scalar carrier. This helper does NOT certify its full digest.
+        // Genuine native receipt validation after the command remains the release boundary for that mismatch.
+        Assert.True(AccountingPeriodReopeningDecisionBindingV1.MatchesDecisionProof(reopening.Item,
+            reopening.AccountingPeriodReopeningProof! with { SourceFactsDigest = new string('B', 64) }));
+    }
+
+    [Fact]
+    public void Opening_six_scalar_hash_is_exactly_the_existing_owner_canonical_hash_without_surrogate_native_fields()
+    {
+        var view = Opening().Period;
+        var canonical = JsonSerializer.Serialize(new { view.PeriodId, view.CompanyId, view.StartsOn, view.EndsOn,
+            view.PreparedByUserId, view.PreparedAtUtc }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var original = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical)));
+        Assert.Equal(original, AccountingApiService.PeriodOpeningSourceFactsDigest(view));
+        Assert.Equal(original, AccountingApiService.PeriodOpeningSourceFactsDigest(view.PeriodId, view.CompanyId,
+            view.StartsOn, view.EndsOn, view.PreparedByUserId, view.PreparedAtUtc));
+    }
+
     [Theory] [InlineData("caption")] [InlineData("maker")] [InlineData("link")] [InlineData("actual")]
     [InlineData("threshold")] [InlineData("deviation")] [InlineData("unit")] [InlineData("ref-id")] [InlineData("ref-label")]
     [InlineData("ref-role")] [InlineData("ref-link")] [InlineData("excluded")]

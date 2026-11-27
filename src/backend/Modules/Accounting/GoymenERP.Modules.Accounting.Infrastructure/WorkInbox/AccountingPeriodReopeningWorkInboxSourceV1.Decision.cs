@@ -62,11 +62,21 @@ internal sealed partial class AccountingPeriodReopeningWorkInboxSourceV1 : IWork
             ClosureId = proposal.ClosureId, ClosedPeriodVersion = proposal.ClosedPeriodVersion, ProposedBy = proposal.ProposedBy,
             ProposedAtUtc = proposal.ProposedAtUtc, Reason = proposal.Reason, ApprovedBy = proposal.ApprovedBy,
             ApprovedAtUtc = proposal.ApprovedAtUtc, Version = proposal.Version }, startsOn, endsOn), laterClosed);
+    internal static WorkInboxItemV1? ProofItem(WorkAccountingPeriodReopeningProofV1 proof) =>
+        IdentityItem(proof.ProposalId, proof.PeriodId, proof.ClosureId, proof.PreparedBy, proof.PreparedAtUtc,
+            proof.StartsOn, proof.EndsOn, proof.LaterPeriodClosed);
 }
 
 /// <summary>The actual owner's dates and later-closed fact drive the existing formatter.</summary>
 public static class AccountingPeriodReopeningDecisionBindingV1
 {
+    /// <summary>Pre-command formatter identity only. The scalar carrier does not contain every immutable hash input.</summary>
+    public static bool MatchesDecisionProof(WorkInboxItemV1? item, WorkAccountingPeriodReopeningProofV1? proof) =>
+        item is not null && proof is not null && proof.CompanyId != Guid.Empty
+        && proof.Version > 0 && proof.ClosedPeriodVersion > 0 && proof.PeriodVersion > 0
+        && AccountingPeriodReopeningWorkInboxSourceV1.ProofItem(proof) is { } expected
+        && AccountingPeriodOpeningDecisionBindingV1.SameItem(item, expected);
+
     public static bool MatchesDecisionItem(WorkInboxItemV1? item, AccountingPeriodReopeningViewV1? original,
         AccountingPeriodApprovalReceiptV1? receipt)
     {

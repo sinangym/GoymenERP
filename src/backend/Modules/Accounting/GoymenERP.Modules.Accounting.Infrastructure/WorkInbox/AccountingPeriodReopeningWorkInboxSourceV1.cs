@@ -83,19 +83,22 @@ internal sealed partial class AccountingPeriodReopeningWorkInboxSourceV1(
             return null;
         }
 
-        var rules = new List<WorkApprovalRuleResultV1>(2) { new(ReopeningRequestedRule, null, null, null, null) };
-        if (laterPeriodClosed)
-        {
-            rules.Add(new(LaterPeriodClosedRule, null, null, null, null));
-        }
+        return IdentityItem(proposal.Id, proposal.PeriodId, proposal.ClosureId, proposal.ProposedBy, proposal.ProposedAtUtc,
+            row.StartsOn, row.EndsOn, laterPeriodClosed);
+    }
 
-        var label = AccountingWorkInboxFence.PeriodLabel(row.StartsOn, row.EndsOn);
-        return new WorkInboxItemV1(ModuleName, KindName, proposal.Id, label, proposal.ProposedAtUtc.ToUniversalTime(),
-            ScreenPath, AccountingWorkInboxFence.Actor(proposal.ProposedBy), rules,
+    private static WorkInboxItemV1? IdentityItem(Guid proposalId, Guid periodId, Guid closureId, Guid proposedBy,
+        DateTimeOffset proposedAt, DateOnly startsOn, DateOnly endsOn, bool laterPeriodClosed)
+    {
+        if (proposalId == Guid.Empty || periodId == Guid.Empty || closureId == Guid.Empty || proposedBy == Guid.Empty || endsOn < startsOn) return null;
+        var rules = new List<WorkApprovalRuleResultV1>(2) { new(ReopeningRequestedRule, null, null, null, null) };
+        if (laterPeriodClosed) rules.Add(new(LaterPeriodClosedRule, null, null, null, null));
+        var label = AccountingWorkInboxFence.PeriodLabel(startsOn, endsOn);
+        return new WorkInboxItemV1(ModuleName, KindName, proposalId, label, proposedAt.ToUniversalTime(),
+            ScreenPath, AccountingWorkInboxFence.Actor(proposedBy), rules,
             [
-                new WorkApprovalReferenceV1("period", label, proposal.PeriodId, ScreenPath),
-                new WorkApprovalReferenceV1("period-closure", AccountingWorkInboxFence.ShortReference(proposal.ClosureId),
-                    proposal.ClosureId, null),
+                new WorkApprovalReferenceV1("period", label, periodId, ScreenPath),
+                new WorkApprovalReferenceV1("period-closure", AccountingWorkInboxFence.ShortReference(closureId), closureId, null),
             ]);
     }
 
