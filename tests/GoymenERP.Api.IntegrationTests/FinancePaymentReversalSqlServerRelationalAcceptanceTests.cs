@@ -19,7 +19,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// credit row; a reversed payment can never be allocated; an active allocation blocks the reversal; and the
 /// migration's Down refuses while a proposal is stored. Party, account, payment and authority are SENTETIK inputs.
 /// </summary>
-public sealed class FinancePaymentReversalSqlServerRelationalAcceptanceTests
+public sealed partial class FinancePaymentReversalSqlServerRelationalAcceptanceTests
 {
     private const string Maker = "SENTETIK-reversal-maker";
     private const string Checker = "SENTETIK-reversal-checker";

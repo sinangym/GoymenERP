@@ -144,9 +144,8 @@ public static class FinanceModuleExtensions
         services.AddScoped(CreateReversalProposalService);
         services.AddScoped<IReversalProposalService>(provider =>
             provider.GetRequiredService<ReversalProposalService>());
-        services.AddScoped(CreatePaymentReversalProposalService);
         services.AddScoped<IPaymentReversalProposalService>(provider =>
-            provider.GetRequiredService<PaymentReversalProposalService>());
+            CreatePaymentReversalProposalService(provider).WithApprovalSafety());
         services.AddScoped<IFinanceAllocationService>(CreateAllocationService);
         services.AddScoped<IFinanceAllocationReadService, FinanceAllocationReadService>();
         // F3a / API-20: a recorded payment applied to payable items, behind the same allocation permissions.

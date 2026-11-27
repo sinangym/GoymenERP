@@ -18,7 +18,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// outgoing money event never change; approval appends one <see cref="OutgoingMoneyEventReversalRow"/> and closes
 /// the payment's allocation state, in one transaction with the command record and the audit event.
 /// </summary>
-public sealed class PaymentReversalProposalService(
+public sealed partial class PaymentReversalProposalService(
     FinanceDbContext dbContext,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
@@ -125,6 +125,9 @@ public sealed class PaymentReversalProposalService(
         {
             return prior;
         }
+
+        if (ownedDecision?.ReplayOnly == true)
+            return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
 
         var proposal = await dbContext.PaymentReversalProposals.SingleOrDefaultAsync(
             row => row.Id == request.ProposalId, cancellationToken);
@@ -265,6 +268,9 @@ public sealed class PaymentReversalProposalService(
         {
             return prior;
         }
+
+        if (ownedDecision?.ReplayOnly == true)
+            return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
 
         var proposal = await dbContext.PaymentReversalProposals.SingleOrDefaultAsync(
             row => row.Id == request.ProposalId, cancellationToken);
@@ -489,6 +495,11 @@ public sealed class PaymentReversalProposalService(
         FinanceContext context, CommandMetadata metadata, FinanceAction action, string command, string payloadHash,
         PaymentReversalProposalCommandResult result, CancellationToken cancellationToken)
     {
+        if (ownedDecision is not null)
+        {
+            await SaveOwnedDecisionAsync(context, command, cancellationToken);
+            return result;
+        }
         // Measure the action again immediately before the write; a revoked permission must not persist the
         // business rows, the idempotency answer or the audit sidecar prepared by a stale decision.
         if (await FenceAsync(context, action, result.Resource?.Id, cancellationToken) is { } fenced)

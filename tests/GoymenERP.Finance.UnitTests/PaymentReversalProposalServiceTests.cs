@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Finance.UnitTests;
 
 /// <summary>API-23 payment reversal service behavior in memory. SENTETIK / NOT_ENV; not SQL or browser evidence.</summary>
-public sealed class PaymentReversalProposalServiceTests
+public sealed partial class PaymentReversalProposalServiceTests
 {
     private static readonly Guid Company = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly DateTimeOffset At = new(2026, 11, 11, 12, 0, 0, TimeSpan.Zero);

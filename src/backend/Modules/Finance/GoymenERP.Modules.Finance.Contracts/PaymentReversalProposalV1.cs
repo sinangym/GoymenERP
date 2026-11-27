@@ -71,3 +71,10 @@ public interface IPaymentReversalProposalService
         FinanceContext context,
         CancellationToken cancellationToken);
 }
+
+/// <summary>Approval-only purpose read; the native proposer-or-approver general read is unchanged.</summary>
+public interface IPaymentReversalDecisionReadV1
+{
+    Task<ReadResult<PaymentReversalProposalView>> ReadDecisionAsync(FinanceContext context, Guid proposalId,
+        Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken);
+}
