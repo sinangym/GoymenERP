@@ -2385,7 +2385,7 @@
           "existing Work post transport and SQL fixtures"
         ],
         "remaining": [
-          "Remaining25 flow owner adapters, original receipts and full authorized human/UI bindings; Flow43/46 native prerequisites are implemented separately, not paired Work purposes yet.",
+          "Remaining flow owner adapters, original receipts and full authorized human/UI bindings; Flow43/46 native prerequisites are implemented separately, not paired Work purposes yet.",
           "All64 actual SQL, normal HTTP/runtime browser acceptance, shell/OpenAPI/guard/recovery pins, full CI and two independent exact-head K3 reviews"
         ],
         "sql": "NOT_RUN",
