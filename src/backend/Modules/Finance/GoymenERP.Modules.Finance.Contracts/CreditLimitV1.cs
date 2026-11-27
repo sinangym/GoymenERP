@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Finance.Contracts;
 
 /// <summary>FNS-D95: one lender, credit group and currency. Changes use existing credit proposal/approval authority.</summary>
@@ -15,7 +17,10 @@ public sealed record CreditLimitMovementAssessmentV1(Guid MovementId, string Sou
 public sealed record CreditLimitWorkspaceV1(Guid CompanyId, Guid CreditAccountId, IReadOnlyList<CreditLimitViewV1> Items,
     CreditLimitAssessmentV1 Assessment);
 public sealed record CreditLimitResultV1(CommandOutcome Outcome, CreditLimitViewV1? Resource, bool IsReplay,
-    string OriginalCorrelationId, IReadOnlyList<ValidationIssue> Issues);
+    string OriginalCorrelationId, IReadOnlyList<ValidationIssue> Issues)
+{
+    [JsonIgnore] public FinanceBankCreditLimitDecisionReceiptV1? DecisionReceipt { get; init; }
+}
 public interface IFinanceCreditLimitServiceV1
 {
     Task<ReadResult<CreditLimitWorkspaceV1>> ReadAsync(FinanceContext context, Guid creditAccountId, CancellationToken cancellationToken);
