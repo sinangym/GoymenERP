@@ -1740,7 +1740,7 @@ it('keeps the original manual payment version, null reason and key across unknow
   ?++posts===1?problem(503):json({companyId:COMPANY_A,kind:manualPaymentKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'SENTETIK-original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK-original'})
   :json({...manualPaymentPreview,pending:posts===0,sourceVersion:posts===0?'7':'9'}):undefined})
  mountManualPayment();await screen.findByRole('button',{name:T.approve});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
- cleanup();mountManualPayment();await screen.findByRole('button',{name:T.retry});expect(screen.getByText(`${T.version}: 7`)).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+ cleanup();mountManualPayment();await screen.findByRole('button',{name:T.retry});expect(await screen.findByText(`${T.version}: 7`)).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
  const sent=calls.filter(call=>call.method==='POST');expect(sent).toHaveLength(2);expect(sent[1]!.body).toEqual(sent[0]!.body)
  expect(sent[1]!.body).toEqual({expectedVersion:'7',approve:true,reason:null,delegationId:null});expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key'])
 })
