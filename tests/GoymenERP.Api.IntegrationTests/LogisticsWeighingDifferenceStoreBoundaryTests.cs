@@ -10,13 +10,15 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed class LogisticsWeighingDifferenceStoreBoundaryTests
 {
-    [Fact]
-    public async Task Configured_nonrelational_store_refuses_before_callback_and_preserves_caller_audit()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Configured_nonrelational_store_refuses_with_clean_or_pending_audit_without_invoking_callbacks(bool pendingAudit)
     {
         var company = new CompanyContext(); company.Set(Guid.NewGuid());
         await using var database = new LogisticsDbContext(new DbContextOptionsBuilder<LogisticsDbContext>()
             .UseInMemoryDatabase("SENTETIK-weighing-entry-" + Guid.NewGuid()).Options, company);
-        var writer = new CallerWriter();
+        var writer = new CallerWriter(pendingAudit);
         var store = new LogisticsWeighingDifferenceStore(database, company, new AuditEventCollector(), TimeProvider.System, writer);
         var called = false;
         var error = await Assert.ThrowsAsync<LogisticsStoreException>(() => store.MutateAsync(
@@ -25,13 +27,13 @@ public sealed class LogisticsWeighingDifferenceStoreBoundaryTests
             (_, _) => throw new InvalidOperationException("Must not mutate"),
             _ => { called = true; return Task.CompletedTask; }));
         Assert.Equal(LogisticsWeighingDifferenceCodesV1.Unavailable, error.Code);
-        Assert.False(called); Assert.False(writer.Discarded); Assert.True(writer.HasPendingDrafts);
+        Assert.False(called); Assert.False(writer.Discarded); Assert.Equal(pendingAudit, writer.HasPendingDrafts);
         Assert.Empty(database.ChangeTracker.Entries());
     }
 
-    private sealed class CallerWriter : IAuditTransactionWriterV1
+    private sealed class CallerWriter(bool pendingAudit) : IAuditTransactionWriterV1
     {
-        public bool Discarded; public bool HasPendingDrafts => true;
+        public bool Discarded; public bool HasPendingDrafts => pendingAudit;
         public Task WritePendingAsync(IDbTransaction transaction, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Must not flush caller drafts");
         public void DiscardPending() => Discarded = true;
