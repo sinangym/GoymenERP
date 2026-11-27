@@ -2256,7 +2256,7 @@
         "activation": "No grants/flags/provider changes"
       },
       "execution": {
-        "source_commit": "b19b5567be636da89bbae3e83b895013eba1afcc",
+        "source_commit": "feccba90a9cd25375572c78109e2f9d38e847876",
         "implemented_kinds": [
           "inventory.opening-cost.v1",
           "finance.cash-account.v1",
@@ -3435,7 +3435,7 @@
           "7898cc30397ab51d38464c5ac674de2422890d07",
           "9f9442c4e9382033ea97f54e62d7238ab50e91c4"
         ],
-        "kind_count_scope": "Atb19 source-derived API kinds36 / frontend mounted35 / staged1 finance.expense-payment.v1; no unknown frontend kinds. Source publication is not business/runtime acceptance. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 pending; all64 semantics NOT_VERIFIED/runtimeNOT_RUN;41packages/50references unchanged.",
+        "kind_count_scope": "Atfecc source36native/36pairedfrontend/0staged. Pairing is source evidence only; all64 runtime NOT_RUN.",
         "staged_kinds": [
           "finance.expense-payment.v1"
         ],
@@ -3631,7 +3631,48 @@
               "limits": "ActualSQL/normalHTTP/browser/fullCI/K3 pending."
             }
           }
-        }
+        },
+        "expense_publication_and_native_guards_checkpoint": {
+          "source_commit": "feccba90a9cd25375572c78109e2f9d38e847876",
+          "scope": "Expense Flow34 paired purpose and provider1.31/64, existing permission only; 36 backend /36 frontend /0staged. Opening44/45 and bank-credit-limit42 native owned safety plus actual guarded DI source only; owner purpose adapters remain separate increments.",
+          "source_peers": "Full bounded nonauthor native guards, credit P2 native-validation delta closure,15-file expense UI +unused-const correction,5-file publication,2 DI composition tests and test-only required-field/configuration/delegation corrections read. No open findings in these scopes; not K3 approval.",
+          "warm_builds": {
+            "source_commit": "683ac4a329eafdf187f42257351a37ee11f82306",
+            "finance_infrastructure": "0errors/0warnings15.0939559s",
+            "api": "0errors/0warnings26.9820778s",
+            "mode": "Release BuildProjectReferences=false, unchanged dependency ABI; not full all-reference rebuild or CI"
+          },
+          "finance_unit": {
+            "source_commit": "feccba90a9cd25375572c78109e2f9d38e847876",
+            "passed": 2316,
+            "total": 2316,
+            "failed": 0,
+            "skipped": 0,
+            "seconds": 15.9328929
+          },
+          "controlled_host": {
+            "source_commit": "feccba90a9cd25375572c78109e2f9d38e847876",
+            "passed": 929,
+            "total": 929,
+            "failed": 0,
+            "skipped": 0,
+            "seconds": 68.6893598,
+            "scope": "Complete integration source compiled; selected controlled host/registry/authority/SQL-wrapper/C7/C8 filter, not actual SQL or normal host/browser acceptance"
+          },
+          "frontend": {
+            "original_source_commit": "958cfa7e8786c5051960b00605086b3a81a4c656",
+            "tsc": "exit0/55.3178025s",
+            "lint": "15explicitfiles exit0/0.7584842s",
+            "original_vitest": "10files1167total1166PASS1FAIL0skip102.9029573s; one new Page test mistook existing delegation checkbox for a financial checkbox. Nine other complete files757PASS; preserved log.",
+            "fix": "fecc test-only retains no financial checkbox inside expense region and global exact one named delegation; no production/assertion weakening.",
+            "rerun_source_commit": "feccba90a9cd25375572c78109e2f9d38e847876",
+            "rerun": "Complete WorkDecisionPage410/410PASS0skip70.475687s; one-file scoped oxlint exit0. Only Page rerun here, not1167 same-head full rerun."
+          },
+          "original_backend_failure": "683 Finance test-source compile failedCS9035 (required synthetic caller fields) andCS0246 (ConfigurationBuilder unavailable). Production warm builds passed, no unit/host test result at683.18b supplies required fields and reuses Audit flat IConfigurationSection fixture without package changes; old logs retained.",
+          "sql": "Finance389 unique test source names,15 new native SQL Facts (opening9/banklimit6) compiled; actual SQL NOT_RUN. No new migration in this increment.",
+          "limits": "ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 pending;41packages/50references/64flows;verified_runtime_flows=0, all64 semantics NOT_VERIFIED/runtimeNOT_RUN."
+        },
+        "staged_native_kinds": []
       }
     },
     {
