@@ -103,7 +103,7 @@ const OPTIONS_KEYS = ['companyId', 'accounts', 'openPeriods'] as const
 const PERIOD_OPTION_KEYS = ['periodId', 'startsOn', 'endsOn'] as const
 const nullableString = (v: unknown) => v === null || typeof v === 'string'
 const account = (v: unknown) => record(v) && exactKeys(v, ACCOUNT_KEYS) && guid(v.accountId) && text(v.code) && text(v.name)
-const plan = (v: unknown, long = nativeLong) => record(v) && exactKeys(v, PLAN_KEYS) && guid(v.packageId) && long(v.packageVersion, 1) && (v.catalogVersion === null || long(v.catalogVersion, 1))
+const plan = (v: unknown, long: NonNullable<CostProofWireValidation['long']> = nativeLong) => record(v) && exactKeys(v, PLAN_KEYS) && guid(v.packageId) && long(v.packageVersion, 1) && (v.catalogVersion === null || long(v.catalogVersion, 1))
   && text(v.sourceVersion) && hash(v.sourceSha256) && account(v.account)
 const pair = (v: Record<string, unknown>) => nullableGuid(v.reversingCorrectionJournalId) && nullableGuid(v.replacementCorrectionJournalId)
   && (v.reversingCorrectionJournalId === null) === (v.replacementCorrectionJournalId === null)
@@ -134,7 +134,7 @@ function purchaseAttributedEvidence(v: unknown, company: string, share: (value: 
       : guid(item.currentJournalId) && /[1-9]/.test(item.currentJournalTotal)))
     && new Set(v.map(item => record(item) && record(item.source) ? item.source.fingerprint : null)).size === v.length
 }
-function evidence(v: unknown, company: string, invoice: string, line: string, long = nativeLong): boolean {
+function evidence(v: unknown, company: string, invoice: string, line: string, long: NonNullable<CostProofWireValidation['long']> = nativeLong): boolean {
   return v === null || record(v) && exactKeys(v, POSTED_EVIDENCE_KEYS) && same(v.companyId, company) && same(v.invoiceId, invoice) && same(v.invoiceLineId, line)
     && long(v.finalizedVersion, 1) && guid(v.journalId) && v.cogsJournalLineNumber === 1 && v.counterJournalLineNumber === 2
     && guid(v.cogsAccountId) && guid(v.counterAccountId) && v.cogsAccountId !== v.counterAccountId && guid(v.currencyId)
