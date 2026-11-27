@@ -1363,3 +1363,63 @@ it('does not restore a bank approval from another authentication session',async(
  cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-bank-new'});mountBank();await screen.findByRole('heading',{name:T.bankProposal})
  expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.url.includes(bankPath)&&call.method==='POST')).toHaveLength(1)
 })
+
+
+const scrapKind='inventory.stock-scrap.v1',scrapCap='inventory.stock-scrap.work-decision'
+const scrapHuman={labelId:countLabel,labelVersion:'7',ownerKind:'Company',ownerId:COMPANY_A,custodianKind:'Company',custodianId:COMPANY_A,locationId:countLocation,productId:countProduct,
+ block:'Free',bookKg:'20.125',scrapKg:'12.125',remainingKg:'8',scrappedAtUtc:'2026-11-27T08:00:00Z',reason:'SENTETIK kayıtlı hurda gerekçesi',recordedBy:'SENTETIK-hurda-kaydeden',recordedAtUtc:'2026-11-27T09:00:00Z',bookPieceCount:2,scrapPieceCount:0}
+const scrapRules=[{ruleCode:'inventory.stock-scrap-request',threshold:null,actual:'12.125',deviation:null,unit:'kg'}]
+const scrapPreview={...preview,kind:scrapKind,documentLabel:'SENTETIK hurda',sourceVersion:'1',approvalReasonRequired:true,rejectionSupported:true,references:countPreview.references,rules:scrapRules,inventoryStockScrap:scrapHuman}
+const scrapPath=`/work/decisions/${scrapKind}/${id}`,mountScrap=()=>mount(`/onaylarim/${scrapKind}/${id}`,true)
+it.each([true,false])('shows the retained scrap, remaining kg and zero pieces without recalculation and submits the explicit decision, approve=%s',async approve=>{
+ const calls=installFetch({capabilities:[scrapCap],respond:(url,init)=>url.includes(scrapPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:scrapKind,itemId:id,state:approve?'Approved':'Rejected',replayed:false,originalCorrelationId:'original'}):json(scrapPreview):undefined})
+ mountScrap();await screen.findByRole('heading',{name:T.scrapProposal});const region=screen.getByRole('region',{name:T.scrapProposal})
+ expect(region.querySelectorAll('dt')).toHaveLength(19)
+ for(const fact of [countLabel,countProduct,countLocation,scrapHuman.bookKg,scrapHuman.remainingKg,scrapHuman.reason,scrapHuman.recordedBy,scrapHuman.scrappedAtUtc,T.scrapReadOnly,T.scrapLabelVersion])expect(region.textContent).toContain(fact)
+ expect(screen.getByText('0')).toBeTruthy();expect(screen.queryByText(T.countNoPieces)).toBeNull();expect(screen.queryByRole('spinbutton')).toBeNull()
+ const reason=screen.getByRole('textbox',{name:T.reason}) as HTMLTextAreaElement;expect(reason.maxLength).toBe(1000)
+ expect((screen.getByRole('button',{name:T.approve}) as HTMLButtonElement).disabled).toBe(true);expect((screen.getByRole('button',{name:T.reject}) as HTMLButtonElement).disabled).toBe(true)
+ fireEvent.change(reason,{target:{value:'x'.repeat(1001)}});expect((screen.getByRole('button',{name:T.approve}) as HTMLButtonElement).disabled).toBe(true)
+ fireEvent.change(reason,{target:{value:'  Karar\nİkinci satır  '}});fireEvent.click(screen.getByRole('button',{name:approve?T.approve:T.reject}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.url.includes(scrapPath)&&call.method==='POST');expect(sent).toHaveLength(1)
+ expect(sent[0]!.body).toEqual({expectedVersion:'1',approve,reason:'Karar\nİkinci satır',delegationId:null})
+ expect(calls.some(call=>call.url.includes('/inventory/labels/')||call.url.includes('/inventory/stock-scraps/'))).toBe(false)
+})
+it('shows null piece tracking separately from whole-scrap zero remaining kg',async()=>{
+ installFetch({capabilities:[scrapCap],respond:url=>url.includes(scrapPath)?json({...scrapPreview,rules:[{...scrapRules[0]!,actual:'20.125'}],inventoryStockScrap:{...scrapHuman,scrapKg:'20.125',remainingKg:'0',bookPieceCount:null,scrapPieceCount:null}}):undefined})
+ mountScrap();await screen.findByRole('heading',{name:T.scrapProposal});expect(screen.getAllByText(T.countNoPieces)).toHaveLength(2);expect(screen.getByText('0')).toBeTruthy()
+})
+it('reconciles the original scrap version-one command after terminal version two without persisting the human evidence',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-scrap-session'});let reads=0,posts=0
+ const calls=installFetch({capabilities:[scrapCap],respond:(url,init)=>{
+  if(!url.includes(scrapPath))return undefined
+  if(init?.method==='POST')return ++posts===1?problem(503):json({companyId:COMPANY_A,kind:scrapKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'})
+  return json(++reads===1?scrapPreview:{...scrapPreview,sourceVersion:'2',pending:false})
+ }})
+ mountScrap();await screen.findByRole('heading',{name:T.scrapProposal});fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:'SENTETIK karar notu'}})
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ const journal=Object.values(sessionStorage).join('');for(const fact of [countLabel,countProduct,countLocation,scrapHuman.reason,scrapHuman.recordedBy,scrapHuman.scrappedAtUtc,scrapHuman.scrapKg,scrapHuman.bookKg])expect(journal).not.toContain(fact)
+ cleanup();mountScrap();await screen.findByText(T.unknown);await screen.findByText(T.closed);expect(screen.getByText(`${T.version}: 1`)).toBeTruthy()
+ expect(screen.queryByRole('button',{name:T.approve})).toBeNull();fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.url.includes(scrapPath)&&call.method==='POST');expect(sent).toHaveLength(2)
+ expect(sent[0]!.body).toEqual(sent[1]!.body);expect(sent[0]!.headers['Idempotency-Key']).toBe(sent[1]!.headers['Idempotency-Key'])
+ expect(sent[1]!.body).toEqual({expectedVersion:'1',approve:true,reason:'SENTETIK karar notu',delegationId:null})
+})
+it.each([{companyId:COMPANY_B},{sourceVersion:'7'},{sourceVersion:'2'},{inventoryStockScrap:null},{inventoryStockScrapProof:{}},{inventoryStockCount:countHuman},
+ {inventoryStockScrap:{...scrapHuman,scrapKg:'0'}},{inventoryStockScrap:{...scrapHuman,remainingKg:'-1'}},{inventoryStockScrap:{...scrapHuman,bookPieceCount:null}},
+ {inventoryStockScrap:{...scrapHuman,unitCost:'100'}},{inventoryStockScrap:{...scrapHuman,labelId:id}},{rules:[{...scrapRules[0]!,unit:'TRY'}]}])('refuses a foreign, incomplete or price-bearing scrap preview %j',async delta=>{
+ const calls=installFetch({capabilities:[scrapCap],respond:url=>url.includes(scrapPath)?json({...scrapPreview,...delta}):undefined});mountScrap()
+ await waitFor(()=>expect(calls.some(call=>call.url.includes(scrapPath))).toBe(true));expect(screen.queryByRole('heading',{name:T.scrapProposal})).toBeNull()
+ expect(screen.queryByRole('button',{name:T.approve})).toBeNull();expect(calls.some(call=>call.method==='POST')).toBe(false)
+})
+it.each([{capabilities:[]},{capabilities:['inventory.stock-scrap.approve']},{capabilities:['inventory.stock-count.work-decision']},{capabilities:['inventory.stock-positions.list']}])('does not read scrap evidence without its exact purpose capability %j',async({capabilities})=>{
+ const calls=installFetch({capabilities,respond:url=>url.includes(scrapPath)?json(scrapPreview):undefined});mountScrap()
+ await waitFor(()=>expect(calls.some(call=>call.url.endsWith('/shell/capabilities'))).toBe(true));expect(calls.some(call=>call.url.includes(scrapPath))).toBe(false)
+})
+it('does not restore a scrap decision into another authenticated session',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-scrap-old'});const calls=installFetch({capabilities:[scrapCap],respond:(url,init)=>url.includes(scrapPath)?init?.method==='POST'?problem(503):json(scrapPreview):undefined})
+ mountScrap();await screen.findByRole('heading',{name:T.scrapProposal});fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:'Karar'}});fireEvent.click(screen.getByRole('button',{name:T.reject}));await screen.findByText(T.unknown)
+ cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-scrap-new'});mountScrap();await screen.findByRole('heading',{name:T.scrapProposal})
+ expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect((screen.getByRole('textbox',{name:T.reason}) as HTMLTextAreaElement).value).toBe('')
+ expect(calls.filter(call=>call.url.includes(scrapPath)&&call.method==='POST')).toHaveLength(1)
+})

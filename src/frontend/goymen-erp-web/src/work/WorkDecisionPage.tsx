@@ -81,7 +81,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const transferRequest = overage ? preview?.inventoryTransferOverage : preview?.inventoryTransferLoss
   const frozenTransferRequest = overage ? attempt.pendingPayload?.inventoryTransferOverage : attempt.pendingPayload?.inventoryTransferLoss
   const lossRequest = frozen ? frozenTransferRequest?.requestNumber : transferRequest?.requestNumber
-  const lossReason = (timedTransfer || kind === 'inventory.stock-count.v1' || kind === 'purchasing.supplier-return-cost-exception.v1') && frozen ? attempt.pendingPayload?.reason ?? '' : reason
+  const lossReason = (timedTransfer || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'purchasing.supplier-return-cost-exception.v1') && frozen ? attempt.pendingPayload?.reason ?? '' : reason
   const currentLossBinding = transferRequest === undefined ? null : `${preview?.sourceVersion}:${transferRequest.requestNumber}`
   const selectedUtc = workDecisionLocalUtc(decisionTime)
   const invalidLossTime = timedTransfer && (currentLossBinding === null || lossTimeBinding !== currentLossBinding || selectedUtc === null
@@ -97,7 +97,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const batch = kind === 'purchasing.goods-receipt-batch.v1'
   const counterparty = isCounterpartyWorkDecisionKind(kind)
   const reasonRequired = (approve: boolean) => preview?.approvalReasonRequired || !approve && !isSalesWorkDecisionKind(kind) && !counterparty
-  const invalidReason = (approve: boolean) => kind === 'inventory.stock-count.v1' && !isWorkStockCountReason(reason.trim()) || supplierReturn && !approve && !isWorkSupplierReturnReason(reason.trim()) || overage && !isWorkTransferOverageReason(reason) || reasonRequired(approve) && reason.trim() === '' || (preview?.approvalReasonRequired || !approve || batch || counterparty) && (batch ? reason.length : reason.trim().length) > reasonLimit
+  const invalidReason = (approve: boolean) => (kind === 'inventory.stock-count.v1' || kind === 'inventory.stock-scrap.v1') && !isWorkStockCountReason(reason.trim()) || supplierReturn && !approve && !isWorkSupplierReturnReason(reason.trim()) || overage && !isWorkTransferOverageReason(reason) || reasonRequired(approve) && reason.trim() === '' || (preview?.approvalReasonRequired || !approve || batch || counterparty) && (batch ? reason.length : reason.trim().length) > reasonLimit
   const submit = async (approve: boolean) => {
     if (preview === null || !approve && preview.rejectionSupported === false || frozen || approve && (selectionInvalid || invalidSupplierVersion) || invalidLossTime || invalidReason(approve) || useDelegation && !delegationId) return
     const answer = await attempt.run({ expectedVersion: preview.sourceVersion, approve,
@@ -114,6 +114,8 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
     const answer = await attempt.retry()
     if (answer.type === 'applied' && !timedTransfer) void query.refetch()
   }
+  const stockProof = preview?.inventoryStockCount ?? preview?.inventoryStockScrap
+  const stockScrap = kind === 'inventory.stock-scrap.v1'
   const cost = preview?.rules.find(rule => rule.ruleCode === 'inventory.opening-cost-unit-cost')?.actual
   return <section className={styles.page} aria-labelledby="work-decision-heading"><h1 id="work-decision-heading">{T.title}</h1><p>{T.intro}</p>
     <Link to="/onaylarim/kuyruk">{T.back}</Link>
@@ -123,7 +125,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       <p>{T.lossFrozenTime}: {frozenTransferRequest?.decidedAtUtc}</p>
     </div> : <StateBlock state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
       subject={T.title} onRetry={() => void query.refetch()} /> : <>
-      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(supplierReturn || kind === 'finance.bank-account.v1' || kind === 'inventory.stock-count.v1' || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
+      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(supplierReturn || kind === 'finance.bank-account.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
       {kind === 'inventory.opening-cost.v1' ? <p>{cost == null ? T.hiddenCost : `${T.cost}: ${cost}`}</p> : null}
       {preview.bankAccount ? <section aria-label={T.bankProposal}><h3>{T.bankProposal}</h3><dl className={styles.facts}>
         <dt>{BANK_COLUMN.name}</dt><dd>{preview.bankAccount.account.displayName}</dd>
@@ -136,20 +138,20 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         <dt>{T.bankProposedBy}</dt><dd>{preview.bankAccount.proposedBy}</dd>
         <dt>{T.bankProposedAt}</dt><dd>{preview.bankAccount.proposedAtUtc}</dd>
       </dl><p>{BANK_MASTER_NOTICE}</p></section> : null}
-      {preview.inventoryStockCount ? <section aria-label={T.countProposal}><h3>{T.countProposal}</h3><dl className={styles.facts}>
-        <dt>{T.countLabel}</dt><dd>{preview.inventoryStockCount.labelId}</dd><dt>{T.countLabelVersion}</dt><dd>{preview.inventoryStockCount.labelVersion}</dd>
-        <dt>{T.countOwnerKind}</dt><dd>{T.countPartyKinds[preview.inventoryStockCount.ownerKind]}</dd><dt>{T.countOwner}</dt><dd>{preview.inventoryStockCount.ownerId}</dd>
-        <dt>{T.countCustodianKind}</dt><dd>{T.countPartyKinds[preview.inventoryStockCount.custodianKind]}</dd><dt>{T.countCustodian}</dt><dd>{preview.inventoryStockCount.custodianId}</dd>
-        <dt>{T.countLocation}</dt><dd>{preview.inventoryStockCount.locationId}</dd><dt>{T.countProduct}</dt><dd>{preview.inventoryStockCount.productId}</dd>
-        <dt>{T.countBlock}</dt><dd>{T.countBlocks[preview.inventoryStockCount.block]}</dd>
-        <dt>{T.countBook}</dt><dd>{preview.inventoryStockCount.bookKg}</dd><dt>{T.countActual}</dt><dd>{preview.inventoryStockCount.countedKg}</dd><dt>{T.countDifference}</dt><dd>{preview.inventoryStockCount.differenceKg}</dd>
-        <dt>{T.countAt}</dt><dd>{preview.inventoryStockCount.countedAtUtc}</dd><dt>{T.countReason}</dt><dd>{preview.inventoryStockCount.reason}</dd>
-        <dt>{T.countRecordedBy}</dt><dd>{preview.inventoryStockCount.recordedBy}</dd><dt>{T.countRecordedAt}</dt><dd>{preview.inventoryStockCount.recordedAtUtc}</dd>
-        <dt>{T.countBookPieces}</dt><dd>{preview.inventoryStockCount.bookPieceCount ?? T.countNoPieces}</dd><dt>{T.countActualPieces}</dt><dd>{preview.inventoryStockCount.countedPieceCount ?? T.countNoPieces}</dd>
+      {stockProof ? <section aria-label={stockScrap ? T.scrapProposal : T.countProposal}><h3>{stockScrap ? T.scrapProposal : T.countProposal}</h3><dl className={styles.facts}>
+        <dt>{T.countLabel}</dt><dd>{stockProof.labelId}</dd><dt>{stockScrap ? T.scrapLabelVersion : T.countLabelVersion}</dt><dd>{stockProof.labelVersion}</dd>
+        <dt>{T.countOwnerKind}</dt><dd>{T.countPartyKinds[stockProof.ownerKind]}</dd><dt>{T.countOwner}</dt><dd>{stockProof.ownerId}</dd>
+        <dt>{T.countCustodianKind}</dt><dd>{T.countPartyKinds[stockProof.custodianKind]}</dd><dt>{T.countCustodian}</dt><dd>{stockProof.custodianId}</dd>
+        <dt>{T.countLocation}</dt><dd>{stockProof.locationId}</dd><dt>{T.countProduct}</dt><dd>{stockProof.productId}</dd>
+        <dt>{T.countBlock}</dt><dd>{T.countBlocks[stockProof.block]}</dd>
+        <dt>{T.countBook}</dt><dd>{stockProof.bookKg}</dd><dt>{stockScrap ? T.scrapQuantity : T.countActual}</dt><dd>{preview.inventoryStockScrap?.scrapKg ?? preview.inventoryStockCount?.countedKg}</dd><dt>{stockScrap ? T.scrapRemaining : T.countDifference}</dt><dd>{preview.inventoryStockScrap?.remainingKg ?? preview.inventoryStockCount?.differenceKg}</dd>
+        <dt>{stockScrap ? T.scrapAt : T.countAt}</dt><dd>{preview.inventoryStockScrap?.scrappedAtUtc ?? preview.inventoryStockCount?.countedAtUtc}</dd><dt>{stockScrap ? T.scrapReason : T.countReason}</dt><dd>{stockProof.reason}</dd>
+        <dt>{stockScrap ? T.scrapRecordedBy : T.countRecordedBy}</dt><dd>{stockProof.recordedBy}</dd><dt>{T.countRecordedAt}</dt><dd>{stockProof.recordedAtUtc}</dd>
+        <dt>{T.countBookPieces}</dt><dd>{stockProof.bookPieceCount ?? T.countNoPieces}</dd><dt>{stockScrap ? T.scrapPieces : T.countActualPieces}</dt><dd>{(stockScrap ? preview.inventoryStockScrap?.scrapPieceCount : preview.inventoryStockCount?.countedPieceCount) ?? T.countNoPieces}</dd>
       </dl><h4>{INBOX.rulesHeading}</h4><ul>{preview.rules.map((rule,index) => <li key={`${rule.ruleCode}:${index}`}>
         <p>{inboxRuleText(rule.ruleCode) ?? INBOX.ruleUnknown}</p><dl className={styles.facts}>
-          <dt>{INBOX.actual}</dt><dd>{rule.actual} {rule.unit}</dd><dt>{INBOX.deviation}</dt><dd>{rule.deviation} {rule.unit}</dd>
-        </dl></li>)}</ul><p>{T.countReadOnly}</p></section> : null}
+          <dt>{INBOX.actual}</dt><dd>{rule.actual} {rule.unit}</dd>{rule.deviation !== null ? <><dt>{INBOX.deviation}</dt><dd>{rule.deviation} {rule.unit}</dd></> : null}
+        </dl></li>)}</ul><p>{stockScrap ? T.scrapReadOnly : T.countReadOnly}</p></section> : null}
       {supplierProof ? <section aria-label={T.supplierReturnProposal}><h3>{T.supplierReturnProposal}</h3><dl className={styles.facts}>
         <dt>{T.supplierReturnOrder}</dt><dd>{supplierProof.purchaseOrderId}</dd>
         <dt>{T.supplierReturnLine}</dt><dd>{supplierProof.purchaseOrderLineId}</dd>
@@ -238,7 +240,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       </div> : null}
       {preview.pending && !reconciledHistorical ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{kind === 'finance.bank-account.v1' ? T.bankApprovalOnly : kind === 'logistics.weighing-difference.v1' ? T.weighingApprovalOnly : kind === 'logistics.plan-excess.v1' ? T.planExcessApprovalOnly : kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
         {preview.rejectionSupported !== false || preview.approvalReasonRequired ? <label>{counterparty ? T.optionalNote : kind === 'manufacturing.plan.v1' ? T.manufacturingRejectReason : T.reason}<textarea value={lossReason} maxLength={reasonLimit} onChange={event => setReason(event.target.value)} /></label> : null}
-        {kind === 'inventory.stock-count.v1' ? <p>{T.countReasonHelp}</p> : null}
+        {kind === 'inventory.stock-count.v1' || stockScrap ? <p>{T.countReasonHelp}</p> : null}
         {kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? <p>{T.approvalReasonRequired(reasonLimit)}</p> : null}
         {kind === 'manufacturing.plan.v1' && preview.rejectionSupported ? <p>{T.manufacturingRejectHelp}</p> : null}
         {kind === 'purchasing.request.v1' || supplierReturn ? <p>{T.rejectionReasonRequired(reasonLimit)}</p> : null}

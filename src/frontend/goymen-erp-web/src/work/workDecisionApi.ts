@@ -9,7 +9,7 @@ import { hasExactKeys, replayHeadersAgree } from '../finance/wireShape'
 import { readJson, type CommandOutcome } from '../settings/discountLimitApi'
 
 export const WORK_DECISION_KINDS = ['inventory.opening-cost.v1', 'finance.cash-account.v1',
-  'finance.credit-account.v1', 'finance.cash-account-passivation.v1', 'finance.cash-account-reactivation.v1','sales.order-draft.v1','sales.invoice.v1','sales.subcontract-invoice.v1','purchasing.request.v1','purchasing.order.v1','purchasing.service-order.v1','purchasing.incoming-invoice-variance.v1','purchasing.goods-receipt-batch.v1','manufacturing.plan.v1','inventory.transfer-loss.v1','counterparty.tax-identity-change.v1','counterparty.legal-name-change.v1','logistics.plan-excess.v1','inventory.transfer-overage.v1','logistics.weighing-difference.v1','purchasing.supplier-return-cost-exception.v1','inventory.stock-count.v1','finance.bank-account.v1'] as const
+  'finance.credit-account.v1', 'finance.cash-account-passivation.v1', 'finance.cash-account-reactivation.v1','sales.order-draft.v1','sales.invoice.v1','sales.subcontract-invoice.v1','purchasing.request.v1','purchasing.order.v1','purchasing.service-order.v1','purchasing.incoming-invoice-variance.v1','purchasing.goods-receipt-batch.v1','manufacturing.plan.v1','inventory.transfer-loss.v1','counterparty.tax-identity-change.v1','counterparty.legal-name-change.v1','logistics.plan-excess.v1','inventory.transfer-overage.v1','logistics.weighing-difference.v1','purchasing.supplier-return-cost-exception.v1','inventory.stock-count.v1','finance.bank-account.v1','inventory.stock-scrap.v1'] as const
 // Native owner purposes: kind prefixes do not define their actual capability ids.
 export const COUNTERPARTY_WORK_DECISION_CAPABILITY = {
   'counterparty.tax-identity-change.v1': 'cari.tax-identity-change.work-decision',
@@ -21,7 +21,7 @@ export const isCounterpartyWorkDecisionKind = (kind: string): kind is Counterpar
   Object.hasOwn(COUNTERPARTY_WORK_DECISION_CAPABILITY, kind)
 export const isSalesWorkDecisionKind = (kind: WorkDecisionKind) => kind === 'sales.order-draft.v1' || kind === 'sales.invoice.v1' || kind === 'sales.subcontract-invoice.v1'
 /** Native owner reason/note bounds; Counterparty notes and Sales rejection reasons are optional. */
-export const workDecisionReasonLimit = (kind: WorkDecisionKind) => kind === 'inventory.stock-count.v1' || isCounterpartyWorkDecisionKind(kind) ? 1000 : kind === 'manufacturing.plan.v1' ? 256 : kind === 'purchasing.incoming-invoice-variance.v1' ? 2000 : kind === 'purchasing.service-order.v1' ? 1000 : isSalesWorkDecisionKind(kind) || kind === 'purchasing.request.v1' ? 4000 : 500
+export const workDecisionReasonLimit = (kind: WorkDecisionKind) => kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || isCounterpartyWorkDecisionKind(kind) ? 1000 : kind === 'manufacturing.plan.v1' ? 256 : kind === 'purchasing.incoming-invoice-variance.v1' ? 2000 : kind === 'purchasing.service-order.v1' ? 1000 : isSalesWorkDecisionKind(kind) || kind === 'purchasing.request.v1' ? 4000 : 500
 export const isWorkDecisionKind = (value: string): value is WorkDecisionKind => isCounterpartyWorkDecisionKind(value) || WORK_DECISION_KINDS.some(kind => kind === value)
 export interface WorkDecisionRequest { readonly expectedVersion: string; readonly approve: boolean; readonly reason: string | null; readonly delegationId: string | null; readonly supplierReturnCostException?: { readonly expectedPurchaseOrderVersion?: string }; readonly inventoryTransferOverage?: { readonly requestNumber: number; readonly decidedAtUtc: string }; readonly logisticsPlanExcess?: { readonly expectedInstructionVersion: string }; readonly inventoryTransferLoss?: { readonly requestNumber: number; readonly decidedAtUtc: string }; readonly manufacturingPlanReapproval?: { readonly selectedLabelIds?: readonly string[] | null } | null }
 export interface CounterpartyTaxIdentityProof {
@@ -57,8 +57,12 @@ export interface InventoryStockCountProof {
   readonly countedAtUtc: string; readonly reason: string; readonly recordedBy: string; readonly recordedAtUtc: string
   readonly bookPieceCount: number | null; readonly countedPieceCount: number | null
 }
+export interface InventoryStockScrapProof extends Omit<InventoryStockCountProof, 'countedKg' | 'differenceKg' | 'countedAtUtc' | 'countedPieceCount'> {
+  readonly scrapKg: string; readonly remainingKg: string; readonly scrappedAtUtc: string; readonly scrapPieceCount: number | null
+}
 export interface WorkBankAccountProof { readonly account: BankAccountView; readonly proposedBy: string; readonly proposedAtUtc: string }
 export interface WorkDecisionPreview {
+  readonly inventoryStockScrap?: InventoryStockScrapProof
   readonly bankAccount?: WorkBankAccountProof
   readonly inventoryStockCount?: InventoryStockCountProof
   readonly supplierReturnCostException?: SupplierReturnCostExceptionProof
@@ -111,7 +115,7 @@ export const isWorkDecisionRequest = (value: unknown, kind?: WorkDecisionKind): 
     || !text(value.expectedVersion) || (kind === 'inventory.transfer-overage.v1' || kind === 'logistics.plan-excess.v1' || kind === 'manufacturing.plan.v1' || kind === 'inventory.transfer-loss.v1' || kind !== undefined && isCounterpartyWorkDecisionKind(kind)) && !isPositiveInt64Text(value.expectedVersion) || typeof value.approve !== 'boolean' || !nullableText(value.reason)
     || value.delegationId !== null && !isBoundUuid(value.delegationId)) return false
   if (kind === 'finance.bank-account.v1') return value.approve && value.reason === null && isPositiveInt64Text(value.expectedVersion) && value.expectedVersion !== '9223372036854775807'
-  if (kind === 'inventory.stock-count.v1') return value.expectedVersion === '1' && isWorkStockCountReason(value.reason)
+  if (kind === 'inventory.stock-count.v1' || kind === 'inventory.stock-scrap.v1') return value.expectedVersion === '1' && isWorkStockCountReason(value.reason)
   if (kind === 'purchasing.supplier-return-cost-exception.v1') {
     const selected = value.supplierReturnCostException
     return isWorkSupplierReturnVersion(value.expectedVersion) && (value.approve ? value.reason === null : isWorkSupplierReturnReason(value.reason))
@@ -140,11 +144,11 @@ export const isWorkDecisionRequest = (value: unknown, kind?: WorkDecisionKind): 
     && (selection.selectedLabelIds === undefined || selection.selectedLabelIds === null || labelIds(selection.selectedLabelIds))
 }
 export function decodeWorkDecisionPreview(value: unknown, company: string, kind: WorkDecisionKind, id: string): WorkDecisionPreview | null {
-  if (!record(value) || !hasExactKeys(value, ['companyId', 'kind', 'itemId', 'documentLabel', 'sourceVersion', 'pending', 'approvalReasonRequired', 'references', 'rules'], kind === 'finance.bank-account.v1' ? ['rejectionSupported', 'bankAccount'] : kind === 'inventory.stock-count.v1' ? ['rejectionSupported', 'inventoryStockCount'] : kind === 'purchasing.supplier-return-cost-exception.v1' ? ['rejectionSupported', 'supplierReturnCostException'] : kind === 'logistics.weighing-difference.v1' ? ['rejectionSupported', 'logisticsWeighingDifference'] : kind === 'inventory.transfer-overage.v1' ? ['rejectionSupported', 'inventoryTransferOverage'] : kind === 'logistics.plan-excess.v1' ? ['rejectionSupported', 'logisticsPlanExcess'] : kind === 'inventory.transfer-loss.v1' ? ['rejectionSupported', 'inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['rejectionSupported', 'manufacturingPlanReapproval'] : kind === 'counterparty.tax-identity-change.v1' ? ['rejectionSupported', 'counterpartyTaxIdentityChange'] : kind === 'counterparty.legal-name-change.v1' ? ['rejectionSupported', 'counterpartyLegalNameChange'] : ['rejectionSupported'])
+  if (!record(value) || !hasExactKeys(value, ['companyId', 'kind', 'itemId', 'documentLabel', 'sourceVersion', 'pending', 'approvalReasonRequired', 'references', 'rules'], kind === 'inventory.stock-scrap.v1' ? ['rejectionSupported', 'inventoryStockScrap'] : kind === 'finance.bank-account.v1' ? ['rejectionSupported', 'bankAccount'] : kind === 'inventory.stock-count.v1' ? ['rejectionSupported', 'inventoryStockCount'] : kind === 'purchasing.supplier-return-cost-exception.v1' ? ['rejectionSupported', 'supplierReturnCostException'] : kind === 'logistics.weighing-difference.v1' ? ['rejectionSupported', 'logisticsWeighingDifference'] : kind === 'inventory.transfer-overage.v1' ? ['rejectionSupported', 'inventoryTransferOverage'] : kind === 'logistics.plan-excess.v1' ? ['rejectionSupported', 'logisticsPlanExcess'] : kind === 'inventory.transfer-loss.v1' ? ['rejectionSupported', 'inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['rejectionSupported', 'manufacturingPlanReapproval'] : kind === 'counterparty.tax-identity-change.v1' ? ['rejectionSupported', 'counterpartyTaxIdentityChange'] : kind === 'counterparty.legal-name-change.v1' ? ['rejectionSupported', 'counterpartyLegalNameChange'] : ['rejectionSupported'])
     || !same(value.companyId, company) || value.kind !== kind || !same(value.itemId, id) || !text(value.documentLabel)
     || (kind === 'inventory.opening-cost.v1' ? value.sourceVersion !== `submission/${id}` : !isPositiveInt64Text(value.sourceVersion))
-    || typeof value.pending !== 'boolean' || value.approvalReasonRequired !== (kind === 'inventory.stock-count.v1' || kind === 'inventory.transfer-overage.v1' || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.opening-cost.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1')
-    || (kind === 'manufacturing.plan.v1' ? typeof value.rejectionSupported !== 'boolean' : kind === 'inventory.stock-count.v1' || kind === 'purchasing.supplier-return-cost-exception.v1' || kind === 'purchasing.goods-receipt-batch.v1' || kind === 'inventory.transfer-overage.v1' || kind === 'inventory.transfer-loss.v1' || isCounterpartyWorkDecisionKind(kind) ? value.rejectionSupported !== true : kind === 'finance.bank-account.v1' || kind === 'logistics.weighing-difference.v1' || kind === 'logistics.plan-excess.v1' || kind === 'purchasing.order.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? value.rejectionSupported !== false : value.rejectionSupported !== undefined && value.rejectionSupported !== true)
+    || typeof value.pending !== 'boolean' || value.approvalReasonRequired !== (kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'inventory.transfer-overage.v1' || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.opening-cost.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1')
+    || (kind === 'manufacturing.plan.v1' ? typeof value.rejectionSupported !== 'boolean' : kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'purchasing.supplier-return-cost-exception.v1' || kind === 'purchasing.goods-receipt-batch.v1' || kind === 'inventory.transfer-overage.v1' || kind === 'inventory.transfer-loss.v1' || isCounterpartyWorkDecisionKind(kind) ? value.rejectionSupported !== true : kind === 'finance.bank-account.v1' || kind === 'logistics.weighing-difference.v1' || kind === 'logistics.plan-excess.v1' || kind === 'purchasing.order.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? value.rejectionSupported !== false : value.rejectionSupported !== undefined && value.rejectionSupported !== true)
     || !Array.isArray(value.references) || value.references.length > 12 || !value.references.every(ref => record(ref)
       && hasExactKeys(ref, ['role', 'label', 'recordId', 'link']) && text(ref.role) && text(ref.label)
       && (ref.recordId === null || isBoundUuid(ref.recordId)) && nullableText(ref.link))
@@ -165,25 +169,30 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
       || value.rules.length !== 1 || !record(value.rules[0]) || value.rules[0].ruleCode !== 'finance.bank-account-approval-required'
       || [value.rules[0].threshold,value.rules[0].actual,value.rules[0].deviation,value.rules[0].unit].some(field => field !== null)) return null
   }
-  if (kind === 'inventory.stock-count.v1') {
-    const count = value.inventoryStockCount
+  if (kind === 'inventory.stock-count.v1' || kind === 'inventory.stock-scrap.v1') {
+    const scrap = kind === 'inventory.stock-scrap.v1'
+    const evidence = scrap ? value.inventoryStockScrap : value.inventoryStockCount
+    const quantityKey = scrap ? 'scrapKg' : 'countedKg', resultKey = scrap ? 'remainingKg' : 'differenceKg'
+    const occurredKey = scrap ? 'scrappedAtUtc' : 'countedAtUtc', piecesKey = scrap ? 'scrapPieceCount' : 'countedPieceCount'
     const refs = value.references
-    // Native persisted quantities, already evaluated by Inventory. No subtraction or piece conversion here.
-    const countKg = (v: unknown, signed = false): v is string => typeof v === 'string' && v !== '-0'
+    // Immutable native quantities; validate their representation, never recompute the remaining kg or difference.
+    const stockKg = (v: unknown, signed = false): v is string => typeof v === 'string' && v !== '-0'
       && isCountedKilogramText(signed && v.startsWith('-') ? v.slice(1) : v)
-    if (!record(count) || !hasExactKeys(count, ['labelId', 'labelVersion', 'ownerKind', 'ownerId', 'custodianKind', 'custodianId', 'locationId', 'productId', 'block', 'bookKg', 'countedKg', 'differenceKg', 'countedAtUtc', 'reason', 'recordedBy', 'recordedAtUtc', 'bookPieceCount', 'countedPieceCount'])
-      || value.sourceVersion !== (value.pending ? '1' : '2') || !isPositiveInt64Text(count.labelVersion)
-      || !['labelId', 'ownerId', 'custodianId', 'locationId', 'productId'].every(key => isBoundUuid(count[key]))
-      || (count.ownerKind !== 'Company' && count.ownerKind !== 'Counterparty') || (count.custodianKind !== 'Company' && count.custodianKind !== 'Counterparty')
-      || (count.block !== 'Free' && count.block !== 'Blocked') || !countKg(count.bookKg) || !countKg(count.countedKg) || !countKg(count.differenceKg, true) || count.differenceKg === '0'
-      || !transferDispatchUtc(count.countedAtUtc) || !transferDispatchUtc(count.recordedAtUtc) || !text(count.reason) || count.reason.length > 1000
-      || !text(count.recordedBy) || count.recordedBy.length > 128
-      || (count.bookPieceCount === null ? count.countedPieceCount !== null : !isPieceCount(count.bookPieceCount) || !isPieceCount(count.countedPieceCount))
-      || value.rules.length !== 1 || !record(value.rules[0]) || value.rules[0].ruleCode !== 'inventory.stock-count-difference'
-      || value.rules[0].threshold !== null || value.rules[0].actual !== count.countedKg || value.rules[0].deviation !== count.differenceKg || value.rules[0].unit !== 'kg'
-      || refs.length !== 3 || refs.filter(ref => record(ref) && ref.role === 'inventory-label' && same(ref.recordId, count.labelId as string) && ref.link === null).length !== 1
-      || refs.filter(ref => record(ref) && ref.role === 'product' && same(ref.recordId, count.productId as string)).length !== 1
-      || refs.filter(ref => record(ref) && ref.role === 'location' && same(ref.recordId, count.locationId as string)).length !== 1) return null
+    if (!record(evidence) || !hasExactKeys(evidence, ['labelId', 'labelVersion', 'ownerKind', 'ownerId', 'custodianKind', 'custodianId', 'locationId', 'productId', 'block', 'bookKg', quantityKey, resultKey, occurredKey, 'reason', 'recordedBy', 'recordedAtUtc', 'bookPieceCount', piecesKey])
+      || value.sourceVersion !== (value.pending ? '1' : '2') || !isPositiveInt64Text(evidence.labelVersion)
+      || !['labelId', 'ownerId', 'custodianId', 'locationId', 'productId'].every(key => isBoundUuid(evidence[key]))
+      || (evidence.ownerKind !== 'Company' && evidence.ownerKind !== 'Counterparty') || (evidence.custodianKind !== 'Company' && evidence.custodianKind !== 'Counterparty')
+      || (evidence.block !== 'Free' && evidence.block !== 'Blocked') || !stockKg(evidence.bookKg) || !stockKg(evidence[quantityKey]) || !stockKg(evidence[resultKey], !scrap)
+      || (scrap ? evidence.bookKg === '0' || evidence.scrapKg === '0' : evidence.differenceKg === '0')
+      || !transferDispatchUtc(evidence[occurredKey]) || !transferDispatchUtc(evidence.recordedAtUtc) || !text(evidence.reason) || evidence.reason.length > 1000
+      || !text(evidence.recordedBy) || evidence.recordedBy.length > 128
+      || (evidence.bookPieceCount === null ? evidence[piecesKey] !== null : !isPieceCount(evidence.bookPieceCount) || !isPieceCount(evidence[piecesKey])
+        || scrap && (evidence[piecesKey] as number) > evidence.bookPieceCount)
+      || value.rules.length !== 1 || !record(value.rules[0]) || value.rules[0].ruleCode !== (scrap ? 'inventory.stock-scrap-request' : 'inventory.stock-count-difference')
+      || value.rules[0].threshold !== null || value.rules[0].actual !== evidence[quantityKey] || value.rules[0].deviation !== (scrap ? null : evidence[resultKey]) || value.rules[0].unit !== 'kg'
+      || refs.length !== 3 || refs.filter(ref => record(ref) && ref.role === 'inventory-label' && same(ref.recordId, evidence.labelId as string) && ref.link === null).length !== 1
+      || refs.filter(ref => record(ref) && ref.role === 'product' && same(ref.recordId, evidence.productId as string)).length !== 1
+      || refs.filter(ref => record(ref) && ref.role === 'location' && same(ref.recordId, evidence.locationId as string)).length !== 1) return null
   }
   if (kind === 'purchasing.supplier-return-cost-exception.v1') {
     const proof = value.supplierReturnCostException

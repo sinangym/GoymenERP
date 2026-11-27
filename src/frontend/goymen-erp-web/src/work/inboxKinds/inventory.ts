@@ -1,5 +1,4 @@
 import { INVENTORY_TRANSFER_ACTION_ROUTE } from '../../inventory/capabilities'
-import { INVENTORY_STOCK_SCRAP_SOURCE } from '../workText'
 import type { WorkInboxKind } from './types'
 
 type TransferActionCapability = keyof typeof INVENTORY_TRANSFER_ACTION_ROUTE
@@ -11,7 +10,7 @@ const OVERAGE_APPROVE: TransferActionCapability = 'inventory.stock-transfer.over
  */
 export const INVENTORY_INBOX_KINDS: readonly WorkInboxKind[] = [
   { kind: 'inventory.stock-count.v1', module: 'inventory', capability: 'inventory.stock-count.work-decision' },
-  { kind: 'inventory.stock-scrap.v1', module: 'inventory', capability: INVENTORY_STOCK_SCRAP_SOURCE.capability },
+  { kind: 'inventory.stock-scrap.v1', module: 'inventory', capability: 'inventory.stock-scrap.work-decision' },
   { kind: 'inventory.transfer-overage.v1', module: 'inventory', capability: OVERAGE_APPROVE },
   { kind: 'inventory.transfer-loss.v1', module: 'inventory', capability: 'inventory.transfer-loss.work-decision' },
   // WP8 / YOL-D41: the decision is on the owner-authorized Work detail route.

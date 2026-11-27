@@ -339,7 +339,7 @@ it('decodes exact loss options among the mounted owner kinds without changing ot
  const value={...preview,kind:lossKind,approvalReasonRequired:true,rejectionSupported:true,inventoryTransferLoss:lossOptions}
  expect(isWorkDecisionKind(lossKind)).toBe(true)
  expect(WORK_DECISION_KINDS.filter(kind=>kind===lossKind)).toHaveLength(1)
- expect(WORK_DECISION_KINDS).toHaveLength(23)
+ expect(WORK_DECISION_KINDS).toHaveLength(24)
  expect(decodeWorkDecisionPreview(value,company,lossKind,id)).not.toBeNull()
  for(const delta of [{companyId:id},{itemId:company},{sourceVersion:'0'},{approvalReasonRequired:false},{rejectionSupported:false},
   {inventoryTransferLoss:null},{inventoryTransferLoss:{...lossOptions,requestNumber:0}},{inventoryTransferLoss:{...lossOptions,requestNumber:1.5}},
@@ -389,7 +389,7 @@ it('mounts both Counterparty purposes once among seventeen and pins their actual
   'counterparty.tax-identity-change.v1':'cari.tax-identity-change.work-decision',
   'counterparty.legal-name-change.v1':'cari.legal-name-change.work-decision',
  })
- expect(WORK_DECISION_KINDS).toHaveLength(23)
+ expect(WORK_DECISION_KINDS).toHaveLength(24)
  for(const cp of cpKinds){
   expect(isWorkDecisionKind(cp)).toBe(true);expect(isCounterpartyWorkDecisionKind(cp)).toBe(true)
   expect(WORK_DECISION_KINDS.filter(kind=>kind===cp)).toEqual([cp])
@@ -524,7 +524,7 @@ const overageRequest={...request,reason:'İnsan karar gerekçesi',inventoryTrans
 it.each([null,0,2147483647])('keeps the exact nine-field human overage proposal and nullable pieces=%s',pieceCount=>{
  const value={...overagePreview,inventoryTransferOverage:{...overageProposal,pieceCount}}
  expect(WORK_DECISION_KINDS.filter(kind=>kind===overageKind)).toEqual([overageKind])
- expect(WORK_DECISION_KINDS).toHaveLength(23)
+ expect(WORK_DECISION_KINDS).toHaveLength(24)
  expect(decodeWorkDecisionPreview(value,company,overageKind,id)).toEqual(value)
 })
 it('refuses malformed, foreign, unbound or hidden overage proof instead of rendering a partial proposal',()=>{
@@ -575,7 +575,7 @@ const weighingEvaluation={dispatchNoteId:weighingNote,instructionId:weighingInst
 const weighingPreview={...preview,kind:weighingKind,sourceVersion:'1',rejectionSupported:false,
  references:[{role:'dispatch-note',label:'SENTETIK irsaliye',recordId:weighingNote,link:null},{role:'loading-instruction',label:'SENTETIK talimat',recordId:weighingInstruction,link:null}],logisticsWeighingDifference:weighingEvaluation}
 it('keeps exactly seventeen immutable evaluation fields and eight native product fields without numeric coercion',()=>{
- expect(WORK_DECISION_KINDS.filter(kind=>kind===weighingKind)).toEqual([weighingKind]);expect(WORK_DECISION_KINDS).toHaveLength(23)
+ expect(WORK_DECISION_KINDS.filter(kind=>kind===weighingKind)).toEqual([weighingKind]);expect(WORK_DECISION_KINDS).toHaveLength(24)
  expect(Object.keys(weighingEvaluation)).toHaveLength(17);expect(Object.keys(weighingEvaluation.products[0]!)).toHaveLength(8)
  expect(decodeWorkDecisionPreview(weighingPreview,company,weighingKind,id)).toEqual(weighingPreview)
  for(const bandLevel of ['NotEvaluated','None','Warning','Approval','Block'])
@@ -759,6 +759,51 @@ describe('safe bank approval Work purpose',()=>{
   for(const delta of [{companyId:id},{itemId:company},{state:'Proposed'},{state:'Rejected'},{kind:'finance.bank-account-iban-change.v1'},{originalCorrelationId:'other'},{account:bankSafeAccount}]){
    fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,...delta}),{status:200,headers}))
    expect((await sendWorkDecision(company,bankKind,id,command,'same-key')).type).toBe('unknown')
+  }
+ })
+})
+
+
+const scrapKind='inventory.stock-scrap.v1'
+const scrapHuman={labelId:countLabel,labelVersion:'7',ownerKind:'Company',ownerId:company,custodianKind:'Company',custodianId:company,locationId:countLocation,productId:countProduct,
+ block:'Free',bookKg:'20.125',scrapKg:'12.125',remainingKg:'8',scrappedAtUtc:'2026-11-27T08:00:00Z',reason:'SENTETIK hurda gerekçesi',recordedBy:'SENTETIK-hurda-kaydeden',recordedAtUtc:'2026-11-27T09:00:00Z',bookPieceCount:2,scrapPieceCount:0}
+const scrapRules=[{ruleCode:'inventory.stock-scrap-request',threshold:null,actual:'12.125',deviation:null,unit:'kg'}]
+const scrapPreview={...preview,kind:scrapKind,sourceVersion:'1',approvalReasonRequired:true,rejectionSupported:true,references:countRefs,rules:scrapRules,inventoryStockScrap:scrapHuman}
+describe('native stock scrap Work evidence',()=>{
+ it('reuses the immutable stock evidence shape while preserving zero scrapped pieces versus null and zero remaining kg',()=>{
+  expect(decodeWorkDecisionPreview(scrapPreview,company,scrapKind,id)).not.toBeNull()
+  expect(decodeWorkDecisionPreview({...scrapPreview,sourceVersion:'2',pending:false},company,scrapKind,id)).not.toBeNull()
+  expect(decodeWorkDecisionPreview({...scrapPreview,inventoryStockScrap:{...scrapHuman,bookPieceCount:null,scrapPieceCount:null}},company,scrapKind,id)).not.toBeNull()
+  expect(decodeWorkDecisionPreview({...scrapPreview,rules:[{...scrapRules[0]!,actual:'20.125'}],inventoryStockScrap:{...scrapHuman,scrapKg:'20.125',remainingKg:'0',scrapPieceCount:2}},company,scrapKind,id)).not.toBeNull()
+ })
+ it.each([{bookKg:'0'},{scrapKg:'0'},{scrapKg:'-1'},{scrapKg:'01'},{remainingKg:'-1'},{remainingKg:'1.000'},{labelVersion:'0'},
+  {labelId:id},{productId:id},{locationId:id},{block:'Unknown'},{ownerKind:'Unknown'},{custodianKind:'Unknown'},
+  {bookPieceCount:null},{scrapPieceCount:null},{scrapPieceCount:3},{scrapPieceCount:-1},{scrapPieceCount:'0'},{scrapPieceCount:2147483648},
+  {reason:''},{reason:'x'.repeat(1001)},{recordedBy:''},{recordedBy:'x'.repeat(129)},{scrappedAtUtc:'2026-11-27T08:00:00+03:00'},
+  {countedKg:'1'},{differenceKg:'2'},{unitCost:'100'},{costStatus:'Known'}])('refuses malformed, misbound or price-bearing scrap facts %j',delta=>{
+  expect(decodeWorkDecisionPreview({...scrapPreview,inventoryStockScrap:{...scrapHuman,...delta}},company,scrapKind,id)).toBeNull()
+ })
+ it.each([{companyId:id},{sourceVersion:'2'},{sourceVersion:'7'},{pending:false},{inventoryStockScrap:null},{inventoryStockScrapProof:{}},{inventoryStockCount:countHuman},
+  {approvalReasonRequired:false},{rejectionSupported:false},{rules:[]},{rules:[{...scrapRules[0]!,deviation:'1'}]},{rules:[{...scrapRules[0]!,actual:'1'}]},{references:[]}])('refuses wrong owner/logical state and extra metadata %j',delta=>{
+  expect(decodeWorkDecisionPreview({...scrapPreview,...delta},company,scrapKind,id)).toBeNull()
+ })
+ it('keeps both native decisions in the four-field command with a mandatory 1000-character reason',()=>{
+  for(const approve of [true,false]){
+   const body={expectedVersion:'1',approve,reason:'x'.repeat(1000),delegationId:null};expect(isWorkDecisionRequest(body,scrapKind)).toBe(true)
+   for(const delta of [{expectedVersion:'2'},{reason:null},{reason:' '},{reason:'x'.repeat(1001)},{inventoryStockScrap:scrapHuman},{inventoryStockCount:countHuman},{inventoryTransferLoss:{requestNumber:1,decidedAtUtc:'2026-11-27T08:00:00Z'}}])expect(isWorkDecisionRequest({...body,...delta},scrapKind)).toBe(false)
+  }
+  expect(workDecisionReasonLimit(scrapKind)).toBe(1000)
+  expect(decodeWorkDecisionPreview({...countPreview,inventoryStockScrap:scrapHuman},company,countKind,id)).toBeNull()
+ })
+ it.each([true,false])('accepts only matching immutable native scrap outcome and replay correlation, approve=%s',async approve=>{
+  const body={companyId:company,kind:scrapKind,itemId:id,state:approve?'Approved':'Rejected',replayed:true,originalCorrelationId:'original'}
+  const headers={'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}
+  const fetch=vi.fn(async()=>new Response(JSON.stringify(body),{status:200,headers}));vi.stubGlobal('fetch',fetch)
+  const command={expectedVersion:'1',approve,reason:'Karar',delegationId:null}
+  expect((await sendWorkDecision(company,scrapKind,id,command,'same-key')).type).toBe('applied')
+  for(const delta of [{companyId:id},{itemId:company},{kind:countKind},{state:'PendingApproval'},{state:approve?'Rejected':'Approved'},{originalCorrelationId:'wrong'},{extra:true}]){
+   fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,...delta}),{status:200,headers}))
+   expect((await sendWorkDecision(company,scrapKind,id,command,'same-key')).type).toBe('unknown')
   }
  })
 })

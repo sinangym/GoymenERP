@@ -155,3 +155,16 @@ it('mounts stock count under its exact standalone Work capability without changi
  expect(inventoryRoutes).toHaveLength(16)
  expect(matchRoutes(inventoryRoutes,'/stok/etiket/cccccccc-0000-4000-8000-000000000001')?.at(-1)?.route.path).toBe(INVENTORY_LABEL_DETAIL_ROUTE.slice(1))
 })
+
+
+it('mounts stock scrap with its exact Work capability without replacing the native label route',()=>{
+ const capability=CAPABILITY.inventoryStockScrapWorkDecision
+ expect(capability).toBe('inventory.stock-scrap.work-decision');expect(CAPABILITY_ROUTE[capability]).toBe('/onaylarim/inventory.stock-scrap.v1/:approvalId')
+ expect(CAPABILITY_NAV_LABEL[capability]).toBe('');expect(NAV_CAPABILITIES).not.toContain(capability)
+ const route=matchRoutes(workRoutes,'/onaylarim/inventory.stock-scrap.v1/cccccccc-0000-4000-8000-000000000001')?.at(-1)?.route
+ expect(route?.path).toBe('onaylarim/inventory.stock-scrap.v1/:approvalId')
+ expect((route?.element as {props?:{capability?:readonly string[]}}|undefined)?.props?.capability).toEqual(['inventory.stock-scrap.work-decision'])
+ expect(WORK_INBOX_KINDS.filter(row=>row.kind==='inventory.stock-scrap.v1')).toEqual([{kind:'inventory.stock-scrap.v1',module:'inventory',capability}])
+ expect(inventoryRoutes).toHaveLength(16)
+ expect(matchRoutes(inventoryRoutes,'/stok/etiket/cccccccc-0000-4000-8000-000000000001')?.at(-1)?.route.path).toBe(INVENTORY_LABEL_DETAIL_ROUTE.slice(1))
+})
