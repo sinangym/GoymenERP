@@ -12,7 +12,9 @@ Ana kayıt [DELIVERY_BACKLOG_v1.json](../backlog/DELIVERY_BACKLOG_v1.json) olara
 
 Bu yönler rol ataması, hesap/vergi seçimi, deployment veya AI açma yetkisi değildir. Tartışma metnindeki öneriler otomatik işletme kararı yapılmaz.
 
-## Kaynakta tespit edilen uygulanabilir farklar
+## İlk incelemedeki kaynak farkları (26 Kasım)
+
+Bu bölüm başlangıç anıdır; güncel teslim ve kalan kabul kanıtları aşağıdaki tarihli notlarda ve paket JSON'undadır.
 
 - İzin kaydı 311, Critical 17; önceki matris 306 satırdı. Kodda bulunan beş izin yalnız rol **önerisi** olarak eklendi. Grant/seed değişmedi. MD ve CSV eşleştirildi.
 - [311 izin kaynak haritası](YETKI_KAYNAK_ESLESMESI_v1.json) backend, capability, frontend ve test kullanım yerlerini ayrı gösterir. Leksik kullanım listesi, tüm ekranların efektif erişimi veya hassas alan kontrolü incelenmiş demek değildir; bu semantik kabul ROLE-UX paketindedir.
@@ -30,14 +32,14 @@ Bu yönler rol ataması, hesap/vergi seçimi, deployment veya AI açma yetkisi d
 4. Tren-2 kalan paketleri ayrı hat olarak mevcut taahhütle biter; bu yeni ilk kullanım kapsamı trene eklenmez.
 5. İki veri provası, gerçek rol ve şirketlerle uçtan uca kabul, mutabakat ve kurtarma kanıtı; ardından insan aktivasyon kapıları.
 
-Codex backend/DB/port ve sözleşme; Claude frontend/tarayıcı; mevcut koordinatör entegrasyon. Aynı dosyada iki yazar yok. Work migration sırası WP3 → WP8 → YOL-D40; AI defteri ayrı şema, C2/C3 ondan sonra. Muhasebe ve Finans şemaları kendi tek yazar kuyruğunda. Pinler en sonda. Bu plan yeni ajan veya çalışma servisi başlatmaz.
+26 Kasım geçici kullanıcı devriyle Codex backend ve frontend'i yürütür; mevcut koordinatör entegrasyonu yönetir. Aynı dosyada iki yazar yok. Work migration sırası WP3 → WP8 → YOL-D40; AI defteri ayrı şema, C2/C3 ondan sonra. Muhasebe ve Finans şemaları kendi tek yazar kuyruğunda. Pinler en sonda. Bu plan yeni ajan veya çalışma servisi başlatmaz.
 
 ## Paket dizini
 
 | Kimlik | Öncelik / risk | Durum | Bağımlılık |
 |---|---|---|---|
 | W1-YETKI/ROL-D24-PARITY | P0 / K2 | IMPLEMENTED_LOCAL | — |
-| W1-YETKI/ROLE-UX | P0 / K3 | SOURCE_REVIEW_REQUIRED | W1-YETKI/ROL-D24-PARITY |
+| W1-YETKI/ROLE-UX | P0 / K3 | SOURCE_PARTIALLY_IMPLEMENTED_LOCAL | W1-YETKI/ROL-D24-PARITY |
 | W1-ORG/BOOTSTRAP | P0 / K3 | SOURCE_REVIEW_REQUIRED | — |
 | W1-CARI/QUICK-CREATE | P0 / K2 | SOURCE_PARTIALLY_IMPLEMENTED_LOCAL | — |
 | W1-URUN/UNIT-SCOPE | P0 / K3 | SOURCE_REVIEW_REQUIRED | — |
@@ -70,7 +72,7 @@ Codex backend/DB/port ve sözleşme; Claude frontend/tarayıcı; mevcut koordina
 | T2/WP-C5 | P1 / K2 | SOURCE_REVIEW_REQUIRED | — |
 | T2/WP-C7 | P1 / K2 | SOURCE_REVIEW_REQUIRED | — |
 | T2/WP-C8 | P1 / K2 | SOURCE_REVIEW_REQUIRED | — |
-| T2/WP-C9 | P1 / K2 | SOURCE_REVIEW_REQUIRED | T2/WP-B2 |
+| T2/WP-C9 | P1 / K3 | CONTRACT_REQUIRED | T2/WP-B2 |
 | T2/YOL-D40 | P1 / K3 | SOURCE_PARTIALLY_IMPLEMENTED_LOCAL | T2/WP8 |
 | T2/CREDIT-GROUPS | P1 / K3 | SOURCE_REVIEW_REQUIRED | — |
 | T2/SMALL-GAPS | P1 / K3 | SOURCE_PARTIALLY_IMPLEMENTED_LOCAL | — |
@@ -171,3 +173,9 @@ WP8 satınalma talebi purpose UI eki `4dc4136b3`: Work kutusu ve yeni amaçlı s
 27 Kasım devamı: fason owner kapanış bağlantısı `5f60d107e`, ayrı Finance `OfficiallyReversed` kanıtı `0d2324dc6`–`9edcbed9f` ve tarihsel iptal eşlemesi `5a1644b2a` bağlandı. Native para/hareket motoru yeniden yazılmadı; iptal ödeme sayılmaz. Finance 1934/1934, normal fatura karar kapısıyla Sales 2450/2450, satınalma purpose kaynak değişiklikleriyle Purchasing 1241/1241 yerel test geçti (0 skip, kaynak/head kapsamları JSON’da). Birleşik 83 host testinin 82’si geçti; değişken yanlış-scope fixture’ı bir testi kırdı. `119191f70` bütün eski iddiaları koruyarak düzeltir ve iki negatif vaka ekler; yeniden koşu bekler. İlk hata makbuzu saklandı. Yeni native SQL kaynakları derlendi, gerçek SQL **NOT_RUN**.
 
 WP8 fason fatura purpose/lifecycle kapısı `27bce08f2`, ordinary invoice replay `a02def7b2` ve ambient transaction reddi `ef8e363c5` mevcut komut, izin ve journal’dan genişletildi. Fason frontend 47/47; son transport dosyası 9/9, tsc/lint temiz. Bu C# artımları henüz doğrulanmadı. `89296ec85`/`d28d94520` onaylı nakdi kredi kaynak-plan/vade farkını uygular; Finance 1951/1951 geçti, grup bütünü tamamlanmadı. Evrakın belgeli serbest bırakma sonrası yeniden kullanımı için dar FNS-D126 sorusu bekliyor; bağımsız işler sürüyor. 41 paket/50 referans korunur; SQL, gerçek HTTP/tarayıcı, pinler, tam CI ve K3 kabulü bekler.
+
+27 Kasım sonraki doğrulama: `6a8480eff` üzerinde Purchasing **1260/1260**, kaynak/Work kompozisyonu **121/121** geçti (skip0); ikincisi 58 satış kapanış vakasını da içerir. Önceki yanlış-scope fixture ve service snapshot fixture hataları korumalar gevşetilmeden düzeltildi, başarısız loglar saklandı. Normal HTTP host authority pin hatası kapanmadı; pinler tren kapanışında üretileceğinden **NOT_ACCEPTED** kalır. Finance **1986/1986** (`aa10817d3`) ve Sales **2469/2469** (`324b9da8c`) ayrı kaynak anlarının yerel kanıtıdır; güncel tam CI veya SQL sonucu değildir.
+
+WP8'e kredi, alış siparişi ve hizmet siparişi amaçlı kararları eklendi. Alış ve hizmet siparişinde native ret yoktur; hizmet onayı kullanıcının gerçek gerekçesini taşır (native sınır 1000). `0d0197c3b` hizmet arayüzü, agent `3d89fe017` kaynağındaki 11 dosyayla aynıdır: **98/98** test, tsc/lint temiz. Önceki alış siparişi arayüzü **85/85** geçti. Native sipariş/servis/kredi komutlarının yetki, vekâlet, işlem ve audit korumaları genişletildi; SQL senaryoları yazılı/derlenmiş, **NOT_RUN**. On bir bağlı kind, 64 akışın kabulü demek değildir. Gelen fatura farkı ve mal kabul karar koruması sıradaki artımlardır.
+
+ROLE-UX `303f9ba4a`–`6a8480eff`: mevcut rol kataloğundan çoklu seçim taslağı ve izin önizlemesi, ilk rol atamasında da aynı native tek-rol formuyla çalışır. Her rol ayrı insan işlemi; Critical talep etkin yetki değildir. Okunamayan efektif izinler boş varsayılmaz. **35/35** test, tsc/lint temiz; altı dosya agent `1edea19c9` ile aynıdır. Gerçek şablon/kişi ataması ve tarayıcı kabulü bekler; 312/17 paritesi atama kanıtı değildir. C9 için A5 sayım portu hazırdır, fakat doğrulanabilir model çıktı kimliği gerekir; bu nedenle mevcut B2 bağı korunur. Saklama zaten K10/No159'da ayrı 90 gün ailesidir; Work notu/hafıza/komut defteri yerine kullanılamaz. Kalıcı sözleşme ve migration kapsamı K3 olarak düzeltilmiştir; yeni paket veya işletme kararı oluşturulmadı.

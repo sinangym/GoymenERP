@@ -2,7 +2,7 @@
 
 Bu katalog çalışan yeni fonksiyonların kabul listesi değildir. 50 kaynak/test giriş noktasıdır. Her kayıtta gerçek yol, sembol/satır, SHA-256, Git blob, karar ilişkisi, uyarlama sınırı ve yeni kullanım testi bulunur.
 
-**Kaynak:** `claude/tren-2` `c24706af4de4300d4a171eca11459098d87cd14f`. 27 kaydın kaynak ve test blobları geçmiş başarılı CI ağacıyla aynıdır; 23 kayıt yalnız kaynak/test kanıtına sahiptir. Tek tek test sonuçları bu çalışmada okunmadı. Yeni kullanım için SQL, tarayıcı ve işletme kabulü yapılmadı.
+**Başlangıç kaynağı:** `claude/tren-2` `c24706af4de4300d4a171eca11459098d87cd14f`; değişen referansların ayrı commit'leri JSON'dadır. 26 kaydın kaynak ve test blobları geçmiş başarılı CI ağacıyla aynıdır; 24 kayıt yalnız kaynak/test kanıtına sahiptir. Yerel fark testleri aşağıda belirtilir. Yeni kullanım için SQL, tarayıcı ve işletme kabulü yapılmadı.
 
 Makine kaynağı: [REFERANS_KOD_KATALOGU_v1.json](REFERANS_KOD_KATALOGU_v1.json). Doğrulayıcı: `python3 -I -S -B tools/verify_delivery_reference_catalog.py`. Windows’ta kurulu Python yürütücüsü kullanılabilir.
 
@@ -44,7 +44,7 @@ Makine kaynağı: [REFERANS_KOD_KATALOGU_v1.json](REFERANS_KOD_KATALOGU_v1.json)
 | REF-REPORT-01 | Rapor, dışa aktarım ve kayıtlı görünüm | DIRECT_REUSE | Kaynak/test var |
 | REF-UI-01 | Yetkili sekmeli çalışma alanı | REFERENCE_PATTERN | Eski CI ağacı eşleşiyor |
 | REF-UI-02 | Loading/error/empty durum bileşeni | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
-| REF-UI-03 | Onaylı erişim talebi paneli | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |
+| REF-UI-03 | Onaylı erişim talebi paneli | SMALL_EXTENSION | Kaynak/test var |
 | REF-MIGRATION-01 | Work migration ve model örüntüsü | REFERENCE_PATTERN | Kaynak/test var |
 | REF-MOTOR-01 | Dilme ve sarım golden hesapları | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
 | REF-MOTOR-02 | Soğuk hadde motoru | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
@@ -72,3 +72,5 @@ Yeni oturum bütün kataloğu bağlama almaz: paketin `references` kimliklerinde
 REF-CARRY-01 test bağlantısı, dönem açılış devri yerine gerçek cari bakiye aktarımı SQL ve birim testlerine düzeltildi (`69ffd6ccb`). Eski makbuzda olmayan correlation kimliği uydurulmaz.
 
 27 Kasım: REF-CLOSE-01 test fixture’ları YOL-D23 ile uyumlu farklı onaycı kullanacak biçimde güncellendi; REF-WORK-02/03 yeni stale bildirim kaynağına bağlandı. Güncel hash/commit kanıtları JSON’dadır; eski CI sonucu yeni kaynaklara aktarılmaz. Sales birim testleri 2440/2440 (0 skip), yeni Work bildirim arayüzü agent kaynağında 62/62 (0 skip); SQL/CI/runtime kabulü bekler.
+
+REF-ORDER-01 güncel native onay korumalarına (`43d4e5063`), REF-UI-03 mevcut rol seçimi ve ilk-rol formuna (`6a8480eff`) bağlandı. İkincisi 35/35 yerel test, tsc/lint kanıtına sahiptir; önceki CI eşliği yalnız geçmiş kaydıdır. Yeni katalog maddesi eklenmedi; 50 referans korunur.

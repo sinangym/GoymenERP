@@ -1768,10 +1768,24 @@
       "sources": [
         {
           "path": "src/frontend/goymen-erp-web/src/identity/AccessGrantPanel.tsx",
-          "line": 18,
+          "line": 19,
           "anchor": "export function AccessGrantPanel({ company, user, roles, changed }: { readonly company: string; readonly user: AccessUserDetail; readonly roles: readonly AccessRoleSummary[]; readonly changed: () => void }) {",
-          "sha256": "69c568c81ab228c9c6be5f768a7f93e8f8db6642668b39e7647ed4d85531f5b2",
-          "git_blob": "6ad33ee29d3eec8a91076d3f706e17356b4a764e"
+          "sha256": "6010911d1d630c63a76cdd838c0eeb452fb6cf0dd534e51a36ce130436eb4d5b",
+          "git_blob": "8e924006d8d216b60e23472917d2c8b8a28b2bbb"
+        },
+        {
+          "path": "src/frontend/goymen-erp-web/src/identity/RoleSelectionPreview.tsx",
+          "line": 16,
+          "anchor": "export function RoleSelectionPreview(",
+          "sha256": "926c31a31992c0136df604564061eff6b8757062671278f3ef4940826b1f08f8",
+          "git_blob": "5d942c873c6876e203c3242d3bfa2d4e4c0fd31b"
+        },
+        {
+          "path": "src/frontend/goymen-erp-web/src/identity/IdentityUserManagementPage.tsx",
+          "line": 48,
+          "anchor": "function ManagementAssignment(",
+          "sha256": "8038cc79e3105b5e87165f71a606ddd0fc829dff0cfd559d926d52f3bde3f193",
+          "git_blob": "9e949ca458441c3c095ec42e9304cb9b4670e4e5"
         }
       ],
       "tests": [
@@ -1779,12 +1793,19 @@
           "path": "src/frontend/goymen-erp-web/src/identity/AccessGrantPanel.test.tsx",
           "line": 21,
           "anchor": "it('uses the server critical flag to open a request instead of directly assigning a role', async () => {",
-          "sha256": "0b69d21bfc20ee31236dbc5cf8809f2177fac2d193a66e2dfa428bd8ba20864e",
-          "git_blob": "e7369b74918cf1ee446367b7b724aec6723466b7"
+          "sha256": "b4c762cfb1797053b6400e093fc7e2e80574323835f1d069db91fd44d48a9063",
+          "git_blob": "83b02798202e0a28c80380688f2a1265c41da97e"
+        },
+        {
+          "path": "src/frontend/goymen-erp-web/src/identity/IdentityUserManagementRoleSelection.test.tsx",
+          "line": 45,
+          "anchor": "requires separate human commands for the first normal role",
+          "sha256": "428bd72955497c598b18c79b2c5ddc778670c09d782852f27e3ee3a1e82f7454",
+          "git_blob": "c9affb23a42e6859360ca675016f22551baebdb7"
         }
       ],
-      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
-      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "source_commit": "6a8480eff9f1fb6240cba422de0120e4cb00d6ce",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
       "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
@@ -1803,7 +1824,10 @@
       "decision_refs": [
         "AGENTS.md: Mimari değişmezler; owner iş kararını ayrıca seç"
       ],
-      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
+      "previous_source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "previous_historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "local_verification": "Agent1edea19c9:35/35 scoped frontend pass, skip0; tsc/lint exit0. Six integrated file blobs equal that source. This is not SQL/browser/full CI/K3 or effective grant acceptance."
     },
     {
       "id": "REF-MIGRATION-01",

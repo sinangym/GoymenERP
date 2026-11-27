@@ -91,7 +91,7 @@
       "backlog_parent": "W1-YETKI",
       "title": "Şirket ve görev şablonuyla sade kullanıcı yönetimi",
       "group": "FIRST_USE",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P0",
       "risk": "K3",
       "scope": "Mevcut grant talebi üzerine şirket/rol şablonu önizlemesi; çok rol birleşimi, hassas veri ve onay etkisi. Gerçek atamayı mevcut komut yürütür.",
@@ -144,7 +144,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "Live role selection and first-role management UI reuse native single-role commands. Real persona templates/people-company-role assignments remain human gates; verify actual backend effective visibility, SoD/revocation, browser/SQL/full CI/K3 before acceptance.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -153,8 +153,47 @@
         "src/frontend/goymen-erp-web/src/identity/AccessGrantPanel.tsx",
         "tests/GoymenERP.Identity.UnitTests/ErpAuthorityRevalidationServiceTests.cs"
       ],
-      "change_files": [],
-      "activation_status": "HUMAN_ACTIVATION_REQUIRED"
+      "change_files": [
+        "src/frontend/goymen-erp-web/src/identity/AccessGrantPanel.test.tsx",
+        "src/frontend/goymen-erp-web/src/identity/AccessGrantPanel.tsx",
+        "src/frontend/goymen-erp-web/src/identity/IdentityUserManagementPage.tsx",
+        "src/frontend/goymen-erp-web/src/identity/IdentityUserManagementRoleSelection.test.tsx",
+        "src/frontend/goymen-erp-web/src/identity/RoleSelectionPreview.tsx",
+        "src/frontend/goymen-erp-web/src/identity/identityText.ts"
+      ],
+      "activation_status": "HUMAN_ACTIVATION_REQUIRED",
+      "execution": {
+        "source_commit": "6a8480eff9f1fb6240cba422de0120e4cb00d6ce",
+        "source_commits": [
+          "303f9ba4a",
+          "0dda56f24",
+          "1955e98e1",
+          "6a8480eff"
+        ],
+        "agent_source_commit": "1edea19c936ee4303444fa7f6af1fb39633d114f",
+        "scope": "Company-scoped live role basket, selected permission union separate from actual effective permissions, explicit native one-role assignment/request, and the same UI for a first role. Global managed-user presence is not company-access proof; unreadable effective permissions are Unknown, never invented empty data.",
+        "reuse": [
+          "AccessGrantPanel/AssignmentForm and existing native grant/critical-request commands",
+          "Owner roles/detail/access-user API and shared company directory",
+          "Existing namespace+entry generation+user remount and unknown attempt behavior"
+        ],
+        "local_checks": "35/35 frontend passed, skip0 in five scoped files at agent1edea19c9; tsc and six-file scoped lint exit0/0 warnings. All six integrated file blobs equal agent source.",
+        "new_permissions": [],
+        "migration": null,
+        "sql": "NOT_RUN",
+        "browser": "NOT_RUN",
+        "hosted_ci": "NOT_RUN",
+        "independent_review": "PENDING",
+        "remaining": [
+          "No atomic batch/fanout or simultaneous cross-company grants; every native operation needs a human action.",
+          "Actual people/role assignments and any persona grants require Sinan; 312 permissions/17 Critical remain proposal parity, not effective access.",
+          "Real user/browser, revocation/SoD across surfaces and train acceptance."
+        ],
+        "measurements": {
+          "token": "NOT_AVAILABLE",
+          "development_duration": "NOT_SEPARATELY_MEASURED"
+        }
+      }
     },
     {
       "id": "W1-ORG/BOOTSTRAP",
@@ -865,7 +904,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Run existing and added SQL acceptance at train closure, add remaining subcontract proof family in this same package, then browser/full CI/two independent K3. Missing proof remains fail-closed.",
+      "next_action": "Normal and subcontract owner evidence families are connected. Run native SQL and real authorized close/cancellation/replacement journeys, then browser/train pins/full CI/two K3. Ambiguous or unavailable evidence stays fail-closed.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -917,8 +956,9 @@
           "Finance.UnitTests": "1898 passed, 0 skipped; includes 22 new owner evidence tests",
           "Api.IntegrationTests build": "0 errors, 0 warnings; OpenApiGenerateDocumentsOnBuild=false",
           "new_SQL_facts": "8 written (2 Finance, 2 Purchasing, 4 closure); latest added closure compilation pending",
-          "Sales owner composition": "21 passed, 0 skipped; synthetic owner proofs, not SQL acceptance",
-          "Purchasing owner obligations": "12 passed, 0 skipped"
+          "Sales owner composition": "58/58 passed, skip0 within the 121-case composition at 6a8480eff9f1fb6240cba422de0120e4cb00d6ce; includes corrected negative scope fixtures and normal/subcontract cancellation families.",
+          "Purchasing owner obligations": "12 passed, 0 skipped",
+          "latest Finance/Sales regressions": "Finance1986/1986 at aa10817d3 and Sales2469/2469 at324b9da8c passed, skip0; no actual SQL/browser acceptance implied."
         },
         "reuse": [
           "FinanceExactDecimalText exact arithmetic",
@@ -927,7 +967,6 @@
           "existing admission/allocation/release commands in SQL source"
         ],
         "remaining": [
-          "Run the corrected closure negative sources (58 closure cases expected) and preserve the prior83-run failure evidence.",
           "Historical cancelled Logistics/released Inventory reservation proof is still Unreadable when lawful owner release evidence is unavailable.",
           "Actual SQL and native human close for normal and two-way subcontract journeys; synthetic owner tests are not end-to-end acceptance.",
           "Real browser, train pins/full CI and two independent K3 reviews."
@@ -1722,7 +1761,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "WP8 is the next exclusive Work schema writer; preserve pending SQL and K3 gates.",
+      "next_action": "WP3 source and local tests are delivered; WP8 consumes the reader. Actual native SQL, real delegation/revocation browser, pins/full CI/two K3 remain. Delegations stay off.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -1860,7 +1899,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Continue other owner adapters against the 64-flow map and delegation name/paging UX; per-kind rule editor source delivered. Train SQL/browser/pins/full CI/two K3 reviews remain.",
+      "next_action": "Continue native owner adapters against the 64-flow map. Management rule editor and delegation name/paging UI are source-delivered. Actual SQL/browser, train pins/full CI and two independent K3 reviews remain.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -1962,7 +2001,10 @@
           "sales.order-draft.v1",
           "sales.invoice.v1",
           "purchasing.request.v1",
-          "sales.subcontract-invoice.v1"
+          "sales.subcontract-invoice.v1",
+          "finance.credit-account.v1",
+          "purchasing.order.v1",
+          "purchasing.service-order.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -1976,7 +2018,12 @@
           "delegation_display_frontend": "Agent source b61a351b0: 66 passed, 0 skipped; tsc/lint passed; one pre-existing Fast Refresh warning",
           "delegation_display_HTTP": "6 attempted, 6 host-start failures: shell authority pins deferred by train policy; NOT_ACCEPTED",
           "Sales decision frontend": "Agent source 005184 (integrated 60a3b7998): shell registry, mount and access checks 35 passed, 0 skipped; tsc/lint passed. Hosted shell authority pins remain deferred.",
-          "Sales backend": "Sales.UnitTests at f4ccda30f: 2440 passed, 0 failed, 0 skipped. Existing native approval fixtures now use independent maker/checker actors under YOL-D23; negative fences preserved."
+          "Sales backend": "Sales.UnitTests at f4ccda30f: 2440 passed, 0 failed, 0 skipped. Existing native approval fixtures now use independent maker/checker actors under YOL-D23; negative fences preserved.",
+          "Finance latest full unit suite": "1986/1986 passed, 0 skipped at aa10817d3; credit profile fields and native credit Work fences included.",
+          "Sales latest full unit suite": "2469/2469 passed, 0 skipped at 324b9da8c; native order/invoice/subcontract guards included.",
+          "Purchasing latest full unit suite": "1260/1260 passed, 0 skipped at 6a8480eff9f1fb6240cba422de0120e4cb00d6ce; request/order/service purpose reads and native command guards included.",
+          "Latest owner/Work composition": "121/121 passed, 0 skipped at 6a8480eff9f1fb6240cba422de0120e4cb00d6ce; 58 closure cases plus Work and selected pure registry checks. Synthetic owner seams, not actual HTTP/browser/SQL acceptance.",
+          "Prior failed runs": "83-run wrong-scope fixture corrected; later 93-run contained 91 pass and two failures (pure Sales declaration expectation corrected; normal HTTP authority pin remains NOT_ACCEPTED). New service fixture run1259 pass/1 failure correctly hit immutable history; fixture corrected without weakening native guards. Original logs retained."
         },
         "reuse": [
           "existing FinanceCashAccountService commands and durable receipts",
@@ -2100,6 +2147,34 @@
             "scope": "Ordinary invoice approval current replay accepts only native Finalized/OfficiallyCancelled with matching receipt; subcontract guarded commands reject ambient/borrowed transactions.",
             "local_checks": "9/9 transport frontend cases passed,0 skipped; tsc/lint exit0/0 warnings at a760a2829 agent source. Native ambient/borrowed SQL sources and lifecycle unit increment compilation NOT_RUN.",
             "sql": "Three subcontract guard SQL facts total, NOT_RUN; no waiver of actual transaction acceptance."
+          },
+          {
+            "source_commit": "0d0197c3b",
+            "source_commits": [
+              "34321f2a1",
+              "21567aabc",
+              "68ca412f7",
+              "4da0e4d96",
+              "c89070ac6",
+              "b2af29249",
+              "ddf1ee359",
+              "9611044e0",
+              "c9aa4e299",
+              "0d0197c3b"
+            ],
+            "scope": "Native credit approve/reject and purchasing order/service approve-only purpose routes; clean owned transactions and fresh authority/delegation fences reuse existing owner commands. Service approval forwards actual human reason (native trim max1000); current preview is distinct from immutable Approved replay.",
+            "local_checks": {
+              "backend": "Purchasing1260/1260 and owner/Work121/121 passed, skip0 at 6a8480eff9f1fb6240cba422de0120e4cb00d6ce; Finance1986 and Sales2469 passed at the exact earlier heads above.",
+              "frontend order": "85/85 passed, skip0 in seven scoped files at agent8da310d7b; tsc/scoped lint exit0.",
+              "frontend service": "98/98 passed, skip0 in seven scoped files at agent3d89fe017; tsc/scoped lint exit0/0 warnings. All11 integrated file blobs equal that source.",
+              "source inventory": "12 native Sales order, seven Purchasing order, two service and three Finance credit Work SQL facts inventoried; compiled in API integration assembly, actual SQL NOT_RUN."
+            },
+            "remaining": [
+              "Remaining owner kinds and all64 flow acceptance; eleven kinds are not eleven accepted flows.",
+              "Normal HTTP host authority pin failure remains open until train pin generation; actual SQL/browser/full CI/two K3 pending."
+            ],
+            "new_permissions": [],
+            "migration": null
           }
         ],
         "source_commits": [
@@ -2114,7 +2189,20 @@
           "14d832b99",
           "27bce08f2",
           "a02def7b2",
-          "ef8e363c5"
+          "ef8e363c5",
+          "700989044",
+          "409c9f77f",
+          "440f7f36c",
+          "34321f2a1",
+          "21567aabc",
+          "68ca412f7",
+          "4da0e4d96",
+          "c89070ac6",
+          "b2af29249",
+          "ddf1ee359",
+          "9611044e0",
+          "c9aa4e299",
+          "0d0197c3b"
         ]
       }
     },
@@ -2824,9 +2912,9 @@
       "backlog_parent": "W5-AIGATEWAY",
       "title": "Geri bildirim defteri",
       "group": "TREN2",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "CONTRACT_REQUIRED",
       "priority": "P1",
-      "risk": "K2",
+      "risk": "K3",
       "scope": "Kabul/düzeltme/ret/sonradan geri alma; otomatik politika öneri/yayımı yok.",
       "exclusions": [
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
@@ -2844,8 +2932,9 @@
       ],
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
-        "Devir belgesinde kalan iş; listedeki mevcut kaynak/testler bulundu.",
-        "Tam davranış ve runtime kabulü: NOT_RUN."
+        "A5 IAiAcceptanceCountSourceV1 and usage endpoint are already ready, but no concrete C9 source is registered.",
+        "Ask/Gateway/B3 results lack a durable answer/proposal ID. C1 PreviewId/hash exists but is not user feedback or proof of a financial undo; correlation/document SHA is not an answer identity.",
+        "SINAN_KARARLARI_2026-10-21.md K10/No159 fixes separate feedback/question-answer retention at90 days, RetainUntil at creation and legal hold precedence. Personal memory1year and record notes are distinct families."
       ],
       "decisions": [
         "AI-D12"
@@ -2861,14 +2950,17 @@
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
         "K3 mutation/migration: gerçek SQL; ilgili UI: gerçek owner API ile tarayıcı ve erişim iptali.",
-        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
+        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı.",
+        "Feedback references a server-verified source receipt/hash/version under CompanyId and current authority; no prompt/name/amount copying merely to count outcomes.",
+        "Idempotency/CAS/previous-feedback chain prevents duplicate counts; human Accepted/Corrected/Rejected/Reverted is not inferred from command Executed/Rejected/Invalidated. Actual undo evidence is separate.",
+        "RetainUntil is fixed under K10/No159, identity is separated and EK43/hold gates remain; no retention or deletion activation."
       ],
       "business_acceptance": [
         "Tek feedback kimliği ve kaynak sürümü; kabul oranı tek başarı ölçütü olmaz."
       ],
-      "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
+      "migration_owner": "AI owner single writer; separate feedback persistence with K10/No159 retention, never reuse immutable CommandEvents or Work notes as feedback storage. Actual schema/contract needs normal K3 review.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "First establish a server-verifiable answer/proposal receipt via the existing B2 dependency; then link native feedback and A5 counts. Missing source identity remains unavailable, not fabricated measured data. K10 already answers 90-day retention; do not ask again.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -3047,7 +3139,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Tamamlandı değildir: onaylı alan listesinin kalan grup alanlarını, gayrinakdi gerçek tazmin/banka bağlantısını ve evrakın iki krediye bağlanmamasını tamamla; rol/grant/aktivasyon yapma. SQL/CI/K3 kapanışta.",
+      "next_action": "Approved profile fields and their existing form/detail UI are source-delivered. Complete documented instrument cross-credit release/uniqueness after the pending user answer, NonCash actual reimbursement/bank links and full group movement evidence. Actual SQL/browser/CI/K3 remain; no role/grant/activation.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -3129,6 +3221,21 @@
               "FNS-D126 document cross-credit uniqueness and explicit lawful release semantics; user question pending.",
               "Factoring deduction/maturity fields; full group real SQL/browser/CI/K3 acceptance."
             ]
+          },
+          {
+            "source_commit": "108a0c457",
+            "source_commits": [
+              "2dbc587d9",
+              "aa64ab35e",
+              "c67c43233",
+              "108a0c457"
+            ],
+            "scope": "Approved Cash FX-index/export, NonCash documented risk/commission metadata, instrument deduction/maturity and leasing contract/purchase-option source fields reuse SourceProfileJson and native proposals. Legacy immutable receipts remain readable/replayable; new approvals fail closed when required source fields are missing.",
+            "local_checks": "Finance1986/1986 passed skip0 at aa10817d3, including32 added profile cases; profile UI46/46 in two files at agentcea122c74, tsc/lint exit0 (one pre-existing warning). One four-group native SQL fact compiled at6a8480eff; actual SQL NOT_RUN.",
+            "remaining": [
+              "FNS-D126 instrument release/reuse user question remains pending; independent work continues.",
+              "NonCash actual bank/tazmin/reimbursement links and full factoring/movement SQL/browser/CI/K3 evidence."
+            ]
           }
         ]
       }
@@ -3186,7 +3293,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Finish targeted replay checks and native HTTP/SQL acceptance at train closure; continue independent ShareId/source decision search and remaining logistics text scope.",
+      "next_action": "LOJ-D21 ShareId policy is answered and source/migration written. Run historical duplicate preflight and native concurrency/replay/rollback SQL without rewriting history; finish remaining text and full downstream identity journey at train closure.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
