@@ -26,7 +26,7 @@ Makine kaynağı: [REFERANS_KOD_KATALOGU_v1.json](REFERANS_KOD_KATALOGU_v1.json)
 | REF-OPENITEM-01 | Faturadan tek açık kalem | SMALL_EXTENSION | Kaynak/test; güncel SQL kabulü bekliyor |
 | REF-ALLOCATE-01 | Ödeme dağıtımı ve tek para hareketi | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
 | REF-EXPENSE-01 | Masraf ödemesi ve audit/idempotency | SMALL_EXTENSION | Güncel kaynak/test ve yerel fark testi; SQL/CI kabulü bekliyor |
-| REF-CREDIT-01 | Kredi hareketi öneri ve karar | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |
+| REF-CREDIT-01 | Kredi hareketi öneri ve karar | SMALL_EXTENSION | Güncel native kaynak/test ve hedefli yerel doğrulama; SQL/CI kabulü bekliyor |
 | REF-CARRY-01 | Cari bakiye virman kaynağı | REFERENCE_PATTERN | Güncel kaynak/test; replay için 5 hedefli test geçti, SQL/CI bekler |
 | REF-BANK-01 | Ekstre import ve tekilleştirme | DIRECT_REUSE | Kaynak/test var |
 | REF-JOURNAL-01 | Kaynaklı fiş taslağı ve farklı kişi onayı | REFERENCE_PATTERN | Kaynak/test var |

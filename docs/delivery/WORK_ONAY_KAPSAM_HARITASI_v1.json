@@ -1434,7 +1434,7 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native owned decision safety and guarded DI source implemented; existing permission/policy preserved. fecc Finance2316/Host929PASS0skip; new native SQL sources compiled only, actualSQL NOT_RUN. Full Work human/receipt/purpose adapters are separate pending increments. No general read/grant opened; all64 semantics NOT_VERIFIED/runtimeNOT_RUN."
+      "limitation": "Full owner receipt/human Work purpose and paired UI source implemented; Finance2445 atba5,controlledHost1054 at7ccb,frontend1116 at804 (separate exact heads). Purpose permission only, no general read/grant. ActualSQL/HTTP/browser/CI/K3 NOT_RUN; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN."
     },
     {
       "flow": 43,
@@ -1453,7 +1453,7 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Native owned approval safety and actual guarded DI implemented and included in Finance2445 atba5. Narrow owner read/receipt69a remains unintegrated source-only NOT_RUN; full Work source/host and paired UI are separate pending work. ActualSQL/HTTP/browser/CI/K3 NOT_RUN; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN."
     },
     {
       "flow": 44,
@@ -1494,7 +1494,7 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native owned decision safety and guarded DI source implemented; existing permission/policy preserved. fecc Finance2316/Host929PASS0skip; new native SQL sources compiled only, actualSQL NOT_RUN. Full Work human/receipt/purpose adapters are separate pending increments. No general read/grant opened; all64 semantics NOT_VERIFIED/runtimeNOT_RUN."
+      "limitation": "Full owner receipt/human Work purpose and paired UI source implemented; Finance2445 atba5,controlledHost1054 at7ccb,frontend1116 at804 (separate exact heads). Purpose permission only, no general read/grant. ActualSQL/HTTP/browser/CI/K3 NOT_RUN; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN."
     },
     {
       "flow": 45,
@@ -1513,7 +1513,7 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native owned decision safety and guarded DI source implemented; existing permission/policy preserved. fecc Finance2316/Host929PASS0skip; new native SQL sources compiled only, actualSQL NOT_RUN. Full Work human/receipt/purpose adapters are separate pending increments. No general read/grant opened; all64 semantics NOT_VERIFIED/runtimeNOT_RUN."
+      "limitation": "Full owner receipt/human Work purpose and paired UI source implemented; Finance2445 atba5,controlledHost1054 at7ccb,frontend1116 at804 (separate exact heads). Purpose permission only, no general read/grant. ActualSQL/HTTP/browser/CI/K3 NOT_RUN; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN."
     },
     {
       "flow": 46,
@@ -1539,7 +1539,7 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Native owned approval safety, guarded DI, narrow owner read/receipt prerequisites implemented; included in Finance2445 atba5. Full Work source/host and paired UI integration is separate pending work. ActualSQL/HTTP/browser/CI/K3 NOT_RUN; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN."
     },
     {
       "flow": 47,
@@ -2021,7 +2021,7 @@
     }
   ],
   "closure": "For each flow verify real inbox listing, owner decision, company/scope, maker-checker exceptions, expected version, replay and audit. Do not replace owner rules with proposal cells.",
-  "source_extension": "Atd31523715dc7aa3faf1aa4b4005a6be3f45dd685 source sets33native/33paired/0staged; Flow29/30 paired source. ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 and pins pending; verified_runtime_flows=0,64 semantics NOT_VERIFIED/runtimeNOT_RUN;41packages/50references unchanged.",
+  "source_extension": "At8046fd301ca682a4dda01eb4dbdd71cfc9735b42:39 native/39 paired frontend/0 staged; Finance1.32/67. Source pairing and bounded local checks only;41packages/50references/64flows unchanged. verified_runtime_flows0, all64 semanticsNOT_VERIFIED/runtimeNOT_RUN.",
   "historical_source_extension": "Atcc379ff28f74d5810ed51ad537ebece821440d72 exact source sets match29native/29paired frontend kinds, including Product package-standard; staged0. Native Product Publish safety is not a30th purpose. verified_runtime_flows stays0; all64 actualSQL/HTTP/browser/CI/K3 acceptances remain NOT_RUN. Earlier exact-head evidence stays separate; new Node batch751PASS/1FAIL is not752PASS.",
   "historical_source_extensions": [
     "Atb1cacee89f805a05959b5b79af034270b80b8103 source-derived sets:30native/29paired frontend; only product.price-list-version.v1 staged, no unknown frontend kind. Historicalcc379 exact29/29 remains valid only at that head. verified_runtime_flows=0; all64 semantics/runtime remain NOT_VERIFIED/NOT_RUN.",
@@ -2192,5 +2192,47 @@
     "original_backend_failure": "683 Finance test-source compile failedCS9035 (required synthetic caller fields) andCS0246 (ConfigurationBuilder unavailable). Production warm builds passed, no unit/host test result at683.18b supplies required fields and reuses Audit flat IConfigurationSection fixture without package changes; old logs retained.",
     "sql": "Finance389 unique test source names,15 new native SQL Facts (opening9/banklimit6) compiled; actual SQL NOT_RUN. No new migration in this increment.",
     "limits": "ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 pending;41packages/50references/64flows;verified_runtime_flows=0, all64 semantics NOT_VERIFIED/runtimeNOT_RUN."
+  },
+  "native_finance_paired_checkpoint": {
+    "source_commit": "8046fd301ca682a4dda01eb4dbdd71cfc9735b42",
+    "scope": "Flow42 bank limit and Flow44/45 opening/reversal now have private scalar proofs, original native receipts, complete purpose-only human GET, paired Work UI and Finance provider1.32/67 declarations. Existing owner commands and permissions reused; no grant, new permission, policy or activation.",
+    "source_counts": {
+      "native": 39,
+      "paired_frontend": 39,
+      "staged": 0
+    },
+    "api_build": {
+      "source_commit": "75cc4c05cf1ece5f398e82e8902ffe5017cbed81",
+      "result": "Release all references0errors/0warnings187.3875477s; later test/frontend-only source changes do not constitute a new full-build run."
+    },
+    "finance_unit": {
+      "source_commit": "ba5abcbfa44a6cccd507295d76f17b4352020ec9",
+      "total": 2445,
+      "passed": 2445,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 16.4815811
+    },
+    "controlled_host": {
+      "source_commit": "7ccb5a5f0e7d71f3a082c77204b6f76a17d3254f",
+      "total": 1054,
+      "passed": 1054,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 60.0236968,
+      "scope": "DecisionHost/Finance registry/import authority/SqlConcurrencyWrapper/C7/C8; all integration source including SQL compiled, actual SQL NOT_RUN."
+    },
+    "frontend": {
+      "source_commit": "8046fd301ca682a4dda01eb4dbdd71cfc9735b42",
+      "tsc": "exit0/49.2741742s full TypeScript build",
+      "lint": "exit0/0.7569787s,20 explicit changed files,0diagnostics",
+      "vitest": "Eight complete files1116/1116PASS0skip87.1689978s; root independently parsed JSON counters."
+    },
+    "source_peers": "Complete bounded nonauthor owner/source/host/UI/publication differences and fixture deltas reviewed, no concrete open P0/P1/P2 reported. Not K3 approval.",
+    "native_prerequisites": "Flow43 owned guard and actual guarded DI plus Flow46 native narrow read/receipt implemented and included in Finance2445. Flow43 owner69a and Flow46 Work source/hosta423 remain unintegrated, NOT_RUN at this checkpoint.",
+    "sql": "Finance inventory412 unique ordinal source names; native guard/receipt test sources compiled. Actual SQL NOT_RUN; no new migration in this increment.",
+    "original_failures": "75cc Finance2442PASS/3FAIL: pending frontend publication and obsolete exact screen/link fixtures. ba5 controlledHost1053PASS/1FAIL: expected registry ordering;7ccb moves the one expected tuple without weakening exact-set checks.7ccb frontendTSC exit2/56.3697791s: fixture union narrowing and unsupported matcher;804 test-only delta fixes these, no production/schema relaxation. Original logs retained; no skipped/removed tests.",
+    "limits": "41packages/50references/64flows unchanged; verified_runtime_flows0, all64 semanticsNOT_VERIFIED/runtimeNOT_RUN. ActualSQL/normalHTTP/browser/fullCI/pins/two exact-head K3 pending.",
+    "reference": "UYGULAMA_PAKETLERI_2026-11-26.json -> T2/WP8.execution.native_finance_paired_checkpoint"
   }
 }

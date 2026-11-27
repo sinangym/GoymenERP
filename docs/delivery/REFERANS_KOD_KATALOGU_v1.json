@@ -902,8 +902,8 @@
           "path": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCreditMovementServiceV1.cs",
           "line": 29,
           "anchor": "public async Task<CreditMovementResultV1> ProposeAsync(FinanceContext context, CommandMetadata metadata,",
-          "sha256": "7831902a41e0f21a3cc3a0055a148b260ebefb4007f71bdac87f3429af1f443b",
-          "git_blob": "f813fe3ec06c4b7f3a2df41c949c71b46ff39d59"
+          "sha256": "168c56d4a92fe6ce799d196a12bb29ba9a055347bb9a880f0afeaa24f8849b11",
+          "git_blob": "03b6f2106db7aa3e15121288f85c98dc2f112093"
         }
       ],
       "tests": [
@@ -915,7 +915,7 @@
           "git_blob": "db61f67f5655e3f1908e9d2e65e22f8e6bd56b44"
         }
       ],
-      "source_commit": "f45d0ce05f368eaeeaab64fefa90569f888661bd",
+      "source_commit": "8046fd301ca682a4dda01eb4dbdd71cfc9735b42",
       "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": null,
@@ -929,8 +929,8 @@
       "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
       "adaptations": "FNS-D124..D127 alan listesi kapısı ve kaynaktan leasing KDV bağlantısı eklendi; grubun kalan alan ve tazmin/evrak kabulü ayrıca tamamlanır.",
       "limitations": [
-        "Host NoneApproved; dört alan listesi onaylıdır ama leasing KDV eşlemesi ayrıca tamamlanır.",
-        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+        "Native owned approval safety and guarded DI are implemented; remaining group fields and real business acceptance are separate package obligations.",
+        "Historical CI baseline is retained separately; current source/local tests are not actual SQL, normal HTTP, browser, full CI or K3 acceptance."
       ],
       "decision_refs": [
         "FNS-D106",
@@ -947,12 +947,22 @@
       },
       "local_validation": {
         "status": "TARGETED_LOCAL_ONLY",
-        "source_commit": "f45d0ce05f368eaeeaab64fefa90569f888661bd",
-        "finance_unit_passed": 1876,
-        "accounting_credit_passed": 9,
-        "frontend_credit_passed": 22,
+        "source_commit": "ba5abcbfa44a6cccd507295d76f17b4352020ec9",
+        "finance_unit_passed": 2445,
         "skipped": 0,
         "sql_acceptance": "NOT_RUN"
+      },
+      "previous_source_checkpoint": {
+        "source_commit": "f45d0ce05f368eaeeaab64fefa90569f888661bd",
+        "local_validation": {
+          "status": "TARGETED_LOCAL_ONLY",
+          "source_commit": "f45d0ce05f368eaeeaab64fefa90569f888661bd",
+          "finance_unit_passed": 1876,
+          "accounting_credit_passed": 9,
+          "frontend_credit_passed": 22,
+          "skipped": 0,
+          "sql_acceptance": "NOT_RUN"
+        }
       }
     },
     {
