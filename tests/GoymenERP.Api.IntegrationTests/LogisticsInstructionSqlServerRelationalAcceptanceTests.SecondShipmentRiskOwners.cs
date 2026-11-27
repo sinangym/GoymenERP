@@ -309,7 +309,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         public bool CanAccessCompany(Guid id) => id == CompanyA;
         public Task<ReadResult<PartyAccountEligibility>> GetAuthorizedAsync(FinanceContext context, Guid party, Guid account, CancellationToken token) =>
             Task.FromResult(context.CompanyId == CompanyA && party == fixture.Owners.Party && account == fixture.Owners.Account
-                ? new ReadResult<PartyAccountEligibility>(ReadOutcome.Found, new(party, account, CompanyA, true, true)) : new(ReadOutcome.NotFound, null));
+                ? new ReadResult<PartyAccountEligibility>(ReadOutcome.Found, new(party, account, CompanyA, true, IsPartyActive: true)) : new(ReadOutcome.NotFound, null));
         public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceInvoiceProducerV1 producer, Guid invoice, CancellationToken token) =>
             Task.FromResult(context.CompanyId == CompanyA ? PermissionDecision.Allowed : PermissionDecision.Denied);
         public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? source, CancellationToken token) =>
@@ -353,7 +353,7 @@ public sealed partial class FinanceRecordSqlServerRelationalAcceptanceTests
         Guid party, Guid account, FinanceInvoiceOpenItemAdmissionV1 invoice)
     {
         Assert.Equal(Currency, invoice.CurrencyId);
-        var run = new Run(string.Empty, factory); var owners = new Owners(company, Guid.NewGuid(), party, account);
+        var run = Run.BorrowSecondShipmentFactory(factory); var owners = new Owners(company, Guid.NewGuid(), party, account);
         await run.SeedApprovedBankAccountAsync(owners);
         var draft = await run.SaveDraftAsync(owners, "240.00"); SavedDraft recorded;
         await using (var receipt = run.Service(company, owners))
@@ -371,6 +371,12 @@ public sealed partial class FinanceRecordSqlServerRelationalAcceptanceTests
         }
         Assert.Equal(invoice.Installments.Count, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItems WHERE SourceId=@id AND Status=2 AND OutstandingAmountText='0.00'", ("@id", invoice.InvoiceId)));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ReceiptDrafts WHERE Id=@id AND Stage=1", ("@id", recorded.Id)));
+    }
+
+    private sealed partial class Run
+    {
+        // The existing constructor stays private. This borrowed fixture must never dispose the caller-owned factory.
+        public static Run BorrowSecondShipmentFactory(SqlServerRelationalApiFactory factory) => new(string.Empty, factory);
     }
 }
 
