@@ -604,3 +604,14 @@ it.each(['logistics.customer-returns.decision','logistics.customer-returns.appro
  await renderAt('/onaylarim/kuyruk');await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
  expect(api.inboxReads()).toHaveLength(0);expect(screen.queryByTestId('work-inbox-list')).toBeNull()
 })
+
+it.each([{granted:['finance.manual-bank-payment.work-decision'],visible:true},{granted:[],visible:false},
+ {granted:[FINANCE_CAPABILITY.manualBankPaymentsApprove],visible:false}])('uses the manual payment purpose capability for its owner-produced Work link %j',async({granted,visible})=>{
+ const link=`/onaylarim/${PAYMENT_KIND}/${PAYMENT_ID}`
+ const api=installFetch({granted,inbox:()=>json(inbox({items:[{...paymentItem,link}],sources:[src('finance',PAYMENT_KIND,'finance.manual-bank-payment.approve','BusinessDays')]}))})
+ await renderAt('/onaylarim/kuyruk')
+ if(visible){await waitFor(()=>expect(screen.getByTestId('work-inbox-item')).toBeTruthy());const card=cardOf(PAYMENT_KIND)
+  expect(within(card).getByRole('link').getAttribute('href')).toBe(link)
+  expect(card.getAttribute('data-kind')).toBe(PAYMENT_KIND)
+ }else{expect(screen.queryByTestId('work-inbox-item')).toBeNull();expect(api.inboxReads()).toHaveLength(0)}
+})

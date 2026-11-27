@@ -266,6 +266,7 @@ export const CAPABILITY = {
    * FIN-S9 (FNS-D23) Açılış Bakiyeleri. Its propose and approve are CONTROLS of this list, never routes.
    */
   financeOpeningBalancesList: 'finance.opening-balances.list',
+  financeManualBankPaymentWorkDecision: 'finance.manual-bank-payment.work-decision',
   financeBankAccountWorkDecision: 'finance.bank-account.work-decision',
   financeCashAccountWorkDecision: 'finance.cash-account.work-decision',
   financeCashAccountPassivationWorkDecision: 'finance.cash-account-passivation.work-decision',
@@ -567,6 +568,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.financeCreditLimitsList]: '/finans/kredi-limitleri',
   [CAPABILITY.financeCollateralsList]: '/finans/teminatlar',
   [CAPABILITY.financeOpeningBalancesList]: '/finans/acilis-bakiyeleri',
+  [CAPABILITY.financeManualBankPaymentWorkDecision]: '/onaylarim/finance.manual-bank-payment.v1/:approvalId',
   [CAPABILITY.financeBankAccountWorkDecision]: '/onaylarim/finance.bank-account.v1/:approvalId',
   [CAPABILITY.financeCashAccountWorkDecision]: '/onaylarim/finance.cash-account.v1/:approvalId',
   [CAPABILITY.financeCashAccountPassivationWorkDecision]: '/onaylarim/finance.cash-account-passivation.v1/:approvalId',

@@ -1535,7 +1535,7 @@ it('mounts dispatch as the 25th native purpose under its exact standalone capabi
  expect(route?.path).toBe(`onaylarim/${dispatchKind}/:approvalId`)
  const element=route?.element as ReactElement<{capability:readonly string[];children:ReactElement<{kind:string}>}>
  expect(element.props.capability).toEqual([dispatchCap]);expect(element.props.children.type).toBe(WorkDecisionPage);expect(element.props.children.props.kind).toBe(dispatchKind)
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(26)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(27)
 })
 it.each([{companyId:COMPANY_B},{logisticsDispatchNote:{...dispatchProof,dispatchNoteId:COMPANY_A}},{rejectionSupported:true}])('does not expose malformed/foreign dispatch proof %j',async(delta)=>{
  installFetch({capabilities:[dispatchCap],respond:url=>url.includes(dispatchPath)?json({...dispatchPreview,...delta}):undefined});mountDispatchPurpose()
@@ -1609,7 +1609,7 @@ it('mounts the customer return purpose under its exact standalone capability amo
  expect(route?.path).toBe(`onaylarim/${customerKind}/:approvalId`)
  expect(route).toBeDefined()
  expect((route!.element as ReactElement<{capability:readonly string[]}>).props.capability).toEqual([customerCap])
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(26)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(27)
 })
 it('does not restore a customer-return unknown attempt under another authentication session',async()=>{
  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-return-old'})
@@ -1719,4 +1719,39 @@ it('does not mount the summary or read AI for a foreign-company Work preview',as
  const calls=installFetch({capabilities:[summaryCap,AI_PANEL_CAPABILITY,'sales.drafts.detail'],respond:url=>url.includes(summaryPath)?json({...summaryPreview,companyId:COMPANY_B}):undefined})
  mount(`/onaylarim/${summaryKind}/${id}`);await waitFor(()=>expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
  expect(screen.queryByRole('region',{name:SUMMARY.heading})).toBeNull();expect(calls.some(call=>call.url.includes('/ai/'))).toBe(false)
+})
+
+const manualPaymentKind='finance.manual-bank-payment.v1',manualPaymentCap='finance.manual-bank-payment.work-decision'
+const manualPaymentPath=`/work/decisions/${manualPaymentKind}/${id}`
+const manualPaymentPreview={...preview,kind:manualPaymentKind,documentLabel:'SENTETIK banka ödemesi',rejectionSupported:false}
+const mountManualPayment=()=>mount(`/onaylarim/${manualPaymentKind}/${id}`,true)
+it('opens manual bank payment approval with only its standalone capability and never records a money movement',async()=>{
+ const calls=installFetch({capabilities:[manualPaymentCap],respond:(url,init)=>url.includes(manualPaymentPath)?init?.method==='POST'
+  ?json({companyId:COMPANY_A,kind:manualPaymentKind,itemId:id,state:'Approved',replayed:false,originalCorrelationId:'SENTETIK-original'}):json(manualPaymentPreview):undefined})
+ mountManualPayment();await screen.findByRole('button',{name:T.approve})
+ expect(screen.queryByRole('textbox',{name:T.reason})).toBeNull();expect(screen.queryByRole('button',{name:T.reject})).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.method==='POST');expect(sent).toHaveLength(1);expect(sent[0]!.body).toEqual({expectedVersion:'7',approve:true,reason:null,delegationId:null})
+ expect(calls.some(call=>call.url.includes('/finance/'))).toBe(false)
+})
+it('keeps the original manual payment version, null reason and key across unknown remount even when the current preview is terminal',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-manual-payment-session'});let posts=0
+ const calls=installFetch({capabilities:[manualPaymentCap],respond:(url,init)=>url.includes(manualPaymentPath)?init?.method==='POST'
+  ?++posts===1?problem(503):json({companyId:COMPANY_A,kind:manualPaymentKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'SENTETIK-original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK-original'})
+  :json({...manualPaymentPreview,pending:posts===0,sourceVersion:posts===0?'7':'9'}):undefined})
+ mountManualPayment();await screen.findByRole('button',{name:T.approve});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ cleanup();mountManualPayment();await screen.findByRole('button',{name:T.retry});expect(screen.getByText(`${T.version}: 7`)).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.method==='POST');expect(sent).toHaveLength(2);expect(sent[1]!.body).toEqual(sent[0]!.body)
+ expect(sent[1]!.body).toEqual({expectedVersion:'7',approve:true,reason:null,delegationId:null});expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key'])
+})
+it.each([{capabilities:[]},{capabilities:['finance.manual-bank-payments.approve']},{capabilities:['finance.manual-bank-payments.detail']}])('does not read manual payment under missing or native browse/control capabilities %j',async({capabilities})=>{
+ const calls=installFetch({capabilities,respond:url=>url.includes(manualPaymentPath)?json(manualPaymentPreview):undefined});mountManualPayment()
+ await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(calls.some(call=>call.url.includes(manualPaymentPath))).toBe(false)
+})
+it('clears manual payment approval when a fresh server 403 removes its standalone capability',async()=>{
+ const capabilities=[manualPaymentCap]
+ const calls=installFetch({capabilities,respond:(url,init)=>{if(!url.includes(manualPaymentPath))return undefined;if(init?.method==='POST'){capabilities.splice(0);return problem(403)}return json(manualPaymentPreview)}})
+ mountManualPayment();await screen.findByRole('button',{name:T.approve});fireEvent.click(screen.getByRole('button',{name:T.approve}))
+ await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+ expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
 })

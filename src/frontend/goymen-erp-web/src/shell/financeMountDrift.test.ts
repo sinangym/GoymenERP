@@ -241,3 +241,16 @@ it('mounts only the safe bank approval purpose while preserving the native F04 c
  expect(CAPABILITY_ROUTE[CAPABILITY.financeBankAccountsList]).toBe(FINANCE_ROUTE.bankAccountsList)
  expect(matchRoutes(financeRoutes,FINANCE_ROUTE.bankAccountsList)?.at(-1)?.route.path).toBe(FINANCE_ROUTE.bankAccountsList.slice(1))
 })
+
+it('mounts manual bank payment as an approve-only Work purpose while keeping native prepare, detail and record controls',()=>{
+ const capability=CAPABILITY.financeManualBankPaymentWorkDecision
+ expect(capability).toBe('finance.manual-bank-payment.work-decision');expect(CAPABILITY_ROUTE[capability]).toBe('/onaylarim/finance.manual-bank-payment.v1/:approvalId')
+ expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
+ expect(matchRoutes(workRoutes,'/onaylarim/finance.manual-bank-payment.v1/cccccccc-0000-4000-8000-000000000001')?.at(-1)?.route.path).toBe('onaylarim/finance.manual-bank-payment.v1/:approvalId')
+ expect(WORK_INBOX_KINDS.filter(row=>row.kind==='finance.manual-bank-payment.v1')).toEqual([{kind:'finance.manual-bank-payment.v1',module:'finance',capability}])
+ expect(CAPABILITY_ROUTE[CAPABILITY.financeManualBankPaymentsList]).toBe(FINANCE_ROUTE.manualBankPaymentsList)
+ expect(CAPABILITY_ROUTE[CAPABILITY.financeManualBankPaymentsDetail]).toBe(FINANCE_ROUTE.manualBankPaymentsDetail)
+ expect(FINANCE_CAPABILITY.manualBankPaymentsApprove).toBe('finance.manual-bank-payments.approve')
+ expect(FINANCE_CAPABILITY.manualBankPaymentsRecord).toBe('finance.manual-bank-payments.record')
+ expect(matchRoutes(financeRoutes,manualBankPaymentDetailPath('cccccccc-0000-4000-8000-000000000001'))?.at(-1)?.route.path).toBe(FINANCE_ROUTE.manualBankPaymentsDetail.slice(1))
+})

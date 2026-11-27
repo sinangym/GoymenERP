@@ -65,3 +65,9 @@ describe('WP5 Finance and Accounting inbox kinds', () => {
     for (const permission of PERMISSIONS) expect(inboxPermissionText(permission)).not.toBe(permission)
   })
 })
+
+it('maps the single manual-payment kind to its native approve-only Work purpose without changing its permission words',()=>{
+ expect(FINANCE_INBOX_KINDS.filter(row=>row.kind==='finance.manual-bank-payment.v1')).toEqual([{kind:'finance.manual-bank-payment.v1',module:'finance',capability:'finance.manual-bank-payment.work-decision'}])
+ expect(inboxPermissionText('finance.manual-bank-payment.approve')).not.toBe('finance.manual-bank-payment.approve')
+ expect(inboxRuleText('finance.manual-bank-payment-approval-required')).not.toBeNull()
+})
