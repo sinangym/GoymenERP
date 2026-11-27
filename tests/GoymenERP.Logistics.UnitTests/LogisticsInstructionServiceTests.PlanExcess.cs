@@ -49,17 +49,22 @@ public sealed partial class LogisticsInstructionServiceTests
     {
         public Action? AfterPlanApproval { get; set; }
         public bool PlanRacePayloadMismatch { get; set; }
+        public LogisticsPlanExcessResultV1? PlanReplayAnswer;
+        public Action? BeforePlanReplay;
+        public int PlanApprovalWrites;
         private int planReplayCalls;
         public Task<LogisticsPlanExcessPageV1> ListPlanExcessAsync(Guid? instructionId, string? cursor, CancellationToken token) => Task.FromResult(new LogisticsPlanExcessPageV1([], null));
         public Task<LogisticsPlanExcessResultV1?> FindPlanExcessReplayAsync(LogisticsWriteEnvelope envelope, string hash, string command, CancellationToken token)
         {
+            BeforePlanReplay?.Invoke();
             planReplayCalls++;
             if (PlanRacePayloadMismatch && planReplayCalls > 1) throw new LogisticsStoreException(LogisticsStoreCodes.SameKeyPayloadMismatch, "SENTETIK unique race winner differs");
-            return Task.FromResult<LogisticsPlanExcessResultV1?>(null);
+            return Task.FromResult(PlanReplayAnswer);
         }
         public Task<LogisticsPlanExcessResultV1> ProposePlanExcessAsync(LogisticsWriteEnvelope envelope, string hash, Guid instructionId, Guid lineId, ProposeLogisticsPlanExcessV1 request, CancellationToken token) => throw new NotImplementedException();
         public Task<LogisticsPlanExcessResultV1> ApprovePlanExcessAsync(LogisticsWriteEnvelope envelope, string hash, Guid exceptionId, ApproveLogisticsPlanExcessV1 request, CancellationToken token)
         {
+            PlanApprovalWrites++;
             AfterPlanApproval?.Invoke();
             if (PlanRacePayloadMismatch) throw new LogisticsStoreException(LogisticsStoreCodes.ConcurrentChange, "SENTETIK insert unique race");
             var now = DateTimeOffset.UtcNow;

@@ -1,5 +1,7 @@
 using System.Data;
 using System.Data.Common;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Api.InventoryRuntime;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
@@ -27,9 +29,54 @@ internal sealed class LogisticsRealizationTransactionRunner(
         Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default) =>
         ExecuteAsync(companyId, operation, beforeCommit, cancellationToken, serializable: true);
 
-    public Task<T> ExecutePlanExcessAsync<T>(Guid companyId, Func<CancellationToken, Task<T>> operation,
-        Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default) =>
-        ExecuteDeliveryCoreAsync(companyId, operation, beforeCommit, cancellationToken, serializable: true);
+    public async Task<T> ExecutePlanExcessAsync<T>(Guid companyId, Func<CancellationToken, Task<T>> operation,
+        Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default)
+    {
+        Require(companyId, operation, beforeCommit);
+        var company = services.GetService<ICompanyContext>();
+        var audit = services.GetService<IAuditTransactionWriterV1>();
+        // Entry refusal is outside owned cleanup: never clear a caller's dirty state, audit or borrowed transaction.
+        if (company is null || !company.IsResolved || company.CompanyId != companyId || audit is null
+            || System.Transactions.Transaction.Current is not null || logistics.Database.CurrentTransaction is not null
+            || !logistics.Database.IsRelational() || logistics.ChangeTracker.HasChanges() || audit.HasPendingDrafts)
+            throw new LogisticsInstructionServiceException(503, LogisticsPlanExcessV1.Unavailable);
+        async Task Fence()
+        {
+            if (!company.IsResolved || company.CompanyId != companyId) throw new LogisticsInstructionServiceException(403, "forbidden");
+            await beforeCommit(cancellationToken);
+            if (!company.IsResolved || company.CompanyId != companyId) throw new LogisticsInstructionServiceException(403, "forbidden");
+        }
+        await using var owned = await logistics.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            await Fence();
+            var result = await operation(cancellationToken);
+            // Includes native SaveChanges and its Audit interceptor. Callback is the captured owner
+            // company/actor/permission fence, including the host's live delegation decorator.
+            await Fence();
+            if (audit.HasPendingDrafts)
+            {
+                await audit.WritePendingAsync(owned.GetDbTransaction(), cancellationToken);
+                await Fence();
+            }
+            if (audit.HasPendingDrafts) throw new LogisticsInstructionServiceException(503, LogisticsPlanExcessV1.Unavailable);
+            await Fence();
+            await owned.CommitAsync(cancellationToken);
+            return result;
+        }
+        catch
+        {
+            var rolledBack = await RollBackAsync(owned, CancellationToken.None);
+            try { await owned.DisposeAsync(); }
+            finally
+            {
+                logistics.ChangeTracker.Clear();
+                audit.DiscardPending();
+            }
+            if (!rolledBack) throw new LogisticsInstructionServiceException(503, LogisticsPlanExcessV1.Unavailable);
+            throw;
+        }
+    }
 
     public Task<T> ExecuteDeliveryAsync<T>(Guid companyId,
         Func<CancellationToken, Task<T>> operation, Func<CancellationToken, Task> beforeCommit,

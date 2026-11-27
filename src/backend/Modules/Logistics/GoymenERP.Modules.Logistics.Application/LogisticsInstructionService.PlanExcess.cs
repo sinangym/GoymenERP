@@ -47,13 +47,20 @@ public sealed partial class LogisticsInstructionService : ILogisticsPlanExcessSe
         var owner = store as ILogisticsPlanExcessStoreV1 ?? throw PlanExcessUnavailable();
         var envelope = Envelope(scope, metadata, permission);
         var hash = LogisticsRequestHash.Compute(LogisticsPlanExcessV1.ApproveCommand, exceptionId, request);
-        if (await PlanExcessReplayAsync(scope, permission, owner, envelope, hash, LogisticsPlanExcessV1.ApproveCommand, token) is { } replay) return replay;
         return await WritePlanExcessAsync(scope, permission, owner, envelope, hash, LogisticsPlanExcessV1.ApproveCommand,
-            ct => owner.ApprovePlanExcessAsync(envelope, hash, exceptionId, request, ct), token);
+            async ct => await PlanExcessReplayAsync(scope, permission, owner, envelope, hash, LogisticsPlanExcessV1.ApproveCommand, ct, withinTransaction: true)
+                ?? await owner.ApprovePlanExcessAsync(envelope, hash, exceptionId, request, ct), token);
     }
     private async Task<LogisticsPlanExcessResultV1?> PlanExcessReplayAsync(Scope scope, string? permission,
-        ILogisticsPlanExcessStoreV1 owner, LogisticsWriteEnvelope envelope, string hash, string command, CancellationToken token)
+        ILogisticsPlanExcessStoreV1 owner, LogisticsWriteEnvelope envelope, string hash, string command, CancellationToken token, bool withinTransaction = false)
     {
+        if (command == LogisticsPlanExcessV1.ApproveCommand && !withinTransaction)
+        {
+            var transaction = realization ?? throw PlanExcessUnavailable();
+            return await transaction.ExecutePlanExcessAsync(scope.CompanyId,
+                ct => PlanExcessReplayAsync(scope, permission, owner, envelope, hash, command, ct, withinTransaction: true),
+                ct => RequireStillAsync(scope, permission, ct), token);
+        }
         try { return await GuardedAsync(scope, permission, () => owner.FindPlanExcessReplayAsync(envelope, hash, command, token), token); }
         catch (LogisticsStoreException error) { throw Store(error); }
     }
@@ -81,7 +88,7 @@ public sealed partial class LogisticsInstructionService : ILogisticsPlanExcessSe
             // The host has confirmed rollback. A fresh own transaction stores only this immutable terminal answer.
             var result = await transaction.ExecutePlanExcessAsync<LogisticsPlanExcessResultV1?>(scope.CompanyId, async ct =>
             {
-                var won = await PlanExcessReplayAsync(scope, permission, owner, envelope, hash, command, ct);
+                var won = await PlanExcessReplayAsync(scope, permission, owner, envelope, hash, command, ct, withinTransaction: true);
                 if (won is not null) return won;
                 await GuardedAsync(scope, permission, async () =>
                 {
