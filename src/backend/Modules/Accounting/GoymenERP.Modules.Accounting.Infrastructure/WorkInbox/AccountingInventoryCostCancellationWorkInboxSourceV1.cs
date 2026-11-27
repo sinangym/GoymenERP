@@ -14,9 +14,10 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.WorkInbox;
 /// preparer (<c>inventory_cost_approval_refused</c>); no other user is refused. The item is the inventory cost proposal the
 /// approve command addresses. The approve command accepts only a company-wide grant (D11: no scoped approver).
 /// </summary>
-internal sealed class AccountingInventoryCostCancellationWorkInboxSourceV1(
+internal sealed partial class AccountingInventoryCostCancellationWorkInboxSourceV1(
     AccountingDbContext dbContext,
-    AccountingWorkInboxFence fence) : IWorkInboxSourceV1
+    AccountingWorkInboxFence fence,
+    IAccountingInventoryCostCancellationDecisionReadV1? decisionReader = null) : IWorkInboxSourceV1
 {
     public const string ModuleName = "accounting";
     public const string KindName = "accounting.inventory-cost-cancellation.v1";
@@ -49,29 +50,16 @@ internal sealed class AccountingInventoryCostCancellationWorkInboxSourceV1(
                             && newer.Version > row.Version))
                     .OrderBy(row => row.RecordedAtUtc).ThenBy(row => row.InventoryCostProposalId)
                     .Take(maxCount + 1)
+                    .Select(row => new InventoryCostCancellationVersionRow { CompanyId = row.CompanyId, InventoryCostProposalId = row.InventoryCostProposalId,
+                        Id = row.Id, CancellationId = row.CancellationId, Status = row.Status, PreparedBy = row.PreparedBy,
+                        ApprovedBy = row.ApprovedBy, PeriodId = row.PeriodId, RecordedAtUtc = row.RecordedAtUtc })
                     .ToListAsync(token);
             },
             rows => AccountingWorkInboxFence.Page(rows, maxCount, Item),
             cancellationToken);
 
-    private static WorkInboxItemV1? Item(InventoryCostCancellationVersionRow row)
-    {
-        if (row.InventoryCostProposalId == Guid.Empty || row.Id == Guid.Empty || row.CancellationId == Guid.Empty
-            || row.PreparedBy == Guid.Empty || row.PeriodId == Guid.Empty || row.ApprovedBy is not null)
-        {
-            return null;
-        }
-
-        return new WorkInboxItemV1(ModuleName, KindName, row.InventoryCostProposalId,
-            AccountingWorkInboxFence.ShortReference(row.InventoryCostProposalId), row.RecordedAtUtc.ToUniversalTime(),
-            ScreenPath, AccountingWorkInboxFence.Actor(row.PreparedBy),
-            [new WorkApprovalRuleResultV1(ApprovalRequiredRule, null, null, null, null)],
-            [
-                new WorkApprovalReferenceV1("inventory-cost-proposal",
-                    AccountingWorkInboxFence.ShortReference(row.InventoryCostProposalId), row.InventoryCostProposalId, null),
-                new WorkApprovalReferenceV1("invoice-cancellation", AccountingWorkInboxFence.ShortReference(row.CancellationId),
-                    row.CancellationId, null),
-                new WorkApprovalReferenceV1("period", AccountingWorkInboxFence.ShortReference(row.PeriodId), row.PeriodId, null),
-            ]);
-    }
+    private static WorkInboxItemV1? Item(InventoryCostCancellationVersionRow row) =>
+        row.Status != PreparedStatus || row.Id == Guid.Empty || row.ApprovedBy is not null ? null
+        : AccountingInventoryCostCancellationDecisionBindingV1.Item(row.InventoryCostProposalId, row.CancellationId,
+            row.PeriodId, row.PreparedBy, row.RecordedAtUtc);
 }

@@ -91,6 +91,7 @@ public sealed record AccountingInventoryCostProposalV1(Guid ProposalId, Guid Com
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AccountingCostProposalRenewalV1? RenewedFrom = null)
 {
     [JsonIgnore] public AccountingInventoryCostApprovalReceiptV1? ApprovalReceipt { get; init; }
+    [JsonIgnore] public AccountingInventoryCostCancellationApprovalReceiptV1? CancellationApprovalReceipt { get; init; }
 
     public string ExactTlAmount => AccountingInventoryCostAmountsV1.TryExactDecimal(Component.SignedTlAmount, 28, out var amount)
         ? amount.ToString("0.############################", System.Globalization.CultureInfo.InvariantCulture)

@@ -13,8 +13,11 @@ public sealed partial class AccountingInventoryCostServiceV1
         // Keep the native permission-only refusal before an unconfigured store; capture precedes the first await.
         try { await ApprovalFenceAsync(captured, token); }
         catch (NormalJournalAuthorityDeniedException) { return Denied<AccountingInventoryCostProposalV1>(); }
-        return await store.RunCancellationApprovalAsync(replayOnly => Run("approve-component-cancellation", captured.Permission,
-            new { id, request }, key, (checker, fence, metadata) => store.ApproveCancellationAsync(id, request, checker, fence, metadata, token),
-            token, captured, replayOnly), ct => ApprovalFenceAsync(captured, ct), token);
+        return await store.RunCancellationApprovalAsync(async replayOnly =>
+        {
+            var answer = await Run("approve-component-cancellation", captured.Permission, new { id, request }, key,
+                (checker, fence, metadata) => store.ApproveCancellationAsync(id, request, checker, fence, metadata, token), token, captured, replayOnly);
+            return await AttachCancellationReceiptAsync(answer, id, request, key, captured, token);
+        }, ct => ApprovalFenceAsync(captured, ct), token);
     }
 }

@@ -98,8 +98,8 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
                 var count=0;var fired=false;owner.Authority.Read=()=>
                 {
                     if(save.Completed)count++;
-                    // Final cancellation save: owner postSave1, Atomic2, service3, runner4, precommit5, release6.
-                    var trigger=phase=="precommit"?count==5:phase=="postcommit"?tx.Commits==1:save.Completed;
+                    // Final cancellation save: postSave1, Atomic2, service3, command4/5, retained reads6..22, receipt23, runner24, precommit25, release26.
+                    var trigger=phase=="precommit"?count==25:phase=="postcommit"?tx.Commits==1:save.Completed;
                     if(!trigger||fired)return true;fired=true;
                     if(phase=="actor")owner.User.Actor=Maker;else if(phase=="company")owner.Company.Set(Guid.NewGuid());
                     else if(phase=="member")owner.User.Member=false;else if(phase=="cancel")cancellation.Cancel();else return false;
