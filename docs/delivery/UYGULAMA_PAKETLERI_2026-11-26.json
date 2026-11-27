@@ -1108,6 +1108,13 @@
             "scope": "Retained historical cancelled invoice scope/original version and native outbox proof; active replacement requires Settled, cancelled original requires OfficiallyReversed.",
             "local_checks": "Root integration assembly compiled; targeted combined run83:82 passed,1 failed,0 skipped. Wrong-scope fixture produces a new Guid per observation; diagnosis/fix pending, not accepted. Test fix119191f70 retains all original axis assertions, uses one stable wrong scope, and adds two changing-proof rejection cases. Rerun pending; prior failed log retained.",
             "sql": "Existing normal and subcontract cancellation+replacement source assertions compiled; NOT_RUN."
+          },
+          {
+            "source_commit": "2ec40417bd3d2ed97b5ed2681dc7b4f7a2a7aba5",
+            "scope": "Targeted existing SalesOrderOwnerAxesHostTests after119191 test-only stable wrong-scope fixture and two changing-proof negative cases; bounded independent source peer no findings.",
+            "checks": "58/58PASS0skip3.5943422s, no-build fromce800 integration assembly; Sales owner and test sources unchanged through2ec. Not83/85 complete family rerun and not native SQL/browser business acceptance.",
+            "sql": "NOT_RUN",
+            "browser": "NOT_RUN"
           }
         ]
       }
@@ -2249,7 +2256,7 @@
         "activation": "No grants/flags/provider changes"
       },
       "execution": {
-        "source_commit": "d31523715dc7aa3faf1aa4b4005a6be3f45dd685",
+        "source_commit": "b19b5567be636da89bbae3e83b895013eba1afcc",
         "implemented_kinds": [
           "inventory.opening-cost.v1",
           "finance.cash-account.v1",
@@ -2283,7 +2290,10 @@
           "product.price-list-version.v1",
           "finance.party-credit-limit.v1",
           "finance.official-invoice-import.v1",
-          "finance.official-sales-invoice.v1"
+          "finance.official-sales-invoice.v1",
+          "finance.manual-bank-payment-reversal.v1",
+          "finance.manual-receipt-reversal.v1",
+          "finance.expense-payment.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -2321,7 +2331,35 @@
           "Product package-standard UI fixture follow-up": "Agent ad41b1926b91d33f52dcff6db9fcd38411c7ec83 (root98c8aa9da308aa4812f9aa73b4a7207ef02f179a) changes only the new Inbox fixture: open the existing explanation toggle; native reference assertion unchanged. Full Inbox48/48PASS0skip17.15s, fulltsc0/50.49s,13explicitlint0/0diagnostics. Original2f6 batch751PASS/1FAIL/7520skip retained; six unchanged files704PASS at2f6 are separate-head evidence, not752PASS atad41. At2f6 fulltsc0/51.38s and13lint0 also terminal.",
           "Product/host pre-ROL-D18 terminal evidence": "Exact98c8aa9da308aa4812f9aa73b4a7207ef02f179a: Product.Infrastructure warm build0errors/0warnings; Product1174/1174PASS0skip and complete integration-source build/selected DecisionHost-registry522/522PASS0skip. Full API build evidence belongs separately to3b8cc andb1. This is before staged price-list purpose/ROL-D18 and Finance limit safety, not evidence for their later code.",
           "Current b1 frozen verification": "Exactb1cacee89f805a05959b5b79af034270b80b8103: API Release build0errors/0warnings199.2839662s; Product1185/1185PASS0skip18.5318384s, Finance2063/2063PASS0skip18.2867623s, Work187/187PASS0skip10.6533415s. Root independently parsed TRX XML counters; Finance11new native safety cases and Price owner/ROL-D18 cases included. Complete integration-source compile failed after49.7987076s at new ApprovalSafety.cs302 xUnit2029 Assert.Empty(Where); controlled host NOT_RUN atb1. Original failure retained. Root test-onlyb4b79ec816e7525f8fd69960bbf6b72d63b7230d uses Assert.DoesNotContain(originalEntries,samepredicate), preserving the assertion; nonauthor one-line peer found no concrete P1/P2, notK3. Exactb4b79ec816e7525f8fd69960bbf6b72d63b7230d: complete API integration-source build and controlled DecisionHost/FinanceShell/package-purpose filter551/551PASS0skip75.7390616s, including29PriceList host cases; root independently parsed TRX XML counters. Distinct fromb1 API/unit evidence and its retained xUnit2029 compile failure. Native and new SQL test sources compiled; actualSQL/HTTP/browser/fullCI/K3 NOT_RUN. ActualSQL NOT_RUN.",
-          "Final b4 controlled host verification": "Exactb4b79ec816e7525f8fd69960bbf6b72d63b7230d: complete API integration-source build and controlled DecisionHost/FinanceShell/package-purpose filter551/551PASS0skip75.7390616s, including29PriceList host cases; root independently parsed TRX XML counters. Distinct fromb1 API/unit evidence and its retained xUnit2029 compile failure. Native and new SQL test sources compiled; actualSQL/HTTP/browser/fullCI/K3 NOT_RUN."
+          "Final b4 controlled host verification": "Exactb4b79ec816e7525f8fd69960bbf6b72d63b7230d: complete API integration-source build and controlled DecisionHost/FinanceShell/package-purpose filter551/551PASS0skip75.7390616s, including29PriceList host cases; root independently parsed TRX XML counters. Distinct fromb1 API/unit evidence and its retained xUnit2029 compile failure. Native and new SQL test sources compiled; actualSQL/HTTP/browser/fullCI/K3 NOT_RUN.",
+          "reversal_and_expense_checkpoint": {
+            "api_full": {
+              "source_commit": "d512d7804c4dba3207c19333d533412512562dee",
+              "exit": 0,
+              "errors": 0,
+              "warnings": 0,
+              "seconds": 192.448994,
+              "mode": "Release all project references; OpenAPI generation disabled; not full CI"
+            },
+            "finance_unit": {
+              "source_commit": "b19b5567be636da89bbae3e83b895013eba1afcc",
+              "total": 2284,
+              "passed": 2284,
+              "failed": 0,
+              "skipped": 0,
+              "seconds": 15.1104446
+            },
+            "controlled_host": {
+              "source_commit": "b19b5567be636da89bbae3e83b895013eba1afcc",
+              "total": 929,
+              "passed": 929,
+              "failed": 0,
+              "skipped": 0,
+              "seconds": 70.1222749,
+              "scope": "DecisionHost/Finance registry/import authority/SqlConcurrencyWrapper/C7/C8 controlled ports; complete integration-source compiled, actual SQL NOT_RUN"
+            },
+            "original_failures": "4ccc API full PASS200.2623446s; Finance test-source compile failed on internal Audit.Pending. a3f75 Finance2241PASS0skip16.8405267s; integration source failed4 missing Persistence symbols. ce800 Finance2252PASS0skip16.0868709s; controlled Host865total864PASS1FAIL0skip74.0214885s (maker503 vs403). feeed3344 Finance2254PASS0skip15.8521812s and Host865PASS0skip60.4506076s after real maker403 fix and public collector fixture correction. d512 Finance2284total2283PASS1FAIL0skip16.5263706s (two new screen literals missing); b19 test-only exact expected-set correction. All old logs retained; no assertion or test removed."
+          }
         },
         "reuse": [
           "existing FinanceCashAccountService commands and durable receipts",
@@ -2334,8 +2372,8 @@
           "existing Work post transport and SQL fixtures"
         ],
         "remaining": [
-          "Other owner decision adapters and all 64 flow acceptance evidence",
-          "Actual SQL, HTTP/runtime browser acceptance, shell/OpenAPI/guard/recovery pins, full CI and two independent exact-head K3 reviews"
+          "Expense approval frontend/purpose publication; other owner decision adapters, typed receipts and full human/UI bindings",
+          "All64 actual SQL, normal HTTP/runtime browser acceptance, shell/OpenAPI/guard/recovery pins, full CI and two independent exact-head K3 reviews"
         ],
         "sql": "NOT_RUN",
         "browser": "NOT_RUN",
@@ -3397,8 +3435,10 @@
           "7898cc30397ab51d38464c5ac674de2422890d07",
           "9f9442c4e9382033ea97f54e62d7238ab50e91c4"
         ],
-        "kind_count_scope": "Atd31523715dc7aa3faf1aa4b4005a6be3f45dd685 source-derived sets33native/33paired/0staged; frontend mounted33 unique kinds. Flow29/30 are paired source, not runtime acceptance. ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 and pins pending; verified_runtime_flows=0,64 semantics NOT_VERIFIED/runtimeNOT_RUN;41packages/50references unchanged.",
-        "staged_kinds": [],
+        "kind_count_scope": "Atb19 source-derived API kinds36 / frontend mounted35 / staged1 finance.expense-payment.v1; no unknown frontend kinds. Source publication is not business/runtime acceptance. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 pending; all64 semantics NOT_VERIFIED/runtimeNOT_RUN;41packages/50references unchanged.",
+        "staged_kinds": [
+          "finance.expense-payment.v1"
+        ],
         "historical_kind_count_scope": "29 paired source kinds/29 native kinds with exact set equality atcc379ff28f74d5810ed51ad537ebece821440d72, including Product package-standard; staged0. Native price-list publish safety is a prerequisite, not a30th Work purpose. All64 runtime flows remain NOT_VERIFIED/NOT_RUN; source pairing is not acceptance.",
         "historical_kind_count_scopes": [
           "Atb1cacee89f805a05959b5b79af034270b80b8103 source-derived sets:30native/29paired frontend; only product.price-list-version.v1 staged, no unknown frontend kind. Historicalcc379 exact29/29 remains valid only at that head. verified_runtime_flows=0; all64 semantics/runtime remain NOT_VERIFIED/NOT_RUN.",
@@ -3478,31 +3518,54 @@
           "native_prerequisite_source_commit": "9f9442c4e9382033ea97f54e62d7238ab50e91c4"
         },
         "latest_checkpoint": {
-          "source_commit": "d31523715dc7aa3faf1aa4b4005a6be3f45dd685",
-          "scope": "Flow29 and Flow30 paired native owner purposes and full generic Work UI;33native/33paired/0staged. Finance provider1.29/61 declarations; only Flow30 standalone purpose availability changed, native record/approve/withdraw remain staged. Native ScreenPath preserved; source items use purpose routes.",
-          "source_peers": "Full Flow29 backend21-file and UI15-file reviews, UTC correction6250; Flow30 owner7-file/shared9-file/matcher4-file/UI12-file and paired publication7-file reviews: no open bounded P0/P1/P2 after corrections. Not K3 or runtime acceptance.",
-          "checks": "Exact d315 full Release API with all project references0errors/0warnings205.664137s; full Finance2144/2144PASS0skip; complete integration-source compile and controlled Host/registry/authority/SqlWrapper/C7/C8 batch741/741PASS0skip. Root independently parsed TRX XML counters. SQL sources compiled, actualSQL NOT_RUN. Frontend evidence is separate in frontend_checks; original513 failures retained; fixture-only493 rerun evidence recorded separately.",
-          "sql": "Finance inventory341 unique source names;2 new Flow30 shared-purpose SQL Facts registered. Native and purpose SQL sources compiled at4f570, actualSQL NOT_RUN.",
-          "limits": "ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 and pins pending; verified_runtime_flows=0,64 semantics NOT_VERIFIED/runtimeNOT_RUN;41packages/50references unchanged.",
+          "source_commit": "b19b5567be636da89bbae3e83b895013eba1afcc",
+          "scope": "Flow32/33 native commands, scalar private proofs, original typed receipts, full human GET and paired Work UI. Flow34 expense native guard, original command receipt, revised-draft human GET and shared host implemented; frontend/publication pending. No payment Record path exposed by Work approval.",
+          "source_peers": "Complete bounded independent source peers on Flow32/33 owners, shared host,17-file paired UI plus fixes,9-file publication; Flow34 native guard/owner/host plus maker correction. Root reviewed integration deltas. No open P0/P1/P2 reported in these scopes; these are not K3 approvals.",
+          "checks": {
+            "api_full": {
+              "source_commit": "d512d7804c4dba3207c19333d533412512562dee",
+              "exit": 0,
+              "errors": 0,
+              "warnings": 0,
+              "seconds": 192.448994,
+              "mode": "Release all project references; OpenAPI generation disabled; not full CI"
+            },
+            "finance_unit": {
+              "source_commit": "b19b5567be636da89bbae3e83b895013eba1afcc",
+              "total": 2284,
+              "passed": 2284,
+              "failed": 0,
+              "skipped": 0,
+              "seconds": 15.1104446
+            },
+            "controlled_host": {
+              "source_commit": "b19b5567be636da89bbae3e83b895013eba1afcc",
+              "total": 929,
+              "passed": 929,
+              "failed": 0,
+              "skipped": 0,
+              "seconds": 70.1222749,
+              "scope": "DecisionHost/Finance registry/import authority/SqlConcurrencyWrapper/C7/C8 controlled ports; complete integration-source compiled, actual SQL NOT_RUN"
+            },
+            "original_failures": "4ccc API full PASS200.2623446s; Finance test-source compile failed on internal Audit.Pending. a3f75 Finance2241PASS0skip16.8405267s; integration source failed4 missing Persistence symbols. ce800 Finance2252PASS0skip16.0868709s; controlled Host865total864PASS1FAIL0skip74.0214885s (maker503 vs403). feeed3344 Finance2254PASS0skip15.8521812s and Host865PASS0skip60.4506076s after real maker403 fix and public collector fixture correction. d512 Finance2284total2283PASS1FAIL0skip16.5263706s (two new screen literals missing); b19 test-only exact expected-set correction. All old logs retained; no assertion or test removed."
+          },
           "frontend_checks": {
-            "d315": {
-              "source_commit": "d31523715dc7aa3faf1aa4b4005a6be3f45dd685",
-              "checks": "TSC exit2/63.4437674s,2 callback narrowing errors; lint and Vitest NOT_RUN. Original log retained. Backend API/Finance/Host PASS is separately recorded at this same head."
-            },
-            "513": {
-              "source_commit": "513004ee88d44e4fc5ab6881aef7378d6354b060",
-              "fix": "Single-file3+/2- validated references readonly alias only; bounded peer no open issue, no any/cast/schema relaxation. Backend tree unchanged; no new backend run claimed.",
-              "checks": "TSC exit0/59.3669307s;16-file lint exit0/0.8065656s,0diagnostics. Nine test files1120total/1099PASS/21FAIL/0skip162.5820981s; root independently counted JSON.",
-              "test_files": "API487PASS, Page378PASS, Inbox52PASS, mount23PASS, import27PASS, official8PASS, wire25PASS; ApprovalInboxPages108total/20FAIL and WorkQueue12total/1FAIL. Counts are included1120, not additional.",
-              "failure_scope": "At513 legacy read-detail route/capability fixtures failed; later493 fixture-only rerun is recorded separately. Original failure retained; no runtime acceptance claim."
-            },
-            "493": {
-              "source_commit": "49348244c342b5f40939fe207a1c56b39871d0db",
-              "checks": "Full TSC exit0;2-file scoped lint exit0; complete ApprovalInboxPages108 and WorkQueuePage12 tests120/120PASS0skip. Only these2 test files rerun at493.",
-              "provenance": "Earlier513 retains21fail and separate7-file1000PASS evidence. Do not claim1120tests rerun at493 or sum across heads into a same-head result. Legacy read-only router/capability fixture correction preserves assertions; actual current-purpose route tests remain on real router.",
-              "limits": "ActualSQL/normalHTTP/browser/fullCI/K3 pending."
-            }
-          }
+            "source_commit": "3e810483b5ff8a5530184e7f2df5836eee4f1326",
+            "tsc": "exit0/52.6308986s; complete TypeScript build",
+            "lint": "Existing oxlint,17 changed files,exit0/1.0122349s; earlier incorrect ESLint-path operator failure retained, not a code lint failure.",
+            "vitest": "Same-head8 files1010/1010PASS0skip87.8346261s plus separate actual work/ApprovalInboxPages file108/108PASS0skip24.39s. Nine unique files1118 tests across two runs, not one run. Root independently parsed both JSONs. First intended9-path command included wrong finance/ApprovalInboxPages path; actual8-file report was counted before missing108-file run.",
+            "original_failure": "8ceb fullTSC exit2/57.6375042s, two test-source capability/union errors; lint/Vitest NOT_RUN. b3deb test-only fix uses actual native route gate and explicit property guard without any/cast or new legacy capability."
+          },
+          "sql": "Finance inventory374 unique source names. Flow32 8 native-safety+3 owner-receipt Facts; Flow33 9 native-safety+3 owner-receipt Facts; Flow34 7 safety+3 owner-receipt Facts. SQL sources compiled atb19; actualSQL NOT_RUN. No new migration in these increments.",
+          "source_kinds": {
+            "native": 36,
+            "paired_frontend": 35,
+            "staged": [
+              "finance.expense-payment.v1"
+            ],
+            "unknown_frontend": []
+          },
+          "limits": "ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 pending; all64 semantics NOT_VERIFIED/runtimeNOT_RUN;41packages/50references unchanged."
         },
         "historical_checkpoint_0ac": {
           "source_commit": "0acdf2fa89d22cd1a7ad63ec211d753e34a79e64",
@@ -3541,6 +3604,33 @@
           "checks": "Finance2168/2168PASS0skip16.7619333s. Finance.Contracts/Infrastructure/API sequential warm builds with BuildProjectReferences=false all0errors/0warnings5.3650881s/12.6599044s/25.8141878s; warm evidence distinct from d315 full Release API. Complete integration-source compiled and controlled Host741/741PASS0skip77.0553985s; root independently verified all TRX XML counters. SQL sources compiled only, actualSQL NOT_RUN.",
           "sql": "Finance inventory358 source names; Flow32 8 and Flow33 9 real relational SQL source Facts NOT_RUN. Controlled1205/provider-aborted injection, ordered winner and real simultaneous-session Fact are distinct sources, none executed.",
           "limits": "41packages/50references/64flows/runtime0 unchanged; all64 semantics NOT_VERIFIED/runtimeNOT_RUN. ActualSQL/normalHTTP/browser/fullCI/K3 pending."
+        },
+        "historical_checkpoint_d315_to_493": {
+          "source_commit": "d31523715dc7aa3faf1aa4b4005a6be3f45dd685",
+          "scope": "Flow29 and Flow30 paired native owner purposes and full generic Work UI;33native/33paired/0staged. Finance provider1.29/61 declarations; only Flow30 standalone purpose availability changed, native record/approve/withdraw remain staged. Native ScreenPath preserved; source items use purpose routes.",
+          "source_peers": "Full Flow29 backend21-file and UI15-file reviews, UTC correction6250; Flow30 owner7-file/shared9-file/matcher4-file/UI12-file and paired publication7-file reviews: no open bounded P0/P1/P2 after corrections. Not K3 or runtime acceptance.",
+          "checks": "Exact d315 full Release API with all project references0errors/0warnings205.664137s; full Finance2144/2144PASS0skip; complete integration-source compile and controlled Host/registry/authority/SqlWrapper/C7/C8 batch741/741PASS0skip. Root independently parsed TRX XML counters. SQL sources compiled, actualSQL NOT_RUN. Frontend evidence is separate in frontend_checks; original513 failures retained; fixture-only493 rerun evidence recorded separately.",
+          "sql": "Finance inventory341 unique source names;2 new Flow30 shared-purpose SQL Facts registered. Native and purpose SQL sources compiled at4f570, actualSQL NOT_RUN.",
+          "limits": "ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 and pins pending; verified_runtime_flows=0,64 semantics NOT_VERIFIED/runtimeNOT_RUN;41packages/50references unchanged.",
+          "frontend_checks": {
+            "d315": {
+              "source_commit": "d31523715dc7aa3faf1aa4b4005a6be3f45dd685",
+              "checks": "TSC exit2/63.4437674s,2 callback narrowing errors; lint and Vitest NOT_RUN. Original log retained. Backend API/Finance/Host PASS is separately recorded at this same head."
+            },
+            "513": {
+              "source_commit": "513004ee88d44e4fc5ab6881aef7378d6354b060",
+              "fix": "Single-file3+/2- validated references readonly alias only; bounded peer no open issue, no any/cast/schema relaxation. Backend tree unchanged; no new backend run claimed.",
+              "checks": "TSC exit0/59.3669307s;16-file lint exit0/0.8065656s,0diagnostics. Nine test files1120total/1099PASS/21FAIL/0skip162.5820981s; root independently counted JSON.",
+              "test_files": "API487PASS, Page378PASS, Inbox52PASS, mount23PASS, import27PASS, official8PASS, wire25PASS; ApprovalInboxPages108total/20FAIL and WorkQueue12total/1FAIL. Counts are included1120, not additional.",
+              "failure_scope": "At513 legacy read-detail route/capability fixtures failed; later493 fixture-only rerun is recorded separately. Original failure retained; no runtime acceptance claim."
+            },
+            "493": {
+              "source_commit": "49348244c342b5f40939fe207a1c56b39871d0db",
+              "checks": "Full TSC exit0;2-file scoped lint exit0; complete ApprovalInboxPages108 and WorkQueuePage12 tests120/120PASS0skip. Only these2 test files rerun at493.",
+              "provenance": "Earlier513 retains21fail and separate7-file1000PASS evidence. Do not claim1120tests rerun at493 or sum across heads into a same-head result. Legacy read-only router/capability fixture correction preserves assertions; actual current-purpose route tests remain on real router.",
+              "limits": "ActualSQL/normalHTTP/browser/fullCI/K3 pending."
+            }
+          }
         }
       }
     },

@@ -832,10 +832,10 @@
       "sources": [
         {
           "path": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ExpensePaymentService.cs",
-          "line": 217,
+          "line": 220,
           "anchor": "public async Task<ExpensePaymentCommandResult> RecordAsync(",
-          "sha256": "ecc74c3309d07a7ccfebf43080f17a6eee0fba64f1f7a3f004767dfbd921cc32",
-          "git_blob": "009b61d9f98fc311c1c9800771e9fa378ba0bc77"
+          "sha256": "a70b866258c381cd705b9831f527daed5aeab943b835d3c57fc8eb2dd2914ce3",
+          "git_blob": "901941a994aeb7e6427b93ddf29ae93288a4426b"
         }
       ],
       "tests": [
@@ -847,11 +847,11 @@
           "git_blob": "1ec8e63fd005e1a6494fa6569192e1ee7d6772da"
         }
       ],
-      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
-      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "source_commit": "b19b5567be636da89bbae3e83b895013eba1afcc",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
-      "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
-      "sql_evidence": "HISTORICAL_SUITE_ONLY_NOT_INDIVIDUAL_RESULT",
+      "historical_ci_url": null,
+      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
       "invariants": [
         "CompanyId ve güncel yetki",
         "Owner modül veri sahipliği",
@@ -862,7 +862,8 @@
       "adaptations": "SingleExpenseItemCatalog halen bağlı; katalog değiştirmek gider/muhasebe politikasını seçmez.",
       "limitations": [
         "SingleExpenseItemCatalog halen bağlı; katalog değiştirmek gider/muhasebe politikasını seçmez.",
-        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı.",
+        "Native karar guvenligi degistigi icin eski CI agaci eslesmesi guncel kaynak icin kullanilmaz; yerel testler gercek SQL ve yeni kullanim kabulunun yerine gecmez."
       ],
       "decision_refs": [
         "FNS-D11",
@@ -873,7 +874,22 @@
         "FNS-D65",
         "YOL-D23"
       ],
-      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
+      "previous_historical_evidence": {
+        "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+        "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+        "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
+        "sql_evidence": "HISTORICAL_SUITE_ONLY_NOT_INDIVIDUAL_RESULT"
+      },
+      "local_evidence": {
+        "source_commit": "b19b5567be636da89bbae3e83b895013eba1afcc",
+        "finance_unit": "2284 passed; 0 skipped",
+        "controlled_host": "929 passed; 0 skipped",
+        "sql": "NOT_RUN",
+        "browser": "NOT_RUN",
+        "full_ci": "NOT_RUN",
+        "k3": "NOT_RUN"
+      }
     },
     {
       "id": "REF-CREDIT-01",

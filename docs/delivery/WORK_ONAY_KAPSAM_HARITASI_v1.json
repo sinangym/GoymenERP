@@ -1024,7 +1024,7 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native guarded approval safety prerequisite and real runtime DI source only; Finance2168PASS0skip, warm builds0/0; complete integration-source compiled and controlled Host741/741PASS0skip77.0553985s at958ad65; root independently verified TRX counters. SQL sources compiled only, actualSQL NOT_RUN. Complete Work purpose/typed receipt/human projection absent; semantics NOT_VERIFIED/runtimeNOT_RUN.",
+      "limitation": "Paired native command/private original receipt/full human GET/Work UI source implemented and bounded peers reviewed. Current checkpoint b19 Finance2284PASS/controlledHost929PASS0skip; same frontend3e810 nine unique files1118PASS across two runs, TypeScript/oxlint PASS. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 pending; all64 semantics NOT_VERIFIED/runtimeNOT_RUN;41packages/50references unchanged.",
       "native_prerequisite_reference": {
         "source_commit": "203477131",
         "author_commit": "75723a9d",
@@ -1038,7 +1038,8 @@
         "reference": "T2/WP8.execution.native_flow32_33_prerequisite_checkpoint",
         "sql_source_facts": 8,
         "actual_sql": "NOT_RUN"
-      }
+      },
+      "source_checkpoint_reference": "T2/WP8.execution.latest_checkpoint"
     },
     {
       "flow": 33,
@@ -1061,13 +1062,14 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native guarded approval safety prerequisite and real runtime DI source only; Finance2168PASS0skip, warm builds0/0; complete integration-source compiled and controlled Host741/741PASS0skip77.0553985s at958ad65; root independently verified TRX counters. SQL sources compiled only, actualSQL NOT_RUN. Complete Work purpose/typed receipt/human projection absent; semantics NOT_VERIFIED/runtimeNOT_RUN.",
+      "limitation": "Paired native command/private original receipt/full human GET/Work UI source implemented and bounded peers reviewed. Current checkpoint b19 Finance2284PASS/controlledHost929PASS0skip; same frontend3e810 nine unique files1118PASS across two runs, TypeScript/oxlint PASS. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 pending; all64 semantics NOT_VERIFIED/runtimeNOT_RUN;41packages/50references unchanged.",
       "native_prerequisite_reference_latest": {
         "source_commit": "958ad65cd3853561ad180f70b234d74d5156fc07",
         "reference": "T2/WP8.execution.native_flow32_33_prerequisite_checkpoint",
         "sql_source_facts": 9,
         "actual_sql": "NOT_RUN"
-      }
+      },
+      "source_checkpoint_reference": "T2/WP8.execution.latest_checkpoint"
     },
     {
       "flow": 34,
@@ -1090,7 +1092,8 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Native owned guard, original ExpensePaymentCommands receipt, revised draft N-to-N+1 human owner and shared Work host implemented; subsequent RecordN+2 never replaces original Approved receipt. Frontend/publication pending. b19 Finance2284PASS/controlledHost929PASS0skip;3 new owner SQL Facts compiled only. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 pending; all64 semantics NOT_VERIFIED/runtimeNOT_RUN;41packages/50references unchanged.",
+      "source_checkpoint_reference": "T2/WP8.execution.latest_checkpoint"
     },
     {
       "flow": 35,
@@ -1510,7 +1513,7 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Read-only source preflight atd512 confirms existing registered companywide/nonCritical finance.opening-balances.approve for both opening approval and reversal. Earlier permission-not-registered note is stale; no new permission or grant is introduced. Native four-decision safety and purpose adapter are separate pending increments. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 pending; all64 semantics NOT_VERIFIED/runtimeNOT_RUN;41packages/50references unchanged."
     },
     {
       "flow": 46,
@@ -2099,5 +2102,55 @@
     "checks": "Finance2168/2168PASS0skip16.7619333s. Finance.Contracts/Infrastructure/API sequential warm builds with BuildProjectReferences=false all0errors/0warnings5.3650881s/12.6599044s/25.8141878s; warm evidence distinct from d315 full Release API. Complete integration-source compiled and controlled Host741/741PASS0skip77.0553985s; root independently verified all TRX XML counters. SQL sources compiled only, actualSQL NOT_RUN.",
     "sql": "Finance inventory358 source names; Flow32 8 and Flow33 9 real relational SQL source Facts NOT_RUN. Controlled1205/provider-aborted injection, ordered winner and real simultaneous-session Fact are distinct sources, none executed.",
     "limits": "41packages/50references/64flows/runtime0 unchanged; all64 semantics NOT_VERIFIED/runtimeNOT_RUN. ActualSQL/normalHTTP/browser/fullCI/K3 pending."
+  },
+  "reversal_and_expense_checkpoint": {
+    "source_commit": "b19b5567be636da89bbae3e83b895013eba1afcc",
+    "scope": "Flow32/33 native commands, scalar private proofs, original typed receipts, full human GET and paired Work UI. Flow34 expense native guard, original command receipt, revised-draft human GET and shared host implemented; frontend/publication pending. No payment Record path exposed by Work approval.",
+    "source_peers": "Complete bounded independent source peers on Flow32/33 owners, shared host,17-file paired UI plus fixes,9-file publication; Flow34 native guard/owner/host plus maker correction. Root reviewed integration deltas. No open P0/P1/P2 reported in these scopes; these are not K3 approvals.",
+    "checks": {
+      "api_full": {
+        "source_commit": "d512d7804c4dba3207c19333d533412512562dee",
+        "exit": 0,
+        "errors": 0,
+        "warnings": 0,
+        "seconds": 192.448994,
+        "mode": "Release all project references; OpenAPI generation disabled; not full CI"
+      },
+      "finance_unit": {
+        "source_commit": "b19b5567be636da89bbae3e83b895013eba1afcc",
+        "total": 2284,
+        "passed": 2284,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": 15.1104446
+      },
+      "controlled_host": {
+        "source_commit": "b19b5567be636da89bbae3e83b895013eba1afcc",
+        "total": 929,
+        "passed": 929,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": 70.1222749,
+        "scope": "DecisionHost/Finance registry/import authority/SqlConcurrencyWrapper/C7/C8 controlled ports; complete integration-source compiled, actual SQL NOT_RUN"
+      },
+      "original_failures": "4ccc API full PASS200.2623446s; Finance test-source compile failed on internal Audit.Pending. a3f75 Finance2241PASS0skip16.8405267s; integration source failed4 missing Persistence symbols. ce800 Finance2252PASS0skip16.0868709s; controlled Host865total864PASS1FAIL0skip74.0214885s (maker503 vs403). feeed3344 Finance2254PASS0skip15.8521812s and Host865PASS0skip60.4506076s after real maker403 fix and public collector fixture correction. d512 Finance2284total2283PASS1FAIL0skip16.5263706s (two new screen literals missing); b19 test-only exact expected-set correction. All old logs retained; no assertion or test removed."
+    },
+    "frontend_checks": {
+      "source_commit": "3e810483b5ff8a5530184e7f2df5836eee4f1326",
+      "tsc": "exit0/52.6308986s; complete TypeScript build",
+      "lint": "Existing oxlint,17 changed files,exit0/1.0122349s; earlier incorrect ESLint-path operator failure retained, not a code lint failure.",
+      "vitest": "Same-head8 files1010/1010PASS0skip87.8346261s plus separate actual work/ApprovalInboxPages file108/108PASS0skip24.39s. Nine unique files1118 tests across two runs, not one run. Root independently parsed both JSONs. First intended9-path command included wrong finance/ApprovalInboxPages path; actual8-file report was counted before missing108-file run.",
+      "original_failure": "8ceb fullTSC exit2/57.6375042s, two test-source capability/union errors; lint/Vitest NOT_RUN. b3deb test-only fix uses actual native route gate and explicit property guard without any/cast or new legacy capability."
+    },
+    "sql": "Finance inventory374 unique source names. Flow32 8 native-safety+3 owner-receipt Facts; Flow33 9 native-safety+3 owner-receipt Facts; Flow34 7 safety+3 owner-receipt Facts. SQL sources compiled atb19; actualSQL NOT_RUN. No new migration in these increments.",
+    "source_kinds": {
+      "native": 36,
+      "paired_frontend": 35,
+      "staged": [
+        "finance.expense-payment.v1"
+      ],
+      "unknown_frontend": []
+    },
+    "limits": "ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 pending; all64 semantics NOT_VERIFIED/runtimeNOT_RUN;41packages/50references unchanged."
   }
 }

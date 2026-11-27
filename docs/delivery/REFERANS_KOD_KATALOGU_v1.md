@@ -2,7 +2,7 @@
 
 Bu katalog çalışan yeni fonksiyonların kabul listesi değildir. 50 kaynak/test giriş noktasıdır. Her kayıtta gerçek yol, sembol/satır, SHA-256, Git blob, karar ilişkisi, uyarlama sınırı ve yeni kullanım testi bulunur.
 
-**Başlangıç kaynağı:** `claude/tren-2` `c24706af4de4300d4a171eca11459098d87cd14f`; değişen referansların ayrı commit'leri JSON'dadır. 25 kaydın kaynak ve test blobları geçmiş başarılı CI ağacıyla aynıdır; 25 kayıt yalnız kaynak/test kanıtına sahiptir. Yerel fark testleri aşağıda belirtilir. Yeni kullanım için SQL, tarayıcı ve işletme kabulü yapılmadı.
+**Başlangıç kaynağı:** `claude/tren-2` `c24706af4de4300d4a171eca11459098d87cd14f`; değişen referansların ayrı commit'leri JSON'dadır. 24 kaydın kaynak ve test blobları geçmiş başarılı CI ağacıyla aynıdır; 26 kayıt kaynak/test kanıtına sahiptir. Yerel fark testleri aşağıda belirtilir. Yeni kullanım için SQL, tarayıcı ve işletme kabulü yapılmadı.
 
 Makine kaynağı: [REFERANS_KOD_KATALOGU_v1.json](REFERANS_KOD_KATALOGU_v1.json). Doğrulayıcı: `python3 -I -S -B tools/verify_delivery_reference_catalog.py`. Windows’ta kurulu Python yürütücüsü kullanılabilir.
 
@@ -25,7 +25,7 @@ Makine kaynağı: [REFERANS_KOD_KATALOGU_v1.json](REFERANS_KOD_KATALOGU_v1.json)
 | REF-LOGISTICS-01 | Yükleme/sevk owner servisi | SMALL_EXTENSION | Kaynak/test var |
 | REF-OPENITEM-01 | Faturadan tek açık kalem | SMALL_EXTENSION | Kaynak/test; güncel SQL kabulü bekliyor |
 | REF-ALLOCATE-01 | Ödeme dağıtımı ve tek para hareketi | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
-| REF-EXPENSE-01 | Masraf ödemesi ve audit/idempotency | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |
+| REF-EXPENSE-01 | Masraf ödemesi ve audit/idempotency | SMALL_EXTENSION | Güncel kaynak/test ve yerel fark testi; SQL/CI kabulü bekliyor |
 | REF-CREDIT-01 | Kredi hareketi öneri ve karar | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |
 | REF-CARRY-01 | Cari bakiye virman kaynağı | REFERENCE_PATTERN | Güncel kaynak/test; replay için 5 hedefli test geçti, SQL/CI bekler |
 | REF-BANK-01 | Ekstre import ve tekilleştirme | DIRECT_REUSE | Kaynak/test var |
