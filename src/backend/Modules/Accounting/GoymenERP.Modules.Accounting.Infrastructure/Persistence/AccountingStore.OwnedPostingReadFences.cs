@@ -9,5 +9,6 @@ public sealed partial class AccountingStore
         await ManufacturingCostDifferenceApprovalReadFenceAsync(token);
         await InvoiceLineCogsApprovalReadFenceAsync(token);
         await InventoryCostApprovalReadFenceAsync(token);
+        await InventoryCostCancellationApprovalReadFenceAsync(token);
     }
 }
