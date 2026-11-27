@@ -19,8 +19,10 @@ public static class FinanceOfficialSalesInvoiceHostExtensions
             provider.GetRequiredService<FinanceOfficialSalesInvoiceAuthority>());
         services.AddScoped<IFinanceOfficialSalesInvoiceDocumentPortV1, FinanceOfficialSalesInvoiceDocumentPort>();
         services.AddScoped<IFinanceOfficialSalesInvoiceOwnerReadV1, FinanceOfficialSalesInvoiceOwnerReadV1>();
-        services.AddScoped<IFinanceOfficialSalesInvoiceServiceV1>(CreateService);
-        services.AddScoped<IFinanceOfficialSalesInvoiceCandidatesV1>(CreateService);
+        services.AddScoped<IFinanceOfficialSalesInvoiceServiceV1>(provider =>
+            CreateService(provider).WithApprovalSafety(provider.GetService<IAuditTransactionWriterV1>()));
+        services.AddScoped<IFinanceOfficialSalesInvoiceCandidatesV1>(provider =>
+            (IFinanceOfficialSalesInvoiceCandidatesV1)provider.GetRequiredService<IFinanceOfficialSalesInvoiceServiceV1>());
         services.AddScoped<IFinanceOfficialSalesInvoiceCustomerPortV1, CounterpartyFinanceOfficialInvoiceCustomerPortV1>();
         return services;
     }

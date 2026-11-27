@@ -25,7 +25,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// pin and permission in this class is SENTETIK test data; this is not a real invoice, grant or UAT. FNS-D39: a rejected
 /// or withdrawn record keeps its row and frees its official number, ETTN and PDF content (unique among live records).
 /// </summary>
-public sealed class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTests
+public sealed partial class FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid Company = TestCompanyIds.CompanyA;
     private static readonly Guid Unreserved = Guid.Parse("91000000-0000-4000-8000-000000000001");

@@ -284,6 +284,8 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1(
         {
             return prior;
         }
+        if (ownedInvoiceDecision?.ReplayOnly == true)
+            return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
 
         var row = await dbContext.OfficialSalesInvoices
             .SingleOrDefaultAsync(candidate => candidate.Id == request.InvoiceId, cancellationToken);
@@ -510,6 +512,8 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1(
         {
             return prior;
         }
+        if (ownedInvoiceDecision?.ReplayOnly == true)
+            return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
 
         var row = await dbContext.OfficialSalesInvoices
             .SingleOrDefaultAsync(candidate => candidate.Id == invoiceId, cancellationToken);
@@ -883,6 +887,11 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1(
         string keyHash, string payloadHash, Func<Task<FinanceOfficialSalesInvoiceResultV1?>>? conflicts,
         CancellationToken cancellationToken)
     {
+        if (ownedInvoiceDecision is not null)
+        {
+            await SaveOwnedDecisionAsync(context, command, action, invoiceId, cancellationToken);
+            return null;
+        }
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
