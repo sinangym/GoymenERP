@@ -26,7 +26,8 @@ public sealed partial class FinanceCreditLimitServiceV1
         {
             // Capture before awaiting fresh authority; check again before ownership. Caller work is never cleanup-owned.
             var cleanBefore = CleanEntry();
-            if (await Fence(context, FinanceAction.ApproveCredit, token) is { } denied) return denied;
+            if (await Start(context, metadata, FinanceAction.ApproveCredit, token) is { } denied) return denied;
+            if (DecisionShapeRefusal(context, request) is { } invalid) return invalid;
             if (!cleanBefore || !CleanEntry()) return Unavailable();
             var state = new OwnedLimitDecision(request.LimitId, auditOwner!, replayOnly);
             IDbContextTransaction? transaction = null; var committed = false; ownedDecision = state;

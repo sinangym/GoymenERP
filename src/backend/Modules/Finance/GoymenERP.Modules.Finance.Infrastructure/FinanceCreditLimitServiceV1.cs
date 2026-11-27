@@ -59,8 +59,7 @@ public sealed partial class FinanceCreditLimitServiceV1(FinanceDbContext db, ICo
     {
         const FinanceAction action = FinanceAction.ApproveCredit;
         if (await Start(context, metadata, action, cancellationToken) is { } refused) return refused;
-        if (request.LimitId == Guid.Empty || !Text(request.ExpectedVersion, 64)
-            || (request.Approve ? request.Reason is not null : !Text(request.Reason, 1000))) return Failure(context, CommandOutcome.ValidationFailed, "credit_limit_decision_invalid");
+        if (DecisionShapeRefusal(context, request) is { } invalid) return invalid;
         var hash = FinanceCreditAccountService.PayloadHash(DecideCommand, request);
         return await Transaction(context, async () =>
         {
@@ -166,6 +165,11 @@ public sealed partial class FinanceCreditLimitServiceV1(FinanceDbContext db, ICo
     private static bool Expected(FinanceCreditLimitRow? current, CreditLimitProposeV1 request) => current is null
         ? request.ExpectedCurrentLimitId is null && request.ExpectedCurrentLimitVersion is null
         : current.Id == request.ExpectedCurrentLimitId && current.Version.ToString(CultureInfo.InvariantCulture) == request.ExpectedCurrentLimitVersion;
+    // Shared pure native validation: persistence-entry refusal must not replace an existing validation response.
+    private static CreditLimitResultV1? DecisionShapeRefusal(FinanceContext context, CreditLimitDecisionV1 request) =>
+        request.LimitId == Guid.Empty || !Text(request.ExpectedVersion, 64)
+            || (request.Approve ? request.Reason is not null : !Text(request.Reason, 1000))
+            ? Failure(context, CommandOutcome.ValidationFailed, "credit_limit_decision_invalid") : null;
     private static bool Text(string? value, int length) => FinanceCreditMovementPolicyV1.Text(value, length);
     private bool Same(FinanceContext context) => company.IsResolved && company.CompanyId == context.CompanyId && context.CompanyId != Guid.Empty
         && user.IsAuthenticated && !string.IsNullOrWhiteSpace(user.UserId) && user.UserId == context.ActorId && user.CanAccessCompany(context.CompanyId);

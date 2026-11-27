@@ -57,6 +57,35 @@ public sealed partial class FinanceCreditAccountTests
         Assert.True(writer.HasPendingDrafts); Assert.Equal(0, writer.Writes); Assert.Equal(0, writer.Discards);
     }
 
+    [Theory]
+    [InlineData("key")] [InlineData("reason-null")] [InlineData("reason-long")]
+    [InlineData("version-null")] [InlineData("version-empty")] [InlineData("version-padded")] [InlineData("version-long")]
+    public async Task Bank_limit_malformed_native_input_keeps_validation_precedence_and_preserves_pending_caller_work(string fault)
+    {
+        await using var run = new Run(); await using var db = run.Memory(CompanyA);
+        var company = new LimitSafetyCompany(CompanyA); var user = new LimitSafetyUser(); var permission = new LimitSafetyPermission();
+        var writer = new LimitEntryWriter { HasPendingDrafts = true };
+        var caller = new FinanceCreditLimitRow { Id = Guid.NewGuid(), CompanyId = CompanyA, Version = 1 }; db.CreditLimits.Add(caller);
+        var request = new CreditLimitDecisionV1(Guid.NewGuid(), "1", false, "SENTETIK ret");
+        request = fault switch
+        {
+            "reason-null" => request with { Reason = null }, "reason-long" => request with { Reason = new string('x', 1001) },
+            "version-null" => request with { ExpectedVersion = null! }, "version-empty" => request with { ExpectedVersion = "" },
+            "version-padded" => request with { ExpectedVersion = " 1 " }, "version-long" => request with { ExpectedVersion = new string('1', 65) },
+            _ => request,
+        };
+        var context = Ctx(Checker); var metadata = new CommandMetadata(fault == "key" ? " padded " : "limit-malformed");
+        var core = LimitSafetyCore(db, company, user, permission, writer);
+        // Raw native golden refuses before transaction/read; the guarded interface must retain the SAME result/code.
+        var original = await core.DecideAsync(context, metadata, request, default);
+        var guarded = await core.WithApprovalSafety().DecideAsync(context, metadata, request, default);
+        Assert.Equal(CommandOutcome.ValidationFailed, original.Outcome); Assert.Equal(original.Outcome, guarded.Outcome);
+        Assert.Equal(fault == "key" ? "credit_limit_metadata_invalid" : "credit_limit_decision_invalid", Assert.Single(guarded.Issues).Code);
+        Assert.Equal(original.Issues.ToArray(), guarded.Issues.ToArray()); Assert.False(guarded.IsReplay); Assert.Null(guarded.Resource);
+        Assert.Same(caller, Assert.Single(db.ChangeTracker.Entries()).Entity); Assert.True(writer.HasPendingDrafts);
+        Assert.Equal(0, writer.Writes); Assert.Equal(0, writer.Discards); Assert.Null(db.Database.CurrentTransaction);
+    }
+
     private static FinanceCreditLimitServiceV1 LimitSafetyCore(FinanceDbContext db, ICompanyContext company, ICurrentUser user,
         IFinancePermissionPort permission, IAuditTransactionWriterV1? writer) => new(db, company, user, permission,
         new SyntheticCreditSources(CompanyA), new AuditEventCollector(), Envelopes(), new FixedClock(), writer);
