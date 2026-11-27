@@ -37,6 +37,6 @@ internal sealed class GuardedProductPriceListService(ProductPriceListService cor
     public Task<PriceListViewV1> GetAsync(Guid id, CancellationToken token = default) => core.GetAsync(id, token);
     public Task<PriceListProductOptionsV1> GetProductOptionsAsync(string? query, CancellationToken token = default) => core.GetProductOptionsAsync(query, token);
     public Task<PriceListResultV1> CreateAsync(CreatePriceListRequestV1 request, ProductPriceListCommandMetadata metadata, CancellationToken token = default) => core.CreateAsync(request, metadata, token);
-    public Task<PriceListResultV1> ReviseDraftAsync(Guid id, RevisePriceListDraftRequestV1 request, ProductPriceListCommandMetadata metadata, CancellationToken token = default) => core.ReviseDraftAsync(id, request, metadata, captured.ActorId, token);
-    public Task<PriceListResultV1> StartVersionAsync(Guid id, StartPriceListVersionRequestV1 request, ProductPriceListCommandMetadata metadata, CancellationToken token = default) => core.StartVersionAsync(id, request, metadata, captured.ActorId, token);
+    public Task<PriceListResultV1> ReviseDraftAsync(Guid id, RevisePriceListDraftRequestV1 request, ProductPriceListCommandMetadata metadata, CancellationToken token = default) => core.ReviseDraftAsync(id, request, metadata, token);
+    public Task<PriceListResultV1> StartVersionAsync(Guid id, StartPriceListVersionRequestV1 request, ProductPriceListCommandMetadata metadata, CancellationToken token = default) => core.StartVersionAsync(id, request, metadata, token);
 }
