@@ -59,9 +59,9 @@ describe('Logistics lane ↔ backend shell provider', () => {
 
   it('preserves accepted route availability and stages the two new plan-excess purposes', () => {
     // The declaration form ends with `)`; the provider's doc comment mentions the same words inside `<c>…</c>`.
-    expect(constant('OwnerContractVersion')).toBe('1.6')
-    // The three instruction screens and the two AT-025 operations sections (L-01, L-09).
-    expect((providerText.match(/ImplementationAvailable: true\)/g) ?? []).length).toBe(6)
+    expect(constant('OwnerContractVersion')).toBe('1.16')
+    // Published native screens/child controls and paired Work purposes; the two legacy plan-excess purposes remain staged.
+    expect((providerText.match(/ImplementationAvailable: true[),]/g) ?? []).length).toBe(16)
     expect((providerText.match(/ImplementationAvailable: false/g) ?? []).length).toBe(2)
   })
 
@@ -87,7 +87,7 @@ describe('Logistics lane ↔ backend shell provider', () => {
   it('pins the shipment and delivery child controls to detail with separate authorities', () => {
     expect(constant('ShipmentCapabilityId')).toBe('logistics.shipments.record')
     expect(constant('DeliveryCapabilityId')).toBe('logistics.deliveries.record')
-    expect((providerText.match(/ParentCapabilityId: DetailCapabilityId/g) ?? []).length).toBe(7)
+    expect((providerText.match(/ParentCapabilityId: DetailCapabilityId/g) ?? []).length).toBe(8)
 
     const shipment = declaration('ShipmentCapabilityId')
     expect(shipment).toContain('DetailCapabilityId, DetailRoutePath, DetailScreenId')
