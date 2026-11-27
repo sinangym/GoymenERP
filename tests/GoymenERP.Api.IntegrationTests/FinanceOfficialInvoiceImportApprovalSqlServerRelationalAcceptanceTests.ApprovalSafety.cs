@@ -3,6 +3,8 @@ using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Data.SqlClient;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -129,6 +131,81 @@ public sealed partial class FinanceOfficialInvoiceImportApprovalSqlServerRelatio
             await AssertOneApproval(run);
         }
         else { Assert.Equal(CommandOutcome.VersionConflict, result.Outcome); Assert.False(result.IsReplay); await AssertOnlyUpload(run); }
+    }
+
+    [SqlServerFact]
+    public async Task Real_sql_deadlock_before_save_aborts_then_reads_only_the_original_key_once()
+    {
+        // Both native commands hold the batch's serializable read lock before requesting XLOCK.
+        // SELECT changes no data; SQL Server produces the real 1205. The second iteration models EF's wrapper
+        // around that same real exception, without constructing SQL exceptions or another persistence fixture.
+        foreach (var wrapped in new[] { false, true })
+        {
+            await using var run = await Run.StartAsync(); await UploadForSafety(run);
+            var bothRead = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var winnerCommitted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var ready = 0; var calls = new int[2]; var deadlocks = new bool[2]; var resumed = new bool[2];
+            Scope?[] scopes = new Scope?[2];
+            var transactions = new[] { new HashSet<Guid>(), new HashSet<Guid>() };
+            var probes = new[] { new ApprovalSafetySaveProbe(), new ApprovalSafetySaveProbe() };
+            var authorities = new IFinanceOfficialInvoiceImportApprovalAuthorityV1[2];
+            for (var index = 0; index < 2; index++)
+            {
+                var slot = index;
+                authorities[slot] = new ApprovalSafetyAuthority(async () =>
+                {
+                    var scope = scopes[slot]!; var call = ++calls[slot];
+                    if (deadlocks[slot] && !resumed[slot])
+                    {
+                        resumed[slot] = true; AssertApprovalClean(scope);
+                        await winnerCommitted.Task.WaitAsync(TimeSpan.FromSeconds(30));
+                    }
+                    if (scope.Database.Database.CurrentTransaction is { } transaction)
+                        transactions[slot].Add(transaction.TransactionId);
+                    // Entry, owned fence, core entry, prior read, then native batch/approval read.
+                    if (call == 5)
+                    {
+                        if (Interlocked.Increment(ref ready) == 2) bothRead.TrySetResult(true);
+                        await bothRead.Task.WaitAsync(TimeSpan.FromSeconds(30));
+                        await using var command = scope.Database.Database.GetDbConnection().CreateCommand();
+                        command.Transaction = scope.Database.Database.CurrentTransaction!.GetDbTransaction();
+                        command.CommandTimeout = 20;
+                        command.CommandText = "SELECT Id FROM finance.OfficialInvoiceImportBatches WITH (XLOCK, ROWLOCK) WHERE CompanyId=@company AND Id=@id";
+                        var company = command.CreateParameter(); company.ParameterName = "@company"; company.Value = Company; command.Parameters.Add(company);
+                        var id = command.CreateParameter(); id.ParameterName = "@id"; id.Value = Batch; command.Parameters.Add(id);
+                        try { Assert.Equal(Batch, Assert.IsType<Guid>(await command.ExecuteScalarAsync())); }
+                        catch (SqlException error) when (error.Number == 1205)
+                        {
+                            deadlocks[slot] = true;
+                            if (wrapped) throw new DbUpdateException("SENTETIK wrapper around the real SQL deadlock", error);
+                            throw;
+                        }
+                    }
+                    return PermissionDecision.Allowed;
+                });
+            }
+            await using var first = scopes[0] = run.Service(Company, "SENTETIK-checker-a", authorities[0], probes[0]);
+            await using var second = scopes[1] = run.Service(Company, "SENTETIK-checker-b", authorities[1], probes[1]);
+            var results = await Task.WhenAll(Decide(0), Decide(1));
+            Assert.Single(results, result => result.Outcome == CommandOutcome.Succeeded);
+            Assert.Single(results, result => result.Outcome == CommandOutcome.VersionConflict);
+            Assert.Single(deadlocks, value => value); Assert.Single(resumed, value => value);
+            Assert.Equal(1, probes.Sum(probe => probe.Attempts)); // Loser never reached Save or retried mutation.
+            for (var index = 0; index < 2; index++)
+            {
+                Assert.Equal(deadlocks[index] ? 2 : 1, transactions[index].Count);
+                Assert.False(results[index].IsReplay); AssertApprovalClean(scopes[index]!);
+            }
+            await AssertOneApproval(run);
+
+            async Task<FinanceOfficialInvoiceImportApprovalResultV1> Decide(int slot)
+            {
+                var scope = scopes[slot]!;
+                var result = await scope.Service.ApproveAsync(scope.Context, new("deadlock-" + slot), new(Batch, "1"), default);
+                if (result.Outcome == CommandOutcome.Succeeded) winnerCommitted.TrySetResult(true);
+                return result;
+            }
+        }
     }
 
     [SqlServerFact]

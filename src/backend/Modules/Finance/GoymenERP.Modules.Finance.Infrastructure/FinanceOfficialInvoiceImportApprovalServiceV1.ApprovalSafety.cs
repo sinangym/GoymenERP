@@ -72,8 +72,13 @@ public sealed partial class FinanceOfficialInvoiceImportApprovalServiceV1
                 if (faults.Count > 0)
                     throw new AggregateException("Import approval cleanup failed; winner replay is unsafe.", [failure, .. faults]);
                 if (failure is ApprovalRefusal refusal) return refusal.Result;
-                if (!replayOnly && !committed && state.SaveAttempted && !state.Saved && failure is DbUpdateException update
-                    && (update is DbUpdateConcurrencyException || update.InnerException is SqlException { Number: 2601 or 2627 }))
+                // Serializable read/insert conversions can lose before Save (including the Audit owner write).
+                // Only a fully cleaned, uncommitted attempt may inspect the original key once; never rerun mutation.
+                var deadlock = failure is SqlException { Number: 1205 }
+                    or DbUpdateException { InnerException: SqlException { Number: 1205 } };
+                var saveRace = state.SaveAttempted && !state.Saved && failure is DbUpdateException update
+                    && (update is DbUpdateConcurrencyException || update.InnerException is SqlException { Number: 2601 or 2627 });
+                if (!replayOnly && !committed && (deadlock || saveRace))
                     throw new ApprovalSaveRace();
                 throw;
             }

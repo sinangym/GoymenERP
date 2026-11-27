@@ -21,7 +21,14 @@ public sealed partial class FinanceOfficialInvoiceImportHostAuthorityTests
     {
         var services = new ServiceCollection();
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        { ["DB_CONNECTION_STRING"] = "Server=unused.invalid;Database=unused;Connect Timeout=1;" }).Build();
+        {
+            ["DB_CONNECTION_STRING"] = "Server=unused.invalid;Database=unused;Connect Timeout=1;",
+            // Existing Audit retention fixture/shipped timeout; synthetic DI binding, no production setting change.
+            ["Audit:RefusedAttempts:Retention:Period"] = "P2Y",
+            ["Audit:RefusedAttempts:Retention:PolicyRef"] = "policy-ref-1",
+            ["Audit:RefusedAttempts:Retention:AutoDisposalEnabled"] = "false",
+            ["Audit:RefusedAttempts:StandaloneWrite:Timeout"] = "00:00:02",
+        }).Build();
         services.AddAuditModule(config);
         services.AddScoped<ICompanyContext>(_ => new MutableCompanyContext(Company));
         services.AddSingleton<ICurrentUser>(new User(Actor, Company));
