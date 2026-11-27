@@ -29,14 +29,16 @@ public sealed partial class FinanceOfficialSalesInvoiceSqlServerRelationalAccept
         {
             var id = await OfficialSafetyPrepare(run); var probe = new OfficialSafetySaveProbe(id);
             await using var scope = new OfficialSafetyScope(run, probe: probe);
-            var deny = true; var observed = false; var savedReads = 0;
+            var deny = true; var observed = false; var observedPendingAudit = false; var savedReads = 0;
             scope.Authority.BeforeRead = () =>
             {
                 var staged = scope.Database.ChangeTracker.Entries<FinanceOfficialSalesInvoiceRow>().Any(row => row.Entity.Id == id && row.Entity.Version == 2);
+                if (staged && scope.Writer.HasPendingDrafts) observedPendingAudit = true;
                 if (probe.Saved) savedReads++;
                 // Save's fence, wrapper post-execute fence, then the final precommit fence.
                 var phase = fault == "before-audit" ? staged && scope.Writer.HasPendingDrafts
-                    : fault == "after-audit" ? staged && !scope.Writer.HasPendingDrafts
+                    // A staged decision also exists before Audit enqueue; only a seen-and-drained draft proves the real writer ran.
+                    : fault == "after-audit" ? staged && observedPendingAudit && !scope.Writer.HasPendingDrafts
                     : fault == "precommit" ? savedReads >= 3 : probe.Saved;
                 if (!deny || !phase) return PermissionDecision.Allowed;
                 observed = true;
@@ -47,6 +49,7 @@ public sealed partial class FinanceOfficialSalesInvoiceSqlServerRelationalAccept
                 return PermissionDecision.Denied;
             };
             Assert.Equal(CommandOutcome.Denied, (await scope.Decide(id, approve, "official-late-" + fault)).Outcome);
+            if (fault == "after-audit") { Assert.True(observedPendingAudit); Assert.False(probe.Saved); }
             Assert.True(observed); scope.AssertClean(); await OfficialSafetyDurable(run, id, 1, 1, 0, 0);
             deny = false; scope.User.Actor = SafetyChecker; scope.User.Member = true; scope.Company.Set(Company); probe.Saved = false;
             Assert.Equal(CommandOutcome.Succeeded, (await scope.Decide(id, approve, "official-late-" + fault)).Outcome);
