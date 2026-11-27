@@ -24,8 +24,16 @@ public sealed class PurchaseUnorderedAcceptancePersistenceTests
             Assert.DoesNotContain(entity.GetProperties(), x => x.Name.Contains("OrderId", StringComparison.Ordinal));
         }
         var fact = model.FindEntityType(typeof(PurchaseUnorderedAcceptanceRow))!;
+        Assert.Equal(PurchasingDbContext.UnorderedAcceptanceIdentityCheckV1,
+            fact.GetCheckConstraints().Single(x => x.Name == "CK_UnorderedAcceptanceFacts_Identity").Sql);
+        Assert.Equal(PurchasingDbContext.UnorderedAcceptanceJsonCheckV1,
+            fact.GetCheckConstraints().Single(x => x.Name == "CK_UnorderedAcceptanceFacts_Json").Sql);
         Assert.True(fact.FindProperty("Version")!.IsConcurrencyToken);
         var attempt = model.FindEntityType(typeof(PurchaseUnorderedAcceptanceAttemptRow))!;
+        Assert.Equal(PurchasingDbContext.UnorderedAcceptanceAttemptIdentityCheckV1,
+            attempt.GetCheckConstraints().Single(x => x.Name == "CK_UnorderedAcceptanceAttempts_Identity").Sql);
+        Assert.Equal(PurchasingDbContext.UnorderedAcceptanceAttemptReceiptCheckV1,
+            attempt.GetCheckConstraints().Single(x => x.Name == "CK_UnorderedAcceptanceAttempts_Receipt").Sql);
         Assert.Contains(attempt.GetForeignKeys(), x => x.PrincipalEntityType.ClrType == typeof(PurchaseUnorderedAcceptanceRow)
             && x.Properties.Select(p => p.Name).SequenceEqual(["CompanyId", "AcceptanceId", "AcceptanceLineId"])
             && x.DeleteBehavior == DeleteBehavior.Restrict);

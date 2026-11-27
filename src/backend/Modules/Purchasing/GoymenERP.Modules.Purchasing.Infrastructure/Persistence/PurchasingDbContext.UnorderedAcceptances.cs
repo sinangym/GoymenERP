@@ -5,6 +5,11 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 
 public sealed partial class PurchasingDbContext
 {
+    internal const string UnorderedAcceptanceIdentityCheckV1 = "[CompanyId] <> " + EmptyGuid + " AND [AcceptanceId] <> " + EmptyGuid + " AND [AcceptanceLineId] <> " + EmptyGuid + " AND [Version] = 1";
+    internal const string UnorderedAcceptanceJsonCheckV1 = "ISJSON([RecordJson]) = 1 AND LEN([RecordHash]) = 64";
+    internal const string UnorderedAcceptanceAttemptIdentityCheckV1 = "[CompanyId] <> " + EmptyGuid + " AND [AcceptanceId] <> " + EmptyGuid + " AND [AcceptanceLineId] <> " + EmptyGuid;
+    internal const string UnorderedAcceptanceAttemptReceiptCheckV1 = "LEN([KeyHash]) = 64 AND LEN([RequestHash]) = 64 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0 AND ISJSON([RecordJson]) = 1";
+
     internal DbSet<PurchaseUnorderedAcceptanceRow> UnorderedAcceptances => Set<PurchaseUnorderedAcceptanceRow>();
     internal DbSet<PurchaseUnorderedAcceptanceAttemptRow> UnorderedAcceptanceAttempts => Set<PurchaseUnorderedAcceptanceAttemptRow>();
 
@@ -13,8 +18,8 @@ public sealed partial class PurchasingDbContext
         var fact = builder.Entity<PurchaseUnorderedAcceptanceRow>();
         fact.ToTable("UnorderedAcceptanceFacts", Schema, table =>
         {
-            table.HasCheckConstraint("CK_UnorderedAcceptanceFacts_Identity", $"[CompanyId] <> {EmptyGuid} AND [AcceptanceId] <> {EmptyGuid} AND [AcceptanceLineId] <> {EmptyGuid} AND [Version] = 1");
-            table.HasCheckConstraint("CK_UnorderedAcceptanceFacts_Json", "ISJSON([RecordJson]) = 1 AND LEN([RecordHash]) = 64");
+            table.HasCheckConstraint("CK_UnorderedAcceptanceFacts_Identity", UnorderedAcceptanceIdentityCheckV1);
+            table.HasCheckConstraint("CK_UnorderedAcceptanceFacts_Json", UnorderedAcceptanceJsonCheckV1);
         });
         fact.HasKey(x => new { x.CompanyId, x.AcceptanceId, x.AcceptanceLineId });
         fact.Property(x => x.Version).IsConcurrencyToken();
@@ -26,8 +31,8 @@ public sealed partial class PurchasingDbContext
         var attempt = builder.Entity<PurchaseUnorderedAcceptanceAttemptRow>();
         attempt.ToTable("UnorderedAcceptanceAttempts", Schema, table =>
         {
-            table.HasCheckConstraint("CK_UnorderedAcceptanceAttempts_Identity", $"[CompanyId] <> {EmptyGuid} AND [AcceptanceId] <> {EmptyGuid} AND [AcceptanceLineId] <> {EmptyGuid}");
-            table.HasCheckConstraint("CK_UnorderedAcceptanceAttempts_Receipt", "LEN([KeyHash]) = 64 AND LEN([RequestHash]) = 64 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0 AND ISJSON([RecordJson]) = 1");
+            table.HasCheckConstraint("CK_UnorderedAcceptanceAttempts_Identity", UnorderedAcceptanceAttemptIdentityCheckV1);
+            table.HasCheckConstraint("CK_UnorderedAcceptanceAttempts_Receipt", UnorderedAcceptanceAttemptReceiptCheckV1);
         });
         attempt.HasKey(x => new { x.CompanyId, x.KeyHash }); // This table owns only RecordCommand.
         attempt.Property(x => x.KeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation);

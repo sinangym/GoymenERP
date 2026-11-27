@@ -581,3 +581,14 @@ record notes and tasks. It looks the order up in Purchasing's own company-filter
 (`PurchaseAcceptanceOrderLookup`) and then answers with the authorized `GetGoodsReceiptAsync` read (order read permission
 company-wide, company fence, not-found rules). An unknown acceptance still goes through that read with an empty order id, so
 an unauthorized caller gets the same 403 whether or not the receipt exists. No endpoint, no write, no schema change.
+
+
+## NOPO — retained unordered acceptance facts (ALS-D130)
+
+`20261127183937_AddPurchaseUnorderedAcceptanceFacts` adds Purchasing-owned, company-filtered
+`UnorderedAcceptanceFacts` and `UnorderedAcceptanceAttempts` with an original same-transaction audit receipt.
+Up is additive DDL only. Down's first operation refuses with `THROW 52320` while either table retains
+records (forward fix); an empty store can roll back. No existing records are rewritten.
+The prerequisite bridge remains unavailable until its real owner evidence is connected. These facts alone
+do not create stock, match an invoice or affect Finance. Generated migration/model and SQL test sources
+are present; actual SQL acceptance remains NOT_RUN until the train closure.
