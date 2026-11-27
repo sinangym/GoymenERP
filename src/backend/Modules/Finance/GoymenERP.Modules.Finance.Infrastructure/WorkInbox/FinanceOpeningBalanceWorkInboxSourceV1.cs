@@ -1,5 +1,6 @@
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Work;
+using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,9 +19,10 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// since the proposal is the owner's check when the decision is given (it is another module's period, not read here).
 /// </para>
 /// </summary>
-internal sealed class FinanceOpeningBalanceWorkInboxSourceV1(
+internal sealed partial class FinanceOpeningBalanceWorkInboxSourceV1(
     FinanceDbContext dbContext,
-    FinanceWorkInboxFence fence) : IWorkInboxSourceV1
+    FinanceWorkInboxFence fence,
+    IFinanceOpeningBalanceService? owner = null) : IWorkInboxSourceV1
 {
     public const string ModuleName = "finance";
     public const string KindName = "finance.opening-balance.v1";
@@ -52,7 +54,7 @@ internal sealed class FinanceOpeningBalanceWorkInboxSourceV1(
         return (rows, true);
     }
 
-    private static WorkInboxItemV1? Item(OpeningBalanceRow row, bool _)
+    internal static WorkInboxItemV1? Item(OpeningBalanceRow row, bool _)
     {
         if (row.Id == Guid.Empty || string.IsNullOrWhiteSpace(row.ProposedBy)
             || FinanceWorkInboxRead.Amount(row.AmountText) is not { } amount

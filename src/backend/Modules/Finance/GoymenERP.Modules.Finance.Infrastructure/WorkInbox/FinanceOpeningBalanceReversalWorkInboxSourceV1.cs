@@ -1,5 +1,6 @@
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Work;
+using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,9 +20,10 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// the same save that approves the reversal), so the answer is Unavailable.
 /// </para>
 /// </summary>
-internal sealed class FinanceOpeningBalanceReversalWorkInboxSourceV1(
+internal sealed partial class FinanceOpeningBalanceReversalWorkInboxSourceV1(
     FinanceDbContext dbContext,
-    FinanceWorkInboxFence fence) : IWorkInboxSourceV1
+    FinanceWorkInboxFence fence,
+    IFinanceOpeningBalanceService? owner = null) : IWorkInboxSourceV1
 {
     public const string ModuleName = "finance";
     public const string KindName = "finance.opening-balance-reversal.v1";
@@ -59,9 +61,13 @@ internal sealed class FinanceOpeningBalanceReversalWorkInboxSourceV1(
 
     private static WorkInboxItemV1? Item(OpeningBalanceReversalRow row, IReadOnlyDictionary<Guid, OpeningBalanceRow> openings)
     {
+        if (!openings.TryGetValue(row.OpeningBalanceId, out var opening) || opening.Status != FinanceOpeningBalanceService.Approved) return null;
+        return FormatItem(row, opening);
+    }
+
+    internal static WorkInboxItemV1? FormatItem(OpeningBalanceReversalRow row, OpeningBalanceRow opening)
+    {
         if (row.Id == Guid.Empty || row.OpeningBalanceId == Guid.Empty || string.IsNullOrWhiteSpace(row.ProposedBy)
-            || !openings.TryGetValue(row.OpeningBalanceId, out var opening)
-            || opening.Status != FinanceOpeningBalanceService.Approved
             || FinanceWorkInboxRead.Amount(opening.AmountText) is not { } amount
             || FinanceOpeningBalanceWorkInboxSourceV1.References(opening) is not { } references)
         {
