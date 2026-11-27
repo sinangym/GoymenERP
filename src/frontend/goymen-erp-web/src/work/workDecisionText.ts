@@ -1,4 +1,16 @@
 export const WORK_DECISION_TEXT = {
+  accountingPeriodTitle: 'Açılması onaylanacak dönem', accountingReopeningTitle: 'Yeniden açılması onaylanacak dönem',
+  accountingClosureTitle: 'Kayıtlı kapanış ve devir', accountingReopeningProposal: 'Yeniden açma önerisi',
+  accountingLaterClosed: 'Daha sonraki bir dönem kapalı. Önce o dönemin yeniden açılması gerekir.',
+  accountingPeriodRetained: 'Önceki onayınız yeniden doğrulanıyor. Karar verdiğiniz dönem ve sürümler korunuyor; güncel dönem bilgileri bu isteğin yerine kullanılmıyor.',
+  accountingYes: 'Evet', accountingNo: 'Hayır',
+  accountingPeriodFields: { periodId: 'Dönem', companyId: 'Şirket', startsOn: 'Başlangıç', endsOn: 'Bitiş', status: 'Durum', version: 'Sürüm',
+    preparedByUserId: 'Hazırlayan', preparedAtUtc: 'Hazırlanma zamanı (UTC)', approvedByUserId: 'Onaylayan', approvedAtUtc: 'Onay zamanı (UTC)',
+    closedByUserId: 'Kapatan', closedAtUtc: 'Kapanış zamanı (UTC)', isOwnProposal: 'Kendi öneriniz', id: 'Kayıt', closureId: 'Kapanış kaydı',
+    closedPeriodVersion: 'Kapanıştaki dönem sürümü', proposedBy: 'Öneren', proposedAtUtc: 'Önerilme zamanı (UTC)', reason: 'Kayıtlı gerekçe',
+    approvedBy: 'Onaylayan', targetPeriodId: 'Devrin hedef dönemi', carryVoucherId: 'Devir fişi', lineCount: 'Devir fişindeki bakiye sayısı',
+    closedBy: 'Kapatan', reopeningId: 'Yeniden açma önerisi', reopenedBy: 'Yeniden açan', reopenedAtUtc: 'Yeniden açılma zamanı (UTC)' },
+
   normalJournalProposal: 'Normal fiş taslağı', normalJournalId: 'Taslak kaydı', normalJournalDraft: 'Taslak', normalJournalApproved: 'Onaylandı',
   normalJournalAccountPlan: 'Onaylı hesap planı sürümü', normalJournalApprover: 'Onaylayan', normalJournalApprovedAt: 'Onay zamanı (UTC)',
   normalJournalPosted: 'Kaydedilen fiş', normalJournalMapping: 'Hesap eşlemesi',

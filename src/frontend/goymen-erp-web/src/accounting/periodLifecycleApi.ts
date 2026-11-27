@@ -2,16 +2,16 @@ import type { ViewOutcome } from '../shell/uiState'
 import { ACCOUNTING_BASE, devHeaders } from './api'
 import { exactKeys } from './exactKeys'
 
-export interface PeriodClosure {
-  readonly id: string; readonly companyId: string; readonly periodId: string; readonly closedPeriodVersion: number
+export interface PeriodClosure<V = number> {
+  readonly id: string; readonly companyId: string; readonly periodId: string; readonly closedPeriodVersion: V
   readonly targetPeriodId: string; readonly carryVoucherId: string; readonly sourceHash: string; readonly lineCount: number
   readonly closedBy: string; readonly closedAtUtc: string; readonly reopeningId: string | null
   readonly reopenedBy: string | null; readonly reopenedAtUtc: string | null
 }
-export interface PeriodReopening {
+export interface PeriodReopening<V = number> {
   readonly id: string; readonly companyId: string; readonly periodId: string; readonly closureId: string
-  readonly closedPeriodVersion: number; readonly proposedBy: string; readonly proposedAtUtc: string; readonly reason: string
-  readonly approvedBy: string | null; readonly approvedAtUtc: string | null; readonly version: number
+  readonly closedPeriodVersion: V; readonly proposedBy: string; readonly proposedAtUtc: string; readonly reason: string
+  readonly approvedBy: string | null; readonly approvedAtUtc: string | null; readonly version: V
 }
 export interface PeriodLifecycle {
   readonly companyId: string; readonly periodId: string; readonly periodVersion: number
@@ -37,29 +37,38 @@ const positive = (v: unknown): v is number => Number.isSafeInteger(v) && (v as n
 const instant = (v: unknown): v is string => typeof v === 'string' && /(?:Z|\+00:00)$/.test(v) && Number.isFinite(Date.parse(v))
 const scoped = (v: Record<string, unknown>, company: string, period: string) => guid(v.companyId) && same(v.companyId, company)
   && guid(v.periodId) && same(v.periodId, period)
-export function decodePeriodReopening(value: unknown, company: string, period: string): PeriodReopening | null {
+export function decodePeriodReopening(value: unknown, company: string, period: string): PeriodReopening | null
+export function decodePeriodReopening<T>(value: unknown, company: string, period: string, projection: { readonly readVersion: (v: unknown) => T | null; readonly nativeChronology: false }): PeriodReopening<T> | null
+export function decodePeriodReopening(value: unknown, company: string, period: string, projection?: { readonly readVersion: (v: unknown) => unknown; readonly nativeChronology: false }): PeriodReopening<unknown> | null {
   if (!record(value) || !exactKeys(value, REOPENING_KEYS) || !scoped(value, company, period) || !guid(value.id) || !guid(value.closureId)
-    || !positive(value.closedPeriodVersion) || !guid(value.proposedBy) || !instant(value.proposedAtUtc)
+    || !(projection ? projection.readVersion(value.closedPeriodVersion) !== null : positive(value.closedPeriodVersion)) || !guid(value.proposedBy) || !instant(value.proposedAtUtc)
     || typeof value.reason !== 'string' || !value.reason.trim() || value.reason !== value.reason.trim() || value.reason.length > 1000
-    || ![1, 2].includes(value.version as number)) return null
-  if (value.version === 1 ? value.approvedBy !== null || value.approvedAtUtc !== null
+    || !(projection ? ['1','2'].includes(String(projection.readVersion(value.version))) : [1, 2].includes(value.version as number))) return null
+  if ((projection ? value.version === '1' : value.version === 1) ? value.approvedBy !== null || value.approvedAtUtc !== null
     : !guid(value.approvedBy) || same(value.approvedBy, value.proposedBy) || !instant(value.approvedAtUtc)
-      || Date.parse(value.approvedAtUtc) < Date.parse(value.proposedAtUtc)) return null
-  return value as unknown as PeriodReopening
+      || projection === undefined && Date.parse(value.approvedAtUtc) < Date.parse(value.proposedAtUtc)) return null
+  return value as unknown as PeriodReopening<unknown>
+}
+export function decodePeriodClosure(value: unknown, company: string, period: string): PeriodClosure | null
+export function decodePeriodClosure<T>(value: unknown, company: string, period: string, projection: { readonly readVersion: (v: unknown) => T | null; readonly nativeChronology: false }): PeriodClosure<T> | null
+export function decodePeriodClosure(value: unknown, company: string, period: string, projection?: { readonly readVersion: (v: unknown) => unknown; readonly nativeChronology: false }): PeriodClosure<unknown> | null {
+  const row = value
+  if (!record(row) || !exactKeys(row, CLOSURE_KEYS) || !scoped(row, company, period) || !guid(row.id) || !guid(row.targetPeriodId)
+    || same(row.targetPeriodId, period) || !guid(row.carryVoucherId) || (projection ? projection.readVersion(row.closedPeriodVersion) === null : !positive(row.closedPeriodVersion))
+    || !guid(row.closedBy) || !instant(row.closedAtUtc)
+    || typeof row.sourceHash !== 'string' || !/^[a-f0-9]{64}$/i.test(row.sourceHash)
+    || !Number.isSafeInteger(row.lineCount) || (row.lineCount as number) < 0) return null
+  if (row.reopeningId === null ? row.reopenedBy !== null || row.reopenedAtUtc !== null
+    : !guid(row.reopeningId) || !guid(row.reopenedBy) || !instant(row.reopenedAtUtc)
+    || projection === undefined && Date.parse(row.reopenedAtUtc) < Date.parse(row.closedAtUtc)) return null
+  return row as unknown as PeriodClosure<unknown>
 }
 export function decodePeriodLifecycle(value: unknown, company: string, period: string): PeriodLifecycle | null {
   if (!record(value) || !exactKeys(value, LIFECYCLE_KEYS) || !scoped(value, company, period) || !positive(value.periodVersion)
     || !Array.isArray(value.closures) || !Array.isArray(value.reopenings)) return null
   const closures: PeriodClosure[] = []
   for (const row of value.closures) {
-    if (!record(row) || !exactKeys(row, CLOSURE_KEYS) || !scoped(row, company, period) || !guid(row.id) || !guid(row.targetPeriodId)
-      || same(row.targetPeriodId, period) || !guid(row.carryVoucherId) || !positive(row.closedPeriodVersion)
-      || row.closedPeriodVersion > value.periodVersion || !guid(row.closedBy) || !instant(row.closedAtUtc)
-      || typeof row.sourceHash !== 'string' || !/^[a-f0-9]{64}$/i.test(row.sourceHash)
-      || !Number.isSafeInteger(row.lineCount) || (row.lineCount as number) < 0) return null
-    if (row.reopeningId === null ? row.reopenedBy !== null || row.reopenedAtUtc !== null
-      : !guid(row.reopeningId) || !guid(row.reopenedBy) || !instant(row.reopenedAtUtc)
-        || Date.parse(row.reopenedAtUtc) < Date.parse(row.closedAtUtc)) return null
+    if (decodePeriodClosure(row, company, period) === null || !record(row) || !positive(row.closedPeriodVersion) || row.closedPeriodVersion > value.periodVersion) return null
     closures.push(row as unknown as PeriodClosure)
   }
   const reopenings = value.reopenings.map(row => decodePeriodReopening(row, company, period))

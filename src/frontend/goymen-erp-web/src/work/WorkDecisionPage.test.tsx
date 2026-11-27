@@ -1,3 +1,6 @@
+import { accountingOpeningFixture, accountingReopeningFixture, openingPeriodKind, reopeningPeriodKind } from './accountingPeriodDecisionFixture'
+import { ACCOUNTING_PERIOD_WORK_CAPABILITY, type AccountingPeriodWorkKind } from './workAccountingPeriodDecision'
+import { CapabilityRoute } from '../shell/CapabilityRoute'
 import { normalJournalFixture } from './normalJournalDecisionFixture'
 import { NORMAL_JOURNAL_WORK_KIND as journalKind, NORMAL_JOURNAL_WORK_CAPABILITY as journalCap } from './workNormalJournalDecision'
 import { NORMAL_JOURNAL_TEXT as JOURNAL } from '../accounting/accountingText'
@@ -2663,5 +2666,100 @@ describe('normal journal receipt context and late-read fences',()=>{
   else {cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK journal different session'});mountJournalPurpose()}
   await screen.findByRole('region',{name:T.normalJournalProposal})
   expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+ })
+})
+
+// Candidate routes use the real shell/auth boundary; publication is a separate paired change.
+function mountAccountingPeriod(kind: AccountingPeriodWorkKind,client?:QueryClient){
+ const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[{path:`onaylarim/${kind}/:approvalId`,
+  element:<CapabilityRoute capability={[ACCOUNTING_PERIOD_WORK_CAPABILITY[kind]]}><WorkDecisionPage kind={kind}/></CapabilityRoute>}]}],{initialEntries:[`/onaylarim/${kind}/${id}`]})
+ render(<ShellProvider queryClient={client??new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})}><RouterProvider router={router}/></ShellProvider>)
+}
+describe('Work period native candidate',()=>{
+ it.each([openingPeriodKind,reopeningPeriodKind])('shows complete native human facts without private digests or general reads: %s',async kind=>{
+  const value=kind===openingPeriodKind?accountingOpeningFixture(COMPANY_A,id):accountingReopeningFixture(COMPANY_A,id)
+  const path=`/work/decisions/${kind}/${id}`
+  const calls=installFetch({capabilities:[ACCOUNTING_PERIOD_WORK_CAPABILITY[kind]],respond:(url,init)=>url.includes(path)?init?.method==='POST'?json({companyId:COMPANY_A,kind,itemId:id,state:'Approved',replayed:false,originalCorrelationId:'SENTETIK period'}):json(value):undefined})
+  mountAccountingPeriod(kind);const region=await screen.findByRole('region',{name:kind===openingPeriodKind?T.accountingPeriodTitle:T.accountingReopeningTitle})
+  expect(region.textContent).toContain('2026-11-01');expect(region.textContent).toContain('2026-11-30')
+  expect(region.textContent).not.toContain('A'.repeat(64));expect(region.textContent).not.toContain('B'.repeat(64))
+  if('accountingPeriodReopening'in value){
+   expect(region.textContent).toContain(value.accountingPeriodReopening.reopening.reason)
+   expect(region.textContent).toContain(value.accountingPeriodReopening.closure.carryVoucherId)
+   expect(region.textContent).not.toContain(value.accountingPeriodReopening.closure.sourceHash)
+   expect(region.textContent).not.toContain(value.accountingPeriodReopening.sourceFactsDigest)
+  }
+  expect(screen.queryByRole('button',{name:T.reject})).toBeNull();expect(screen.queryByRole('textbox',{name:T.reason})).toBeNull()
+  expect(within(region).queryByRole('combobox')).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done)
+  expect(calls.filter(c=>c.method==='POST').map(c=>c.body)).toEqual([{expectedVersion:'1',approve:true,reason:null,delegationId:null,
+   ...(kind===reopeningPeriodKind?{accountingPeriodReopening:{expectedPeriodVersion:'3'}}:{})}])
+  expect(calls.some(c=>c.url.includes('/accounting/periods'))).toBe(false)
+  expect(screen.queryByRole('region',{name:kind===openingPeriodKind?T.accountingPeriodTitle:T.accountingReopeningTitle})).toBeNull()
+ })
+ it('withholds reopening approval for the real later-closed rule without offering another operation',async()=>{
+  const value=accountingReopeningFixture(COMPANY_A,id);value.accountingPeriodReopening.laterPeriodClosed=true;value.approvalSupported=false
+  value.rules.push({...value.rules[0]!,ruleCode:'accounting.period-reopening-later-period-closed'})
+  const calls=installFetch({capabilities:[ACCOUNTING_PERIOD_WORK_CAPABILITY[reopeningPeriodKind]],respond:url=>url.includes(`/work/decisions/${reopeningPeriodKind}/${id}`)?json(value):undefined})
+  mountAccountingPeriod(reopeningPeriodKind);await screen.findByText(T.accountingLaterClosed)
+  expect(screen.getByRole('button',{name:T.approve}).matches(':disabled')).toBe(true)
+  expect(screen.queryByRole('button',{name:T.reject})).toBeNull();expect(calls.some(c=>c.method==='POST')).toBe(false)
+ })
+ it.each([openingPeriodKind,reopeningPeriodKind])('reconciles the frozen original versions/key across unknown remount without another GET: %s',async kind=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK period session'})
+  const value=kind===openingPeriodKind?accountingOpeningFixture(COMPANY_A,id,'9007199254740993'):accountingReopeningFixture(COMPANY_A,id,'9007199254740993')
+  const path=`/work/decisions/${kind}/${id}`;let posts=0
+  const calls=installFetch({capabilities:[ACCOUNTING_PERIOD_WORK_CAPABILITY[kind]],respond:(url,init)=>url.includes(path)?init?.method==='POST'?++posts===1?problem(503):json({companyId:COMPANY_A,kind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'SENTETIK period original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK period original'}):json(value):undefined})
+  mountAccountingPeriod(kind);await screen.findByRole('region',{name:kind===openingPeriodKind?T.accountingPeriodTitle:T.accountingReopeningTitle})
+  fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+  const reads=calls.filter(c=>c.url.includes(path)&&c.method==='GET').length
+  cleanup();mountAccountingPeriod(kind);await screen.findByText(T.unknown)
+  expect(screen.queryByRole('region',{name:T.accountingReopeningTitle})).toBeNull();expect(screen.queryByRole('region',{name:T.accountingPeriodTitle})).toBeNull()
+  expect(calls.filter(c=>c.url.includes(path)&&c.method==='GET')).toHaveLength(reads)
+  fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+  const sent=calls.filter(c=>c.method==='POST');expect(sent).toHaveLength(2);expect(sent[1]!.body).toEqual(sent[0]!.body)
+  expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key'])
+  expect(sent[0]!.body).toEqual({expectedVersion:kind===openingPeriodKind?'9007199254740993':'1',approve:true,reason:null,delegationId:null,
+   ...(kind===reopeningPeriodKind?{accountingPeriodReopening:{expectedPeriodVersion:'9007199254740993'}}:{})})
+  expect(JSON.stringify(sessionStorage)).not.toContain('sourceFactsDigest');expect(JSON.stringify(sessionStorage)).not.toContain('SENTETIK yeniden açma gerekçesi')
+ })
+ it.each([openingPeriodKind,reopeningPeriodKind])('does not read with only legacy/native or missing approval capabilities: %s',async kind=>{
+  const path=`/work/decisions/${kind}/${id}`
+  const calls=installFetch({capabilities:['accounting.periods.list','accounting.periods.approve','accounting.periods.reopen'],respond:url=>url.includes(path)?problem(503):undefined})
+  mountAccountingPeriod(kind);await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+  expect(calls.some(c=>c.url.includes(path))).toBe(false)
+ })
+ it.each([403,503])('withholds facts/commands on owner %s',async status=>{
+  const calls=installFetch({capabilities:[ACCOUNTING_PERIOD_WORK_CAPABILITY[openingPeriodKind]],respond:url=>url.includes(`/work/decisions/${openingPeriodKind}/${id}`)?problem(status):undefined})
+  mountAccountingPeriod(openingPeriodKind);await waitFor(()=>expect(calls.some(c=>c.url.includes('/work/decisions/'))).toBe(true))
+  expect(screen.queryByRole('region',{name:T.accountingPeriodTitle})).toBeNull();expect(screen.queryByRole('button',{name:T.approve})).toBeNull();expect(calls.some(c=>c.method==='POST')).toBe(false)
+ })
+ it('never renders a late current period while the original unknown request is frozen',async()=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK period late'})
+  const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}}),path=`/work/decisions/${reopeningPeriodKind}/${id}`
+  let gets=0,release!:(value:Response)=>void;const late=new Promise<Response>(resolve=>{release=resolve})
+  const calls=installFetch({capabilities:[ACCOUNTING_PERIOD_WORK_CAPABILITY[reopeningPeriodKind]],respond:(url,init)=>url.includes(path)?init?.method==='POST'?problem(503):++gets===1?json(accountingReopeningFixture(COMPANY_A,id)):late:undefined})
+  mountAccountingPeriod(reopeningPeriodKind,client);await screen.findByRole('region',{name:T.accountingReopeningTitle})
+  let refetch!:Promise<void>;act(()=>{refetch=client.refetchQueries({predicate:q=>q.queryKey.includes('work-decision')})});await waitFor(()=>expect(gets).toBe(2))
+  fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+  const changed=accountingReopeningFixture(COMPANY_A,id,'5');changed.accountingPeriodReopening.reopening.reason='SENTETIK newer private reason'
+  await act(async()=>{release(json(changed));await refetch})
+  expect(screen.queryByText('SENTETIK newer private reason')).toBeNull();expect(screen.queryByRole('region',{name:T.accountingReopeningTitle})).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.unknown)
+  const sent=calls.filter(c=>c.method==='POST');expect(sent).toHaveLength(2);expect(sent[1]!.body).toEqual(sent[0]!.body);expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key']);client.clear()
+ })
+ it.each(['company','session'] as const)('never restores an unknown period request across %s',async change=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK period first session'})
+  const path=`/work/decisions/${openingPeriodKind}/${id}`
+  const calls=installFetch({capabilities:[ACCOUNTING_PERIOD_WORK_CAPABILITY[openingPeriodKind]],respond:(url,init)=>{
+   if(!url.includes(path))return undefined
+   if(init?.method==='POST')return problem(503)
+   const company=new Headers(init?.headers).get('X-Company-Id');if(company===null)throw new Error('Captured company required')
+   return json(accountingOpeningFixture(company,id))
+  }})
+  mountAccountingPeriod(openingPeriodKind);await screen.findByRole('region',{name:T.accountingPeriodTitle});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+  if(change==='company')await userEvent.setup().selectOptions(screen.getByRole('combobox',{name:'Şirket'}),COMPANY_B)
+  else {cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK period new session'});mountAccountingPeriod(openingPeriodKind)}
+  await screen.findByRole('region',{name:T.accountingPeriodTitle});expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(c=>c.method==='POST')).toHaveLength(1)
  })
 })

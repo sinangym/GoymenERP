@@ -106,3 +106,9 @@ describe('periodCommandBody', () => {
     })
   })
 })
+
+it('keeps native period numeric versions and Open/Closed own-proposal exclusions unchanged',()=>{
+ expect(decodePeriod({...period(),version:'9007199254740993'},COMPANY_A)).toBeNull()
+ expect(decodePeriod(openPeriod({isOwnProposal:true}),COMPANY_A)).toBeNull()
+ expect(decodePeriod(openPeriod(),COMPANY_A)?.version).toBe(2)
+})

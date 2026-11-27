@@ -50,3 +50,13 @@ describe('period lifecycle exact key sets', () => {
     for (const [label, body] of keyProbes(reopening, [[[], 'approvedBy']])) expect(decodePeriodReopening(body, company, period), label).toBeNull()
   })
 })
+
+it('preserves default lifecycle numeric-version and approval chronology refusals',()=>{
+ const source=view(),r=source.reopenings[0]!,c=source.closures[0]!
+ expect(decodePeriodReopening({...r,version:'1',closedPeriodVersion:'3'},company,period)).toBeNull()
+ expect(decodePeriodReopening({...r,version:2,approvedBy:id(9),approvedAtUtc:'2026-11-17T09:00:00Z'},company,period)).toBeNull()
+ const earlier={...source,closures:[{...c,reopeningId:r.id,reopenedBy:id(9),reopenedAtUtc:'2026-11-17T08:00:00Z'}],
+  reopenings:[{...r,version:2,approvedBy:id(9),approvedAtUtc:'2026-11-17T08:00:00Z'}]}
+ expect(decodePeriodLifecycle(earlier,company,period)).toBeNull()
+ expect(decodePeriodLifecycle(source,company,period)).toEqual(source)
+})

@@ -447,13 +447,16 @@ const PERIOD_KEYS = [
   'isOwnProposal',
 ] as const
 
-export function decodePeriod(value: unknown, companyId: string): PeriodView | null {
+export function decodePeriod(value: unknown, companyId: string): PeriodView | null
+export function decodePeriod<T>(value: unknown, companyId: string, projection: { readonly readVersion: (v: unknown) => T | null; readonly date: (v: unknown) => boolean }): (Omit<PeriodView, 'version'> & { readonly version: T }) | null
+export function decodePeriod(value: unknown, companyId: string, projection?: { readonly readVersion: (v: unknown) => unknown; readonly date: (v: unknown) => boolean }): (Omit<PeriodView, 'version'> & { readonly version: unknown }) | null {
   const v = record(value)
   if (v === null || !hasExactKeys(v, PERIOD_KEYS)) return null
-  if (!isGuid(v.periodId) || v.companyId !== companyId || !isDate(v.startsOn) || !isDate(v.endsOn)) return null
+  if (!isGuid(v.periodId) || v.companyId !== companyId || !(projection?.date ?? isDate)(v.startsOn) || !(projection?.date ?? isDate)(v.endsOn)) return null
   if ((v.endsOn as string) < (v.startsOn as string)) return null
   if (typeof v.status !== 'string' || !(PERIOD_STATUSES as readonly string[]).includes(v.status)) return null
-  if (!isCount(v.version, 1) || !isGuid(v.preparedByUserId) || !isInstant(v.preparedAtUtc)) return null
+  const version = projection ? projection.readVersion(v.version) : isCount(v.version, 1) ? v.version : null
+  if (version === null || !isGuid(v.preparedByUserId) || !isInstant(v.preparedAtUtc)) return null
   if (!isNullableGuid(v.approvedByUserId) || !isNullableInstant(v.approvedAtUtc)) return null
   if (!isNullableGuid(v.closedByUserId) || !isNullableInstant(v.closedAtUtc)) return null
   if (typeof v.isOwnProposal !== 'boolean') return null
@@ -478,7 +481,7 @@ export function decodePeriod(value: unknown, companyId: string): PeriodView | nu
     startsOn: v.startsOn as string,
     endsOn: v.endsOn as string,
     status,
-    version: v.version,
+    version,
     preparedByUserId: v.preparedByUserId,
     preparedAtUtc: v.preparedAtUtc,
     approvedByUserId: v.approvedByUserId,
