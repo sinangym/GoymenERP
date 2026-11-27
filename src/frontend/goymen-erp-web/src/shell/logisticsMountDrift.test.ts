@@ -30,7 +30,7 @@ describe('shell ↔ Logistics lane capability ids', () => {
     expect(CAPABILITY.logisticsTransferDepartures).toBe(LOGISTICS_CAPABILITY.transferDepartures)
     expect(CAPABILITY.logisticsPlanExcessApprove).toBe(LOGISTICS_CAPABILITY.planExcessApprove)
     const shellIds = (Object.values(CAPABILITY) as string[]).filter((id) => id.startsWith('logistics.'))
-    expect([...shellIds].sort()).toEqual([...Object.values(LOGISTICS_CAPABILITY).filter((id) => id !== LOGISTICS_CAPABILITY.planExcessPrepare), ...Object.values(SUBCONTRACT_CAPABILITY)].sort())
+    expect([...shellIds].sort()).toEqual([...Object.values(LOGISTICS_CAPABILITY).filter((id) => id !== LOGISTICS_CAPABILITY.planExcessPrepare), ...Object.values(SUBCONTRACT_CAPABILITY), 'logistics.plan-excess.work-decision'].sort())
   })
 
   it('agrees with the lane on every route, value by value', () => {
@@ -65,4 +65,12 @@ describe('shell ↔ Logistics lane capability ids', () => {
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.logisticsInstructionsCreate]).toBe('')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.logisticsInstructionsDetail]).toBe('')
   })
+})
+
+
+it('mounts the Work plan excess purpose separately from its existing native approval page',()=>{
+ expect(CAPABILITY.logisticsPlanExcessWorkDecision).toBe('logistics.plan-excess.work-decision')
+ expect(CAPABILITY_ROUTE[CAPABILITY.logisticsPlanExcessWorkDecision]).toBe('/onaylarim/logistics.plan-excess.v1/:approvalId')
+ expect(CAPABILITY_NAV_LABEL[CAPABILITY.logisticsPlanExcessWorkDecision]).toBe('')
+ expect(CAPABILITY_ROUTE[CAPABILITY.logisticsPlanExcessApprove]).toBe(LOGISTICS_ROUTE.planExcessApprove)
 })

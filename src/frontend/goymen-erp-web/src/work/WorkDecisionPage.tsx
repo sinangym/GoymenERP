@@ -1,5 +1,6 @@
 import { KIND_LABEL, TAX_IDENTITY_TEXT } from '../cari/taxIdentity'
 import { LEGAL_NAME_TEXT } from '../cari/legalName'
+import { PLAN_EXCESS_TEXT as PLAN_EXCESS } from '../logistics/planExcessText'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { useInfiniteQuery, useQuery, type InfiniteData } from '@tanstack/react-query'
@@ -79,6 +80,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
     if (preview === null || !approve && preview.rejectionSupported === false || frozen || approve && selectionInvalid || invalidLossTime || invalidReason(approve) || useDelegation && !delegationId) return
     const answer = await attempt.run({ expectedVersion: preview.sourceVersion, approve,
       reason: batch ? reason === '' ? null : reason : preview.approvalReasonRequired || !approve || counterparty ? reason.trim() || null : null, delegationId: useDelegation ? delegationId : null,
+      ...(kind === 'logistics.plan-excess.v1' ? { logisticsPlanExcess: { expectedInstructionVersion: preview.logisticsPlanExcess!.instructionVersion } } : {}),
       ...(loss ? { inventoryTransferLoss: { requestNumber: preview.inventoryTransferLoss!.requestNumber, decidedAtUtc: workDecisionLocalUtc(decisionTime)! } } : {}),
       ...(kind === 'manufacturing.plan.v1' && options !== undefined ? { manufacturingPlanReapproval: { selectedLabelIds: [...selectedLabels] } } : {}) })
     if (answer.type === 'applied') void query.refetch()
@@ -92,8 +94,17 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
     <Link to="/onaylarim/kuyruk">{T.back}</Link>
     {preview === null ? <StateBlock state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
       subject={T.title} onRetry={() => void query.refetch()} /> : <>
-      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {preview.sourceVersion}</p>
+      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {kind === 'logistics.plan-excess.v1' && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
       {kind === 'inventory.opening-cost.v1' ? <p>{cost == null ? T.hiddenCost : `${T.cost}: ${cost}`}</p> : null}
+      {preview.logisticsPlanExcess ? <section aria-label={T.planExcessProposal}><h3>{T.planExcessProposal}</h3><dl>
+        <dt>{PLAN_EXCESS.instruction}</dt><dd>{preview.logisticsPlanExcess.instructionId}</dd>
+        <dt>{PLAN_EXCESS.line}</dt><dd>{preview.logisticsPlanExcess.lineId}</dd>
+        <dt>{T.instructionVersion}</dt><dd>{frozen ? attempt.pendingPayload?.logisticsPlanExcess?.expectedInstructionVersion : preview.logisticsPlanExcess.instructionVersion}</dd>
+        <dt>{PLAN_EXCESS.quantity}</dt><dd>{preview.logisticsPlanExcess.quantity}</dd>
+        <dt>{PLAN_EXCESS.reason}</dt><dd>{preview.logisticsPlanExcess.reason}</dd>
+        <dt>{PLAN_EXCESS.proposer}</dt><dd>{preview.logisticsPlanExcess.proposedBy}</dd>
+        <dt>{PLAN_EXCESS.proposedAt}</dt><dd>{preview.logisticsPlanExcess.proposedAtUtc}</dd>
+      </dl><p>{PLAN_EXCESS.warning}</p></section> : null}
       {preview.counterpartyTaxIdentityChange ? <section aria-label={T.identityProof}><h3>{T.identityProof}</h3><dl>
         <dt>{TAX_IDENTITY_TEXT.pendingCurrent}</dt><dd>{preview.counterpartyTaxIdentityChange.currentTaxIdentityNumber}</dd>
         <dt>{TAX_IDENTITY_TEXT.pendingProposed}</dt><dd>{preview.counterpartyTaxIdentityChange.proposedTaxIdentityNumber} ({KIND_LABEL[preview.counterpartyTaxIdentityChange.proposedKind]})</dd>
@@ -117,7 +128,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         {frozen && attempt.pendingPayload?.inventoryTransferLoss ? <p>{T.lossFrozenTime}: {attempt.pendingPayload.inventoryTransferLoss.decidedAtUtc}</p>
           : <p>{T.lossRequestedAt}: {preview.inventoryTransferLoss?.requestedAtUtc}</p>}
       </div> : null}
-      {preview.pending ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
+      {preview.pending ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{kind === 'logistics.plan-excess.v1' ? T.planExcessApprovalOnly : kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
         {preview.rejectionSupported !== false || preview.approvalReasonRequired ? <label>{counterparty ? T.optionalNote : kind === 'manufacturing.plan.v1' ? T.manufacturingRejectReason : T.reason}<textarea value={lossReason} maxLength={reasonLimit} onChange={event => setReason(event.target.value)} /></label> : null}
         {kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? <p>{T.approvalReasonRequired(reasonLimit)}</p> : null}
         {kind === 'manufacturing.plan.v1' && preview.rejectionSupported ? <p>{T.manufacturingRejectHelp}</p> : null}

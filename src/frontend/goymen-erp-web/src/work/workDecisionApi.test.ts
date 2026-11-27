@@ -339,7 +339,7 @@ it('decodes exact loss options among the mounted owner kinds without changing ot
  const value={...preview,kind:lossKind,approvalReasonRequired:true,rejectionSupported:true,inventoryTransferLoss:lossOptions}
  expect(isWorkDecisionKind(lossKind)).toBe(true)
  expect(WORK_DECISION_KINDS.filter(kind=>kind===lossKind)).toHaveLength(1)
- expect(WORK_DECISION_KINDS).toHaveLength(17)
+ expect(WORK_DECISION_KINDS).toHaveLength(18)
  expect(decodeWorkDecisionPreview(value,company,lossKind,id)).not.toBeNull()
  for(const delta of [{companyId:id},{itemId:company},{sourceVersion:'0'},{approvalReasonRequired:false},{rejectionSupported:false},
   {inventoryTransferLoss:null},{inventoryTransferLoss:{...lossOptions,requestNumber:0}},{inventoryTransferLoss:{...lossOptions,requestNumber:1.5}},
@@ -389,7 +389,7 @@ it('mounts both Counterparty purposes once among seventeen and pins their actual
   'counterparty.tax-identity-change.v1':'cari.tax-identity-change.work-decision',
   'counterparty.legal-name-change.v1':'cari.legal-name-change.work-decision',
  })
- expect(WORK_DECISION_KINDS).toHaveLength(17)
+ expect(WORK_DECISION_KINDS).toHaveLength(18)
  for(const cp of cpKinds){
   expect(isWorkDecisionKind(cp)).toBe(true);expect(isCounterpartyWorkDecisionKind(cp)).toBe(true)
   expect(WORK_DECISION_KINDS.filter(kind=>kind===cp)).toEqual([cp])
@@ -455,4 +455,54 @@ it('validates native tax kind and number shape, and preserves both full 250-char
  expect(decodeWorkDecisionPreview(legal,company,cpKinds[1],id)?.counterpartyLegalNameChange).toEqual(names)
  for(const delta of [{currentLegalName:'E'.repeat(251)},{proposedLegalName:'Y'.repeat(251)},{currentLegalName:''}])
   expect(decodeWorkDecisionPreview({...legal,counterpartyLegalNameChange:{...names,...delta}},company,cpKinds[1],id)).toBeNull()
+})
+
+
+const excessKind='logistics.plan-excess.v1'
+const excessInstruction='dddddddd-0000-4000-8000-000000000001', excessLine='eeeeeeee-0000-4000-8000-000000000001'
+const excessProposal={instructionVersion:'9007199254740993',instructionId:excessInstruction,lineId:excessLine,quantity:'20.125',reason:'SENTETIK tam teklif gerekçesi',proposedBy:'SENTETIK-maker',proposedAtUtc:'2026-11-27T08:00:00Z'}
+const excessPreview={...preview,kind:excessKind,sourceVersion:'1',rejectionSupported:false,
+ references:[{role:'loading-instruction',label:'SENTETIK talimat',recordId:excessInstruction,link:null}],logisticsPlanExcess:excessProposal}
+const excessRequest={...request,expectedVersion:'1',logisticsPlanExcess:{expectedInstructionVersion:excessProposal.instructionVersion}}
+it('decodes only the complete price-free plan excess proposal under the exact owner kind',()=>{
+ expect(WORK_DECISION_KINDS.filter(kind=>kind===excessKind)).toEqual([excessKind])
+ expect(decodeWorkDecisionPreview(excessPreview,company,excessKind,id)).toEqual(excessPreview)
+ expect(decodeWorkDecisionPreview({...excessPreview,logisticsPlanExcess:{...excessProposal,reason:'R'.repeat(500),quantity:'999999999999999.999'}},company,excessKind,id)).not.toBeNull()
+ for(const delta of [{companyId:id},{itemId:company},{rejectionSupported:true},{approvalReasonRequired:true},{logisticsPlanExcess:null},
+  {sourceVersion:'01'},{references:[]},{references:[{...excessPreview.references[0],recordId:id}]},
+  {references:[excessPreview.references[0],excessPreview.references[0]]},{logisticsPlanExcessProof:{reason:excessProposal.reason}},
+  {inventoryTransferLoss:lossOptions},{counterpartyLegalNameChange:{}}])
+  expect(decodeWorkDecisionPreview({...excessPreview,...delta},company,excessKind,id)).toBeNull()
+ for(const delta of [{instructionVersion:'01'},{instructionVersion:'9223372036854775808'},{instructionId:id},{lineId:'00000000-0000-0000-0000-000000000000'},
+  {quantity:'0'},{quantity:'20.0'},{quantity:'01'},{quantity:'1.0001'},{quantity:'1e2'},{quantity:'1000000000000000'},
+  {reason:''},{reason:' x'},{reason:'R'.repeat(501)},{reason:'x\ny'},{proposedBy:''},{proposedBy:'M'.repeat(129)},
+  {proposedAtUtc:'bad'},{proposedAtUtc:'2026-11-27T08:00:00+03:00'},{amount:'5'}])
+  expect(decodeWorkDecisionPreview({...excessPreview,logisticsPlanExcess:{...excessProposal,...delta}},company,excessKind,id)).toBeNull()
+ expect(decodeWorkDecisionPreview({...preview,logisticsPlanExcess:excessProposal},company,kind,id)).toBeNull()
+})
+it('requires the exact two frozen canonical versions, approve-only null reason and exclusive typed request',()=>{
+ expect(isWorkDecisionRequest(excessRequest,excessKind)).toBe(true)
+ for(const delta of [{approve:false},{reason:''},{reason:'insan gerekçesi'},{expectedVersion:'01'},{logisticsPlanExcess:undefined},
+  {logisticsPlanExcess:null},{logisticsPlanExcess:{expectedInstructionVersion:'0'}},{logisticsPlanExcess:{expectedInstructionVersion:'9223372036854775808'}},
+  {logisticsPlanExcess:{expectedInstructionVersion:'3',reason:excessProposal.reason}},{inventoryTransferLoss:lossRequest.inventoryTransferLoss},
+  {manufacturingPlanReapproval:{selectedLabelIds:[id]}},{logisticsPlanExcessProof:{}}])
+  expect(isWorkDecisionRequest({...excessRequest,...delta},excessKind)).toBe(false)
+ expect(isWorkDecisionRequest(excessRequest,kind)).toBe(false)
+ expect(isWorkDecisionRequest(excessRequest,'manufacturing.plan.v1')).toBe(false)
+})
+it('forwards frozen plan excess versions unchanged and accepts only the immutable Approved result',async()=>{
+ const result={companyId:company,kind:excessKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'original'}
+ const headers={'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}
+ const fetch=vi.fn(async(_input:RequestInfo|URL,_init?:RequestInit)=>new Response(JSON.stringify(result),{status:200,headers}))
+ vi.stubGlobal('fetch',fetch)
+ expect((await sendWorkDecision(company,excessKind,id,excessRequest,'frozen-key')).type).toBe('applied')
+ expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string)).toEqual(excessRequest)
+ expect((fetch.mock.calls[0]![1]!.headers as Record<string,string>)['Idempotency-Key']).toBe('frozen-key')
+ for(const delta of [{state:'Rejected'},{state:'Pending'},{companyId:id},{itemId:company},{kind},{extra:true}]){
+  fetch.mockResolvedValueOnce(new Response(JSON.stringify({...result,...delta}),{status:200,headers}))
+  expect((await sendWorkDecision(company,excessKind,id,excessRequest,'frozen-key')).type).toBe('unknown')
+ }
+ const count=fetch.mock.calls.length
+ expect((await sendWorkDecision(company,excessKind,id,{...excessRequest,approve:false},'frozen-key')).type).toBe('unknown')
+ expect(fetch.mock.calls).toHaveLength(count)
 })

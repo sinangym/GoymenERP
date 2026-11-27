@@ -834,3 +834,72 @@ it.each(cpKinds)('does not grant native Cari browse through the standalone %s de
  await waitFor(()=>expect(calls.filter(call=>call.url.endsWith('/shell/capabilities')).length).toBeGreaterThan(1))
  expect(calls.some(call=>call.url.includes('/counterparties'))).toBe(false)
 })
+
+
+const excessKind='logistics.plan-excess.v1', excessCap='logistics.plan-excess.work-decision'
+const excessInstruction='dddddddd-0000-4000-8000-000000000001',excessLine='eeeeeeee-0000-4000-8000-000000000001'
+const excessProposal={instructionVersion:'9007199254740993',instructionId:excessInstruction,lineId:excessLine,quantity:'20.125',reason:'R'.repeat(500),proposedBy:'SENTETIK-maker',proposedAtUtc:'2026-11-27T08:00:00Z'}
+const excessPreview={...preview,kind:excessKind,sourceVersion:'1',rejectionSupported:false,
+ references:[{role:'loading-instruction',label:'SENTETIK talimat',recordId:excessInstruction,link:null}],logisticsPlanExcess:excessProposal}
+const excessPath=`/work/decisions/${excessKind}/${id}`
+const mountExcess=()=>mount(`/onaylarim/${excessKind}/${id}`,true)
+it('shows the full native proposal and only approval, forwarding both versions without proposal metadata',async()=>{
+ const calls=installFetch({capabilities:[excessCap],respond:(url,init)=>url.includes(excessPath)
+  ?init?.method==='POST'?json({companyId:COMPANY_A,kind:excessKind,itemId:id,state:'Approved',replayed:false,originalCorrelationId:'original'}):json(excessPreview):undefined})
+ mountExcess()
+ await screen.findByRole('heading',{name:T.planExcessProposal})
+ for(const value of [excessInstruction,excessLine,excessProposal.quantity,excessProposal.reason,excessProposal.proposedBy,excessProposal.proposedAtUtc])expect(screen.getByText(value)).toBeTruthy()
+ expect(screen.queryByRole('button',{name:T.reject})).toBeNull()
+ expect(screen.queryByRole('textbox')).toBeNull()
+ expect(screen.getByText(T.planExcessApprovalOnly)).toBeTruthy()
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.method==='POST'&&call.url.includes(excessPath))
+ expect(sent).toHaveLength(1)
+ expect(sent[0]!.body).toEqual({expectedVersion:'1',approve:true,reason:null,delegationId:null,logisticsPlanExcess:{expectedInstructionVersion:excessProposal.instructionVersion}})
+ expect(sent[0]!.headers['X-Company-Id']).toBe(COMPANY_A)
+ expect(calls.some(call=>call.url.includes('/logistics/plan-excess/'))).toBe(false)
+})
+it.each([true,false])('keeps both frozen versions/key after unknown remount with pending=%s, without journaling proposal text',async pending=>{
+ let reads=0,posts=0
+ const calls=installFetch({capabilities:[excessCap],respond:(url,init)=>{
+  if(!url.includes(excessPath))return undefined
+  if(init?.method==='POST')return ++posts===1?problem(503):json({companyId:COMPANY_A,kind:excessKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'})
+  return json(++reads===1?excessPreview:{...excessPreview,sourceVersion:'2',pending,logisticsPlanExcess:{...excessProposal,instructionVersion:'9007199254740995'}})
+ }})
+ const baseFetch=globalThis.fetch
+ vi.stubGlobal('fetch',vi.fn((input:RequestInfo|URL,init?:RequestInit)=>String(input).endsWith('/identity/me')
+  ?Promise.resolve(json({userId:'99999999-9999-4999-8999-999999999999',displayName:'SENTETIK',email:null,allowedCompanyIds:[COMPANY_A],mustChangePassword:false,localCredentialVersion:null,authenticationSessionBinding:'SENTETIK-excess-session'}))
+  :baseFetch(input,init)))
+ mountExcess();await screen.findByRole('heading',{name:T.planExcessProposal})
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ const journal=Object.values(sessionStorage).join('')
+ expect(journal).not.toContain(excessProposal.reason);expect(journal).not.toContain(excessProposal.proposedBy)
+ expect(journal).not.toContain(excessInstruction);expect(journal).not.toContain(excessLine)
+ cleanup();mountExcess();await screen.findByText(T.unknown);await screen.findByRole('heading',{name:T.planExcessProposal})
+ expect(screen.getByText(`${T.version}: 1`)).toBeTruthy()
+ fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.method==='POST'&&call.url.includes(excessPath))
+ expect(sent).toHaveLength(2);expect(sent[0]!.body).toEqual(sent[1]!.body)
+ expect(sent[0]!.headers['Idempotency-Key']).toBe(sent[1]!.headers['Idempotency-Key'])
+ expect(sent[1]!.body).toEqual({expectedVersion:'1',approve:true,reason:null,delegationId:null,logisticsPlanExcess:{expectedInstructionVersion:excessProposal.instructionVersion}})
+})
+it.each([{companyId:COMPANY_B},{rejectionSupported:true},{logisticsPlanExcess:null},{logisticsPlanExcess:{...excessProposal,instructionId:id}},
+ {logisticsPlanExcess:{...excessProposal,reason:''}},{logisticsPlanExcessProof:{reason:'PRIVATE'}}])('does not show a partial or foreign plan excess proposal %j',async delta=>{
+ const calls=installFetch({capabilities:[excessCap],respond:url=>url.includes(excessPath)?json({...excessPreview,...delta}):undefined})
+ mountExcess();await waitFor(()=>expect(calls.some(call=>call.url.includes(excessPath))).toBe(true))
+ expect(screen.queryByRole('heading',{name:T.planExcessProposal})).toBeNull();expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+ expect(calls.some(call=>call.method==='POST')).toBe(false)
+})
+it.each([{capabilities:[]},{capabilities:['logistics.shipments.plan-excess.approve']},{capabilities:['logistics.instructions.detail']},{capabilities:['finance.cash-account.work-decision']}])('does not fetch a plan excess purpose without its exact capability %j',async({capabilities})=>{
+ const calls=installFetch({capabilities,respond:url=>url.includes(excessPath)?json(excessPreview):undefined})
+ mountExcess();await waitFor(()=>expect(calls.some(call=>call.url.endsWith('/shell/capabilities'))).toBe(true))
+ expect(calls.some(call=>call.url.includes(excessPath))).toBe(false)
+ expect(screen.queryByRole('heading',{name:T.planExcessProposal})).toBeNull()
+})
+it('mounts the exact plan excess purpose capability while retaining both identity purposes',()=>{
+ const route=matchRoutes(workRoutes,`/onaylarim/${excessKind}/${id}`)?.at(-1)?.route
+ expect(route?.path).toBe('onaylarim/logistics.plan-excess.v1/:approvalId')
+ const element=route?.element as ReactElement<{capability:readonly string[];children:ReactElement<{kind:string}>}>
+ expect(element.props.capability).toEqual([excessCap]);expect(element.props.children.props.kind).toBe(excessKind)
+ for(const cp of cpKinds)expect(matchRoutes(workRoutes,`/onaylarim/${cp}/${id}`)?.at(-1)?.route.path).toBe(`onaylarim/${cp}/:approvalId`)
+})

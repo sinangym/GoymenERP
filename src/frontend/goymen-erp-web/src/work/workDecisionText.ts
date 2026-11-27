@@ -1,4 +1,7 @@
 export const WORK_DECISION_TEXT = {
+  planExcessProposal: 'Karar verilecek plan üstü sevk teklifi',
+  instructionVersion: 'Talimat sürümü',
+  planExcessApprovalOnly: 'Bu teklif için yalnız onay verilebilir. Teklif miktarı ve gerekçesi değiştirilmez.',
   identityProof: 'Karar verilecek değişiklik',
   optionalNote: 'Karar notu (isteğe bağlı)',
   optionalNoteHelp: 'Onay ve ret için not isteğe bağlıdır; en fazla 1000 karakter yazabilirsiniz.',

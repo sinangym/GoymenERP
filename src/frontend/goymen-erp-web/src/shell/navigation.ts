@@ -434,6 +434,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // AT-025: one sidebar entry per section, because each section is its own grant.
   'logistics.operations-work.sales': 'Operasyon işleri — Satış',
   'logistics.operations-work.purchase': 'Operasyon işleri — Satın alma',
+  'logistics.plan-excess.work-decision': '',
   'logistics.shipments.plan-excess.approve': 'Plan üstü sevk onayı',
   'logistics.transfer-departures.record': 'Transfer çıkışları',
   'purchasing.request.work-decision': '',
