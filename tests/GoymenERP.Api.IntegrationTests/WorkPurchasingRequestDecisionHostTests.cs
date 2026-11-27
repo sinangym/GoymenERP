@@ -95,6 +95,7 @@ public sealed partial class WorkPurchasingRequestDecisionHostTests
         public PurchasingServiceException? Refusal;
         public Action? BeforeFence;
         public bool NativeEffect;
+        public bool OmitVarianceDecision;
         public Guid ResultCompany = Company, ResultId = Item;
         public string OrderState = "Approved";
         public Run(bool order = false, bool ownerAvailable = true, bool serviceOrder = false, bool invoiceVariance = false)
@@ -147,8 +148,10 @@ public sealed partial class WorkPurchasingRequestDecisionHostTests
                 try { invoice.ApproveVariance(invoice.Version, Actor, ((PurchaseIncomingInvoiceVarianceApprovalRequestV1)args[1]!).Reason, DateTimeOffset.UtcNow); }
                 catch (ArgumentException) { throw new PurchasingServiceException(400, "validation_failed"); }
                 NativeEffect = true;
-                return new(GoymenERP.Modules.Purchasing.Domain.Invoices.PurchaseIncomingInvoiceSnapshot.Capture(invoice)
-                    with { CompanyId = ResultCompany, Id = ResultId }, true, "SENTETIK-original");
+                var snapshot = GoymenERP.Modules.Purchasing.Domain.Invoices.PurchaseIncomingInvoiceSnapshot.Capture(invoice)
+                    with { CompanyId = ResultCompany, Id = ResultId };
+                if (OmitVarianceDecision) snapshot = snapshot with { VarianceDecision = null };
+                return new(snapshot, true, "SENTETIK-original");
             }
             ((NativeOwnerProxy)(object)invoiceOwner).Handler = (method, args) => AnswerVariance(method, args);
             Host = new(company, new User(), correlation, authority, [Source], Delegations, fence, null!, null!, purchasing: ownerAvailable ? owner : null, purchasingServiceOrders: ownerAvailable ? serviceOwner : null, purchaseInvoiceWorkflow: ownerAvailable ? invoiceOwner : null);

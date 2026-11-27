@@ -7,6 +7,16 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed partial class WorkPurchasingRequestDecisionHostTests
 {
     [Fact]
+    public async Task Invoice_variance_matched_native_receipt_without_a_variance_decision_is_not_success()
+    {
+        var run = new Run(invoiceVariance: true) { OmitVarianceDecision = true };
+        var error = await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.DecideAsync(WorkDecisionHostV1.PurchaseInvoiceVariance,
+            Item, new("2", true, "SENTETIK onay"), "malformed-receipt", default));
+        Assert.Equal(503, error.Status);
+        Assert.Equal("ApproveVarianceAsync", Assert.Single(run.Calls).Method);
+    }
+
+    [Fact]
     public async Task Invoice_variance_purpose_forwards_only_native_approval_human_reason_and_original_receipt()
     {
         var run = new Run(invoiceVariance: true); run.Source.Pending = false;

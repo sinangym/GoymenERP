@@ -179,7 +179,9 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
             {
                 var answer = await purchaseInvoiceWorkflow.ApproveVarianceAsync(id, new(request.ExpectedVersion, request.Reason!),
                     new(key, correlation.CorrelationId, correlation.CausationId, DateTimeOffset.UtcNow), token);
-                if (answer.Invoice.Id != id || answer.Invoice.CompanyId != snapshot.CompanyId) throw new WorkDecisionException(503);
+                if (answer.Invoice.Id != id || answer.Invoice.CompanyId != snapshot.CompanyId
+                    || answer.Invoice.Status != GoymenERP.Modules.Purchasing.Domain.Invoices.PurchaseIncomingInvoiceStatus.Matched
+                    || answer.Invoice.VarianceDecision is null) throw new WorkDecisionException(503);
                 return new(snapshot.CompanyId, kind, id, answer.Invoice.Status.ToString(), answer.IsReplay, answer.OriginalCorrelationId);
             }
             catch (PurchasingServiceException error)

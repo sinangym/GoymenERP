@@ -158,11 +158,13 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
             var before = await FindIncomingInvoiceAsync(invoiceId, cancellationToken);
             if (before is null) return null;
             var invoice = before.Restore();
-            if (command == PurchaseIncomingInvoiceCommandsV1.ApproveVariance)
-                await RequireInvoiceVarianceDeciderAsync(invoice, envelope.ActorId.Trim(), cancellationToken);
+            // ApproveVariance's native callback is a pure domain transition. Preserve its version/state/reason
+            // refusals before reading the approval history; the detached aggregate has not staged any rows.
             await requireStillAuthorized(cancellationToken); await mutate(invoice, cancellationToken);
             if (invoice.Version != before.Version + 1 || !ValidInvoiceTransition(command, before.Status, invoice.Status))
                 throw new InvalidOperationException("Fatura komutu tek bir geçerli sürüm adımı yazmalıdır.");
+            if (command == PurchaseIncomingInvoiceCommandsV1.ApproveVariance)
+                await RequireInvoiceVarianceDeciderAsync(invoice, envelope.ActorId.Trim(), cancellationToken);
             Action? stageBindings = command == PurchaseIncomingInvoiceCommandsV1.Match
                 ? await PrepareIncomingInvoiceReceiptBindingsAsync(invoice, lockedOrders, cancellationToken) : null;
             var now = timeProvider.GetUtcNow(); var after = PurchaseIncomingInvoiceSnapshot.Capture(invoice);

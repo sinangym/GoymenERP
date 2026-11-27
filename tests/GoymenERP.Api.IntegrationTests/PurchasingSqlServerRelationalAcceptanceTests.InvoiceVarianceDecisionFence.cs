@@ -18,14 +18,64 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
     private const string VarianceChecker = "SENTETIK-variance-checker";
 
     [SqlServerFact]
+    public async Task Incoming_invoice_variance_recorded_without_matches_keeps_native_state_refusal_before_history_proof()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = IncomingInvoice(run);
+        await using var writer = run.Store(CompanyA);
+        var owner = (IPurchasingIncomingInvoiceStoreV1)writer.Store;
+        await owner.RecordIncomingInvoiceAsync(invoice, run.Envelope("variance-recorded-only"), Hash("variance-recorded-only"), _ => Task.CompletedTask);
+        var before = await VarianceCountsAsync(run, invoice.Id);
+        var error = await Assert.ThrowsAsync<PurchasingRuleException>(() => owner.MutateIncomingInvoiceAsync(invoice.Id,
+            PurchaseIncomingInvoiceCommandsV1.ApproveVariance, run.Envelope("variance-invalid-state", actor: VarianceChecker), Hash("variance-invalid-state"), [],
+            (value, _) => { value.ApproveVariance(1, VarianceChecker, "SENTETIK gerekçe", DateTimeOffset.UtcNow); return Task.CompletedTask; }, _ => Task.CompletedTask));
+        Assert.Equal(PurchaseIncomingInvoice.StateConflict, error.Code);
+        Assert.Empty(writer.Context.ChangeTracker.Entries());
+        Assert.Equal(before, await VarianceCountsAsync(run, invoice.Id));
+    }
+
+    [SqlServerFact]
+    public async Task Incoming_invoice_variance_stale_version_keeps_native_version_refusal_before_missing_history_proof()
+    {
+        await using var run = await Run.StartAsync();
+        var id = await PrepareNativeVarianceAsync(run);
+        await ClearVarianceOrderApprovalProofAsync(run, id);
+        var before = await VarianceCountsAsync(run, id);
+        await using var writer = run.Store(CompanyA);
+        var error = await Assert.ThrowsAsync<PurchasingVersionConflictException>(() => ((IPurchasingIncomingInvoiceStoreV1)writer.Store)
+            .MutateIncomingInvoiceAsync(id, PurchaseIncomingInvoiceCommandsV1.ApproveVariance,
+                run.Envelope("variance-stale-before-proof", actor: VarianceChecker), Hash("variance-stale-before-proof"), [],
+                (value, _) => { value.ApproveVariance(1, VarianceChecker, "SENTETIK gerekçe", DateTimeOffset.UtcNow); return Task.CompletedTask; }, _ => Task.CompletedTask));
+        Assert.Equal((1L, 2L), (error.ExpectedVersion, error.CurrentVersion));
+        Assert.Empty(writer.Context.ChangeTracker.Entries());
+        Assert.Equal(before, await VarianceCountsAsync(run, id));
+    }
+
+    [SqlServerFact]
+    public async Task Incoming_invoice_variance_already_decided_keeps_native_state_refusal_before_missing_history_proof()
+    {
+        await using var run = await Run.StartAsync();
+        var id = await RecordedNativeVarianceAsync(run);
+        await ClearVarianceOrderApprovalProofAsync(run, id);
+        var before = await VarianceCountsAsync(run, id);
+        await using var writer = run.Store(CompanyA);
+        var error = await Assert.ThrowsAsync<PurchasingRuleException>(() => ((IPurchasingIncomingInvoiceStoreV1)writer.Store)
+            .MutateIncomingInvoiceAsync(id, PurchaseIncomingInvoiceCommandsV1.ApproveVariance,
+                run.Envelope("variance-already-decided", actor: VarianceChecker), Hash("variance-already-decided"), [],
+                (value, _) => { value.ApproveVariance(3, VarianceChecker, "SENTETIK gerekçe", DateTimeOffset.UtcNow); return Task.CompletedTask; }, _ => Task.CompletedTask));
+        Assert.Equal(PurchaseIncomingInvoice.StateConflict, error.Code);
+        Assert.Empty(writer.Context.ChangeTracker.Entries());
+        Assert.Equal(before, await VarianceCountsAsync(run, id));
+    }
+
+    [SqlServerFact]
     public async Task Incoming_invoice_variance_missing_order_approval_proof_is_unavailable_without_a_decision()
     {
         await using var run = await Run.StartAsync();
         var id = await PrepareNativeVarianceAsync(run);
         var before = await VarianceCountsAsync(run, id);
         // Legacy/corruption negative, not an invented native transition: unknown actor is never an empty exclusion.
-        await run.ExecuteAsync("UPDATE purchasing.PurchaseOrders SET ApprovedBy=NULL, ApprovedAtUtc=NULL WHERE Id IN "
-            + "(SELECT OrderId FROM purchasing.InvoiceOrderBindings WHERE InvoiceId=@id)", ("@id", id));
+        await ClearVarianceOrderApprovalProofAsync(run, id);
         await using var writer = run.Store(CompanyA);
         var error = await Assert.ThrowsAsync<PurchasingServiceException>(() => ApproveNativeVarianceAsync(run,
             (IPurchasingIncomingInvoiceStoreV1)writer.Store, id, "variance-missing-proof", _ => Task.CompletedTask));
@@ -263,6 +313,11 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         (await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.IncomingInvoiceRevisions WHERE InvoiceId=@id", ("@id", id)),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.IncomingInvoiceAttempts"),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType=N'Purchasing.IncomingInvoice' AND EntityId=@id", ("@id", id.ToString("D"))));
+
+    // Legacy/corruption negative only; never a claimed native transition.
+    private static Task ClearVarianceOrderApprovalProofAsync(Run run, Guid id) => run.ExecuteAsync(
+        "UPDATE purchasing.PurchaseOrders SET ApprovedBy=NULL, ApprovedAtUtc=NULL WHERE Id IN "
+        + "(SELECT OrderId FROM purchasing.InvoiceOrderBindings WHERE InvoiceId=@id)", ("@id", id));
 
     private static AuditEventDraft VariancePendingAudit(Run run, Guid id) => new(CompanyA, "purchasing.synthetic-variance-caller.v1",
         "Purchasing.SyntheticVarianceCaller", id.ToString("D"), "prepared", null, 1, AuditActorTypes.User, run.Actor,
