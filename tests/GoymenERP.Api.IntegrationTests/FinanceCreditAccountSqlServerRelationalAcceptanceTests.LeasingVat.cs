@@ -15,7 +15,7 @@ public sealed partial class FinanceCreditAccountSqlServerRelationalAcceptanceTes
         await run.ExecuteAsync(guard);
         var input = Request();
         input = input with { Group = CreditAccountGroup.Leasing,
-            Profile = input.Profile! with { Cash = null, Leasing = new("SENTETIK lease asset", input.StartDate, input.StartDate.AddYears(2)) },
+            Profile = input.Profile! with { Cash = null, Leasing = new("SENTETIK lease asset", input.StartDate, input.StartDate.AddYears(2), ContractDate: input.StartDate) },
             Installments = [new(1, input.StartDate.AddMonths(1), "1150.000", "1000.00", "50.000", "0", "0", Vat: "100.000")] };
         CreditAccountView proposed;
         await using (var maker = run.Open(CompanyA, Maker))

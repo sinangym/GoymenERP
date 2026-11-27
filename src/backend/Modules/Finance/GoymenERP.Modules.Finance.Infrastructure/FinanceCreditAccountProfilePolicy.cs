@@ -20,8 +20,7 @@ internal static class FinanceCreditAccountProfilePolicy
         void Invalid(string field) => issues.Add(new(field, "credit_source_profile_invalid"));
         if (profile is null) { Invalid("profile"); return issues; }
         if (profile.LenderPartyId == Guid.Empty || profile.LenderCompanyPartyAccountId == Guid.Empty) Invalid("profile.lender");
-        if (profile.SourceDocument is not { } source || !Text(source.Reference, 100) || !Text(source.Revision, 100)
-            || source.DocumentDate == default) Invalid("profile.sourceDocument");
+        if (!Document(profile.SourceDocument)) Invalid("profile.sourceDocument");
         if (!Enum.IsDefined(profile.PlanNature)) Invalid("profile.planNature");
         if (new object?[] { profile.Cash, profile.NonCash, profile.InstrumentAndFactoring, profile.Leasing }.Count(x => x is not null) != 1)
             Invalid("profile");
@@ -40,6 +39,11 @@ internal static class FinanceCreditAccountProfilePolicy
                         Invalid("profile.planNature");
                     if ((cash.Kind is CreditCashKindV1.Spot or CreditCashKindV1.Installment) && cash.MaturityDate is null)
                         Invalid("profile.cash.maturityDate");
+                    if (cash.IndexCurrencyId == Guid.Empty
+                        || cash.Kind == CreditCashKindV1.ForeignCurrencyIndexed && cash.IndexCurrencyId is null)
+                        Invalid("profile.cash.indexCurrencyId");
+                    if (cash.ExportCommitmentReference is { } export && !Text(export, 200))
+                        Invalid("profile.cash.exportCommitmentReference");
                 }
                 break;
             case CreditAccountGroup.NonCash:
@@ -48,6 +52,19 @@ internal static class FinanceCreditAccountProfilePolicy
                     || nonCash.IsIndefinite != (nonCash.ExpiryDate is null)
                     || nonCash.ExpiryDate is { } expiry && expiry < request.StartDate
                     || profile.PlanNature != CreditPlanNatureV1.SourceMovements) Invalid("profile.nonCash");
+                if (profile.NonCash is { } nonCashFields)
+                {
+                    if (!Amount(nonCashFields.RiskAmount)) Invalid("profile.nonCash.riskAmount");
+                    if (nonCashFields.Commission is { } commission && (!Amount(commission.Amount)
+                        || commission.CommissionDate == default || !Document(commission.SourceDocument)
+                        || commission.Period is { } period && !Text(period, 200)))
+                        Invalid("profile.nonCash.commission");
+                    if (nonCashFields.RelatedCommercialDocumentReference is { } commercial && !Text(commercial, 200))
+                        Invalid("profile.nonCash.relatedCommercialDocumentReference");
+                    if (nonCashFields.ReturnEvidence is { } returned
+                        && (returned.ReturnedOn == default || !Document(returned.SourceDocument)))
+                        Invalid("profile.nonCash.returnEvidence");
+                }
                 break;
             case CreditAccountGroup.InstrumentAndFactoring:
                 if (profile.InstrumentAndFactoring is not { } instrument || !Enum.IsDefined(instrument.Kind)
@@ -59,10 +76,26 @@ internal static class FinanceCreditAccountProfilePolicy
                     || (instrument.Kind == CreditInstrumentKindV1.Factoring
                         ? instrument.WithRecourse is null || instrument.ReceivableDocumentReferences.Count == 0
                         : instrument.InstrumentIds.Count == 0)) Invalid("profile.instrumentAndFactoring");
+                if (profile.InstrumentAndFactoring is { } instrumentFields)
+                {
+                    if (instrumentFields.MaturityDate is not { } instrumentMaturity || instrumentMaturity < request.StartDate)
+                        Invalid("profile.instrumentAndFactoring.maturityDate");
+                    if (instrumentFields.Deductions is not { } deductions || !Amount(deductions.Interest)
+                        || !Amount(deductions.Commission) || !Amount(deductions.Bsmv))
+                        Invalid("profile.instrumentAndFactoring.deductions");
+                }
                 break;
             case CreditAccountGroup.Leasing:
                 if (profile.Leasing is not { } leasing || !Text(leasing.AssetReference, 200)
                     || leasing.LeaseStartDate == default || leasing.LeaseEndDate < leasing.LeaseStartDate) Invalid("profile.leasing");
+                if (profile.Leasing is { } leasingFields)
+                {
+                    if (leasingFields.ContractDate is null || leasingFields.ContractDate == default(DateOnly))
+                        Invalid("profile.leasing.contractDate");
+                    if (leasingFields.PurchaseOptionAmount is { } purchase && !Amount(purchase))
+                        Invalid("profile.leasing.purchaseOptionAmount");
+                    if (profile.PlanNature != CreditPlanNatureV1.Installments) Invalid("profile.planNature");
+                }
                 break;
             default: Invalid("group"); break;
         }
@@ -83,4 +116,10 @@ internal static class FinanceCreditAccountProfilePolicy
 
     private static bool Text(string? value, int maximum) => !string.IsNullOrWhiteSpace(value)
         && value == value.Trim() && value.Length <= maximum;
+
+    private static bool Document(CreditSourceDocumentV1? value) => value is not null && Text(value.Reference, 100)
+        && Text(value.Revision, 100) && value.DocumentDate != default;
+
+    private static bool Amount(string? value) => value is { Length: <= 128 }
+        && FinanceExactDecimalText.TryParseNonNegative(value, out _);
 }

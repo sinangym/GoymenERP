@@ -94,7 +94,8 @@ public sealed partial class FinanceCreditAccountTests
     {
         Profile = Profile(CreditAccountGroup.Cash) with
         {
-            Cash = new(kind, kind is CreditCashKindV1.Spot or CreditCashKindV1.Installment ? Start.AddYears(1) : null),
+            Cash = new(kind, kind is CreditCashKindV1.Spot or CreditCashKindV1.Installment ? Start.AddYears(1) : null,
+                IndexCurrencyId: kind == CreditCashKindV1.ForeignCurrencyIndexed ? Currency : null),
             PlanNature = movements ? CreditPlanNatureV1.SourceMovements : CreditPlanNatureV1.Installments
         },
         Installments = movements ? [] : Plan()

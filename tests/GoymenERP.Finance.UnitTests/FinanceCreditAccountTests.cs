@@ -671,9 +671,11 @@ public sealed partial class FinanceCreditAccountTests
         Guid.Parse("f4710000-0000-4000-8000-000000000001"), Guid.Parse("f4710000-0000-4000-8000-000000000002"),
         new("SENTETIK banka planı", Start, "1"), group == CreditAccountGroup.NonCash ? CreditPlanNatureV1.SourceMovements : CreditPlanNatureV1.Installments,
         Cash: group == CreditAccountGroup.Cash ? new(CreditCashKindV1.Installment, Start.AddYears(1)) : null,
-        NonCash: group == CreditAccountGroup.NonCash ? new(CreditNonCashKindV1.Guarantee, "SENTETIK lehtar", true, null) : null,
-        InstrumentAndFactoring: group == CreditAccountGroup.InstrumentAndFactoring ? new(CreditInstrumentKindV1.Factoring, true, [], ["SENTETIK-FAT-1"]) : null,
-        Leasing: group == CreditAccountGroup.Leasing ? new("SENTETIK varlık", Start, Start.AddYears(2)) : null);
+        NonCash: group == CreditAccountGroup.NonCash ? new(CreditNonCashKindV1.Guarantee, "SENTETIK lehtar", true, null,
+            RiskAmount: "1000.00") : null,
+        InstrumentAndFactoring: group == CreditAccountGroup.InstrumentAndFactoring ? new(CreditInstrumentKindV1.Factoring, true, [], ["SENTETIK-FAT-1"],
+            MaturityDate: Start.AddYears(1), Deductions: new("0", "0", "0")) : null,
+        Leasing: group == CreditAccountGroup.Leasing ? new("SENTETIK varlık", Start, Start.AddYears(2), ContractDate: Start) : null);
 
     private static FinanceDbContext Context()
     {

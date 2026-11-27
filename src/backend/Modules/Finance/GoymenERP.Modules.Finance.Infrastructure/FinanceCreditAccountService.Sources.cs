@@ -21,6 +21,12 @@ public sealed partial class FinanceCreditAccountService
         var profileRead = await MoneyProfileAsync(context, action, request.CurrencyId, request.StartDate, cancellationToken);
         if (profileRead.Refusal is not null) return new(profileRead.Refusal, null, null);
         var input = request.Profile!;
+        if (input.Cash?.IndexCurrencyId is { } indexCurrency
+            && await CurrencyRefusalAsync(context, action, indexCurrency, cancellationToken) is { } indexedRefusal)
+            return new(indexedRefusal with
+            {
+                Issues = indexedRefusal.Issues.Select(issue => issue with { Field = "profile.cash.indexCurrencyId" }).ToArray()
+            }, null, null);
         if (lenders is null) return new(Refused(context, CommandOutcome.Unavailable, Issue("profile.lender", "credit_lender_source_unavailable")), null, null);
         FinanceCreditLenderAnswerV1? lender;
         try { lender = await lenders.ReadAsync(context.CompanyId, input.LenderPartyId, input.LenderCompanyPartyAccountId, cancellationToken); }
