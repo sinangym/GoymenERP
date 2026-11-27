@@ -46,4 +46,8 @@ public sealed partial class AccountingStore
     internal Task SaveOwnedInvoiceLineCogsApprovalAsync(InvoiceLineCogsCorrectionStoreV1 caller, AccountingDbContext candidateDb,
         IAuditEventCollector candidateCollector, IAuditTransactionWriterV1 candidateWriter, CancellationToken token)
     { RequireOwnedInvoiceLineCogsApproval(caller, candidateDb, candidateCollector, candidateWriter); return SaveOwnedNormalApprovalAsync(token); }
+    // Root's closed shared-read relay may call this; all other Accounting commands remain no-op.
+    private Task InvoiceLineCogsApprovalReadFenceAsync(CancellationToken token) =>
+        ownedInvoiceLineCogsCaller is { } caller && IsOwnedInvoiceLineCogsApproval(caller, dbContext, auditEvents, normalApprovalAuditWriter!)
+            ? NormalApprovalFence(token) : Task.CompletedTask;
 }
