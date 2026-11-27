@@ -56,6 +56,23 @@ public static class AiRuntimeServiceCollectionExtensions
         services.AddSingleton<IAiAnswerComposerV1>(_ => new FakeAiAnswerComposer(AiModelPlacementV1.OnPremises));
         services.AddScoped<IAiGatewayV1, AiGateway>();
         services.AddScoped<AiAskService>();
+        services.AddScoped<Feedback.AiFeedbackServiceV1>(provider => new(
+            provider.GetRequiredService<IOptions<AiRuntimeOptions>>(), provider.GetService<IAiFeedbackPersistenceV1>(),
+            provider.GetRequiredService<GoymenERP.BuildingBlocks.Multitenancy.ICompanyContext>(),
+            provider.GetRequiredService<GoymenERP.BuildingBlocks.Security.ICurrentUser>(),
+            provider.GetRequiredService<GoymenERP.BuildingBlocks.Security.IErpAuthorityRevalidationService>(),
+            provider.GetRequiredService<GoymenERP.Api.Shell.IActorSessionBindingResolver>(),
+            provider.GetRequiredService<GoymenERP.BuildingBlocks.Observability.ICorrelationContext>()));
+        // Normal host registers AiKnowledge before this runtime. A standalone runtime without that
+        // owner keeps A5's existing not-measured state; it must not fabricate an empty count source.
+        if (services.Any(descriptor => descriptor.ServiceType == typeof(IAiFeedbackPersistenceV1)))
+            services.TryAddScoped<IAiAcceptanceCountSourceV1>(provider => new Feedback.AiFeedbackAcceptanceCountSourceV1(
+                provider.GetService<IAiFeedbackPersistenceV1>(),
+                provider.GetRequiredService<GoymenERP.BuildingBlocks.Multitenancy.ICompanyContext>(),
+                provider.GetRequiredService<GoymenERP.BuildingBlocks.Security.ICurrentUser>(),
+                provider.GetRequiredService<GoymenERP.BuildingBlocks.Security.IErpAuthorityRevalidationService>(),
+                provider.GetRequiredService<GoymenERP.Api.Shell.IActorSessionBindingResolver>(),
+                provider.GetRequiredService<TimeProvider>()));
         services.TryAddScoped<Answers.IAiAnswerReceiptWriterV1>(provider => new Answers.AiAnswerReceiptWriterV1(
             provider.GetService<IAiAnswerReceiptPersistenceV1>(), provider.GetRequiredService<TimeProvider>()));
         services.AddScoped<IAiOwnerToolV1>(provider => new Tools.SalesDraftSummaryAiToolV1(

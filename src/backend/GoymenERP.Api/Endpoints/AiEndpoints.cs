@@ -7,11 +7,11 @@ using GoymenERP.Api.OpenApi;
 namespace GoymenERP.Api.Endpoints;
 
 /// <summary>
-/// AI-3 READ-only runtime endpoints. Both require an authenticated user and a server company context. The
+/// AI-3 read runtime and C9 observation endpoints. All require an authenticated user and a server company context. The
 /// <c>ai.panel.use</c> capability is measured inside <see cref="AiAskService"/> (fresh) rather than by an endpoint
 /// policy so that a missing capability is recorded as an <c>ai.authz.denied</c> security event (Group E).
 /// </summary>
-public static class AiEndpoints
+public static partial class AiEndpoints
 {
     public const string AiDisabledCode = "ai_disabled";
     public const string AiToolUnavailableCode = "ai_tool_unavailable";
@@ -169,6 +169,7 @@ public static class AiEndpoints
             .ProducesErpAuthenticatedProblems()
             .ProducesErpServiceUnavailable(AiDocumentDraftsDisabledCode);
 
+        MapFeedbackEndpoints(endpoints);
         return endpoints;
     }
 
