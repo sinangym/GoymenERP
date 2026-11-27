@@ -18,8 +18,8 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         var created = await world.Service().CreateDraftAsync(Request(), Metadata("decision-create"));
-        var id = created.Draft.Id;
-        var submitted = await world.Service().SubmitDraftAsync(id, Command(created.Draft.Version), Metadata("decision-submit"));
+        var id = created.Detail.Draft.Id;
+        var submitted = await world.Service().SubmitDraftAsync(id, Command(created.Detail.Draft.Version), Metadata("decision-submit"));
         var before = (await world.Store.FindDraftAsync(id))!;
         var expected = (before.Version, before.ApprovalState, before.Approval);
         var warnings = world.Store.RiskWarnings.Count;
@@ -46,13 +46,13 @@ public sealed partial class SalesDraftServiceTests
     {
         var world = new World();
         var created = await world.Service().CreateDraftAsync(Request(), Metadata("actor-create"));
-        var submitted = await world.Service().SubmitDraftAsync(created.Draft.Id, Command(created.Draft.Version), Metadata("actor-submit"));
+        var submitted = await world.Service().SubmitDraftAsync(created.Detail.Draft.Id, Command(created.Detail.Draft.Version), Metadata("actor-submit"));
         world.Store.AfterDecisionSave = () => world.User.Id = Actor;
         var error = await Assert.ThrowsAsync<SalesDraftServiceException>(() => WithIndependentApproverAsync(world, () => approve
-            ? world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata("actor-decision"))
-            : world.Service().RejectDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version) with { Reason = "SENTETIK" }, Metadata("actor-decision"))));
+            ? world.Service().ApproveDraftAsync(created.Detail.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata("actor-decision"))
+            : world.Service().RejectDraftAsync(created.Detail.Draft.Id, Command(submitted.Detail.Draft.Version) with { Reason = "SENTETIK" }, Metadata("actor-decision"))));
         Assert.Equal(403, error.Status);
-        Assert.Equal(submitted.Detail.Draft.Version, (await world.Store.FindDraftAsync(created.Draft.Id))!.Version.ToString());
+        Assert.Equal(submitted.Detail.Draft.Version, (await world.Store.FindDraftAsync(created.Detail.Draft.Id))!.Version.ToString());
         Assert.DoesNotContain(world.Store.Transitions, x => x.Command is SalesDraftCommands.ApproveV1 or SalesDraftCommands.RejectV1);
     }
 
