@@ -1090,15 +1090,20 @@
       "candidate_tests": [
         "tests/GoymenERP.Finance.UnitTests/FinanceBankAccountIbanPurposeSourceTests.cs",
         "tests/GoymenERP.Api.IntegrationTests/WorkBankAccountIbanDecisionHostTests.cs",
-        "tests/GoymenERP.Api.IntegrationTests/FinanceBankAccountSqlServerRelationalAcceptanceTests.IbanWorkPurpose.cs"
+        "tests/GoymenERP.Api.IntegrationTests/FinanceBankAccountSqlServerRelationalAcceptanceTests.IbanWorkPurpose.cs",
+        "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs",
+        "src/frontend/goymen-erp-web/src/work/workDecisionApi.test.ts",
+        "src/frontend/goymen-erp-web/src/work/WorkDecisionPage.test.tsx",
+        "src/frontend/goymen-erp-web/src/work/WorkInbox.test.tsx",
+        "src/frontend/goymen-erp-web/src/shell/financeMountDrift.test.ts"
       ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Historical matrix permission_cell is retained as source context; current native approve permission is verified in source only. Staged backend does not prove runtime acceptance or paired UI.",
-      "source_evidence": "FNS-D128 staged owner/host8d439c452: API build0/0,7owner+25host cases passed within2051Finance/494host at4dad. ActualSQL/normalHTTP/browser/fullCI/K3 and UI/pairedpublication pending; no role/grant/Critical change."
+      "limitation": "Historical matrix permission_cell is source context, not a new role/Critical decision. Paired IBAN source is one of28 kinds, not a verified flow. Human-only eight-field GET and original four-field command remain separate; actualSQL/normalHTTP/browser/fullCI/K3 NOT_RUN.",
+      "source_evidence": "Root3dd66/agent1f9 pairs FNS-D128, Finance1.24 standalone purpose and native links:776UI PASS0skip/tsc0/lint0 at1f9. Separate late-GET/cache P2 fix e3f (root46c6) has Page306PASS0skip/tsc0/lint0 and bounded source peer closure; do not sum distinct heads. Root3dd66 API0/0 and original Finance2051PASS/1FAIL log retained; test-onlyab959 fixes the exact screen list. Rootbe282 Finance2052PASS0skip and521DecisionHost/FinanceRegistryPASS0skip (IBAN25/FinanceRegistry4 included), full integration-source warm compile. Older4dad Finance2051/host494PASS0skip stays separate. SQL NOT_RUN; no grant/activation."
     },
     {
       "flow": 37,
@@ -1840,19 +1845,29 @@
       "approver_proposal": "OPM, GM",
       "duration_cell": "2 iş günü",
       "decision_note": "KISMEN (ROL-D5).",
-      "candidate_inbox_sources": [],
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/WorkInbox/ProductWorkInboxSourcesV1.cs",
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/WorkInbox/ProductPackageStandardWorkInboxSourceV1.Decision.cs",
+        "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.ProductPackageStandard.cs"
+      ],
       "candidate_tests": [
         "tests/GoymenERP.Counterparty.UnitTests/CounterpartyProductPackageStandardCustomerSourceV1Tests.cs:23",
         "tests/GoymenERP.Counterparty.UnitTests/CounterpartyProductPackageStandardCustomerSourceV1Tests.cs:48",
         "tests/GoymenERP.Product.UnitTests/ProductPackageStandardTests.cs:238",
-        "tests/GoymenERP.Product.UnitTests/ProductPackageStandardTests.cs:239"
+        "tests/GoymenERP.Product.UnitTests/ProductPackageStandardTests.cs:239",
+        "tests/GoymenERP.Product.UnitTests/ProductWorkInboxSourcesV1Tests.PackageDecision.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkProductPackageStandardDecisionHostTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/ProductPriceListSqlServerRelationalAcceptanceTests.PackageWorkPurpose.cs",
+        "tests/GoymenERP.Api.IntegrationTests/ProductPriceListSqlServerRelationalAcceptanceTests.PackageStandardApprovalSafety.cs",
+        "tests/GoymenERP.Api.IntegrationTests/ProductPriceListSqlServerRelationalAcceptanceTests.PackageStandardPostCommitFence.cs"
       ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Staged product.package-standard-version.v1 backend source, not a paired purpose UI or accepted flow. Human effective date and native mandatory reason remain required; native version does not increment. Oversized/incomplete tables are503, never truncated approval evidence. Product purpose UI/publication and actualSQL/HTTP/browser/fullCI/K3 remain pending.",
+      "source_evidence": "Root2852361f4/agent406a48718ffcd6dee6dcc8b619935d1a59de9a9e adds exact immutable table source and private command/key/actor/company/decision/attempt/header receipt; old keys do not remap to later pending versions. Full12-file bounded peer found no concrete P0/P1/P2, notK3. Root3dd66 API0/0 and Product1161PASS0skip; separatebe282 full integration-source warm compile/521DecisionHost/FinanceRegistryPASS0skip includes23Product cases, not added to Product1161. Native6+postcommit2+purpose1 SQL Facts NOT_RUN."
     },
     {
       "flow": 64,
@@ -1877,5 +1892,5 @@
     }
   ],
   "closure": "For each flow verify real inbox listing, owner decision, company/scope, maker-checker exceptions, expected version, replay and audit. Do not replace owner rules with proposal cells.",
-  "source_extension": "27 paired WP8 source kinds plus1 staged IBAN backend; Finance2051 and DecisionHost494PASS0skip at4dad. All64 actual SQL/HTTP/browser/CI/K3 acceptances remain NOT_RUN; UI pairing pending."
+  "source_extension": "Atbe282c2df actual source enumerations contain29 native Work kinds and28 paired frontend kinds including IBAN; Product package-standard backend remains staged without its purpose UI/publication. verified_runtime_flows stays0; all64 actualSQL/HTTP/browser/CI/K3 acceptances remain NOT_RUN. Exact-head evidence and limitations are recorded onflows36/63."
 }

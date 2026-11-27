@@ -2090,7 +2090,9 @@
         "Work management mounts existing rules and follow-up sections plus WP3 create/revoke UI; separate management permission is not assigned.",
         "Cash owner gained an optional post-flush/pre-commit fence in the existing transaction helper; existing native command receipts remain authoritative.",
         "64-flow acceptance, remaining owner adapters and rule editing are not complete.",
-        "Sales invoice/order native commands and terminal decision metadata connected; approve-only purpose read avoids adding DraftsRead. Invoice command also requires existing price-read authority. Optional native reject reasons retained."
+        "Sales invoice/order native commands and terminal decision metadata connected; approve-only purpose read avoids adding DraftsRead. Invoice command also requires existing price-read authority. Optional native reject reasons retained.",
+        "At be282c2df native Work kinds contain29 and paired frontend kinds28, including FNS-D128 IBAN. Product package-standard is the remaining staged backend kind, without its purpose UI/publication; neither count is64-flow runtime acceptance.",
+        "Product package-standard purpose uses the immutable native table version, human effective date and required native reason; approval/rejection does not increment that version. Exact command/key/actor/company/receipt binds original replay, not a later pending table."
       ],
       "decisions": [
         "YOL-D41",
@@ -2115,7 +2117,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Verify paired native measured-return UI and provider1.16, complete remaining owner adapters and64-flow actual acceptance. B2 grounded sales summary is scoped-tested, recommendations and other families remain closed.",
+      "next_action": "Pair the staged Product package-standard human date/reason UI and complete remaining owner adapters/64-flow actual SQL/HTTP/browser acceptance. B2 recommendations and other unsupported families remain closed.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2234,7 +2236,7 @@
         "activation": "No grants/flags/provider changes"
       },
       "execution": {
-        "source_commit": "4df90f171e986c7452a30932cee8e7855d5bc4f8",
+        "source_commit": "be282c2dfaef532cc1e2605bde8848323993e79f",
         "implemented_kinds": [
           "inventory.opening-cost.v1",
           "finance.cash-account.v1",
@@ -2262,7 +2264,8 @@
           "inventory.stock-scrap.v1",
           "logistics.dispatch-note.v1",
           "logistics.customer-return.v1",
-          "finance.manual-bank-payment.v1"
+          "finance.manual-bank-payment.v1",
+          "finance.bank-account-iban-change.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -2294,7 +2297,9 @@
           "API compile failure at022f72782": "Integration assembly failed CS0246: missing Security using for ICurrentUser in new bank SQL fixture. Test-only import00b72c031 corrects namespace; API host tests NOT_RUN in failed batch; rerun pending. Native assertions unchanged, failure log retained. Second00b72 compilation found wrong AuditAiInvolvement namespace/missing Audit.Persistence using.6f901 test-only references corrected both;135selected API passed. All original failure logs retained.",
           "Inventory failed attempts retained": "62d run stopped on ambiguous JsonSerializerOptions overload;40fe test-only explicit options corrected it. Subsequent2301pass/1fail Count source fixture tried reassigning immutable resolved CompanyContext;1c2f fixes request-vs-server scope and adds Denied assertion, full2302 passed.6f72 full2321pass/1fail Scrap fixture hit same setup error; c170 same request-scope correction, full2322 passed. No production guards or existing assertions weakened; original logs retained.",
           "Product native package-standard safety": "1158/1158PASS0skip at65c518e6f9e8cfdbf37ee3b78148cabea9da18ce after native restore; first no-assets exit0 was NOT_RUN. ProductInfrastructure/integration-source warm builds0/0;6SQLsourceFacts compiled, not executed.",
-          "Latest Work host regression": "494/494PASS0skip at4dadc4db182937517395af902633fbab0b96b3b7, including25newIBAN decision cases. Full API build0/0; complete integration sources compiled. Controlled host tests are not normal HTTP/browser, actual SQL or full CI/K3."
+          "Latest Work host regression": "494/494PASS0skip at4dadc4db182937517395af902633fbab0b96b3b7, including25newIBAN decision cases. Full API build0/0; complete integration sources compiled. Controlled host tests are not normal HTTP/browser, actual SQL or full CI/K3.",
+          "IBAN/Product source candidate at3dd66": "API build0errors/0warnings and Product1161/1161PASS0skip at3dd66ab9d8209ba93104c878be931e387e522bcb. Original Finance2051PASS/1FAIL log retained: exact expected screen-ID list omitted the new purpose. Test-onlyab959 fixes the list; atbe282c2dfaef532cc1e2605bde8848323993e79f Finance2052/2052PASS0skip14.48s and complete integration-source warm compile plus521/521DecisionHost/FinanceRegistryPASS0skip67.70s (Product23/IBAN25/FinanceRegistry4 included). Earlier4dad Finance2051/host494 evidence remains separate. SQL NOT_RUN.",
+          "IBAN frontend and subsequent P2 fix": "Agent1f9c7fb81629e55f91df538e2f3e319a45b619ac:776PASS0skip, fulltsc0/scopedlint0. Separate late-GET/cache P2 fix e3f215e724dfd8678f58f0b2c431d2f0d5578c88 (root46c6b06c4):complete Page306PASS0skip45.56s, fulltsc0/49.01s,2filelint0errors0warnings; root parsed terminal metadata. Bounded delta peer source-closed P2. Do not sum these distinct heads or call them actual browser/HTTP/SQL/CI acceptance."
         },
         "reuse": [
           "existing FinanceCashAccountService commands and durable receipts",
@@ -3072,6 +3077,31 @@
             "remaining": [
               "Actual SQL execution and final CI/K3; no actual Identity or simultaneous race claim"
             ]
+          },
+          {
+            "source_commit": "3dd66ab9d8209ba93104c878be931e387e522bcb",
+            "agent_source_commit": "1f9c7fb81629e55f91df538e2f3e319a45b619ac",
+            "scope": "FNS-D128 paired approve-only IBAN purpose, Finance1.24 standalone company-wide capability and private eight-field human GET. Raw old/new IBAN, legal name and preparation reason stay out of the four-field command/journal/URL/AI. Native bank browse and permissions are unchanged.",
+            "local_checks": "Agent1f9:776PASS0skip/fulltsc0/lint0; separatee3f Page306PASS0skip/tsc0/lint0. Root3dd66:API0/0 and Product1161PASS0skip; original Finance2051PASS/1FAIL log retained. Afterab959 exact screen-list-only fix, rootbe282 Finance2052PASS0skip and DecisionHost/FinanceRegistry521PASS0skip with full integration-source warm compile. These results are not actual SQL/HTTP/browser/CI/K3.",
+            "review": "Full19-file nonauthor delta peer, then separate P2 late-GET/cache finding. e3f215e724dfd8678f58f0b2c431d2f0d5578c88 (root46c6b06c4) adds an IBAN-only render fence and deterministic deferred-GET regression; separate two-file peer source-closed the P2. Separate e3f complete Page306PASS0skip45.56s/tsc0/lint0 verified by root; not summed with776 at1f9 and not actual browser acceptance.",
+            "remaining": [
+              "Actual SQL/HTTP/browser/pins/fullCI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null
+          },
+          {
+            "source_commit": "2852361f4",
+            "agent_source_commit": "406a48718ffcd6dee6dcc8b619935d1a59de9a9e",
+            "scope": "Staged product.package-standard-version.v1 native purpose: exact immutable table with full entry counts (over-bound or incomplete read503), human effective date and mandatory native4000 reason; version unchanged. Guarded owner emits private original decision/attempt/header proof; old key never remaps to a later pending table. No Product purpose UI/capability publication or activation.",
+            "local_checks": "API0/0 and Product1161PASS0skip at3dd66. Separate rootbe282 full integration-source warm compile and521DecisionHost/FinanceRegistryPASS0skip include23Product package purpose cases; they are not added to Product1161. New native SQL purpose Fact is NOT_RUN; previous native six SQL Facts and two post-commit fence Facts remain NOT_RUN.",
+            "review": "Complete12-file489+/14- delta and native Save/replay/guard/DI/Audit chain read by nonauthor, no concrete open P0/P1/P2. Reviewer previously authored guard SQL tests; this bounded purpose peer is not full K3.",
+            "remaining": [
+              "Paired Product purpose UI/publication with explicit human effective date and reason",
+              "Large-table boundary verification and actual SQL/HTTP/browser/pins/fullCI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null
           }
         ],
         "source_commits": [
@@ -3203,11 +3233,15 @@
           "bcf457bbd",
           "bf4dee5a0",
           "8d439c452",
-          "3086ca656"
+          "3086ca656",
+          "2852361f4",
+          "3dd66ab9d8209ba93104c878be931e387e522bcb",
+          "46c6b06c4",
+          "ab9596fa19d80241e7cf62cd4514cdfbdb7644c3"
         ],
-        "kind_count_scope": "27 paired source kinds plus1 staged IBAN backend; not28 accepted flows. All64 SQL/HTTP/browser/fullCI/twoK3 acceptance remains open.",
+        "kind_count_scope": "28 paired source kinds including IBAN plus1 staged Product package-standard backend (29 native kinds/28 frontend kinds atbe282c2df). All64 runtime flows remain NOT_VERIFIED/NOT_RUN; source pairing is not acceptance.",
         "staged_kinds": [
-          "finance.bank-account-iban-change.v1"
+          "product.package-standard-version.v1"
         ]
       }
     },
