@@ -24,7 +24,7 @@ public sealed partial class AccountingJournalReversalServiceV1 : IAccountingJour
                 return Denied<AccountingJournalReversalDecisionDetailV1>();
             var view = View(source.Proposal);
             return new(AccountingApiStatus.Ok, new(view, JournalReversalSourceFactsDigest(view), JournalReversalPreviewDigest(view))
-                { CancellationSourceActorId = source.CancellationSourceActorId }, false, null);
+                { CancellationSourceActorId = source.CancellationSourceActorId, CancellationSourceActorProofEstablished = true }, false, null);
         }
         catch (AccountingJournalReversalAuthorityDeniedException) { return Denied<AccountingJournalReversalDecisionDetailV1>(); }
         async Task ReadFence(CancellationToken token)

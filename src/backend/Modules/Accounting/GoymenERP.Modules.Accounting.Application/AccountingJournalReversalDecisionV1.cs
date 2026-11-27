@@ -13,6 +13,7 @@ public sealed record AccountingJournalReversalDecisionDetailV1(AccountingJournal
     string SourceFactsDigest, string PreviewDigest)
 {
     [JsonIgnore] public Guid? CancellationSourceActorId { get; init; }
+    [JsonIgnore] public bool CancellationSourceActorProofEstablished { get; init; }
 }
 public sealed record AccountingJournalReversalApprovalReceiptV1(Guid CompanyId, Guid ProposalId, Guid SourceJournalId,
     Guid ReversalJournalId, Guid PeriodId, string CommandName, string IdempotencyKeyHash, string PayloadHash,

@@ -122,6 +122,10 @@ public sealed partial class AccountingJournalReversalLifecycleV1Tests
             new FixedUser(Checker), new FixedCorrelation(), new FixedTimeProvider(Now));
         var answer = await service.ReadDecisionAsync(Proposal, _ => Task.CompletedTask);
         Assert.Equal(AccountingApiStatus.Ok, answer.Status); Assert.Equal(DecisionView(Pending()), answer.Resource!.Proposal);
+        Assert.True(answer.Resource.CancellationSourceActorProofEstablished); Assert.Null(answer.Resource.CancellationSourceActorId);
+        var json = JsonSerializer.SerializeToElement(answer.Resource, ReversalJson);
+        Assert.Equal(3, json.EnumerateObject().Count()); Assert.False(json.TryGetProperty("cancellationSourceActorProofEstablished", out _));
+        Assert.False(json.TryGetProperty("cancellationSourceActorId", out _));
         Assert.Equal(AccountingJournalReversalServiceV1.JournalReversalSourceFactsDigest(answer.Resource.Proposal), answer.Resource.SourceFactsDigest);
         Assert.Equal(0, port.Writes);
     }
