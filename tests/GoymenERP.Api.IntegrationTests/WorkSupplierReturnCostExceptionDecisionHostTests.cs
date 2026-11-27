@@ -128,7 +128,7 @@ public sealed class WorkSupplierReturnCostExceptionDecisionHostTests
         using var legacy=JsonDocument.Parse(JsonSerializer.Serialize(new WorkDecisionRequestV1("1",true,null),options));Assert.Equal(4,legacy.RootElement.EnumerateObject().Count());
         Assert.DoesNotContain("supplierReturnCostException",JsonSerializer.Serialize(new WorkDecisionPreviewV1(Company,WorkDecisionHostV1.OpeningCost,Id,"SENTETIK","1",true,true,[],[]),options));
         Assert.DoesNotContain("supplierReturnCostExceptionProof",JsonSerializer.Serialize(await run.Source.ReadDecisionAsync(new(Company,Actor,"SENTETIK",null),Id,default),options));
-        var cap=Assert.Single(new PurchasingShellCapabilityProvider().GetDeclarations().Where(c=>c.CapabilityId==PurchasingShellCapabilityProvider.SupplierReturnWorkDecisionCapabilityId));
+        var cap=Assert.Single(new PurchasingShellCapabilityProvider().GetDeclarations(), c=>c.CapabilityId==PurchasingShellCapabilityProvider.SupplierReturnWorkDecisionCapabilityId);
         Assert.False(cap.ImplementationAvailable);Assert.Null(cap.ParentCapabilityId);Assert.Equal([PurchasingPermissionManifestV1.OrdersApprove],cap.RequiredPermissions);
     }
 
