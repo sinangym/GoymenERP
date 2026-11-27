@@ -72,7 +72,7 @@ Bu bölüm başlangıç anıdır; güncel teslim ve kalan kabul kanıtları aşa
 | T2/WP-C5 | P1 / K2 | SOURCE_REVIEW_REQUIRED | — |
 | T2/WP-C7 | P1 / K2 | SOURCE_REVIEW_REQUIRED | — |
 | T2/WP-C8 | P1 / K2 | SOURCE_REVIEW_REQUIRED | — |
-| T2/WP-C9 | P1 / K3 | CONTRACT_REQUIRED | T2/WP-B2 |
+| T2/WP-C9 | P1 / K3 | SOURCE_PARTIALLY_IMPLEMENTED_LOCAL | T2/WP-B2 |
 | T2/YOL-D40 | P1 / K3 | SOURCE_PARTIALLY_IMPLEMENTED_LOCAL | T2/WP8 |
 | T2/CREDIT-GROUPS | P1 / K3 | SOURCE_REVIEW_REQUIRED | — |
 | T2/SMALL-GAPS | P1 / K3 | SOURCE_PARTIALLY_IMPLEMENTED_LOCAL | — |
@@ -231,3 +231,7 @@ Birleşik `5b07aacf3` üretim API derlemesi **0 hata/0 uyarı**, 3:34.88; native
 B4 ilk dar artım `d880932f3`: tek satır marjı mevcut Sales owner hesap izinden alınır; yeni hesaplayıcı/rapor motoru yok. 38 kaynak vaka, doğrulama sırada; shipped catalog/pin/allowlist açılmadı. `e7f2a5b3e` yalnız kaynaklı ERP cevapta opsiyonel gerçek AnswerId alanını strict frontend decoder’a ekler; kimlik üretmez/geri bildirim açmaz, henüz koşmadı. WP8 ilk purpose derlemesi CS1931 alias çakışmasında durdu; davranışsız `5566cd003` düzeltmesi ayrı commit, hata logu korunur, retry sürer.
 
 B2 çıktı makbuzu `97a6f7bfd`/`dbfe2e165`/`2d3bc700f`/`8459de355`/`c87076199`: başarılı kaynaklı cevap için gerçek AnswerId, kimlik ayrı ve K10/90gün; içerik/ham citation saklanmaz, silme açılmaz. Commit sonrası yeni await’in yetki boşluğu P1 düzeltildi, cevabın yayımlanması ayrıca yeniden denetlenir; makbuz teslim kanıtı değildir. EF migration yalnız2tablo, Down52312; altı gerçek SQL kaynağı NOT_RUN. Agent9f kaynakta integration assembly derlendi, model/adapter10/10 skip0; birleşik Ask/B4/B1 kabulü bekler; B2 özeti/C9 olayları tamamlanmış değildir. Root8459 arayüzü105/105, tsc/lint0; bağımlılık eksikliğindeki ilk koşum test sayılmadı. B1 üçüncü exact Sales bağlamı `3fafd15c1`/`d1e6ef6b8` mevcut detay servisini kullanır; 41 test kaynağı henüz koşmadı, shippedpin kapalı. İrsaliye backend216+23 skip0, staged UI `4cb71878b` LF/CR sınırları düzeltilmiş ve kaynak incelemeli; Node kabulü ve paired publication sırada. 41paket/50referans korunur.
+
+27 Kasım C9/Work devamı: AI-D51/D52 doğrudan cevapları kaynakta uygulandı. C9 append-only olay/ayrı kimlik, CAS/özgün replay ve gerçek A5 sayım kaynağı mevcut AiKnowledge/receipt altyapısıyla bağlandı; EF iki tablo, Down52313. Agent22e üzerinde **41/41** seçili test geçti (skip0), API derlemesi0hata/0uyarı; 11 SQL kaynağı derlendi, gerçek SQL **NOT_RUN**. Root033 API/kompozisyon doğrulaması sürer; C9 arayüzü ffeb/6d kaynakta bağlı, yeni Node kontrolü bekler.
+
+İrsaliye eşli yayımı e0eda ile **25 kaynak türü**; müşteri iadesi 4efea/c1e21/805b ile staged26ıncı backend, capability=false. Bunlar64 akışın kabulü değildir. Önceki cb8 birleşik arayüz800/800, warning-only f757 mount7/7 ve TypeScript/lint0; C9 veya sonraki iade kodunun kanıtı sayılmaz. Native iade işlem/audit/yetki güvenliği ve minimum olay tarihi aralık uyumu düzeltildi. Adet→kg hatasını önleyen476ddb guardı korunur. Sinan **LOJ-D22** ile gerçek adet+fiilî net tartım/kanıtını onayladı; tartım eksikse Pending, kesin stok girişi yok. Mevcut kantar/Inventory bağlantısı sıradadır; yeni oran/tolerans seçilmedi. Gerçek SQL/HTTP/tarayıcı, pin/tamCI ve iki exact-head K3 hâlâ bekler.

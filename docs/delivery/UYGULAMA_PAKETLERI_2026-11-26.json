@@ -1494,11 +1494,14 @@
       ],
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
-        "Mevcut V2 completion read portu ve teslim ekranı var; iki yönün tam kullanıcı zinciri ayrıca kabul bekler."
+        "Mevcut V2 completion read portu ve teslim ekranı var; iki yönün tam kullanıcı zinciri ayrıca kabul bekler.",
+        "Targeted native customer-return inspection found Piece quantity passed to Inventory as QuantityKg without unit/piece provenance (LogisticsCustomerReturnService -> runtime.Stage). Existing Piece/unit approval is not accepted; a native fail-closed guard and real owner kg/piece binding are required, with actual movement/replay negative proof. Do not compute a replacement conversion in Work/UI.",
+        "LOJ-D22 is directly approved: actual returned pieces and measured netkg with weighing proof, theoretical weight comparison only. Missing weighing remains Pending with no final stock entry; current native guard prevents Piece becoming kilograms. Existing weighing/unit ports must be reused; actual binding acceptance pending."
       ],
       "decisions": [
         "URT-D15",
-        "URT-D17"
+        "URT-D17",
+        "LOJ-D22"
       ],
       "depends_on": [],
       "open_decisions": [],
@@ -1510,14 +1513,16 @@
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
         "K3 mutation/migration: gerçek SQL; ilgili UI: gerçek owner API ile tarayıcı ve erişim iptali.",
-        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
+        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı.",
+        "Customer return in Piece must never interpret one piece as one kilogram. Native owner kg/piece source binding, unused/partial quantities and original replay must preserve a single actual Inventory compensation; temporary Unavailable is not full first-use acceptance.",
+        "LOJ-D22: immutable company-bound return weighing evidence supplies actual netkg and pieces; no source-dispatch ratio; missing/stale/foreign evidence leaves Pending without a stock movement. Native repeat keeps one compensation and separate invoice/cost/Finance effects."
       ],
       "business_acceptance": [
         "Müşteri malı şirketin mali stoğuna girmez; giden mal lokasyonda izlenir; kısmi dönüş/hizmet faturası ve iade tekil."
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "Implement approved LOJ-D22 native weighing/piece source binding using existing owner ports and add real SQL/replay/negative acceptance; no invented conversion or tolerance.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2012,7 +2017,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Verify latest paired publication and remaining owner adapters.24 paired source kinds do not close64-flow actual SQL/HTTP/browser/CI/K3 acceptance.",
+      "next_action": "Complete staged customer-return paired UI and LOJ-D22 native measured kg/piece binding; verify latest publication and remaining owner adapters.25 paired source kinds do not close64-flow actual acceptance.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2140,7 +2145,8 @@
           "purchasing.supplier-return-cost-exception.v1",
           "inventory.stock-count.v1",
           "finance.bank-account.v1",
-          "inventory.stock-scrap.v1"
+          "inventory.stock-scrap.v1",
+          "logistics.dispatch-note.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -2840,6 +2846,22 @@
             ],
             "new_permissions": [],
             "migration": null
+          },
+          {
+            "source_commits": [
+              "e0eda816f",
+              "cb8d0e399",
+              "476ddb697",
+              "4efea2883",
+              "c1e21fb00",
+              "805b4430a"
+            ],
+            "scope": "Dispatch paired publication; native customer-return owned clean transaction/audit/authority fences, proven original receipt, Work15-field human preview and staged provider1.13false. Minimum supplied occurrence date preserves native range. Piece approval remains unavailable until real measured kg+piece binding under LOJ-D22.",
+            "local_checks": "Dispatch+AI frontend800/800 atcb8d0e399; warning-onlyf757 delta mount7/7+tsc/lint0; newer C9/customer-return source not covered. Root033 combined API/normal tests RUNNING, not PASS.",
+            "remaining": [
+              "CustomerReturn paired UI and real measured Piece binding",
+              "SQL/HTTP/browser/pins/fullCI/twoK3"
+            ]
           }
         ],
         "source_commits": [
@@ -2956,9 +2978,9 @@
           "b70ad2cb6",
           "4cb71878b"
         ],
-        "kind_count_scope": "24 paired source kinds +1 staged dispatch backend; not25 accepted flows. All64 runtime/native SQL/HTTP/browser/CI/K3 acceptance remains open.",
+        "kind_count_scope": "25 paired source kinds +1 staged customer-return backend; not26 accepted flows. All64 actual SQL/HTTP/browser/CI/K3 acceptance remains open.",
         "staged_kinds": [
-          "logistics.dispatch-note.v1"
+          "logistics.customer-return.v1"
         ]
       }
     },
@@ -3818,7 +3840,7 @@
       "backlog_parent": "W5-AIGATEWAY",
       "title": "Geri bildirim defteri",
       "group": "TREN2",
-      "status": "CONTRACT_REQUIRED",
+      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P1",
       "risk": "K3",
       "scope": "Kabul/düzeltme/ret/sonradan geri alma; otomatik politika öneri/yayımı yok.",
@@ -3842,7 +3864,8 @@
         "Ask/Gateway/B3 results lack a durable answer/proposal ID. C1 PreviewId/hash exists but is not user feedback or proof of a financial undo; correlation/document SHA is not an answer identity.",
         "SINAN_KARARLARI_2026-10-21.md K10/No159 fixes separate feedback/question-answer retention at90 days, RetainUntil at creation and legal hold precedence. Personal memory1year and record notes are distinct families.",
         "B2 real immutable answer-receipt dependency is now source implemented97a6/dbfe/2d3/c870; model/SQL/runtime acceptance pending. C9 event writer, closed reason codes and A5 measured counts are still absent; budget IDs are not answer proof.",
-        "Sinan directly approved AI-D51 closed reason list/no free text and AI-D52 one latest month-end category per answer plus separate unreviewed answers. Feedback never changes business rules or reverses ERP commands; implementation in progress, no measured-count source yet."
+        "Sinan directly approved AI-D51 closed reason list/no free text and AI-D52 one latest month-end category per answer plus separate unreviewed answers. Feedback never changes business rules or reverses ERP commands; implementation in progress, no measured-count source yet.",
+        "C9 source5963901/e396/dcb24 and EF22e935 now provide append-only receipt-bound feedback, separate identity, CAS/replay, approved fixed reasons and actual A5 last-state counts. Root03328 wires strict GET/POST; frontendf3ed/d34 isolates route generations and freezes original retry. This supersedes the earlier absent-source notes; actual SQL/HTTP/browser/CI/K3 remain NOT_RUN."
       ],
       "decisions": [
         "AI-D12",
@@ -3870,7 +3893,7 @@
       ],
       "migration_owner": "AI owner single writer; separate feedback persistence with K10/No159 retention, never reuse immutable CommandEvents or Work notes as feedback storage. Actual schema/contract needs normal K3 review.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "First establish a server-verifiable answer/proposal receipt via the existing B2 dependency; then link native feedback and A5 counts. Missing source identity remains unavailable, not fabricated measured data. K10 already answers 90-day retention; do not ask again.",
+      "next_action": "Verify integrated C9 UI/runtime and actual SQL history/count/cleanup/Down/replay. Keep flags closed, preserve90-day separate retention and unreviewed cohort; no automatic ERP undo or rule change.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -3879,7 +3902,41 @@
         "tests/GoymenERP.Api.IntegrationTests/AiKnowledgeApprovalTests.cs",
         "tests/GoymenERP.Work.UnitTests/WorkCollaborationServiceTests.Wp9.cs"
       ],
-      "change_files": []
+      "change_files": [],
+      "execution": {
+        "source_commits": [
+          "5963901b9410ae80f0acb05fd7c40004cbe050c3",
+          "e396920d244b04a6cd3cc173be7bcd96a81ac804",
+          "dcb24fbd2d7b8ef575cf6dcf61bfa7d99d501271",
+          "22e93502ca0eedfe6f1d921670f1736a86a3ab19",
+          "03328b9baaba8889d5e9dd4902e24b26db5e15f6",
+          "ffeb3707d7ffa3b4eec165aa746b9db2b727e7ba",
+          "6d255ed2bba7ca4901843c34917be323766709bf"
+        ],
+        "local_checks": {
+          "source": "22e93502ca0eedfe6f1d921670f1736a86a3ab19",
+          "api_build": "PASS0errors0warnings204.5s",
+          "ef_generation": "PASS EF10.0.8; root Designer/snapshot body equality checked",
+          "selected_tests": "41/41 PASS0skip (Feedback28+Receipt10+Ledger3); integration assembly compiled",
+          "combined_root_runtime": "RUNNING at03328; not acceptance",
+          "frontend": "NOT_RUN for C9 UI"
+        },
+        "reuse": [
+          "AiKnowledge existing receipt/context/filter/EF",
+          "existing actor-session/fresh authority fence",
+          "existing A5 source port and business-month/timezone",
+          "useScopedCommandAttempt and strict shared decoder patterns"
+        ],
+        "measurement_semantics": "Answers created in the requested business month form the displayed cohort; each has its latest state at exclusive next-month boundary (or now for current month), including Unreviewed. Older cohorts outside90 days are unavailable rather than fake0. This is an explicit implementation interpretation, not a new retention policy.",
+        "migration": "20261127084023_AddAiAnswerFeedback;2tables;Down52313 before destructive operations; no purge activation",
+        "sql": "11 source facts compiled; actual SQL NOT_RUN",
+        "http": "Strict transport/metadata source tests authored; normal-host pin closure and actual HTTP NOT_RUN",
+        "browser": "NOT_RUN",
+        "hosted_ci": "NOT_RUN",
+        "independent_review": "Bounded nonauthor source reviews only; train two exact-head K3 pending",
+        "new_permissions": [],
+        "activation": "Ai Enabled/allowlist/provider/grants unchanged and closed"
+      }
     },
     {
       "id": "T2/YOL-D40",
