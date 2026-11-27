@@ -17,9 +17,9 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.WorkInbox;
 /// (YOL-D23). The approve command accepts only a company-wide grant (D11: no scoped approver).
 /// </para>
 /// </summary>
-internal sealed class AccountingNormalJournalDraftWorkInboxSourceV1(
+internal sealed partial class AccountingNormalJournalDraftWorkInboxSourceV1(
     AccountingDbContext dbContext,
-    AccountingWorkInboxFence fence) : IWorkInboxSourceV1
+    AccountingWorkInboxFence fence, INormalJournalDraftDecisionReadV1? owner = null) : IWorkInboxSourceV1
 {
     public const string ModuleName = "accounting";
     public const string KindName = "accounting.normal-journal-draft.v1";
