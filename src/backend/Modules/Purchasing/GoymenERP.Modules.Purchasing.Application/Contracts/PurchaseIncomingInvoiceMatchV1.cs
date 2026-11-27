@@ -18,6 +18,22 @@ public sealed record PurchaseIncomingInvoiceMatchSourceV1(IReadOnlyList<Purchase
 /// Actual Purchasing receipts and prices plus versioned Settings facts are read; no client-supplied expected amounts.</summary>
 public interface IPurchaseIncomingInvoiceMatchSourceV1
 {
+    /// <summary>Internal extension boundary; no existing command/wire/hash changes. Only wholly ordered,
+    /// valid selections can reach the old PO price/receipt matcher. Unordered sources require a real
+    /// persistent acceptance AND commercial bridge; even valid operational facts cannot be downgraded to a PO.</summary>
+    Task<PurchaseIncomingInvoiceMatchSourceV1> ReadAcceptanceVariantsAsync(PurchaseIncomingInvoice invoice,
+        IReadOnlyList<PurchaseInvoiceAcceptanceSelectionV1> selected, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (selected is null || selected.Count == 0 || selected.Any(item =>
+                item is not PurchaseInvoiceOrderedAcceptanceSelectionV1 || !PurchaseInvoiceAcceptanceSelectionContractV1.IsValid(item))
+            || selected.Select(item => item.AcceptanceId).Distinct().Count() != selected.Count)
+            throw new PurchasingServiceException(503, "service_unavailable");
+        return ReadWithAdditionalCostsAsync(invoice, selected.Cast<PurchaseInvoiceOrderedAcceptanceSelectionV1>()
+            .Select(item => new PurchaseInvoiceReceiptSelectionV1(item.InvoiceLineId, item.PurchaseOrderId, item.AcceptanceId, item.Quantity))
+            .ToArray(), [], cancellationToken);
+    }
+
     Task<PurchaseIncomingInvoiceMatchSourceV1> ReadAsync(PurchaseIncomingInvoice invoice,
         IReadOnlyList<PurchaseInvoiceReceiptSelectionV1> selected, CancellationToken cancellationToken = default);
     Task<PurchaseIncomingInvoiceMatchSourceV1> ReadWithAdditionalCostsAsync(PurchaseIncomingInvoice invoice,
