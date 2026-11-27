@@ -49,6 +49,11 @@ public static class PurchasingModuleExtensions
         });
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<PurchasingStore>();
+        services.AddScoped<PurchaseUnorderedAcceptanceStoreV1>();
+        services.AddScoped<IPurchaseUnorderedAcceptanceStoreV1>(sp => sp.GetRequiredService<PurchaseUnorderedAcceptanceStoreV1>());
+        services.AddScoped<IPurchaseUnorderedAcceptanceSourceV1>(sp => sp.GetRequiredService<PurchaseUnorderedAcceptanceStoreV1>());
+        services.AddScoped<IPurchaseUnorderedAcceptanceServiceV1, PurchaseUnorderedAcceptanceServiceV1>();
+        // Actual NOPO exception/master/document prerequisite adapter is deliberately NOT substituted with a permissive fallback.
         services.AddScoped<PurchaseServiceOrderStoreV1>();
         services.AddScoped<IPurchaseServiceOrderStoreV1>(sp => sp.GetRequiredService<PurchaseServiceOrderStoreV1>());
         services.AddScoped<IPurchaseSubcontractOrderReadPortV1>(sp => sp.GetRequiredService<PurchaseServiceOrderStoreV1>());

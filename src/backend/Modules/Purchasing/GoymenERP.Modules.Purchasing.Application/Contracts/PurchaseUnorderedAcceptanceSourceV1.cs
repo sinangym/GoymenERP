@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 
 /// <summary>ALS-D130: an actual, company-owned document line, not a fabricated purchase order.
@@ -5,6 +7,9 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 public sealed record PurchaseAcceptanceDocumentEvidenceV1(Guid DocumentId, long DocumentVersion,
     string Sha256, string SourceLineId);
 
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+[JsonDerivedType(typeof(PurchaseUnorderedGoodsSubjectV1), "Goods")]
+[JsonDerivedType(typeof(PurchaseUnorderedServiceSubjectV1), "Service")]
 public abstract record PurchaseUnorderedAcceptanceSubjectV1;
 public sealed record PurchaseUnorderedGoodsSubjectV1(Guid ProductId, string ProductVersion)
     : PurchaseUnorderedAcceptanceSubjectV1;
@@ -25,7 +30,7 @@ public sealed record PurchaseUnorderedAcceptanceSourceAnswerV1(PurchaseUnordered
     PurchaseUnorderedAcceptanceSourceV1? Source);
 
 /// <summary>Trusted server company, exact acceptance/line. Missing and foreign sources are indistinguishable
-/// NotFound. No persistent owner is registered by this contract increment: its absence is Unavailable.
+/// NotFound. An absent persistent owner is Unavailable.
 /// Called under the consumer's current company/actor/permission fence. A future matching consumer must
 /// additionally serialize the actual acceptance share and retain its evidence; this read is not a reservation.</summary>
 public interface IPurchaseUnorderedAcceptanceSourceV1

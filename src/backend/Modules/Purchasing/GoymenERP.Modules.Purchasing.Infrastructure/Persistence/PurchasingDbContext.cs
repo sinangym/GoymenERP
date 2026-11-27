@@ -249,6 +249,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
         ConfigureInvoiceImports(modelBuilder);
         ConfigureServiceOrders(modelBuilder);
         ConfigureAdditionalCosts(modelBuilder);
+        ConfigureUnorderedAcceptances(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -919,6 +920,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
         GuardIncomingInvoiceSnapshots();
         GuardServiceOrders();
         GuardAdditionalCosts();
+        GuardUnorderedAcceptances();
         foreach (var entry in ChangeTracker.Entries<IPurchasingTenantRow>())
         {
             if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
