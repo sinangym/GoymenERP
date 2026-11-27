@@ -1,0 +1,15 @@
+export const WORK_CATALOG_TEXT = {
+  title: 'Etkinleştirilecek muhasebe kaynak paketi', packageId: 'Paket kaydı', companyId: 'Şirket', status: 'Durum', version: 'Paket sürümü',
+  catalogVersion: 'Katalog sürümü', expectedActiveVersion: 'Görülen etkin katalog sürümü', template: 'Paket şablonu', plan: 'Hesap planı kaynak sürümü',
+  accountsHash: 'Hesap dosyası SHA-256', mappingsHash: 'Eşleme dosyası SHA-256',
+  preparedBy: 'Hazırlayan', preparedAt: 'Hazırlanma zamanı', activatedBy: 'Etkinleştiren', activatedAt: 'Etkinleştirme zamanı',
+  accountCount: 'Hesap sayısı', bindingCount: 'Kaynak bağı sayısı', absent: 'Yok',
+  accounts: 'Paketin tüm hesapları', code: 'Hesap kodu', name: 'Hesap adı', accountId: 'Hesap kimliği',
+  bindings: 'Paketin tüm kaynak bağları', sourceId: 'Kaynak kimliği', sourceKind: 'Kaynak türü', sourceVersion: 'Kaynak sürümü',
+  profile: 'Sahip profil', profileVersion: 'Profil sürümü', currency: 'Para birimi kimliği', purpose: 'Muhasebeleştirme amacı', rule: 'Kural sürümü',
+  mappings: 'Hesap eşlemeleri', mappingKey: 'Eşleme anahtarı', side: 'Borç / alacak', debit: 'Borç', credit: 'Alacak',
+  retained: 'Önceki etkinleştirmeniz yeniden doğrulanıyor. Seçtiğiniz paket ve etkin katalog sürümleri korunuyor; güncel paket bilgileri bu isteğin yerine kullanılmıyor.',
+  versions: 'Onayınız, bu ekranda görülen paket ve etkin katalog sürümleriyle gönderilir.',
+  activationRule: 'Muhasebe kaynak paketinin etkinleştirilmesi için onay bekleniyor.',
+  states: {Prepared:'Hazırlandı',Active:'Etkin',Superseded:'Yerine yenisi etkinleştirildi'},
+} as const
