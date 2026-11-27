@@ -310,6 +310,7 @@ export const CAPABILITY = {
   /** M-06 Mizan — posted-journal aggregates, read-only. Route `/muhasebe/mizan`. */
   accountingTrialBalance: 'accounting.trial-balance',
   /** INV-OPEN-2 opening-stock workspace. Home, create and detail share this existing permission. */
+  inventoryOpeningCostWorkDecision: 'inventory.opening-cost.work-decision',
   inventoryOpeningStockRecord: 'inventory.opening-stock.record',
   /** ST-01 bounded, company-scoped physical stock-position read. */
   inventoryStockPositionsList: 'inventory.stock-positions.list',
@@ -585,6 +586,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.accountingNormalDraftApprove]: '/muhasebe/normal-fis-onay/:draftId',
   [CAPABILITY.accountingPostingQueues]: '/muhasebe/kontrol',
   [CAPABILITY.accountingTrialBalance]: '/muhasebe/mizan',
+  [CAPABILITY.inventoryOpeningCostWorkDecision]: '/onaylarim/inventory.opening-cost.v1/:approvalId',
   [CAPABILITY.inventoryOpeningStockRecord]: '/stok/acilis',
   [CAPABILITY.inventoryStockPositionsList]: '/stok/pozisyonlar',
   [CAPABILITY.inventorySubcontractRelease]: '/stok/fason-ayirma-birak',

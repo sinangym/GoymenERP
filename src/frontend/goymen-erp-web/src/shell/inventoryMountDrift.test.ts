@@ -14,6 +14,7 @@ import {
   INVENTORY_TRANSFER_ACTION_ROUTE,
   inventoryFutureAllocationPath,
 } from '../inventory/capabilities'
+import { workRoutes } from '../work/workRoutes'
 import { inventoryRoutes } from '../inventory/inventoryRoutes'
 import { INVENTORY_LABEL_DETAIL_ROUTE } from '../inventory/labelDetailRoute'
 import { NAV_CAPABILITIES } from './AppShell'
@@ -100,4 +101,15 @@ it('mounts explicit unused subcontract release independently of stock display ca
   expect(matchRoutes(inventoryRoutes, CAPABILITY_ROUTE[capability])?.at(-1)?.route.path).toBe('stok/fason-ayirma-birak')
   expect(NAV_CAPABILITIES).toContain(capability)
   expect(CAPABILITY_NAV_LABEL[capability]).toBe('Kullanılmayan fason ayırmayı bırak')
+})
+
+
+it('registers the existing native opening-cost purpose literal and its separate Work mount exactly', () => {
+ // InventoryShellCapabilityProvider's existing declaration; no new permission or native inventory route.
+ expect(CAPABILITY.inventoryOpeningCostWorkDecision).toBe('inventory.opening-cost.work-decision')
+ expect(CAPABILITY_ROUTE[CAPABILITY.inventoryOpeningCostWorkDecision]).toBe('/onaylarim/inventory.opening-cost.v1/:approvalId')
+ expect(CAPABILITY_NAV_LABEL[CAPABILITY.inventoryOpeningCostWorkDecision]).toBe('')
+ expect(matchRoutes(workRoutes,'/onaylarim/inventory.opening-cost.v1/cccccccc-0000-4000-8000-000000000001')?.at(-1)?.route.path)
+  .toBe('onaylarim/inventory.opening-cost.v1/:approvalId')
+ expect(inventoryRoutes).toHaveLength(16)
 })
