@@ -88,6 +88,42 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         }
     }
 
+    [SqlServerFact]
+    public async Task Shared_plan_excess_proposal_boundary_accepts_native_proposal_with_real_audit_and_preserves_rejected_caller_state()
+    {
+        await using var run = await Run.StartAsync();
+        foreach (var fault in new[] { "dirty", "pending-audit", "borrowed" })
+        {
+            await using var frame = OwnedPlanExcessFrame(run);
+            // Existing helper executes the real native ProposePlanExcessAsync through the shared owned runner,
+            // using exactly the same actual Audit collector/writer as LogisticsStore and its interceptor.
+            var (instruction, exception) = await SeedOwnedPlanException(run, frame);
+            var original = await frame.Store.FindPlanExcessReplayAsync(run.Envelope("px-owned-propose-" + exception)
+                with { PermissionCode = LogisticsPermissionManifestV1.LoadsRecord }, Hash("propose"), LogisticsPlanExcessV1.ProposeCommand, default);
+            Assert.NotNull(original); Assert.True(original.IsReplay);
+            Assert.Equal((exception, "Pending", "1", "3", run.Actor), (original.Exception.ExceptionId,
+                original.Exception.Status, original.Exception.Version, original.Exception.InstructionVersion, original.Exception.ProposedBy));
+            Assert.False(frame.Writer.HasPendingDrafts);
+            var before = await run.CountsAsync(instruction);
+            var row = await frame.Db.Instructions.SingleAsync(row => row.Id == instruction);
+            if (fault == "dirty") row.Version++;
+            if (fault == "pending-audit") frame.Collector.Enqueue(new(CompanyA, "logistics.synthetic.caller.v1", "Logistics.LoadingInstruction", instruction.ToString("D"),
+                "Caller", 1, 1, AuditActorTypes.User, run.Actor, "synthetic.permission", [], "{}", "{}", "SYNTHETIC caller-owned draft", null,
+                AuditAiInvolvement.None, null, "Web", null, null, run.Correlation, null, "caller-proposal"));
+            await using var borrowed = fault == "borrowed" ? await frame.Db.Database.BeginTransactionAsync() : null;
+            var callbacks = 0; var writes = 0;
+            Assert.Equal(503, (await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => frame.Runner.ExecutePlanExcessAsync(CompanyA,
+                token => { writes++; return frame.Store.ProposePlanExcessAsync(run.Envelope("px-refused-proposal-" + exception)
+                    with { PermissionCode = LogisticsPermissionManifestV1.LoadsRecord }, Hash("refused-proposal"), instruction, original.Exception.LineId,
+                    new(Guid.NewGuid(), "3", "10", "SYNTHETIC refused proposal"), token); },
+                _ => { callbacks++; return Task.CompletedTask; }))).Status);
+            Assert.Equal((0, 0), (callbacks, writes)); Assert.Equal(before, await run.CountsAsync(instruction));
+            if (fault == "dirty") Assert.True(frame.Db.ChangeTracker.HasChanges());
+            if (fault == "pending-audit") Assert.True(frame.Writer.HasPendingDrafts);
+            if (fault == "borrowed") Assert.Same(borrowed, frame.Db.Database.CurrentTransaction);
+        }
+    }
+
     private static LogisticsInstructionService PlanApprovalService(PlanApprovalFrame frame, Func<bool> allowed)
     {
         var correlation = new CorrelationContext(); correlation.Set("px-owned-correlation", null, "Web", null, null);
