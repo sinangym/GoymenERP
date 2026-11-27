@@ -53,8 +53,9 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     /// <para>1.15/1.16 (WP8): standalone catalog and account mapping decisions use their existing activation permissions.</para>
     /// <para>1.17 (WP8): a standalone manufacturing cost difference decision uses the existing journal approval permission.</para>
     /// <para>1.18 (WP8): invoice line COGS corrections use their existing approval permission on a standalone Work route.</para>
+    /// <para>1.19 (WP8): both inventory cost approvals have standalone Work routes with their existing native permissions.</para>
     /// </summary>
-    public const string OwnerContractVersion = "1.18";
+    public const string OwnerContractVersion = "1.19";
 
     public const string InvoicedShipmentPrepareCapabilityId = "accounting.invoiced-shipment-costs.prepare";
     public const string InvoicedShipmentPrepareRoutePath = "/muhasebe/sevk-smm-hazirla";
@@ -136,6 +137,14 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     public const string NormalDraftApproveCapabilityId = "accounting.normal-journal-drafts.approve";
     public const string NormalDraftApproveRouteId = "accounting.normal-journal-drafts.approve";
     public const string NormalDraftApproveRoutePath = "/muhasebe/normal-fis-onay/:draftId";
+    public const string InvoicedShipmentCostWorkDecisionCapabilityId = "accounting.invoiced-shipment-cost.work-decision";
+    public const string InvoicedShipmentCostWorkDecisionRouteId = "accounting-invoiced-shipment-cost-work-decision";
+    public const string InvoicedShipmentCostWorkDecisionRoutePath = "/onaylarim/accounting.invoiced-shipment-cost.v1/:approvalId";
+    public const string InvoicedShipmentCostWorkDecisionScreenId = "M-INVOICED-SHIPMENT-COST-WORK-DECISION";
+    public const string PurchaseCostDifferenceWorkDecisionCapabilityId = "accounting.purchase-cost-difference.work-decision";
+    public const string PurchaseCostDifferenceWorkDecisionRouteId = "accounting-purchase-cost-difference-work-decision";
+    public const string PurchaseCostDifferenceWorkDecisionRoutePath = "/onaylarim/accounting.purchase-cost-difference.v1/:approvalId";
+    public const string PurchaseCostDifferenceWorkDecisionScreenId = "M-PURCHASE-COST-DIFFERENCE-WORK-DECISION";
     public const string NormalDraftWorkDecisionCapabilityId = "accounting.normal-journal-draft.work-decision";
     public const string ManufacturingCostDifferenceWorkDecisionCapabilityId = "accounting.manufacturing-cost-difference.work-decision";
     public const string InvoiceLineCogsCorrectionWorkDecisionCapabilityId = "accounting.invoice-line-cogs-correction.work-decision";
@@ -277,6 +286,12 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
                 [NormalJournalPermissionNamesV1.DraftApprove], available: true),
             Declaration(ManufacturingCostDifferenceWorkDecisionCapabilityId, ManufacturingCostDifferenceWorkDecisionRouteId, ManufacturingCostDifferenceWorkDecisionRoutePath,
                 ManufacturingCostDifferenceWorkDecisionScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                [AccountingJournalReversalPermissionNamesV1.Approve], available: true),
+            Declaration(InvoicedShipmentCostWorkDecisionCapabilityId, InvoicedShipmentCostWorkDecisionRouteId, InvoicedShipmentCostWorkDecisionRoutePath,
+                InvoicedShipmentCostWorkDecisionScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                [NormalJournalPermissionNamesV1.DraftApprove], available: true),
+            Declaration(PurchaseCostDifferenceWorkDecisionCapabilityId, PurchaseCostDifferenceWorkDecisionRouteId, PurchaseCostDifferenceWorkDecisionRoutePath,
+                PurchaseCostDifferenceWorkDecisionScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
                 [AccountingJournalReversalPermissionNamesV1.Approve], available: true),
             Declaration(InvoiceLineCogsCorrectionWorkDecisionCapabilityId, InvoiceLineCogsCorrectionWorkDecisionRouteId, InvoiceLineCogsCorrectionWorkDecisionRoutePath,
                 InvoiceLineCogsCorrectionWorkDecisionScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,

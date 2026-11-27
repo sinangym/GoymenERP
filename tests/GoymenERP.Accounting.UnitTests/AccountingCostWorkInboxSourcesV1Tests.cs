@@ -257,8 +257,8 @@ public sealed class AccountingInventoryCostWorkInboxSourcesV1Tests
         Assert.Null(first.ExcludedDeciders);
         Assert.Equal("SENTETIK-FTR-1", first.DocumentLabel);
         Assert.Equal(Kit.Start.ToUniversalTime(), first.WaitingSinceUtc);
-        Assert.Equal(AccountingInvoicedShipmentCostWorkInboxSourceV1.ScreenPath, first.Link);
-        Assert.Equal(AccountingPurchaseCostDifferenceWorkInboxSourceV1.ScreenPath, purchases.Items![0].Link);
+        Assert.Equal(AccountingInvoicedShipmentCostWorkInboxSourceV1.PurposePath + "/" + first.ItemId.ToString("D"), first.Link);
+        Assert.Equal(AccountingPurchaseCostDifferenceWorkInboxSourceV1.PurposePath + "/" + purchases.Items![0].ItemId.ToString("D"), purchases.Items![0].Link);
         Assert.Equal([new WorkApprovalRuleResultV1(AccountingInvoicedShipmentCostWorkInboxSourceV1.ApprovalRequiredRule,
             null, "-12.34", null, "TRY")], first.Rules);
         Assert.Equal([AccountingPurchaseCostDifferenceWorkInboxSourceV1.ApprovalRequiredRule],

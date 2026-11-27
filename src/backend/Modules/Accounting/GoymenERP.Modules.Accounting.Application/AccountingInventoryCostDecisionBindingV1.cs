@@ -12,12 +12,14 @@ public static class AccountingInventoryCostDecisionBindingV1
     { AccountingInventoryCostKindV1.SalesInvoicedShipment => ShipmentKind, AccountingInventoryCostKindV1.PurchaseInvoiceDifference => PurchaseKind, _ => "" };
     public static string ScreenPath(AccountingInventoryCostKindV1 kind) => kind switch
     { AccountingInventoryCostKindV1.SalesInvoicedShipment => "/muhasebe/sevk-smm-onay", AccountingInventoryCostKindV1.PurchaseInvoiceDifference => "/muhasebe/alis-maliyet-farki-onay", _ => "" };
+    public static string PurposePath(AccountingInventoryCostKindV1 kind) => kind switch
+    { AccountingInventoryCostKindV1.SalesInvoicedShipment => "/onaylarim/accounting.invoiced-shipment-cost.v1", AccountingInventoryCostKindV1.PurchaseInvoiceDifference => "/onaylarim/accounting.purchase-cost-difference.v1", _ => "" };
     public static string RuleCode(AccountingInventoryCostKindV1 kind) => kind switch
     { AccountingInventoryCostKindV1.SalesInvoicedShipment => "accounting.invoiced-shipment-cost-approval-required", AccountingInventoryCostKindV1.PurchaseInvoiceDifference => "accounting.purchase-cost-difference-approval-required", _ => "" };
     public static WorkInboxItemV1? Item(AccountingInventoryCostKindV1 kind, Guid id, Guid invoiceId, string? invoiceNumber,
         Guid periodId, Guid maker, DateTimeOffset recordedAtUtc, decimal signedAmount) =>
         !Enum.IsDefined(kind) || id == Guid.Empty || invoiceId == Guid.Empty || periodId == Guid.Empty || maker == Guid.Empty ? null
-        : new("accounting", KindName(kind), id, Label(invoiceNumber, id), recordedAtUtc.ToUniversalTime(), ScreenPath(kind), maker.ToString("D", CultureInfo.InvariantCulture),
+        : new("accounting", KindName(kind), id, Label(invoiceNumber, id), recordedAtUtc.ToUniversalTime(), PurposePath(kind) + "/" + id.ToString("D", CultureInfo.InvariantCulture), maker.ToString("D", CultureInfo.InvariantCulture),
             [new(RuleCode(kind), null, WorkInboxRulesV1.Decimal(signedAmount), null, "TRY")],
             [new("invoice", Label(invoiceNumber, invoiceId), invoiceId, null), new("period", Short(periodId), periodId, null)]);
     public static WorkInboxItemV1? FromView(AccountingInventoryCostProposalV1 p, DateTimeOffset recordedAtUtc) =>

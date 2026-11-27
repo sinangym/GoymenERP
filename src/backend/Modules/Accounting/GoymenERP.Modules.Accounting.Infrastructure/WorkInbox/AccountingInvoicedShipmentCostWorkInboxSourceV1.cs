@@ -13,6 +13,7 @@ internal sealed class AccountingInvoicedShipmentCostWorkInboxSourceV1(
     IAccountingInventoryCostDecisionReadV1? decisionReader = null) : AccountingInventoryCostWorkInboxSourceBaseV1(dbContext, fence, decisionReader)
 {
     public const string KindName = "accounting.invoiced-shipment-cost.v1";
+    public const string PurposePath = "/onaylarim/accounting.invoiced-shipment-cost.v1";
     public const string ScreenPath = "/muhasebe/sevk-smm-onay";
 
     /// <summary>A prepared invoiced-shipment COGS posting needs a different person's approval.</summary>
@@ -24,7 +25,7 @@ internal sealed class AccountingInvoicedShipmentCostWorkInboxSourceV1(
 
     protected override AccountingInventoryCostKindV1 CostKind => AccountingInventoryCostKindV1.SalesInvoicedShipment;
 
-    protected override string ScreenLink => ScreenPath;
+    protected override string ScreenLink => PurposePath;
 
     protected override string RuleCode => ApprovalRequiredRule;
 }

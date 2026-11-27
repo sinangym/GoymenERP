@@ -13,6 +13,7 @@ internal sealed class AccountingPurchaseCostDifferenceWorkInboxSourceV1(
     IAccountingInventoryCostDecisionReadV1? decisionReader = null) : AccountingInventoryCostWorkInboxSourceBaseV1(dbContext, fence, decisionReader)
 {
     public const string KindName = "accounting.purchase-cost-difference.v1";
+    public const string PurposePath = "/onaylarim/accounting.purchase-cost-difference.v1";
     public const string ScreenPath = "/muhasebe/alis-maliyet-farki-onay";
 
     /// <summary>A prepared purchase invoice cost difference posting needs a different person's approval.</summary>
@@ -24,7 +25,7 @@ internal sealed class AccountingPurchaseCostDifferenceWorkInboxSourceV1(
 
     protected override AccountingInventoryCostKindV1 CostKind => AccountingInventoryCostKindV1.PurchaseInvoiceDifference;
 
-    protected override string ScreenLink => ScreenPath;
+    protected override string ScreenLink => PurposePath;
 
     protected override string RuleCode => ApprovalRequiredRule;
 }

@@ -11,7 +11,7 @@ describe('approved source catalog Work transport',()=>{
     expect(decodeWorkDecisionPreview(value,company,kind,id)?.approvedSourceCatalog).toEqual(value.approvedSourceCatalog)
     expect(Object.keys(value.approvedSourceCatalog)).toHaveLength(6);expect(Object.keys(value.approvedSourceCatalog.catalog)).toHaveLength(15)
     expect(value.approvedSourceCatalog.package.accounts).toHaveLength(13);expect(value.approvedSourceCatalog.package.bindings[0]!.mappings).toHaveLength(13)
-    expect(isWorkDecisionKind(kind)).toBe(true);expect(WORK_DECISION_KINDS).toHaveLength(49)
+    expect(isWorkDecisionKind(kind)).toBe(true);expect(WORK_DECISION_KINDS).toHaveLength(51)
     expect(WORK_DECISION_KINDS.filter(k=>String(k)===kind)).toEqual([kind])
     expect(decodeWorkDecisionPreview(value,company.toUpperCase(),kind,id.toUpperCase())).not.toBeNull()
   })
