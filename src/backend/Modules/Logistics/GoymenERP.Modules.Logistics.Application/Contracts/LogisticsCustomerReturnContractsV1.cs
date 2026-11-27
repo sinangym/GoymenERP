@@ -64,7 +64,8 @@ public sealed record CustomerReturnViewV1(
     Guid? OriginalLabelId,
     Guid? OriginalShipmentMovementId);
 
-public sealed record CustomerReturnResponseV1(CustomerReturnViewV1 Return, bool IsReplay, string OriginalCorrelationId);
+public sealed record CustomerReturnResponseV1(CustomerReturnViewV1 Return, bool IsReplay, string OriginalCorrelationId,
+    [property: System.Text.Json.Serialization.JsonIgnore] bool CommandReceiptProven = false);
 
 public interface ILogisticsCustomerReturnServiceV1
 {

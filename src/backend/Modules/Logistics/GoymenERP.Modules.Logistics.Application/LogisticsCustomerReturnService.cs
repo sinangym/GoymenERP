@@ -35,7 +35,7 @@ public sealed class LogisticsCustomerReturnService(
 
         try
         {
-            return await FaultFencedAsync(
+            return await ProvenAsync(FaultFencedAsync(
                 () => transactions.ExecuteLogisticsAsync(scope.CompanyId, async token =>
                 {
                     var replay = await GuardedAsync(scope, bindings.RequestPermission,
@@ -53,7 +53,7 @@ public sealed class LogisticsCustomerReturnService(
                     var stored = await store.StoreRequestAsync(envelope, hash, customerReturn, token);
                     return Response(stored.Return, stored.Outcome == LogisticsWriteOutcome.Replayed, stored.OriginalCorrelationId);
                 }, token => scopes.RequireStillAsync(scope, bindings.RequestPermission, token), cancellationToken),
-                () => scopes.RequireStillAsync(scope, bindings.RequestPermission, cancellationToken));
+                () => scopes.RequireStillAsync(scope, bindings.RequestPermission, cancellationToken)));
         }
         catch (CustomerReturnRuleException exception) { throw Rule(exception); }
         catch (ArgumentException exception) when (string.Equals(exception.ParamName, "reason", StringComparison.Ordinal))
@@ -131,7 +131,7 @@ public sealed class LogisticsCustomerReturnService(
         {
             if (!approving)
             {
-                return await FaultFencedAsync(
+                return await ProvenAsync(FaultFencedAsync(
                     () => transactions.ExecuteLogisticsAsync(scope.CompanyId, async token =>
                     {
                         var replay = await GuardedAsync(scope, bindings.DecisionPermission,
@@ -142,10 +142,10 @@ public sealed class LogisticsCustomerReturnService(
                         var saved = await store.StoreDecisionAsync(envelope, hash, command, pending, token);
                         return Response(saved.Return, saved.Outcome == LogisticsWriteOutcome.Replayed, saved.OriginalCorrelationId);
                     }, token => scopes.RequireStillAsync(scope, bindings.DecisionPermission, token), cancellationToken),
-                    () => RequireCommandStillAsync(scope, bindings.DecisionPermission, command, cancellationToken));
+                    () => RequireCommandStillAsync(scope, bindings.DecisionPermission, command, cancellationToken)));
             }
 
-            return await FaultFencedAsync(
+            return await ProvenAsync(FaultFencedAsync(
                 () => transactions.ExecuteApprovalAsync(scope.CompanyId, async (stock, token) =>
                 {
                     // Inventory authority is checked before any replay oracle is released.
@@ -155,6 +155,12 @@ public sealed class LogisticsCustomerReturnService(
                     if (replay is not null) return Replayed(replay);
                     var pending = await RequirePendingAsync(scope, bindings.DecisionPermission, customerReturnId, token);
                     pending.RequireDecision(expectedVersion, scope.ActorId);
+
+                    // The participant consumes kilograms. A Piece value is not kilograms, and this
+                    // source contract carries no authoritative returned-kg/piece conversion proof.
+                    // Preserve read/reject and original receipt replay; never stage a guessed stock return.
+                    if (pending.Quantity.Unit != QuantityUnit.Kilogram)
+                        throw new LogisticsCustomerReturnServiceException(503, LogisticsCustomerReturnCodesV1.InventoryUnavailable);
 
                     var source = await GuardedAsync(scope, bindings.DecisionPermission,
                         () => sources.FindDeliveryAsync(pending.LoadingInstructionId, pending.LoadingInstructionLineId,
@@ -193,7 +199,7 @@ public sealed class LogisticsCustomerReturnService(
                     await scopes.RequireStillAsync(scope, bindings.DecisionPermission, token);
                     await stock.RequireStillAsync(token);
                 }, cancellationToken),
-                () => RequireCommandStillAsync(scope, bindings.DecisionPermission, command, cancellationToken));
+                () => RequireCommandStillAsync(scope, bindings.DecisionPermission, command, cancellationToken)));
         }
         catch (CustomerReturnVersionConflictException exception)
         {
@@ -282,7 +288,7 @@ public sealed class LogisticsCustomerReturnService(
                     return await store.RecordRefusalAsync(envelope, requestHash, command, refusal, token);
                 }, token => RequireCommandStillAsync(scope, permission, command, token), cancellationToken),
                 () => RequireCommandStillAsync(scope, permission, command, cancellationToken));
-            return Resolve(recorded.Replay, recorded.Outcome == LogisticsWriteOutcome.Replayed);
+            return Resolve(recorded.Replay, recorded.Outcome == LogisticsWriteOutcome.Replayed) with { CommandReceiptProven = true };
         }
         catch (LogisticsStoreException raced) when (raced.Code == LogisticsStoreCodes.ConcurrentChange)
         {
@@ -303,7 +309,7 @@ public sealed class LogisticsCustomerReturnService(
             }, token => RequireCommandStillAsync(scope, permission, command, token), cancellationToken),
             () => RequireCommandStillAsync(scope, permission, command, cancellationToken));
         if (winner is null) throw original;
-        return Replayed(winner);
+        return Replayed(winner) with { CommandReceiptProven = true };
     }
 
     private static CustomerReturnResponseV1 Resolve(CustomerReturnReplayV1 replay, bool isReplay)
@@ -316,6 +322,11 @@ public sealed class LogisticsCustomerReturnService(
     }
 
     private static CustomerReturnResponseV1 Replayed(CustomerReturnReplayV1 replay) => Resolve(replay, isReplay: true);
+
+    // The runner has finished its owned commit (or bounded read-only lookup of the original receipt).
+    // Never set provenance on a domain-shaped result before that await completes.
+    private static async Task<CustomerReturnResponseV1> ProvenAsync(Task<CustomerReturnResponseV1> operation) =>
+        (await operation) with { CommandReceiptProven = true };
 
     private async Task RequireCommandStillAsync(LogisticsCustomerReturnScopeV1 scope, string permission, string command,
         CancellationToken cancellationToken)

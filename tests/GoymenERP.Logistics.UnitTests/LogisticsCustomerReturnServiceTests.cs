@@ -12,7 +12,7 @@ namespace GoymenERP.Logistics.UnitTests;
 /// Inventory participant and central adapter are owned and ready; these tests prevent either owner
 /// from accepting raw label/location/owner/custodian data from a client.
 /// </summary>
-public sealed class LogisticsCustomerReturnServiceTests
+public sealed partial class LogisticsCustomerReturnServiceTests
 {
     [Fact]
     public void Inventory_request_contains_only_source_identity_and_never_client_selected_stock_position()
