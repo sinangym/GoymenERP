@@ -23,7 +23,7 @@ public sealed partial class ManufacturingCostDifferenceSqlServerRelationalAccept
                     "domain" => "cost_difference_posting_refused", _ => "cost_difference_amount_unaccepted" }, refused.Code);
                 Assert.Null(refused.Field); Assert.Equal(fault == "before-plan" ? 0 : 2, save.Saves);
                 // The four late attribution cases have saved both journal and proposal/OK-command inside the still-owned SQL transaction; the plan refusal precedes all saves.
-                Assert.Equal(1, scope.Writer.Discards); scope.AssertClean();
+                Assert.Equal(fault == "before-plan" ? 0 : 1, scope.Writer.Discards); scope.AssertClean();
             }
             Assert.Equal(before, await SafetyCounts(run)); Assert.Equal(0, await run.Count("accounting.ManufacturingCostAttributions"));
             Assert.Equal(0, await run.Count("accounting.ManufacturingCostAttributionShares"));
