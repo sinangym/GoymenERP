@@ -112,6 +112,15 @@ public sealed partial class FinanceCreditAccountTests
         var row = Account(FinanceCreditAccountService.Proposed);
         row.CreditGroup = FinanceCreditAccountService.NonCashGroup;
         row.SourceProfileJson = sourceJson;
+        var money = await new SyntheticCreditSources(CompanyA).GetMoneyProfileAsync(Currency,
+            FinanceCreditAccountService.PlanMoneyOperation, Start);
+        row.LenderPartyId = profile.LenderPartyId;
+        row.LenderCompanyPartyAccountId = profile.LenderCompanyPartyAccountId;
+        row.LenderPartyVersion = 1;
+        row.LenderCompanyAccountVersion = 1;
+        row.MoneyProfileId = money.Profile.ProfileId;
+        row.MoneyProfileVersion = money.Profile.Version;
+        row.CurrencyScale = money.Scale;
         await using (var db = run.Memory(CompanyA))
         {
             db.CreditAccounts.Add(row);
