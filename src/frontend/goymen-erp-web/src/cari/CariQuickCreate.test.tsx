@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient } from '@tanstack/react-query'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { AppShell } from '../shell/AppShell'
+import { CapabilityRoute } from '../shell/CapabilityRoute'
 import { ShellProvider } from '../shell/ShellProvider'
 import { CAPABILITY } from '../shell/capabilities'
 import type { CounterpartyMutationResult } from './mutationContract'
@@ -13,9 +14,9 @@ import { resetPendingTaxIdentityAttempts } from './pendingTaxIdentityAttempt'
 import { CariQuickCreate } from './CariQuickCreate'
 import { findQuickCreatedOffer } from './quickCreateSelection'
 import { QUICK_CARI_TEXT as T } from './quickCreateText'
-import { A_ID, B_ID, PARTY, PARTY_2, ALL_CARI_CAPABILITIES, installFetch, json, noContent, LEGAL_NAME, mutationView, problem } from './commandPageHarness'
+import { A_ID, B_ID, PARTY, PARTY_2, ALL_CARI_CAPABILITIES, findStateBlock, installFetch, json, noContent, LEGAL_NAME, mutationView, problem } from './commandPageHarness'
 
-function mount(onCreated: (record: CounterpartyMutationResult, signal: AbortSignal) => Promise<boolean> = vi.fn(async () => true)) {
+function mount(onCreated: (record: CounterpartyMutationResult, signal: AbortSignal) => Promise<boolean> = vi.fn(async () => true), gated = false) {
   function Form() {
     const [note, setNote] = useState(''), [sent, setSent] = useState(false), [unresolved, setUnresolved] = useState(false)
     return <form onSubmit={e => { e.preventDefault(); if (!unresolved) setSent(true) }}>
@@ -25,7 +26,7 @@ function mount(onCreated: (record: CounterpartyMutationResult, signal: AbortSign
       {sent ? <p>Ana işlem gönderildi</p> : null}
     </form>
   }
-  const router = createMemoryRouter([{ path: '/', element: <AppShell />, children: [{ path: 'quick', element: <Form /> }] }], { initialEntries: ['/quick'] })
+  const router = createMemoryRouter([{ path: '/', element: <AppShell />, children: [{ path: 'quick', element: gated ? <CapabilityRoute capability={CAPABILITY.cariPartiesCreate}><Form /></CapabilityRoute> : <Form /> }] }], { initialEntries: ['/quick'] })
   render(<ShellProvider queryClient={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}><RouterProvider router={router} /></ShellProvider>)
   return { router, onCreated }
 }
@@ -281,10 +282,10 @@ it('atomic post-commit 403 remount keeps the original key/body and retries only 
     }
     return response
   }))
-  const {router,onCreated}=mount();let dialog=await openAndFill()
+  const {router,onCreated}=mount(undefined,true);let dialog=await openAndFill()
   await userEvent.type(within(dialog).getByLabelText('VKN / TCKN (isteğe bağlı)'),'1234567890')
   await userEvent.click(within(dialog).getByRole('button',{name:'Cari oluştur'}))
-  await screen.findByText(T.denied)
+  await findStateBlock('not-found')
   expect(log.creates()).toHaveLength(1)
   // A 403 closes authority; only explicit re-entry can obtain a new current grant.
   await act(async()=>{await router.navigate('/')})
