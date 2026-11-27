@@ -19,7 +19,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// number and ETTN, a second acceptance of an identity whose receivable is not cancelled is refused, and the claim
 /// migration refuses its rollback while claims exist. Every row, actor and permission is SENTETIK test data.
 /// </summary>
-public sealed class FinanceOfficialInvoiceIdentityClaimSqlServerRelationalAcceptanceTests
+public sealed partial class FinanceOfficialInvoiceIdentityClaimSqlServerRelationalAcceptanceTests
 {
     private const string PreviousMigration = "20261115121907_RequirePartyCreditLimitSecondPerson";
     private static readonly Guid Company = TestCompanyIds.CompanyA;
@@ -146,7 +146,7 @@ public sealed class FinanceOfficialInvoiceIdentityClaimSqlServerRelationalAccept
 
     private sealed record Approved(Guid BatchId, ApprovedFinanceOpenItemSourceBatch Batch);
 
-    private sealed class Run : IAsyncDisposable
+    private sealed partial class Run : IAsyncDisposable
     {
         private readonly string baseConnectionString;
 
