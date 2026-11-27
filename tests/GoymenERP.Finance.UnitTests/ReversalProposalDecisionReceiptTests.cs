@@ -30,6 +30,20 @@ public sealed class ReversalProposalDecisionReceiptTests
     }
 
     [Theory]
+    [InlineData(true)] [InlineData(false)]
+    public void Native_clock_rollback_keeps_original_decision_timestamp_identity_without_an_added_chronology_rule(bool approve)
+    {
+        var (row, result, context, metadata, reason) = Fixture(approve);
+        result = result with { Resource = result.Resource! with { ProposedAtUtc = At.AddMinutes(1) } };
+        row.ResultJson = JsonSerializer.Serialize(result, Json);
+        var proof = Restore(row, result, context, metadata, reason);
+        Assert.NotNull(proof); Assert.Equal(At, proof.RecordedAtUtc); Assert.Equal("2", proof.ResultVersion);
+        Assert.Equal(At, result.Resource!.DecidedAtUtc); Assert.True(result.Resource.ProposedAtUtc > proof.RecordedAtUtc);
+        row.RecordedAtUtc = At.AddSeconds(1);
+        Assert.Null(Restore(row, result, context, metadata, reason));
+    }
+
+    [Theory]
     [InlineData("company")] [InlineData("proposal")] [InlineData("command")] [InlineData("actor")]
     [InlineData("key")] [InlineData("hash")] [InlineData("correlation")] [InlineData("time")]
     [InlineData("version")] [InlineData("result-resource")] [InlineData("maker")] [InlineData("extra-json")]

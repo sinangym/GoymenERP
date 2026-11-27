@@ -80,7 +80,7 @@ public sealed record ReceiptReversalOriginalReceiptV1(Guid SourceId, string Sour
     PosCommissionBearer? PosCommissionBearer, Guid OriginalEventId, string RecordedBy, DateTimeOffset RecordedAtUtc);
 
 public sealed record ReceiptReversalDecisionDetailV1(Guid CompanyId, ReversalProposalView Proposal,
-    ReceiptReversalOriginalReceiptV1 OriginalReceipt);
+    ReceiptReversalOriginalReceiptV1 OriginalReceipt, string TreasuryAccountLabel);
 
 /// <summary>Approval-only human purpose read. Native proposer-or-approver general reads retain their contract.</summary>
 public interface IReceiptReversalDecisionReadV1

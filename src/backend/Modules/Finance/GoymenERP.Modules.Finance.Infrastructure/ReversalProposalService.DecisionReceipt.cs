@@ -18,6 +18,7 @@ public sealed partial class ReversalProposalService
         var row = await dbContext.Commands.AsNoTracking().SingleOrDefaultAsync(record => record.CompanyId == context.CompanyId
             && record.ReversalProposalId == proposalId && record.CommandName == command && record.IdempotencyKeyHash == key
             && record.ActorId == context.ActorId, token);
+        await Fence();
         // Both original tables are retained immutable owner facts. Never use the current proposal or bank metadata.
         var sourceId = row is null ? Guid.Empty : JsonSerializer.Deserialize<ReversalProposalCommandResult>(row.ResultJson, Json)?.Resource?.OriginalSourceId ?? Guid.Empty;
         var original = sourceId == Guid.Empty ? null : await ReadOriginalReceiptAsync(context.CompanyId, sourceId, token);
@@ -57,7 +58,7 @@ public sealed partial class ReversalProposalService
                 || !ReceiptIdentity(row.CorrelationId) || row.CorrelationId != stored.OriginalCorrelationId
                 || !result.IsReplay && row.CorrelationId != context.CorrelationId
                 || row.RecordedAtUtc.Offset != TimeSpan.Zero || view.DecidedAtUtc != row.RecordedAtUtc
-                || view.ProposedAtUtc.Offset != TimeSpan.Zero || row.RecordedAtUtc < view.ProposedAtUtc
+                || view.ProposedAtUtc.Offset != TimeSpan.Zero
                 || !CanonicalReason(view.Reason) || !Version(expectedVersion, out var expected) || expected == long.MaxValue
                 || view.Version != (expected + 1).ToString(CultureInfo.InvariantCulture)) return null;
             var approve = command == ApproveCommand;

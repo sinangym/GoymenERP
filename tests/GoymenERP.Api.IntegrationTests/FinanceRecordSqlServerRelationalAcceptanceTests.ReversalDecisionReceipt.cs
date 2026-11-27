@@ -50,6 +50,31 @@ public sealed partial class FinanceRecordSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Native_receipt_reversal_each_receipt_read_fence_aborts_all_native_effects_and_same_key_later_executes_once()
+    {
+        await using var run = await Run.StartAsync();
+        foreach (var approve in new[] { true, false })
+        foreach (var receiptFence in new[] { 2, 3, 4 })
+        {
+            var (source, proposal) = await ReceiptDecisionSafetyPrepare(run); var save = new ReceiptDecisionSafetySave(proposal);
+            await using var scope = new ReceiptDecisionSafetyScope(run, save: save); var savedFences = 0; var deny = true;
+            // After native Save (1): before Commands (2), after Commands/before retained facts (3), after facts (4).
+            scope.Permissions.Check = () => !save.Saved || !deny || ++savedFences < receiptFence
+                ? PermissionDecision.Allowed : PermissionDecision.Denied;
+            var key = "receipt-fence-" + proposal;
+            var refused = await scope.Decide(proposal, approve, key);
+            Assert.Equal(CommandOutcome.Denied, refused.Outcome); Assert.Null(refused.DecisionReceipt);
+            Assert.Equal(receiptFence, savedFences); Assert.True(save.Saved); scope.AssertClean();
+            await ReceiptDecisionSafetyDurable(run, source, proposal, 1, ReversalProposalStatuses.Pending, 0, 0, 0);
+            deny = false; save.Saved = false;
+            var succeeded = await scope.Decide(proposal, approve, key);
+            Assert.Equal(CommandOutcome.Succeeded, succeeded.Outcome); Assert.NotNull(succeeded.DecisionReceipt); scope.AssertClean();
+            await ReceiptDecisionSafetyDurable(run, source, proposal, 2,
+                approve ? ReversalProposalStatuses.Approved : ReversalProposalStatuses.Rejected, 1, 1, approve ? 1 : 0);
+        }
+    }
+
+    [SqlServerFact]
     public async Task Native_receipt_reversal_human_read_rechecks_company_actor_permission_and_consumers_without_owner_writes()
     {
         await using var run = await Run.StartAsync(); var (_, proposal) = await ReceiptDecisionSafetyPrepare(run);

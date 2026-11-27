@@ -38,10 +38,10 @@ public sealed partial class FinanceRecordSqlServerRelationalAcceptanceTests
                 var staged = scope.Database.ChangeTracker.Entries<ReversalProposalRow>().Any(e => e.Entity.Id == proposal && e.Entity.Version == 2);
                 if (staged && scope.Writer.HasPendingDrafts) seenPending = true;
                 if (save.Saved) savedFences++;
-                // Save post-fence (1), immutable receipt read before/after fences (2/3), wrapper post-execution (4), precommit (5).
+                // Save post-fence (1), receipt read before/after Commands/after original facts (2/3/4), wrapper post-execution (5), precommit (6).
                 var reached = phase == "before-audit" ? staged && scope.Writer.HasPendingDrafts
                     : phase == "after-audit" ? staged && seenPending && !scope.Writer.HasPendingDrafts
-                    : phase == "precommit" ? savedFences >= 5 : save.Saved;
+                    : phase == "precommit" ? savedFences >= 6 : save.Saved;
                 if (!deny || !reached) return PermissionDecision.Allowed;
                 observed = true;
                 if (phase == "actor") { scope.User.Actor = "SENTETIK-other"; return PermissionDecision.Allowed; }
@@ -51,7 +51,7 @@ public sealed partial class FinanceRecordSqlServerRelationalAcceptanceTests
             };
             var refused = await scope.Decide(proposal, approve, "reversal-late-" + proposal);
             Assert.Equal(CommandOutcome.Denied, refused.Outcome); Assert.True(observed);
-            if (phase == "precommit") Assert.Equal(5, savedFences);
+            if (phase == "precommit") Assert.Equal(6, savedFences);
             if (phase == "after-audit") { Assert.True(seenPending); Assert.False(save.Saved); }
             scope.AssertClean(); await ReceiptDecisionSafetyDurable(run, source, proposal, 1, ReversalProposalStatuses.Pending, 0, 0, 0);
             deny = false; scope.User.Actor = ReceiptChecker; scope.User.Member = true; scope.Company.Set(CompanyA); save.Saved = false;

@@ -34,15 +34,8 @@ public sealed partial class ReversalProposalService : IReceiptReversalDecisionRe
             || proposal.Id == Guid.Empty || proposal.OriginalSourceId != original.SourceId || original.SourceId == Guid.Empty
             || original.PartyId == Guid.Empty || original.TreasuryAccountId == Guid.Empty || original.CurrencyId == Guid.Empty
             || !ReceiptIdentity(proposal.ProposedBy) || !Version(proposal.Version, out _) || !Enum.IsDefined(proposal.Status)
-            || FinanceWorkInboxRead.Amount(original.AmountText) is not { } amount) return null;
-        return new(FinanceManualReceiptReversalWorkInboxSourceV1.ModuleName, FinanceManualReceiptReversalWorkInboxSourceV1.KindName,
-            proposal.Id, FinanceWorkInboxRead.Label(original.DocumentNumber, proposal.Id), proposal.ProposedAtUtc,
-            FinanceManualReceiptReversalWorkInboxSourceV1.ScreenPath, proposal.ProposedBy,
-            [new(FinanceManualReceiptReversalWorkInboxSourceV1.ApprovalRequiredRule, null, amount, null, null)],
-            [FinanceWorkInboxRead.Reference("manual-receipt", original.SourceId, FinanceWorkInboxRead.Label(original.DocumentNumber, original.SourceId),
-                FinanceWorkInboxFence.Link(FinanceManualReceiptReversalWorkInboxSourceV1.ReceiptScreenPath, original.SourceId)),
-             FinanceWorkInboxRead.Reference("party", original.PartyId), FinanceWorkInboxRead.Reference("bank-account", original.TreasuryAccountId),
-             FinanceWorkInboxRead.Reference("currency", original.CurrencyId)]);
+            || FinanceWorkInboxRead.Amount(original.AmountText) is null) return null;
+        return FinanceManualReceiptReversalWorkInboxSourceV1.DecisionItem(detail);
     }
 
     public static bool MatchesDecisionSnapshot(ReceiptReversalDecisionDetailV1? detail, WorkApprovalDecisionSnapshotV1? snapshot)
@@ -79,12 +72,18 @@ public sealed partial class ReversalProposalService : IReceiptReversalDecisionRe
         var receipt = await ReadOriginalReceiptAsync(context.CompanyId, proposal.OriginalSourceId, cancellationToken);
         if (await Fence() is { } afterOriginal) return afterOriginal;
         if (receipt is null) return new(ReadOutcome.Unavailable, null);
+        // The existing Inbox discloses this company-bound display label under the same approval permission.
+        // It is dynamic preview metadata, never part of the retained original-receipt facts or their digest.
+        var bankName = await dbContext.BankAccounts.AsNoTracking().Where(row => row.CompanyId == context.CompanyId && row.Id == receipt.TreasuryAccountId)
+            .Select(row => row.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        if (await Fence() is { } afterBankLabel) return afterBankLabel;
+        var treasuryAccountLabel = FinanceWorkInboxRead.Name(bankName, receipt.TreasuryAccountId);
         // One current proposal revision only; a concurrent native decision cannot mix pending/terminal human facts.
         var final = await dbContext.ReversalProposals.AsNoTracking().Where(row => row.CompanyId == context.CompanyId && row.Id == proposalId)
             .Select(row => new { row.Version, row.Status, row.OriginalSourceId }).SingleOrDefaultAsync(cancellationToken);
         if (await Fence() is { } afterFinal) return afterFinal;
         return final is null || final.Version != capturedVersion || final.Status != capturedStatus || final.OriginalSourceId != proposal.OriginalSourceId
-            ? new(ReadOutcome.Unavailable, null) : new(ReadOutcome.Found, new(context.CompanyId, view, receipt));
+            ? new(ReadOutcome.Unavailable, null) : new(ReadOutcome.Found, new(context.CompanyId, view, receipt, treasuryAccountLabel));
 
         async Task<ReadResult<ReceiptReversalDecisionDetailV1>?> Fence()
         {
@@ -104,20 +103,23 @@ public sealed partial class ReversalProposalService : IReceiptReversalDecisionRe
         {
             ReversalProposalStatuses.Pending => row.DecidedBy is null && row.DecidedAtUtc is null && row.DecisionReason is null && row.ReversalSourceId is null,
             ReversalProposalStatuses.Approved => ReceiptIdentity(row.DecidedBy) && row.DecidedBy != row.ProposedBy
-                && row.DecidedAtUtc is { Offset: var offset } && offset == TimeSpan.Zero && row.DecidedAtUtc >= row.ProposedAtUtc
+                && row.DecidedAtUtc is { Offset: var offset } && offset == TimeSpan.Zero
                 && row.DecisionReason is null && row.ReversalSourceId is not null && row.ReversalSourceId != Guid.Empty && row.ReversalSourceId != row.OriginalSourceId,
             ReversalProposalStatuses.Rejected => ReceiptIdentity(row.DecidedBy) && row.DecidedBy != row.ProposedBy
-                && row.DecidedAtUtc is { Offset: var offset } && offset == TimeSpan.Zero && row.DecidedAtUtc >= row.ProposedAtUtc
+                && row.DecidedAtUtc is { Offset: var offset } && offset == TimeSpan.Zero
                 && CanonicalReason(row.DecisionReason) && row.ReversalSourceId is null,
             _ => false,
         });
 
     private async Task<ReceiptReversalOriginalReceiptV1?> ReadOriginalReceiptAsync(Guid companyId, Guid sourceId, CancellationToken token)
     {
-        var source = await dbContext.ReceiptDrafts.AsNoTracking().SingleOrDefaultAsync(row => row.CompanyId == companyId && row.Id == sourceId, token);
-        var fact = await dbContext.MoneyEvents.AsNoTracking().SingleOrDefaultAsync(row => row.CompanyId == companyId && row.SourceId == sourceId
-            && row.Kind == MoneyEventKinds.ManualBankReceiptRecorded, token);
-        return OriginalReceipt(companyId, sourceId, source, fact);
+        // One awaited owner read: no source/event query can continue after a preceding unmeasured authority change.
+        var found = await (from source in dbContext.ReceiptDrafts.AsNoTracking()
+            join fact in dbContext.MoneyEvents.AsNoTracking() on source.Id equals fact.SourceId
+            where source.CompanyId == companyId && source.Id == sourceId && fact.CompanyId == companyId
+                && fact.Kind == MoneyEventKinds.ManualBankReceiptRecorded
+            select new { Source = source, Fact = fact }).SingleOrDefaultAsync(token);
+        return found is null ? null : OriginalReceipt(companyId, sourceId, found.Source, found.Fact);
     }
 
     internal static ReceiptReversalOriginalReceiptV1? OriginalReceipt(Guid companyId, Guid sourceId, ReceiptDraftRow? source, MoneyEventRow? fact)

@@ -22,7 +22,7 @@ public sealed class ReversalProposalDecisionReadTests
     {
         await using var fixture = await Fixture.StartAsync(); var calls = 0;
         var answer = await fixture.Core.ReadDecisionAsync(fixture.Context, fixture.Proposal.Id, _ => { calls++; return Task.CompletedTask; }, default);
-        Assert.Equal(ReadOutcome.Found, answer.Outcome); Assert.Equal(8, calls);
+        Assert.Equal(ReadOutcome.Found, answer.Outcome); Assert.Equal(10, calls);
         var detail = Assert.IsType<ReceiptReversalDecisionDetailV1>(answer.Resource);
         Assert.Equal(Company, detail.CompanyId); Assert.Equal(fixture.Proposal.Id, detail.Proposal.Id);
         Assert.Equal("001250.50", detail.OriginalReceipt.AmountText); Assert.Equal("2", detail.OriginalReceipt.SourceVersion);
@@ -48,6 +48,14 @@ public sealed class ReversalProposalDecisionReadTests
         var human = (await fixture.Core.ReadDecisionAsync(fixture.Context, fixture.Proposal.Id, _ => Task.CompletedTask, default)).Resource!;
         Assert.True(ReversalProposalService.MatchesDecisionSnapshot(human, snapshot));
         Assert.True(ReversalProposalService.MatchesDecisionItem(snapshot.Item, human));
+        var legacy = await source.ListPendingAsync(new(Company, "checker", "SENTETIK-source-trace", "SENTETIK-source-cause"), 10, default);
+        Assert.True(ReversalProposalService.MatchesDecisionItem(Assert.Single(legacy.Items!), human));
+        Assert.Equal("SENTETIK named bank", human.TreasuryAccountLabel);
+        Assert.Contains(snapshot.Item.References, r => r.Role == "bank-account" && r.Label == human.TreasuryAccountLabel);
+        var renamed = human with { TreasuryAccountLabel = "SENTETIK different label" };
+        Assert.NotEqual(ReversalProposalService.DecisionPreviewDigest(human), ReversalProposalService.DecisionPreviewDigest(renamed));
+        Assert.Equal(ReversalProposalService.RecordedFactsDigest(human), ReversalProposalService.RecordedFactsDigest(renamed));
+        Assert.False(ReversalProposalService.MatchesDecisionItem(snapshot.Item, renamed));
         Assert.False(ReversalProposalService.MatchesDecisionItem(snapshot.Item with { DocumentLabel = "different" }, human));
         Assert.False(ReversalProposalService.MatchesDecisionItem(snapshot.Item with { Link = "/wrong" }, human));
         Assert.False(ReversalProposalService.MatchesDecisionItem(snapshot.Item with { ExcludedDeciders = ["other"] }, human));
@@ -91,6 +99,20 @@ public sealed class ReversalProposalDecisionReadTests
     }
 
     [Fact]
+    public async Task Company_bound_bank_label_read_is_followed_by_fresh_authority_before_preview_release()
+    {
+        await using var fixture = await Fixture.StartAsync(); var calls = 0;
+        var answer = await fixture.Core.ReadDecisionAsync(fixture.Context, fixture.Proposal.Id, _ =>
+        {
+            // Callback 7 is the first consumer fence immediately after the added bank-label query.
+            if (++calls == 7) fixture.Permissions.Allowed = false;
+            return Task.CompletedTask;
+        }, default);
+        Assert.Equal(ReadOutcome.Denied, answer.Outcome); Assert.Null(answer.Resource); Assert.Equal(8, calls);
+        Assert.False(fixture.Database.ChangeTracker.HasChanges()); Assert.Empty(await fixture.Database.Commands.ToArrayAsync());
+    }
+
+    [Fact]
     public async Task Native_decision_between_original_read_and_final_version_fence_cannot_create_a_mixed_preview()
     {
         await using var fixture = await Fixture.StartAsync(); var calls = 0; var changed = false;
@@ -105,6 +127,32 @@ public sealed class ReversalProposalDecisionReadTests
         Assert.True(changed); Assert.Equal(ReadOutcome.Unavailable, answer.Outcome); Assert.Null(answer.Resource);
         Assert.False(fixture.Database.ChangeTracker.HasChanges());
         Assert.Equal(ReversalProposalStatuses.Rejected, (await fixture.Database.ReversalProposals.AsNoTracking().SingleAsync()).Status);
+    }
+
+    [Theory]
+    [InlineData(true)] [InlineData(false)]
+    public async Task Native_clock_rollback_decision_is_read_without_inventing_a_timestamp_order_policy(bool approve)
+    {
+        await using var fixture = await Fixture.StartAsync(); var decidedAt = At.AddMinutes(-1);
+        // Real native policy and owner model, synthetic in-memory persistence; not guarded SQL commit acceptance.
+        await using (var writer = fixture.NewDatabase())
+        {
+            var proposal = await writer.ReversalProposals.SingleAsync();
+            var original = await writer.ReceiptDrafts.AsNoTracking().SingleAsync();
+            if (approve)
+            {
+                var rows = ReversalProposalPolicy.Approve(original, proposal, new(proposal.Id, "1"), Guid.NewGuid(), Guid.NewGuid(),
+                    "checker", "SENTETIK-clock-rollback", decidedAt);
+                writer.ReceiptDrafts.Add(rows.Source); writer.MoneyEvents.Add(rows.Event);
+            }
+            else ReversalProposalPolicy.Reject(original, proposal, new(proposal.Id, "1", "SENTETIK ret"), "checker", decidedAt);
+            await writer.SaveChangesAsync();
+        }
+        var result = await fixture.Core.ReadDecisionAsync(fixture.Context, fixture.Proposal.Id, _ => Task.CompletedTask, default);
+        Assert.Equal(ReadOutcome.Found, result.Outcome); Assert.Equal(decidedAt, result.Resource!.Proposal.DecidedAtUtc);
+        Assert.Equal(At, result.Resource.Proposal.ProposedAtUtc); Assert.Equal("2", result.Resource.Proposal.Version);
+        Assert.Equal(approve ? ReversalProposalStatus.Approved : ReversalProposalStatus.Rejected, result.Resource.Proposal.Status);
+        Assert.Empty(await fixture.Database.Commands.ToArrayAsync()); Assert.False(fixture.Database.ChangeTracker.HasChanges());
     }
 
     [Theory]
@@ -161,7 +209,7 @@ public sealed class ReversalProposalDecisionReadTests
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly string name = "receipt-reversal-read-" + Guid.NewGuid();
-        public CompanyContext Company { get; } = new(); public User User { get; } = new(); public Permissions Permissions { get; } = new();
+        public MutableCompany Company { get; } = new(); public User User { get; } = new(); public Permissions Permissions { get; } = new();
         public AuditEventCollector Collector { get; } = new(); public ReceiptDraftRow Original { get; private set; } = null!;
         public ReversalProposalRow Proposal { get; private set; } = null!; public FinanceDbContext Database { get; private set; } = null!;
         public ReversalProposalService Core { get; private set; } = null!;
@@ -171,7 +219,9 @@ public sealed class ReversalProposalDecisionReadTests
             var fixture = new Fixture(); fixture.Company.Set(ReversalProposalDecisionReadTests.Company);
             var (source, fact) = ReversalProposalDecisionReadTests.Original(); fixture.Original = source;
             fixture.Proposal = ReversalProposalPolicy.Propose(source, new(source.Id, "2", new(2026, 11, 27), "SENTETIK reason"), Guid.NewGuid(), "maker", At);
-            await using (var seed = fixture.NewDatabase()) { seed.ReceiptDrafts.Add(source); seed.MoneyEvents.Add(fact); seed.ReversalProposals.Add(fixture.Proposal); await seed.SaveChangesAsync(); }
+            await using (var seed = fixture.NewDatabase()) { seed.BankAccounts.Add(new BankAccountRow { Id = source.TreasuryAccountId,
+                CompanyId = ReversalProposalDecisionReadTests.Company, CurrencyId = source.CurrencyId, DisplayName = "SENTETIK named bank",
+                Status = 1, Version = 1, ProposedBy = "bank-maker", ProposedAtUtc = At, UpdatedAtUtc = At }); seed.ReceiptDrafts.Add(source); seed.MoneyEvents.Add(fact); seed.ReversalProposals.Add(fixture.Proposal); await seed.SaveChangesAsync(); }
             fixture.Database = fixture.NewDatabase(); fixture.Core = fixture.Service(fixture.Database, fixture.Collector); return fixture;
         }
         public FinanceDbContext NewDatabase() => new(new DbContextOptionsBuilder<FinanceDbContext>().UseInMemoryDatabase(name).Options, Company);
@@ -179,6 +229,8 @@ public sealed class ReversalProposalDecisionReadTests
             new OpenPeriod(), new NoAllocations(), collector, new(new("propose", [], "Web"), new("approve", [], "Web")), TimeProvider.System);
         public ValueTask DisposeAsync() => Database.DisposeAsync();
     }
+    private sealed class MutableCompany : ICompanyContext
+    { public bool IsResolved => CompanyId != Guid.Empty; public Guid CompanyId { get; private set; } public void Set(Guid id) => CompanyId = id; }
     private sealed class User : ICurrentUser
     { public string Actor = "checker"; public bool IsAuthenticated => true; public string? UserId => Actor;
       public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { Company }; public bool CanAccessCompany(Guid id) => AllowedCompanyIds.Contains(id); }

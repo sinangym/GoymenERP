@@ -1,5 +1,6 @@
 using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Finance.Contracts;
+using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 
 namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 
@@ -33,4 +34,17 @@ internal sealed partial class FinanceManualReceiptReversalWorkInboxSourceV1
             if (refusal is not null) throw new InvalidOperationException("Receipt reversal decision read unavailable.");
         }
     }
+
+    // Reuse exactly the native Inbox formatter, including its stored company bank display label.
+    internal static WorkInboxItemV1? DecisionItem(ReceiptReversalDecisionDetailV1 detail) => Item(
+        new ReversalProposalRow { Id = detail.Proposal.Id, OriginalSourceId = detail.OriginalReceipt.SourceId,
+            CompanyId = detail.CompanyId, ProposedBy = detail.Proposal.ProposedBy, ProposedAtUtc = detail.Proposal.ProposedAtUtc },
+        new Lookup(new Dictionary<Guid, ReceiptDraftRow>
+        {
+            [detail.OriginalReceipt.SourceId] = new() { Id = detail.OriginalReceipt.SourceId, CompanyId = detail.CompanyId,
+                DocumentNumber = detail.OriginalReceipt.DocumentNumber, PartyId = detail.OriginalReceipt.PartyId,
+                TreasuryAccountId = detail.OriginalReceipt.TreasuryAccountId, CurrencyId = detail.OriginalReceipt.CurrencyId,
+                AmountText = detail.OriginalReceipt.AmountText },
+        }, new Dictionary<Guid, string> { [detail.OriginalReceipt.TreasuryAccountId] = detail.TreasuryAccountLabel }));
+
 }
