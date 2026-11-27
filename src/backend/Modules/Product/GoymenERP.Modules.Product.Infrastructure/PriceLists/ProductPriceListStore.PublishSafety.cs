@@ -21,13 +21,12 @@ internal sealed partial class ProductPriceListStore
         {
             token.ThrowIfCancellationRequested();
             // Outside owned cleanup: a refused entry must preserve the caller's tracked work, collector and transaction.
-            if (writer is null || ownedPublish is not null || !dbContext.Database.IsRelational()
-                || System.Transactions.Transaction.Current is not null || dbContext.Database.CurrentTransaction is not null
-                || dbContext.ChangeTracker.HasChanges() || writer.HasPendingDrafts)
-                throw new ProductPriceListException(503, ProductPriceListCodesV1.Unavailable);
+            Preflight();
             // Initial authentication/company refusal still owns nothing: do not clear or discard caller state.
             await fence(token);
-            var state = new OwnedPublish(replayOnly, writer, fence);
+            // The await may have admitted another same-scope caller. Never overwrite its lease or clear its new work.
+            Preflight();
+            var state = new OwnedPublish(replayOnly, writer!, fence);
             IDbContextTransaction? transaction = null; var committed = false;
             try
             {
@@ -40,7 +39,7 @@ internal sealed partial class ProductPriceListStore
                 await fence(token);
                 if (answer is not null && !(answer.IsReplay ? state.ReplayProven : state.Saved))
                     throw new InvalidOperationException("Publish success has no native stored receipt.");
-                if (writer.HasPendingDrafts || dbContext.ChangeTracker.HasChanges())
+                if (writer!.HasPendingDrafts || dbContext.ChangeTracker.HasChanges())
                     throw new InvalidOperationException("Publish has unflushed owner work or Audit.");
                 await fence(token);
                 await transaction.CommitAsync(token); committed = true;
@@ -58,13 +57,22 @@ internal sealed partial class ProductPriceListStore
                     try { await transaction.DisposeAsync(); } catch (Exception error) { faults.Add(error); }
                 }
                 try { dbContext.ChangeTracker.Clear(); } catch (Exception error) { faults.Add(error); }
-                try { writer.DiscardPending(); } catch (Exception error) { faults.Add(error); }
+                try { writer!.DiscardPending(); } catch (Exception error) { faults.Add(error); }
                 if (faults.Count > 0) throw new AggregateException("Publish cleanup failed; replay is unsafe.", [failure, .. faults]);
                 if (!replayOnly && !committed && state.SaveAttempted && !state.Saved && failure is DbUpdateException)
                     throw new PublishSaveRace();
                 throw;
             }
             finally { ownedPublish = null; }
+
+            void Preflight()
+            {
+                token.ThrowIfCancellationRequested();
+                if (writer is null || ownedPublish is not null || !dbContext.Database.IsRelational()
+                    || System.Transactions.Transaction.Current is not null || dbContext.Database.CurrentTransaction is not null
+                    || dbContext.ChangeTracker.HasChanges() || writer.HasPendingDrafts)
+                    throw new ProductPriceListException(503, ProductPriceListCodesV1.Unavailable);
+            }
         }
     }
 

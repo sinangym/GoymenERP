@@ -85,6 +85,34 @@ public sealed class ProductPriceListPublishSafetyTests
     }
 
     [Fact]
+    public async Task First_fresh_authority_await_cannot_admit_new_caller_work_into_the_owned_publish_cleanup()
+    {
+        foreach (var pendingAudit in new[] { false, true })
+        {
+            var company = new CompanyContext(); company.Set(Guid.NewGuid()); var user = new User();
+            var writer = new Writer(); var authority = new Authority { Granted = true };
+            await using var database = new ProductPriceListDbContext(new DbContextOptionsBuilder<ProductPriceListDbContext>()
+                .UseSqlServer("Server=unused.invalid;Database=unused;Connect Timeout=1;").Options, company);
+            var caller = new ProductPackageStandardDecisionRow { CompanyId = company.CompanyId, Version = 1, DecisionId = Guid.NewGuid() };
+            authority.AfterRead = () =>
+            {
+                if (pendingAudit) writer.HasPendingDrafts = true;
+                else database.PackageStandardDecisions.Add(caller);
+            };
+            var core = new ProductPriceListService(company, user, authority,
+                new(database, company, new AuditEventCollector(), TimeProvider.System), TimeProvider.System, null, _ => true);
+            var facade = new GuardedProductPriceListService(core, writer);
+            var error = await Assert.ThrowsAsync<ProductPriceListException>(() => facade.PublishAsync(Guid.NewGuid(), new("1", 1),
+                new(user.UserId, ProductPriceListPermissionsV1.Publish, [], "SENTETIK", null, "key", "Web")));
+            Assert.Equal((503, ProductPriceListCodesV1.Unavailable), (error.Status, error.Code));
+            Assert.Equal(1, authority.Calls); Assert.Equal((0, 0), (writer.Writes, writer.Discards));
+            Assert.Equal(pendingAudit, writer.HasPendingDrafts); Assert.Equal(!pendingAudit, database.ChangeTracker.HasChanges());
+            if (!pendingAudit) Assert.Same(caller, Assert.Single(database.ChangeTracker.Entries()).Entity);
+            Assert.Null(database.Database.CurrentTransaction);
+        }
+    }
+
+    [Fact]
     public void Runtime_price_list_interface_resolves_only_the_native_guarded_facade()
     {
         var company = new CompanyContext(); company.Set(Guid.NewGuid());
@@ -104,7 +132,14 @@ public sealed class ProductPriceListPublishSafetyTests
     private sealed class User : ICurrentUser
     { public bool Authenticated = true; public bool IsAuthenticated => Authenticated; public string UserId => "SENTETIK-publisher"; public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid>(); public bool CanAccessCompany(Guid id) => true; }
     private sealed class Authority : IErpAuthorityRevalidationService
-    { public int Calls; public Task<PermissionScope> RevalidatePermissionScopeAsync(string p, Guid c, CancellationToken t = default) { Calls++; return Task.FromResult(PermissionScope.Denied); } }
+    {
+        public int Calls; public bool Granted; public Action? AfterRead;
+        public async Task<PermissionScope> RevalidatePermissionScopeAsync(string p, Guid c, CancellationToken t = default)
+        {
+            Calls++; await Task.Yield(); AfterRead?.Invoke();
+            return Granted ? new(true, true, new HashSet<string>(), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()) : PermissionScope.Denied;
+        }
+    }
     private sealed class Writer : IAuditTransactionWriterV1
     {
         public bool HasPendingDrafts { get; set; } public int Writes, Discards;
