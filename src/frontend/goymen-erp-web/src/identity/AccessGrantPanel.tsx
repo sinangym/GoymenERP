@@ -14,16 +14,24 @@ import { fetchAccessGrantRequests, sendAccessGrant } from './accessGrantApi'
 import type { AccessGrantAction, AccessGrantOutcome, AccessGrantRequest, AssignAccessBody } from './accessGrantContract'
 import { ACCESS_GRANT_TEXT as T } from './identityText'
 import styles from './identity.module.css'
+import { RoleSelectionPreview } from './RoleSelectionPreview'
 
 export function AccessGrantPanel({ company, user, roles, changed }: { readonly company: string; readonly user: AccessUserDetail; readonly roles: readonly AccessRoleSummary[]; readonly changed: () => void }) {
   const shell = useShellState()
   const [editing, setEditing] = useState<'assign' | AccessAssignment | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const finish = (message: string | null) => { setEditing(null); setNotice(message); if (message !== null) changed() }
+  const [preparedRole, setPreparedRole] = useState<string | null>(null)
+  const [recordedRoles, setRecordedRoles] = useState<readonly string[]>([])
+  const finish: Finish = (message, applied) => {
+    if (applied && preparedRole !== null) setRecordedRoles(previous => [...new Set([...previous, preparedRole])])
+    setEditing(null); setPreparedRole(null); setNotice(message); if (message !== null) changed()
+  }
   if (!hasCapability(shell, IDENTITY_ACCESS_CONTROL.manage)) return null
   return <section className={styles.panel}><h3>{T.title}</h3><p role="status">{notice}</p>
-    {editing === 'assign' ? <AssignmentForm company={company} user={user} roles={roles} finish={finish} />
-      : <Button type="button" disabled={editing !== null || !user.isActive || !roles.some((role) => role.isActive)} onClick={() => setEditing('assign')}>{T.assign}</Button>}
+    <RoleSelectionPreview company={company} user={user} roles={roles} disabled={editing !== null || !user.isActive}
+      recordedRoles={recordedRoles} prepare={roleId => { setPreparedRole(roleId); setEditing('assign') }} />
+    {editing === 'assign' ? <AssignmentForm company={company} user={user} roles={roles} initialRoleId={preparedRole ?? undefined} finish={finish} />
+      : <Button type="button" disabled={editing !== null || !user.isActive || !roles.some((role) => role.isActive)} onClick={() => { setPreparedRole(null); setEditing('assign') }}>{T.assign}</Button>}
     {user.assignments.filter((assignment) => assignment.status === 'Active').map((assignment) => <section key={assignment.assignmentId}>
       <p>{assignment.roleName}</p>{editing !== null && editing !== 'assign' && editing.assignmentId === assignment.assignmentId
         ? <><p>{T.lastAdmin}</p>{user.assignments.filter((item) => item.validity === 'effective').length <= 1 && <p role="note">{T.lastAssignment}</p>}
@@ -33,8 +41,8 @@ export function AccessGrantPanel({ company, user, roles, changed }: { readonly c
   </section>
 }
 
-export function AssignmentForm({ company, user, roles, finish }: { readonly company: string; readonly user: Pick<AccessUserDetail, 'userId' | 'displayName'>; readonly roles: readonly AccessRoleSummary[]; readonly finish: Finish }) {
-  const [roleId, setRole] = useState('')
+export function AssignmentForm({ company, user, roles, initialRoleId, finish }: { readonly company: string; readonly user: Pick<AccessUserDetail, 'userId' | 'displayName'>; readonly roles: readonly AccessRoleSummary[]; readonly initialRoleId?: string; readonly finish: Finish }) {
+  const [roleId, setRole] = useState(initialRoleId ?? '')
   const [from, setFrom] = useState('')
   const [until, setUntil] = useState('')
   const selected = roles.find((role) => role.roleId === roleId && role.isActive)
@@ -43,7 +51,7 @@ export function AssignmentForm({ company, user, roles, finish }: { readonly comp
   const valid = selected !== undefined && (from === '' || start !== null) && (until === '' || (start !== null && end !== null && end > start))
   const body: AssignAccessBody = { userId: user.userId, roleId, validFromUtc: start, validUntilUtc: end, reason: null }
   return <CommandForm company={company} action={selected?.isCritical ? 'request' : 'assign'} id={null} body={body} finish={finish} valid={valid} submitLabel={selected?.isCritical ? T.request : T.assign}>
-    <Field label={T.role}>{(control) => <select {...control} required value={roleId} onChange={(event) => setRole(event.target.value)}><option value="">{T.chooseRole}</option>{roles.filter((role) => role.isActive).map((role) => <option key={role.roleId} value={role.roleId}>{role.name}</option>)}</select>}</Field>
+    <Field label={T.role}>{(control) => <select {...control} required disabled={initialRoleId !== undefined} value={roleId} onChange={(event) => setRole(event.target.value)}><option value="">{T.chooseRole}</option>{roles.filter((role) => role.isActive).map((role) => <option key={role.roleId} value={role.roleId}>{role.name}</option>)}</select>}</Field>
     {selected?.isCritical && <p role="note">{T.critical}</p>}
     <Field label={T.from}>{(control) => <input {...control} type="datetime-local" value={from} onChange={(event) => setFrom(event.target.value)} />}</Field>
     <Field label={T.until}>{(control) => <input {...control} type="datetime-local" min={from} value={until} onChange={(event) => setUntil(event.target.value)} />}</Field>
@@ -76,7 +84,7 @@ function QueueRows({ requests, actor, company, canManage, canDecide, changed }: 
   })}</>
 }
 
-type Finish = (message: string | null) => void
+type Finish = (message: string | null, applied?: boolean) => void
 function CommandForm({ company, action, id, body, finish, valid = true, submitLabel, children }: {
   readonly company: string; readonly action: AccessGrantAction; readonly id: string | null; readonly body: object; readonly finish: Finish; readonly valid?: boolean; readonly submitLabel?: string; readonly children?: ReactNode
 }) {
@@ -97,7 +105,7 @@ function CommandForm({ company, action, id, body, finish, valid = true, submitLa
     const result = await attempt.run(payload, (key) => sendAccessGrant(company, key, payload.action, id, payload.body))
     if (result.type === 'unknown') { setFrozen(payload); return }
     setFrozen(null)
-    if (result.type === 'applied') { finish(result.replayed ? T.replay : T.succeeded); return }
+    if (result.type === 'applied') { finish(result.replayed ? T.replay : T.succeeded, true); return }
     if (result.status === 401 || result.status === 403) boundary.report(result.status, snapshot)
     if (result.status === 404 || result.code === 'identity.access.version_conflict') { finish(T.versionConflict); return }
     setRefusal(result.code === 'identity.last_admin_required' ? T.lastAdmin : result.code === 'identity.assignment.second_approval_required' ? T.secondApproval

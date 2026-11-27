@@ -65,6 +65,13 @@ export const ACCESS_GRANT_TEXT = {
   unknown: 'İşlemin sonucu bilinmiyor. Aynı istek ve işlem anahtarıyla yeniden deneyin.', refused: 'İşlem reddedildi. Yetkiyi ve kaydın güncel durumunu kontrol edin.',
   versionConflict: 'Kayıt değişti. Güncel liste yeniden okundu; işlemi yeniden başlatın.', secondApproval: 'Bu rol için ikinci kişi onayı gerekir. Atama yerine onaya gönderin.', selfApproval: 'Talebi açan veya hedef kişi karar veremez.',
   operation: 'İşlem', target: 'Hedef kullanıcı', requester: 'Talebi açan', validity: 'Geçerlilik', preview: 'Atama önizlemesi', noRole: 'Atanabilir etkin rol yok.',
+  company: 'İşlem şirketi', selectionTitle: 'Rol seçim taslağı', selectRoles: 'Önizlenecek mevcut roller',
+  selectionNotice: 'Bu seçim yetki vermez. Her rol için mevcut atama veya onay talebi işlemini ayrı ayrı inceleyip uygulayın. Şirket değişikliği ortak şirket seçicisinden yapılır.',
+  selectedPermissions: 'Seçilen rollerin izin birleşimi', currentPermissions: 'Kullanıcının şu an geçerli izinleri',
+  currentPermissionsNotice: 'Bu liste sunucunun mevcut kullanıcı cevabıdır; rol seçim taslağıyla değiştirilmez.', noCurrentPermissions: 'Sunucu bu şirkette geçerli izin bildirmedi.',
+  requiresApproval: 'Critical / ikinci onay', prepareRole: 'Bu rolün işlemini hazırla', remainingRoles: 'İşlemi kaydedilmemiş seçili rol',
+  roleStepRecorded: 'Bu oturumda rol işlemi kaydedildi. Talep veya atama sonucu, güncel sunucu kaydından izlenir.',
+  previewUnavailable: 'Rol ayrıntısı okuma yetkisi olmadan izin önizlemesi gösterilemez.',
 } as const
 
 export const LOGIN_TEXT = {
