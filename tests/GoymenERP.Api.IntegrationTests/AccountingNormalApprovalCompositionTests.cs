@@ -24,6 +24,7 @@ public sealed class AccountingNormalApprovalCompositionTests
     [InlineData("accounting.period.reopening.approve.v1")]
     [InlineData(ApprovedAccountingSourceCatalogCommandNamesV1.Activate)]
     [InlineData(AccountingPostingAccountMappingCommandNamesV1.Activate)]
+    [InlineData("accounting.source-voucher.approve.v1")]
     public async Task Real_module_approval_alias_preserves_caller_audit_added_during_its_fence_without_opening_SQL(string? periodCommand)
     {
         var company = Guid.Parse("ac490000-0000-4000-8000-000000000001");
@@ -108,6 +109,18 @@ public sealed class AccountingNormalApprovalCompositionTests
             {
                 attempts++;
                 throw new InvalidOperationException("A refused mapping boundary must preserve the caller draft.");
+            }, Fence);
+            Assert.Equal(AccountingApiStatus.Unavailable, result.Status); Assert.Null(result.Resource); Assert.False(result.IsReplay);
+        }
+        else if (periodCommand == "accounting.source-voucher.approve.v1")
+        {
+            var vouchers = scope.GetRequiredService<IAccountingSourceVoucherStoreV1>();
+            Assert.IsType<AccountingSourceVoucherStoreV1>(vouchers);
+            Assert.Same(vouchers, scope.GetRequiredService<IAccountingSourceVoucherStoreV1>());
+            var result = await vouchers.RunApprovalAsync(_ =>
+            {
+                attempts++;
+                throw new InvalidOperationException("A refused voucher boundary must preserve the caller draft.");
             }, Fence);
             Assert.Equal(AccountingApiStatus.Unavailable, result.Status); Assert.Null(result.Resource); Assert.False(result.IsReplay);
         }
