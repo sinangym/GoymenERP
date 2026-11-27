@@ -1,5 +1,7 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Audit.Application.Contracts;
+using Microsoft.Extensions.DependencyInjection;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Finance.Contracts;
@@ -24,7 +26,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// Every identity and currency below is SENTETIK / NOT_ENV test data.
 /// </para>
 /// </summary>
-public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
+public sealed partial class FinanceBankAccountSqlServerRelationalAcceptanceTests
 {
     private const string Operation = "SENTETIK-operation";
     private const string Proposer = "SENTETIK-proposer";
@@ -651,10 +653,12 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         private Scope Open(Guid company, string actor, bool realSettings, IFinancePermissionPort permissions,
             Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] extra, bool approvedSettings = false)
         {
-            var companyContext = new CompanyContext();
+            var auditScope = Factory.Services.CreateScope();
+            var companyContext = auditScope.ServiceProvider.GetRequiredService<ICompanyContext>();
             companyContext.Set(company);
             var currentUser = new FixedCurrentUser(actor, company);
-            var collector = new AuditEventCollector();
+            var collector = auditScope.ServiceProvider.GetRequiredService<AuditEventCollector>();
+            var writer = auditScope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
             var interceptors = new List<Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor>
             {
                 new AuditSaveChangesInterceptor(collector, companyContext),
@@ -675,12 +679,12 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
                 new FinanceBankAccountEnvelopes(
                     new FinanceAuditEnvelope(FinanceBankAccountService.ProposeCommand, ["SENTETIK-FINANCE"], "Web"),
                     new FinanceAuditEnvelope(FinanceBankAccountService.ApproveCommand, ["SENTETIK-FINANCE"], "Web")),
-                TimeProvider.System);
+                TimeProvider.System, writer);
             // The draft service reads bank accounts through the REAL persisted reader above.
             var drafts = new ReceiptDraftService(dbContext, companyContext, currentUser, permissions, accounts,
                 new SyntheticParty(company), new SyntheticSettings(company), collector, new FinanceReceiptDraftBinding(Operation),
                 new FinanceAuditEnvelope(ReceiptDraftService.SaveDraftCommand, ["SENTETIK-FINANCE"], "Web"), TimeProvider.System, documentNumbers: new SyntheticFinanceRecordNumbers());
-            return new Scope(dbContext, accounts, drafts, new FinanceContext(company, actor, Correlation, null));
+            return new Scope(dbContext, accounts, drafts, new FinanceContext(company, actor, Correlation, null), auditScope);
         }
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
@@ -734,13 +738,14 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
     }
 
     private sealed class Scope(FinanceDbContext dbContext, FinanceBankAccountService accounts, ReceiptDraftService drafts,
-        FinanceContext context) : IAsyncDisposable
+        FinanceContext context, IServiceScope? auditScope = null) : IAsyncDisposable
     {
         public FinanceBankAccountService Accounts => accounts;
         public IManualReceiptService Drafts => drafts;
         public FinanceContext Context => context;
 
-        public ValueTask DisposeAsync() => dbContext.DisposeAsync();
+        public async ValueTask DisposeAsync()
+        { try { await dbContext.DisposeAsync(); } finally { auditScope?.Dispose(); } }
     }
 
     /// <summary>SENTETIK: allows every Finance action. Not a grant; there is no Finance permission on main.</summary>

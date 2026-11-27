@@ -237,7 +237,7 @@ public static class FinanceModuleExtensions
             new FinanceBankAccountEnvelopes(
                 Envelope(provider, ErpPermissions.FinanceBankAccountPropose, permissions, FinanceAction.ProposeBankAccount),
                 Envelope(provider, ErpPermissions.FinanceBankAccountApprove, permissions, FinanceAction.ApproveBankAccount)),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<IAuditTransactionWriterV1>());
     }
 
     private static FinanceCashAccountService CreateCashAccountService(IServiceProvider provider)

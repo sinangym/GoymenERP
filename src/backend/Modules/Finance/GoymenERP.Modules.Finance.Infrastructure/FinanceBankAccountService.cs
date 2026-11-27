@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Data;
+using Microsoft.EntityFrameworkCore.Storage;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -68,7 +70,7 @@ public sealed class FinanceBankAccountService(
     ISettingsMoneyCandidateReader currencies,
     IAuditEventCollector auditEvents,
     FinanceBankAccountEnvelopes envelopes,
-    TimeProvider timeProvider) : IFinanceBankAccountMaster, IFinanceBankAccountReader
+    TimeProvider timeProvider, IAuditTransactionWriterV1? approvalAuditWriter = null) : IFinanceBankAccountMaster, IFinanceBankAccountReader
 {
     public const string ProposeCommand = "finance.bank-account.propose";
     public const string ApproveCommand = "finance.bank-account.approve";
@@ -204,6 +206,12 @@ public sealed class FinanceBankAccountService(
             return Refused(context, CommandOutcome.ValidationFailed, Issue("expectedVersion", "identity_required"));
         }
 
+        return await RunBankApprovalAsync(context, metadata, request, cancellationToken);
+    }
+
+    private async Task<BankAccountCommandResult> ApproveCoreAsync(FinanceContext context, CommandMetadata metadata,
+        BankAccountApproveRequest request, bool replayOnly, CancellationToken cancellationToken)
+    {
         var payloadHash = PayloadHash(ApproveCommand, request);
         if (await PriorAsync(context, metadata, FinanceAction.ApproveBankAccount, ApproveCommand, payloadHash, cancellationToken)
             is { } prior)
@@ -211,12 +219,14 @@ public sealed class FinanceBankAccountService(
             return prior;
         }
 
+        if (replayOnly) return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
+
         var row = await dbContext.BankAccounts.SingleOrDefaultAsync(candidate => candidate.Id == request.AccountId, cancellationToken);
         if (row is null)
         {
             // Another company's account is not visible either: the same answer, nothing leaks. Terminal
             // (ADR-011 §7): the key keeps this answer, with no target to point at.
-            return await TerminalAsync(context, metadata, FinanceAction.ApproveBankAccount, ApproveCommand, payloadHash,
+            return await BankApprovalTerminalAsync(context, metadata, payloadHash,
                 accountId: null, Refused(context, CommandOutcome.ValidationFailed, Issue("accountId", "bank_account_not_found")),
                 cancellationToken);
         }
@@ -224,7 +234,7 @@ public sealed class FinanceBankAccountService(
         if (!string.Equals(VersionText(row.Version), request.ExpectedVersion, StringComparison.Ordinal))
         {
             // Terminal (§7): a retry of this key answers the same conflict even after the account moves on.
-            return await TerminalAsync(context, metadata, FinanceAction.ApproveBankAccount, ApproveCommand, payloadHash,
+            return await BankApprovalTerminalAsync(context, metadata, payloadHash,
                 row.Id, Refused(context, CommandOutcome.VersionConflict, Issue("expectedVersion", "version_conflict")),
                 cancellationToken);
         }
@@ -261,9 +271,102 @@ public sealed class FinanceBankAccountService(
         Audit(context, metadata, envelopes.Approve, row.Id, "finance.bank-account.approved.v1", "Approve", versionBefore,
             row.Version, before, AccountAudit(row), approval,
             "Finans banka hesabı onayı (hazırlayandan farklı tek onay; para etkisi yok)");
-        return await SaveAsync(context, metadata, FinanceAction.ApproveBankAccount, ApproveCommand, payloadHash, result,
-            cancellationToken);
+        return await SaveBankApprovalAsync(context, row.Id, result, cancellationToken);
     }
+
+    private bool bankApprovalActive;
+
+    private async Task<BankAccountCommandResult> RunBankApprovalAsync(FinanceContext context, CommandMetadata metadata,
+        BankAccountApproveRequest request, CancellationToken token)
+    {
+        try { return await RunOwnedBankApprovalAsync(context, metadata, request, false, token); }
+        catch (BankApprovalSaveRace)
+        {
+            // The failed writer has rolled back and disposed before this bounded, read-only receipt lookup.
+            return await RunOwnedBankApprovalAsync(context, metadata, request, true, token);
+        }
+    }
+
+    private async Task<BankAccountCommandResult> RunOwnedBankApprovalAsync(FinanceContext context, CommandMetadata metadata,
+        BankAccountApproveRequest request, bool replayOnly, CancellationToken token)
+    {
+        // Caller work is refused before the owned cleanup scope. The public auth/body preflight reads no Finance row.
+        if (approvalAuditWriter is null || System.Transactions.Transaction.Current is not null
+            || !dbContext.Database.IsRelational() || dbContext.Database.CurrentTransaction is not null
+            || dbContext.ChangeTracker.HasChanges() || approvalAuditWriter.HasPendingDrafts || bankApprovalActive)
+            return Refused(context, CommandOutcome.Unavailable, Issue("request", "bank_account_approval_unavailable"));
+        bankApprovalActive = true;
+        try
+        {
+            await using var owned = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, token);
+            try
+            {
+                await RequireBankApprovalFenceAsync(context, request.AccountId, token);
+                var result = await ApproveCoreAsync(context, metadata, request, replayOnly, token);
+                await RequireBankApprovalFenceAsync(context, request.AccountId, token);
+                if (approvalAuditWriter.HasPendingDrafts)
+                {
+                    await approvalAuditWriter.WritePendingAsync(owned.GetDbTransaction(), token);
+                    await RequireBankApprovalFenceAsync(context, request.AccountId, token);
+                }
+                if (approvalAuditWriter.HasPendingDrafts) throw new InvalidOperationException("Bank approval audit is still pending.");
+                await RequireBankApprovalFenceAsync(context, request.AccountId, token);
+                await owned.CommitAsync(token);
+                return result;
+            }
+            catch (Exception error)
+            {
+                // Both cleanup operations run even if rollback or dispose itself fails. Such failure never starts a replay.
+                try { await owned.RollbackAsync(CancellationToken.None); }
+                finally
+                {
+                    try { await owned.DisposeAsync(); }
+                    finally { dbContext.ChangeTracker.Clear(); approvalAuditWriter.DiscardPending(); }
+                }
+                if (error is BankApprovalRefusal refused) return refused.Result;
+                if (error is DbUpdateException update && (update is DbUpdateConcurrencyException
+                    || update.InnerException is SqlException { Number: 2601 or 2627 }))
+                {
+                    if (replayOnly) return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
+                    throw new BankApprovalSaveRace(update);
+                }
+                throw;
+            }
+        }
+        finally { bankApprovalActive = false; }
+    }
+
+    private async Task RequireBankApprovalFenceAsync(FinanceContext context, Guid accountId, CancellationToken token)
+    {
+        if (await FenceAsync(context, FinanceAction.ApproveBankAccount, accountId, token) is { } refusal)
+            throw new BankApprovalRefusal(refusal);
+    }
+
+    private async Task<BankAccountCommandResult> SaveBankApprovalAsync(FinanceContext context, Guid? accountId,
+        BankAccountCommandResult result, CancellationToken token)
+    {
+        if (await FenceAsync(context, FinanceAction.ApproveBankAccount, accountId, token) is { } refusal)
+            throw new BankApprovalRefusal(refusal);
+        // Flush the actual collector in this same transaction before Save; no interceptor-attached batch can survive a failed save.
+        await approvalAuditWriter!.WritePendingAsync(dbContext.Database.CurrentTransaction!.GetDbTransaction(), token);
+        if (await FenceAsync(context, FinanceAction.ApproveBankAccount, accountId, token) is { } afterAudit)
+            throw new BankApprovalRefusal(afterAudit);
+        await dbContext.SaveChangesAsync(token);
+        if (await FenceAsync(context, FinanceAction.ApproveBankAccount, accountId, token) is { } afterSave)
+            throw new BankApprovalRefusal(afterSave);
+        return result;
+    }
+
+    private Task<BankAccountCommandResult> BankApprovalTerminalAsync(FinanceContext context, CommandMetadata metadata,
+        string payloadHash, Guid? accountId, BankAccountCommandResult refusal, CancellationToken token)
+    {
+        AddCommand(context, metadata, ApproveCommand, payloadHash, accountId, refusal, timeProvider.GetUtcNow());
+        return SaveBankApprovalAsync(context, accountId, refusal, token);
+    }
+
+    private sealed class BankApprovalRefusal(BankAccountCommandResult result) : Exception
+    { internal BankAccountCommandResult Result { get; } = result; }
+    private sealed class BankApprovalSaveRace(Exception inner) : Exception("Bank approval save race.", inner);
 
     /// <summary>
     /// D4 (Sinan #66 5749046401): propose a new IBAN for an APPROVED account. The value is written
