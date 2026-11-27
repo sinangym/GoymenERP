@@ -33,21 +33,69 @@ internal sealed partial class AccountingJournalReversalWorkInboxSourceV1(
 
     public string ApproverPermission => AccountingJournalReversalPermissionNamesV1.Approve;
 
-    public Task<WorkInboxSourceResultV1> ListPendingAsync(
+    public async Task<WorkInboxSourceResultV1> ListPendingAsync(
         WorkInboxSourceContextV1 context,
         int maxCount,
-        CancellationToken cancellationToken) =>
-        fence.ListAsync(context, ApproverPermission, maxCount,
-            token => dbContext.JournalReversalProposals.AsNoTracking()
-                .Where(row => row.CompanyId == context.CompanyId
-                    && row.Status == (int)AccountingJournalReversalProposalStatusV1.Pending)
-                .OrderBy(row => row.ProposedAtUtc).ThenBy(row => row.Id)
-                .Take(maxCount + 1)
-                .ToListAsync(token),
-            rows => AccountingWorkInboxFence.Page(rows, maxCount, Item),
-            cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context); ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCount);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (context.GrantScope is not null) return WorkInboxSourceResultV1.Denied();
+        var answer = await fence.ListAsync(context, ApproverPermission, maxCount,
+            async token =>
+            {
+                var rows = await dbContext.JournalReversalProposals.AsNoTracking()
+                    .Where(row => row.CompanyId == context.CompanyId
+                        && row.Status == (int)AccountingJournalReversalProposalStatusV1.Pending)
+                    .OrderBy(row => row.ProposedAtUtc).ThenBy(row => row.Id)
+                    .Take(maxCount + 1).ToListAsync(token);
+                await FreshReadFence(token);
+                var journals = rows.Take(maxCount).Select(row => row.SourceJournalId).Distinct().ToArray();
+                if (journals.Length == 0) return new PendingPage(rows, []);
+                // Same company-bound KLN-D17 predicate as native approval; one bulk read, never N+1 human reads.
+                var actors = await dbContext.SourceDocumentVoucherDrafts.AsNoTracking()
+                    .Where(voucher => voucher.CompanyId == context.CompanyId && voucher.Status == 2
+                        && voucher.JournalId != null && journals.Contains(voucher.JournalId.Value)
+                        && dbContext.SourceInvoiceCancellations.Any(cancellation => cancellation.CompanyId == context.CompanyId
+                            && cancellation.SourceDocumentId == voucher.SourceDocumentId && cancellation.InvoiceId == voucher.InvoiceId
+                            && cancellation.FinalizedVersion == voucher.FinalizedVersion))
+                    .Select(voucher => new PendingCancellationActor(voucher.JournalId!.Value, voucher.SourceActorId))
+                    .ToListAsync(token);
+                await FreshReadFence(token);
+                return new PendingPage(rows, actors);
+            },
+            page => BuildPendingPage(page.Rows, page.Actors, maxCount), cancellationToken);
+        // The existing shared fence can receive a normal-completing, cancelled provider response.
+        cancellationToken.ThrowIfCancellationRequested();
+        return answer;
+        async Task FreshReadFence(CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            if (await fence.CheckAsync(context, ApproverPermission, token) is { } refused)
+            {
+                if (refused.Outcome == NativeApprovalQueueOutcomeV1.Denied) throw new UnauthorizedAccessException();
+                throw new InvalidOperationException("Journal reversal pending authority unavailable.");
+            }
+            token.ThrowIfCancellationRequested();
+        }
+    }
 
-    private static WorkInboxItemV1? Item(AccountingJournalReversalProposalRow row)
+    internal static (IReadOnlyList<WorkInboxItemV1>? Items, bool HasMore) BuildPendingPage(
+        IReadOnlyList<AccountingJournalReversalProposalRow> rows, IReadOnlyList<PendingCancellationActor> actors, int maxCount)
+    {
+        var journalIds = rows.Take(maxCount).Select(row => row.SourceJournalId).ToHashSet();
+        var groups = actors.GroupBy(actor => actor.JournalId).ToArray();
+        // Approved voucher JournalId equals its primary Id. Never guess if malformed/legacy rows violate uniqueness.
+        if (groups.Any(group => group.Count() != 1) || actors.Any(actor => actor.ActorId == Guid.Empty || !journalIds.Contains(actor.JournalId)))
+            return (null, false);
+        var actorByJournal = groups.ToDictionary(group => group.Key, group => group.Single().ActorId);
+        return AccountingWorkInboxFence.Page(rows, maxCount, row =>
+            Item(row, actorByJournal.TryGetValue(row.SourceJournalId, out var actor) ? actor : null));
+    }
+    internal sealed record PendingCancellationActor(Guid JournalId, Guid ActorId);
+    private sealed record PendingPage(IReadOnlyList<AccountingJournalReversalProposalRow> Rows, IReadOnlyList<PendingCancellationActor> Actors);
+
+    private static WorkInboxItemV1? Item(AccountingJournalReversalProposalRow row, Guid? cancellationActor)
     {
         if (row.Id == Guid.Empty || row.SourceJournalId == Guid.Empty || row.PeriodId == Guid.Empty
             || row.ProposedByUserId == Guid.Empty || row.DecidedByUserId is not null || row.ReversalJournalId is not null)
@@ -55,7 +103,7 @@ internal sealed partial class AccountingJournalReversalWorkInboxSourceV1(
             return null;
         }
 
-        return IdentityItem(row.Id, row.SourceJournalId, row.PeriodId, row.ProposedByUserId, row.ProposedAtUtc, null);
+        return IdentityItem(row.Id, row.SourceJournalId, row.PeriodId, row.ProposedByUserId, row.ProposedAtUtc, cancellationActor);
     }
 
     private static WorkInboxItemV1? IdentityItem(Guid proposalId, Guid sourceJournalId, Guid periodId,
@@ -71,6 +119,6 @@ internal sealed partial class AccountingJournalReversalWorkInboxSourceV1(
                 new WorkApprovalReferenceV1("journal", AccountingWorkInboxFence.ShortReference(sourceJournalId),
                     sourceJournalId, AccountingWorkInboxFence.Link(JournalScreenPath, sourceJournalId)),
                 new WorkApprovalReferenceV1("period", AccountingWorkInboxFence.ShortReference(periodId), periodId, null),
-            ], cancellationActor is { } actor ? [AccountingWorkInboxFence.Actor(actor)!] : null);
+            ], cancellationActor is { } actor && actor != proposedBy ? [AccountingWorkInboxFence.Actor(actor)] : null);
     }
 }

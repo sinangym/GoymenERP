@@ -9,7 +9,7 @@ using Kit = GoymenERP.Accounting.UnitTests.AccountingWorkInboxTestKit;
 
 namespace GoymenERP.Accounting.UnitTests;
 
-public sealed class AccountingJournalReversalDecisionWorkSourceTests
+public sealed partial class AccountingJournalReversalDecisionWorkSourceTests
 {
     private static readonly Guid Proposal = Guid.Parse("b7219039-05d9-4d7a-8835-13c19f481901");
     private static readonly Guid Journal = Guid.Parse("b7219039-05d9-4d7a-8835-13c19f481902");
