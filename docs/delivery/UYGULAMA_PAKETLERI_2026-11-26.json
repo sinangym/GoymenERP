@@ -350,21 +350,24 @@
       ],
       "execution": {
         "source_commits": [
-          "0dc6182ab"
+          "0dc6182ab",
+          "f3ebf4963"
         ],
         "agent_source_commit": "7b2ed4d6fa93f318a467a4c9cdbc073e77e05313",
         "local_checks": {
           "frontend": "Complete five affected test files: 101/101 passed, 0 skipped, 126.13s. Scoped integrated Cari/Sales/Purchasing/Finance entry files match agent source exactly.",
           "tsc": "exit 0",
-          "lint": "exit 0; 0 errors, 12 existing hook/memo warnings; no broad cleanup."
+          "lint": "exit 0; 0 errors, 12 existing hook/memo warnings; no broad cleanup.",
+          "Tax identity increment": "120/120 in seven affected files, skip0, tsc/scoped lint exit0 at agent e667 source integrated f3ebf4963; six pre-existing lint warnings. Source evidence, not browser/API acceptance."
         },
         "reuse": [
           "CariCreatePage native form/probe/useCommandAttempt and strict mutation decoder",
           "Existing Sales/Purchasing owner option queries",
-          "Existing Finance Cari list and canonical draft-context validation"
+          "Existing Finance Cari list and canonical draft-context validation",
+          "Existing native EnterTaxIdentity command and duplicate warning/confirmation; Create remains the existing four-field contract"
         ],
         "remaining": [
-          "VKN/TCKN and legal-identity duplicate acceptance",
+          "Pre-create legal-identity duplicate checks, foreign identity and complete tax/duplicate acceptance; current post-create tax step is not an atomic create-with-tax contract.",
           "Unauthorized creation request contract/service",
           "Incoming-document and independent receipt-start entry points",
           "Real browser/API, SQL/full CI and independent review"
@@ -407,7 +410,10 @@
       ],
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
-        "DEC-PRD-007 bütün ürünlerde kg der; yeni hizmet ve sarf kapsamıyla dar uzlaştırma gerekir."
+        "DEC-PRD-007 bütün ürünlerde kg der; yeni hizmet ve sarf kapsamıyla dar uzlaştırma gerekir.",
+        "Targeted review at f5a971016: Product validator/eligibility, Purchasing Quantity/verifier and Inventory receipt/StockLedger still require kg; non-steel order selection is not kg-free physical stock acceptance.",
+        "Existing Settings unit-profile administration and PurchaseServiceOrder profile/scale/partial receipt can be reused; no second profile or service-order engine.",
+        "ApprovedSettingsPhysicalUnitSemanticsV1 must not classify newly added non-steel identities as Piece through its old catch-all mapping; only the four existing exact identities may retain physical semantics."
       ],
       "decisions": [
         "DEC-PRD-007",
@@ -424,7 +430,8 @@
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
         "K3 mutation/migration: gerçek SQL; ilgili UI: gerçek owner API ile tarayıcı ve erişim iptali.",
-        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
+        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı.",
+        "Never fabricate kg for non-steel receipts; added unit identities do not activate company profiles, precision, family eligibility, conversion or physical stock support. Preserve steel/fason golden behavior and require explicit supported physical semantics."
       ],
       "business_acceptance": [
         "HRC kg; profil kg/adet; motor adet; hizmet fiziksel stok yaratmaz; dönüşüm yoksa tahmin edilmez."
@@ -2012,7 +2019,9 @@
           "sales.subcontract-invoice.v1",
           "finance.credit-account.v1",
           "purchasing.order.v1",
-          "purchasing.service-order.v1"
+          "purchasing.service-order.v1",
+          "purchasing.incoming-invoice-variance.v1",
+          "purchasing.goods-receipt-batch.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -2029,9 +2038,11 @@
           "Sales backend": "Sales.UnitTests at f4ccda30f: 2440 passed, 0 failed, 0 skipped. Existing native approval fixtures now use independent maker/checker actors under YOL-D23; negative fences preserved.",
           "Finance latest full unit suite": "1986/1986 passed, 0 skipped at aa10817d3; credit profile fields and native credit Work fences included.",
           "Sales latest full unit suite": "2469/2469 passed, 0 skipped at 324b9da8c; native order/invoice/subcontract guards included.",
-          "Purchasing latest full unit suite": "1260/1260 passed, 0 skipped at 6a8480eff9f1fb6240cba422de0120e4cb00d6ce; request/order/service purpose reads and native command guards included.",
-          "Latest owner/Work composition": "121/121 passed, 0 skipped at 6a8480eff9f1fb6240cba422de0120e4cb00d6ce; 58 closure cases plus Work and selected pure registry checks. Synthetic owner seams, not actual HTTP/browser/SQL acceptance.",
-          "Prior failed runs": "83-run wrong-scope fixture corrected; later 93-run contained 91 pass and two failures (pure Sales declaration expectation corrected; normal HTTP authority pin remains NOT_ACCEPTED). New service fixture run1259 pass/1 failure correctly hit immutable history; fixture corrected without weakening native guards. Original logs retained."
+          "Purchasing latest full unit suite": "1296/1296 passed, 0 skipped at f1e7d5269; invoice variance and receipt purpose/native fences included.",
+          "Latest owner/Work composition": "115/115 passed, 0 skipped at c56d32a456115a9d03d8a7f3ab6cf9ae6ff4eeb3; five Work*DecisionHostTests classes. Synthetic owner/store composition, not actual HTTP/SQL/browser. Full integration test assembly compiled the new SQL sources.",
+          "Prior failed runs": "83-run wrong-scope fixture corrected; later 93-run contained 91 pass and two failures (pure Sales declaration expectation corrected; normal HTTP authority pin remains NOT_ACCEPTED). New service fixture run1259 pass/1 failure correctly hit immutable history; fixture corrected without weakening native guards. Original logs retained.",
+          "Manufacturing latest full unit suite": "1551/1551 passed, 0 skipped at c56d32a456115a9d03d8a7f3ab6cf9ae6ff4eeb3; native rejection, approval/reapproval allocation fences and staged purpose. Three earlier reapproval fixture failures retained; captured Settings proof corrected using existing At044 fixture, guards/assertions unchanged.",
+          "Deferred host pins": "Earlier 78-case run at 6920c495e had 76 pass/2 normal-host authority-pin failures; retained NOT_ACCEPTED. Pins deferred to train close, no gate waived."
         },
         "reuse": [
           "existing FinanceCashAccountService commands and durable receipts",
@@ -2183,6 +2194,61 @@
             ],
             "new_permissions": [],
             "migration": null
+          },
+          {
+            "source_commit": "c56d32a456115a9d03d8a7f3ab6cf9ae6ff4eeb3",
+            "source_commits": [
+              "4705b55b1",
+              "de7f0504c",
+              "a6e259821",
+              "fdc6ec393",
+              "6920c495e",
+              "a56f0d51f",
+              "420918e9a",
+              "9b06c6aae",
+              "f14309984",
+              "b7a578a8d",
+              "74f860df2",
+              "f0c475ac5",
+              "67e137a80",
+              "a367ec04b",
+              "a425d4dda",
+              "cd0bfaff0",
+              "f1e7d5269",
+              "b8c74e098",
+              "a54a63102",
+              "2d6deda75",
+              "f5a971016",
+              "c56d32a45"
+            ],
+            "scope": "Incoming invoice variance and goods-receipt batch native owner decisions, purpose/UI and fresh price/actor/company/delegation fences. Manufacturing native rejection owned transaction, final approval allocation fence, staged read/reject purpose; no implicit input-label selection.",
+            "reuse": [
+              "PurchaseInvoiceVarianceOrderProof and frozen supplier-approval history",
+              "Native ApproveVariance and goods-receipt batch command/replay",
+              "Work generic decision transport and scoped command journal",
+              "ManufacturingCommandService, owner allocation port, native audit writer and owned-transaction SQL fixtures"
+            ],
+            "local_checks": {
+              "Purchasing": "1296/1296, skip0 at f1e7d5269",
+              "Manufacturing": "1551/1551, skip0 at c56d32a45",
+              "Work owner composition": "115/115, skip0 at c56d32a45",
+              "Invoice UI": "112/112 in 7 files, tsc/scoped lint exit0, agent5f6797 integrated420918e9a",
+              "Receipt UI": "132/132 in 7 files, tsc/scoped lint exit0; 11 changed files match agentd9fafbfce integratedcd0bfaff0"
+            },
+            "sql": "23 invoice/reject facts previously inventoried by f14309984, plus 3 goods-purpose and 17 Manufacturing facts inventoried by f5a971016. Sources compiled at c56d32a45; actual SQL NOT_RUN.",
+            "review": "Bounded read-only non-author source review of six Manufacturing commits at exact c56d32a45 reported no concrete finding; not K3 approval or runtime evidence.",
+            "remaining": [
+              "Manufacturing Work initial approval/reapproval UI and explicit input-label contract; staged capability stays false",
+              "Remaining owner kinds and all 64-flow acceptance",
+              "Actual SQL/HTTP/browser, all pins, fresh full CI and two independent exact-head K3 reviews"
+            ],
+            "new_permissions": [],
+            "migration": null,
+            "measurements": {
+              "token": "NOT_AVAILABLE",
+              "development_duration": "NOT_SEPARATELY_MEASURED",
+              "rework": "Original failures retained; immutable receipt-label fixtures, frozen supplier approval fixtures, xUnit predicate Single, and captured Settings reapproval proof corrected without loosening native business guards."
+            }
           }
         ],
         "source_commits": [
@@ -2211,6 +2277,14 @@
           "9611044e0",
           "c9aa4e299",
           "0d0197c3b"
+        ],
+        "kind_count_scope": "13 connected source kinds; not 13 accepted flows. Manufacturing plan is staged separately with ImplementationAvailable=false; 64-flow runtime acceptance remains open.",
+        "staged_kinds": [
+          {
+            "kind": "manufacturing.plan.v1",
+            "implementation_available": false,
+            "scope": "Native Reject and bounded purpose metadata source; Approve/Reapprove unavailable in Work. Explicit reapproval input-label selection is not in the generic Work DTO."
+          }
         ]
       }
     },
@@ -3245,7 +3319,18 @@
               "NonCash actual bank/tazmin/reimbursement links and full factoring/movement SQL/browser/CI/K3 evidence."
             ]
           }
-        ]
+        ],
+        "noncash_tazmin_gate": {
+          "status": "USER_DECISION_PENDING",
+          "sources": [
+            "FNS-D87",
+            "FNS-D88",
+            "FNS-D125",
+            "FINANCE_CREDIT_GROUP_FIELDS_DRAFT_v1.md v1.2"
+          ],
+          "gap": "Actual bank reimbursement to a beneficiary must not be treated as native Drawdown bank inflow. Separate bank debt/tazmin and company repayment event direction is not settled by approved field list.",
+          "recommendation_not_policy": "Separate linked actual-source events; company bank balance only changes with documented real cash movement. Question asked; no implementation/activation until answered."
+        }
       }
     },
     {
