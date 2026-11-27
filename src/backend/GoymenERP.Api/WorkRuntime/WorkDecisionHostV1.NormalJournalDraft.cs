@@ -37,7 +37,7 @@ public sealed partial class WorkDecisionHostV1
             && snapshot.Item.References.Count == 2;
     }
 
-    private async Task<NormalJournalDraftDecisionDetailV1> NormalJournalDraftHumanPreviewAsync(WorkApprovalDecisionSnapshotV1 snapshot,
+    private async Task<WorkNormalJournalDraftPreviewV1> NormalJournalDraftHumanPreviewAsync(WorkApprovalDecisionSnapshotV1 snapshot,
         string actor, CancellationToken token)
     {
         if (normalJournalDrafts is null) throw new WorkDecisionException(503);
@@ -55,7 +55,7 @@ public sealed partial class WorkDecisionHostV1
             || detail.SourceFactsDigest != p.SourceFactsDigest || detail.PreviewDigest != p.PreviewDigest
             || NormalJournalDraftServiceV1.NormalPreviewDigest(view) != p.PreviewDigest
             || !AccountingNormalJournalDraftDecisionBindingV1.MatchesDecisionItem(snapshot.Item, detail)) throw new WorkDecisionException(503);
-        return detail;
+        return WorkNormalJournalDraftPreviewV1.FromNative(detail);
         async Task Fence(CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested();

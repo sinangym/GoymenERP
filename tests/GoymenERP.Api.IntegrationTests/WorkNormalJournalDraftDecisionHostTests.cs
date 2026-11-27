@@ -23,19 +23,33 @@ public sealed class WorkNormalJournalDraftDecisionHostTests
     private static readonly DateTimeOffset At = new(2026, 11, 27, 9, 0, 0, TimeSpan.Zero);
     private const string Key = "normal-work-original", Correlation = "SENTETIK-normal-work";
 
-    [Theory] [InlineData(1L, false)] [InlineData(7L, false)] [InlineData(1L, true)]
+    [Theory] [InlineData(1L, false)] [InlineData(7L, false)] [InlineData(1L, true)] [InlineData(9007199254740993L, false)]
     public async Task Human_full_native_view_and_explicit_period_native_approval_keep_version_protocol_and_original_key(long version, bool credit)
     {
         using var rig = new Rig(version, credit); var preview = await rig.Preview();
         Assert.False(preview.RejectionSupported); Assert.False(preview.ApprovalReasonRequired);
-        var detail = Assert.IsType<NormalJournalDraftDecisionDetailV1>(preview.NormalJournalDraft);
-        Assert.Equal(version, detail.Draft.Version); Assert.Null(detail.Draft.PeriodId); Assert.Equal(2, detail.Draft.Lines.Count);
+        var detail = Assert.IsType<WorkNormalJournalDraftPreviewV1>(preview.NormalJournalDraft);
+        Assert.Equal(version.ToString(CultureInfo.InvariantCulture), detail.Draft.Version); Assert.Null(detail.Draft.PeriodId); Assert.Equal(2, detail.Draft.Lines.Count);
         Assert.Equal("10", detail.Draft.Lines[0].Amount); Assert.Equal(20, JsonSerializer.SerializeToElement(detail.Draft).EnumerateObject().Count());
+        var workWire = JsonSerializer.SerializeToElement(detail, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Equal(3, workWire.EnumerateObject().Count());
+        Assert.Equal(JsonValueKind.String, workWire.GetProperty("draft").GetProperty("version").ValueKind);
+        Assert.Equal(version.ToString(CultureInfo.InvariantCulture), workWire.GetProperty("draft").GetProperty("version").GetString());
         rig.Port.Reads = 0;
         var first = await rig.Decide(); Assert.Equal("Approved", first.State); Assert.False(first.Replayed);
         Assert.Equal(Period, rig.Port.SelectedPeriod); Assert.Equal(version, rig.Port.Expected); Assert.Equal(Key, rig.Port.Key);
         Assert.Equal(2, rig.Port.Reads); // One source read and the genuine receipt's retained-source read; no second human POST GET.
         Assert.Equal(1, rig.Port.Approvals); Assert.Single(rig.Port.Commands);
+        using var nativeWire = JsonDocument.Parse(Assert.Single(rig.Port.Commands).ResultJson);
+        Assert.Equal(8, nativeWire.RootElement.EnumerateObject().Count());
+        var originalNative = nativeWire.RootElement.GetProperty("resource");
+        Assert.Equal(20, originalNative.EnumerateObject().Count()); Assert.Equal(JsonValueKind.Number, originalNative.GetProperty("version").ValueKind);
+        Assert.Equal(version + 1, originalNative.GetProperty("version").GetInt64());
+        var terminalPreview = await rig.Preview();
+        var nativeComparable = System.Text.Json.Nodes.JsonNode.Parse(originalNative.GetRawText())!;
+        nativeComparable["version"] = (version + 1).ToString(CultureInfo.InvariantCulture);
+        Assert.True(System.Text.Json.Nodes.JsonNode.DeepEquals(nativeComparable,
+            JsonSerializer.SerializeToNode(terminalPreview.NormalJournalDraft!.Draft, new JsonSerializerOptions(JsonSerializerDefaults.Web))));
         var replay = await rig.Decide(); Assert.True(replay.Replayed); Assert.Equal(Correlation, replay.OriginalCorrelationId);
         Assert.Equal(version + 1, rig.Port.Record.Version); Assert.Equal(1, rig.Port.Approvals); Assert.Single(rig.Port.Commands);
     }
