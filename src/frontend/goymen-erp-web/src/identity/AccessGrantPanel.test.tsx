@@ -239,7 +239,7 @@ async function selectOneImpactRole(){
  return user
 }
 it('reads the single selected native role delta only on a human read action, keeps server code facts and unassessed scope/SoD distinct from a grant',async()=>{
- const calls=installFetch({capabilities:selectionCapabilities,respond:(url,init)=>url.endsWith(impactPath)?json(impactFacts):selectionResponse(url)})
+ const calls=installFetch({capabilities:selectionCapabilities,respond:url=>url.endsWith(impactPath)?json(impactFacts):selectionResponse(url)})
  renderAtSelected();const user=await selectOneImpactRole();expect(calls.filter(call=>call.method==='POST')).toEqual([])
  await user.click(screen.getByRole('button',{name:T.codeImpactRead}));const region=await screen.findByRole('region',{name:T.codeImpact})
  await within(region).findByRole('heading',{name:T.codeImpactAdded});expect(within(region).getAllByText(T.codeImpactUnknown)).toHaveLength(2)
