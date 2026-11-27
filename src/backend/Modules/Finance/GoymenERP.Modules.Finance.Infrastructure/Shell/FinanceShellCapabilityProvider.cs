@@ -86,7 +86,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.25";
+    public const string OwnerContractVersion = "1.26";
     public const string BankStatementCapabilityId = "finance.bank-statements.read";
     public const string BankStatementImportCapabilityId = "finance.bank-statements.import";
     public const string BankStatementMatchCapabilityId = "finance.bank-statements.match";
@@ -331,7 +331,7 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceBankAccountApprove]),
             Declaration(PartyCreditLimitWorkDecisionCapabilityId, "finance-party-credit-limit-work-decision",
                 "/onaylarim/finance.party-credit-limit.v1/:approvalId", "F-PARTY-CREDIT-LIMIT-WORK-DECISION",
-                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCreditLimitsApprove]) with { ImplementationAvailable = false },
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCreditLimitsApprove]),
             Declaration(ManualBankPaymentWorkDecisionCapabilityId, "finance-manual-bank-payment-work-decision",
                 "/onaylarim/finance.manual-bank-payment.v1/:approvalId", "F-MANUAL-BANK-PAYMENT-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinancePermissionNames.ManualBankPaymentApprove]),

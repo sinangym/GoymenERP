@@ -336,6 +336,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'price-lists.package-standard-version.work-decision': '',
   'finance.bank-account-iban-change.work-decision': '',
   'finance.bank-account.work-decision': '',
+  'finance.party-credit-limit.work-decision': '',
   'finance.cash-account.work-decision': '',
   'finance.cash-account-passivation.work-decision': '',
   'finance.cash-account-reactivation.work-decision': '',

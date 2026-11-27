@@ -21,7 +21,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         "finance.cash-exchange-book-values.approve", "finance.cash-exchange-book-values.prepare",
         "finance.credits.approve", "finance.credits.propose", "finance.credits.workspace",
         "finance.official-sales-invoices.approve", "finance.official-sales-invoices.record", "finance.official-sales-invoices.withdraw",
-        "finance.party-balance-transfers.record", "finance.party-credit-limit.work-decision",
+        "finance.party-balance-transfers.record",
     ];
 
     [Fact]
@@ -37,13 +37,13 @@ public sealed class FinanceShellCapabilityRegistryTests
             FinancePermissionNames.PartyLedgerAmountRead], declaration.RequiredPermissions);
     }
     [Fact]
-    public void The_staged_credit_limit_purpose_is_single_company_company_wide_approve_without_browse_read()
+    public void The_credit_limit_purpose_is_single_company_company_wide_approve_without_browse_read()
     {
         var provider = new FinanceShellCapabilityProvider();
         var registry = new ShellCapabilityRegistry([provider],
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision([provider])]));
         var purpose = Assert.Single(registry.Registrations, row => row.Declaration.CapabilityId == FinanceShellCapabilityProvider.PartyCreditLimitWorkDecisionCapabilityId).Declaration;
-        Assert.False(purpose.ImplementationAvailable); Assert.Null(purpose.ParentCapabilityId);
+        Assert.True(purpose.ImplementationAvailable); Assert.Null(purpose.ParentCapabilityId);
         Assert.Equal("/onaylarim/finance.party-credit-limit.v1/:approvalId", purpose.RoutePath);
         Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, purpose.ContextRequirement);
         Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, purpose.ScopeRequirement);

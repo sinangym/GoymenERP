@@ -1,4 +1,9 @@
 export const WORK_DECISION_TEXT = {
+  creditLimitProposal: 'Karar verilecek cari kredi limiti önerisi',
+  creditLimitBaseRevision: 'Önerinin dayandığı limit sürümü', creditLimitCurrentRevision: 'Hesabın güncel limit sürümü',
+  creditLimitProposedBy: 'Öneriyi hazırlayan', creditLimitAbsent: 'Belirtilmedi',
+  creditLimitDecisionHelp: 'Onayda gerekçe kaydedilmez. Ret gerekçesi zorunludur ve en fazla 500 karakter olabilir.',
+  creditLimitRetained: 'Önceki kredi limiti kararınızın sonucu doğrulanıyor. İlk isteğiniz korunuyor; hesabın güncel limit bilgileri bu kararın yerine gösterilmiyor.',
   priceListRetained: 'Önceki yayın isteğiniz yeniden doğrulanıyor. Karar verdiğiniz sürüm korunuyor; güncel fiyatlar bu isteğin yerine kullanılmıyor.',
   priceListRecord: 'Fiyat listesi kaydı', priceLineNumber: 'Satır no',
   packageProposal: 'Karar verilecek paket standardı sürümü', packageVersionId: 'Sürüm kaydı', packageSourceKind: 'Kaynak türü',

@@ -24,6 +24,7 @@ internal sealed partial class FinancePartyCreditLimitWorkInboxSourceV1(
     public const string ModuleName = "finance";
     public const string KindName = "finance.party-credit-limit.v1";
     public const string ScreenPath = "/finans/kredi-limitleri";
+    public static string WorkDecisionPath(Guid itemId) => $"/onaylarim/{KindName}/{itemId:D}";
 
     /// <summary>A Set proposal on an account with an approved Set limit in the same currency.</summary>
     public const string ChangeRule = "finance.credit-limit-change";
@@ -188,7 +189,7 @@ internal sealed partial class FinancePartyCreditLimitWorkInboxSourceV1(
         }
 
         item = new WorkInboxItemV1(ModuleName, KindName, row.Id, FinanceWorkInboxFence.ShortReference(row.CompanyAccountId),
-            row.ProposedAtUtc.ToUniversalTime(), ScreenPath, row.ProposedBy, rules, references);
+            row.ProposedAtUtc.ToUniversalTime(), WorkDecisionPath(row.Id), row.ProposedBy, rules, references);
         return true;
     }
 }

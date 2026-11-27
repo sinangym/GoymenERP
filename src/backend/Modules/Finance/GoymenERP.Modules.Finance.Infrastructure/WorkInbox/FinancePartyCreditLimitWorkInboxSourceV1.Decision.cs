@@ -37,7 +37,7 @@ internal sealed partial class FinancePartyCreditLimitWorkInboxSourceV1
             row.Kind == FinancePartyCreditLimitService.SetKind ? "Set" : "Remove", row.CurrencyId, row.AmountText,
             row.BaseRevision.ToString(CultureInfo.InvariantCulture), revision.ToString(CultureInfo.InvariantCulture),
             row.ProposedBy, row.ProposedAtUtc.ToUniversalTime());
-        // Keep the original browse link until the paired purpose UI is published.
+        // The human purpose targets this immutable proposal; the native browse path remains available separately.
         return new(context.CompanyId, item, version.ToString(CultureInfo.InvariantCulture),
             status == FinancePartyCreditLimitService.Proposed, PartyCreditLimitProof: new(context.CompanyId, itemId, human));
 

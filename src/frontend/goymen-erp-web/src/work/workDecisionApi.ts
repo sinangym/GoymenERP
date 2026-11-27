@@ -1,5 +1,7 @@
 import { decodePriceListLine, decodePriceListScope, type PriceListLine, type PriceListScope } from '../product/priceLists/contract'
 import { isPiecesPerPackage } from '../product/packageImportApi'
+import { isRevisionText, type CreditLimitKind } from '../finance/CreditLimitContract'
+import { isPositiveDecimalText } from '../finance/decimalText'
 import { isCountedKilogramText, isPieceCount } from '../inventory/stockCountContract'
 import { KG_TEXT, KG_SIGNED_TEXT, KG_DECIMAL_TEXT, isDispatchKilogramsProduct, type DispatchKilograms } from '../logistics/dispatchKilogramsContract'
 import { checkTaxIdentity, type TaxIdentityKind } from '../cari/taxIdentity'
@@ -11,7 +13,7 @@ import { hasExactKeys, replayHeadersAgree } from '../finance/wireShape'
 import { readJson, type CommandOutcome } from '../settings/discountLimitApi'
 
 export const WORK_DECISION_KINDS = ['inventory.opening-cost.v1', 'finance.cash-account.v1',
-  'finance.credit-account.v1', 'finance.cash-account-passivation.v1', 'finance.cash-account-reactivation.v1','sales.order-draft.v1','sales.invoice.v1','sales.subcontract-invoice.v1','purchasing.request.v1','purchasing.order.v1','purchasing.service-order.v1','purchasing.incoming-invoice-variance.v1','purchasing.goods-receipt-batch.v1','manufacturing.plan.v1','inventory.transfer-loss.v1','counterparty.tax-identity-change.v1','counterparty.legal-name-change.v1','logistics.plan-excess.v1','inventory.transfer-overage.v1','logistics.weighing-difference.v1','purchasing.supplier-return-cost-exception.v1','inventory.stock-count.v1','finance.bank-account.v1','inventory.stock-scrap.v1','logistics.dispatch-note.v1','logistics.customer-return.v1','finance.manual-bank-payment.v1','finance.bank-account-iban-change.v1','product.package-standard-version.v1','product.price-list-version.v1'] as const
+  'finance.credit-account.v1', 'finance.cash-account-passivation.v1', 'finance.cash-account-reactivation.v1','sales.order-draft.v1','sales.invoice.v1','sales.subcontract-invoice.v1','purchasing.request.v1','purchasing.order.v1','purchasing.service-order.v1','purchasing.incoming-invoice-variance.v1','purchasing.goods-receipt-batch.v1','manufacturing.plan.v1','inventory.transfer-loss.v1','counterparty.tax-identity-change.v1','counterparty.legal-name-change.v1','logistics.plan-excess.v1','inventory.transfer-overage.v1','logistics.weighing-difference.v1','purchasing.supplier-return-cost-exception.v1','inventory.stock-count.v1','finance.bank-account.v1','inventory.stock-scrap.v1','logistics.dispatch-note.v1','logistics.customer-return.v1','finance.manual-bank-payment.v1','finance.bank-account-iban-change.v1','product.package-standard-version.v1','product.price-list-version.v1','finance.party-credit-limit.v1'] as const
 // Native owner purposes: kind prefixes do not define their actual capability ids.
 export const COUNTERPARTY_WORK_DECISION_CAPABILITY = {
   'counterparty.tax-identity-change.v1': 'cari.tax-identity-change.work-decision',
@@ -73,6 +75,11 @@ export interface WorkBankAccountIbanChangeProof {
   readonly currentIban: string | null; readonly proposedIban: string; readonly reason: string; readonly proposedBy: string; readonly proposedAtUtc: string
 }
 export interface WorkBankAccountProof { readonly account: BankAccountView; readonly proposedBy: string; readonly proposedAtUtc: string }
+export interface WorkPartyCreditLimitPreview {
+  readonly partyId: string; readonly companyAccountId: string; readonly kind: CreditLimitKind
+  readonly currencyId: string | null; readonly amount: string | null; readonly baseRevision: string; readonly currentRevision: string
+  readonly proposedBy: string; readonly proposedAtUtc: string
+}
 export interface LogisticsDispatchNoteProof {
   readonly instructionId: string; readonly dispatchNoteId: string; readonly customerPartyId: string; readonly companyAccountId: string
   readonly effectiveOn: string; readonly status: 'Draft' | 'Approved' | 'Cancelled'; readonly number: string | null; readonly eDispatchNumber: string | null
@@ -105,6 +112,7 @@ export interface WorkProductPriceListPreview {
   readonly lines: readonly PriceListLine[]; readonly scope: PriceListScope
 }
 export interface WorkDecisionPreview {
+  readonly partyCreditLimit?: WorkPartyCreditLimitPreview
   readonly productPriceList?: WorkProductPriceListPreview
   readonly productPackageStandard?: WorkProductPackageStandardProof
   readonly logisticsCustomerReturn?: LogisticsCustomerReturnProof
@@ -137,6 +145,9 @@ const path = (kind: WorkDecisionKind, id: string) => `/work/decisions/${encodeUR
 // Dispatch native Guid/Int64 parsers require the entire string, including its final character.
 const dispatchGuid = (value: unknown): value is string => typeof value === 'string' && value.length === 36 && isBoundUuid(value)
 const dispatchVersion = (value: unknown): value is string => typeof value === 'string' && value === value.trim() && isPositiveInt64Text(value)
+const creditLimitRevision = (value: unknown): value is string => typeof value === 'string' && value === value.trim() && isRevisionText(value)
+const creditLimitAmount = (value: unknown): value is string => typeof value === 'string' && value === value.trim()
+  && !nativeControls(value) && value.length <= 64 && isPositiveDecimalText(value)
 const requestNumber = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 2147483647
 const positiveInt32Text = (value: unknown): value is string => typeof value === 'string' && /^[1-9][0-9]*$/.test(value)
   && (value.length < 10 || value.length === 10 && value <= '2147483647')
@@ -185,6 +196,8 @@ export const isWorkDecisionRequest = (value: unknown, kind?: WorkDecisionKind): 
   if (kind === 'finance.bank-account-iban-change.v1') return value.approve && value.reason === null && dispatchVersion(value.expectedVersion) && value.expectedVersion !== '9223372036854775807' && (value.delegationId === null || dispatchGuid(value.delegationId))
   if (kind === 'finance.manual-bank-payment.v1') return value.approve && value.reason === null && dispatchVersion(value.expectedVersion) && value.expectedVersion !== '9223372036854775807'
   if (kind === 'finance.bank-account.v1') return value.approve && value.reason === null && isPositiveInt64Text(value.expectedVersion) && value.expectedVersion !== '9223372036854775807'
+  if (kind === 'finance.party-credit-limit.v1') return dispatchVersion(value.expectedVersion) && value.expectedVersion !== '9223372036854775807'
+    && (value.approve ? value.reason === null : typeof value.reason === 'string' && value.reason === value.reason.trim() && value.reason.length > 0 && value.reason.length <= 500)
   if (kind === 'inventory.stock-count.v1' || kind === 'inventory.stock-scrap.v1') return value.expectedVersion === '1' && isWorkStockCountReason(value.reason)
   if (kind === 'purchasing.supplier-return-cost-exception.v1') {
     const selected = value.supplierReturnCostException
@@ -214,11 +227,11 @@ export const isWorkDecisionRequest = (value: unknown, kind?: WorkDecisionKind): 
     && (selection.selectedLabelIds === undefined || selection.selectedLabelIds === null || labelIds(selection.selectedLabelIds))
 }
 export function decodeWorkDecisionPreview(value: unknown, company: string, kind: WorkDecisionKind, id: string): WorkDecisionPreview | null {
-  if (!record(value) || !hasExactKeys(value, ['companyId', 'kind', 'itemId', 'documentLabel', 'sourceVersion', 'pending', 'approvalReasonRequired', 'references', 'rules'], kind === 'product.price-list-version.v1' ? ['rejectionSupported','productPriceList'] : kind === 'product.package-standard-version.v1' ? ['rejectionSupported','productPackageStandard'] : kind === 'logistics.customer-return.v1' ? ['rejectionSupported','approvalSupported','logisticsCustomerReturn'] : kind === 'logistics.dispatch-note.v1' ? ['rejectionSupported', 'logisticsDispatchNote'] : kind === 'inventory.stock-scrap.v1' ? ['rejectionSupported', 'inventoryStockScrap'] : kind === 'finance.bank-account-iban-change.v1' ? ['rejectionSupported', 'bankAccountIbanChange'] : kind === 'finance.bank-account.v1' ? ['rejectionSupported', 'bankAccount'] : kind === 'inventory.stock-count.v1' ? ['rejectionSupported', 'inventoryStockCount'] : kind === 'purchasing.supplier-return-cost-exception.v1' ? ['rejectionSupported', 'supplierReturnCostException'] : kind === 'logistics.weighing-difference.v1' ? ['rejectionSupported', 'logisticsWeighingDifference'] : kind === 'inventory.transfer-overage.v1' ? ['rejectionSupported', 'inventoryTransferOverage'] : kind === 'logistics.plan-excess.v1' ? ['rejectionSupported', 'logisticsPlanExcess'] : kind === 'inventory.transfer-loss.v1' ? ['rejectionSupported', 'inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['rejectionSupported', 'manufacturingPlanReapproval'] : kind === 'counterparty.tax-identity-change.v1' ? ['rejectionSupported', 'counterpartyTaxIdentityChange'] : kind === 'counterparty.legal-name-change.v1' ? ['rejectionSupported', 'counterpartyLegalNameChange'] : ['rejectionSupported'])
+  if (!record(value) || !hasExactKeys(value, ['companyId', 'kind', 'itemId', 'documentLabel', 'sourceVersion', 'pending', 'approvalReasonRequired', 'references', 'rules'], kind === 'finance.party-credit-limit.v1' ? ['rejectionSupported','partyCreditLimit'] : kind === 'product.price-list-version.v1' ? ['rejectionSupported','productPriceList'] : kind === 'product.package-standard-version.v1' ? ['rejectionSupported','productPackageStandard'] : kind === 'logistics.customer-return.v1' ? ['rejectionSupported','approvalSupported','logisticsCustomerReturn'] : kind === 'logistics.dispatch-note.v1' ? ['rejectionSupported', 'logisticsDispatchNote'] : kind === 'inventory.stock-scrap.v1' ? ['rejectionSupported', 'inventoryStockScrap'] : kind === 'finance.bank-account-iban-change.v1' ? ['rejectionSupported', 'bankAccountIbanChange'] : kind === 'finance.bank-account.v1' ? ['rejectionSupported', 'bankAccount'] : kind === 'inventory.stock-count.v1' ? ['rejectionSupported', 'inventoryStockCount'] : kind === 'purchasing.supplier-return-cost-exception.v1' ? ['rejectionSupported', 'supplierReturnCostException'] : kind === 'logistics.weighing-difference.v1' ? ['rejectionSupported', 'logisticsWeighingDifference'] : kind === 'inventory.transfer-overage.v1' ? ['rejectionSupported', 'inventoryTransferOverage'] : kind === 'logistics.plan-excess.v1' ? ['rejectionSupported', 'logisticsPlanExcess'] : kind === 'inventory.transfer-loss.v1' ? ['rejectionSupported', 'inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['rejectionSupported', 'manufacturingPlanReapproval'] : kind === 'counterparty.tax-identity-change.v1' ? ['rejectionSupported', 'counterpartyTaxIdentityChange'] : kind === 'counterparty.legal-name-change.v1' ? ['rejectionSupported', 'counterpartyLegalNameChange'] : ['rejectionSupported'])
     || !same(value.companyId, company) || value.kind !== kind || !same(value.itemId, id) || !text(value.documentLabel)
     || (kind === 'inventory.opening-cost.v1' ? value.sourceVersion !== `submission/${id}` : !isPositiveInt64Text(value.sourceVersion))
     || typeof value.pending !== 'boolean' || value.approvalReasonRequired !== (kind === 'product.package-standard-version.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'inventory.transfer-overage.v1' || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.opening-cost.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1')
-    || (kind === 'manufacturing.plan.v1' ? typeof value.rejectionSupported !== 'boolean' : kind === 'product.package-standard-version.v1' || kind === 'logistics.customer-return.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'purchasing.supplier-return-cost-exception.v1' || kind === 'purchasing.goods-receipt-batch.v1' || kind === 'inventory.transfer-overage.v1' || kind === 'inventory.transfer-loss.v1' || isCounterpartyWorkDecisionKind(kind) ? value.rejectionSupported !== true : kind === 'product.price-list-version.v1' || kind === 'finance.bank-account-iban-change.v1' || kind === 'finance.manual-bank-payment.v1' || kind === 'logistics.dispatch-note.v1' || kind === 'finance.bank-account.v1' || kind === 'logistics.weighing-difference.v1' || kind === 'logistics.plan-excess.v1' || kind === 'purchasing.order.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? value.rejectionSupported !== false : value.rejectionSupported !== undefined && value.rejectionSupported !== true)
+    || (kind === 'manufacturing.plan.v1' ? typeof value.rejectionSupported !== 'boolean' : kind === 'finance.party-credit-limit.v1' || kind === 'product.package-standard-version.v1' || kind === 'logistics.customer-return.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'purchasing.supplier-return-cost-exception.v1' || kind === 'purchasing.goods-receipt-batch.v1' || kind === 'inventory.transfer-overage.v1' || kind === 'inventory.transfer-loss.v1' || isCounterpartyWorkDecisionKind(kind) ? value.rejectionSupported !== true : kind === 'product.price-list-version.v1' || kind === 'finance.bank-account-iban-change.v1' || kind === 'finance.manual-bank-payment.v1' || kind === 'logistics.dispatch-note.v1' || kind === 'finance.bank-account.v1' || kind === 'logistics.weighing-difference.v1' || kind === 'logistics.plan-excess.v1' || kind === 'purchasing.order.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? value.rejectionSupported !== false : value.rejectionSupported !== undefined && value.rejectionSupported !== true)
     || !Array.isArray(value.references) || value.references.length > 12 || !value.references.every(ref => record(ref)
       && hasExactKeys(ref, ['role', 'label', 'recordId', 'link']) && text(ref.role) && text(ref.label)
       && (ref.recordId === null || isBoundUuid(ref.recordId)) && nullableText(ref.link))
@@ -348,6 +361,20 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
       || value.references.filter(ref => record(ref) && ref.role === 'currency' && same(ref.recordId, account.currencyId)).length !== 1
       || value.rules.length !== 1 || !record(value.rules[0]) || value.rules[0].ruleCode !== 'finance.bank-account-approval-required'
       || [value.rules[0].threshold,value.rules[0].actual,value.rules[0].deviation,value.rules[0].unit].some(field => field !== null)) return null
+  }
+  if (kind === 'finance.party-credit-limit.v1') {
+    const facts = value.partyCreditLimit
+    if (!dispatchGuid(value.companyId) || !dispatchGuid(value.itemId) || !dispatchVersion(value.sourceVersion)
+      || value.pending && value.sourceVersion === '9223372036854775807'
+      || !record(facts) || !hasExactKeys(facts, ['partyId','companyAccountId','kind','currencyId','amount','baseRevision','currentRevision','proposedBy','proposedAtUtc'])
+      || !dispatchGuid(facts.partyId) || !dispatchGuid(facts.companyAccountId) || facts.kind !== 'Set' && facts.kind !== 'Remove'
+      || (facts.kind === 'Set' ? !dispatchGuid(facts.currencyId) || !creditLimitAmount(facts.amount) : facts.currencyId !== null || facts.amount !== null)
+      || !creditLimitRevision(facts.baseRevision) || !creditLimitRevision(facts.currentRevision)
+      || !text(facts.proposedBy) || facts.proposedBy.length > 128 || !transferDispatchUtc(facts.proposedAtUtc) || facts.proposedAtUtc !== facts.proposedAtUtc.trim()
+      || value.references.filter(ref => record(ref) && ref.role === 'party' && same(ref.recordId, facts.partyId as string)).length !== 1
+      || value.references.filter(ref => record(ref) && ref.role === 'company-account' && same(ref.recordId, facts.companyAccountId as string)).length !== 1
+      || facts.kind === 'Set' && value.references.filter(ref => record(ref) && ref.role === 'currency' && same(ref.recordId, facts.currencyId as string)).length !== 1
+      || facts.kind === 'Remove' && value.references.some(ref => record(ref) && ref.role === 'currency')) return null
   }
   if (kind === 'inventory.stock-count.v1' || kind === 'inventory.stock-scrap.v1') {
     const scrap = kind === 'inventory.stock-scrap.v1'

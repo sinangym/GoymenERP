@@ -1537,7 +1537,7 @@ it('mounts dispatch as the 25th native purpose under its exact standalone capabi
  expect(route?.path).toBe(`onaylarim/${dispatchKind}/:approvalId`)
  const element=route?.element as ReactElement<{capability:readonly string[];children:ReactElement<{kind:string}>}>
  expect(element.props.capability).toEqual([dispatchCap]);expect(element.props.children.type).toBe(WorkDecisionPage);expect(element.props.children.props.kind).toBe(dispatchKind)
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(30)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(31)
 })
 it.each([{companyId:COMPANY_B},{logisticsDispatchNote:{...dispatchProof,dispatchNoteId:COMPANY_A}},{rejectionSupported:true}])('does not expose malformed/foreign dispatch proof %j',async(delta)=>{
  installFetch({capabilities:[dispatchCap],respond:url=>url.includes(dispatchPath)?json({...dispatchPreview,...delta}):undefined});mountDispatchPurpose()
@@ -1611,7 +1611,7 @@ it('mounts the customer return purpose under its exact standalone capability amo
  expect(route?.path).toBe(`onaylarim/${customerKind}/:approvalId`)
  expect(route).toBeDefined()
  expect((route!.element as ReactElement<{capability:readonly string[]}>).props.capability).toEqual([customerCap])
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(30)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(31)
 })
 it('does not restore a customer-return unknown attempt under another authentication session',async()=>{
  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-return-old'})
@@ -1987,4 +1987,117 @@ it('invalidates current authority when a fresh price preview returns 403',async(
  const calls=installFetch({capabilities:[priceCap],respond:url=>url.includes(pricePath)?problem(403):undefined});mount(priceRoute)
  await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
  expect(screen.queryByText('41000.125')).toBeNull();expect(calls.some(call=>call.method==='POST')).toBe(false)
+})
+
+const limitKind='finance.party-credit-limit.v1',limitCap='finance.party-credit-limit.work-decision'
+const limitPath=`/work/decisions/${limitKind}/${id}`,limitRoute=`/onaylarim/${limitKind}/${id}`
+const limitHuman={partyId:'dddddddd-0000-4000-8000-000000000071',companyAccountId:'dddddddd-0000-4000-8000-000000000072',kind:'Set',currencyId:'dddddddd-0000-4000-8000-000000000073',amount:'00123.4500',baseRevision:'0',currentRevision:'0',proposedBy:'SENTETIK limit proposer',proposedAtUtc:'2026-11-27T08:00:00Z'}
+const limitRefs=[{role:'party',recordId:limitHuman.partyId,label:'SENTETIK cari',link:null},{role:'company-account',recordId:limitHuman.companyAccountId,label:'SENTETIK hesap',link:null},{role:'currency',recordId:limitHuman.currencyId,label:'SENTETIK para',link:null}]
+const limitPreview={companyId:COMPANY_A,kind:limitKind,itemId:id,documentLabel:'SENTETIK limit önerisi',sourceVersion:'1',pending:true,approvalReasonRequired:false,rejectionSupported:true,references:limitRefs,rules:[],partyCreditLimit:limitHuman}
+const limitResult=(approve=true,replayed=false)=>json({companyId:COMPANY_A,kind:limitKind,itemId:id,state:approve?'Approved':'Rejected',replayed,originalCorrelationId:'SENTETIK original'},200,replayed?{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK original'}:undefined)
+
+it.each([{remove:false,approve:true},{remove:false,approve:false},{remove:true,approve:true},{remove:true,approve:false}])('renders the native credit limit proposal and sends only its explicit four-field decision %j',async({remove,approve})=>{
+ const facts=remove?{...limitHuman,kind:'Remove',currencyId:null,amount:null}:limitHuman
+ const calls=installFetch({capabilities:[limitCap],respond:(url,init)=>url.includes(limitPath)?init?.method==='POST'?limitResult(approve):json({...limitPreview,references:remove?limitRefs.slice(0,2):limitRefs,partyCreditLimit:facts}):undefined})
+ mount(limitRoute,true);const region=await screen.findByRole('region',{name:T.creditLimitProposal})
+ for(const value of [facts.partyId,facts.companyAccountId,facts.proposedBy,facts.proposedAtUtc])expect(within(region).getByText(value)).toBeTruthy()
+ expect(within(region).getByText(remove?'Limit yok':limitHuman.amount)).toBeTruthy()
+ expect(within(region).getByText(T.creditLimitDecisionHelp)).toBeTruthy()
+ expect((screen.getByRole('button',{name:T.reject}) as HTMLButtonElement).disabled).toBe(true)
+ if(!approve){fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:'  SENTETIK ret  '}})}
+ fireEvent.click(screen.getByRole('button',{name:approve?T.approve:T.reject}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.url.includes(limitPath)&&call.method==='POST');expect(sent).toHaveLength(1)
+ expect(sent[0]!.body).toEqual({expectedVersion:'1',approve,reason:approve?null:'SENTETIK ret',delegationId:null})
+ expect(screen.queryByRole('region',{name:T.creditLimitProposal})).toBeNull()
+ expect(calls.filter(call=>call.url.includes(limitPath)&&call.method==='GET')).toHaveLength(1)
+})
+it.each([true,false])('keeps an unknown credit limit decision original after remount and later superseding direct Set (%s)',async approve=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-limit-session'});let posts=0
+ const calls=installFetch({capabilities:[limitCap],respond:(url,init)=>{
+  if(!url.includes(limitPath))return undefined
+  if(init?.method==='POST')return ++posts===1?problem(503):limitResult(approve,true)
+  return json(posts===0?limitPreview:{...limitPreview,pending:false,sourceVersion:'3',partyCreditLimit:{...limitHuman,currentRevision:'7'}})
+ }})
+ mount(limitRoute,true);await screen.findByRole('region',{name:T.creditLimitProposal})
+ if(!approve)fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:'SENTETIK ret'}})
+ fireEvent.click(screen.getByRole('button',{name:approve?T.approve:T.reject}));await screen.findByText(T.unknown)
+ const journal=JSON.stringify(sessionStorage);for(const value of [limitHuman.amount,limitHuman.partyId,limitHuman.currencyId,limitHuman.proposedBy,'partyCreditLimit'])expect(journal).not.toContain(value)
+ cleanup();mount(limitRoute,true);await screen.findByText(T.unknown);await screen.findByText(T.creditLimitRetained)
+ expect(screen.getByText(`${T.version}: 1`)).toBeTruthy();expect(screen.queryByRole('region',{name:T.creditLimitProposal})).toBeNull()
+ expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done);await screen.findByText(T.priorDecisionResolved)
+ const sent=calls.filter(call=>call.url.includes(limitPath)&&call.method==='POST');expect(sent).toHaveLength(2)
+ expect(sent[0]!.body).toEqual({expectedVersion:'1',approve,reason:approve?null:'SENTETIK ret',delegationId:null})
+ expect(sent[1]!.body).toEqual(sent[0]!.body);expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key'])
+ expect(calls.filter(call=>call.url.includes(limitPath)&&call.method==='GET')).toHaveLength(1)
+ expect(screen.queryByRole('region',{name:T.creditLimitProposal})).toBeNull()
+})
+it('hides cached and late current credit revisions throughout an original decision receipt reconciliation',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-limit-late-session'})
+ const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}});let gets=0,posts=0,release!:(reply:Response)=>void
+ const late=new Promise<Response>(resolve=>{release=resolve})
+ const calls=installFetch({capabilities:[limitCap],respond:(url,init)=>{
+  if(!url.includes(limitPath))return undefined
+  if(init?.method==='POST')return ++posts===1?problem(503):limitResult(true,true)
+  return ++gets===1?json(limitPreview):late
+ }})
+ mount(limitRoute,true,client);await screen.findByRole('region',{name:T.creditLimitProposal})
+ const matching=(query:{readonly queryKey:readonly unknown[]})=>query.queryKey.includes('work-decision')
+ let refetch!:Promise<void>;act(()=>{refetch=client.refetchQueries({predicate:matching})});await waitFor(()=>expect(gets).toBe(2))
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ expect(screen.queryByRole('region',{name:T.creditLimitProposal})).toBeNull()
+ await act(async()=>{release(json({...limitPreview,pending:false,sourceVersion:'3',partyCreditLimit:{...limitHuman,currentRevision:'7'}}));await refetch})
+ expect(client.getQueryCache().findAll({predicate:matching})[0]?.state.data).toMatchObject({type:'ok-single',data:{sourceVersion:'3',partyCreditLimit:{currentRevision:'7'}}})
+ expect(screen.queryByRole('region',{name:T.creditLimitProposal})).toBeNull();expect(screen.getByText(`${T.version}: 1`)).toBeTruthy()
+ fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done);await screen.findByText(T.priorDecisionResolved)
+ expect(screen.queryByRole('region',{name:T.creditLimitProposal})).toBeNull();expect(gets).toBe(2)
+ const sent=calls.filter(call=>call.url.includes(limitPath)&&call.method==='POST');expect(sent).toHaveLength(2)
+ expect(sent[1]!.body).toEqual(sent[0]!.body);expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key']);client.clear()
+})
+it.each([{capabilities:[]},{capabilities:['finance.credit-limits.approve']},{capabilities:['finance.credit-limits.list']},{capabilities:['finance.bank-account.work-decision']},{capabilities:['finance.credit-account.work-decision']}])('requires the exact credit limit purpose capability %j',async({capabilities})=>{
+ const calls=installFetch({capabilities,respond:url=>url.includes(limitPath)?json(limitPreview):undefined});mount(limitRoute,true)
+ await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(calls.some(call=>call.url.includes(limitPath))).toBe(false)
+})
+it.each([{companyId:COMPANY_B},{partyCreditLimit:null},{partyCreditLimit:{...limitHuman,amount:'1\n'}}])('withholds malformed or foreign credit limit human facts %j',async delta=>{
+ installFetch({capabilities:[limitCap],respond:url=>url.includes(limitPath)?json({...limitPreview,...delta}):undefined});mount(limitRoute,true)
+ await waitFor(()=>expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
+ expect(screen.queryByRole('region',{name:T.creditLimitProposal})).toBeNull();expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+})
+it('does not restore the old credit decision into revoked capability or a changed authentication session',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-limit-old'});const capabilities=[limitCap]
+ const calls=installFetch({capabilities,respond:(url,init)=>url.includes(limitPath)?init?.method==='POST'?problem(503):json(limitPreview):undefined})
+ mount(limitRoute,true);await screen.findByRole('region',{name:T.creditLimitProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ cleanup();capabilities.splice(0);mount(limitRoute,true);await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(screen.queryByRole('button',{name:T.retry})).toBeNull()
+ cleanup();capabilities.push(limitCap);Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-limit-new'});mount(limitRoute,true);await screen.findByRole('region',{name:T.creditLimitProposal})
+ expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.url.includes(limitPath)&&call.method==='POST')).toHaveLength(1)
+})
+it.each([401,403])('preserves the ordinary credit decision HTTP %s boundary',async status=>{
+ const capabilities=[limitCap]
+ const calls=installFetch({capabilities,respond:(url,init)=>{if(!url.includes(limitPath))return undefined;if(init?.method==='POST'){capabilities.splice(0);return problem(status)}return json(limitPreview)}})
+ mount(limitRoute,true);await screen.findByRole('region',{name:T.creditLimitProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}))
+ await waitFor(()=>expect(document.querySelector(`[data-state="${status===401?'unauthenticated':'not-found'}"]`)).not.toBeNull())
+ expect(screen.queryByRole('region',{name:T.creditLimitProposal})).toBeNull()
+ expect(calls.filter(call=>call.url.includes(limitPath)&&call.method==='POST')).toHaveLength(1);expect(screen.queryByRole('button',{name:T.retry})).toBeNull()
+})
+it('does not transfer a retained credit limit decision or its facts to a different company',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-limit-company-session'})
+ const calls=installFetch({capabilities:[limitCap],respond:(url,init)=>{
+  if(!url.includes(limitPath))return undefined
+  const company=(init?.headers as Record<string,string>)?.['X-Company-Id']??COMPANY_A
+  return init?.method==='POST'?problem(503):json({...limitPreview,companyId:company,partyCreditLimit:{...limitHuman,amount:company===COMPANY_A?limitHuman.amount:'98765.4000'}})
+ }})
+ mount(limitRoute,true);await screen.findByRole('region',{name:T.creditLimitProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ await userEvent.setup().selectOptions(screen.getByRole('combobox',{name:'Şirket'}),COMPANY_B)
+ await waitFor(()=>expect(calls.some(call=>call.url.includes(limitPath)&&call.method==='GET'&&call.headers['X-Company-Id']===COMPANY_B)).toBe(true))
+ expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(screen.queryByText(limitHuman.amount)).toBeNull()
+ expect(calls.filter(call=>call.url.includes(limitPath)&&call.method==='POST')).toHaveLength(1)
+})
+it('validates the native rejection note boundary without adding a reason to approval',async()=>{
+ const calls=installFetch({capabilities:[limitCap],respond:(url,init)=>url.includes(limitPath)?init?.method==='POST'?limitResult(false):json(limitPreview):undefined})
+ mount(limitRoute,true);await screen.findByRole('region',{name:T.creditLimitProposal})
+ const input=screen.getByRole('textbox',{name:T.reason}),reject=screen.getByRole('button',{name:T.reject}) as HTMLButtonElement
+ fireEvent.change(input,{target:{value:'x'.repeat(501)}});expect(reject.disabled).toBe(true)
+ fireEvent.change(input,{target:{value:'x'.repeat(500)}});expect(reject.disabled).toBe(false)
+ fireEvent.click(reject);await screen.findByText(T.done)
+ expect(calls.find(call=>call.url.includes(limitPath)&&call.method==='POST')?.body).toEqual({expectedVersion:'1',approve:false,reason:'x'.repeat(500),delegationId:null})
 })

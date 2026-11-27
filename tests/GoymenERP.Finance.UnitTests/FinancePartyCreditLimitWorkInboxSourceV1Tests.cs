@@ -50,7 +50,7 @@ public sealed partial class FinancePartyCreditLimitWorkInboxSourceV1Tests
         Assert.Equal(older.CompanyAccountId.ToString("D")[..8], first.DocumentLabel);
         Assert.Equal(Start.ToUniversalTime(), first.WaitingSinceUtc);
         Assert.Equal(TimeSpan.Zero, first.WaitingSinceUtc.Offset);
-        Assert.Equal(FinancePartyCreditLimitWorkInboxSourceV1.ScreenPath, first.Link);
+        Assert.Equal(FinancePartyCreditLimitWorkInboxSourceV1.WorkDecisionPath(older.Id), first.Link);
         Assert.True(NativeApprovalQueueRulesV1.IsValidLink(first.Link));
         Assert.All(result.Items!, item => Assert.All(item.Rules, rule => Assert.True(WorkInboxRulesV1.IsValidRule("finance", rule))));
         Assert.All(result.Items!, item => Assert.All(item.References, reference => Assert.True(WorkInboxRulesV1.IsValidReference(reference))));

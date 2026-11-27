@@ -16,7 +16,6 @@ import { matchPath, matchRoutes } from 'react-router'
 import { CAPABILITY, CAPABILITY_ROUTE, CAPABILITY_NAV_LABEL, type CapabilityId } from './capabilities'
 import {
   FINANCE_WORK_DECISION_CAPABILITIES,
-  STAGED_PARTY_CREDIT_LIMIT_PURPOSE,
   FINANCE_CAPABILITY,
   FINANCE_ROUTE,
   manualBankPaymentDetailPath,
@@ -112,14 +111,15 @@ const CONTROLS: readonly string[] = [
 ]
 
 describe('shell ↔ Finance lane capability ids', () => {
-  it('keeps the staged party credit limit purpose outside published capabilities and mounted routes', () => {
-    const { capabilityId, routePath } = STAGED_PARTY_CREDIT_LIMIT_PURPOSE
-    expect(FINANCE_WORK_DECISION_CAPABILITIES.map(([id]) => id)).not.toContain(capabilityId)
-    expect(Object.values(CAPABILITY)).not.toContain(capabilityId)
-    expect(Object.keys(CAPABILITY_ROUTE)).not.toContain(capabilityId)
-    expect(Object.keys(CAPABILITY_NAV_LABEL)).not.toContain(capabilityId)
-    expect(workRoutes.filter(route => route.path === routePath.slice(1))).toHaveLength(0)
-    expect(WORK_INBOX_KINDS.some(row => row.kind === 'finance.party-credit-limit.v1' && row.capability === capabilityId)).toBe(false)
+  it('mounts the party credit limit purpose under its own capability without changing native F18 access', () => {
+    const capabilityId=CAPABILITY.financePartyCreditLimitWorkDecision,routePath='/onaylarim/finance.party-credit-limit.v1/:approvalId'
+    expect(capabilityId).toBe('finance.party-credit-limit.work-decision')
+    expect(FINANCE_WORK_DECISION_CAPABILITIES).toContainEqual([capabilityId,routePath])
+    expect(CAPABILITY_ROUTE[capabilityId]).toBe(routePath);expect(CAPABILITY_NAV_LABEL[capabilityId]).toBe('')
+    expect(workRoutes.filter(route => route.path === routePath.slice(1))).toHaveLength(1)
+    expect(WORK_INBOX_KINDS.filter(row => row.kind === 'finance.party-credit-limit.v1')).toEqual([{kind:'finance.party-credit-limit.v1',module:'finance',capability:capabilityId}])
+    expect(FINANCE_CAPABILITY.creditLimitsList).toBe('finance.credit-limits.list')
+    expect(FINANCE_CAPABILITY.creditLimitsApprove).toBe('finance.credit-limits.approve')
   })
 
   it('mounts the official-invoice uploader and checker once under their own authority boundaries', () => {

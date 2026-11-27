@@ -20,7 +20,7 @@ public sealed partial class FinancePartyCreditLimitWorkInboxSourceV1Tests
             (p.PartyId, p.CompanyAccountId, p.Kind, p.CurrencyId, p.Amount, p.BaseRevision, p.CurrentRevision, p.ProposedBy, p.ProposedAtUtc));
         Assert.Equal(9, JsonSerializer.SerializeToElement(p, new JsonSerializerOptions(JsonSerializerDefaults.Web)).EnumerateObject().Count());
         Assert.All(authority.Asked, ask => Assert.Equal((ErpPermissions.FinanceCreditLimitsApprove, Company), ask));
-        Assert.Equal(FinancePartyCreditLimitWorkInboxSourceV1.ScreenPath, snapshot.Item.Link);
+        Assert.Equal(FinancePartyCreditLimitWorkInboxSourceV1.WorkDecisionPath(row.Id), snapshot.Item.Link);
         var wire = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         Assert.DoesNotContain("partyCreditLimitProof", wire); Assert.DoesNotContain("00123.4500", wire);
         Assert.False(run.Db.ChangeTracker.HasChanges());
@@ -68,11 +68,11 @@ public sealed partial class FinancePartyCreditLimitWorkInboxSourceV1Tests
     }
 
     [Fact]
-    public void The_staged_standalone_purpose_does_not_grant_browse_read_or_change_the_existing_F18_control()
+    public void The_standalone_purpose_does_not_grant_browse_read_or_change_the_existing_F18_control()
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
         var cap = Assert.Single(declarations, row => row.CapabilityId == FinanceShellCapabilityProvider.PartyCreditLimitWorkDecisionCapabilityId);
-        Assert.False(cap.ImplementationAvailable); Assert.Null(cap.ParentCapabilityId);
+        Assert.True(cap.ImplementationAvailable); Assert.Null(cap.ParentCapabilityId);
         Assert.Equal("/onaylarim/finance.party-credit-limit.v1/:approvalId", cap.RoutePath);
         Assert.Equal([ErpPermissions.FinanceCreditLimitsApprove], cap.RequiredPermissions);
         var native = Assert.Single(declarations, row => row.CapabilityId == FinanceShellCapabilityProvider.CreditLimitApproveCapabilityId);

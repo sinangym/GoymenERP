@@ -21,7 +21,6 @@ public sealed class FinanceShellCapabilityProviderTests
         Assert.All(declarations, declaration => Assert.Equal(
             !declaration.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)
             && !declaration.CapabilityId.StartsWith("finance.official-sales-invoices.", StringComparison.Ordinal)
-            && declaration.CapabilityId != FinanceShellCapabilityProvider.PartyCreditLimitWorkDecisionCapabilityId
             && declaration.CapabilityId != FinanceShellCapabilityProvider.PartyBalanceTransferCapabilityId
             && !declaration.CapabilityId.StartsWith("finance.cash-exchange-book-values.", StringComparison.Ordinal), declaration.ImplementationAvailable));
     }
@@ -45,7 +44,7 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.25", provider.ContractVersion);
+        Assert.Equal("1.26", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("finance.party-credit-limit.work-decision", "finance-party-credit-limit-work-decision", "/onaylarim/finance.party-credit-limit.v1/:approvalId", "F-PARTY-CREDIT-LIMIT-WORK-DECISION",

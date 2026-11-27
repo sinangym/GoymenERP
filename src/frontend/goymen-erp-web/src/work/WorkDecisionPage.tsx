@@ -1,4 +1,5 @@
 import { PRICE_LIST_TEXT as PRICE } from '../product/priceLists/priceListText'
+import { CREDIT_LIMIT_TEXT as CREDIT_LIMIT } from '../finance/CreditLimitText'
 import { AI_PANEL_CAPABILITY } from '../ai/aiCapabilities'
 import { WorkSalesSummary } from './WorkSalesSummary'
 import { customerReturnText as CUSTOMER_RETURN } from '../logistics/customerReturnText'
@@ -68,7 +69,8 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   // A validated historical command resolves through its native receipt, not a newer maker's preview.
   const priceList = kind === 'product.price-list-version.v1'
   const ibanChange = kind === 'finance.bank-account-iban-change.v1'
-  const receiptRetryKind = priceList || ibanChange || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.transfer-overage.v1'
+  const partyCreditLimit = kind === 'finance.party-credit-limit.v1'
+  const receiptRetryKind = partyCreditLimit || priceList || ibanChange || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.transfer-overage.v1'
   const historicalRetry = receiptRetryKind && attempt.hasPendingRetry
   const [reconcilingHistorical, setReconcilingHistorical] = useState(historicalRetry)
   const query = useQuery({ queryKey: [namespace, shell.routeEntryGeneration, 'work-decision', kind, id],
@@ -79,9 +81,9 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
     } })
   if (company === null || capabilityFailClosed(shell)) return <StateBlock state={{ kind: 'no-authorized-company' }} subject={T.title} />
   // Disabling a query does not erase cached data or a refetch already in flight.
-  // An IBAN receipt retry must never display a replacement proposal as its human evidence.
-  const suppressIbanPreview = (priceList || ibanChange) && (attempt.hasPendingRetry || reconcilingHistorical || attempt.status.kind === 'applied')
-  const preview = !suppressIbanPreview && query.data?.type === 'ok-single' ? query.data.data : null
+  // A receipt retry must never display current proposal/revision facts as its original human evidence.
+  const suppressReceiptPreview = (partyCreditLimit || priceList || ibanChange) && (attempt.hasPendingRetry || reconcilingHistorical || attempt.status.kind === 'applied')
+  const preview = !suppressReceiptPreview && query.data?.type === 'ok-single' ? query.data.data : null
   const frozen = attempt.status.kind === 'busy' || attempt.hasPendingRetry
   const reconciledHistorical = reconcilingHistorical && !attempt.hasPendingRetry && (attempt.status.kind === 'applied' || attempt.status.kind === 'refused')
   const options = preview?.manufacturingPlanReapproval?.parentRollIds
@@ -127,7 +129,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       ...(loss ? { inventoryTransferLoss: { requestNumber: preview.inventoryTransferLoss!.requestNumber, decidedAtUtc: workDecisionLocalUtc(decisionTime)! } } : {}),
       ...(kind === 'manufacturing.plan.v1' && options !== undefined ? { manufacturingPlanReapproval: { selectedLabelIds: [...selectedLabels] } } : {}) })
     if (answer.type === 'applied') {
-      if (ibanChange || priceList) setReconcilingHistorical(true)
+      if (partyCreditLimit || ibanChange || priceList) setReconcilingHistorical(true)
       else void query.refetch()
     }
   }
@@ -143,7 +145,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
     <Link to="/onaylarim/kuyruk">{T.back}</Link>
     {preview === null ? reconciledHistorical ? <p>{T.priorDecisionResolved}</p> : historicalRetry ? <div><p>{T.priorDecisionPending}</p>
       <p>{T.version}: {attempt.pendingPayload?.expectedVersion}</p>
-      {priceList ? <p>{T.priceListRetained}</p> : ibanChange ? <p>{T.ibanRetained}</p> : <><p>{overage ? T.overageRequestNumber : T.lossRequestNumber}: {frozenTransferRequest?.requestNumber}</p>
+      {partyCreditLimit ? <p>{T.creditLimitRetained}</p> : priceList ? <p>{T.priceListRetained}</p> : ibanChange ? <p>{T.ibanRetained}</p> : <><p>{overage ? T.overageRequestNumber : T.lossRequestNumber}: {frozenTransferRequest?.requestNumber}</p>
       <p>{T.lossFrozenTime}: {frozenTransferRequest?.decidedAtUtc}</p></>}
     </div> : <StateBlock state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
       subject={T.title} onRetry={() => void query.refetch()} /> : <>
@@ -227,6 +229,17 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       <tbody>{preview.productPackageStandard.entries.map(entry => <tr key={`${entry.productId}:${entry.customerId ?? ''}`}>
         <td>{entry.productId}</td><td>{entry.customerId ?? T.packageDefault}</td><td>{entry.piecesPerPackage}</td>
       </tr>)}</tbody></table></section> : null}
+      {preview.partyCreditLimit ? <section aria-label={T.creditLimitProposal}><h3>{T.creditLimitProposal}</h3><dl className={styles.facts}>
+        <dt>{CREDIT_LIMIT.partyId}</dt><dd>{preview.partyCreditLimit.partyId}</dd>
+        <dt>{CREDIT_LIMIT.companyAccountId}</dt><dd>{preview.partyCreditLimit.companyAccountId}</dd>
+        <dt>{CREDIT_LIMIT.proposeKind}</dt><dd>{preview.partyCreditLimit.kind === 'Set' ? CREDIT_LIMIT.proposeKindSet : CREDIT_LIMIT.proposeKindRemove}</dd>
+        <dt>{CREDIT_LIMIT.currency}</dt><dd>{preview.partyCreditLimit.currencyId ?? T.creditLimitAbsent}</dd>
+        <dt>{CREDIT_LIMIT.amount}</dt><dd>{preview.partyCreditLimit.amount ?? CREDIT_LIMIT.noLimit}</dd>
+        <dt>{T.creditLimitBaseRevision}</dt><dd>{preview.partyCreditLimit.baseRevision}</dd>
+        <dt>{T.creditLimitCurrentRevision}</dt><dd>{preview.partyCreditLimit.currentRevision}</dd>
+        <dt>{T.creditLimitProposedBy}</dt><dd>{preview.partyCreditLimit.proposedBy}</dd>
+        <dt>{CREDIT_LIMIT.column.proposedAt}</dt><dd>{preview.partyCreditLimit.proposedAtUtc}</dd>
+      </dl><p>{T.creditLimitDecisionHelp}</p></section> : null}
       {preview.bankAccountIbanChange ? <section aria-label={T.ibanProposal}><h3>{T.ibanProposal}</h3><dl className={styles.facts}>
         <dt>{T.ibanHolder}</dt><dd>{preview.bankAccountIbanChange.companyLegalName}</dd>
         <dt>{T.bankAccountId}</dt><dd>{preview.bankAccountIbanChange.accountId}</dd>

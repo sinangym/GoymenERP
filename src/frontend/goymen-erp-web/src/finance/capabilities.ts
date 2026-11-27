@@ -187,14 +187,9 @@ export const partyLedgerPath = (
   return `${base}?${params.toString()}`
 }
 
-/** WP8 source candidate only: no mounted route until the paired UI is ready. */
-export const STAGED_PARTY_CREDIT_LIMIT_PURPOSE = {
-  capabilityId: 'finance.party-credit-limit.work-decision',
-  routePath: '/onaylarim/finance.party-credit-limit.v1/:approvalId',
-} as const
-
 /** WP8: owner-published approval-only routes; declared by Finance, rendered by Work. No read/report grant is implied. */
 export const FINANCE_WORK_DECISION_CAPABILITIES = [
+  ['finance.party-credit-limit.work-decision', '/onaylarim/finance.party-credit-limit.v1/:approvalId'],
   ['finance.manual-bank-payment.work-decision', '/onaylarim/finance.manual-bank-payment.v1/:approvalId'],
   ['finance.bank-account-iban-change.work-decision', '/onaylarim/finance.bank-account-iban-change.v1/:approvalId'],
   ['finance.bank-account.work-decision', '/onaylarim/finance.bank-account.v1/:approvalId'],
