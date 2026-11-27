@@ -1155,7 +1155,8 @@
         "tests/GoymenERP.Api.IntegrationTests/FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests.cs",
         "tests/GoymenERP.Api.IntegrationTests/LogisticsInstructionSqlServerRelationalAcceptanceTests.ShipmentRiskGate.cs",
         "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.RiskProcessedInvoices.cs",
-        "tests/GoymenERP.Api.IntegrationTests/FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests.RiskProcessedInvoices.cs"
+        "tests/GoymenERP.Api.IntegrationTests/FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests.RiskProcessedInvoices.cs",
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsInstructionSqlServerRelationalAcceptanceTests.SecondShipmentRiskOwners.cs"
       ],
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
@@ -1215,7 +1216,16 @@
           "local_checks": "Initial compile atb84be19cb791d0bbfcba39a36c28a72ce0d48e5f failed2fixture errors: private Run constructor and PartyAccountEligibility positional binding. Original log retained. New-file-only8+/2- fix5d793 keeps assertions/production unchanged. Complete integration-source compile at3086ca656 passed0errors/0warnings53.33s, including3risk+2postcommitSQLFacts. ActualSQL/CI/K3 NOT_RUN; not a simultaneous race.",
           "production_changes": false,
           "fix_commit": "5d793f457",
-          "agent_fix_commit": "8d58553e2605c1cec5a603553b1a31cf3ea86333"
+          "agent_fix_commit": "8d58553e2605c1cec5a603553b1a31cf3ea86333",
+          "existing_fact_navigation": {
+            "path": "tests/GoymenERP.Api.IntegrationTests/LogisticsInstructionSqlServerRelationalAcceptanceTests.SecondShipmentRiskOwners.cs",
+            "facts": [
+              "Second_native_shipment_uses_real_Sales_and_Finance_owners_without_double_count_before_and_after_full_allocation",
+              "Second_native_shipment_fresh_authority_loss_after_real_Finance_read_writes_no_owner_effect",
+              "Second_native_shipment_and_real_Finance_membership_never_cross_the_company_boundary"
+            ],
+            "bounded_read": "Existing source located at2a3e/789; no duplicate tests or production changes. Native admission/Receipt.Record/Allocation.Create → FinanceV2 membership/AR → Sales gate → second hosted Logistics shipment; external fixture inputs remain explicitly synthetic. Cancellation/reversal Finance boundary sources are separate. ActualSQL pending; next_action retained."
+          }
         }
       }
     },
@@ -3222,6 +3232,12 @@
               "frontend": "Exact2a3e3f5cbf519744a9064d9407862ee260976f8e: nine frontend files938total925PASS13FAIL0skip, all13 failures in old WorkInbox fixture; original logs retained,75new API/Page cases included. Other eight complete files890PASS are separate2a3e evidence. Fulltsc exit0/54.806s;10explicitlint exit0/0diagnostics0.752s. Exact9e0e79ecf39a3e1749f4277f4546006bca633478: fulltsc exit0/51.6475571s, lint exit0/0diagnostics0.694s; Inbox49total48PASS1FAIL0skip (obsolete query assertion), original logs retained. Exact7898cc30397ab51d38464c5ac674de2422890d07: complete Inbox49/49PASS0skip17.2442436s, one-filelint exit0/0diagnostics0.1208757s; root independently parsed JSON counters. TSC not repeated for the one-literal test correction. No939 same-head sum of2a3e890 and78949."
             },
             "limits": "ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 remain pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows=0;41packages/50references unchanged."
+          },
+          {
+            "source_commit": "9f9442c4e9382033ea97f54e62d7238ab50e91c4",
+            "scope": "Flow29/30 native safety prerequisites and two existing Finance approval1205 refinements; see execution.native_prerequisite_checkpoint. No additional Work purpose or activation.",
+            "sql_source_facts": 24,
+            "actual_sql": "NOT_RUN"
           }
         ],
         "source_commits": [
@@ -3375,7 +3391,8 @@
           "c42ed290f5c20a59065f79b70718e98adae926b3",
           "2a3e3f5cbf519744a9064d9407862ee260976f8e",
           "9e0e79ecf39a3e1749f4277f4546006bca633478",
-          "7898cc30397ab51d38464c5ac674de2422890d07"
+          "7898cc30397ab51d38464c5ac674de2422890d07",
+          "9f9442c4e9382033ea97f54e62d7238ab50e91c4"
         ],
         "kind_count_scope": "At2a3e3f5cbf519744a9064d9407862ee260976f8e source-derived WorkDecisionHostV1.Kinds and WORK_DECISION_KINDS are equal:31native/31paired/0staged, no unknown frontend kind. Flow40 is now paired; previous c42 31/30/1, b1 30/29/1 and cc37929/29/0 remain exact-head historical records. ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 remain pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows=0;41packages/50references unchanged.",
         "staged_kinds": [],
@@ -3412,7 +3429,49 @@
           "frontend": "Exact2a3e3f5cbf519744a9064d9407862ee260976f8e: nine frontend files938total925PASS13FAIL0skip, all13 failures in old WorkInbox fixture; original logs retained,75new API/Page cases included. Other eight complete files890PASS are separate2a3e evidence. Fulltsc exit0/54.806s;10explicitlint exit0/0diagnostics0.752s. Exact9e0e79ecf39a3e1749f4277f4546006bca633478: fulltsc exit0/51.6475571s, lint exit0/0diagnostics0.694s; Inbox49total48PASS1FAIL0skip (obsolete query assertion), original logs retained. Exact7898cc30397ab51d38464c5ac674de2422890d07: complete Inbox49/49PASS0skip17.2442436s, one-filelint exit0/0diagnostics0.1208757s; root independently parsed JSON counters. TSC not repeated for the one-literal test correction. No939 same-head sum of2a3e890 and78949.",
           "peer": "Full17-file bounded nonauthor UI peer plus a91276f3a8aac2acb554f435020b606cb6f2a9be two-file correction: CLR decimal overflow/nonzero excess-scale P2 source-closed; raw text unchanged. Root test-only9e0e79ecf39a3e1749f4277f4546006bca633478 aligns the actual purpose capability/link and adds native-F18-alone no-fetch negative. Its remaining obsolete query assertion P2 is source-closed by7898cc30397ab51d38464c5ac674de2422890d07 exact empty-query assertion; pathname/event assertions retained. Source peer is not K3.",
           "verified_runtime_flows": 0,
-          "limits": "ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 remain pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows=0;41packages/50references unchanged."
+          "limits": "ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 remain pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows=0;41packages/50references unchanged.",
+          "native_prerequisite_source_commit": "9f9442c4e9382033ea97f54e62d7238ab50e91c4"
+        },
+        "native_prerequisite_checkpoint": {
+          "source_commit": "9f9442c4e9382033ea97f54e62d7238ab50e91c4",
+          "scope": "Native prerequisites only: existing owned transaction/actual scoped Audit/fresh authority/original immutable receipt safety. Public hashes/results, FNS policy and existing roles/grants/schema unchanged. Flow29/30 staged purpose adapters/UI are NOT_IMPLEMENTED; these prerequisites add no Work purpose. Current31native/31paired/0staged sets,41packages/50references/64flows and runtime0 unchanged.",
+          "owners": {
+            "flow29": {
+              "author_stack": "194 → 7d8 → 44",
+              "root_stack": [
+                "a2d6140e0",
+                "96d174740",
+                "daa7a0d6e"
+              ],
+              "sql_source_facts": 10
+            },
+            "flow30": {
+              "author_stack": "c071 → 1f8 → 28d → 5b",
+              "root_stack": [
+                "23f6c56d2",
+                "b059efb45",
+                "74360a213",
+                "dff93da7c"
+              ],
+              "sql_source_facts": 12
+            },
+            "party_credit_limit_and_manual_bank_approval": {
+              "author_stack": [
+                "f519edc96152ae1b7babe70d68df8dd8ef0a74c6",
+                "38ed908e860b039a27a894899869723af50d5118"
+              ],
+              "root_stack": [
+                "0bb1d5b4b",
+                "462377237"
+              ],
+              "sql_source_facts": 2
+            }
+          },
+          "sql": "Finance inventory333 sources, including24new native safety Facts; actualSQL NOT_RUN. Original-key winner/noWinner and controlled injected1205/provider-completed rollback sources are distinct from Flow29 real two-session deadlock reproduction source; neither kind has run. Successful owned cleanup only permits one readonly original-key pass, never mutation retry; cleanup faults/postcommit/replay-only repeated1205 do not enter another loop.",
+          "peer": "Each bounded source peer completed outside its respective author; not K3 or runtime acceptance.",
+          "initial_verification": "Exact13f13045668807dab70bf52286bee19f4ab35f73: warm Finance0errors/0warnings, API0errors/0warnings; Finance2108PASS0skip. Controlled Host597total596PASS1FAIL0skip (missing mandatory synthetic Audit configuration); original failure retained.",
+          "corrected_verification": "Exact9f9442c4e9382033ea97f54e62d7238ab50e91c4: warm Finance0errors/0warnings12.3332947s, API0errors/0warnings23.9552844s; full Finance2108/2108PASS0skip15.9330926s; complete integration-source compile and controlled Host/DI/helper filter618/618PASS0skip71.642513s. Existing21SqlConcurrencyWrapper cases are included in618, not additional. Root independently parsed TRX counters. Warm builds are not a full API build.",
+          "limits": "Full API build/actualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 NOT_RUN. Earlier UI results remain separate-head evidence; all64 semantics NOT_VERIFIED/runtime NOT_RUN, verified_runtime_flows=0."
         }
       }
     },

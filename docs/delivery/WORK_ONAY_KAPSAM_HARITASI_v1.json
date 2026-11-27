@@ -873,7 +873,13 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command. Native decision safety prerequisite now source-implemented and bounded-peer reviewed; staged purpose adapter/UI remain NOT_IMPLEMENTED. No new Work kind or runtime acceptance.",
+      "native_prerequisite_reference": {
+        "source_commit": "9f9442c4e9382033ea97f54e62d7238ab50e91c4",
+        "evidence": "UYGULAMA_PAKETLERI_2026-11-26.json → T2/WP8.execution.native_prerequisite_checkpoint",
+        "sql_source_facts": 10,
+        "actual_sql": "NOT_RUN"
+      }
     },
     {
       "flow": 30,
@@ -901,7 +907,13 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command. Native decision safety prerequisite now source-implemented and bounded-peer reviewed; staged purpose adapter/UI remain NOT_IMPLEMENTED. No new Work kind or runtime acceptance.",
+      "native_prerequisite_reference": {
+        "source_commit": "9f9442c4e9382033ea97f54e62d7238ab50e91c4",
+        "evidence": "UYGULAMA_PAKETLERI_2026-11-26.json → T2/WP8.execution.native_prerequisite_checkpoint",
+        "sql_source_facts": 12,
+        "actual_sql": "NOT_RUN"
+      }
     },
     {
       "flow": 31,
@@ -1984,6 +1996,7 @@
     "frontend": "Exact2a3e3f5cbf519744a9064d9407862ee260976f8e: nine frontend files938total925PASS13FAIL0skip, all13 failures in old WorkInbox fixture; original logs retained,75new API/Page cases included. Other eight complete files890PASS are separate2a3e evidence. Fulltsc exit0/54.806s;10explicitlint exit0/0diagnostics0.752s. Exact9e0e79ecf39a3e1749f4277f4546006bca633478: fulltsc exit0/51.6475571s, lint exit0/0diagnostics0.694s; Inbox49total48PASS1FAIL0skip (obsolete query assertion), original logs retained. Exact7898cc30397ab51d38464c5ac674de2422890d07: complete Inbox49/49PASS0skip17.2442436s, one-filelint exit0/0diagnostics0.1208757s; root independently parsed JSON counters. TSC not repeated for the one-literal test correction. No939 same-head sum of2a3e890 and78949.",
     "peer": "Full17-file bounded nonauthor UI peer plus a91276f3a8aac2acb554f435020b606cb6f2a9be two-file correction: CLR decimal overflow/nonzero excess-scale P2 source-closed; raw text unchanged. Root test-only9e0e79ecf39a3e1749f4277f4546006bca633478 aligns the actual purpose capability/link and adds native-F18-alone no-fetch negative. Its remaining obsolete query assertion P2 is source-closed by7898cc30397ab51d38464c5ac674de2422890d07 exact empty-query assertion; pathname/event assertions retained. Source peer is not K3.",
     "verified_runtime_flows": 0,
-    "limits": "ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 remain pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows=0;41packages/50references unchanged."
+    "limits": "ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 remain pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows=0;41packages/50references unchanged.",
+    "native_prerequisite_reference": "UYGULAMA_PAKETLERI_2026-11-26.json → T2/WP8.execution.native_prerequisite_checkpoint @9f9442c4e9382033ea97f54e62d7238ab50e91c4"
   }
 }
