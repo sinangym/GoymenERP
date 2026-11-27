@@ -1,4 +1,9 @@
 export const WORK_DECISION_TEXT = {
+  normalJournalProposal: 'Normal fiş taslağı', normalJournalId: 'Taslak kaydı', normalJournalDraft: 'Taslak', normalJournalApproved: 'Onaylandı',
+  normalJournalAccountPlan: 'Onaylı hesap planı sürümü', normalJournalApprover: 'Onaylayan', normalJournalApprovedAt: 'Onay zamanı (UTC)',
+  normalJournalPosted: 'Kaydedilen fiş', normalJournalMapping: 'Hesap eşlemesi',
+  normalJournalRetained: 'Önceki onayınız yeniden doğrulanıyor. Seçtiğiniz dönem ve karar verdiğiniz sürüm korunuyor; güncel fiş bilgileri bu isteğin yerine kullanılmıyor.',
+
   creditMovementProposal: 'Karar verilecek gerçek kredi hareketi', cashBookProposal: 'Karar verilecek döviz defter değeri',
   movementBookFields: { movement: 'Gerçek kredi hareketi', transfer: 'Kayıtlı döviz işlemi', proposal: 'Defter değeri önerisi', bankDisplayName: 'Banka adı',
     source: 'Kayıtlı kaynak', sourceDocument: 'Kaynak belge', components: 'Kaynak kalemleri', bankEffect: 'Gerçek banka hareketi', moneyProfile: 'Kayıtlı para profili',

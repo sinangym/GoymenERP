@@ -1,3 +1,6 @@
+import { normalJournalFixture } from './normalJournalDecisionFixture'
+import { NORMAL_JOURNAL_WORK_KIND as journalKind, NORMAL_JOURNAL_WORK_CAPABILITY as journalCap } from './workNormalJournalDecision'
+import { NORMAL_JOURNAL_TEXT as JOURNAL } from '../accounting/accountingText'
 import { OFFICIAL_SALES_INVOICE_TEXT as OFFICIAL } from '../finance/officialSalesInvoiceText'
 import { priceKind, priceCap, priceHuman } from './priceListDecisionFixture'
 import { PRICE_LIST_TEXT as PRICE } from '../product/priceLists/priceListText'
@@ -2553,4 +2556,109 @@ it.each([
  const denied=installFetch({capabilities:['finance.credits.workspace','finance.credits.approve','finance.cash-exchange-book-values.approve'],respond:url=>url.includes(ownerPath)?problem(503):undefined})
  mount(`/onaylarim/${k}/${id}`,true)
  await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(denied.some(call=>call.url.includes(ownerPath))).toBe(false)
+})
+
+
+// Staged core fixture: public workRoutes stays at 41 until the paired backend publication is compiled.
+function mountJournalCandidate(client?:QueryClient){
+ const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[{path:`onaylarim/${journalKind}/:approvalId`,element:<WorkDecisionPage kind={journalKind}/>}]}],{initialEntries:[`/onaylarim/${journalKind}/${id}`]})
+ render(<ShellProvider queryClient={client??new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})}><RouterProvider router={router}/></ShellProvider>)
+ return router
+}
+const journalPeriod='aaaaaaaa-0000-4000-8000-000000000079'
+const journalPeriodPage={items:[{periodId:journalPeriod,companyId:COMPANY_A,startsOn:'2026-11-01',endsOn:'2026-11-30',status:'Open',version:2,
+ preparedByUserId:'aaaaaaaa-0000-4000-8000-000000000081',preparedAtUtc:'2026-11-01T08:00:00Z',approvedByUserId:'aaaaaaaa-0000-4000-8000-000000000082',approvedAtUtc:'2026-11-01T09:00:00Z',closedByUserId:null,closedAtUtc:null,isOwnProposal:false}],nextCursor:null}
+const journalOwnerPath=`/work/decisions/${journalKind}/${id}`
+describe('WP8 normal journal staged human decision',()=>{
+ it('shows every native line and date without proof hashes, and requires an explicit open period choice',async()=>{
+  const value=normalJournalFixture(COMPANY_A,id)
+  const calls=installFetch({capabilities:[journalCap,'accounting.periods.list'],respond:(url,init)=>url.includes(journalOwnerPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:journalKind,itemId:id,state:'Approved',replayed:false,originalCorrelationId:'SENTETIK journal'}):json(value):url.includes('/accounting/periods')?json(journalPeriodPage):undefined})
+  mountJournalCandidate();const region=await screen.findByRole('region',{name:T.normalJournalProposal})
+  expect(within(region).getAllByRole('row')).toHaveLength(3)
+  expect(within(region).getAllByText('1250.50')).toHaveLength(2)
+  expect(within(region).getByText('SENTETIK plan-3')).toBeTruthy()
+  expect(region.textContent).not.toContain(value.normalJournalDraft.sourceFactsDigest)
+  expect(region.textContent).not.toContain(value.normalJournalDraft.previewDigest)
+  expect(region.textContent).not.toContain(value.normalJournalDraft.draft.accountPlanSourceSha256)
+  const select=await screen.findByLabelText(JOURNAL.period) as HTMLSelectElement
+  await screen.findByRole('option',{name:/2026-11-01/});expect(select.value).toBe('')
+  expect(screen.getByRole('button',{name:T.approve}).matches(':disabled')).toBe(true)
+  expect(screen.queryByRole('button',{name:T.reject})).toBeNull();expect(screen.queryByRole('textbox',{name:T.reason})).toBeNull()
+  fireEvent.change(select,{target:{value:journalPeriod}})
+  await userEvent.setup().click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done)
+  expect(calls.filter(call=>call.method==='POST').map(call=>call.body)).toEqual([{expectedVersion:'7',approve:true,reason:null,delegationId:null,normalJournalDraft:{periodId:journalPeriod}}])
+  expect(screen.queryByRole('region',{name:T.normalJournalProposal})).toBeNull()
+ })
+ it('keeps the candidate off the published routes until backend publication',()=>{
+  expect(workRoutes.some(route=>route.path===`onaylarim/${journalKind}/:approvalId`)).toBe(false)
+ })
+ it('keeps the original period/version/key after unknown remount, with no fresh human or period GET',async()=>{
+  const value=normalJournalFixture(COMPANY_A,id,'9007199254740993');let posts=0
+  const calls=installFetch({capabilities:[journalCap,'accounting.periods.list'],respond:(url,init)=>url.includes(journalOwnerPath)?init?.method==='POST'?++posts===1?problem(503):json({companyId:COMPANY_A,kind:journalKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'SENTETIK original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK original'}):json(value):url.includes('/accounting/periods')?json(journalPeriodPage):undefined})
+  const baseFetch=globalThis.fetch
+  vi.stubGlobal('fetch',vi.fn((input:RequestInfo|URL,init?:RequestInit)=>String(input).endsWith('/identity/me')?Promise.resolve(json({...IDENTITY,authenticationSessionBinding:'SENTETIK journal session'})):baseFetch(input,init)))
+  mountJournalCandidate();await screen.findByRole('option',{name:/2026-11-01/});fireEvent.change(screen.getByLabelText(JOURNAL.period),{target:{value:journalPeriod}})
+  await userEvent.setup().click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+  const reads=calls.filter(call=>call.method==='GET'&&(call.url.includes(journalOwnerPath)||call.url.includes('/accounting/periods'))).length
+  cleanup();mountJournalCandidate();await screen.findByText(T.unknown)
+  expect(screen.queryByRole('region',{name:T.normalJournalProposal})).toBeNull();expect(screen.queryByLabelText(JOURNAL.period)).toBeNull()
+  expect(calls.filter(call=>call.method==='GET'&&(call.url.includes(journalOwnerPath)||call.url.includes('/accounting/periods')))).toHaveLength(reads)
+  await userEvent.setup().click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+  const sent=calls.filter(call=>call.method==='POST');expect(sent).toHaveLength(2)
+  expect(sent[1].body).toEqual(sent[0].body);expect(sent[1].headers['Idempotency-Key']).toBe(sent[0].headers['Idempotency-Key'])
+  expect(sent[0].body).toEqual({expectedVersion:'9007199254740993',approve:true,reason:null,delegationId:null,normalJournalDraft:{periodId:journalPeriod}})
+  expect(JSON.stringify(sessionStorage)).not.toContain(value.normalJournalDraft.sourceFactsDigest)
+  expect(JSON.stringify(sessionStorage)).not.toContain('1250.50')
+ })
+ it('does not fetch either owner or periods when the purpose capability is missing',async()=>{
+  const calls=installFetch({capabilities:['accounting.periods.list'],respond:url=>url.includes(journalOwnerPath)?json(normalJournalFixture(COMPANY_A,id)):undefined})
+  mountJournalCandidate();await waitFor(()=>expect(calls.some(call=>call.url.endsWith('/shell/capabilities'))).toBe(true))
+  expect(calls.filter(call=>call.url.includes(journalOwnerPath)||call.url.includes('/accounting/periods'))).toHaveLength(0)
+ })
+ it('does not replace the period-list read permission with approve authority',async()=>{
+  const calls=installFetch({capabilities:[journalCap],respond:url=>url.includes(journalOwnerPath)?json(normalJournalFixture(COMPANY_A,id)):undefined})
+  mountJournalCandidate();await screen.findByText(JOURNAL.periodListUnavailable)
+  expect(screen.getByRole('button',{name:T.approve}).matches(':disabled')).toBe(true)
+  expect(calls.some(call=>call.url.includes('/accounting/periods'))).toBe(false)
+ })
+ it.each([403,503])('does not enable approval when the period read answers %s',async status=>{
+  const calls=installFetch({capabilities:[journalCap,'accounting.periods.list'],respond:url=>url.includes(journalOwnerPath)?json(normalJournalFixture(COMPANY_A,id)):url.includes('/accounting/periods')?problem(status):undefined})
+  mountJournalCandidate();await waitFor(()=>expect(calls.some(call=>call.url.includes('/accounting/periods'))).toBe(true))
+  expect(calls.some(call=>call.method==='POST')).toBe(false)
+  const approve=screen.queryByRole('button',{name:T.approve});expect(approve===null||approve.matches(':disabled')).toBe(true)
+ })
+})
+
+
+describe('normal journal receipt context and late-read fences',()=>{
+ it('hides a cached or late human revision while retrying the original command',async()=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK journal late'})
+  const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})
+  const value=normalJournalFixture(COMPANY_A,id);let gets=0;let release!:(response:Response)=>void
+  const late=new Promise<Response>(resolve=>{release=resolve})
+  const calls=installFetch({capabilities:[journalCap,'accounting.periods.list'],respond:(url,init)=>url.includes(journalOwnerPath)?init?.method==='POST'?problem(503):++gets===1?json(value):late:url.includes('/accounting/periods')?json(journalPeriodPage):undefined})
+  mountJournalCandidate(client);await screen.findByRole('option',{name:/2026-11-01/});fireEvent.change(screen.getByLabelText(JOURNAL.period),{target:{value:journalPeriod}})
+  let refetch!:Promise<void>;act(()=>{refetch=client.refetchQueries({predicate:query=>query.queryKey.includes('work-decision')})});await waitFor(()=>expect(gets).toBe(2))
+  fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+  const newer=normalJournalFixture(COMPANY_A,id,'8');newer.normalJournalDraft.draft.postingPurpose='SENTETIK later private facts'
+  await act(async()=>{release(json(newer));await refetch})
+  expect(client.getQueryCache().findAll({predicate:query=>query.queryKey.includes('work-decision')})[0]?.state.data).toMatchObject({type:'ok-single',data:{sourceVersion:'8'}})
+  expect(screen.queryByText('SENTETIK later private facts')).toBeNull();expect(screen.queryByRole('region',{name:T.normalJournalProposal})).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.unknown)
+  const sent=calls.filter(call=>call.method==='POST');expect(sent).toHaveLength(2);expect(sent[1].body).toEqual(sent[0].body);expect(sent[1].headers['Idempotency-Key']).toBe(sent[0].headers['Idempotency-Key']);client.clear()
+ })
+ it.each(['company','session'] as const)('does not restore an unknown journal approval into another %s',async change=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK journal original session'})
+  const calls=installFetch({capabilities:[journalCap,'accounting.periods.list'],respond:(url,init)=>{
+   if(url.includes(journalOwnerPath)){if(init?.method==='POST')return problem(503);const current=(init?.headers as Record<string,string>)['X-Company-Id'] ?? COMPANY_A;return json(normalJournalFixture(current,id))}
+   if(url.includes('/accounting/periods'))return json(journalPeriodPage)
+   return undefined
+  }})
+  mountJournalCandidate();await screen.findByRole('option',{name:/2026-11-01/});fireEvent.change(screen.getByLabelText(JOURNAL.period),{target:{value:journalPeriod}})
+  fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+  if(change==='company')await userEvent.setup().selectOptions(screen.getByRole('combobox',{name:'Şirket'}),COMPANY_B)
+  else {cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK journal different session'});mountJournalCandidate()}
+  await screen.findByRole('region',{name:T.normalJournalProposal})
+  expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+ })
 })

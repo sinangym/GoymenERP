@@ -1,3 +1,5 @@
+import { normalJournalFixture } from './normalJournalDecisionFixture'
+import { NORMAL_JOURNAL_WORK_KIND as journalKind } from './workNormalJournalDecision'
 import { priceKind, priceHuman } from './priceListDecisionFixture'
 import { checkTaxIdentity } from '../cari/taxIdentity'
 import type { WorkDecisionPreview } from './workDecisionApi'
@@ -1398,4 +1400,64 @@ it('requires the native treasury-source role and complete preparation while acce
  expect(decodeWorkDecisionPreview({...cash,references:value.references},company,expenseKind,id)).toBeNull()
  expect(decodeWorkDecisionPreview({...value,expensePayment:{...value.expensePayment,payment:{...value.expensePayment.payment,preparation:{...value.expensePayment.payment.preparation,extra:true}}}},company,expenseKind,id)).toBeNull()
  expect(decodeWorkDecisionPreview(expensePreview(company,id,'9223372036854775807'),company,expenseKind,id)).toBeNull()
+})
+
+
+describe('WP8 normal journal candidate typed owner contract',()=>{
+ const period='aaaaaaaa-0000-4000-8000-000000000079'
+ const selected={...request,normalJournalDraft:{periodId:period}}
+ it('preserves full native lines and lossless Int64 text while keeping the candidate unmounted',()=>{
+  const value=normalJournalFixture(company,id,'9223372036854775807')
+  expect(decodeWorkDecisionPreview(value,company,journalKind,id)?.normalJournalDraft).toEqual(value.normalJournalDraft)
+  expect(WORK_DECISION_KINDS.some(value=>String(value)===journalKind)).toBe(false)
+  expect(isWorkDecisionKind(journalKind)).toBe(true)
+  const many=normalJournalFixture(company,id)
+  many.normalJournalDraft.draft.lines=Array.from({length:501},(_,index)=>({...many.normalJournalDraft.draft.lines[index%2]!,lineNumber:index+1}))
+  expect(decodeWorkDecisionPreview(many,company,journalKind,id)?.normalJournalDraft?.draft.lines).toHaveLength(501)
+ })
+ it.each(['numeric-version','unsafe-numeric','zero-version','leading-zero','foreign','source-reference','currency-reference','lower-digest','digest-LF','private-proof','missing-human','line-amount-LF','line-amount-overflow','line-order','date','bad-UTC','reject-supported','reason-required'] as const)('refuses malformed owner proof: %s',fault=>{
+  const value=normalJournalFixture(company,id)
+  const d=value.normalJournalDraft.draft
+  let mutated:unknown=value
+  if(fault==='numeric-version')mutated={...value,normalJournalDraft:{...value.normalJournalDraft,draft:{...d,version:7}}}
+  else if(fault==='unsafe-numeric')mutated={...value,normalJournalDraft:{...value.normalJournalDraft,draft:{...d,version:9007199254740992}}}
+  else if(fault==='zero-version')d.version='0'
+  else if(fault==='leading-zero')d.version='07'
+  else if(fault==='foreign')d.companyId=id
+  else if(fault==='source-reference')value.references[0].recordId=id
+  else if(fault==='currency-reference')value.references[1].recordId=id
+  else if(fault==='lower-digest')value.normalJournalDraft.sourceFactsDigest='a'.repeat(64)
+  else if(fault==='digest-LF')value.normalJournalDraft.previewDigest+='\n'
+  else if(fault==='private-proof')mutated={...value,normalJournalDraft:{...value.normalJournalDraft,isCreditSource:false}}
+  else if(fault==='missing-human')mutated={...value,normalJournalDraft:undefined}
+  else if(fault==='line-amount-LF')d.lines[0].amount+='\n'
+  else if(fault==='line-amount-overflow')d.lines[0].amount='79228162514264337593543950336'
+  else if(fault==='line-order')d.lines[0].lineNumber=3
+  else if(fault==='date')d.accountingDate='2026-02-30'
+  else if(fault==='bad-UTC')d.preparedAtUtc='2026-11-26T08:00:00+03:00'
+  else if(fault==='reject-supported')value.rejectionSupported=true
+  else value.approvalReasonRequired=true
+  expect(decodeWorkDecisionPreview(mutated,company,journalKind,id)).toBeNull()
+ })
+ it('accepts only an explicitly selected period on null-reason approval; other kinds retain four fields',()=>{
+  expect(isWorkDecisionRequest(selected,journalKind)).toBe(true)
+  for(const change of [{normalJournalDraft:undefined},{normalJournalDraft:{periodId:''}},{normalJournalDraft:{periodId:period,extra:true}},{approve:false},{reason:'onay'},{expectedVersion:'7\n'},{expectedVersion:'9223372036854775808'}])
+   expect(isWorkDecisionRequest({...selected,...change},journalKind)).toBe(false)
+  expect(isWorkDecisionRequest(selected,kind)).toBe(false)
+  expect(isWorkDecisionRequest(request,kind)).toBe(true)
+ })
+ it('freezes only the five command fields and verifies exact scoped native approval receipts',async()=>{
+  const fetch=vi.fn().mockResolvedValue(jsonJournalResult())
+  vi.stubGlobal('fetch',fetch)
+  expect((await sendWorkDecision(company,journalKind,id,selected,'SENTETIK journal key')).type).toBe('applied')
+  const init=fetch.mock.calls[0][1] as RequestInit
+  expect(JSON.parse(String(init.body))).toEqual(selected)
+  expect(String(init.body)).not.toContain('sourceFactsDigest')
+  for(const change of [{state:'Rejected'},{companyId:id},{itemId:company},{kind},{extra:true}]){
+   fetch.mockResolvedValue(jsonJournalResult(change))
+   expect((await sendWorkDecision(company,journalKind,id,selected,'SENTETIK journal key')).type).toBe('unknown')
+  }
+  expect((await sendWorkDecision(company,journalKind,id,{...selected,approve:false},'SENTETIK journal key')).type).toBe('unknown')
+  function jsonJournalResult(change:Record<string,unknown>={}){return new Response(JSON.stringify({companyId:company,kind:journalKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'SENTETIK-original',...change}),{status:200,headers:{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK-original'}})}
+ })
 })

@@ -1,3 +1,5 @@
+import { normalJournalVersion } from '../work/workNormalJournalDecision'
+import { isWorkPackageEffectiveDate } from '../work/workDecisionApi'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { decodeNormalJournalDraft } from './contract'
 import { sendNormalJournalCommand } from './normalJournalApi'
@@ -76,4 +78,20 @@ describe('normal journal commands', () => {
     const approve = { operation: 'approve' as const, idempotencyKey: 'key-3', draftId: DRAFT, expectedVersion: 1, periodId: SOURCE }
     expect(await sendNormalJournalCommand(COMPANY, approve)).toEqual({ type: 'failed', failure: { kind } })
   })
+})
+
+
+describe('normal journal explicit Work projection seam keeps native defaults',()=>{
+ it('keeps native JSON version numeric while Work accepts only canonical text throughout Int64',()=>{
+  expect(decodeNormalJournalDraft(draft(),COMPANY)?.version).toBe(1)
+  expect(decodeNormalJournalDraft(draft({version:'1'}),COMPANY)).toBeNull()
+  expect(decodeNormalJournalDraft(draft({version:9007199254740992}),COMPANY)).toBeNull()
+  expect(decodeNormalJournalDraft(draft({version:'9223372036854775807'}),COMPANY,normalJournalVersion,isWorkPackageEffectiveDate)?.version).toBe('9223372036854775807')
+  expect(decodeNormalJournalDraft(draft(),COMPANY,normalJournalVersion,isWorkPackageEffectiveDate)).toBeNull()
+  for(const version of ['01','0','1\n','9223372036854775808'])expect(decodeNormalJournalDraft(draft({version}),COMPANY,normalJournalVersion,isWorkPackageEffectiveDate)).toBeNull()
+ })
+ it('keeps the native date guard while Work accepts actual CLR DateOnly default',()=>{
+  expect(decodeNormalJournalDraft(draft({accountingDate:'0001-01-01'}),COMPANY)).toBeNull()
+  expect(decodeNormalJournalDraft(draft({version:'1',accountingDate:'0001-01-01'}),COMPANY,normalJournalVersion,isWorkPackageEffectiveDate)?.accountingDate).toBe('0001-01-01')
+ })
 })

@@ -362,10 +362,15 @@ export function decodeNormalJournalDraftAccounts(value: unknown, draft: NormalJo
   }
 }
 
-export function decodeNormalJournalDraft(value: unknown, companyId: string): NormalJournalDraft | null {
+export function decodeNormalJournalDraft(value: unknown, companyId: string): NormalJournalDraft | null
+export function decodeNormalJournalDraft<T>(value: unknown, companyId: string, versionReader: (value: unknown) => T | null,
+  dateValidator?: (value: unknown) => value is string): (Omit<NormalJournalDraft, 'version'> & { readonly version: T }) | null
+export function decodeNormalJournalDraft(value: unknown, companyId: string, versionReader?: (value: unknown) => unknown,
+  dateValidator: (value: unknown) => value is string = isDate): (Omit<NormalJournalDraft, 'version'> & { readonly version: unknown }) | null {
   const v = record(value)
   if (v === null || !hasExactKeys(v, NORMAL_DRAFT_KEYS) || !Array.isArray(v.lines)) return null
-  if (!isGuid(v.draftId) || v.companyId !== companyId || !isCount(v.version, 1)) return null
+  const draftVersion = versionReader ? versionReader(v.version) : isCount(v.version, 1) ? v.version : null
+  if (!isGuid(v.draftId) || v.companyId !== companyId || draftVersion === null || draftVersion === undefined) return null
   if (typeof v.status !== 'string' || !(NORMAL_JOURNAL_DRAFT_STATUSES as readonly string[]).includes(v.status)) return null
   if (!isGuid(v.preparedByUserId) || !isInstant(v.preparedAtUtc)) return null
   if (!isNullableGuid(v.approvedByUserId) || !isNullableInstant(v.approvedAtUtc)) return null
@@ -373,7 +378,7 @@ export function decodeNormalJournalDraft(value: unknown, companyId: string): Nor
   if (!isGuid(v.sourceId) || !isText(v.postingPurpose) || !isText(v.postingRuleVersion)) return null
   if (!isText(v.accountPlanSourceVersion) || typeof v.accountPlanSourceSha256 !== 'string'
       || !/^[0-9a-f]{64}$/i.test(v.accountPlanSourceSha256) || !isGuid(v.currencyId)) return null
-  if (!isDate(v.transactionDate) || !isDate(v.accountingDate) || !(v.valueDate === null || isDate(v.valueDate))) return null
+  if (!dateValidator(v.transactionDate) || !dateValidator(v.accountingDate) || !(v.valueDate === null || dateValidator(v.valueDate))) return null
 
   const status = v.status as NormalJournalDraftStatus
   const unapproved = v.approvedByUserId === null && v.approvedAtUtc === null && v.periodId === null && v.postedJournalId === null
@@ -401,7 +406,7 @@ export function decodeNormalJournalDraft(value: unknown, companyId: string): Nor
   return {
     draftId: v.draftId,
     companyId,
-    version: v.version,
+    version: draftVersion,
     status,
     preparedByUserId: v.preparedByUserId,
     preparedAtUtc: v.preparedAtUtc,

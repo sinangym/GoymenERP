@@ -39,6 +39,7 @@ export function NormalJournalApprovalPeriod({
   onChange,
   disabled,
   reloadToken,
+  autoSelect = true,
 }: {
   /** The shell query namespace; first in the key so a fenced context drops this read with the rest. */
   readonly namespace: string
@@ -52,6 +53,8 @@ export function NormalJournalApprovalPeriod({
    * the loaded later pages are dropped and the list restarts from the first page.
    */
   readonly reloadToken: number
+  /** Purpose decisions require an explicit human choice; native callers retain their existing default. */
+  readonly autoSelect?: boolean
 }) {
   const shell = useShellState()
   const boundary = useAuthBoundary()
@@ -81,7 +84,7 @@ export function NormalJournalApprovalPeriod({
   const loaded = state.kind === 'ready' ? [...state.data.items, ...more] : []
   const open = loaded.filter((period) => period.status === 'Open')
   const holding = open.filter((period) => holds(period, accountingDate))
-  const preselect = value === '' && holding.length === 1 ? holding[0].periodId : null
+  const preselect = autoSelect && value === '' && holding.length === 1 ? holding[0].periodId : null
 
   // A choice the list no longer shows (a restarted list dropped its page) is cleared, so what is sent is what is seen.
   const unseen = state.kind === 'ready' && value !== '' && !open.some((period) => period.periodId === value)
