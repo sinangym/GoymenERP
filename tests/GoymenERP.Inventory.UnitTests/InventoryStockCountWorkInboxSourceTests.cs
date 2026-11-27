@@ -67,7 +67,7 @@ public sealed class InventoryStockCountWorkInboxSourceTests
         Assert.Equal(pending.InventoryStockCountProof.Count, terminal.InventoryStockCountProof!.Count);
         Assert.Equal("Approved", terminal.InventoryStockCountProof.Status);
         Assert.DoesNotContain(row.Reason, JsonSerializer.Serialize(terminal));
-        Assert.DoesNotContain("inventoryStockCountProof", JsonSerializer.Serialize(terminal, new(JsonSerializerDefaults.Web)));
+        Assert.DoesNotContain("inventoryStockCountProof", JsonSerializer.Serialize(terminal, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
     }
 
     [Theory]
