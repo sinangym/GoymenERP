@@ -1,3 +1,5 @@
+using GoymenERP.Modules.Audit.Application.Contracts;
+using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
@@ -892,9 +894,13 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
         public StoreScope Store(Guid company, params IInterceptor[] extra)
         {
-            var companyContext = new CompanyContext();
+            // Resolve the real writer and collector together: the Reject entry fence must inspect the
+            // exact drafts consumed by this context's existing AuditSaveChangesInterceptor.
+            var auditScope = Factory.Services.CreateScope();
+            var companyContext = auditScope.ServiceProvider.GetRequiredService<ICompanyContext>();
             companyContext.Set(company);
-            var collector = new AuditEventCollector();
+            var collector = auditScope.ServiceProvider.GetRequiredService<AuditEventCollector>();
+            var writer = auditScope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
             var interceptors = new List<IInterceptor> { new AuditSaveChangesInterceptor(collector, companyContext) };
             interceptors.AddRange(extra);
             var options = new DbContextOptionsBuilder<ManufacturingDbContext>()
@@ -903,8 +909,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
                 .AddInterceptors(interceptors)
                 .Options;
             var dbContext = new ManufacturingDbContext(options, companyContext);
-            var store = new ManufacturingStore(dbContext, companyContext, collector, TimeProvider.System);
-            return new StoreScope(dbContext, store);
+            var store = new ManufacturingStore(dbContext, companyContext, collector, TimeProvider.System, writer);
+            return new StoreScope(dbContext, store, auditScope);
         }
 
         public async Task<Guid> WorkCenterOfAsync(Guid company) =>
@@ -970,7 +976,8 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         }
     }
 
-    private sealed class StoreScope(ManufacturingDbContext dbContext, ManufacturingStore store) : IAsyncDisposable
+    private sealed class StoreScope(ManufacturingDbContext dbContext, ManufacturingStore store,
+        IServiceScope? auditScope = null) : IAsyncDisposable
     {
         public ManufacturingDbContext Context => dbContext;
         public IManufacturingPlanStore Plans => store;
@@ -988,7 +995,11 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         public IManufacturingMonthlyScrapPriceStore ScrapPrices => store;
         public IManufacturingMonthlyScrapPriceReaderV1 ScrapPriceReader => store;
 
-        public ValueTask DisposeAsync() => dbContext.DisposeAsync();
+        public async ValueTask DisposeAsync()
+        {
+            try { await dbContext.DisposeAsync(); }
+            finally { auditScope?.Dispose(); }
+        }
     }
 
     /// <summary>Holds each save until both writers have reached it, so both read the same order first.</summary>

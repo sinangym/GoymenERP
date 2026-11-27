@@ -1,7 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using System.Net;
 using GoymenERP.BuildingBlocks.Security;
-using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -150,19 +149,44 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
-    public async Task Plan_rejection_pending_audit_entry_refusal_does_not_discard_the_callers_drafts()
+    public async Task Plan_rejection_pending_audit_entry_refusal_preserves_actual_writer_collector_drafts()
     {
         await using var run = await Run.StartAsync();
-        await using var context = run.Context(CompanyA);
-        var company = new CompanyContext(); company.Set(CompanyA);
-        var writer = new RejectionPendingAudit();
-        var owner = new ManufacturingStore(context, company, new AuditEventCollector(), TimeProvider.System, writer);
+        await using var services = run.Factory.Services.CreateAsyncScope();
+        services.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
+        var collector = services.ServiceProvider.GetRequiredService<AuditEventCollector>();
+        var writer = services.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
+        var owner = services.ServiceProvider.GetRequiredService<ManufacturingStore>();
+        collector.Enqueue(RejectionCallerAudit(run));
+        Assert.True(writer.HasPendingDrafts);
         var called = false;
         await Assert.ThrowsAsync<InvalidOperationException>(() => owner.ExecutePlanRejectionAsync(
             _ => { called = true; return Task.FromResult(RejectionOk()); }, _ => Task.CompletedTask));
         Assert.False(called);
         Assert.True(writer.HasPendingDrafts);
-        Assert.Equal(0, writer.Discards);
+        writer.DiscardPending(); // The caller, not the refused owner attempt, cleans up its own test draft.
+    }
+
+    [SqlServerFact]
+    public async Task Plan_rejection_missing_writer_returns_unavailable_without_consuming_actual_collector_drafts()
+    {
+        await using var run = await Run.StartAsync();
+        await using var services = run.Factory.Services.CreateAsyncScope();
+        var company = services.ServiceProvider.GetRequiredService<ICompanyContext>(); company.Set(CompanyA);
+        var collector = services.ServiceProvider.GetRequiredService<AuditEventCollector>();
+        var actualWriter = services.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
+        var context = services.ServiceProvider.GetRequiredService<ManufacturingDbContext>();
+        collector.Enqueue(RejectionCallerAudit(run));
+        var ownerWithoutWriter = new ManufacturingStore(context, company, collector, TimeProvider.System);
+        var called = false;
+        var result = await ownerWithoutWriter.ExecutePlanRejectionAsync(
+            _ => { called = true; return Task.FromResult(RejectionOk()); }, _ => { called = true; return Task.CompletedTask; });
+        Assert.Equal(ManufacturingApiStatus.Unavailable, result.Status);
+        Assert.False(called);
+        Assert.True(actualWriter.HasPendingDrafts);
+        Assert.Empty(context.ChangeTracker.Entries());
+        Assert.Null(context.Database.CurrentTransaction);
+        actualWriter.DiscardPending();
     }
 
     [SqlServerFact]
@@ -198,6 +222,32 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Plan_rejection_real_writer_drains_unflushed_audit_in_the_same_owned_transaction_before_commit()
+    {
+        await using var run = await Run.StartAsync();
+        var plan = NewPlan(CompanyA, await run.WorkCenterOfAsync(CompanyA));
+        await using (var seed = run.Store(CompanyA)) await seed.Plans.SavePlanAsync(plan, Metadata(run));
+        await using var services = run.Factory.Services.CreateAsyncScope();
+        var company = services.ServiceProvider.GetRequiredService<ICompanyContext>(); company.Set(CompanyA);
+        var collector = services.ServiceProvider.GetRequiredService<AuditEventCollector>();
+        var writer = services.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
+        // Deliberately no Audit interceptor: this verifies the existing writer fallback, not a fake flush.
+        await using var context = run.Context(CompanyA);
+        var owner = new ManufacturingStore(context, company, collector, TimeProvider.System, writer);
+        var answer = await owner.ExecutePlanRejectionAsync(async token =>
+        {
+            await owner.RejectPlanAsync(plan.Id, 1, run.Approver, At, "Gerçek insan gerekçesi",
+                RejectionReceiptMetadata(run, "writer-fallback"), token);
+            return RejectionOk();
+        }, _ => Task.CompletedTask);
+        Assert.Equal(ManufacturingApiStatus.Ok, answer.Status);
+        Assert.False(writer.HasPendingDrafts);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType=N'manufacturing.plan.rejected.v1' AND EntityId=@p",
+            ("@p", plan.Id.ToString("D"))));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.PlanRejections WHERE PlanId=@p", ("@p", plan.Id)));
+    }
+
+    [SqlServerFact]
     public async Task Plan_rejection_returned_terminal_status_without_a_native_saved_receipt_never_commits_staged_work()
     {
         await using var run = await Run.StartAsync();
@@ -213,6 +263,12 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         Assert.Equal(ManufacturingApiStatus.Conflict, result.Status);
         await AssertRejectedAttemptAbsent(run, plan.Id);
     }
+
+    private static AuditEventDraft RejectionCallerAudit(Run run) => new(
+        CompanyA, "manufacturing.plan.rejected.v1", "Manufacturing.ProductionPlan", Guid.NewGuid().ToString("D"),
+        "Reject", 1, 2, AuditActorTypes.User, run.Actor.ToString("D"), "synthetic.manufacturing.test-write",
+        ["SYNTHETIC-MANUFACTURING-TEST"], "{}", "{}", "Caller-owned draft", null,
+        AuditAiInvolvement.None, null, "Web", null, null, run.Correlation, null, "caller-owned");
 
     private static ManufacturingApiResult<PlanViewV1> RejectionOk() => new(ManufacturingApiStatus.Ok, null, false, null);
     private static string RejectionHash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
@@ -242,14 +298,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             return ValueTask.FromResult(result);
         }
     }
-    private sealed class RejectionPendingAudit : IAuditTransactionWriterV1
-    {
-        public bool HasPendingDrafts => true;
-        public int Discards { get; private set; }
-        public Task WritePendingAsync(IDbTransaction transaction, CancellationToken cancellationToken = default) =>
-            throw new InvalidOperationException("Caller-owned pending drafts must not be written.");
-        public void DiscardPending() => Discards++;
-    }
+
 }
 
 public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests

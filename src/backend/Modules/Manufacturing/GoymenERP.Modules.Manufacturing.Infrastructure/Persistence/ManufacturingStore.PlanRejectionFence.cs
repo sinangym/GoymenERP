@@ -1,5 +1,6 @@
 using GoymenERP.Modules.Manufacturing.Application;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 
@@ -14,10 +15,14 @@ public sealed partial class ManufacturingStore
     {
         ArgumentNullException.ThrowIfNull(execute);
         ArgumentNullException.ThrowIfNull(freshDecisionFence);
+        // Without the real scope's writer we cannot inspect or discard collector-owned drafts.
+        // This refusal precedes owned cleanup and never touches a caller's collector or tracked work.
+        if (decisionAuditWriter is null)
+            return new(ManufacturingApiStatus.Unavailable, null, false, null);
         // Before any read, callback or replay. Caller-owned work must never enter this attempt's cleanup.
         if (System.Transactions.Transaction.Current is not null || !dbContext.Database.IsRelational()
             || dbContext.Database.CurrentTransaction is not null || dbContext.ChangeTracker.HasChanges()
-            || decisionAuditWriter?.HasPendingDrafts == true || queueMutationMetadata is not null
+            || decisionAuditWriter.HasPendingDrafts || queueMutationMetadata is not null
             || planRejectionFence is not null)
             throw new InvalidOperationException("Plan rejection requires its own clean Manufacturing transaction.");
         var companyId = RequireResolvedCompany();
@@ -40,6 +45,15 @@ public sealed partial class ManufacturingStore
             if (planRejectionReceiptSaved && result.Status is not (ManufacturingApiStatus.Denied
                 or ManufacturingApiStatus.Invalid or ManufacturingApiStatus.Unavailable))
             {
+                // Normally AuditSaveChangesInterceptor already appended and drained this same collector.
+                // A native scope with pending drafts uses the existing Audit owner in this transaction.
+                if (decisionAuditWriter.HasPendingDrafts)
+                {
+                    await decisionAuditWriter.WritePendingAsync(owned.GetDbTransaction(), cancellationToken);
+                    await Fence(cancellationToken);
+                }
+                if (decisionAuditWriter.HasPendingDrafts)
+                    throw new InvalidOperationException("Plan rejection cannot commit pending audit drafts.");
                 await owned.CommitAsync(cancellationToken);
             }
             else
@@ -60,7 +74,7 @@ public sealed partial class ManufacturingStore
             planRejectionFence = null;
             planRejectionReceiptSaved = false;
             queueMutationMetadata = null;
-            decisionAuditWriter?.DiscardPending();
+            decisionAuditWriter.DiscardPending();
         }
     }
 
