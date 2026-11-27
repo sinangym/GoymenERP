@@ -23,14 +23,18 @@ public sealed partial class PurchaseGoodsReceiptBatchWorkInboxSourceV1Tests
         var order = Order(CompanyA, "SENTETIK-PO-purpose");
         var row = Batch(CompanyA, order.Id, (PurchaseGoodsReceiptBatchStatus)status, Start);
         if (!pending) { Decided(row); row.Version = 2; }
-        await world.SeedAsync(CompanyA, db => { db.Orders.Add(order); db.GoodsReceiptBatches.Add(row); db.GoodsReceiptBatchLabels.Add(PurposeLabel(row)); });
+        var label = PurposeLabel(row);
+        await world.SeedAsync(CompanyA, db => { db.Orders.Add(order); db.GoodsReceiptBatches.Add(row); db.GoodsReceiptBatchLabels.Add(label); });
         var result = await Source(world).ReadDecisionAsync(world.Caller(CompanyA), row.BatchId, default);
         Assert.NotNull(result);
         Assert.Equal((CompanyA, pending, pending ? "1" : "2"), (result.CompanyId, result.Pending, result.SourceVersion));
         Assert.Equal(Maker, result.Item.PreparedBy);
         Assert.True(result.Item.Excludes(Maker));
         Assert.Equal("/onaylarim/purchasing.goods-receipt-batch.v1/" + row.BatchId.ToString("D"), result.Item.Link);
-        Assert.Equal(order.Id, Assert.Single(result.Item.References).RecordId);
+        Assert.Equal(order.Id, Assert.Single(result.Item.References, reference => reference.Role == "purchase-order").RecordId);
+        Assert.Equal(label.Released ? 1 : 2, result.Item.References.Count);
+        if (label.Released) Assert.DoesNotContain(result.Item.References, reference => reference.Role == "goods-receipt-label");
+        else Assert.Equal(label.LabelId, Assert.Single(result.Item.References, reference => reference.Role == "goods-receipt-label").RecordId);
         Assert.All(world.AskedPermissions, permission => Assert.Equal(PurchasingPermissionManifestV1.GoodsReceiptsApproveVariance, permission));
     }
 
@@ -62,15 +66,16 @@ public sealed partial class PurchaseGoodsReceiptBatchWorkInboxSourceV1Tests
         if (fault == "order") row.OrderId = Guid.NewGuid();
         if (fault == "decision") row.DecidedBy = Approver;
         if (fault == "terminal-maker") { row.Status = 3; row.Version = 2; Decided(row); row.DecidedBy = Maker; }
-        await world.SeedAsync(CompanyA, db => { db.Orders.Add(order); db.GoodsReceiptBatches.Add(row); db.GoodsReceiptBatchLabels.Add(PurposeLabel(row)); });
-        if (fault is "labels" or "label-total" or "label-source")
-            await world.SeedAsync(CompanyA, db =>
-            {
-                var label = db.GoodsReceiptBatchLabels.Single(candidate => candidate.BatchId == row.BatchId);
-                if (fault == "labels") db.GoodsReceiptBatchLabels.Remove(label);
-                if (fault == "label-total") label.MeasuredQuantityKg = 1m;
-                if (fault == "label-source") label.CodeSource = 777;
-            });
+        // Synthetic corrupt persisted shape, not a lawful mutation of an immutable native label.
+        // Seed the negative fixture once; never delete or rewrite an existing label to arrange it.
+        var label = PurposeLabel(row);
+        if (fault == "label-total") label.MeasuredQuantityKg = 1m;
+        if (fault == "label-source") label.CodeSource = 777;
+        await world.SeedAsync(CompanyA, db =>
+        {
+            db.Orders.Add(order); db.GoodsReceiptBatches.Add(row);
+            if (fault != "labels") db.GoodsReceiptBatchLabels.Add(label);
+        });
         await Assert.ThrowsAsync<InvalidOperationException>(() => Source(world).ReadDecisionAsync(world.Caller(CompanyA), row.BatchId, default));
     }
 
