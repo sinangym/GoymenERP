@@ -39,7 +39,16 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkInventoryStockScrapProofV1? InventoryStockScrapProof = null,
     [property: JsonIgnore] WorkLogisticsDispatchNoteProofV1? LogisticsDispatchNoteProof = null,
     [property: JsonIgnore] WorkLogisticsCustomerReturnProofV1? LogisticsCustomerReturnProof = null,
-    [property: JsonIgnore] WorkBankAccountIbanChangeProofV1? BankAccountIbanChangeProof = null);
+    [property: JsonIgnore] WorkBankAccountIbanChangeProofV1? BankAccountIbanChangeProof = null,
+    [property: JsonIgnore] WorkProductPackageStandardProofV1? ProductPackageStandardProof = null);
+
+/// <summary>Immutable, price-free package table facts, disclosed only by the authorized human purpose GET.</summary>
+public sealed record WorkProductPackageStandardPreviewV1(string SourceKind, string? SourceLabel, string? FileName,
+    string Reason, string PreparedBy, DateTimeOffset PreparedAtUtc, int EntryCount, int CustomerEntryCount,
+    IReadOnlyList<WorkProductPackageStandardEntryV1> Entries);
+public sealed record WorkProductPackageStandardEntryV1(Guid ProductId, Guid? CustomerId, int PiecesPerPackage);
+public sealed record WorkProductPackageStandardProofV1(Guid CompanyId, Guid VersionId, string Version,
+    WorkProductPackageStandardPreviewV1 Table);
 
 /// <summary>Finance-only source binding. Raw facts are never serialized in an inbox, generic snapshot, journal or AI tool.</summary>
 public sealed record WorkBankAccountIbanChangeProofV1(Guid CompanyId, Guid AccountId, string ProposedBy,

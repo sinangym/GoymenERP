@@ -132,7 +132,13 @@ public sealed record ProductPackageStandardCommandMetadataV2(
 /// <summary>A command's terminal answer (stored for replay); <c>Code</c> is null for a success and for a code-less 404.</summary>
 public sealed record ProductPackageStandardAnswerV2(int StatusCode, string? Code, string Title, string Detail);
 
-public sealed record ProductPackageStandardResultV2(ProductPackageStandardAnswerV2 Answer, bool IsReplay, string OriginalCorrelationId);
+public sealed record ProductPackageStandardResultV2(ProductPackageStandardAnswerV2 Answer, bool IsReplay, string OriginalCorrelationId,
+    [property: System.Text.Json.Serialization.JsonIgnore] ProductPackageStandardDecisionReceiptV3? DecisionReceipt = null);
+
+/// <summary>In-process proof from the guarded owner's saved attempt and immutable decision. Never a public response field.</summary>
+public sealed record ProductPackageStandardDecisionReceiptV3(Guid CompanyId, Guid VersionId, long Version,
+    string CommandName, string ActorId, string IdempotencyKeyHash, string RequestHash, string Decision,
+    string? EffectiveFrom, string Reason, DateTimeOffset DecidedAtUtc, string PreparedBy, DateTimeOffset PreparedAtUtc);
 
 /// <summary>A failure of the table read: 400 / 503 (the code names it).</summary>
 public sealed class ProductPackageStandardException(int statusCode, string? code) : Exception(code ?? statusCode.ToString(

@@ -14,7 +14,7 @@ namespace GoymenERP.Product.UnitTests;
 /// only the caller company's waiting records with the owner's maker and "may not decide" set, under the owner's company-wide
 /// decision permission. SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class ProductWorkInboxSourcesV1Tests
+public sealed partial class ProductWorkInboxSourcesV1Tests
 {
     private static readonly Guid CompanyA = Guid.Parse("a1111111-1111-4111-8111-111111111111");
     private static readonly Guid CompanyB = Guid.Parse("b2222222-2222-4222-8222-222222222222");

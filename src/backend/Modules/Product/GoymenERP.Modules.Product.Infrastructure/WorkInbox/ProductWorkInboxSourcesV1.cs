@@ -15,9 +15,9 @@ namespace GoymenERP.Modules.Product.Infrastructure.WorkInbox;
 /// approval panel by a holder of <c>product.package-standards.approve</c> granted company-wide, never by its preparer
 /// (SAT-D416). The rules carry the version's product and customer entry counts as Product stored them.
 /// </summary>
-internal sealed class ProductPackageStandardWorkInboxSourceV1(
+internal sealed partial class ProductPackageStandardWorkInboxSourceV1(
     ProductPriceListDbContext database,
-    WorkInboxCompanyWideFenceV1 fence) : IWorkInboxSourceV1
+    WorkInboxCompanyWideFenceV1 fence) : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "product";
     public const string KindName = "product.package-standard-version.v1";

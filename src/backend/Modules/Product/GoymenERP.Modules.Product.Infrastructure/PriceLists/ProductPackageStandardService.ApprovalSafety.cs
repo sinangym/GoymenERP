@@ -39,6 +39,8 @@ internal sealed partial class ProductPackageStandardService
                 transaction = await database.Database.BeginTransactionAsync(IsolationLevel.Serializable, token);
                 await RequireOwnedDecisionFenceAsync(state, token);
                 var answer = await execute(token);
+                if (answer.Answer.StatusCode == 204)
+                    answer = answer with { DecisionReceipt = await ReadDecisionReceiptAsync(command, metadata, token) };
                 await RequireOwnedDecisionFenceAsync(state, token);
                 if (answer.Answer.StatusCode == 204 && !answer.IsReplay && !state.Saved)
                     throw new InvalidOperationException("Package decision success has no saved native receipt.");
