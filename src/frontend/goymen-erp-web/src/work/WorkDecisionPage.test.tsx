@@ -1218,7 +1218,7 @@ it.each([{companyId:COMPANY_B},{sourceVersion:'9223372036854775807'},{supplierRe
  mountSupplier();await waitFor(()=>expect(calls.some(call=>call.url.includes(supplierPath))).toBe(true))
  expect(screen.queryByRole('heading',{name:T.supplierReturnProposal})).toBeNull();expect(screen.queryByRole('button',{name:T.approve})).toBeNull();expect(calls.some(call=>call.method==='POST')).toBe(false)
 })
-it.each([[],['purchasing.orders.approve'],['purchasing.orders.detail'],['purchasing.goods-receipt-batch.work-decision']])('refuses supplier reads without the exact purpose capability %j',async capabilities=>{
+it.each([{capabilities:[]},{capabilities:['purchasing.orders.approve']},{capabilities:['purchasing.orders.detail']},{capabilities:['purchasing.goods-receipt-batch.work-decision']}])('refuses supplier reads without the exact purpose capability %j',async({capabilities})=>{
  const calls=installFetch({capabilities,respond:url=>url.includes(supplierPath)?json(supplierPreview):undefined})
  mountSupplier();await waitFor(()=>expect(calls.some(call=>call.url.endsWith('/shell/capabilities'))).toBe(true))
  expect(calls.some(call=>call.url.includes(supplierPath))).toBe(false);expect(screen.queryByRole('heading',{name:T.supplierReturnProposal})).toBeNull()
