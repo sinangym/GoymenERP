@@ -35,6 +35,7 @@ public sealed partial class AccountingStore
             var company = companyContext.IsResolved ? companyContext.CompanyId : Guid.Empty;
             var state = new OwnedNormalApproval(company, normalApprovalAuditWriter!, freshFence, replayOnly, commandName);
             IDbContextTransaction? transaction = null; var committed = false; ownedNormalApproval = state;
+            AccountingApiResult<T>? nativeDenial = null;
             try
             {
                 transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, token);
@@ -43,7 +44,13 @@ public sealed partial class AccountingStore
                 if (replayOnly && !result.IsReplay && result.Status == AccountingApiStatus.Conflict && (result.Code == AccountingStoreCodes.ConcurrentChange
                         || noWinnerCode == NormalJournalDraftStoreCodesV1.PostingConflict && result.Code == AccountingApiCodes.IdempotencyConflict))
                     result = result with { Code = noWinnerCode ?? AccountingStoreCodes.ConcurrentChange };
-                if (result.Status == AccountingApiStatus.Denied) throw new NormalJournalAuthorityDeniedException();
+                if (result.Status == AccountingApiStatus.Denied)
+                {
+                    // Period maker refusals retain their native business code/field after owned cleanup.
+                    // The existing normal-draft denial contract remains unchanged.
+                    if (commandName != NormalJournalCommandNamesV1.ApproveDraft) nativeDenial = result;
+                    throw new NormalJournalAuthorityDeniedException();
+                }
                 if (result.Status == AccountingApiStatus.Unavailable) throw new NormalApprovalUnavailable();
                 await NormalApprovalFence(token); RequireFlushed();
                 if (!result.IsReplay && (result.Status == AccountingApiStatus.Ok || state.Saved)
@@ -73,7 +80,13 @@ public sealed partial class AccountingStore
                 try { dbContext.ChangeTracker.Clear(); } catch (Exception error) { faults.Add(error); }
                 try { state.Writer.DiscardPending(); } catch (Exception error) { faults.Add(error); }
                 if (faults.Count != 0) throw new AggregateException("Normal approval cleanup failed; winner read is unsafe.", [failure, .. faults]);
-                if (failure is NormalJournalAuthorityDeniedException) return Denied();
+                if (failure is NormalJournalAuthorityDeniedException)
+                {
+                    if (nativeDenial is null) return Denied();
+                    try { await freshFence(token); token.ThrowIfCancellationRequested(); }
+                    catch (NormalJournalAuthorityDeniedException) { return Denied(); }
+                    return nativeDenial;
+                }
                 if (!replayOnly && !committed && (deadlock || failure is NormalJournalApprovalRaceException)) throw new NormalApprovalRace(failure is NormalJournalApprovalRaceException lost ? lost.NoWinnerCode : AccountingStoreCodes.ConcurrentChange);
                 if (failure is NormalApprovalUnavailable or NormalJournalApprovalRaceException || deadlock) return Unavailable();
                 throw;

@@ -110,6 +110,32 @@ public sealed partial class AccountingSqlServerRelationalAcceptanceTests
         }
     }
 
+    [SqlServerFact]
+    public async Task Both_guarded_period_approvals_preserve_the_native_maker_refusal_code_and_field_without_receipt_or_audit()
+    {
+        foreach (var reopen in new[] { false, true })
+        {
+            await using var run = await Run.StartAsync(); var prepared = await PreparePeriodApproval(run, reopen);
+            await using var scope = new PeriodApprovalScope(run); scope.User.Actor = run.Preparer;
+            if (prepared.Proposal is { } proposal)
+            {
+                var answer = await scope.Service.ApprovePeriodReopeningAsync(prepared.Period, proposal,
+                    new(1, prepared.ExpectedPeriodVersion), "period-maker", default);
+                Assert.Equal(AccountingApiStatus.Denied, answer.Status);
+                Assert.Equal(GoymenERP.Modules.Accounting.Domain.AccountingErrorCodes.PeriodSelfApproval, answer.Code);
+                Assert.Equal("approval", answer.Field); Assert.Null(answer.Resource);
+            }
+            else
+            {
+                var answer = await scope.Service.ApprovePeriodAsync(prepared.Period, new(prepared.ExpectedPeriodVersion), "period-maker", default);
+                Assert.Equal(AccountingApiStatus.Denied, answer.Status);
+                Assert.Equal(GoymenERP.Modules.Accounting.Domain.AccountingErrorCodes.PeriodSelfApproval, answer.Code);
+                Assert.Equal("approval", answer.Field); Assert.Null(answer.Resource);
+            }
+            scope.AssertClean(); await AssertPeriodApprovalDurable(run, prepared, false);
+        }
+    }
+
     private sealed record PreparedPeriodApproval(Guid Period, Guid? Proposal, long ExpectedPeriodVersion)
     { public string Command => Proposal is null ? AccountingCommandNames.ApprovePeriod : "accounting.period.reopening.approve.v1"; }
     private static async Task<PreparedPeriodApproval> PreparePeriodApproval(Run run, bool reopen)
