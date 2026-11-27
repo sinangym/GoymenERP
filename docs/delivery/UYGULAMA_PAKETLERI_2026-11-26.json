@@ -21,7 +21,15 @@
     ],
     "heavy_checks": "Tek ağır iş kilidi ve mevcut resource gate; pin/tren kapanışı; yeni watcher/servis yok",
     "active_branch": "codex/erp-completion-20261126",
-    "shared_plan": "Bu JSON ve aynı dal/head üzerindeki MD; ikinci plan yok."
+    "shared_plan": "Bu JSON ve aynı dal/head üzerindeki MD; ikinci plan yok.",
+    "bootstrap_evidence": {
+      "source_commit": "b067dac5f",
+      "local": "56 cases: 47 passed, 9 skipped, 0 failed; exit0. This is not skip0 acceptance.",
+      "skip_reasons": "Five file-symlink and three directory-symlink cases cannot create symlinks in this Windows session; one case requires simultaneous case-variant filenames.",
+      "source": "tests/dotnet_bootstrap_integrity/test_validate_dotnet_bootstrap_integrity.py",
+      "ci_source": ".github/workflows/ci.yml already executes this suite on ubuntu-latest; unchanged.",
+      "fresh_hosted_result": "NOT_RUN; all mandatory cases still need terminal evidence at train close."
+    }
   },
   "packages": [
     {
