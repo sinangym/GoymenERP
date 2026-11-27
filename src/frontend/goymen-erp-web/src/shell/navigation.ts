@@ -337,6 +337,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'finance.bank-account-iban-change.work-decision': '',
   'finance.bank-account.work-decision': '',
   'finance.party-credit-limit.work-decision': '',
+  'finance.credit-movement.work-decision': '',
+  'finance.cash-exchange-book-value.work-decision': '',
   'finance.bank-credit-limit.work-decision': '',
   'finance.opening-balance.work-decision': '',
   'finance.opening-balance-reversal.work-decision': '',

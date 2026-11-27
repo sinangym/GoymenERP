@@ -342,3 +342,19 @@ it.each([
  expect(financeRoutes.some(route=>route.path===FINANCE_ROUTE.creditsWorkspace.slice(1))).toBe(true)
  expect(financeRoutes.some(route=>route.path===FINANCE_ROUTE.openingBalancesList.slice(1))).toBe(true)
 })
+
+
+it.each([
+ [CAPABILITY.financeCreditMovementWorkDecision,'finance.credit-movement.v1','finance.credit-movement.work-decision'],
+ [CAPABILITY.financeCashExchangeBookValueWorkDecision,'finance.cash-exchange-book-value.v1','finance.cash-exchange-book-value.work-decision'],
+] as const)('publishes %s as a standalone Work purpose without changing native workspace routes',(capability,kind,actual)=>{
+ const path=`/onaylarim/${kind}/:approvalId`
+ expect(capability).toBe(actual);expect(CAPABILITY_ROUTE[capability]).toBe(path);expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
+ expect(FINANCE_WORK_DECISION_CAPABILITIES.filter(([id])=>id===capability)).toEqual([[actual,path]])
+ expect(WORK_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'finance',capability:actual}])
+ const mounted=workRoutes.filter(route=>route.path===path.slice(1));expect(mounted).toHaveLength(1)
+ expect(matchRoutes(shellRoutes,path.replace(':approvalId','cccccccc-0000-4000-8000-0000000000f1'))?.at(-1)?.route).toBe(mounted[0])
+ expect(financeRoutes.some(route=>route.path===FINANCE_ROUTE.creditsWorkspace.slice(1))).toBe(true)
+ expect(financeRoutes.some(route=>route.path===FINANCE_ROUTE.exchangeBookValuesApprove.slice(1))).toBe(true)
+ expect(FINANCE_CAPABILITY.creditsApprove).toBe('finance.credits.approve');expect(FINANCE_CAPABILITY.exchangeBookValuesApprove).toBe('finance.cash-exchange-book-values.approve')
+})

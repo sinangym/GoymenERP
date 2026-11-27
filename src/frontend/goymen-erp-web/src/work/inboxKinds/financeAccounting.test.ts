@@ -94,3 +94,12 @@ it.each(['finance.bank-credit-limit.v1','finance.opening-balance.v1','finance.op
  expect(FINANCE_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'finance',capability:kind.replace('.v1','.work-decision')}])
  expect(inboxPermissionText(kind==='finance.bank-credit-limit.v1'?'finance.credits.approve':'finance.opening-balances.approve')).not.toContain('.approve')
 })
+
+
+it.each([
+ ['finance.credit-movement.v1','finance.credit-movement.work-decision','finance.credits.approve'],
+ ['finance.cash-exchange-book-value.v1','finance.cash-exchange-book-value.work-decision','accounting.normal-journal.draft.approve'],
+])('maps %s only to the exact purpose capability without changing permission translation',(kind,capability,permission)=>{
+ expect(FINANCE_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'finance',capability}])
+ expect(inboxPermissionText(permission)).not.toBe(permission)
+})

@@ -1538,7 +1538,7 @@ it('mounts dispatch as the 25th native purpose under its exact standalone capabi
  expect(route?.path).toBe(`onaylarim/${dispatchKind}/:approvalId`)
  const element=route?.element as ReactElement<{capability:readonly string[];children:ReactElement<{kind:string}>}>
  expect(element.props.capability).toEqual([dispatchCap]);expect(element.props.children.type).toBe(WorkDecisionPage);expect(element.props.children.props.kind).toBe(dispatchKind)
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(39)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(41)
 })
 it.each([{companyId:COMPANY_B},{logisticsDispatchNote:{...dispatchProof,dispatchNoteId:COMPANY_A}},{rejectionSupported:true}])('does not expose malformed/foreign dispatch proof %j',async(delta)=>{
  installFetch({capabilities:[dispatchCap],respond:url=>url.includes(dispatchPath)?json({...dispatchPreview,...delta}):undefined});mountDispatchPurpose()
@@ -1612,7 +1612,7 @@ it('mounts the customer return purpose under its exact standalone capability amo
  expect(route?.path).toBe(`onaylarim/${customerKind}/:approvalId`)
  expect(route).toBeDefined()
  expect((route!.element as ReactElement<{capability:readonly string[]}>).props.capability).toEqual([customerCap])
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(39)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(41)
 })
 it('does not restore a customer-return unknown attempt under another authentication session',async()=>{
  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-return-old'})
@@ -2537,4 +2537,20 @@ it.each(['finance.bank-credit-limit.v1','finance.opening-balance.v1','finance.op
  mount(`/onaylarim/${k}/${id}`,true)
  await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
  expect(denied.some(call=>call.url.includes(ownerPath))).toBe(false)
+})
+
+
+it.each([
+ ['finance.credit-movement.v1','finance.credit-movement.work-decision'],
+ ['finance.cash-exchange-book-value.v1','finance.cash-exchange-book-value.work-decision'],
+] as const)('mounts %s through its exact purpose and never native browse capability',async(k,capability)=>{
+ const ownerPath=`/work/decisions/${k}/${id}`
+ const calls=installFetch({capabilities:[capability],respond:url=>url.includes(ownerPath)?problem(503):undefined})
+ mount(`/onaylarim/${k}/${id}`,true)
+ await waitFor(()=>expect(calls.filter(call=>call.url.includes(ownerPath)&&call.method==='GET')).toHaveLength(1))
+ expect(calls.some(call=>call.url.includes('/finance/'))).toBe(false)
+ cleanup()
+ const denied=installFetch({capabilities:['finance.credits.workspace','finance.credits.approve','finance.cash-exchange-book-values.approve'],respond:url=>url.includes(ownerPath)?problem(503):undefined})
+ mount(`/onaylarim/${k}/${id}`,true)
+ await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(denied.some(call=>call.url.includes(ownerPath))).toBe(false)
 })

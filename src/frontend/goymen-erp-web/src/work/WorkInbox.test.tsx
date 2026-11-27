@@ -704,15 +704,35 @@ it.each(['finance.bank-credit-limit.v1','finance.opening-balance.v1','finance.op
  const api=installFetch({granted:[kind==='finance.bank-credit-limit.v1'?FINANCE_CAPABILITY.creditsApprove:FINANCE_CAPABILITY.openingBalancesApprove],
   inbox:()=>json(inbox({items:[{...limitItem,kind,itemId:LEGACY_ID,link:`/onaylarim/${kind}/${LEGACY_ID}`,awaitingPermission:permission,ruleVersion:RV(kind)}],sources:[src('finance',kind,permission,'BusinessDays')]}))})
  await renderAt('/onaylarim/kuyruk')
- // CreditsApprove still owns other inbox kinds; returned owner cards do not grant the standalone decision route.
- if(kind==='finance.bank-credit-limit.v1'){
-  await screen.findByTestId('work-inbox-item')
-  await userEvent.setup().click(within(cardOf(kind)).getByRole('link'))
-  await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
-  expect(vi.mocked(globalThis.fetch).mock.calls.some(([url])=>String(url).includes(`/work/decisions/${kind}/`))).toBe(false)
-  expect(api.inboxReads()).toHaveLength(1)
- }else{
-  await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
-  expect(api.inboxReads()).toHaveLength(0)
- }
+ // Credit movement now has its own purpose too; native controls grant no Work inbox route.
+ await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+ expect(api.inboxReads()).toHaveLength(0)
+ expect(vi.mocked(globalThis.fetch).mock.calls.some(([url])=>String(url).includes(`/work/decisions/${kind}/`))).toBe(false)
+})
+
+
+it.each([
+ ['finance.credit-movement.v1','finance.credit-movement.work-decision','finance.credits.approve'],
+ ['finance.cash-exchange-book-value.v1','finance.cash-exchange-book-value.work-decision','accounting.normal-journal.draft.approve'],
+])('opens the exact %s purpose card and preserves native related-record references',async(kind,capability,permission)=>{
+ const link=`/onaylarim/${kind}/${LEGACY_ID}`,book=kind==='finance.cash-exchange-book-value.v1'
+ const item={...limitItem,kind,itemId:LEGACY_ID,link,awaitingPermission:permission,ruleVersion:RV(kind),explanation:{
+  rules:book?[{ruleCode:'finance.cash-exchange-source-book-value',threshold:null,actual:'3500',deviation:null,unit:null},
+    {ruleCode:'finance.cash-exchange-target-functional-value',threshold:null,actual:'3300',deviation:null,unit:null}]
+   :[{ruleCode:'finance.credit-movement-drawdown',threshold:null,actual:'95',deviation:null,unit:null}],
+  references:[{role:book?'cash-transfer':'credit-account',recordId:PAYMENT_ID,label:'SENTETIK unchanged native record',link:null}]}}
+ const api=installFetch({granted:[capability],inbox:()=>json(inbox({items:[item],sources:[src('finance',kind,permission,'BusinessDays')]}))})
+ await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-item');const card=cardOf(kind)
+ expect(within(card).getByRole('link').getAttribute('href')).toBe(link)
+ await userEvent.setup().click(within(card).getByRole('button',{name:T.explanationToggle}))
+ expect(within(card).getByText('SENTETIK unchanged native record')).toBeTruthy();expect(within(card).getAllByRole('link')).toHaveLength(1);expect(api.inboxReads()).toHaveLength(1)
+})
+it.each([
+ ['finance.credit-movement.v1',FINANCE_CAPABILITY.creditsApprove],
+ ['finance.cash-exchange-book-value.v1',FINANCE_CAPABILITY.exchangeBookValuesApprove],
+])('native control alone never fetches the standalone %s decision',async(kind,capability)=>{
+ const api=installFetch({granted:[capability]})
+ await renderAt(`/onaylarim/${kind}/${LEGACY_ID}`)
+ await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+ expect(api.inboxReads()).toHaveLength(0);expect(vi.mocked(globalThis.fetch).mock.calls.some(([url])=>String(url).includes(`/work/decisions/${kind}/`))).toBe(false)
 })
