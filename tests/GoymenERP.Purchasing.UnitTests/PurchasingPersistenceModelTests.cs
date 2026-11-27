@@ -258,8 +258,8 @@ public sealed class PurchasingPersistenceModelTests
             byId[PurchasingShellCapabilityProvider.SupplierReturnCapabilityId].RequiredPermissions);
         // WP8: a standalone approval-purpose screen does not grant order browsing or prices.
         Assert.Contains("purchasing.goods-receipts.approve-variance", PurchasingPermissionManifestV1.Names);
-        var receiptPurpose = Assert.Single(declarations.Where(declaration =>
-            declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.GoodsReceiptsApproveVariance)));
+        var receiptPurpose = Assert.Single(declarations, declaration =>
+            declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.GoodsReceiptsApproveVariance));
         Assert.Equal(PurchasingShellCapabilityProvider.GoodsReceiptBatchWorkDecisionCapabilityId, receiptPurpose.CapabilityId);
         Assert.Equal("/onaylarim/purchasing.goods-receipt-batch.v1/:approvalId", receiptPurpose.RoutePath);
         Assert.Equal("purchasing-goods-receipt-batch-work-decision", receiptPurpose.RouteId);
