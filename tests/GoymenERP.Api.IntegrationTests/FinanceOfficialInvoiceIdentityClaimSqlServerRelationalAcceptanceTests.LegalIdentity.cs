@@ -1,9 +1,13 @@
 using GoymenERP.Api.Shell;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
+using GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -227,6 +231,103 @@ public sealed partial class FinanceOfficialInvoiceIdentityClaimSqlServerRelation
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItemSourceBatches"));
     }
 
+    [SqlServerFact]
+    public async Task Legal_identity_receipt_migration_guards_allow_CSV_receipts_but_refuse_native_holder_Down_without_losing_history()
+    {
+        await using var run = await Run.StartAsync();
+        var migration = new BindOfficialInvoiceClaimsToAdmissionReceipts();
+        var up = Assert.IsType<SqlOperation>(migration.UpOperations[0]).Sql;
+        var down = Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql;
+        await run.ExecuteAsync(up); await run.ExecuteAsync(down);
+        var csv = await LegalCsvAsync(run);
+        Assert.Equal(CommandOutcome.Succeeded, (await run.AdmitAsync(csv, "guard-csv")).Outcome);
+        await run.ExecuteAsync(up); await run.ExecuteAsync(down);
+        var native = LegalSalesOffer("600.00") with { OfficialInvoiceNo = "SENTETIK-NATIVE-GUARD", Ettn = Guid.NewGuid().ToString("D") };
+        Assert.Equal(SalesFinanceAdmissionOutcomeV1.Admitted, (await run.AdmitLegalSalesAsync(native)).Outcome);
+        await run.ExecuteAsync(up);
+        var refusal = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(down));
+        Assert.Equal(51374, refusal.Number);
+        Assert.Equal(4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceIdentityClaims"));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItemSourceBatches"));
+    }
+
+    [SqlServerFact]
+    public async Task Legal_identity_receipt_migration_Up_refuses_legacy_claim_without_receipt_and_never_fabricates_a_parent()
+    {
+        await using var run = await Run.StartAsync();
+        var csv = await LegalCsvAsync(run); // Valid immutable uploaded parent, not yet admitted to Finance.
+        await using var connection = new SqlConnection(run.Factory.DatabaseConnectionString);
+        await connection.OpenAsync();
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+        try
+        {
+            await using var prepare = new SqlCommand("""
+                ALTER TABLE [finance].[OfficialInvoiceIdentityClaims]
+                    DROP CONSTRAINT [FK_OfficialInvoiceIdentityClaims_OpenItemSourceBatches_CompanyId_HolderBatchId];
+                INSERT INTO [finance].[OfficialInvoiceIdentityClaims]
+                    (Id,CompanyId,IdentityKind,IdentityValue,Generation,HolderBatchId,HolderSourceDocumentId,ClaimedBy,ClaimedAtUtc,CorrelationId)
+                VALUES (NEWID(),@company,'official-no',N'SENTETIK-ORPHAN',1,@batch,@document,N'SENTETIK',SYSUTCDATETIME(),N'SENTETIK-orphan');
+                """, connection, transaction);
+            prepare.Parameters.AddWithValue("@company", Company);
+            prepare.Parameters.AddWithValue("@batch", csv.BatchId);
+            prepare.Parameters.AddWithValue("@document", csv.Batch.Rows[0].SourceDocumentId);
+            await prepare.ExecuteNonQueryAsync();
+            var guard = Assert.IsType<SqlOperation>(new BindOfficialInvoiceClaimsToAdmissionReceipts().UpOperations[0]).Sql;
+            await using var check = new SqlCommand(guard, connection, transaction);
+            Assert.Equal(51373, (await Assert.ThrowsAsync<SqlException>(() => check.ExecuteNonQueryAsync())).Number);
+            await using var count = new SqlCommand("SELECT COUNT(*) FROM finance.OpenItemSourceBatches WHERE Id=@id", connection, transaction);
+            count.Parameters.AddWithValue("@id", csv.BatchId);
+            Assert.Equal(0, (int)(await count.ExecuteScalarAsync())!);
+        }
+        finally { await transaction.RollbackAsync(); }
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceIdentityClaims"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItemSourceBatches"));
+    }
+
+    [SqlServerFact]
+    public async Task Legal_identity_legacy_companywide_number_or_ETTN_blocks_another_party_even_when_AR_is_settled()
+    {
+        foreach (var identity in new[] { "number", "ettn" })
+        foreach (var settled in new[] { false, true })
+        {
+            await using var run = await Run.StartAsync();
+            var legacy = LegalSalesOffer("600.00") with { InvoiceVersion = "4", PartyId = Guid.NewGuid(),
+                CompanyAccountId = Guid.NewGuid(), OfficialInvoiceNo = null, Ettn = null };
+            Assert.Equal(SalesFinanceAdmissionOutcomeV1.Admitted, (await run.AdmitScopedLegacyAsync(legacy)).Outcome);
+            if (settled)
+            {
+                // Controlled projection input for the legal identity guard, NOT proof of a native allocation/settlement.
+                await run.ExecuteAsync("UPDATE finance.OpenItems SET Status=2,OutstandingAmountText='0' WHERE Status=1;");
+            }
+            var csv = await LegalCsvAsync(run);
+            var proof = new FinanceSalesInvoiceIdentityV1(Company, legacy.InvoiceId, 4, legacy.AdmissionId,
+                legacy.PartyId, legacy.CompanyAccountId, identity == "number" ? "SNT2026000000001" : "SENTETIK-OTHER-NUMBER",
+                identity == "ettn" ? EttnA : Guid.NewGuid().ToString("D"), Guid.NewGuid(), new string('a', 64));
+            var port = new LegalIdentityPort(new(Company, true, [proof]));
+            var refusal = await run.AdmitAsync(csv, "legacy-companywide", port);
+            Assert.Equal(CommandOutcome.ValidationFailed, refusal.Outcome);
+            Assert.Contains(refusal.Issues, error => error.Code == (identity == "number"
+                ? FinanceOfficialSalesInvoiceImportCodesV2.OfficialNoAlreadyOpen : FinanceOfficialSalesInvoiceImportCodesV2.EttnAlreadyOpen));
+            Assert.Equal(1, port.Calls);
+            Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OpenItemSourceBatches"));
+            Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceIdentityClaims"));
+        }
+    }
+
+    [SqlServerFact]
+    public async Task Legal_identity_legacy_foreign_company_receipt_never_enters_this_company_preflight_or_blocks_its_CSV()
+    {
+        await using var run = await Run.StartAsync();
+        var foreign = LegalSalesOffer("600.00") with { CompanyId = TestCompanyIds.CompanyB, InvoiceVersion = "4",
+            OfficialInvoiceNo = null, Ettn = null };
+        Assert.Equal(SalesFinanceAdmissionOutcomeV1.Admitted, (await run.AdmitScopedLegacyAsync(foreign)).Outcome);
+        var csv = await LegalCsvAsync(run);
+        var port = new LegalIdentityPort(new(Company, false, []));
+        Assert.Equal(CommandOutcome.Succeeded, (await run.AdmitAsync(csv, "companywide-foreign", port)).Outcome);
+        Assert.Equal(0, port.Calls);
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OfficialInvoiceIdentityClaims"));
+    }
+
     private sealed class LegalIdentityPort(FinanceSalesInvoiceIdentityBatchV1 answer) : IFinanceSalesInvoiceIdentityReadPortV1
     {
         public int Calls { get; private set; }
@@ -264,6 +365,17 @@ public sealed partial class FinanceOfficialInvoiceIdentityClaimSqlServerRelation
 
     private sealed partial class Run
     {
+        public async Task<SalesFinanceAdmissionAnswerV1> AdmitScopedLegacyAsync(SalesFinanceAdmissionRequestV1 request)
+        {
+            var company = new CompanyContext(); company.Set(request.CompanyId);
+            var collector = new AuditEventCollector();
+            await using var db = Context(company, collector);
+            var owner = new FinanceInvoiceOpenItemAdmissionService(db, company, new LegalScopedUser(request.CompanyId),
+                new LegalScopedParty(), new LegalAuthority(), collector,
+                new FinanceAuditEnvelope("synthetic.finance.sales-finalize", [], "Integration"), TimeProvider.System);
+            return await new SalesFinanceAdmissionAdapterV1(owner).AdmitAsync(request, default);
+        }
+
         public async Task<SalesFinanceAdmissionAnswerV1> AdmitLegalSalesAsync(SalesFinanceAdmissionRequestV1 request, LegalAuthority? authority = null)
         {
             var company = CompanyScope();
@@ -289,5 +401,19 @@ public sealed partial class FinanceOfficialInvoiceIdentityClaimSqlServerRelation
     {
         public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceInvoiceProducerV1 producer, Guid invoiceId,
             CancellationToken token) => Task.FromResult(answer?.Invoke() ?? PermissionDecision.Allowed);
+    }
+
+    private sealed class LegalScopedParty : IFinancePartyAccountPort
+    {
+        public Task<ReadResult<PartyAccountEligibility>> GetAuthorizedAsync(FinanceContext context, Guid partyId,
+            Guid companyAccountId, CancellationToken cancellationToken) => Task.FromResult(new ReadResult<PartyAccountEligibility>(
+                ReadOutcome.Found, new PartyAccountEligibility(partyId, companyAccountId, context.CompanyId, true, IsPartyActive: true)));
+    }
+    private sealed class LegalScopedUser(Guid company) : ICurrentUser
+    {
+        public bool IsAuthenticated => true;
+        public string? UserId => LegalActor;
+        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { company };
+        public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
     }
 }

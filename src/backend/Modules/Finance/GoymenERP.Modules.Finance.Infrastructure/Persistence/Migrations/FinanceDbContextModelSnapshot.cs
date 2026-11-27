@@ -5426,7 +5426,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOfficialInvoiceImportBatchRow", null)
+                    b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceOpenItemSourceBatchRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "HolderBatchId")
                         .HasPrincipalKey("CompanyId", "Id")

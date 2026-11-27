@@ -29,7 +29,7 @@ public sealed class FinanceOfficialInvoiceIdentityClaimPersistenceModelTests
     }
 
     [Fact]
-    public void Each_identity_generation_is_unique_per_company_and_the_holder_is_an_uploaded_file()
+    public void Each_identity_generation_is_unique_per_company_and_the_holder_is_a_Finance_admission_receipt()
     {
         using var context = Context();
         var claims = context.GetService<IDesignTimeModel>().Model
@@ -108,6 +108,29 @@ public sealed class FinanceOfficialInvoiceIdentityClaimPersistenceModelTests
         Assert.Contains("[finance].[OfficialInvoiceIdentityClaims]", guard, StringComparison.Ordinal);
         Assert.Contains("forward fix", guard, StringComparison.Ordinal);
         Assert.Single(migration.DownOperations, operation => operation is SqlOperation);
+    }
+
+    [Fact]
+    public void Admission_receipt_FK_migration_refuses_orphans_and_has_a_native_holder_forward_fix_Down()
+    {
+        using var context = Context();
+        Assert.Equal("20261127071245_BindOfficialInvoiceClaimsToAdmissionReceipts", context.Database.GetMigrations().Last());
+        Assert.False(context.Database.HasPendingModelChanges());
+        var migration = new BindOfficialInvoiceClaimsToAdmissionReceipts();
+        var up = Assert.IsType<SqlOperation>(migration.UpOperations[0]).Sql;
+        var down = Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql;
+        Assert.Contains("THROW 51373", up);
+        Assert.Contains("[finance].[OpenItemSourceBatches]", up);
+        Assert.Contains("without backfill", up);
+        Assert.Contains("THROW 51374", down);
+        Assert.Contains("[finance].[OfficialInvoiceImportBatches]", down);
+        Assert.Contains("forward fix", down);
+        Assert.Single(migration.UpOperations.OfType<SqlOperation>());
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        var foreignKey = Assert.Single(migration.UpOperations.OfType<AddForeignKeyOperation>());
+        Assert.Equal("OpenItemSourceBatches", foreignKey.PrincipalTable);
+        Assert.Equal(new[] { "CompanyId", "HolderBatchId" }, foreignKey.Columns);
+        Assert.Equal(new[] { "CompanyId", "Id" }, foreignKey.PrincipalColumns);
     }
 
     private static FinanceDbContext Context()

@@ -302,17 +302,17 @@ public sealed class FinanceOpenItemSourceAdmissionService(
         return null;
     }
 
-    // Only this party's live claimless non-file AR receipts need historical Sales proof. Settled AR still counts;
+    // Company-wide legal identity cannot be narrowed by the incoming party. Live claimless non-file AR receipts
+    // need historical Sales proof. Settled AR still counts;
     // cancellation alone removes a live obligation. Never infer identity from amount/date or write historical claims.
     private async Task<FinanceOpenItemAdmissionResult?> RefuseUnclaimedNativeIdentityAsync(FinanceContext context,
         ApprovedFinanceOpenItemSourceBatch batch, IReadOnlyList<FinanceOfficialSalesInvoiceImportDocumentV2> documents,
         CancellationToken cancellationToken)
     {
         const int maximumCandidates = 128;
-        var partiesInBatch = batch.Rows.Select(x => x.PartyId).Distinct().ToArray();
         var candidates = await dbContext.OpenItems.AsNoTracking().Where(x => x.CompanyId == context.CompanyId
                 && x.SourceKind == FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment
-                && x.Status != FinanceOpenItemStatuses.Cancelled && partiesInBatch.Contains(x.PartyId)
+                && x.Status != FinanceOpenItemStatuses.Cancelled
                 && !dbContext.OfficialInvoiceImportBatches.Any(upload => upload.CompanyId == context.CompanyId && upload.Id == x.SourceBatchId)
                 && !dbContext.OfficialInvoiceIdentityClaims.Any(claim => claim.CompanyId == context.CompanyId
                     && claim.HolderBatchId == x.SourceBatchId && claim.HolderSourceDocumentId == x.SourceId))

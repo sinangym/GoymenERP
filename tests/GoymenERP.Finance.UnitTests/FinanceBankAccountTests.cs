@@ -139,7 +139,8 @@ public sealed class FinanceBankAccountTests
         const string bankStatementMatches = "20261122220335_AddBankStatementMatches";
         Assert.True(Array.IndexOf(migrations, bankStatementImports) < Array.IndexOf(migrations, bankStatementMatches));
         const string leasingVat = "20261126181654_AddLeasingInstallmentVat";
-        Assert.Equal(new[] { bankStatementMatches, leasingVat }, migrations.TakeLast(2));
+        const string legalIdentity = "20261127071245_BindOfficialInvoiceClaimsToAdmissionReceipts";
+        Assert.Equal(new[] { bankStatementMatches, leasingVat, legalIdentity }, migrations.TakeLast(3));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
