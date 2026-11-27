@@ -44,7 +44,7 @@ public sealed class CounterpartyLegalNameChangeWorkInboxSourceV1Tests
         var first = result.Items![0];
         Assert.Equal(("counterparty", "counterparty.legal-name-change.v1"), (first.Module, first.Kind));
         Assert.Equal("SENTETIK Yeni Unvan A.Ş.", first.DocumentLabel);
-        Assert.Equal("/onaylarim/counterparty.legal-name-change.v1/" + older.Id.ToString("D"), first.Link);
+        Assert.Equal("/onaylarim/counterparty.legal-name-change.v1/" + stale.Id.ToString("D"), first.Link);
         Assert.Equal("/cari/" + party.Id.ToString("D"), Assert.Single(first.References).Link);
         Assert.Equal("SENTETIK-maker", first.PreparedBy);
         Assert.Equal(("party", "SENTETIK Eski Unvan A.Ş."), (first.References[0].Role, first.References[0].Label));
