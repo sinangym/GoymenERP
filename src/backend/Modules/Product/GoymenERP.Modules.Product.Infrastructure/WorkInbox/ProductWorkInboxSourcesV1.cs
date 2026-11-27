@@ -122,9 +122,9 @@ internal sealed partial class ProductPackageStandardWorkInboxSourceV1(
 /// rule (<see cref="PriceList.Publish"/>): no one who created or edited the version may publish it — its creator is the maker and
 /// every other recorded preparer is in the "may not decide" set (D4).
 /// </summary>
-internal sealed class ProductPriceListVersionWorkInboxSourceV1(
+internal sealed partial class ProductPriceListVersionWorkInboxSourceV1(
     ProductPriceListDbContext database,
-    WorkInboxCompanyWideFenceV1 fence) : IWorkInboxSourceV1
+    WorkInboxCompanyWideFenceV1 fence) : IWorkApprovalDecisionVersionSourceV1
 {
     public const string ModuleName = "product";
     public const string KindName = "product.price-list-version.v1";

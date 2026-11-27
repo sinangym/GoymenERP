@@ -40,7 +40,18 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkLogisticsDispatchNoteProofV1? LogisticsDispatchNoteProof = null,
     [property: JsonIgnore] WorkLogisticsCustomerReturnProofV1? LogisticsCustomerReturnProof = null,
     [property: JsonIgnore] WorkBankAccountIbanChangeProofV1? BankAccountIbanChangeProof = null,
-    [property: JsonIgnore] WorkProductPackageStandardProofV1? ProductPackageStandardProof = null);
+    [property: JsonIgnore] WorkProductPackageStandardProofV1? ProductPackageStandardProof = null,
+    [property: JsonIgnore] WorkProductPriceListProofV1? ProductPriceListProof = null);
+
+/// <summary>Price-free owner identity/version/maker binding. Full price facts are released only by authorized human GET.</summary>
+public sealed record WorkProductPriceListProofV1(Guid CompanyId, Guid PriceListId, Guid VersionId, int VersionNo,
+    string HeaderVersion, string CreatedBy, DateTimeOffset CreatedAtUtc, IReadOnlyList<string> Preparers);
+public sealed record WorkProductPriceListPreviewV1(Guid PriceListId, string Name, string CurrencyCode, string Channel,
+    string VatBasis, Guid VersionId, int VersionNo, string ValidFrom, string? ValidThrough,
+    IReadOnlyList<WorkProductPriceListLineV1> Lines, WorkProductPriceListScopeV1 Scope);
+public sealed record WorkProductPriceListScopeV1(string Kind, Guid? PartyId, Guid? CompanyAccountId);
+public sealed record WorkProductPriceListLineV1(Guid LineId, int LineNo, Guid ProductId, string? ProductCode, string? ProductName,
+    Guid PriceUnitId, string UnitPrice, string? FloorUnitPrice, string LowerQuantity, string? UpperQuantity);
 
 /// <summary>Immutable, price-free package table facts, disclosed only by the authorized human purpose GET.</summary>
 public sealed record WorkProductPackageStandardPreviewV1(string SourceKind, string? SourceLabel, string? FileName,

@@ -621,7 +621,9 @@ public sealed partial class ProductPriceListService : IProductPriceListServiceV1
         ?? throw new ProductPriceListException(400, ProductPriceListCodesV1.ValidationFailed, [new("expectedVersion", ProductPriceListCodesV1.ValidationFailed)]);
 
     private static string RequestHash(string commandName, Guid priceListId, object request) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+        commandName == ProductPriceListCommandsV1.PublishV1 && request is PublishPriceListVersionRequestV1 publish
+        ? ProductPriceListWire.PublishRequestHash(priceListId, publish)
+        : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
             JsonSerializer.Serialize(new { command = commandName, priceListId, request }, ProductPriceListWire.Json)))).ToLowerInvariant();
 
     private static PriceListWriteEnvelope Envelope(ProductPriceListCommandMetadata metadata, string permission, Scope scope)

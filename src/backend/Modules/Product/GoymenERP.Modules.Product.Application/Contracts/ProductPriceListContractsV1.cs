@@ -207,7 +207,13 @@ public sealed record PriceListSummaryV1(Guid Id, string Name, string CurrencyCod
 
 public sealed record PriceListPageV1(IReadOnlyList<PriceListSummaryV1> Items, string? NextCursor);
 
-public sealed record PriceListResultV1(PriceListViewV1 PriceList, bool IsReplay, string OriginalCorrelationId);
+public sealed record PriceListResultV1(PriceListViewV1 PriceList, bool IsReplay, string OriginalCorrelationId,
+    [property: JsonIgnore] PriceListPublishReceiptV1? PublishReceipt = null);
+
+/// <summary>Guarded owner proof of the original successful command, never public JSON or a fresh current-list projection.</summary>
+public sealed record PriceListPublishReceiptV1(Guid CompanyId, Guid PriceListId, Guid VersionId, int VersionNo,
+    string ExpectedHeaderVersion, string HeaderVersion, string CommandName, string ActorId, string IdempotencyKeyHash,
+    string RequestHash, DateTimeOffset PublishedAtUtc, string PublishedBy, string OriginalCorrelationId);
 
 /// <summary>One unit a product may be priced in: the card's own stock or sales unit (Settings unit identity, code if known).</summary>
 public sealed record PriceListProductUnitOptionV1(Guid UnitId, string Role, string? Code);
@@ -286,6 +292,11 @@ public interface IProductPriceListCustomerPortV1
 /// <summary>Strict text shapes of the wire (the Sales decimal-text pattern).</summary>
 public static partial class ProductPriceListWire
 {
+    /// <summary>The existing native Publish fingerprint, shared with its in-process consumer without another hash policy.</summary>
+    public static string PublishRequestHash(Guid priceListId, PublishPriceListVersionRequestV1 request) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+            JsonSerializer.Serialize(new { command = ProductPriceListCommandsV1.PublishV1, priceListId, request }, Json)))).ToLowerInvariant();
+
     public static JsonSerializerOptions Json { get; } = new(JsonSerializerDefaults.Web);
 
     [GeneratedRegex("^(0|[1-9][0-9]{0,14})(\\.[0-9]{1,4})?$", RegexOptions.CultureInvariant)]

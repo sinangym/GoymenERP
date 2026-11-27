@@ -12,7 +12,8 @@ internal sealed partial class ProductPriceListStore
     internal bool IsPublishReplayOnly => ownedPublish is { ReplayOnly: true };
 
     internal async Task<PriceListResultV1> RunOwnedPublishAsync(IAuditTransactionWriterV1? writer,
-        Func<CancellationToken, Task> fence, Func<CancellationToken, Task<PriceListResultV1>> execute, CancellationToken token)
+        Func<CancellationToken, Task> fence, Func<CancellationToken, Task<PriceListResultV1>> execute,
+        Guid id, PublishPriceListVersionRequestV1 request, ProductPriceListCommandMetadata metadata, string actor, CancellationToken token)
     {
         try { return await Run(false); }
         catch (PublishSaveRace) { return await Run(true); }
@@ -39,6 +40,8 @@ internal sealed partial class ProductPriceListStore
                 await fence(token);
                 if (answer is not null && !(answer.IsReplay ? state.ReplayProven : state.Saved))
                     throw new InvalidOperationException("Publish success has no native stored receipt.");
+                if (answer is not null)
+                    answer = answer with { PublishReceipt = await ReadPublishReceiptAsync(id, request, metadata, actor, answer, fence, token) };
                 if (writer!.HasPendingDrafts || dbContext.ChangeTracker.HasChanges())
                     throw new InvalidOperationException("Publish has unflushed owner work or Audit.");
                 await fence(token);
