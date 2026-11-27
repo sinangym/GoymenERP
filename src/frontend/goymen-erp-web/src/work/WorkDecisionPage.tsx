@@ -1,3 +1,5 @@
+import { AI_PANEL_CAPABILITY } from '../ai/aiCapabilities'
+import { WorkSalesSummary } from './WorkSalesSummary'
 import { customerReturnText as CUSTOMER_RETURN } from '../logistics/customerReturnText'
 import { DISPATCH_NOTE_TEXT as DISPATCH } from '../logistics/logisticsText'
 import { BANK_COLUMN, BANK_MASTER_NOTICE, currencyFallback } from '../finance/bankAccountText'
@@ -10,7 +12,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { useInfiniteQuery, useQuery, type InfiniteData } from '@tanstack/react-query'
 import { useShellState } from '../shell/shellContext'
-import { contextKey, contextKeyString, capabilityFailClosed } from '../shell/shellState'
+import { contextKey, contextKeyString, capabilityFailClosed, hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -293,6 +295,8 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         {frozen && frozenTransferRequest ? <p>{T.lossFrozenTime}: {frozenTransferRequest.decidedAtUtc}</p>
           : <p>{T.lossRequestedAt}: {transferRequest?.requestedAtUtc}</p>}
       </div> : null}
+      {kind === 'sales.order-draft.v1' && hasCapability(shell, AI_PANEL_CAPABILITY) && hasCapability(shell, 'sales.drafts.detail')
+        ? <WorkSalesSummary companyId={preview.companyId} draftId={preview.itemId} expectedVersion={preview.sourceVersion} /> : null}
       {preview.pending && !reconciledHistorical ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{kind === 'logistics.dispatch-note.v1' ? T.dispatchApprovalOnly : kind === 'finance.bank-account.v1' ? T.bankApprovalOnly : kind === 'logistics.weighing-difference.v1' ? T.weighingApprovalOnly : kind === 'logistics.plan-excess.v1' ? T.planExcessApprovalOnly : kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
         {preview.rejectionSupported !== false || preview.approvalReasonRequired ? <label>{customerReturn ? CUSTOMER_RETURN.note : counterparty ? T.optionalNote : kind === 'manufacturing.plan.v1' ? T.manufacturingRejectReason : T.reason}<textarea value={lossReason} maxLength={customerReturn?undefined:reasonLimit} onChange={event => setReason(event.target.value)} /></label> : null}
         {kind === 'inventory.stock-count.v1' || stockScrap ? <p>{T.countReasonHelp}</p> : null}

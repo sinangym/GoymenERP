@@ -1,3 +1,6 @@
+import { AI_PANEL_CAPABILITY } from '../ai/aiCapabilities'
+import { AI_FEEDBACK_TEXT as FEEDBACK } from '../ai/aiFeedbackText'
+import { WORK_SALES_SUMMARY_TEXT as SUMMARY } from './workSalesSummaryText'
 import { customerReturnText as CUSTOMER_RETURN } from '../logistics/customerReturnText'
 import { CUSTOMER_RETURN_WORK_DECISION_CAPABILITY } from './workDecisionApi'
 import { DISPATCH_NOTE_WORK_DECISION_CAPABILITY } from './workDecisionApi'
@@ -1660,4 +1663,60 @@ it('keeps a prior version1 rejection frozen after another native command records
 it.each([{approvalSupported:false},{sourceVersion:'1'},{logisticsCustomerReturn:{...retainedPieceReturn.logisticsCustomerReturn,weighing:{...retainedReturnWeighing,netKg:'4.1250'}}}])('does not display malformed weighing/support/version proof %#',async delta=>{
  const calls=installFetch({capabilities:[customerCap],respond:url=>url.includes(customerPath)?json({...retainedPieceReturn,...delta}):undefined});mountCustomerCandidate()
  await waitFor(()=>expect(calls.some(call=>call.url.includes(customerPath))).toBe(true));expect(screen.queryByRole('region',{name:T.customerReturnWeighing})).toBeNull();expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+})
+
+const summaryKind='sales.order-draft.v1',summaryCap='sales.order-draft.work-decision',summaryPath=`/work/decisions/${summaryKind}/${id}`
+const summaryVersion='9007199254740993',summaryAnswerId='dddddddd-0000-4000-8000-000000000002',summaryDigest='sha256:'+'a'.repeat(64)
+const summaryPreview={...preview,kind:summaryKind,sourceVersion:summaryVersion,references:[{role:'order-draft',label:'SENTETIK kaynak satış taslağı',recordId:id,link:null}]}
+const summaryReady={availability:'ready',panelAvailable:true,tools:[{toolId:'sales.draft-summary.v1',version:'1',ownerModule:'Sales',dataClass:'Internal'}]}
+function salesSummaryAnswer(version=summaryVersion){
+ const source={targetKind:'sales.order.draft-summary',targetId:id,title:'SENTETIK kaynak taslak',sourceVersion:summaryDigest,asOfUtc:'2026-11-27T08:00:00Z',dataClass:'Internal'}
+ return {outcome:'answered',toolResults:[{toolId:'sales.draft-summary.v1',toolVersion:'1',outcome:'succeeded',contentJson:JSON.stringify({draftId:id,version,revision:'Rev.0',state:'Draft',approvalState:'PendingApproval',lines:[]}),source}],
+ answer:{text:'SENTETIK kaynaklı Work satış özeti',citations:[{toolId:'sales.draft-summary.v1',toolVersion:'1',targetKind:source.targetKind,targetId:id,title:source.title,sourceVersion:summaryDigest,asOfUtc:source.asOfUtc}],modelDeployment:'SENTETIK-local',policyVersion:'SENTETIK-policy',answerId:summaryAnswerId}}
+}
+it.each([[],[AI_PANEL_CAPABILITY],['sales.drafts.detail']])('does not mount sales summary without both separate capabilities and leaves Work approval usable: %j',async extras=>{
+ const calls=installFetch({capabilities:[summaryCap,...extras],respond:(url,init)=>url.includes(summaryPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:summaryKind,itemId:id,state:'Approved',replayed:false,originalCorrelationId:'SENTETIK'}):json(summaryPreview):undefined})
+ mount(`/onaylarim/${summaryKind}/${id}`);await screen.findByRole('button',{name:T.approve})
+ expect(screen.queryByRole('region',{name:SUMMARY.heading})).toBeNull();expect(calls.some(call=>call.url.includes('/ai/'))).toBe(false)
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done)
+ expect(calls.filter(call=>call.url.includes(summaryPath)&&call.method==='POST')[0]!.body).toEqual({expectedVersion:summaryVersion,approve:true,reason:null,delegationId:null})
+})
+it('keeps native Work approval usable while the optional summary runtime is unavailable',async()=>{
+ const calls=installFetch({capabilities:[summaryCap,AI_PANEL_CAPABILITY,'sales.drafts.detail'],respond:(url,init)=>{
+  if(url.includes(summaryPath))return init?.method==='POST'?json({companyId:COMPANY_A,kind:summaryKind,itemId:id,state:'Approved',replayed:false,originalCorrelationId:'SENTETIK'}):json(summaryPreview)
+  if(url.endsWith('/ai/capabilities'))return json({availability:'ready',panelAvailable:true,tools:[]})
+  return undefined
+ }})
+ mount(`/onaylarim/${summaryKind}/${id}`);await screen.findByText(SUMMARY.unavailable)
+ expect(screen.queryByRole('button',{name:SUMMARY.request})).toBeNull();expect((screen.getByRole('button',{name:T.approve}) as HTMLButtonElement).disabled).toBe(false)
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done);expect(calls.some(call=>call.url.endsWith('/ai/ask'))).toBe(false)
+})
+it.each([summaryVersion,'7'])('mounts the existing optional source-bound component after evidence and before decisions, owner content version=%s',async version=>{
+ const calls=installFetch({capabilities:[summaryCap,AI_PANEL_CAPABILITY,'sales.drafts.detail'],respond:(url,init)=>{
+  if(url.includes(summaryPath))return json(summaryPreview)
+  if(url.endsWith('/ai/capabilities'))return json(summaryReady)
+  if(url.endsWith('/ai/ask')&&init?.method==='POST')return json(salesSummaryAnswer(version))
+  if(url.includes(`/ai/answers/${summaryAnswerId}/feedback`))return json({answerId:summaryAnswerId,version:'0',kind:null,reasonCode:null})
+  return undefined
+ }})
+ mount(`/onaylarim/${summaryKind}/${id}`);const summary=await screen.findByRole('region',{name:SUMMARY.heading}),button=await screen.findByRole('button',{name:SUMMARY.request})
+ const reference=screen.getByText('SENTETIK kaynak satış taslağı',{exact:false}),approve=screen.getByRole('button',{name:T.approve})
+ expect(reference.compareDocumentPosition(summary)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();expect(summary.compareDocumentPosition(approve)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+ expect(calls.some(call=>call.url.endsWith('/ai/ask'))).toBe(false);fireEvent.click(button)
+ if(version===summaryVersion){await screen.findByText('SENTETIK kaynaklı Work satış özeti');await screen.findByRole('region',{name:FEEDBACK.heading})}
+ else{await screen.findByText(SUMMARY.stale);expect(screen.queryByRole('region',{name:FEEDBACK.heading})).toBeNull()}
+ const request=calls.filter(call=>call.url.endsWith('/ai/ask'));expect(request).toHaveLength(1);expect(request[0]!.headers['X-Company-Id']).toBe(COMPANY_A)
+ expect(request[0]!.body).toMatchObject({openRecordContext:{targetKind:'sales.order.draft-summary',targetId:id}})
+ expect((approve as HTMLButtonElement).disabled).toBe(false);expect(calls.some(call=>call.url.includes(summaryPath)&&call.method==='POST')).toBe(false)
+})
+it.each(['finance.cash-account.v1','sales.invoice.v1','sales.subcontract-invoice.v1'])('does not mount the draft summary in another decision kind %s',async otherKind=>{
+ const otherPath=`/work/decisions/${otherKind}/${id}`,otherCap=otherKind.replace('.v1','.work-decision')
+ const calls=installFetch({capabilities:[otherCap,AI_PANEL_CAPABILITY,'sales.drafts.detail'],respond:url=>url.includes(otherPath)?json({...preview,kind:otherKind}):undefined})
+ mount(`/onaylarim/${otherKind}/${id}`);await screen.findByRole('button',{name:T.approve})
+ expect(screen.queryByRole('region',{name:SUMMARY.heading})).toBeNull();expect(calls.some(call=>call.url.includes('/ai/'))).toBe(false)
+})
+it('does not mount the summary or read AI for a foreign-company Work preview',async()=>{
+ const calls=installFetch({capabilities:[summaryCap,AI_PANEL_CAPABILITY,'sales.drafts.detail'],respond:url=>url.includes(summaryPath)?json({...summaryPreview,companyId:COMPANY_B}):undefined})
+ mount(`/onaylarim/${summaryKind}/${id}`);await waitFor(()=>expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
+ expect(screen.queryByRole('region',{name:SUMMARY.heading})).toBeNull();expect(calls.some(call=>call.url.includes('/ai/'))).toBe(false)
 })
