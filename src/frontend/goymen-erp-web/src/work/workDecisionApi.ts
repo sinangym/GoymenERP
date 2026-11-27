@@ -144,7 +144,7 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
       || !['purchaseOrderId', 'purchaseOrderLineId', 'goodsAcceptanceId', 'inventoryMovementId'].every(key => isBoundUuid(proof[key]))
       || orders.length !== 1 || !record(orders[0]) || !same(orders[0].recordId, proof.purchaseOrderId as string)
       || (proof.sourceBlock !== 'Free' && proof.sourceBlock !== 'Blocked') || !canonicalPositiveQuantity(proof.quantityKg)
-      || typeof proof.replacementExpected !== 'boolean' || !isWorkSupplierReturnReason(proof.reason)
+      || typeof proof.replacementExpected !== 'boolean' || proof.replacementExpected && proof.recordedExpectedPurchaseOrderVersion === null || !isWorkSupplierReturnReason(proof.reason)
       || !transferDispatchUtc(proof.occurredAtUtc) || !transferDispatchUtc(proof.requestedAtUtc) || !text(proof.requestedBy)
       || (proof.recordedExpectedPurchaseOrderVersion === null
         ? proof.currentPurchaseOrderVersion !== null || proof.undoQuantity !== null

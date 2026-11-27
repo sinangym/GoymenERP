@@ -640,11 +640,11 @@ describe('supplier return cost exception human-only contract',()=>{
   expect(decodeWorkDecisionPreview(supplierPreview,company,supplierKind,id)).not.toBeNull()
   const visible={...supplierPreview,rules:[{...supplierRules[0]!,actual:'99999999999999.9999',unit:'TRY'},supplierRules[1]!],supplierReturnCostException:{...supplierProof,priceDisclosure:'Visible',unitCostTryPerKg:'99999999999999.9999'}}
   expect(decodeWorkDecisionPreview(visible,company,supplierKind,id)).not.toBeNull()
-  expect(decodeWorkDecisionPreview({...supplierPreview,supplierReturnCostException:{...supplierProof,recordedExpectedPurchaseOrderVersion:null,currentPurchaseOrderVersion:null,undoQuantity:null}},company,supplierKind,id)).not.toBeNull()
+  expect(decodeWorkDecisionPreview({...supplierPreview,supplierReturnCostException:{...supplierProof,replacementExpected:false,recordedExpectedPurchaseOrderVersion:null,currentPurchaseOrderVersion:null,undoQuantity:null}},company,supplierKind,id)).not.toBeNull()
  })
  it.each([{unitCostTryPerKg:null},{unitCostTryPerKg:'1'},{priceDisclosure:'Visible'},{priceDisclosure:'Other'},{purchaseOrderId:id},{sourceBlock:'Other'},{quantityKg:'0'},{quantityKg:'1.000'},{quantityKg:'1000000000000000'},
   {replacementExpected:null},{reason:''},{reason:'x'.repeat(501)},{reason:'x\u0085y'},{requestedAtUtc:'2026-11-27T09:00:00+03:00'},{goodsAcceptanceId:''},{currentPurchaseOrderVersion:null},
-  {recordedExpectedPurchaseOrderVersion:null},{currentPurchaseOrderVersion:'9223372036854775807'},{undoQuantity:'0'},{extra:true}])('refuses malformed supplier proposal %j',delta=>{
+  {recordedExpectedPurchaseOrderVersion:null},{recordedExpectedPurchaseOrderVersion:null,currentPurchaseOrderVersion:null,undoQuantity:null},{currentPurchaseOrderVersion:'9223372036854775807'},{undoQuantity:'0'},{extra:true}])('refuses malformed supplier proposal %j',delta=>{
   expect(decodeWorkDecisionPreview({...supplierPreview,supplierReturnCostException:{...supplierProof,...delta}},company,supplierKind,id)).toBeNull()
  })
  it.each([{companyId:id},{sourceVersion:'9223372036854775807'},{supplierReturnCostException:null},{supplierReturnCostExceptionProof:{}},{logisticsPlanExcess:{}},{references:[]},{rules:[supplierRules[1]]},{rules:[{...supplierRules[0]!,actual:'5',unit:'TRY'},supplierRules[1]!]}])('refuses foreign, extra, unbound and leaking supplier metadata %j',delta=>{

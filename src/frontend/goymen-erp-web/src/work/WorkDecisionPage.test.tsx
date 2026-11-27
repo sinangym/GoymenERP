@@ -1176,7 +1176,7 @@ it('shows the retained supplier return without a price grant, starts the measure
  expect(calls.some(call=>call.url.includes('/purchasing/')||call.url.includes('/identity/access'))).toBe(false)
 })
 it('shows an explicitly disclosed cost and approves an unmeasured return without inventing a PO version',async()=>{
- const data={...supplierPreview,rules:[{...supplierPreview.rules[0]!,actual:'3.125',unit:'TRY'},supplierPreview.rules[1]!],supplierReturnCostException:{...supplierHuman,recordedExpectedPurchaseOrderVersion:null,currentPurchaseOrderVersion:null,undoQuantity:null,priceDisclosure:'Visible',unitCostTryPerKg:'3.125'}}
+ const data={...supplierPreview,rules:[{...supplierPreview.rules[0]!,actual:'3.125',unit:'TRY'},supplierPreview.rules[1]!],supplierReturnCostException:{...supplierHuman,replacementExpected:false,recordedExpectedPurchaseOrderVersion:null,currentPurchaseOrderVersion:null,undoQuantity:null,priceDisclosure:'Visible',unitCostTryPerKg:'3.125'}}
  const calls=installFetch({capabilities:[supplierCap],respond:(url,init)=>url.includes(supplierPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:supplierKind,itemId:id,state:'Recorded',replayed:false,originalCorrelationId:'original'}):json(data):undefined})
  mountSupplier();await screen.findByRole('heading',{name:T.supplierReturnProposal});expect(screen.getByText('3.125')).toBeTruthy()
  expect(screen.queryByRole('textbox',{name:T.supplierReturnSelectedOrderVersion})).toBeNull()
@@ -1213,7 +1213,7 @@ it('freezes both supplier versions and original key across an unknown remount af
  expect(sent[1]!.body).toEqual({expectedVersion:'1',approve:true,reason:null,delegationId:null,supplierReturnCostException:{expectedPurchaseOrderVersion:'9'}})
 })
 it.each([{companyId:COMPANY_B},{sourceVersion:'9223372036854775807'},{supplierReturnCostException:null},{supplierReturnCostExceptionProof:{}},
- {supplierReturnCostException:{...supplierHuman,purchaseOrderId:id}},{supplierReturnCostException:{...supplierHuman,unitCostTryPerKg:'3.125'}},{supplierReturnCostException:{...supplierHuman,currentPurchaseOrderVersion:null}}])('does not render a foreign or malformed supplier proposal %j',async delta=>{
+ {supplierReturnCostException:{...supplierHuman,purchaseOrderId:id}},{supplierReturnCostException:{...supplierHuman,unitCostTryPerKg:'3.125'}},{supplierReturnCostException:{...supplierHuman,currentPurchaseOrderVersion:null}},{supplierReturnCostException:{...supplierHuman,recordedExpectedPurchaseOrderVersion:null,currentPurchaseOrderVersion:null,undoQuantity:null}}])('does not render a foreign or malformed supplier proposal %j',async delta=>{
  const calls=installFetch({capabilities:[supplierCap],respond:url=>url.includes(supplierPath)?json({...supplierPreview,...delta}):undefined})
  mountSupplier();await waitFor(()=>expect(calls.some(call=>call.url.includes(supplierPath))).toBe(true))
  expect(screen.queryByRole('heading',{name:T.supplierReturnProposal})).toBeNull();expect(screen.queryByRole('button',{name:T.approve})).toBeNull();expect(calls.some(call=>call.method==='POST')).toBe(false)
