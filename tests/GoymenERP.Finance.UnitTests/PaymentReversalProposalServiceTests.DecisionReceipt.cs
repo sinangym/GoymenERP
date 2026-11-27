@@ -134,12 +134,15 @@ public sealed partial class PaymentReversalProposalServiceTests
         await using var run = await Run.StartAsync(); var id = await run.ProposeAsync("maker"); await using var db = run.Context();
         var core = DecisionCore(db, new DecisionCompany(Company), new DecisionUser(), new DecisionEntryPermissions(), null);
         var read = await core.ReadDecisionPreviewAsync(new(Company, "checker", "rule", null), id, _ => Task.CompletedTask, default);
-        var view = read.Resource!; var proposal = view.Proposal; var label = FinanceWorkInboxRead.Label(view.PaymentDocumentNumber, proposal.PaymentId);
+        var view = read.Resource!; var proposal = view.Proposal;
+        // With no document number, native Item captions use the proposal; payment references use the payment.
+        var caption = FinanceWorkInboxRead.Label(view.PaymentDocumentNumber, proposal.Id);
+        var paymentLabel = FinanceWorkInboxRead.Label(view.PaymentDocumentNumber, proposal.PaymentId);
         var link = FinanceWorkInboxFence.Link(FinanceManualBankPaymentReversalWorkInboxSourceV1.ScreenPath, proposal.PaymentId);
-        var item = new WorkInboxItemV1("finance", FinanceManualBankPaymentReversalWorkInboxSourceV1.KindName, id, label,
+        var item = new WorkInboxItemV1("finance", FinanceManualBankPaymentReversalWorkInboxSourceV1.KindName, id, caption,
             proposal.ProposedAtUtc, link, proposal.ProposedBy,
             [new(FinanceManualBankPaymentReversalWorkInboxSourceV1.ApprovalRequiredRule, null, FinanceWorkInboxRead.Amount(view.Amount), null, null)],
-            [FinanceWorkInboxRead.Reference("manual-bank-payment", proposal.PaymentId, label, link),
+            [FinanceWorkInboxRead.Reference("manual-bank-payment", proposal.PaymentId, paymentLabel, link),
                 FinanceWorkInboxRead.Reference("party", view.PartyId), FinanceWorkInboxRead.Reference("bank-account", view.TreasuryAccountId, view.TreasuryAccountLabel),
                 FinanceWorkInboxRead.Reference("currency", view.CurrencyId)]);
         Assert.True(PaymentReversalProposalService.MatchesDecisionItem(item, view));
