@@ -5,7 +5,7 @@ export const WORK_DECISION_TEXT = {
     kind: 'Tür', functionalAmount: 'Belgedeki TL karşılığı', bankAccountId: 'Banka hesabı', sourceReference: 'Banka hareket referansı',
     replacesOpeningMovementId: 'Düzeltilen açılış hareketi', expectedOpeningMovementVersion: 'Düzeltilen açılış sürümü', reversedByMovementId: 'Ters kaydı oluşturan hareket',
     transactionDate: 'İşlem tarihi', accountingDate: 'Muhasebe tarihi', profileId: 'Profil kimliği', profileVersion: 'Profil sürümü', currencyScale: 'Para birimi basamağı', smallestCurrencyUnit: 'En küçük para birimi',
-    preparation: 'İşlemin kayıtlı bilgileri', documentNumber: 'Belge numarası', number: 'Numara', policyVersion: 'Numaralama kuralı sürümü',
+    preparation: 'İşlemin kayıtlı bilgileri', documentNumber: 'Belge numarası', number: 'Numara', formatVersion: 'Numara biçimi sürümü',
     sourceKind: 'Kaynak hesap türü', sourceAccountId: 'Kaynak hesap', sourceMoney: 'Çıkan tutar', sourceProfile: 'Kaynak para profili',
     targetKind: 'Hedef hesap türü', targetAccountId: 'Hedef hesap', targetMoney: 'Giren tutar', targetProfile: 'Hedef para profili',
     rate: 'İşlem kuru', occurredOn: 'İşlem tarihi', valueOn: 'Valör tarihi', description: 'Açıklama', recordedBy: 'Kaydeden', recordedAtUtc: 'Kayıt zamanı (UTC)', transferConfirmed: 'İşlem teyidi',
