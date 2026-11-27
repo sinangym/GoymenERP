@@ -579,32 +579,29 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             keyHash, payloadHash, freshAuthorityFence, cancellationToken);
     }
 
-    public async Task<InventoryTransferReceiptResultV1?> ReplayDecideLossAsync(
-        Guid transferId,
-        Guid lineId,
-        DecideInventoryTransferLossV1 request,
-        InventoryCommandMetadata metadata,
-        Func<CancellationToken, Task> freshAuthorityFence,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(freshAuthorityFence);
-        RequireTransferCall(metadata);
-        var parsed = LossDecisionPayload(transferId, lineId, request);
-        return await FindReceiptKeyReplayAsync(DecideTransferLossCommand,
-            GenealogyHash(metadata.IdempotencyKey.Trim()), parsed.PayloadHash, metadata.ActorId,
-            freshAuthorityFence, cancellationToken);
-    }
+    public Task<InventoryTransferReceiptResultV1?> ReplayDecideLossAsync(Guid transferId, Guid lineId,
+        DecideInventoryTransferLossV1 request, InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default) =>
+        RunOwnedLossDecisionAsync(transferId, lineId, request, metadata, freshAuthorityFence,
+            replayOnly: true, cancellationToken);
 
-    public Task<InventoryTransferReceiptResultV1> DecideLossAsync(
-        Guid transferId,
-        Guid lineId,
-        DecideInventoryTransferLossV1 request,
-        InventoryCommandMetadata metadata,
-        Func<CancellationToken, Task> freshAuthorityFence,
-        CancellationToken cancellationToken = default) =>
-        WithinPhysicalValidationTransactionAsync(() => DecideLossCoreAsync(transferId, lineId, request,
-            metadata, freshAuthorityFence, cancellationToken), cancellationToken);
+    public async Task<InventoryTransferReceiptResultV1> DecideLossAsync(Guid transferId, Guid lineId,
+        DecideInventoryTransferLossV1 request, InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await RunOwnedLossDecisionAsync(transferId, lineId, request, metadata, freshAuthorityFence,
+                replayOnly: false, cancellationToken) ?? throw TransferError(503, InventoryTransferCodesV1.Unavailable);
+        }
+        catch (LossDecisionSaveRace race)
+        {
+            // The failed owned transaction and its drafts are gone before this bounded, read-only lookup.
+            var winner = await RunOwnedLossDecisionAsync(transferId, lineId, request, metadata, freshAuthorityFence,
+                replayOnly: true, cancellationToken);
+            return winner ?? throw TransferError(409, InventoryTransferCodesV1.ConcurrentChange, race.InnerException);
+        }
+    }
 
     private async Task<InventoryTransferReceiptResultV1> DecideLossCoreAsync(
         Guid transferId,
@@ -994,10 +991,11 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
 
         var stored = JsonSerializer.Deserialize<ReceiptCommandResult>(prior.ResultJson, Json);
         // A result stored before KLN-D107 has no re-request list; it replays with an empty one.
-        return stored is { Transfer: { } transfer, Facts: { } facts }
-            ? new(transfer, facts.OverageRenewals is null ? facts with { OverageRenewals = [] } : facts, true,
-                prior.CorrelationId)
-            : throw TransferError(503, InventoryTransferCodesV1.Unavailable);
+        if (stored is not { Transfer: { } transfer, Facts: { } facts })
+            throw TransferError(503, InventoryTransferCodesV1.Unavailable);
+        if (lossDecisionFence is not null && command == DecideTransferLossCommand) lossDecisionReceiptProven = true;
+        return new(transfer, facts.OverageRenewals is null ? facts with { OverageRenewals = [] } : facts, true,
+            prior.CorrelationId);
     }
 
     private async Task<InventoryTransferReceiptResultV1> SaveReceiptAsync(
@@ -1017,8 +1015,8 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         {
             await dbContext.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
-            || IsUniqueConstraintViolation(exception))
+        catch (DbUpdateException exception) when (lossDecisionFence is null
+            && (exception is DbUpdateConcurrencyException || IsUniqueConstraintViolation(exception)))
         {
             dbContext.ChangeTracker.Clear();
             if (await FindReceiptKeyReplayAsync(command, keyHash, payloadHash, metadata.ActorId,
@@ -1031,6 +1029,11 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             throw TransferError(409, InventoryTransferCodesV1.ConcurrentChange, exception);
         }
 
+        if (lossDecisionFence is not null && command == DecideTransferLossCommand)
+        {
+            lossDecisionReceiptProven = true;
+            await lossDecisionFence(cancellationToken);
+        }
         return new(view, facts, false, correlationId);
     }
 

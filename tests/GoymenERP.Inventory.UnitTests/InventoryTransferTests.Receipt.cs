@@ -490,6 +490,7 @@ public sealed partial class InventoryTransferTests
         public List<(string Operation, InventoryCommandMetadata Metadata)> Calls { get; } = [];
         public List<string> ReplayCalls { get; } = [];
         public Action? BeforeFence { get; set; }
+        public Action? BeforeReplayFence { get; set; }
         public InventoryTransferReceiptResultV1? ReplayResult { get; set; }
 
         public Task<InventoryTransferReceiptResultV1?> ReplayReceiveLineAsync(Guid transferId, Guid lineId,
@@ -567,6 +568,7 @@ public sealed partial class InventoryTransferTests
         {
             ReplayCalls.Add(operation);
             if (ReplayResult is null) return null;
+            BeforeReplayFence?.Invoke();
             await freshAuthorityFence(cancellationToken);
             return ReplayResult;
         }

@@ -122,15 +122,14 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(1, fault.Failures);
         Assert.Equal(beforeApproval, await run.ScalarAsync<string>(durableSql));
 
-        // A borrowed transaction can see the complete staged decision, but only its host may commit it.
+        // A native loss decision now refuses borrowed handles before staging; the caller retains its transaction.
         await using (var borrowed = run.Store(CompanyA))
         await using (var transaction = await borrowed.DbContext.Database.BeginTransactionAsync())
         {
-            var pending = await borrowed.Store.DecideLossAsync(transferId, lineId, approvalRequest, approvalMetadata, Authorized);
-            Assert.False(pending.IsReplay);
-            Assert.Equal("3", pending.Transfer.Version);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => borrowed.Store.DecideLossAsync(
+                transferId, lineId, approvalRequest, approvalMetadata, Authorized));
             Assert.Same(transaction, borrowed.DbContext.Database.CurrentTransaction);
-            Assert.Equal(1, await borrowed.DbContext.TransferLossDecisions.CountAsync(row => row.TransferId == transferId && row.Decision == 1));
+            Assert.Equal(0, await borrowed.DbContext.TransferLossDecisions.CountAsync(row => row.TransferId == transferId && row.Decision == 1));
             await transaction.RollbackAsync();
         }
         Assert.Equal(beforeApproval, await run.ScalarAsync<string>(durableSql));

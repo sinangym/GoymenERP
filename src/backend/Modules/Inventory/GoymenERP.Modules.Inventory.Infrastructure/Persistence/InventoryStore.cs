@@ -57,7 +57,8 @@ public sealed partial class InventoryStore(
     InventoryKilogramScale kilogramScale,
     TimeProvider timeProvider,
     IInventorySubstituteProductVerifierV1? substituteVerifier = null,
-    IInventoryNegativeStockAttemptRecorderV1? negativeStockAttempts = null) : IInventoryLotStore, IInventoryLabelStore, IInventoryMovementStore, IInventoryOpeningStore,
+    IInventoryNegativeStockAttemptRecorderV1? negativeStockAttempts = null,
+    IAuditTransactionWriterV1? lossDecisionAuditWriter = null) : IInventoryLotStore, IInventoryLabelStore, IInventoryMovementStore, IInventoryOpeningStore,
     IInventoryPhysicalAllocationWriterV1, IInventoryLabelGenealogyWriterV1, IInventoryLabelGenealogyReaderV1,
     IInventoryLabelClassificationWriterV1
 {

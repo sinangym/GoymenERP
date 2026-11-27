@@ -1,3 +1,5 @@
+using GoymenERP.Modules.Audit.Application.Contracts;
+using Microsoft.Extensions.DependencyInjection;
 using System.Data.Common;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
@@ -1216,9 +1218,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         public StoreScope Store(Guid company, params IInterceptor[] extra)
         {
-            var companyContext = new CompanyContext();
-            companyContext.Set(company);
-            var collector = new AuditEventCollector();
+            var auditScope = Factory.Services.CreateScope();
+            var companyContext = auditScope.ServiceProvider.GetRequiredService<ICompanyContext>(); companyContext.Set(company);
+            var collector = auditScope.ServiceProvider.GetRequiredService<AuditEventCollector>();
+            var writer = auditScope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
             var interceptors = new List<IInterceptor> { new AuditSaveChangesInterceptor(collector, companyContext) };
             interceptors.AddRange(extra);
             var options = new DbContextOptionsBuilder<InventoryDbContext>()
@@ -1229,8 +1232,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             var dbContext = new InventoryDbContext(options, companyContext);
             var settings = new ApprovedSettingsPrerequisiteProvider(companyContext, new FixedCurrentUser(Actor, company));
             var store = new InventoryStore(dbContext, companyContext, collector, new InventoryKilogramScale(settings),
-                TimeProvider.System);
-            return new StoreScope(dbContext, store);
+                TimeProvider.System, lossDecisionAuditWriter: writer);
+            return new StoreScope(dbContext, store, auditScope);
         }
 
         public async Task<Guid> LocationOfAsync(Guid company) =>
@@ -1281,7 +1284,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         }
     }
 
-    private sealed class StoreScope(InventoryDbContext dbContext, InventoryStore store) : IAsyncDisposable
+    private sealed class StoreScope(InventoryDbContext dbContext, InventoryStore store, IServiceScope? auditScope = null) : IAsyncDisposable
     {
         public IInventoryLotStore Lots => store;
         public IInventoryLabelStore Labels => store;
@@ -1290,8 +1293,15 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         public IInventoryTransferReaderV1 Transfers => store;
         public InventoryDbContext DbContext => dbContext;
         public InventoryStore Store => store;
+        public IAuditTransactionWriterV1 AuditWriter => auditScope!.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
+        public AuditEventCollector AuditCollector => auditScope!.ServiceProvider.GetRequiredService<AuditEventCollector>();
+        public ICompanyContext CompanyContext => auditScope!.ServiceProvider.GetRequiredService<ICompanyContext>();
 
-        public ValueTask DisposeAsync() => dbContext.DisposeAsync();
+        public async ValueTask DisposeAsync()
+        {
+            try { await dbContext.DisposeAsync(); }
+            finally { auditScope?.Dispose(); }
+        }
     }
 
     /// <summary>Both source-grain SQL reads finish before either caller takes the physical-validation mutex.</summary>
