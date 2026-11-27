@@ -168,6 +168,21 @@ public sealed class WorkQueueEndpointTests(GoymenErpApiFactory factory)
             source => source.Kind == NativeApprovalKindsV1.InventoryStockScrap));
     }
 
+    [Fact]
+    public void Production_dispatch_note_inbox_has_one_owner_purpose_and_resolves_the_native_command()
+    {
+        using var scope = factory.Services.CreateScope();
+        var source = Assert.Single(scope.ServiceProvider.GetServices<IWorkInboxSourceV1>(),
+            item => item.Kind == WorkDecisionHostV1.LogisticsDispatchNote);
+        Assert.IsAssignableFrom<IWorkApprovalDecisionSourceV1>(source);
+        Assert.Equal("logistics", source.Module);
+        Assert.Equal(GoymenERP.Modules.Logistics.Application.Contracts.LogisticsPermissionManifestV1.DispatchNotesApprove,
+            source.ApproverPermission);
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<
+            GoymenERP.Modules.Logistics.Application.Contracts.ILogisticsInstructionService>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<WorkDecisionHostV1>());
+    }
+
     private WebApplicationFactory<Program> Host(
         IReadOnlyList<INativeApprovalQueueAdapterV1> sources,
         Action<IServiceCollection>? configure = null) =>
