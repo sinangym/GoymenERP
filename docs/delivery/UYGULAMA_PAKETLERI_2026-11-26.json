@@ -2130,7 +2130,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Complete remaining owner adapters/64-flow actual SQL/HTTP/browser acceptance and paired Product publication warm checks. B2 recommendations and other unsupported families remain closed.",
+      "next_action": "Complete actualSQL/normalHTTP/browser, pin/fullCI and independent K3 acceptance across64 flows; native Flow32/33 safety prerequisites do not complete their Work purposes. No new grants or production activation.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2249,7 +2249,7 @@
         "activation": "No grants/flags/provider changes"
       },
       "execution": {
-        "source_commit": "be282c2dfaef532cc1e2605bde8848323993e79f",
+        "source_commit": "d31523715dc7aa3faf1aa4b4005a6be3f45dd685",
         "implemented_kinds": [
           "inventory.opening-cost.v1",
           "finance.cash-account.v1",
@@ -2282,7 +2282,8 @@
           "product.package-standard-version.v1",
           "product.price-list-version.v1",
           "finance.party-credit-limit.v1",
-          "finance.official-invoice-import.v1"
+          "finance.official-invoice-import.v1",
+          "finance.official-sales-invoice.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -3396,14 +3397,13 @@
           "7898cc30397ab51d38464c5ac674de2422890d07",
           "9f9442c4e9382033ea97f54e62d7238ab50e91c4"
         ],
-        "kind_count_scope": "At0acdf2fa89d22cd1a7ad63ec211d753e34a79e64 source-derived sets32native/31paired/1staged (official invoice import); no unknown frontend kind. Prior counts remain historical. Source pairing is not runtime acceptance; all64 flows remain NOT_VERIFIED/NOT_RUN, runtime0.",
-        "staged_kinds": [
-          "finance.official-invoice-import.v1"
-        ],
+        "kind_count_scope": "Atd31523715dc7aa3faf1aa4b4005a6be3f45dd685 source-derived sets33native/33paired/0staged; frontend mounted33 unique kinds. Flow29/30 are paired source, not runtime acceptance. ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 and pins pending; verified_runtime_flows=0,64 semantics NOT_VERIFIED/runtimeNOT_RUN;41packages/50references unchanged.",
+        "staged_kinds": [],
         "historical_kind_count_scope": "29 paired source kinds/29 native kinds with exact set equality atcc379ff28f74d5810ed51ad537ebece821440d72, including Product package-standard; staged0. Native price-list publish safety is a prerequisite, not a30th Work purpose. All64 runtime flows remain NOT_VERIFIED/NOT_RUN; source pairing is not acceptance.",
         "historical_kind_count_scopes": [
           "Atb1cacee89f805a05959b5b79af034270b80b8103 source-derived sets:30native/29paired frontend; only product.price-list-version.v1 staged, no unknown frontend kind. Historicalcc379 exact29/29 remains valid only at that head. verified_runtime_flows=0; all64 semantics/runtime remain NOT_VERIFIED/NOT_RUN.",
-          "At43ebf5ec240e23f7e3c56443e5a2b10c68e2adf4 live WorkDecisionRegistrationV1.Kinds and WORK_DECISION_KINDS derive31native/30paired; only finance.party-credit-limit.v1 staged, no unknown frontend kind. Price-list purpose is now paired. Historical b1 30native/29paired/1staged and cc379 29/29 remain exact-head records. verified_runtime_flows=0; all64 semantics/runtime stay NOT_VERIFIED/NOT_RUN;41packages/50references unchanged. Corrected checkpointc42ed290f5c20a59065f79b70718e98adae926b3 retains31/30/1; staged constant is not a mounted capability."
+          "At43ebf5ec240e23f7e3c56443e5a2b10c68e2adf4 live WorkDecisionRegistrationV1.Kinds and WORK_DECISION_KINDS derive31native/30paired; only finance.party-credit-limit.v1 staged, no unknown frontend kind. Price-list purpose is now paired. Historical b1 30native/29paired/1staged and cc379 29/29 remain exact-head records. verified_runtime_flows=0; all64 semantics/runtime stay NOT_VERIFIED/NOT_RUN;41packages/50references unchanged. Corrected checkpointc42ed290f5c20a59065f79b70718e98adae926b3 retains31/30/1; staged constant is not a mounted capability.",
+          "At0acdf2fa89d22cd1a7ad63ec211d753e34a79e64 source-derived sets32native/31paired/1staged (official invoice import); no unknown frontend kind. Prior counts remain historical. Source pairing is not runtime acceptance; all64 flows remain NOT_VERIFIED/NOT_RUN, runtime0."
         ],
         "historical_checkpoint_c42": {
           "source_commit": "c42ed290f5c20a59065f79b70718e98adae926b3",
@@ -3478,6 +3478,33 @@
           "native_prerequisite_source_commit": "9f9442c4e9382033ea97f54e62d7238ab50e91c4"
         },
         "latest_checkpoint": {
+          "source_commit": "d31523715dc7aa3faf1aa4b4005a6be3f45dd685",
+          "scope": "Flow29 and Flow30 paired native owner purposes and full generic Work UI;33native/33paired/0staged. Finance provider1.29/61 declarations; only Flow30 standalone purpose availability changed, native record/approve/withdraw remain staged. Native ScreenPath preserved; source items use purpose routes.",
+          "source_peers": "Full Flow29 backend21-file and UI15-file reviews, UTC correction6250; Flow30 owner7-file/shared9-file/matcher4-file/UI12-file and paired publication7-file reviews: no open bounded P0/P1/P2 after corrections. Not K3 or runtime acceptance.",
+          "checks": "Exact d315 full Release API with all project references0errors/0warnings205.664137s; full Finance2144/2144PASS0skip; complete integration-source compile and controlled Host/registry/authority/SqlWrapper/C7/C8 batch741/741PASS0skip. Root independently parsed TRX XML counters. SQL sources compiled, actualSQL NOT_RUN. Frontend evidence is separate in frontend_checks; original513 failures retained; fixture-only493 rerun evidence recorded separately.",
+          "sql": "Finance inventory341 unique source names;2 new Flow30 shared-purpose SQL Facts registered. Native and purpose SQL sources compiled at4f570, actualSQL NOT_RUN.",
+          "limits": "ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 and pins pending; verified_runtime_flows=0,64 semantics NOT_VERIFIED/runtimeNOT_RUN;41packages/50references unchanged.",
+          "frontend_checks": {
+            "d315": {
+              "source_commit": "d31523715dc7aa3faf1aa4b4005a6be3f45dd685",
+              "checks": "TSC exit2/63.4437674s,2 callback narrowing errors; lint and Vitest NOT_RUN. Original log retained. Backend API/Finance/Host PASS is separately recorded at this same head."
+            },
+            "513": {
+              "source_commit": "513004ee88d44e4fc5ab6881aef7378d6354b060",
+              "fix": "Single-file3+/2- validated references readonly alias only; bounded peer no open issue, no any/cast/schema relaxation. Backend tree unchanged; no new backend run claimed.",
+              "checks": "TSC exit0/59.3669307s;16-file lint exit0/0.8065656s,0diagnostics. Nine test files1120total/1099PASS/21FAIL/0skip162.5820981s; root independently counted JSON.",
+              "test_files": "API487PASS, Page378PASS, Inbox52PASS, mount23PASS, import27PASS, official8PASS, wire25PASS; ApprovalInboxPages108total/20FAIL and WorkQueue12total/1FAIL. Counts are included1120, not additional.",
+              "failure_scope": "At513 legacy read-detail route/capability fixtures failed; later493 fixture-only rerun is recorded separately. Original failure retained; no runtime acceptance claim."
+            },
+            "493": {
+              "source_commit": "49348244c342b5f40939fe207a1c56b39871d0db",
+              "checks": "Full TSC exit0;2-file scoped lint exit0; complete ApprovalInboxPages108 and WorkQueuePage12 tests120/120PASS0skip. Only these2 test files rerun at493.",
+              "provenance": "Earlier513 retains21fail and separate7-file1000PASS evidence. Do not claim1120tests rerun at493 or sum across heads into a same-head result. Legacy read-only router/capability fixture correction preserves assertions; actual current-purpose route tests remain on real router.",
+              "limits": "ActualSQL/normalHTTP/browser/fullCI/K3 pending."
+            }
+          }
+        },
+        "historical_checkpoint_0ac": {
           "source_commit": "0acdf2fa89d22cd1a7ad63ec211d753e34a79e64",
           "scope": "Flow29 staged backend: native approve-only Expected1 to terminal2, original-key receipt and private canonical preview digest; legacy native links/pending-only reads preserved. UI NOT_IMPLEMENTED at this head.",
           "checks": "Full Release API build with project references0errors/0warnings205.6963478s; full Finance2114/2114PASS0skip15.9194453s; complete integration-source compile and controlled Host/DI/helper/email669/669PASS0skip72.2082283s. C7 sixteen port tests are included669, not additional. Root parsed TRX counters.",
@@ -3485,6 +3512,35 @@
           "sql": "3 new Flow29 purpose SQL source Facts compiled; actual SQL NOT_RUN. Finance inventory336 at0ac.",
           "next_owner_source": "Flow30 owner-only a96/root1981b8fa3: receipt and narrow read,22 unit cases/3 SQL Facts; full7-file nonauthor source peer no open P0/P1/P2. Not yet built or run; no new Work purpose. Root3094 inventory339 names, actualSQL NOT_RUN.",
           "limits": "ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 and pins pending; verified_runtime_flows=0,64 semantics NOT_VERIFIED/runtimeNOT_RUN."
+        },
+        "historical_checkpoint_bea_to_4f570": {
+          "bea": {
+            "source_commit": "bea72195ab51e74886d94e5fa58b9eed1fb5ea9e",
+            "checks": "Full Release API0errors/0warnings204.7767966s. Finance2143PASS/1FAIL/0skip: missing staged ScreenId literal; original failure retained.33native/32paired/1staged at this head."
+          },
+          "2b949": {
+            "source_commit": "2b94940d761e300d11f2ee2806cb599261a39f54",
+            "checks": "Equivalent test-only ScreenId addition; Finance2144/2144PASS0skip16.8812602s. Integration-source compile failed with6 namespace-import errors; tests NOT_RUN at this head."
+          },
+          "4f570": {
+            "source_commit": "4f5702e5ee2ae72bf2563beb8a7558f86d924743",
+            "checks": "Two test-source using corrections only; complete integration-source compile and controlled DecisionHost/registry/authority/SqlWrapper/C7/C8 batch741/741PASS0skip76.7236621s. Root independently parsed TRX;20C8 and51Flow30 host cases included741, not additional. Actual SQL sources compiled, NOT_RUN."
+          }
+        },
+        "native_flow32_prerequisite_checkpoint": {
+          "source_commit": "203477131",
+          "author_commit": "75723a9d",
+          "scope": "Flow32 native approval safety prerequisite only; full9-file independent and root source reads no open issue. Public5-field result/hash/native policy preserved; complete Work purpose, typed receipt and full human projection absent.",
+          "checks": "11unit/8SQL source cases NOT_RUN; queued for compile/test. Earlier d315 backend and513 frontend evidence do not transfer to this newer C# head.",
+          "sql": "rootbbef97301 inventory349 unique ordinal-sorted Finance SQL source names after8Facts; actualSQL NOT_RUN.",
+          "source_kinds": "33native/33paired/0staged unchanged."
+        },
+        "native_flow32_33_prerequisite_checkpoint": {
+          "source_commit": "958ad65cd3853561ad180f70b234d74d5156fc07",
+          "scope": "Flow32 native guarded approval prerequisite203477131 and Flow33 guard9388aa085 plus real guarded DI/composition and inventory958ad65. Full Flow33 source peer and separate DI-only peer no open findings; not K3. Work purpose/typed receipt/full human projection not completed by these guards;33native/33paired/0staged unchanged.",
+          "checks": "Finance2168/2168PASS0skip16.7619333s. Finance.Contracts/Infrastructure/API sequential warm builds with BuildProjectReferences=false all0errors/0warnings5.3650881s/12.6599044s/25.8141878s; warm evidence distinct from d315 full Release API. Complete integration-source compiled and controlled Host741/741PASS0skip77.0553985s; root independently verified all TRX XML counters. SQL sources compiled only, actualSQL NOT_RUN.",
+          "sql": "Finance inventory358 source names; Flow32 8 and Flow33 9 real relational SQL source Facts NOT_RUN. Controlled1205/provider-aborted injection, ordered winner and real simultaneous-session Fact are distinct sources, none executed.",
+          "limits": "41packages/50references/64flows/runtime0 unchanged; all64 semantics NOT_VERIFIED/runtimeNOT_RUN. ActualSQL/normalHTTP/browser/fullCI/K3 pending."
         }
       }
     },
@@ -4428,7 +4484,7 @@
       "backlog_parent": "W5-AIGATEWAY",
       "title": "Dış asistana salt okunur pilot",
       "group": "TREN2",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P1",
       "risk": "K2",
       "scope": "3–5 hassas olmayan araç; kullanıcı bazlı kimlik; ortak secret veya yazma aracı yok.",
@@ -4470,7 +4526,7 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "Complete approved tool/data/identity/legal activation gates and configure the durable admission-audit owner before any external pilot. No endpoint or dispatch is active.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -4479,7 +4535,16 @@
         "tests/GoymenERP.Api.IntegrationTests/AiGatewayTests.cs",
         "tests/GoymenERP.Identity.UnitTests/ErpAuthorityRevalidationServiceTests.cs"
       ],
-      "change_files": []
+      "change_files": [],
+      "execution": {
+        "source_commits": [
+          "ab315",
+          "8ff9"
+        ],
+        "scope": "Metadata-only external read admission partial; policy/audit adapters unconfigured and fail-closed. No actual dispatch, endpoint, provider/account/secret/flag activation or approved candidate tool list. Existing data-class/local-only/knowledge permission rules cannot be overridden.",
+        "checks": "20 controlled fake-port tests PASS included in4f570741-case batch, not additional; runtime/external pilot NOT_RUN.",
+        "remaining": "Actual tool/version/description-pin/data-field approval, user identity, account/KVKK/security/subscription/budget and audit owner activation gates remain incomplete."
+      }
     },
     {
       "id": "T2/WP-C9",

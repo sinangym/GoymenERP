@@ -856,9 +856,7 @@
       "duration_cell": "2 iş günü",
       "decision_note": "ÖNERİ.",
       "candidate_inbox_sources": [
-        "src/backend/GoymenERP.Api/WorkRuntime/NativeApprovalWorkInboxSourceV1.cs:46",
-        "src/frontend/goymen-erp-web/src/work/WorkInbox.test.tsx:413",
-        "src/frontend/goymen-erp-web/src/work/WorkInbox.test.tsx:421"
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceOfficialInvoiceImportWorkInboxSourceV1.cs"
       ],
       "candidate_tests": [
         "tests/GoymenERP.Api.IntegrationTests/FinanceOfficialInvoiceImportPermissionRegistrationTests.cs:12",
@@ -866,14 +864,16 @@
         "tests/GoymenERP.Api.IntegrationTests/FinanceShellCapabilitySqlServerRelationalAcceptanceTests.cs:107",
         "tests/GoymenERP.Api.IntegrationTests/NativeApprovalWorkInboxSourceV1Tests.cs:20",
         "tests/GoymenERP.BrowserSuiteFixtureTool/Suites/FIN01/Fin01BrowserSeed.cs:61",
-        "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs:84"
+        "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs:84",
+        "src/frontend/goymen-erp-web/src/work/workDecisionApi.test.ts",
+        "src/frontend/goymen-erp-web/src/work/WorkDecisionPage.test.tsx"
       ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native Work backend source implemented and controlled tests passed at0ac; purpose remains staged, legacy link unchanged and paired UI absent. ActualSQL/normalHTTP/browser/fullCI/K3 pending; semantics NOT_VERIFIED/runtimeNOT_RUN.",
+      "limitation": "Native owner command, private human preview and paired Work UI/source links implemented; bounded source peers no open P0/P1/P2 after corrections, not K3. d315 API0errors/0warnings, Finance2144/2144 and controlled Host741/741PASS0skip; Frontend513 TSC/lintPASS but1120total1099PASS21FAIL0skip; separate493 fixture rerun120/120PASS0skip with TSC/lintPASS. Other7files1000PASS remain513 evidence, not a1120 rerun at493. ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 and pins pending; verified_runtime_flows=0,64 semantics NOT_VERIFIED/runtimeNOT_RUN;41packages/50references unchanged.",
       "native_prerequisite_reference": {
         "source_commit": "9f9442c4e9382033ea97f54e62d7238ab50e91c4",
         "evidence": "UYGULAMA_PAKETLERI_2026-11-26.json → T2/WP8.execution.native_prerequisite_checkpoint",
@@ -881,8 +881,17 @@
         "actual_sql": "NOT_RUN"
       },
       "source_implementation": {
-        "source_commit": "0acdf2fa89d22cd1a7ad63ec211d753e34a79e64",
+        "source_commit": "d31523715dc7aa3faf1aa4b4005a6be3f45dd685",
         "reference": "T2/WP8.execution.latest_checkpoint",
+        "kind": "finance.official-invoice-import.v1",
+        "paired": true,
+        "sql_source_facts": 3,
+        "actual_sql": "NOT_RUN",
+        "note": "Original3purpose SQL sources retained."
+      },
+      "historical_source_implementation_0ac": {
+        "source_commit": "0acdf2fa89d22cd1a7ad63ec211d753e34a79e64",
+        "reference": "T2/WP8.execution.historical_checkpoint_0ac",
         "sql_source_facts": 3,
         "actual_sql": "NOT_RUN"
       }
@@ -899,26 +908,39 @@
       "approver_proposal": "FINM, GM",
       "duration_cell": "2 iş günü",
       "decision_note": "ÖNERİ (SAT-D196/D197 deseni).",
-      "candidate_inbox_sources": [],
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceOfficialSalesInvoiceWorkInboxSourceV1.cs"
+      ],
       "candidate_tests": [
         "tests/GoymenERP.Api.IntegrationTests/FinanceOfficialSalesInvoiceHttpAcceptanceTests.cs:851",
         "tests/GoymenERP.Api.IntegrationTests/FinanceOfficialSalesInvoicePermissionRegistrationTests.cs:18",
         "tests/GoymenERP.Api.IntegrationTests/FinanceOfficialSalesInvoiceSqlServerRelationalAcceptanceTests.cs:54",
         "tests/GoymenERP.Api.IntegrationTests/FinanceShellCapabilityRegistryTests.cs:23",
         "tests/GoymenERP.Api.IntegrationTests/FinanceShellCapabilityRegistryTests.cs:88",
-        "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs:53"
+        "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs:53",
+        "src/frontend/goymen-erp-web/src/work/workDecisionApi.test.ts",
+        "src/frontend/goymen-erp-web/src/work/WorkDecisionPage.test.tsx"
       ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native receipt and narrow decision-read owner source implemented at1981b8fa3 and bounded-peer reviewed; new22unit/3SQL source tests NOT_RUN. Work purpose/UI NOT_IMPLEMENTED; no runtime acceptance.",
+      "limitation": "Native owner command, private human preview and paired Work UI/source links implemented; bounded source peers no open P0/P1/P2 after corrections, not K3. d315 API0errors/0warnings, Finance2144/2144 and controlled Host741/741PASS0skip; Frontend513 TSC/lintPASS but1120total1099PASS21FAIL0skip; separate493 fixture rerun120/120PASS0skip with TSC/lintPASS. Other7files1000PASS remain513 evidence, not a1120 rerun at493. ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 and pins pending; verified_runtime_flows=0,64 semantics NOT_VERIFIED/runtimeNOT_RUN;41packages/50references unchanged.",
       "native_prerequisite_reference": {
         "source_commit": "9f9442c4e9382033ea97f54e62d7238ab50e91c4",
         "evidence": "UYGULAMA_PAKETLERI_2026-11-26.json → T2/WP8.execution.native_prerequisite_checkpoint",
         "sql_source_facts": 12,
         "actual_sql": "NOT_RUN"
+      },
+      "source_implementation": {
+        "source_commit": "d31523715dc7aa3faf1aa4b4005a6be3f45dd685",
+        "reference": "T2/WP8.execution.latest_checkpoint",
+        "kind": "finance.official-sales-invoice.v1",
+        "paired": true,
+        "sql_source_facts": 2,
+        "actual_sql": "NOT_RUN",
+        "note": "Flow30 owner-only3SQL and native prerequisite SQL remain separately historical;2 shared-purpose Facts are additional source registrations."
       }
     },
     {
@@ -1002,7 +1024,21 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Native guarded approval safety prerequisite and real runtime DI source only; Finance2168PASS0skip, warm builds0/0; complete integration-source compiled and controlled Host741/741PASS0skip77.0553985s at958ad65; root independently verified TRX counters. SQL sources compiled only, actualSQL NOT_RUN. Complete Work purpose/typed receipt/human projection absent; semantics NOT_VERIFIED/runtimeNOT_RUN.",
+      "native_prerequisite_reference": {
+        "source_commit": "203477131",
+        "author_commit": "75723a9d",
+        "scope": "Flow32 native approval safety prerequisite only; full9-file independent and root source reads no open issue. Public5-field result/hash/native policy preserved; complete Work purpose, typed receipt and full human projection absent.",
+        "checks": "11unit/8SQL source cases NOT_RUN; queued for compile/test. Earlier d315 backend and513 frontend evidence do not transfer to this newer C# head.",
+        "sql": "rootbbef97301 inventory349 unique ordinal-sorted Finance SQL source names after8Facts; actualSQL NOT_RUN.",
+        "source_kinds": "33native/33paired/0staged unchanged."
+      },
+      "native_prerequisite_reference_latest": {
+        "source_commit": "958ad65cd3853561ad180f70b234d74d5156fc07",
+        "reference": "T2/WP8.execution.native_flow32_33_prerequisite_checkpoint",
+        "sql_source_facts": 8,
+        "actual_sql": "NOT_RUN"
+      }
     },
     {
       "flow": 33,
@@ -1025,7 +1061,13 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Native guarded approval safety prerequisite and real runtime DI source only; Finance2168PASS0skip, warm builds0/0; complete integration-source compiled and controlled Host741/741PASS0skip77.0553985s at958ad65; root independently verified TRX counters. SQL sources compiled only, actualSQL NOT_RUN. Complete Work purpose/typed receipt/human projection absent; semantics NOT_VERIFIED/runtimeNOT_RUN.",
+      "native_prerequisite_reference_latest": {
+        "source_commit": "958ad65cd3853561ad180f70b234d74d5156fc07",
+        "reference": "T2/WP8.execution.native_flow32_33_prerequisite_checkpoint",
+        "sql_source_facts": 9,
+        "actual_sql": "NOT_RUN"
+      }
     },
     {
       "flow": 34,
@@ -1976,7 +2018,7 @@
     }
   ],
   "closure": "For each flow verify real inbox listing, owner decision, company/scope, maker-checker exceptions, expected version, replay and audit. Do not replace owner rules with proposal cells.",
-  "source_extension": "At2a3e3f5cbf519744a9064d9407862ee260976f8e source-derived WorkDecisionHostV1.Kinds and WORK_DECISION_KINDS are equal:31native/31paired/0staged, no unknown frontend kind. Flow40 is now paired; previous c42 31/30/1, b1 30/29/1 and cc37929/29/0 remain exact-head historical records. ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 remain pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows=0;41packages/50references unchanged.",
+  "source_extension": "Atd31523715dc7aa3faf1aa4b4005a6be3f45dd685 source sets33native/33paired/0staged; Flow29/30 paired source. ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3 and pins pending; verified_runtime_flows=0,64 semantics NOT_VERIFIED/runtimeNOT_RUN;41packages/50references unchanged.",
   "historical_source_extension": "Atcc379ff28f74d5810ed51ad537ebece821440d72 exact source sets match29native/29paired frontend kinds, including Product package-standard; staged0. Native Product Publish safety is not a30th purpose. verified_runtime_flows stays0; all64 actualSQL/HTTP/browser/CI/K3 acceptances remain NOT_RUN. Earlier exact-head evidence stays separate; new Node batch751PASS/1FAIL is not752PASS.",
   "historical_source_extensions": [
     "Atb1cacee89f805a05959b5b79af034270b80b8103 source-derived sets:30native/29paired frontend; only product.price-list-version.v1 staged, no unknown frontend kind. Historicalcc379 exact29/29 remains valid only at that head. verified_runtime_flows=0; all64 semantics/runtime remain NOT_VERIFIED/NOT_RUN.",
@@ -2006,9 +2048,56 @@
     "native_prerequisite_reference": "UYGULAMA_PAKETLERI_2026-11-26.json → T2/WP8.execution.native_prerequisite_checkpoint @9f9442c4e9382033ea97f54e62d7238ab50e91c4"
   },
   "latest_checkpoint": {
-    "source_commit": "0acdf2fa89d22cd1a7ad63ec211d753e34a79e64",
+    "source_commit": "d31523715dc7aa3faf1aa4b4005a6be3f45dd685",
     "reference": "UYGULAMA_PAKETLERI_2026-11-26.json -> T2/WP8.execution.latest_checkpoint",
+    "source_kinds": "33native/33paired/0staged; Finance1.29/61; source pairing only",
+    "checks": "Exact d315 full Release API with all project references0errors/0warnings205.664137s; full Finance2144/2144PASS0skip; complete integration-source compile and controlled Host/registry/authority/SqlWrapper/C7/C8 batch741/741PASS0skip. Root independently parsed TRX XML counters. SQL sources compiled, actualSQL NOT_RUN. Frontend evidence is separate in frontend_checks; original513 failures retained; fixture-only493 rerun evidence recorded separately.",
+    "verified_runtime_flows": 0,
+    "frontend_checks": {
+      "d315": {
+        "source_commit": "d31523715dc7aa3faf1aa4b4005a6be3f45dd685",
+        "checks": "TSC exit2/63.4437674s,2 callback narrowing errors; lint and Vitest NOT_RUN. Original log retained. Backend API/Finance/Host PASS is separately recorded at this same head."
+      },
+      "513": {
+        "source_commit": "513004ee88d44e4fc5ab6881aef7378d6354b060",
+        "fix": "Single-file3+/2- validated references readonly alias only; bounded peer no open issue, no any/cast/schema relaxation. Backend tree unchanged; no new backend run claimed.",
+        "checks": "TSC exit0/59.3669307s;16-file lint exit0/0.8065656s,0diagnostics. Nine test files1120total/1099PASS/21FAIL/0skip162.5820981s; root independently counted JSON.",
+        "test_files": "API487PASS, Page378PASS, Inbox52PASS, mount23PASS, import27PASS, official8PASS, wire25PASS; ApprovalInboxPages108total/20FAIL and WorkQueue12total/1FAIL. Counts are included1120, not additional.",
+        "failure_scope": "At513 legacy read-detail route/capability fixtures failed; later493 fixture-only rerun is recorded separately. Original failure retained; no runtime acceptance claim."
+      },
+      "493": {
+        "source_commit": "49348244c342b5f40939fe207a1c56b39871d0db",
+        "checks": "Full TSC exit0;2-file scoped lint exit0; complete ApprovalInboxPages108 and WorkQueuePage12 tests120/120PASS0skip. Only these2 test files rerun at493.",
+        "provenance": "Earlier513 retains21fail and separate7-file1000PASS evidence. Do not claim1120tests rerun at493 or sum across heads into a same-head result. Legacy read-only router/capability fixture correction preserves assertions; actual current-purpose route tests remain on real router.",
+        "limits": "ActualSQL/normalHTTP/browser/fullCI/K3 pending."
+      }
+    }
+  },
+  "historical_checkpoint_0ac": {
+    "source_commit": "0acdf2fa89d22cd1a7ad63ec211d753e34a79e64",
+    "reference": "UYGULAMA_PAKETLERI_2026-11-26.json -> T2/WP8.execution.historical_checkpoint_0ac",
     "source_kinds": "32native/31paired/1staged official-invoice-import; no runtime acceptance",
     "verified_runtime_flows": 0
+  },
+  "historical_checkpoint_bea_to_4f570": {
+    "bea": {
+      "source_commit": "bea72195ab51e74886d94e5fa58b9eed1fb5ea9e",
+      "checks": "Full Release API0errors/0warnings204.7767966s. Finance2143PASS/1FAIL/0skip: missing staged ScreenId literal; original failure retained.33native/32paired/1staged at this head."
+    },
+    "2b949": {
+      "source_commit": "2b94940d761e300d11f2ee2806cb599261a39f54",
+      "checks": "Equivalent test-only ScreenId addition; Finance2144/2144PASS0skip16.8812602s. Integration-source compile failed with6 namespace-import errors; tests NOT_RUN at this head."
+    },
+    "4f570": {
+      "source_commit": "4f5702e5ee2ae72bf2563beb8a7558f86d924743",
+      "checks": "Two test-source using corrections only; complete integration-source compile and controlled DecisionHost/registry/authority/SqlWrapper/C7/C8 batch741/741PASS0skip76.7236621s. Root independently parsed TRX;20C8 and51Flow30 host cases included741, not additional. Actual SQL sources compiled, NOT_RUN."
+    }
+  },
+  "native_flow32_33_prerequisite_checkpoint": {
+    "source_commit": "958ad65cd3853561ad180f70b234d74d5156fc07",
+    "scope": "Flow32 native guarded approval prerequisite203477131 and Flow33 guard9388aa085 plus real guarded DI/composition and inventory958ad65. Full Flow33 source peer and separate DI-only peer no open findings; not K3. Work purpose/typed receipt/full human projection not completed by these guards;33native/33paired/0staged unchanged.",
+    "checks": "Finance2168/2168PASS0skip16.7619333s. Finance.Contracts/Infrastructure/API sequential warm builds with BuildProjectReferences=false all0errors/0warnings5.3650881s/12.6599044s/25.8141878s; warm evidence distinct from d315 full Release API. Complete integration-source compiled and controlled Host741/741PASS0skip77.0553985s; root independently verified all TRX XML counters. SQL sources compiled only, actualSQL NOT_RUN.",
+    "sql": "Finance inventory358 source names; Flow32 8 and Flow33 9 real relational SQL source Facts NOT_RUN. Controlled1205/provider-aborted injection, ordered winner and real simultaneous-session Fact are distinct sources, none executed.",
+    "limits": "41packages/50references/64flows/runtime0 unchanged; all64 semantics NOT_VERIFIED/runtimeNOT_RUN. ActualSQL/normalHTTP/browser/fullCI/K3 pending."
   }
 }
