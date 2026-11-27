@@ -214,7 +214,7 @@ public sealed class InventoryCostWorkDecisionHostTests
         public Func<AccountingApiResult<AccountingInventoryCostProposalV1>,AccountingApiResult<AccountingInventoryCostProposalV1>>? AfterAnswer;
         public List<AccountingCommandRecord> Commands {get;}=[];
         public async Task<AccountingInventoryCostDecisionSourceV1?> ReadInventoryCostDecisionAsync(Guid id,AccountingInventoryCostKindV1 kind,long? version,Func<CancellationToken,Task> fence,CancellationToken token=default)
-        {await fence(token);BeforeRead?.Invoke(++Reads);await fence(token);return id!=Id||kind!=Original.Proposal.Kind?null:version is null?Current:version==Original.Proposal.Version?Original:null;}
+        {await fence(token);Reads++;BeforeRead?.Invoke(Reads);await fence(token);return id!=Id||kind!=Original.Proposal.Kind?null:version is null?Current:version==Original.Proposal.Version?Original:null;}
         public async Task<AccountingApiResult<AccountingInventoryCostProposalV1>> RunApprovalAsync(Func<bool,Task<AccountingApiResult<AccountingInventoryCostProposalV1>>> attempt,Func<CancellationToken,Task> fence,CancellationToken token=default)
         {try{await fence(token);var answer=await attempt(false);await fence(token);return AfterAnswer?.Invoke(answer)??answer;}catch(NormalJournalAuthorityDeniedException){return new(AccountingApiStatus.Denied,null,false,AccountingApiCodes.AuthorityDenied);}}
         public async Task<AccountingInventoryCostProposalV1> ApproveAsync(Guid id,AccountingInventoryCostKindV1 kind,long version,Guid actor,Func<CancellationToken,Task> fence,AccountingCommandMetadata metadata,CancellationToken token=default)
