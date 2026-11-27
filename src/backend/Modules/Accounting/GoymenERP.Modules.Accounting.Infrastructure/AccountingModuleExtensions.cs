@@ -113,6 +113,7 @@ public static class AccountingModuleExtensions
         services.AddScoped<IAccountingSourceInvoiceCancellationStoreV1, AccountingSourceInvoiceCancellationStoreV1>();
         services.AddScoped<IAccountingSourceInvoiceCancellationPortV1, AccountingSourceInvoiceCancellationServiceV1>();
         services.AddScoped<AccountingApiService>();
+        services.AddScoped<IAccountingPeriodDecisionReadV1>(provider => provider.GetRequiredService<AccountingApiService>());
         // WP-A3c: the narrow read view of the same authorized service, and the Accounting READ tools of the AI catalog.
         // Registration only makes them candidates of the default-deny catalog; Ai:AllowedTools stays empty.
         services.AddScoped<IAccountingOwnerReadV1>(provider => provider.GetRequiredService<AccountingApiService>());
