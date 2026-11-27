@@ -107,7 +107,7 @@ export const WORK_DECISION_TEXT = {
   scrapReadOnly: 'Bu bilgiler kaydedilen hurda talebine aittir. Onaylanan miktar stoktan çıkar; ret stok miktarını değiştirmez.',
   reversalProposal: 'Karar verilecek ters kayıt', reversalRequest: 'Ters kayıt önerisi', reversalOriginal: 'Orijinal tahsilat', reversalAbsent: 'Kayıtlı değil',
   reversalReadOnly: 'Bu bilgiler kayıtlı öneriye aittir. Onay ayrı ve bağlantılı bir karşı hareket oluşturur; orijinal kaydı değiştirmez. Ret için gerekçe zorunludur; onayda karar gerekçesi kaydedilmez.',
-  reversalRetained: 'Önceki kararınız aynı sürüm ve işlem anahtarıyla yeniden doğrulanıyor. Güncel öneri bilgileri bu isteğin yerine kullanılmıyor.',
+  reversalRetained: 'Önceki kararınız yeniden doğrulanıyor. Karar verdiğiniz sürüm korunuyor; güncel öneri bilgileri bu isteğin yerine kullanılmıyor.',
   reversalStatuses: { Pending: 'Karar bekliyor', Approved: 'Onaylandı', Rejected: 'Reddedildi' }, reversalBearers: { Company: 'Şirket', Customer: 'Müşteri' },
   reversalFields: {
     companyId: 'Şirket',
