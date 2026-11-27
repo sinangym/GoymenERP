@@ -2,7 +2,7 @@
 
 Bu katalog çalışan yeni fonksiyonların kabul listesi değildir. 50 kaynak/test giriş noktasıdır. Her kayıtta gerçek yol, sembol/satır, SHA-256, Git blob, karar ilişkisi, uyarlama sınırı ve yeni kullanım testi bulunur.
 
-**Başlangıç kaynağı:** `claude/tren-2` `c24706af4de4300d4a171eca11459098d87cd14f`; değişen referansların ayrı commit'leri JSON'dadır. 24 kaydın kaynak ve test blobları geçmiş başarılı CI ağacıyla aynıdır; 26 kayıt kaynak/test kanıtına sahiptir. Yerel fark testleri aşağıda belirtilir. Yeni kullanım için SQL, tarayıcı ve işletme kabulü yapılmadı.
+**Başlangıç kaynağı:** `claude/tren-2` `c24706af4de4300d4a171eca11459098d87cd14f`; değişen referansların ayrı commit'leri JSON'dadır. 23 kaydın kaynak ve test blobları geçmiş başarılı CI ağacıyla aynıdır; 27 kayıt kaynak/test kanıtına sahiptir. Yerel fark testleri aşağıda belirtilir. Yeni kullanım için SQL, tarayıcı ve işletme kabulü yapılmadı.
 
 Makine kaynağı: [REFERANS_KOD_KATALOGU_v1.json](REFERANS_KOD_KATALOGU_v1.json). Doğrulayıcı: `python3 -I -S -B tools/verify_delivery_reference_catalog.py`. Windows’ta kurulu Python yürütücüsü kullanılabilir.
 
