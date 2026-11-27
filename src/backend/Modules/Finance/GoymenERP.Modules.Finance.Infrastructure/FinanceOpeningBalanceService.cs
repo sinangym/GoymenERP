@@ -37,7 +37,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// Treasury movements participate in the FNS-D102 internal ledger. Not built here:
 /// an open item for a party opening, cheque/note, loan and DBS openings.
 /// </summary>
-public sealed class FinanceOpeningBalanceService(
+public sealed partial class FinanceOpeningBalanceService(
     FinanceDbContext dbContext,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
@@ -186,6 +186,11 @@ public sealed class FinanceOpeningBalanceService(
         ArgumentNullException.ThrowIfNull(metadata);
         if (await StartAsync(context, metadata, FinanceAction.ApproveOpeningBalance, cancellationToken)
             is { } denied) return denied;
+        if (ownedOpeningDecision is { } owned)
+        {
+            if (owned.Command != ApproveCommand) throw new InvalidOperationException("Opening decision ownership is for another command.");
+            return await ApproveTreasuryCoreAsync(context, metadata, request, cancellationToken);
+        }
         return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
             () => ApproveTreasuryCoreAsync(context, metadata, request, cancellationToken),
             async () => await FenceAsync(context, FinanceAction.ApproveOpeningBalance, cancellationToken)
@@ -215,6 +220,9 @@ public sealed class FinanceOpeningBalanceService(
         {
             return prior;
         }
+
+        if (ownedOpeningDecision?.ReplayOnly == true)
+            return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
 
         if (IdentityRefusal(context, request.OpeningBalanceId, request.ExpectedVersion) is { } malformed)
         {
@@ -254,6 +262,9 @@ public sealed class FinanceOpeningBalanceService(
         {
             return prior;
         }
+
+        if (ownedOpeningDecision?.ReplayOnly == true)
+            return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
 
         if (IdentityRefusal(context, request.OpeningBalanceId, request.ExpectedVersion) is { } malformed)
         {
@@ -381,6 +392,11 @@ public sealed class FinanceOpeningBalanceService(
         ArgumentNullException.ThrowIfNull(metadata);
         if (await StartAsync(context, metadata, FinanceAction.ApproveOpeningBalance, cancellationToken)
             is { } denied) return denied;
+        if (ownedOpeningDecision is { } owned)
+        {
+            if (owned.Command != ApproveReversalCommand) throw new InvalidOperationException("Opening decision ownership is for another command.");
+            return await ApproveReversalTreasuryCoreAsync(context, metadata, request, cancellationToken);
+        }
         return await FinanceTreasuryTransaction.ExecuteAsync(dbContext,
             () => ApproveReversalTreasuryCoreAsync(context, metadata, request, cancellationToken),
             async () => await FenceAsync(context, FinanceAction.ApproveOpeningBalance, cancellationToken)
@@ -411,6 +427,9 @@ public sealed class FinanceOpeningBalanceService(
         {
             return prior;
         }
+
+        if (ownedOpeningDecision?.ReplayOnly == true)
+            return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
 
         if (IdentityRefusal(context, request.OpeningBalanceId, request.ExpectedVersion) is { } malformed)
         {
@@ -450,6 +469,9 @@ public sealed class FinanceOpeningBalanceService(
         {
             return prior;
         }
+
+        if (ownedOpeningDecision?.ReplayOnly == true)
+            return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
 
         if (IdentityRefusal(context, request.OpeningBalanceId, request.ExpectedVersion) is { } malformed)
         {
@@ -709,6 +731,11 @@ public sealed class FinanceOpeningBalanceService(
 
         var row = await dbContext.OpeningBalances
             .SingleOrDefaultAsync(row => row.Id == openingBalanceId, cancellationToken);
+        if (ownedOpeningDecision is not null && await FenceAsync(context, action, cancellationToken) is { } afterOpening)
+        {
+            dbContext.ChangeTracker.Clear();
+            return afterOpening;
+        }
         var reversal = row is null
             ? null
             : await dbContext.OpeningBalanceReversals
@@ -1068,6 +1095,8 @@ public sealed class FinanceOpeningBalanceService(
         var keyHash = FinanceCommandKeys.Hash(metadata.IdempotencyKey);
         var prior = await dbContext.OpeningBalanceCommands.AsNoTracking()
             .SingleOrDefaultAsync(row => row.CommandName == command && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        if (ownedOpeningDecision is not null && await FenceAsync(context, action, cancellationToken) is { } afterPrior)
+            return afterPrior;
         if (prior is null)
         {
             return null;
@@ -1159,6 +1188,12 @@ public sealed class FinanceOpeningBalanceService(
         {
             dbContext.ChangeTracker.Clear();
             return fenced;
+        }
+
+        if (ownedOpeningDecision is not null)
+        {
+            await SaveOwnedOpeningDecisionAsync(context, command, cancellationToken);
+            return result;
         }
 
         try

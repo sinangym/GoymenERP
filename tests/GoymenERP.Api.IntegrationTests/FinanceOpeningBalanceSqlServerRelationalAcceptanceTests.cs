@@ -23,7 +23,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// outcome. Every identity, amount and currency below is SENTETIK / NOT_ENV test data. An opening balance moves no money.
 /// </para>
 /// </summary>
-public sealed class FinanceOpeningBalanceSqlServerRelationalAcceptanceTests
+public sealed partial class FinanceOpeningBalanceSqlServerRelationalAcceptanceTests
 {
     private const string Specialist = "SENTETIK-specialist";
     private const string Manager = "SENTETIK-manager";
