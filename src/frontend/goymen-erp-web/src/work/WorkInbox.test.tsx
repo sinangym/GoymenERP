@@ -736,3 +736,23 @@ it.each([
  await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
  expect(api.inboxReads()).toHaveLength(0);expect(vi.mocked(globalThis.fetch).mock.calls.some(([url])=>String(url).includes(`/work/decisions/${kind}/`))).toBe(false)
 })
+
+
+it('opens the normal-journal standalone Work card with its exact capability and native source references',async()=>{
+ const kind='accounting.normal-journal-draft.v1',capability='accounting.normal-journal-draft.work-decision',permission='accounting.normal-journal.draft.approve'
+ const link=`/onaylarim/${kind}/${LEGACY_ID}`
+ const item={...limitItem,module:'accounting',kind,itemId:LEGACY_ID,link,awaitingPermission:permission,ruleVersion:RV(kind),explanation:{
+  rules:[{ruleCode:'accounting.normal-journal-draft-approval-required',threshold:null,actual:null,deviation:null,unit:null}],
+  references:[{role:'source-record',recordId:PAYMENT_ID,label:'SENTETIK unchanged source',link:null},{role:'currency',recordId:LIMIT_ID,label:'SENTETIK currency',link:null}]}}
+ const api=installFetch({granted:[capability],inbox:()=>json(inbox({items:[item],sources:[src('accounting',kind,permission,'BusinessDays')]}))})
+ await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-item');const card=cardOf(kind)
+ expect(within(card).getByRole('link').getAttribute('href')).toBe(link)
+ await userEvent.setup().click(within(card).getByRole('button',{name:T.explanationToggle}))
+ expect(within(card).getByText('SENTETIK unchanged source')).toBeTruthy();expect(within(card).getAllByRole('link')).toHaveLength(1);expect(api.inboxReads()).toHaveLength(1)
+})
+it.each(['accounting.normal-journal-drafts.approve','accounting.normal-journal-drafts.detail'])('does not read the standalone normal-journal decision with only legacy capability %s',async capability=>{
+ const kind='accounting.normal-journal-draft.v1',api=installFetch({granted:[capability]})
+ await renderAt(`/onaylarim/${kind}/${LEGACY_ID}`)
+ await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+ expect(api.inboxReads()).toHaveLength(0);expect(vi.mocked(globalThis.fetch).mock.calls.some(([url])=>String(url).includes(`/work/decisions/${kind}/`))).toBe(false)
+})

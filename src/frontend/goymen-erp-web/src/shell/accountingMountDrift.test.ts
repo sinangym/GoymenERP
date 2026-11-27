@@ -16,7 +16,10 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { matchPath } from 'react-router'
+import { matchPath, matchRoutes } from 'react-router'
+import { workRoutes } from '../work/workRoutes'
+import { shellRoutes } from './router'
+import { WORK_INBOX_KINDS } from '../work/workInboxKinds'
 import { CAPABILITY, CAPABILITY_ROUTE, CAPABILITY_NAV_LABEL } from './capabilities'
 import { ACCOUNTING_CAPABILITY, ACCOUNTING_ROUTE, journalDetailPath } from '../accounting/capabilities'
 
@@ -41,6 +44,7 @@ const ROUTED = [
   [CAPABILITY.accountingNormalDraftCreate, ACCOUNTING_CAPABILITY.normalDraftCreate, ACCOUNTING_ROUTE.normalDraftCreate],
   [CAPABILITY.accountingNormalDraftDetail, ACCOUNTING_CAPABILITY.normalDraftDetail, ACCOUNTING_ROUTE.normalDraftDetail],
   [CAPABILITY.accountingNormalDraftApprove, ACCOUNTING_CAPABILITY.normalDraftApprove, ACCOUNTING_ROUTE.normalDraftApprove],
+  [CAPABILITY.accountingNormalDraftWorkDecision, ACCOUNTING_CAPABILITY.normalDraftWorkDecision, ACCOUNTING_ROUTE.normalDraftWorkDecision],
   [CAPABILITY.accountingPostingQueues, ACCOUNTING_CAPABILITY.postingQueues, ACCOUNTING_ROUTE.postingQueues],
   [CAPABILITY.accountingTrialBalance, ACCOUNTING_CAPABILITY.trialBalance, ACCOUNTING_ROUTE.trialBalance],
 ] as const
@@ -93,4 +97,16 @@ describe('shell ↔ Accounting lane capability ids', () => {
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingNormalDraftApprove]).toBe('')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.accountingTrialBalance]).toBe('')
   })
+})
+
+
+it('publishes the exact standalone normal-draft decision without changing native approval and read routes',()=>{
+ const capability=CAPABILITY.accountingNormalDraftWorkDecision,path='/onaylarim/accounting.normal-journal-draft.v1/:approvalId'
+ expect(capability).toBe('accounting.normal-journal-draft.work-decision');expect(CAPABILITY_ROUTE[capability]).toBe(path);expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
+ expect(WORK_INBOX_KINDS.filter(row=>row.kind==='accounting.normal-journal-draft.v1')).toEqual([{kind:'accounting.normal-journal-draft.v1',module:'accounting',capability}])
+ const mounted=workRoutes.filter(route=>route.path===path.slice(1));expect(mounted).toHaveLength(1)
+ expect(matchRoutes(shellRoutes,path.replace(':approvalId','cccccccc-0000-4000-8000-0000000000f1'))?.at(-1)?.route).toBe(mounted[0])
+ expect(ACCOUNTING_CAPABILITY.normalDraftApprove).toBe('accounting.normal-journal-drafts.approve')
+ expect(ACCOUNTING_ROUTE.normalDraftApprove).toBe('/muhasebe/normal-fis-onay/:draftId')
+ expect(ACCOUNTING_ROUTE.normalDraftDetail).toBe('/muhasebe/normal-fisler/:draftId')
 })

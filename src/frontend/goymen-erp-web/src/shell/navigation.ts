@@ -436,6 +436,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'accounting.normal-journal-drafts.create': '',
   'accounting.normal-journal-drafts.detail': '',
   'accounting.normal-journal-drafts.approve': '',
+  'accounting.normal-journal-draft.work-decision': '',
   'logistics.instructions.list': 'Yükleme Talimatları',
   'logistics.subcontract-deliveries.list': 'Fason teslimler',
   'logistics.subcontract-deliveries.create': '',

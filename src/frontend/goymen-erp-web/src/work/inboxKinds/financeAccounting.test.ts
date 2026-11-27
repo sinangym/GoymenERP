@@ -103,3 +103,10 @@ it.each([
  expect(FINANCE_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'finance',capability}])
  expect(inboxPermissionText(permission)).not.toBe(permission)
 })
+
+
+it('maps one normal-journal kind to the standalone purpose and keeps native permission words',()=>{
+ expect(ACCOUNTING_INBOX_KINDS.filter(row=>row.kind==='accounting.normal-journal-draft.v1')).toEqual([{kind:'accounting.normal-journal-draft.v1',module:'accounting',capability:'accounting.normal-journal-draft.work-decision'}])
+ expect(inboxPermissionText('accounting.normal-journal.draft.approve')).not.toBe('accounting.normal-journal.draft.approve')
+ expect(inboxRuleText('accounting.normal-journal-draft-approval-required')).not.toBeNull()
+})

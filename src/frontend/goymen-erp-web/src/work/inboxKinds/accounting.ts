@@ -6,7 +6,7 @@ export const ACCOUNTING_INBOX_KINDS: readonly WorkInboxKind[] = [
   { kind: 'accounting.period-opening.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.periodsApprove },
   // ROL-D12: the reopening approval has its own name.
   { kind: 'accounting.period-reopening.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.periodsReopen },
-  { kind: 'accounting.normal-journal-draft.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.normalDraftApprove },
+  { kind: 'accounting.normal-journal-draft.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.normalDraftWorkDecision },
   { kind: 'accounting.journal-reversal.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.journalReversalApprove },
   { kind: 'accounting.manufacturing-cost-difference.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.costDifferenceApprove },
   { kind: 'accounting.invoice-line-cogs-correction.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.invoiceLineCogsApprove },

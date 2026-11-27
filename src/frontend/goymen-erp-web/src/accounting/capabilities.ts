@@ -49,6 +49,7 @@ export const ACCOUNTING_CAPABILITY = {
   normalDraftDetail: 'accounting.normal-journal-drafts.detail',
   /** ACC-V1 — read and approve a company draft with the narrow approval permission. */
   normalDraftApprove: 'accounting.normal-journal-drafts.approve',
+  normalDraftWorkDecision: 'accounting.normal-journal-draft.work-decision',
   /** M-01 Muhasebe Kontrol Merkezi — the posting queues, read-only. */
   postingQueues: 'accounting.posting-queues',
   /** M-06 Mizan — posted journal aggregates, read-only. */
@@ -84,6 +85,7 @@ export const ACCOUNTING_ROUTE = {
   normalDraftCreate: '/muhasebe/normal-fisler/yeni',
   normalDraftDetail: '/muhasebe/normal-fisler/:draftId',
   normalDraftApprove: '/muhasebe/normal-fis-onay/:draftId',
+  normalDraftWorkDecision: '/onaylarim/accounting.normal-journal-draft.v1/:approvalId',
   postingQueues: '/muhasebe/kontrol',
   trialBalance: '/muhasebe/mizan',
   accountPlan: '/muhasebe/hesap-plani',

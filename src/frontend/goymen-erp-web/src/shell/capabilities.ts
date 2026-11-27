@@ -323,6 +323,7 @@ export const CAPABILITY = {
   accountingNormalDraftCreate: 'accounting.normal-journal-drafts.create',
   accountingNormalDraftDetail: 'accounting.normal-journal-drafts.detail',
   accountingNormalDraftApprove: 'accounting.normal-journal-drafts.approve',
+  accountingNormalDraftWorkDecision: 'accounting.normal-journal-draft.work-decision',
   /** M-01 Muhasebe Kontrol Merkezi — the posting queues, read-only. Route `/muhasebe/kontrol`. */
   accountingPostingQueues: 'accounting.posting-queues',
   /** M-06 Mizan — posted-journal aggregates, read-only. Route `/muhasebe/mizan`. */
@@ -629,6 +630,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.accountingNormalDraftCreate]: '/muhasebe/normal-fisler/yeni',
   [CAPABILITY.accountingNormalDraftDetail]: '/muhasebe/normal-fisler/:draftId',
   [CAPABILITY.accountingNormalDraftApprove]: '/muhasebe/normal-fis-onay/:draftId',
+  [CAPABILITY.accountingNormalDraftWorkDecision]: '/onaylarim/accounting.normal-journal-draft.v1/:approvalId',
   [CAPABILITY.accountingPostingQueues]: '/muhasebe/kontrol',
   [CAPABILITY.accountingTrialBalance]: '/muhasebe/mizan',
   [CAPABILITY.inventoryStockScrapWorkDecision]: '/onaylarim/inventory.stock-scrap.v1/:approvalId',
