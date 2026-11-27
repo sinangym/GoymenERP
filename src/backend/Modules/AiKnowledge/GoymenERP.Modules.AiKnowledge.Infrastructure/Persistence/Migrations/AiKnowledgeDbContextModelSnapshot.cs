@@ -208,6 +208,89 @@ namespace GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiFeedbackEventRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AnswerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<long?>("PriorVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ReasonCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("RetainUntilUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("CompanyId", "AnswerId", "Version");
+
+                    b.HasIndex("CompanyId", "RetainUntilUtc");
+
+                    b.HasIndex("CompanyId", "AnswerId", "PriorVersion");
+
+                    b.HasIndex("CompanyId", "CreatedAtUtc", "AnswerId", "Version");
+
+                    b.ToTable("FeedbackEvents", "ai", t =>
+                        {
+                            t.HasCheckConstraint("CK_AiFeedbackEvents_Event", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [AnswerId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0 AND (([Version] = 1 AND [PriorVersion] IS NULL) OR ([Version] > 1 AND [PriorVersion] IS NOT NULL AND [PriorVersion] = [Version] - 1)) AND [Kind] BETWEEN 1 AND 4 AND ([Kind] <> 4 OR [PriorVersion] IS NOT NULL) AND (([Kind] = 1 AND [ReasonCode] IS NULL) OR ([ReasonCode] IS NOT NULL AND DATALENGTH([ReasonCode]) = DATALENGTH(RTRIM([ReasonCode])) AND [ReasonCode] COLLATE Latin1_General_100_BIN2 IN ('incorrect_information','incorrect_or_missing_source','incomplete_answer','outdated_information','other'))) AND DATEPART(TZOFFSET,[CreatedAtUtc]) = 0 AND DATEPART(TZOFFSET,[RetainUntilUtc]) = 0 AND [RetainUntilUtc] = DATEADD(day,90,[CreatedAtUtc])");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiFeedbackIdentityRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AnswerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("ActorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("IdempotencyKeySha256")
+                        .IsRequired()
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .IsFixedLength();
+
+                    b.Property<string>("RequestSha256")
+                        .IsRequired()
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .IsFixedLength();
+
+                    b.HasKey("CompanyId", "AnswerId", "Version");
+
+                    b.HasIndex("CompanyId", "ActorId", "IdempotencyKeySha256")
+                        .IsUnique();
+
+                    b.ToTable("FeedbackIdentities", "ai", t =>
+                        {
+                            t.HasCheckConstraint("CK_AiFeedbackIdentities_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [AnswerId] <> '00000000-0000-0000-0000-000000000000' AND [Version] > 0 AND [ActorId] <> '00000000-0000-0000-0000-000000000000' AND LEN(LTRIM(RTRIM([CorrelationId]))) > 0 AND DATALENGTH([IdempotencyKeySha256]) = 64 AND [IdempotencyKeySha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%' AND DATALENGTH([RequestSha256]) = 64 AND [RequestSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%'");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiKnowledgeApprovalRow", b =>
                 {
                     b.Property<Guid>("Id")
@@ -554,6 +637,29 @@ namespace GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiKnowledgeCompanyReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiFeedbackEventRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiAnswerReceiptRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "AnswerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiFeedbackEventRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "AnswerId", "PriorVersion")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiFeedbackIdentityRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiFeedbackEventRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "AnswerId", "Version")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

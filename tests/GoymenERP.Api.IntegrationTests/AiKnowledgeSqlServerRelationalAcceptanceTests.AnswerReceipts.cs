@@ -145,8 +145,9 @@ public sealed partial class AiKnowledgeSqlServerRelationalAcceptanceTests
         {
             await using var db = Db(connection, TestCompanyIds.CompanyA);
             var migrations = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.EndsWith("_AddAiAnswerReceipts", migrations[^1]);
-            var previous = migrations[^2]; var migrator = db.GetService<IMigrator>();
+            var receiptMigration = Assert.Single(migrations, id => id.EndsWith("_AddAiAnswerReceipts", StringComparison.Ordinal));
+            var receiptIndex = Array.IndexOf(migrations, receiptMigration); Assert.True(receiptIndex > 0);
+            var previous = migrations[receiptIndex - 1]; var migrator = db.GetService<IMigrator>();
             await migrator.MigrateAsync(previous);
             await migrator.MigrateAsync();
             var receipt = AnswerReceipt();

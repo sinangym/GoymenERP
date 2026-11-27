@@ -95,7 +95,7 @@ public sealed class AiAnswerReceiptTests
         Assert.Equal(AiKnowledgeDbContext.AnswerIdentityCheck, Assert.Single(identity.GetCheckConstraints()).Sql);
         Assert.Contains(receipt.GetIndexes(), index => index.Properties.Select(x => x.Name).SequenceEqual(["CompanyId", "RetainUntilUtc", "AnswerId"]));
         Assert.False(db.Database.HasPendingModelChanges());
-        Assert.EndsWith("_AddAiAnswerReceipts", db.Database.GetMigrations().Last());
+        Assert.Single(db.Database.GetMigrations(), id => id.EndsWith("_AddAiAnswerReceipts", StringComparison.Ordinal));
         var migration = new AddAiAnswerReceipts();
         Assert.Equal(new[] { "AnswerReceipts", "AnswerReceiptIdentities" }, migration.UpOperations.OfType<CreateTableOperation>().Select(x => x.Name));
         Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);

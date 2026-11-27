@@ -7,9 +7,11 @@ using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.AiKnowledge.Domain;
 using GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence;
+using GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.Migrations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.Options;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -73,6 +75,13 @@ public sealed class AiFeedbackTests
         foreach (var name in new[] { "ActorId", "CorrelationId", "Text", "Question", "AnswerText", "CorrectionText", "IdempotencyKey", "Amount", "Name" })
             Assert.Null(events.FindProperty(name));
         Assert.NotNull(identities.FindProperty("ActorId")); Assert.Null(identities.FindProperty("Text"));
+        Assert.False(db.Database.HasPendingModelChanges());
+        Assert.EndsWith("_AddAiAnswerFeedback", db.Database.GetMigrations().Last());
+        var migration = new AddAiAnswerFeedback();
+        Assert.Equal(new[] { "FeedbackEvents", "FeedbackIdentities" }, migration.UpOperations.OfType<CreateTableOperation>().Select(x => x.Name));
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        Assert.Contains("THROW 52313", Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
     }
     [Theory]
     [InlineData("0", "Accepted", null, true)] [InlineData("0", "Rejected", "other", true)]
