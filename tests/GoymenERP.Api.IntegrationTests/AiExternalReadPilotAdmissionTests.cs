@@ -4,7 +4,6 @@ using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
-using GoymenERP.BuildingBlocks.Security.Events;
 using Microsoft.Extensions.Options;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -57,10 +56,14 @@ public sealed class AiExternalReadPilotAdmissionTests
     }
 
     [Fact]
-    public async Task Audit_failure_closes_even_when_writer_says_fail_open()
+    public async Task Absent_or_unrecorded_admission_audit_closes_without_dispatch()
     {
         var h = new Harness(); h.Audit.Recorded = false;
         Assert.False(await h.Check()); Assert.Equal(0, h.Tool.Reads);
+        h.Audit.Recorded = true; h.Audit.IsAvailable = false;
+        Assert.False(await h.Check()); Assert.Equal(1, h.Audit.Calls);
+        var missing = new Harness(auditConfigured: false);
+        Assert.False(await missing.Check()); Assert.Equal(0, missing.Policy.Reads); Assert.Equal(0, missing.Audit.Calls);
     }
 
     [Fact]
@@ -69,9 +72,36 @@ public sealed class AiExternalReadPilotAdmissionTests
         var h = new Harness();
         Assert.True(await h.Check()); Assert.True(await h.Check(release: true));
         Assert.Equal(0, h.Tool.Reads); Assert.Equal(2, h.Audit.Calls);
-        Assert.Equal(AiDataClassV1.Internal, h.Audit.Last!.AiDataClass);
-        Assert.Empty(SecurityEventV1Validator.Validate(h.Audit.Last));
-        Assert.Equal(SecurityEventPhasesV1.Completed, h.Audit.Last.Phase);
+        Assert.NotNull(h.Audit.Last); Assert.True(h.Audit.Last.ReleaseCheck);
+        Assert.Equal("test.pilot.v1", h.Audit.Last.ToolId);
+        // This port receives admission metadata only, never an AiToolCalled envelope or a data payload.
+        Assert.Equal(AiDataClassV1.Internal, h.Tool.Descriptor.DataClass);
+    }
+
+    [Fact]
+    public async Task Pre_cancelled_or_authority_await_cancelled_checks_never_record_admission()
+    {
+        var h = new Harness(); using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => h.Check(token: cancelled.Token));
+        Assert.Equal(0, h.Policy.Reads); Assert.Equal(0, h.Audit.Calls);
+        using var duringAuthority = new CancellationTokenSource(); h.Authority.OnRead = duringAuthority.Cancel;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => h.Check(token: duringAuthority.Token));
+        Assert.Equal(0, h.Audit.Calls); Assert.Equal(0, h.Tool.Reads);
+    }
+
+    [Fact]
+    public async Task Caller_mutating_policy_arrays_during_authority_does_not_rewrite_the_audited_snapshot()
+    {
+        var h = new Harness(); var original = h.Policy.Value!;
+        var digest = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(original)));
+        h.Authority.OnRead = () =>
+        {
+            h.Authority.OnRead = null;
+            ((AiExternalReadPilotToolV1[])original.Tools)[0] = original.Tools[0] with { NonSensitiveDataApproved = false };
+        };
+        Assert.False(await h.Check());
+        Assert.NotNull(h.Audit.Last); Assert.Equal(digest, h.Audit.Last.PolicyDigest);
+        Assert.Equal(0, h.Tool.Reads);
     }
 
     private sealed class Harness
@@ -81,7 +111,7 @@ public sealed class AiExternalReadPilotAdmissionTests
         public Session Session { get; } = new(); public Authority Authority { get; } = new(); public Audit Audit { get; } = new();
         private AiExternalReadPilotAdmissionV1 Service { get; }
         private AiServerContextV1 Context { get; }
-        public Harness(AiToolRiskClassV1 risk = AiToolRiskClassV1.Read, AiDataClassV1 dataClass = AiDataClassV1.Internal)
+        public Harness(AiToolRiskClassV1 risk = AiToolRiskClassV1.Read, AiDataClassV1 dataClass = AiDataClassV1.Internal, bool auditConfigured = true)
         {
             Tool = new(risk, dataClass);
             Tool[] tools = [Tool, new(AiToolRiskClassV1.Read, AiDataClassV1.Internal, "test.other-one.v1"),
@@ -92,9 +122,9 @@ public sealed class AiExternalReadPilotAdmissionTests
                 tools.Select(x => new AiExternalReadPilotToolV1(x.Descriptor.ToolId, "1", AiToolDescriptionPinV1.Compute(x.Descriptor),
                     x.Descriptor.Contract.FieldPolicy, true, [new("count", AiDataClassV1.Internal, AiSensitiveDataTypeV1.None)])).ToArray());
             Context = new(Company.Id, User.Actor, Session.Value!, "scope", "authority", "SENTETIK-correlation", null, null, null);
-            Service = new(new AiToolCatalog(tools, options), Policy, Company, User, Session, Authority, Audit, TimeProvider.System);
+            Service = new(new AiToolCatalog(tools, options), Policy, Company, User, Session, Authority, auditConfigured ? Audit : null);
         }
-        public Task<bool> Check(bool release = false) => Service.CheckAsync(Context, Tool.Descriptor.ToolId, "1", release);
+        public Task<bool> Check(bool release = false, CancellationToken token = default) => Service.CheckAsync(Context, Tool.Descriptor.ToolId, "1", release, token);
     }
     private sealed class Tool : IAiOwnerReadToolV1
     {
@@ -108,8 +138,9 @@ public sealed class AiExternalReadPilotAdmissionTests
     }
     private sealed class Policy : IAiExternalReadPilotPolicyV1
     {
-        public AiExternalReadPilotPolicyV1? Value;
-        public Task<AiExternalReadPilotPolicyV1?> ReadApprovedAsync(Guid companyId, string actorId, CancellationToken cancellationToken) => Task.FromResult(Value);
+        public AiExternalReadPilotPolicyV1? Value; public int Reads;
+        public Task<AiExternalReadPilotPolicyV1?> ReadApprovedAsync(Guid companyId, string actorId, CancellationToken cancellationToken)
+        { Reads++; return Task.FromResult(Value); }
     }
     private sealed class Company : ICompanyContext
     { public Guid Id = Guid.NewGuid(); public bool IsResolved => true; public Guid CompanyId => Id; public void Set(Guid id) => Id = id; }
@@ -120,16 +151,15 @@ public sealed class AiExternalReadPilotAdmissionTests
     { public string? Value = "SENTETIK-session"; public Task<string?> ResolveAsync(CancellationToken cancellationToken = default) => Task.FromResult(Value); }
     private sealed class Authority : IErpAuthorityRevalidationService
     {
-        public bool Allowed = true;
-        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new PermissionScope(Allowed, true, new HashSet<string>(), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
+        public bool Allowed = true; public Action? OnRead;
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default)
+        { OnRead?.Invoke(); return Task.FromResult(new PermissionScope(Allowed, true, new HashSet<string>(), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())); }
     }
-    private sealed class Audit : ISecurityEventWriterV1
+    private sealed class Audit : IAiExternalReadPilotAdmissionAuditV1
     {
-        public bool Recorded = true; public int Calls; public Action? AfterWrite; public SecurityEventV1? Last;
-        public Task<SecurityEventWriteResultV1> WriteAsync(SecurityEventV1 securityEvent, CancellationToken cancellationToken = default)
-        { Calls++; Last = securityEvent; AfterWrite?.Invoke(); return Task.FromResult(Recorded
-            ? SecurityEventWriteResultV1.Written(SecurityEventWriteFailureMode.FailOpenWithAlarm)
-            : SecurityEventWriteResultV1.NotWritten(SecurityEventWriteFailureMode.FailOpenWithAlarm, SecurityEventWriteFailureKindsV1.StoreUnavailable)); }
+        public bool IsAvailable { get; set; } = true;
+        public bool Recorded = true; public int Calls; public Action? AfterWrite; public AiExternalReadPilotAuditV1? Last;
+        public Task<bool> RecordAdmissionAsync(AiExternalReadPilotAuditV1 metadata, CancellationToken cancellationToken)
+        { Calls++; Last = metadata; AfterWrite?.Invoke(); return Task.FromResult(Recorded); }
     }
 }

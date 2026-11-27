@@ -16,3 +16,17 @@ public interface IAiExternalReadPilotPolicyV1
 {
     Task<AiExternalReadPilotPolicyV1?> ReadApprovedAsync(Guid companyId, string actorId, CancellationToken cancellationToken);
 }
+
+// Metadata-only audit request, NOT AiToolCalled and not proof that a tool or external release ran.
+public sealed record AiExternalReadPilotAuditV1(Guid CompanyId, string ActorId, string SessionId,
+    string CorrelationId, string PolicyId, int PolicyVersion, string PolicyDigest,
+    string ToolId, string ToolVersion, bool ReleaseCheck);
+
+/// <summary>Unconfigured adapter to the existing approved audit owner, never a second store.
+/// Its owner must record an appropriate approved admission semantic and return true only when actually recorded.
+/// No such semantic/implementation is introduced here. Real dispatch retains its own native tool-call audit.</summary>
+public interface IAiExternalReadPilotAdmissionAuditV1
+{
+    bool IsAvailable { get; }
+    Task<bool> RecordAdmissionAsync(AiExternalReadPilotAuditV1 metadata, CancellationToken cancellationToken);
+}
