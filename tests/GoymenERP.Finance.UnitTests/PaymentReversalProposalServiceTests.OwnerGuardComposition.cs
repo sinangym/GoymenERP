@@ -44,7 +44,7 @@ public sealed partial class PaymentReversalProposalServiceTests
         Assert.IsNotType<FinanceCreditLimitServiceV1>(owner); Assert.Null(scope.ServiceProvider.GetService<FinanceCreditLimitServiceV1>());
         Assert.Same(owner, scope.ServiceProvider.GetRequiredService<IFinanceCreditLimitServiceV1>());
         var db = scope.ServiceProvider.GetRequiredService<FinanceDbContext>();
-        var caller = new FinanceCreditLimitRow { Id = Guid.NewGuid(), CompanyId = Company, Version = 1 };
+        var caller = new FinanceCreditLimitRow { Id = Guid.NewGuid(), CompanyId = Company, Version = 1, AmountText = "0", SourceJson = "{}", ProposedBy = "SENTETIK caller" };
         db.CreditLimits.Add(caller);
         var writer = OwnerGuardCompositionPendingAudit(scope.ServiceProvider, caller.Id);
         var result = await owner.DecideAsync(new(Company, "checker", "credit-limit-di", null), Key("credit-limit-di"), new(caller.Id, "1", true, null), default);
@@ -60,12 +60,12 @@ public sealed partial class PaymentReversalProposalServiceTests
     {
         // Existing actual module factories, not substituted native owners/writers. The relational provider is configured
         // but never opened: pending caller work must refuse before any SQL/owner read. No SQL-success acceptance claim.
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        var configuration = new OwnerGuardConfiguration(string.Empty, new Dictionary<string, string?>
         {
             ["DB_PROVIDER"] = "SqlServer", ["DB_CONNECTION_STRING"] = "Server=unused.invalid;Database=unused;Connect Timeout=1;",
             ["Audit:RefusedAttempts:Retention:Period"] = "P2Y", ["Audit:RefusedAttempts:Retention:PolicyRef"] = "SENTETIK-test-only",
             ["Audit:RefusedAttempts:Retention:AutoDisposalEnabled"] = "false", ["Audit:RefusedAttempts:StandaloneWrite:Timeout"] = "00:00:05",
-        }).Build();
+        });
         var services = new ServiceCollection(); services.AddAuditModule(configuration); services.AddFinancePersistence(configuration); services.AddFinanceServices();
         Assert.Equal(ServiceLifetime.Scoped, Assert.Single(services, d => d.ServiceType == typeof(IFinanceOpeningBalanceService)).Lifetime);
         Assert.Equal(ServiceLifetime.Scoped, Assert.Single(services, d => d.ServiceType == typeof(IFinanceCreditLimitServiceV1)).Lifetime);
@@ -89,6 +89,18 @@ public sealed partial class PaymentReversalProposalServiceTests
             AuditAiInvolvement.None, null, "Web", null, null, "owner-di", null, "owner-di"));
         // Public writer observes this exact scoped collector; no Audit.Pending/internal access or fake pending flag.
         Assert.True(writer.HasPendingDrafts); return writer;
+    }
+    // Same flat section fixture as Audit.UnitTests.RefusedAttemptRecorderTests; only Abstractions is required.
+    private sealed class OwnerGuardConfiguration(string path, IReadOnlyDictionary<string, string?> values) : IConfigurationSection
+    {
+        public string? this[string key] { get => values.GetValueOrDefault(Combine(key)); set => throw new NotSupportedException(); }
+        public string Key => path.Split(':')[^1];
+        public string Path => path;
+        public string? Value { get => values.GetValueOrDefault(path); set => throw new NotSupportedException(); }
+        public IConfigurationSection GetSection(string key) => new OwnerGuardConfiguration(Combine(key), values);
+        public IEnumerable<IConfigurationSection> GetChildren() => [];
+        public Microsoft.Extensions.Primitives.IChangeToken GetReloadToken() => throw new NotSupportedException();
+        private string Combine(string key) => path.Length == 0 ? key : path + ":" + key;
     }
     private sealed class OwnerGuardCompositionPorts : IFinancePartyAccountPort, IFinanceCreditLenderPortV1
     {

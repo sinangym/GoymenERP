@@ -64,7 +64,7 @@ public sealed partial class FinanceCreditAccountSqlServerRelationalAcceptanceTes
             await using var scope = new LimitDecisionScope(run, missingWriter: kind == "missing-writer");
             using var ambient = kind == "ambient" ? new TransactionScope(TransactionScopeAsyncFlowOption.Enabled) : null;
             await using var borrowed = kind == "borrowed" ? await scope.Db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable) : null;
-            var caller = new FinanceCreditLimitRow { CompanyId = CompanyA, Id = Guid.NewGuid(), Version = 1 };
+            var caller = new FinanceCreditLimitRow { CompanyId = CompanyA, Id = Guid.NewGuid(), Version = 1, AmountText = "0", SourceJson = "{}", ProposedBy = "SENTETIK caller" };
             if (kind == "dirty") scope.Db.CreditLimits.Add(caller);
             if (kind == "pending") scope.Collector.Enqueue(LimitSafetyAudit(id));
             scope.Permission.Check = () =>

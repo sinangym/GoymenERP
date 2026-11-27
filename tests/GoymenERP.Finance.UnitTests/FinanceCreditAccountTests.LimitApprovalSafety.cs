@@ -22,7 +22,7 @@ public sealed partial class FinanceCreditAccountTests
         await using var run = new Run(); await using var db = run.Memory(CompanyA);
         var company = new LimitSafetyCompany(CompanyA); var user = new LimitSafetyUser(); var permission = new LimitSafetyPermission();
         var writer = new LimitEntryWriter { HasPendingDrafts = boundary == "pending" };
-        var caller = new FinanceCreditLimitRow { Id = Guid.NewGuid(), CompanyId = CompanyA, Version = 1 };
+        var caller = new FinanceCreditLimitRow { Id = Guid.NewGuid(), CompanyId = CompanyA, Version = 1, AmountText = "0", SourceJson = "{}", ProposedBy = "SENTETIK caller" };
         if (boundary == "dirty") db.CreditLimits.Add(caller);
         permission.AfterRead = () =>
         {
@@ -46,7 +46,7 @@ public sealed partial class FinanceCreditAccountTests
         await using var run = new Run(); await using var db = run.Memory(CompanyA);
         var company = new LimitSafetyCompany(CompanyA); var user = new LimitSafetyUser(); var permission = new LimitSafetyPermission();
         var writer = new LimitEntryWriter { HasPendingDrafts = true };
-        db.CreditLimits.Add(new() { Id = Guid.NewGuid(), CompanyId = CompanyA, Version = 1 });
+        db.CreditLimits.Add(new() { Id = Guid.NewGuid(), CompanyId = CompanyA, Version = 1, AmountText = "0", SourceJson = "{}", ProposedBy = "SENTETIK caller" });
         if (fault == "permission") permission.Decision = PermissionDecision.Denied;
         if (fault == "actor") user.Actor = Maker;
         if (fault == "company") company.Set(CompanyB);
@@ -65,7 +65,7 @@ public sealed partial class FinanceCreditAccountTests
         await using var run = new Run(); await using var db = run.Memory(CompanyA);
         var company = new LimitSafetyCompany(CompanyA); var user = new LimitSafetyUser(); var permission = new LimitSafetyPermission();
         var writer = new LimitEntryWriter { HasPendingDrafts = true };
-        var caller = new FinanceCreditLimitRow { Id = Guid.NewGuid(), CompanyId = CompanyA, Version = 1 }; db.CreditLimits.Add(caller);
+        var caller = new FinanceCreditLimitRow { Id = Guid.NewGuid(), CompanyId = CompanyA, Version = 1, AmountText = "0", SourceJson = "{}", ProposedBy = "SENTETIK caller" }; db.CreditLimits.Add(caller);
         var request = new CreditLimitDecisionV1(Guid.NewGuid(), "1", false, "SENTETIK ret");
         request = fault switch
         {
