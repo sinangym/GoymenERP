@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { CustomerReturnViewV1 } from "./customerReturnContract";
 import type { CustomerReturnDecisionController, CustomerReturnRequestController } from "./customerReturnApi";
 import { CustomerReturnPanel } from "./CustomerReturnPanel";
+import { customerReturnText as RETURN_TEXT } from './customerReturnText';
 
 const binding = "company-a:authority-1:instruction-1";
 const pendingReturn: CustomerReturnViewV1 = {
@@ -197,4 +198,20 @@ describe("CustomerReturnPanel", () => {
     expect(screen.queryByText("Ambalaj hasarı")).toBeNull();
     expect(screen.queryByRole("button")).toBeNull();
   });
+});
+
+it('keeps Piece pending without approval until retained actual weighing exists while rejection remains available', () => {
+  const submit = vi.fn();
+  const props = { ...baseProps(), visibility: { canRead: true, canRequest: false, canApprove: true, canReject: true },
+    weighingContext: { companyId: pendingReturn.companyId, salesOrderId: pendingReturn.sourceOrderId,
+      loadingInstructionId: pendingReturn.loadingInstructionId, loadingInstructionLineId: pendingReturn.loadingInstructionLineId,
+      binding, quantityUnit: 'Piece' as const },
+    decisionController: { state: { type: 'idle' as const }, submit, retrySameAttempt: vi.fn(), abandonUnknownAttempt: vi.fn() } };
+  const view = render(<CustomerReturnPanel {...props} />);
+  expect(screen.getByText(RETURN_TEXT.weighingPending)).toBeTruthy(); expect(screen.queryByRole('button', { name: 'Onayla' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Reddet' })).toBeTruthy();
+  const weighing = { weighingId: pendingReturn.customerReturnId, direction: 'GrossFirst' as const, firstWeighingKg: '1013.125', secondWeighingKg: '1000',
+    netKg: '13.125', recordedBy: 'SENTETIK operator', recordedAtUtc: '2026-11-27T08:00:00Z' };
+  view.rerender(<CustomerReturnPanel {...props} readState={{ type: 'ready', binding, returns: [{ ...pendingReturn, version: '2', weighing }] }} />);
+  expect(screen.getByRole('button', { name: 'Onayla' })).toBeTruthy(); expect(screen.getByRole('region', { name: RETURN_TEXT.weighingRetained }).querySelectorAll('dt')).toHaveLength(7);
 });

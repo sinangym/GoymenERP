@@ -7,6 +7,8 @@ import {
   type CustomerReturnReadState,
   type CustomerReturnRequestController,
 } from "./customerReturnApi";
+import type { CustomerReturnContext } from './customerReturnApi';
+import { CustomerReturnWeighing, CustomerReturnWeighingFacts } from './CustomerReturnWeighing';
 import { customerReturnText as text } from "./customerReturnText";
 
 export interface CustomerReturnVisibility {
@@ -34,6 +36,9 @@ export interface CustomerReturnPanelProps {
   decisionController?: CustomerReturnDecisionController;
   requestCompletionVisible?: boolean;
   decisionCompletionVisible?: boolean;
+  readonly weighingContext?: CustomerReturnContext;
+  readonly canRecordWeighing?: boolean;
+  readonly onWeighingRecorded?: () => void;
 }
 
 function statusLabel(status: CustomerReturnStatus): string {
@@ -75,6 +80,7 @@ export function CustomerReturnPanel({
   decisionController,
   requestCompletionVisible = false,
   decisionCompletionVisible = false,
+  weighingContext, canRecordWeighing = false, onWeighingRecorded,
 }: CustomerReturnPanelProps) {
   const [deliveryId, setDeliveryId] = useState(deliveryOptions[0]?.sourceDeliveryId ?? "");
   const [quantity, setQuantity] = useState("");
@@ -142,6 +148,9 @@ export function CustomerReturnPanel({
             <li key={customerReturn.customerReturnId}>
               <p>{customerReturn.quantity} - {statusLabel(customerReturn.status)}</p>
               <p>{customerReturn.reason}</p>
+              {customerReturn.weighing ? <CustomerReturnWeighingFacts value={customerReturn.weighing} /> : null}
+              {weighingContext?.quantityUnit === 'Piece' && customerReturn.status === 'Pending' && !customerReturn.weighing ? <p>{text.weighingPending}</p> : null}
+              {weighingContext && canRecordWeighing && onWeighingRecorded ? <CustomerReturnWeighing context={weighingContext} customerReturn={customerReturn} canRecord={canRecordWeighing} onRecorded={onWeighingRecorded} /> : null}
               {customerReturn.status === "Pending" && (visibility.canApprove || visibility.canReject) && decisionController ? (
                 <div>
                   <label>
@@ -154,7 +163,7 @@ export function CustomerReturnPanel({
                       }))}
                     />
                   </label>
-                  {visibility.canApprove ? (
+                  {visibility.canApprove && (weighingContext?.quantityUnit !== 'Piece' || customerReturn.weighing !== undefined) ? (
                     <button
                       type="button"
                       disabled={decisionLocked}

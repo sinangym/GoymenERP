@@ -7,12 +7,13 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { INSTRUCTION_DETAIL_TEXT as T, PROBLEM_CODE_TEXT } from './logisticsText'
+import { INSTRUCTION_DETAIL_TEXT as T, PROBLEM_CODE_TEXT, WEIGHING_TEXT } from './logisticsText'
+import { customerReturnText as RETURN_TEXT } from './customerReturnText'
 import { formatInstant } from './format'
 import { CUSTOMER_RETURN_CAPABILITY } from './customerReturnApi'
-import type { CustomerReturnResponseV1, CustomerReturnViewV1, RequestCustomerReturnV1 } from './customerReturnContract'
+import type { CustomerReturnResponseV1, CustomerReturnViewV1, RecordCustomerReturnWeighingV1, RequestCustomerReturnV1 } from './customerReturnContract'
 import {
   CANCELLED_INSTRUCTION,
   FORBIDDEN_MONEY_WORDS,
@@ -51,8 +52,10 @@ function loadAnswer(call: RecordedCall, isReplay = false): Response {
 }
 
 function installCustomerReturnScreen(capabilities: readonly string[], handlers: {
+  readonly piece?: boolean
   readonly onRead?: (fallback: CustomerReturnViewV1) => Response | Promise<Response>
   readonly onRequest?: (fallback: CustomerReturnViewV1, request: RequestCustomerReturnV1) => Response | Promise<Response>
+  readonly onWeighing?: (fallback: CustomerReturnViewV1, request: RecordCustomerReturnWeighingV1) => Response | Promise<Response>
 } = {}) {
   const companyId = '00000000-0000-4000-8000-000000000041'
   const instructionId = '00000000-0000-4000-8000-000000000042'
@@ -68,6 +71,7 @@ function installCustomerReturnScreen(capabilities: readonly string[], handlers: 
     delivered: '1',
     shipped: '1',
     shippedNotDelivered: '0',
+    ...(handlers.piece ? { loadedKg: '40', shippedKg: '40' } : {}),
   })
   const delivery = {
     shareId: '00000000-0000-4000-8000-000000000051',
@@ -92,7 +96,7 @@ function installCustomerReturnScreen(capabilities: readonly string[], handlers: 
     sourceOrderId,
     sourceOrderLineId,
     unitId,
-    quantity: '0.5',
+    quantity: handlers.piece ? '1' : '0.5',
     sourceDeliveredQuantity: '1',
     status: 'Pending',
     version: '1',
@@ -126,6 +130,13 @@ function installCustomerReturnScreen(capabilities: readonly string[], handlers: 
     }
     if (
       init?.method === 'POST'
+      && url.pathname === `/api/v1/logistics/customer-returns/${customerReturn.customerReturnId}/weighings`
+      && handlers.onWeighing
+    ) {
+      return handlers.onWeighing(customerReturn, JSON.parse(String(init.body)) as RecordCustomerReturnWeighingV1)
+    }
+    if (
+      init?.method === 'POST'
       && url.pathname === `/api/v1/logistics/instructions/${instructionId}/lines/${lineId}/customer-returns`
       && handlers.onRequest
     ) {
@@ -137,6 +148,35 @@ function installCustomerReturnScreen(capabilities: readonly string[], handlers: 
 }
 
 describe('L-02-DETAIL', () => {
+  it('uses the typed Piece line for actual return weighing and unlocks approval only after the measured read', async () => {
+    let current: CustomerReturnViewV1 | null = null
+    const requests: RecordCustomerReturnWeighingV1[] = []
+    const setup = installCustomerReturnScreen([...ALL_LOGISTICS, CUSTOMER_RETURN_CAPABILITY.read,
+      CUSTOMER_RETURN_CAPABILITY.approve, CUSTOMER_RETURN_CAPABILITY.recordWeighing], {
+      piece: true,
+      onRead: fallback => json([current ?? fallback]),
+      onWeighing: (fallback, request) => {
+        requests.push(request)
+        current = { ...fallback, version: '2', weighing: { weighingId: request.weighingId, direction: request.direction,
+          firstWeighingKg: request.firstWeighingKg, secondWeighingKg: request.secondWeighingKg, netKg: '13.125',
+          recordedBy: 'customer-return-user', recordedAtUtc: '2026-11-27T08:00:00Z' } }
+        return json({ return: current, isReplay: false, originalCorrelationId: 'SENTETIK-weighing' })
+      },
+    })
+    renderLogisticsApp(setup.path)
+    const form = await screen.findByRole('region', { name: RETURN_TEXT.weighingTitle })
+    expect(screen.queryByRole('button', { name: RETURN_TEXT.approve })).toBeNull()
+    fireEvent.change(within(form).getByRole('combobox', { name: WEIGHING_TEXT.direction }), { target: { value: 'GrossFirst' } })
+    fireEvent.change(within(form).getByLabelText(WEIGHING_TEXT.first), { target: { value: '1013.125' } })
+    fireEvent.change(within(form).getByLabelText(WEIGHING_TEXT.second), { target: { value: '1000' } })
+    fireEvent.click(within(form).getByRole('button', { name: RETURN_TEXT.weighingRecord }))
+    await screen.findByRole('button', { name: RETURN_TEXT.approve })
+    expect(requests).toHaveLength(1)
+    expect(requests[0]).toMatchObject({ expectedVersion: '1', direction: 'GrossFirst', firstWeighingKg: '1013.125', secondWeighingKg: '1000' })
+    expect(Object.keys(requests[0]!).sort()).toEqual(['direction', 'expectedVersion', 'firstWeighingKg', 'secondWeighingKg', 'weighingId'])
+    expect(screen.getByRole('region', { name: RETURN_TEXT.weighingRetained }).querySelectorAll('dt')).toHaveLength(7)
+  })
+
   it('fails closed at the real shell boundary when the customer-return read capability is absent', async () => {
     const setup = installCustomerReturnScreen(ALL_LOGISTICS)
     renderLogisticsApp(setup.path)

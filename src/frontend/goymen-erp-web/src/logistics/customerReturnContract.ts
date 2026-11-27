@@ -1,4 +1,25 @@
+import { KG_TEXT } from './dispatchKilogramsContract';
+import { isPositiveQuantityText, type WeighingDirection } from './contract';
+
 export type CustomerReturnStatus = "Pending" | "Approved" | "Rejected";
+
+export interface RecordCustomerReturnWeighingV1 {
+  readonly expectedVersion: string;
+  readonly weighingId: string;
+  readonly direction: WeighingDirection;
+  readonly firstWeighingKg: string;
+  readonly secondWeighingKg: string;
+}
+
+export interface CustomerReturnWeighingViewV1 {
+  readonly weighingId: string;
+  readonly direction: WeighingDirection;
+  readonly firstWeighingKg: string;
+  readonly secondWeighingKg: string;
+  readonly netKg: string;
+  readonly recordedBy: string;
+  readonly recordedAtUtc: string;
+}
 
 export interface RequestCustomerReturnV1 {
   customerReturnId: string;
@@ -44,6 +65,7 @@ export interface CustomerReturnViewV1 {
   inventoryMovementId: string | null;
   originalLabelId: string | null;
   originalShipmentMovementId: string | null;
+  readonly weighing?: CustomerReturnWeighingViewV1;
 }
 
 export interface CustomerReturnResponseV1 {
@@ -56,6 +78,7 @@ export interface CustomerReturnDecodeExpectation {
   companyId?: string;
   loadingInstructionId?: string;
   loadingInstructionLineId?: string;
+  quantityUnit?: "Kilogram" | "Piece";
 }
 
 export type CustomerReturnDecodeResult<T> =
@@ -106,7 +129,31 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
 }
 
 function isUuid(value: unknown): value is string {
-  return typeof value === "string" && guidPattern.test(value) && value.toLowerCase() !== emptyGuid;
+  return typeof value === "string" && value.length === 36 && guidPattern.test(value) && value.toLowerCase() !== emptyGuid;
+}
+
+const weighingKeys = ["weighingId", "direction", "firstWeighingKg", "secondWeighingKg", "netKg", "recordedBy", "recordedAtUtc"] as const;
+const weighingRequestKeys = ["expectedVersion", "weighingId", "direction", "firstWeighingKg", "secondWeighingKg"] as const;
+const direction = (value: unknown): value is WeighingDirection => value === "TareFirst" || value === "GrossFirst";
+// Native Weight(0.###), decimal(18,3). Validate text only; no net, ratio or unit conversion is calculated here.
+export const isCustomerReturnWeighingKg = (value: unknown): value is string => typeof value === "string"
+  && value === value.trim() && KG_TEXT.test(value) && isPositiveQuantityText(value)
+  && (!value.includes('.') || !value.endsWith('0'));
+
+export function isCustomerReturnWeighingRequest(value: unknown): value is RecordCustomerReturnWeighingV1 {
+  return isObject(value) && hasExactKeys(value, weighingRequestKeys) && value.expectedVersion === "1"
+    && isUuid(value.weighingId) && direction(value.direction)
+    && isCustomerReturnWeighingKg(value.firstWeighingKg) && isCustomerReturnWeighingKg(value.secondWeighingKg);
+}
+
+export function decodeCustomerReturnWeighing(value: unknown): CustomerReturnWeighingViewV1 | null {
+  if (!isObject(value) || !hasExactKeys(value, weighingKeys) || !isUuid(value.weighingId) || !direction(value.direction)
+    || ![value.firstWeighingKg, value.secondWeighingKg, value.netKg].every(isCustomerReturnWeighingKg)
+    || !isBoundedText(value.recordedBy, 128) || value.recordedBy !== value.recordedBy.trim()
+    || typeof value.recordedAtUtc !== 'string' || value.recordedAtUtc !== value.recordedAtUtc.trim()
+    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|\+00:00)$/.test(value.recordedAtUtc)
+    || !isInstant(value.recordedAtUtc) || new Date(value.recordedAtUtc).toISOString().slice(0, 19) !== value.recordedAtUtc.slice(0, 19)) return null;
+  return value as unknown as CustomerReturnWeighingViewV1;
 }
 
 function isBoundedText(value: unknown, maximumLength: number): value is string {
@@ -142,7 +189,7 @@ function isNullableInstant(value: unknown): value is string | null {
 
 function statusShapeIsCoherent(value: CustomerReturnViewV1): boolean {
   if (value.status === "Pending") {
-    return value.version === "1"
+    return value.version === (value.weighing === undefined ? "1" : "2")
       && value.decidedBy === null
       && value.decidedAtUtc === null
       && value.decisionNote === null
@@ -152,7 +199,7 @@ function statusShapeIsCoherent(value: CustomerReturnViewV1): boolean {
   }
 
   if (value.status === "Rejected") {
-    return value.version === "2"
+    return value.version === (value.weighing === undefined ? "2" : "3")
       && value.decidedBy !== null
       && value.decidedAtUtc !== null
       && value.inventoryMovementId === null
@@ -160,7 +207,7 @@ function statusShapeIsCoherent(value: CustomerReturnViewV1): boolean {
       && value.originalShipmentMovementId === null;
   }
 
-  return value.version === "2"
+  return value.version === (value.weighing === undefined ? "2" : "3")
     && value.decidedBy !== null
     && value.decidedAtUtc !== null
     && value.inventoryMovementId !== null
@@ -172,7 +219,7 @@ export function decodeCustomerReturnViewV1(
   input: unknown,
   expected: CustomerReturnDecodeExpectation = {},
 ): CustomerReturnDecodeResult<CustomerReturnViewV1> {
-  if (!isObject(input) || !hasExactKeys(input, returnKeys)) {
+  if (!isObject(input) || !hasExactKeys(input, Object.hasOwn(input, 'weighing') ? [...returnKeys, 'weighing'] : returnKeys)) {
     return { ok: false, error: "customer-return-shape" };
   }
 
@@ -210,6 +257,8 @@ export function decodeCustomerReturnViewV1(
     return { ok: false, error: "customer-return-member" };
   }
 
+  if (Object.hasOwn(input, 'weighing') && (decodeCustomerReturnWeighing(input.weighing) === null || expected.quantityUnit === 'Kilogram'))
+    return { ok: false, error: "customer-return-weighing" };
   const value = input as unknown as CustomerReturnViewV1;
   if (
     (expected.companyId !== undefined && value.companyId !== expected.companyId)
@@ -219,7 +268,8 @@ export function decodeCustomerReturnViewV1(
     return { ok: false, error: "customer-return-context" };
   }
 
-  if (!statusShapeIsCoherent(value)) {
+  if (!statusShapeIsCoherent(value)
+    || expected.quantityUnit === 'Piece' && value.status === 'Approved' && value.weighing === undefined) {
     return { ok: false, error: "customer-return-state" };
   }
 

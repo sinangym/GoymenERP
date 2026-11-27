@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeCustomerReturnListV1, decodeCustomerReturnResponseV1, decodeCustomerReturnViewV1 } from "./customerReturnContract";
+import { decodeCustomerReturnListV1, decodeCustomerReturnResponseV1, decodeCustomerReturnViewV1, isCustomerReturnWeighingRequest } from "./customerReturnContract";
 
 const ids = {
   customerReturnId: "00000000-0000-4000-8000-000000000001",
@@ -115,4 +115,32 @@ describe("customer-return contract", () => {
       originalCorrelationId,
     }).ok).toBe(false);
   });
+});
+
+const measuredWeighing = { weighingId: ids.inventoryMovementId, direction: 'GrossFirst', firstWeighingKg: '1013.125', secondWeighingKg: '1000',
+  netKg: '13.125', recordedBy: 'SENTETIK operator', recordedAtUtc: '2026-11-27T08:00:00Z' };
+it('keeps old unweighed snapshots and the measured Pending2/terminal3 source distinct without deriving kg', () => {
+  expect(decodeCustomerReturnViewV1(pendingReturn()).ok).toBe(true);
+  const measured = { ...pendingReturn(), weighing: measuredWeighing, version: '2' };
+  expect(decodeCustomerReturnViewV1(measured, { quantityUnit: 'Piece' }).ok).toBe(true);
+  const terminal = { ...measured, status: 'Rejected', version: '3', decidedBy: 'checker', decidedAtUtc: '2026-11-27T09:00:00Z' };
+  expect(decodeCustomerReturnViewV1(terminal, { quantityUnit: 'Piece' }).ok).toBe(true);
+  expect(decodeCustomerReturnViewV1(measured, { quantityUnit: 'Kilogram' }).ok).toBe(false);
+  expect(decodeCustomerReturnViewV1({ ...measured, version: '1' }).ok).toBe(false);
+  expect(decodeCustomerReturnViewV1({ ...terminal, version: '2' }).ok).toBe(false);
+  expect(decodeCustomerReturnViewV1({ ...pendingReturn(), status: 'Approved', version: '2', decidedBy: 'checker',
+    decidedAtUtc: '2026-11-27T09:00:00Z', inventoryMovementId: ids.inventoryMovementId, originalLabelId: ids.originalLabelId,
+    originalShipmentMovementId: ids.originalShipmentMovementId }, { quantityUnit: 'Piece' }).ok).toBe(false);
+});
+it.each([null, { ...measuredWeighing, direction: ['GrossFirst'] }, { ...measuredWeighing, netKg: '13.125\n' },
+  { ...measuredWeighing, weighingId: ids.inventoryMovementId + '\n' }, { ...measuredWeighing, recordedBy: '' },
+  { ...measuredWeighing, recordedAtUtc: '2026-02-30T08:00:00Z' }, { ...measuredWeighing, recordedAtUtc: '2026-11-27T08:00:00+03:00' },
+  { ...measuredWeighing, extra: 'private' }])('refuses malformed retained weighing evidence %j', weighing => {
+  expect(decodeCustomerReturnViewV1({ ...pendingReturn(), version: '2', weighing }).ok).toBe(false);
+});
+it('accepts only the five native command fields and never a client net or current version replacement', () => {
+  const request = { expectedVersion: '1', weighingId: ids.inventoryMovementId, direction: 'GrossFirst', firstWeighingKg: '1013.125', secondWeighingKg: '1000' };
+  expect(isCustomerReturnWeighingRequest(request)).toBe(true);
+  for (const delta of [{ expectedVersion: '2' }, { netKg: '13.125' }, { firstWeighingKg: '1013.125\n' }, { direction: ['GrossFirst'] }])
+    expect(isCustomerReturnWeighingRequest({ ...request, ...delta })).toBe(false);
 });

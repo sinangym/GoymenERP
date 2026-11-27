@@ -240,12 +240,14 @@ function CustomerReturnLine({
   const canRequest = hasCapability(shell, CUSTOMER_RETURN_CAPABILITY.request)
   const canApprove = hasCapability(shell, CUSTOMER_RETURN_CAPABILITY.approve)
   const canReject = hasCapability(shell, CUSTOMER_RETURN_CAPABILITY.reject)
+  const canRecordWeighing = hasCapability(shell, CUSTOMER_RETURN_CAPABILITY.recordWeighing)
   const context: CustomerReturnContext = {
     companyId,
     salesOrderId: line.sourceOrderId,
     loadingInstructionId: detail.instruction.id,
     loadingInstructionLineId: line.lineId,
     binding,
+    quantityUnit: isPieceLine(line) ? 'Piece' : 'Kilogram',
   }
   const query = useQuery({
     queryKey: [binding, 'customer-returns', line.sourceOrderId, line.lineId],
@@ -325,6 +327,9 @@ function CustomerReturnLine({
       deliveryOptions={deliveries}
       requestCompletionVisible={requestCompletionBinding === binding}
       decisionCompletionVisible={decisionCompletionBinding === binding}
+      weighingContext={context}
+      canRecordWeighing={canRecordWeighing}
+      onWeighingRecorded={() => { void query.refetch(); onRecorded() }}
       requestController={{
         state: customerReturnCommandState(requestLifecycle),
         submit: (draft) => {

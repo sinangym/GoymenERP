@@ -4,12 +4,15 @@ import type {
   CustomerReturnViewV1,
   RejectCustomerReturnV1,
   RequestCustomerReturnV1,
+  RecordCustomerReturnWeighingV1,
 } from "./customerReturnContract";
 import {
   decodeCustomerReturnListV1,
   decodeCustomerReturnResponseV1,
+  isCustomerReturnWeighingRequest,
 } from "./customerReturnContract";
 import { API_BASE } from "./api";
+import type { CommandOutcome } from '../settings/discountLimitApi';
 
 export interface CustomerReturnContext {
   companyId: string;
@@ -17,6 +20,7 @@ export interface CustomerReturnContext {
   loadingInstructionId: string;
   loadingInstructionLineId: string;
   binding: string;
+  quantityUnit?: "Kilogram" | "Piece";
 }
 
 export interface CustomerReturnOperationIds {
@@ -262,6 +266,7 @@ export const CUSTOMER_RETURN_CAPABILITY = Object.freeze({
   request: "logistics.customer-returns.request",
   approve: "logistics.customer-returns.approve",
   reject: "logistics.customer-returns.reject",
+  recordWeighing: "logistics.customer-returns.record-weighing",
 });
 
 export const CUSTOMER_RETURN_OPERATION = Object.freeze({
@@ -269,6 +274,7 @@ export const CUSTOMER_RETURN_OPERATION = Object.freeze({
   request: "RequestLogisticsCustomerReturnV1",
   approve: "ApproveLogisticsCustomerReturnV1",
   reject: "RejectLogisticsCustomerReturnV1",
+  recordWeighing: "RecordLogisticsCustomerReturnWeighingV1",
 });
 
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? "company-a-user";
@@ -333,6 +339,7 @@ async function command(
     companyId: context.companyId,
     loadingInstructionId: context.loadingInstructionId,
     loadingInstructionLineId: context.loadingInstructionLineId,
+    quantityUnit: context.quantityUnit,
   });
   if (
     !decoded.ok
@@ -361,6 +368,7 @@ export const customerReturnEndpointAdapter: CustomerReturnEndpointAdapter = {
     if (response.status !== 200) return { type: "http", status: response.status };
     const decoded = decodeCustomerReturnListV1(body, {
       companyId: context.companyId,
+      quantityUnit: context.quantityUnit,
     });
     if (!decoded.ok || decoded.value.some((item) => item.sourceOrderId !== context.salesOrderId)) {
       return { type: "malformed" };
@@ -406,3 +414,34 @@ export const customerReturnEndpointAdapter: CustomerReturnEndpointAdapter = {
     );
   },
 };
+
+/** One native weighing command, using the original frozen key/body even when the current return is terminal. */
+export async function recordCustomerReturnWeighing(context: CustomerReturnContext, customerReturnId: string,
+  actorId: string, request: RecordCustomerReturnWeighingV1, key: string): Promise<CommandOutcome<CustomerReturnResponseV1>> {
+  if (context.quantityUnit !== 'Piece' || !isCustomerReturnWeighingRequest(request)) return { type: 'unknown', reason: 'unexpected' };
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/logistics/customer-returns/${encodeURIComponent(customerReturnId)}/weighings`, {
+      method: 'POST', headers: transportHeaders(context.companyId, key), body: JSON.stringify(request),
+    });
+  } catch { return { type: 'unknown', reason: globalThis.navigator?.onLine === false ? 'offline' : 'network-error' }; }
+  const raw = await readJson(response);
+  const replayed = response.headers.get('Idempotency-Replayed');
+  const original = response.headers.get('Idempotency-Original-Correlation-Id');
+  if (replayed !== null && replayed !== 'true' || replayed === 'true' && !original?.trim()
+    || replayed === null && original !== null) return { type: 'unknown', reason: 'unexpected' };
+  if (response.status === 200) {
+    const decoded = decodeCustomerReturnResponseV1(raw, { companyId: context.companyId,
+      loadingInstructionId: context.loadingInstructionId, loadingInstructionLineId: context.loadingInstructionLineId, quantityUnit: 'Piece' });
+    const row = decoded.ok ? decoded.value.return : null, weighing = row?.weighing;
+    if (!decoded.ok || row === null || row.customerReturnId !== customerReturnId || row.sourceOrderId !== context.salesOrderId
+      || row.status !== 'Pending' || row.version !== '2' || weighing === undefined
+      || weighing.weighingId !== request.weighingId || weighing.direction !== request.direction
+      || weighing.firstWeighingKg !== request.firstWeighingKg || weighing.secondWeighingKg !== request.secondWeighingKg
+      || weighing.recordedBy !== actorId || !responseMatchesHeaders(response, decoded.value)) return { type: 'unknown', reason: 'unexpected' };
+    return { type: 'applied', data: decoded.value, replayed: decoded.value.isReplay };
+  }
+  return [400, 401, 403, 404, 409, 415, 422].includes(response.status)
+    ? { type: 'refused', status: response.status, code: null, companyId: null, groupCode: null, replayed: replayed === 'true' }
+    : { type: 'unknown', reason: response.status >= 500 ? 'server' : 'unexpected' };
+}

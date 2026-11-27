@@ -1,4 +1,13 @@
 export const customerReturnText = {
+  weighingTitle: "Müşteri iadesinin fiilî tartımı",
+  weighingRecord: "İade tartımını kaydet",
+  weighingIdentity: "Tartım kaydı",
+  weighingHelp: "İki fiilî tartımı girin. Net ağırlık, kaydedilen tartım sonucunda gösterilir; bu kayıt tek başına stok girişi veya iade onayı oluşturmaz.",
+  weighingPending: "Adetli iade, fiilî tartım kaydedilene kadar bekler. Kesin stok girişi ve onay yapılamaz.",
+  weighingRetained: "Kaydedilmiş iade tartımı",
+  weighingReplay: "Önceki tartım işleminin özgün sonucu doğrulandı.",
+  weighingInvalid: "İki tartımı pozitif kg olarak girin. Belirsiz binlik ayırıcı kullanmayın.",
+  weighingVersion: "Tartım işleminin beklenen sürümü",
   title: "Müşteri iadesi",
   unavailable: "Müşteri iadesi işlemi henüz kullanıma hazır değil.",
   neutralNotFound: "Bu kayıt için kullanılabilir iade bilgisi bulunamadı.",

@@ -11,6 +11,7 @@ import {
   resetSettledCustomerReturnAttempt,
   settleCustomerReturnAttempt,
   customerReturnEndpointAdapter,
+  recordCustomerReturnWeighing,
   type CustomerReturnEndpointAdapter,
   type CustomerReturnAttemptLifecycle,
 } from "./customerReturnApi";
@@ -463,4 +464,37 @@ describe("customer-return adapter boundary", () => {
       expect.objectContaining({ headers: expect.objectContaining({ "X-Company-Id": accepted.companyId }) }),
     );
   });
+});
+
+afterEach(() => { vi.unstubAllGlobals(); });
+
+const weighId = '00000000-0000-4000-8000-000000000021';
+const weighBody = { expectedVersion: '1', weighingId: weighId, direction: 'GrossFirst' as const, firstWeighingKg: '1013.125', secondWeighingKg: '1000' };
+const weighContext = { companyId: '00000000-0000-4000-8000-000000000003', salesOrderId: '00000000-0000-4000-8000-000000000007',
+  loadingInstructionId: '00000000-0000-4000-8000-000000000004', loadingInstructionLineId: '00000000-0000-4000-8000-000000000005', binding: 'SENTETIK', quantityUnit: 'Piece' as const };
+const weighedReturn = { customerReturnId: requestPayload.customerReturnId, companyId: weighContext.companyId, loadingInstructionId: weighContext.loadingInstructionId,
+  loadingInstructionLineId: weighContext.loadingInstructionLineId, sourceDeliveryId: requestPayload.sourceDeliveryId,
+  sourceShipmentId: '00000000-0000-4000-8000-000000000006', sourceOrderId: weighContext.salesOrderId, sourceOrderLineId: '00000000-0000-4000-8000-000000000008',
+  unitId: '00000000-0000-4000-8000-000000000009', quantity: '1', sourceDeliveredQuantity: '2', status: 'Pending', version: '2',
+  reason: 'SENTETIK', requestedBy: 'maker', occurredAtUtc: '2026-11-27T07:00:00Z', requestedAtUtc: '2026-11-27T07:01:00Z',
+  decidedBy: null, decidedAtUtc: null, decisionNote: null, inventoryMovementId: null, originalLabelId: null, originalShipmentMovementId: null,
+  weighing: { weighingId: weighId, direction: 'GrossFirst', firstWeighingKg: '1013.125', secondWeighingKg: '1000', netKg: '13.125', recordedBy: 'operator', recordedAtUtc: '2026-11-27T08:00:00Z' } };
+it('replays only the original native Pending2 weighing receipt with the same five-field body and key', async () => {
+  const fetch = vi.fn(async () => new Response(JSON.stringify({ return: weighedReturn, isReplay: true, originalCorrelationId: 'original' }), {
+    status: 200, headers: { 'Content-Type': 'application/json', 'Idempotency-Replayed': 'true', 'Idempotency-Original-Correlation-Id': 'original' } }));
+  vi.stubGlobal('fetch', fetch);
+  const result = await recordCustomerReturnWeighing(weighContext, weighedReturn.customerReturnId, 'operator', weighBody, 'original-key');
+  expect(result.type).toBe('applied'); expect(result.type === 'applied' && result.replayed).toBe(true);
+  expect(fetch).toHaveBeenCalledWith(expect.stringContaining(`/logistics/customer-returns/${weighedReturn.customerReturnId}/weighings`),
+    expect.objectContaining({ headers: expect.objectContaining({ 'X-Company-Id': weighContext.companyId, 'Idempotency-Key': 'original-key' }), body: JSON.stringify(weighBody) }));
+});
+it.each(['current-terminal', 'foreign-company', 'foreign-order', 'weighing-id', 'weighing-actor', 'replay-header'])('never treats an inconsistent weighing reply as a receipt: %s', async fault => {
+  const value = { return: { ...weighedReturn, weighing: { ...weighedReturn.weighing } }, isReplay: false, originalCorrelationId: 'original' };
+  if (fault === 'current-terminal') Object.assign(value.return, { status: 'Rejected', version: '3', decidedBy: 'checker', decidedAtUtc: '2026-11-27T09:00:00Z' });
+  if (fault === 'foreign-company') value.return.companyId = weighId;
+  if (fault === 'foreign-order') value.return.sourceOrderId = weighId;
+  if (fault === 'weighing-id') value.return.weighing.weighingId = weighedReturn.customerReturnId;
+  if (fault === 'weighing-actor') value.return.weighing.recordedBy = 'other';
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(value), { status: 200, headers: fault === 'replay-header' ? { 'Idempotency-Replayed': 'true', 'Idempotency-Original-Correlation-Id': 'original' } : {} })));
+  expect((await recordCustomerReturnWeighing(weighContext, weighedReturn.customerReturnId, 'operator', weighBody, 'original-key')).type).toBe('unknown');
 });
