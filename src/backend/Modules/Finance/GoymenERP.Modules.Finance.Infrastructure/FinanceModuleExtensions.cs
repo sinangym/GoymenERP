@@ -99,12 +99,12 @@ public static class FinanceModuleExtensions
         // is open. Until a Settings adapter registers its reader the default answers Unavailable: every proposal and
         // decision fails closed and the period is never assumed open. Approval records one opening ledger movement.
         services.TryAddScoped<IFinanceOpeningPeriodReader, UnavailableFinanceOpeningPeriodReader>();
-        services.AddScoped<IFinanceOpeningBalanceService>(CreateOpeningBalanceService);
+        services.AddScoped<IFinanceOpeningBalanceService>(provider => CreateOpeningBalanceService(provider).WithApprovalSafety());
         // FIN-SC47 (FNS-D87/FNS-D88/FNS-D93/FNS-D94): the credit account with its imported plan; no grant.
         services.AddScoped<IFinanceCreditAccountService>(CreateCreditAccountService);
         services.TryAddScoped<IFinanceCreditAccountingPeriodPortV1, UnavailableFinanceCreditAccountingPeriodPortV1>();
         services.AddScoped<IFinanceCreditMovementServiceV1>(CreateCreditMovementService);
-        services.AddScoped<IFinanceCreditLimitServiceV1>(CreateCreditLimitService);
+        services.AddScoped<IFinanceCreditLimitServiceV1>(provider => CreateCreditLimitService(provider).WithApprovalSafety());
         // F018 §L3 (FNS-D27 (2), FNS-D31 (4)): the Cari card's Finance panel read — the credit limit, open receivables,
         // collateral, its utilization and the documentary risk from the calculators above. It writes nothing.
         services.AddScoped<IFinancePartyCreditPanelReader>(CreatePartyCreditPanelService);
