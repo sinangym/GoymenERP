@@ -5,6 +5,8 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
+using GoymenERP.Modules.Audit.Application.Contracts;
+using Microsoft.Extensions.DependencyInjection;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
@@ -326,7 +328,10 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
         {
             var company = new CompanyContext();
             company.Set(Company);
-            var collector = new AuditEventCollector();
+            var owner = Factory.Services.CreateScope();
+            owner.ServiceProvider.GetRequiredService<ICompanyContext>().Set(Company);
+            var collector = owner.ServiceProvider.GetRequiredService<AuditEventCollector>();
+            var writer = owner.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
             var options = new DbContextOptionsBuilder<FinanceDbContext>(Options())
                 .AddInterceptors(new AuditSaveChangesInterceptor(collector, company)).Options;
             var db = new FinanceDbContext(options, company);
@@ -335,8 +340,8 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
                 new FinanceOfficialInvoiceImportAuditEnvelopesV1(
                     new FinanceAuditEnvelope(FinanceOfficialInvoiceImportPermissionNamesV1.Upload, [], "Integration"),
                     new FinanceAuditEnvelope(FinanceOfficialInvoiceImportPermissionNamesV1.Approve, [], "Integration")),
-                TimeProvider.System);
-            return new Scope(db, service, new FinanceContext(Company, actor, $"work-{Guid.NewGuid():N}", null));
+                TimeProvider.System, writer);
+            return new Scope(db, service, new FinanceContext(Company, actor, $"work-{Guid.NewGuid():N}", null), owner);
         }
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
@@ -374,11 +379,11 @@ public sealed class FinanceOfficialInvoiceImportWorkDeliverySqlServerRelationalA
     }
 
     private sealed class Scope(FinanceDbContext db, FinanceOfficialInvoiceImportApprovalServiceV1 service,
-        FinanceContext context) : IAsyncDisposable
+        FinanceContext context, IServiceScope owner) : IAsyncDisposable
     {
         public FinanceOfficialInvoiceImportApprovalServiceV1 Service => service;
         public FinanceContext Context => context;
-        public ValueTask DisposeAsync() => db.DisposeAsync();
+        public async ValueTask DisposeAsync() { try { await db.DisposeAsync(); } finally { owner.Dispose(); } }
     }
 
     private sealed class User(string actor) : ICurrentUser

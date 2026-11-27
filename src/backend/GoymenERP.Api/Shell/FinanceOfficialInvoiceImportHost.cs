@@ -57,7 +57,8 @@ public static class FinanceOfficialInvoiceImportHostExtensions
                     authority.RoleCodesOf(FinanceOfficialInvoiceImportAuthorityActionV1.Upload), correlation),
                 Envelope(FinanceOfficialInvoiceImportPermissionNamesV1.Approve,
                     authority.RoleCodesOf(FinanceOfficialInvoiceImportAuthorityActionV1.Approve), correlation)),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetService<IAuditTransactionWriterV1>());
     }
 
     private static FinanceOfficialInvoiceImportPendingApprovalReadServiceV1 CreatePendingApprovalReadService(

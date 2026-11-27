@@ -3,6 +3,9 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
+using GoymenERP.Modules.Audit.Application.Contracts;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
@@ -17,7 +20,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// Real SQL Server persistence evidence for the approved v1 application CSV carrier. Every row and
 /// permission in this class is SENTETIK test data; this is not a real invoice file, mapping, grant or UAT.
 /// </summary>
-public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAcceptanceTests
+public sealed partial class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid Company = TestCompanyIds.CompanyA;
     private static readonly Guid Batch = Guid.Parse("81000000-0000-0000-0000-000000000001");
@@ -221,18 +224,23 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
             return new FinanceDbContext(Options(Factory), companyContext);
         }
 
-        public Scope Service(Guid company, string actor, IFinanceOfficialInvoiceImportApprovalAuthorityV1 authority)
+        public Scope Service(Guid company, string actor, IFinanceOfficialInvoiceImportApprovalAuthorityV1 authority,
+            IInterceptor? probe = null, bool withAuditInterceptor = true, IInterceptor? extra = null)
         {
             var companyContext = new CompanyContext();
             companyContext.Set(company);
             var currentUser = new User(actor, company);
-            var collector = new AuditEventCollector();
+            var owner = Factory.Services.CreateScope();
+            owner.ServiceProvider.GetRequiredService<ICompanyContext>().Set(company);
+            var collector = owner.ServiceProvider.GetRequiredService<AuditEventCollector>();
+            var writer = owner.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
             var options = new DbContextOptionsBuilder<FinanceDbContext>()
                 .UseSqlServer(Factory.DatabaseConnectionString,
-                    sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema))
-                .AddInterceptors(new AuditSaveChangesInterceptor(collector, companyContext))
-                .Options;
-            var db = new FinanceDbContext(options, companyContext);
+                    sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema));
+            if (withAuditInterceptor) options.AddInterceptors(new AuditSaveChangesInterceptor(collector, companyContext));
+            if (probe is not null) options.AddInterceptors(probe);
+            if (extra is not null) options.AddInterceptors(extra);
+            var db = new FinanceDbContext(options.Options, companyContext);
             var service = new FinanceOfficialInvoiceImportApprovalServiceV1(db, companyContext, currentUser,
                 new FinanceOfficialInvoiceImportParserV1(), authority, new ReadAuthority(), collector,
                 new FinanceOfficialInvoiceImportAuditEnvelopesV1(
@@ -240,8 +248,8 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
                         ["SENTETIK-FINANCE"], "Integration"),
                     new FinanceAuditEnvelope(FinanceOfficialInvoiceImportPermissionNamesV1.Approve,
                         ["SENTETIK-FINANCE"], "Integration")),
-                TimeProvider.System);
-            return new Scope(db, service, new FinanceContext(company, actor, $"fin-import-{Guid.NewGuid():N}", null));
+                TimeProvider.System, writer);
+            return new Scope(db, service, new FinanceContext(company, actor, $"fin-import-{Guid.NewGuid():N}", null), owner, writer, collector);
         }
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
@@ -276,12 +284,16 @@ public sealed class FinanceOfficialInvoiceImportApprovalSqlServerRelationalAccep
                     sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema)).Options;
     }
 
-    private sealed class Scope(FinanceDbContext db, FinanceOfficialInvoiceImportApprovalServiceV1 service, FinanceContext context)
+    private sealed class Scope(FinanceDbContext db, FinanceOfficialInvoiceImportApprovalServiceV1 service, FinanceContext context,
+        IServiceScope owner, IAuditTransactionWriterV1 writer, AuditEventCollector collector)
         : IAsyncDisposable
     {
         public FinanceOfficialInvoiceImportApprovalServiceV1 Service => service;
         public FinanceContext Context => context;
-        public ValueTask DisposeAsync() => db.DisposeAsync();
+        public FinanceDbContext Database => db;
+        public IAuditTransactionWriterV1 Writer => writer;
+        public AuditEventCollector Collector => collector;
+        public async ValueTask DisposeAsync() { try { await db.DisposeAsync(); } finally { owner.Dispose(); } }
     }
 
     private sealed class User(string actor, Guid company) : ICurrentUser

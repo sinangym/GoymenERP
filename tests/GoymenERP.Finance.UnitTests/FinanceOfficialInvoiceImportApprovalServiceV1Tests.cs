@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Finance.UnitTests;
 
-public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
+public sealed partial class FinanceOfficialInvoiceImportApprovalServiceV1Tests
 {
     private static readonly Guid Company = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid Batch = Guid.Parse("20000000-0000-0000-0000-000000000002");
@@ -84,7 +84,7 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
         var service = Service(db, company, "maker", RepeatingCommandAuthority(PermissionDecision.Allowed), ReadAuthority());
         await service.UploadAsync(Context("maker"), new CommandMetadata("upload-key"), Request(), default);
 
-        var result = await service.ApproveAsync(Context("maker"), new CommandMetadata("approve-key"),
+        var result = await service.ApproveCoreAsync(Context("maker"), new CommandMetadata("approve-key"),
             new FinanceOfficialInvoiceImportApproveRequestV1(Batch, "1"), default);
 
         Assert.Equal(CommandOutcome.ValidationFailed, result.Outcome);
@@ -103,7 +103,7 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
         var checker = Service(db, company, "checker", RepeatingCommandAuthority(PermissionDecision.Allowed),
             ReadAuthority(PermissionDecision.Allowed, PermissionDecision.Allowed));
 
-        var approved = await checker.ApproveAsync(Context("checker"), new CommandMetadata("approve-key"),
+        var approved = await checker.ApproveCoreAsync(Context("checker"), new CommandMetadata("approve-key"),
             new FinanceOfficialInvoiceImportApproveRequestV1(Batch, "1"), default);
         var source = await checker.GetApprovedAsync(Context("checker"), Reference(pending), default);
 
@@ -370,6 +370,7 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1Tests
             service.GetAsync(Context("maker"), Batch, 1, Guid.NewGuid(), cancellation.Token));
     }
 
+    // Existing InMemory cases prove domain rules only; public owned-entry and SQL behavior are covered separately.
     private static FinanceOfficialInvoiceImportApprovalServiceV1 Service(
         FinanceDbContext db,
         ICompanyContext company,

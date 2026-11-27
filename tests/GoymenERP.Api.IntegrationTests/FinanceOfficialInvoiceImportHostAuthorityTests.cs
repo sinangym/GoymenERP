@@ -12,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-public sealed class FinanceOfficialInvoiceImportHostAuthorityTests
+public sealed partial class FinanceOfficialInvoiceImportHostAuthorityTests
 {
     private static readonly Guid Company = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private const string Actor = "finance-import-actor";

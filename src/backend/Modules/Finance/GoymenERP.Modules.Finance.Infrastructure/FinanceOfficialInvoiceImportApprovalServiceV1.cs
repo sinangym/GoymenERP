@@ -21,7 +21,7 @@ public sealed record FinanceOfficialInvoiceImportAuditEnvelopesV1(
 /// separate append-only facts. Only a different authorized actor's approval makes the batch visible
 /// through the existing approved-source ports; pending data is never returned by those ports.
 /// </summary>
-public sealed class FinanceOfficialInvoiceImportApprovalServiceV1(
+public sealed partial class FinanceOfficialInvoiceImportApprovalServiceV1(
     FinanceDbContext dbContext,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
@@ -30,7 +30,8 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1(
     IFinanceOpenItemSourceAuthority readAuthority,
     IAuditEventCollector auditEvents,
     FinanceOfficialInvoiceImportAuditEnvelopesV1 envelopes,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IAuditTransactionWriterV1? auditWriter = null)
     : IFinanceOfficialInvoiceImportApprovalServiceV1,
       IApprovedFinanceOpenItemSourcePort,
       IApprovedFinanceOpenItemSourceCatalogPort,
@@ -138,7 +139,8 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1(
             row.Id, keyHash, payloadHash, cancellationToken) ?? result;
     }
 
-    public async Task<FinanceOfficialInvoiceImportApprovalResultV1> ApproveAsync(
+    // Domain core for the guarded public entry and existing native algorithm tests; never a public command bypass.
+    internal async Task<FinanceOfficialInvoiceImportApprovalResultV1> ApproveCoreAsync(
         FinanceContext context,
         CommandMetadata metadata,
         FinanceOfficialInvoiceImportApproveRequestV1 request,
@@ -167,6 +169,9 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1(
         {
             return prior;
         }
+
+        if (ownedApproval is { ReplayOnly: true })
+            return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
 
         var row = await dbContext.OfficialInvoiceImportBatches
             .SingleOrDefaultAsync(candidate => candidate.Id == request.BatchId, cancellationToken);
@@ -213,6 +218,7 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1(
         if (await FenceAsync(context, FinanceOfficialInvoiceImportAuthorityActionV1.Approve, row.Id, cancellationToken)
                 is { } beforeSave)
         {
+            if (ownedApproval is not null) throw new ApprovalRefusal(beforeSave);
             dbContext.ChangeTracker.Clear();
             return beforeSave;
         }
@@ -401,6 +407,13 @@ public sealed class FinanceOfficialInvoiceImportApprovalServiceV1(
         FinanceContext context, string command, FinanceOfficialInvoiceImportAuthorityActionV1 action, Guid batchId,
         string keyHash, string payloadHash, CancellationToken cancellationToken)
     {
+        if (ownedApproval is not null)
+        {
+            if (command != ApproveCommand || action != FinanceOfficialInvoiceImportAuthorityActionV1.Approve)
+                throw new InvalidOperationException("The approval boundary cannot save another import command.");
+            await SaveOwnedApprovalAsync(context, batchId, cancellationToken);
+            return null;
+        }
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);

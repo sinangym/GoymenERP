@@ -7,6 +7,7 @@ using GoymenERP.Api.WorkRuntime;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
+using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
@@ -39,6 +40,10 @@ public sealed class FinanceOfficialInvoiceImportPendingApprovalSqlServerRelation
 
         var company = new CompanyContext();
         company.Set(Company);
+        using var auditOwner = factory.Services.CreateScope();
+        auditOwner.ServiceProvider.GetRequiredService<ICompanyContext>().Set(Company);
+        var collector = auditOwner.ServiceProvider.GetRequiredService<AuditEventCollector>();
+        var writer = auditOwner.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
         var options = new DbContextOptionsBuilder<FinanceDbContext>()
             .UseSqlServer(factory.DatabaseConnectionString,
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema)).Options;
@@ -103,7 +108,7 @@ public sealed class FinanceOfficialInvoiceImportPendingApprovalSqlServerRelation
             Assert.Empty(foreignPage.RootElement.GetProperty("items").EnumerateArray());
         }
 
-        var checker = Approval(db, company, "SENTETIK-checker", authority);
+        var checker = Approval(db, company, "SENTETIK-checker", authority, collector, writer);
         var approved = await checker.ApproveAsync(Context("SENTETIK-checker"), new CommandMetadata("approve-key"),
             new FinanceOfficialInvoiceImportApproveRequestV1(Batch, "1"), default);
         Assert.Equal(CommandOutcome.Succeeded, approved.Outcome);
@@ -122,13 +127,14 @@ public sealed class FinanceOfficialInvoiceImportPendingApprovalSqlServerRelation
     }
 
     private static FinanceOfficialInvoiceImportApprovalServiceV1 Approval(
-        FinanceDbContext db, ICompanyContext company, string actor, IFinanceOfficialInvoiceImportApprovalAuthorityV1 authority) =>
+        FinanceDbContext db, ICompanyContext company, string actor, IFinanceOfficialInvoiceImportApprovalAuthorityV1 authority,
+        IAuditEventCollector? collector = null, IAuditTransactionWriterV1? writer = null) =>
         new(db, company, new User(actor, Company), new FinanceOfficialInvoiceImportParserV1(), authority,
-            new ReadAuthority(), new NullAuditCollector(),
+            new ReadAuthority(), collector ?? new NullAuditCollector(),
             new FinanceOfficialInvoiceImportAuditEnvelopesV1(
                 new FinanceAuditEnvelope(FinanceOfficialInvoiceImportPermissionNamesV1.Upload, ["SENTETIK-FINANCE"], "SQL"),
                 new FinanceAuditEnvelope(FinanceOfficialInvoiceImportPermissionNamesV1.Approve, ["SENTETIK-FINANCE"], "SQL")),
-            TimeProvider.System);
+            TimeProvider.System, writer);
 
     private static FinanceOfficialInvoiceImportPreviewRequestV1 Request(Guid batchId)
     {
