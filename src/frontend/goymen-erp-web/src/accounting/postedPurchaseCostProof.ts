@@ -1,14 +1,34 @@
 import { isDateOnly } from '../finance/dateOnly'
 import { exactKeys } from './exactKeys'
+import type { CostProofWireValidation, CostProofRatio, CostProofReturn } from './postedManufacturingCostProof'
 
-export interface PostedPurchaseCostShare {
+export interface PurchaseCostRounding {
+  readonly exactSignedAmount: CostProofRatio; readonly roundedSignedAmount: string; readonly exactSignedResidue: CostProofRatio
+  readonly ruleVersion: string; readonly exactSignedAmountText?: string | null; readonly exactSignedResidueText?: string | null
+}
+export interface PurchaseCostShipment<TVersion = number> {
+  readonly shipmentId: string; readonly movementId: string; readonly movementLineNumber: number; readonly loadingInstructionLineId: string
+  readonly productId: string; readonly labelId: string; readonly physicalQuantityKg: number; readonly rootShare: CostProofRatio
+  readonly netRootQuantityKg: CostProofRatio; readonly recordedAtUtc: string; readonly provenOriginalSequence: TVersion | null
+  readonly returns: readonly CostProofReturn[]; readonly physicalProofJson: string
+}
+export interface PurchaseCostCandidate<TVersion = number> {
+  readonly companyId: string; readonly sourceEventId: string; readonly invoiceLineId: string; readonly acceptanceId: string
+  readonly receiptMovementId: string; readonly rootLabelId: string; readonly productId: string; readonly invoicedRootShare: CostProofRatio
+  readonly invoicedNetQuantityKg: CostProofRatio; readonly exactTlAmount: CostProofRatio; readonly shipment: PurchaseCostShipment<TVersion>
+  readonly sourceProofSha256: string; readonly physicalSourceSha256: string; readonly fingerprint: string
+}
+export interface PostedPurchaseCostShare<TVersion = number> {
   readonly approval: { readonly companyId: string; readonly sourceEventId: string; readonly invoiceLineId: string
-    readonly proposalId: string; readonly proposalVersion: number; readonly journalId: string | null; readonly status: 'Posted' | 'RoundedNoCost'
-    readonly signedAmount: string; readonly currencyId: string; readonly moneyProfileId: string; readonly moneyProfileVersion: number
+    readonly proposalId: string; readonly proposalVersion: TVersion; readonly journalId: string | null; readonly status: 'Posted' | 'RoundedNoCost'
+    readonly signedAmount: string; readonly currencyId: string; readonly moneyProfileId: string; readonly moneyProfileVersion: TVersion
     readonly moneyScale: number; readonly cogsAccountId: string; readonly counterAccountId: string; readonly accountingDate: string
-    readonly preparedBy: string; readonly approvedBy: string; readonly approvedAtUtc: string; readonly sourceProofSha256: string; readonly fingerprint: string }
+    readonly preparedBy: string; readonly approvedBy: string; readonly approvedAtUtc: string; readonly sourceProofSha256: string; readonly fingerprint: string
+    readonly recordedRounding: { readonly currencyId: string; readonly moneyProfileId: string; readonly moneyProfileVersion: TVersion
+      readonly moneyScale: number; readonly rounding: PurchaseCostRounding } }
   readonly shipmentId: string; readonly movementId: string; readonly movementLineNumber: number; readonly productId: string
-  readonly physicalQuantityKg: number; readonly signedAmount: string; readonly fingerprint: string
+  readonly physicalQuantityKg: number; readonly signedAmount: string; readonly exactSignedAmount: CostProofRatio
+  readonly exactSignedResidue: CostProofRatio; readonly candidates: readonly PurchaseCostCandidate<TVersion>[]; readonly fingerprint: string
 }
 const rec = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
 const guid = (v: unknown): v is string => typeof v === 'string' && /^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(v) && !/^0{8}(-0{4}){3}-0{12}$/.test(v)
@@ -40,17 +60,24 @@ const RETURN_KEYS = ['returnId', 'movementId', 'movementLineNumber', 'sourceIssu
 
 // Identity/shape gate only: source exact amounts, sums and remainder allocation are never recalculated in the UI.
 export function postedPurchaseCostShare(v: unknown, company: string, product: string): v is PostedPurchaseCostShare {
+  return validPostedPurchaseCostShare(v, company, product)
+}
+// Shared shape/identity gate; the native typed wrapper above always uses its numeric defaults.
+export function validPostedPurchaseCostShare(v: unknown, company: string, product: string, wire: CostProofWireValidation = {}): boolean {
+  const long = wire.long ?? ((value: unknown, minimum: number) => integer(value) && (value as number) >= minimum)
+  const date = wire.date ?? ((value: unknown) => typeof value === 'string' && isDateOnly(value))
+  const instant = wire.utc ?? utc
   if (!rec(v) || !exactKeys(v, SHARE_KEYS) || !rec(v.approval) || !exactKeys(v.approval, APPROVAL_KEYS)) return false
   const a = v.approval
   if (!same(a.companyId, company) || !['sourceEventId', 'invoiceLineId', 'proposalId', 'currencyId', 'moneyProfileId', 'cogsAccountId', 'counterAccountId', 'preparedBy', 'approvedBy'].every(k => guid(a[k]))
-    || !integer(a.proposalVersion) || (a.proposalVersion as number) < 3 || !integer(a.moneyProfileVersion) || !scale(a.moneyScale)
+    || !long(a.proposalVersion, 3) || !long(a.moneyProfileVersion, 1) || !scale(a.moneyScale)
     || !decimal(a.signedAmount) || same(a.cogsAccountId, a.counterAccountId) || same(a.preparedBy, a.approvedBy)
-    || typeof a.accountingDate !== 'string' || !isDateOnly(a.accountingDate) || !utc(a.approvedAtUtc)
+    || !date(a.accountingDate) || !instant(a.approvedAtUtc)
     || !hash(a.sourceProofSha256) || !hash(a.fingerprint)
     || (a.status === 'Posted' ? !guid(a.journalId) || a.signedAmount === '0'
       : a.status !== 'RoundedNoCost' || a.journalId !== null || a.signedAmount !== '0' || v.signedAmount !== '0')) return false
   const recorded = a.recordedRounding
-  if (!rec(recorded) || !exactKeys(recorded, RECORDED_ROUNDING_KEYS) || !same(recorded.currencyId, a.currencyId) || !guid(recorded.moneyProfileId) || !integer(recorded.moneyProfileVersion)
+  if (!rec(recorded) || !exactKeys(recorded, RECORDED_ROUNDING_KEYS) || !same(recorded.currencyId, a.currencyId) || !guid(recorded.moneyProfileId) || !long(recorded.moneyProfileVersion, 1)
     || !scale(recorded.moneyScale) || !rec(recorded.rounding) || !exactKeys(recorded.rounding, ROUNDING_KEYS, ROUNDING_OPTIONAL_KEYS)
     || !optionalText(recorded.rounding.exactSignedAmountText) || !optionalText(recorded.rounding.exactSignedResidueText)
     || recorded.rounding.ruleVersion !== 'accounting.inventory-cost-component-total.v1'
@@ -69,8 +96,8 @@ export function postedPurchaseCostShare(v: unknown, company: string, product: st
     const s = c.shipment
     if (!same(s.shipmentId, v.shipmentId) || !same(s.movementId, v.movementId) || s.movementLineNumber !== v.movementLineNumber
       || !same(s.productId, product) || s.physicalQuantityKg !== v.physicalQuantityKg || !guid(s.loadingInstructionLineId) || !guid(s.labelId)
-      || !ratio(s.rootShare) || !ratio(s.netRootQuantityKg) || !utc(s.recordedAtUtc)
-      || s.provenOriginalSequence !== null && !integer(s.provenOriginalSequence)
+      || !ratio(s.rootShare) || !ratio(s.netRootQuantityKg) || !instant(s.recordedAtUtc)
+      || s.provenOriginalSequence !== null && !long(s.provenOriginalSequence, 1)
       || !Array.isArray(s.returns) || s.returns.length > 65536 || typeof s.physicalProofJson !== 'string' || s.physicalProofJson.length === 0) return false
     const key = c.acceptanceId.toLowerCase()
     if (identities.has(key)) return false
@@ -78,7 +105,7 @@ export function postedPurchaseCostShare(v: unknown, company: string, product: st
     const returnIds = new Set<string>()
     for (const r of s.returns) {
       if (!rec(r) || !exactKeys(r, RETURN_KEYS) || !guid(r.returnId) || !guid(r.movementId) || !integer(r.movementLineNumber) || !same(r.sourceIssueMovementId, v.movementId)
-        || typeof r.quantityKg !== 'number' || !Number.isFinite(r.quantityKg) || r.quantityKg <= 0 || !utc(r.recordedAtUtc)
+        || typeof r.quantityKg !== 'number' || !Number.isFinite(r.quantityKg) || r.quantityKg <= 0 || !instant(r.recordedAtUtc)
         || returnIds.has(r.returnId.toLowerCase())) return false
       returnIds.add(r.returnId.toLowerCase())
     }

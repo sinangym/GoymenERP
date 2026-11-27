@@ -2,30 +2,30 @@ import type { ViewOutcome } from '../shell/uiState'
 import { isDateOnly } from '../finance/dateOnly'
 import { ACCOUNTING_BASE, devHeaders } from './api'
 import { exactKeys } from './exactKeys'
-import { postedManufacturingCostShare, type PostedManufacturingCostShare } from './postedManufacturingCostProof'
+import { postedManufacturingCostShare, type PostedManufacturingCostShare, type CostProofWireValidation } from './postedManufacturingCostProof'
 import { postedPurchaseCostShare, type PostedPurchaseCostShare } from './postedPurchaseCostProof'
 
-export interface CogsAttributedEvidence { readonly source: PostedManufacturingCostShare; readonly currentJournalId: string
+export interface CogsAttributedEvidence<TVersion = number> { readonly source: PostedManufacturingCostShare<TVersion>; readonly currentJournalId: string
   readonly currentCogsAccountId: string; readonly counterAccountId: string; readonly currentJournalTotal: string }
-export interface CogsPurchaseAttributedEvidence { readonly source: PostedPurchaseCostShare; readonly currentJournalId: string | null
+export interface CogsPurchaseAttributedEvidence<TVersion = number> { readonly source: PostedPurchaseCostShare<TVersion>; readonly currentJournalId: string | null
   readonly currentCogsAccountId: string; readonly counterAccountId: string; readonly currentJournalTotal: string }
 export interface CogsAttributedCorrection { readonly attributionFingerprint: string; readonly sourceJournalId: string
   readonly reversingCorrectionJournalId: string; readonly replacementCorrectionJournalId: string }
 
 export interface CogsAccount { readonly accountId: string; readonly code: string; readonly name: string }
-export interface CogsAccountPlan { readonly packageId: string; readonly packageVersion: number; readonly catalogVersion: number | null
+export interface CogsAccountPlan<TVersion = number> { readonly packageId: string; readonly packageVersion: TVersion; readonly catalogVersion: TVersion | null
   readonly sourceVersion: string; readonly sourceSha256: string; readonly account: CogsAccount }
-export interface CogsEvidence { readonly companyId: string; readonly invoiceId: string; readonly invoiceLineId: string
-  readonly finalizedVersion: number; readonly journalId: string; readonly cogsJournalLineNumber: number; readonly counterJournalLineNumber: number
+export interface CogsEvidence<TVersion = number> { readonly companyId: string; readonly invoiceId: string; readonly invoiceLineId: string
+  readonly finalizedVersion: TVersion; readonly journalId: string; readonly cogsJournalLineNumber: number; readonly counterJournalLineNumber: number
   readonly cogsAccountId: string; readonly counterAccountId: string; readonly currencyId: string; readonly amount: string; readonly sourceFingerprint: string }
-export interface CogsProposal { readonly proposalId: string; readonly companyId: string; readonly invoiceId: string; readonly invoiceLineId: string
-  readonly finalizedVersion: number; readonly version: number; readonly expectedLineVersion: number; readonly status: 'Prepared' | 'Approved'
-  readonly classification: 1 | 2; readonly accountPlan: CogsAccountPlan; readonly periodId: string; readonly transactionDate: string
+export interface CogsProposal<TVersion = number> { readonly proposalId: string; readonly companyId: string; readonly invoiceId: string; readonly invoiceLineId: string
+  readonly finalizedVersion: TVersion; readonly version: TVersion; readonly expectedLineVersion: TVersion; readonly status: 'Prepared' | 'Approved'
+  readonly classification: 1 | 2; readonly accountPlan: CogsAccountPlan<TVersion>; readonly periodId: string; readonly transactionDate: string
   readonly accountingDate: string; readonly valueDate: string | null; readonly preparedBy: string; readonly preparedAtUtc: string
-  readonly approvedBy: string | null; readonly approvedAtUtc: string | null; readonly reason: string; readonly postedEvidence: CogsEvidence | null
+  readonly approvedBy: string | null; readonly approvedAtUtc: string | null; readonly reason: string; readonly postedEvidence: CogsEvidence<TVersion> | null
   readonly reversingCorrectionJournalId: string | null; readonly replacementCorrectionJournalId: string | null
-  readonly attributedEvidence?: readonly CogsAttributedEvidence[]; readonly attributedCorrections?: readonly CogsAttributedCorrection[]
-  readonly purchaseAttributedEvidence?: readonly CogsPurchaseAttributedEvidence[] }
+  readonly attributedEvidence?: readonly CogsAttributedEvidence<TVersion>[]; readonly attributedCorrections?: readonly CogsAttributedCorrection[]
+  readonly purchaseAttributedEvidence?: readonly CogsPurchaseAttributedEvidence<TVersion>[] }
 export interface CogsRevision { readonly version: number; readonly proposalId: string; readonly classification: 1 | 2
   readonly accountPlan: CogsAccountPlan; readonly preparedBy: string; readonly approvedBy: string; readonly approvedAtUtc: string
   readonly periodId: string; readonly transactionDate: string; readonly accountingDate: string; readonly reason: string
@@ -71,6 +71,14 @@ const classification = (v: unknown) => v === 1 || v === 2
 // InvoiceLineCogsCorrectionViewV1, InvoiceLineCogsRevisionViewV1, FinalizedInvoiceLineReferenceV1, FinalizedInvoiceCogsSelectionV1,
 // InvoiceLineCogsHistoryV1, InvoiceLineCogsProductReferenceV1, InvoiceLineCogsOptionsV1, InvoiceLineCogsPeriodOptionV1.
 // *_OPTIONAL_KEYS are the properties that are not in the schema's `required`.
+export interface CogsProposalWireValidation extends CostProofWireValidation {
+  readonly exactVersion?: (value: unknown, expected: number) => boolean
+  readonly instant?: (value: unknown) => boolean
+  readonly manufacturingShare?: (value: unknown, company: string) => boolean
+  readonly purchaseShare?: (value: unknown, company: string, product: string) => boolean
+}
+const nativeLong = (value: unknown, minimum: number) => integer(value, minimum)
+const nativeDate = (value: unknown) => date(value)
 const ACCOUNT_KEYS = ['accountId', 'code', 'name'] as const
 const PLAN_KEYS = ['packageId', 'packageVersion', 'catalogVersion', 'sourceVersion', 'sourceSha256', 'account'] as const
 const ATTRIBUTED_EVIDENCE_KEYS = ['source', 'currentJournalId', 'currentCogsAccountId', 'counterAccountId', 'currentJournalTotal'] as const
@@ -95,17 +103,17 @@ const OPTIONS_KEYS = ['companyId', 'accounts', 'openPeriods'] as const
 const PERIOD_OPTION_KEYS = ['periodId', 'startsOn', 'endsOn'] as const
 const nullableString = (v: unknown) => v === null || typeof v === 'string'
 const account = (v: unknown) => record(v) && exactKeys(v, ACCOUNT_KEYS) && guid(v.accountId) && text(v.code) && text(v.name)
-const plan = (v: unknown) => record(v) && exactKeys(v, PLAN_KEYS) && guid(v.packageId) && integer(v.packageVersion) && (v.catalogVersion === null || integer(v.catalogVersion))
+const plan = (v: unknown, long = nativeLong) => record(v) && exactKeys(v, PLAN_KEYS) && guid(v.packageId) && long(v.packageVersion, 1) && (v.catalogVersion === null || long(v.catalogVersion, 1))
   && text(v.sourceVersion) && hash(v.sourceSha256) && account(v.account)
 const pair = (v: Record<string, unknown>) => nullableGuid(v.reversingCorrectionJournalId) && nullableGuid(v.replacementCorrectionJournalId)
   && (v.reversingCorrectionJournalId === null) === (v.replacementCorrectionJournalId === null)
-function attributedEvidence(v: unknown, company: string): boolean {
+function attributedEvidence(v: unknown, company: string, share: (value: unknown, company: string) => boolean = postedManufacturingCostShare): boolean {
   return v === undefined || Array.isArray(v) && v.length > 0 && v.every(item => record(item) && exactKeys(item, ATTRIBUTED_EVIDENCE_KEYS)
-    && postedManufacturingCostShare(item.source, company) && guid(item.currentJournalId) && guid(item.currentCogsAccountId)
+    && record(item.source) && share(item.source, company) && guid(item.currentJournalId) && guid(item.currentCogsAccountId)
     && guid(item.counterAccountId) && !same(item.currentCogsAccountId, item.counterAccountId)
-    && same(item.counterAccountId, item.source.counterAccountId) && typeof item.currentJournalTotal === 'string'
+    && same(item.counterAccountId, item.source.counterAccountId as string) && typeof item.currentJournalTotal === 'string'
     && /^(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(item.currentJournalTotal) && /[1-9]/.test(item.currentJournalTotal))
-    && new Set(v.map(item => (item as CogsAttributedEvidence).source.fingerprint)).size === v.length
+    && new Set(v.map(item => record(item) && record(item.source) ? item.source.fingerprint : null)).size === v.length
 }
 function attributedCorrections(v: unknown): boolean {
   return v === undefined || Array.isArray(v) && v.every(item => record(item) && exactKeys(item, ATTRIBUTED_CORRECTION_KEYS) && hash(item.attributionFingerprint)
@@ -114,40 +122,47 @@ function attributedCorrections(v: unknown): boolean {
     && !same(item.sourceJournalId, item.reversingCorrectionJournalId) && !same(item.sourceJournalId, item.replacementCorrectionJournalId))
     && new Set(v.map(item => (item as CogsAttributedCorrection).attributionFingerprint)).size === v.length
 }
-function purchaseAttributedEvidence(v: unknown, company: string): boolean {
+function purchaseAttributedEvidence(v: unknown, company: string, share: (value: unknown, company: string, product: string) => boolean = postedPurchaseCostShare): boolean {
   return v === undefined || Array.isArray(v) && v.length > 0 && v.every(item => record(item) && exactKeys(item, ATTRIBUTED_EVIDENCE_KEYS)
-    && record(item.source) && guid(item.source.productId) && postedPurchaseCostShare(item.source, company, item.source.productId)
+    && record(item.source) && guid(item.source.productId) && share(item.source, company, item.source.productId) && record(item.source.approval)
     && nullableGuid(item.currentJournalId) && guid(item.currentCogsAccountId)
     && guid(item.counterAccountId) && !same(item.currentCogsAccountId, item.counterAccountId)
-    && same(item.counterAccountId, item.source.approval.counterAccountId) && typeof item.currentJournalTotal === 'string'
+    && same(item.counterAccountId, item.source.approval.counterAccountId as string) && typeof item.currentJournalTotal === 'string'
     && /^(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(item.currentJournalTotal)
     && (item.source.approval.status === 'RoundedNoCost'
       ? item.currentJournalId === null && item.currentJournalTotal === '0' && item.source.signedAmount === '0'
       : guid(item.currentJournalId) && /[1-9]/.test(item.currentJournalTotal)))
-    && new Set(v.map(item => (item as CogsPurchaseAttributedEvidence).source.fingerprint)).size === v.length
+    && new Set(v.map(item => record(item) && record(item.source) ? item.source.fingerprint : null)).size === v.length
 }
-function evidence(v: unknown, company: string, invoice: string, line: string): boolean {
+function evidence(v: unknown, company: string, invoice: string, line: string, long = nativeLong): boolean {
   return v === null || record(v) && exactKeys(v, POSTED_EVIDENCE_KEYS) && same(v.companyId, company) && same(v.invoiceId, invoice) && same(v.invoiceLineId, line)
-    && integer(v.finalizedVersion) && guid(v.journalId) && v.cogsJournalLineNumber === 1 && v.counterJournalLineNumber === 2
+    && long(v.finalizedVersion, 1) && guid(v.journalId) && v.cogsJournalLineNumber === 1 && v.counterJournalLineNumber === 2
     && guid(v.cogsAccountId) && guid(v.counterAccountId) && v.cogsAccountId !== v.counterAccountId && guid(v.currencyId)
     && typeof v.amount === 'string' && /^(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(v.amount) && /[1-9]/.test(v.amount) && hash(v.sourceFingerprint)
 }
 export function decodeCogsProposal(v: unknown, company: string, invoice: string, line: string): CogsProposal | null {
+  return validCogsProposalWire(v, company, invoice, line) ? v as unknown as CogsProposal : null
+}
+// Boolean validation only: a Work string representation is never asserted to be native numeric data.
+export function validCogsProposalWire(v: unknown, company: string, invoice: string, line: string, wire: CogsProposalWireValidation = {}): boolean {
+  const long = wire.long ?? nativeLong, exactVersion = wire.exactVersion ?? ((value: unknown, expected: number) => value === expected)
+  const validDate = wire.date ?? nativeDate, validInstant = wire.instant ?? instant
   if (!record(v) || !exactKeys(v, PROPOSAL_KEYS, PROPOSAL_OPTIONAL_KEYS) || !guid(v.proposalId) || !same(v.companyId, company) || !same(v.invoiceId, invoice) || !same(v.invoiceLineId, line)
-    || !integer(v.finalizedVersion) || !integer(v.expectedLineVersion, 0) || !classification(v.classification) || !plan(v.accountPlan)
-    || !guid(v.periodId) || !date(v.transactionDate) || !date(v.accountingDate) || v.valueDate !== null && !date(v.valueDate)
-    || !guid(v.preparedBy) || !instant(v.preparedAtUtc) || !text(v.reason) || !pair(v) || !evidence(v.postedEvidence, company, invoice, line)
-    || !attributedEvidence(v.attributedEvidence, company) || !purchaseAttributedEvidence(v.purchaseAttributedEvidence, company)
+    || !long(v.finalizedVersion, 1) || !long(v.expectedLineVersion, 0) || !classification(v.classification) || !plan(v.accountPlan, long)
+    || !guid(v.periodId) || !validDate(v.transactionDate) || !validDate(v.accountingDate) || v.valueDate !== null && !validDate(v.valueDate)
+    || !guid(v.preparedBy) || !validInstant(v.preparedAtUtc) || !text(v.reason) || !pair(v) || !evidence(v.postedEvidence, company, invoice, line, long)
+    || !attributedEvidence(v.attributedEvidence, company, wire.manufacturingShare) || !purchaseAttributedEvidence(v.purchaseAttributedEvidence, company, wire.purchaseShare)
     || !attributedCorrections(v.attributedCorrections)
-    || v.postedEvidence === null && v.reversingCorrectionJournalId !== null) return null
-  if (v.status === 'Prepared' ? v.version !== 1 || v.approvedBy !== null || v.approvedAtUtc !== null || v.reversingCorrectionJournalId !== null
-    : v.status !== 'Approved' || v.version !== 2 || !guid(v.approvedBy) || !instant(v.approvedAtUtc)
-      || v.preparedBy.toLowerCase() === v.approvedBy.toLowerCase()) return null
+    || v.postedEvidence === null && v.reversingCorrectionJournalId !== null) return false
+  if (v.status === 'Prepared' ? !exactVersion(v.version, 1) || v.approvedBy !== null || v.approvedAtUtc !== null || v.reversingCorrectionJournalId !== null
+    : v.status !== 'Approved' || !exactVersion(v.version, 2) || !guid(v.approvedBy) || !validInstant(v.approvedAtUtc)
+      || v.preparedBy.toLowerCase() === v.approvedBy.toLowerCase()) return false
   if (v.status === 'Prepared' && v.attributedCorrections !== undefined || Array.isArray(v.attributedCorrections)
-    && v.attributedCorrections.some(c => ![...((v.attributedEvidence as CogsAttributedEvidence[] | undefined) ?? []),
-      ...((v.purchaseAttributedEvidence as CogsPurchaseAttributedEvidence[] | undefined) ?? [])]
-      .some(e => e.source.fingerprint === c.attributionFingerprint && e.currentJournalId !== null && same(c.sourceJournalId, e.currentJournalId)))) return null
-  return v as unknown as CogsProposal
+    && v.attributedCorrections.some(c => !record(c) || ![...(Array.isArray(v.attributedEvidence) ? v.attributedEvidence : []),
+      ...(Array.isArray(v.purchaseAttributedEvidence) ? v.purchaseAttributedEvidence : [])]
+      .some(e => record(e) && record(e.source) && e.source.fingerprint === c.attributionFingerprint
+        && e.currentJournalId !== null && same(c.sourceJournalId, e.currentJournalId as string)))) return false
+  return true
 }
 function revision(v: unknown): v is CogsRevision {
   return record(v) && exactKeys(v, REVISION_KEYS, REVISION_OPTIONAL_KEYS) && integer(v.version) && guid(v.proposalId) && classification(v.classification) && plan(v.accountPlan)
@@ -155,16 +170,17 @@ function revision(v: unknown): v is CogsRevision {
     && instant(v.approvedAtUtc) && guid(v.periodId) && date(v.transactionDate) && date(v.accountingDate) && text(v.reason) && pair(v)
     && attributedCorrections(v.attributedCorrections)
 }
-function sourceReference(v: unknown, company: string, invoice: string, line: string): boolean {
+export function validCogsSourceReference(v: unknown, company: string, invoice: string, line: string, wire: CostProofWireValidation = {}): boolean {
+  const long = wire.long ?? nativeLong, validDate = wire.date ?? nativeDate
   return record(v) && same(v.companyId, company) && same(v.invoiceId, invoice) && same(v.invoiceLineId, line)
-    && integer(v.finalizedVersion) && ['finalizationAdmissionId', 'productId', 'shipmentId', 'dispatchNoteId', 'ettn'].every(k => guid(v[k]))
-    && integer(v.dispatchNoteLineNo) && integer(v.invoiceLineNo) && date(v.invoiceDate) && text(v.officialInvoiceNumber)
+    && long(v.finalizedVersion, 1) && ['finalizationAdmissionId', 'productId', 'shipmentId', 'dispatchNoteId', 'ettn'].every(k => guid(v[k]))
+    && integer(v.dispatchNoteLineNo) && integer(v.invoiceLineNo) && validDate(v.invoiceDate) && text(v.officialInvoiceNumber)
     && hash(v.fingerprint) && exactKeys(v, SOURCE_KEYS)
 }
 export function decodeCogsSourceSelection(v: unknown, company: string): CogsSourceSelection | null {
   if (!record(v) || !exactKeys(v, SELECTION_KEYS) || !same(v.companyId, company) || !guid(v.invoiceId) || !guid(v.ettn) || !text(v.officialInvoiceNumber)
     || !Array.isArray(v.lines) || v.lines.length === 0 || v.lines.some(line => !record(line) || !guid(line.invoiceLineId)
-      || !sourceReference(line, company, v.invoiceId as string, line.invoiceLineId) || line.ettn !== v.ettn)
+      || !validCogsSourceReference(line, company, v.invoiceId as string, line.invoiceLineId) || line.ettn !== v.ettn)
     || new Set(v.lines.map(line => (line as CogsHistory['source']).invoiceLineId.toLowerCase())).size !== v.lines.length) return null
   return v as unknown as CogsSourceSelection
 }
@@ -172,17 +188,21 @@ function attributedSourceMatches(value: unknown, source: unknown): boolean {
   if (value === undefined) return true
   if (!Array.isArray(value) || !record(source) || !guid(source.productId) || !guid(source.shipmentId)) return false
   const product = source.productId; const shipment = source.shipmentId
-  return value.every((entry: CogsAttributedEvidence) => same(entry.source.shipment.productId, product) && same(entry.source.shipment.shipmentId, shipment))
+  return value.every(entry => record(entry) && record(entry.source) && record(entry.source.shipment)
+    && same(entry.source.shipment.productId, product) && same(entry.source.shipment.shipmentId, shipment))
 }
 function purchaseAttributedSourceMatches(value: unknown, source: unknown): boolean {
   if (value === undefined) return true
   if (!Array.isArray(value) || !record(source) || !guid(source.productId) || !guid(source.shipmentId)) return false
   const product = source.productId; const shipment = source.shipmentId
-  return value.every((entry: CogsPurchaseAttributedEvidence) => same(entry.source.productId, product) && same(entry.source.shipmentId, shipment))
+  return value.every(entry => record(entry) && record(entry.source) && same(entry.source.productId, product) && same(entry.source.shipmentId, shipment))
+}
+export function validCogsCorrelatedEvidence(proposal: unknown, source: unknown): boolean {
+  return record(proposal) && attributedSourceMatches(proposal.attributedEvidence, source) && purchaseAttributedSourceMatches(proposal.purchaseAttributedEvidence, source)
 }
 export function decodeCogsHistory(v: unknown, company: string, invoice: string, line: string): CogsHistory | null {
   if (!record(v) || !exactKeys(v, HISTORY_KEYS, HISTORY_OPTIONAL_KEYS) || !same(v.companyId, company) || !same(v.invoiceId, invoice) || !same(v.invoiceLineId, line) || !integer(v.lineVersion, 0)
-    || !record(v.source) || !sourceReference(v.source, company, invoice, line) || !Array.isArray(v.proposals) || !Array.isArray(v.revisions)
+    || !record(v.source) || !validCogsSourceReference(v.source, company, invoice, line) || !Array.isArray(v.proposals) || !Array.isArray(v.revisions)
     || !v.revisions.every(revision) || v.revisions.length !== v.lineVersion || v.revisions.some((r, i) => r.version !== i + 1)
     || v.proposals.some(p => decodeCogsProposal(p, company, invoice, line) === null)
     || new Set(v.proposals.map(p => (p as CogsProposal).proposalId.toLowerCase())).size !== v.proposals.length

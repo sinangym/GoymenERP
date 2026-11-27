@@ -1,17 +1,28 @@
 import { isDateOnly } from '../finance/dateOnly'
 import { exactKeys } from './exactKeys'
 
-export interface PostedManufacturingCostShare {
+export interface CostProofWireValidation {
+  readonly long?: (value: unknown, minimum: number) => boolean
+  readonly date?: (value: unknown) => boolean
+  readonly utc?: (value: unknown) => boolean
+}
+export interface CostProofRatio { readonly numerator: string; readonly denominator: string }
+export interface CostProofReturn { readonly returnId: string; readonly movementId: string; readonly movementLineNumber: number
+  readonly sourceIssueMovementId: string; readonly quantityKg: number; readonly recordedAtUtc: string }
+export interface ManufacturingCostShipment<TVersion = number> {
+  readonly shipmentId: string; readonly movementId: string; readonly movementLineNumber: number; readonly loadingInstructionLineId: string
+  readonly productId: string; readonly labelId: string; readonly physicalQuantityKg: number; readonly rootShare: CostProofRatio
+  readonly netRootQuantityKg: CostProofRatio; readonly recordedAtUtc: string; readonly provenOriginalSequence: TVersion | null
+  readonly hasReturns?: boolean; readonly physicalProofJson: string; readonly returns?: readonly CostProofReturn[]
+}
+export interface PostedManufacturingCostShare<TVersion = number> {
   readonly companyId: string; readonly sourceEventId: string; readonly outputId: string; readonly generationId: string
   readonly generationVersion: string; readonly receiptMovementId: string; readonly journalId: string; readonly currencyId: string
   readonly cogsAccountId: string; readonly counterAccountId: string; readonly journalTotal: string; readonly signedAmount: string
   readonly signedRoundingResidue: string; readonly exactSignedAmount: { readonly numerator: string; readonly denominator: string }
-  readonly moneyProfileId: string; readonly moneyProfileVersion: number; readonly moneyScale: number; readonly profileAccountingDate: string
+  readonly moneyProfileId: string; readonly moneyProfileVersion: TVersion; readonly moneyScale: number; readonly profileAccountingDate: string
   readonly sourcePayloadSha256: string; readonly lineageSha256: string; readonly historySha256: string; readonly fingerprint: string
-  readonly shipment: { readonly shipmentId: string; readonly movementId: string; readonly movementLineNumber: number
-    readonly productId: string; readonly physicalQuantityKg: number; readonly recordedAtUtc: string; readonly hasReturns?: boolean
-    readonly returns?: readonly { readonly returnId: string; readonly movementId: string; readonly movementLineNumber: number
-      readonly sourceIssueMovementId: string; readonly quantityKg: number; readonly recordedAtUtc: string }[] }
+  readonly shipment: ManufacturingCostShipment<TVersion>
 }
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 const guid = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(value) && !/^0{8}(-0{4}){3}-0{12}$/.test(value)
@@ -35,19 +46,26 @@ const RETURN_KEYS = ['returnId', 'movementId', 'movementLineNumber', 'sourceIssu
 
 // Shape and identity validation only. The browser never computes a monetary share, sum or remainder.
 export function postedManufacturingCostShare(value: unknown, company: string, product?: string): value is PostedManufacturingCostShare {
+  return validPostedManufacturingCostShare(value, company, product)
+}
+// Boolean seam only: accepting another wire representation never narrows it to native numeric types.
+export function validPostedManufacturingCostShare(value: unknown, company: string, product?: string, wire: CostProofWireValidation = {}): boolean {
+  const long = wire.long ?? ((v: unknown, minimum: number) => positiveInteger(v) && (v as number) >= minimum)
+  const date = wire.date ?? ((v: unknown) => typeof v === 'string' && isDateOnly(v))
+  const instant = wire.utc ?? utc
   if (!record(value) || !exactKeys(value, SHARE_KEYS) || !same(value.companyId, company)
     || !['sourceEventId', 'outputId', 'generationId', 'receiptMovementId', 'journalId', 'currencyId', 'cogsAccountId', 'counterAccountId', 'moneyProfileId'].every(key => guid(value[key]))
     || same(value.cogsAccountId, value.counterAccountId as string) || typeof value.generationVersion !== 'string' || !/^[1-9][0-9]*$/.test(value.generationVersion)
     || !['journalTotal', 'signedAmount', 'signedRoundingResidue'].every(key => decimal(value[key]))
     || (value.journalTotal as string).startsWith('-') || value.journalTotal === '0' || !ratio(value.exactSignedAmount)
-    || !positiveInteger(value.moneyProfileVersion) || !Number.isSafeInteger(value.moneyScale) || (value.moneyScale as number) < 0 || (value.moneyScale as number) > 28
-    || typeof value.profileAccountingDate !== 'string' || !isDateOnly(value.profileAccountingDate)
+    || !long(value.moneyProfileVersion, 1) || !Number.isSafeInteger(value.moneyScale) || (value.moneyScale as number) < 0 || (value.moneyScale as number) > 28
+    || !date(value.profileAccountingDate)
     || !['sourcePayloadSha256', 'lineageSha256', 'historySha256', 'fingerprint'].every(key => hash(value[key]))
     || !record(value.shipment)) return false
   const shipment = value.shipment
   if (!exactKeys(shipment, SHIPMENT_KEYS, SHIPMENT_OPTIONAL_KEYS) || !guid(shipment.movementId) || !positiveInteger(shipment.movementLineNumber)
     || !guid(shipment.loadingInstructionLineId) || !guid(shipment.labelId) || !ratio(shipment.rootShare) || !ratio(shipment.netRootQuantityKg)
-    || shipment.provenOriginalSequence !== null && !positiveInteger(shipment.provenOriginalSequence)
+    || shipment.provenOriginalSequence !== null && !long(shipment.provenOriginalSequence, 1)
     || typeof shipment.physicalProofJson !== 'string' || typeof shipment.hasReturns !== 'boolean') return false
   if (shipment.hasReturns === true) {
     if (!Array.isArray(shipment.returns) || shipment.returns.length === 0 || shipment.returns.length > 65536) return false
@@ -55,7 +73,7 @@ export function postedManufacturingCostShare(value: unknown, company: string, pr
     for (const item of shipment.returns) {
       if (!record(item) || !exactKeys(item, RETURN_KEYS) || !guid(item.returnId) || !guid(item.movementId) || !positiveInteger(item.movementLineNumber)
         || !same(item.sourceIssueMovementId, shipment.movementId as string)
-        || typeof item.quantityKg !== 'number' || !Number.isFinite(item.quantityKg) || item.quantityKg <= 0 || !utc(item.recordedAtUtc)) return false
+        || typeof item.quantityKg !== 'number' || !Number.isFinite(item.quantityKg) || item.quantityKg <= 0 || !instant(item.recordedAtUtc)) return false
       const identity = item.returnId.toLowerCase(); const movement = `${item.movementId}:${item.movementLineNumber}`.toLowerCase()
       if (ids.has(identity) || movements.has(movement)) return false
       ids.add(identity); movements.add(movement)
@@ -64,5 +82,5 @@ export function postedManufacturingCostShare(value: unknown, company: string, pr
   return ['shipmentId', 'movementId', 'productId'].every(key => guid(shipment[key]))
     && (product === undefined || same(shipment.productId, product)) && positiveInteger(shipment.movementLineNumber)
     && typeof shipment.physicalQuantityKg === 'number' && Number.isFinite(shipment.physicalQuantityKg) && shipment.physicalQuantityKg > 0
-    && utc(shipment.recordedAtUtc)
+    && instant(shipment.recordedAtUtc)
 }
