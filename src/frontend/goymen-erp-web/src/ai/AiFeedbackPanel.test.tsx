@@ -1,7 +1,7 @@
 import { afterEach,expect,it,vi } from 'vitest'
 import { act,cleanup,fireEvent,render,screen,waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient } from '@tanstack/react-query'
+import { QueryClient,QueryObserver } from '@tanstack/react-query'
 import { createMemoryRouter,RouterProvider } from 'react-router'
 import { ShellProvider } from '../shell/ShellProvider'
 import { AppShell } from '../shell/AppShell'
@@ -12,9 +12,9 @@ import { AI_FEEDBACK_TEXT as T } from './aiFeedbackText'
 const id='cccccccc-0000-4000-8000-000000000001',path=`/ai/answers/${id}/feedback`
 const view={answerId:id,version:'0',kind:null,reasonCode:null}
 const receipt={answerId:id,version:'1',kind:'Accepted',reasonCode:null,originalCorrelationId:'original',replayed:false}
-function mount(company=COMPANY_A,answerId=id){
- const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[{path:'feedback-test',element:<AiFeedbackPanel companyId={company} answerId={answerId}/>}]}],{initialEntries:['/feedback-test']})
- render(<ShellProvider queryClient={new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}})}><RouterProvider router={router}/></ShellProvider>)
+function mount(company=COMPANY_A,answerId=id,client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}})){
+ const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[{path:'feedback-test',element:<AiFeedbackPanel companyId={company} answerId={answerId}/>},{path:'feedback-away',element:<p>SENTETIK başka ekran</p>}]}],{initialEntries:['/feedback-test']})
+ render(<ShellProvider queryClient={client}><RouterProvider router={router}/></ShellProvider>)
  return router
 }
 afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks();sessionStorage.clear();Object.assign(IDENTITY,{authenticationSessionBinding:null})})
@@ -84,4 +84,31 @@ it('does not release a late receipt into another committed company',async()=>{
  await userEvent.setup().selectOptions(screen.getByRole('combobox',{name:'Şirket'}),COMPANY_B)
  await waitFor(()=>expect(screen.queryByRole('region',{name:T.heading})).toBeNull())
  await act(async()=>{release(json(receipt));await Promise.resolve()});expect(screen.queryByText(T.done,{exact:false})).toBeNull()
+})
+
+it('starts a fresh generation read on route return even while another observer retains the old in-flight feedback query',async()=>{
+ let releaseOld!:(response:Response)=>void,reads=0
+ const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}})
+ const calls=installFetch({capabilities:[AI_PANEL_CAPABILITY],respond:(url,init)=>{
+  if(!url.includes(path)||init?.method==='POST')return undefined
+  return ++reads===1?new Promise<Response>(resolve=>{releaseOld=resolve}):json({answerId:id,version:'2',kind:'Rejected',reasonCode:'other'})
+ }})
+ const router=mount(COMPANY_A,id,client)
+ await waitFor(()=>expect(reads).toBe(1))
+ const oldQuery=client.getQueryCache().findAll().find(query=>query.queryKey.includes('ai-answer-feedback'))
+ expect(oldQuery).toBeDefined()
+ // A second consumer can retain a query through unmount. Cancellation/gcTime alone is not an entry fence.
+ const observer=new QueryObserver(client,{queryKey:oldQuery!.queryKey,enabled:false})
+ const stop=observer.subscribe(()=>{})
+ try{
+  await act(async()=>{await router.navigate('/feedback-away')})
+  await screen.findByText('SENTETIK başka ekran')
+  await act(async()=>{await router.navigate('/feedback-test')})
+  await screen.findByText(`${T.current}: ${T.kinds.Rejected} · ${T.version}: 2`)
+  expect(reads).toBe(2)
+  await act(async()=>{releaseOld(json({...view,version:'1',kind:'Accepted'}));await Promise.resolve()})
+  expect(screen.getByText(`${T.current}: ${T.kinds.Rejected} · ${T.version}: 2`)).toBeTruthy()
+  expect(screen.queryByText(`${T.current}: ${T.kinds.Accepted} · ${T.version}: 1`)).toBeNull()
+  expect(calls.filter(call=>call.url.includes(path)&&call.method==='POST')).toHaveLength(0)
+ }finally{stop();observer.destroy()}
 })

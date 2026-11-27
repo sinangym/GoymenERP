@@ -14,13 +14,13 @@ import styles from './AiPanel.module.css'
 export function AiFeedbackPanel({companyId,answerId}:{readonly companyId:string;readonly answerId:string}) {
  const shell=useShellState(),context=contextKey(shell)
  if(context===null || shell.activeContext?.scopeMode!=='single' || shell.activeContext.companyId!==companyId || capabilityFailClosed(shell) || !hasCapability(shell, AI_PANEL_CAPABILITY) || !isAiFeedbackAnswerId(answerId)) return null
- return <Feedback key={`${contextKeyString(context)}:${shell.routeEntryGeneration}:${answerId}`} company={companyId} answerId={answerId} namespace={contextKeyString(context)}/>
+ return <Feedback key={`${contextKeyString(context)}:${shell.routeEntryGeneration}:${answerId}`} company={companyId} answerId={answerId} namespace={contextKeyString(context)} generation={shell.routeEntryGeneration}/>
 }
-function Feedback({company,answerId,namespace}:{readonly company:string;readonly answerId:string;readonly namespace:string}) {
+function Feedback({company,answerId,namespace,generation}:{readonly company:string;readonly answerId:string;readonly namespace:string;readonly generation:number}) {
  const boundary=useAuthBoundary()
  const [selected,setSelected]=useState<AiFeedbackKind|''>(''),[reason,setReason]=useState<AiFeedbackReason|''>('')
  const attempt=useScopedCommandAttempt<AiFeedbackRequest,AiFeedbackReceipt>(`ai-answer-feedback:${answerId}`,(body,key)=>sendAiFeedback(company,answerId,body,key),isAiFeedbackRequest)
- const read=useQuery({queryKey:[namespace,'ai-answer-feedback',answerId],retry:false,staleTime:0,gcTime:0,queryFn:async({signal})=>{
+ const read=useQuery({queryKey:[namespace,generation,'ai-answer-feedback',answerId],retry:false,staleTime:0,gcTime:0,queryFn:async({signal})=>{
   const captured=boundary.capture(),result=await fetchAiFeedback(company,answerId,signal)
   if(result.type==='http')boundary.report(result.status,captured)
   return result
