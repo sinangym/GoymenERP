@@ -18,9 +18,10 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// original receipt Finance does not find is unreadable as the owner's invariants say, so the answer is Unavailable.
 /// </para>
 /// </summary>
-internal sealed class FinanceManualReceiptReversalWorkInboxSourceV1(
+internal sealed partial class FinanceManualReceiptReversalWorkInboxSourceV1(
     FinanceDbContext dbContext,
-    FinanceWorkInboxFence fence) : IWorkInboxSourceV1
+    FinanceWorkInboxFence fence,
+    IReversalProposalService? reversalService = null) : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "finance";
     public const string KindName = "finance.manual-receipt-reversal.v1";

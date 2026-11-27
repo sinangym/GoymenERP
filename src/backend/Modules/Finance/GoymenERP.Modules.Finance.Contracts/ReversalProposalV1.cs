@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Finance.Contracts;
 
 public sealed record ReversalProposalCommandResult(
@@ -5,7 +7,12 @@ public sealed record ReversalProposalCommandResult(
     ReversalProposalView? Resource,
     bool IsReplay,
     string OriginalCorrelationId,
-    IReadOnlyList<ValidationIssue> Issues);
+    IReadOnlyList<ValidationIssue> Issues)
+{
+    // Server-only native command provenance; the existing public five-field result is unchanged.
+    [JsonIgnore]
+    public ReceiptReversalDecisionReceiptV1? DecisionReceipt { get; init; }
+}
 
 public sealed record ReversalProposalPage(IReadOnlyList<ReversalProposalView> Items);
 
@@ -59,4 +66,25 @@ public interface IFinanceReversalAllocationGate
         FinanceContext context,
         Guid originalSourceId,
         CancellationToken cancellationToken);
+}
+
+/// <summary>Actual immutable native command receipt; never reconstructed from the current proposal.</summary>
+public sealed record ReceiptReversalDecisionReceiptV1(Guid CompanyId, Guid ProposalId, Guid OriginalSourceId,
+    string CommandName, string IdempotencyKeyHash, string PayloadHash, string ActorId, string ExpectedVersion,
+    string ResultVersion, string OriginalCorrelationId, DateTimeOffset RecordedAtUtc, string RecordedFactsDigest);
+
+/// <summary>Immutable original receipt facts only: no bank card, party name, balance or general browse access.</summary>
+public sealed record ReceiptReversalOriginalReceiptV1(Guid SourceId, string SourceVersion, string? DocumentNumber,
+    Guid PartyId, Guid CompanyAccountId, Guid TreasuryAccountId, Guid CurrencyId, string AmountText,
+    DateOnly OccurredOn, DateOnly? ValueOn, string? PosCommissionAmountText, string? PosBankNetAmountText,
+    PosCommissionBearer? PosCommissionBearer, Guid OriginalEventId, string RecordedBy, DateTimeOffset RecordedAtUtc);
+
+public sealed record ReceiptReversalDecisionDetailV1(Guid CompanyId, ReversalProposalView Proposal,
+    ReceiptReversalOriginalReceiptV1 OriginalReceipt);
+
+/// <summary>Approval-only human purpose read. Native proposer-or-approver general reads retain their contract.</summary>
+public interface IReceiptReversalDecisionReadV1
+{
+    Task<ReadResult<ReceiptReversalDecisionDetailV1>> ReadDecisionAsync(FinanceContext context, Guid proposalId,
+        Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken);
 }
