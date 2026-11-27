@@ -266,3 +266,37 @@ it('keeps the tax attempt on stay and never reselects the old company after an e
  expect((screen.getByRole('combobox',{name:'Şirket'}) as HTMLSelectElement).value).toBe(B_ID)
  expect(screen.queryByText(T.selected)).toBeNull()
 })
+
+
+it('atomic post-commit 403 remount keeps the original key/body and retries only after a fresh owner read',async()=>{
+  let creates=0,generation=0
+  const log=installFetch({create:()=>++creates===1?problem(403,null):json(mutationView({version:'2'}),201,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'atomic-original'})})
+  const nativeFetch=globalThis.fetch
+  vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo | URL,init?:RequestInit)=>{
+    const url=String(input)
+    if(url.endsWith('/counterparties/tax-identity/duplicates'))return json({taxIdentityNumber:'1234567890',kind:'vkn',duplicates:[]})
+    const response=await nativeFetch(input,init)
+    if(url.includes('/shell/capabilities')) {
+      const body=await response.json();return json({...body,generation:`atomic-generation-${++generation}`})
+    }
+    return response
+  }))
+  const {onCreated}=mount();let dialog=await openAndFill()
+  await userEvent.type(within(dialog).getByLabelText('VKN / TCKN (isteğe bağlı)'),'1234567890')
+  await userEvent.click(within(dialog).getByRole('button',{name:'Cari oluştur'}))
+  await waitFor(()=>expect(generation).toBeGreaterThan(1))
+  // Authority refresh can remount and close the portal; reopening must not mint another attempt.
+  if(screen.queryByRole('dialog')===null)await userEvent.click(await screen.findByRole('button',{name:T.open}))
+  dialog=screen.getByRole('dialog')
+  await within(dialog).findByText(/İşlem sonucu belirsiz/)
+  expect(log.creates()).toHaveLength(1)
+  expect((within(dialog).getByLabelText('VKN / TCKN (isteğe bağlı)') as HTMLInputElement).value).toBe('1234567890')
+  expect((within(dialog).getByRole('button',{name:'Cari oluştur'}) as HTMLButtonElement).disabled).toBe(true)
+  await userEvent.click(within(dialog).getByRole('button',{name:'Aynı işlemi yeniden dene'}))
+  await screen.findByText(T.selected)
+  expect(onCreated).toHaveBeenCalledTimes(1)
+  expect(log.creates()).toHaveLength(2)
+  expect(log.creates()[1].idempotencyKey).toBe(log.creates()[0].idempotencyKey)
+  expect(log.creates()[1].body).toEqual(log.creates()[0].body)
+  expect(log.calls.filter(call=>call.method==='PUT')).toHaveLength(0)
+})

@@ -190,6 +190,7 @@ export function classifyCommandOutcome<R>(outcome: CommandOutcome<R>): CommandRe
     case 'malformed':
       return { kind: 'unknown', reason: 'malformed-response' }
     case 'http':
+      if(outcome.status===403 && outcome.mayHaveCommitted===true)return {kind:'unknown',reason:'service-unavailable'}
       return classifyHttp(outcome.status, outcome.code)
     default:
       return { kind: 'unknown', reason: 'malformed-response' }

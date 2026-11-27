@@ -89,23 +89,32 @@ export interface CommandAttemptController<P, R> {
   readonly abandon: () => void
 }
 
-export function useCommandAttempt<P, R>(): CommandAttemptController<P, R> {
+/** Optional ephemeral handoff; ordinary callers retain the original component-only lifecycle. */
+interface RetainedAttempt<P, R> {
+  readonly initialState: () => AttemptState<P, R>
+  readonly restoreSender: (payload: P) => CommandSender<R>
+  readonly onStateChange: (state: AttemptState<P, R>) => void
+}
+
+export function useCommandAttempt<P, R>(retained?: RetainedAttempt<P, R>): CommandAttemptController<P, R> {
   const shell = useShellState()
   const boundary = useAuthBoundary()
-  const [state, setState] = useState<AttemptState<P, R>>({ phase: 'idle' })
+  const [state, setState] = useState<AttemptState<P, R>>(() => retained?.initialState() ?? { phase: 'idle' })
 
   // Mirrors for the async continuation. Written in an effect, never during
   // render (oxlint/react purity — the same lesson as CapabilityRoute).
+  const retainedRef = useRef(retained)
   const shellRef = useRef(shell)
   const boundaryRef = useRef(boundary)
   const stateRef = useRef(state)
   useEffect(() => {
+    retainedRef.current = retained
     shellRef.current = shell
     boundaryRef.current = boundary
     stateRef.current = state
   })
 
-  const senderRef = useRef<CommandSender<R> | null>(null)
+  const senderRef = useRef<CommandSender<R> | null>(state.phase==='unknown'||state.phase==='abandoned'?retained?.restoreSender(state.snapshot.payload)??null:null)
   const controllerRef = useRef<AbortController | null>(null)
   const inFlightRef = useRef(false)
   const disposedRef = useRef(false)
@@ -138,6 +147,10 @@ export function useCommandAttempt<P, R>(): CommandAttemptController<P, R> {
       // A departed context: the outcome belongs to an attempt that no longer has a
       // screen. Nothing is written, nothing is announced.
       if (attemptBinding(shellRef.current) !== snapshot.binding) return
+      const pending = stateRef.current
+      if (pending.phase === 'submitting' && pending.snapshot.key === snapshot.key) {
+        retainedRef.current?.onStateChange(settleAttempt(pending, outcome))
+      }
       setState((current) =>
         current.phase === 'submitting' && current.snapshot.key === snapshot.key
           ? settleAttempt(current, outcome)
@@ -161,6 +174,7 @@ export function useCommandAttempt<P, R>(): CommandAttemptController<P, R> {
       const snapshot: AttemptSnapshot<P> = { key: generateAttemptKey(), operation, binding, payload }
       senderRef.current = send
       stateRef.current = beginAttempt(snapshot)
+      retainedRef.current?.onStateChange(stateRef.current)
       setState(stateRef.current)
       dispatchSend(snapshot, send)
       return 'started'
@@ -207,6 +221,7 @@ export function useCommandAttempt<P, R>(): CommandAttemptController<P, R> {
 
       if (revalidate === undefined) {
         stateRef.current = retryAttempt(current)
+        retainedRef.current?.onStateChange(stateRef.current)
         setState(stateRef.current)
         dispatchSend(snapshot, sender)
         return
@@ -229,6 +244,7 @@ export function useCommandAttempt<P, R>(): CommandAttemptController<P, R> {
           if (latest.phase !== 'unknown' && latest.phase !== 'abandoned') return
           if (latest.snapshot.key !== snapshot.key) return
           stateRef.current = retryAttempt(latest)
+          retainedRef.current?.onStateChange(stateRef.current)
           setState(stateRef.current)
           dispatchSend(latest.snapshot, sender)
         })
@@ -262,6 +278,7 @@ export function useCommandAttempt<P, R>(): CommandAttemptController<P, R> {
     // retried under its own key (unresolved); a closed attempt drops it.
     if (next.phase !== 'abandoned') senderRef.current = null
     stateRef.current = next
+    retainedRef.current?.onStateChange(next)
     setState(next)
   }, [invalidateRetry])
 

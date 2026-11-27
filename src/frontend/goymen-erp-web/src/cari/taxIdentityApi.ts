@@ -193,3 +193,14 @@ export function decideTaxIdentityChange(
     replayable(TAX_PROBLEM_CODE.changeNotPending, TAX_PROBLEM_CODE.changeStale, TAX_PROBLEM_CODE.selfDecision),
   )
 }
+
+/** Native pre-create warning read; no Party id exists and no card is selected or linked. */
+export function checkCreateTaxIdentityDuplicates(companyId:string,number:string,signal?:AbortSignal):Promise<TaxReadOutcome<TaxDuplicateCheck>> {
+  return postJson('/counterparties/tax-identity/duplicates',companyId,{taxIdentityNumber:number},raw=>{
+    if(typeof raw!=='object' || raw===null || Array.isArray(raw) || Object.keys(raw).sort().join(',')!=='duplicates,kind,taxIdentityNumber')return null
+    if(!('duplicates' in raw) || !Array.isArray(raw.duplicates) || !raw.duplicates.every(row=>typeof row==='object' && row!==null && !Array.isArray(row) && Object.keys(row).sort().join(',')==='accountIsActive,code,legalName,partyId'))return null
+    const result=decodeTaxDuplicateCheck(raw,number)
+    return result!==null && result.duplicates.length<=20 && new Set(result.duplicates.map(row=>row.partyId.toLowerCase())).size===result.duplicates.length
+      && result.duplicates.every(row=>row.partyId.length===36)?result:null
+  },signal)
+}

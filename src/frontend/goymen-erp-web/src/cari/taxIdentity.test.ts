@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { checkCreateTaxIdentityDuplicates } from './taxIdentityApi'
 import {
   checkTaxIdentity,
   decodeTaxDuplicateCheck,
@@ -129,4 +130,22 @@ describe('AT-009 decoders are strict and bound to the request', () => {
     expect(taxProblemCodeOf({ code: 'tax_identity_self_decision' })).toBe('tax_identity_self_decision')
     expect(taxProblemCodeOf(null)).toBeNull()
   })
+})
+
+// The pre-create probe is a read: no card id, mutation key, company override or fallback zero.
+afterEach(()=>vi.unstubAllGlobals())
+it('uses the native pre-create number-only body and decodes at most 20 bound warning rows',async()=>{
+ const fetch=vi.fn<(input:RequestInfo|URL,init?:RequestInit)=>Promise<Response>>(async()=>new Response(JSON.stringify({taxIdentityNumber:'1234567890',kind:'vkn',duplicates:[]}),{status:200}));vi.stubGlobal('fetch',fetch)
+ expect(await checkCreateTaxIdentityDuplicates(COMPANY,'1234567890')).toEqual({type:'ok',data:{taxIdentityNumber:'1234567890',kind:'vkn',duplicates:[]}})
+ const [url,init]=fetch.mock.calls[0]!;expect(String(url).endsWith('/counterparties/tax-identity/duplicates')).toBe(true);expect(String(url)).not.toContain('?')
+ expect(JSON.parse(init!.body as string)).toEqual({taxIdentityNumber:'1234567890'});expect(new Headers(init?.headers).get('X-Company-Id')).toBe(COMPANY);expect(new Headers(init?.headers).has('Idempotency-Key')).toBe(false)
+})
+it.each([203,403,503])('does not treat probe status %s as zero duplicates or creation authority',async status=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({taxIdentityNumber:'1234567890',kind:'vkn',duplicates:[]}),{status})))
+ expect(await checkCreateTaxIdentityDuplicates(COMPANY,'1234567890')).toMatchObject({type:'http',status})
+})
+it.each([{taxIdentityNumber:'9876543217'},{kind:'tckn'},{companyId:OTHER},{duplicates:Array.from({length:21},()=>({partyId:PARTY,code:'SENTETIK',legalName:'SENTETIK',accountIsActive:true}))},
+ {duplicates:[{partyId:PARTY,code:'SENTETIK',legalName:'SENTETIK',accountIsActive:true},{partyId:PARTY,code:'SENTETIK',legalName:'SENTETIK',accountIsActive:true}]}])('refuses foreign-number, partial or unbounded pre-create warning %j',async delta=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({taxIdentityNumber:'1234567890',kind:'vkn',duplicates:[],...delta}),{status:200})))
+ expect(await checkCreateTaxIdentityDuplicates(COMPANY,'1234567890')).toEqual({type:'malformed'})
 })

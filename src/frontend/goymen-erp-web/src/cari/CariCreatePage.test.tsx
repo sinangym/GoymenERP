@@ -35,6 +35,7 @@ import {
 } from './commandPageHarness'
 import { CAPABILITY } from '../shell/capabilities'
 import { PROBLEM_CODE } from './contract'
+import { resetPendingTaxIdentityAttempts } from './pendingTaxIdentityAttempt'
 
 const WITHOUT_DETAIL = ALL_CARI_CAPABILITIES.filter((c) => c !== CAPABILITY.cariPartiesDetail)
 const HEADING = { name: 'Yeni Cari' } as const
@@ -48,6 +49,7 @@ beforeEach(() => {
   vi.stubGlobal('navigator', { onLine: true })
 })
 afterEach(() => {
+  resetPendingTaxIdentityAttempts()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -100,7 +102,7 @@ describe('C-02 route and capability (G-002 check 5)', () => {
     expect(fetchLog.calls.some((c) => c.url.includes('/counterparties'))).toBe(false)
   })
 
-  it('renders exactly the four command fields, the company read-only from the directory, no raw id, nothing else', async () => {
+  it('renders the native four fields plus optional tax identity, with the company read-only and no raw id', async () => {
     installFetch()
     renderAt('/cari/yeni')
     await openCreate()
@@ -110,7 +112,7 @@ describe('C-02 route and capability (G-002 check 5)', () => {
     expect(legalNameInput().getAttribute('aria-required')).toBe('true')
     expect(tradeNameInput().hasAttribute('required')).toBe(false)
     // Inside <main>: the shell toolbar's global search box (AT-002) is not one of the form's fields.
-    expect(within(screen.getByRole('main')).getAllByRole('textbox')).toHaveLength(2)
+    expect(within(screen.getByRole('main')).getAllByRole('textbox')).toHaveLength(3)
     expect(screen.getAllByRole('checkbox').map((c) => c.getAttribute('id'))).toEqual([
       'cari-create-role-customer',
       'cari-create-role-supplier',
@@ -974,5 +976,36 @@ describe('C-02 the compatibility warning names only what is on screen (ca19 P2)'
     // restore the values.
     expect(warning.textContent).toContain('Sayfayı yenilemeyin')
     expect(warning.textContent).toContain('eski değerlerine geri getirin')
+  })
+})
+
+
+describe('optional atomic tax identity create', () => {
+  function probe(duplicates: unknown[] = []) {
+    const fetchNative=globalThis.fetch
+    return vi.stubGlobal('fetch',vi.fn((input: RequestInfo | URL,init?: RequestInit)=>String(input).endsWith('/counterparties/tax-identity/duplicates')
+      ? Promise.resolve(json({taxIdentityNumber:'1234567890',kind:'vkn',duplicates})) : fetchNative(input,init)))
+  }
+  it('requires the native duplicate warning confirmation, then creates tax atomically without a Tax PUT',async()=>{
+    const log=installFetch({capabilities:WITHOUT_DETAIL,create:()=>json(mutationView({version:'2'}),201)})
+    probe([{partyId:PARTY,code:'C-1',legalName:'Mevcut cari',accountIsActive:true}])
+    renderAt('/cari/yeni');await openCreate();const user=userEvent.setup();await fillValid(user)
+    await user.type(screen.getByLabelText('VKN / TCKN (isteğe bağlı)'),'1234567890')
+    await user.click(submitButton())
+    const confirm=await screen.findByRole('button',{name:'Uyarıya rağmen cari oluştur'})
+    expect(log.creates()).toHaveLength(0)
+    await user.click(confirm)
+    await waitFor(()=>expect(log.creates()).toHaveLength(1))
+    expect(log.creates()[0].body).toMatchObject({taxIdentityNumber:'1234567890'})
+    expect(log.calls.filter(call=>call.method==='PUT')).toHaveLength(0)
+  })
+  it('does not create when the duplicate owner read is unavailable or returns an invalid number',async()=>{
+    const log=installFetch();const nativeFetch=globalThis.fetch
+    vi.stubGlobal('fetch',vi.fn((input:RequestInfo | URL,init?:RequestInit)=>String(input).endsWith('/counterparties/tax-identity/duplicates')
+      ? Promise.resolve(json({taxIdentityNumber:'9876543217',kind:'vkn',duplicates:[]})):nativeFetch(input,init)))
+    renderAt('/cari/yeni');await openCreate();const user=userEvent.setup();await fillValid(user)
+    await user.type(screen.getByLabelText('VKN / TCKN (isteğe bağlı)'),'1234567890');await user.click(submitButton())
+    await screen.findByText(/Mükerrer kontrolü veya bu işlem için yetki doğrulanamadı/)
+    expect(log.creates()).toHaveLength(0)
   })
 })

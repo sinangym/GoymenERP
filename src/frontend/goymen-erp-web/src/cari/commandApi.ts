@@ -50,6 +50,7 @@ export interface CreateCounterpartyPayload {
   readonly legalName: string
   readonly tradeName: string | null
   readonly roles: number
+  readonly taxIdentityNumber?: string | null
 }
 
 /** The link request body — roles only. No reason, no company, no version (§7.4). */
@@ -115,6 +116,8 @@ export type CommandOutcome<T> =
        * as `false`, never as a guess.
        */
       readonly replayed?: boolean
+      /** Native atomic creation can commit before a final authority refusal is returned. */
+      readonly mayHaveCommitted?: boolean
     }
   /** A 201 arrived and its body did not match the contract. The record may exist. */
   | { readonly type: 'malformed' }
@@ -477,16 +480,23 @@ export function createCounterparty(
     legalName: payload.legalName,
     tradeName: payload.tradeName,
     ...(payload.roles === 0 ? {} : { roles: payload.roles }),
+    ...(payload.taxIdentityNumber == null ? {} : { taxIdentityNumber: payload.taxIdentityNumber }),
   }
   return postCommand(
     '/counterparties',
     context,
     body,
-    (raw) => decodeCounterpartyMutation(raw, { activeCompanyId: context.companyId }),
+    (raw) => {
+      const result=decodeCounterpartyMutation(raw, { activeCompanyId: context.companyId })
+      if(payload.taxIdentityNumber==null)return result
+      if(result===null || result.version!=='2' || result.account.version!=='1' || typeof raw!=='object' || raw===null || Object.keys(raw).sort().join(',')!==['id','code','kind','legalName','tradeName','isActive','version','companyAccounts'].sort().join(','))return null
+      return result
+    },
     // `CreateCounterpartyV1` stores only its 201: no failure of a create is a replay.
     NO_REPLAYABLE_FAILURE,
     signal,
-  )
+  ).then(outcome=>payload.taxIdentityNumber!=null && outcome.type==='http' && outcome.status===403
+    ?{...outcome,mayHaveCommitted:true}:outcome)
 }
 
 /**

@@ -508,3 +508,22 @@ describe('putVersionedCommand — PUT, exact 204, fenced on the row version it r
     expect(await putVersionedCommand(PATH, CONTEXT, '7', FIELDS, controller.signal)).toEqual({ type: 'aborted' })
   })
 })
+
+it('sends optional initial tax identity only in the atomic branch and requires its exact version-2 creation receipt',async()=>{
+ const calls=stubFetch(()=>json(mutationView({version:'2'}),201))
+ expect((await createCounterparty(CONTEXT,{...PAYLOAD,taxIdentityNumber:'1234567890'})).type).toBe('created')
+ expect(bodyOf(calls[0])).toEqual({...PAYLOAD,taxIdentityNumber:'1234567890'})
+ for(const body of [mutationView(),mutationView({version:'3'}),{...mutationView({version:'2'}),taxIdentityNumber:'1234567890'},mutationView({version:'2',companyAccounts:[{...mutationView().companyAccounts[0],version:'2'}]})]){
+  stubFetch(()=>json(body,201));expect((await createCounterparty(CONTEXT,{...PAYLOAD,taxIdentityNumber:'1234567890'})).type).toBe('malformed')
+ }
+})
+it('keeps omitted/null tax on the original four-field create wire and version-1 success',async()=>{
+ const calls=stubFetch(()=>json(mutationView(),201))
+ expect((await createCounterparty(CONTEXT,{...PAYLOAD,taxIdentityNumber:null})).type).toBe('created')
+ expect(bodyOf(calls[0])).toEqual(PAYLOAD)
+})
+it('marks atomic post-commit 403 as possibly committed while preserving the actual HTTP boundary and legacy refusal',async()=>{
+ stubFetch(()=>problem(403,null))
+ expect(await createCounterparty(CONTEXT,{...PAYLOAD,taxIdentityNumber:'1234567890'})).toMatchObject({type:'http',status:403,mayHaveCommitted:true})
+ expect(await createCounterparty(CONTEXT,PAYLOAD)).not.toHaveProperty('mayHaveCommitted')
+})

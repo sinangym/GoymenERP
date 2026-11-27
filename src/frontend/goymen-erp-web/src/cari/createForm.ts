@@ -4,6 +4,7 @@
  * mirrors it field for field and nothing more.
  */
 
+import { checkTaxIdentity } from './taxIdentity'
 import { PARTY_KIND, type PartyKind } from './contract'
 import type { CreateCounterpartyPayload } from './commandApi'
 import { CARI_CREATE_TEXT } from './cariCommandText'
@@ -17,6 +18,7 @@ export interface CreateFormValues {
   readonly legalName: string
   readonly tradeName: string
   readonly roles: number
+  readonly taxIdentityNumber?: string
 }
 
 export interface CreateFormErrors {
@@ -24,6 +26,7 @@ export interface CreateFormErrors {
   readonly legalName?: string
   readonly tradeName?: string
   readonly roles?: string
+  readonly taxIdentityNumber?: string
 }
 
 export type CreateFormValidation =
@@ -34,7 +37,7 @@ export const EMPTY_CREATE_FORM: CreateFormValues = { kind: '', legalName: '', tr
 
 export function isCreateFormPristine(values: CreateFormValues): boolean {
   return (
-    values.kind === '' && values.legalName === '' && values.tradeName === '' && values.roles === 0
+    values.kind === '' && values.legalName === '' && values.tradeName === '' && values.roles === 0 && !values.taxIdentityNumber?.trim()
   )
 }
 
@@ -68,6 +71,10 @@ export function validateCreateForm(values: CreateFormValues): CreateFormValidati
     errors.roles = CARI_CREATE_TEXT.validation.roles
   }
 
+  const taxText=values.taxIdentityNumber?.trim()??''
+  const tax=taxText===''?null:checkTaxIdentity(taxText)
+  if(tax!==null && !tax.ok)errors.taxIdentityNumber=tax.message
+
   if (Object.keys(errors).length > 0) return { ok: false, errors }
 
   return {
@@ -77,6 +84,7 @@ export function validateCreateForm(values: CreateFormValues): CreateFormValidati
       legalName,
       tradeName: tradeName.length === 0 ? null : tradeName,
       roles: values.roles,
+      ...(tax?.ok?{taxIdentityNumber:tax.value}:{}),
     },
   }
 }

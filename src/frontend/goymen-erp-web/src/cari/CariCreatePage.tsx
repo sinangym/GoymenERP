@@ -2,12 +2,9 @@
  * C-02 Yeni Cari — the create SUBSET the accepted backend supports
  * (CARI_C02_LINK_JIT_SPEC_v1 §2.1, §3, §4, §5; screen id `C-02`, route `cari.create`).
  *
- * One submit = one Party + one account in the ACTIVE company. The four fields
- * below are the whole command. Deliberately absent, and forbidden by the spec
- * (§4.1): a code field (server-generated), VKN/TCKN, bank, address, contact,
- * tax/registry, risk, limit, balance, a reason, `externalIntegrationCode`, and any
- * AI suggestion without an owner endpoint. A field with no command behind it is
- * not rendered empty — it is not rendered.
+ * One submit creates a Party and its active-company account. Optional native
+ * VKN/TCKN creation is gated by the owner duplicate-warning read; omitted tax
+ * identity retains the legacy four-field command. No other card data is invented.
  *
  * The company is shell truth, shown read-only. It is never a form value and
  * nothing here can override the `X-Company-Id` the transport sends (§3.2).
@@ -16,6 +13,8 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router'
+import { checkCreateTaxIdentityDuplicates } from './taxIdentityApi'
+import type { TaxDuplicate } from './taxIdentity'
 import { createCounterparty, type CreateCounterpartyPayload } from './commandApi'
 import type { CounterpartyMutationResult } from './mutationContract'
 import { PARTY_KIND, rolesFromFlags, type PartyKind } from './contract'
@@ -29,6 +28,8 @@ import {
   type CreateFormValues,
 } from './createForm'
 import { canBeginAttempt, isAttemptFrozen, repeatsUnresolvedAttempt } from './commandAttempt'
+import { atomicCreateBindingForShell,rememberAtomicCreateAttempt,recallAtomicCreateAttempt,forgetAtomicCreateAttempt } from './pendingTaxIdentityAttempt'
+import { attemptBinding } from './useCommandAttempt'
 import { useCommandAttempt } from './useCommandAttempt'
 import { CariRoleFieldset } from './CariRoleFieldset'
 import { CommandAttemptNotice } from './CommandAttemptNotice'
@@ -86,7 +87,12 @@ function CariCreateForm({ namespace, inline }: { readonly namespace: string | nu
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const directory = useCompanyDirectory()
-  const attempt = useCommandAttempt<CreateCounterpartyPayload, CounterpartyMutationResult>()
+  const retainedOwner=atomicCreateBindingForShell(shell,API_BASE)
+  const attempt = useCommandAttempt<CreateCounterpartyPayload, CounterpartyMutationResult>({
+    initialState:()=>recallAtomicCreateAttempt(retainedOwner,attemptBinding(shell)),
+    restoreSender:payload=>(idempotencyKey,signal)=>createCounterparty({companyId:shell.activeContext!.companyId!,idempotencyKey,contract:{origin:API_BASE,namespace:namespace??''}},payload,signal),
+    onStateChange:state=>rememberAtomicCreateAttempt(retainedOwner,state),
+  })
 
   const activeCompanyId = shell.activeContext?.companyId ?? null
   const singleCompanyContext = shell.activeContext?.scopeMode === 'single' && activeCompanyId !== null
@@ -192,7 +198,7 @@ function CariCreateForm({ namespace, inline }: { readonly namespace: string | nu
   const probeFailed = probeAnswered && !probeSucceeded
   const incompatibleServer = probeAnswered && probeSucceeded && !writeReady
 
-  const [values, setValues] = useState<CreateFormValues>(() => ({ ...EMPTY_CREATE_FORM, roles: inline?.initialRoles ?? 0 }))
+  const [values, setValues] = useState<CreateFormValues>(() => attempt.state.phase==='idle'?{...EMPTY_CREATE_FORM,roles:inline?.initialRoles??0}:{...attempt.state.snapshot.payload,tradeName:attempt.state.snapshot.payload.tradeName??'',taxIdentityNumber:attempt.state.snapshot.payload.taxIdentityNumber??''})
   const [showErrors, setShowErrors] = useState(false)
   // Focus targets: the validation summary (UX-AC-001: it — not the first invalid
   // field — receives focus on an invalid submit) and the abandoned-attempt box.
@@ -202,8 +208,17 @@ function CariCreateForm({ namespace, inline }: { readonly namespace: string | nu
   const unresolvedRef = useRef<HTMLDivElement>(null)
   const [summaryFocusRequest, setSummaryFocusRequest] = useState(0)
 
+  const [checkingTax,setCheckingTax]=useState(false)
+  const [taxWarning,setTaxWarning]=useState<{readonly fingerprint:string;readonly duplicates:readonly TaxDuplicate[]}|null>(null)
+  const [taxUnavailable,setTaxUnavailable]=useState(false)
+  const taxProbe=useRef<AbortController|null>(null)
+  const taxScope=JSON.stringify([namespace,shell.routeEntryGeneration,activeCompanyId,canCreate])
+  const taxScopeRef=useRef(taxScope)
+  useEffect(()=>{taxScopeRef.current=taxScope},[taxScope])
+  useEffect(()=>()=>taxProbe.current?.abort(),[])
   const phase = attempt.state.phase
-  const frozen = isAttemptFrozen(attempt.state)
+  const atomicAbandoned=attempt.state.phase==='abandoned' && attempt.state.snapshot.payload.taxIdentityNumber!=null
+  const frozen = isAttemptFrozen(attempt.state) || checkingTax || atomicAbandoned
   const inlineUnresolved = frozen || phase === 'abandoned'
   const onUnresolvedChange = inline?.onUnresolvedChange
   useEffect(() => { onUnresolvedChange?.(inlineUnresolved) }, [inlineUnresolved, onUnresolvedChange])
@@ -213,13 +228,13 @@ function CariCreateForm({ namespace, inline }: { readonly namespace: string | nu
    * only once compatibility has been proven here. `writeReady` is checked again in
    * the transport; this one is so the button never invites a submit that cannot go.
    */
-  const canSubmit = canBeginAttempt(attempt.state) && writeReady && canCreate
+  const canSubmit = canBeginAttempt(attempt.state) && writeReady && canCreate && !checkingTax && !atomicAbandoned
   const completed = attempt.state.phase === 'completed' ? attempt.state : null
   const failure = attempt.state.phase === 'failed' ? attempt.state.failure : null
 
   const validation = validateCreateForm(values)
   const errors: CreateFormErrors = showErrors && !validation.ok ? validation.errors : {}
-  const errorList = [errors.kind, errors.legalName, errors.tradeName, errors.roles].filter(
+  const errorList = [errors.kind, errors.legalName, errors.tradeName, errors.roles, errors.taxIdentityNumber].filter(
     (message): message is string => message !== undefined,
   )
   // After "İşlemi bırak" the attempt is still unresolved. While the form holds
@@ -250,6 +265,7 @@ function CariCreateForm({ namespace, inline }: { readonly namespace: string | nu
   useEffect(() => () => dispatch({ type: 'DIRTY_CLEAR', scope: CARI_CREATE_DIRTY_SCOPE }), [dispatch])
 
   function update(patch: Partial<CreateFormValues>) {
+    taxProbe.current?.abort();taxProbe.current=null;setCheckingTax(false);setTaxWarning(null);setTaxUnavailable(false)
     // Editing after a definite failure makes the next submit a NEW business
     // attempt with a new snapshot and key; the old key is never reused for a
     // different payload (§4.3).
@@ -265,10 +281,10 @@ function CariCreateForm({ namespace, inline }: { readonly namespace: string | nu
     if (summaryFocusRequest > 0) summaryRef.current?.focus()
   }, [summaryFocusRequest])
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     // Double submit, a frozen snapshot or an unacknowledged failure: nothing is sent.
-    if (!canSubmit || activeCompanyId === null) return
+    if (!canSubmit || activeCompanyId === null || taxProbe.current!==null) return
     const result = validateCreateForm(values)
     if (!result.ok) {
       // Client-invalid: the summary lists every error and takes focus; each control
@@ -280,6 +296,17 @@ function CariCreateForm({ namespace, inline }: { readonly namespace: string | nu
     setShowErrors(false)
     const payload = result.payload
     const companyId = activeCompanyId
+    const fingerprint=JSON.stringify(payload)
+    if(payload.taxIdentityNumber!=null && taxWarning?.fingerprint!==fingerprint){
+      const controller=new AbortController(),capturedScope=taxScope,security=boundary.capture()
+      taxProbe.current=controller;setCheckingTax(true);setTaxUnavailable(false)
+      const answer=await checkCreateTaxIdentityDuplicates(companyId,payload.taxIdentityNumber,controller.signal)
+      if(answer.type==='http' && (answer.status===401 || answer.status===403))boundary.report(answer.status,security)
+      if(controller.signal.aborted || taxScopeRef.current!==capturedScope || taxProbe.current!==controller)return
+      taxProbe.current=null;setCheckingTax(false)
+      if(answer.type!=='ok'){setTaxUnavailable(true);return}
+      if(answer.data.duplicates.length>0){setTaxWarning({fingerprint,duplicates:answer.data.duplicates});return}
+    }
     const outcome = attempt.submit(CREATE_OPERATION, payload, (idempotencyKey, signal) =>
       createCounterparty({ companyId, idempotencyKey, contract: { origin: API_BASE, namespace: namespace ?? '' } }, payload, signal),
     )
@@ -296,6 +323,7 @@ function CariCreateForm({ namespace, inline }: { readonly namespace: string | nu
   useEffect(() => {
     if (completed === null || completedKeyRef.current === completed.snapshot.key) return
     completedKeyRef.current = completed.snapshot.key
+    if(completed.snapshot.payload.taxIdentityNumber!=null)forgetAtomicCreateAttempt(retainedOwner)
     // Reads cached under this context predate the new record.
     if (namespace !== null) {
       void queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === namespace })
@@ -443,7 +471,7 @@ function CariCreateForm({ namespace, inline }: { readonly namespace: string | nu
       <form
         className={styles.form}
         noValidate
-        onSubmit={onSubmit}
+        onSubmit={event=>void onSubmit(event)}
         aria-describedby={showSummary ? summaryId : undefined}
       >
         {/* Shell truth, read-only: company code + legal name from the directory,
@@ -528,6 +556,12 @@ function CariCreateForm({ namespace, inline }: { readonly namespace: string | nu
             <FieldError id="cari-create-trade-name-error" message={errors.tradeName} />
           </div>
 
+          <div className={styles.field}>
+            <label htmlFor="cari-create-tax-identity">{TEXT.taxIdentity}</label>
+            <input id="cari-create-tax-identity" inputMode="numeric" autoComplete="off" maxLength={32} value={values.taxIdentityNumber??''}
+              aria-invalid={errors.taxIdentityNumber?true:undefined} aria-describedby={errors.taxIdentityNumber?"cari-create-tax-hint cari-create-tax-error":"cari-create-tax-hint"} onChange={event=>update({taxIdentityNumber:event.target.value})}/>
+            <span id="cari-create-tax-hint" className={styles.hint}>{TEXT.taxNotice}</span><FieldError id="cari-create-tax-error" message={errors.taxIdentityNumber}/>
+          </div>
           <CariRoleFieldset
             idPrefix="cari-create"
             legend={TEXT.roles}
@@ -537,6 +571,9 @@ function CariCreateForm({ namespace, inline }: { readonly namespace: string | nu
           />
         </fieldset>
 
+        {checkingTax?<p role="status">{TEXT.taxChecking}</p>:null}
+        {taxUnavailable?<p role="alert">{TEXT.taxUnavailable}</p>:null}
+        {taxWarning!==null?<div role="status"><p>{TEXT.taxDuplicates}</p><ul>{taxWarning.duplicates.map(row=><li key={row.partyId}>{row.code} · {row.legalName}</li>)}</ul></div>:null}
         <CommandAttemptNotice
           state={attempt.state}
           onRetry={() =>
@@ -567,7 +604,7 @@ function CariCreateForm({ namespace, inline }: { readonly namespace: string | nu
             disabled={!canSubmit}
             aria-busy={phase === 'submitting' || undefined}
           >
-            {phase === 'submitting' ? TEXT.submitting : TEXT.submit}
+            {phase === 'submitting' ? TEXT.submitting : checkingTax ? TEXT.taxChecking : taxWarning!==null ? TEXT.taxConfirm : TEXT.submit}
           </button>
         </div>
       </form>

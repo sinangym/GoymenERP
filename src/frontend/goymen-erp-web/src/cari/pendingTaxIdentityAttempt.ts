@@ -1,6 +1,7 @@
 import type { SecuritySnapshot } from '../shell/authBoundary'
 import type { ShellState } from '../shell/shellState'
-import type { CommandContext, CommandOutcome } from './commandApi'
+import type { CreateCounterpartyPayload, CommandContext, CommandOutcome } from './commandApi'
+import type { CounterpartyMutationResult } from './mutationContract'
 import type { AttemptState } from './commandAttempt'
 import type { ContractContext } from './clientContract'
 
@@ -160,4 +161,41 @@ export function resetPendingTaxIdentityAttempts(): void {
   slots.clear()
   settled.clear()
   armedDiscards.clear()
+  atomicCreateSlots.clear()
+}
+
+// Atomic creation shares the existing ephemeral owner scope and reset lifecycle.
+// The cached snapshot never contains a sender/authority closure and is never serialized.
+type AtomicCreateState = AttemptState<CreateCounterpartyPayload, CounterpartyMutationResult>
+const atomicCreateSlots = new Map<string, AtomicCreateState>()
+
+export function atomicCreateBindingForShell(shell: ShellState, origin: string): TaxIdentityAttemptBinding | null {
+  return binding(origin, shell.activeContext?.userId ?? null, shell.sessionEpoch, shell.activeContext?.companyId ?? null, 'atomic-create')
+}
+
+export function rememberAtomicCreateAttempt(owner: TaxIdentityAttemptBinding | null, state: AtomicCreateState): void {
+  if (owner === null || state.phase === 'idle' || state.snapshot.payload.taxIdentityNumber == null) return
+  if (state.phase === 'submitting' || state.phase === 'unknown' || state.phase === 'abandoned' || state.phase === 'completed') {
+    atomicCreateSlots.set(owner.key, state)
+  } else {
+    atomicCreateSlots.delete(owner.key)
+  }
+}
+
+export function recallAtomicCreateAttempt(owner: TaxIdentityAttemptBinding | null, currentBinding: string | null): AtomicCreateState {
+  const held = owner === null ? undefined : atomicCreateSlots.get(owner.key)
+  if (held === undefined || currentBinding === null || held.phase === 'idle') return { phase: 'idle' }
+  // A result not acknowledged by the owning screen remains unresolved after remount.
+  // Rebind only the response fence: the original key and body never change. The
+  // caller reconstructs the sender using its CURRENT contract and requires a fresh GET.
+  return {
+    phase: 'unknown',
+    snapshot: { ...held.snapshot, binding: currentBinding },
+    reason: held.phase === 'unknown' || held.phase === 'abandoned' ? held.reason : 'network-error',
+    resends: 'resends' in held ? held.resends : 0,
+  }
+}
+
+export function forgetAtomicCreateAttempt(owner: TaxIdentityAttemptBinding | null): void {
+  if (owner !== null) atomicCreateSlots.delete(owner.key)
 }
