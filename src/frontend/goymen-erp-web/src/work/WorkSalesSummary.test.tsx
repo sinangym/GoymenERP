@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient } from '@tanstack/react-query'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { AppShell } from '../shell/AppShell'
+import { CapabilityRoute } from '../shell/CapabilityRoute'
 import { ShellProvider } from '../shell/ShellProvider'
 import { COMPANY_A, COMPANY_B, IDENTITY, installFetch, json, problem } from '../settings/testHarness'
 import { AI_PANEL_CAPABILITY } from '../ai/aiCapabilities'
@@ -24,8 +25,8 @@ function reply() { return { outcome: 'answered', toolResults: [{ toolId, toolVer
     modelDeployment: 'SENTETIK-local', policyVersion: 'SENTETIK-policy', answerId } } }
 function mount(companyId = COMPANY_A, version = '7') {
   const router = createMemoryRouter([{ path: '/', element: <AppShell />, children: [
-    { path: 'summary-test', element: <WorkSalesSummary companyId={companyId} draftId={draftId} expectedVersion={version} /> },
-    { path: 'summary-next', element: <WorkSalesSummary companyId={COMPANY_A} draftId={draftId} expectedVersion="8" /> },
+    { path: 'summary-test', element: <CapabilityRoute capability={capabilities}><WorkSalesSummary companyId={companyId} draftId={draftId} expectedVersion={version} /></CapabilityRoute> },
+    { path: 'summary-next', element: <CapabilityRoute capability={capabilities}><WorkSalesSummary companyId={COMPANY_A} draftId={draftId} expectedVersion="8" /></CapabilityRoute> },
     { path: 'summary-away', element: <p>SENTETIK başka kayıt</p> },
   ] }], { initialEntries: ['/summary-test'] })
   render(<ShellProvider queryClient={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } } })}><RouterProvider router={router} /></ShellProvider>)
@@ -79,6 +80,7 @@ it.each([{ company: COMPANY_B, version: '7' }, { company: COMPANY_A, version: '0
 
 it.each([
   { version: '8' }, { version: digest }, { draftId: COMPANY_B }, { privatePrice: '100' }, { lines: [{ ...content.lines[0], quantity: '1.2500\n' }] },
+  { state: ['Draft'] }, { approvalState: ['PendingApproval'] },
 ])('withholds the text and feedback when the owner content does not match this exact Work record/version %j', async delta => {
   const value = reply(); value.toolResults[0]!.contentJson = JSON.stringify({ ...content, ...delta })
   const calls = install({ answer: () => json(value) }); mount(); fireEvent.click(await screen.findByRole('button', { name: T.request }))
@@ -135,6 +137,6 @@ it('reports a fresh Ask 403 through the real shell boundary without showing text
     if (url.endsWith('/ai/ask') && init?.method === 'POST') { caps.splice(0); return problem(403) }
     return undefined
   } }); mount(); fireEvent.click(await screen.findByRole('button', { name: T.request }))
-  expect(await screen.findByText(T.unavailable)).toBeTruthy(); expect(screen.queryByText(summary)).toBeNull()
+  await waitFor(() => expect(document.querySelector('[data-state="not-found"]')).not.toBeNull()); expect(screen.queryByText(summary)).toBeNull()
   expect(calls.filter(call => call.url.endsWith('/ai/ask'))).toHaveLength(1)
 })

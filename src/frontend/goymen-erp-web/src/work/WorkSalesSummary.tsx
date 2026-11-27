@@ -37,8 +37,8 @@ function boundAnswer(reply: AiAskAnswer, draftId: string, expectedVersion: strin
   if (!exact(content, ['draftId', 'version', 'revision', 'state', 'approvalState', 'lines'])
     || !uuid(content.draftId) || !same(content.draftId, draftId) || content.version !== expectedVersion
     || typeof content.revision !== 'string' || !content.revision.trim()
-    || !['Draft', 'Cancelled', 'Closed'].includes(String(content.state))
-    || !['Preparing', 'PendingApproval', 'Approved', 'Rejected', 'Withdrawn'].includes(String(content.approvalState))
+    || typeof content.state !== 'string' || !['Draft', 'Cancelled', 'Closed'].includes(content.state)
+    || typeof content.approvalState !== 'string' || !['Preparing', 'PendingApproval', 'Approved', 'Rejected', 'Withdrawn'].includes(content.approvalState)
     || !Array.isArray(content.lines) || !content.lines.every(line => exact(line, ['lineId', 'lineNo', 'productId', 'orderUnitId', 'quantity'])
       && uuid(line.lineId) && Number.isSafeInteger(line.lineNo) && (line.lineNo as number) > 0
       && uuid(line.productId) && uuid(line.orderUnitId) && typeof line.quantity === 'string' && line.quantity === line.quantity.trim()
