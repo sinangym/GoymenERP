@@ -2357,6 +2357,7 @@ describe('native reversal decisions',()=>{
   mount(`/onaylarim/${k}/${id}`,true);const region=await screen.findByRole('region',{name:T.reversalProposal})
   for(const text of ['000123.4500','SENTETIK named bank','SENTETIK immutable reversal reason','SENTETIK preparer','0001-01-01T00:00:00Z'])expect(within(region).getAllByText(text).length).toBeGreaterThan(0)
   expect(within(region).getByText(reversalAccount)).toBeTruthy();expect(within(region).getByText(reversalEvent)).toBeTruthy()
+  expect(screen.queryByText('a'.repeat(64))).toBeNull()
   const input=screen.getByRole('textbox',{name:T.reason}) as HTMLTextAreaElement;expect(input.maxLength).toBe(1000)
   expect((screen.getByRole('button',{name:T.reject}) as HTMLButtonElement).disabled).toBe(true)
   fireEvent.change(input,{target:{value:'x'.repeat(1001)}});expect((screen.getByRole('button',{name:T.reject}) as HTMLButtonElement).disabled).toBe(true)

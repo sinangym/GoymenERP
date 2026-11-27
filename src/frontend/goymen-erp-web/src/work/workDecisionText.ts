@@ -122,7 +122,6 @@ export const WORK_DECISION_TEXT = {
     originalEventId: 'Orijinal olay',
     paymentRecordedBy: 'Ödemeyi kaydeden',
     paymentRecordedAtUtc: 'Ödeme kayıt zamanı (UTC)',
-    recordedFactsDigest: 'Kayıtlı bilgi özeti',
     treasuryAccountLabel: 'Banka hesabı',
     id: 'Öneri kaydı',
     paymentId: 'Orijinal ödeme',
