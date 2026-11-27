@@ -293,15 +293,17 @@ public sealed partial class PurchasingServiceTests
         public Task<StoredPurchaseSupplierReturn> SaveDecisionAsync(Guid order, PurchaseSupplierReturn decided, long version, PurchasingWriteEnvelope envelope,
             string hash, string command, CancellationToken cancellationToken = default)
         {
+            DecisionSaveAttempts++;
             DecisionWrites++; Stored = Stored! with { Return = Stored!.Return with { Status = decided.Status }, Version = decided.Version,
                 DecidedBy = envelope.ActorId, DecidedAtUtc = DateTimeOffset.UnixEpoch, DecisionReason = decided.Reason };
+            if (FailDecisionConcurrency) throw new PurchasingStoreException(PurchasingStoreCodes.ConcurrentChange, "SENTETIK failed save before a receipt exists");
             Remember(envelope, hash, command, new(decided.Id, null, envelope.CorrelationId, Stored));
             AfterDecisionSave?.Invoke();
             AfterAccess?.Invoke();
             return Task.FromResult(Stored);
         }
         public Task RecordRefusalAsync(PurchasingWriteEnvelope envelope, string hash, string command, PurchasingTerminalRefusal refusal, CancellationToken cancellationToken = default)
-        { Remember(envelope, hash, command, new(null, refusal, envelope.CorrelationId)); return Task.CompletedTask; }
+        { RefusalCalls++; Remember(envelope, hash, command, new(null, refusal, envelope.CorrelationId)); return Task.CompletedTask; }
         private void Remember(PurchasingWriteEnvelope envelope, string hash, string command, PurchaseSupplierReturnReplay replay) =>
             attempts.Add((command, envelope.IdempotencyKey), (envelope.ActorId, hash, replay));
     }
