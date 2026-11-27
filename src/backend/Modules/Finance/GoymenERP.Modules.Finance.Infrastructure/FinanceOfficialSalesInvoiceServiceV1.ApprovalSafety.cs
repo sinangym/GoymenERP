@@ -1,6 +1,7 @@
 using System.Data;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Finance.Contracts;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -67,7 +68,11 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1
                 try { state.Writer.DiscardPending(); } catch (Exception error) { faults.Add(error); }
                 if (faults.Count > 0) throw new AggregateException("Official sales invoice cleanup failed; replay is unsafe.", [failure, .. faults]);
                 if (failure is InvoiceDecisionRefusal refusal) return refusal.Result;
-                if (!replayOnly && !committed && state.SaveAttempted && !state.Saved && failure is DbUpdateException update && IsLostRace(update))
+                // Serializable reads and the actual Audit write can lose a deadlock before owner SaveChanges.
+                var deadlock = failure is SqlException { Number: 1205 }
+                    or DbUpdateException { InnerException: SqlException { Number: 1205 } };
+                if (!replayOnly && !committed && (deadlock
+                    || state.SaveAttempted && !state.Saved && failure is DbUpdateException update && IsLostRace(update)))
                     throw new InvoiceDecisionSaveRace();
                 throw;
             }

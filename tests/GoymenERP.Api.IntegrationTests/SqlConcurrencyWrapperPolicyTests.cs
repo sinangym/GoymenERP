@@ -79,7 +79,7 @@ public sealed class SqlConcurrencyWrapperPolicyTests
     }
 
     // Same installed-SqlClient construction pattern as the existing deterministic Logistics deadlock fixture.
-    private static SqlException SqlFailure(int number)
+    internal static SqlException SqlFailure(int number)
     {
         const BindingFlags hidden = BindingFlags.Instance | BindingFlags.NonPublic;
         var error = typeof(SqlError).GetConstructor(hidden,
