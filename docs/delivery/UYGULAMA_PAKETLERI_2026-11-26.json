@@ -1962,7 +1962,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Continue remaining native owner kinds after Inventory native loss safety checks. Manufacturing Work initial/reapproval explicit selection is source-connected; actual SQL/HTTP/browser, all64 flow evidence, pins/full CI/two K3 remain.",
+      "next_action": "Validate the final15 source-kind publication and Counterparty native safety, then connect its two existing owner commands. No new business policy/grants. All64 actual SQL/HTTP/browser, pins/full CI/two K3 still required.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2070,7 +2070,8 @@
           "purchasing.service-order.v1",
           "purchasing.incoming-invoice-variance.v1",
           "purchasing.goods-receipt-batch.v1",
-          "manufacturing.plan.v1"
+          "manufacturing.plan.v1",
+          "inventory.transfer-loss.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -2092,8 +2093,9 @@
           "Prior failed runs": "83-run wrong-scope fixture corrected; later 93-run contained 91 pass and two failures (pure Sales declaration expectation corrected; normal HTTP authority pin remains NOT_ACCEPTED). New service fixture run1259 pass/1 failure correctly hit immutable history; fixture corrected without weakening native guards. Original logs retained. New SQL refusal fixture CS8619 at9bef fixed by separate await branches e5fd8ae07; no assertions changed. UI159 pass/1 failed test wrongly assumed no legacy route; corrected to exact existing fallback component/path and final160 passed.",
           "Manufacturing latest full unit suite": "1560/1560 passed, 0 skipped at 9bef612e9; publication/provider source included. Manufacturing module tree unchanged through 255453f72.",
           "Deferred host pins": "Earlier 78-case run at 6920c495e had 76 pass/2 normal-host authority-pin failures; retained NOT_ACCEPTED. Pins deferred to train close, no gate waived.",
-          "Manufacturing Work UI": "160/160, 0 skipped in 8 files at 0ec55126efd55506128845a0ea7e6d3a2b64683a; tsc/scoped lint exit0, one unchanged baseline lint warning. Whole frontend tree parity verified at root631da552f; includes plural native capability fix and staged typed-loss UI. Earlier128 synthetic cases did not prove backend capability parity; original failures retained.",
-          "Inventory latest full unit suite": "2266/2266 passed, 0 skipped at 9bef612e9; native loss owned boundary. Later 2c35e5842 typed purpose/provenance changes pending checks."
+          "Manufacturing Work UI": "170/170,0 skipped in9files atc900c99975690d5cf1ada22c48d157f742e97002; tsc/scopedlint exit0,one unchanged baseline warning. Whole frontend tree matches root1349d982c. Includes actual Manufacturing/loss capability, native route preservation, typed UTC frozen body and missing/wrong-capability refusals.",
+          "Inventory latest full unit suite": "2275/2275 passed,0 skipped at30b81a53ab33cf3472fa6d0cc293bfaeabc75da2; native loss purpose/provenance and staged provider. Subsequent declaration publication/host historical-replay fix pending checks.",
+          "Counterparty native identity decisions": "SOURCE_READY atcdc4aac0c;10 entry unit cases +4 SQL theories/12 cases written; compilation/execution pending. Work adapters for these two kinds are not yet connected."
         },
         "reuse": [
           "existing FinanceCashAccountService commands and durable receipts",
@@ -2357,6 +2359,31 @@
             ],
             "new_permissions": [],
             "migration": null
+          },
+          {
+            "source_commit": "cdc4aac0c",
+            "source_commits": [
+              "60380ae37",
+              "c1152cbc2",
+              "1349d982c",
+              "cdc4aac0c"
+            ],
+            "scope": "Loss source/UI publication candidate and narrowly retained historical key replay despite later current maker; live delegation still checked against the correct historical maker. Native Counterparty tax/legal decisions now own clean transaction, audit and late authority fences; their Work adapters are next.",
+            "local_checks": {
+              "Inventory": "2275/2275 skip0 at30b81a53a; final publication checks pending",
+              "Frontend": "170/170 skip0 atc900c9997;tsc/scopedlint exit0;root whole-tree parity verified",
+              "API/Counterparty": "New source compilation/checks pending"
+            },
+            "sql": "Inventory3 purpose facts and Counterparty4 theories/12 cases inventoried; actual SQL NOT_RUN.",
+            "review": "Bounded non-author source review found one historical-maker replay P2 in0ae; fixed by60380ae37 with6 new host cases and expanded native SQL source. Delta review/passing checks pending; not full K3.",
+            "remaining": [
+              "Remaining native owner kinds/all64 flow acceptance",
+              "Counterparty native checks and two purpose adapters",
+              "Loss history/locator1000 scale readiness",
+              "Real SQL/HTTP/browser,pins/full CI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null
           }
         ],
         "source_commits": [
@@ -2397,16 +2424,14 @@
           "fb1312d62",
           "bff583b9c",
           "631da552f",
-          "2c35e5842"
+          "2c35e5842",
+          "60380ae37",
+          "c1152cbc2",
+          "1349d982c",
+          "cdc4aac0c"
         ],
-        "kind_count_scope": "14 connected source kinds; not 14 accepted flows. Manufacturing native initial approval/reapproval and explicit input-label Work contract/UI are connected. All 64-flow runtime acceptance remains open.",
-        "staged_kinds": [
-          {
-            "kind": "inventory.transfer-loss.v1",
-            "implementation_available": false,
-            "scope": "Native numbered-request purpose and immutable key receipt provenance, bounded owner history and typed user UTC UI candidate are source-connected. Capability false, native item link/legacy route retained; new backend checks pending."
-          }
-        ]
+        "kind_count_scope": "15 connected source kinds; not 15 accepted flows. Native loss request number/time, historical maker and real command receipt proof are connected to the standalone Work route. All64 runtime acceptance remains open.",
+        "staged_kinds": []
       }
     },
     {
