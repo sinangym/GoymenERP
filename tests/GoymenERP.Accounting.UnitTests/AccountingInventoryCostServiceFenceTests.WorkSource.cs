@@ -29,7 +29,8 @@ public sealed partial class AccountingInventoryCostServiceFenceTests
         Assert.True(AccountingInventoryCostDecisionBindingV1.MatchesDecisionProof(snapshot.Item, proof));
         var detail = (await reader.ReadDecisionAsync(SafetyId, kind, _ => Task.CompletedTask)).Resource!;
         Assert.True(AccountingInventoryCostDecisionBindingV1.MatchesDecisionItem(snapshot.Item, detail));
-        Assert.Equal(AccountingInventoryCostDecisionBindingV1.ScreenPath(kind), snapshot.Item.Link);
+        Assert.Equal($"/onaylarim/{source.Kind}/{SafetyId:D}", snapshot.Item.Link);
+        Assert.Equal(kind == AccountingInventoryCostKindV1.SalesInvoicedShipment ? "/muhasebe/sevk-smm-onay" : "/muhasebe/alis-maliyet-farki-onay", AccountingInventoryCostDecisionBindingV1.ScreenPath(kind));
         Assert.Equal("600", Assert.Single(snapshot.Item.Rules).Actual); Assert.Equal("TRY", snapshot.Item.Rules[0].Unit);
         Assert.Equal(new[]{"invoice","period"}, snapshot.Item.References.Select(x=>x.Role));
         Assert.True(snapshot.Item.Excludes(retained.Prepared.Preparation.PreparedBy.ToString("D"))); Assert.False(snapshot.Item.Excludes(Actor.ToString("D")));
