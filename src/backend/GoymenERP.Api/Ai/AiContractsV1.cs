@@ -9,7 +9,14 @@ namespace GoymenERP.Api.Ai;
 /// general-chat accepts only the question and never carries a tool hint or prior ERP context.
 /// </summary>
 public sealed record AiAskRequestV1(string? Question, string? ToolId, string? ToolVersion, JsonElement? Arguments,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Mode = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Mode = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AiOpenRecordContextV1? OpenRecordContext = null);
+
+/// <summary>A record reference, never client-supplied record content or authority. The optional version is
+/// the exact owner tool source digest, not a mutable party/instruction row version.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record AiOpenRecordContextV1(string? TargetKind, Guid TargetId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExpectedSourceVersion = null);
 
 public static class AiAskModesV1
 {
@@ -112,6 +119,7 @@ public sealed record AiAskResultV1(AiAskStatusV1 Status, AiAskResponseV1? Respon
 /// <summary>Stable field codes for an invalid ask; never echo the rejected value.</summary>
 public static class AiInvalidFieldsV1
 {
+    public const string OpenRecordContext = "openRecordContext";
     public const string Mode = "mode";
     public const string Question = "question";
     public const string Tool = "tool";

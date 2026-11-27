@@ -93,6 +93,12 @@ public sealed class AiAskService(
             return AiAskResultV1.InvalidInput(AiInvalidFieldsV1.Mode);
         }
         var generalChat = request?.Mode == AiAskModesV1.GeneralChat;
+        if (generalChat && request!.OpenRecordContext is not null)
+        {
+            await RefuseAsync(SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.PolicyRefused,
+                companyId, actorId, null, null, cancellationToken);
+            return AiAskResultV1.InvalidInput(AiInvalidFieldsV1.OpenRecordContext);
+        }
         if (generalChat && (request!.ToolId is not null || request.ToolVersion is not null || request.Arguments is not null))
         {
             await RefuseAsync(SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.PolicyRefused,
@@ -110,11 +116,39 @@ public sealed class AiAskService(
         if (generalChat)
             return await ComposeAnswerAsync(question, [], companyId, actorId, cancellationToken, generalChat: true);
 
+        AiOpenRecordContextBindingV1? recordContext = null;
+        if (request?.OpenRecordContext is { } openRecord)
+        {
+            if (!AiOpenRecordContextBindingV1.TryBind(openRecord, out recordContext)
+                || hint is not null && !recordContext!.Matches(hint.ToolId, hint.ToolVersion, hint.ArgumentsJson, limits.MaxArgumentBytes))
+            {
+                await RefuseAsync(SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.PolicyRefused,
+                    companyId, actorId, null, null, cancellationToken);
+                return AiAskResultV1.InvalidInput(AiInvalidFieldsV1.OpenRecordContext);
+            }
+            // The catalogue still owns allowlist/description-pin eligibility. A context creates no tool access.
+            var boundTool = catalog.Find(recordContext!.ToolId, recordContext.ToolVersion);
+            if (boundTool is null)
+            {
+                await RefuseAsync(SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.AiToolNotAllowed,
+                    companyId, actorId, null, null, cancellationToken);
+                return AiAskResultV1.Of(AiAskStatusV1.Refused);
+            }
+            hint = recordContext.Hint();
+            if (!TryCanonicalizeArguments(hint.ArgumentsJson, boundTool.Descriptor, limits, out _))
+            {
+                await RefuseAsync(SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.PolicyRefused,
+                    companyId, actorId, null, boundTool.Descriptor, cancellationToken);
+                return AiAskResultV1.InvalidInput(AiInvalidFieldsV1.Arguments);
+            }
+        }
+
         AiModelPlanV1 plan;
         try
         {
             var available = catalog.Descriptors
-                .Where(descriptor => descriptor.DataClass <= limits.MaxDataClass)
+                .Where(descriptor => descriptor.DataClass <= limits.MaxDataClass
+                    && (recordContext is null || descriptor.ToolId == recordContext.ToolId && descriptor.Version == recordContext.ToolVersion))
                 .Select(descriptor => new AiModelToolV1(descriptor.ToolId, descriptor.Version, descriptor.DataClass, descriptor.FieldAllowlist, descriptor.Description))
                 .ToArray();
             plan = await provider.PlanAsync(new AiModelRequestV1(question, available, hint), cancellationToken);
@@ -136,7 +170,9 @@ public sealed class AiAskService(
         // Model output is untrusted: a missing plan or too many calls is refused before any tool runs.
         if (plan?.ToolCalls is null
             || plan.ToolCalls.Any(call => call is null)
-            || plan.ToolCalls.Count > limits.MaxToolCallsPerRequest)
+            || plan.ToolCalls.Count > limits.MaxToolCallsPerRequest
+            || recordContext is not null && (plan.ToolCalls.Count != 1
+                || plan.ToolCalls.Any(call => !recordContext.Matches(call.ToolId, call.ToolVersion, call.ArgumentsJson, limits.MaxArgumentBytes))))
         {
             await RefuseAsync(SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.PolicyRefused,
                 companyId, actorId, null, null, cancellationToken);
@@ -148,7 +184,7 @@ public sealed class AiAskService(
         var usedTools = new List<AiToolDescriptorV1>(plan.ToolCalls.Count);
         foreach (var call in plan.ToolCalls)
         {
-            var outcome = await RunToolAsync(call, companyId, actorId, limits, grantedRoleCodes, cancellationToken);
+            var outcome = await RunToolAsync(call, companyId, actorId, limits, grantedRoleCodes, cancellationToken, recordContext);
             if (outcome.Failure is not null)
             {
                 return outcome.Failure;
@@ -256,7 +292,8 @@ public sealed class AiAskService(
         string actorId,
         AiRuntimeLimits limits,
         SortedSet<string> grantedRoleCodes,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AiOpenRecordContextBindingV1? recordContext = null)
     {
         var tool = catalog.Find(call.ToolId, call.ToolVersion);
         if (tool is null)
@@ -323,6 +360,15 @@ public sealed class AiAskService(
             return ToolRun.Failed(AiAskResultV1.Of(AiAskStatusV1.Unavailable));
         }
 
+        // A bound screen reference is not permission: measure the captured actor/company and tool
+        // authority again after planning/session/event awaits, immediately before its owner READ.
+        if (recordContext is not null && !await RemainsCurrentAsync(actorId, companyId, [descriptor], cancellationToken))
+        {
+            await RefuseAsync(SecurityEventTypesV1.AiAuthorizationDenied, SecurityEventReasonCodesV1.PermissionMissing,
+                companyId, actorId, ErpPermissions.AiPanelUse, descriptor, cancellationToken);
+            return ToolRun.Failed(AiAskResultV1.Of(AiAskStatusV1.Refused));
+        }
+
         AiReadResultV1? read;
         try
         {
@@ -335,7 +381,8 @@ public sealed class AiAskService(
 
         var released = read is not null
             && (read.Outcome == AiToolOutcomeV1.NotFound
-                || (read.Outcome == AiToolOutcomeV1.Succeeded && SourceIsReleasable(read.Source, descriptor, limits)));
+                || (read.Outcome == AiToolOutcomeV1.Succeeded && SourceIsReleasable(read.Source, descriptor, limits)
+                    && (recordContext is null || recordContext.MatchesSource(read.Source))));
         await securityEvents.WriteAsync(
             NewEvent(SecurityEventTypesV1.AiToolCalled, SecurityEventPhasesV1.Completed,
                 released ? SecurityEventOutcomesV1.Allowed : SecurityEventOutcomesV1.Failed,
