@@ -443,10 +443,10 @@ public static class FinanceModuleExtensions
             provider.GetService<IAuditTransactionWriterV1>());
     }
 
-    private static ManualBankPaymentService CreateManualBankPaymentService(IServiceProvider provider)
+    private static IManualBankPaymentService CreateManualBankPaymentService(IServiceProvider provider)
     {
         var permissions = provider.GetRequiredService<FinancePermissionPort>();
-        return new ManualBankPaymentService(
+        var core = new ManualBankPaymentService(
             provider.GetRequiredService<FinanceDbContext>(),
             provider.GetRequiredService<ICompanyContext>(),
             provider.GetRequiredService<ICurrentUser>(),
@@ -469,6 +469,8 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<IAuditTransactionWriterV1>(),
             new SettingsFinanceDocumentNumberReservationV1(provider.GetRequiredService<FinanceDbContext>(),
                 provider.GetService<ISettingsDocumentNumberSeriesV1>()));
+        return new GuardedManualBankPaymentService(core, provider.GetRequiredService<FinanceDbContext>(),
+            provider.GetRequiredService<IAuditTransactionWriterV1>());
     }
 
     private static ExpensePaymentService CreateExpensePaymentService(IServiceProvider provider)

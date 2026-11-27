@@ -13,7 +13,7 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Finance.UnitTests;
 
 /// <summary>R47 service behavior in memory. SENTETIK / NOT_ENV; not SQL or browser evidence.</summary>
-public sealed class ManualBankPaymentServiceTests
+public sealed partial class ManualBankPaymentServiceTests
 {
     private static readonly Guid Company = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly Guid Currency = Guid.Parse("22222222-2222-4222-8222-222222222222");

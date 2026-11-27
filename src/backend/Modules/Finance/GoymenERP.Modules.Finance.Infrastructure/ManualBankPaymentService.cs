@@ -28,7 +28,7 @@ public sealed record ManualBankPaymentAuditEnvelopes(
 /// zero; the final Record asks <see cref="IFinanceTreasuryBalanceGuard"/> whether the account's current balance covers the
 /// payment and refuses an insufficient or unknown answer (fail-closed) before anything is written.
 /// </summary>
-public sealed class ManualBankPaymentService(
+public sealed partial class ManualBankPaymentService(
     FinanceDbContext dbContext,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
@@ -174,6 +174,8 @@ public sealed class ManualBankPaymentService(
         var payloadHash = Hash(request);
         if (await PriorAsync(context, ApproveCommand, FinanceAction.ApproveManualBankPayment, keyHash, payloadHash,
                 cancellationToken) is { } prior) return prior;
+        if (ownedApprovalReplayOnly)
+            return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
         var row = await dbContext.ManualBankPayments.SingleOrDefaultAsync(candidate => candidate.Id == request.PaymentId,
             cancellationToken);
         if (await FenceAsync(context, FinanceAction.ApproveManualBankPayment, request.PaymentId, cancellationToken)
@@ -542,6 +544,11 @@ public sealed class ManualBankPaymentService(
         string payloadHash,
         CancellationToken cancellationToken)
     {
+        if (command == ApproveCommand && ownedApprovalActive)
+        {
+            await SaveOwnedApprovalAsync(context, cancellationToken);
+            return null;
+        }
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);

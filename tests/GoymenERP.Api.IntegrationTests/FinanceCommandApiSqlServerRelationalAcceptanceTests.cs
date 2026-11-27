@@ -33,7 +33,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// Where a case says so, the Counterparty party port is a SENTETIK stand-in (an active party account,
 /// a gate that holds two callers together, an outage). This is API evidence, not the FIN-01 user outcome.
 /// </summary>
-public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
+public sealed partial class FinanceCommandApiSqlServerRelationalAcceptanceTests
 {
     [SqlServerFact]
     public async Task Work_manual_bank_approval_reuses_native_receipt_without_recording_money()
