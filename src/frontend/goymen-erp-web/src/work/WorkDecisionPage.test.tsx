@@ -1526,7 +1526,7 @@ it('retries the original dispatch key/version/body after remount and a later can
  await userEvent.setup().click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
  const sent=calls.filter(call=>call.url.includes(dispatchPath)&&call.method==='POST');expect(sent).toHaveLength(2);expect(sent[0]!.body).toEqual(sent[1]!.body);expect(sent[0]!.headers['Idempotency-Key']).toBe(sent[1]!.headers['Idempotency-Key'])
 })
-it.each([[],['logistics.dispatch-notes.approve'],['logistics.instructions.detail']])('keeps dispatch candidate reads closed without its exact capability %j',async(capabilities)=>{
+it.each([{capabilities:[]},{capabilities:['logistics.dispatch-notes.approve']},{capabilities:['logistics.instructions.detail']}])('keeps dispatch candidate reads closed without its exact capability %j',async({capabilities})=>{
  const calls=installFetch({capabilities,respond:url=>url.includes(dispatchPath)?json(dispatchPreview):undefined});mountDispatchCandidate()
  await waitFor(()=>expect(calls.some(call=>call.url.endsWith('/shell/capabilities'))).toBe(true));expect(calls.some(call=>call.url.includes(dispatchPath))).toBe(false)
 })
