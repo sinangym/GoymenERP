@@ -2260,7 +2260,7 @@
           "delegation_display_HTTP": "6 attempted, 6 host-start failures: shell authority pins deferred by train policy; NOT_ACCEPTED",
           "Sales decision frontend": "Agent source 005184 (integrated 60a3b7998): shell registry, mount and access checks 35 passed, 0 skipped; tsc/lint passed. Hosted shell authority pins remain deferred.",
           "Sales backend": "Sales.UnitTests at f4ccda30f: 2440 passed, 0 failed, 0 skipped. Existing native approval fixtures now use independent maker/checker actors under YOL-D23; negative fences preserved.",
-          "Finance latest full unit suite": "1995/1995 passed skip0 at6f72ea8fac37f236f673db44efa45b6f0e7b6c00; bank paired publication included. Actual SQL NOT_RUN.",
+          "Finance latest full unit suite": "2044/2044PASS0skip at bcf457bbd0fafa1efed51aaee54e59dd7dbdc47e; includes18 private IBAN receipt cases. Actual SQL NOT_RUN.",
           "Sales latest full unit suite": "2469/2469 passed, 0 skipped at 324b9da8c; native order/invoice/subcontract guards included.",
           "Purchasing latest full unit suite": "1318/1318 passed skip0 at022f727828d3e42b608ae1542003362d76ebf6ee; supplier-return Work owner, native receipt provenance and paired source1.22 declaration included. Actual SQL NOT_RUN.",
           "Latest owner/Work composition": "406/406 Work/native-boundary passed skip0 at4df90f171e986c7452a30932cee8e7855d5bc4f8, including paired Scrap publication. Same572-case API batch had163AI pass/3AI fixture failures; retained failure logs. Test-only825b corrects explicit context-drift double and valid malformed-digest fixture; AI166/166 passed atfb4cc4d2d095157ec47372a7c8fcc7abccbd66e1 using unchanged4df compiled production references. Entire integration assembly compiled; actual Program factory/SQL/HTTP/browser/full CI acceptance still open.",
@@ -2275,7 +2275,8 @@
           "Latest frontend": "Scrap agentbd9d77c3e84c3e08b7346f48801eaff8a73cd8c9:8files517/517 passed skip0 in53.88s; fulltsc-b0;9changedfile lint0errors0warnings. Root76dbd4e01 entire frontend tree equal. Includes Count/Bank regression and native Count/Scrap/Bank contract tests; four unchanged financeAccounting cases from prior448 run were not rerun. Actual browser NOT_RUN.",
           "Historical API compile failure at2ba0032c8": "At2ba0032c8 integration assembly failed CS0246: nonexistent SqlServerTheory. Corrected by19a6351ee to12 existing SqlServerFact wrappers sharing unchanged assertion bodies. API host execution NOT_RUN for this increment; failure log retained.",
           "API compile failure at022f72782": "Integration assembly failed CS0246: missing Security using for ICurrentUser in new bank SQL fixture. Test-only import00b72c031 corrects namespace; API host tests NOT_RUN in failed batch; rerun pending. Native assertions unchanged, failure log retained. Second00b72 compilation found wrong AuditAiInvolvement namespace/missing Audit.Persistence using.6f901 test-only references corrected both;135selected API passed. All original failure logs retained.",
-          "Inventory failed attempts retained": "62d run stopped on ambiguous JsonSerializerOptions overload;40fe test-only explicit options corrected it. Subsequent2301pass/1fail Count source fixture tried reassigning immutable resolved CompanyContext;1c2f fixes request-vs-server scope and adds Denied assertion, full2302 passed.6f72 full2321pass/1fail Scrap fixture hit same setup error; c170 same request-scope correction, full2322 passed. No production guards or existing assertions weakened; original logs retained."
+          "Inventory failed attempts retained": "62d run stopped on ambiguous JsonSerializerOptions overload;40fe test-only explicit options corrected it. Subsequent2301pass/1fail Count source fixture tried reassigning immutable resolved CompanyContext;1c2f fixes request-vs-server scope and adds Denied assertion, full2302 passed.6f72 full2321pass/1fail Scrap fixture hit same setup error; c170 same request-scope correction, full2322 passed. No production guards or existing assertions weakened; original logs retained.",
+          "Product native package-standard safety": "1158/1158PASS0skip at65c518e6f9e8cfdbf37ee3b78148cabea9da18ce after native restore; first no-assets exit0 was NOT_RUN. ProductInfrastructure/integration-source warm builds0/0;6SQLsourceFacts compiled, not executed."
         },
         "reuse": [
           "existing FinanceCashAccountService commands and durable receipts",
@@ -3003,6 +3004,34 @@
             "scope": "Native IBAN Approve reuses existing bank owned helper via action/account/native-core parameters; existing BankApprove default, change-maker SoD, original actor/hash/receipt and fresh audit/rollback remain. No Work purpose/disclosure/UI/new grant yet. FNS-D128 is a separate explicit user decision.",
             "local_checks": "API/integration-source compile atf7 zero errors/warnings; Finance2026 passed at522, including6 new IBAN entry cases. Five IBAN SQL facts compiled, actualSQL NOT_RUN. Full three-file independent nonauthor/root source read found no open P0/P1/P2; not K3.",
             "sql": "NOT_RUN"
+          },
+          {
+            "source_commits": [
+              "e2556450d",
+              "bcf457bbd"
+            ],
+            "scope": "Native Finance-private immutable IBAN receipt, schema2 proof binds original proposer/time/versions/digest and existing native command/hash. No raw IBAN duplication or Work publication; legacy bare replay unchanged.",
+            "local_checks": "Exact bcf457bbd0fafa1efed51aaee54e59dd7dbdc47e: FinanceInfrastructure and integration-source warm builds zero errors/warnings; full Finance2044/2044PASS0skip, including18 receipt codec cases. One new actual-SQL Fact compiled; actualSQL NOT_RUN.",
+            "review": "Root and independent nonauthor full four-file delta and called native chain read; no concrete open P0/P1/P2. Not K3.",
+            "remaining": [
+              "FNS-D128 paired human decision preview/adapter and final validation",
+              "Actual SQL/HTTP/browser/pins/fullCI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null
+          },
+          {
+            "source_commit": "bf4dee5a0",
+            "agent_source_commit": "337e81d0f147253a484e28acfb372e083bc5da28",
+            "scope": "Native Product package-standard Approve/Reject reuse current core, version/hash/reason/typed effective date and SAT-D416 maker policy inside owned serializable transaction with actual scoped audit. All four V2/V3 runtime aliases resolve one guarded facade; no new Work kind/UI/nav/grant/schema.",
+            "local_checks": "Exact65c518e6f9e8cfdbf37ee3b78148cabea9da18ce: ProductInfrastructure and complete integration-source warm builds0errors/0warnings. First unit command exit0 ran no tests because restore assets were absent; retained as NOT_RUN, not PASS. Native restore then full Product1158/1158PASS0skip, including7 approval safety cases; TRX counters independently read. Six SQL Facts compiled; actualSQL NOT_RUN.",
+            "review": "Root and independent nonauthor full six-file delta/native DI-audit chain read, no concrete open P0/P1/P2; not K3. Controlled ordered winner is not a proven simultaneous race.",
+            "remaining": [
+              "Paired Work preview/decision UI with human-supplied native effective date and reason",
+              "Actual SQL/HTTP/browser/pins/fullCI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null
           }
         ],
         "source_commits": [
@@ -3129,7 +3158,10 @@
           "792cd00d9",
           "1967aa7a2",
           "e230c7360",
-          "52274cbc1"
+          "52274cbc1",
+          "e2556450d",
+          "bcf457bbd",
+          "bf4dee5a0"
         ],
         "kind_count_scope": "27 paired source kinds, not27 accepted flows. Manual native approval P1 source repair compiled and unit-tested; actual safety SQL and all64 SQL/HTTP/browser/CI/K3 acceptance remain open.",
         "staged_kinds": []
