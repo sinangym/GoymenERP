@@ -1,3 +1,4 @@
+import { WORK_INBOX_KINDS } from '../work/workInboxKinds'
 import { describe, expect, it } from 'vitest'
 import { matchPath, matchRoutes } from 'react-router'
 import {
@@ -138,4 +139,19 @@ it('mounts overage Work purpose independently of its unchanged native approval s
  expect(CAPABILITY.inventoryTransferOverageApproval).toBe('inventory.stock-transfer.overage-approve')
  expect(CAPABILITY_ROUTE[CAPABILITY.inventoryTransferOverageApproval]).toBe('/stok/transferler/fazla-kabul-onaylari')
  expect(inventoryRoutes).toHaveLength(16)
+})
+
+
+it('mounts stock count under its exact standalone Work capability without changing native label routes',()=>{
+ const capability=CAPABILITY.inventoryStockCountWorkDecision
+ expect(capability).toBe('inventory.stock-count.work-decision')
+ expect(CAPABILITY_ROUTE[capability]).toBe('/onaylarim/inventory.stock-count.v1/:approvalId')
+ expect(CAPABILITY_NAV_LABEL[capability]).toBe('');expect(NAV_CAPABILITIES).not.toContain(capability)
+ const matches=matchRoutes(workRoutes,'/onaylarim/inventory.stock-count.v1/cccccccc-0000-4000-8000-000000000001')
+ const route=matches?.at(-1)?.route
+ expect(route?.path).toBe('onaylarim/inventory.stock-count.v1/:approvalId')
+ expect((route?.element as {props?:{capability?:readonly string[]}}|undefined)?.props?.capability).toEqual(['inventory.stock-count.work-decision'])
+ expect(WORK_INBOX_KINDS.filter(row=>row.kind==='inventory.stock-count.v1')).toEqual([{kind:'inventory.stock-count.v1',module:'inventory',capability}])
+ expect(inventoryRoutes).toHaveLength(16)
+ expect(matchRoutes(inventoryRoutes,'/stok/etiket/cccccccc-0000-4000-8000-000000000001')?.at(-1)?.route.path).toBe(INVENTORY_LABEL_DETAIL_ROUTE.slice(1))
 })

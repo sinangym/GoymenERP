@@ -1,5 +1,5 @@
 import { INVENTORY_TRANSFER_ACTION_ROUTE } from '../../inventory/capabilities'
-import { INVENTORY_STOCK_COUNT_SOURCE, INVENTORY_STOCK_SCRAP_SOURCE } from '../workText'
+import { INVENTORY_STOCK_SCRAP_SOURCE } from '../workText'
 import type { WorkInboxKind } from './types'
 
 type TransferActionCapability = keyof typeof INVENTORY_TRANSFER_ACTION_ROUTE
@@ -10,7 +10,7 @@ const OVERAGE_APPROVE: TransferActionCapability = 'inventory.stock-transfer.over
  * transit loss decisions. WP8 connects loss decisions to their standalone owner-authorized Work purpose.
  */
 export const INVENTORY_INBOX_KINDS: readonly WorkInboxKind[] = [
-  { kind: 'inventory.stock-count.v1', module: 'inventory', capability: INVENTORY_STOCK_COUNT_SOURCE.capability },
+  { kind: 'inventory.stock-count.v1', module: 'inventory', capability: 'inventory.stock-count.work-decision' },
   { kind: 'inventory.stock-scrap.v1', module: 'inventory', capability: INVENTORY_STOCK_SCRAP_SOURCE.capability },
   { kind: 'inventory.transfer-overage.v1', module: 'inventory', capability: OVERAGE_APPROVE },
   { kind: 'inventory.transfer-loss.v1', module: 'inventory', capability: 'inventory.transfer-loss.work-decision' },

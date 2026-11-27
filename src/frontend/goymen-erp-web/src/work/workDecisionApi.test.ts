@@ -339,7 +339,7 @@ it('decodes exact loss options among the mounted owner kinds without changing ot
  const value={...preview,kind:lossKind,approvalReasonRequired:true,rejectionSupported:true,inventoryTransferLoss:lossOptions}
  expect(isWorkDecisionKind(lossKind)).toBe(true)
  expect(WORK_DECISION_KINDS.filter(kind=>kind===lossKind)).toHaveLength(1)
- expect(WORK_DECISION_KINDS).toHaveLength(21)
+ expect(WORK_DECISION_KINDS).toHaveLength(22)
  expect(decodeWorkDecisionPreview(value,company,lossKind,id)).not.toBeNull()
  for(const delta of [{companyId:id},{itemId:company},{sourceVersion:'0'},{approvalReasonRequired:false},{rejectionSupported:false},
   {inventoryTransferLoss:null},{inventoryTransferLoss:{...lossOptions,requestNumber:0}},{inventoryTransferLoss:{...lossOptions,requestNumber:1.5}},
@@ -389,7 +389,7 @@ it('mounts both Counterparty purposes once among seventeen and pins their actual
   'counterparty.tax-identity-change.v1':'cari.tax-identity-change.work-decision',
   'counterparty.legal-name-change.v1':'cari.legal-name-change.work-decision',
  })
- expect(WORK_DECISION_KINDS).toHaveLength(21)
+ expect(WORK_DECISION_KINDS).toHaveLength(22)
  for(const cp of cpKinds){
   expect(isWorkDecisionKind(cp)).toBe(true);expect(isCounterpartyWorkDecisionKind(cp)).toBe(true)
   expect(WORK_DECISION_KINDS.filter(kind=>kind===cp)).toEqual([cp])
@@ -524,7 +524,7 @@ const overageRequest={...request,reason:'İnsan karar gerekçesi',inventoryTrans
 it.each([null,0,2147483647])('keeps the exact nine-field human overage proposal and nullable pieces=%s',pieceCount=>{
  const value={...overagePreview,inventoryTransferOverage:{...overageProposal,pieceCount}}
  expect(WORK_DECISION_KINDS.filter(kind=>kind===overageKind)).toEqual([overageKind])
- expect(WORK_DECISION_KINDS).toHaveLength(21)
+ expect(WORK_DECISION_KINDS).toHaveLength(22)
  expect(decodeWorkDecisionPreview(value,company,overageKind,id)).toEqual(value)
 })
 it('refuses malformed, foreign, unbound or hidden overage proof instead of rendering a partial proposal',()=>{
@@ -575,7 +575,7 @@ const weighingEvaluation={dispatchNoteId:weighingNote,instructionId:weighingInst
 const weighingPreview={...preview,kind:weighingKind,sourceVersion:'1',rejectionSupported:false,
  references:[{role:'dispatch-note',label:'SENTETIK irsaliye',recordId:weighingNote,link:null},{role:'loading-instruction',label:'SENTETIK talimat',recordId:weighingInstruction,link:null}],logisticsWeighingDifference:weighingEvaluation}
 it('keeps exactly seventeen immutable evaluation fields and eight native product fields without numeric coercion',()=>{
- expect(WORK_DECISION_KINDS.filter(kind=>kind===weighingKind)).toEqual([weighingKind]);expect(WORK_DECISION_KINDS).toHaveLength(21)
+ expect(WORK_DECISION_KINDS.filter(kind=>kind===weighingKind)).toEqual([weighingKind]);expect(WORK_DECISION_KINDS).toHaveLength(22)
  expect(Object.keys(weighingEvaluation)).toHaveLength(17);expect(Object.keys(weighingEvaluation.products[0]!)).toHaveLength(8)
  expect(decodeWorkDecisionPreview(weighingPreview,company,weighingKind,id)).toEqual(weighingPreview)
  for(const bandLevel of ['NotEvaluated','None','Warning','Approval','Block'])
@@ -670,6 +670,56 @@ describe('supplier return cost exception human-only contract',()=>{
   for(const delta of [{companyId:id},{itemId:company},{state:'Approved'},{state:approve?'Rejected':'Recorded'},{originalCorrelationId:'other'},{extra:true}]){
    fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,...delta}),{status:200,headers:{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}}))
    expect((await sendWorkDecision(company,supplierKind,id,command,'old-key')).type).toBe('unknown')
+  }
+ })
+})
+
+
+const countKind='inventory.stock-count.v1'
+const countLabel='dddddddd-0000-4000-8000-000000000051',countProduct='eeeeeeee-0000-4000-8000-000000000051',countLocation='ffffffff-0000-4000-8000-000000000051'
+const countHuman={labelId:countLabel,labelVersion:'7',ownerKind:'Company',ownerId:company,custodianKind:'Company',custodianId:company,locationId:countLocation,productId:countProduct,
+ block:'Free',bookKg:'10',countedKg:'0',differenceKg:'-10',countedAtUtc:'2026-11-27T08:00:00Z',reason:'SENTETIK sayım gerekçesi',recordedBy:'SENTETIK-sayan',recordedAtUtc:'2026-11-27T09:00:00Z',bookPieceCount:2,countedPieceCount:0}
+const countRefs=[{role:'inventory-label',recordId:countLabel,label:'SENTETIK etiket',link:null},{role:'product',recordId:countProduct,label:'SENTETIK ürün',link:null},{role:'location',recordId:countLocation,label:'SENTETIK konum',link:null}]
+const countRules=[{ruleCode:'inventory.stock-count-difference',threshold:null,actual:'0',deviation:'-10',unit:'kg'}]
+const countPreview={...preview,kind:countKind,sourceVersion:'1',approvalReasonRequired:true,rejectionSupported:true,references:countRefs,rules:countRules,inventoryStockCount:countHuman}
+describe('native stock count Work human evidence',()=>{
+ it('reads exactly eighteen immutable facts including counted zero and nullable pieces; terminal version is not the label version',()=>{
+  expect(decodeWorkDecisionPreview(countPreview,company,countKind,id)).not.toBeNull()
+  expect(decodeWorkDecisionPreview({...countPreview,pending:false,sourceVersion:'2'},company,countKind,id)).not.toBeNull()
+  expect(decodeWorkDecisionPreview({...countPreview,inventoryStockCount:{...countHuman,bookPieceCount:null,countedPieceCount:null}},company,countKind,id)).not.toBeNull()
+  expect(decodeWorkDecisionPreview({...countPreview,rules:[{...countRules[0]!,actual:'2',deviation:'2'}],inventoryStockCount:{...countHuman,bookKg:'0',countedKg:'2',differenceKg:'2',bookPieceCount:0,countedPieceCount:2}},company,countKind,id)).not.toBeNull()
+ })
+ it.each([{labelId:''},{labelVersion:'0'},{labelVersion:'07'},{ownerKind:'Unknown'},{custodianKind:'Unknown'},{ownerId:id+'x'},{locationId:id},{productId:id},{block:'Other'},
+  {bookKg:'-1'},{countedKg:'1.000'},{differenceKg:'-0'},{differenceKg:'0'},{differenceKg:'-1.000'},{reason:''},{reason:'x'.repeat(1001)},
+  {recordedBy:''},{recordedBy:'x'.repeat(129)},{countedAtUtc:'2026-11-27T09:00:00+03:00'},{recordedAtUtc:null},
+  {bookPieceCount:null},{countedPieceCount:null},{countedPieceCount:-1},{bookPieceCount:2147483648},{countedPieceCount:'0'},{bookPieceCount:undefined},
+  {cost:'1'},{costStatus:'Known'},{unitCostTryPerKg:'10'},{extra:true}])('refuses malformed or leaking count evidence %j',delta=>{
+  expect(decodeWorkDecisionPreview({...countPreview,inventoryStockCount:{...countHuman,...delta}},company,countKind,id)).toBeNull()
+ })
+ it.each([{companyId:id},{itemId:company},{sourceVersion:'2'},{sourceVersion:'9223372036854775807'},{pending:false},{rejectionSupported:false},{approvalReasonRequired:false},
+  {inventoryStockCount:null},{inventoryStockCountProof:{}},{rules:[]},{rules:[{...countRules[0]!,actual:'10'}]},{rules:[{...countRules[0]!,unit:'TRY'}]},{references:countRefs.slice(1)},{references:[{...countRefs[0]!,link:'/stok/etiket/x'},...countRefs.slice(1)]}])('refuses mismatched count scope, logical version and privacy shape %j',delta=>{
+  expect(decodeWorkDecisionPreview({...countPreview,...delta},company,countKind,id)).toBeNull()
+ })
+ it('uses only the old four-field command and native mandatory reason limit on both decisions',()=>{
+  for(const approve of [true,false]){
+   expect(isWorkDecisionRequest({expectedVersion:'1',approve,reason:'x'.repeat(1000),delegationId:null},countKind)).toBe(true)
+   expect(isWorkDecisionRequest({expectedVersion:'1',approve,reason:'Satır1\nSatır2',delegationId:null},countKind)).toBe(true)
+   for(const delta of [{expectedVersion:'2'},{expectedVersion:'01'},{reason:null},{reason:' '},{reason:'x'.repeat(1001)},
+    {inventoryStockCount:{}},{supplierReturnCostException:{expectedPurchaseOrderVersion:'9'}},{logisticsPlanExcess:{expectedInstructionVersion:'1'}},{manufacturingPlanReapproval:{selectedLabelIds:[id]}}])
+    expect(isWorkDecisionRequest({expectedVersion:'1',approve,reason:'Karar',delegationId:null,...delta},countKind)).toBe(false)
+  }
+  expect(workDecisionReasonLimit(countKind)).toBe(1000)
+  expect(decodeWorkDecisionPreview({...preview,inventoryStockCount:countHuman},company,kind,id)).toBeNull()
+ })
+ it.each([true,false])('accepts matching immutable Approved/Rejected receipt and original replay correlation only, approval=%s',async approve=>{
+  const body={companyId:company,kind:countKind,itemId:id,state:approve?'Approved':'Rejected',replayed:true,originalCorrelationId:'original'}
+  const headers={'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}
+  const fetch=vi.fn(async()=>new Response(JSON.stringify(body),{status:200,headers}));vi.stubGlobal('fetch',fetch)
+  const command={expectedVersion:'1',approve,reason:'Karar',delegationId:null}
+  expect((await sendWorkDecision(company,countKind,id,command,'old-key')).type).toBe('applied')
+  for(const delta of [{companyId:id},{itemId:company},{kind},{state:'PendingApproval'},{state:approve?'Rejected':'Approved'},{state:'NoDifference'},{originalCorrelationId:'different'},{extra:true}]){
+   fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,...delta}),{status:200,headers}))
+   expect((await sendWorkDecision(company,countKind,id,command,'old-key')).type).toBe('unknown')
   }
  })
 })

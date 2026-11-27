@@ -1240,3 +1240,74 @@ it('preserves a native expired supplier decision refusal without displaying succ
  expect(screen.queryByText(T.done)).toBeNull();expect(screen.queryByRole('button',{name:T.retry})).toBeNull()
  expect(calls.find(call=>call.url.includes(supplierPath)&&call.method==='POST')?.body).toEqual({expectedVersion:'1',approve:true,reason:null,delegationId:null,supplierReturnCostException:{expectedPurchaseOrderVersion:'9'}})
 })
+
+
+const countKind='inventory.stock-count.v1',countCap='inventory.stock-count.work-decision'
+const countLabel='dddddddd-0000-4000-8000-000000000051',countProduct='eeeeeeee-0000-4000-8000-000000000051',countLocation='ffffffff-0000-4000-8000-000000000051'
+const countHuman={labelId:countLabel,labelVersion:'7',ownerKind:'Company',ownerId:COMPANY_A,custodianKind:'Company',custodianId:COMPANY_A,locationId:countLocation,productId:countProduct,
+ block:'Blocked',bookKg:'10',countedKg:'0',differenceKg:'-10',countedAtUtc:'2026-11-27T08:00:00Z',reason:'SENTETIK kayıtlı sayım gerekçesi',recordedBy:'SENTETIK-sayan',recordedAtUtc:'2026-11-27T09:00:00Z',bookPieceCount:2,countedPieceCount:0}
+const countRules=[{ruleCode:'inventory.stock-count-difference',threshold:null,actual:'0',deviation:'-10',unit:'kg'}]
+const countPreview={...preview,kind:countKind,documentLabel:'SENTETIK sayım',sourceVersion:'1',approvalReasonRequired:true,rejectionSupported:true,rules:countRules,
+ references:[{role:'inventory-label',label:'SENTETIK etiket',recordId:countLabel,link:null},{role:'product',label:'SENTETIK ürün',recordId:countProduct,link:null},{role:'location',label:'SENTETIK konum',recordId:countLocation,link:null}],inventoryStockCount:countHuman}
+const countPath=`/work/decisions/${countKind}/${id}`
+const mountCount=()=>mount(`/onaylarim/${countKind}/${id}`,true)
+it.each([true,false])('shows all price-free immutable count facts and posts only the explicit mandatory decision reason, approve=%s',async approve=>{
+ const calls=installFetch({capabilities:[countCap],respond:(url,init)=>url.includes(countPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:countKind,itemId:id,state:approve?'Approved':'Rejected',replayed:false,originalCorrelationId:'original'}):json(countPreview):undefined})
+ mountCount();await screen.findByRole('heading',{name:T.countProposal})
+ const region=screen.getByRole('region',{name:T.countProposal})
+ expect(region.querySelectorAll('dt')).toHaveLength(20)
+ for(const fact of [countLabel,countProduct,countLocation,countHuman.reason,countHuman.recordedBy,countHuman.countedAtUtc,countHuman.recordedAtUtc,T.countBlocks.Blocked])expect(region.textContent).toContain(fact)
+ expect(screen.getAllByText('0').length).toBeGreaterThanOrEqual(2)
+ expect(screen.queryByRole('spinbutton')).toBeNull();expect(screen.getAllByRole('textbox')).toHaveLength(1)
+ expect((screen.getByRole('button',{name:T.approve}) as HTMLButtonElement).disabled).toBe(true);expect((screen.getByRole('button',{name:T.reject}) as HTMLButtonElement).disabled).toBe(true)
+ const reason=screen.getByRole('textbox',{name:T.reason}) as HTMLTextAreaElement
+ expect(reason.maxLength).toBe(1000);fireEvent.change(reason,{target:{value:'x'.repeat(1001)}})
+ expect((screen.getByRole('button',{name:T.approve}) as HTMLButtonElement).disabled).toBe(true)
+ fireEvent.change(reason,{target:{value:'  Karar\nİkinci satır  '}});fireEvent.click(screen.getByRole('button',{name:approve?T.approve:T.reject}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.url.includes(countPath)&&call.method==='POST');expect(sent).toHaveLength(1)
+ expect(sent[0]!.body).toEqual({expectedVersion:'1',approve,reason:'Karar\nİkinci satır',delegationId:null});expect(sent[0]!.headers['X-Company-Id']).toBe(COMPANY_A)
+ expect(calls.some(call=>call.url.includes('/inventory/labels/')||call.url.includes('/inventory/stock-counts/'))).toBe(false)
+})
+it('shows zero-book count evidence without invoking the legacy positive-book decoder or editing kg/pieces',async()=>{
+ const zero={...countPreview,rules:[{...countRules[0]!,actual:'2',deviation:'2'}],inventoryStockCount:{...countHuman,bookKg:'0',countedKg:'2',differenceKg:'2',bookPieceCount:0,countedPieceCount:2}}
+ installFetch({capabilities:[countCap],respond:url=>url.includes(countPath)?json(zero):undefined});mountCount();await screen.findByRole('heading',{name:T.countProposal})
+ expect(screen.getByRole('region',{name:T.countProposal}).textContent).toContain(T.countReadOnly)
+ expect(screen.getAllByText('0').length).toBeGreaterThanOrEqual(2);expect(screen.queryByRole('spinbutton')).toBeNull()
+})
+it('renders null piece tracking explicitly without turning it into zero',async()=>{
+ installFetch({capabilities:[countCap],respond:url=>url.includes(countPath)?json({...countPreview,inventoryStockCount:{...countHuman,bookPieceCount:null,countedPieceCount:null}}):undefined})
+ mountCount();await screen.findByRole('heading',{name:T.countProposal});expect(screen.getAllByText(T.countNoPieces)).toHaveLength(2)
+})
+it('reconciles the original count version-one command and key after a terminal version-two remount, keeping human facts out of the journal',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-count-session'});let reads=0,posts=0
+ const calls=installFetch({capabilities:[countCap],respond:(url,init)=>{
+  if(!url.includes(countPath))return undefined
+  if(init?.method==='POST')return ++posts===1?problem(503):json({companyId:COMPANY_A,kind:countKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'})
+  return json(++reads===1?countPreview:{...countPreview,sourceVersion:'2',pending:false})
+ }})
+ mountCount();await screen.findByRole('heading',{name:T.countProposal});fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:'SENTETIK karar notu'}})
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ const journal=Object.values(sessionStorage).join('');for(const fact of [countLabel,countProduct,countLocation,countHuman.reason,countHuman.recordedBy,countHuman.countedAtUtc,countHuman.recordedAtUtc])expect(journal).not.toContain(fact)
+ cleanup();mountCount();await screen.findByText(T.unknown);await screen.findByText(T.closed)
+ expect(screen.queryByRole('button',{name:T.approve})).toBeNull();fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.url.includes(countPath)&&call.method==='POST');expect(sent).toHaveLength(2)
+ expect(sent[0]!.body).toEqual(sent[1]!.body);expect(sent[0]!.headers['Idempotency-Key']).toBe(sent[1]!.headers['Idempotency-Key'])
+ expect(sent[1]!.body).toEqual({expectedVersion:'1',approve:true,reason:'SENTETIK karar notu',delegationId:null})
+})
+it.each([{companyId:COMPANY_B},{sourceVersion:'7'},{sourceVersion:'2'},{inventoryStockCount:null},{inventoryStockCountProof:{}},{sourceModule:'inventory'},
+ {inventoryStockCount:{...countHuman,bookPieceCount:null}},{inventoryStockCount:{...countHuman,unitCost:'100'}},{inventoryStockCount:{...countHuman,labelId:id}},{rules:[{...countRules[0]!,unit:'TRY'}]}])('refuses foreign, incomplete or price-bearing count evidence %j',async delta=>{
+ const calls=installFetch({capabilities:[countCap],respond:url=>url.includes(countPath)?json({...countPreview,...delta}):undefined});mountCount()
+ await waitFor(()=>expect(calls.some(call=>call.url.includes(countPath))).toBe(true))
+ expect(screen.queryByRole('heading',{name:T.countProposal})).toBeNull();expect(screen.queryByRole('button',{name:T.approve})).toBeNull();expect(calls.some(call=>call.method==='POST')).toBe(false)
+})
+it.each([{capabilities:[]},{capabilities:['inventory.stock-count.approve']},{capabilities:['inventory.stock-positions.list']},{capabilities:['inventory.opening-cost.work-decision']}])('does not read count evidence without its exact purpose capability %j',async({capabilities})=>{
+ const calls=installFetch({capabilities,respond:url=>url.includes(countPath)?json(countPreview):undefined});mountCount()
+ await waitFor(()=>expect(calls.some(call=>call.url.endsWith('/shell/capabilities'))).toBe(true));expect(calls.some(call=>call.url.includes(countPath))).toBe(false)
+})
+it('does not restore an old count command into another authenticated session',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-count-old'});const calls=installFetch({capabilities:[countCap],respond:(url,init)=>url.includes(countPath)?init?.method==='POST'?problem(503):json(countPreview):undefined})
+ mountCount();await screen.findByRole('heading',{name:T.countProposal});fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:'Karar'}});fireEvent.click(screen.getByRole('button',{name:T.reject}));await screen.findByText(T.unknown)
+ cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-count-new'});mountCount();await screen.findByRole('heading',{name:T.countProposal})
+ expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect((screen.getByRole('textbox',{name:T.reason}) as HTMLTextAreaElement).value).toBe('')
+ expect(calls.filter(call=>call.url.includes(countPath)&&call.method==='POST')).toHaveLength(1)
+})
