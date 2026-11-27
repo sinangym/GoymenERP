@@ -52,7 +52,8 @@ public sealed partial class CashExchangeBookValueServiceV1
             var actual = View(proposal, decision);
             if (!JsonNode.DeepEquals(JsonSerializer.SerializeToNode(actual, Json), JsonSerializer.SerializeToNode(stored.Resource, Json))) return null;
             return new(context.CompanyId, proposal.Id, proposal.TransferId, DecideCommand, command.KeyHash, command.PayloadHash, command.ActorId,
-                request.ExpectedVersion, actual.Version, stored.OriginalCorrelationId, decision.DecidedAtUtc, ProposalFactsDigest(actual), OriginalReceiptDigest(stored));
+                request.ExpectedVersion, actual.Version, stored.OriginalCorrelationId, decision.DecidedAtUtc, ProposalFactsDigest(actual), OriginalReceiptDigest(stored))
+                { TransferSource = transfer };
         }
         catch (Exception error) when (error is JsonException or InvalidOperationException or ArgumentException or FormatException or OverflowException) { return null; }
     }

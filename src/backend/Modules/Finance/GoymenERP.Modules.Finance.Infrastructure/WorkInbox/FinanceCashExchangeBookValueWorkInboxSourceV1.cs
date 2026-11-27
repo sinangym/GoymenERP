@@ -23,9 +23,10 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// contract; Finance stores no currency code for them, so the unit is left empty.
 /// </para>
 /// </summary>
-internal sealed class FinanceCashExchangeBookValueWorkInboxSourceV1(
+internal sealed partial class FinanceCashExchangeBookValueWorkInboxSourceV1(
     FinanceDbContext dbContext,
-    FinanceWorkInboxFence fence) : IWorkInboxSourceV1
+    FinanceWorkInboxFence fence,
+    ICashExchangeBookValueServiceV1? owner = null) : IWorkInboxSourceV1
 {
     public const string ModuleName = "finance";
     public const string KindName = "finance.cash-exchange-book-value.v1";
@@ -73,7 +74,7 @@ internal sealed class FinanceCashExchangeBookValueWorkInboxSourceV1(
         return (rows, transfers);
     }
 
-    private static WorkInboxItemV1? Item(CashExchangeBookValueProposalRow row, IReadOnlyDictionary<Guid, string?> transfers)
+    internal static WorkInboxItemV1? Item(CashExchangeBookValueProposalRow row, IReadOnlyDictionary<Guid, string?> transfers)
     {
         if (row.Id == Guid.Empty || row.TransferId == Guid.Empty || string.IsNullOrWhiteSpace(row.PreparedBy)
             || Preparation(row.PreparationJson) is not { } preparation
