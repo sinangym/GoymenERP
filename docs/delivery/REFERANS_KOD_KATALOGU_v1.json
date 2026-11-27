@@ -2768,5 +2768,11 @@
       ],
       "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
     }
-  ]
+  ],
+  "catalog_activation_native_checkpoint": {
+    "source_commit": "d4ed8f3f8ceff20fd65cddad77a742f6c24e6acd",
+    "evidence_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#catalog_activation_native_checkpoint",
+    "reference_binding": "No exact existing native approved-source-catalog reference; all50 reference records unchanged, no new ID or Settings REF-CATALOG-01 substitution.",
+    "runtime_acceptance": "NOT_RUN"
+  }
 }

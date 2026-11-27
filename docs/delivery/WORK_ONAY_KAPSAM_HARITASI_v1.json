@@ -1725,14 +1725,24 @@
       "candidate_inbox_sources": [],
       "candidate_tests": [
         "tests/GoymenERP.Api.IntegrationTests/AccountingApprovedSourceCatalogSqlServerRelationalAcceptanceTests.cs:60",
-        "tests/GoymenERP.Api.IntegrationTests/AccountingPermissionRegistrationTests.cs:25"
+        "tests/GoymenERP.Api.IntegrationTests/AccountingPermissionRegistrationTests.cs:25",
+        "tests/GoymenERP.Accounting.UnitTests/ApprovedAccountingSourceCatalogLifecycleV1Tests.ActivationSafety.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingNormalApprovalCompositionTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingApprovedSourceCatalogSqlServerRelationalAcceptanceTests.ActivationSafety.cs"
       ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Native activation owned safety prerequisite implemented; owner-purpose human read/typed receipt and Work source/host/UI pending. Existing self-activation exception and native public wire/hash/Prepare behavior preserved. Not an additional Work kind:45 backend/45 frontend/0 staged unchanged. Local exact-head checks and source-only SQL limits: catalog_activation_native_checkpoint. All semantic/runtime flags remainNOT_VERIFIED/NOT_RUN.",
+      "latest_source_evidence": {
+        "source_commit": "d4ed8f3f8ceff20fd65cddad77a742f6c24e6acd",
+        "scope": "Native prerequisite only; no Work adapter delivery",
+        "evidence_ref": "#catalog_activation_native_checkpoint",
+        "sql": "NOT_RUN",
+        "runtime_acceptance": "NOT_RUN"
+      }
     },
     {
       "flow": 52,
@@ -2679,5 +2689,40 @@
     "nopo": "Unchanged: actual document-line/businessDate owner bridge absent =>503; no stock/Finance/commercial matching effects.",
     "sql": "Accounting168/Finance418/Purchasing203 unique SQL source names. Integration-source compilation is not actual SQL; actualSQL NOT_RUN.",
     "limits": "All64 semanticsNOT_VERIFIED/runtimeNOT_RUN; verified_runtime_flows0;41packages/50references unchanged. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 and business acceptance pending. Later unintegrated Flow51 work excluded."
+  },
+  "catalog_activation_native_checkpoint": {
+    "source_commit": "d4ed8f3f8ceff20fd65cddad77a742f6c24e6acd",
+    "artifact": "catalog-activation-native-20261127",
+    "scope": "Flow51 native activation safety prerequisite only; owner-purpose read/typed receipt/Work adapter/UI pending. Not another implemented or staged Work kind: existing45 backend/45 frontend/0 staged unchanged.",
+    "native_source_commit": "af440c9e0bd4d94409eeb9c3a0af9e8c24885689",
+    "reuse": "Existing RunOwnedAccountingApprovalAsync with exact Activate marker, same scoped Accounting context/collector/actual Audit writer; caller ambient/borrowed/dirty/pending state preserved. PostSave/precommit/release authority fences, mandatory cleanup before at most one original-key readonly winner; no mutation retry. Original activation receipt survives later supersession. Explicit native self-activation exception, Prepare policy/public wire/hash unchanged.",
+    "checks": {
+      "accounting_unit": {
+        "passed": 1062,
+        "failed": 0,
+        "skipped": 0,
+        "exit": 0,
+        "seconds": 34.8825006
+      },
+      "api_refresh": {
+        "errors": 0,
+        "warnings": 0,
+        "exit": 0,
+        "seconds": 22.8260449,
+        "mode": "BuildProjectReferences=false after fresh Accounting dependencies; not a new all-reference API build"
+      },
+      "controlled_host": {
+        "passed": 1413,
+        "failed": 0,
+        "skipped": 0,
+        "exit": 0,
+        "seconds": 68.6628145,
+        "scope": "Controlled host and actual scoped module composition; complete SQL test source compiled, actual SQL NOT_RUN"
+      }
+    },
+    "source_peer": "af440 full8files and called owner/DI chain; d4ed exact2file composition/inventory delta read. No concrete P0/P1/P2; bounded source peer, not K3.",
+    "sql": "Accounting174 unique ordinal SQL source names;6 added activation safety Facts compiled, actualSQL NOT_RUN. Controlled injected1205 is not natural two-session deadlock acceptance; synthetic golden fixtures are not relational transaction acceptance.",
+    "existing_reference": "No exact approved-source-catalog reference among existing50; REF-CATALOG-01 belongs to Settings and is not rebound. No new reference ID.",
+    "limits": "All64 semanticsNOT_VERIFIED/runtimeNOT_RUN/verified_runtime_flows0;41packages/50references unchanged. ActualSQL/normalHTTP/browser/fullCI/pins/two independent K3 and business acceptance pending. Previous45 paired checkpoint and failures retained at their original heads."
   }
 }

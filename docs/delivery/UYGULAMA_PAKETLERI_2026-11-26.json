@@ -2176,7 +2176,8 @@
         "Atb1cacee89f805a05959b5b79af034270b80b8103 source-derived sets:30native/29paired frontend; only product.price-list-version.v1 staged, no unknown frontend kind. Historicalcc379 exact29/29 remains valid only at that head. verified_runtime_flows=0; all64 semantics/runtime remain NOT_VERIFIED/NOT_RUN.",
         "Native staged product.price-list-version.v1 source8cd6de9d5bf837328fdce4040fff542e082e1849/rootb7d807ce1; facade4arg compile correction6deaa242358f95ab091c589c29032e37a28a1516/roota04ec0ebc; ROL-D18 correction1819933ac010da8c6f2a84bbb33c5391da23f9f1/root272cc4727. Human11field price preview requires existing companywide Read+Publish; inbox/private proof remain price-free, and the private in-process PublishReceipt is omitted from public JSON. Authorized human GET and native result/view keep their existing price-bearing contracts. Authorized creator/editor publication is permitted; preparer history and immutable prior terminal409 receipts remain unchanged. Earlier creator/all-editor prohibition tests are superseded by ROL-D18, not silently removed. Exact-kind Work Excludes exception does not affect package-standard SAT-D416 or other kinds. No frontend publication or grant.",
         "Native PartyCreditLimit approve/reject safety5080752e0637a77b2364d0c9df9dcacaccfa052c/root2b0b99f05: existing owned Serializable/Audit/fresh company-actor-permission fences, clean-entry caller preservation, owned cleanup and one readonly original-key winner read reused. FNS-D27a maker rule and FNS-D56/57 single-step Set/Remove unchanged. Flow40 Work purpose/UI is not implemented by this prerequisite.",
-        "Flow47/48 period and Flow50 journal reversal purposes paired in source45/45/0; exact-head local checks and retained failures: docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#journal_reversal_paired_checkpoint. ActualSQL/HTTP/browser/fullCI/K3/business acceptance pending; no new policy/grant/activation."
+        "Flow47/48 period and Flow50 journal reversal purposes paired in source45/45/0; exact-head local checks and retained failures: docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#journal_reversal_paired_checkpoint. ActualSQL/HTTP/browser/fullCI/K3/business acceptance pending; no new policy/grant/activation.",
+        "Flow51 native catalog activation safety prerequisite: existing owned runner/actual scoped Audit/current authority and original-key receipt preserved; Work owner-purpose/source/host/UI pending. Counts remain45/45/0; evidence: docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#catalog_activation_native_checkpoint."
       ],
       "decisions": [
         "YOL-D41",
@@ -2320,7 +2321,7 @@
         "activation": "No grants/flags/provider changes"
       },
       "execution": {
-        "source_commit": "bc4755a19190bca665f34965d9067023fe19f774",
+        "source_commit": "d4ed8f3f8ceff20fd65cddad77a742f6c24e6acd",
         "implemented_kinds": [
           "accounting.journal-reversal.v1",
           "accounting.period-opening.v1",
@@ -4084,6 +4085,12 @@
             "staged": []
           },
           "evidence_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#journal_reversal_paired_checkpoint",
+          "runtime_acceptance": "NOT_RUN"
+        },
+        "catalog_activation_native_checkpoint": {
+          "source_commit": "d4ed8f3f8ceff20fd65cddad77a742f6c24e6acd",
+          "evidence_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#catalog_activation_native_checkpoint",
+          "delivery_scope": "Native prerequisite only; not another Work kind",
           "runtime_acceptance": "NOT_RUN"
         }
       }
