@@ -10,6 +10,8 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class WorkInventoryCostDecisionPreviewV1Tests
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly string EconomicKey = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+        System.Text.Encoding.UTF8.GetBytes("SENTETIK-economic")));
     [Theory] [InlineData(1L)] [InlineData(9007199254740993L)] [InlineData(long.MaxValue)]
     public void All_nested_native_longs_are_lossless_Work_text_and_all_other_human_facts_are_unchanged(long version)
     {
@@ -63,6 +65,12 @@ public sealed class WorkInventoryCostDecisionPreviewV1Tests
         foreach(var name in PrivateFields)Assert.DoesNotContain("\""+name+"\"",raw,StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("sourceFactsDigest",raw,StringComparison.OrdinalIgnoreCase);Assert.DoesNotContain("previewDigest",raw,StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("SENTETIK RAW PRIVATE",raw);Assert.DoesNotContain(receipt.OriginalCorrelationId,raw);Assert.Same(receipt,p.ApprovalReceipt);
+        var wire=JsonSerializer.SerializeToElement(human,Json);
+        Assert.False(wire.GetProperty("proposal").GetProperty("component").GetProperty("claimSuccession").GetProperty("reversedComponents")[0].TryGetProperty("economicKey",out _));
+        Assert.False(wire.GetProperty("proposal").GetProperty("componentCancellation").GetProperty("components")[0].TryGetProperty("economicKey",out _));
+        Assert.Equal(64,EconomicKey.Length);Assert.DoesNotContain(EconomicKey,raw);
+        Assert.Equal(EconomicKey,p.Component.ClaimSuccession!.ReversedComponents[0].EconomicKey);
+        Assert.Contains(EconomicKey,JsonSerializer.Serialize(p,Json)); // Native fact/wire is retained; only Work omits the opaque key.
         Assert.DoesNotContain("approvalReceipt",JsonSerializer.Serialize(p,Json),StringComparison.OrdinalIgnoreCase);
         Assert.Equal("100.0100",human.Proposal.Component.AlreadyPostedComponents[0].JournalTotal);
         Assert.Equal("0.0000",human.Proposal.Component.AlreadyPostedPurchaseComponents![0].Approval.SignedAmount);
@@ -91,7 +99,7 @@ public sealed class WorkInventoryCostDecisionPreviewV1Tests
         var candidate=new PurchaseFirstCostCandidateV1(p.CompanyId,id,id,id,id,id,id,ratio,ratio,ratio,purchasedShipment,new('A',64),new('B',64),new('C',64));
         var share=new PostedPurchaseCostShareV1(approval,id,id,1,id,100.001m,"-2.0100",ratio,ratio,[candidate],new('A',64));
         var physical=new AccountingSalesPhysicalCostClaimV1(id,id,1,id,100.001m);
-        var reversed=new InventoryCostCancellationComponentV1("SENTETIK-economic","Known",id,id,"SENTETIK-purpose",id,"100.0100","-2.0100",id,id,new('A',64),id);
+        var reversed=new InventoryCostCancellationComponentV1(EconomicKey,"Known",id,id,"SENTETIK-purpose",id,"100.0100","-2.0100",id,id,new('A',64),id);
         var succession=new InventoryCostClaimSuccessionV1(id,id,id,id,v,id,v,new('A',64),id,v,[new(physical,v,new('A',64))],[reversed],[new('B',64)],ratio,ratio,ratio);
         p=p with{Version=v,InvoiceVersion=v,Preparation=p.Preparation with{MoneyProfileVersion=v,AccountPlanPackageVersion=v,AccountPlanCatalogVersion=v,
                 Classification=p.Preparation.Classification with{MappingVersion=v,InvoiceLineRevision=v}},
@@ -101,7 +109,7 @@ public sealed class WorkInventoryCostDecisionPreviewV1Tests
         return new(p,f.PreparedRecordedAtUtc,new('A',64),new('B',64));
     }
     private static readonly HashSet<string> LongFields=["version","invoiceVersion","moneyProfileVersion","mappingVersion","invoiceLineRevision","accountPlanPackageVersion","accountPlanCatalogVersion","proposalVersion","provenOriginalSequence","previousFinalizedVersion","previousProposalVersion","previousGeneration","preparedVersion","previousClosedVersion"];
-    private static readonly HashSet<string> PrivateFields=["sourceProofJson","sourceProofSha256","accountPlanSha256","physicalProofJson","sourcePayloadSha256","lineageSha256","historySha256","fingerprint","physicalSourceSha256","previousSourceSha256","previousClaimSha256","sourceFingerprint","capturedCostFingerprints","approvalReceipt"];
+    private static readonly HashSet<string> PrivateFields=["economicKey","sourceProofJson","sourceProofSha256","accountPlanSha256","physicalProofJson","sourcePayloadSha256","lineageSha256","historySha256","fingerprint","physicalSourceSha256","previousSourceSha256","previousClaimSha256","sourceFingerprint","capturedCostFingerprints","approvalReceipt"];
     // Test-only comparison: the production projection is a closed typed whitelist, with no generic JSON walker.
     private static void NormalizeExpected(JsonNode node)
     {

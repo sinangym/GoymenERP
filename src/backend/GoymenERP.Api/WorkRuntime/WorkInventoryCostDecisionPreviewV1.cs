@@ -397,8 +397,7 @@ public sealed record WorkInventoryCostClaimGenerationV1(AccountingSalesPhysicalC
             value.PreviousGeneration.ToString(CultureInfo.InvariantCulture));
 }
 
-public sealed record WorkInventoryCostCancellationComponentV1(string EconomicKey,
-    string Origin,
+public sealed record WorkInventoryCostCancellationComponentV1(string Origin,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? SourceJournalId,
     Guid JournalSourceId,
     string PostingPurpose,
@@ -410,8 +409,7 @@ public sealed record WorkInventoryCostCancellationComponentV1(string EconomicKey
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? ReversingJournalId)
 {
     internal static WorkInventoryCostCancellationComponentV1 FromNative(InventoryCostCancellationComponentV1 value) =>
-        new(value.EconomicKey,
-            value.Origin,
+        new(value.Origin,
             value.SourceJournalId,
             value.JournalSourceId,
             value.PostingPurpose,
