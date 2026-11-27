@@ -147,7 +147,7 @@ public sealed class PurchasingPersistenceModelTests
     public void The_request_and_order_screens_and_their_controls_are_published()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal("1.16", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal("1.17", PurchasingShellCapabilityProvider.OwnerContractVersion);
         Assert.Equal(30, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(!declaration.CapabilityId.StartsWith("purchasing.invoices.", StringComparison.Ordinal), declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
@@ -160,6 +160,16 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, purpose.ContextRequirement);
         Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, purpose.ScopeRequirement);
         Assert.Equal([PurchasingPermissionManifestV1.RequestsApprove], purpose.RequiredPermissions);
+        var orderPurpose = byId[PurchasingShellCapabilityProvider.OrderWorkDecisionCapabilityId];
+        Assert.Equal("purchasing.order.work-decision", orderPurpose.CapabilityId);
+        Assert.Equal("/onaylarim/purchasing.order.v1/:approvalId", orderPurpose.RoutePath);
+        Assert.Equal("purchasing-order-work-decision", orderPurpose.RouteId);
+        Assert.Equal("W-PURCHASING-ORDER-01", orderPurpose.ScreenId);
+        Assert.Null(orderPurpose.ParentCapabilityId);
+        Assert.Equal(ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, orderPurpose.RoutePrecedence);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, orderPurpose.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, orderPurpose.ScopeRequirement);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersApprove], orderPurpose.RequiredPermissions);
         var import = byId[PurchasingShellCapabilityProvider.InvoiceImportCapabilityId];
         var invoiceList = byId[PurchasingShellCapabilityProvider.InvoiceListCapabilityId];
         Assert.Equal(invoiceList.CapabilityId, import.ParentCapabilityId);
