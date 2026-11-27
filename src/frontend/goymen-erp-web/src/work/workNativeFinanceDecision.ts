@@ -60,7 +60,7 @@ export function validNativeFinancePreview(value: Record<string, unknown>, compan
     const decoded = decodeOpeningBalance(human.openingBalance,company,dateValidator,reversal ? 'retained-reversal-decision' : 'opening-decision')
     if (!decoded.ok) return false
     const v = decoded.value, target = reversal ? v.reversal : v
-    if (target === null || !guid(v.companyId) || !guid(v.id) || !guid(v.targetId) || !guid(v.currencyId)
+    if (target === null || !amount(v.amount) || !guid(v.companyId) || !guid(v.id) || !guid(v.targetId) || !guid(v.currencyId)
       || v.partyId !== null && !guid(v.partyId) || !same(target.id,id) || !utc(v.proposedAtUtc)
       || v.decidedAtUtc !== null && !utc(v.decidedAtUtc) || !utc(target.proposedAtUtc)
       || target.decidedAtUtc !== null && !utc(target.decidedAtUtc) || target.isOwnProposal
