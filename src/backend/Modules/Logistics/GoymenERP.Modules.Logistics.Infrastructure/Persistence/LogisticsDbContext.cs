@@ -787,6 +787,7 @@ public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbConte
                         nameof(CustomerReturnRow.DecidedAtUtc), nameof(CustomerReturnRow.DecisionNote),
                         nameof(CustomerReturnRow.InventoryMovementId), nameof(CustomerReturnRow.OriginalLabelId),
                         nameof(CustomerReturnRow.OriginalShipmentMovementId),
+                        .. CustomerReturnWeighingColumns,
                     ],
                     TransferOutgoingDocumentRow =>
                     [
@@ -889,13 +890,7 @@ public sealed partial class LogisticsDbContext(DbContextOptions<LogisticsDbConte
 
                 break;
             case CustomerReturnRow:
-                var returnStatus = entry.Property(nameof(CustomerReturnRow.Status));
-                var returnVersion = entry.Property(nameof(CustomerReturnRow.Version));
-                if (!returnStatus.IsModified || (int)returnStatus.OriginalValue! != 1
-                    || (int)returnStatus.CurrentValue! is not (2 or 3)
-                    || !returnVersion.IsModified || (long)returnVersion.OriginalValue! != 1L
-                    || (long)returnVersion.CurrentValue! != 2L)
-                    throw new InvalidOperationException("Musteri iadesi yalniz bekliyor durumundan onayli veya reddedildi durumuna bir kez gecer.");
+                RequireCustomerReturnForwardOnly(entry);
                 break;
             case TransferOutgoingDocumentRow:
                 var documentStatus = entry.Property(nameof(TransferOutgoingDocumentRow.Status));
