@@ -56,6 +56,8 @@ public sealed partial class FinanceCreditLimitServiceV1 : IFinanceBankCreditLimi
             await freshConsumerFence(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (!Same(context)) return new(ReadOutcome.Denied, null);
+            if (refusal is null) refusal = await Fence(context, FinanceAction.ApproveCredit, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             return refusal is null ? null : new(refusal.Outcome == CommandOutcome.Denied ? ReadOutcome.Denied : ReadOutcome.Unavailable, null);
         }
     }

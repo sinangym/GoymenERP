@@ -118,6 +118,24 @@ public sealed partial class FinanceOpeningBalanceSqlServerRelationalAcceptanceTe
         }
     }
 
+    [SqlServerFact]
+    public async Task Opening_and_reversal_final_consumer_normal_completion_after_revocation_never_releases_human_facts()
+    {
+        await using var run = await Run.StartAsync();
+        foreach (var reversal in new[] { false, true })
+        {
+            var id = await OpeningSafetyPrepare(run, reversal ? 2 : 0); await using var scope = new OpeningSafetyScope(run);
+            var reader = Assert.IsAssignableFrom<IFinanceOpeningBalanceDecisionReadV1>(scope.Service); var allowed = true;
+            scope.Authority.BeforeRead = () => allowed ? PermissionDecision.Allowed : PermissionDecision.Denied;
+            var context = new FinanceContext(CompanyA, Manager, "SENTETIK-final-consumer", null); var calls = 0; var final = reversal ? 8 : 6;
+            Task Consumer(CancellationToken _) { if (++calls == final) allowed = false; return Task.CompletedTask; }
+            var answer = reversal ? await reader.ReadReversalDecisionAsync(context, await OpeningPendingReversalId(run, id), Consumer, default)
+                : await reader.ReadOpeningDecisionAsync(context, id, Consumer, default);
+            Assert.Equal(final, calls); Assert.False(allowed); Assert.Equal(ReadOutcome.Denied, answer.Outcome); Assert.Null(answer.Resource);
+            scope.AssertClean(); await OpeningSafetyDurable(run, id, reversal ? 2 : 0, decided: false);
+        }
+    }
+
     private static Task<Guid> OpeningPendingReversalId(Run run, Guid id) => run.ScalarAsync<Guid>(
         "SELECT Id FROM finance.OpeningBalanceReversals WHERE CompanyId=@company AND OpeningBalanceId=@id AND Status=1",
         ("@company", CompanyA), ("@id", id));

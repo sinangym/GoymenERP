@@ -89,6 +89,27 @@ public sealed partial class FinanceOpeningBalanceTests
         Assert.False(scope.Database.ChangeTracker.HasChanges());
     }
 
+    [Theory] [InlineData(false, PermissionDecision.Denied)] [InlineData(true, PermissionDecision.Denied)]
+    [InlineData(false, PermissionDecision.Unavailable)] [InlineData(true, PermissionDecision.Unavailable)]
+    public async Task Purpose_owner_authority_is_rechecked_after_normal_completion_of_the_final_consumer(bool reversal, PermissionDecision decision)
+    {
+        await using var run = new Run(); var opening = (await run.ProposeAsync(Specialist, PartyRequest())).Resource!; var id = opening.Id;
+        if (reversal) { await run.ApproveAsync(Manager, new(id, "1")); id = (await run.ProposeReversalAsync(Specialist, new(id, "2", Reason))).Resource!.Reversal!.Id; }
+        await using var scope = new OpeningReadScope(run, Manager); var calls = 0; var final = reversal ? 8 : 6;
+        var answer = await scope.Read(reversal, id, _ => { if (++calls == final) scope.Permissions.Override = decision; return Task.CompletedTask; });
+        Assert.Equal(final, calls); Assert.Equal(decision == PermissionDecision.Denied ? ReadOutcome.Denied : ReadOutcome.Unavailable, answer.Outcome);
+        Assert.Null(answer.Resource); Assert.False(scope.Database.ChangeTracker.HasChanges());
+    }
+
+    [Theory] [InlineData(PermissionDecision.Denied)] [InlineData(PermissionDecision.Unavailable)]
+    public async Task Purpose_original_owner_refusal_is_not_overridden_when_a_later_consumer_restores_authority(PermissionDecision decision)
+    {
+        await using var run = new Run(); var opening = (await run.ProposeAsync(Specialist, PartyRequest())).Resource!;
+        await using var scope = new OpeningReadScope(run, Manager); scope.Permissions.Override = decision; var calls = 0;
+        var answer = await scope.Read(false, opening.Id, _ => { if (++calls == 2) scope.Permissions.Override = PermissionDecision.Allowed; return Task.CompletedTask; });
+        Assert.Equal(2, calls); Assert.Equal(decision == PermissionDecision.Denied ? ReadOutcome.Denied : ReadOutcome.Unavailable, answer.Outcome); Assert.Null(answer.Resource);
+    }
+
     [Fact]
     public async Task Purpose_final_version_fence_refuses_a_mixed_pending_read_after_a_native_concurrent_decision()
     {
@@ -156,9 +177,9 @@ public sealed partial class FinanceOpeningBalanceTests
     { public bool IsAuthenticated => true; public string UserId => scope.Actor; public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { CompanyA, CompanyB }; public bool CanAccessCompany(Guid company) => AllowedCompanyIds.Contains(company); }
     private sealed class OpeningDecisionPermission : IFinancePermissionPort
     {
-        public bool Allowed = true; public readonly List<FinanceAction> Actions = [];
+        public bool Allowed = true; public PermissionDecision? Override; public readonly List<FinanceAction> Actions = [];
         public Task<PermissionDecision> CheckAsync(FinanceContext c, FinanceAction a, Guid? id, CancellationToken token)
-        { Actions.Add(a); return Task.FromResult(Allowed && a == FinanceAction.ApproveOpeningBalance ? PermissionDecision.Allowed : PermissionDecision.Denied); }
+        { Actions.Add(a); return Task.FromResult(Override ?? (Allowed && a == FinanceAction.ApproveOpeningBalance ? PermissionDecision.Allowed : PermissionDecision.Denied)); }
     }
 
     // Pure verifier fixtures, not SQL provenance or a financial-event acceptance claim.

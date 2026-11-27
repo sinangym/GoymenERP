@@ -74,13 +74,17 @@ public sealed partial class FinanceOpeningBalanceService : IFinanceOpeningBalanc
         return new(ReadOutcome.Found, detail with { DecisionProof = proof });
         async Task<ReadResult<OpeningBalanceDecisionDetailV1>?> Fence()
         {
+            token.ThrowIfCancellationRequested();
             await consumerFence(token);
             token.ThrowIfCancellationRequested();
             if (!SameContext(context)) return new(ReadOutcome.Denied, null);
             var refusal = await FenceAsync(context, FinanceAction.ApproveOpeningBalance, token);
+            token.ThrowIfCancellationRequested();
             await consumerFence(token);
             token.ThrowIfCancellationRequested();
             if (!SameContext(context)) return new(ReadOutcome.Denied, null);
+            if (refusal is null) refusal = await FenceAsync(context, FinanceAction.ApproveOpeningBalance, token);
+            token.ThrowIfCancellationRequested();
             return refusal is null ? null : new(refusal.Outcome == CommandOutcome.Denied ? ReadOutcome.Denied : ReadOutcome.Unavailable, null);
         }
     }

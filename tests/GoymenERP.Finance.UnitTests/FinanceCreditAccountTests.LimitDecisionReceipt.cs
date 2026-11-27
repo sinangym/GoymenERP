@@ -127,6 +127,25 @@ public sealed partial class FinanceCreditAccountTests
         Assert.Equal(cancelAt, calls); Assert.False(db.ChangeTracker.HasChanges());
     }
 
+    [Theory] [InlineData(PermissionDecision.Denied)] [InlineData(PermissionDecision.Unavailable)]
+    public async Task Bank_limit_final_consumer_normal_completion_cannot_release_stale_owner_authority(PermissionDecision decision)
+    {
+        await using var run = new Run(); var id = await LimitDecisionPrepare(run); await using var db = run.Memory(CompanyA);
+        var permission = new LimitDecisionReadPermission(); var core = LimitSafetyCore(db, new LimitSafetyCompany(CompanyA), new LimitSafetyUser(), permission, null); var calls = 0;
+        var answer = await core.ReadDecisionAsync(Ctx(Checker), id, _ => { if (++calls == 8) permission.Override = decision; return Task.CompletedTask; }, default);
+        Assert.Equal(8, calls); Assert.Equal(decision == PermissionDecision.Denied ? ReadOutcome.Denied : ReadOutcome.Unavailable, answer.Outcome);
+        Assert.Null(answer.Resource); Assert.False(db.ChangeTracker.HasChanges());
+    }
+
+    [Theory] [InlineData(PermissionDecision.Denied)] [InlineData(PermissionDecision.Unavailable)]
+    public async Task Bank_limit_original_owner_refusal_remains_even_when_the_second_consumer_restores_authority(PermissionDecision decision)
+    {
+        await using var run = new Run(); var id = await LimitDecisionPrepare(run); await using var db = run.Memory(CompanyA);
+        var permission = new LimitDecisionReadPermission { Override = decision }; var core = LimitSafetyCore(db, new LimitSafetyCompany(CompanyA), new LimitSafetyUser(), permission, null); var calls = 0;
+        var answer = await core.ReadDecisionAsync(Ctx(Checker), id, _ => { if (++calls == 2) permission.Override = PermissionDecision.Allowed; return Task.CompletedTask; }, default);
+        Assert.Equal(2, calls); Assert.Equal(decision == PermissionDecision.Denied ? ReadOutcome.Denied : ReadOutcome.Unavailable, answer.Outcome); Assert.Null(answer.Resource);
+    }
+
     [Fact]
     public async Task Bank_limit_final_source_revision_check_refuses_a_mixed_pending_and_terminal_preview()
     {
@@ -149,9 +168,9 @@ public sealed partial class FinanceCreditAccountTests
     }
     private sealed class LimitDecisionReadPermission : IFinancePermissionPort
     {
-        public bool Allowed = true; public List<FinanceAction> Actions { get; } = [];
+        public bool Allowed = true; public PermissionDecision? Override; public List<FinanceAction> Actions { get; } = [];
         public Task<PermissionDecision> CheckAsync(FinanceContext c, FinanceAction a, Guid? id, CancellationToken t)
-        { Actions.Add(a); return Task.FromResult(Allowed && a == FinanceAction.ApproveCredit ? PermissionDecision.Allowed : PermissionDecision.Denied); }
+        { Actions.Add(a); return Task.FromResult(Override ?? (Allowed && a == FinanceAction.ApproveCredit ? PermissionDecision.Allowed : PermissionDecision.Denied)); }
     }
     private static (FinanceCreditMovementCommandRow Command, FinanceCreditLimitRow Row, FinanceContext Context, CommandMetadata Metadata, CreditLimitDecisionV1 Request, CreditLimitResultV1 Result) LimitReceiptFixture(bool approve)
     {
