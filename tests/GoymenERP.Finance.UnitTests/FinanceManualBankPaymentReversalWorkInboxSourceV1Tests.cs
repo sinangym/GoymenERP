@@ -8,7 +8,7 @@ namespace GoymenERP.Finance.UnitTests;
 /// <summary>
 /// W1-A (AI-D31, AI-D32): the Work inbox source over Finance's pending reversals of recorded manual bank payments
 /// (API-23), on SYNTHETIC rows. Only Pending proposals are listed; the proposer is the maker; the rule carries the
-/// reversed payment's stored amount and the link opens the payment's own screen.
+/// reversed payment's stored amount; the purpose link retains a separate native payment reference.
 /// </summary>
 public sealed class FinanceManualBankPaymentReversalWorkInboxSourceV1Tests : FinanceWorkInboxSourceContractTests
 {
@@ -35,7 +35,7 @@ public sealed class FinanceManualBankPaymentReversalWorkInboxSourceV1Tests : Fin
         db.PaymentReversalProposals.Add(Proposal(company, Guid.NewGuid(), at, Maker, ReversalProposalStatuses.Pending));
 
     [Fact]
-    public async Task The_rule_carries_the_payments_stored_amount_and_the_link_opens_the_payments_own_screen()
+    public async Task The_rule_carries_the_payments_stored_amount_and_the_purpose_retains_the_native_payment_reference()
     {
         var seeded = Build(Company, Start, Maker, ReversalProposalStatuses.Pending, "980.4000", "SENTETIK-ODM-1");
 
@@ -48,12 +48,12 @@ public sealed class FinanceManualBankPaymentReversalWorkInboxSourceV1Tests : Fin
         var item = Assert.Single(result.Items!);
         Assert.Equal(seeded.Proposal.Id, item.ItemId);
         Assert.Equal("SENTETIK-ODM-1", item.DocumentLabel);
-        Assert.Equal("/finans/odemeler/" + seeded.Payment.Id.ToString("D"), item.Link);
+        Assert.Equal("/onaylarim/finance.manual-bank-payment-reversal.v1/" + seeded.Proposal.Id.ToString("D"), item.Link);
         Assert.Equal(
             [new WorkApprovalRuleResultV1(FinanceManualBankPaymentReversalWorkInboxSourceV1.ApprovalRequiredRule, null, "980.4", null, null)],
             item.Rules);
         Assert.Contains(item.References, reference => reference.Role == "manual-bank-payment"
-            && reference.RecordId == seeded.Payment.Id && reference.Link == item.Link);
+            && reference.RecordId == seeded.Payment.Id && reference.Link == "/finans/odemeler/" + seeded.Payment.Id.ToString("D"));
         Assert.Contains(item.References, reference => reference.Role == "party" && reference.RecordId == seeded.Payment.PartyId);
         Assert.Contains(item.References, reference => reference.Role == "bank-account" && reference.RecordId == seeded.Payment.TreasuryAccountId);
         Assert.Contains(item.References, reference => reference.Role == "currency" && reference.RecordId == Try);

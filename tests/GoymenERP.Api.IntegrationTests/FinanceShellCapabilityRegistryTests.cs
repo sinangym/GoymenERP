@@ -123,6 +123,7 @@ public sealed class FinanceShellCapabilityRegistryTests
                 ("finance.expense-payments.draft", "F-25-EXPENSE-PAYMENTS", "finance.expense-payments.workspace"),
                 ("finance.expense-payments.record", "F-25-EXPENSE-PAYMENTS", "finance.expense-payments.workspace"),
                 ("finance.expense-payments.workspace", "F-25-EXPENSE-PAYMENTS", null),
+                ("finance.manual-bank-payment-reversal.work-decision", "F-MANUAL-BANK-PAYMENT-REVERSAL-WORK-DECISION", null),
                 ("finance.manual-bank-payment.work-decision", "F-MANUAL-BANK-PAYMENT-WORK-DECISION", null),
                 ("finance.manual-bank-payments.approve", "F-02-PAYMENT-DETAIL", "finance.manual-bank-payments.detail"),
                 ("finance.manual-bank-payments.create", "F-02-PAYMENT-NEW", null),
@@ -132,6 +133,7 @@ public sealed class FinanceShellCapabilityRegistryTests
                 // API-23 (Finance 1.8): the maker-checker payment reversal controls of the payment detail.
                 ("finance.manual-bank-payments.reverse.approve", "F-02-PAYMENT-DETAIL", "finance.manual-bank-payments.detail"),
                 ("finance.manual-bank-payments.reverse.propose", "F-02-PAYMENT-DETAIL", "finance.manual-bank-payments.detail"),
+                ("finance.manual-receipt-reversal.work-decision", "F-MANUAL-RECEIPT-REVERSAL-WORK-DECISION", null),
                 ("finance.official-invoice-import.approve", "F-02-OFFICIAL-INVOICE-APPROVALS", null),
                 ("finance.official-invoice-import.upload", "F-02-OFFICIAL-INVOICE-UPLOAD", null),
                 ("finance.official-invoice-import.work-decision", "F-OFFICIAL-INVOICE-IMPORT-WORK-DECISION", null),
@@ -178,7 +180,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(providers,
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision(providers)]));
 
-        Assert.Equal(61, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
+        Assert.Equal(63, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
     }
 
     [Fact]

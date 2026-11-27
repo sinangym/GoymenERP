@@ -65,7 +65,7 @@ public sealed class ReversalProposalDecisionReadTests
         Assert.False(ReversalProposalService.MatchesDecisionSnapshot(human, snapshot with { Item = snapshot.Item with { References = snapshot.Item.References.Select(r => r.Role == "manual-receipt" ? r with { RecordId = Guid.NewGuid() } : r).ToArray() } }));
         var wire = JsonSerializer.Serialize(snapshot, FinanceJson.CreateOptions());
         Assert.DoesNotContain("manualReceiptReversalProof", wire); Assert.DoesNotContain("recordedFactsDigest", wire);
-        Assert.DoesNotContain("SENTETIK reason", wire); Assert.Equal(FinanceManualReceiptReversalWorkInboxSourceV1.ScreenPath, snapshot.Item.Link);
+        Assert.DoesNotContain("SENTETIK reason", wire); Assert.Equal($"/onaylarim/finance.manual-receipt-reversal.v1/{fixture.Proposal.Id:D}", snapshot.Item.Link);
         Assert.All(authority.Asked, query => Assert.Equal(FinancePermissionNames.ReverseApprove, query.Permission));
         var missingOwner = new FinanceManualReceiptReversalWorkInboxSourceV1(fixture.Database, fence);
         await Assert.ThrowsAsync<InvalidOperationException>(() => missingOwner.ReadDecisionAsync(new(Company, "checker", "SENTETIK-source-trace", "SENTETIK-source-cause"), fixture.Proposal.Id, default));

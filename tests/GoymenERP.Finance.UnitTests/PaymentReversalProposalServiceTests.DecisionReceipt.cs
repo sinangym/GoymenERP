@@ -140,7 +140,7 @@ public sealed partial class PaymentReversalProposalServiceTests
         var paymentLabel = FinanceWorkInboxRead.Label(view.PaymentDocumentNumber, proposal.PaymentId);
         var link = FinanceWorkInboxFence.Link(FinanceManualBankPaymentReversalWorkInboxSourceV1.ScreenPath, proposal.PaymentId);
         var item = new WorkInboxItemV1("finance", FinanceManualBankPaymentReversalWorkInboxSourceV1.KindName, id, caption,
-            proposal.ProposedAtUtc, link, proposal.ProposedBy,
+            proposal.ProposedAtUtc, $"/onaylarim/finance.manual-bank-payment-reversal.v1/{id:D}", proposal.ProposedBy,
             [new(FinanceManualBankPaymentReversalWorkInboxSourceV1.ApprovalRequiredRule, null, FinanceWorkInboxRead.Amount(view.Amount), null, null)],
             [FinanceWorkInboxRead.Reference("manual-bank-payment", proposal.PaymentId, paymentLabel, link),
                 FinanceWorkInboxRead.Reference("party", view.PartyId), FinanceWorkInboxRead.Reference("bank-account", view.TreasuryAccountId, view.TreasuryAccountLabel),

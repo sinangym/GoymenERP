@@ -86,7 +86,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
-    public const string OwnerContractVersion = "1.29";
+    public const string OwnerContractVersion = "1.30";
     public const string BankStatementCapabilityId = "finance.bank-statements.read";
     public const string BankStatementImportCapabilityId = "finance.bank-statements.import";
     public const string BankStatementMatchCapabilityId = "finance.bank-statements.match";
@@ -156,6 +156,8 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public const string PartyCreditLimitWorkDecisionCapabilityId = "finance.party-credit-limit.work-decision";
     public const string OfficialInvoiceImportWorkDecisionCapabilityId = "finance.official-invoice-import.work-decision";
     public const string OfficialSalesInvoiceWorkDecisionCapabilityId = "finance.official-sales-invoice.work-decision";
+    public const string ManualBankPaymentReversalWorkDecisionCapabilityId = "finance.manual-bank-payment-reversal.work-decision";
+    public const string ManualReceiptReversalWorkDecisionCapabilityId = "finance.manual-receipt-reversal.work-decision";
     public const string BankAccountApproveCapabilityId = "finance.bank-accounts.approve";
 
     public const string ManualBankPaymentListScreenId = "F-02-PAYMENTS";
@@ -343,6 +345,12 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
             Declaration(ManualBankPaymentWorkDecisionCapabilityId, "finance-manual-bank-payment-work-decision",
                 "/onaylarim/finance.manual-bank-payment.v1/:approvalId", "F-MANUAL-BANK-PAYMENT-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinancePermissionNames.ManualBankPaymentApprove]),
+            Declaration(ManualBankPaymentReversalWorkDecisionCapabilityId, "finance-manual-bank-payment-reversal-work-decision",
+                "/onaylarim/finance.manual-bank-payment-reversal.v1/:approvalId", "F-MANUAL-BANK-PAYMENT-REVERSAL-WORK-DECISION",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinancePermissionNames.PaymentReverseApprove]),
+            Declaration(ManualReceiptReversalWorkDecisionCapabilityId, "finance-manual-receipt-reversal-work-decision",
+                "/onaylarim/finance.manual-receipt-reversal.v1/:approvalId", "F-MANUAL-RECEIPT-REVERSAL-WORK-DECISION",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinancePermissionNames.ReverseApprove]),
             bankAccounts,
             Declaration(BankAccountProposeCapabilityId, BankAccountProposeRouteId, BankAccountProposeRoutePath,
                 BankAccountProposeScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceBankAccountPropose]),

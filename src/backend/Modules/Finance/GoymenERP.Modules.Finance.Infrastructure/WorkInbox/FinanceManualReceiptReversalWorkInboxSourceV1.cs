@@ -9,7 +9,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// W1-A (AI-D31, AI-D32, YOL-D18): the proposals to reverse a recorded manual bank receipt (FIN-T06/B1-B2) waiting for a
 /// decision, as Finance lists them for the Work inbox. A proposal waits while its status is Pending (the approve and
 /// reject commands accept only a pending proposal) from the moment it was proposed; it is never edited. It is decided on
-/// the reversal approval screen by a holder of <c>finance.manual-receipt.reverse.approve</c> other than the proposer (the
+/// the Work purpose screen by a holder of <c>finance.manual-receipt.reverse.approve</c> other than the proposer (the
 /// approve command refuses only the proposer). The owner's permission port answers only a company-wide grant, so scoped
 /// approvers are not accepted. Every pending proposal of the company is returned, the caller's own included: Work hides a
 /// maker's own item.
@@ -75,7 +75,7 @@ internal sealed partial class FinanceManualReceiptReversalWorkInboxSourceV1(
         }
 
         return new WorkInboxItemV1(ModuleName, KindName, row.Id, FinanceWorkInboxRead.Label(receipt.DocumentNumber, row.Id),
-            row.ProposedAtUtc.ToUniversalTime(), ScreenPath, row.ProposedBy,
+            row.ProposedAtUtc.ToUniversalTime(), $"/onaylarim/{KindName}/{row.Id:D}", row.ProposedBy,
             [new WorkApprovalRuleResultV1(ApprovalRequiredRule, null, amount, null, null)],
             [
                 FinanceWorkInboxRead.Reference("manual-receipt", receipt.Id,

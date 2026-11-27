@@ -17,7 +17,7 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(61, declarations.Count);
+        Assert.Equal(63, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             !declaration.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)
             && !declaration.CapabilityId.StartsWith("finance.official-sales-invoices.", StringComparison.Ordinal)
@@ -44,9 +44,13 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.29", provider.ContractVersion);
+        Assert.Equal("1.30", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
+            ("finance.manual-bank-payment-reversal.work-decision", "finance-manual-bank-payment-reversal-work-decision", "/onaylarim/finance.manual-bank-payment-reversal.v1/:approvalId", "F-MANUAL-BANK-PAYMENT-REVERSAL-WORK-DECISION",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinancePermissionNames.PaymentReverseApprove]),
+            ("finance.manual-receipt-reversal.work-decision", "finance-manual-receipt-reversal-work-decision", "/onaylarim/finance.manual-receipt-reversal.v1/:approvalId", "F-MANUAL-RECEIPT-REVERSAL-WORK-DECISION",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinancePermissionNames.ReverseApprove]),
             ("finance.official-sales-invoice.work-decision", "finance-official-sales-invoice-work-decision", "/onaylarim/finance.official-sales-invoice.v1/:approvalId", "F-OFFICIAL-SALES-INVOICE-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinanceOfficialSalesInvoicePermissionNamesV1.Approve]),
             ("finance.official-invoice-import.work-decision", "finance-official-invoice-import-work-decision", "/onaylarim/finance.official-invoice-import.v1/:approvalId", "F-OFFICIAL-INVOICE-IMPORT-WORK-DECISION",

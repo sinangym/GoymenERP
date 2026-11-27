@@ -47,7 +47,7 @@ public sealed class FinanceManualReceiptReversalWorkInboxSourceV1Tests : Finance
 
         var item = Assert.Single(result.Items!);
         Assert.Equal("SENTETIK-THS-1", item.DocumentLabel);
-        Assert.Equal("/finans/ters-kayit-onaylari", item.Link);
+        Assert.Equal("/onaylarim/finance.manual-receipt-reversal.v1/" + seeded.Proposal.Id.ToString("D"), item.Link);
         Assert.Equal(
             [new WorkApprovalRuleResultV1(FinanceManualReceiptReversalWorkInboxSourceV1.ApprovalRequiredRule, null, "75.1", null, null)],
             item.Rules);
