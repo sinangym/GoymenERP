@@ -2,9 +2,8 @@
  * F-02 Tahsilat / Ödeme — the route pages around the existing components (FIN-T04b screens):
  * the draft list, a new draft entered from a Cari account, and one draft.
  *
- * - The new draft needs the party and its company account from its ENTRY: the Cari account screen
- *   links here with both (`receiptDraftPath`). Finance has no party picker and invents none; the
- *   draft-context read validates both server-side for this company, date and bank account.
+ * - A Cari account entry keeps its party/account pair. The independent entry reuses quick create,
+ *   then the current company owner read; draft-context validates the account, versions, date and bank.
  * - The detail page offers Record and the FIN-T06 reversal-proposal flow only when shell capabilities allow them.
  *   It never substitutes the unpublished legacy direct-Reverse action.
  */
@@ -13,7 +12,12 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { StateBlock } from '../shell/StateBlock'
 import { useShellState } from '../shell/shellContext'
-import { hasCapability } from '../shell/shellState'
+import { capabilityFailClosed, contextKey, contextKeyString, hasCapability } from '../shell/shellState'
+import { useAuthBoundary } from '../shell/useAuthBoundary'
+import { fetchCounterparties } from '../cari/api'
+import { CariQuickCreate } from '../cari/CariQuickCreate'
+import { findQuickCreatedOffer } from '../cari/quickCreateSelection'
+import { PARTY_ROLE_FLAG } from '../cari/contract'
 import { decodeSourceDetailFor, isBoundUuid, type SourceDetail } from './contract'
 import {
   FINANCE_CAPABILITY,
@@ -127,21 +131,56 @@ export function ReceiptListPage() {
 }
 
 export function ReceiptDraftPage() {
+  const shell = useShellState(), context = contextKey(shell)
   const [search] = useSearchParams()
+  const companyId = !capabilityFailClosed(shell) && shell.activeContext?.scopeMode === 'single'
+    ? shell.activeContext.companyId : null
+  return <ReceiptDraftEntry key={JSON.stringify([context === null ? null : contextKeyString(context),
+    shell.sessionEpoch, shell.routeEntryGeneration, search.toString()])} search={search} companyId={companyId} />
+}
+
+function ReceiptDraftEntry({ search, companyId }: { readonly search: URLSearchParams; readonly companyId: string | null }) {
+  const boundary = useAuthBoundary()
+  const [createdParty, setCreatedParty] = useState<{ partyId: string; companyAccountId: string } | null>(null)
+  const [quickUnresolved, setQuickUnresolved] = useState(false)
+  const independent = !search.has('partyId') && !search.has('companyAccountId')
   const partyId = search.get('partyId')
   const companyAccountId = search.get('companyAccountId')
   const [saved, setSaved] = useState<SourceDetail | null>(null)
   const [instrument, setInstrument] = useState<'transfer' | 'instrument'>('transfer')
   const party =
-    isBoundUuid(partyId) && isBoundUuid(companyAccountId) ? { partyId, companyAccountId } : null
+    isBoundUuid(partyId) && isBoundUuid(companyAccountId) ? { partyId, companyAccountId } : independent ? createdParty : null
 
   return (
     <section aria-labelledby="finance-receipt-draft-title">
       <h1 id="finance-receipt-draft-title">{RECEIPT_DRAFT_TITLE}</h1>
+      {independent && companyId !== null ? <CariQuickCreate initialRoles={PARTY_ROLE_FLAG.Customer}
+        onUnresolvedChange={setQuickUnresolved} onCreated={async (record, signal) => {
+          if (signal.aborted || record.account.companyId !== companyId
+            || createdParty !== null && (createdParty.partyId !== record.id || createdParty.companyAccountId !== record.account.id)) return false
+          const captured = boundary.capture()
+          const found = await findQuickCreatedOffer(signal, async cursor => {
+            const result = await fetchCounterparties({ mode: 'single', companyId }, {
+              partyState: 'active', accountState: 'active', sort: 'legalName', direction: 'asc', pageSize: 100,
+              q: record.code, cursor,
+            }, signal)
+            if (result.type === 'http' && [401, 403].includes(result.status)) boundary.report(result.status, captured)
+            return result.type === 'ok-single' ? result.data : null
+          }, item => item.id === record.id && item.isActive && item.companyAccounts.length === 1
+            && item.companyAccounts[0].isActive && item.companyAccounts[0].companyId === companyId
+            && item.companyAccounts[0].id === record.account.id)
+          if (found === null || signal.aborted) return false
+          setCreatedParty({ partyId: found.id, companyAccountId: found.companyAccounts[0].id })
+          // The native draft-context read still supplies current party/account versions before saving.
+          return true
+        }} /> : null}
       {party === null ? (
         <p role="status">{RECEIPT_DRAFT_NEEDS_PARTY}</p>
       ) : (
-        <>
+        <div onSubmitCapture={event => {
+          if (quickUnresolved) { event.preventDefault(); event.stopPropagation() }
+        }}>
+          <fieldset disabled={quickUnresolved}>
           <div className={styles.field}>
             <label htmlFor="finance-receipt-instrument">{RECEIPT_INSTRUMENT_LABEL}</label>
             <select id="finance-receipt-instrument" value={instrument}
@@ -156,7 +195,8 @@ export function ReceiptDraftPage() {
           {/* The customer's own cheque / note risk, beside the receipt entered from its account (facts only). */}
           <CustomerInstrumentRiskBlock party={party} />
           <PartyLedgerLink partyId={party.partyId} companyAccountId={party.companyAccountId} />
-        </>
+          </fieldset>
+        </div>
       )}
       {saved === null ? null : (
         <p>
