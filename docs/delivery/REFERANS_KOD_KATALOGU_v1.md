@@ -23,7 +23,7 @@ Makine kaynağı: [REFERANS_KOD_KATALOGU_v1.json](REFERANS_KOD_KATALOGU_v1.json)
 | REF-MFG-02 | Üretim iadesi ve çıktı portu | SMALL_EXTENSION | Kaynak/test ve yeni hedefli yerel kontrol |
 | REF-SUBCONTRACT-01 | Gelen fason tamamlama kaynağı | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
 | REF-LOGISTICS-01 | Yükleme/sevk owner servisi | SMALL_EXTENSION | Kaynak/test var |
-| REF-OPENITEM-01 | Faturadan tek açık kalem | DIRECT_REUSE | Kaynak/test; güncel SQL kabulü bekliyor |
+| REF-OPENITEM-01 | Faturadan tek açık kalem | SMALL_EXTENSION | Kaynak/test; güncel SQL kabulü bekliyor |
 | REF-ALLOCATE-01 | Ödeme dağıtımı ve tek para hareketi | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
 | REF-EXPENSE-01 | Masraf ödemesi ve audit/idempotency | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |
 | REF-CREDIT-01 | Kredi hareketi öneri ve karar | SMALL_EXTENSION | Eski CI ağacı eşleşiyor |
@@ -76,3 +76,5 @@ REF-CARRY-01 test bağlantısı, dönem açılış devri yerine gerçek cari bak
 REF-ORDER-01 güncel native onay korumalarına (`43d4e5063`), REF-UI-03 mevcut rol seçimi ve ilk-rol formuna (`6a8480eff`) bağlandı. İkincisi 35/35 yerel test, tsc/lint kanıtına sahiptir; önceki CI eşliği yalnız geçmiş kaydıdır. Yeni katalog maddesi eklenmedi; 50 referans korunur.
 
 REF-CARD-01, native kimlik kararı güvenlik artımının `cdc4aac0c` kaynağına güncellendi; CreateAsync yeniden kullanılabilir. Katalog 50 kayıttır; kaynak/test kanıtı ve yeni kullanım için SQL/CI kabulü ayrıdır.
+
+27 Kasım `5b07aacf3`: REF-OPENITEM-01 ve REF-LOGISTICS-01 kaynak parmak izleri mevcut küçük genişletmelere göre güncellendi. Kimlik claim/admission ve native onay/audit altyapıları yeniden kullanıldı; eski CI bu yeni kullanımı kabul etmiş sayılmaz. Gerçek SQL ve tren kapanışı bekler.

@@ -675,8 +675,8 @@
           "path": "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Application/LogisticsInstructionService.cs",
           "line": 30,
           "anchor": "public sealed partial class LogisticsInstructionService(",
-          "sha256": "926472cb9c91183a2170c9a5aaab4b9fc7c353ece6e2bcf8f061ce07a10be6d4",
-          "git_blob": "c5d248c7daffc3235a20f1bad381907279a772a9"
+          "sha256": "bb81dacdbbe755d9f553b73b480cbb15d0f3e8b68b411318aea0065711823fc3",
+          "git_blob": "e13de3bc637c241537a6aef9276fc7c6e3b37b35"
         }
       ],
       "tests": [
@@ -688,11 +688,11 @@
           "git_blob": "04f50de958afa8f1388c79caf26cc1d0e1bf9cec"
         }
       ],
-      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "source_commit": "5b07aacf3bf5f5d4db2dd10bb2748f5f6178aa86",
       "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": null,
-      "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
+      "sql_evidence": "SOURCE_ONLY_ACTUAL_SQL_NOT_RUN",
       "invariants": [
         "CompanyId ve güncel yetki",
         "Owner modül veri sahipliği",
@@ -709,21 +709,22 @@
         "KLN-D119",
         "ROL-D14"
       ],
-      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
+      "previous_source_commit": "c24706af4de4300d4a171eca11459098d87cd14f"
     },
     {
       "id": "REF-OPENITEM-01",
       "function": "Faturadan tek açık kalem",
       "module": "Finance",
       "backlog_parent": "W2-ACIKKALEM",
-      "reuse_mode": "DIRECT_REUSE",
+      "reuse_mode": "SMALL_EXTENSION",
       "sources": [
         {
           "path": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceInvoiceOpenItemAdmissionService.cs",
           "line": 41,
           "anchor": "public async Task<FinanceOpenItemAdmissionResult> AdmitAsync(",
-          "sha256": "a2c5dcae6c456d691639780401714b000dcbbbb9c27de5aef978b6c343153174",
-          "git_blob": "c3e80807f1cacdbac16e52c0bcedb51506b5fa32"
+          "sha256": "0cc12823713a29421f2688979effa7e8fcd244f5c29735624fe24214ef16fd4c",
+          "git_blob": "f11e8474c2b9652b693a3c58537842d2cb109bcf"
         }
       ],
       "tests": [
@@ -735,11 +736,11 @@
           "git_blob": "39c6ee795fea37f5360196ab30af0ac4526e1bab"
         }
       ],
-      "source_commit": "51a59cf5dff47fdc4c09d172b06cf944cc3ad9eb",
+      "source_commit": "5b07aacf3bf5f5d4db2dd10bb2748f5f6178aa86",
       "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
-      "sql_evidence": "HISTORICAL_SUITE_ONLY_NOT_CURRENT_SOURCE_ACCEPTANCE",
+      "sql_evidence": "SOURCE_ONLY_ACTUAL_SQL_NOT_RUN",
       "invariants": [
         "CompanyId ve güncel yetki",
         "Owner modül veri sahipliği",
@@ -747,10 +748,9 @@
         "Eski test sonucu yeni kullanım kabulü değildir"
       ],
       "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
-      "adaptations": "Fatura ID bazlı tekillik farklı CSV kaynak kimliğinin aynı hukuki faturayı tekrar üretmesini tek başına engellemez.",
+      "adaptations": "Native Sales and CSV reuse companywide legal claims and immutable admission receipts; legacy proof is bounded and fails closed. Amounts and installments never merge silently.",
       "limitations": [
-        "Fatura ID bazlı tekillik farklı CSV kaynak kimliğinin aynı hukuki faturayı tekrar üretmesini tek başına engellemez.",
-        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+        "Actual SQL/migration/cross-owner journey not run at this source head. Existing historical CI does not accept this adaptation."
       ],
       "decision_refs": [
         "ALS-D24",
@@ -758,8 +758,8 @@
         "SAT-D86"
       ],
       "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
-      "previous_source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
-      "previous_historical_evidence": "HISTORICAL_CI_TREE_MATCH"
+      "previous_source_commit": "51a59cf5dff47fdc4c09d172b06cf944cc3ad9eb",
+      "previous_historical_evidence": "SOURCE_AND_TEST_ONLY"
     },
     {
       "id": "REF-ALLOCATE-01",
