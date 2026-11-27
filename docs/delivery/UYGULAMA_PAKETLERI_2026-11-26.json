@@ -2049,7 +2049,12 @@
         "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Shell/LogisticsShellCapabilityProvider.cs",
         "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/WorkInbox/LogisticsPlanExcessWorkInboxSourceV1.cs",
         "tests/GoymenERP.Api.IntegrationTests/WorkLogisticsPlanExcessDecisionHostTests.cs",
-        "tests/GoymenERP.Api.IntegrationTests/LogisticsInstructionSqlServerRelationalAcceptanceTests.WorkPlanExcess.cs"
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsInstructionSqlServerRelationalAcceptanceTests.WorkPlanExcess.cs",
+        "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.InventoryTransferOverage.cs",
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/WorkInbox/InventoryTransferOverageWorkInboxSourceV1.Decision.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInventoryTransferOverageDecisionHostTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/InventoryTransferOverageWorkPurposeSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryTransferOverageWorkInboxSourceTests.Decision.cs"
       ],
       "ownership_lease": {
         "branch": "codex/erp-completion-20261126",
@@ -2448,6 +2453,20 @@
             ],
             "new_permissions": [],
             "migration": null
+          },
+          {
+            "source_commit": "19294d8a6",
+            "scope": "Inventory overage native approve/reject with original transfer version, numbered request/time and reason. Existing loss owned transaction/audit/fresh-authority/delegation and immutable command receipt pattern reused; native browse/inbox link unchanged; staged capability=false. No new permission/migration/grant.",
+            "local_checks": "34 new source cases (22 host/8 owner-source/4 SQL facts); compilation/execution NOT_RUN. Final Logistics publication checks also pending.",
+            "sql": "4 new facts inventoried. Existing corrections SQL borrowed-approval block now explicitly asserts safe caller-state entry refusal; normal approval/materialization/audit/replay assertions preserved. Actual SQL NOT_RUN.",
+            "review": "Root source read and production caller inventory; independent bounded full source review in progress, not K3.",
+            "remaining": [
+              "Owner history/locator1000 scale readiness",
+              "Paired typed overage UI and source availability",
+              "Actual SQL/HTTP/browser,pins/full CI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null
           }
         ],
         "source_commits": [
@@ -2508,10 +2527,13 @@
           "2dd74372b",
           "8f00dfad4",
           "11657e046",
-          "83aac68e6"
+          "83aac68e6",
+          "19294d8a6"
         ],
-        "kind_count_scope": "18 paired source kinds; not18 accepted flows. Logistics purpose/native approval uses frozen exception+instruction versions and an authorized human-only proposal preview. All64 runtime acceptances remain open.",
-        "staged_kinds": []
+        "kind_count_scope": "18 paired source kinds plus1 staged Inventory overage backend; not19 accepted flows. All64 runtime acceptances remain open.",
+        "staged_kinds": [
+          "inventory.transfer-overage.v1"
+        ]
       }
     },
     {
