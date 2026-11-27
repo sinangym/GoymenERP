@@ -212,7 +212,7 @@ public sealed partial class AccountingPostingAccountMappingSqlServerRelationalAc
                 "expected" => answer with { ExpectedVersion = 1 }, "current" => answer with { CurrentVersion = 1 }, _ => answer
             };
             var command = new AccountingCommandRecord(fault == "marker" ? AccountingPostingAccountMappingCommandNamesV1.Prepare : AccountingPostingAccountMappingCommandNamesV1.Activate,
-                AccountingApiService.Sha256("predicate-" + fault), MappingSafetyActor.ToString("D"), "SENTETIK-payload",
+                Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("predicate-" + fault))), MappingSafetyActor.ToString("D"), "SENTETIK-payload",
                 fault == "serialized" ? "{}" : JsonSerializer.Serialize(answer with { IsReplay = false, OriginalCorrelationId = null }, new JsonSerializerOptions(JsonSerializerDefaults.Web)), "SENTETIK-corr");
             if (fault == "marker")
                 await Assert.ThrowsAsync<InvalidOperationException>(() => probe.Store.RunActivationAsync(async _ => { await probe.Core.RecordCommandAsync(command); return answer; }, _ => Task.CompletedTask));
