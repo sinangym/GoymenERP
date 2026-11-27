@@ -387,7 +387,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             kind == LogisticsDispatchNote ? snapshot.LogisticsDispatchNoteProof!.Note : null,
             kind == LogisticsCustomerReturn ? snapshot.LogisticsCustomerReturnProof!.Return : null,
             kind == LogisticsCustomerReturn ? snapshot.LogisticsCustomerReturnProof!.Return.QuantityUnit == "Kilogram" || snapshot.LogisticsCustomerReturnProof.Return.Weighing is not null
-                : kind == CashExchangeBookValue ? cashExchangeBookValuePreview!.Proposal.TargetFunctionalValueTl is not null : null,
+                : kind == CashExchangeBookValue ? cashExchangeBookValuePreview!.Proposal.TargetFunctionalValueTl is not null
+                : kind == AccountingPeriodReopening ? !accountingPeriodReopeningPreview!.LaterPeriodClosed : null,
             ibanPreview, kind == ProductPackageStandard ? snapshot.ProductPackageStandardProof!.Table : null, priceListPreview,
             kind == PartyCreditLimit ? snapshot.PartyCreditLimitProof!.Proposal : null, importPreview, officialSalesPreview, paymentReversalPreview, receiptReversalPreview, expensePreview, bankCreditLimitPreview, openingPreview, creditMovementPreview, cashExchangeBookValuePreview, normalJournalDraftPreview, accountingPeriodOpeningPreview, accountingPeriodReopeningPreview);
     }
