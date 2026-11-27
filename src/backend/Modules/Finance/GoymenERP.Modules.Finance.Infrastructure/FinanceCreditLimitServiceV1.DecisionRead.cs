@@ -47,10 +47,14 @@ public sealed partial class FinanceCreditLimitServiceV1 : IFinanceBankCreditLimi
         return new(ReadOutcome.Found, new(view, row.ProposedBy, SourceFactsDigest(view, row.ProposedBy)));
         async Task<ReadResult<FinanceBankCreditLimitDecisionDetailV1>?> FreshReadFence()
         {
+            cancellationToken.ThrowIfCancellationRequested();
             await freshConsumerFence(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             if (!Same(context)) return new(ReadOutcome.Denied, null);
             var refusal = await Fence(context, FinanceAction.ApproveCredit, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             await freshConsumerFence(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             if (!Same(context)) return new(ReadOutcome.Denied, null);
             return refusal is null ? null : new(refusal.Outcome == CommandOutcome.Denied ? ReadOutcome.Denied : ReadOutcome.Unavailable, null);
         }

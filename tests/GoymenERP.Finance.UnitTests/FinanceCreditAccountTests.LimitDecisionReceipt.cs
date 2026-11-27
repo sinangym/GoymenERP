@@ -111,6 +111,22 @@ public sealed partial class FinanceCreditAccountTests
         Assert.False(db.ChangeTracker.HasChanges());
     }
 
+    [Theory] [InlineData(1)] [InlineData(8)]
+    public async Task Bank_limit_consumer_cancellation_never_releases_a_preview_even_when_callbacks_ignore_the_token(int cancelAt)
+    {
+        await using var run = new Run(); var id = await LimitDecisionPrepare(run); await using var db = run.Memory(CompanyA);
+        var permission = new LimitDecisionReadPermission(); // Deliberately returns a completed answer without inspecting its token.
+        var core = LimitSafetyCore(db, new LimitSafetyCompany(CompanyA), new LimitSafetyUser(), permission, null);
+        using var cancellation = new CancellationTokenSource(); var calls = 0;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => core.ReadDecisionAsync(Ctx(Checker), id, token =>
+        {
+            Assert.Equal(cancellation.Token, token);
+            if (++calls == cancelAt) cancellation.Cancel(); // Includes the final consumer callback, after the last owner read.
+            return Task.CompletedTask;
+        }, cancellation.Token));
+        Assert.Equal(cancelAt, calls); Assert.False(db.ChangeTracker.HasChanges());
+    }
+
     [Fact]
     public async Task Bank_limit_final_source_revision_check_refuses_a_mixed_pending_and_terminal_preview()
     {
