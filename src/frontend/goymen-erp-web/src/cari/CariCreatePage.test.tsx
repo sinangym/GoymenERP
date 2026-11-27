@@ -1009,3 +1009,26 @@ describe('optional atomic tax identity create', () => {
     expect(log.creates()).toHaveLength(0)
   })
 })
+
+
+it('keeps an abandoned atomic create frozen and explains the same-key retry without offering changed-data creation',async()=>{
+  let sent=0
+  const log=installFetch({capabilities:WITHOUT_DETAIL,create:()=>{
+    if(++sent===1)throw new TypeError('offline')
+    return json(mutationView({version:'2'}),201,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'atomic-original'})
+  }})
+  const nativeFetch=globalThis.fetch
+  vi.stubGlobal('fetch',vi.fn((input:RequestInfo | URL,init?:RequestInit)=>String(input).endsWith('/counterparties/tax-identity/duplicates')
+    ? Promise.resolve(json({taxIdentityNumber:'1234567890',kind:'vkn',duplicates:[]})):nativeFetch(input,init)))
+  renderAt('/cari/yeni');await openCreate();const user=userEvent.setup();await fillValid(user)
+  await user.type(screen.getByLabelText('VKN / TCKN (isteğe bağlı)'),'1234567890');await user.click(submitButton())
+  await screen.findByText('İşlem sonucu belirsiz');await user.click(screen.getByRole('button',{name:'İşlemi bırak'}))
+  await screen.findByText(/Bilgiler ve işlem anahtarı korunur; yeni oluşturma başlatılmaz/)
+  expect(screen.queryByText(/önceki işlemi yeniden deneyin ya da bilgileri değiştirin/)).toBeNull()
+  expect((screen.getByLabelText('VKN / TCKN (isteğe bağlı)') as HTMLInputElement).disabled).toBe(true)
+  expect(submitButton().disabled).toBe(true)
+  await user.click(screen.getByRole('button',{name:'Önceki işlemi yeniden dene'}))
+  await waitFor(()=>expect(log.creates()).toHaveLength(2))
+  expect(log.creates()[1].idempotencyKey).toBe(log.creates()[0].idempotencyKey)
+  expect(log.creates()[1].body).toEqual(log.creates()[0].body)
+})

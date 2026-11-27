@@ -36,6 +36,7 @@ export function CommandAttemptNotice<P, R>({
   repeatsUnresolved = false,
   unresolvedRef,
   messages,
+  abandonedDetail,
 }: {
   readonly state: AttemptState<P, R>
   readonly onRetry: () => void
@@ -53,6 +54,8 @@ export function CommandAttemptNotice<P, R>({
    * refreshed, which is true for a link and false for a status change.
    */
   readonly messages?: AttemptFailureMessages
+  /** Owner wording when an unresolved command must remain frozen after leaving retry. */
+  readonly abandonedDetail?: string
 }) {
   if (state.phase === 'abandoned') {
     if (!repeatsUnresolved) return null
@@ -65,7 +68,7 @@ export function CommandAttemptNotice<P, R>({
         data-attempt="abandoned"
       >
         <p className={styles.title}>{TEXT.abandoned.title}</p>
-        <p className={styles.detail}>{TEXT.abandoned.detail}</p>
+        <p className={styles.detail}>{abandonedDetail ?? TEXT.abandoned.detail}</p>
         <div className={styles.actions}>
           <button type="button" className={styles.primary} onClick={onRetry}>
             {TEXT.abandoned.retry}

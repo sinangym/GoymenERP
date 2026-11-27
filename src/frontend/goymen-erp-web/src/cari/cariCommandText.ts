@@ -20,6 +20,7 @@ export const CARI_KIND_LABEL: Record<number, string> = {
 }
 
 export const CARI_CREATE_TEXT = {
+  atomicAbandoned: 'Önceki cari oluşturma işlemi tamamlanmış olabilir. Bilgiler ve işlem anahtarı korunur; yeni oluşturma başlatılmaz. Güncel yetki doğrulandıktan sonra önceki işlemi aynı anahtarla yeniden deneyin.',
   taxIdentity: 'VKN / TCKN (isteğe bağlı)', taxNotice: 'Numara girerseniz şirket kapsamındaki mükerrer uyarısı okunur ve cariyle birlikte ilk kimlik bilgisi kaydedilir. Bu işlem ayrı değişiklik onayı değildir.',
   taxChecking: 'Mükerrer ve işlem yetkisi kontrol ediliyor.', taxUnavailable: 'Mükerrer kontrolü veya bu işlem için yetki doğrulanamadı. Sayı sıfır kabul edilmez; yeniden kontrol edin veya numarayı boş bırakarak normal cari yolunu kullanın.',
   taxDuplicates: 'Bu şirkette aynı numarayı taşıyan cariler var. Bu bir uyarıdır; mevcut cariyle birleştirme yapılmaz.', taxConfirm: 'Uyarıya rağmen cari oluştur',

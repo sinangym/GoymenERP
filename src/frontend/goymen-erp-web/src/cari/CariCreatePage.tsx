@@ -331,7 +331,7 @@ function CariCreateForm({ namespace, inline }: { readonly namespace: string | nu
     // The canonical detail route, from the VERIFIED id — never the Location header.
     if (inline !== undefined) { inline.onCreated(completed.result); return }
     if (canOpenDetail) void navigate(`/cari/${completed.result.id}`)
-  }, [completed, canOpenDetail, namespace, navigate, queryClient, inline])
+  }, [completed, canOpenDetail, namespace, navigate, queryClient, inline, retainedOwner])
 
   const announcement = completed === null ? '' : TEXT.announceCreated(completed.result.code)
 
@@ -594,6 +594,7 @@ function CariCreateForm({ namespace, inline }: { readonly namespace: string | nu
           onAbandon={attempt.abandon}
           onAcknowledge={attempt.abandon}
           repeatsUnresolved={repeatsUnresolved}
+          abandonedDetail={atomicAbandoned ? TEXT.atomicAbandoned : undefined}
           unresolvedRef={unresolvedRef}
         />
 
