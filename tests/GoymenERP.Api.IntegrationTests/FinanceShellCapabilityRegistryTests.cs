@@ -94,11 +94,11 @@ public sealed class FinanceShellCapabilityRegistryTests
                 ("finance.bank-accounts.approve", "F-04", "finance.bank-accounts.list"),
                 ("finance.bank-accounts.list", "F-04", null),
                 ("finance.bank-accounts.propose", "F-04-NEW", null),
+                ("finance.bank-credit-limit.work-decision", "F-BANK-CREDIT-LIMIT-WORK-DECISION", null),
                 // WP12 (Finance 1.18, FNS-D13/D113): import and match are controls of the statement workspace.
                 ("finance.bank-statements.import", "F-13-BANK-STATEMENT", "finance.bank-statements.read"),
                 ("finance.bank-statements.match", "F-13-BANK-STATEMENT", "finance.bank-statements.read"),
                 ("finance.bank-statements.read", "F-13-BANK-STATEMENT", null),
-                ("finance.bank-credit-limit.work-decision", "F-BANK-CREDIT-LIMIT-WORK-DECISION", null),
                 ("finance.cash-account-passivation.work-decision", "W-FIN-CASH-ACCOUNT-PASSIVATION-01", null),
                 ("finance.cash-account-reactivation.work-decision", "W-FIN-CASH-ACCOUNT-REACTIVATION-01", null),
                 ("finance.cash-account.work-decision", "W-FIN-CASH-ACCOUNT-01", null),
