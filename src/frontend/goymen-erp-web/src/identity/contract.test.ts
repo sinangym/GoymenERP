@@ -79,3 +79,13 @@ it.each([{companyId:ROLE_OPERATOR},{userId:ROLE_OPERATOR},{roleId:USER_ALICE},{c
  {requestedRolePermissionCodes:[{code:'  ',isCritical:false}]},{addedPermissionCodes:null},{addedPermissionCodes:[]}])('refuses malformed or foreign native code impact without a safe partial fallback %j',delta=>{
  expect(decodeRoleRequestImpact({...codeImpact,...delta},impactCompany,USER_ALICE,ROLE_OPERATOR)).toBeNull()
 })
+
+it('refuses an owner delta that classifies a currently held code as added without manufacturing a replacement',()=>{
+ const contradictory={...codeImpact,currentPermissionCodes:codeImpact.requestedRolePermissionCodes}
+ expect(decodeRoleRequestImpact(contradictory,impactCompany,USER_ALICE,ROLE_OPERATOR)).toBeNull()
+})
+it.each([true,false])('refuses a Critical classification toggle for the same current and requested permission code: current=%s',currentCritical=>{
+ const contradictory={...codeImpact,currentPermissionCodes:[{code:'identity.profile.read',isCritical:currentCritical}],
+  requestedRolePermissionCodes:[{code:'identity.profile.read',isCritical:!currentCritical}],addedPermissionCodes:[],alreadyHeldCodes:['identity.profile.read'],roleHasCriticalPermissions:!currentCritical}
+ expect(decodeRoleRequestImpact(contradictory,impactCompany,USER_ALICE,ROLE_OPERATOR)).toBeNull()
+})

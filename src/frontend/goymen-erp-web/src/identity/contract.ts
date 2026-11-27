@@ -386,7 +386,8 @@ export function decodeRoleRequestImpact(raw: unknown, company: string, userId: s
   const current=raw.currentPermissionCodes, added=raw.addedPermissionCodes, already=raw.alreadyHeldCodes
   const requested = new Set(raw.requestedRolePermissionCodes.map(permission => permission.code))
   // Validate source membership only; never manufacture a replacement delta or scope assessment.
-  if (added.length + already.length !== requested.size || added.some(code => !requested.has(code) || already.includes(code))
-    || already.some(code => !requested.has(code) || !current.some(permission => permission.code === code))) return null
+  if (added.length + already.length !== requested.size || added.some(code => !requested.has(code) || already.includes(code) || current.some(permission => permission.code === code))
+    || already.some(code => !requested.has(code) || !current.some(permission => permission.code === code))
+    || raw.requestedRolePermissionCodes.some(permission => current.some(held => held.code === permission.code && held.isCritical !== permission.isCritical))) return null
   return raw as unknown as AccessRoleRequestImpact
 }
