@@ -47,7 +47,7 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PURCHASING";
     // WP8 1.16: request purpose decisions use the existing approval name without a browse/price grant.
-    public const string OwnerContractVersion = "1.16";
+    public const string OwnerContractVersion = "1.17";
     public const string AdditionalCostReadCapabilityId = "purchasing.additional-costs.read";
     public const string AdditionalCostRecordCapabilityId = "purchasing.additional-costs.record";
 
@@ -66,6 +66,7 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
     public const string InvoiceFinalizeCapabilityId = "purchasing.invoices.finalize";
 
     public const string RequestWorkDecisionCapabilityId = "purchasing.request.work-decision";
+    public const string OrderWorkDecisionCapabilityId = "purchasing.order.work-decision";
     public const string RequestListCapabilityId = "purchasing.requests.list";
     public const string RequestListRoutePath = "/satinalma/talepler";
     public const string RequestListScreenId = "P-01";
@@ -117,6 +118,10 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 
         return
         [
+            new ShellCapabilityDeclaration(OrderWorkDecisionCapabilityId, "purchasing-order-work-decision",
+                "/onaylarim/purchasing.order.v1/:approvalId", "W-PURCHASING-ORDER-01",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide, [PurchasingPermissionManifestV1.OrdersApprove], ImplementationAvailable: true),
             new ShellCapabilityDeclaration(RequestWorkDecisionCapabilityId, "purchasing-request-work-decision",
                 "/onaylarim/purchasing.request.v1/:approvalId", "W-PURCHASING-REQUEST-01",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,

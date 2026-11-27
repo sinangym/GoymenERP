@@ -13,7 +13,7 @@ namespace GoymenERP.Api.WorkRuntime;
 public sealed record WorkDecisionRequestV1(string ExpectedVersion, bool Approve, string? Reason, Guid? DelegationId = null);
 public sealed record WorkDecisionPreviewV1(Guid CompanyId, string Kind, Guid ItemId, string DocumentLabel,
     string SourceVersion, bool Pending, bool ApprovalReasonRequired, IReadOnlyList<WorkApprovalReferenceV1> References,
-    IReadOnlyList<WorkApprovalRuleResultV1> Rules);
+    IReadOnlyList<WorkApprovalRuleResultV1> Rules, bool RejectionSupported = true);
 public sealed record WorkDecisionResultV1(Guid CompanyId, string Kind, Guid ItemId, string State, bool Replayed, string OriginalCorrelationId);
 public sealed class WorkDecisionException(int status, string? code = null, bool replayed = false, string? original = null) : Exception(code)
 {
@@ -89,8 +89,9 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
     public const string SalesSubcontractInvoice = "sales.subcontract-invoice.v1";
     public const string CreditAccount = "finance.credit-account.v1";
     public const string PurchaseRequest = "purchasing.request.v1";
+    public const string PurchaseOrder = "purchasing.order.v1";
     public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([OpeningCost, "finance.cash-account.v1",
-        "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest, CreditAccount], StringComparer.Ordinal);
+        "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest, PurchaseOrder, CreditAccount], StringComparer.Ordinal);
 
     private async Task RequireDecisionAuthorityAsync(string kind,string permission,Guid companyId,string actor,CancellationToken token)
     {
@@ -150,7 +151,7 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
         }
         await RequireDecisionAuthorityAsync(kind,sources.Single(source => source.Kind == kind).ApproverPermission,snapshot.CompanyId,actor!,token);
         return new(snapshot.CompanyId, kind, id, snapshot.Item.DocumentLabel, snapshot.SourceVersion, snapshot.Pending,
-            kind == OpeningCost, snapshot.Item.References, rules);
+            kind == OpeningCost, snapshot.Item.References, rules, kind != PurchaseOrder);
     }
 
     public async Task<WorkDecisionResultV1> DecideAsync(string kind, Guid id, WorkDecisionRequestV1 request, string key, CancellationToken token)
@@ -159,7 +160,8 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
         var actor = user.UserId;
         var snapshot = await SnapshotAsync(kind, id, token);
         if (user.UserId != actor) throw new WorkDecisionException(403);
-        if (string.IsNullOrWhiteSpace(request.ExpectedVersion) || request.ExpectedVersion.Length > 128
+        if (kind == PurchaseOrder && !request.Approve
+            || string.IsNullOrWhiteSpace(request.ExpectedVersion) || request.ExpectedVersion.Length > 128
             || (kind == OpeningCost && request.ExpectedVersion != snapshot.SourceVersion)
             || ((kind == OpeningCost || !request.Approve && kind is not (SalesOrder or SalesInvoice or SalesSubcontractInvoice or PurchaseRequest)) && (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 500))
             || (kind != OpeningCost && request.Approve && request.Reason is not null)) throw new WorkDecisionException(400, "work_decision_invalid");
@@ -167,12 +169,19 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
             || await delegations.FindForActorAsync(delegation, snapshot.Item, ct) is not null;
         if (!await Verify(token)) throw new WorkDecisionException(403);
         using var lease = executionFence.Enter(Verify);
-        if (kind == PurchaseRequest)
+        if (kind is PurchaseRequest or PurchaseOrder)
         {
             if (purchasing is null) throw new WorkDecisionException(503);
             var purchasingMetadata = new PurchasingCommandMetadata(key, correlation.CorrelationId, correlation.CausationId, DateTimeOffset.UtcNow);
             try
             {
+                if (kind == PurchaseOrder)
+                {
+                    // The owner has approval, not rejection. Cancellation remains a separate native workflow.
+                    var order = await purchasing.ApproveOrderAsync(id, new(request.ExpectedVersion), purchasingMetadata, token);
+                    if (order.Detail.Order.Id != id || order.Detail.Order.CompanyId != snapshot.CompanyId) throw new WorkDecisionException(503);
+                    return new(snapshot.CompanyId, kind, id, order.Detail.Order.Status, order.IsReplay, order.OriginalCorrelationId);
+                }
                 // Native validation retains its 4000-character reason limit, terminal state/version refusals,
                 // maker/submitter exclusion and original receipt. Never reinterpret cancellation as rejection.
                 var answer = request.Approve

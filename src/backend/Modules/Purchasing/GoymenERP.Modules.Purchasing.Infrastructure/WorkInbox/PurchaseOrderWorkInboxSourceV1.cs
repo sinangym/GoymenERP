@@ -20,7 +20,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.WorkInbox;
 /// </summary>
 internal sealed class PurchaseOrderWorkInboxSourceV1(
     PurchasingDbContext dbContext,
-    PurchasingWorkInboxFence fence) : IWorkInboxSourceV1
+    PurchasingWorkInboxFence fence) : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "purchasing";
     public const string KindName = "purchasing.order.v1";
@@ -37,6 +37,19 @@ internal sealed class PurchaseOrderWorkInboxSourceV1(
 
     public string ApproverPermission => PurchasingPermissionManifestV1.OrdersApprove;
 
+    public async Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context, Guid itemId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (itemId == Guid.Empty || await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+        var row = await dbContext.Orders.AsNoTracking().SingleOrDefaultAsync(
+            candidate => candidate.CompanyId == context.CompanyId && candidate.Id == itemId, cancellationToken);
+        if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null || row is null) return null;
+        if (row.Version < 1 || !Enum.IsDefined((PurchaseOrderStatus)row.Status) || !TryItem(context, Read(row), out var item))
+            throw new InvalidOperationException("Sipariş karar kaynağı geçersiz.");
+        return new(context.CompanyId, item, row.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            row.Status == (int)PurchaseOrderStatus.Draft);
+    }
 
     public async Task<WorkInboxSourceResultV1> ListPendingAsync(
         WorkInboxSourceContextV1 context,
@@ -130,7 +143,7 @@ internal sealed class PurchaseOrderWorkInboxSourceV1(
         }
 
         item = new WorkInboxItemV1(ModuleName, KindName, row.Id, label, entry.WaitingSinceUtc,
-            PurchasingWorkInboxFence.Link(PurchasingWorkInboxFence.OrderScreenPath, row.Id), entry.PreparedBy,
+            $"/onaylarim/{KindName}/{row.Id:D}", entry.PreparedBy,
             rules, references);
         return true;
     }

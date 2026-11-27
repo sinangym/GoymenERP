@@ -41,6 +41,7 @@ describe('shell ↔ Purchasing lane route catalogue', () => {
     const shellIds = (Object.values(CAPABILITY) as string[]).filter((id) => id.startsWith('purchasing.'))
     expect([...shellIds].sort()).toEqual([
       CAPABILITY.purchasingRequestWorkDecision,
+      CAPABILITY.purchasingOrderWorkDecision,
       PURCHASING_CAPABILITY.requestCreate,
       PURCHASING_CAPABILITY.requestDetail,
       PURCHASING_CAPABILITY.requestList,

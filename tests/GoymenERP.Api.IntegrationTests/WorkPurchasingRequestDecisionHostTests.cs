@@ -72,7 +72,7 @@ public sealed class WorkPurchasingRequestDecisionHostTests
         run.Source.CompanyId = Company; run.Raw.Allowed = false;
         Assert.Equal(403, (await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.PreviewAsync(WorkDecisionHostV1.PurchaseRequest, Item, default))).Status);
         run.Raw.Allowed = true;
-        Assert.Equal(404, (await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.PreviewAsync("purchasing.order.v1", Item, default))).Status);
+        Assert.Equal(404, (await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.PreviewAsync("purchasing.unregistered.v1", Item, default))).Status);
         Assert.Empty(run.Calls);
     }
 

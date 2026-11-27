@@ -432,6 +432,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'logistics.shipments.plan-excess.approve': 'Plan üstü sevk onayı',
   'logistics.transfer-departures.record': 'Transfer çıkışları',
   'purchasing.request.work-decision': '',
+  'purchasing.order.work-decision': '',
   'purchasing.requests.list': 'Satın alma talepleri',
   // K5: create is reached through the list's single action; detail is reached from a row.
   'purchasing.requests.create': '',

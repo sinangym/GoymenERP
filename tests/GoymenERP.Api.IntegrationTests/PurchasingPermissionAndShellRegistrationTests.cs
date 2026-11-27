@@ -107,6 +107,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
             PurchasingShellCapabilityProvider.LineScheduleCapabilityId,
             PurchasingShellCapabilityProvider.ListCapabilityId,
             PurchasingShellCapabilityProvider.SupplierRevisionCapabilityId,
+            PurchasingShellCapabilityProvider.OrderWorkDecisionCapabilityId,
             PurchasingShellCapabilityProvider.RequestWorkDecisionCapabilityId,
             PurchasingShellCapabilityProvider.RequestApproveCapabilityId,
             PurchasingShellCapabilityProvider.RequestCreateCapabilityId,

@@ -38,7 +38,7 @@ public sealed class PurchaseOrderWorkInboxSourceV1Tests
         AssertContractShape("purchasing", first);
         Assert.Equal("purchasing.order.v1", first.Kind);
         Assert.Equal("SENTETIK-PO-1", first.DocumentLabel);
-        Assert.Equal("/satinalma/siparisler/" + older.Id.ToString("D"), first.Link);
+        Assert.Equal("/onaylarim/purchasing.order.v1/" + older.Id.ToString("D"), first.Link);
         Assert.Equal(Start, first.WaitingSinceUtc);
         Assert.Equal("…" + newer.Id.ToString("D")[^8..], result.Items![1].DocumentLabel);
         Assert.Equal(PurchasingPermissionManifestV1.OrdersApprove, world.LastPermission);
@@ -117,6 +117,36 @@ public sealed class PurchaseOrderWorkInboxSourceV1Tests
         var result = await Source(world).ListPendingAsync(world.Caller(CompanyB), 5, CancellationToken.None);
 
         Assert.Equal(NativeApprovalQueueOutcomeV1.Denied, result.Outcome);
+    }
+
+    [Theory]
+    [InlineData(PurchaseOrderStatus.Draft, true)]
+    [InlineData(PurchaseOrderStatus.Approved, false)]
+    [InlineData(PurchaseOrderStatus.Cancelled, false)]
+    public async Task Purpose_snapshot_retains_terminal_owner_version_without_a_browse_or_price_grant(PurchaseOrderStatus status, bool pending)
+    {
+        var world = new PurchasingWorkInboxTestWorld();
+        var row = Order(CompanyA, status, Start, "SENTETIK-purpose");
+        await world.SeedAsync(CompanyA, db => db.Orders.Add(row));
+        var snapshot = await Source(world).ReadDecisionAsync(world.Caller(CompanyA), row.Id, default);
+        Assert.NotNull(snapshot);
+        Assert.Equal(pending, snapshot.Pending);
+        Assert.Equal(row.Version.ToString(System.Globalization.CultureInfo.InvariantCulture), snapshot.SourceVersion);
+        Assert.Equal(Maker, snapshot.Item.PreparedBy);
+        Assert.Equal(PurchasingPermissionManifestV1.OrdersApprove, world.LastPermission);
+    }
+
+    [Fact]
+    public async Task Purpose_snapshot_refuses_foreign_records_and_revoked_authority()
+    {
+        var world = new PurchasingWorkInboxTestWorld();
+        var own = Order(CompanyA, PurchaseOrderStatus.Draft, Start, null);
+        var foreign = Order(CompanyB, PurchaseOrderStatus.Draft, Start, null);
+        await world.SeedAsync(CompanyA, db => db.Orders.Add(own));
+        await world.SeedAsync(CompanyB, db => db.Orders.Add(foreign));
+        Assert.Null(await Source(world).ReadDecisionAsync(world.Caller(CompanyA), foreign.Id, default));
+        world.Granted = false;
+        Assert.Null(await Source(world).ReadDecisionAsync(world.Caller(CompanyA), own.Id, default));
     }
 
     private static PurchaseOrderWorkInboxSourceV1 Source(PurchasingWorkInboxTestWorld world) =>
