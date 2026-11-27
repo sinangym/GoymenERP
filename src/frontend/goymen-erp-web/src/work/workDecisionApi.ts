@@ -59,6 +59,9 @@ const same = (value: unknown, expected: string) => typeof value === 'string' && 
 const path = (kind: WorkDecisionKind, id: string) => `/work/decisions/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`
 const requestNumber = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 2147483647
 const nativeControls = (value: string) => Array.from(value).some(character => { const code = character.charCodeAt(0); return code <= 0x1f || code >= 0x7f && code <= 0x9f })
+/** Native overage decision NormalizeText: trim, required 500 characters, no embedded controls. */
+export const isWorkTransferOverageReason = (value: unknown): value is string => typeof value === 'string'
+  && value.trim().length > 0 && value.trim().length <= 500 && !nativeControls(value.trim())
 // Native decimal(18,3) rendered as 0.###; no quantity calculation or conversion.
 const canonicalPositiveQuantity = (value: unknown): value is string => typeof value === 'string' && /^(?:0|[1-9]\d{0,14})(?:\.\d{0,2}[1-9])?$/.test(value) && value !== '0'
 /** Same user-local conversion and native UTC validator as TransferReceiptPanel; never called by retry. */
@@ -76,8 +79,7 @@ export const isWorkDecisionRequest = (value: unknown, kind?: WorkDecisionKind): 
   if (kind === 'inventory.transfer-overage.v1') {
     const selected = value.inventoryTransferOverage
     return record(selected) && hasExactKeys(selected, ['requestNumber', 'decidedAtUtc']) && requestNumber(selected.requestNumber)
-      && transferDispatchUtc(selected.decidedAtUtc) && typeof value.reason === 'string' && value.reason.trim().length > 0
-      && value.reason.trim().length <= 500 && !nativeControls(value.reason.trim())
+      && transferDispatchUtc(selected.decidedAtUtc) && isWorkTransferOverageReason(value.reason)
   }
   if (kind === 'logistics.plan-excess.v1') {
     const selected = value.logisticsPlanExcess

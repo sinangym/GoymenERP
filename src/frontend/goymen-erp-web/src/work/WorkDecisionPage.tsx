@@ -12,7 +12,7 @@ import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useScopedCommandAttempt } from '../settings/useCommandAttempt'
 import { Button } from '../ui/Button'
 import { inboxKindText, inboxRoleText } from './workInboxText'
-import { fetchWorkDecision, sendWorkDecision, workDecisionLocalUtc, isWorkDecisionRequest, isSalesWorkDecisionKind, isCounterpartyWorkDecisionKind, workDecisionReasonLimit, type WorkDecisionKind, type WorkDecisionRequest, type WorkDecisionResult } from './workDecisionApi'
+import { fetchWorkDecision, sendWorkDecision, workDecisionLocalUtc, isWorkDecisionRequest, isSalesWorkDecisionKind, isCounterpartyWorkDecisionKind, isWorkTransferOverageReason, workDecisionReasonLimit, type WorkDecisionKind, type WorkDecisionRequest, type WorkDecisionResult } from './workDecisionApi'
 import { fetchDelegations, type DelegationPage } from './workDelegationApi'
 import { delegationPersonLabel } from './delegationPersonLabel'
 import type { ViewOutcome } from '../shell/uiState'
@@ -55,8 +55,9 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
     (payload, key) => sendWorkDecision(company!, kind, id, payload, key), payload => isWorkDecisionRequest(payload, kind))
   // A validated historical command resolves through its native receipt, not a newer maker's preview.
   const historicalRetry = (kind === 'inventory.transfer-loss.v1' || kind === 'inventory.transfer-overage.v1') && attempt.hasPendingRetry
+  const [reconcilingHistorical, setReconcilingHistorical] = useState(historicalRetry)
   const query = useQuery({ queryKey: [namespace, shell.routeEntryGeneration, 'work-decision', kind, id],
-    enabled: company !== null && namespace !== null && !capabilityFailClosed(shell) && !historicalRetry, queryFn: async ({ signal }) => {
+    enabled: company !== null && namespace !== null && !capabilityFailClosed(shell) && !historicalRetry && !reconcilingHistorical, queryFn: async ({ signal }) => {
       const captured = boundary.capture(); const result = await fetchWorkDecision(company!, kind, id, signal)
       if (result.type === 'http') boundary.report(result.status, captured)
       return result
@@ -64,6 +65,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   if (company === null || capabilityFailClosed(shell)) return <StateBlock state={{ kind: 'no-authorized-company' }} subject={T.title} />
   const preview = query.data?.type === 'ok-single' ? query.data.data : null
   const frozen = attempt.status.kind === 'busy' || attempt.hasPendingRetry
+  const reconciledHistorical = reconcilingHistorical && !attempt.hasPendingRetry && (attempt.status.kind === 'applied' || attempt.status.kind === 'refused')
   const options = preview?.manufacturingPlanReapproval?.parentRollIds
   const selected = frozen ? attempt.pendingPayload?.manufacturingPlanReapproval?.selectedLabelIds ?? [] : selectionVersion === preview?.sourceVersion ? selectedLabels : []
   const selectionInvalid = options !== undefined && (selectionVersion !== preview?.sourceVersion || selectedLabels.length !== options.length
@@ -83,7 +85,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const batch = kind === 'purchasing.goods-receipt-batch.v1'
   const counterparty = isCounterpartyWorkDecisionKind(kind)
   const reasonRequired = (approve: boolean) => preview?.approvalReasonRequired || !approve && !isSalesWorkDecisionKind(kind) && !counterparty
-  const invalidReason = (approve: boolean) => reasonRequired(approve) && reason.trim() === '' || (preview?.approvalReasonRequired || !approve || batch || counterparty) && (batch ? reason.length : reason.trim().length) > reasonLimit
+  const invalidReason = (approve: boolean) => overage && !isWorkTransferOverageReason(reason) || reasonRequired(approve) && reason.trim() === '' || (preview?.approvalReasonRequired || !approve || batch || counterparty) && (batch ? reason.length : reason.trim().length) > reasonLimit
   const submit = async (approve: boolean) => {
     if (preview === null || !approve && preview.rejectionSupported === false || frozen || approve && selectionInvalid || invalidLossTime || invalidReason(approve) || useDelegation && !delegationId) return
     const answer = await attempt.run({ expectedVersion: preview.sourceVersion, approve,
@@ -95,13 +97,14 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
     if (answer.type === 'applied') void query.refetch()
   }
   const retry = async () => {
+    if (timedTransfer && attempt.hasPendingRetry) setReconcilingHistorical(true)
     const answer = await attempt.retry()
-    if (answer.type === 'applied') void query.refetch()
+    if (answer.type === 'applied' && !timedTransfer) void query.refetch()
   }
   const cost = preview?.rules.find(rule => rule.ruleCode === 'inventory.opening-cost-unit-cost')?.actual
   return <section className={styles.page} aria-labelledby="work-decision-heading"><h1 id="work-decision-heading">{T.title}</h1><p>{T.intro}</p>
     <Link to="/onaylarim/kuyruk">{T.back}</Link>
-    {preview === null ? historicalRetry ? <div><p>{T.priorDecisionPending}</p>
+    {preview === null ? reconciledHistorical ? <p>{T.priorDecisionResolved}</p> : historicalRetry ? <div><p>{T.priorDecisionPending}</p>
       <p>{T.version}: {attempt.pendingPayload?.expectedVersion}</p>
       <p>{overage ? T.overageRequestNumber : T.lossRequestNumber}: {frozenTransferRequest?.requestNumber}</p>
       <p>{T.lossFrozenTime}: {frozenTransferRequest?.decidedAtUtc}</p>
@@ -150,7 +153,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         {frozen && frozenTransferRequest ? <p>{T.lossFrozenTime}: {frozenTransferRequest.decidedAtUtc}</p>
           : <p>{T.lossRequestedAt}: {transferRequest?.requestedAtUtc}</p>}
       </div> : null}
-      {preview.pending ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{kind === 'logistics.plan-excess.v1' ? T.planExcessApprovalOnly : kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
+      {preview.pending && !reconciledHistorical ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{kind === 'logistics.plan-excess.v1' ? T.planExcessApprovalOnly : kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
         {preview.rejectionSupported !== false || preview.approvalReasonRequired ? <label>{counterparty ? T.optionalNote : kind === 'manufacturing.plan.v1' ? T.manufacturingRejectReason : T.reason}<textarea value={lossReason} maxLength={reasonLimit} onChange={event => setReason(event.target.value)} /></label> : null}
         {kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? <p>{T.approvalReasonRequired(reasonLimit)}</p> : null}
         {kind === 'manufacturing.plan.v1' && preview.rejectionSupported ? <p>{T.manufacturingRejectHelp}</p> : null}
@@ -168,7 +171,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
           {delegations.hasNextPage ? <><p>{T.delegationMoreAvailable}</p><Button type="button" disabled={delegations.isFetchingNextPage}
             onClick={() => void delegations.fetchNextPage()}>{T.delegationMore}</Button></> : null}</> : null}
         <div className={styles.actions}><Button type="button" disabled={invalidLossTime || selectionInvalid || useDelegation && !delegationId || invalidReason(true)} onClick={() => void submit(true)}>{T.approve}</Button>
-          {preview.rejectionSupported !== false ? <Button type="button" variant="secondary" disabled={invalidLossTime || useDelegation && !delegationId || invalidReason(false)} onClick={() => void submit(false)}>{T.reject}</Button> : null}</div></fieldset> : <p>{T.closed}</p>}
+          {preview.rejectionSupported !== false ? <Button type="button" variant="secondary" disabled={invalidLossTime || useDelegation && !delegationId || invalidReason(false)} onClick={() => void submit(false)}>{T.reject}</Button> : null}</div></fieldset> : <p>{reconciledHistorical ? T.priorDecisionResolved : T.closed}</p>}
     </>}
     {attempt.status.kind === 'unknown' ? <div role="alert"><p>{T.unknown}</p><Button type="button" onClick={() => void retry()}>{T.retry}</Button></div> : null}
     {attempt.status.kind === 'refused' ? <p role="alert">{T.refused} ({attempt.status.status})</p> : null}

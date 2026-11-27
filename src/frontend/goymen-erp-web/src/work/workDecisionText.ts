@@ -1,4 +1,5 @@
 export const WORK_DECISION_TEXT = {
+  priorDecisionResolved: 'Önceki karar isteği sonuçlandı. Güncel kayıt için iş kutusuna dönün.',
   priorDecisionPending: 'Önceki karar isteğinin sonucu doğrulanmalıdır. Aynı isteği yeniden gönderin.',
   overageProposal: 'Karar verilecek fazla kabul talebi',
   overageRequestNumber: 'Karar verilecek fazla kabul talebi numarası',

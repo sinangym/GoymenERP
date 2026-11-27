@@ -929,6 +929,10 @@ it.each([{approve:true,pieceCount:0},{approve:false,pieceCount:null}])('shows ex
  const local='2026-11-27T12:30:00'
  fireEvent.change(time,{target:{value:local}})
  fireEvent.change(reason,{target:{value:'R'.repeat(501)}});expect(button.disabled).toBe(true)
+ for(const control of ['\n','\u0085','\u009f']){
+  fireEvent.change(reason,{target:{value:`karar${control}gerekçesi`}});expect(button.disabled).toBe(true)
+  fireEvent.click(button);expect(calls.some(call=>call.method==='POST'&&call.url.includes(overagePath))).toBe(false)
+ }
  fireEvent.change(reason,{target:{value:'R'.repeat(500)}});expect(button.disabled).toBe(false)
  fireEvent.click(button);await screen.findByText(T.done)
  const sent=calls.filter(call=>call.method==='POST'&&call.url.includes(overagePath))
@@ -1000,7 +1004,14 @@ it.each(['inventory.transfer-loss.v1','inventory.transfer-overage.v1'] as const)
  cleanup();mount(`/onaylarim/${receiptKind}/${id}`,true);await screen.findByText(T.priorDecisionPending)
  expect(reads).toBe(1);expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
  expect(screen.queryByRole('button',{name:T.reject})).toBeNull();expect(screen.queryByLabelText(T.lossDecisionTime)).toBeNull()
+ const capabilityReads=calls.filter(call=>call.url.endsWith('/shell/capabilities')).length
  fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+ await act(async()=>{await Promise.resolve();await Promise.resolve()})
+ expect(reads).toBe(1)
+ expect(calls.filter(call=>call.url.endsWith('/shell/capabilities'))).toHaveLength(capabilityReads)
+ expect(screen.getByText(T.done)).toBeTruthy();expect(screen.getByText(T.priorDecisionResolved)).toBeTruthy()
+ expect(document.querySelector('[data-state="not-found"]')).toBeNull()
+ expect(screen.queryByRole('button',{name:T.approve})).toBeNull();expect(screen.queryByRole('button',{name:T.reject})).toBeNull()
  const sent=calls.filter(call=>call.method==='POST'&&call.url.includes(receiptPath))
  expect(sent).toHaveLength(2);expect(sent[0]!.body).toEqual(sent[1]!.body)
  expect(sent[0]!.headers['Idempotency-Key']).toBe(sent[1]!.headers['Idempotency-Key'])
