@@ -2,7 +2,7 @@
 
 Bu katalog çalışan yeni fonksiyonların kabul listesi değildir. 50 kaynak/test giriş noktasıdır. Her kayıtta gerçek yol, sembol/satır, SHA-256, Git blob, karar ilişkisi, uyarlama sınırı ve yeni kullanım testi bulunur.
 
-**Başlangıç kaynağı:** `claude/tren-2` `c24706af4de4300d4a171eca11459098d87cd14f`; değişen referansların ayrı commit'leri JSON'dadır. 26 kaydın kaynak ve test blobları geçmiş başarılı CI ağacıyla aynıdır; 24 kayıt yalnız kaynak/test kanıtına sahiptir. Yerel fark testleri aşağıda belirtilir. Yeni kullanım için SQL, tarayıcı ve işletme kabulü yapılmadı.
+**Başlangıç kaynağı:** `claude/tren-2` `c24706af4de4300d4a171eca11459098d87cd14f`; değişen referansların ayrı commit'leri JSON'dadır. 25 kaydın kaynak ve test blobları geçmiş başarılı CI ağacıyla aynıdır; 25 kayıt yalnız kaynak/test kanıtına sahiptir. Yerel fark testleri aşağıda belirtilir. Yeni kullanım için SQL, tarayıcı ve işletme kabulü yapılmadı.
 
 Makine kaynağı: [REFERANS_KOD_KATALOGU_v1.json](REFERANS_KOD_KATALOGU_v1.json). Doğrulayıcı: `python3 -I -S -B tools/verify_delivery_reference_catalog.py`. Windows’ta kurulu Python yürütücüsü kullanılabilir.
 
@@ -14,7 +14,7 @@ Makine kaynağı: [REFERANS_KOD_KATALOGU_v1.json](REFERANS_KOD_KATALOGU_v1.json)
 | REF-CATALOG-01 | Sürümlü referans liste ve pasifleştirme | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
 | REF-POLICY-01 | Şirket politikası ve yürürlük sürümü | REFERENCE_PATTERN | Eski CI ağacı eşleşiyor |
 | REF-ORDER-01 | Çok satırlı alış ve belge onayı | SMALL_EXTENSION | Kaynak/test; güncel SQL kabulü bekliyor |
-| REF-INVOICE-01 | Alış faturası kaynağı ve kabul eşleştirme testleri | REFERENCE_PATTERN | Eski CI ağacı eşleşiyor |
+| REF-INVOICE-01 | Alış faturası kaynağı ve kabul eşleştirme testleri | REFERENCE_PATTERN | Güncel kaynak/test; yerel Purchasing1280 geçti, SQL/CI bekler |
 | REF-CLOSE-01 | Satış normal kapanış eksenleri | SMALL_EXTENSION | Güncel kaynak/test; yeni owner kompozisyonu hedefli doğrulandı, SQL/CI bekler |
 | REF-RISK-01 | Sevkte deterministik risk kapısı | DIRECT_REUSE | Eski CI ağacı eşleşiyor |
 | REF-STOCK-01 | Tek stok defteri ve adet/kg tutarlılığı | DIRECT_REUSE | Eski CI ağacı eşleşiyor |

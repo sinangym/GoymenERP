@@ -233,8 +233,8 @@
           "path": "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchaseIncomingInvoiceWorkflow.cs",
           "line": 38,
           "anchor": "public async Task<PurchaseIncomingInvoiceOperationResultV1> MatchAsync(Guid invoiceId,",
-          "sha256": "d7842e446c9c0ad02efcf16689ad4dafadd1b55f9618bcf76828dad367de930b",
-          "git_blob": "ca07aee7f83977274bd81af685744afd75426ba8"
+          "sha256": "1a11a15a1c6067e29ef7f2c8ca009119604bf762e22025408531b3e7f8c29efc",
+          "git_blob": "095937caebdee042c7005089e18c415c7408d098"
         }
       ],
       "tests": [
@@ -242,12 +242,12 @@
           "path": "tests/GoymenERP.Purchasing.UnitTests/PurchaseIncomingInvoiceWorkflowTests.cs",
           "line": 16,
           "anchor": "public async Task Matching_reads_owner_facts_under_the_selected_order_locks_and_replays_without_reading_them_again()",
-          "sha256": "6a164a13e1e283fd84af21106716e41177404d240bac586bb92bf2570aaf78fc",
-          "git_blob": "5866c0ba4046bcade34b1924b83b94b9102a60eb"
+          "sha256": "1092031337fb859b63145033e2198c7d3c42caa5960696835d88dee4aad41046",
+          "git_blob": "5b231c04ff26578c4ecbdde214a3e12b0cfd0938"
         }
       ],
-      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
-      "historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "source_commit": "9b06c6aaed210bb81c32e11bf28a499a6f18ae71",
+      "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
       "sql_evidence": "NOT_VERIFIED_FOR_NEW_USE",
@@ -261,12 +261,15 @@
       "adaptations": "Mevcut kabul eşleştirmesi PO/kabul kimliği ister; siparişsiz kaynak türü ayrı sözleşme gerektirir.",
       "limitations": [
         "Mevcut kabul eşleştirmesi PO/kabul kimliği ister; siparişsiz kaynak türü ayrı sözleşme gerektirir.",
-        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
+        "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı.",
+        "Native variance authority and owner transaction fences changed; Purchasing1280/1280 at 9b06c6aaed210bb81c32e11bf28a499a6f18ae71 passed locally, but actual SQL/browser/full CI/K3 remain NOT_RUN/PENDING."
       ],
       "decision_refs": [
         "ALS-D8"
       ],
-      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
+      "previous_source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "previous_historical_evidence": "HISTORICAL_CI_TREE_MATCH"
     },
     {
       "id": "REF-CLOSE-01",
