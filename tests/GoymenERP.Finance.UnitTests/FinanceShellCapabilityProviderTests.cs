@@ -62,13 +62,13 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.32", provider.ContractVersion);
+        Assert.Equal("1.33", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("finance.credit-movement.work-decision", "finance-credit-movement-work-decision", "/onaylarim/finance.credit-movement.v1/:approvalId", "F-CREDIT-MOVEMENT-WORK-DECISION",
-                new[] { ErpPermissions.FinanceCreditsApprove }),
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCreditsApprove]),
             ("finance.cash-exchange-book-value.work-decision", "finance-cash-exchange-book-value-work-decision", "/onaylarim/finance.cash-exchange-book-value.v1/:approvalId", "F-CASH-EXCHANGE-BOOK-VALUE-WORK-DECISION",
-                new[] { CashExchangeBookValuePermissionsV1.Approve }),
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [CashExchangeBookValuePermissionsV1.Approve]),
             ("finance.bank-credit-limit.work-decision", "finance-bank-credit-limit-work-decision", "/onaylarim/finance.bank-credit-limit.v1/:approvalId", "F-BANK-CREDIT-LIMIT-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCreditsApprove]),
             ("finance.opening-balance.work-decision", "finance-opening-balance-work-decision", "/onaylarim/finance.opening-balance.v1/:approvalId", "F-OPENING-BALANCE-WORK-DECISION",
