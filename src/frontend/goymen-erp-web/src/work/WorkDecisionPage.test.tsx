@@ -1311,3 +1311,55 @@ it('does not restore an old count command into another authenticated session',as
  expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect((screen.getByRole('textbox',{name:T.reason}) as HTMLTextAreaElement).value).toBe('')
  expect(calls.filter(call=>call.url.includes(countPath)&&call.method==='POST')).toHaveLength(1)
 })
+
+
+const bankKind='finance.bank-account.v1',bankCap='finance.bank-account.work-decision',bankCurrency='dddddddd-0000-4000-8000-000000000061'
+const bankSafeAccount={id,companyId:COMPANY_A,currencyId:bankCurrency,displayName:'SENTETIK güvenli banka hesabı',isActive:false,isUsableForReceipt:false,version:'1'}
+const bankHuman={account:bankSafeAccount,proposedBy:'SENTETIK-hesap-öneren',proposedAtUtc:'2026-11-27T08:00:00Z'}
+const bankPreview={...preview,kind:bankKind,sourceVersion:'1',rejectionSupported:false,rules:[{ruleCode:'finance.bank-account-approval-required',threshold:null,actual:null,deviation:null,unit:null}],
+ references:[{role:'bank-account',recordId:id,label:'SENTETIK hesap',link:null},{role:'currency',recordId:bankCurrency,label:'SENTETIK para birimi',link:null}],bankAccount:bankHuman}
+const bankPath=`/work/decisions/${bankKind}/${id}`,mountBank=()=>mount(`/onaylarim/${bankKind}/${id}`,true)
+it('shows the native safe account proposal without card/IBAN reads, editable values, a rejection or note',async()=>{
+ const calls=installFetch({capabilities:[bankCap],respond:(url,init)=>url.includes(bankPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:bankKind,itemId:id,state:'Approved',replayed:false,originalCorrelationId:'original'}):json(bankPreview):undefined})
+ mountBank();await screen.findByRole('heading',{name:T.bankProposal});const region=screen.getByRole('region',{name:T.bankProposal})
+ for(const fact of [bankSafeAccount.displayName,bankHuman.proposedBy,bankHuman.proposedAtUtc,T.bankCurrentVersion])expect(region.textContent).toContain(fact)
+ expect(region.querySelectorAll('dt')).toHaveLength(9);expect(screen.getAllByText(T.bankNo)).toHaveLength(2)
+ expect(screen.queryByRole('textbox')).toBeNull();expect(screen.queryByRole('button',{name:T.reject})).toBeNull();expect(screen.getByText(T.bankApprovalOnly)).toBeTruthy()
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.url.includes(bankPath)&&call.method==='POST');expect(sent).toHaveLength(1)
+ expect(sent[0]!.body).toEqual({expectedVersion:'1',approve:true,reason:null,delegationId:null})
+ expect(calls.some(call=>call.url.includes('/finance/bank-accounts')||call.url.includes('/finance/currencies'))).toBe(false)
+})
+it('keeps the original bank approval version and key after a later IBAN/card revision while exposing no private proposal in the journal',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-bank-session'});let reads=0,posts=0
+ const calls=installFetch({capabilities:[bankCap],respond:(url,init)=>{
+  if(!url.includes(bankPath))return undefined
+  if(init?.method==='POST')return ++posts===1?problem(503):json({companyId:COMPANY_A,kind:bankKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'})
+  return json(++reads===1?bankPreview:{...bankPreview,pending:false,sourceVersion:'4',bankAccount:{...bankHuman,account:{...bankSafeAccount,isActive:true,isUsableForReceipt:false,version:'4'}}})
+ }})
+ mountBank();await screen.findByRole('heading',{name:T.bankProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ const journal=Object.values(sessionStorage).join('');for(const fact of [bankSafeAccount.displayName,bankCurrency,bankHuman.proposedBy,bankHuman.proposedAtUtc])expect(journal).not.toContain(fact)
+ cleanup();mountBank();await screen.findByText(T.unknown);await screen.findByText(T.closed)
+ expect(screen.getByText(`${T.version}: 1`)).toBeTruthy();expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.url.includes(bankPath)&&call.method==='POST');expect(sent).toHaveLength(2)
+ expect(sent[0]!.body).toEqual(sent[1]!.body);expect(sent[0]!.headers['Idempotency-Key']).toBe(sent[1]!.headers['Idempotency-Key'])
+ expect(sent[1]!.body).toEqual({expectedVersion:'1',approve:true,reason:null,delegationId:null})
+})
+it.each([{companyId:COMPANY_B},{sourceVersion:'9223372036854775807'},{bankAccount:null},{bankAccountProof:{}},{rejectionSupported:true},
+ {bankAccount:{...bankHuman,iban:'TR-SENTETIK'}},{bankAccount:{...bankHuman,account:{...bankSafeAccount,iban:'TR-SENTETIK'}}},{bankAccount:{...bankHuman,account:{...bankSafeAccount,bankName:'SENTETIK banka'}}},
+ {bankAccount:{...bankHuman,account:{...bankSafeAccount,companyId:COMPANY_B}}},{bankAccount:{...bankHuman,account:{...bankSafeAccount,isUsableForReceipt:true}}},{bankAccount:{...bankHuman,proposedBy:''}}])('refuses bank scope drift, malformed proof and extra card disclosure %j',async delta=>{
+ const calls=installFetch({capabilities:[bankCap],respond:url=>url.includes(bankPath)?json({...bankPreview,...delta}):undefined});mountBank()
+ await waitFor(()=>expect(calls.some(call=>call.url.includes(bankPath))).toBe(true));expect(screen.queryByRole('heading',{name:T.bankProposal})).toBeNull()
+ expect(screen.queryByRole('button',{name:T.approve})).toBeNull();expect(calls.some(call=>call.method==='POST')).toBe(false);expect(screen.queryByText('TR-SENTETIK')).toBeNull()
+})
+it.each([{capabilities:[]},{capabilities:['finance.bank-accounts.approve']},{capabilities:['finance.bank-accounts.list']},{capabilities:['finance.cash-account.work-decision']}])('makes no bank purpose read with missing or wrong capability %j',async({capabilities})=>{
+ const calls=installFetch({capabilities,respond:url=>url.includes(bankPath)?json(bankPreview):undefined});mountBank()
+ await waitFor(()=>expect(calls.some(call=>call.url.endsWith('/shell/capabilities'))).toBe(true));expect(calls.some(call=>call.url.includes(bankPath))).toBe(false)
+})
+it('does not restore a bank approval from another authentication session',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-bank-old'});const calls=installFetch({capabilities:[bankCap],respond:(url,init)=>url.includes(bankPath)?init?.method==='POST'?problem(503):json(bankPreview):undefined})
+ mountBank();await screen.findByRole('heading',{name:T.bankProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-bank-new'});mountBank();await screen.findByRole('heading',{name:T.bankProposal})
+ expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.url.includes(bankPath)&&call.method==='POST')).toHaveLength(1)
+})

@@ -1,3 +1,4 @@
+import { BANK_COLUMN, BANK_MASTER_NOTICE, currencyFallback } from '../finance/bankAccountText'
 import { SUPPLIER_RETURN_TEXT as SUPPLIER_RETURN, SUPPLIER_RETURN_SOURCE_BLOCK_TEXT } from '../purchasing/supplierReturnText'
 import { KIND_LABEL, TAX_IDENTITY_TEXT } from '../cari/taxIdentity'
 import { LEGAL_NAME_TEXT } from '../cari/legalName'
@@ -122,8 +123,19 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       <p>{T.lossFrozenTime}: {frozenTransferRequest?.decidedAtUtc}</p>
     </div> : <StateBlock state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
       subject={T.title} onRetry={() => void query.refetch()} /> : <>
-      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(supplierReturn || kind === 'inventory.stock-count.v1' || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
+      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(supplierReturn || kind === 'finance.bank-account.v1' || kind === 'inventory.stock-count.v1' || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
       {kind === 'inventory.opening-cost.v1' ? <p>{cost == null ? T.hiddenCost : `${T.cost}: ${cost}`}</p> : null}
+      {preview.bankAccount ? <section aria-label={T.bankProposal}><h3>{T.bankProposal}</h3><dl className={styles.facts}>
+        <dt>{BANK_COLUMN.name}</dt><dd>{preview.bankAccount.account.displayName}</dd>
+        <dt>{BANK_COLUMN.currency}</dt><dd>{currencyFallback(preview.bankAccount.account.currencyId)}</dd>
+        <dt>{T.bankAccountId}</dt><dd>{preview.bankAccount.account.id}</dd>
+        <dt>{T.bankCompany}</dt><dd>{preview.bankAccount.account.companyId}</dd>
+        <dt>{T.bankActive}</dt><dd>{preview.bankAccount.account.isActive ? T.bankYes : T.bankNo}</dd>
+        <dt>{T.bankReceiptUsable}</dt><dd>{preview.bankAccount.account.isUsableForReceipt ? T.bankYes : T.bankNo}</dd>
+        <dt>{T.bankCurrentVersion}</dt><dd>{preview.bankAccount.account.version}</dd>
+        <dt>{T.bankProposedBy}</dt><dd>{preview.bankAccount.proposedBy}</dd>
+        <dt>{T.bankProposedAt}</dt><dd>{preview.bankAccount.proposedAtUtc}</dd>
+      </dl><p>{BANK_MASTER_NOTICE}</p></section> : null}
       {preview.inventoryStockCount ? <section aria-label={T.countProposal}><h3>{T.countProposal}</h3><dl className={styles.facts}>
         <dt>{T.countLabel}</dt><dd>{preview.inventoryStockCount.labelId}</dd><dt>{T.countLabelVersion}</dt><dd>{preview.inventoryStockCount.labelVersion}</dd>
         <dt>{T.countOwnerKind}</dt><dd>{T.countPartyKinds[preview.inventoryStockCount.ownerKind]}</dd><dt>{T.countOwner}</dt><dd>{preview.inventoryStockCount.ownerId}</dd>
@@ -224,7 +236,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         {frozen && frozenTransferRequest ? <p>{T.lossFrozenTime}: {frozenTransferRequest.decidedAtUtc}</p>
           : <p>{T.lossRequestedAt}: {transferRequest?.requestedAtUtc}</p>}
       </div> : null}
-      {preview.pending && !reconciledHistorical ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{kind === 'logistics.weighing-difference.v1' ? T.weighingApprovalOnly : kind === 'logistics.plan-excess.v1' ? T.planExcessApprovalOnly : kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
+      {preview.pending && !reconciledHistorical ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{kind === 'finance.bank-account.v1' ? T.bankApprovalOnly : kind === 'logistics.weighing-difference.v1' ? T.weighingApprovalOnly : kind === 'logistics.plan-excess.v1' ? T.planExcessApprovalOnly : kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
         {preview.rejectionSupported !== false || preview.approvalReasonRequired ? <label>{counterparty ? T.optionalNote : kind === 'manufacturing.plan.v1' ? T.manufacturingRejectReason : T.reason}<textarea value={lossReason} maxLength={reasonLimit} onChange={event => setReason(event.target.value)} /></label> : null}
         {kind === 'inventory.stock-count.v1' ? <p>{T.countReasonHelp}</p> : null}
         {kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? <p>{T.approvalReasonRequired(reasonLimit)}</p> : null}

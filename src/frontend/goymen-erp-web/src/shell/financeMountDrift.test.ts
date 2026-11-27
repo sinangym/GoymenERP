@@ -1,3 +1,4 @@
+import { WORK_INBOX_KINDS } from '../work/workInboxKinds'
 /**
  * The shell mounts exactly the Finance capability ids and routes that lane declares.
  *
@@ -227,4 +228,16 @@ describe('shell ↔ Finance lane capability ids', () => {
       'finance.opening-balances.list': 'Açılış Bakiyeleri',
     })
   })
+})
+
+
+it('mounts only the safe bank approval purpose while preserving the native F04 card/list paths and IBAN approval kind',()=>{
+ const capability=CAPABILITY.financeBankAccountWorkDecision
+ expect(capability).toBe('finance.bank-account.work-decision');expect(CAPABILITY_ROUTE[capability]).toBe('/onaylarim/finance.bank-account.v1/:approvalId')
+ expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
+ expect(matchRoutes(workRoutes,'/onaylarim/finance.bank-account.v1/cccccccc-0000-4000-8000-000000000001')?.at(-1)?.route.path).toBe('onaylarim/finance.bank-account.v1/:approvalId')
+ expect(WORK_INBOX_KINDS.filter(row=>row.kind==='finance.bank-account.v1')).toEqual([{kind:'finance.bank-account.v1',module:'finance',capability}])
+ expect(WORK_INBOX_KINDS.find(row=>row.kind==='finance.bank-account-iban-change.v1')?.capability).toBe(FINANCE_CAPABILITY.bankAccountsApprove)
+ expect(CAPABILITY_ROUTE[CAPABILITY.financeBankAccountsList]).toBe(FINANCE_ROUTE.bankAccountsList)
+ expect(matchRoutes(financeRoutes,FINANCE_ROUTE.bankAccountsList)?.at(-1)?.route.path).toBe(FINANCE_ROUTE.bankAccountsList.slice(1))
 })

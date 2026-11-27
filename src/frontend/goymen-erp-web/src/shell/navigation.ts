@@ -331,6 +331,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'finance.credit-limits.list': 'Kredi Limitleri',
   'finance.collaterals.list': 'Müşteri Teminatları',
   'finance.opening-balances.list': 'Açılış Bakiyeleri',
+  'finance.bank-account.work-decision': '',
   'finance.cash-account.work-decision': '',
   'finance.cash-account-passivation.work-decision': '',
   'finance.cash-account-reactivation.work-decision': '',
