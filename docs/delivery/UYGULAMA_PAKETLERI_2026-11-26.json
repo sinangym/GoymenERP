@@ -1962,7 +1962,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Validate the final15 source-kind publication and Counterparty native safety, then connect its two existing owner commands. No new business policy/grants. All64 actual SQL/HTTP/browser, pins/full CI/two K3 still required.",
+      "next_action": "Recompile/run affected owner composition after native SQL fixture correction; connect staged Counterparty owner purposes. Actual SQL/HTTP/browser, pins/full CI/two K3 remain.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2094,8 +2094,10 @@
           "Manufacturing latest full unit suite": "1560/1560 passed, 0 skipped at 9bef612e9; publication/provider source included. Manufacturing module tree unchanged through 255453f72.",
           "Deferred host pins": "Earlier 78-case run at 6920c495e had 76 pass/2 normal-host authority-pin failures; retained NOT_ACCEPTED. Pins deferred to train close, no gate waived.",
           "Manufacturing Work UI": "170/170,0 skipped in9files atc900c99975690d5cf1ada22c48d157f742e97002; tsc/scopedlint exit0,one unchanged baseline warning. Whole frontend tree matches root1349d982c. Includes actual Manufacturing/loss capability, native route preservation, typed UTC frozen body and missing/wrong-capability refusals.",
-          "Inventory latest full unit suite": "2275/2275 passed,0 skipped at30b81a53ab33cf3472fa6d0cc293bfaeabc75da2; native loss purpose/provenance and staged provider. Subsequent declaration publication/host historical-replay fix pending checks.",
-          "Counterparty native identity decisions": "SOURCE_READY atcdc4aac0c;10 entry unit cases +4 SQL theories/12 cases written; compilation/execution pending. Work adapters for these two kinds are not yet connected."
+          "Inventory latest full unit suite": "2275/2275 passed,0 failed,0 skipped at2ba0032c8f2c3576b609ecd008e82afaa6489279; final loss publication included.",
+          "Counterparty native identity decisions": "SOURCE_READY atcdc4aac0c;10 entry unit cases +4 SQL theories/12 cases written; compilation/execution pending. Work adapters for these two kinds are not yet connected.",
+          "Counterparty latest full unit suite": "386/386 passed,0 failed,0 skipped at2ba0032c8f2c3576b609ecd008e82afaa6489279; native identity safety included.",
+          "Latest API compile failure": "At2ba0032c8 integration assembly failed CS0246: nonexistent SqlServerTheory. Corrected by19a6351ee to12 existing SqlServerFact wrappers sharing unchanged assertion bodies. API host execution NOT_RUN for this increment; failure log retained."
         },
         "reuse": [
           "existing FinanceCashAccountService commands and durable receipts",
@@ -2428,7 +2430,8 @@
           "60380ae37",
           "c1152cbc2",
           "1349d982c",
-          "cdc4aac0c"
+          "cdc4aac0c",
+          "19a6351ee"
         ],
         "kind_count_scope": "15 connected source kinds; not 15 accepted flows. Native loss request number/time, historical maker and real command receipt proof are connected to the standalone Work route. All64 runtime acceptance remains open.",
         "staged_kinds": []

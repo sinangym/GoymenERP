@@ -24,10 +24,10 @@
       "sources": [
         {
           "path": "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.cs",
-          "line": 44,
+          "line": 45,
           "anchor": "public async Task<CounterpartyCommandExecution> CreateAsync(",
-          "sha256": "3af5d7ae9896ccb1bf74bf045a8b30dba71d65ff81481a7067b35b2db24049b1",
-          "git_blob": "30f5a865d4a824c45f01a870a5d4460066fac803"
+          "sha256": "59c4c1b70f0cc01ea104269687d31e791431f401ebacb6c92f2eb31c4c7e7216",
+          "git_blob": "6ea6ce69a843a1de0a0fb764278389c9427ba70b"
         }
       ],
       "tests": [
@@ -39,7 +39,7 @@
           "git_blob": "7e8e61b7a71a2d1230778f8bf2dc5623bad3b156"
         }
       ],
-      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "source_commit": "cdc4aac0c0a214fa8e2cade1b46764b1575ee8b4",
       "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": null,

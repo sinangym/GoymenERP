@@ -74,3 +74,5 @@ REF-CARRY-01 test bağlantısı, dönem açılış devri yerine gerçek cari bak
 27 Kasım: REF-CLOSE-01 test fixture’ları YOL-D23 ile uyumlu farklı onaycı kullanacak biçimde güncellendi; REF-WORK-02/03 yeni stale bildirim kaynağına bağlandı. Güncel hash/commit kanıtları JSON’dadır; eski CI sonucu yeni kaynaklara aktarılmaz. Sales birim testleri 2440/2440 (0 skip), yeni Work bildirim arayüzü agent kaynağında 62/62 (0 skip); SQL/CI/runtime kabulü bekler.
 
 REF-ORDER-01 güncel native onay korumalarına (`43d4e5063`), REF-UI-03 mevcut rol seçimi ve ilk-rol formuna (`6a8480eff`) bağlandı. İkincisi 35/35 yerel test, tsc/lint kanıtına sahiptir; önceki CI eşliği yalnız geçmiş kaydıdır. Yeni katalog maddesi eklenmedi; 50 referans korunur.
+
+REF-CARD-01, native kimlik kararı güvenlik artımının `cdc4aac0c` kaynağına güncellendi; CreateAsync yeniden kullanılabilir. Katalog 50 kayıttır; kaynak/test kanıtı ve yeni kullanım için SQL/CI kabulü ayrıdır.
