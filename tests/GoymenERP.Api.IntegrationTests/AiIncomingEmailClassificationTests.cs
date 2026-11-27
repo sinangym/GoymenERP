@@ -36,6 +36,23 @@ public sealed class AiIncomingEmailClassificationTests
         var authority = new Authority(); var classifier = new Classifier { AfterRead = () => authority.Current = false };
         Assert.Null(await new AiIncomingEmailClassificationV1(classifier, authority).ClassifyAsync(Scope(), Guid.NewGuid(), "SENTETIK"));
     }
+    [Fact]
+    public async Task Pre_cancelled_input_never_reaches_a_token_ignoring_classifier()
+    {
+        var classifier = new Classifier(); using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+        var service = new AiIncomingEmailClassificationV1(classifier, new Authority());
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.ClassifyAsync(Scope(), Guid.NewGuid(), "SENTETIK", cancelled.Token));
+        Assert.Null(classifier.Data);
+    }
+
+    [Fact]
+    public async Task Cancellation_during_extraction_prevents_result_release()
+    {
+        using var cancelled = new CancellationTokenSource(); var classifier = new Classifier { AfterRead = cancelled.Cancel };
+        var service = new AiIncomingEmailClassificationV1(classifier, new Authority());
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.ClassifyAsync(Scope(), Guid.NewGuid(), "SENTETIK", cancelled.Token));
+    }
+
     private static AiEmailScopeV1 Scope() => new(Guid.NewGuid(), Guid.NewGuid(), "synthetic-session");
     private sealed class Authority : IAiEmailAuthorityV1
     {

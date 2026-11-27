@@ -19,24 +19,34 @@ public sealed class AiApprovedEmailServiceV1(IAiApprovedEmailOwnerV1 owner, IAiE
     public async Task<AiEmailReceiptV1> ExecuteApprovedAsync(AiEmailApprovalV1 approval,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         // Snapshot the caller's collection before the first await; subsequent mutation cannot alter the approved effect.
         approval = approval with { Recipients = approval.Recipients.ToArray() };
         if (!Valid(approval)) return Result(approval, AiEmailStateV1.Refused);
         if (!owner.IsAvailable) return Result(approval, AiEmailStateV1.Unavailable);
         if (!await authority.IsCurrentAsync(approval.Scope, cancellationToken)) return Result(approval, AiEmailStateV1.Refused);
+        cancellationToken.ThrowIfCancellationRequested();
         var prior = await owner.FindAsync(approval.Scope, approval.OperationId, cancellationToken);
         if (!await authority.IsCurrentAsync(approval.Scope, cancellationToken)) return Result(approval, AiEmailStateV1.Refused);
         // A durable Unknown/Queued/Delivered receipt never re-enters enqueue or rebinds to newer contact data.
+        cancellationToken.ThrowIfCancellationRequested();
         if (prior is not null) return Bound(approval, prior) ? prior : Result(approval, AiEmailStateV1.Refused);
         if (!await recipients.MatchesAsync(approval.Scope, approval.Recipients, cancellationToken)
             || !await authority.IsCurrentAsync(approval.Scope, cancellationToken)) return Result(approval, AiEmailStateV1.Refused);
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
             var receipt = await owner.EnqueueApprovedOnceAsync(approval, cancellationToken);
             if (!await authority.IsCurrentAsync(approval.Scope, cancellationToken)) return Result(approval, AiEmailStateV1.Unknown);
+            cancellationToken.ThrowIfCancellationRequested();
             return Bound(approval, receipt) ? receipt : Result(approval, AiEmailStateV1.Unknown);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (OperationCanceledException)
+        {
+            // Admission may already be durable. Preserve ambiguity; never enqueue again from this outcome.
+            return Result(approval, AiEmailStateV1.Unknown);
+        }
+        catch (Exception)
         {
             // No automatic resend. The caller must retain operation/digest and use ReconcileAsync.
             return Result(approval, AiEmailStateV1.Unknown);
@@ -45,13 +55,16 @@ public sealed class AiApprovedEmailServiceV1(IAiApprovedEmailOwnerV1 owner, IAiE
 
     public async Task<AiEmailReceiptV1> ReconcileAsync(AiEmailApprovalV1 approval, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         // Snapshot the caller's collection before the first await; subsequent mutation cannot alter the approved effect.
         approval = approval with { Recipients = approval.Recipients.ToArray() };
         if (!Valid(approval)) return Result(approval, AiEmailStateV1.Refused);
         if (!owner.IsAvailable) return Result(approval, AiEmailStateV1.Unavailable);
         if (!await authority.IsCurrentAsync(approval.Scope, cancellationToken)) return Result(approval, AiEmailStateV1.Refused);
+        cancellationToken.ThrowIfCancellationRequested();
         var receipt = await owner.FindAsync(approval.Scope, approval.OperationId, cancellationToken);
         if (!await authority.IsCurrentAsync(approval.Scope, cancellationToken)) return Result(approval, AiEmailStateV1.Refused);
+        cancellationToken.ThrowIfCancellationRequested();
         return receipt is not null && Bound(approval, receipt) ? receipt : Result(approval, AiEmailStateV1.Unknown);
     }
 

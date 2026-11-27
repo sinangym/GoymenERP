@@ -64,6 +64,34 @@ public sealed class AiApprovedEmailServiceTests
         Assert.Equal(1, h.Owner.Enqueues);
     }
 
+    [Fact]
+    public async Task Pre_cancelled_request_never_reads_or_enqueues_even_when_ports_ignore_the_token()
+    {
+        var h = new Harness(); using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => h.Service.ExecuteApprovedAsync(h.Approval(), cancelled.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => h.Service.ReconcileAsync(h.Approval(), cancelled.Token));
+        Assert.Equal(0, h.Authority.Reads); Assert.Equal(0, h.Contacts.Reads); Assert.Equal(0, h.Owner.Enqueues);
+    }
+
+    [Fact]
+    public async Task Cancellation_in_the_final_authority_await_prevents_enqueue()
+    {
+        var h = new Harness(); using var cancelled = new CancellationTokenSource();
+        h.Authority.OnRead = count => { if (count == 5) cancelled.Cancel(); };
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => h.Service.ExecuteApprovedAsync(h.Approval(), cancelled.Token));
+        Assert.Equal(1, h.Contacts.Reads); Assert.Equal(0, h.Owner.Enqueues);
+    }
+
+    [Fact]
+    public async Task Cancellation_after_durable_admission_is_unknown_and_retry_only_looks_up()
+    {
+        var h = new Harness(); using var cancelled = new CancellationTokenSource(); var approval = h.Approval();
+        h.Owner.AfterEnqueue = cancelled.Cancel;
+        Assert.Equal(AiEmailStateV1.Unknown, (await h.Service.ExecuteApprovedAsync(approval, cancelled.Token)).State);
+        Assert.Equal(AiEmailStateV1.Queued, (await h.Service.ReconcileAsync(approval)).State);
+        Assert.Equal(1, h.Owner.Enqueues);
+    }
+
     private sealed class Harness
     {
         public AiEmailScopeV1 Scope { get; } = new(Guid.NewGuid(), Guid.NewGuid(), "synthetic-session");
@@ -86,19 +114,25 @@ public sealed class AiApprovedEmailServiceTests
     private sealed class Authority : IAiEmailAuthorityV1
     {
         public bool Current { get; set; } = true;
-        public Task<bool> IsCurrentAsync(AiEmailScopeV1 scope, CancellationToken cancellationToken) => Task.FromResult(Current);
+        public int Reads { get; private set; }
+        public Action<int>? OnRead { get; set; }
+        public Task<bool> IsCurrentAsync(AiEmailScopeV1 scope, CancellationToken cancellationToken)
+        {
+            OnRead?.Invoke(++Reads); return Task.FromResult(Current);
+        }
     }
     private sealed class Owner : IAiApprovedEmailOwnerV1
     {
         public bool IsAvailable { get; set; } = true;
         public AiEmailReceiptV1? Receipt { get; set; }
         public int Enqueues { get; private set; }
+        public Action? AfterEnqueue { get; set; }
         public Task<AiEmailReceiptV1?> FindAsync(AiEmailScopeV1 scope, Guid operationId, CancellationToken cancellationToken) => Task.FromResult(Receipt);
         public Task<AiEmailReceiptV1> EnqueueApprovedOnceAsync(AiEmailApprovalV1 approval, CancellationToken cancellationToken)
         {
             Enqueues++;
             var receipt = new AiEmailReceiptV1(approval.OperationId, approval.Scope.CompanyId, approval.Digest, AiEmailStateV1.Queued);
-            Receipt = receipt;
+            Receipt = receipt; AfterEnqueue?.Invoke();
             return Task.FromResult(receipt);
         }
     }

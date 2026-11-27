@@ -17,11 +17,14 @@ public sealed class AiIncomingEmailClassificationV1(IAiIncomingEmailClassifierV1
     public async Task<AiEmailReplyClassificationV1?> ClassifyAsync(AiEmailScopeV1 scope, Guid messageId,
         string text, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (messageId == Guid.Empty || string.IsNullOrWhiteSpace(text) || !classifier.IsLocalAndAvailable
             || !await authority.IsCurrentAsync(scope, cancellationToken)) return null;
+        cancellationToken.ThrowIfCancellationRequested();
         var data = AiExternalContentQuarantineV1.Admit(text, AiExternalContentSourceV1.Email);
         var result = await classifier.ClassifyDataAsync(data, cancellationToken);
         if (!await authority.IsCurrentAsync(scope, cancellationToken) || result is null || !Enum.IsDefined(result.Value)) return null;
+        cancellationToken.ThrowIfCancellationRequested();
         return new(messageId, data.Sha256, result.Value);
     }
 }
