@@ -96,7 +96,7 @@ public sealed partial class AiKnowledgeSqlServerRelationalAcceptanceTests
     {
         await WithDatabaseAsync(async connection =>
         {
-            foreach (var boundary in new[] { "borrowed", "dirty", "ambient", "audit" })
+            foreach (var boundary in new[] { "borrowed", "dirty", "ambient", "audit", "empty-actor" })
             {
                 var receipt = AnswerReceipt(); var company = AnswerCompany(receipt.CompanyId); var audit = new ReceiptAudit { HasPendingDrafts = boundary == "audit" };
                 await using var db = Db(connection, receipt.CompanyId);
@@ -105,8 +105,10 @@ public sealed partial class AiKnowledgeSqlServerRelationalAcceptanceTests
                 if (caller is not null) db.AnswerReceipts.Add(caller);
                 using var ambient = boundary == "ambient" ? new TransactionScope(TransactionScopeAsyncFlowOption.Enabled) : null;
                 var calls = 0;
-                Assert.False(await new AiAnswerReceiptPersistenceV1(db, company, new SqlUser(), audit, new AnswerClock(AnswerAt))
-                    .TryAddAsync(receipt, AnswerIdentity(receipt), _ => { calls++; return Task.CompletedTask; }));
+                var actor = new AnswerMutableUser { ActorId = boundary == "empty-actor" ? Guid.Empty : Approver };
+                var identity = AnswerIdentity(receipt) with { ActorId = actor.ActorId.ToString("D") };
+                Assert.False(await new AiAnswerReceiptPersistenceV1(db, company, actor, audit, new AnswerClock(AnswerAt))
+                    .TryAddAsync(receipt, identity, _ => { calls++; return Task.CompletedTask; }));
                 Assert.Equal(0, calls); Assert.Same(borrowed, db.Database.CurrentTransaction);
                 Assert.Equal(boundary == "dirty", db.ChangeTracker.HasChanges());
                 Assert.Equal(boundary == "audit", audit.HasPendingDrafts); Assert.False(audit.Discarded);

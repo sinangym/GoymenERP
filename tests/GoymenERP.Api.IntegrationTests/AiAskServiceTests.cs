@@ -848,7 +848,7 @@ public sealed partial class AiAskServiceTests
             AllowedTools = [new AiAllowedToolOptions { ToolId = ToolId, Version = ToolVersion }],
         };
 
-        public AiAskService Service(IEnumerable<IAiAnswerComposerV1>? composers = null, bool receiptsAvailable = true) => new(
+        public AiAskService Service(IEnumerable<IAiAnswerComposerV1>? composers = null, bool receiptsAvailable = true, IAiAnswerReceiptWriterV1? receiptWriter = null) => new(
             Options.Create(options),
             new TestHostEnvironment("Development"),
             Provider,
@@ -860,7 +860,7 @@ public sealed partial class AiAskServiceTests
             Correlation,
             Writer,
             TimeProvider.System,
-            AiGatewayTestDoubles.Gateway(options, GatewayStore, composers), receiptsAvailable ? ReceiptWriter : null);
+            AiGatewayTestDoubles.Gateway(options, GatewayStore, composers), receiptsAvailable ? receiptWriter ?? ReceiptWriter : null);
 
         public AiCapabilityService CapabilityService() => new(
             Options.Create(options),

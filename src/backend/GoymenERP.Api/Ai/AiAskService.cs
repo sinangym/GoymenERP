@@ -286,6 +286,14 @@ public sealed class AiAskService(
                     catch (Exception exception) when (exception is not OperationCanceledException)
                     { return AiAskResultV1.Of(AiAskStatusV1.Unavailable); }
                     if (answerId is null || answerId == Guid.Empty) return AiAskResultV1.Of(AiAskStatusV1.Unavailable);
+                    // The owner fences the durable receipt, but authority can change during its commit await.
+                    // A persisted receipt is not proof that this response was released to the caller.
+                    if (!await RemainsCurrentAsync(actorId, companyId, releasedTools ?? [], cancellationToken))
+                    {
+                        await RefuseAsync(SecurityEventTypesV1.AiAuthorizationDenied, SecurityEventReasonCodesV1.PermissionMissing,
+                            companyId, actorId, ErpPermissions.AiPanelUse, null, cancellationToken);
+                        return AiAskResultV1.Of(AiAskStatusV1.Refused);
+                    }
                 }
                 return AiAskResultV1.Answered(new AiAskResponseV1(AiAskOutcomesV1.Answered, results,
                     new AiAnswerV1(answer.Text,

@@ -1,5 +1,7 @@
 using System.Text.Json;
 using GoymenERP.Api.Ai;
+using GoymenERP.Api.Ai.Answers;
+using GoymenERP.Api.Ai.Gateway;
 using GoymenERP.Modules.AiKnowledge.Domain;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -45,6 +47,18 @@ public sealed partial class AiAskServiceTests
         Assert.Empty(rig.ReceiptStore.Receipts); Assert.Empty(rig.ReceiptStore.Identities);
     }
 
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task Authority_loss_after_the_receipt_writer_commit_refuses_response_without_claiming_the_receipt_was_rolled_back(bool panel)
+    {
+        var rig = new Harness();
+        var writer = new ReleaseRacingReceiptWriter(() => rig.Authority.Revoke(panel ? GoymenERP.BuildingBlocks.Security.ErpPermissions.AiPanelUse : ToolPermission));
+        var result = await rig.Service(receiptWriter: writer).AskAsync(Ask());
+        Assert.True(writer.Committed); Assert.NotEqual(Guid.Empty, writer.AnswerId);
+        Assert.Equal(AiAskStatusV1.Refused, result.Status); Assert.Null(result.Response);
+        Assert.Equal(GoymenERP.BuildingBlocks.Security.Events.SecurityEventTypesV1.AiAuthorizationDenied, rig.Writer.Events[^1].EventType);
+    }
+
     [Fact]
     public async Task No_supported_source_creates_neither_a_receipt_nor_an_answer_id()
     {
@@ -61,6 +75,20 @@ public sealed partial class AiAskServiceTests
         Assert.NotEqual(first.Response!.Answer!.AnswerId, second.Response!.Answer!.AnswerId);
         Assert.Equal(2, rig.ReceiptStore.Receipts.Count);
         Assert.Equal(rig.ReceiptStore.Receipts[0].AnswerSha256, rig.ReceiptStore.Receipts[1].AnswerSha256);
+    }
+
+    private sealed class ReleaseRacingReceiptWriter(Action afterCommit) : IAiAnswerReceiptWriterV1
+    {
+        public Guid AnswerId { get; } = Guid.NewGuid();
+        public bool Committed { get; private set; }
+        public async Task<Guid?> RecordAsync(Guid companyId, string actorId, string correlationId, AiGatewayAnswerV1 answer,
+            Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken = default)
+        {
+            await freshConsumerFence(cancellationToken);
+            Committed = true;
+            afterCommit();
+            return AnswerId;
+        }
     }
 
     // Real API receipt adapter, controlled atomic owner seam. Real SQL tests separately prove persistence/rollback.

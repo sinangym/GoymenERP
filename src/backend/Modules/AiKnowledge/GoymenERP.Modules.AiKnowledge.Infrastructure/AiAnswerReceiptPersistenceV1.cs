@@ -72,7 +72,7 @@ public sealed class AiAnswerReceiptPersistenceV1(AiKnowledgeDbContext database, 
         return AiAnswerReceiptRulesV1.IsValid(answer) ? answer : throw new InvalidOperationException("Invalid stored answer receipt.");
     }
     private bool Current(Guid companyId, string actor) => companyId != Guid.Empty && company.IsResolved && company.CompanyId == companyId
-        && user.IsAuthenticated && Guid.TryParse(user.UserId, out var currentActor) && currentActor.ToString("D") == actor && user.CanAccessCompany(companyId);
+        && user.IsAuthenticated && Guid.TryParse(user.UserId, out var currentActor) && currentActor != Guid.Empty && currentActor.ToString("D") == actor && user.CanAccessCompany(companyId);
     private bool CleanEntry() => System.Transactions.Transaction.Current is null && database.Database.IsSqlServer()
         && database.Database.CurrentTransaction is null && !database.ChangeTracker.HasChanges() && !auditWriter.HasPendingDrafts;
 }
