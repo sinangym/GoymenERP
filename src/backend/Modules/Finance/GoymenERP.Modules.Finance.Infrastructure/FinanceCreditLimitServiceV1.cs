@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Modules.Finance.Infrastructure;
 
 /// <summary>FNS-D95/D100: source-backed bank/type limit, separate maker/checker, advisory exact-principal assessment.</summary>
-public sealed class FinanceCreditLimitServiceV1(FinanceDbContext db, ICompanyContext company, ICurrentUser user,
+public sealed partial class FinanceCreditLimitServiceV1(FinanceDbContext db, ICompanyContext company, ICurrentUser user,
     IFinancePermissionPort permissions, IFinanceCreditLenderPortV1 lenders, IAuditEventCollector audit,
     FinanceCreditAccountEnvelopes envelopes, TimeProvider time, IAuditTransactionWriterV1? auditOwner = null) : IFinanceCreditLimitServiceV1
 {
@@ -65,6 +65,8 @@ public sealed class FinanceCreditLimitServiceV1(FinanceDbContext db, ICompanyCon
         return await Transaction(context, async () =>
         {
             if (await Prior(context, metadata, action, DecideCommand, hash, cancellationToken) is { } prior) return prior;
+            // A collision recovery may only release an original receipt, never repeat the decision or stage a refusal.
+            if (ownedDecision?.ReplayOnly == true) return Failure(context, CommandOutcome.VersionConflict, "credit_limit_concurrent_change");
             var row = await db.CreditLimits.SingleOrDefaultAsync(x => x.Id == request.LimitId, cancellationToken);
             if (await Fence(context, action, cancellationToken) is { } fenced) return fenced;
             if (row is null || row.Status != 1 || row.Version.ToString(CultureInfo.InvariantCulture) != request.ExpectedVersion)
@@ -192,13 +194,23 @@ public sealed class FinanceCreditLimitServiceV1(FinanceDbContext db, ICompanyCon
     private async Task<CreditLimitResultV1> Save(FinanceContext context, CommandMetadata metadata, FinanceAction action, string command,
         string hash, CreditLimitResultV1 result, CancellationToken ct)
     {
-        if (await Fence(context, action, ct) is { } denied) { db.ChangeTracker.Clear(); auditOwner?.DiscardPending(); return denied; }
+        if (await Fence(context, action, ct) is { } denied)
+        {
+            if (ownedDecision is null) { db.ChangeTracker.Clear(); auditOwner?.DiscardPending(); }
+            return denied;
+        }
         db.CreditMovementCommands.Add(new FinanceCreditMovementCommandRow() { CompanyId = context.CompanyId, Command = command, KeyHash = FinanceCommandKeys.Hash(metadata.IdempotencyKey),
             ActorId = context.ActorId, PayloadHash = hash, ResultJson = JsonSerializer.Serialize(result, Json) });
-        await db.SaveChangesAsync(ct); return result;
+        if (ownedDecision is not null)
+        {
+            if (command != DecideCommand) throw new InvalidOperationException("Credit limit decision ownership cannot save another command.");
+            await SaveOwnedDecisionAsync(context, ct);
+        }
+        else await db.SaveChangesAsync(ct);
+        return result;
     }
     private Task<CreditLimitResultV1> Transaction(FinanceContext context, Func<Task<CreditLimitResultV1>> action, CancellationToken ct) =>
-        FinanceTreasuryTransaction.ExecuteAsync(db, action, async () => await Fence(context, FinanceAction.ReadCredits, ct) ?? Failure(context, CommandOutcome.Unavailable), auditOwner, ct);
+        ownedDecision is not null ? action() : FinanceTreasuryTransaction.ExecuteAsync(db, action, async () => await Fence(context, FinanceAction.ReadCredits, ct) ?? Failure(context, CommandOutcome.Unavailable), auditOwner, ct);
     private void Audit(FinanceContext context, CommandMetadata metadata, FinanceCreditLimitRow row, FinanceAuditEnvelope envelope,
         string operation, long? beforeVersion, string before, string reason) => audit.Enqueue(new AuditEventDraft(context.CompanyId,
             "finance.credit-limit." + operation.ToLowerInvariant() + ".v1", "Finance.CreditLimit", row.Id.ToString("D"), operation,
