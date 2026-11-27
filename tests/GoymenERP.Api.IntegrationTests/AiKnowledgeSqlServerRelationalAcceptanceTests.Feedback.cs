@@ -37,7 +37,7 @@ public sealed partial class AiKnowledgeSqlServerRelationalAcceptanceTests
             Assert.Equal(AiFeedbackWriteStatusV1.IdempotencyConflict, (await store.AppendAsync(command with { ReasonCode = AiFeedbackReasonsV1.Other }, _ => Task.CompletedTask)).Status);
             Assert.Equal(AiFeedbackWriteStatusV1.VersionConflict, (await store.AppendAsync(command with { IdempotencyKey = "SENTETIK-new-stale" }, _ => Task.CompletedTask)).Status);
             var current = await store.GetOwnCurrentAsync(answer.CompanyId, answer.AnswerId, Approver, _ => Task.CompletedTask);
-            Assert.Equal((2L, AiFeedbackKindV1.Rejected), (current!.Version, current.Kind));
+            Assert.Equal(2L, current!.Version); Assert.Equal(AiFeedbackKindV1.Rejected, current.Kind);
             Assert.Equal(2, await db.FeedbackEvents.CountAsync()); Assert.Equal(2, await db.FeedbackIdentities.CountAsync());
             Assert.Equal(1, await db.AnswerReceipts.CountAsync());
         });
