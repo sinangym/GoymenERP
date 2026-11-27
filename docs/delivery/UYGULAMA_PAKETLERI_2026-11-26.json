@@ -1282,7 +1282,7 @@
         "source_commit": "9731d1f4b",
         "agent_source_commit": "e38bcd33bf3a1984c6b69c1f407df3040e00783f",
         "scope": "Four commits integrated as47fd5c7b9/63fa293de/a7ab12caa/9731d1f4b. Existing Finance claim/admission, Sales immutable receipt reader and native API adapter reused. No new permissions or financial policy.",
-        "local_checks": "Agent final source: Finance2005/2005 and Sales2484/2484 PASS skip0; API production and integration assembly build0 errors/0 warnings; Finance pending-model exit0. Root5b07aacf3 combined production build PASS0 errors/0 warnings3:34.88; source modules exactly match reviewed agent delta. Initial CS0122 and empty-assets exit0 logs preserved; empty run not counted.",
+        "local_checks": "Agent final source: Finance2005/2005 and Sales2484/2484 PASS skip0; API production and integration assembly build0 errors/0 warnings; Finance pending-model exit0. Root5b07aacf3 combined production build PASS0 errors/0 warnings3:34.88; source modules exactly match reviewed agent delta. Initial CS0122 and empty-assets exit0 logs preserved; empty run not counted. Root5b07 integration assembly including new Finance16+Logistics6 SQL sources also built0 errors/0 warnings59.06s; no actual SQL execution.",
         "sql": "NOT_RUN; 16 source Fact tests compile, migration apply/legacy cross-owner E2E not accepted.",
         "remaining": [
           "Actual SQL/migration/preflight and native owner journey",
@@ -2815,6 +2815,31 @@
             ],
             "new_permissions": [],
             "migration": null
+          },
+          {
+            "source_commit": "8d4f567b9c0c0529979663a96efc2c75a568f64d",
+            "agent_source_commit": "6e583a03f1714046d0eb041642701f39860b3dd3",
+            "scope": "Staged dispatch purpose: full price-free note/header/line array, native approve-only/no reason, original instruction version/key/hash/typed receipt and fresh delegation fences. Current cancelled/e-numbered view cannot substitute original receipt. Logistics provider1.11 false; native routes/permissions unchanged.",
+            "local_checks": "Agent572173 source: Logistics216/216 and Work dispatch host23/23PASS skip0; API build6d3930 errors/0 warnings3:04.21, production tree equal finaltest-only572; integration assembly and newSQLsources compiled. Initial6e583CS1931 and later215PASS/1stale exactregistry expectation failure retained. Root purpose matches8d4/5566/22eb; actual SQL/normalhost/browser NOT_RUN.",
+            "review": "Root complete12file523+/17- delta/called host/DI chain read with no concrete P0/P1/P2; not full K3.",
+            "remaining": [
+              "Paired UI and publication after scoped source verification",
+              "Actual SQL/HTTP/browser/pins/fullCI/twoK3"
+            ],
+            "new_permissions": [],
+            "migration": null
+          },
+          {
+            "source_commit": "4cb71878b",
+            "agent_source_commit": "3a776652442f4d32dd94eb8ba08a5836dead3e36",
+            "scope": "Dispatch paired UI candidate only: full11header/9line raw native proof,500/501rows, approve-onlyreasonnull, exact Int64/GUID/quantity/date/e-number boundaries. Existing frozen journal4fields/key/body/version reused; laterCancelled10 does not change original7 retry.",
+            "local_checks": "Source-only, Node/tsc/lint NOT_RUN. Root complete5file+P2fix and peer full bounded UI/native-chain review found no remaining concrete P0/P1/P2. LF/CR/CRLF scalar bypass corrected; shared Finance validators unchanged.",
+            "remaining": [
+              "Scoped UI checks and actual paired source publication",
+              "SQL/HTTP/browser/pins/fullCI/twoK3"
+            ],
+            "new_permissions": [],
+            "migration": null
           }
         ],
         "source_commits": [
@@ -2922,10 +2947,19 @@
           "c17047bd3",
           "76dbd4e01",
           "4df90f171",
-          "5b07aacf3"
+          "5b07aacf3",
+          "8d4f567b9",
+          "702bada20",
+          "5566cd003",
+          "22eb68d51",
+          "7db6ec69e",
+          "b70ad2cb6",
+          "4cb71878b"
         ],
-        "kind_count_scope": "24 paired source kinds; not24 accepted flows. All64 runtime/native SQL/HTTP/browser/CI/K3 acceptance remains open.",
-        "staged_kinds": []
+        "kind_count_scope": "24 paired source kinds +1 staged dispatch backend; not25 accepted flows. All64 runtime/native SQL/HTTP/browser/CI/K3 acceptance remains open.",
+        "staged_kinds": [
+          "logistics.dispatch-note.v1"
+        ]
       }
     },
     {
@@ -3083,7 +3117,18 @@
           "development_duration": "NOT_SEPARATELY_MEASURED",
           "reuse": "Existing Ask/catalog/read tools/gateway/composer test harness; additive context only"
         },
-        "agent_frontend_commit": "1bd2797f19363ddd61f06b57ed4e8dfc2725b2a8"
+        "agent_frontend_commit": "1bd2797f19363ddd61f06b57ed4e8dfc2725b2a8",
+        "sales_context_increment": {
+          "source_commits": [
+            "3fafd15c1",
+            "d1e6ef6b8",
+            "d24ed105f"
+          ],
+          "agent_source_commit": "4ad6a9aeb9a678ed0af2123c96c6de5041c7f84b",
+          "scope": "Third exact family sales.order.draft-summary on actual Sales detail route/capability. Existing GetDraftDetailAsync reused with only IDs/statuses/unit/recorded quantity, no prices/people/notes. Native companywide read permission; no price co-grant. Company-list status tool was not misbound to a draft.",
+          "local_checks": "41 new source cases, root full4file/backend chain and peer root4file UI/DI+label resource source review; no concrete remaining finding. Build/test for third family NOT_RUN, old two-family166/144/combined334 proof not transferred.",
+          "activation": "No shipped catalog entry/hash/AllowedTools activation. New tools require final reviewed pin and human flags before runtime."
+        }
       }
     },
     {
@@ -3133,7 +3178,7 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "First deterministic evidence-order UI increment verified with334 combined frontend cases. Add real grounded answer identity before C9/recommendation feedback; budget-entry IDs are not output proof. Keep recommendations disabled pending approved evidence.",
+      "next_action": "Verify real AnswerId receipt composition and model/SQL proof, then bind C9 feedback and B2 summaries; recommendations remain disabled. Receipt persistence does not prove response delivery; final release authority is revalidated after commit.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -3170,7 +3215,27 @@
         "new_permissions": [],
         "migration": null,
         "activation": "No recommendations/provider/flags/grants enabled",
-        "reuse": "Existing WorkDecisionPreview rules/human facts/references, inbox rule text/number formatting and command test harness"
+        "reuse": "Existing WorkDecisionPreview rules/human facts/references, inbox rule text/number formatting and command test harness",
+        "answer_receipt_increment": {
+          "source_commits": [
+            "97a6f7bfd",
+            "dbfe2e165",
+            "2d3bc700f",
+            "8459de355",
+            "c87076199"
+          ],
+          "agent_source_commit": "9f5240fc2b4819e6ab355ebd79ae5b08b7273ad9",
+          "scope": "Successful grounded ERP output receives server AnswerId tied to canonical content/citation digests and separate actor/correlation identity. Existing AiKnowledge owner, Ask/gateway and fixtures reused. Record-time K10/No159 retention90days, no purge, no feedback UI/count fabricated.",
+          "migration": "20261127080128_AddAiAnswerReceipts; EF10.0.8 generated snapshot/Designer, Down first52312 refuses existing evidence/identity; actual migration apply NOT_RUN.",
+          "source_review": "Root handwritten14file+followup/P1fix/SQLsource read; independent source review plus6file EF handwritten delta,571line Designer/snapshot normalized model bodies ordinal equal. Not full K3; controlled audit stub is not same-collector SQL acceptance.",
+          "local_checks": "Agent2bee API build0 errors/0 warnings203.7s; EF generationexit0. Final9f fullintegrationassembly including6SQLsources compiled:0errors/0warnings; AiAnswerReceiptTests10/10PASS0skip, build+run274.44s. ActualSQL and Ask/B4/B1combined NOT_RUN. Root frontend8459 two files105/105PASS skip0, fulltsc0, scopedoxlint0. Initial root UI attempt failed missing dependencies before tests; original log retained, pinned npmci exit0 and localvitest4.1.12 used.",
+          "remaining": [
+            "Final model/adapter and root combined Ask/B1/B4 checks",
+            "Six genuine SQL/rollback/restart/FK/Down cases and caller-preservation evidence",
+            "B2 actual AI summary/risk UI and C9 accepted/corrected/rejected/reversed events",
+            "Final SQL/browser/pins/fullCI/twoK3"
+          ]
+        }
       }
     },
     {
@@ -3178,7 +3243,7 @@
       "backlog_parent": "W5-AIGATEWAY",
       "title": "Dar doğal dil sorgu",
       "group": "TREN2",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P1",
       "risk": "K2",
       "scope": "Sayı yalnız owner araç/hesaplayıcı; tanımlı ölçüt ve marj anlatımı.",
@@ -3198,8 +3263,8 @@
       ],
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
-        "Devir belgesinde kalan iş; listedeki mevcut kaynak/testler bulundu.",
-        "Tam davranış ve runtime kabulü: NOT_RUN."
+        "Existing AiAsk plan/allowlist/schema/fresh permission/grounding and native Sales line-margin calculator are reused. First margin owner bridge staged; general reporting metrics and full B4 remain.",
+        "No shipped tool-catalog entry/description pin/AllowedTools activation was added. Positive tests use synthetic reviewed pins; missing-pin and unavailable-owner tests keep default-deny."
       ],
       "decisions": [
         "AI-D22"
@@ -3220,7 +3285,7 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "Validate first sales-line-margin owner bridge and Fake numeric-grounding tests, then integrate real grounded receipt writer. Add only approved remaining measures through existing owner tools; no second report/query calculator.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -3229,7 +3294,25 @@
         "tests/GoymenERP.Api.IntegrationTests/AiGatewayTests.cs",
         "tests/GoymenERP.Reporting.UnitTests/ReportingServiceTests.cs"
       ],
-      "change_files": []
+      "change_files": [
+        "src/backend/GoymenERP.Api/Ai/AiRuntimeServiceCollectionExtensions.cs",
+        "src/backend/GoymenERP.Api/Ai/Tools/SalesLineMarginExplanationAiToolV1.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiAskServiceTests.MarginExplanation.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiSalesLineMarginExplanationToolTests.cs"
+      ],
+      "execution": {
+        "source_commit": "d880932f31dfe1e7a65f1e63e56b121bd66c1d2e",
+        "agent_source_commit": "2ae54875c76b5410ea19d546d32df89a7b63009f",
+        "scope": "One Confidential sales.line-margin-explanation.v1 read tool takes draftId/lineId only and reuses native ExplainDraftLineMarginAsync, exact owner values and calculator steps. Drops free-text source detail; requires existing read/price/margin and local gateway.",
+        "local_checks": "38 new source cases; build/test NOT_RUN pending serial heavy lease. Root complete4file482line delta and native calculator/read-permission chain reviewed; not full K3.",
+        "remaining": [
+          "Scoped compile/Fake tests and integrated receipt-writer composition",
+          "Remaining B4 defined owner/report measures and natural-language acceptance",
+          "Final reviewed catalog pin/actual provider-human gates and train SQL/browser/CI/K3 where applicable"
+        ],
+        "new_permissions": [],
+        "activation": "Closed; no new shipped catalog entry/pin or AllowedTools change."
+      }
     },
     {
       "id": "T2/WP-B5",
@@ -3505,8 +3588,10 @@
       ],
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
-        "Devir belgesinde kalan iş; listedeki mevcut kaynak/testler bulundu.",
-        "Tam davranış ve runtime kabulü: NOT_RUN."
+        "AI-D25 forbids role/grant assignment and policy publication in AI commands; current Pipeline/Effects/Catalog already enforce the exclusion. C3 must prepare a request, never wrap normal mutation commands as an AI write tool.",
+        "Existing Identity GetUserAsync/GetRoleAsync supply effective/selected-role permission and Critical facts. AccessGrantPanel uses these real facts. No general owner SoD/affected-transactions/peer-comparison impact read contract exists.",
+        "Settings Record* methods write a new active policy version; existing SoD GetAsync may auto-close/audit, so it is not a side-effect-free C3 preview source. No fabricated impact/always-unconfigured draft shell was added.",
+        "NLP-to-typed request and authoritative owner impact preview remain actual package dependencies. Existing normal human forms remain the only mutation path; no new grant/policy activation."
       ],
       "decisions": [
         "AI-D16",
@@ -3531,7 +3616,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "Add the real owner read-only impact contract before binding a request preview; no fabricated SoD conflicts from permission names or fake natural-language parser. Independent WP8/C9 implementation continues.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -3755,10 +3840,14 @@
       "source_findings": [
         "A5 IAiAcceptanceCountSourceV1 and usage endpoint are already ready, but no concrete C9 source is registered.",
         "Ask/Gateway/B3 results lack a durable answer/proposal ID. C1 PreviewId/hash exists but is not user feedback or proof of a financial undo; correlation/document SHA is not an answer identity.",
-        "SINAN_KARARLARI_2026-10-21.md K10/No159 fixes separate feedback/question-answer retention at90 days, RetainUntil at creation and legal hold precedence. Personal memory1year and record notes are distinct families."
+        "SINAN_KARARLARI_2026-10-21.md K10/No159 fixes separate feedback/question-answer retention at90 days, RetainUntil at creation and legal hold precedence. Personal memory1year and record notes are distinct families.",
+        "B2 real immutable answer-receipt dependency is now source implemented97a6/dbfe/2d3/c870; model/SQL/runtime acceptance pending. C9 event writer, closed reason codes and A5 measured counts are still absent; budget IDs are not answer proof.",
+        "Sinan directly approved AI-D51 closed reason list/no free text and AI-D52 one latest month-end category per answer plus separate unreviewed answers. Feedback never changes business rules or reverses ERP commands; implementation in progress, no measured-count source yet."
       ],
       "decisions": [
-        "AI-D12"
+        "AI-D12",
+        "AI-D51",
+        "AI-D52"
       ],
       "depends_on": [
         "T2/WP-B2"

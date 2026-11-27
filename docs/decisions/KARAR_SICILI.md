@@ -2,6 +2,8 @@
 
 Son tarihli ek karar: [LOJ-D21 — şirket genelinde hareket payı kimliği ve geçmiş çakışma kapısı](SINAN_KARARLARI_2026-11-27_LOJISTIK_SHARE_ID.md). Sinan'ın 27 Kasım doğrudan cevabıdır; aşağıdaki kaynak önceliğine göre uygulanır.
 
+Son tarihli AI ek kararı: [AI-D51/D52 — geri bildirim nedenleri ve tekil aylık sayım](SINAN_KARARLARI_2026-11-27_AI_GERI_BILDIRIM.md). Sinan’ın bu oturumdaki iki doğrudan cevabıdır; AI veya rol aktivasyonu değildir.
+
 Bu sicil, Master Rapor v3.0 ile 26 Ağustos 2026 tarihli son kullanıcı cevaplarını uygulama kararlarına dönüştürür.
 
 ## Durumlar
