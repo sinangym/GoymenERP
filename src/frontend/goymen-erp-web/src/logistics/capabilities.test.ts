@@ -61,7 +61,7 @@ describe('Logistics lane ↔ backend shell provider', () => {
     // The declaration form ends with `)`; the provider's doc comment mentions the same words inside `<c>…</c>`.
     expect(constant('OwnerContractVersion')).toBe('1.16')
     // Published native screens/child controls and paired Work purposes; the two legacy plan-excess purposes remain staged.
-    expect((providerText.match(/ImplementationAvailable: true[),]/g) ?? []).length).toBe(16)
+    expect((providerText.match(/ImplementationAvailable: true[),]/g) ?? []).length).toBe(17)
     expect((providerText.match(/ImplementationAvailable: false/g) ?? []).length).toBe(2)
   })
 
