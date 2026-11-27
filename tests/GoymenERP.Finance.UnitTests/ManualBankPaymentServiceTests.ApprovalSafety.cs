@@ -9,6 +9,7 @@ using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
