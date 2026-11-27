@@ -9,6 +9,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 
 public sealed partial class ReversalProposalService : IReceiptReversalDecisionReadV1
 {
+    public static string ApprovePayloadHash(ApproveReversalRequest request) => PayloadHash(ApproveCommand, request);
+    public static string RejectPayloadHash(RejectReversalRequest request) => PayloadHash(RejectCommand, request);
+
     public static string DecisionPreviewDigest(ReceiptReversalDecisionDetailV1 detail) =>
         PayloadHash("finance.receipt-reversal.decision-preview.v1", detail);
 
