@@ -13,7 +13,7 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Modules.Finance.Infrastructure;
 
 /// <summary>FIN-T06/B1-B2 authorized, idempotent maker-checker reversal workflow.</summary>
-public sealed class ReversalProposalService(
+public sealed partial class ReversalProposalService(
     FinanceDbContext dbContext,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
@@ -134,6 +134,9 @@ public sealed class ReversalProposalService(
         {
             return prior;
         }
+
+        if (ownedDecision?.ReplayOnly == true)
+            return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
 
         var proposal = await dbContext.ReversalProposals.SingleOrDefaultAsync(row => row.Id == request.ProposalId,
             cancellationToken);
@@ -306,6 +309,9 @@ public sealed class ReversalProposalService(
         {
             return prior;
         }
+        if (ownedDecision?.ReplayOnly == true)
+            return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
+
         var proposal = await dbContext.ReversalProposals.SingleOrDefaultAsync(row => row.Id == request.ProposalId,
             cancellationToken);
         if (proposal is null)
@@ -495,6 +501,11 @@ public sealed class ReversalProposalService(
         FinanceContext context, CommandMetadata metadata, FinanceAction action, string command, string payloadHash,
         ReversalProposalCommandResult result, CancellationToken cancellationToken)
     {
+        if (ownedDecision is not null)
+        {
+            await SaveOwnedDecisionAsync(context, command, cancellationToken);
+            return result;
+        }
         // The command may have awaited proposal/source/owner reads since StartAsync. Measure the action
         // again immediately before the write; a revoked permission must not persist the business row,
         // idempotency answer or audit sidecar prepared by the stale authorization decision.
