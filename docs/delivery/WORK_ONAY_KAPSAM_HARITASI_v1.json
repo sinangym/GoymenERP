@@ -1553,7 +1553,10 @@
       "approver_proposal": "MUHM (başka kişi), GM",
       "duration_cell": "2 iş günü",
       "decision_note": "KARARLI (SAT-D191; P6). Tek Muhasebe Müdürü varsa onaycı GM (ROL-D3).",
-      "candidate_inbox_sources": [],
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingPeriodOpeningWorkInboxSourceV1.cs",
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingPeriodOpeningWorkInboxSourceV1.Decision.cs"
+      ],
       "candidate_tests": [
         "tests/GoymenERP.Accounting.UnitTests/AccountingShellCapabilityProviderTests.cs:116",
         "tests/GoymenERP.Api.IntegrationTests/AccountingPermissionRegistrationTests.cs:15",
@@ -1562,18 +1565,23 @@
         "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:28",
         "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:45",
         "tests/GoymenERP.Accounting.UnitTests/NormalJournalDraftLifecycleV1Tests.PeriodApprovalSafety.cs",
-        "tests/GoymenERP.Api.IntegrationTests/AccountingSqlServerRelationalAcceptanceTests.PeriodApprovalSafety.cs"
+        "tests/GoymenERP.Api.IntegrationTests/AccountingSqlServerRelationalAcceptanceTests.PeriodApprovalSafety.cs",
+        "tests/GoymenERP.Accounting.UnitTests/AccountingApiFenceTests.PeriodDecisionReceipt.cs",
+        "tests/GoymenERP.Accounting.UnitTests/AccountingPeriodDecisionWorkSourceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkAccountingPeriodDecisionHostTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingSqlServerRelationalAcceptanceTests.PeriodDecisionReceipt.cs"
       ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native period approval/reopening owned safety140498330/fdff4a53b/901576dbb integrated. Existing maker/period/carry policy unchanged; fresh late Finance carry-read fences preserved. Native prerequisite only; owner human read/typed original receipt/Work source/purpose/UI absent. Accounting867 and Finance2518 at a1c45 PASS0skip; controlledHost1262PASS0skip at the same a1c45 head. ActualSQL NOT_RUN; source tests do not establish business acceptance.",
+      "limitation": "Native safety plus purpose owner read/genuine receipt/private scalar/source/shared host now implemented; staged backend kind, no paired UI or purpose publication yet. Native links/permissions/hash/public numeric versions/carry policy unchanged. Work human versions are canonical text; current period version cannot replace original receipt. Actual LaterPeriodClosed supports the existing reopening block; Opening maker is excluded for opening; only the reopening maker is excluded for reopening. 1fbdAccounting949PASS but controlledHost1332PASS/3FAIL0skip retained.75b9 native ownership source fix and59e fixture counter fix: final59eAccounting949/controlledHost1335PASS0skip, including71period-host cases. API59e refresh0errors0warnings is references=false, not a new all-reference build. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 and business acceptance pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows0;41packages/50references unchanged.",
       "latest_source_evidence": {
-        "source_commit": "a1c45b30fdb0d74b38e21007d655c36c9209d61a",
-        "scope": "Native safety prerequisite only",
-        "sql": "NOT_RUN"
+        "source_commit": "59e09117e6652e42deaf6e3a1721c35e7ba68724",
+        "scope": "Backend owner/source/host implemented; frontend/publication pending",
+        "sql": "NOT_RUN",
+        "runtime_acceptance": "NOT_RUN"
       }
     },
     {
@@ -1588,7 +1596,10 @@
       "approver_proposal": "yalnız GM",
       "duration_cell": "2 iş günü",
       "decision_note": "KARARLI (ROL-D12). İzin adı kaynakta kayıtlıdır; SoD-09 uygulama/kabul kontrolü ayrı kalır.",
-      "candidate_inbox_sources": [],
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingPeriodReopeningWorkInboxSourceV1.cs",
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingPeriodReopeningWorkInboxSourceV1.Decision.cs"
+      ],
       "candidate_tests": [
         "tests/GoymenERP.Accounting.UnitTests/AccountingApiFenceTests.cs:209",
         "tests/GoymenERP.Accounting.UnitTests/AccountingShellCapabilityProviderTests.cs:120",
@@ -1598,18 +1609,23 @@
         "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:30",
         "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:47",
         "tests/GoymenERP.Accounting.UnitTests/NormalJournalDraftLifecycleV1Tests.PeriodApprovalSafety.cs",
-        "tests/GoymenERP.Api.IntegrationTests/AccountingSqlServerRelationalAcceptanceTests.PeriodApprovalSafety.cs"
+        "tests/GoymenERP.Api.IntegrationTests/AccountingSqlServerRelationalAcceptanceTests.PeriodApprovalSafety.cs",
+        "tests/GoymenERP.Accounting.UnitTests/AccountingApiFenceTests.PeriodDecisionReceipt.cs",
+        "tests/GoymenERP.Accounting.UnitTests/AccountingPeriodDecisionWorkSourceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkAccountingPeriodDecisionHostTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingSqlServerRelationalAcceptanceTests.PeriodDecisionReceipt.cs"
       ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native period approval/reopening owned safety140498330/fdff4a53b/901576dbb integrated. Existing maker/period/carry policy unchanged; fresh late Finance carry-read fences preserved. Native prerequisite only; owner human read/typed original receipt/Work source/purpose/UI absent. Accounting867 and Finance2518 at a1c45 PASS0skip; controlledHost1262PASS0skip at the same a1c45 head. ActualSQL NOT_RUN; source tests do not establish business acceptance.",
+      "limitation": "Native safety plus purpose owner read/genuine receipt/private scalar/source/shared host now implemented; staged backend kind, no paired UI or purpose publication yet. Native links/permissions/hash/public numeric versions/carry policy unchanged. Work human versions are canonical text; current period version cannot replace original receipt. Actual LaterPeriodClosed supports the existing reopening block; Opening maker is excluded for opening; only the reopening maker is excluded for reopening. 1fbdAccounting949PASS but controlledHost1332PASS/3FAIL0skip retained.75b9 native ownership source fix and59e fixture counter fix: final59eAccounting949/controlledHost1335PASS0skip, including71period-host cases. API59e refresh0errors0warnings is references=false, not a new all-reference build. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 and business acceptance pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows0;41packages/50references unchanged.",
       "latest_source_evidence": {
-        "source_commit": "a1c45b30fdb0d74b38e21007d655c36c9209d61a",
-        "scope": "Native safety prerequisite only",
-        "sql": "NOT_RUN"
+        "source_commit": "59e09117e6652e42deaf6e3a1721c35e7ba68724",
+        "scope": "Backend owner/source/host implemented; frontend/publication pending",
+        "sql": "NOT_RUN",
+        "runtime_acceptance": "NOT_RUN"
       }
     },
     {
@@ -2048,12 +2064,13 @@
     }
   ],
   "closure": "For each flow verify real inbox listing, owner decision, company/scope, maker-checker exceptions, expected version, replay and audit. Do not replace owner rules with proposal cells.",
-  "source_extension": "Ata1c45b30fdb0d74b38e21007d655c36c9209d61a:42 native/42 paired frontend/0 staged, exact source sets equal including Flow49 normal-journal. Flow47/48 native safety prerequisites do not add a Work kind. Gerçek SQL/normal HTTP/tarayıcı/tam CI/pinler/iki bağımsız exact-head K3 ve işletme kabulü bekler. 64 semantik NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows=0; 41 paket/50 referans korunur.",
+  "source_extension": "At59e09117e6652e42deaf6e3a1721c35e7ba68724:44 backend/42 paired frontend/2 staged accounting.period-opening.v1 and accounting.period-reopening.v1; no unknown frontend kind. Native links retained until paired UI. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 and business acceptance pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows0;41packages/50references unchanged.",
   "historical_source_extension": "Atcc379ff28f74d5810ed51ad537ebece821440d72 exact source sets match29native/29paired frontend kinds, including Product package-standard; staged0. Native Product Publish safety is not a30th purpose. verified_runtime_flows stays0; all64 actualSQL/HTTP/browser/CI/K3 acceptances remain NOT_RUN. Earlier exact-head evidence stays separate; new Node batch751PASS/1FAIL is not752PASS.",
   "historical_source_extensions": [
     "Atb1cacee89f805a05959b5b79af034270b80b8103 source-derived sets:30native/29paired frontend; only product.price-list-version.v1 staged, no unknown frontend kind. Historicalcc379 exact29/29 remains valid only at that head. verified_runtime_flows=0; all64 semantics/runtime remain NOT_VERIFIED/NOT_RUN.",
     "At43ebf5ec240e23f7e3c56443e5a2b10c68e2adf4 live WorkDecisionRegistrationV1.Kinds and WORK_DECISION_KINDS derive31native/30paired; only finance.party-credit-limit.v1 staged, no unknown frontend kind. Price-list purpose is now paired. Historical b1 30native/29paired/1staged and cc379 29/29 remain exact-head records. verified_runtime_flows=0; all64 semantics/runtime stay NOT_VERIFIED/NOT_RUN;41packages/50references unchanged. Corrected checkpointc42ed290f5c20a59065f79b70718e98adae926b3 retains31/30/1; staged constant is not a mounted capability.",
-    "At0046bc8947740b963b7d7a88885de6b8dab97b87:41 native/39 paired frontend/2 staged CreditMovement/CashExchangeBookValue; no unknown frontend kind. All64 semanticsNOT_VERIFIED/runtimeNOT_RUN;verified_runtime_flows0;41packages/50references unchanged."
+    "At0046bc8947740b963b7d7a88885de6b8dab97b87:41 native/39 paired frontend/2 staged CreditMovement/CashExchangeBookValue; no unknown frontend kind. All64 semanticsNOT_VERIFIED/runtimeNOT_RUN;verified_runtime_flows0;41packages/50references unchanged.",
+    "Ata1c45b30fdb0d74b38e21007d655c36c9209d61a:42 native/42 paired frontend/0 staged, exact source sets equal including Flow49 normal-journal. Flow47/48 native safety prerequisites do not add a Work kind. Gerçek SQL/normal HTTP/tarayıcı/tam CI/pinler/iki bağımsız exact-head K3 ve işletme kabulü bekler. 64 semantik NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows=0; 41 paket/50 referans korunur."
   ],
   "historical_checkpoint_c42": {
     "source_commit": "c42ed290f5c20a59065f79b70718e98adae926b3",
@@ -2473,5 +2490,81 @@
     "sql": "Accounting160/Finance418/Purchasing203 unique SQL source names. Source compilation is not actual SQL; all actual SQL NOT_RUN.",
     "limits": "Gerçek SQL/normal HTTP/tarayıcı/tam CI/pinler/iki bağımsız exact-head K3 ve işletme kabulü bekler. 64 semantik NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows=0; 41 paket/50 referans korunur.",
     "reference": "UYGULAMA_PAKETLERI_2026-11-26.json -> T2/WP8.execution.normal_unordered_and_period_checkpoint"
+  },
+  "accounting_period_backend_checkpoint": {
+    "source_commit": "59e09117e6652e42deaf6e3a1721c35e7ba68724",
+    "source_kinds": {
+      "backend": 44,
+      "paired_frontend": 42,
+      "staged": [
+        "accounting.period-opening.v1",
+        "accounting.period-reopening.v1"
+      ],
+      "unknown_frontend": [],
+      "scope": "Kinds, not64 acceptance rows"
+    },
+    "checks": {
+      "owner_source_after_test_import_fix": {
+        "source_commit": "b4325d3447842e4e24a844ca68afc7e6d3ccf6f9",
+        "accounting_passed": 942,
+        "failed": 0,
+        "skipped": 0,
+        "exit": 0,
+        "seconds": 34.2451157
+      },
+      "first_full_host_phase": {
+        "source_commit": "1fbd6e39b81a830570b8d7eae2e328aa8cf514a7",
+        "api_all_references": {
+          "exit": 0,
+          "errors": 0,
+          "warnings": 0,
+          "seconds": 184.4877987
+        },
+        "accounting_unit": {
+          "passed": 949,
+          "failed": 0,
+          "skipped": 0,
+          "seconds": 10.3775838
+        },
+        "controlled_host": {
+          "total": 1335,
+          "passed": 1332,
+          "failed": 3,
+          "skipped": 0,
+          "exit": 1,
+          "seconds": 72.0630663
+        },
+        "failures": "Two happy-path read counters used ++Reads inside an optional callback argument, so null callbacks did not increment. The third failure exposed an actual ROL-D12 source bug: native IsOwnProposal is Proposed AND maker==viewer, not always maker==viewer. No assertions or native maker policy weakened."
+      },
+      "current_fixed_phase": {
+        "source_commit": "59e09117e6652e42deaf6e3a1721c35e7ba68724",
+        "accounting_all_references": {
+          "passed": 949,
+          "failed": 0,
+          "skipped": 0,
+          "exit": 0,
+          "seconds": 36.7466651
+        },
+        "api_refresh": {
+          "exit": 0,
+          "errors": 0,
+          "warnings": 0,
+          "seconds": 23.2056765,
+          "mode": "BuildProjectReferences=false; not a new full all-reference API build"
+        },
+        "controlled_host": {
+          "passed": 1335,
+          "failed": 0,
+          "skipped": 0,
+          "exit": 0,
+          "seconds": 79.4024429,
+          "new_period_host_cases": 71,
+          "scope": "Controlled owner/source/host/registry/helper suite plus compiled SQL test source; not real SQL/HTTP/browser"
+        }
+      },
+      "retained_failures": "224e25bfc Accounting test compileFAIL (missing Application namespace), fixed only test import b432; tests NOT_RUN at224. FullAPI3d996ac51 compileFAIL3CS0122 internal source constants; host NOT_RUN. Public owner MatchesDecisionProof c1cf and host1fbd correct visibility and precommand formatter bindings without widening source classes. Original logs and1fbd3fail retained.75b9 source preserves native proposed-only IsOwnProposal;59e only fixes callback-independent test read counters."
+    },
+    "limits": "ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 and business acceptance pending. All64 semantics NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows0;41packages/50references unchanged.",
+    "reference": "UYGULAMA_PAKETLERI_2026-11-26.json -> T2/WP8.execution.accounting_period_backend_checkpoint"
   }
 }

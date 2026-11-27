@@ -1095,7 +1095,7 @@
           "git_blob": "ab6d10d190a7e08aec808bc43d3fbf9eecc40234"
         }
       ],
-      "source_commit": "a1c45b30fdb0d74b38e21007d655c36c9209d61a",
+      "source_commit": "59e09117e6652e42deaf6e3a1721c35e7ba68724",
       "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": null,
@@ -1149,7 +1149,74 @@
         "frontend": "9actualfiles1144PASS0skip; fullTSC0;20filelint0errors0warnings. Separate-head evidence.",
         "period_prerequisite_source_commit": "a1c45b30fdb0d74b38e21007d655c36c9209d61a",
         "period_prerequisite": "Accounting867/Finance2518/controlledHost1262PASS0skip at a1c45; API refresh references=false0errors0warnings, not a full all-reference build. Native period safety only, no owner human read/Work/UI.",
-        "sql": "Accounting160 SQL source names compiled; actualSQL NOT_RUN. No historical CI result transferred to this source."
+        "sql": "Accounting160 SQL source names compiled; actualSQL NOT_RUN. No historical CI result transferred to this source.",
+        "period_backend_checkpoint": {
+          "source_commit": "59e09117e6652e42deaf6e3a1721c35e7ba68724",
+          "scope": "Related native Accounting owner infrastructure reused for two staged period kinds; normal-journal source/test blobs unchanged and rechecked, no new CI transfer.",
+          "checks": {
+            "owner_source_after_test_import_fix": {
+              "source_commit": "b4325d3447842e4e24a844ca68afc7e6d3ccf6f9",
+              "accounting_passed": 942,
+              "failed": 0,
+              "skipped": 0,
+              "exit": 0,
+              "seconds": 34.2451157
+            },
+            "first_full_host_phase": {
+              "source_commit": "1fbd6e39b81a830570b8d7eae2e328aa8cf514a7",
+              "api_all_references": {
+                "exit": 0,
+                "errors": 0,
+                "warnings": 0,
+                "seconds": 184.4877987
+              },
+              "accounting_unit": {
+                "passed": 949,
+                "failed": 0,
+                "skipped": 0,
+                "seconds": 10.3775838
+              },
+              "controlled_host": {
+                "total": 1335,
+                "passed": 1332,
+                "failed": 3,
+                "skipped": 0,
+                "exit": 1,
+                "seconds": 72.0630663
+              },
+              "failures": "Two happy-path read counters used ++Reads inside an optional callback argument, so null callbacks did not increment. The third failure exposed an actual ROL-D12 source bug: native IsOwnProposal is Proposed AND maker==viewer, not always maker==viewer. No assertions or native maker policy weakened."
+            },
+            "current_fixed_phase": {
+              "source_commit": "59e09117e6652e42deaf6e3a1721c35e7ba68724",
+              "accounting_all_references": {
+                "passed": 949,
+                "failed": 0,
+                "skipped": 0,
+                "exit": 0,
+                "seconds": 36.7466651
+              },
+              "api_refresh": {
+                "exit": 0,
+                "errors": 0,
+                "warnings": 0,
+                "seconds": 23.2056765,
+                "mode": "BuildProjectReferences=false; not a new full all-reference API build"
+              },
+              "controlled_host": {
+                "passed": 1335,
+                "failed": 0,
+                "skipped": 0,
+                "exit": 0,
+                "seconds": 79.4024429,
+                "new_period_host_cases": 71,
+                "scope": "Controlled owner/source/host/registry/helper suite plus compiled SQL test source; not real SQL/HTTP/browser"
+              }
+            },
+            "retained_failures": "224e25bfc Accounting test compileFAIL (missing Application namespace), fixed only test import b432; tests NOT_RUN at224. FullAPI3d996ac51 compileFAIL3CS0122 internal source constants; host NOT_RUN. Public owner MatchesDecisionProof c1cf and host1fbd correct visibility and precommand formatter bindings without widening source classes. Original logs and1fbd3fail retained.75b9 source preserves native proposed-only IsOwnProposal;59e only fixes callback-independent test read counters."
+          },
+          "runtime_acceptance": "NOT_RUN",
+          "sql": "Accounting162 sources compiled; actualSQL NOT_RUN."
+        }
       },
       "historical_source_checkpoint_39a": {
         "source_commit": "39a0f3e5552cb48d2f788bc08d76da29ff32390f",
@@ -1180,6 +1247,41 @@
           "composition_source_commit": "39a0f3e5552cb48d2f788bc08d76da29ff32390f",
           "composition": "Included in1199 controlled host tests; SQL connection deliberately not opened.",
           "sql": "8 native guard SQL Fact sources compiled but NOT_RUN; no business acceptance."
+        }
+      },
+      "historical_source_checkpoint_a1c45": {
+        "source_commit": "a1c45b30fdb0d74b38e21007d655c36c9209d61a",
+        "sources": [
+          {
+            "path": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/NormalJournalDraftLifecycleV1.cs",
+            "line": 170,
+            "anchor": "Task<AccountingApiResult<NormalJournalDraftViewV1>> ApproveAsync(",
+            "sha256": "96405ea66eb360d6131b824b2d78c099caf440ca2cc5460f2fa1a9499476cdf3",
+            "git_blob": "7a9999bc7050f3086acebd53ec05ea148549fa45"
+          }
+        ],
+        "tests": [
+          {
+            "path": "tests/GoymenERP.Accounting.UnitTests/NormalJournalDraftLifecycleV1Tests.cs",
+            "line": 16,
+            "anchor": "public async Task Create_only_authority_never_approves_a_normal_draft()",
+            "sha256": "e8619e01d4d9205138a304a60ca6b6bd1c683cdd723e10c92de7617795dfb212",
+            "git_blob": "ab6d10d190a7e08aec808bc43d3fbf9eecc40234"
+          }
+        ],
+        "historical_evidence": "SOURCE_AND_TEST_ONLY",
+        "historical_ci_url": null,
+        "local_validation": {
+          "source_commit": "21d1fecbbe6d5de2ce49b9691975dd08dd73110f",
+          "accounting_unit": 859,
+          "skipped": 0,
+          "composition_source_commit": "21d1fecbbe6d5de2ce49b9691975dd08dd73110f",
+          "composition": "Included in1262 controlled host tests; actualSQL not opened. Original command receipt, lossless human view and explicit PeriodId Work source-paired; not runtime acceptance.",
+          "frontend_source_commit": "7c944b060422942bdc5a5b40e712ddf3e5517853",
+          "frontend": "9actualfiles1144PASS0skip; fullTSC0;20filelint0errors0warnings. Separate-head evidence.",
+          "period_prerequisite_source_commit": "a1c45b30fdb0d74b38e21007d655c36c9209d61a",
+          "period_prerequisite": "Accounting867/Finance2518/controlledHost1262PASS0skip at a1c45; API refresh references=false0errors0warnings, not a full all-reference build. Native period safety only, no owner human read/Work/UI.",
+          "sql": "Accounting160 SQL source names compiled; actualSQL NOT_RUN. No historical CI result transferred to this source."
         }
       }
     },
