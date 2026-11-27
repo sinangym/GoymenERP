@@ -89,9 +89,7 @@ public sealed partial class AccountingInventoryCostServiceV1(IAccountingInventor
     public Task<AccountingApiResult<AccountingInventoryCostProposalV1>> ApproveCancellationAsync(Guid id,
         ApproveInventoryCostCancellationV1 request, string key, CancellationToken cancellationToken = default) =>
         request is null || id == Guid.Empty || request.ExpectedVersion < 1 || request.ExpectedCancellationVersion < 1
-            ? InvalidVersionOrIdentity() : Run("approve-component-cancellation", AccountingJournalReversalPermissionNamesV1.Approve,
-                new { id, request }, key, (actor, fence, metadata) => store.ApproveCancellationAsync(id, request, actor, fence,
-                    metadata, cancellationToken), cancellationToken);
+            ? InvalidVersionOrIdentity() : RunCancellationApprovalAsync(id, request, key, cancellationToken);
 
     private static string Permission(AccountingInventoryCostKindV1 kind, bool approve) => kind == AccountingInventoryCostKindV1.SalesInvoicedShipment
         ? approve ? NormalJournalPermissionNamesV1.DraftApprove : NormalJournalPermissionNamesV1.DraftCreate

@@ -14,7 +14,8 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
             : approvalSafetyOwner.RunInvoiceLineCogsApprovalAsync(this, db, audit, auditWriter, attempt, freshFence, cancellationToken);
     private bool IsOwnedApproval => approvalSafetyOwner?.IsOwnedInvoiceLineCogsApproval(this, db, audit, auditWriter) == true;
     // Only the exact outer approval marker owns these extra fences. Prepare/read/cancellation keep their existing protocol.
-    private Task ApprovalReadFenceAsync(CancellationToken token) => IsOwnedApproval
+    private Task ApprovalReadFenceAsync(CancellationToken token) => cancellationReadFence is not null
+        ? cancellationReadFence(token) : IsOwnedApproval
         ? approvalSafetyOwner!.InvoiceLineCogsApprovalFenceAsync(this, db, audit, auditWriter, token) : Task.CompletedTask;
     private async Task<T> ApprovalReadAsync<T>(Func<Task<T>> read, CancellationToken token)
     {

@@ -116,6 +116,12 @@ public interface IAccountingInventoryCostStoreV1
         Func<CancellationToken, Task> freshFence, CancellationToken token = default) =>
         Task.FromResult(new AccountingApiResult<AccountingInventoryCostProposalV1>(AccountingApiStatus.Unavailable, null, false, null));
 
+    // Component cancellation approval owns its command lookup, effects, audit and terminal receipt together.
+    Task<AccountingApiResult<AccountingInventoryCostProposalV1>> RunCancellationApprovalAsync(
+        Func<bool, Task<AccountingApiResult<AccountingInventoryCostProposalV1>>> attempt,
+        Func<CancellationToken, Task> freshFence, CancellationToken token = default) =>
+        Task.FromResult(new AccountingApiResult<AccountingInventoryCostProposalV1>(AccountingApiStatus.Unavailable, null, false, null));
+
     Task RecordAttemptAsync(AccountingCommandRecord record, Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken = default);
     Task AcceptAsync(WorkInboxEventV1 envelope, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AccountingInventoryCostProposalV1>> ListAsync(AccountingInventoryCostKindV1 kind, CancellationToken cancellationToken = default);

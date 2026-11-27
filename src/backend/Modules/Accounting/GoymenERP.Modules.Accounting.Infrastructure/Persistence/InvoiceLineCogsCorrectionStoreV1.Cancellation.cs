@@ -9,7 +9,30 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 public sealed partial class InvoiceLineCogsCorrectionStoreV1
 {
     internal async Task<(long Revision, IReadOnlyList<InventoryCostCancellationComponentV1> Components)>
-        ReadCancellationComponentsAsync(AccountingInventoryCostProposalV1 view, CancellationToken token)
+        ReadCancellationComponentsAsync(AccountingInventoryCostProposalV1 view, CancellationToken token,
+            Func<CancellationToken, Task>? freshReadFence = null)
+    {
+        if (cancellationReadFence is not null) throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceUnavailable);
+        if (freshReadFence is null) return await ReadCancellationComponentsCoreAsync(view, token);
+        if (IsOwnedApproval) throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceUnavailable);
+        var captured = Company();
+        cancellationReadFence = async ct =>
+        {
+            ct.ThrowIfCancellationRequested(); RequireCompany(captured);
+            await freshReadFence(ct);
+            ct.ThrowIfCancellationRequested(); RequireCompany(captured);
+        };
+        try
+        {
+            await ApprovalReadFenceAsync(token);
+            var result = await ReadCancellationComponentsCoreAsync(view, token);
+            await ApprovalReadFenceAsync(token);
+            return result;
+        }
+        finally { cancellationReadFence = null; }
+    }
+    private async Task<(long Revision, IReadOnlyList<InventoryCostCancellationComponentV1> Components)>
+        ReadCancellationComponentsCoreAsync(AccountingInventoryCostProposalV1 view, CancellationToken token)
     {
         if (view.CompanyId != Company() || view.Kind != AccountingInventoryCostKindV1.SalesInvoicedShipment
             || db.Database.CurrentTransaction?.GetDbTransaction().IsolationLevel != IsolationLevel.Serializable)

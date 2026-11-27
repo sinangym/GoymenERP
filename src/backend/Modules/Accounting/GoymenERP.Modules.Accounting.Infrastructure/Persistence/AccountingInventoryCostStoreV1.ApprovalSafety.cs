@@ -8,7 +8,15 @@ public sealed partial class AccountingInventoryCostStoreV1
         Func<bool, Task<AccountingApiResult<AccountingInventoryCostProposalV1>>> attempt,
         Func<CancellationToken, Task> freshFence, CancellationToken token = default) =>
         posting.RunInventoryCostApprovalAsync(this, db, audit, auditWriter, attempt, freshFence, token);
-    private bool IsOwnedApproval => posting.IsOwnedInventoryCostApproval(this, db, audit, auditWriter);
+    private bool IsOwnedCancellationApproval => posting.IsOwnedInventoryCostCancellationApproval(this, db, audit, auditWriter);
+    private bool IsOwnedApproval => IsOwnedCancellationApproval || posting.IsOwnedInventoryCostApproval(this, db, audit, auditWriter);
+    public Task<AccountingApiResult<AccountingInventoryCostProposalV1>> RunCancellationApprovalAsync(
+        Func<bool, Task<AccountingApiResult<AccountingInventoryCostProposalV1>>> attempt,
+        Func<CancellationToken, Task> freshFence, CancellationToken token = default) =>
+        posting.RunInventoryCostCancellationApprovalAsync(this, db, audit, auditWriter, attempt, freshFence, token);
+    private Task RecordOwnedApprovalRefusalAsync(AccountingCommandRecord command, CancellationToken token) => IsOwnedCancellationApproval
+        ? posting.RecordOwnedInventoryCostCancellationRefusalAsync(this, db, audit, auditWriter, command, token)
+        : posting.RecordOwnedInventoryCostRefusalAsync(this, db, audit, auditWriter, command, token);
     private async Task ApprovalReadFence(CancellationToken token)
     {
         if (decisionReadFence is not null)
@@ -17,6 +25,7 @@ public sealed partial class AccountingInventoryCostStoreV1
             if (decisionReadOwnedAtEntry != IsOwnedApproval) throw Refuse("inventory_cost_source_unavailable");
             await decisionReadFence(token);
         }
+        else if (IsOwnedCancellationApproval) await posting.ReadOwnedInventoryCostCancellationApprovalAsync(this, db, audit, auditWriter, token);
         else if (IsOwnedApproval) await posting.ReadOwnedInventoryCostApprovalAsync(this, db, audit, auditWriter, token);
     }
     private async Task<T> ApprovalRead<T>(Func<Task<T>> read, CancellationToken token)
@@ -34,8 +43,12 @@ public sealed partial class AccountingInventoryCostStoreV1
         var result = await operation();
         await ApprovalReadFence(token);
         if (metadata.Completion?.Invoke(result!) is { } command)
-            posting.CompleteOwnedInventoryCostApproval(this, db, audit, auditWriter, command);
-        await posting.SaveOwnedInventoryCostApprovalAsync(this, db, audit, auditWriter, token);
+        {
+            if (IsOwnedCancellationApproval) posting.CompleteOwnedInventoryCostCancellationApproval(this, db, audit, auditWriter, command);
+            else posting.CompleteOwnedInventoryCostApproval(this, db, audit, auditWriter, command);
+        }
+        if (IsOwnedCancellationApproval) await posting.SaveOwnedInventoryCostCancellationApprovalAsync(this, db, audit, auditWriter, token);
+        else await posting.SaveOwnedInventoryCostApprovalAsync(this, db, audit, auditWriter, token);
         await ApprovalReadFence(token);
         return result;
     }

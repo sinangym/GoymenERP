@@ -79,7 +79,7 @@ public sealed partial class AccountingInventoryCostStoreV1
         foreach (var item in physical)
         {
             var history = await InvoiceCogsClaimHistoryV1.ReadAsync(db, view.CompanyId, item.MovementId, item.MovementLineNumber,
-                () => RequireCompany(view.CompanyId), token);
+                () => RequireCompany(view.CompanyId), token, IsOwnedCancellationApproval ? ApprovalReadFence : null);
             var next = history.SingleOrDefault(x => x.Succession?.PreviousEventId == view.EventId
                 && x.Succession.PreviousInvoiceLineId == view.Component.InvoiceLineId)?.Succession;
             if (next is null) continue;

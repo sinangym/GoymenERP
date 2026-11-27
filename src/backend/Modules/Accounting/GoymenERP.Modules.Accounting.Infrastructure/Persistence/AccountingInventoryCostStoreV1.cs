@@ -30,7 +30,7 @@ public sealed partial class AccountingInventoryCostStoreV1(AccountingDbContext d
 
     public Task RecordAttemptAsync(AccountingCommandRecord record, Func<CancellationToken, Task> freshFence,
         CancellationToken cancellationToken = default) => IsOwnedApproval
-        ? posting.RecordOwnedInventoryCostRefusalAsync(this, db, audit, auditWriter, record, cancellationToken)
+        ? RecordOwnedApprovalRefusalAsync(record, cancellationToken)
         : Atomic(new AccountingCommandMetadata(record.ActorId, "", [], record.OriginalCorrelationId,
             null, record.IdempotencyKeyHash, SourceChannels.System), freshFence, () =>
         {
