@@ -2130,7 +2130,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Complete actualSQL/normalHTTP/browser, pin/fullCI and independent K3 acceptance across64 flows; native Flow32/33 safety prerequisites do not complete their Work purposes. No new grants or production activation.",
+      "next_action": "Complete remaining owner adapters, typed native receipts and human/UI purpose bindings, then actualSQL/normalHTTP/browser, pin/fullCI and independent K3 acceptance across64 flows; native Flow32/33 safety prerequisites do not complete their Work purposes. No new grants or production activation.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
