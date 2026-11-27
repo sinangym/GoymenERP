@@ -350,7 +350,7 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
             after: JsonSerializer.Serialize(view, Json), reason);
 
         await SaveStockScrapAsync(freshAuthorityFence, cancellationToken);
-        return new(view, false, decision.CorrelationId);
+        return new(view, false, decision.CorrelationId, CommandReceiptProven: true);
     }
 
     public async Task<InventoryLabelStockScrapsV1?> ReadStockScrapsAsync(
@@ -449,7 +449,7 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
 
         var stored = JsonSerializer.Deserialize<StockScrapCommandResult>(prior.ResultJson, Json)
             ?? throw StockScrapError(503, InventoryStockScrapCodesV1.Unavailable);
-        return new(stored.Scrap, true, prior.CorrelationId);
+        return new(stored.Scrap, true, prior.CorrelationId, CommandReceiptProven: command == DecideStockScrapCommand);
     }
 
     /// <summary>The same scrap id: the same content is the stored scrap again; other content is a conflict.</summary>
@@ -556,7 +556,7 @@ public sealed partial class InventoryStore : IInventoryStockScrapWriterV1, IInve
         }
     }
 
-    private static InventoryStockScrapViewV1 StockScrapView(StockScrapRow row, StockScrapDecisionRow? decision)
+    internal static InventoryStockScrapViewV1 StockScrapView(StockScrapRow row, StockScrapDecisionRow? decision)
     {
         var status = decision?.Decision switch
         {

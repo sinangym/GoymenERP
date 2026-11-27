@@ -27,7 +27,9 @@ internal sealed class InventoryInMemoryWorkInboxRows : InventoryWorkInboxRows
     public List<OpeningCostRow> OpeningCostRows { get; } = [];
     public List<OpeningCostDecisionRow> OpeningCostDecisionRows { get; } = [];
     public List<StockCountRow> StockCountRows { get; } = [];
+    public List<StockScrapRow> StockScrapRows { get; } = [];
     public List<StockCountDecisionRow> StockCountDecisionRows { get; } = [];
+    public List<StockScrapDecisionRow> StockScrapDecisionRows { get; } = [];
     public bool FailReads { get; set; }
     public int Reads { get; private set; }
 
@@ -44,7 +46,9 @@ internal sealed class InventoryInMemoryWorkInboxRows : InventoryWorkInboxRows
     public override IQueryable<OpeningCostRow> OpeningCosts => OpeningCostRows.AsQueryable();
     public override IQueryable<OpeningCostDecisionRow> OpeningCostDecisions => OpeningCostDecisionRows.AsQueryable();
     public override IQueryable<StockCountRow> StockCounts => StockCountRows.AsQueryable();
+    public override IQueryable<StockScrapRow> StockScraps => StockScrapRows.AsQueryable();
     public override IQueryable<StockCountDecisionRow> StockCountDecisions => StockCountDecisionRows.AsQueryable();
+    public override IQueryable<StockScrapDecisionRow> StockScrapDecisions => StockScrapDecisionRows.AsQueryable();
 
     public override Task<List<T>> ListAsync<T>(IQueryable<T> query, CancellationToken cancellationToken)
     {
@@ -83,7 +87,9 @@ internal sealed class InventorySqlTranslatingWorkInboxRows : InventoryWorkInboxR
     public override IQueryable<OpeningCostRow> OpeningCosts => inner.OpeningCosts;
     public override IQueryable<OpeningCostDecisionRow> OpeningCostDecisions => inner.OpeningCostDecisions;
     public override IQueryable<StockCountRow> StockCounts => inner.StockCounts;
+    public override IQueryable<StockScrapRow> StockScraps => inner.StockScraps;
     public override IQueryable<StockCountDecisionRow> StockCountDecisions => inner.StockCountDecisions;
+    public override IQueryable<StockScrapDecisionRow> StockScrapDecisions => inner.StockScrapDecisions;
 
     public override Task<List<T>> ListAsync<T>(IQueryable<T> query, CancellationToken cancellationToken)
     {

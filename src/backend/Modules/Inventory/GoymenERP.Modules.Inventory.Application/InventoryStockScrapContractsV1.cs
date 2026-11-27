@@ -106,7 +106,8 @@ public sealed record InventoryStockScrapViewV1(
 public sealed record InventoryStockScrapResultV1(
     InventoryStockScrapViewV1 Scrap,
     bool IsReplay,
-    string OriginalCorrelationId);
+    string OriginalCorrelationId,
+    [property: JsonIgnore] bool CommandReceiptProven = false);
 
 /// <summary>The newest scraps of one label, newest first.</summary>
 public sealed record InventoryLabelStockScrapsV1(

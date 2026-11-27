@@ -27,7 +27,8 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkLogisticsWeighingDifferenceProofV1? LogisticsWeighingDifferenceProof = null,
     [property: JsonIgnore] WorkSupplierReturnCostExceptionProofV1? SupplierReturnCostExceptionProof = null,
     [property: JsonIgnore] WorkInventoryStockCountProofV1? InventoryStockCountProof = null,
-    [property: JsonIgnore] WorkBankAccountProofV1? BankAccountProof = null);
+    [property: JsonIgnore] WorkBankAccountProofV1? BankAccountProof = null,
+    [property: JsonIgnore] WorkInventoryStockScrapProofV1? InventoryStockScrapProof = null);
 
 /// <summary>Immutable, price-free native count evidence, exposed only by the authorized human purpose GET.</summary>
 public sealed record WorkInventoryStockCountPreviewV1(Guid LabelId, string LabelVersion,
@@ -37,6 +38,15 @@ public sealed record WorkInventoryStockCountPreviewV1(Guid LabelId, string Label
 /// <summary>Owner-only logical-state proof; neither a live label version nor an Inbox/AI payload.</summary>
 public sealed record WorkInventoryStockCountProofV1(Guid CompanyId, Guid CountId,
     WorkInventoryStockCountPreviewV1 Count, string Status);
+
+/// <summary>Immutable, price-free native scrap evidence, exposed only by the authorized human purpose GET.</summary>
+public sealed record WorkInventoryStockScrapPreviewV1(Guid LabelId, string LabelVersion,
+    string OwnerKind, Guid OwnerId, string CustodianKind, Guid CustodianId, Guid LocationId, Guid ProductId,
+    string Block, string BookKg, string ScrapKg, string RemainingKg, DateTimeOffset ScrappedAtUtc,
+    string Reason, string RecordedBy, DateTimeOffset RecordedAtUtc, int? BookPieceCount, int? ScrapPieceCount);
+/// <summary>Owner-only logical-state proof; neither a live label version nor an Inbox/AI payload.</summary>
+public sealed record WorkInventoryStockScrapProofV1(Guid CompanyId, Guid ScrapId,
+    WorkInventoryStockScrapPreviewV1 Scrap, string Status);
 
 /// <summary>Approval-purpose identities from the current plan revision, never an implicit user selection.</summary>
 public sealed record WorkManufacturingPlanReapprovalOptionsV1(IReadOnlyList<Guid> ParentRollIds);

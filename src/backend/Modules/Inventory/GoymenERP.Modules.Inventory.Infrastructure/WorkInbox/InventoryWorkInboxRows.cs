@@ -36,7 +36,9 @@ internal abstract class InventoryWorkInboxRows
     public abstract IQueryable<OpeningCostDecisionRow> OpeningCostDecisions { get; }
 
     public abstract IQueryable<StockCountRow> StockCounts { get; }
+    public abstract IQueryable<StockScrapRow> StockScraps { get; }
     public abstract IQueryable<StockCountDecisionRow> StockCountDecisions { get; }
+    public abstract IQueryable<StockScrapDecisionRow> StockScrapDecisions { get; }
 
     public abstract Task<List<T>> ListAsync<T>(IQueryable<T> query, CancellationToken cancellationToken);
 }
@@ -75,7 +77,9 @@ internal sealed class InventoryWorkInboxDbRows(InventoryDbContext dbContext) : I
     public override IQueryable<OpeningCostDecisionRow> OpeningCostDecisions => dbContext.OpeningCostDecisions.AsNoTracking();
 
     public override IQueryable<StockCountRow> StockCounts => dbContext.StockCounts.AsNoTracking();
+    public override IQueryable<StockScrapRow> StockScraps => dbContext.StockScraps.AsNoTracking();
     public override IQueryable<StockCountDecisionRow> StockCountDecisions => dbContext.StockCountDecisions.AsNoTracking();
+    public override IQueryable<StockScrapDecisionRow> StockScrapDecisions => dbContext.StockScrapDecisions.AsNoTracking();
 
     public override Task<List<T>> ListAsync<T>(IQueryable<T> query, CancellationToken cancellationToken) =>
         query.ToListAsync(cancellationToken);
