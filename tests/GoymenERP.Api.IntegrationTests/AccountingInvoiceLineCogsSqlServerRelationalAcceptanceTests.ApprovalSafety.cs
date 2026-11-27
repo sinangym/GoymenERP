@@ -169,6 +169,81 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         Assert.Equal(before with { Commands = before.Commands + 2 }, await CogsCountsOf(run)); scope.AssertClean();
     }
 
+    [SqlServerFact]
+    public async Task Cogs_late_mixed_component_business_refusal_aborts_unsaved_pairs_and_preserves_422_and_the_unused_key()
+    {
+        foreach (var auditInterceptor in new[] { false, true })
+        {
+            await using var run = await Run.Start();
+            var fixture = await CogsLateRefusalPrepare(run); var before = await CogsCountsOf(run);
+            var save = new CogsApprovalSave();
+            await using var scope = new CogsApprovalScope(run, save, auditInterceptor: auditInterceptor, physical: fixture.Physical);
+            var periodBefore = await scope.Db.Periods.AsNoTracking().SingleAsync(x => x.Id == fixture.Period);
+            var early = await scope.Approve(fixture.EarlyRefusalProposal, "early-business");
+            Assert.Equal(AccountingApiStatus.Unprocessable, early.Status); Assert.Equal(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid, early.Code);
+            Assert.Equal(0, scope.Writer.Discards); Assert.Equal(0, save.Attempts); scope.AssertClean(); Assert.Equal(before, await CogsCountsOf(run));
+            var refused = await scope.Approve(fixture.InvalidProposal, "late-business");
+            Assert.Equal(AccountingApiStatus.Unprocessable, refused.Status);
+            Assert.Equal(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid, refused.Code);
+            Assert.Null(refused.Resource); Assert.False(refused.IsReplay); Assert.Equal(0, save.Attempts);
+            Assert.Equal(1, scope.Writer.Discards); scope.AssertClean(); Assert.Equal(before, await CogsCountsOf(run));
+            Assert.Equal(periodBefore.Version, (await scope.Db.Periods.AsNoTracking().SingleAsync(x => x.Id == fixture.Period)).Version);
+            var retained = await scope.Db.InvoiceLineCogsProposals.AsNoTracking().Where(x => x.Id == fixture.InvalidProposal).Select(x => x.ViewJson).SingleAsync();
+            Assert.Equal("Prepared", JsonSerializer.Deserialize<InvoiceLineCogsCorrectionViewV1>(retained, Json)!.Status);
+            // The invalid immutable proposal is not rewritten. A separate valid proposal may use the unconsumed key.
+            var accepted = await scope.Approve(fixture.ValidProposal, "late-business");
+            Assert.Equal(AccountingApiStatus.Ok, accepted.Status); Assert.False(accepted.IsReplay);
+            Assert.Equal(fixture.ValidProposal, accepted.Resource?.ProposalId); Assert.Equal("Approved", accepted.Resource?.Status);
+            Assert.Equal(before with { Revisions = before.Revisions + 1, Commands = before.Commands + 1, Audits = before.Audits + 1 }, await CogsCountsOf(run));
+            var replay = await scope.Approve(fixture.ValidProposal, "late-business");
+            Assert.True(replay.IsReplay); Assert.Equal(JsonSerializer.Serialize(accepted.Resource, Json), JsonSerializer.Serialize(replay.Resource, Json));
+            Assert.Equal(0, accepted.Resource?.AttributedCorrections?.Count ?? 0); scope.AssertClean();
+        }
+    }
+
+    [SqlServerFact]
+    public async Task Cogs_late_business_refusal_never_masks_owned_cleanup_failure_as_422_or_starts_a_winner_read()
+    {
+        foreach (var dispose in new[] { false, true })
+        {
+            await using var run = await Run.Start(); var fixture = await CogsLateRefusalPrepare(run); var before = await CogsCountsOf(run);
+            var cleanup = new CogsApprovalCleanup(dispose); var commandReads = 0;
+            var probe = new CogsApprovalReadProbe(sql => { if (sql.Contains("[Commands]", StringComparison.Ordinal)) commandReads++; });
+            await using var scope = new CogsApprovalScope(run, extra: cleanup, second: probe, physical: fixture.Physical);
+            var failure = await Assert.ThrowsAsync<AggregateException>(() => scope.Approve(fixture.InvalidProposal, "late-cleanup"));
+            Assert.Contains(failure.InnerExceptions, error => error is InvalidOperationException);
+            Assert.True(cleanup.Failed); Assert.Equal(1, commandReads); Assert.Equal(1, scope.Writer.Discards);
+            Assert.False(scope.Db.ChangeTracker.HasChanges()); Assert.False(scope.Writer.HasPendingDrafts);
+            Assert.Equal(before, await CogsCountsOf(run));
+        }
+    }
+
+    private static async Task<(Guid InvalidProposal, Guid ValidProposal, Guid EarlyRefusalProposal, Guid Period, AttributionLineage Physical)> CogsLateRefusalPrepare(Run run)
+    {
+        var period = await run.Period(); var physical = new AttributionLineage(run.Source.Facts);
+        await using var setup = run.Open(); var ledger = AttributionLedger(setup, physical);
+        // The actual attributed component has a different counter-account from the ordinary component.
+        var manufacturing = ManufacturingCosts(setup, ledger);
+        await manufacturing.AcceptAsync(physical.Envelope, physical.Source);
+        await manufacturing.PrepareAsync(new(physical.Envelope.EventId, 1, period, new(2026, 11, 17), new(2026, 11, 17),
+            Old, Next, "SENTETIK late component refusal"), Maker, Fence, Metadata(Maker));
+        await manufacturing.ApproveAsync(physical.Envelope.EventId, 2, Checker, Fence, Metadata(Checker));
+        var reader = new MixedCostReader(new(run.Source.Facts, ledger, physical), 25.125m);
+        var costs = AttributedCosts(setup, reader, ledger); await costs.AcceptAsync(reader.Envelope);
+        var received = Assert.Single(await costs.ListAsync(AccountingInventoryCostKindV1.SalesInvoicedShipment));
+        await costs.PrepareAsync(received.ProposalId, received.Kind, CostPreparation(period), Maker, Fence, Metadata(Maker));
+        await costs.ApproveAsync(received.ProposalId, received.Kind, 2, Checker, Fence, Metadata(Checker));
+        var corrections = AttributedCorrections(setup, ledger);
+        var history = await corrections.ReadAsync(run.Source.Facts);
+        Assert.Equal("MixedPostedCogs", history.PostingEvidenceState);
+        Assert.Equal(Counter, history.PostedEvidence!.CounterAccountId);
+        Assert.Equal(Next, Assert.Single(history.AttributedEvidence!).CounterAccountId);
+        var invalid = await corrections.PrepareAsync(run.Source.Facts, Request(run.Source.Facts, period), Maker, Fence, Metadata(Maker));
+        var valid = await corrections.PrepareAsync(run.Source.Facts, Request(run.Source.Facts, period) with { CogsAccountId = Old }, Maker, Fence, Metadata(Maker));
+        var early = await corrections.PrepareAsync(run.Source.Facts, Request(run.Source.Facts, period) with { CogsAccountId = Counter }, Maker, Fence, Metadata(Maker));
+        return (invalid.ProposalId, valid.ProposalId, early.ProposalId, period, physical);
+    }
+
     private static async Task<Guid> CogsSafetyPrepare(Run run)
     {
         var facts = run.Source.Facts; var period = await run.Period(); await run.PostComponent(facts, period);
@@ -183,7 +258,7 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         public CogsApprovalUser User { get; } = new(); public CogsApprovalAuthority Authority { get; } = new(); public CogsApprovalPlan CurrentPlan { get; } = new();
         public CogsApprovalSource Source { get; } public string CorrelationId { get; } = Guid.NewGuid().ToString("N");
         public AccountingDbContext Db { get; } public AuditEventCollector Collector { get; } public CogsApprovalWriter Writer { get; } public InvoiceLineCogsCorrectionServiceV1 Service { get; }
-        public CogsApprovalScope(Run run, CogsApprovalSave? save = null, IInterceptor? extra = null, IInterceptor? second = null, string? entryFault = null, bool auditDeadlock = false, bool auditInterceptor = true)
+        public CogsApprovalScope(Run run, CogsApprovalSave? save = null, IInterceptor? extra = null, IInterceptor? second = null, string? entryFault = null, bool auditDeadlock = false, bool auditInterceptor = true, AttributionLineage? physical = null)
         {
             auditScope = run.Factory.Services.CreateScope(); auditScope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(AccountingInvoiceLineCogsSqlServerRelationalAcceptanceTests.Company);
             Collector = auditScope.ServiceProvider.GetRequiredService<AuditEventCollector>(); Writer = new(auditScope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>()) { AuditDeadlock = auditDeadlock };
@@ -195,6 +270,8 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
                 TimeProvider.System, new AccountingAmountScaleVerifier(new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(AccountingInvoiceLineCogsSqlServerRelationalAcceptanceTests.Company)),
                 normalApprovalAuditWriter: entryFault == "missing-writer" ? null : Writer);
             var store = new InvoiceLineCogsCorrectionStoreV1(Db, Company, CurrentPlan, Collector, entryFault == "other-writer" ? new CogsApprovalWriter(Writer) : Writer, TimeProvider.System,
+                postedManufacturing: physical is null ? null : new ManufacturingPostedCostAttributionStoreV1(Db, Company, physical,
+                    new(new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(AccountingInvoiceLineCogsSqlServerRelationalAcceptanceTests.Company)), TimeProvider.System),
                 approvalSafetyOwner: entryFault == "missing-owner" ? null : core);
             Source = new(run.Source); var correlation = new CorrelationContext(); correlation.Set(CorrelationId, null, "Web", null, null);
             Service = new(store, Source, run.Source, core, Authority, Company, User, correlation);

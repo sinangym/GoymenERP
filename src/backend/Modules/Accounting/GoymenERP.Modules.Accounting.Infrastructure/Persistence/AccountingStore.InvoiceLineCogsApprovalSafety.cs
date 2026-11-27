@@ -1,3 +1,4 @@
+using System.Text.Json;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Audit.Application.Contracts;
 
@@ -7,23 +8,47 @@ public sealed partial class AccountingStore
 {
     private const string InvoiceLineCogsApproveCommand = "accounting.invoice-line-cogs.approve.v1";
     private InvoiceLineCogsCorrectionStoreV1? ownedInvoiceLineCogsCaller;
-    internal Task<AccountingApiResult<InvoiceLineCogsCorrectionViewV1>> RunInvoiceLineCogsApprovalAsync(
+    internal async Task<AccountingApiResult<InvoiceLineCogsCorrectionViewV1>> RunInvoiceLineCogsApprovalAsync(
         InvoiceLineCogsCorrectionStoreV1 caller, AccountingDbContext candidateDb, IAuditEventCollector candidateCollector,
         IAuditTransactionWriterV1 candidateWriter, Func<bool, Task<AccountingApiResult<InvoiceLineCogsCorrectionViewV1>>> attempt,
         Func<CancellationToken, Task> fence, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(attempt); ArgumentNullException.ThrowIfNull(fence);
         if (!SameInvoiceLineCogsScope(candidateDb, candidateCollector, candidateWriter))
-            return Task.FromResult(new AccountingApiResult<InvoiceLineCogsCorrectionViewV1>(AccountingApiStatus.Unavailable, null, false, null));
-        return RunOwnedAccountingApprovalAsync(InvoiceLineCogsApproveCommand, async replayOnly =>
+            return new(AccountingApiStatus.Unavailable, null, false, null);
+        try
         {
-            if (ownedInvoiceLineCogsCaller is not null || ownedNormalApproval?.CommandName != InvoiceLineCogsApproveCommand)
-                throw new InvalidOperationException("Invoice-line COGS approval requires its exact owned command boundary.");
-            ownedInvoiceLineCogsCaller = caller;
-            try { return await attempt(replayOnly); }
-            finally { ownedInvoiceLineCogsCaller = null; }
-        }, fence, token);
+            return await RunOwnedAccountingApprovalAsync(InvoiceLineCogsApproveCommand, async replayOnly =>
+            {
+                if (ownedInvoiceLineCogsCaller is not null || ownedNormalApproval?.CommandName != InvoiceLineCogsApproveCommand)
+                    throw new InvalidOperationException("Invoice-line COGS approval requires its exact owned command boundary.");
+                ownedInvoiceLineCogsCaller = caller;
+                try
+                {
+                    var result = await attempt(replayOnly);
+                    RequireOwnedInvoiceLineCogsApproval(caller, candidateDb, candidateCollector, candidateWriter);
+                    // A native late refusal can follow staged journal pairs, before their first Save.
+                    // Abort only our owned work; a clean early refusal keeps the native read-only path.
+                    if (!replayOnly && ownedNormalApproval is { } state
+                        && result.Status is AccountingApiStatus.Unprocessable or AccountingApiStatus.Conflict or AccountingApiStatus.NotFound
+                        && (dbContext.ChangeTracker.HasChanges() || state.Writer.HasPendingDrafts
+                            || state.Saved && state.Command?.ResultJson != JsonSerializer.Serialize(result with { IsReplay = false, OriginalCorrelationId = null }, Json)))
+                        throw new InvoiceLineCogsRollbackAnswer(result);
+                    return result;
+                }
+                finally { ownedInvoiceLineCogsCaller = null; }
+            }, fence, token);
+        }
+        catch (InvoiceLineCogsRollbackAnswer refused)
+        {
+            // A direct rethrow proves abort/dispose/clear/discard succeeded. Cleanup AggregateException must escape.
+            try { await fence(token); token.ThrowIfCancellationRequested(); }
+            catch (NormalJournalAuthorityDeniedException) { return new(AccountingApiStatus.Denied, null, false, AccountingApiCodes.AuthorityDenied); }
+            return refused.Answer;
+        }
     }
+    private sealed class InvoiceLineCogsRollbackAnswer(AccountingApiResult<InvoiceLineCogsCorrectionViewV1> answer) : Exception
+    { internal AccountingApiResult<InvoiceLineCogsCorrectionViewV1> Answer { get; } = answer; }
     private bool SameInvoiceLineCogsScope(AccountingDbContext candidateDb, IAuditEventCollector candidateCollector, IAuditTransactionWriterV1 candidateWriter) =>
         ReferenceEquals(dbContext, candidateDb) && ReferenceEquals(auditEvents, candidateCollector)
         && normalApprovalAuditWriter is not null && ReferenceEquals(normalApprovalAuditWriter, candidateWriter);
