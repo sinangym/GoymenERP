@@ -339,7 +339,7 @@ it('decodes exact loss options among the mounted owner kinds without changing ot
  const value={...preview,kind:lossKind,approvalReasonRequired:true,rejectionSupported:true,inventoryTransferLoss:lossOptions}
  expect(isWorkDecisionKind(lossKind)).toBe(true)
  expect(WORK_DECISION_KINDS.filter(kind=>kind===lossKind)).toHaveLength(1)
- expect(WORK_DECISION_KINDS).toHaveLength(18)
+ expect(WORK_DECISION_KINDS).toHaveLength(19)
  expect(decodeWorkDecisionPreview(value,company,lossKind,id)).not.toBeNull()
  for(const delta of [{companyId:id},{itemId:company},{sourceVersion:'0'},{approvalReasonRequired:false},{rejectionSupported:false},
   {inventoryTransferLoss:null},{inventoryTransferLoss:{...lossOptions,requestNumber:0}},{inventoryTransferLoss:{...lossOptions,requestNumber:1.5}},
@@ -389,7 +389,7 @@ it('mounts both Counterparty purposes once among seventeen and pins their actual
   'counterparty.tax-identity-change.v1':'cari.tax-identity-change.work-decision',
   'counterparty.legal-name-change.v1':'cari.legal-name-change.work-decision',
  })
- expect(WORK_DECISION_KINDS).toHaveLength(18)
+ expect(WORK_DECISION_KINDS).toHaveLength(19)
  for(const cp of cpKinds){
   expect(isWorkDecisionKind(cp)).toBe(true);expect(isCounterpartyWorkDecisionKind(cp)).toBe(true)
   expect(WORK_DECISION_KINDS.filter(kind=>kind===cp)).toEqual([cp])
@@ -511,4 +511,56 @@ it('rejects native C0 and C1 controls in the exact human proposal without changi
  for(const control of ['\u0000','\u001f','\u007f','\u0085','\u009f'])
   expect(decodeWorkDecisionPreview({...excessPreview,logisticsPlanExcess:{...excessProposal,reason:`before${control}after`}},company,excessKind,id)).toBeNull()
  expect(decodeWorkDecisionPreview({...excessPreview,logisticsPlanExcess:{...excessProposal,reason:'Türkçe teklif gerekçesi'}},company,excessKind,id)).not.toBeNull()
+})
+
+
+const overageKind='inventory.transfer-overage.v1'
+const overageTransfer='dddddddd-0000-4000-8000-000000000021',overageLine='eeeeeeee-0000-4000-8000-000000000021'
+const overageProposal={requestNumber:2,requestedAtUtc:'2026-11-27T08:00:00Z',transferId:overageTransfer,lineId:overageLine,kilograms:'20.125',pieceCount:0,
+ reason:'SENTETIK fazla kabul talep gerekçesi',requestedBy:'SENTETIK-requester',receivedBy:'SENTETIK-receiver'}
+const overagePreview={...preview,kind:overageKind,approvalReasonRequired:true,rejectionSupported:true,
+ references:[{role:'inventory-transfer',label:'SENTETIK transfer',recordId:overageTransfer,link:null}],inventoryTransferOverage:overageProposal}
+const overageRequest={...request,reason:'İnsan karar gerekçesi',inventoryTransferOverage:{requestNumber:2,decidedAtUtc:'2026-11-27T09:00:00Z'}}
+it.each([null,0,2147483647])('keeps the exact nine-field human overage proposal and nullable pieces=%s',pieceCount=>{
+ const value={...overagePreview,inventoryTransferOverage:{...overageProposal,pieceCount}}
+ expect(WORK_DECISION_KINDS.filter(kind=>kind===overageKind)).toEqual([overageKind])
+ expect(WORK_DECISION_KINDS).toHaveLength(19)
+ expect(decodeWorkDecisionPreview(value,company,overageKind,id)).toEqual(value)
+})
+it('refuses malformed, foreign, unbound or hidden overage proof instead of rendering a partial proposal',()=>{
+ for(const delta of [{companyId:id},{itemId:company},{sourceVersion:'01'},{approvalReasonRequired:false},{rejectionSupported:false},
+  {inventoryTransferOverage:null},{inventoryTransferOverage:undefined},{inventoryTransferOverageProof:{}},{inventoryTransferLoss:lossOptions},
+  {references:[]},{references:[{...overagePreview.references[0],recordId:id}]},{references:[...overagePreview.references,...overagePreview.references]}])
+  expect(decodeWorkDecisionPreview({...overagePreview,...delta},company,overageKind,id)).toBeNull()
+ for(const delta of [{requestNumber:0},{requestNumber:1.5},{requestNumber:2147483648},{requestedAtUtc:'bad'},{requestedAtUtc:'2026-11-27T08:00:00+03:00'},
+  {transferId:id},{lineId:'00000000-0000-0000-0000-000000000000'},{kilograms:'0'},{kilograms:'1.0'},{kilograms:'1e2'},{kilograms:'1000000000000000'},
+  {kilograms:'1.0001'},{pieceCount:undefined},{pieceCount:-1},{pieceCount:0.5},{pieceCount:2147483648},{pieceCount:'0'},
+  {reason:''},{reason:' R'},{reason:'R'.repeat(501)},{reason:'x\u0085y'},{requestedBy:''},{requestedBy:'x'.repeat(129)},{receivedBy:''},{extra:true}])
+  expect(decodeWorkDecisionPreview({...overagePreview,inventoryTransferOverage:{...overageProposal,...delta}},company,overageKind,id)).toBeNull()
+ expect(decodeWorkDecisionPreview({...preview,inventoryTransferOverage:overageProposal},company,kind,id)).toBeNull()
+ expect(decodeWorkDecisionPreview({...preview,kind:lossKind,approvalReasonRequired:true,rejectionSupported:true,inventoryTransferLoss:lossOptions,inventoryTransferOverage:overageProposal},company,lossKind,id)).toBeNull()
+})
+it.each([true,false])('preserves the explicit numbered overage command and required native reason for approve=%s',approve=>{
+ const command={...overageRequest,approve,reason:'R'.repeat(500)}
+ expect(isWorkDecisionRequest(command,overageKind)).toBe(true)
+ for(const delta of [{reason:null},{reason:''},{reason:'R'.repeat(501)},{reason:'x\u0085y'},{expectedVersion:'0'},
+  {inventoryTransferOverage:null},{inventoryTransferOverage:{requestNumber:0,decidedAtUtc:'2026-11-27T09:00:00Z'}},
+  {inventoryTransferOverage:{requestNumber:2,decidedAtUtc:'bad'}},{inventoryTransferOverage:{...command.inventoryTransferOverage,extra:true}},
+  {inventoryTransferLoss:lossRequest.inventoryTransferLoss},{logisticsPlanExcess:{expectedInstructionVersion:'3'}},{manufacturingPlanReapproval:{selectedLabelIds:[id]}}])
+  expect(isWorkDecisionRequest({...command,...delta},overageKind)).toBe(false)
+ expect(isWorkDecisionRequest(command,lossKind)).toBe(false)
+ expect(isWorkDecisionRequest(command,kind)).toBe(false)
+})
+it.each([true,false])('accepts only the exact immutable overage decision result approve=%s',async approve=>{
+ const result={companyId:company,kind:overageKind,itemId:id,state:approve?'Approved':'Rejected',replayed:true,originalCorrelationId:'original'}
+ const headers={'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}
+ const fetch=vi.fn(async(_input:RequestInfo|URL,_init?:RequestInit)=>new Response(JSON.stringify(result),{status:200,headers}))
+ vi.stubGlobal('fetch',fetch)
+ const command={...overageRequest,approve}
+ expect((await sendWorkDecision(company,overageKind,id,command,'frozen-overage-key')).type).toBe('applied')
+ expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string)).toEqual(command)
+ for(const delta of [{state:approve?'Rejected':'Approved'},{state:'Pending'},{companyId:id},{kind:lossKind},{itemId:company},{extra:true}]){
+  fetch.mockResolvedValueOnce(new Response(JSON.stringify({...result,...delta}),{status:200,headers}))
+  expect((await sendWorkDecision(company,overageKind,id,command,'frozen-overage-key')).type).toBe('unknown')
+ }
 })

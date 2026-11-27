@@ -320,6 +320,7 @@ export const CAPABILITY = {
   inventoryTransferPlanning: 'inventory.stock-transfer.write',
   inventoryTransferOverageApproval: 'inventory.stock-transfer.overage-approve',
   inventoryTransferLossRequest: 'inventory.stock-transfer.loss-record',
+  inventoryTransferOverageWorkDecision: 'inventory.transfer-overage.work-decision',
   inventoryTransferLossWorkDecision: 'inventory.transfer-loss.work-decision',
   inventoryTransferLossApproval: 'inventory.stock-transfer.loss-approve',
   /** SY-01 read subset "Kullanıcılar ve yetkiler". Route `/ayarlar/kullanicilar-ve-yetkiler`, owner Identity. Read-only. */
@@ -599,6 +600,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.inventoryTransferPlanning]: '/stok/transferler/planla',
   [CAPABILITY.inventoryTransferOverageApproval]: '/stok/transferler/fazla-kabul-onaylari',
   [CAPABILITY.inventoryTransferLossRequest]: '/stok/transferler/kayip-talepleri',
+  [CAPABILITY.inventoryTransferOverageWorkDecision]: '/onaylarim/inventory.transfer-overage.v1/:approvalId',
   [CAPABILITY.inventoryTransferLossWorkDecision]: '/onaylarim/inventory.transfer-loss.v1/:approvalId',
   [CAPABILITY.inventoryTransferLossApproval]: '/stok/transferler/kayip-onaylari',
   [CAPABILITY.identityAssignmentsList]: '/ayarlar/kullanicilar-ve-yetkiler',

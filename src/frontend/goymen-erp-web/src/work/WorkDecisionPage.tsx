@@ -51,14 +51,16 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const candidates = [...new Map(pages.flatMap(page => page.items).map(row => [row.id,row])).values()].filter(row => row.kind === kind
     && row.delegateUserId === shell.activeContext?.userId && row.revokedAtUtc === null)
   const people = pages.flatMap(page => page.people)
+  const attempt = useScopedCommandAttempt<WorkDecisionRequest, WorkDecisionResult>(`work-decision:${kind}:${id}`,
+    (payload, key) => sendWorkDecision(company!, kind, id, payload, key), payload => isWorkDecisionRequest(payload, kind))
+  // A validated historical command resolves through its native receipt, not a newer maker's preview.
+  const historicalRetry = (kind === 'inventory.transfer-loss.v1' || kind === 'inventory.transfer-overage.v1') && attempt.hasPendingRetry
   const query = useQuery({ queryKey: [namespace, shell.routeEntryGeneration, 'work-decision', kind, id],
-    enabled: company !== null && namespace !== null && !capabilityFailClosed(shell), queryFn: async ({ signal }) => {
+    enabled: company !== null && namespace !== null && !capabilityFailClosed(shell) && !historicalRetry, queryFn: async ({ signal }) => {
       const captured = boundary.capture(); const result = await fetchWorkDecision(company!, kind, id, signal)
       if (result.type === 'http') boundary.report(result.status, captured)
       return result
     } })
-  const attempt = useScopedCommandAttempt<WorkDecisionRequest, WorkDecisionResult>(`work-decision:${kind}:${id}`,
-    (payload, key) => sendWorkDecision(company!, kind, id, payload, key), payload => isWorkDecisionRequest(payload, kind))
   if (company === null || capabilityFailClosed(shell)) return <StateBlock state={{ kind: 'no-authorized-company' }} subject={T.title} />
   const preview = query.data?.type === 'ok-single' ? query.data.data : null
   const frozen = attempt.status.kind === 'busy' || attempt.hasPendingRetry
@@ -67,10 +69,16 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const selectionInvalid = options !== undefined && (selectionVersion !== preview?.sourceVersion || selectedLabels.length !== options.length
     || selectedLabels.some(id => !options.includes(id)))
   const loss = kind === 'inventory.transfer-loss.v1'
-  const lossRequest = frozen ? attempt.pendingPayload?.inventoryTransferLoss?.requestNumber : preview?.inventoryTransferLoss?.requestNumber
-  const lossReason = loss && frozen ? attempt.pendingPayload?.reason ?? '' : reason
-  const currentLossBinding = preview?.inventoryTransferLoss === undefined ? null : `${preview.sourceVersion}:${preview.inventoryTransferLoss.requestNumber}`
-  const invalidLossTime = loss && (currentLossBinding === null || lossTimeBinding !== currentLossBinding || workDecisionLocalUtc(decisionTime) === null)
+  const overage = kind === 'inventory.transfer-overage.v1'
+  const timedTransfer = loss || overage
+  const transferRequest = overage ? preview?.inventoryTransferOverage : preview?.inventoryTransferLoss
+  const frozenTransferRequest = overage ? attempt.pendingPayload?.inventoryTransferOverage : attempt.pendingPayload?.inventoryTransferLoss
+  const lossRequest = frozen ? frozenTransferRequest?.requestNumber : transferRequest?.requestNumber
+  const lossReason = timedTransfer && frozen ? attempt.pendingPayload?.reason ?? '' : reason
+  const currentLossBinding = transferRequest === undefined ? null : `${preview?.sourceVersion}:${transferRequest.requestNumber}`
+  const selectedUtc = workDecisionLocalUtc(decisionTime)
+  const invalidLossTime = timedTransfer && (currentLossBinding === null || lossTimeBinding !== currentLossBinding || selectedUtc === null
+    || overage && transferRequest !== undefined && selectedUtc !== null && Date.parse(selectedUtc) < Date.parse(transferRequest.requestedAtUtc))
   const reasonLimit = workDecisionReasonLimit(kind)
   const batch = kind === 'purchasing.goods-receipt-batch.v1'
   const counterparty = isCounterpartyWorkDecisionKind(kind)
@@ -81,6 +89,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
     const answer = await attempt.run({ expectedVersion: preview.sourceVersion, approve,
       reason: batch ? reason === '' ? null : reason : preview.approvalReasonRequired || !approve || counterparty ? reason.trim() || null : null, delegationId: useDelegation ? delegationId : null,
       ...(kind === 'logistics.plan-excess.v1' ? { logisticsPlanExcess: { expectedInstructionVersion: preview.logisticsPlanExcess!.instructionVersion } } : {}),
+      ...(overage ? { inventoryTransferOverage: { requestNumber: preview.inventoryTransferOverage!.requestNumber, decidedAtUtc: workDecisionLocalUtc(decisionTime)! } } : {}),
       ...(loss ? { inventoryTransferLoss: { requestNumber: preview.inventoryTransferLoss!.requestNumber, decidedAtUtc: workDecisionLocalUtc(decisionTime)! } } : {}),
       ...(kind === 'manufacturing.plan.v1' && options !== undefined ? { manufacturingPlanReapproval: { selectedLabelIds: [...selectedLabels] } } : {}) })
     if (answer.type === 'applied') void query.refetch()
@@ -92,10 +101,23 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const cost = preview?.rules.find(rule => rule.ruleCode === 'inventory.opening-cost-unit-cost')?.actual
   return <section className={styles.page} aria-labelledby="work-decision-heading"><h1 id="work-decision-heading">{T.title}</h1><p>{T.intro}</p>
     <Link to="/onaylarim/kuyruk">{T.back}</Link>
-    {preview === null ? <StateBlock state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
+    {preview === null ? historicalRetry ? <div><p>{T.priorDecisionPending}</p>
+      <p>{T.version}: {attempt.pendingPayload?.expectedVersion}</p>
+      <p>{overage ? T.overageRequestNumber : T.lossRequestNumber}: {frozenTransferRequest?.requestNumber}</p>
+      <p>{T.lossFrozenTime}: {frozenTransferRequest?.decidedAtUtc}</p>
+    </div> : <StateBlock state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
       subject={T.title} onRetry={() => void query.refetch()} /> : <>
-      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {kind === 'logistics.plan-excess.v1' && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
+      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
       {kind === 'inventory.opening-cost.v1' ? <p>{cost == null ? T.hiddenCost : `${T.cost}: ${cost}`}</p> : null}
+      {preview.inventoryTransferOverage ? <section aria-label={T.overageProposal}><h3>{T.overageProposal}</h3><dl>
+        <dt>{T.overageTransfer}</dt><dd>{preview.inventoryTransferOverage.transferId}</dd>
+        <dt>{T.overageLine}</dt><dd>{preview.inventoryTransferOverage.lineId}</dd>
+        <dt>{T.overageKilograms}</dt><dd>{preview.inventoryTransferOverage.kilograms}</dd>
+        <dt>{T.overagePieces}</dt><dd>{preview.inventoryTransferOverage.pieceCount === null ? T.overageNoPieces : preview.inventoryTransferOverage.pieceCount}</dd>
+        <dt>{T.overageProposalReason}</dt><dd>{preview.inventoryTransferOverage.reason}</dd>
+        <dt>{T.overageRequestedBy}</dt><dd>{preview.inventoryTransferOverage.requestedBy}</dd>
+        <dt>{T.overageReceivedBy}</dt><dd>{preview.inventoryTransferOverage.receivedBy}</dd>
+      </dl></section> : null}
       {preview.logisticsPlanExcess ? <section aria-label={T.planExcessProposal}><h3>{T.planExcessProposal}</h3><dl>
         <dt>{PLAN_EXCESS.instruction}</dt><dd>{preview.logisticsPlanExcess.instructionId}</dd>
         <dt>{PLAN_EXCESS.line}</dt><dd>{preview.logisticsPlanExcess.lineId}</dd>
@@ -124,9 +146,9 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
           }} />{labelId}</label>)}
         <Button type="button" onClick={() => { setSelectedLabels([]); setSelectionVersion(null) }}>{T.clearLabels}</Button>
       </fieldset> : null}
-      {loss ? <div><p>{T.lossRequestNumber}: {lossRequest}</p>
-        {frozen && attempt.pendingPayload?.inventoryTransferLoss ? <p>{T.lossFrozenTime}: {attempt.pendingPayload.inventoryTransferLoss.decidedAtUtc}</p>
-          : <p>{T.lossRequestedAt}: {preview.inventoryTransferLoss?.requestedAtUtc}</p>}
+      {timedTransfer ? <div><p>{overage ? T.overageRequestNumber : T.lossRequestNumber}: {lossRequest}</p>
+        {frozen && frozenTransferRequest ? <p>{T.lossFrozenTime}: {frozenTransferRequest.decidedAtUtc}</p>
+          : <p>{T.lossRequestedAt}: {transferRequest?.requestedAtUtc}</p>}
       </div> : null}
       {preview.pending ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{kind === 'logistics.plan-excess.v1' ? T.planExcessApprovalOnly : kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
         {preview.rejectionSupported !== false || preview.approvalReasonRequired ? <label>{counterparty ? T.optionalNote : kind === 'manufacturing.plan.v1' ? T.manufacturingRejectReason : T.reason}<textarea value={lossReason} maxLength={reasonLimit} onChange={event => setReason(event.target.value)} /></label> : null}
@@ -134,7 +156,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         {kind === 'manufacturing.plan.v1' && preview.rejectionSupported ? <p>{T.manufacturingRejectHelp}</p> : null}
         {kind === 'purchasing.request.v1' ? <p>{T.rejectionReasonRequired(reasonLimit)}</p> : null}
         {counterparty ? <p>{T.optionalNoteHelp}</p> : null}
-        {loss ? <><label>{T.lossDecisionTime}<input type="datetime-local" step="1" disabled={frozen} value={decisionTime} onChange={event => { setDecisionTime(event.target.value); setLossTimeBinding(currentLossBinding) }} /></label><p>{T.lossReason}</p></> : null}
+        {timedTransfer ? <><label>{T.lossDecisionTime}<input type="datetime-local" step="1" disabled={frozen} value={decisionTime} onChange={event => { setDecisionTime(event.target.value); setLossTimeBinding(currentLossBinding) }} /></label><p>{overage ? T.overageReasonHelp : T.lossReason}</p></> : null}
         {batch ? <p>{T.batchReason(reasonLimit)}</p> : null}
         <label><input type="checkbox" checked={useDelegation} onChange={event => { setUseDelegation(event.target.checked); setDelegationId('') }} />{T.delegation}</label>
         {useDelegation ? <><label>{T.delegationChoice}<select value={delegationId} onChange={event => setDelegationId(event.target.value)}><option value="">{T.choose}</option>

@@ -1,4 +1,11 @@
 export const WORK_DECISION_TEXT = {
+  priorDecisionPending: 'Önceki karar isteğinin sonucu doğrulanmalıdır. Aynı isteği yeniden gönderin.',
+  overageProposal: 'Karar verilecek fazla kabul talebi',
+  overageRequestNumber: 'Karar verilecek fazla kabul talebi numarası',
+  overageTransfer: 'Transfer', overageLine: 'Transfer satırı', overageKilograms: 'Fazla kabul (kg)',
+  overagePieces: 'Fazla kabul (adet)', overageNoPieces: 'Kg bazında izleniyor',
+  overageProposalReason: 'Talep gerekçesi', overageRequestedBy: 'Talep eden', overageReceivedBy: 'Teslim alan',
+  overageReasonHelp: 'Onay ve ret için karar gerekçesi zorunludur; en fazla 500 karakterdir. Karar zamanını kendiniz seçin.',
   planExcessProposal: 'Karar verilecek plan üstü sevk teklifi',
   instructionVersion: 'Talimat sürümü',
   planExcessApprovalOnly: 'Bu teklif için yalnız onay verilebilir. Teklif miktarı ve gerekçesi değiştirilmez.',

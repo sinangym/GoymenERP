@@ -126,3 +126,16 @@ it('mounts the loss Work purpose separately from the unchanged native loss appro
  expect(matchRoutes(inventoryRoutes,'/stok/transferler/kayip-onaylari')?.at(-1)?.route.path).toBe('stok/transferler/kayip-onaylari')
  expect(inventoryRoutes).toHaveLength(16)
 })
+
+
+it('mounts overage Work purpose independently of its unchanged native approval screen',()=>{
+ expect(CAPABILITY.inventoryTransferOverageWorkDecision).toBe('inventory.transfer-overage.work-decision')
+ expect(CAPABILITY_ROUTE[CAPABILITY.inventoryTransferOverageWorkDecision]).toBe('/onaylarim/inventory.transfer-overage.v1/:approvalId')
+ expect(CAPABILITY_NAV_LABEL[CAPABILITY.inventoryTransferOverageWorkDecision]).toBe('')
+ const route=matchRoutes(workRoutes,'/onaylarim/inventory.transfer-overage.v1/cccccccc-0000-4000-8000-000000000001')?.at(-1)?.route
+ expect(route?.path).toBe('onaylarim/inventory.transfer-overage.v1/:approvalId')
+ expect((route?.element as {props?:{capability?:readonly string[]}}).props?.capability).toEqual(['inventory.transfer-overage.work-decision'])
+ expect(CAPABILITY.inventoryTransferOverageApproval).toBe('inventory.stock-transfer.overage-approve')
+ expect(CAPABILITY_ROUTE[CAPABILITY.inventoryTransferOverageApproval]).toBe('/stok/transferler/fazla-kabul-onaylari')
+ expect(inventoryRoutes).toHaveLength(16)
+})

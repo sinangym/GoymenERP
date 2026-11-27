@@ -903,3 +903,163 @@ it('mounts the exact plan excess purpose capability while retaining both identit
  expect(element.props.capability).toEqual([excessCap]);expect(element.props.children.props.kind).toBe(excessKind)
  for(const cp of cpKinds)expect(matchRoutes(workRoutes,`/onaylarim/${cp}/${id}`)?.at(-1)?.route.path).toBe(`onaylarim/${cp}/:approvalId`)
 })
+
+
+const overageKind='inventory.transfer-overage.v1',overageCap='inventory.transfer-overage.work-decision'
+const overageTransfer='dddddddd-0000-4000-8000-000000000021',overageLine='eeeeeeee-0000-4000-8000-000000000021'
+const overageProposal={requestNumber:2,requestedAtUtc:'2026-11-27T08:00:00Z',transferId:overageTransfer,lineId:overageLine,kilograms:'20.125',pieceCount:0,
+ reason:'SENTETIK fazla kabul talep gerekçesi',requestedBy:'SENTETIK-requester',receivedBy:'SENTETIK-receiver'}
+const overagePreview={...preview,kind:overageKind,approvalReasonRequired:true,rejectionSupported:true,
+ references:[{role:'inventory-transfer',label:'SENTETIK transfer',recordId:overageTransfer,link:null}],inventoryTransferOverage:overageProposal}
+const overagePath=`/work/decisions/${overageKind}/${id}`
+const mountOverage=()=>mount(`/onaylarim/${overageKind}/${id}`,true)
+it.each([{approve:true,pieceCount:0},{approve:false,pieceCount:null}])('shows exact human overage context with pieces=$pieceCount and requires explicit time/reason approve=$approve',async({approve,pieceCount})=>{
+ const calls=installFetch({capabilities:[overageCap],respond:(url,init)=>url.includes(overagePath)
+  ?init?.method==='POST'?json({companyId:COMPANY_A,kind:overageKind,itemId:id,state:approve?'Approved':'Rejected',replayed:false,originalCorrelationId:'original'}):json({...overagePreview,inventoryTransferOverage:{...overageProposal,pieceCount}}):undefined})
+ mountOverage();await screen.findByRole('heading',{name:T.overageProposal})
+ for(const value of [overageTransfer,overageLine,overageProposal.kilograms,overageProposal.reason,overageProposal.requestedBy,overageProposal.receivedBy])expect(screen.getByText(value)).toBeTruthy()
+ expect(screen.getByText(pieceCount===null?T.overageNoPieces:'0',{exact:true})).toBeTruthy()
+ expect(screen.getByText(`${T.overageRequestNumber}: 2`)).toBeTruthy()
+ expect(screen.getByText(`${T.lossRequestedAt}: ${overageProposal.requestedAtUtc}`)).toBeTruthy()
+ const button=screen.getByRole('button',{name:approve?T.approve:T.reject}) as HTMLButtonElement
+ const time=screen.getByLabelText(T.lossDecisionTime),reason=screen.getByLabelText(T.reason)
+ expect(button.disabled).toBe(true)
+ fireEvent.change(reason,{target:{value:'İnsan kararı'}});expect(button.disabled).toBe(true)
+ fireEvent.change(time,{target:{value:'2026-11-26T12:30:00'}});expect(button.disabled).toBe(true)
+ const local='2026-11-27T12:30:00'
+ fireEvent.change(time,{target:{value:local}})
+ fireEvent.change(reason,{target:{value:'R'.repeat(501)}});expect(button.disabled).toBe(true)
+ fireEvent.change(reason,{target:{value:'R'.repeat(500)}});expect(button.disabled).toBe(false)
+ fireEvent.click(button);await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.method==='POST'&&call.url.includes(overagePath))
+ expect(sent).toHaveLength(1)
+ expect(sent[0]!.body).toEqual({expectedVersion:'7',approve,reason:'R'.repeat(500),delegationId:null,inventoryTransferOverage:{requestNumber:2,decidedAtUtc:new Date(local).toISOString()}})
+ expect(sent[0]!.headers['X-Company-Id']).toBe(COMPANY_A)
+})
+it.each([{approve:true,pending:true},{approve:false,pending:false}])('keeps old numbered request/time/reason/key after an unknown overage result pending=$pending approve=$approve',async({approve,pending})=>{
+ let reads=0,posts=0
+ const calls=installFetch({capabilities:[overageCap],respond:(url,init)=>{
+  if(!url.includes(overagePath))return undefined
+  if(init?.method==='POST')return ++posts===1?problem(503):json({companyId:COMPANY_A,kind:overageKind,itemId:id,state:approve?'Approved':'Rejected',replayed:true,originalCorrelationId:'original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'})
+  return json(++reads===1?overagePreview:{...overagePreview,sourceVersion:'9',pending,inventoryTransferOverage:{...overageProposal,requestNumber:3,requestedAtUtc:'2026-11-28T08:00:00Z',reason:'SENTETIK yeni talep'}})
+ }})
+ const baseFetch=globalThis.fetch
+ vi.stubGlobal('fetch',vi.fn((input:RequestInfo|URL,init?:RequestInit)=>String(input).endsWith('/identity/me')
+  ?Promise.resolve(json({userId:'99999999-9999-4999-8999-999999999999',displayName:'SENTETIK',email:null,allowedCompanyIds:[COMPANY_A],mustChangePassword:false,localCredentialVersion:null,authenticationSessionBinding:'SENTETIK-overage-session'}))
+  :baseFetch(input,init)))
+ mountOverage();await screen.findByRole('heading',{name:T.overageProposal})
+ const local='2026-11-27T12:30:00'
+ fireEvent.change(screen.getByLabelText(T.lossDecisionTime),{target:{value:local}})
+ fireEvent.change(screen.getByLabelText(T.reason),{target:{value:'İnsan karar gerekçesi'}})
+ fireEvent.click(screen.getByRole('button',{name:approve?T.approve:T.reject}));await screen.findByText(T.unknown)
+ const journal=Object.values(sessionStorage).join('')
+ expect(journal).toContain('İnsan karar gerekçesi')
+ for(const value of [overageProposal.reason,overageProposal.requestedBy,overageProposal.receivedBy,overageProposal.kilograms,overageTransfer,overageLine])expect(journal).not.toContain(value)
+ cleanup();mountOverage();await screen.findByText(T.unknown);await screen.findByText(T.priorDecisionPending)
+ expect(screen.queryByRole('heading',{name:T.overageProposal})).toBeNull()
+ expect(reads).toBe(1)
+ expect(screen.getByText(`${T.overageRequestNumber}: 2`)).toBeTruthy()
+ expect(screen.getByText(`${T.lossFrozenTime}: ${new Date(local).toISOString()}`)).toBeTruthy()
+ fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.method==='POST'&&call.url.includes(overagePath))
+ expect(sent).toHaveLength(2);expect(sent[0]!.body).toEqual(sent[1]!.body)
+ expect(sent[0]!.headers['Idempotency-Key']).toBe(sent[1]!.headers['Idempotency-Key'])
+ expect(sent[1]!.body).toEqual({expectedVersion:'7',approve,reason:'İnsan karar gerekçesi',delegationId:null,inventoryTransferOverage:{requestNumber:2,decidedAtUtc:new Date(local).toISOString()}})
+})
+it.each([{companyId:COMPANY_B},{inventoryTransferOverage:null},{inventoryTransferOverage:{...overageProposal,transferId:id}},
+ {inventoryTransferOverage:{...overageProposal,pieceCount:undefined}},{inventoryTransferOverageProof:{}},{approvalReasonRequired:false}])('does not render partial or foreign overage proof %j',async delta=>{
+ const calls=installFetch({capabilities:[overageCap],respond:url=>url.includes(overagePath)?json({...overagePreview,...delta}):undefined})
+ mountOverage();await waitFor(()=>expect(calls.some(call=>call.url.includes(overagePath))).toBe(true))
+ expect(screen.queryByRole('heading',{name:T.overageProposal})).toBeNull();expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+ expect(calls.some(call=>call.method==='POST')).toBe(false)
+})
+it.each([{capabilities:[]},{capabilities:['inventory.stock-transfer.overage-approve']},{capabilities:['inventory.transfer-loss.work-decision']},
+ {capabilities:['inventory.transfers.read']}])('does not fetch overage without the exact purpose capability %j',async({capabilities})=>{
+ const calls=installFetch({capabilities,respond:url=>url.includes(overagePath)?json(overagePreview):undefined})
+ mountOverage();await waitFor(()=>expect(calls.some(call=>call.url.endsWith('/shell/capabilities'))).toBe(true))
+ expect(calls.some(call=>call.url.includes(overagePath))).toBe(false)
+ expect(screen.queryByRole('heading',{name:T.overageProposal})).toBeNull()
+})
+
+it.each(['inventory.transfer-loss.v1','inventory.transfer-overage.v1'] as const)('restores only the old native command without reading a newer maker-blocked preview for %s',async receiptKind=>{
+ const overage=receiptKind===overageKind,receiptCap=overage?overageCap:lossCap,receiptPath=`/work/decisions/${receiptKind}/${id}`
+ let reads=0,posts=0
+ const calls=installFetch({capabilities:[receiptCap],respond:(url,init)=>{
+  if(!url.includes(receiptPath))return undefined
+  if(init?.method==='POST')return ++posts===1?problem(503):json({companyId:COMPANY_A,kind:receiptKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'})
+  return ++reads===1?json(overage?overagePreview:lossPreview):problem(403)
+ }})
+ const baseFetch=globalThis.fetch
+ vi.stubGlobal('fetch',vi.fn((input:RequestInfo|URL,init?:RequestInit)=>String(input).endsWith('/identity/me')
+  ?Promise.resolve(json({userId:'99999999-9999-4999-8999-999999999999',displayName:'SENTETIK',email:null,allowedCompanyIds:[COMPANY_A],mustChangePassword:false,localCredentialVersion:null,authenticationSessionBinding:'SENTETIK-historical-receipt-session'}))
+  :baseFetch(input,init)))
+ mount(`/onaylarim/${receiptKind}/${id}`,true);await screen.findByLabelText(T.lossDecisionTime)
+ fireEvent.change(screen.getByLabelText(T.lossDecisionTime),{target:{value:'2026-11-27T12:30:00'}})
+ fireEvent.change(screen.getByLabelText(T.reason),{target:{value:'İnsan ilk karar gerekçesi'}})
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ cleanup();mount(`/onaylarim/${receiptKind}/${id}`,true);await screen.findByText(T.priorDecisionPending)
+ expect(reads).toBe(1);expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+ expect(screen.queryByRole('button',{name:T.reject})).toBeNull();expect(screen.queryByLabelText(T.lossDecisionTime)).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.method==='POST'&&call.url.includes(receiptPath))
+ expect(sent).toHaveLength(2);expect(sent[0]!.body).toEqual(sent[1]!.body)
+ expect(sent[0]!.headers['Idempotency-Key']).toBe(sent[1]!.headers['Idempotency-Key'])
+})
+it.each(['capability','session'] as const)('cannot restore or send an old overage command after a foreign %s boundary',async changed=>{
+ let allowed=true,session='SENTETIK-bound-overage'
+ const calls=installFetch({capabilities:[overageCap],respond:(url,init)=>{
+  if(!url.includes(overagePath))return undefined
+  return init?.method==='POST'?problem(503):json(overagePreview)
+ }})
+ const baseFetch=globalThis.fetch
+ vi.stubGlobal('fetch',vi.fn((input:RequestInfo|URL,init?:RequestInit)=>{
+  const url=String(input)
+  if(url.endsWith('/identity/me'))return Promise.resolve(json({userId:'99999999-9999-4999-8999-999999999999',displayName:'SENTETIK',email:null,allowedCompanyIds:[COMPANY_A,COMPANY_B],mustChangePassword:false,localCredentialVersion:null,authenticationSessionBinding:session}))
+  if(!allowed&&url.endsWith('/shell/capabilities'))return baseFetch(input,init).then(async response=>{
+   const value=await response.json() as Record<string,unknown>
+   return json({...value,capabilities:[]})
+  })
+  return baseFetch(input,init)
+ }))
+ mountOverage();await screen.findByLabelText(T.lossDecisionTime)
+ fireEvent.change(screen.getByLabelText(T.lossDecisionTime),{target:{value:'2026-11-27T12:30:00'}})
+ fireEvent.change(screen.getByLabelText(T.reason),{target:{value:'İnsan karar gerekçesi'}})
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ cleanup()
+ if(changed==='capability')allowed=false
+ if(changed==='session')session='SENTETIK-new-session'
+ mountOverage()
+ await waitFor(()=>expect(calls.filter(call=>call.url.endsWith('/shell/capabilities')).length).toBeGreaterThan(1))
+ if(changed==='capability')expect(screen.queryByRole('button',{name:T.retry})).toBeNull()
+ if(changed==='session')expect(screen.queryByText(T.priorDecisionPending)).toBeNull()
+ expect(calls.filter(call=>call.method==='POST'&&call.url.includes(overagePath))).toHaveLength(1)
+})
+
+it('keeps the unresolved overage command bound to its original company when the user switches company',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-company-bound-overage'})
+ const calls=installFetch({capabilities:[overageCap],respond:(url,init)=>{
+  if(!url.includes(overagePath))return undefined
+  const company=(init?.headers as Record<string,string>)?.['X-Company-Id']??COMPANY_A
+  return init?.method==='POST'?problem(503):json({...overagePreview,companyId:company})
+ }})
+ mountOverage();await screen.findByLabelText(T.lossDecisionTime)
+ fireEvent.change(screen.getByLabelText(T.lossDecisionTime),{target:{value:'2026-11-27T12:30:00'}})
+ fireEvent.change(screen.getByLabelText(T.reason),{target:{value:'İnsan karar gerekçesi'}})
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ await userEvent.setup().selectOptions(screen.getByRole('combobox',{name:'Şirket'}),COMPANY_B)
+ await waitFor(()=>expect(calls.some(call=>call.url.includes(overagePath)&&call.method==='GET'&&call.headers['X-Company-Id']===COMPANY_B)).toBe(true))
+ expect(screen.queryByText(T.priorDecisionPending)).toBeNull()
+ expect(screen.queryByRole('button',{name:T.retry})).toBeNull()
+ expect(calls.filter(call=>call.url.includes(overagePath)&&call.method==='POST')).toHaveLength(1)
+ expect(calls.find(call=>call.url.includes(overagePath)&&call.method==='POST')?.headers['X-Company-Id']).toBe(COMPANY_A)
+})
+it('does not turn a fresh overage authority refusal into success or a new decision',async()=>{
+ const calls=installFetch({capabilities:[overageCap],respond:(url,init)=>url.includes(overagePath)?init?.method==='POST'?problem(403):json(overagePreview):undefined})
+ mountOverage();await screen.findByLabelText(T.lossDecisionTime)
+ fireEvent.change(screen.getByLabelText(T.lossDecisionTime),{target:{value:'2026-11-27T12:30:00'}})
+ fireEvent.change(screen.getByLabelText(T.reason),{target:{value:'İnsan karar gerekçesi'}})
+ fireEvent.click(screen.getByRole('button',{name:T.approve}))
+ await waitFor(()=>expect(screen.queryByRole('button',{name:T.approve})).toBeNull())
+ expect(screen.queryByText(T.done)).toBeNull()
+ expect(calls.filter(call=>call.url.includes(overagePath)&&call.method==='POST')).toHaveLength(1)
+})

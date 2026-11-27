@@ -7,7 +7,7 @@ import { hasExactKeys, replayHeadersAgree } from '../finance/wireShape'
 import { readJson, type CommandOutcome } from '../settings/discountLimitApi'
 
 export const WORK_DECISION_KINDS = ['inventory.opening-cost.v1', 'finance.cash-account.v1',
-  'finance.credit-account.v1', 'finance.cash-account-passivation.v1', 'finance.cash-account-reactivation.v1','sales.order-draft.v1','sales.invoice.v1','sales.subcontract-invoice.v1','purchasing.request.v1','purchasing.order.v1','purchasing.service-order.v1','purchasing.incoming-invoice-variance.v1','purchasing.goods-receipt-batch.v1','manufacturing.plan.v1','inventory.transfer-loss.v1','counterparty.tax-identity-change.v1','counterparty.legal-name-change.v1','logistics.plan-excess.v1'] as const
+  'finance.credit-account.v1', 'finance.cash-account-passivation.v1', 'finance.cash-account-reactivation.v1','sales.order-draft.v1','sales.invoice.v1','sales.subcontract-invoice.v1','purchasing.request.v1','purchasing.order.v1','purchasing.service-order.v1','purchasing.incoming-invoice-variance.v1','purchasing.goods-receipt-batch.v1','manufacturing.plan.v1','inventory.transfer-loss.v1','counterparty.tax-identity-change.v1','counterparty.legal-name-change.v1','logistics.plan-excess.v1','inventory.transfer-overage.v1'] as const
 // Native owner purposes: kind prefixes do not define their actual capability ids.
 export const COUNTERPARTY_WORK_DECISION_CAPABILITY = {
   'counterparty.tax-identity-change.v1': 'cari.tax-identity-change.work-decision',
@@ -21,7 +21,7 @@ export const isSalesWorkDecisionKind = (kind: WorkDecisionKind) => kind === 'sal
 /** Native owner reason/note bounds; Counterparty notes and Sales rejection reasons are optional. */
 export const workDecisionReasonLimit = (kind: WorkDecisionKind) => isCounterpartyWorkDecisionKind(kind) ? 1000 : kind === 'manufacturing.plan.v1' ? 256 : kind === 'purchasing.incoming-invoice-variance.v1' ? 2000 : kind === 'purchasing.service-order.v1' ? 1000 : isSalesWorkDecisionKind(kind) || kind === 'purchasing.request.v1' ? 4000 : 500
 export const isWorkDecisionKind = (value: string): value is WorkDecisionKind => isCounterpartyWorkDecisionKind(value) || WORK_DECISION_KINDS.some(kind => kind === value)
-export interface WorkDecisionRequest { readonly expectedVersion: string; readonly approve: boolean; readonly reason: string | null; readonly delegationId: string | null; readonly logisticsPlanExcess?: { readonly expectedInstructionVersion: string }; readonly inventoryTransferLoss?: { readonly requestNumber: number; readonly decidedAtUtc: string }; readonly manufacturingPlanReapproval?: { readonly selectedLabelIds?: readonly string[] | null } | null }
+export interface WorkDecisionRequest { readonly expectedVersion: string; readonly approve: boolean; readonly reason: string | null; readonly delegationId: string | null; readonly inventoryTransferOverage?: { readonly requestNumber: number; readonly decidedAtUtc: string }; readonly logisticsPlanExcess?: { readonly expectedInstructionVersion: string }; readonly inventoryTransferLoss?: { readonly requestNumber: number; readonly decidedAtUtc: string }; readonly manufacturingPlanReapproval?: { readonly selectedLabelIds?: readonly string[] | null } | null }
 export interface CounterpartyTaxIdentityProof {
   readonly partyId: string; readonly changeRequestId: string; readonly currentTaxIdentityNumber: string
   readonly proposedTaxIdentityNumber: string; readonly proposedKind: TaxIdentityKind; readonly reason: string
@@ -34,7 +34,12 @@ export interface LogisticsPlanExcessProof {
   readonly instructionVersion: string; readonly instructionId: string; readonly lineId: string; readonly quantity: string
   readonly reason: string; readonly proposedBy: string; readonly proposedAtUtc: string
 }
+export interface InventoryTransferOverageProof {
+  readonly requestNumber: number; readonly requestedAtUtc: string; readonly transferId: string; readonly lineId: string
+  readonly kilograms: string; readonly pieceCount: number | null; readonly reason: string; readonly requestedBy: string; readonly receivedBy: string
+}
 export interface WorkDecisionPreview {
+  readonly inventoryTransferOverage?: InventoryTransferOverageProof
   readonly logisticsPlanExcess?: LogisticsPlanExcessProof
   readonly counterpartyTaxIdentityChange?: CounterpartyTaxIdentityProof
   readonly counterpartyLegalNameChange?: CounterpartyLegalNameProof
@@ -53,6 +58,9 @@ const nullableText = (value: unknown) => value === null || typeof value === 'str
 const same = (value: unknown, expected: string) => typeof value === 'string' && value.toLowerCase() === expected.toLowerCase()
 const path = (kind: WorkDecisionKind, id: string) => `/work/decisions/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`
 const requestNumber = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 2147483647
+const nativeControls = (value: string) => Array.from(value).some(character => { const code = character.charCodeAt(0); return code <= 0x1f || code >= 0x7f && code <= 0x9f })
+// Native decimal(18,3) rendered as 0.###; no quantity calculation or conversion.
+const canonicalPositiveQuantity = (value: unknown): value is string => typeof value === 'string' && /^(?:0|[1-9]\d{0,14})(?:\.\d{0,2}[1-9])?$/.test(value) && value !== '0'
 /** Same user-local conversion and native UTC validator as TransferReceiptPanel; never called by retry. */
 export const workDecisionLocalUtc = (value: string): string | null => {
   const date = value === '' ? null : new Date(value)
@@ -62,9 +70,15 @@ export const workDecisionLocalUtc = (value: string): string | null => {
 const labelIds = (value: unknown): value is readonly string[] => Array.isArray(value) && value.length > 0
   && value.every(isBoundUuid) && new Set(value.map(id => id.toLowerCase())).size === value.length
 export const isWorkDecisionRequest = (value: unknown, kind?: WorkDecisionKind): value is WorkDecisionRequest => {
-  if (!record(value) || !hasExactKeys(value, ['expectedVersion', 'approve', 'reason', 'delegationId'], kind === 'logistics.plan-excess.v1' ? ['logisticsPlanExcess'] : kind === 'inventory.transfer-loss.v1' ? ['inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['manufacturingPlanReapproval'] : [])
-    || !text(value.expectedVersion) || (kind === 'logistics.plan-excess.v1' || kind === 'manufacturing.plan.v1' || kind === 'inventory.transfer-loss.v1' || kind !== undefined && isCounterpartyWorkDecisionKind(kind)) && !isPositiveInt64Text(value.expectedVersion) || typeof value.approve !== 'boolean' || !nullableText(value.reason)
+  if (!record(value) || !hasExactKeys(value, ['expectedVersion', 'approve', 'reason', 'delegationId'], kind === 'inventory.transfer-overage.v1' ? ['inventoryTransferOverage'] : kind === 'logistics.plan-excess.v1' ? ['logisticsPlanExcess'] : kind === 'inventory.transfer-loss.v1' ? ['inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['manufacturingPlanReapproval'] : [])
+    || !text(value.expectedVersion) || (kind === 'inventory.transfer-overage.v1' || kind === 'logistics.plan-excess.v1' || kind === 'manufacturing.plan.v1' || kind === 'inventory.transfer-loss.v1' || kind !== undefined && isCounterpartyWorkDecisionKind(kind)) && !isPositiveInt64Text(value.expectedVersion) || typeof value.approve !== 'boolean' || !nullableText(value.reason)
     || value.delegationId !== null && !isBoundUuid(value.delegationId)) return false
+  if (kind === 'inventory.transfer-overage.v1') {
+    const selected = value.inventoryTransferOverage
+    return record(selected) && hasExactKeys(selected, ['requestNumber', 'decidedAtUtc']) && requestNumber(selected.requestNumber)
+      && transferDispatchUtc(selected.decidedAtUtc) && typeof value.reason === 'string' && value.reason.trim().length > 0
+      && value.reason.trim().length <= 500 && !nativeControls(value.reason.trim())
+  }
   if (kind === 'logistics.plan-excess.v1') {
     const selected = value.logisticsPlanExcess
     return value.approve && value.reason === null && record(selected) && hasExactKeys(selected, ['expectedInstructionVersion'])
@@ -82,17 +96,29 @@ export const isWorkDecisionRequest = (value: unknown, kind?: WorkDecisionKind): 
     && (selection.selectedLabelIds === undefined || selection.selectedLabelIds === null || labelIds(selection.selectedLabelIds))
 }
 export function decodeWorkDecisionPreview(value: unknown, company: string, kind: WorkDecisionKind, id: string): WorkDecisionPreview | null {
-  if (!record(value) || !hasExactKeys(value, ['companyId', 'kind', 'itemId', 'documentLabel', 'sourceVersion', 'pending', 'approvalReasonRequired', 'references', 'rules'], kind === 'logistics.plan-excess.v1' ? ['rejectionSupported', 'logisticsPlanExcess'] : kind === 'inventory.transfer-loss.v1' ? ['rejectionSupported', 'inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['rejectionSupported', 'manufacturingPlanReapproval'] : kind === 'counterparty.tax-identity-change.v1' ? ['rejectionSupported', 'counterpartyTaxIdentityChange'] : kind === 'counterparty.legal-name-change.v1' ? ['rejectionSupported', 'counterpartyLegalNameChange'] : ['rejectionSupported'])
+  if (!record(value) || !hasExactKeys(value, ['companyId', 'kind', 'itemId', 'documentLabel', 'sourceVersion', 'pending', 'approvalReasonRequired', 'references', 'rules'], kind === 'inventory.transfer-overage.v1' ? ['rejectionSupported', 'inventoryTransferOverage'] : kind === 'logistics.plan-excess.v1' ? ['rejectionSupported', 'logisticsPlanExcess'] : kind === 'inventory.transfer-loss.v1' ? ['rejectionSupported', 'inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['rejectionSupported', 'manufacturingPlanReapproval'] : kind === 'counterparty.tax-identity-change.v1' ? ['rejectionSupported', 'counterpartyTaxIdentityChange'] : kind === 'counterparty.legal-name-change.v1' ? ['rejectionSupported', 'counterpartyLegalNameChange'] : ['rejectionSupported'])
     || !same(value.companyId, company) || value.kind !== kind || !same(value.itemId, id) || !text(value.documentLabel)
     || (kind === 'inventory.opening-cost.v1' ? value.sourceVersion !== `submission/${id}` : !isPositiveInt64Text(value.sourceVersion))
-    || typeof value.pending !== 'boolean' || value.approvalReasonRequired !== (kind === 'inventory.transfer-loss.v1' || kind === 'inventory.opening-cost.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1')
-    || (kind === 'manufacturing.plan.v1' ? typeof value.rejectionSupported !== 'boolean' : kind === 'purchasing.goods-receipt-batch.v1' || kind === 'inventory.transfer-loss.v1' || isCounterpartyWorkDecisionKind(kind) ? value.rejectionSupported !== true : kind === 'logistics.plan-excess.v1' || kind === 'purchasing.order.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? value.rejectionSupported !== false : value.rejectionSupported !== undefined && value.rejectionSupported !== true)
+    || typeof value.pending !== 'boolean' || value.approvalReasonRequired !== (kind === 'inventory.transfer-overage.v1' || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.opening-cost.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1')
+    || (kind === 'manufacturing.plan.v1' ? typeof value.rejectionSupported !== 'boolean' : kind === 'purchasing.goods-receipt-batch.v1' || kind === 'inventory.transfer-overage.v1' || kind === 'inventory.transfer-loss.v1' || isCounterpartyWorkDecisionKind(kind) ? value.rejectionSupported !== true : kind === 'logistics.plan-excess.v1' || kind === 'purchasing.order.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? value.rejectionSupported !== false : value.rejectionSupported !== undefined && value.rejectionSupported !== true)
     || !Array.isArray(value.references) || value.references.length > 12 || !value.references.every(ref => record(ref)
       && hasExactKeys(ref, ['role', 'label', 'recordId', 'link']) && text(ref.role) && text(ref.label)
       && (ref.recordId === null || isBoundUuid(ref.recordId)) && nullableText(ref.link))
     || !Array.isArray(value.rules) || value.rules.length > 8 || !value.rules.every(rule => record(rule)
       && hasExactKeys(rule, ['ruleCode', 'threshold', 'actual', 'deviation', 'unit']) && text(rule.ruleCode)
       && [rule.threshold, rule.actual, rule.deviation, rule.unit].every(nullableText))) return null
+  if (kind === 'inventory.transfer-overage.v1') {
+    const proposal = value.inventoryTransferOverage
+    const transfers = value.references.filter(ref => record(ref) && ref.role === 'inventory-transfer')
+    if (!isBoundUuid(value.companyId) || !isBoundUuid(value.itemId) || !record(proposal)
+      || !hasExactKeys(proposal, ['requestNumber', 'requestedAtUtc', 'transferId', 'lineId', 'kilograms', 'pieceCount', 'reason', 'requestedBy', 'receivedBy'])
+      || !requestNumber(proposal.requestNumber) || !transferDispatchUtc(proposal.requestedAtUtc)
+      || !isBoundUuid(proposal.transferId) || !isBoundUuid(proposal.lineId) || transfers.length !== 1
+      || !record(transfers[0]) || !same(transfers[0].recordId, proposal.transferId) || !canonicalPositiveQuantity(proposal.kilograms)
+      || !(proposal.pieceCount === null || typeof proposal.pieceCount === 'number' && Number.isInteger(proposal.pieceCount) && proposal.pieceCount >= 0 && proposal.pieceCount <= 2147483647)
+      || !text(proposal.reason) || proposal.reason !== proposal.reason.trim() || proposal.reason.length > 500 || nativeControls(proposal.reason)
+      || !text(proposal.requestedBy) || proposal.requestedBy.length > 128 || !text(proposal.receivedBy) || proposal.receivedBy.length > 128) return null
+  }
   if (kind === 'logistics.plan-excess.v1') {
     const proposal = value.logisticsPlanExcess
     const instructions = value.references.filter(ref => record(ref) && ref.role === 'loading-instruction')
@@ -100,8 +126,8 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
     if (!isBoundUuid(value.companyId) || !isBoundUuid(value.itemId) || !record(proposal) || !hasExactKeys(proposal, ['instructionVersion', 'instructionId', 'lineId', 'quantity', 'reason', 'proposedBy', 'proposedAtUtc'])
       || !isPositiveInt64Text(proposal.instructionVersion) || !isBoundUuid(proposal.instructionId) || !isBoundUuid(proposal.lineId)
       || instructions.length !== 1 || !record(instructions[0]) || !same(instructions[0].recordId, proposal.instructionId)
-      || typeof proposal.quantity !== 'string' || !/^(?:0|[1-9]\d{0,14})(?:\.\d{0,2}[1-9])?$/.test(proposal.quantity) || proposal.quantity === '0'
-      || !text(proposal.reason) || proposal.reason.trim() !== proposal.reason || proposal.reason.length > 500 || Array.from(proposal.reason).some(character => { const code = character.charCodeAt(0); return code <= 0x1f || code >= 0x7f && code <= 0x9f })
+      || !canonicalPositiveQuantity(proposal.quantity)
+      || !text(proposal.reason) || proposal.reason.trim() !== proposal.reason || proposal.reason.length > 500 || nativeControls(proposal.reason)
       || !text(proposal.proposedBy) || proposal.proposedBy.length > 128 || !transferDispatchUtc(proposal.proposedAtUtc)) return null
   }
   if (isCounterpartyWorkDecisionKind(kind)) {
