@@ -1084,3 +1084,11 @@ it.each(['Published','Approved','Draft'])('accepts only native Published outcome
  vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({companyId:company,kind:priceKind,itemId:priceId,state,replayed:false,originalCorrelationId:'SENTETIK'}),{status:200})))
  expect((await sendWorkDecision(company,priceKind,priceId,request,'SENTETIK-key')).type).toBe(state==='Published'?'applied':'unknown')
 })
+
+it.each(['\n','\r','\r\n'])('returns malformed instead of escaping the native quantity parser for final controls %j',suffix=>{
+ for(const change of [{lowerQuantity:'1.2'+suffix,upperQuantity:'2'},{lowerQuantity:'1',upperQuantity:'2.2'+suffix}]) {
+  const malformed={...pricePreview,productPriceList:{...priceHuman,lines:[{...priceHuman.lines[0],...change}]}}
+  expect(()=>decodeWorkDecisionPreview(malformed,company,priceKind,priceId)).not.toThrow()
+  expect(decodeWorkDecisionPreview(malformed,company,priceKind,priceId)).toBeNull()
+ }
+})

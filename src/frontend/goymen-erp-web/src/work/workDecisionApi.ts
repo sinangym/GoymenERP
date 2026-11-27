@@ -238,8 +238,10 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
     const ids = new Set<string>(); const numbers = new Set<number>()
     for (const line of table.lines) {
       if (!record(line) || !hasExactKeys(line,['lineId','lineNo','productId','productCode','productName','priceUnitId','unitPrice','floorUnitPrice','lowerQuantity','upperQuantity'])
+        // Reject noncanonical text before the native decoder's exact BigInt quantity comparison.
+        || [line.unitPrice,line.floorUnitPrice,line.lowerQuantity,line.upperQuantity].some(v=>typeof v==='string' && v!==v.trim())
         || decodePriceListLine(line) === null || !dispatchGuid(line.lineId) || !dispatchGuid(line.productId) || !dispatchGuid(line.priceUnitId)
-        || !requestNumber(line.lineNo) || [line.unitPrice,line.floorUnitPrice,line.lowerQuantity,line.upperQuantity].some(v=>typeof v==='string' && v!==v.trim())
+        || !requestNumber(line.lineNo)
         || ids.has(line.lineId.toLowerCase()) || numbers.has(line.lineNo)) return null
       ids.add(line.lineId.toLowerCase()); numbers.add(line.lineNo)
     }
