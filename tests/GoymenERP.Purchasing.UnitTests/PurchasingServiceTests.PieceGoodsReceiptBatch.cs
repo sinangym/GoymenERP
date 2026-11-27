@@ -193,15 +193,15 @@ public sealed partial class PurchasingServiceTests
     }
 
     /// <summary>An in-memory bulk receipt store: no code is taken, nothing replays; it keeps what the service decided.</summary>
-    private sealed class FakeBatchStore : IPurchaseGoodsReceiptBatchStore
+    private sealed partial class FakeBatchStore : IPurchaseGoodsReceiptBatchStore
     {
         private readonly Dictionary<Guid, StoredPurchaseGoodsReceiptBatch> batches = [];
 
         public Task<PurchaseGoodsReceiptBatchReplay?> FindReplayAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
-            CancellationToken cancellationToken = default) => Task.FromResult<PurchaseGoodsReceiptBatchReplay?>(null);
+            CancellationToken cancellationToken = default) => Task.FromResult(ReadBatchDecisionReplay(envelope, requestHash, commandName));
 
-        public Task<StoredPurchaseGoodsReceiptBatch?> FindAsync(Guid orderId, Guid batchId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(batches.GetValueOrDefault(batchId));
+        public Task<StoredPurchaseGoodsReceiptBatch?> FindAsync(Guid orderId, Guid batchId, CancellationToken cancellationToken = default)
+        { BeforeDecisionRead?.Invoke(); return Task.FromResult(batches.GetValueOrDefault(batchId)); }
 
         public Task<bool> BatchIdExistsAsync(Guid batchId, CancellationToken cancellationToken = default) => Task.FromResult(batches.ContainsKey(batchId));
 
@@ -229,9 +229,10 @@ public sealed partial class PurchasingServiceTests
 
         public Task<StoredPurchaseGoodsReceiptBatch> SaveDecisionAsync(Guid orderId, PurchaseGoodsReceiptBatch decided, long expectedVersion,
             PurchasingWriteEnvelope envelope, string requestHash, string commandName, CancellationToken cancellationToken = default) =>
-            throw new InvalidOperationException("SENTETIK unexpected bulk receipt decision.");
+            Task.FromResult(SaveBatchDecision(decided, expectedVersion, envelope, requestHash, commandName));
 
         public Task RecordRefusalAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName, PurchasingTerminalRefusal refusal,
-            CancellationToken cancellationToken = default) => Task.CompletedTask;
+            CancellationToken cancellationToken = default)
+        { RecordBatchDecisionRefusal(envelope, requestHash, commandName, refusal); return Task.CompletedTask; }
     }
 }

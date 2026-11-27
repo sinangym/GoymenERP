@@ -264,6 +264,12 @@ public static class PurchaseGoodsReceiptBatchFutureSupplyReleasesV1
 /// </summary>
 public interface IPurchaseGoodsReceiptBatchStore
 {
+    /// <summary>The native rejection owns a clean transaction through its last read, save, audit and fresh authority fence.
+    /// Legacy stores without that boundary fail closed; this never falls back to an unguarded save.</summary>
+    Task<T> ExecuteRejectionGuardedAsync<T>(Func<CancellationToken, Task<T>> operation,
+        Func<CancellationToken, Task> freshDecisionFence, CancellationToken cancellationToken = default) =>
+        throw new PurchasingServiceException(503, PurchaseGoodsReceiptBatchCodesV1.Unavailable);
+
     Task<PurchaseGoodsReceiptBatchReplay?> FindReplayAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
         CancellationToken cancellationToken = default);
     Task<StoredPurchaseGoodsReceiptBatch?> FindAsync(Guid orderId, Guid batchId, CancellationToken cancellationToken = default);

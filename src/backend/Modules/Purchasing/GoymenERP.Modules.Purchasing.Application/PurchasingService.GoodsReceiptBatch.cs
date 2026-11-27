@@ -268,6 +268,43 @@ public sealed partial class PurchasingService
         catch (JsonException) { throw new PurchasingServiceException(400, "validation_failed"); }
         var expectedVersion = ParseVersion(request.ExpectedVersion);
         var batches = batchStore ?? throw BatchUnavailable();
+        if (!approve)
+        {
+            // Native terminal 409 receipts are committed before being answered. Authority/provider failures
+            // still abort the owned operation, and replay uses the same fresh read/commit boundary.
+            PurchasingServiceException? terminal = null;
+            try
+            {
+                var result = await batches.ExecuteRejectionGuardedAsync<PurchaseGoodsReceiptBatchResponseV1?>(async token =>
+                {
+                    try
+                    {
+                        return await DecideGoodsReceiptBatchCoreAsync(scope, permission, batches, orderId, batchId, request,
+                            metadata, command, approve, expectedVersion, token);
+                    }
+                    catch (PurchasingServiceException exception) when (exception.Status == 409)
+                    {
+                        terminal = exception;
+                        return null;
+                    }
+                }, token => RequireStillAsync(scope, permission, token), cancellationToken);
+                if (terminal is not null) throw terminal;
+                return result ?? throw BatchUnavailable();
+            }
+            catch (PurchasingStoreException exception)
+            {
+                await RequireStillAsync(scope, permission, cancellationToken);
+                throw Store(exception);
+            }
+        }
+        return await DecideGoodsReceiptBatchCoreAsync(scope, permission, batches, orderId, batchId, request, metadata,
+            command, approve, expectedVersion, cancellationToken);
+    }
+
+    private async Task<PurchaseGoodsReceiptBatchResponseV1> DecideGoodsReceiptBatchCoreAsync(Scope scope, string? permission,
+        IPurchaseGoodsReceiptBatchStore batches, Guid orderId, Guid batchId, DecidePurchaseGoodsReceiptBatchV1 request,
+        PurchasingCommandMetadata metadata, string command, bool approve, long expectedVersion, CancellationToken cancellationToken)
+    {
         var requestHash = PurchasingRequestHash.Compute(command, batchId, new { orderId, request });
         var envelope = Envelope(scope, metadata, permission!);
         var replay = await FindBatchReplayAsync(scope, permission, batches, envelope, requestHash, command, cancellationToken);

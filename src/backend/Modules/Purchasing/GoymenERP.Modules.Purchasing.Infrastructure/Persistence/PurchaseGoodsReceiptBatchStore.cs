@@ -1,11 +1,13 @@
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Application.Contracts;
+using GoymenERP.Modules.Purchasing.Application;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Domain.GoodsReceipts;
 using GoymenERP.Modules.Purchasing.Domain.Orders;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 
@@ -16,7 +18,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 /// code source is refused, never repaired. The PurchasingStore attempt/refusal shape is mirrored on the batch's own attempt table.
 /// </summary>
 public sealed class PurchaseGoodsReceiptBatchStore(PurchasingDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents,
-    TimeProvider timeProvider) : IPurchaseGoodsReceiptBatchStore
+    TimeProvider timeProvider, IAuditTransactionWriterV1? decisionAuditWriter = null) : IPurchaseGoodsReceiptBatchStore
 {
     private const string BatchEntityType = "Purchasing.GoodsReceiptBatch";
     private const int ActorMaximumLength = 128;
@@ -31,6 +33,48 @@ public sealed class PurchaseGoodsReceiptBatchStore(PurchasingDbContext dbContext
     // decimal(18,3): 15 integer digits and 3 decimals; a value outside is refused before the save, never a provider exception.
     private const decimal ColumnBound = 1_000_000_000_000_000m;
     private const int KgScale = 3;
+    // Scoped to the one owned rejection; approval's existing participant transaction never binds this callback.
+    private Func<CancellationToken, Task>? rejectionDecisionFence;
+
+    public async Task<T> ExecuteRejectionGuardedAsync<T>(Func<CancellationToken, Task<T>> operation,
+        Func<CancellationToken, Task> freshDecisionFence, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        ArgumentNullException.ThrowIfNull(freshDecisionFence);
+        // Entry refusal must preserve work and audit drafts owned by the caller. Only the clean
+        // native rejection below owns rollback/cleanup; it never borrows another transaction.
+        if (System.Transactions.Transaction.Current is not null || !dbContext.Database.IsRelational()
+            || dbContext.Database.CurrentTransaction is not null || dbContext.ChangeTracker.HasChanges()
+            || decisionAuditWriter?.HasPendingDrafts == true)
+            throw new InvalidOperationException("Goods receipt rejection requires its own clean Purchasing transaction.");
+        if (decisionAuditWriter is null)
+            throw new PurchasingServiceException(503, PurchaseGoodsReceiptBatchCodesV1.Unavailable);
+        var companyId = RequireResolvedCompany();
+        async Task Fence(CancellationToken token)
+        {
+            if (RequireResolvedCompany() != companyId) throw Refused(PurchasingStoreCodes.CompanyContextMismatch, "Company context changed.");
+            await freshDecisionFence(token);
+            if (RequireResolvedCompany() != companyId) throw Refused(PurchasingStoreCodes.CompanyContextMismatch, "Company context changed.");
+        }
+        await Fence(cancellationToken);
+        await using var owned = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            rejectionDecisionFence = Fence;
+            var result = await operation(cancellationToken);
+            await Fence(cancellationToken);
+            await decisionAuditWriter.WritePendingAsync(owned.GetDbTransaction(), cancellationToken);
+            await Fence(cancellationToken);
+            await owned.CommitAsync(cancellationToken);
+            return result;
+        }
+        catch
+        {
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
+        finally { rejectionDecisionFence = null; decisionAuditWriter.DiscardPending(); }
+    }
 
     // ---- reads ----------------------------------------------------------------------------------
 
@@ -286,6 +330,12 @@ public sealed class PurchaseGoodsReceiptBatchStore(PurchasingDbContext dbContext
             .ToListAsync(cancellationToken);
         var before = Restore(row, companyId, labels);
         var now = timeProvider.GetUtcNow();
+        if (rejectionDecisionFence is not null)
+        {
+            if (commandName != PurchaseGoodsReceiptBatchCommandsV1.RejectV1 || decided.Status != PurchaseGoodsReceiptBatchStatus.Rejected)
+                throw new InvalidOperationException("The owned rejection cannot post stock or approve a batch.");
+            await rejectionDecisionFence(cancellationToken);
+        }
         row.Status = (int)decided.Status;
         row.DecidedBy = actorId;
         row.DecidedAtUtc = now;
@@ -339,6 +389,7 @@ public sealed class PurchaseGoodsReceiptBatchStore(PurchasingDbContext dbContext
             throw Refused(PurchasingStoreCodes.ConcurrentChange, "Bu anahtar zaten bir deneme taşıyor; tekrar onu alır.");
         }
 
+        if (rejectionDecisionFence is not null) await rejectionDecisionFence(cancellationToken);
         var row = Attempt(companyId, commandName, keyHash, requestHash, envelope.ActorId.Trim(), envelope, null, timeProvider.GetUtcNow());
         row.Outcome = AttemptOutcomeRefused;
         row.RefusalJson = JsonSerializer.Serialize(refusal, Json);
