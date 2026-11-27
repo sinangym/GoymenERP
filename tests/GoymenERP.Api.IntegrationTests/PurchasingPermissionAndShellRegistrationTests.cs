@@ -94,12 +94,13 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         var purchasing = registry.Registrations
             .Where(item => item.Owner == PurchasingShellCapabilityProvider.OwnerId)
             .ToArray();
-        Assert.Equal(33, purchasing.Length);
+        Assert.Equal(34, purchasing.Length);
         string[] published =
         [
             PurchasingShellCapabilityProvider.AdditionalCostReadCapabilityId,
             PurchasingShellCapabilityProvider.AdditionalCostRecordCapabilityId,
             PurchasingShellCapabilityProvider.GoodsReceiptCapabilityId,
+            PurchasingShellCapabilityProvider.GoodsReceiptBatchWorkDecisionCapabilityId,
             PurchasingShellCapabilityProvider.InvoiceVarianceWorkDecisionCapabilityId,
             PurchasingShellCapabilityProvider.OrderWorkDecisionCapabilityId,
             PurchasingShellCapabilityProvider.ApproveCapabilityId,
@@ -178,6 +179,13 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         Assert.Null(variancePurpose.ParentCapabilityId);
         Assert.Equal([PurchaseIncomingInvoicePermissionNamesV1.ApproveVariance, PurchasingPermissionManifestV1.OrdersPriceRead], variancePurpose.RequiredPermissions);
         Assert.True(variancePurpose.ImplementationAvailable);
+
+        var batchPurpose = Assert.Single(purchasing,
+            item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.GoodsReceiptBatchWorkDecisionCapabilityId).Declaration;
+        Assert.Equal("/onaylarim/purchasing.goods-receipt-batch.v1/:approvalId", batchPurpose.RoutePath);
+        Assert.Null(batchPurpose.ParentCapabilityId);
+        Assert.Equal([PurchasingPermissionManifestV1.GoodsReceiptsApproveVariance], batchPurpose.RequiredPermissions);
+        Assert.True(batchPurpose.ImplementationAvailable);
 
         var create = Assert.Single(purchasing,
             item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.CreateCapabilityId);
