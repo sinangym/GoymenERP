@@ -23,6 +23,7 @@ public sealed class AccountingNormalApprovalCompositionTests
     [InlineData(AccountingCommandNames.ApprovePeriod)]
     [InlineData("accounting.period.reopening.approve.v1")]
     [InlineData(ApprovedAccountingSourceCatalogCommandNamesV1.Activate)]
+    [InlineData(AccountingPostingAccountMappingCommandNamesV1.Activate)]
     public async Task Real_module_approval_alias_preserves_caller_audit_added_during_its_fence_without_opening_SQL(string? periodCommand)
     {
         var company = Guid.Parse("ac490000-0000-4000-8000-000000000001");
@@ -64,6 +65,9 @@ public sealed class AccountingNormalApprovalCompositionTests
         var catalog = scope.GetRequiredService<ApprovedAccountingSourceCatalogStoreV1>();
         Assert.Same(catalog, scope.GetRequiredService<IApprovedAccountingSourceCatalogStoreV1>());
         Assert.Same(catalog, scope.GetRequiredService<IApprovedNormalJournalSourceBindingCatalogV1>());
+        Assert.Same(scope.GetRequiredService<ApprovedAccountingSourceCatalogServiceV1>(), scope.GetRequiredService<IApprovedAccountingSourceCatalogDecisionReadV1>());
+        var mappings = scope.GetRequiredService<AccountingPostingAccountMappingStoreV1>();
+        Assert.Same(mappings, scope.GetRequiredService<IAccountingPostingAccountMappingStoreV1>());
         var collector = scope.GetRequiredService<AuditEventCollector>();
         Assert.Same(collector, scope.GetRequiredService<IAuditEventCollector>());
         var writer = scope.GetRequiredService<IAuditTransactionWriterV1>();
@@ -88,6 +92,15 @@ public sealed class AccountingNormalApprovalCompositionTests
             {
                 attempts++;
                 throw new InvalidOperationException("A refused catalog boundary must preserve the caller draft.");
+            }, Fence);
+            Assert.Equal(AccountingApiStatus.Unavailable, result.Status); Assert.Null(result.Resource); Assert.False(result.IsReplay);
+        }
+        else if (periodCommand == AccountingPostingAccountMappingCommandNamesV1.Activate)
+        {
+            var result = await mappings.RunActivationAsync(_ =>
+            {
+                attempts++;
+                throw new InvalidOperationException("A refused mapping boundary must preserve the caller draft.");
             }, Fence);
             Assert.Equal(AccountingApiStatus.Unavailable, result.Status); Assert.Null(result.Resource); Assert.False(result.IsReplay);
         }

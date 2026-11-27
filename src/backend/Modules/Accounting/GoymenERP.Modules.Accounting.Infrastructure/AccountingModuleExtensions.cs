@@ -92,6 +92,8 @@ public static class AccountingModuleExtensions
             serviceProvider.GetRequiredService<AccountingJournalReversalServiceV1>());
         services.AddScoped<AccountingJournalReversalPublicServiceV1>();
         services.AddScoped<ApprovedAccountingSourceCatalogServiceV1>();
+        services.AddScoped<IApprovedAccountingSourceCatalogDecisionReadV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<ApprovedAccountingSourceCatalogServiceV1>());
         // FIN-S16 (M-05): the read-only active account plan; no bypass, no permission granted here.
         services.AddScoped<IActiveAccountPlanReaderV1, ApprovedActiveAccountPlanReaderV1>();
         services.AddScoped<AccountPlanReadServiceV1>();

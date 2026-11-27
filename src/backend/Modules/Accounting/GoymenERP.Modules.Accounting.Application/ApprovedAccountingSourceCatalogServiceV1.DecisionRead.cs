@@ -18,7 +18,7 @@ public sealed partial class ApprovedAccountingSourceCatalogServiceV1 : IApproved
             var source = await reader.ReadActivationDecisionAsync(packageId, ReadFence, cancellationToken);
             await ReadFence(cancellationToken);
             if (source is null) return new(AccountingApiStatus.NotFound, null, false, null);
-            if (source.Record.CompanyId != company || source.Record.PackageId != packageId || source.ActiveCatalogVersion < 0
+            if (source.Record is null || source.Record.CompanyId != company || source.Record.PackageId != packageId || source.ActiveCatalogVersion < 0
                 || !ValidCatalogDecisionRecord(source.Record)) return ReadUnavailable();
             var view = View(source.Record); var package = CatalogDecisionPackage(source.Record.Package);
             return new(AccountingApiStatus.Ok, new(view, package, view.Version, source.ActiveCatalogVersion,

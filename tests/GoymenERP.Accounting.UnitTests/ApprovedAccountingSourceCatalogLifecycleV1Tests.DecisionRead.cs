@@ -59,12 +59,12 @@ public sealed partial class ApprovedAccountingSourceCatalogLifecycleV1Tests
     [Theory]
     [InlineData("denied")] [InlineData("scoped")] [InlineData("null-authority")] [InlineData("not-found")]
     [InlineData("foreign-company")] [InlineData("foreign-id")] [InlineData("malformed-version")] [InlineData("malformed-package")]
-    [InlineData("provider")]
+    [InlineData("provider")] [InlineData("null-record")]
     public async Task Catalog_purpose_read_refuses_unknown_malformed_or_unauthorized_source_without_granting_prepare(string fault)
     {
         var store = new MemoryStore(await Preview())
         {
-            DecisionMissing = fault == "not-found", DecisionFailure = fault == "provider",
+            DecisionMissing = fault == "not-found", DecisionFailure = fault == "provider", DecisionNullRecord = fault == "null-record",
             DecisionTransform = source => fault switch
             {
                 "foreign-company" => source with { CompanyId = OtherCompany }, "foreign-id" => source with { PackageId = Guid.NewGuid() },
@@ -182,7 +182,7 @@ public sealed partial class ApprovedAccountingSourceCatalogLifecycleV1Tests
     }
     private sealed partial class MemoryStore : IApprovedAccountingSourceCatalogDecisionStoreV1
     {
-        public long? DecisionActiveVersion; public bool DecisionMissing, DecisionFailure; public int DecisionReads;
+        public long? DecisionActiveVersion; public bool DecisionMissing, DecisionFailure, DecisionNullRecord; public int DecisionReads;
         public Func<ApprovedAccountingSourceCatalogRecordV1, ApprovedAccountingSourceCatalogRecordV1>? DecisionTransform;
         public async Task<ApprovedAccountingSourceCatalogRecordV1?> ReadActivationReceiptSourceAsync(Guid id, Func<CancellationToken, Task> fence, CancellationToken token = default)
         {
@@ -195,7 +195,7 @@ public sealed partial class ApprovedAccountingSourceCatalogLifecycleV1Tests
         {
             var source = await ReadActivationReceiptSourceAsync(id, fence, token); if (source is null) return null;
             await fence(token); token.ThrowIfCancellationRequested();
-            return new(source, DecisionActiveVersion ?? (source.Status == ApprovedAccountingSourceCatalogStatusV1.Active ? source.CatalogVersion ?? 0 : 0));
+            return new(DecisionNullRecord ? null! : source, DecisionActiveVersion ?? (source.Status == ApprovedAccountingSourceCatalogStatusV1.Active ? source.CatalogVersion ?? 0 : 0));
         }
         public void SupersedeDecisionRecord() { Record = Record! with { Status = ApprovedAccountingSourceCatalogStatusV1.Superseded, Version = 3 }; DecisionActiveVersion = 2; }
     }
