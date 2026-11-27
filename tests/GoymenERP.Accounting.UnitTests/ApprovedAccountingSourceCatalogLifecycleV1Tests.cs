@@ -8,7 +8,7 @@ using GoymenERP.Modules.Accounting.Infrastructure;
 
 namespace GoymenERP.Accounting.UnitTests;
 
-public sealed class ApprovedAccountingSourceCatalogLifecycleV1Tests
+public sealed partial class ApprovedAccountingSourceCatalogLifecycleV1Tests
 {
     private static readonly Guid Company = Guid.Parse("10000000-0000-4000-8000-000000000001");
     private static readonly Guid OtherCompany = Guid.Parse("10000000-0000-4000-8000-000000000099");
@@ -278,6 +278,33 @@ public sealed class ApprovedAccountingSourceCatalogLifecycleV1Tests
     private sealed class MemoryStore : IApprovedAccountingSourceCatalogStoreV1, IAccountingCommandLog
     {
         private readonly List<AccountingCommandRecord> commands = [];
+
+        // Synthetic lifecycle protocol only: no relational transaction/Audit or SQL acceptance claim.
+        public async Task<AccountingApiResult<ApprovedAccountingSourceCatalogViewV1>> RunActivationAsync(
+            Func<bool, Task<AccountingApiResult<ApprovedAccountingSourceCatalogViewV1>>> attempt,
+            Func<CancellationToken, Task> fence, CancellationToken token = default)
+        {
+            var before = Record; var activations = Activations; var count = commands.Count;
+            try
+            {
+                await fence(token);
+                var result = await attempt(false);
+                await fence(token);
+                if (result.Status is AccountingApiStatus.Denied or AccountingApiStatus.Unavailable) Restore();
+                return result;
+            }
+            catch (NormalJournalAuthorityDeniedException)
+            {
+                Restore();
+                return new(AccountingApiStatus.Denied, null, false, AccountingApiCodes.AuthorityDenied);
+            }
+            void Restore()
+            {
+                Record = before; Activations = activations;
+                commands.RemoveRange(count, commands.Count - count);
+            }
+        }
+
 
         public MemoryStore()
         {

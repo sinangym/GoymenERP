@@ -395,6 +395,25 @@ public sealed partial class AccountingPostingAccountMappingLifecycleV1Tests
         new HashSet<Guid>(),
         new HashSet<Guid>());
 
+    // Mapping golden seed only. InMemory cannot prove production activation ownership, Audit or rollback.
+    private sealed class SyntheticCatalogActivationProtocolStore(IApprovedAccountingSourceCatalogStoreV1 inner)
+        : IApprovedAccountingSourceCatalogStoreV1
+    {
+        public async Task<AccountingApiResult<ApprovedAccountingSourceCatalogViewV1>> RunActivationAsync(
+            Func<bool, Task<AccountingApiResult<ApprovedAccountingSourceCatalogViewV1>>> attempt,
+            Func<CancellationToken, Task> fence, CancellationToken token = default)
+        { await fence(token); var answer = await attempt(false); await fence(token); return answer; }
+        public Task<ApprovedAccountingSourceCatalogRecordV1?> ReadAsync(Guid id, CancellationToken token = default) => inner.ReadAsync(id, token);
+        public Task<(ApprovedAccountingSourceCatalogRecordV1 Record, AccountingWriteOutcome Outcome)> PrepareAsync(Guid id,
+            ApprovedAccountingSourcePackagePreviewV1 preview, Guid actor, DateTimeOffset at, Func<CancellationToken, Task> fence,
+            AccountingCommandMetadata metadata, CancellationToken token = default) => inner.PrepareAsync(id, preview, actor, at, fence, metadata, token);
+        public Task<ApprovedAccountingSourceCatalogRecordV1> ActivateAsync(Guid id, long version, long activeVersion, Guid actor,
+            DateTimeOffset at, Func<CancellationToken, Task> fence, AccountingCommandMetadata metadata, CancellationToken token = default)
+            => inner.ActivateAsync(id, version, activeVersion, actor, at, fence, metadata, token);
+        public Task<NormalJournalPostingRuleV1?> ResolveAsync(Guid company, Guid source, string kind, string version, string profile,
+            string profileVersion, Guid currency, CancellationToken token = default) => inner.ResolveAsync(company, source, kind, version, profile, profileVersion, currency, token);
+    }
+
     private sealed class Book
     {
         private readonly InMemoryDatabaseRoot root;
@@ -485,7 +504,7 @@ public sealed partial class AccountingPostingAccountMappingLifecycleV1Tests
             var catalog = new ApprovedAccountingSourceCatalogStoreV1(
                 dbContext, companyContext, new NullAuditCollector(), time);
             var service = new ApprovedAccountingSourceCatalogServiceV1(
-                new ApprovedAccountingSourcePackageParserV1(), catalog, log,
+                new ApprovedAccountingSourcePackageParserV1(), new SyntheticCatalogActivationProtocolStore(catalog), log,
                 new GrantingAuthority([ApprovedAccountingSourceCatalogPermissionNamesV1.Prepare,
                     ApprovedAccountingSourceCatalogPermissionNamesV1.Activate]),
                 companyContext, new FixedUser(Preparer, Company), new FixedCorrelation("seed"), time);

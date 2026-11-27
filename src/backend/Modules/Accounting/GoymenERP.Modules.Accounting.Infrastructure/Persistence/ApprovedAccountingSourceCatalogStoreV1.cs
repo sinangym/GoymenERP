@@ -10,11 +10,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 
-public sealed class ApprovedAccountingSourceCatalogStoreV1(
+public sealed partial class ApprovedAccountingSourceCatalogStoreV1(
     AccountingDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    AccountingStore? activationSafetyOwner = null)
     : IApprovedAccountingSourceCatalogStoreV1, IApprovedNormalJournalSourceKindCatalogV1
 {
     private const int Prepared = (int)ApprovedAccountingSourceCatalogStatusV1.Prepared;
@@ -143,13 +144,16 @@ public sealed class ApprovedAccountingSourceCatalogStoreV1(
                 nameof(packageId));
         }
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var owned = IsOwnedActivation;
+        await using var transaction = owned ? null : await dbContext.Database.BeginTransactionAsync(cancellationToken);
         try
         {
+            await CatalogActivationFenceAsync(cancellationToken);
             var row = await dbContext.ApprovedSourceCatalogs
                 .SingleOrDefaultAsync(candidate => candidate.Id == packageId, cancellationToken)
                 ?? throw Refused(ApprovedAccountingSourceCatalogCodesV1.NotFound,
                     "This company has no such prepared Accounting source package.");
+            await CatalogActivationFenceAsync(cancellationToken);
             if (row.Version != expectedPackageVersion)
             {
                 throw new AccountingVersionConflictException(expectedPackageVersion, row.Version);
@@ -163,6 +167,7 @@ public sealed class ApprovedAccountingSourceCatalogStoreV1(
 
             var active = await dbContext.ApprovedSourceCatalogs
                 .SingleOrDefaultAsync(candidate => candidate.Status == Active, cancellationToken);
+            await CatalogActivationFenceAsync(cancellationToken);
             var currentCatalogVersion = active?.CatalogVersion ?? 0;
             if (currentCatalogVersion != expectedActiveCatalogVersion)
             {
@@ -200,12 +205,13 @@ public sealed class ApprovedAccountingSourceCatalogStoreV1(
             Complete(metadata, record);
             await SaveAsync(cancellationToken);
             await freshAuthorityFence(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
             return record;
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken);
+            if (owned) throw; // The existing core owned runner alone performs abort/dispose/tracker/Audit cleanup.
+            await transaction!.RollbackAsync(cancellationToken);
             throw;
         }
     }
@@ -283,6 +289,11 @@ public sealed class ApprovedAccountingSourceCatalogStoreV1(
     {
         var completion = metadata.Completion?.Invoke(record)
             ?? throw new InvalidOperationException("Catalog writes require an atomic command completion.");
+        if (IsOwnedActivation)
+        {
+            activationSafetyOwner!.CompleteOwnedCatalogActivation(this, dbContext, auditEvents, completion);
+            return;
+        }
         dbContext.Commands.Add(new AccountingCommandRow
         {
             CompanyId = companyContext.CompanyId,
@@ -300,12 +311,17 @@ public sealed class ApprovedAccountingSourceCatalogStoreV1(
     {
         try
         {
-            await dbContext.SaveChangesAsync(cancellationToken);
+            if (IsOwnedActivation) await activationSafetyOwner!.SaveOwnedCatalogActivationAsync(this, dbContext, auditEvents, cancellationToken);
+            else await dbContext.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException exception)
         {
             throw Refused(AccountingStoreCodes.ConcurrentChange,
                 "Another catalog write changed the same version first; nothing was stored.", exception);
+        }
+        catch (DbUpdateException exception) when (IsOwnedActivation && AccountingStore.IsPeriodTransactionDeadlock(exception))
+        {
+            throw; // Keep the provider's 1205 identity, including a server-completed transaction, for the existing runner.
         }
         catch (DbUpdateException exception) when (exception.GetBaseException() is SqlException { Number: 2601 or 2627 or 1205 })
         {

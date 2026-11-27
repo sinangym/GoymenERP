@@ -82,6 +82,11 @@ public sealed record ApprovedAccountingSourceCatalogViewV1(
 
 public interface IApprovedAccountingSourceCatalogStoreV1 : IApprovedNormalJournalSourceBindingCatalogV1
 {
+    Task<AccountingApiResult<ApprovedAccountingSourceCatalogViewV1>> RunActivationAsync(
+        Func<bool, Task<AccountingApiResult<ApprovedAccountingSourceCatalogViewV1>>> attempt,
+        Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken = default)
+        => Task.FromResult(new AccountingApiResult<ApprovedAccountingSourceCatalogViewV1>(AccountingApiStatus.Unavailable, null, false, null));
+
     Task<ApprovedAccountingSourceCatalogRecordV1?> ReadAsync(
         Guid packageId,
         CancellationToken cancellationToken = default);
@@ -123,7 +128,7 @@ public sealed class ApprovedAccountingSourceCatalogAuthorityDeniedException()
 /// requires the separate catalog authority and deliberately permits the same actor when that authority is
 /// granted (Sinan #66/5946629677). It registers no grant and does not alter voucher approval rules.
 /// </summary>
-public sealed class ApprovedAccountingSourceCatalogServiceV1(
+public sealed partial class ApprovedAccountingSourceCatalogServiceV1(
     IApprovedAccountingSourcePackageParserV1 parser,
     IApprovedAccountingSourceCatalogStoreV1 catalogs,
     IAccountingCommandLog commands,
@@ -224,7 +229,9 @@ public sealed class ApprovedAccountingSourceCatalogServiceV1(
             return Task.FromResult(Invalid("request"));
         }
 
-        return RunAsync(
+        if (string.IsNullOrWhiteSpace(idempotencyKey)) return Task.FromResult(Invalid("idempotencyKey"));
+        if (!companyContext.IsResolved || !TryContext(out var capturedCompany, out var capturedActor)) return Task.FromResult(Denied());
+        return catalogs.RunActivationAsync(replayOnly => RunAsync(
             ApprovedAccountingSourceCatalogPermissionNamesV1.Activate,
             ApprovedAccountingSourceCatalogCommandNamesV1.Activate,
             idempotencyKey,
@@ -238,13 +245,13 @@ public sealed class ApprovedAccountingSourceCatalogServiceV1(
                     request.ExpectedActiveCatalogVersion,
                     actor,
                     now,
-                    fence => FenceAsync(ApprovedAccountingSourceCatalogPermissionNamesV1.Activate,
-                        company, actor, fence),
+                    fence => ActivationFenceAsync(company, actor, fence),
                     metadata,
                     token);
                 return Success(AccountingApiStatus.Ok, record);
             },
-            cancellationToken);
+            cancellationToken, capturedCompany, capturedActor, replayOnly),
+            token => ActivationFenceAsync(capturedCompany, capturedActor, token), cancellationToken);
     }
 
     public async Task<AccountingApiResult<ApprovedAccountingSourceCatalogViewV1>> ReadAsync(
@@ -284,15 +291,16 @@ public sealed class ApprovedAccountingSourceCatalogServiceV1(
         AccountingApiStatus successStatus,
         Func<AccountingCommandMetadata, Guid, Guid, DateTimeOffset, CancellationToken,
             Task<AccountingApiResult<ApprovedAccountingSourceCatalogViewV1>>> write,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, Guid? activationCompany = null, Guid? activationActor = null, bool replayOnly = false)
     {
         if (string.IsNullOrWhiteSpace(idempotencyKey))
         {
             return Invalid("idempotencyKey");
         }
 
-        if (!TryContext(out var company, out var actor)
-            || !await AuthorizeCapturedAsync(permission, company, actor, cancellationToken))
+        var company = activationCompany ?? Guid.Empty; var actor = activationActor ?? Guid.Empty;
+        if (activationCompany is null && !TryContext(out company, out actor)) return Denied();
+        if (!await AuthorizeRunAsync(cancellationToken))
         {
             return Denied();
         }
@@ -302,7 +310,7 @@ public sealed class ApprovedAccountingSourceCatalogServiceV1(
         var requestHash = AccountingApiService.Sha256(
             commandName + "|" + JsonSerializer.Serialize(canonicalRequest, Json));
         var prior = await commands.FindCommandAsync(commandName, keyHash, cancellationToken);
-        if (!await AuthorizeCapturedAsync(permission, company, actor, cancellationToken))
+        if (!await AuthorizeRunAsync(cancellationToken))
         {
             return Denied();
         }
@@ -312,8 +320,10 @@ public sealed class ApprovedAccountingSourceCatalogServiceV1(
             return Answer(prior, actorId, requestHash);
         }
 
+        if (replayOnly) return new(AccountingApiStatus.Conflict, null, false, AccountingStoreCodes.ConcurrentChange);
         var scope = await authority.RevalidatePermissionScopeAsync(permission, company, cancellationToken);
-        if (!Granted(scope) || !ContextMatches(company, actor))
+        if (activationCompany is not null) cancellationToken.ThrowIfCancellationRequested();
+        if (!Granted(scope) || !(activationCompany is null ? ContextMatches(company, actor) : ActivationContextMatches(company, actor)))
         {
             return Denied();
         }
@@ -346,7 +356,7 @@ public sealed class ApprovedAccountingSourceCatalogServiceV1(
         try
         {
             result = await write(metadata, company, actor, timeProvider.GetUtcNow(), cancellationToken);
-            if (!await AuthorizeCapturedAsync(permission, company, actor, cancellationToken))
+            if (!await AuthorizeRunAsync(cancellationToken))
             {
                 return Denied();
             }
@@ -374,8 +384,9 @@ public sealed class ApprovedAccountingSourceCatalogServiceV1(
         }
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ConcurrentChange)
         {
+            if (activationCompany is not null) throw new NormalJournalApprovalRaceException(exception.Code, exception);
             var winner = await commands.FindCommandAsync(commandName, keyHash, cancellationToken);
-            if (!await AuthorizeCapturedAsync(permission, company, actor, cancellationToken))
+            if (!await AuthorizeRunAsync(cancellationToken))
             {
                 return Denied();
             }
@@ -387,7 +398,7 @@ public sealed class ApprovedAccountingSourceCatalogServiceV1(
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ProviderUnavailable)
         {
             // A provider outage is retryable data, not a persisted 422 or a fabricated concurrent winner.
-            if (!await AuthorizeCapturedAsync(permission, company, actor, cancellationToken)) return Denied();
+            if (!await AuthorizeRunAsync(cancellationToken)) return Denied();
             return new AccountingApiResult<ApprovedAccountingSourceCatalogViewV1>(AccountingApiStatus.Unavailable, null, false, null);
         }
         catch (AccountingStoreException exception)
@@ -406,7 +417,7 @@ public sealed class ApprovedAccountingSourceCatalogServiceV1(
             };
         }
 
-        if (!await AuthorizeCapturedAsync(permission, company, actor, cancellationToken))
+        if (!await AuthorizeRunAsync(cancellationToken))
         {
             return Denied();
         }
@@ -418,8 +429,9 @@ public sealed class ApprovedAccountingSourceCatalogServiceV1(
         }
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ConcurrentChange)
         {
+            if (activationCompany is not null) throw new NormalJournalApprovalRaceException(exception.Code, exception);
             var winner = await commands.FindCommandAsync(commandName, keyHash, cancellationToken);
-            if (!await AuthorizeCapturedAsync(permission, company, actor, cancellationToken))
+            if (!await AuthorizeRunAsync(cancellationToken))
             {
                 return Denied();
             }
@@ -427,12 +439,28 @@ public sealed class ApprovedAccountingSourceCatalogServiceV1(
             return winner is not null ? Answer(winner, actorId, requestHash) : result;
         }
 
-        if (!await AuthorizeCapturedAsync(permission, company, actor, cancellationToken))
+        if (!await AuthorizeRunAsync(cancellationToken))
         {
             return Denied();
         }
 
         return result;
+        async Task<bool> AuthorizeRunAsync(CancellationToken token)
+        {
+            if (activationCompany is null) return await AuthorizeCapturedAsync(permission, company, actor, token);
+            try { await ActivationFenceAsync(company, actor, token); return true; }
+            catch (NormalJournalAuthorityDeniedException) { return false; }
+        }
+    }
+
+    private bool ActivationContextMatches(Guid company, Guid actor) => companyContext.IsResolved && ContextMatches(company, actor);
+    private async Task ActivationFenceAsync(Guid company, Guid actor, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        if (!ActivationContextMatches(company, actor)) throw new NormalJournalAuthorityDeniedException();
+        var scope = await authority.RevalidatePermissionScopeAsync(ApprovedAccountingSourceCatalogPermissionNamesV1.Activate, company, token);
+        token.ThrowIfCancellationRequested();
+        if (!Granted(scope) || !ActivationContextMatches(company, actor)) throw new NormalJournalAuthorityDeniedException();
     }
 
     private async Task FenceAsync(
