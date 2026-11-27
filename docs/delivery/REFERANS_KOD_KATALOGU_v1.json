@@ -2774,5 +2774,11 @@
     "evidence_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#catalog_activation_native_checkpoint",
     "reference_binding": "No exact existing native approved-source-catalog reference; all50 reference records unchanged, no new ID or Settings REF-CATALOG-01 substitution.",
     "runtime_acceptance": "NOT_RUN"
+  },
+  "catalog_owner_mapping_native_checkpoint": {
+    "source_commit": "28637ed9592f3d27df3a0ac438c78133874d781a",
+    "evidence_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#catalog_owner_mapping_native_checkpoint",
+    "reference_binding": "No exact existing catalog/mapping reference;50 reference bodies preserved. REF-JOURNAL-01/02 source/test current blobs/SHA/anchors rechecked unchanged; historical evidence remains attached to original heads.",
+    "runtime_acceptance": "NOT_RUN"
   }
 }

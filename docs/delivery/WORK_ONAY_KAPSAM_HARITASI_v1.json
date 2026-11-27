@@ -1728,18 +1728,20 @@
         "tests/GoymenERP.Api.IntegrationTests/AccountingPermissionRegistrationTests.cs:25",
         "tests/GoymenERP.Accounting.UnitTests/ApprovedAccountingSourceCatalogLifecycleV1Tests.ActivationSafety.cs",
         "tests/GoymenERP.Api.IntegrationTests/AccountingNormalApprovalCompositionTests.cs",
-        "tests/GoymenERP.Api.IntegrationTests/AccountingApprovedSourceCatalogSqlServerRelationalAcceptanceTests.ActivationSafety.cs"
+        "tests/GoymenERP.Api.IntegrationTests/AccountingApprovedSourceCatalogSqlServerRelationalAcceptanceTests.ActivationSafety.cs",
+        "tests/GoymenERP.Accounting.UnitTests/ApprovedAccountingSourceCatalogLifecycleV1Tests.DecisionRead.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingApprovedSourceCatalogSqlServerRelationalAcceptanceTests.DecisionRead.cs"
       ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native activation owned safety prerequisite implemented; owner-purpose human read/typed receipt and Work source/host/UI pending. Existing self-activation exception and native public wire/hash/Prepare behavior preserved. Not an additional Work kind:45 backend/45 frontend/0 staged unchanged. Local exact-head checks and source-only SQL limits: catalog_activation_native_checkpoint. All semantic/runtime flags remainNOT_VERIFIED/NOT_RUN.",
+      "limitation": "Native safety plus owner human read/genuine receipt implemented; Work adapter ongoing, purpose/UI pending. Native wire/hash/permissions and maker/business rules unchanged. Not another Work kind;45backend/45frontend/0staged unchanged. Separate-head local evidence, retained compile failure and actualSQL/runtime limits: catalog_owner_mapping_native_checkpoint. All semantic/runtime flags remainNOT_VERIFIED/NOT_RUN.",
       "latest_source_evidence": {
-        "source_commit": "d4ed8f3f8ceff20fd65cddad77a742f6c24e6acd",
-        "scope": "Native prerequisite only; no Work adapter delivery",
-        "evidence_ref": "#catalog_activation_native_checkpoint",
+        "source_commit": "28637ed9592f3d27df3a0ac438c78133874d781a",
+        "scope": "Native safety plus owner human read/genuine receipt implemented; Work adapter ongoing, purpose/UI pending",
+        "evidence_ref": "#catalog_owner_mapping_native_checkpoint",
         "sql": "NOT_RUN",
         "runtime_acceptance": "NOT_RUN"
       }
@@ -1760,14 +1762,24 @@
       "candidate_tests": [
         "tests/GoymenERP.Accounting.UnitTests/AccountingShellCapabilityProviderTests.cs:95",
         "tests/GoymenERP.Api.IntegrationTests/AccountingPermissionRegistrationTests.cs:28",
-        "tests/GoymenERP.Api.IntegrationTests/AccountingShellRegistrationTests.cs:118"
+        "tests/GoymenERP.Api.IntegrationTests/AccountingShellRegistrationTests.cs:118",
+        "tests/GoymenERP.Accounting.UnitTests/AccountingPostingAccountMappingLifecycleV1Tests.ActivationSafety.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingNormalApprovalCompositionTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingPostingAccountMappingSqlServerRelationalAcceptanceTests.ActivationSafety.cs"
       ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Native activation safety implemented; owner-purpose human read/receipt/Work/UI pending. Native wire/hash/permissions and maker/business rules unchanged. Not another Work kind;45backend/45frontend/0staged unchanged. Separate-head local evidence, retained compile failure and actualSQL/runtime limits: catalog_owner_mapping_native_checkpoint. All semantic/runtime flags remainNOT_VERIFIED/NOT_RUN.",
+      "latest_source_evidence": {
+        "source_commit": "28637ed9592f3d27df3a0ac438c78133874d781a",
+        "scope": "Native activation safety implemented; owner-purpose human read/receipt/Work/UI pending",
+        "evidence_ref": "#catalog_owner_mapping_native_checkpoint",
+        "sql": "NOT_RUN",
+        "runtime_acceptance": "NOT_RUN"
+      }
     },
     {
       "flow": 53,
@@ -2724,5 +2736,35 @@
     "sql": "Accounting174 unique ordinal SQL source names;6 added activation safety Facts compiled, actualSQL NOT_RUN. Controlled injected1205 is not natural two-session deadlock acceptance; synthetic golden fixtures are not relational transaction acceptance.",
     "existing_reference": "No exact approved-source-catalog reference among existing50; REF-CATALOG-01 belongs to Settings and is not rebound. No new reference ID.",
     "limits": "All64 semanticsNOT_VERIFIED/runtimeNOT_RUN/verified_runtime_flows0;41packages/50references unchanged. ActualSQL/normalHTTP/browser/fullCI/pins/two independent K3 and business acceptance pending. Previous45 paired checkpoint and failures retained at their original heads."
+  },
+  "catalog_owner_mapping_native_checkpoint": {
+    "source_commit": "28637ed9592f3d27df3a0ac438c78133874d781a",
+    "scope": "Flow51 native owner activation-purpose full-package read and genuine immutable original receipt implemented; Work adapter ongoing, no paired purpose. Flow52 native activation owned safety implemented; owner-purpose read/receipt/UI pending. Existing45 backend/45 frontend/0 staged Work kinds unchanged.",
+    "checks": {
+      "owner_and_mapping_native": {
+        "source_commit": "238f49c244e2497c5cdac7c11941fe84ccf6e7e4",
+        "artifact": "catalog-owner-mapping-native-20261127",
+        "accounting": "1122/1122PASS0skip35.7075621s",
+        "api_refresh": "exit0/0errors/0warnings21.4685935s; references=false, not a new all-reference API build",
+        "host": "compileFAILCS0117 at SQL fixture215/43.5330569s; tests NOT_RUN. Original log retained."
+      },
+      "host_after_test_only_fix": {
+        "source_commit": "a441930ba7067a9ca55a0babe0f7770cbcedb08f",
+        "artifact": "catalog-owner-mapping-host-fixed-20261127",
+        "controlled_host": "1414/1414PASS0skip68.9012802s; complete integration test source compiled, actualSQL NOT_RUN",
+        "fix": "One fixture hash uses local SHA instead of unavailable internal helper; no production/assertion change."
+      },
+      "work_private_proof": {
+        "source_commit": "28637ed9592f3d27df3a0ac438c78133874d781a",
+        "artifact": "catalog-work-proof-20261127",
+        "work_unit": "194/194PASS0skip25.3383392s, including7 new constructor/body-JsonIgnore/native maker-exception cases",
+        "limits": "Work assembly/test only; not a later API rerun or Work-purpose delivery."
+      }
+    },
+    "source_peers": "Catalog7c09 owner8files read; null Record P2 fixed985b with negative case. Mapping5645752f full8files,09aee9d2 two-file SQL/unit delta, root985b full4file alias/composition delta read; unread0/no remaining concrete P0/P1/P2 in these bounded scopes. Not formal K3.",
+    "native_boundaries": "Catalog Activate-only companywide read emits full stored accounts/bindings and two frozen versions; public15/result8/hash unchanged. Private14-field JsonIgnore receipt binds original command/key/hash/actor/company/correlation and original Active2 despite current Superseded3. Mapping native maker Self403 terminal receipt alone can commit under exact owned mapping marker/saved command; all other Denied paths rollback. No mutation retry or new business policy/grant.",
+    "sql": "Accounting183 unique ordinal SQL source names:3 catalog owner read/receipt plus6 mapping activation Facts added after174. Compiled-source inventory is not actualSQL; SQL NOT_RUN. Controlled1205 injection is not natural two-session deadlock acceptance.",
+    "reference_provenance": "Existing REF-JOURNAL-01 and REF-JOURNAL-02 source/test blobs, SHA256 and anchors still exactly match28637; their original source commits/local proofs/CI histories unchanged. No exact catalog/mapping reference exists; no new ID or Settings REF-CATALOG-01 substitution. All50 reference bodies preserved.",
+    "limits": "41packages/50references/64flow rows unchanged; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN/verified_runtime_flows0.45/45/0 denotes existing Work kinds only, not Flow51/52 completion. ActualSQL/normalHTTP/browser/fullCI/pins/two independent K3/business acceptance pending. Artifact folder dates20261127 retained; record updated2026-11-28."
   }
 }
