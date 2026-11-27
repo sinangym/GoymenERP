@@ -229,7 +229,7 @@ public sealed class LogisticsPlanExcessWorkInboxSourceTests
     [Fact]
     public void Decision_purpose_has_the_paired_Work_implementation_and_preserves_native_screen_availability_and_permission()
     {
-        var provider = new LogisticsShellCapabilityProvider(); Assert.Equal("1.8", provider.ContractVersion);
+        var provider = new LogisticsShellCapabilityProvider(); Assert.Equal("1.9", provider.ContractVersion);
         var purpose = Assert.Single(provider.GetDeclarations(), value => value.CapabilityId == LogisticsShellCapabilityProvider.PlanExcessWorkDecisionCapabilityId);
         Assert.Equal("/onaylarim/logistics.plan-excess.v1/:approvalId", purpose.RoutePath); Assert.Null(purpose.ParentCapabilityId);
         Assert.True(purpose.ImplementationAvailable); Assert.Equal([LogisticsPlanExcessV1.ApprovePermission], purpose.RequiredPermissions);
