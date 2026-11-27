@@ -66,12 +66,13 @@ public sealed partial class InventoryTransferLossWorkInboxSourceTests
         Assert.Equal(["ETK-4", "ETK-1"], result.Items!.Select(item => item.DocumentLabel));
         var first = result.Items![0];
         Assert.Equal((InventoryWorkInboxFence.TransferLineItemId(Kind, F.Id(2), F.Id(14)), F.T0.AddMinutes(10).ToUniversalTime(),
-                "/stok/transferler/kayip-onaylari", F.Requester, (IReadOnlyList<string>?)null),
+                $"/onaylarim/inventory.transfer-loss.v1/{InventoryWorkInboxFence.TransferLineItemId(Kind, F.Id(2), F.Id(14)):D}", F.Requester, (IReadOnlyList<string>?)null),
             (first.ItemId, first.WaitingSinceUtc, first.Link, first.PreparedBy, first.ExcludedDeciders));
         Assert.Equal([new WorkApprovalRuleResultV1("inventory.transfer-loss-request", null, "98.5", null, "kg")], first.Rules);
         Assert.Equal([new WorkApprovalRuleResultV1("inventory.transfer-loss-request", null, null, null, null)],
             result.Items![1].Rules);
         Assert.Equal(["inventory-label", "inventory-transfer"], first.References.Select(reference => reference.Role));
+        Assert.Equal("/stok/transferler/kayip-onaylari", Assert.Single(first.References, reference => reference.Role == "inventory-transfer").Link);
     }
 
     [Fact]

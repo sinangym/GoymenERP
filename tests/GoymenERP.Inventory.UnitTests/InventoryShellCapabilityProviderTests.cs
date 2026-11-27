@@ -29,7 +29,7 @@ public sealed class InventoryShellCapabilityProviderTests
             item => item.CapabilityId == InventoryShellCapabilityProvider.OpeningStockCapabilityId);
 
         Assert.Equal("INVENTORY", provider.Owner);
-        Assert.Equal("1.15", provider.ContractVersion);
+        Assert.Equal("1.16", provider.ContractVersion);
         Assert.Equal(ErpPermissions.InventoryOpeningStockRecord, declaration.CapabilityId);
         Assert.Equal("inventory.opening-stock", declaration.RouteId);
         Assert.Equal("/stok/acilis", declaration.RoutePath);

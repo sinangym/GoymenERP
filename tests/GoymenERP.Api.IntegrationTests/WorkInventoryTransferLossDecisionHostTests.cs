@@ -161,11 +161,11 @@ public sealed class WorkInventoryTransferLossDecisionHostTests
     }
 
     [Fact]
-    public void Staged_loss_purpose_capability_keeps_existing_native_loss_screen_and_permission()
+    public void Loss_purpose_capability_keeps_existing_native_loss_screen_and_permission()
     {
         var declarations = new GoymenERP.Modules.Inventory.Infrastructure.Shell.InventoryShellCapabilityProvider().GetDeclarations();
         var purpose = Assert.Single(declarations, row => row.CapabilityId == "inventory.transfer-loss.work-decision");
-        Assert.False(purpose.ImplementationAvailable); Assert.Null(purpose.ParentCapabilityId);
+        Assert.True(purpose.ImplementationAvailable); Assert.Null(purpose.ParentCapabilityId);
         Assert.Equal("/onaylarim/inventory.transfer-loss.v1/:approvalId", purpose.RoutePath);
         Assert.Equal([InventoryPermissionManifestV1.StockTransferLossApprove], purpose.RequiredPermissions);
         Assert.Contains(declarations, row => row.RoutePath == "/stok/transferler/kayip-onaylari" && row.ImplementationAvailable);

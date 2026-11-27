@@ -27,7 +27,7 @@ public sealed partial class InventoryTransferLossWorkInboxSourceTests
         Assert.Equal(2, renewed.InventoryTransferLoss!.RequestNumber); Assert.True(renewed.Pending);
         Assert.Equal([F.Requester, "SENTETIK-new-maker"], renewed.InventoryTransferLossProof!.Requests.Select(row => row.PreparedBy));
         Assert.Equal(["Rejected", "Pending"], renewed.InventoryTransferLossProof.Requests.Select(row => row.Status));
-        Assert.Equal("/stok/transferler/kayip-onaylari", renewed.Item.Link);
+        Assert.Equal($"/onaylarim/inventory.transfer-loss.v1/{id:D}", renewed.Item.Link);
     }
 
     [Fact]
@@ -84,10 +84,10 @@ public sealed partial class InventoryTransferLossWorkInboxSourceTests
     }
 
     [Fact]
-    public void Loss_purpose_declaration_is_staged_and_standalone_under_the_existing_company_wide_native_permission()
+    public void Loss_purpose_declaration_is_standalone_under_the_existing_company_wide_native_permission()
     {
         var row = Assert.Single(new InventoryShellCapabilityProvider().GetDeclarations(), row => row.CapabilityId == "inventory.transfer-loss.work-decision");
-        Assert.False(row.ImplementationAvailable); Assert.Null(row.ParentCapabilityId);
+        Assert.True(row.ImplementationAvailable); Assert.Null(row.ParentCapabilityId);
         Assert.Equal("/onaylarim/inventory.transfer-loss.v1/:approvalId", row.RoutePath);
         Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, row.ScopeRequirement);
         Assert.Equal([ErpPermissions.InventoryStockTransferLossApprove], row.RequiredPermissions);

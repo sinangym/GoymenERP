@@ -162,9 +162,9 @@ internal sealed partial class InventoryTransferLossWorkInboxSourceV1 : IWorkAppr
             rules.Add(new(RenewedRequestRule, null, null, null, null));
         }
 
-        item = new WorkInboxItemV1(ModuleName, KindName,
-            InventoryWorkInboxFence.TransferLineItemId(KindName, row.TransferId, row.LineId), row.LabelCode,
-            row.RecordedAtUtc.ToUniversalTime(), InventoryWorkInboxFence.TransferLossApprovalPath, row.RecordedBy.Trim(), rules,
+        var itemId = InventoryWorkInboxFence.TransferLineItemId(KindName, row.TransferId, row.LineId);
+        item = new WorkInboxItemV1(ModuleName, KindName, itemId, row.LabelCode,
+            row.RecordedAtUtc.ToUniversalTime(), "/onaylarim/" + KindName + "/" + InventoryWorkInboxFence.Id(itemId), row.RecordedBy.Trim(), rules,
             [
                 new WorkApprovalReferenceV1("inventory-label", row.LabelCode, row.LabelId,
                     InventoryWorkInboxFence.LabelLink(row.LabelId)),
