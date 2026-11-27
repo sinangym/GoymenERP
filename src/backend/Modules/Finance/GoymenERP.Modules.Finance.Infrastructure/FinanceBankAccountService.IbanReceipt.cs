@@ -9,6 +9,13 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 
 public sealed partial class FinanceBankAccountService
 {
+    internal const string IbanReceiptEnvelopePrefix = "{\"schemaVersion\":";
+
+    private static BankAccountIbanApprovalReceiptV1? IbanApprovalStamp(IbanChangeReceiptProof? proof, string actor, DateTimeOffset recordedAt, string keyHash) =>
+        proof is { CommandName: ApproveIbanChangeCommand, ApprovalVersion: { } approved }
+            ? new(proof.CompanyId, proof.AccountId, proof.CommandName, actor, recordedAt.ToUniversalTime(),
+                VersionText(proof.ProposalVersion), VersionText(approved), proof.ChangeProposedBy, proof.ChangeProposedAtUtc, proof.FactsDigest, keyHash)
+            : null;
     // Finance persistence only. Never a public command/result field or a replacement for native authorization.
     [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
     internal sealed record IbanChangeReceiptProof([property: JsonRequired] string CommandName,

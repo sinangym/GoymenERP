@@ -12,6 +12,14 @@ public interface IWorkApprovalDecisionSourceV1 : IWorkInboxSourceV1
         CancellationToken cancellationToken);
 }
 
+/// <summary>Optional owner selection of an original native proposal version for an immutable command retry.
+/// Other sources retain their existing read contract; this is not a current-version substitution.</summary>
+public interface IWorkApprovalDecisionVersionSourceV1 : IWorkApprovalDecisionSourceV1
+{
+    Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionVersionAsync(WorkInboxSourceContextV1 context, Guid itemId,
+        string expectedProposalVersion, CancellationToken cancellationToken);
+}
+
 public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxItemV1 Item,
     string SourceVersion, bool Pending,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -30,7 +38,13 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkBankAccountProofV1? BankAccountProof = null,
     [property: JsonIgnore] WorkInventoryStockScrapProofV1? InventoryStockScrapProof = null,
     [property: JsonIgnore] WorkLogisticsDispatchNoteProofV1? LogisticsDispatchNoteProof = null,
-    [property: JsonIgnore] WorkLogisticsCustomerReturnProofV1? LogisticsCustomerReturnProof = null);
+    [property: JsonIgnore] WorkLogisticsCustomerReturnProofV1? LogisticsCustomerReturnProof = null,
+    [property: JsonIgnore] WorkBankAccountIbanChangeProofV1? BankAccountIbanChangeProof = null);
+
+/// <summary>Finance-only source binding. Raw facts are never serialized in an inbox, generic snapshot, journal or AI tool.</summary>
+public sealed record WorkBankAccountIbanChangeProofV1(Guid CompanyId, Guid AccountId, string ProposedBy,
+    DateTimeOffset ProposedAtUtc, string ProposalVersion, string FactsDigest, WorkBankAccountIbanChangeFactsV1? HumanFacts);
+public sealed record WorkBankAccountIbanChangeFactsV1(string? CurrentIban, string ProposedIban, string Reason);
 
 /// <summary>Recorded physical-return facts for the authorized human only; no price or current master lookup.</summary>
 public sealed record WorkLogisticsCustomerReturnPreviewV1(Guid LoadingInstructionId, Guid LoadingInstructionLineId,

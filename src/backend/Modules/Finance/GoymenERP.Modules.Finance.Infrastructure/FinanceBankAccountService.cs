@@ -571,18 +571,19 @@ public sealed partial class FinanceBankAccountService(
         row.UpdatedAtUtc = now;
         row.Version = checked(row.Version + 1);
         var result = Succeeded(context, row);
-        AddCommand(context, metadata, ApproveIbanChangeCommand, payloadHash, row.Id, result, now,
-            proposedAt is { } knownProposalTime && versionBefore > 1 && !string.IsNullOrWhiteSpace(pendingBy)
+        IbanChangeReceiptProof? ibanProof = proposedAt is { } knownProposalTime && versionBefore > 1 && !string.IsNullOrWhiteSpace(pendingBy)
                 ? new(ApproveIbanChangeCommand, context.CompanyId, row.Id, pendingBy, knownProposalTime.ToUniversalTime(),
                     versionBefore, row.Version, payloadHash, IbanChangeFactsDigest(previousIban, pendingIban, pendingReason))
-                : null); // Native legacy approval remains valid; an absent original fact is never invented.
+                : null; // Native legacy approval remains valid; an absent original fact is never invented.
+        AddCommand(context, metadata, ApproveIbanChangeCommand, payloadHash, row.Id, result, now, ibanProof);
         var approval = JsonSerializer.Serialize(
             new { rule = "O4", proposedBy = pendingBy, approvedBy = context.ActorId, previousIban, newIban = pendingIban, reason = pendingReason },
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
         Audit(context, metadata, envelopes.Approve, row.Id, "finance.bank-account.iban-change-approved.v1",
             "ApproveIbanChange", versionBefore, row.Version, before, AccountAudit(row), approval,
             "Finans banka hesabı IBAN değişikliği onayı (öneren≠onaylayan; eski değer audit'te korunur)");
-        return await SaveBankApprovalAsync(context, row.Id, result, cancellationToken, FinanceAction.ApproveBankAccountIbanChange);
+        var saved = await SaveBankApprovalAsync(context, row.Id, result, cancellationToken, FinanceAction.ApproveBankAccountIbanChange);
+        return saved with { IbanApprovalReceipt = IbanApprovalStamp(ibanProof, context.ActorId, now, FinanceCommandKeys.Hash(metadata.IdempotencyKey)) };
     }
 
     /// <summary>
@@ -873,9 +874,11 @@ public sealed partial class FinanceBankAccountService(
         }
 
         var stored = RestoreBankCommandResult(prior);
+        var ibanProof = command == ApproveIbanChangeCommand ? ReadIbanChangeReceiptProof(prior) : null;
         return stored with
         {
             IsReplay = true,
+            IbanApprovalReceipt = IbanApprovalStamp(ibanProof, prior.ActorId, prior.RecordedAtUtc, prior.IdempotencyKeyHash),
             // The command row and its immutable original JSON own this evidence. Later card/IBAN changes are irrelevant.
             ApprovalReceipt = command == ApproveCommand && stored.Outcome == CommandOutcome.Succeeded
                 && stored.Resource is { } approved && prior.BankAccountId == approved.Id && prior.CompanyId == approved.CompanyId

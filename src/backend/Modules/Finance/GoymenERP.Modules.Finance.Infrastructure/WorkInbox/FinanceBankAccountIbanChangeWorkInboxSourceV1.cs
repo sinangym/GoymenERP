@@ -18,9 +18,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// unreadable, so the answer is Unavailable. Neither the current nor the proposed IBAN is carried into the inbox.
 /// </para>
 /// </summary>
-internal sealed class FinanceBankAccountIbanChangeWorkInboxSourceV1(
+internal sealed partial class FinanceBankAccountIbanChangeWorkInboxSourceV1(
     FinanceDbContext dbContext,
-    FinanceWorkInboxFence fence) : IWorkInboxSourceV1
+    FinanceWorkInboxFence fence) : IWorkApprovalDecisionVersionSourceV1
 {
     public const string ModuleName = "finance";
     public const string KindName = "finance.bank-account-iban-change.v1";

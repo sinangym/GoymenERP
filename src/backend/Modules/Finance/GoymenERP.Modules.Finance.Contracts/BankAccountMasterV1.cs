@@ -67,7 +67,13 @@ public sealed record BankAccountIbanChangeApproveRequest(Guid AccountId, string 
 
 public sealed record BankAccountCommandResult(CommandOutcome Outcome, BankAccountView? Resource,
     bool IsReplay, string OriginalCorrelationId, IReadOnlyList<ValidationIssue> Issues,
-    [property: JsonIgnore] BankAccountApprovalReceiptV1? ApprovalReceipt = null);
+    [property: JsonIgnore] BankAccountApprovalReceiptV1? ApprovalReceipt = null,
+    [property: JsonIgnore] BankAccountIbanApprovalReceiptV1? IbanApprovalReceipt = null);
+
+/// <summary>Genuine native IBAN save/original command proof; never public wire or reconstructed from a current pending row.</summary>
+public sealed record BankAccountIbanApprovalReceiptV1(Guid CompanyId, Guid AccountId, string CommandName,
+    string ActorId, DateTimeOffset RecordedAtUtc, string ProposalVersion, string ApprovalVersion,
+    string ChangeProposedBy, DateTimeOffset ChangeProposedAtUtc, string FactsDigest, string IdempotencyKeyHash);
 
 /// <summary>In-process proof from a genuine saved approval command, never serialized or sourced from a current card.</summary>
 public sealed record BankAccountApprovalReceiptV1(Guid CompanyId, Guid AccountId, string CommandName, string ActorId, DateTimeOffset RecordedAtUtc);
