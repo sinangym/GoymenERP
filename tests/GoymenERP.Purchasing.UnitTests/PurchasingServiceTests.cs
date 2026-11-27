@@ -837,18 +837,25 @@ public sealed partial class PurchasingServiceTests
         }
 
         public Task<PurchasingOrderStoreResult?> MutateOrderAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName, Guid orderId,
-            Action<PurchaseOrder, DateTimeOffset> mutate, PurchasingMutationAudit audit, CancellationToken cancellationToken = default)
+            Action<PurchaseOrder, DateTimeOffset> mutate, PurchasingMutationAudit audit, CancellationToken cancellationToken = default) =>
+            MutateOrderFakeCoreAsync(envelope, requestHash, commandName, orderId, mutate, audit, cancellationToken);
+
+        private async Task<PurchasingOrderStoreResult?> MutateOrderFakeCoreAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName, Guid orderId,
+            Action<PurchaseOrder, DateTimeOffset> mutate, PurchasingMutationAudit audit, CancellationToken cancellationToken,
+            Func<CancellationToken, Task>? freshDecisionFence = null)
         {
             if (_attempts.TryGetValue((commandName, envelope.IdempotencyKey), out var attempt))
             {
                 Check(attempt, envelope, requestHash);
                 if (attempt.Order is null) throw new PurchasingStoreException(PurchasingStoreCodes.ConcurrentChange, "synthetic refusal under the key");
-                return Task.FromResult<PurchasingOrderStoreResult?>(new PurchasingOrderStoreResult(attempt.Order, PurchasingWriteOutcome.Replayed, attempt.Correlation));
+                if (freshDecisionFence is not null) await freshDecisionFence(cancellationToken);
+                return new PurchasingOrderStoreResult(attempt.Order, PurchasingWriteOutcome.Replayed, attempt.Correlation);
             }
 
             var stored = _orders.SingleOrDefault(candidate => candidate.Order.Id == orderId);
-            if (stored is null) return Task.FromResult<PurchasingOrderStoreResult?>(null);
+            if (stored is null) return null;
             BeforeMutation?.Invoke();
+            if (freshDecisionFence is not null) await freshDecisionFence(cancellationToken);
             var before = stored.Order.Version;
             if (OverSourced && commandName == PurchasingCommands.OrderApproveV1)
             {
@@ -867,7 +874,30 @@ public sealed partial class PurchasingServiceTests
 
             var schedulesBefore = stored.Order.Lines.ToDictionary(line => line.Id, line => line.DeliverySchedule);
             var now = TimeProvider.System.GetUtcNow();
-            mutate(stored.Order, now);
+            var snapshot = (stored.Order.Status, stored.Order.Version, stored.Order.Approval, stored.Order.ApprovalVersion, stored.Order.UpdatedAtUtc);
+            var kilograms = stored.Order.Lines.Select(x => (Line: x, x.TheoreticalKilograms)).ToArray();
+            try
+            {
+                mutate(stored.Order, now);
+                if (freshDecisionFence is not null)
+                {
+                    BeforeOrderStage?.Invoke(); await freshDecisionFence(cancellationToken);
+                    AfterOrderSave?.Invoke(); await freshDecisionFence(cancellationToken); // Synthetic boundary; SQL source proves real Save rollback.
+                }
+            }
+            catch
+            {
+                if (freshDecisionFence is not null)
+                {
+                    typeof(PurchaseOrder).GetProperty(nameof(PurchaseOrder.Status))!.SetValue(stored.Order, snapshot.Status);
+                    typeof(PurchaseOrder).GetProperty(nameof(PurchaseOrder.Version))!.SetValue(stored.Order, snapshot.Version);
+                    typeof(PurchaseOrder).GetProperty(nameof(PurchaseOrder.Approval))!.SetValue(stored.Order, snapshot.Approval);
+                    typeof(PurchaseOrder).GetProperty(nameof(PurchaseOrder.ApprovalVersion))!.SetValue(stored.Order, snapshot.ApprovalVersion);
+                    typeof(PurchaseOrder).GetProperty(nameof(PurchaseOrder.UpdatedAtUtc))!.SetValue(stored.Order, snapshot.UpdatedAtUtc);
+                    foreach (var item in kilograms) typeof(PurchaseOrderLine).GetProperty(nameof(PurchaseOrderLine.TheoreticalKilograms))!.SetValue(item.Line, item.TheoreticalKilograms);
+                }
+                throw;
+            }
             foreach (var line in stored.Order.Lines.Where(line => !ReferenceEquals(schedulesBefore[line.Id], line.DeliverySchedule)))
             {
                 // F-027: like the SQL store, a schedule command appends the line's whole new set as a revision at the new version.
@@ -880,7 +910,7 @@ public sealed partial class PurchasingServiceTests
             Envelopes.Add(envelope);
             Audits.Add(audit);
             Transitions.Add((commandName, orderId, before, stored.Order.Version));
-            return Task.FromResult<PurchasingOrderStoreResult?>(new PurchasingOrderStoreResult(stored, PurchasingWriteOutcome.Recorded, envelope.CorrelationId));
+            return new PurchasingOrderStoreResult(stored, PurchasingWriteOutcome.Recorded, envelope.CorrelationId);
         }
 
         /// <summary>F-017 F17-4: the transaction handed to participants (the fake has no database).</summary>

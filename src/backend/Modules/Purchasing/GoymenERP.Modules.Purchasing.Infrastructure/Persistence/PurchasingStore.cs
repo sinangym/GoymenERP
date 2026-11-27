@@ -28,7 +28,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 /// </summary>
 public sealed partial class PurchasingStore(PurchasingDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents, TimeProvider timeProvider,
     ISettingsDocumentNumberSeriesV1? documentNumbers = null, ICurrentUser? numberUser = null,
-    IErpAuthorityRevalidationService? numberAuthority = null)
+    IErpAuthorityRevalidationService? numberAuthority = null, IAuditTransactionWriterV1? decisionAuditWriter = null)
     : IPurchasingStore
 {
     private const string RequestEntityType = "Purchasing.PurchaseRequest";
@@ -422,6 +422,43 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             PurchasingWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
+    public async Task<PurchasingOrderStoreResult?> MutateOrderGuardedAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
+        Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, PurchasingMutationAudit audit,
+        Func<CancellationToken, Task> freshDecisionFence, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(freshDecisionFence);
+        if (commandName != PurchasingCommands.OrderApproveV1)
+            throw new ArgumentException("Guarded order decision is native approval only.", nameof(commandName));
+        // The guard precedes all reads/callbacks, including replay, and remains outside cleanup of owned work.
+        if (System.Transactions.Transaction.Current is not null || !dbContext.Database.IsRelational()
+            || dbContext.Database.CurrentTransaction is not null || dbContext.ChangeTracker.HasChanges()
+            || decisionAuditWriter?.HasPendingDrafts == true)
+            throw new InvalidOperationException("Order approval requires its own clean Purchasing transaction.");
+        var companyId = RequireResolvedCompany();
+        async Task Fence(CancellationToken token)
+        {
+            if (RequireResolvedCompany() != companyId) throw Refused(PurchasingStoreCodes.CompanyContextMismatch, "Company context changed.");
+            await freshDecisionFence(token);
+            if (RequireResolvedCompany() != companyId) throw Refused(PurchasingStoreCodes.CompanyContextMismatch, "Company context changed.");
+        }
+        try
+        {
+            await Fence(cancellationToken);
+            await using var owned = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+            var result = await MutateOrderCoreAsync(envelope, requestHash, commandName, orderId, mutate, participant: null,
+                audit, cancellationToken, freshDecisionFence: Fence);
+            await Fence(cancellationToken);
+            await owned.CommitAsync(cancellationToken);
+            return result;
+        }
+        catch
+        {
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
+        finally { decisionAuditWriter?.DiscardPending(); } // Only this attempt's drafts: caller-pending state was refused above.
+    }
+
     public Task<PurchasingOrderStoreResult?> MutateOrderAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
         Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, PurchasingMutationAudit audit, CancellationToken cancellationToken = default) =>
         MutateOrderCoreAsync(envelope, requestHash, commandName, orderId, mutate, participant: null, audit, cancellationToken);
@@ -448,7 +485,8 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, Func<PurchaseOrder, IDbTransaction, CancellationToken, Task>? participant,
         PurchasingMutationAudit audit, CancellationToken cancellationToken,
         Func<PurchaseOrder, CancellationToken, Task>? beforeMutation = null, Guid? revisedCompanyAccountId = null,
-        Func<CancellationToken, Task>? requireStillAuthorized = null)
+        Func<CancellationToken, Task>? requireStillAuthorized = null,
+        Func<CancellationToken, Task>? freshDecisionFence = null)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         RequireEnvelope(envelope);
@@ -473,6 +511,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             }
 
             var stored = await FindOrderAsync(recordedId, cancellationToken) ?? throw new InvalidOperationException("Kayıtlı denemenin siparişi bulunamadı.");
+            if (freshDecisionFence is not null) await freshDecisionFence(cancellationToken);
             return new PurchasingOrderStoreResult(stored, PurchasingWriteOutcome.Replayed, attempt.CorrelationId);
         }
 
@@ -525,6 +564,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         if (beforeMutation is not null) await beforeMutation(order, cancellationToken);
         if (requireStillAuthorized is not null) await requireStillAuthorized(cancellationToken);
         if (RequireResolvedCompany() != companyId) throw Refused(PurchasingStoreCodes.CompanyContextMismatch, "Şirket bağlamı değişti.");
+        if (freshDecisionFence is not null) await freshDecisionFence(cancellationToken);
         mutate(order, now);
         if (order.Version != versionBefore + 1 || order.Id != row.Id || order.CompanyId != companyId || order.Lines.Count != lineRows.Count
             || order.Acceptances.Count != acceptanceRows.Count)
@@ -573,6 +613,8 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             await participant(order, transaction.GetDbTransaction(), cancellationToken);
         }
 
+        // The source-request approval/share owner reads have finished; no tracked order/line/attempt/audit is staged yet.
+        if (freshDecisionFence is not null) await freshDecisionFence(cancellationToken);
         var cancelsNumber = order.Status == PurchaseOrderStatus.Cancelled && row.DocumentNumber is not null && row.DocumentNumberCancelledAtUtc is null;
         if (cancelsNumber)
         {

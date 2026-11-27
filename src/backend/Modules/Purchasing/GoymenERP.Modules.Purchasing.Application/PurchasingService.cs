@@ -397,9 +397,10 @@ public sealed partial class PurchasingService(
         PurchasingOrderStoreResult? result;
         try
         {
-            result = await store.MutateOrderAsync(envelope, requestHash, PurchasingCommands.OrderApproveV1, orderId,
+            result = await store.MutateOrderGuardedAsync(envelope, requestHash, PurchasingCommands.OrderApproveV1, orderId,
                 (order, now) => order.Approve(expectedVersion, actor, now, SettingsCurrencyIdentitiesV1.TurkishLira, kilograms),
-                new PurchasingMutationAudit("purchasing.purchase-order.approved.v1", "Approve", "Satınalma siparişi onaylandı"), cancellationToken);
+                new PurchasingMutationAudit("purchasing.purchase-order.approved.v1", "Approve", "Satınalma siparişi onaylandı"),
+                token => RequireStillAsync(scope, bindings.ApprovePermission, token), cancellationToken);
         }
         catch (PurchasingVersionConflictException)
         {

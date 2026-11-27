@@ -269,6 +269,13 @@ public interface IPurchasingStore
     Task<PurchasingOrderStoreResult?> MutateOrderAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
         Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, PurchasingMutationAudit audit, CancellationToken cancellationToken = default);
 
+    /// <summary>Native order approval with the real consumer authority fence after owner reads and before staging,
+    /// and again after Save before the store-owned transaction commits. Unsupported stores fail closed.</summary>
+    Task<PurchasingOrderStoreResult?> MutateOrderGuardedAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
+        Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, PurchasingMutationAudit audit,
+        Func<CancellationToken, Task> freshDecisionFence, CancellationToken cancellationToken = default) =>
+        throw new PurchasingServiceException(503, "service_unavailable");
+
     /// <summary>
     /// F-017 §3.5 F17-4 (ALS-D85, §3.6): <see cref="MutateOrderAsync"/> with a <paramref name="participant"/> that runs inside the
     /// same transaction, after the domain transition and its invariants and before the single save, while every general line lock
