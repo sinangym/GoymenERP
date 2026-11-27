@@ -1537,7 +1537,7 @@ it('mounts dispatch as the 25th native purpose under its exact standalone capabi
  expect(route?.path).toBe(`onaylarim/${dispatchKind}/:approvalId`)
  const element=route?.element as ReactElement<{capability:readonly string[];children:ReactElement<{kind:string}>}>
  expect(element.props.capability).toEqual([dispatchCap]);expect(element.props.children.type).toBe(WorkDecisionPage);expect(element.props.children.props.kind).toBe(dispatchKind)
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(29)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(30)
 })
 it.each([{companyId:COMPANY_B},{logisticsDispatchNote:{...dispatchProof,dispatchNoteId:COMPANY_A}},{rejectionSupported:true}])('does not expose malformed/foreign dispatch proof %j',async(delta)=>{
  installFetch({capabilities:[dispatchCap],respond:url=>url.includes(dispatchPath)?json({...dispatchPreview,...delta}):undefined});mountDispatchPurpose()
@@ -1611,7 +1611,7 @@ it('mounts the customer return purpose under its exact standalone capability amo
  expect(route?.path).toBe(`onaylarim/${customerKind}/:approvalId`)
  expect(route).toBeDefined()
  expect((route!.element as ReactElement<{capability:readonly string[]}>).props.capability).toEqual([customerCap])
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(29)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(30)
 })
 it('does not restore a customer-return unknown attempt under another authentication session',async()=>{
  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-return-old'})
@@ -1950,12 +1950,15 @@ it('keeps original price key/body/version across unknown/remount without showing
  mount(priceRoute);await screen.findByRole('region',{name:PRICE.listHeading});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
  expect(screen.queryByRole('region',{name:PRICE.listHeading})).toBeNull();expect(JSON.stringify(sessionStorage)).not.toContain('41000.125');expect(JSON.stringify(sessionStorage)).not.toContain('SENTETIK fiyat')
  cleanup();mount(priceRoute);await screen.findByRole('button',{name:T.retry});expect(gets).toBe(1)
+ expect(screen.getByText(T.priceListRetained)).toBeTruthy()
+ expect(screen.queryByText(T.lossRequestNumber,{exact:false})).toBeNull();expect(screen.queryByText(T.lossFrozenTime,{exact:false})).toBeNull()
+ expect(screen.queryByLabelText(T.reason)).toBeNull();expect(screen.queryByLabelText(T.packageEffectiveFrom)).toBeNull()
  fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
  const sent=calls.filter(call=>call.url.includes(pricePath)&&call.method==='POST');expect(sent).toHaveLength(2)
  expect(sent[1]!.body).toEqual(sent[0]!.body);expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key'])
  expect(screen.queryByRole('region',{name:PRICE.listHeading})).toBeNull()
 })
-it.each([[],['price-lists.publish'],['price-lists.detail'],['price-lists.package-standard-version.work-decision'],['product.items.detail']])('requires exact standalone price purpose %j',async capabilities=>{
+it.each([[],['price-lists.publish'],['price-lists.detail'],['price-lists.package-standard-version.work-decision'],['product.items.detail']].map(capabilities=>({capabilities})))('requires exact standalone price purpose %j',async({capabilities})=>{
  const calls=installFetch({capabilities,respond:url=>url.includes(pricePath)?json(pricePreview):undefined});mount(priceRoute)
  await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(calls.some(call=>call.url.includes(pricePath))).toBe(false)
 })

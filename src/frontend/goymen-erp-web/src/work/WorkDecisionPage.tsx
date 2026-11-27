@@ -143,7 +143,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
     <Link to="/onaylarim/kuyruk">{T.back}</Link>
     {preview === null ? reconciledHistorical ? <p>{T.priorDecisionResolved}</p> : historicalRetry ? <div><p>{T.priorDecisionPending}</p>
       <p>{T.version}: {attempt.pendingPayload?.expectedVersion}</p>
-      {ibanChange ? <p>{T.ibanRetained}</p> : <><p>{overage ? T.overageRequestNumber : T.lossRequestNumber}: {frozenTransferRequest?.requestNumber}</p>
+      {priceList ? <p>{T.priceListRetained}</p> : ibanChange ? <p>{T.ibanRetained}</p> : <><p>{overage ? T.overageRequestNumber : T.lossRequestNumber}: {frozenTransferRequest?.requestNumber}</p>
       <p>{T.lossFrozenTime}: {frozenTransferRequest?.decidedAtUtc}</p></>}
     </div> : <StateBlock state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
       subject={T.title} onRetry={() => void query.refetch()} /> : <>
