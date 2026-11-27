@@ -2178,7 +2178,7 @@
         "Native PartyCreditLimit approve/reject safety5080752e0637a77b2364d0c9df9dcacaccfa052c/root2b0b99f05: existing owned Serializable/Audit/fresh company-actor-permission fences, clean-entry caller preservation, owned cleanup and one readonly original-key winner read reused. FNS-D27a maker rule and FNS-D56/57 single-step Set/Remove unchanged. Flow40 Work purpose/UI is not implemented by this prerequisite.",
         "Flow47/48 period and Flow50 journal reversal purposes paired in source45/45/0; exact-head local checks and retained failures: docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#journal_reversal_paired_checkpoint. ActualSQL/HTTP/browser/fullCI/K3/business acceptance pending; no new policy/grant/activation.",
         "Flow51 native catalog activation safety prerequisite: existing owned runner/actual scoped Audit/current authority and original-key receipt preserved; Work owner-purpose/source/host/UI pending. Counts remain45/45/0; evidence: docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#catalog_activation_native_checkpoint.",
-        "Flow51 native full-package owner read/original receipt implemented, Work adapter ongoing; Flow52 native activation safety implemented, owner/UI pending. Existing Work kinds remain45/45/0. Canonical exact-head evidence: docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#catalog_owner_mapping_native_checkpoint."
+        "Flow51 owner full-package read/original receipt plus Work source/DTO implemented, WorkHost ongoing/frontend pending; Flow52 owner read/original activation receipt implemented, WorkHost/frontend pending. Existing Work kinds remain45/45/0. Canonical exact-head evidence: docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#catalog_owner_mapping_native_checkpoint."
       ],
       "decisions": [
         "YOL-D41",
@@ -4095,9 +4095,9 @@
           "runtime_acceptance": "NOT_RUN"
         },
         "catalog_owner_mapping_native_checkpoint": {
-          "source_commit": "28637ed9592f3d27df3a0ac438c78133874d781a",
+          "source_commit": "c3fd261c351986a8b1906a68cd13adcf71e0d3ca",
           "evidence_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#catalog_owner_mapping_native_checkpoint",
-          "delivery_scope": "Flow51 owner read/receipt and Flow52 native safety, not new Work purposes",
+          "delivery_scope": "Flow51 owner read/receipt+Work source/DTO and Flow52 owner read/receipt; host ongoing/frontend pending, no new paired Work purposes",
           "runtime_acceptance": "NOT_RUN"
         }
       }

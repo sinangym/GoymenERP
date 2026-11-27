@@ -1737,10 +1737,10 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native safety plus owner human read/genuine receipt implemented; Work adapter ongoing, purpose/UI pending. Native wire/hash/permissions and maker/business rules unchanged. Not another Work kind;45backend/45frontend/0staged unchanged. Separate-head local evidence, retained compile failure and actualSQL/runtime limits: catalog_owner_mapping_native_checkpoint. All semantic/runtime flags remainNOT_VERIFIED/NOT_RUN.",
+      "limitation": "Native safety, owner human read/genuine receipt and Work source adapter/DTO implemented; WorkHost ongoing, frontend pending. Native wire/hash/permissions and maker/business rules unchanged. Not another Work kind;45backend/45frontend/0staged unchanged. Separate-head local evidence, retained compile failure and actualSQL/runtime limits: catalog_owner_mapping_native_checkpoint. All semantic/runtime flags remainNOT_VERIFIED/NOT_RUN.",
       "latest_source_evidence": {
-        "source_commit": "28637ed9592f3d27df3a0ac438c78133874d781a",
-        "scope": "Native safety plus owner human read/genuine receipt implemented; Work adapter ongoing, purpose/UI pending",
+        "source_commit": "c3fd261c351986a8b1906a68cd13adcf71e0d3ca",
+        "scope": "Native safety, owner human read/genuine receipt plus Work source/DTO implemented; WorkHost ongoing/frontend pending",
         "evidence_ref": "#catalog_owner_mapping_native_checkpoint",
         "sql": "NOT_RUN",
         "runtime_acceptance": "NOT_RUN"
@@ -1772,10 +1772,10 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native activation safety implemented; owner-purpose human read/receipt/Work/UI pending. Native wire/hash/permissions and maker/business rules unchanged. Not another Work kind;45backend/45frontend/0staged unchanged. Separate-head local evidence, retained compile failure and actualSQL/runtime limits: catalog_owner_mapping_native_checkpoint. All semantic/runtime flags remainNOT_VERIFIED/NOT_RUN.",
+      "limitation": "Native activation safety plus owner-purpose human read/original receipt implemented; WorkHost/frontend pending. Native wire/hash/permissions and maker/business rules unchanged. Not another Work kind;45backend/45frontend/0staged unchanged. Separate-head local evidence, retained compile failure and actualSQL/runtime limits: catalog_owner_mapping_native_checkpoint. All semantic/runtime flags remainNOT_VERIFIED/NOT_RUN.",
       "latest_source_evidence": {
-        "source_commit": "28637ed9592f3d27df3a0ac438c78133874d781a",
-        "scope": "Native activation safety implemented; owner-purpose human read/receipt/Work/UI pending",
+        "source_commit": "c3fd261c351986a8b1906a68cd13adcf71e0d3ca",
+        "scope": "Native activation safety plus owner read/original receipt implemented; WorkHost/frontend pending",
         "evidence_ref": "#catalog_owner_mapping_native_checkpoint",
         "sql": "NOT_RUN",
         "runtime_acceptance": "NOT_RUN"
@@ -2738,8 +2738,8 @@
     "limits": "All64 semanticsNOT_VERIFIED/runtimeNOT_RUN/verified_runtime_flows0;41packages/50references unchanged. ActualSQL/normalHTTP/browser/fullCI/pins/two independent K3 and business acceptance pending. Previous45 paired checkpoint and failures retained at their original heads."
   },
   "catalog_owner_mapping_native_checkpoint": {
-    "source_commit": "28637ed9592f3d27df3a0ac438c78133874d781a",
-    "scope": "Flow51 native owner activation-purpose full-package read and genuine immutable original receipt implemented; Work adapter ongoing, no paired purpose. Flow52 native activation owned safety implemented; owner-purpose read/receipt/UI pending. Existing45 backend/45 frontend/0 staged Work kinds unchanged.",
+    "source_commit": "c3fd261c351986a8b1906a68cd13adcf71e0d3ca",
+    "scope": "Flow51 owner full-package read/original receipt plus Work source adapter and DTO implemented; WorkHost ongoing, frontend pending. Flow52 owner read/original activation receipt implemented; WorkHost/frontend pending. Existing45 backend/45 frontend/0 staged Work kinds unchanged.",
     "checks": {
       "owner_and_mapping_native": {
         "source_commit": "238f49c244e2497c5cdac7c11941fe84ccf6e7e4",
@@ -2759,12 +2759,30 @@
         "artifact": "catalog-work-proof-20261127",
         "work_unit": "194/194PASS0skip25.3383392s, including7 new constructor/body-JsonIgnore/native maker-exception cases",
         "limits": "Work assembly/test only; not a later API rerun or Work-purpose delivery."
+      },
+      "catalog_source_compile_failure": {
+        "source_commit": "a771bf0894e9f8951aa3c52045db8932afdb2bf1",
+        "artifact": "catalog-work-source-20261128",
+        "accounting": "compileFAILCS0246 PostingSide at binding73; exit1/18.8559273s; tests NOT_RUN. Retained independently; root582 adds only Domain.Posting using."
+      },
+      "catalog_source_mapping_owner": {
+        "source_commit": "f487c441c20993f350bae16448ac77e2cd896c27",
+        "artifact": "catalog-source-mapping-owner-20261128",
+        "accounting": "1236/1236PASS0skip34.6312372s; actual TRX counters and meta/head parsed; Mapping owner60 and Catalog source54 cases included, not additional totals",
+        "limits": "Accounting unit evidence only; not fullAPI/Host/SQL at c3fd. Prior1414 Host result remains attached to its old head."
       }
     },
-    "source_peers": "Catalog7c09 owner8files read; null Record P2 fixed985b with negative case. Mapping5645752f full8files,09aee9d2 two-file SQL/unit delta, root985b full4file alias/composition delta read; unread0/no remaining concrete P0/P1/P2 in these bounded scopes. Not formal K3.",
-    "native_boundaries": "Catalog Activate-only companywide read emits full stored accounts/bindings and two frozen versions; public15/result8/hash unchanged. Private14-field JsonIgnore receipt binds original command/key/hash/actor/company/correlation and original Active2 despite current Superseded3. Mapping native maker Self403 terminal receipt alone can commit under exact owned mapping marker/saved command; all other Denied paths rollback. No mutation retry or new business policy/grant.",
-    "sql": "Accounting183 unique ordinal SQL source names:3 catalog owner read/receipt plus6 mapping activation Facts added after174. Compiled-source inventory is not actualSQL; SQL NOT_RUN. Controlled1205 injection is not natural two-session deadlock acceptance.",
+    "source_peers": "Catalog7c09 owner8files read; null Record P2 fixed985b with negative case. Mapping5645752f full8files,09aee9d2 two-file SQL/unit delta, root985b full4file alias/composition delta read; unread0/no remaining concrete P0/P1/P2 in these bounded scopes. Not formal K3. Flow51 c766 full5files+calls read by root; Flow52 4ea full7files+native chain and06e7 full2file SQL delta+called helpers read; unread0/no concrete P0/P1/P2, not formal K3. Actual precommit fence11 and final consumer12 source-aligned.",
+    "native_boundaries": "Catalog Activate-only companywide read emits full stored accounts/bindings and two frozen versions; public15/result8/hash unchanged. Private14-field JsonIgnore receipt binds original command/key/hash/actor/company/correlation and original Active2 despite current Superseded3. Mapping native maker Self403 terminal receipt alone can commit under exact owned mapping marker/saved command; all other Denied paths rollback. No mutation retry or new business policy/grant. Mapping full12-header/8-row human facts retain prepared-plan reference separately from current active plan; private13-field JsonIgnore receipt binds two original expectations and genuine Commands JSON. Original Active2 receipt survives current Superseded3/active-plan replacement.",
+    "sql": "Accounting183 unique ordinal SQL source names:3 catalog owner read/receipt plus6 mapping activation Facts added after174. Compiled-source inventory is not actualSQL; SQL NOT_RUN. Controlled1205 injection is not natural two-session deadlock acceptance. Subsequent catalog Work source1 plus mapping owner3 Facts bring pending root source inventory to187; inventory update belongs to root. These four source additions have not been executed on SQL.",
     "reference_provenance": "Existing REF-JOURNAL-01 and REF-JOURNAL-02 source/test blobs, SHA256 and anchors still exactly match28637; their original source commits/local proofs/CI histories unchanged. No exact catalog/mapping reference exists; no new ID or Settings REF-CATALOG-01 substitution. All50 reference bodies preserved.",
-    "limits": "41packages/50references/64flow rows unchanged; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN/verified_runtime_flows0.45/45/0 denotes existing Work kinds only, not Flow51/52 completion. ActualSQL/normalHTTP/browser/fullCI/pins/two independent K3/business acceptance pending. Artifact folder dates20261127 retained; record updated2026-11-28."
+    "limits": "41packages/50references/64flow rows unchanged; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN/verified_runtime_flows0.45/45/0 denotes existing Work kinds only, not Flow51/52 completion. ActualSQL/normalHTTP/browser/fullCI/pins/two independent K3/business acceptance pending. Artifact folder dates20261127 retained; record updated2026-11-28.",
+    "previous_source_commit": "28637ed9592f3d27df3a0ac438c78133874d781a",
+    "source_updates": {
+      "catalog_source": "c766/root4c2f; missing PostingSide namespace fixed by root582 using-only",
+      "mapping_owner": "4ea/rootec045; SQL06e7/rootc3fd",
+      "catalog_work_dto": "4ef/rootf487;7 DTO source cases NOT_RUN",
+      "dto_scope": "7 DTO source cases written; fullAPI/Host/SQL NOT_RUN at current checkpoint head"
+    }
   }
 }
