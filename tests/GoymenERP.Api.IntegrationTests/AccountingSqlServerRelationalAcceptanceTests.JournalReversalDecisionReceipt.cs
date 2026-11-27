@@ -41,7 +41,7 @@ public sealed partial class AccountingSqlServerRelationalAcceptanceTests
         Assert.Equal(id, proof.ProposalId); Assert.Equal(approved.Resource.ReversalJournalId, proof.ReversalJournalId);
         Assert.Equal(before.Resource.SourceFactsDigest, proof.SourceFactsDigest); Assert.Equal(run.Correlation, proof.OriginalCorrelationId);
         var actual = await run.ScalarAsync<string>("SELECT ResultJson FROM accounting.Commands WHERE CommandName=@n AND IdempotencyKeyHash=@h", ("@n", proof.CommandName), ("@h", proof.IdempotencyKeyHash));
-        Assert.Equal(AccountingApiService.Sha256(actual), proof.OriginalResultDigest);
+        Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(actual))), proof.OriginalResultDigest);
         Assert.Equal(actual, JsonSerializer.Serialize(approved, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
         Assert.DoesNotContain("approvalReceipt", actual, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(16, JsonSerializer.SerializeToElement(approved.Resource).EnumerateObject().Count());
