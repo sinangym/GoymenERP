@@ -463,7 +463,7 @@ public sealed partial class AccountingPostingAccountMappingLifecycleV1Tests
             var store = new AccountingPostingAccountMappingStoreV1(
                 dbContext, catalog, companyContext, new NullAuditCollector(), time);
             var service = new AccountingPostingAccountMappingServiceV1(
-                store, log, authority ?? new GrantingAuthority(granted ?? All), companyContext,
+                new SyntheticMappingActivationProtocolStore(store), log, authority ?? new GrantingAuthority(granted ?? All), companyContext,
                 new FixedUser(actor, Company), new FixedCorrelation(correlation ?? Guid.NewGuid().ToString("N")), time);
             return new RequestScope(dbContext, service, store);
         }

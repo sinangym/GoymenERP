@@ -115,7 +115,9 @@ public sealed partial class AccountingPostingAccountMappingServiceV1(
             return Task.FromResult(Invalid("expectedActiveMappingVersion"));
         }
 
-        return RunAsync(
+        if (string.IsNullOrWhiteSpace(idempotencyKey)) return Task.FromResult(Invalid("idempotencyKey"));
+        if (!TryContext(out var capturedCompany, out var capturedActor)) return Task.FromResult(Denied());
+        return mappings.RunActivationAsync(replayOnly => RunAsync(
             AccountingPostingAccountMappingPermissionNamesV1.Activate,
             AccountingPostingAccountMappingCommandNamesV1.Activate,
             idempotencyKey,
@@ -129,12 +131,13 @@ public sealed partial class AccountingPostingAccountMappingServiceV1(
                     request.ExpectedActiveMappingVersion,
                     actor,
                     now,
-                    fence => FenceAsync(AccountingPostingAccountMappingPermissionNamesV1.Activate, company, actor, fence),
+                    fence => ActivationFenceAsync(company, actor, fence),
                     metadata,
                     token);
                 return Success(AccountingApiStatus.Ok, record);
             },
-            cancellationToken);
+            cancellationToken, capturedCompany, capturedActor, replayOnly),
+            token => ActivationFenceAsync(capturedCompany, capturedActor, token), cancellationToken);
     }
 
     public Task<AccountingApiResult<AccountingPostingAccountMappingViewV1>> ReadAsync(
@@ -193,7 +196,7 @@ public sealed partial class AccountingPostingAccountMappingServiceV1(
         AccountingApiStatus successStatus,
         Func<AccountingCommandMetadata, Guid, Guid, DateTimeOffset, CancellationToken,
             Task<AccountingApiResult<AccountingPostingAccountMappingViewV1>>> write,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, Guid? activationCompany = null, Guid? activationActor = null, bool replayOnly = false)
     {
         if (string.IsNullOrWhiteSpace(idempotencyKey))
         {
@@ -206,8 +209,9 @@ public sealed partial class AccountingPostingAccountMappingServiceV1(
             return Unavailable();
         }
 
-        if (!TryContext(out var company, out var actor)
-            || !await AuthorizeCapturedAsync(permission, company, actor, cancellationToken))
+        var company = activationCompany ?? Guid.Empty; var actor = activationActor ?? Guid.Empty;
+        if (activationCompany is null && !TryContext(out company, out actor)) return Denied();
+        if (!await AuthorizeRunAsync(cancellationToken))
         {
             return Denied();
         }
@@ -217,7 +221,7 @@ public sealed partial class AccountingPostingAccountMappingServiceV1(
         var requestHash = AccountingApiService.Sha256(
             commandName + "|" + JsonSerializer.Serialize(canonicalRequest, Json));
         var prior = await commands.FindCommandAsync(commandName, keyHash, cancellationToken);
-        if (!await AuthorizeCapturedAsync(permission, company, actor, cancellationToken))
+        if (!await AuthorizeRunAsync(cancellationToken))
         {
             return Denied();
         }
@@ -227,7 +231,9 @@ public sealed partial class AccountingPostingAccountMappingServiceV1(
             return Answer(prior, actorId, requestHash);
         }
 
+        if (replayOnly) return new(AccountingApiStatus.Conflict, null, false, AccountingStoreCodes.ConcurrentChange);
         var scope = await authority.RevalidatePermissionScopeAsync(permission, company, cancellationToken);
+        if (activationCompany is not null) cancellationToken.ThrowIfCancellationRequested();
         if (!Granted(scope) || !ContextMatches(company, actor))
         {
             return Denied();
@@ -239,6 +245,7 @@ public sealed partial class AccountingPostingAccountMappingServiceV1(
             completed = stored switch
             {
                 AccountingPostingAccountMappingRecordV1 record => Success(successStatus, record),
+                AccountingApiResult<AccountingPostingAccountMappingViewV1> answer => answer,
                 _ => throw new InvalidOperationException("Unsupported posting account mapping command result."),
             };
             return Record(commandName, keyHash, actorId, requestHash, completed);
@@ -260,7 +267,7 @@ public sealed partial class AccountingPostingAccountMappingServiceV1(
         try
         {
             result = await write(metadata, company, actor, timeProvider.GetUtcNow(), cancellationToken);
-            if (!await AuthorizeCapturedAsync(permission, company, actor, cancellationToken))
+            if (!await AuthorizeRunAsync(cancellationToken))
             {
                 return Denied();
             }
@@ -307,8 +314,9 @@ public sealed partial class AccountingPostingAccountMappingServiceV1(
         }
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ConcurrentChange)
         {
+            if (activationCompany is not null) throw new NormalJournalApprovalRaceException(exception.Code, exception);
             var winner = await commands.FindCommandAsync(commandName, keyHash, cancellationToken);
-            if (!await AuthorizeCapturedAsync(permission, company, actor, cancellationToken))
+            if (!await AuthorizeRunAsync(cancellationToken))
             {
                 return Denied();
             }
@@ -324,7 +332,7 @@ public sealed partial class AccountingPostingAccountMappingServiceV1(
         }
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ProviderUnavailable)
         {
-            if (!await AuthorizeCapturedAsync(permission, company, actor, cancellationToken)) return Denied();
+            if (!await AuthorizeRunAsync(cancellationToken)) return Denied();
             return Unavailable();
         }
         catch (AccountingStoreException)
@@ -333,7 +341,7 @@ public sealed partial class AccountingPostingAccountMappingServiceV1(
             return Unavailable();
         }
 
-        if (!await AuthorizeCapturedAsync(permission, company, actor, cancellationToken))
+        if (!await AuthorizeRunAsync(cancellationToken))
         {
             return Denied();
         }
@@ -345,8 +353,9 @@ public sealed partial class AccountingPostingAccountMappingServiceV1(
         }
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ConcurrentChange)
         {
+            if (activationCompany is not null) throw new NormalJournalApprovalRaceException(exception.Code, exception);
             var winner = await commands.FindCommandAsync(commandName, keyHash, cancellationToken);
-            if (!await AuthorizeCapturedAsync(permission, company, actor, cancellationToken))
+            if (!await AuthorizeRunAsync(cancellationToken))
             {
                 return Denied();
             }
@@ -354,12 +363,27 @@ public sealed partial class AccountingPostingAccountMappingServiceV1(
             return winner is not null ? Answer(winner, actorId, requestHash) : result;
         }
 
-        if (!await AuthorizeCapturedAsync(permission, company, actor, cancellationToken))
+        if (!await AuthorizeRunAsync(cancellationToken))
         {
             return Denied();
         }
 
         return result;
+        async Task<bool> AuthorizeRunAsync(CancellationToken token)
+        {
+            if (activationCompany is null) return await AuthorizeCapturedAsync(permission, company, actor, token);
+            try { await ActivationFenceAsync(company, actor, token); return true; }
+            catch (NormalJournalAuthorityDeniedException) { return false; }
+        }
+    }
+
+    private async Task ActivationFenceAsync(Guid company, Guid actor, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        if (!ContextMatches(company, actor)) throw new NormalJournalAuthorityDeniedException();
+        var scope = await authority.RevalidatePermissionScopeAsync(AccountingPostingAccountMappingPermissionNamesV1.Activate, company, token);
+        token.ThrowIfCancellationRequested();
+        if (!Granted(scope) || !ContextMatches(company, actor)) throw new NormalJournalAuthorityDeniedException();
     }
 
     private async Task FenceAsync(string permission, Guid company, Guid actor, CancellationToken cancellationToken)

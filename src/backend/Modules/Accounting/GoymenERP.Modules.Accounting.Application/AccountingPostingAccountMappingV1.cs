@@ -234,6 +234,12 @@ public sealed class AccountingPostingAccountMappingAuthorityDeniedException()
 
 public interface IAccountingPostingAccountMappingStoreV1
 {
+    // Runtime activation owns the entire command, including original-key and terminal-refusal reads/writes.
+    Task<AccountingApiResult<AccountingPostingAccountMappingViewV1>> RunActivationAsync(
+        Func<bool, Task<AccountingApiResult<AccountingPostingAccountMappingViewV1>>> attempt,
+        Func<CancellationToken, Task> freshFence, CancellationToken token = default) =>
+        Task.FromResult(new AccountingApiResult<AccountingPostingAccountMappingViewV1>(AccountingApiStatus.Unavailable, null, false, null));
+
     Task<AccountingPostingAccountMappingRecordV1?> ReadAsync(
         long mappingVersion,
         CancellationToken cancellationToken = default);

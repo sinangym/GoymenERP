@@ -22,7 +22,8 @@ public sealed partial class AccountingPostingAccountMappingStoreV1(
     ApprovedAccountingSourceCatalogStoreV1 catalog,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    AccountingStore? activationSafetyOwner = null)
     : IAccountingPostingAccountMappingStoreV1, IAccountingPostingAccountMappingResolverV1,
       IAccountingPostingAccountMappingWorkspaceStoreV1
 {
@@ -171,13 +172,16 @@ public sealed partial class AccountingPostingAccountMappingStoreV1(
                 nameof(mappingVersion));
         }
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var owned = IsOwnedActivation;
+        await using var transaction = owned ? null : await dbContext.Database.BeginTransactionAsync(cancellationToken);
         try
         {
+            await MappingActivationFenceAsync(cancellationToken);
             var row = await dbContext.PostingAccountMappingVersions
                 .SingleOrDefaultAsync(candidate => candidate.MappingVersion == mappingVersion, cancellationToken)
                 ?? throw new AccountingPostingAccountMappingRefusalException(
                     AccountingPostingAccountMappingCodesV1.NotFound);
+            await MappingActivationFenceAsync(cancellationToken);
             if (row.Version != expectedVersion)
             {
                 throw new AccountingVersionConflictException(expectedVersion, row.Version);
@@ -195,8 +199,10 @@ public sealed partial class AccountingPostingAccountMappingStoreV1(
                     AccountingPostingAccountMappingCodesV1.SelfActivation, "activation");
             }
 
+            await MappingActivationFenceAsync(cancellationToken);
             var active = await dbContext.PostingAccountMappingVersions
                 .SingleOrDefaultAsync(candidate => candidate.Status == Active, cancellationToken);
+            await MappingActivationFenceAsync(cancellationToken);
             var currentActive = active?.MappingVersion ?? 0;
             if (currentActive != expectedActiveMappingVersion)
             {
@@ -204,8 +210,10 @@ public sealed partial class AccountingPostingAccountMappingStoreV1(
                     "expectedActiveMappingVersion", expectedActiveMappingVersion, currentActive);
             }
 
+            await MappingActivationFenceAsync(cancellationToken);
             var entries = await EntriesAsync(row.MappingVersion, cancellationToken);
-            var plan = await ActivePlanAsync(cancellationToken)
+            await MappingActivationFenceAsync(cancellationToken);
+            var plan = await ActivePlanAsync(cancellationToken, owned ? MappingActivationFenceAsync : null)
                 ?? throw new AccountingPostingAccountMappingRefusalException(
                     AccountingPostingAccountMappingCodesV1.AccountPlanUnavailable);
             for (var index = 0; index < entries.Count; index++)
@@ -220,7 +228,9 @@ public sealed partial class AccountingPostingAccountMappingStoreV1(
             await freshAuthorityFence(cancellationToken);
             if (active is not null)
             {
+                await MappingActivationFenceAsync(cancellationToken);
                 var activeEntries = await EntriesAsync(active.MappingVersion, cancellationToken);
+                await MappingActivationFenceAsync(cancellationToken);
                 var activeBefore = AuditJson(Restore(active, activeEntries));
                 var activeVersionBefore = active.Version;
                 active.Status = Superseded;
@@ -251,12 +261,13 @@ public sealed partial class AccountingPostingAccountMappingStoreV1(
             Complete(metadata, record);
             await SaveAsync(cancellationToken);
             await freshAuthorityFence(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
             return record;
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken);
+            if (owned) throw; // Only the outer command owner can abort, dispose and clean this attempt.
+            await transaction!.RollbackAsync(cancellationToken);
             throw;
         }
     }
@@ -332,18 +343,21 @@ public sealed partial class AccountingPostingAccountMappingStoreV1(
             : AccountingPostingAccountMappingResolutionV1.Mapped(entry.AccountId, active.MappingVersion);
     }
 
-    private async Task<AccountPlanMirrorV1?> ActivePlanAsync(CancellationToken cancellationToken)
+    private async Task<AccountPlanMirrorV1?> ActivePlanAsync(CancellationToken cancellationToken, Func<CancellationToken, Task>? freshReadFence = null)
     {
+        if (freshReadFence is not null) await freshReadFence(cancellationToken);
         var activeCatalogId = await dbContext.ApprovedSourceCatalogs.AsNoTracking()
             .Where(candidate => candidate.Status == CatalogActive)
             .Select(candidate => (Guid?)candidate.Id)
             .SingleOrDefaultAsync(cancellationToken);
+        if (freshReadFence is not null) await freshReadFence(cancellationToken);
         if (activeCatalogId is not { } id)
         {
             return null;
         }
 
         var mirror = (await catalog.ReadAsync(id, cancellationToken))?.Package.Mirror;
+        if (freshReadFence is not null) await freshReadFence(cancellationToken);
         return mirror is not null && mirror.CompanyId == companyContext.CompanyId ? mirror : null;
     }
 
@@ -385,6 +399,11 @@ public sealed partial class AccountingPostingAccountMappingStoreV1(
     {
         var completion = metadata.Completion?.Invoke(record)
             ?? throw new InvalidOperationException("Mapping writes require an atomic command completion.");
+        if (IsOwnedActivation)
+        {
+            activationSafetyOwner!.CompleteOwnedMappingActivation(this, dbContext, auditEvents, completion);
+            return;
+        }
         dbContext.Commands.Add(new AccountingCommandRow
         {
             CompanyId = companyContext.CompanyId,
@@ -402,12 +421,17 @@ public sealed partial class AccountingPostingAccountMappingStoreV1(
     {
         try
         {
-            await dbContext.SaveChangesAsync(cancellationToken);
+            if (IsOwnedActivation) await activationSafetyOwner!.SaveOwnedMappingActivationAsync(this, dbContext, auditEvents, cancellationToken);
+            else await dbContext.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException exception)
         {
             throw new AccountingStoreException(AccountingStoreCodes.ConcurrentChange,
                 "Another mapping write changed the same version first; nothing was stored.", exception);
+        }
+        catch (DbUpdateException exception) when (IsOwnedActivation && AccountingStore.IsPeriodTransactionDeadlock(exception))
+        {
+            throw; // Preserve actual 1205 identity for the existing owned cleanup/read-only pass.
         }
         catch (DbUpdateException exception) when (exception.GetBaseException() is SqlException { Number: 2601 or 2627 or 1205 })
         {

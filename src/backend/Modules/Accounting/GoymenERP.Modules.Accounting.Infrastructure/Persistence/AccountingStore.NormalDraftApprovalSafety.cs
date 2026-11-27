@@ -44,7 +44,7 @@ public sealed partial class AccountingStore
                 if (replayOnly && !result.IsReplay && result.Status == AccountingApiStatus.Conflict && (result.Code == AccountingStoreCodes.ConcurrentChange
                         || (noWinnerCode == NormalJournalDraftStoreCodesV1.PostingConflict || noWinnerCode == AccountingJournalReversalStoreCodesV1.PostingConflict) && result.Code == AccountingApiCodes.IdempotencyConflict))
                     result = result with { Code = noWinnerCode ?? AccountingStoreCodes.ConcurrentChange };
-                if (result.Status == AccountingApiStatus.Denied)
+                if (result.Status == AccountingApiStatus.Denied && !CanCommitOwnedMappingSelfActivation(commandName, result, state))
                 {
                     // Period maker refusals retain their native business code/field after owned cleanup.
                     // The existing normal-draft denial contract remains unchanged.
