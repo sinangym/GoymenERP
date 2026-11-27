@@ -94,7 +94,8 @@ it('pairs the dispatch Work route, blank navigation and inbox with the existing 
  expect(CAPABILITY_NAV_LABEL[CAPABILITY.logisticsDispatchNoteWorkDecision]).toBe('')
  const route=matchRoutes(workRoutes,'/onaylarim/logistics.dispatch-note.v1/cccccccc-0000-4000-8000-000000000001')?.at(-1)?.route
  expect(route?.path).toBe('onaylarim/logistics.dispatch-note.v1/:approvalId')
- expect((route?.element as {props:{capability:readonly string[]}}).props.capability).toEqual(['logistics.dispatch-note.work-decision'])
+ expect(route).toBeDefined()
+ expect((route!.element as {props:{capability:readonly string[]}}).props.capability).toEqual(['logistics.dispatch-note.work-decision'])
  expect(WORK_INBOX_KINDS.filter(row=>row.kind==='logistics.dispatch-note.v1')).toEqual([{kind:'logistics.dispatch-note.v1',module:'logistics',capability:'logistics.dispatch-note.work-decision'}])
  expect(CAPABILITY_ROUTE[CAPABILITY.logisticsInstructionsDetail]).toBe(LOGISTICS_ROUTE.detail)
  expect(instructionDetailRoute('cccccccc-0000-4000-8000-000000000001')).toBe('/lojistik/yukleme-talimatlari/cccccccc-0000-4000-8000-000000000001')
