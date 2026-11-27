@@ -761,6 +761,12 @@ public sealed partial class FinanceOpeningBalanceService(
                 Issue("openingBalanceId", "opening_balance_reversal_not_proposed"));
         }
 
+        if (ownedOpeningDecision?.BoundReversalId is { } bound && reversal.Id != bound)
+        {
+            dbContext.ChangeTracker.Clear();
+            return Refused(context, CommandOutcome.VersionConflict, Issue("reversalId", "opening_balance_reversal_changed"));
+        }
+
         if (!string.Equals(VersionText(reversal.Version), expectedVersion, StringComparison.Ordinal))
         {
             return await TerminalAsync(context, metadata, action, command, payloadHash, row.Id,

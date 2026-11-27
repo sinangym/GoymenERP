@@ -15,9 +15,9 @@ public sealed partial class FinanceOpeningBalanceService
     public IFinanceOpeningBalanceService WithApprovalSafety() => new GuardedOpeningBalanceService(this, auditOwner);
 
     private async Task<OpeningBalanceCommandResult> RunOwnedOpeningDecisionAsync(FinanceContext context,
-        CommandMetadata metadata, string expectedVersion, string? reason, string command,
+        CommandMetadata metadata, Guid openingId, string expectedVersion, string? reason, string command,
         IAuditTransactionWriterV1? writer, Func<CancellationToken, Task<OpeningBalanceCommandResult>> execute,
-        CancellationToken token)
+        CancellationToken token, Guid? boundReversalId = null)
     {
         ArgumentNullException.ThrowIfNull(context); ArgumentNullException.ThrowIfNull(metadata);
         token.ThrowIfCancellationRequested();
@@ -32,10 +32,12 @@ public sealed partial class FinanceOpeningBalanceService
             if (expectedVersion is null)
                 return Refused(context, CommandOutcome.ValidationFailed, Issue("expectedVersion", "identity_required"));
             if (command is RejectCommand or RejectReversalCommand && ReasonRefusal(context, reason!) is { } invalid) return invalid;
+            if (boundReversalId == Guid.Empty)
+                return Refused(context, CommandOutcome.ValidationFailed, Issue("reversalId", "identity_required"));
             if (!cleanBefore || !CleanEntry()) return Unavailable();
             if (command is not (ApproveCommand or RejectCommand or ApproveReversalCommand or RejectReversalCommand))
                 throw new InvalidOperationException("Unknown opening balance decision.");
-            var state = new OwnedOpeningDecision(command, writer!, replayOnly);
+            var state = new OwnedOpeningDecision(command, writer!, replayOnly, boundReversalId);
             IDbContextTransaction? transaction = null;
             var committed = false;
             ownedOpeningDecision = state;
@@ -45,6 +47,10 @@ public sealed partial class FinanceOpeningBalanceService
                 await RequireFence();
                 var result = await execute(token);
                 if (result.Outcome is CommandOutcome.Denied or CommandOutcome.Unavailable) throw new OpeningDecisionRefusal(result);
+                if (result.Outcome == CommandOutcome.Succeeded && boundReversalId is { } bound && result.Resource?.Reversal?.Id != bound)
+                    throw new OpeningDecisionRefusal(Unavailable());
+                if (result.Outcome == CommandOutcome.Succeeded && (state.Saved || result.IsReplay))
+                    result = result with { DecisionReceipt = await ReadDecisionReceiptAsync(context, metadata, openingId, expectedVersion, reason, command, result, token) };
                 await RequireFence(); RequireFlushed();
                 if (result.Outcome == CommandOutcome.Succeeded && !result.IsReplay && !state.Saved)
                     throw new InvalidOperationException("Opening balance decision has no saved native receipt.");
@@ -123,39 +129,53 @@ public sealed partial class FinanceOpeningBalanceService
         }
     }
 
-    private sealed record OwnedOpeningDecision(string Command, IAuditTransactionWriterV1 Writer, bool ReplayOnly)
+    private sealed record OwnedOpeningDecision(string Command, IAuditTransactionWriterV1 Writer, bool ReplayOnly, Guid? BoundReversalId)
     { internal bool SaveAttempted; internal bool Saved; }
     private sealed class OpeningDecisionRefusal(OpeningBalanceCommandResult result) : Exception
     { internal OpeningBalanceCommandResult Result { get; } = result; }
     private sealed class OpeningDecisionSaveRace : Exception;
 
     private sealed class GuardedOpeningBalanceService(FinanceOpeningBalanceService core, IAuditTransactionWriterV1? writer)
-        : IFinanceOpeningBalanceService
+        : IFinanceOpeningBalanceService, IFinanceOpeningBalanceDecisionReadV1, IFinanceOpeningBalanceReversalDecisionV1
     {
         public Task<OpeningBalanceCommandResult> ApproveAsync(FinanceContext c, CommandMetadata m, OpeningBalanceApproveRequest r, CancellationToken t)
         {
             ArgumentNullException.ThrowIfNull(r);
-            return core.RunOwnedOpeningDecisionAsync(c, m, r.ExpectedVersion, null, ApproveCommand, writer,
+            return core.RunOwnedOpeningDecisionAsync(c, m, r.OpeningBalanceId, r.ExpectedVersion, null, ApproveCommand, writer,
                 token => core.ApproveAsync(c, m, r, token), t);
         }
         public Task<OpeningBalanceCommandResult> RejectAsync(FinanceContext c, CommandMetadata m, OpeningBalanceRejectRequest r, CancellationToken t)
         {
             ArgumentNullException.ThrowIfNull(r);
-            return core.RunOwnedOpeningDecisionAsync(c, m, r.ExpectedVersion, r.Reason, RejectCommand, writer,
+            return core.RunOwnedOpeningDecisionAsync(c, m, r.OpeningBalanceId, r.ExpectedVersion, r.Reason, RejectCommand, writer,
                 token => core.RejectAsync(c, m, r, token), t);
         }
         public Task<OpeningBalanceCommandResult> ApproveReversalAsync(FinanceContext c, CommandMetadata m, OpeningBalanceReversalApproveRequest r, CancellationToken t)
         {
             ArgumentNullException.ThrowIfNull(r);
-            return core.RunOwnedOpeningDecisionAsync(c, m, r.ExpectedVersion, null, ApproveReversalCommand, writer,
+            return core.RunOwnedOpeningDecisionAsync(c, m, r.OpeningBalanceId, r.ExpectedVersion, null, ApproveReversalCommand, writer,
                 token => core.ApproveReversalAsync(c, m, r, token), t);
         }
         public Task<OpeningBalanceCommandResult> RejectReversalAsync(FinanceContext c, CommandMetadata m, OpeningBalanceReversalRejectRequest r, CancellationToken t)
         {
             ArgumentNullException.ThrowIfNull(r);
-            return core.RunOwnedOpeningDecisionAsync(c, m, r.ExpectedVersion, r.Reason, RejectReversalCommand, writer,
+            return core.RunOwnedOpeningDecisionAsync(c, m, r.OpeningBalanceId, r.ExpectedVersion, r.Reason, RejectReversalCommand, writer,
                 token => core.RejectReversalAsync(c, m, r, token), t);
         }
+        public Task<OpeningBalanceCommandResult> ApproveReversalDecisionAsync(FinanceContext c, CommandMetadata m, Guid reversalId, OpeningBalanceReversalApproveRequest r, CancellationToken t)
+        {
+            ArgumentNullException.ThrowIfNull(r);
+            return core.RunOwnedOpeningDecisionAsync(c, m, r.OpeningBalanceId, r.ExpectedVersion, null, ApproveReversalCommand, writer,
+                token => core.ApproveReversalAsync(c, m, r, token), t, reversalId);
+        }
+        public Task<OpeningBalanceCommandResult> RejectReversalDecisionAsync(FinanceContext c, CommandMetadata m, Guid reversalId, OpeningBalanceReversalRejectRequest r, CancellationToken t)
+        {
+            ArgumentNullException.ThrowIfNull(r);
+            return core.RunOwnedOpeningDecisionAsync(c, m, r.OpeningBalanceId, r.ExpectedVersion, r.Reason, RejectReversalCommand, writer,
+                token => core.RejectReversalAsync(c, m, r, token), t, reversalId);
+        }
+        public Task<ReadResult<OpeningBalanceDecisionDetailV1>> ReadOpeningDecisionAsync(FinanceContext c, Guid id, Func<CancellationToken, Task> fence, CancellationToken t) => core.ReadOpeningDecisionAsync(c, id, fence, t);
+        public Task<ReadResult<OpeningBalanceDecisionDetailV1>> ReadReversalDecisionAsync(FinanceContext c, Guid id, Func<CancellationToken, Task> fence, CancellationToken t) => core.ReadReversalDecisionAsync(c, id, fence, t);
         public Task<OpeningBalanceCommandResult> ProposeAsync(FinanceContext c, CommandMetadata m, OpeningBalanceProposeRequest r, CancellationToken t) => core.ProposeAsync(c, m, r, t);
         public Task<OpeningBalanceCommandResult> ProposeReversalAsync(FinanceContext c, CommandMetadata m, OpeningBalanceReversalProposeRequest r, CancellationToken t) => core.ProposeReversalAsync(c, m, r, t);
         public Task<ReadResult<OpeningPeriodView>> GetPeriodAsync(FinanceContext c, CancellationToken t) => core.GetPeriodAsync(c, t);

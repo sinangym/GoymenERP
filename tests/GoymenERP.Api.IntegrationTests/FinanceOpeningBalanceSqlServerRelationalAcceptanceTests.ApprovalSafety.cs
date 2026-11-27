@@ -35,8 +35,8 @@ public sealed partial class FinanceOpeningBalanceSqlServerRelationalAcceptanceTe
                 if (scope.Writer.HasPendingDrafts) seenPending = true;
                 var phase = fault == "before-audit" ? scope.Writer.HasPendingDrafts
                     : fault == "after-audit" ? seenPending && !scope.Writer.HasPendingDrafts
-                    // Native post-save (1), wrapper post-execute (2), final precommit (3).
-                    : fault == "precommit" ? savedFences >= 3 : probe.Saved;
+                    // Post-save (1), receipt-before/afterCommands/afterSourceFacts (2/3/4), wrapper (5), final precommit (6).
+                    : fault == "precommit" ? savedFences >= 6 : probe.Saved;
                 if (!deny || !phase) return PermissionDecision.Allowed;
                 observed = true;
                 if (fault == "actor") { scope.User.Actor = "SENTETIK-changed"; return PermissionDecision.Allowed; }
@@ -48,7 +48,7 @@ public sealed partial class FinanceOpeningBalanceSqlServerRelationalAcceptanceTe
             var key = "opening-late-" + id + fault;
             Assert.Equal(CommandOutcome.Denied, (await scope.Decide(id, operation, key)).Outcome);
             Assert.True(observed); if (fault == "after-audit") { Assert.True(seenPending); Assert.False(probe.Saved); }
-            if (fault == "precommit") { Assert.True(probe.Saved); Assert.Equal(3, savedFences); }
+            if (fault == "precommit") { Assert.True(probe.Saved); Assert.Equal(6, savedFences); }
             scope.AssertClean(); await OpeningSafetyDurable(run, id, operation, decided: false);
             deny = false; scope.User.Actor = Manager; scope.User.Member = true; scope.Company.Set(CompanyA); probe.Saved = false;
             Assert.Equal(CommandOutcome.Succeeded, (await scope.Decide(id, operation, key)).Outcome);

@@ -26,7 +26,7 @@ namespace GoymenERP.Finance.UnitTests;
 /// FNS-D85's reversal plus new proposal, and FNS-D86's business-day AsOfDate and period-version check. What SQL Server enforces is
 /// proven by the relational acceptance tests. SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class FinanceOpeningBalanceTests
+public sealed partial class FinanceOpeningBalanceTests
 {
     private static readonly Guid CompanyA = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid CompanyB = Guid.Parse("12121212-1212-1212-1212-121212121212");

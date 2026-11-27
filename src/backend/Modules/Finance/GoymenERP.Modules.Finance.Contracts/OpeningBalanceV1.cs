@@ -117,7 +117,8 @@ public sealed record OpeningBalanceListPage(Guid CompanyId, IReadOnlyList<Openin
 public sealed record OpeningPeriodView(Guid CompanyId, OpeningPeriodState State, string? Version);
 
 public sealed record OpeningBalanceCommandResult(CommandOutcome Outcome, OpeningBalanceView? Resource, bool IsReplay,
-    string OriginalCorrelationId, IReadOnlyList<ValidationIssue> Issues);
+    string OriginalCorrelationId, IReadOnlyList<ValidationIssue> Issues,
+    [property: JsonIgnore] OpeningBalanceDecisionReceiptV1? DecisionReceipt = null);
 
 public sealed record OpeningBalanceCurrencyCandidate(Guid CurrencyId, string Code, string DisplayLabel);
 
