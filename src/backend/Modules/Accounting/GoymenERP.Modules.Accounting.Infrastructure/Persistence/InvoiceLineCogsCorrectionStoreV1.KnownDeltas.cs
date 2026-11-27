@@ -9,9 +9,9 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
     private async Task RequireCompletedKnownSource(CogsEvidenceIdentityV1 source, Guid salesEventId,
         AccountingInventoryCostComponentV1 component, CancellationToken token)
     {
-        var rows = await db.InventoryCostProposals.AsNoTracking().Where(x => x.EventId == salesEventId
+        var rows = await ApprovalReadAsync(() => db.InventoryCostProposals.AsNoTracking().Where(x => x.EventId == salesEventId
             && x.ComponentKey == component.ComponentKey && (x.Status == 3 || x.Status == 4 || x.Status == 5 || x.Status == 6))
-            .ToListAsync(token);
+            .ToListAsync(token), token);
         RequireCompany(source.CompanyId);
         if (rows.Count != 1) throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
         var accepted = Decode<AccountingInventoryCostProposalV1>(rows[0].ViewJson);
@@ -42,7 +42,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
                 throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
             return;
         }
-        var journal = await db.Journals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == accepted.JournalId, token);
+        var journal = await ApprovalReadAsync(() => db.Journals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == accepted.JournalId, token), token);
         RequireCompany(source.CompanyId);
         if (journal is null || journal.Kind != (int)JournalKind.Original || journal.CompanyId != source.CompanyId
             || journal.SourceId != source.InvoiceId || journal.CurrencyId != preparation.CurrencyId

@@ -121,6 +121,11 @@ public sealed record ApproveInvoiceLineCogsCorrectionV1([property: JsonRequired]
 
 public interface IInvoiceLineCogsCorrectionStoreV1
 {
+    // Production approval owns the complete command, including the first original-key lookup.
+    Task<AccountingApiResult<InvoiceLineCogsCorrectionViewV1>> RunApprovalAsync(
+        Func<bool, Task<AccountingApiResult<InvoiceLineCogsCorrectionViewV1>>> nativeAttempt,
+        Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new AccountingApiResult<InvoiceLineCogsCorrectionViewV1>(AccountingApiStatus.Unavailable, null, false, null));
     Task<InvoiceLineCogsOptionsV1> OptionsAsync(CancellationToken cancellationToken = default);
     Task RecordAttemptAsync(AccountingCommandRecord record, Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken = default);
     Task<InvoiceLineCogsHistoryV1> ReadAsync(FinalizedInvoiceLineSourceV1 source, CancellationToken cancellationToken = default);

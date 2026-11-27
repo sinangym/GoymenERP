@@ -6,7 +6,7 @@ using GoymenERP.Modules.Accounting.Domain;
 
 namespace GoymenERP.Modules.Accounting.Application;
 
-public sealed class InvoiceLineCogsCorrectionServiceV1(IInvoiceLineCogsCorrectionStoreV1 store,
+public sealed partial class InvoiceLineCogsCorrectionServiceV1(IInvoiceLineCogsCorrectionStoreV1 store,
     IAccountingFinalizedInvoiceLineSourceV1 source, IAccountingInvoiceLineProductReferenceV1 products, IAccountingCommandLog commands,
     IErpAuthorityRevalidationService authority, ICompanyContext company, ICurrentUser user, ICorrelationContext correlation)
 {
@@ -76,33 +76,38 @@ public sealed class InvoiceLineCogsCorrectionServiceV1(IInvoiceLineCogsCorrectio
 
     public Task<AccountingApiResult<InvoiceLineCogsCorrectionViewV1>> ApproveAsync(Guid invoiceId, Guid lineId, Guid proposalId,
         ApproveInvoiceLineCogsCorrectionV1 request, string key, CancellationToken token = default) =>
-        Run("approve", AccountingJournalReversalPermissionNamesV1.Approve, invoiceId, lineId, new { proposalId, request }, key,
-            async (facts, actor, fence, metadata) => await store.ApproveAsync(facts, proposalId, request.ExpectedVersion, actor, fence, metadata, token), token);
+        RunApprovalAsync(invoiceId, lineId, proposalId, request, key, token);
 
     private async Task<AccountingApiResult<InvoiceLineCogsCorrectionViewV1>> Run(string operation, string permission,
         Guid invoiceId, Guid lineId, object payload, string key,
         Func<FinalizedInvoiceLineSourceV1, Guid, Func<CancellationToken, Task>, AccountingCommandMetadata,
-            Task<InvoiceLineCogsCorrectionViewV1>> write, CancellationToken token)
+            Task<InvoiceLineCogsCorrectionViewV1>> write, CancellationToken token, ApprovalCapture? approval = null, bool replayOnly = false)
     {
         if (invoiceId == Guid.Empty || lineId == Guid.Empty || payload is null || string.IsNullOrWhiteSpace(key)
             || key.Trim().Length > 128 || key.Contains(',')) return new(AccountingApiStatus.Invalid, null, false, AccountingApiCodes.RequestInvalid);
-        if (!Capture(out var companyId, out var actor, out var actorText)
-            || !await Allowed(permission, companyId, actor, actorText, token)) return Denied<InvoiceLineCogsCorrectionViewV1>();
+        var companyId = approval?.CompanyId ?? Guid.Empty; var actor = approval?.ActorId ?? Guid.Empty; var actorText = approval?.ActorText ?? "";
+        if (approval is null && !Capture(out companyId, out actor, out actorText)
+            || !await AllowedRun(token)) return Denied<InvoiceLineCogsCorrectionViewV1>();
         var command = "accounting.invoice-line-cogs." + operation + ".v1";
         var keyHash = AccountingApiService.Sha256(key.Trim());
         var hash = AccountingApiService.Sha256(JsonSerializer.Serialize(new { command, invoiceId, lineId, payload }, Json));
         var prior = await commands.FindCommandAsync(command, keyHash, token);
-        if (!await Allowed(permission, companyId, actor, actorText, token)) return Denied<InvoiceLineCogsCorrectionViewV1>();
+        if (!await AllowedRun(token)) return Denied<InvoiceLineCogsCorrectionViewV1>();
         if (prior is not null) return Replay(prior, actorText, hash);
+        if (replayOnly) return new(AccountingApiStatus.Conflict, null, false, AccountingStoreCodes.ConcurrentChange);
         var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, token);
-        if (!scope.IsGranted || !scope.IsCompanyWide || !Current(companyId, actor, actorText)) return Denied<InvoiceLineCogsCorrectionViewV1>();
+        if (approval is not null) token.ThrowIfCancellationRequested();
+        if (scope is null || !scope.IsGranted || !scope.IsCompanyWide || !Current(companyId, actor, actorText)) return Denied<InvoiceLineCogsCorrectionViewV1>();
         var metadata = new AccountingCommandMetadata(actorText, permission, [.. scope.RoleCodes.Order(StringComparer.Ordinal)],
             correlation.CorrelationId, correlation.CausationId, key.Trim(), correlation.SourceChannel,
             correlation.ClientIpAddress, correlation.UserAgent, value => new AccountingCommandRecord(command, keyHash,
                 actorText, hash, JsonSerializer.Serialize(new AccountingApiResult<InvoiceLineCogsCorrectionViewV1>(AccountingApiStatus.Ok,
                     (InvoiceLineCogsCorrectionViewV1)value, false, null), Json), correlation.CorrelationId));
         async Task Fence(CancellationToken ct)
-        { if (!await Allowed(permission, companyId, actor, actorText, ct)) throw new AuthorityChanged(); }
+        {
+            if (approval is not null) await ApprovalFenceAsync(approval, ct);
+            else if (!await AllowedRun(ct)) throw new AuthorityChanged();
+        }
         async Task<AccountingApiResult<InvoiceLineCogsCorrectionViewV1>> Terminal(AccountingApiResult<InvoiceLineCogsCorrectionViewV1> result)
         {
             try
@@ -114,32 +119,36 @@ public sealed class InvoiceLineCogsCorrectionServiceV1(IInvoiceLineCogsCorrectio
             }
             catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ConcurrentChange)
             {
+                if (approval is not null) throw new NormalJournalApprovalRaceException(exception.Code, exception);
                 var winner = await commands.FindCommandAsync(command, keyHash, token);
-                if (!await Allowed(permission, companyId, actor, actorText, token)) return Denied<InvoiceLineCogsCorrectionViewV1>();
+                if (!await AllowedRun(token)) return Denied<InvoiceLineCogsCorrectionViewV1>();
                 return winner is null ? result : Replay(winner, actorText, hash);
             }
             catch (AuthorityChanged) { return Denied<InvoiceLineCogsCorrectionViewV1>(); }
         }
         try
         {
+            if (approval is not null) await Fence(token);
             var facts = await Source(invoiceId, lineId, token);
             await Fence(token);
             var result = await write(facts, actor, Fence, metadata);
+            if (approval is not null) await Fence(token);
             return new(AccountingApiStatus.Ok, result, false, null);
         }
         catch (AuthorityChanged) { return Denied<InvoiceLineCogsCorrectionViewV1>(); }
         catch (AccountingVersionConflictException exception)
         {
-            if (!await Allowed(permission, companyId, actor, actorText, token)) return Denied<InvoiceLineCogsCorrectionViewV1>();
+            if (!await AllowedRun(token)) return Denied<InvoiceLineCogsCorrectionViewV1>();
             return await Terminal(new(AccountingApiStatus.Conflict, null, false, AccountingApiCodes.VersionConflict, "expectedVersion", exception.ExpectedVersion, exception.CurrentVersion));
         }
         catch (AccountingStoreException exception)
         {
-            if (!await Allowed(permission, companyId, actor, actorText, token)) return Denied<InvoiceLineCogsCorrectionViewV1>();
+            if (!await AllowedRun(token)) return Denied<InvoiceLineCogsCorrectionViewV1>();
             if (exception.Code == AccountingStoreCodes.ConcurrentChange)
             {
+                if (approval is not null) throw new NormalJournalApprovalRaceException(exception.Code, exception);
                 var winner = await commands.FindCommandAsync(command, keyHash, token);
-                if (!await Allowed(permission, companyId, actor, actorText, token)) return Denied<InvoiceLineCogsCorrectionViewV1>();
+                if (!await AllowedRun(token)) return Denied<InvoiceLineCogsCorrectionViewV1>();
                 return winner is null ? new(AccountingApiStatus.Conflict, null, false, exception.Code) : Replay(winner, actorText, hash);
             }
             var result = new AccountingApiResult<InvoiceLineCogsCorrectionViewV1>(Status(exception.Code), null, false, exception.Code);
@@ -148,7 +157,13 @@ public sealed class InvoiceLineCogsCorrectionServiceV1(IInvoiceLineCogsCorrectio
             return result.Status is AccountingApiStatus.Conflict or AccountingApiStatus.NotFound ? await Terminal(result) : result;
         }
         catch (AccountingDomainException) { return new(AccountingApiStatus.Unprocessable, null, false, InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid); }
-        catch (System.Data.Common.DbException) { return new(AccountingApiStatus.Unavailable, null, false, InvoiceLineCogsCorrectionCodesV1.SourceUnavailable); }
+        catch (System.Data.Common.DbException) when (approval is null) { return new(AccountingApiStatus.Unavailable, null, false, InvoiceLineCogsCorrectionCodesV1.SourceUnavailable); }
+        async Task<bool> AllowedRun(CancellationToken ct)
+        {
+            if (approval is null) return await Allowed(permission, companyId, actor, actorText, ct);
+            try { await ApprovalFenceAsync(approval, ct); return true; }
+            catch (NormalJournalAuthorityDeniedException) { return false; }
+        }
     }
 
     private async Task<FinalizedInvoiceLineSourceV1> Source(Guid invoiceId, Guid lineId, CancellationToken token)

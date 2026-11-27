@@ -18,7 +18,7 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext db, ICompanyContext company,
     IActiveAccountPlanReaderV1 accountPlans, IAuditEventCollector audit, IAuditTransactionWriterV1 auditWriter,
     TimeProvider clock, IPostedManufacturingShipmentCostReaderV1? postedManufacturing = null,
-    IPostedPurchaseShipmentCostReaderV1? postedPurchasing = null) : IInvoiceLineCogsCorrectionStoreV1
+    IPostedPurchaseShipmentCostReaderV1? postedPurchasing = null, AccountingStore? approvalSafetyOwner = null) : IInvoiceLineCogsCorrectionStoreV1
 {
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private const string Entity = "Accounting.InvoiceLineCogsCorrection";
@@ -40,6 +40,12 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
         CancellationToken cancellationToken = default)
     {
         var captured = Company();
+        if (IsOwnedApproval && record.CommandName == "accounting.invoice-line-cogs.approve.v1")
+        {
+            await ApprovalReadFenceAsync(cancellationToken);
+            await SaveOwnedApprovalCommandAsync(record, cancellationToken);
+            return;
+        }
         if (db.Database.CurrentTransaction is not null || System.Transactions.Transaction.Current is not null
             || db.ChangeTracker.HasChanges() || auditWriter.HasPendingDrafts) throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceUnavailable);
         var started = false;
@@ -107,17 +113,17 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
         {
             if (metadata.PermissionCode != AccountingJournalReversalPermissionNamesV1.Propose) throw Refuse(AccountingStoreCodes.CompanyContextMismatch);
             ValidateRequest(source, request);
-            if (await db.InvoiceLineCogsProposals.AnyAsync(x => x.Id == request.ProposalId, cancellationToken)) throw Refuse(InvoiceLineCogsCorrectionCodesV1.VersionConflict);
-            var current = await Latest(source, cancellationToken);
+            if (await ApprovalReadAsync(() => db.InvoiceLineCogsProposals.AnyAsync(x => x.Id == request.ProposalId, cancellationToken), cancellationToken)) throw Refuse(InvoiceLineCogsCorrectionCodesV1.VersionConflict);
+            var current = await ApprovalReadAsync(() => Latest(source, cancellationToken), cancellationToken);
             if (request.ExpectedLineVersion != (current?.Version ?? 0))
                 throw new AccountingVersionConflictException(request.ExpectedLineVersion, current?.Version ?? 0);
-            await Period(request.PeriodId, request.AccountingDate, cancellationToken);
-            var plan = await Account(request.CogsAccountId, cancellationToken);
-            var (state, evidence) = await Evidence(source, current, cancellationToken);
+            await ApprovalReadAsync(() => Period(request.PeriodId, request.AccountingDate, cancellationToken), cancellationToken);
+            var plan = await ApprovalReadAsync(() => Account(request.CogsAccountId, cancellationToken), cancellationToken);
+            var (state, evidence) = await ApprovalReadAsync(() => Evidence(source, current, cancellationToken), cancellationToken);
             if (state == "Unreadable") throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
-            var attributed = await AttributedEvidence(source, cancellationToken);
-            var purchased = await PurchaseAttributedEvidence(source, cancellationToken);
-            if (attributed is not null || purchased is not null) await RequireMixedPosting(source, evidence, cancellationToken);
+            var attributed = await ApprovalReadAsync(() => AttributedEvidence(source, cancellationToken), cancellationToken);
+            var purchased = await ApprovalReadAsync(() => PurchaseAttributedEvidence(source, cancellationToken), cancellationToken);
+            if (attributed is not null || purchased is not null) await ApprovalReadAsync(() => RequireMixedPosting(source, evidence, cancellationToken), cancellationToken);
             var view = new InvoiceLineCogsCorrectionViewV1(request.ProposalId, source.CompanyId, source.InvoiceId,
                 source.InvoiceLineId, source.FinalizedVersion, 1, request.ExpectedLineVersion, "Prepared", request.Classification,
                 plan, request.PeriodId, request.TransactionDate, request.AccountingDate, request.ValueDate,
@@ -137,35 +143,35 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
         {
             if (metadata.PermissionCode != AccountingJournalReversalPermissionNamesV1.Approve) throw Refuse(AccountingStoreCodes.CompanyContextMismatch);
             if (proposalId == Guid.Empty || expectedVersion < 1) throw Refuse(InvoiceLineCogsCorrectionCodesV1.RequestInvalid);
-            var row = await db.InvoiceLineCogsProposals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == proposalId, cancellationToken)
+            var row = await ApprovalReadAsync(() => db.InvoiceLineCogsProposals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == proposalId, cancellationToken), cancellationToken)
                 ?? throw Refuse(InvoiceLineCogsCorrectionCodesV1.NotFound);
             var prepared = Decode<InvoiceLineCogsCorrectionViewV1>(row.ViewJson);
             if (row.InvoiceId != source.InvoiceId || row.InvoiceLineId != source.InvoiceLineId || row.SourceJson != Encode(source))
                 throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceChanged);
             if (actorId == row.PreparedBy) throw Refuse(InvoiceLineCogsCorrectionCodesV1.SelfApproval);
-            var priorApproval = await db.InvoiceLineCogsRevisions.AsNoTracking().SingleOrDefaultAsync(x => x.ProposalId == proposalId, cancellationToken);
+            var priorApproval = await ApprovalReadAsync(() => db.InvoiceLineCogsRevisions.AsNoTracking().SingleOrDefaultAsync(x => x.ProposalId == proposalId, cancellationToken), cancellationToken);
             if (expectedVersion != (priorApproval is null ? 1 : 2)) throw new AccountingVersionConflictException(expectedVersion, priorApproval is null ? 1 : 2);
             if (priorApproval is not null) throw Refuse(InvoiceLineCogsCorrectionCodesV1.NotPrepared);
-            var current = await Latest(source, cancellationToken);
+            var current = await ApprovalReadAsync(() => Latest(source, cancellationToken), cancellationToken);
             if ((current?.Version ?? 0) != row.ExpectedLineVersion)
                 throw new AccountingVersionConflictException(row.ExpectedLineVersion, current?.Version ?? 0);
-            var period = await Period(prepared.PeriodId, prepared.AccountingDate, cancellationToken);
-            if (Encode(await Account(prepared.AccountPlan.Account.AccountId, cancellationToken)) != Encode(prepared.AccountPlan))
+            var period = await ApprovalReadAsync(() => Period(prepared.PeriodId, prepared.AccountingDate, cancellationToken), cancellationToken);
+            if (Encode(await ApprovalReadAsync(() => Account(prepared.AccountPlan.Account.AccountId, cancellationToken), cancellationToken)) != Encode(prepared.AccountPlan))
                 throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceChanged);
-            var (state, evidence) = await Evidence(source, current, cancellationToken);
+            var (state, evidence) = await ApprovalReadAsync(() => Evidence(source, current, cancellationToken), cancellationToken);
             if (state == "Unreadable") throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
             if (Encode(evidence) != Encode(prepared.PostedEvidence)) throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceChanged);
-            var attributed = await AttributedEvidence(source, cancellationToken);
-            var purchased = await PurchaseAttributedEvidence(source, cancellationToken);
+            var attributed = await ApprovalReadAsync(() => AttributedEvidence(source, cancellationToken), cancellationToken);
+            var purchased = await ApprovalReadAsync(() => PurchaseAttributedEvidence(source, cancellationToken), cancellationToken);
             if (Encode(attributed) != Encode(prepared.AttributedEvidence))
                 throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceChanged);
             if (Encode(purchased) != Encode(prepared.PurchaseAttributedEvidence))
                 throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceChanged);
-            if (attributed is not null || purchased is not null) await RequireMixedPosting(source, evidence, cancellationToken);
+            if (attributed is not null || purchased is not null) await ApprovalReadAsync(() => RequireMixedPosting(source, evidence, cancellationToken), cancellationToken);
             Guid? reverseId = null, replacementId = null;
             if (evidence is not null && evidence.CogsAccountId != prepared.AccountPlan.Account.AccountId)
             {
-                var original = await Journal(evidence.JournalId, cancellationToken);
+                var original = await ApprovalReadAsync(() => Journal(evidence.JournalId, cancellationToken), cancellationToken);
                 var dates = new PostingDates(prepared.TransactionDate, prepared.AccountingDate, prepared.ValueDate, clock.GetUtcNow());
                 var reversingCorrectionId = Guid.NewGuid();
                 var replacementCorrectionId = Guid.NewGuid();
@@ -181,8 +187,8 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
                 db.Entry(period).Property(x => x.UpdatedAtUtc).IsModified = true;
             }
             var now = clock.GetUtcNow();
-            var attributedCorrections = await CorrectAttributed(attributed, prepared, period, metadata, cancellationToken);
-            var purchaseCorrections = await CorrectPurchaseAttributed(purchased, prepared, period, metadata, cancellationToken);
+            var attributedCorrections = await ApprovalReadAsync(() => CorrectAttributed(attributed, prepared, period, metadata, cancellationToken), cancellationToken);
+            var purchaseCorrections = await ApprovalReadAsync(() => CorrectPurchaseAttributed(purchased, prepared, period, metadata, cancellationToken), cancellationToken);
             if (purchaseCorrections is not null) attributedCorrections = (attributedCorrections ?? []).Concat(purchaseCorrections).ToArray();
             var approved = prepared with { Version = 2, Status = "Approved", ApprovedBy = actorId, ApprovedAtUtc = now,
                 ReversingCorrectionJournalId = reverseId, ReplacementCorrectionJournalId = replacementId,
@@ -206,6 +212,8 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
         if (actor == Guid.Empty || !Guid.TryParse(metadata.ActorId, out var parsed) || parsed != actor
             || string.IsNullOrWhiteSpace(metadata.PermissionCode) || string.IsNullOrWhiteSpace(metadata.CorrelationId)
             || string.IsNullOrWhiteSpace(metadata.IdempotencyKey)) throw Refuse(InvoiceLineCogsCorrectionCodesV1.RequestInvalid);
+        if (IsOwnedApproval && metadata.PermissionCode == GoymenERP.Modules.Accounting.Application.AccountingJournalReversalPermissionNamesV1.Approve)
+            return await MutateOwnedApprovalAsync(source, operation, metadata, cancellationToken);
         // Reject before touching caller-owned state. A failed save is never swallowed and committed (including with MARS).
         if (db.Database.CurrentTransaction is not null || System.Transactions.Transaction.Current is not null
             || db.ChangeTracker.HasChanges() || auditWriter.HasPendingDrafts) throw Refuse(InvoiceLineCogsCorrectionCodesV1.SourceUnavailable);
@@ -251,7 +259,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
         .Where(x => x.InvoiceId == source.InvoiceId && x.InvoiceLineId == source.InvoiceLineId);
     private async Task<InvoiceLineCogsRevisionViewV1?> Latest(CogsEvidenceIdentityV1 source, CancellationToken token)
     {
-        var row = await Revisions(source).AsNoTracking().OrderByDescending(x => x.Version).FirstOrDefaultAsync(token);
+        var row = await ApprovalReadAsync(() => Revisions(source).AsNoTracking().OrderByDescending(x => x.Version).FirstOrDefaultAsync(token), token);
         return row is null ? null : Decode<InvoiceLineCogsRevisionViewV1>(row.RevisionJson);
     }
 
@@ -260,16 +268,16 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
     {
         // Every query reads actual owner tables. No matching source facts is distinct from an unreadable/aggregate posting.
         // The initial producer must explicitly bind a journal to this invoice line; no quantity/price allocation is inferred.
-        var rows = await db.Journals.AsNoTracking().Where(x => x.SourceId == source.InvoiceLineId || x.SourceId == source.InvoiceId
-            || x.SourceId == source.FinalizationAdmissionId || x.SourceId == source.ShipmentId || x.SourceId == source.DispatchNoteId).ToListAsync(token);
+        var rows = await ApprovalReadAsync(() => db.Journals.AsNoTracking().Where(x => x.SourceId == source.InvoiceLineId || x.SourceId == source.InvoiceId
+            || x.SourceId == source.FinalizationAdmissionId || x.SourceId == source.ShipmentId || x.SourceId == source.DispatchNoteId).ToListAsync(token), token);
         rows.RemoveAll(row => IsAnotherLineComponent(row, source));
         if (rows.Count == 0) return ("NoPostedCogs", null);
         var candidateId = current?.ReplacementCorrectionJournalId;
         // A classification-only revision or an unchanged account retains the last actual posted component.
         if (current is not null && candidateId is null)
         {
-            var previousPosted = await Revisions(source).AsNoTracking().Where(x => x.Version <= current.Version)
-                .OrderByDescending(x => x.Version).ToListAsync(token);
+            var previousPosted = await ApprovalReadAsync(() => Revisions(source).AsNoTracking().Where(x => x.Version <= current.Version)
+                .OrderByDescending(x => x.Version).ToListAsync(token), token);
             candidateId = previousPosted.Select(x => Decode<InvoiceLineCogsRevisionViewV1>(x.RevisionJson))
                 .FirstOrDefault(x => x.ReplacementCorrectionJournalId.HasValue)?.ReplacementCorrectionJournalId;
         }
@@ -278,19 +286,19 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
         if (candidate is null) return ("Unreadable", null);
         if (candidate.SourceId != source.InvoiceId || candidate.PostingPurpose != InvoiceLineCogsPostingTraceV1.For(source.InvoiceLineId, source.FinalizedVersion))
             return ("Unreadable", null);
-        var lines = await db.JournalLines.AsNoTracking().Where(x => x.JournalId == candidate.Id).OrderBy(x => x.LineNumber).ToListAsync(token);
+        var lines = await ApprovalReadAsync(() => db.JournalLines.AsNoTracking().Where(x => x.JournalId == candidate.Id).OrderBy(x => x.LineNumber).ToListAsync(token), token);
         if (lines.Count != 2 || lines[0].LineNumber != 1 || lines[1].LineNumber != 2 || lines[0].Debit <= 0
             || lines[0].Credit != 0 || lines[1].Debit != 0 || lines[1].Credit != lines[0].Debit
             || lines[0].AccountId == lines[1].AccountId
-            || await db.Journals.AnyAsync(x => x.LinkedJournalId == candidate.Id && x.Kind == (int)JournalKind.Reversal, token)) return ("Unreadable", null);
-        var permitted = await Revisions(source).AsNoTracking().Select(x => x.RevisionJson).ToListAsync(token);
+            || await ApprovalReadAsync(() => db.Journals.AnyAsync(x => x.LinkedJournalId == candidate.Id && x.Kind == (int)JournalKind.Reversal, token), token)) return ("Unreadable", null);
+        var permitted = await ApprovalReadAsync(() => Revisions(source).AsNoTracking().Select(x => x.RevisionJson).ToListAsync(token), token);
         var ownCorrections = permitted.Select(x => Decode<InvoiceLineCogsRevisionViewV1>(x)).SelectMany(x =>
             new[] { x.ReversingCorrectionJournalId, x.ReplacementCorrectionJournalId }).Where(x => x.HasValue).Select(x => x!.Value).ToHashSet();
         if (source.CancellationRead)
         {
-            var answered = await db.InventoryCostCancellationClaims.AsNoTracking().Where(x => x.InvoiceId == source.InvoiceId
+            var answered = await ApprovalReadAsync(() => db.InventoryCostCancellationClaims.AsNoTracking().Where(x => x.InvoiceId == source.InvoiceId
                 && x.InvoiceLineId == source.InvoiceLineId && x.FinalizedVersion == source.FinalizedVersion
-                && x.ReversingJournalId != null).Select(x => x.ReversingJournalId!.Value).ToListAsync(token);
+                && x.ReversingJournalId != null).Select(x => x.ReversingJournalId!.Value).ToListAsync(token), token);
             ownCorrections.UnionWith(answered); // The cancellation reader separately verifies every immutable claim and journal.
         }
         if (rows.Any(x => x.SourceId == source.InvoiceId && x.PostingPurpose == candidate.PostingPurpose && x.Id != candidate.Id
@@ -313,7 +321,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
     private async Task<InvoiceLineCogsAccountPlanV1> Account(Guid accountId, CancellationToken token)
     {
         var captured = Company();
-        var plan = await accountPlans.ReadActiveAsync(token);
+        var plan = await ApprovalReadAsync(() => accountPlans.ReadActiveAsync(token), token);
         RequireCompany(captured);
         if (plan is null || plan.CompanyId != captured || plan.Status != ApprovedAccountingSourceCatalogStatusV1.Active
             || plan.Package.Mirror.CompanyId != captured) throw Refuse(InvoiceLineCogsCorrectionCodesV1.AccountPlanUnavailable);
@@ -325,7 +333,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
 
     private async Task<PeriodRow> Period(Guid id, DateOnly date, CancellationToken token)
     {
-        var period = await db.Periods.SingleOrDefaultAsync(x => x.Id == id, token);
+        var period = await ApprovalReadAsync(() => db.Periods.SingleOrDefaultAsync(x => x.Id == id, token), token);
         if (period is null || period.Status != (int)AccountingPeriodStatus.Open || date < period.StartsOn || date > period.EndsOn)
             throw Refuse(InvoiceLineCogsCorrectionCodesV1.OpenPeriodRequired);
         return period;
@@ -334,8 +342,8 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1(AccountingDbContext
         p.EndsOn, p.PreparedByUserId, p.PreparedAtUtc, p.ApprovedByUserId, p.ApprovedAtUtc, p.ClosedByUserId, p.ClosedAtUtc);
     private async Task<Journal> Journal(Guid id, CancellationToken token)
     {
-        var row = await db.Journals.AsNoTracking().SingleAsync(x => x.Id == id, token);
-        var lines = await db.JournalLines.AsNoTracking().Where(x => x.JournalId == id).OrderBy(x => x.LineNumber).ToListAsync(token);
+        var row = await ApprovalReadAsync(() => db.Journals.AsNoTracking().SingleAsync(x => x.Id == id, token), token);
+        var lines = await ApprovalReadAsync(() => db.JournalLines.AsNoTracking().Where(x => x.JournalId == id).OrderBy(x => x.LineNumber).ToListAsync(token), token);
         return GoymenERP.Modules.Accounting.Domain.Journals.Journal.Restore(row.Id, (JournalKind)row.Kind, new SourceReference(row.CompanyId, row.SourceId, row.PostingPurpose),
             row.PostingRuleVersion, row.CurrencyId, new PostingDates(row.TransactionDate, row.AccountingDate, row.ValueDate, row.RecordedAtUtc),
             lines.Select(x => new JournalLine(new AccountRef(x.CompanyId, x.AccountId), x.Debit, x.Credit)), row.LinkedJournalId);

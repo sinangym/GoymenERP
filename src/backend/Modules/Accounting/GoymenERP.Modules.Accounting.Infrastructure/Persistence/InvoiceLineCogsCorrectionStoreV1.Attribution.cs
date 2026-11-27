@@ -11,19 +11,19 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
     private async Task<IReadOnlyList<InvoiceLineCogsAttributedEvidenceV1>?> AttributedEvidence(CogsEvidenceIdentityV1 source,
         CancellationToken token)
     {
-        var claims = await InvoiceCogsClaimHistoryV1.CurrentForInvoiceAsync(db, source.CompanyId, source.InvoiceId,
-            source.InvoiceLineId, source.FinalizedVersion, () => RequireCompany(source.CompanyId), token);
+        var claims = await ApprovalReadAsync(() => InvoiceCogsClaimHistoryV1.CurrentForInvoiceAsync(db, source.CompanyId, source.InvoiceId,
+            source.InvoiceLineId, source.FinalizedVersion, () => RequireCompany(source.CompanyId), token), token);
         RequireCompany(source.CompanyId);
         if (claims.Count == 0) return null;
         if (claims.Any(x => x.Origin is not (1 or 2) || x.AdmissionId != source.FinalizationAdmissionId || x.ShipmentId != source.ShipmentId))
             throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
-        var revisions = await Revisions(source).AsNoTracking().OrderBy(x => x.Version).Select(x => x.RevisionJson).ToListAsync(token);
+        var revisions = await ApprovalReadAsync(() => Revisions(source).AsNoTracking().OrderBy(x => x.Version).Select(x => x.RevisionJson).ToListAsync(token), token);
         RequireCompany(source.CompanyId);
         var prior = revisions.Select(x => Decode<InvoiceLineCogsRevisionViewV1>(x)).ToArray();
         var result = new List<InvoiceLineCogsAttributedEvidenceV1>();
         foreach (var claim in claims)
         {
-            var header = await db.InventoryCostSources.AsNoTracking().SingleOrDefaultAsync(x => x.EventId == claim.SalesEventId, token)
+            var header = await ApprovalReadAsync(() => db.InventoryCostSources.AsNoTracking().SingleOrDefaultAsync(x => x.EventId == claim.SalesEventId, token), token)
                 ?? throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
             RequireCompany(source.CompanyId);
             var recorded = Decode<AccountingInventoryCostSourceV1>(header.SourceJson);
@@ -36,15 +36,15 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
                 || component is null || claim.Origin == 2 && !component.HasPostedComponents
                 || claim.SourceHash != AccountingInventoryCostSourceValidationV1.Sha256(claim.ViewJson))
                 throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
-            var actual = await ReadAttributedPhysical(source, claim, component, physical, token);
+            var actual = await ApprovalReadAsync(() => ReadAttributedPhysical(source, claim, component, physical, token), token);
             foreach (var share in actual.Manufacturing)
             {
                 var signed = decimal.Parse(share.SignedAmount, CultureInfo.InvariantCulture);
                 var corrected = prior.SelectMany(x => x.AttributedCorrections ?? []).LastOrDefault(x => x.AttributionFingerprint == share.Fingerprint);
                 var currentId = corrected?.ReplacementCorrectionJournalId ?? share.JournalId;
-                var journal = await db.Journals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == currentId, token);
+                var journal = await ApprovalReadAsync(() => db.Journals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == currentId, token), token);
                 RequireCompany(source.CompanyId);
-                var lines = await db.JournalLines.AsNoTracking().Where(x => x.JournalId == currentId).OrderBy(x => x.LineNumber).ToListAsync(token);
+                var lines = await ApprovalReadAsync(() => db.JournalLines.AsNoTracking().Where(x => x.JournalId == currentId).OrderBy(x => x.LineNumber).ToListAsync(token), token);
                 RequireCompany(source.CompanyId);
                 var total = corrected is null ? decimal.Parse(share.JournalTotal, CultureInfo.InvariantCulture) : Math.Abs(signed);
                 if (journal is null || journal.CompanyId != source.CompanyId || journal.SourceId != share.SourceEventId
@@ -57,10 +57,10 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
                 // A zero share needs no correction journal. Its source sign, accounts and amount are retained as evidence.
                 if (signed == 0) { cogs = lines.Single(x => x.AccountId == share.CogsAccountId); counter = lines.Single(x => x.AccountId == share.CounterAccountId); }
                 if (counter.AccountId != share.CounterAccountId || corrected is null && cogs.AccountId != share.CogsAccountId
-                    || await db.Journals.AnyAsync(x => x.LinkedJournalId == currentId && x.Kind == (int)JournalKind.Reversal, token))
+                    || await ApprovalReadAsync(() => db.Journals.AnyAsync(x => x.LinkedJournalId == currentId && x.Kind == (int)JournalKind.Reversal, token), token))
                     throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
                 RequireCompany(source.CompanyId);
-                if (await db.JournalReversalProposals.AnyAsync(x => x.SourceJournalId == currentId && x.Status == 1, token))
+                if (await ApprovalReadAsync(() => db.JournalReversalProposals.AnyAsync(x => x.SourceJournalId == currentId && x.Status == 1, token), token))
                     throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
                 RequireCompany(source.CompanyId);
                 result.Add(new(share, currentId, cogs.AccountId, counter.AccountId,
@@ -82,15 +82,15 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
         CancellationToken token)
     {
         if (evidence is null) return;
-        var claims = await InvoiceCogsClaimHistoryV1.CurrentForInvoiceAsync(db, source.CompanyId, source.InvoiceId,
-            source.InvoiceLineId, source.FinalizedVersion, () => RequireCompany(source.CompanyId), token);
+        var claims = await ApprovalReadAsync(() => InvoiceCogsClaimHistoryV1.CurrentForInvoiceAsync(db, source.CompanyId, source.InvoiceId,
+            source.InvoiceLineId, source.FinalizedVersion, () => RequireCompany(source.CompanyId), token), token);
         RequireCompany(source.CompanyId);
         if (!claims.Any(x => x.Origin == 1)
             || claims.Any(x => x.Origin is not (1 or 2) || x.AdmissionId != source.FinalizationAdmissionId || x.ShipmentId != source.ShipmentId)
             || claims.Select(x => x.SalesEventId).Distinct().Count() != 1)
             throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
         var eventId = claims[0].SalesEventId;
-        var header = await db.InventoryCostSources.AsNoTracking().SingleOrDefaultAsync(x => x.EventId == eventId, token)
+        var header = await ApprovalReadAsync(() => db.InventoryCostSources.AsNoTracking().SingleOrDefaultAsync(x => x.EventId == eventId, token), token)
             ?? throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
         RequireCompany(source.CompanyId);
         var owner = Decode<AccountingInventoryCostSourceV1>(header.SourceJson);
@@ -112,8 +112,8 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
             if (claim.ViewJson != proof || claim.SourceHash != AccountingInventoryCostSourceValidationV1.Sha256(proof))
                 throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
         }
-        var rows = await db.InventoryCostProposals.AsNoTracking().Where(x => x.EventId == eventId
-            && x.ComponentKey == component.ComponentKey && x.Status == 3).ToListAsync(token);
+        var rows = await ApprovalReadAsync(() => db.InventoryCostProposals.AsNoTracking().Where(x => x.EventId == eventId
+            && x.ComponentKey == component.ComponentKey && x.Status == 3).ToListAsync(token), token);
         RequireCompany(source.CompanyId);
         if (rows.Count != 1) throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
         var accepted = Decode<AccountingInventoryCostProposalV1>(rows[0].ViewJson);
@@ -126,7 +126,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
                 preparation.MoneyProfileVersion, preparation.MoneyScale, out _, out var expected) || expected != rounding
             || preparation.SignedAmount != evidence.Amount || preparation.CurrencyId != evidence.CurrencyId)
             throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
-        var original = await db.Journals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == accepted.JournalId, token);
+        var original = await ApprovalReadAsync(() => db.Journals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == accepted.JournalId, token), token);
         RequireCompany(source.CompanyId);
         if (original is null || original.Kind != (int)JournalKind.Original || original.SourceId != source.InvoiceId
             || original.PostingPurpose != InvoiceLineCogsPostingTraceV1.For(source.InvoiceLineId, source.FinalizedVersion))
@@ -144,7 +144,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
             var source = item.Source;
             var signed = decimal.Parse(source.SignedAmount, CultureInfo.InvariantCulture);
             if (signed == 0 || item.CurrentCogsAccountId == prepared.AccountPlan.Account.AccountId) continue;
-            var journal = await Journal(item.CurrentJournalId, token);
+            var journal = await ApprovalReadAsync(() => Journal(item.CurrentJournalId, token), token);
             RequireCompany(prepared.CompanyId);
             var component = new AttributedPostedJournalComponent(prepared.CompanyId, source.SourceEventId, source.OutputId,
                 source.Shipment.MovementId, source.Shipment.MovementLineNumber, item.CurrentJournalId, source.SourceEventId,

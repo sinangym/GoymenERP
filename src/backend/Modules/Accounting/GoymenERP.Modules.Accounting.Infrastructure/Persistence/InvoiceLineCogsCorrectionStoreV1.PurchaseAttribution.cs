@@ -17,21 +17,21 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
             component.InvoiceLineId, Physical = physical, component.SourceProofSha256 });
         if (claim.ViewJson != proof || claim.SourceHash != AccountingInventoryCostSourceValidationV1.Sha256(proof))
             throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
-        Task Fence(CancellationToken _) { RequireCompany(source.CompanyId); return Task.CompletedTask; }
+        async Task Fence(CancellationToken ct) { await ApprovalReadFenceAsync(ct); RequireCompany(source.CompanyId); }
         IReadOnlyList<PostedManufacturingCostShareV1> manufacturing = [];
         IReadOnlyList<PostedPurchaseCostShareV1> purchase = [];
         if (component.ClaimSuccession is { } succession)
         {
             if (claim.Origin != 1 || postedManufacturing is null || postedPurchasing is null)
                 throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
-            var deltas = await postedManufacturing.ReadPostedDeltasAsync(source.CompanyId, source.ShipmentId, physical.MovementId,
-                physical.MovementLineNumber, source.ProductId, physical.QuantityKg, Fence, token);
+            var deltas = await ApprovalReadAsync(() => postedManufacturing.ReadPostedDeltasAsync(source.CompanyId, source.ShipmentId, physical.MovementId,
+                physical.MovementLineNumber, source.ProductId, physical.QuantityKg, Fence, token), token);
             RequireCompany(source.CompanyId);
-            var purchases = await postedPurchasing.ReadProvenSharesAsync(source.CompanyId, source.ShipmentId, physical.MovementId,
-                physical.MovementLineNumber, source.ProductId, physical.QuantityKg, Fence, token);
+            var purchases = await ApprovalReadAsync(() => postedPurchasing.ReadProvenSharesAsync(source.CompanyId, source.ShipmentId, physical.MovementId,
+                physical.MovementLineNumber, source.ProductId, physical.QuantityKg, Fence, token), token);
             RequireCompany(source.CompanyId);
             if (purchases.HasPendingCandidate) throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
-            if (!source.CancellationRead) await RequireCompletedKnownSource(source, claim.SalesEventId, component, token);
+            if (!source.CancellationRead) await ApprovalReadAsync(() => RequireCompletedKnownSource(source, claim.SalesEventId, component, token), token);
             // Prior aggregate postings were actually reversed for this invoice share. They remain immutable historical
             // evidence, not another AlreadyAccounted amount. Only newly received actual cost components follow the current owner.
             return (deltas?.Shares.Where(x => !succession.CapturedCostFingerprints.Contains(x.Fingerprint, StringComparer.Ordinal)).ToArray() ?? [],
@@ -40,13 +40,13 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
         if (claim.Origin == 1)
         {
             if (postedManufacturing is null) throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
-            var deltas = await postedManufacturing.ReadPostedDeltasAsync(source.CompanyId, source.ShipmentId, physical.MovementId,
-                physical.MovementLineNumber, source.ProductId, physical.QuantityKg, Fence, token);
+            var deltas = await ApprovalReadAsync(() => postedManufacturing.ReadPostedDeltasAsync(source.CompanyId, source.ShipmentId, physical.MovementId,
+                physical.MovementLineNumber, source.ProductId, physical.QuantityKg, Fence, token), token);
             RequireCompany(source.CompanyId);
             if (deltas is null) return (manufacturing, purchase);
             // Cancellation can answer an actual posted delta even if the separate initial known proposal
             // was never posted. It never creates that initial journal or claims its amount as accounted.
-            if (!source.CancellationRead) await RequireCompletedKnownSource(source, claim.SalesEventId, component, token);
+            if (!source.CancellationRead) await ApprovalReadAsync(() => RequireCompletedKnownSource(source, claim.SalesEventId, component, token), token);
             // The original known source already proves physical coverage. These are only independently posted
             // changes; they cannot be reused by the unavailable-original-cost admission path.
             return (deltas.Shares, purchase);
@@ -55,8 +55,8 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
                 && x.Shipment.MovementLineNumber == physical.MovementLineNumber) == true)
         {
             if (postedManufacturing is null) throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
-            var actual = await postedManufacturing.ReadProvenSharesAsync(source.CompanyId, source.ShipmentId, physical.MovementId,
-                physical.MovementLineNumber, source.ProductId, physical.QuantityKg, Fence, token);
+            var actual = await ApprovalReadAsync(() => postedManufacturing.ReadProvenSharesAsync(source.CompanyId, source.ShipmentId, physical.MovementId,
+                physical.MovementLineNumber, source.ProductId, physical.QuantityKg, Fence, token), token);
             RequireCompany(source.CompanyId);
             manufacturing = actual?.Shares ?? throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
         }
@@ -64,8 +64,8 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
                 && x.MovementLineNumber == physical.MovementLineNumber) == true)
         {
             if (postedPurchasing is null) throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
-            var actual = await postedPurchasing.ReadProvenSharesAsync(source.CompanyId, source.ShipmentId, physical.MovementId,
-                physical.MovementLineNumber, source.ProductId, physical.QuantityKg, Fence, token);
+            var actual = await ApprovalReadAsync(() => postedPurchasing.ReadProvenSharesAsync(source.CompanyId, source.ShipmentId, physical.MovementId,
+                physical.MovementLineNumber, source.ProductId, physical.QuantityKg, Fence, token), token);
             RequireCompany(source.CompanyId);
             if (actual.HasPendingCandidate) throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
             purchase = actual.Shares;
@@ -78,17 +78,17 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
     private async Task<IReadOnlyList<InvoiceLineCogsPurchaseAttributedEvidenceV1>?> PurchaseAttributedEvidence(
         CogsEvidenceIdentityV1 source, CancellationToken token)
     {
-        var claims = await InvoiceCogsClaimHistoryV1.CurrentForInvoiceAsync(db, source.CompanyId, source.InvoiceId,
-            source.InvoiceLineId, source.FinalizedVersion, () => RequireCompany(source.CompanyId), token);
+        var claims = await ApprovalReadAsync(() => InvoiceCogsClaimHistoryV1.CurrentForInvoiceAsync(db, source.CompanyId, source.InvoiceId,
+            source.InvoiceLineId, source.FinalizedVersion, () => RequireCompany(source.CompanyId), token), token);
         RequireCompany(source.CompanyId);
         if (claims.Count == 0) return null;
-        var revisions = await Revisions(source).AsNoTracking().OrderBy(x => x.Version).Select(x => x.RevisionJson).ToListAsync(token);
+        var revisions = await ApprovalReadAsync(() => Revisions(source).AsNoTracking().OrderBy(x => x.Version).Select(x => x.RevisionJson).ToListAsync(token), token);
         RequireCompany(source.CompanyId);
         var prior = revisions.Select(x => Decode<InvoiceLineCogsRevisionViewV1>(x)).ToArray();
         var result = new List<InvoiceLineCogsPurchaseAttributedEvidenceV1>();
         foreach (var claim in claims)
         {
-            var header = await db.InventoryCostSources.AsNoTracking().SingleOrDefaultAsync(x => x.EventId == claim.SalesEventId, token)
+            var header = await ApprovalReadAsync(() => db.InventoryCostSources.AsNoTracking().SingleOrDefaultAsync(x => x.EventId == claim.SalesEventId, token), token)
                 ?? throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
             RequireCompany(source.CompanyId);
             var recorded = Decode<AccountingInventoryCostSourceV1>(header.SourceJson);
@@ -102,7 +102,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
                 || component is null || claim.Origin == 2 && !component.HasPostedComponents)
                 throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
             if (claim.Origin == 1 && component.ClaimSuccession is null) continue;
-            var actual = await ReadAttributedPhysical(source, claim, component, physical, token);
+            var actual = await ApprovalReadAsync(() => ReadAttributedPhysical(source, claim, component, physical, token), token);
             foreach (var share in actual.Purchase)
             {
                 var approval = share.Approval;
@@ -116,9 +116,9 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
                     result.Add(new(share, null, approval.CogsAccountId, approval.CounterAccountId, "0"));
                     continue;
                 }
-                var journal = await db.Journals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == currentId, token);
+                var journal = await ApprovalReadAsync(() => db.Journals.AsNoTracking().SingleOrDefaultAsync(x => x.Id == currentId, token), token);
                 RequireCompany(source.CompanyId);
-                var lines = await db.JournalLines.AsNoTracking().Where(x => x.JournalId == currentId).OrderBy(x => x.LineNumber).ToListAsync(token);
+                var lines = await ApprovalReadAsync(() => db.JournalLines.AsNoTracking().Where(x => x.JournalId == currentId).OrderBy(x => x.LineNumber).ToListAsync(token), token);
                 RequireCompany(source.CompanyId);
                 var total = corrected is null ? decimal.Parse(approval.SignedAmount, CultureInfo.InvariantCulture) : amount;
                 if (journal is null || journal.CompanyId != source.CompanyId || journal.SourceId != approval.ProposalId
@@ -128,10 +128,10 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
                     || lines[0].Debit != total || lines[0].Credit != 0 || lines[1].Credit != total || lines[1].Debit != 0
                     || lines[1].AccountId != approval.CounterAccountId || corrected is null && lines[0].AccountId != approval.CogsAccountId)
                     throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
-                if (await db.Journals.AnyAsync(x => x.LinkedJournalId == currentId && x.Kind == (int)JournalKind.Reversal, token))
+                if (await ApprovalReadAsync(() => db.Journals.AnyAsync(x => x.LinkedJournalId == currentId && x.Kind == (int)JournalKind.Reversal, token), token))
                     throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
                 RequireCompany(source.CompanyId);
-                if (await db.JournalReversalProposals.AnyAsync(x => x.SourceJournalId == currentId && x.Status == 1, token))
+                if (await ApprovalReadAsync(() => db.JournalReversalProposals.AnyAsync(x => x.SourceJournalId == currentId && x.Status == 1, token), token))
                     throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid);
                 RequireCompany(source.CompanyId);
                 result.Add(new(share, currentId, lines[0].AccountId, lines[1].AccountId,
@@ -155,7 +155,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
             var share = item.Source; var approval = share.Approval;
             var amount = decimal.Parse(share.SignedAmount, CultureInfo.InvariantCulture);
             if (amount == 0 || item.CurrentCogsAccountId == prepared.AccountPlan.Account.AccountId) continue;
-            var journal = await Journal(item.CurrentJournalId ?? throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid), token);
+            var journal = await ApprovalReadAsync(() => Journal(item.CurrentJournalId ?? throw Refuse(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid), token), token);
             RequireCompany(prepared.CompanyId);
             var component = new PurchaseAttributedPostedJournalComponent(prepared.CompanyId, approval.SourceEventId, approval.InvoiceLineId,
                 approval.ProposalId, share.MovementId, share.MovementLineNumber, journal.Id,
