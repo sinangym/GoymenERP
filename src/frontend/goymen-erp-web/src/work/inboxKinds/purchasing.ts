@@ -3,7 +3,7 @@ import type { WorkInboxKind } from './types'
 
 export const PURCHASING_INBOX_KINDS: readonly WorkInboxKind[] = [
   { kind: 'purchasing.order.v1', module: 'purchasing', capability: 'purchasing.order.work-decision' },
-  { kind: 'purchasing.incoming-invoice-variance.v1', module: 'purchasing', capability: PURCHASING_CAPABILITY.invoiceApproveVariance },
+  { kind: 'purchasing.incoming-invoice-variance.v1', module: 'purchasing', capability: 'purchasing.invoice-variance.work-decision' },
   // No frontend capability for `purchasing.goods-receipts.approve-variance` yet.
   { kind: 'purchasing.goods-receipt-batch.v1', module: 'purchasing', capability: null },
   // WP7

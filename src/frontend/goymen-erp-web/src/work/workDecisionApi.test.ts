@@ -220,3 +220,41 @@ it('keeps service order approval receipts immutable and never treats its absent 
  fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,replayed:false}),{status:200}))
  expect((await sendWorkDecision(company,kind,id,command,'original-key')).type).toBe('applied')
 })
+
+
+it('requires native invoice variance approval metadata and the exact two-thousand-character owner bound',()=>{
+ const kind='purchasing.incoming-invoice-variance.v1'
+ const value={...preview,kind,approvalReasonRequired:true,rejectionSupported:false}
+ expect(workDecisionReasonLimit(kind)).toBe(2000)
+ expect(decodeWorkDecisionPreview(value,company,kind,id)).not.toBeNull()
+ for(const delta of [{approvalReasonRequired:false},{rejectionSupported:undefined},{rejectionSupported:true},{rejectionSupported:null},{companyId:id},{itemId:company},{sourceVersion:'0'},{extra:true}])
+  expect(decodeWorkDecisionPreview({...value,...delta},company,kind,id)).toBeNull()
+})
+
+it('accepts only the host-proved immutable Matched variance receipt for approval with exact scope, shape and replay headers',async()=>{
+ const kind='purchasing.incoming-invoice-variance.v1',command={...request,reason:'Actual human reason'}
+ const body={companyId:company,kind,itemId:id,state:'Matched',replayed:true,originalCorrelationId:'original'}
+ const headers={'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}
+ const fetch=vi.fn(async()=>new Response(JSON.stringify(body),{status:200,headers}))
+ vi.stubGlobal('fetch',fetch)
+ expect((await sendWorkDecision(company,kind,id,command,'original-key')).type).toBe('applied')
+ for(const replayed of [true,false]) {
+  for(const delta of [{companyId:id},{itemId:company},{kind:'purchasing.order.v1'},{extra:true},{varianceDecision:{}},
+   ...['Approved','Rejected','Imported','Draft','Finalized','Cancelled','FutureState'].map(state=>({state}))]) {
+   fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,replayed,...delta}),{status:200,headers:replayed?headers:{}}))
+   expect((await sendWorkDecision(company,kind,id,command,'original-key')).type).toBe('unknown')
+  }
+  fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,replayed}),{status:200,headers:replayed?headers:{}}))
+  expect((await sendWorkDecision(company,kind,id,{...command,approve:false},'original-key')).type).toBe('unknown')
+ }
+ const invalidHeaders: Record<string,string>[]=[{}, {'Idempotency-Replayed':'true'}, {...headers,'Idempotency-Original-Correlation-Id':'other'}]
+ for(const bad of invalidHeaders) {
+  fetch.mockImplementation(async()=>new Response(JSON.stringify(body),{status:200,headers:bad}))
+  expect((await sendWorkDecision(company,kind,id,command,'original-key')).type).toBe('unknown')
+ }
+ fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,originalCorrelationId:'other'}),{status:200,headers}))
+ expect((await sendWorkDecision(company,kind,id,command,'original-key')).type).toBe('unknown')
+ fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,replayed:false}),{status:200}))
+ expect((await sendWorkDecision(company,kind,id,command,'original-key')).type).toBe('applied')
+ expect((await sendWorkDecision(company,'purchasing.service-order.v1',id,command,'original-key')).type).toBe('unknown')
+})

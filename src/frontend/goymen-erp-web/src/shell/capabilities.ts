@@ -434,6 +434,7 @@ export const CAPABILITY = {
   /** P-01 purchase-request list. Route `/satinalma/talepler`, owner the Purchasing lane. */
   purchasingRequestWorkDecision: 'purchasing.request.work-decision',
   purchasingServiceOrderWorkDecision: 'purchasing.service-order.work-decision',
+  purchasingInvoiceVarianceWorkDecision: 'purchasing.invoice-variance.work-decision',
   purchasingOrderWorkDecision: 'purchasing.order.work-decision',
   purchasingRequestsList: 'purchasing.requests.list',
   /** P-01 new request. Route `/satinalma/talepler/yeni`; reached from the list under K5. */
@@ -648,6 +649,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.logisticsSubcontractCorrect]: '/lojistik/fason-teslimler/:instructionId',
   [CAPABILITY.purchasingRequestWorkDecision]: '/onaylarim/purchasing.request.v1/:approvalId',
   [CAPABILITY.purchasingServiceOrderWorkDecision]: '/onaylarim/purchasing.service-order.v1/:approvalId',
+  [CAPABILITY.purchasingInvoiceVarianceWorkDecision]: '/onaylarim/purchasing.incoming-invoice-variance.v1/:approvalId',
   [CAPABILITY.purchasingOrderWorkDecision]: '/onaylarim/purchasing.order.v1/:approvalId',
   [CAPABILITY.purchasingRequestsList]: '/satinalma/talepler',
   // K5 keeps creation inside the P-01 list. Static `yeni` must never be read as a request id.

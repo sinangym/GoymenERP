@@ -301,3 +301,98 @@ describe('WP8 native service order purpose',()=>{
   expect(screen.queryByText(T.done)).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
  })
 })
+
+
+const varianceKind='purchasing.incoming-invoice-variance.v1',varianceCap='purchasing.invoice-variance.work-decision'
+const variancePath=`/work/decisions/${varianceKind}/${id}`,varianceRoute=`/onaylarim/${varianceKind}/${id}`
+const variancePreview={...preview,kind:varianceKind,documentLabel:'SENTETIK fark',approvalReasonRequired:true,rejectionSupported:false}
+
+describe('WP8 native invoice variance purpose',()=>{
+ it('uses its purpose capability and human reason while keeping staged invoice routes and rejection unavailable',async()=>{
+  let decided=false
+  const calls=installFetch({capabilities:[varianceCap],respond:(url,init)=>{
+   if(!url.includes(variancePath))return undefined
+   if(init?.method==='POST'){decided=true;return json({companyId:COMPANY_A,kind:varianceKind,itemId:id,state:'Matched',replayed:false,originalCorrelationId:'SENTETIK'})}
+   return json(decided?{...variancePreview,pending:false,sourceVersion:'8'}:variancePreview)
+  }})
+  const router=mount(varianceRoute,true);await screen.findByText('SENTETIK fark',{exact:false})
+  const input=screen.getByRole('textbox',{name:T.reason}) as HTMLTextAreaElement
+  expect(input.maxLength).toBe(2000);expect(input.value).toBe('')
+  expect(screen.getByText(T.approvalReasonRequired(2000))).toBeTruthy()
+  expect(screen.queryByRole('button',{name:T.reject})).toBeNull()
+  const button=screen.getByRole('button',{name:T.approve}) as HTMLButtonElement
+  expect(button.disabled).toBe(true)
+  fireEvent.change(input,{target:{value:'   '}});expect(button.disabled).toBe(true)
+  const reason='R'.repeat(2000)
+  fireEvent.change(input,{target:{value:`  ${reason}  `}});expect(button.disabled).toBe(false)
+  await userEvent.setup().click(button);await screen.findByText(T.done);await screen.findByText(T.closed)
+  const sent=calls.filter(call=>call.method==='POST');expect(sent).toHaveLength(1)
+  expect(sent[0].body).toEqual({expectedVersion:'7',approve:true,reason,delegationId:null})
+  expect(sent[0].headers['X-Company-Id']).toBe(COMPANY_A);expect(sent[0].headers['Idempotency-Key']).toBeTruthy()
+  for(const route of ['/satinalma/faturalar',`/satinalma/faturalar/${id}`]) {
+   await act(async()=>{await router.navigate(route)})
+   await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+  }
+  expect(calls.some(call=>call.url.includes('/purchasing/'))).toBe(false)
+ })
+ it('does not truncate or send an overlong invoice variance approval reason',async()=>{
+  const calls=installFetch({capabilities:[varianceCap],respond:url=>url.includes(variancePath)?json(variancePreview):undefined})
+  mount(varianceRoute);await screen.findByText('SENTETIK fark',{exact:false})
+  const input=screen.getByRole('textbox',{name:T.reason}) as HTMLTextAreaElement
+  fireEvent.change(input,{target:{value:'R'.repeat(2001)}});expect(input.value).toHaveLength(2001)
+  expect((screen.getByRole('button',{name:T.approve}) as HTMLButtonElement).disabled).toBe(true)
+  await userEvent.setup().click(screen.getByRole('button',{name:T.approve}))
+  expect(calls.some(call=>call.method==='POST')).toBe(false)
+ })
+ it('preserves the original human reason/version/key through unknown remount and a newer closed Matched preview',async()=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-variance-decision'})
+  let posts=0
+  const calls=installFetch({capabilities:[varianceCap],respond:(url,init)=>{
+   if(!url.includes(variancePath))return undefined
+   if(init?.method==='POST')return ++posts===1?problem(503):new Response(JSON.stringify({companyId:COMPANY_A,kind:varianceKind,itemId:id,state:'Matched',replayed:true,originalCorrelationId:'original'}),{status:200,headers:{'Content-Type':'application/json','Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}})
+   return json(posts?{...variancePreview,pending:false,sourceVersion:'9'}:variancePreview)
+  }})
+  mount(varianceRoute);await screen.findByText('SENTETIK fark',{exact:false})
+  fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:'  Original human reason  '}})
+  await userEvent.setup().click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+  cleanup();mount(varianceRoute);await screen.findByText(T.unknown);await screen.findByText('SENTETIK fark',{exact:false})
+  await screen.findByText(T.closed)
+  expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+  await userEvent.setup().click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+  const sent=calls.filter(call=>call.method==='POST');expect(sent).toHaveLength(2)
+  expect(sent[1].body).toEqual(sent[0].body);expect(sent[1].body).toEqual({expectedVersion:'7',approve:true,reason:'Original human reason',delegationId:null})
+  expect(sent[1].headers['Idempotency-Key']).toBe(sent[0].headers['Idempotency-Key'])
+  expect(calls.filter(call=>call.url.includes(variancePath)&&call.method==='GET').length).toBeGreaterThanOrEqual(3)
+ })
+ it.each([{companyId:COMPANY_B},{rejectionSupported:true},{rejectionSupported:undefined},{approvalReasonRequired:false}])('fails closed on untrusted variance preview %j',async delta=>{
+  const calls=installFetch({capabilities:[varianceCap],respond:url=>url.includes(variancePath)?json({...variancePreview,...delta}):undefined})
+  mount(varianceRoute);await waitFor(()=>expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
+  expect(screen.queryByText('SENTETIK fark',{exact:false})).toBeNull();expect(calls.some(call=>call.method==='POST')).toBe(false)
+ })
+ it('does not read variance owner without its purpose capability',async()=>{
+  const calls=installFetch({capabilities:['purchasing.invoices.approve-variance'],respond:url=>url.includes(variancePath)?json(variancePreview):undefined})
+  mount(varianceRoute,true);await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+  expect(calls.some(call=>call.url.includes(variancePath))).toBe(false)
+ })
+ it('keeps fresh native refusal authoritative after the human reason is entered',async()=>{
+  const calls=installFetch({capabilities:[varianceCap],respond:(url,init)=>url.includes(variancePath)?init?.method==='POST'?problem(403):json(variancePreview):undefined})
+  mount(varianceRoute);await screen.findByText('SENTETIK fark',{exact:false})
+  fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:'Actual human reason'}})
+  await userEvent.setup().click(screen.getByRole('button',{name:T.approve}))
+  await waitFor(()=>expect(screen.queryByRole('button',{name:T.approve})).toBeNull())
+  expect(screen.queryByText(T.done)).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+ })
+})
+
+
+it('freezes a foreign variance success response as unknown without automatically retrying or showing success',async()=>{
+ const calls=installFetch({capabilities:[varianceCap],respond:(url,init)=>url.includes(variancePath)?init?.method==='POST'
+  ?json({companyId:COMPANY_B,kind:varianceKind,itemId:id,state:'Matched',replayed:false,originalCorrelationId:'SENTETIK'}):json(variancePreview):undefined})
+ mount(varianceRoute);await screen.findByText('SENTETIK fark',{exact:false})
+ fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:'Actual human variance reason'}})
+ await userEvent.setup().click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ expect(screen.queryByText(T.done)).toBeNull()
+ expect(screen.getByRole('button',{name:T.approve}).closest('fieldset')?.disabled).toBe(true)
+ await userEvent.setup().click(screen.getByRole('button',{name:T.approve}))
+ expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+})
