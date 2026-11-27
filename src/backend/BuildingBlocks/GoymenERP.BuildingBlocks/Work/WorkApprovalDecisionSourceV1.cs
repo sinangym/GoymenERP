@@ -43,7 +43,13 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkProductPackageStandardProofV1? ProductPackageStandardProof = null,
     [property: JsonIgnore] WorkProductPriceListProofV1? ProductPriceListProof = null,
     [property: JsonIgnore] WorkPartyCreditLimitProofV1? PartyCreditLimitProof = null,
-    [property: JsonIgnore] WorkOfficialInvoiceImportProofV1? OfficialInvoiceImportProof = null);
+    [property: JsonIgnore] WorkOfficialInvoiceImportProofV1? OfficialInvoiceImportProof = null,
+    [property: JsonIgnore] WorkOfficialSalesInvoiceProofV1? OfficialSalesInvoiceProof = null);
+
+/// <summary>Scalar owner binding only. Full monetary/document facts are released only by authorized human GET.</summary>
+public sealed record WorkOfficialSalesInvoiceProofV1(Guid CompanyId, Guid InvoiceId, string OfficialNo,
+    Guid CustomerPartyId, Guid CurrencyId, Guid PdfDocumentId, string RecordedBy, DateTimeOffset RecordedAtUtc,
+    string Status, string RecordedFactsDigest, string PreviewDigest);
 
 /// <summary>Price-free immutable import header; full canonical rows stay in the authorized human GET only.</summary>
 public sealed record WorkOfficialInvoiceImportProofV1(Guid CompanyId, Guid BatchId, string BatchVersion,

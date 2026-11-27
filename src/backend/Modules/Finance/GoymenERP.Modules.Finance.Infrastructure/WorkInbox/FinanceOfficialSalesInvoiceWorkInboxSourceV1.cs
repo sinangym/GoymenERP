@@ -19,9 +19,10 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// Finance stores the currency identity, not its code, so the unit is left empty and the currency is a reference.
 /// </para>
 /// </summary>
-internal sealed class FinanceOfficialSalesInvoiceWorkInboxSourceV1(
+internal sealed partial class FinanceOfficialSalesInvoiceWorkInboxSourceV1(
     FinanceDbContext dbContext,
-    FinanceWorkInboxFence fence) : IWorkInboxSourceV1
+    FinanceWorkInboxFence fence,
+    IFinanceOfficialSalesInvoiceServiceV1? owner = null) : IWorkInboxSourceV1
 {
     public const string ModuleName = "finance";
     public const string KindName = "finance.official-sales-invoice.v1";
