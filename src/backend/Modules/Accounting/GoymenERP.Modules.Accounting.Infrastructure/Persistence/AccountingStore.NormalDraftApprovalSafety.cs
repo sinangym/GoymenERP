@@ -121,7 +121,7 @@ public sealed partial class AccountingStore
                 : throw new InvalidOperationException("Guarded normal approval requires its owned command boundary.");
         public Task<(NormalJournalDraftRecordV1 Record, AccountingWriteOutcome Outcome)> CreateNormalDraftAsync(NormalJournalDraftV1 draft,
             Func<CancellationToken, Task> fence, AccountingCommandMetadata metadata, CancellationToken token = default) => core.CreateNormalDraftAsync(draft, fence, metadata, token);
-        public Task<NormalJournalDraftRecordV1?> ReadNormalDraftDecisionAsync(Guid id, Func<CancellationToken, Task> fence, CancellationToken token = default) => core.ReadNormalDraftDecisionAsync(id, fence, token);
+        public Task<NormalJournalDraftDecisionSourceV1?> ReadNormalDraftDecisionAsync(Guid id, Func<CancellationToken, Task> fence, CancellationToken token = default) => core.ReadNormalDraftDecisionAsync(id, fence, token);
         public Task<NormalJournalDraftRecordV1?> FindNormalDraftAsync(Guid id, CancellationToken token = default) => core.FindNormalDraftAsync(id, token);
     }
 }

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Accounting.Application;
 
@@ -30,7 +31,7 @@ public sealed partial class NormalJournalDraftLifecycleV1Tests
         var service = ApprovalService(port, port.Inner, company, user, authority);
         Task Callback(CancellationToken _)
         {
-            if (++calls == 5) // initial, owner entry/header/lines, final service release: callback completes without throwing.
+            if (++calls == 6) // initial, owner entry/header/lines/membership, final service release: callback completes without throwing.
             {
                 if (fault == "permission") authority.Allowed = false;
                 if (fault == "actor") user.ActorId = Guid.NewGuid();
@@ -104,7 +105,7 @@ public sealed partial class NormalJournalDraftLifecycleV1Tests
 
     [Theory]
     [InlineData("command")][InlineData("key")][InlineData("actor")][InlineData("payload")][InlineData("company")]
-    [InlineData("amount")][InlineData("period")][InlineData("version")][InlineData("resource")][InlineData("malformed")][InlineData("correlation")]
+    [InlineData("amount")][InlineData("period")][InlineData("version")][InlineData("resource")][InlineData("malformed")][InlineData("correlation")][InlineData("unknown-root")][InlineData("unknown-resource")][InlineData("private-proof")][InlineData("missing-membership")]
     public async Task Private_receipt_never_reconstructs_original_success_from_changed_source_or_malformed_command(string fault)
     {
         var port = new DecisionProtocolPort(); var service = ApprovalService(port, port.Inner, new ApprovalCompany(Company), new ApprovalUser(), new ApprovalAuthority());
@@ -119,10 +120,17 @@ public sealed partial class NormalJournalDraftLifecycleV1Tests
             "correlation" => command with { OriginalCorrelationId = "" }, "malformed" => command with { ResultJson = "{" },
             "resource" => command with { ResultJson = "{\"status\":0}" }, _ => command,
         };
+        if (fault is "unknown-root" or "unknown-resource" or "private-proof")
+        {
+            var json = JsonNode.Parse(command.ResultJson)!;
+            if (fault == "unknown-root") json["unexpected"] = true;
+            else json["resource"]![fault == "private-proof" ? "approvalReceipt" : "unexpected"] = true;
+            command = command with { ResultJson = json.ToJsonString() };
+        }
         if (fault == "company") source = source with { CompanyId = Guid.NewGuid() };
         if (fault == "amount") source = source with { Request = source.Request with { Lines = source.Request.Lines.Select(x => x with { Amount = 11m }).ToArray() } };
         Assert.Null(NormalJournalDraftServiceV1.BindNormalApprovalReceipt(command, source, result,
-            fault == "version" ? 2 : 1, fault == "period" ? Guid.NewGuid() : period, key, Actor));
+            fault == "version" ? 2 : 1, fault == "period" ? Guid.NewGuid() : period, key, Actor, fault == "missing-membership" ? null : false));
         Assert.Equal(1, port.Inner.Approvals); Assert.Equal(1, port.Inner.Completions);
     }
 
@@ -133,8 +141,8 @@ public sealed partial class NormalJournalDraftLifecycleV1Tests
         public MemoryStore Inner { get; } = new(initial ?? Record() with { PreparedByUserId = Guid.Parse("a0000000-0000-4000-8000-0000000000b2") });
         public Task<AccountingApiResult<NormalJournalDraftViewV1>> RunNormalApprovalAsync(Func<bool, Task<AccountingApiResult<NormalJournalDraftViewV1>>> attempt,
             Func<CancellationToken, Task> fence, CancellationToken token = default) => Inner.RunNormalApprovalAsync(attempt, fence, token);
-        public async Task<NormalJournalDraftRecordV1?> ReadNormalDraftDecisionAsync(Guid id, Func<CancellationToken, Task> fence, CancellationToken token = default)
-        { await fence(token); var value = await Inner.FindNormalDraftAsync(id, token); await fence(token); await fence(token); return value; }
+        public async Task<NormalJournalDraftDecisionSourceV1?> ReadNormalDraftDecisionAsync(Guid id, Func<CancellationToken, Task> fence, CancellationToken token = default)
+        { await fence(token); var value = await Inner.FindNormalDraftAsync(id, token); await fence(token); await fence(token); await fence(token); return value is null ? null : new(value, false); }
         public Task<NormalJournalDraftRecordV1?> FindNormalDraftAsync(Guid id, CancellationToken token = default) => Inner.FindNormalDraftAsync(id, token);
         public Task<(NormalJournalDraftRecordV1 Record, AccountingWriteOutcome Outcome)> CreateNormalDraftAsync(NormalJournalDraftV1 draft,
             Func<CancellationToken, Task> fence, AccountingCommandMetadata metadata, CancellationToken token = default) => Inner.CreateNormalDraftAsync(draft, fence, metadata, token);

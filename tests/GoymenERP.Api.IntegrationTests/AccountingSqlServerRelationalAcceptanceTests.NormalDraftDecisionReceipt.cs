@@ -38,7 +38,7 @@ public sealed partial class AccountingSqlServerRelationalAcceptanceTests
     public async Task Normal_draft_receipt_command_and_retained_source_await_refusals_roll_back_actual_saved_posting_and_reuse_the_original_key_once()
     {
         // Actual migrated SQL and actual scoped Audit writer; authority answers at new read boundaries are controlled.
-        foreach (var boundary in new[] { 4, 6, 7, 8 }) // saved result: command, source header, source lines, release.
+        foreach (var boundary in new[] { 4, 6, 7, 8, 9 }) // saved result: command, source header, source lines, exact credit membership, release.
         {
             await using var run = await Run.StartAsync(); var (id, period) = await NormalSafetyPrepare(run);
             var save = new NormalApprovalSave(id); await using var scope = new NormalApprovalScope(run, save);

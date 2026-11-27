@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace GoymenERP.Modules.Accounting.Application;
 
@@ -16,8 +17,8 @@ public sealed partial class NormalJournalDraftServiceV1
         await ReceiptFence(token);
         var source = await reader.ReadNormalDraftDecisionAsync(id, ReceiptFence, token);
         await ReceiptFence(token);
-        var proof = source is null || source.CompanyId != company || source.Id != id ? null
-            : BindNormalApprovalReceipt(command, source, answer, expectedVersion, periodId, key, actor);
+        var proof = source is null || source.Record.CompanyId != company || source.Record.Id != id ? null
+            : BindNormalApprovalReceipt(command, source.Record, answer, expectedVersion, periodId, key, actor, source.IsCreditSource);
         return answer with { Resource = answer.Resource with { ApprovalReceipt = proof } };
         Task ReceiptFence(CancellationToken cancellationToken) => FenceAsync(permissions.ApprovePermission, actor, cancellationToken, company);
     }
@@ -25,9 +26,9 @@ public sealed partial class NormalJournalDraftServiceV1
     /// <summary>Only the original persisted result supplies decision fields. Current source supplies retained immutable facts.</summary>
     public static NormalJournalDraftApprovalReceiptV1? BindNormalApprovalReceipt(
         AccountingCommandRecord? command, NormalJournalDraftRecordV1 source,
-        AccountingApiResult<NormalJournalDraftViewV1> answer, long expectedVersion, Guid periodId, string key, Guid actor)
+        AccountingApiResult<NormalJournalDraftViewV1> answer, long expectedVersion, Guid periodId, string key, Guid actor, bool? isCreditSource = null)
     {
-        if (command is null || !ValidNormalDecisionRecord(source) || expectedVersion <= 0 || expectedVersion == long.MaxValue || periodId == Guid.Empty
+        if (isCreditSource is null || command is null || !ValidNormalDecisionRecord(source) || expectedVersion <= 0 || expectedVersion == long.MaxValue || periodId == Guid.Empty
             || actor == Guid.Empty || string.IsNullOrWhiteSpace(key) || source.PreparedByUserId == actor
             || command.CommandName != NormalJournalCommandNamesV1.ApproveDraft
             || command.IdempotencyKeyHash != AccountingApiService.Sha256(key.Trim())
@@ -35,7 +36,12 @@ public sealed partial class NormalJournalDraftServiceV1
             || command.RequestHash != AccountingApiService.Sha256(NormalJournalCommandNamesV1.ApproveDraft + "|"
                 + JsonSerializer.Serialize(new { draftId = source.Id, expectedVersion, periodId }, Json))) return null;
         AccountingApiResult<NormalJournalDraftViewV1>? stored;
-        try { stored = JsonSerializer.Deserialize<AccountingApiResult<NormalJournalDraftViewV1>>(command.ResultJson, Json); }
+        try
+        {
+            stored = JsonSerializer.Deserialize<AccountingApiResult<NormalJournalDraftViewV1>>(command.ResultJson, Json);
+            // JsonIgnore/unknown fields are not provenance. Only an exact canonical native envelope is certifiable.
+            if (!JsonNode.DeepEquals(JsonNode.Parse(command.ResultJson), JsonSerializer.SerializeToNode(stored, Json))) return null;
+        }
         catch (JsonException) { return null; }
         if (stored is not { Status: AccountingApiStatus.Ok, IsReplay: false, Code: null, Resource: { } original }
             || stored.OriginalCorrelationId is not null || stored.Field is not null || stored.ExpectedVersion is not null || stored.CurrentVersion is not null
@@ -51,6 +57,6 @@ public sealed partial class NormalJournalDraftServiceV1
             || answer.IsReplay && answer.OriginalCorrelationId != command.OriginalCorrelationId) return null;
         return new(source.CompanyId, source.Id, command.CommandName, command.IdempotencyKeyHash, command.RequestHash,
             actor, expectedVersion, original.Version, periodId, source.Id, command.OriginalCorrelationId, at,
-            NormalSourceFactsDigest(source), AccountingApiService.Sha256(command.ResultJson));
+            NormalSourceFactsDigest(source), AccountingApiService.Sha256(command.ResultJson)) { IsCreditSource = isCreditSource };
     }
 }

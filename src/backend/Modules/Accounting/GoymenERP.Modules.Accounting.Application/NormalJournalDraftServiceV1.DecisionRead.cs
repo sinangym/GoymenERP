@@ -17,14 +17,15 @@ public sealed partial class NormalJournalDraftServiceV1 : INormalJournalDraftDec
             await ReadFence(cancellationToken);
             if (drafts is not IAccountingNormalJournalDraftDecisionStoreV1 reader)
                 return new(AccountingApiStatus.Unavailable, null, false, null);
-            var record = await reader.ReadNormalDraftDecisionAsync(draftId, ReadFence, cancellationToken);
+            var source = await reader.ReadNormalDraftDecisionAsync(draftId, ReadFence, cancellationToken);
             await ReadFence(cancellationToken);
-            if (record is null) return new(AccountingApiStatus.NotFound, null, false, null);
+            if (source is null) return new(AccountingApiStatus.NotFound, null, false, null);
+            var record = source.Record;
             if (record.CompanyId != company || record.Id != draftId || !ValidNormalDecisionRecord(record)) return new(AccountingApiStatus.Unavailable, null, false, null);
             // ROL-D14/YOL-D23: approval-purpose disclosure excludes the actual draft maker.
             if (record.PreparedByUserId == actor) return DecisionDenied();
             var view = View(record);
-            return new(AccountingApiStatus.Ok, new(view, NormalSourceFactsDigest(record), NormalPreviewDigest(view)), false, null);
+            return new(AccountingApiStatus.Ok, new(view, NormalSourceFactsDigest(record), NormalPreviewDigest(view)) { IsCreditSource = source.IsCreditSource }, false, null);
         }
         catch (NormalJournalAuthorityDeniedException) { return DecisionDenied(); }
         async Task ReadFence(CancellationToken token)
