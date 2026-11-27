@@ -72,7 +72,7 @@ public sealed class AiGateway(
 
         var composer = composers.FirstOrDefault(candidate =>
             string.Equals(candidate.ProviderKind, runtime!.Provider, StringComparison.Ordinal) && candidate.Placement == route.Placement);
-        if (composer is null)
+        if (composer is null || chat && !composer.SupportsGeneralChat || !chat && composer.UsesWeb)
             return AiGatewayResultV1.Of(AiGatewayStatusV1.Unavailable);
 
         SettingsAiBudgetReservationV1 reservation;
@@ -126,7 +126,7 @@ public sealed class AiGateway(
 
         if (chat)
         {
-            return string.IsNullOrWhiteSpace(composed?.Text)
+            return string.IsNullOrWhiteSpace(composed?.Text) || composed.CitedSources is not { Count: 0 }
                 ? AiGatewayResultV1.Of(AiGatewayStatusV1.Unavailable)
                 : new AiGatewayResultV1(AiGatewayStatusV1.Answered,
                     new AiGatewayAnswerV1(composed.Text, Grounded: false, [], route.ModelDeployment, route.Placement,

@@ -11,7 +11,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// task × data class table with its fixed placement rules (no cloud above Internal, no document/e-mail text on a cloud
 /// model, the runtime cap); the disabled runtime; general chat without ERP data. SENTETIK values only.
 /// </summary>
-public sealed class AiGatewayTests
+public sealed partial class AiGatewayTests
 {
     private static readonly Guid Company = Guid.Parse("aaaaaaaa-0000-4000-8000-0000000000a1");
     private static readonly Guid Actor = Guid.Parse("11111111-1111-4111-8111-1111111111a1");
@@ -354,7 +354,7 @@ public sealed class AiGatewayTests
     public async Task General_chat_runs_without_erp_data_and_is_marked_ungrounded_while_chat_with_grounding_is_invalid()
     {
         var store = new InMemoryAiGatewayStore(Company);
-        var composer = new CountingComposer(AiModelPlacementV1.Cloud) { Text = "SENTETIK genel cevap.", Cited = [] };
+        var composer = new CountingComposer(AiModelPlacementV1.Cloud) { Text = "SENTETIK genel cevap.", Cited = [], SupportsGeneralChat = true };
         var gateway = AiGatewayTestDoubles.Gateway(ReadyOptions(), store, [composer]);
 
         var chat = await gateway.ComposeAsync(Request(feature: AiFeatureV1.Chat, task: AiTaskKindV1.Converse, grounding: []));
@@ -428,6 +428,8 @@ public sealed class AiGatewayTests
     {
         private readonly FakeAiAnswerComposer inner = new(placement);
 
+        public bool SupportsGeneralChat { get; init; }
+        public bool UsesWeb { get; init; }
         public int Calls { get; private set; }
         public string? Text { get; init; }
         public IReadOnlyList<int>? Cited { get; init; }

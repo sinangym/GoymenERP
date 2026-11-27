@@ -32,6 +32,12 @@ public interface IAiAnswerComposerV1
 
     AiModelPlacementV1 Placement { get; }
 
+    /// <summary>Explicit opt-in only. A source-restating composer is not a general conversation provider.</summary>
+    bool SupportsGeneralChat => false;
+
+    /// <summary>Declared provider behavior. Web-capable composition is never admitted for ERP features (AI-D28).</summary>
+    bool UsesWeb => false;
+
     Task<AiComposedTextV1> ComposeAsync(AiComposeRequestV1 request, CancellationToken cancellationToken = default);
 }
 

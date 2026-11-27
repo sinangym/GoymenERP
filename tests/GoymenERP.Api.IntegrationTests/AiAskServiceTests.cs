@@ -1,6 +1,7 @@
 using System.Text.Json;
 using GoymenERP.Api.Ai;
 using GoymenERP.Api.Ai.External;
+using GoymenERP.Api.Ai.Gateway;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.BuildingBlocks.Multitenancy;
@@ -22,7 +23,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// pins the shipped starting limits and their fail-closed reading; ASSUMPTION-AI-POLICYREF-1 pins the policy reference
 /// every Group E event carries.
 /// </summary>
-public sealed class AiAskServiceTests
+public sealed partial class AiAskServiceTests
 {
     private const string ToolId = "test.item-summary.v1";
     private const string ToolVersion = "1";
@@ -844,7 +845,7 @@ public sealed class AiAskServiceTests
             AllowedTools = [new AiAllowedToolOptions { ToolId = ToolId, Version = ToolVersion }],
         };
 
-        public AiAskService Service() => new(
+        public AiAskService Service(IEnumerable<IAiAnswerComposerV1>? composers = null) => new(
             Options.Create(options),
             new TestHostEnvironment("Development"),
             Provider,
@@ -856,7 +857,7 @@ public sealed class AiAskServiceTests
             Correlation,
             Writer,
             TimeProvider.System,
-            AiGatewayTestDoubles.Gateway(options, GatewayStore));
+            AiGatewayTestDoubles.Gateway(options, GatewayStore, composers));
 
         public AiCapabilityService CapabilityService() => new(
             Options.Create(options),

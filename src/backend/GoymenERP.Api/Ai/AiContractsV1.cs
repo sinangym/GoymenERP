@@ -1,12 +1,21 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace GoymenERP.Api.Ai;
 
 /// <summary>
 /// <c>POST /api/v1/ai/ask</c> body. Everything here is untrusted input: there is no company id, actor or authority
-/// field, and a tool hint is re-checked exactly like model output (ERP-000J §8).
+/// field, and a tool hint is re-checked exactly like model output (ERP-000J §8). Null/absent mode is ERP;
+/// general-chat accepts only the question and never carries a tool hint or prior ERP context.
 /// </summary>
-public sealed record AiAskRequestV1(string? Question, string? ToolId, string? ToolVersion, JsonElement? Arguments);
+public sealed record AiAskRequestV1(string? Question, string? ToolId, string? ToolVersion, JsonElement? Arguments,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Mode = null);
+
+public static class AiAskModesV1
+{
+    public const string Erp = "erp";
+    public const string GeneralChat = "general-chat";
+}
 
 public static class AiAskOutcomesV1
 {
@@ -34,14 +43,17 @@ public static class AiAvailabilityValuesV1
 
 /// <summary>
 /// The answer of a READ-only ask: what each owner tool released and where it came from, and (WP-A1) the natural language
-/// answer the gateway composed from those results. Every number in <see cref="Answer"/> appears in a cited source; the
-/// runtime adds no totals or derived values (data class §5a). <see cref="Answer"/> is null when the outcome is
+/// answer the gateway composed from those results. In ERP mode every number in <see cref="Answer"/> appears in a cited
+/// source; the runtime adds no totals or derived values (data class §5a). General chat has no tool results or citations and
+/// explicitly marks its answer ungrounded. <see cref="Answer"/> is null when the outcome is
 /// <see cref="AiAskOutcomesV1.CannotAnswer"/>.
 /// </summary>
-public sealed record AiAskResponseV1(string Outcome, IReadOnlyList<AiToolResultV1> ToolResults, AiAnswerV1? Answer);
+public sealed record AiAskResponseV1(string Outcome, IReadOnlyList<AiToolResultV1> ToolResults, AiAnswerV1? Answer,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Mode = null);
 
 /// <summary>WP-A1: the composed text, its cited sources and the model/policy identity that produced it.</summary>
-public sealed record AiAnswerV1(string Text, IReadOnlyList<AiAnswerCitationV1> Citations, string ModelDeployment, string PolicyVersion);
+public sealed record AiAnswerV1(string Text, IReadOnlyList<AiAnswerCitationV1> Citations, string ModelDeployment, string PolicyVersion,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Grounded = null);
 
 public sealed record AiAnswerCitationV1(
     string ToolId,
@@ -100,6 +112,7 @@ public sealed record AiAskResultV1(AiAskStatusV1 Status, AiAskResponseV1? Respon
 /// <summary>Stable field codes for an invalid ask; never echo the rejected value.</summary>
 public static class AiInvalidFieldsV1
 {
+    public const string Mode = "mode";
     public const string Question = "question";
     public const string Tool = "tool";
     public const string Arguments = "arguments";

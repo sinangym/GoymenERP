@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using GoymenERP.Api.Ai.External;
+using GoymenERP.Api.Ai.Evaluation;
 using GoymenERP.Api.Ai.Gateway;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Ai;
@@ -78,11 +79,25 @@ public sealed class AiAskService(
         }
 
         var panelScope = await authority.RevalidatePermissionScopeAsync(ErpPermissions.AiPanelUse, companyId, cancellationToken);
-        if (!IsCompanyWideGrant(panelScope))
+        if (!IsCompanyWideGrant(panelScope) || ResolveActorId() != actorId || ResolvedCompanyOrNull(actorId) != companyId)
         {
             await RefuseAsync(SecurityEventTypesV1.AiAuthorizationDenied, SecurityEventReasonCodesV1.PermissionMissing,
                 companyId, actorId, ErpPermissions.AiPanelUse, null, cancellationToken);
             return AiAskResultV1.Of(AiAskStatusV1.Refused);
+        }
+
+        if (request?.Mode is not (null or AiAskModesV1.Erp or AiAskModesV1.GeneralChat))
+        {
+            await RefuseAsync(SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.PolicyRefused,
+                companyId, actorId, null, null, cancellationToken);
+            return AiAskResultV1.InvalidInput(AiInvalidFieldsV1.Mode);
+        }
+        var generalChat = request?.Mode == AiAskModesV1.GeneralChat;
+        if (generalChat && (request!.ToolId is not null || request.ToolVersion is not null || request.Arguments is not null))
+        {
+            await RefuseAsync(SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.PolicyRefused,
+                companyId, actorId, null, null, cancellationToken);
+            return AiAskResultV1.InvalidInput(AiInvalidFieldsV1.Tool);
         }
 
         if (!TryReadQuestion(request, limits, out var question) || !TryReadHint(request, out var hint))
@@ -91,6 +106,9 @@ public sealed class AiAskService(
                 companyId, actorId, null, null, cancellationToken);
             return AiAskResultV1.InvalidInput(question is null ? AiInvalidFieldsV1.Question : AiInvalidFieldsV1.Tool);
         }
+
+        if (generalChat)
+            return await ComposeAnswerAsync(question, [], companyId, actorId, cancellationToken, generalChat: true);
 
         AiModelPlanV1 plan;
         try
@@ -148,7 +166,7 @@ public sealed class AiAskService(
             return AiAskResultV1.Of(AiAskStatusV1.Refused);
         }
 
-        return await ComposeAnswerAsync(question, results, companyId, actorId, cancellationToken);
+        return await ComposeAnswerAsync(question, results, companyId, actorId, cancellationToken, releasedTools: usedTools);
     }
 
     /// <summary>
@@ -160,7 +178,9 @@ public sealed class AiAskService(
         IReadOnlyList<AiToolResultV1> results,
         Guid companyId,
         string actorId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyList<AiToolDescriptorV1>? releasedTools = null,
+        bool generalChat = false)
     {
         var grounding = new List<AiGroundingItemV1>(results.Count);
         foreach (var result in results)
@@ -176,10 +196,30 @@ public sealed class AiAskService(
                     source.SourceVersion, source.AsOfUtc, dataClass)));
         }
 
+        var contentClass = AiQuestionDataClassV1.Classify(question);
+        // Reuse the approved evaluation screens for the new free conversation boundary. They only
+        // raise the class (AI-D44/D49); no names, amounts or matching values are retained or logged.
+        if (generalChat && (AiOutboundTextScreenV1.Screen(question).Findings.Count > 0
+                || new AiEvalPersonNameScreenV1().Screen(question).Count > 0))
+            contentClass = (AiDataClassV1)Math.Max((int)contentClass, (int)AiDataClassV1.Confidential);
         var composed = await gateway.ComposeAsync(
-            new AiGatewayRequestV1(AiFeatureV1.Panel, AiTaskKindV1.Answer, question, AiQuestionDataClassV1.Classify(question), grounding,
+            new AiGatewayRequestV1(generalChat ? AiFeatureV1.Chat : AiFeatureV1.Panel, generalChat ? AiTaskKindV1.Converse : AiTaskKindV1.Answer, question, contentClass, grounding,
                 new AiGatewayCallerV1(companyId, actorId, correlationContext.CorrelationId, correlationContext.CausationId)),
             cancellationToken);
+
+        if (!await RemainsCurrentAsync(actorId, companyId, releasedTools ?? [], cancellationToken))
+        {
+            await RefuseAsync(SecurityEventTypesV1.AiAuthorizationDenied, SecurityEventReasonCodesV1.PermissionMissing,
+                companyId, actorId, ErpPermissions.AiPanelUse, null, cancellationToken);
+            return AiAskResultV1.Of(AiAskStatusV1.Refused);
+        }
+        if (generalChat && composed.Status == AiGatewayStatusV1.Answered
+            && (composed.Answer is not { Grounded: false } chatAnswer || chatAnswer.Citations is not { Count: 0 }))
+        {
+            await RefuseAsync(SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.AiProviderFailed,
+                companyId, actorId, null, null, cancellationToken);
+            return AiAskResultV1.Of(AiAskStatusV1.Unavailable);
+        }
 
         switch (composed.Status)
         {
@@ -188,9 +228,9 @@ public sealed class AiAskService(
                     new AiAnswerV1(answer.Text,
                         answer.Citations.Select(citation => new AiAnswerCitationV1(citation.ToolId, citation.ToolVersion,
                             citation.TargetKind, citation.TargetId, citation.Title, citation.SourceVersion, citation.AsOfUtc)).ToArray(),
-                        answer.ModelDeployment, answer.PolicyVersion)));
+                        answer.ModelDeployment, answer.PolicyVersion, generalChat ? false : null), generalChat ? AiAskModesV1.GeneralChat : null));
             case AiGatewayStatusV1.CannotAnswer:
-                return AiAskResultV1.Answered(new AiAskResponseV1(AiAskOutcomesV1.CannotAnswer, results, null));
+                return AiAskResultV1.Answered(new AiAskResponseV1(AiAskOutcomesV1.CannotAnswer, results, null, generalChat ? AiAskModesV1.GeneralChat : null));
             case AiGatewayStatusV1.FeatureDisabled:
                 await RefuseAsync(SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.PolicyRefused,
                     companyId, actorId, null, null, cancellationToken);
@@ -342,7 +382,7 @@ public sealed class AiAskService(
         foreach (var permission in permissions)
         {
             var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
-            if (!IsCompanyWideGrant(scope))
+            if (!IsCompanyWideGrant(scope) || ResolveActorId() != actorId || ResolvedCompanyOrNull(actorId) != companyId)
             {
                 return false;
             }
