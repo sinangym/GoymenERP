@@ -269,12 +269,12 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<IAuditTransactionWriterV1>());
     }
 
-    private static FinancePartyCreditLimitService CreatePartyCreditLimitService(IServiceProvider provider)
+    private static IFinancePartyCreditLimitMaster CreatePartyCreditLimitService(IServiceProvider provider)
     {
         var companyContext = provider.GetRequiredService<ICompanyContext>();
         var currentUser = provider.GetRequiredService<ICurrentUser>();
         var permissions = provider.GetRequiredService<FinancePermissionPort>();
-        return new FinancePartyCreditLimitService(
+        var core = new FinancePartyCreditLimitService(
             provider.GetRequiredService<FinanceDbContext>(),
             companyContext,
             currentUser,
@@ -287,6 +287,7 @@ public static class FinanceModuleExtensions
                 Envelope(provider, ErpPermissions.FinanceCreditLimitsPropose, permissions, FinanceAction.ProposeCreditLimit),
                 Envelope(provider, ErpPermissions.FinanceCreditLimitsApprove, permissions, FinanceAction.ApproveCreditLimit)),
             provider.GetRequiredService<TimeProvider>());
+        return new GuardedFinancePartyCreditLimitService(core, provider.GetService<IAuditTransactionWriterV1>());
     }
 
     private static FinancePartyCollateralService CreatePartyCollateralService(IServiceProvider provider)

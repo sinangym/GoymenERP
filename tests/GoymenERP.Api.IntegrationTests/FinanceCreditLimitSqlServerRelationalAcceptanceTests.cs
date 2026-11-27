@@ -23,7 +23,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// moves no money.
 /// </para>
 /// </summary>
-public sealed class FinanceCreditLimitSqlServerRelationalAcceptanceTests
+public sealed partial class FinanceCreditLimitSqlServerRelationalAcceptanceTests
 {
     private const string Proposer = "SENTETIK-proposer";
     private const string Approver = "SENTETIK-approver";

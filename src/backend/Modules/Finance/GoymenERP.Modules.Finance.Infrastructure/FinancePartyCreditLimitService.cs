@@ -41,7 +41,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// </list>
 /// Not built: a threshold or a second approval (FNS-D56/FNS-D57(4): a later, separate decision may add them).
 /// </summary>
-public sealed class FinancePartyCreditLimitService(
+public sealed partial class FinancePartyCreditLimitService(
     FinanceDbContext dbContext,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
@@ -325,6 +325,8 @@ public sealed class FinancePartyCreditLimitService(
         {
             return prior;
         }
+        if (ownedDecision is { ReplayOnly: true })
+            return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
 
         var (row, terminal) = await DecisionTargetAsync(context, metadata, ApproveCommand, payloadHash,
             request.ProposalId, request.ExpectedVersion, cancellationToken);
@@ -426,6 +428,8 @@ public sealed class FinancePartyCreditLimitService(
         {
             return prior;
         }
+        if (ownedDecision is { ReplayOnly: true })
+            return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
 
         var (row, terminal) = await DecisionTargetAsync(context, metadata, RejectCommand, payloadHash,
             request.ProposalId, request.ExpectedVersion, cancellationToken);
@@ -1036,6 +1040,8 @@ public sealed class FinancePartyCreditLimitService(
         FinanceAction action, string command, string payloadHash, PartyCreditLimitCommandResult result,
         CancellationToken cancellationToken)
     {
+        if (ownedDecision is not null)
+            return await SaveOwnedDecisionAsync(context, action, command, result, cancellationToken);
         if (await FenceAsync(context, action, result.Resource?.Id, cancellationToken) is { } fenced)
         {
             dbContext.ChangeTracker.Clear();
