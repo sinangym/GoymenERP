@@ -935,7 +935,7 @@ const manualPaymentKind='finance.manual-bank-payment.v1'
 const manualPaymentPreview={...preview,kind:manualPaymentKind,rejectionSupported:false,
  references:[{role:'party',recordId:id,label:'SENTETIK cari',link:null},{role:'company-account',recordId:id,label:'SENTETIK şirket hesabı',link:null},
  {role:'bank-account',recordId:id,label:'SENTETIK banka hesabı',link:null},{role:'currency',recordId:id,label:'SENTETIK döviz',link:null}],
- rules:[{ruleCode:'finance.manual-bank-payment-approval-required',threshold:null,actual:'125.25',deviation:null,unit:'TRY'}]}
+ rules:[{ruleCode:'finance.manual-bank-payment-approval-required',threshold:null,actual:'125.25',deviation:null,unit:null}]}
 it('publishes the 27th manual payment purpose with the existing generic owner-authorized preview and no new typed body',()=>{
  expect(WORK_DECISION_KINDS).toHaveLength(27);expect(WORK_DECISION_KINDS.filter(kind=>kind===manualPaymentKind)).toEqual([manualPaymentKind])
  expect(decodeWorkDecisionPreview(manualPaymentPreview,company,manualPaymentKind,id)).not.toBeNull()
