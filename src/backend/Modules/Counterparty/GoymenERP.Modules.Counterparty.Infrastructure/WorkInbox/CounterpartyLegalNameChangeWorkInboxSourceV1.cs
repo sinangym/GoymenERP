@@ -43,7 +43,7 @@ internal sealed class CounterpartyLegalNameChangeWorkInboxSourceV1(
 
     /// <summary>Native decision purpose: terminal requests remain readable for the owner's immutable replay.
     /// Party visibility uses the native company-account existence rule, including inactive accounts.
-    /// No tax identity, source command body or decision note leaves this owner read.</summary>
+    /// Exact proposal values leave only through the non-serializable human proof, never the inbox item.</summary>
     public async Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context, Guid itemId,
         CancellationToken cancellationToken)
     {
@@ -53,19 +53,25 @@ internal sealed class CounterpartyLegalNameChangeWorkInboxSourceV1(
         var row = await database.PartyLegalNameChangeRequests.AsNoTracking()
             .Where(request => request.CompanyId == context.CompanyId && request.Id == itemId)
             .Select(request => new { request.Id, request.CompanyId, request.PartyId, request.Version, request.Status,
-                request.PartyVersionAtRequest, request.RequestedBy, request.RequestedAtUtc, request.ProposedLegalName })
+                request.PartyVersionAtRequest, request.RequestedBy, request.RequestedAtUtc, request.Reason, request.CurrentLegalName, request.ProposedLegalName })
             .SingleOrDefaultAsync(cancellationToken);
         if (row is null) { await fence.CheckAsync(context, Permissions, cancellationToken); return null; }
         var party = await database.Parties.AsNoTracking()
             .Where(party => party.Id == row.PartyId && database.CompanyPartyAccounts.Any(account =>
                 account.CompanyId == context.CompanyId && account.PartyId == party.Id))
-            .Select(party => new { party.Id, party.LegalName, party.Version }).SingleOrDefaultAsync(cancellationToken);
+            .Select(party => new { party.Id, party.Code, party.LegalName, party.Version }).SingleOrDefaultAsync(cancellationToken);
         if (await fence.CheckAsync(context, Permissions, cancellationToken) is not null || party is null) return null;
         if (row.Id == Guid.Empty || row.PartyId == Guid.Empty || row.Version < 1 || row.PartyVersionAtRequest < 1
             || party.Version < 1 || !Enum.IsDefined(row.Status) || string.IsNullOrWhiteSpace(row.RequestedBy)
             || row.RequestedAtUtc == default || string.IsNullOrWhiteSpace(party.LegalName)
-            || party.LegalName.Length > WorkInboxRulesV1.MaxDocumentLabelLength || string.IsNullOrWhiteSpace(row.ProposedLegalName)
-            || row.ProposedLegalName.Length > WorkInboxRulesV1.MaxDocumentLabelLength)
+            || party.LegalName.Length > Party.LegalNameMaximumLength || string.IsNullOrWhiteSpace(row.ProposedLegalName)
+            || row.ProposedLegalName.Length > Party.LegalNameMaximumLength
+            || string.IsNullOrWhiteSpace(row.Reason) || row.Reason.Trim() != row.Reason
+            || row.Reason.Length > PartyLegalNameChangeRequest.ReasonMaximumLength
+            || string.IsNullOrWhiteSpace(party.Code.Value) || party.Code.Value.Length > WorkInboxRulesV1.MaxReferenceLabelLength
+            || string.IsNullOrWhiteSpace(row.CurrentLegalName) || row.CurrentLegalName.Length > Party.LegalNameMaximumLength
+            || row.CurrentLegalName.Trim() != row.CurrentLegalName || row.ProposedLegalName.Trim() != row.ProposedLegalName
+            || row.CurrentLegalName == row.ProposedLegalName)
             throw new InvalidOperationException("The native identity decision source is malformed.");
         // Do not combine a newer request status/party version with an earlier projection. No retry or mutation.
         var finalRequest = await database.PartyLegalNameChangeRequests.AsNoTracking()
@@ -82,11 +88,13 @@ internal sealed class CounterpartyLegalNameChangeWorkInboxSourceV1(
         var rules = new List<WorkApprovalRuleResultV1> { new(ApprovalRequiredRule, null, null, null, null) };
         if (party.Version != row.PartyVersionAtRequest) rules.Add(new(StaleRule, null, null, null, null));
         var link = WorkInboxCompanyWideFenceV1.Link(PartyScreenPath, row.PartyId);
-        var item = new WorkInboxItemV1(ModuleName, KindName, row.Id, row.ProposedLegalName,
+        var label = row.ProposedLegalName.Length <= WorkInboxRulesV1.MaxDocumentLabelLength ? row.ProposedLegalName : party.Code.Value;
+        var referenceLabel = party.LegalName.Length <= WorkInboxRulesV1.MaxReferenceLabelLength ? party.LegalName : party.Code.Value;
+        var item = new WorkInboxItemV1(ModuleName, KindName, row.Id, label,
             row.RequestedAtUtc.ToUniversalTime(), link, row.RequestedBy, rules,
-            [new("party", party.LegalName, row.PartyId, link)]);
+            [new("party", referenceLabel, row.PartyId, link)]);
         return new(context.CompanyId, item, party.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            row.Status == PartyLegalNameChangeStatus.Pending);
+            row.Status == PartyLegalNameChangeStatus.Pending, CounterpartyLegalNameChange: new(row.PartyId, row.Id, row.CurrentLegalName, row.ProposedLegalName, row.Reason));
     }
 
     public async Task<WorkInboxSourceResultV1> ListPendingAsync(
@@ -103,7 +111,7 @@ internal sealed class CounterpartyLegalNameChangeWorkInboxSourceV1(
         }
 
         List<PartyLegalNameChangeRequest> rows;
-        Dictionary<Guid, (string LegalName, long Version)> parties;
+        Dictionary<Guid, (string Code, string LegalName, long Version)> parties;
         int total;
         try
         {
@@ -115,9 +123,9 @@ internal sealed class CounterpartyLegalNameChangeWorkInboxSourceV1(
             var partyIds = rows.Select(row => row.PartyId).Distinct().ToArray();
             parties = (await database.Parties.AsNoTracking()
                     .Where(party => partyIds.Contains(party.Id))
-                    .Select(party => new { party.Id, party.LegalName, party.Version })
+                    .Select(party => new { party.Id, party.Code, party.LegalName, party.Version })
                     .ToListAsync(cancellationToken))
-                .ToDictionary(party => party.Id, party => (party.LegalName, party.Version));
+                .ToDictionary(party => party.Id, party => (party.Code.Value, party.LegalName, party.Version));
         }
         catch (Exception) when (!cancellationToken.IsCancellationRequested)
         {
@@ -133,7 +141,8 @@ internal sealed class CounterpartyLegalNameChangeWorkInboxSourceV1(
         foreach (var row in rows)
         {
             if (row.Id == Guid.Empty || string.IsNullOrWhiteSpace(row.RequestedBy) || !parties.TryGetValue(row.PartyId, out var party)
-                || string.IsNullOrWhiteSpace(party.LegalName) || party.LegalName.Length > WorkInboxRulesV1.MaxDocumentLabelLength)
+                || string.IsNullOrWhiteSpace(party.LegalName) || party.LegalName.Length > Party.LegalNameMaximumLength
+                || string.IsNullOrWhiteSpace(party.Code) || party.Code.Length > WorkInboxRulesV1.MaxReferenceLabelLength)
             {
                 return WorkInboxSourceResultV1.Unavailable();
             }
@@ -145,13 +154,15 @@ internal sealed class CounterpartyLegalNameChangeWorkInboxSourceV1(
             }
 
             var link = WorkInboxCompanyWideFenceV1.Link(PartyScreenPath, row.PartyId);
-            if (string.IsNullOrWhiteSpace(row.ProposedLegalName) || row.ProposedLegalName.Length > WorkInboxRulesV1.MaxDocumentLabelLength)
+            if (string.IsNullOrWhiteSpace(row.ProposedLegalName) || row.ProposedLegalName.Length > Party.LegalNameMaximumLength)
             {
                 return WorkInboxSourceResultV1.Unavailable();
             }
 
-            items.Add(new WorkInboxItemV1(ModuleName, KindName, row.Id, row.ProposedLegalName, row.RequestedAtUtc.ToUniversalTime(), link,
-                row.RequestedBy, rules, [new("party", party.LegalName, row.PartyId, link)]));
+            var label = row.ProposedLegalName.Length <= WorkInboxRulesV1.MaxDocumentLabelLength ? row.ProposedLegalName : party.Code;
+            var referenceLabel = party.LegalName.Length <= WorkInboxRulesV1.MaxReferenceLabelLength ? party.LegalName : party.Code;
+            items.Add(new WorkInboxItemV1(ModuleName, KindName, row.Id, label, row.RequestedAtUtc.ToUniversalTime(), link,
+                row.RequestedBy, rules, [new("party", referenceLabel, row.PartyId, link)]));
         }
 
         return WorkInboxSourceResultV1.Found(context.CompanyId, items, total > rows.Count);

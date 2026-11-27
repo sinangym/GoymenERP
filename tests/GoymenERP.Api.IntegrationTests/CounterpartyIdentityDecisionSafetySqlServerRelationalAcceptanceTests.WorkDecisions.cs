@@ -64,8 +64,21 @@ public sealed partial class CounterpartyIdentityDecisionSafetySqlServerRelationa
             var preview = await host.PreviewAsync(kind, data.RequestId, default);
             Assert.Equal(data.RequestId, preview.ItemId); Assert.False(preview.ApprovalReasonRequired); Assert.True(preview.RejectionSupported);
             Assert.Equal(data.PartyId, Assert.Single(preview.References).RecordId);
-            var wire = JsonSerializer.Serialize(preview);
-            Assert.DoesNotContain("1234567890", wire); Assert.DoesNotContain("10000000146", wire); Assert.DoesNotContain("4567890128", wire);
+            // Even after a later request/decision the old request's exact proof is retained, not the native GET's latest proposal.
+            if (tax)
+            {
+                var proof = Assert.IsType<WorkCounterpartyTaxIdentityChangePreviewV1>(preview.CounterpartyTaxIdentityChange);
+                Assert.Equal((data.PartyId, data.RequestId, "10000000146", "1234567890", "vkn", "Test talebi"),
+                    (proof.PartyId, proof.ChangeRequestId, proof.CurrentTaxIdentityNumber, proof.ProposedTaxIdentityNumber, proof.ProposedKind, proof.Reason));
+            }
+            else
+            {
+                var proof = Assert.IsType<WorkCounterpartyLegalNameChangePreviewV1>(preview.CounterpartyLegalNameChange);
+                Assert.Equal((data.PartyId, data.RequestId, "SENTETIK legal decision boundary", "SENTETIK approved legal name", "Test talebi"),
+                    (proof.PartyId, proof.ChangeRequestId, proof.CurrentLegalName, proof.ProposedLegalName, proof.Reason));
+            }
+            var metadataWire = JsonSerializer.Serialize(new { preview.References, preview.Rules });
+            Assert.DoesNotContain("1234567890", metadataWire); Assert.DoesNotContain("10000000146", metadataWire); Assert.DoesNotContain("4567890128", metadataWire);
             return await host.DecideAsync(kind, data.RequestId, new(version, approve, new string('n', 1000), delegationId), "work-original-key", default);
         }
     }

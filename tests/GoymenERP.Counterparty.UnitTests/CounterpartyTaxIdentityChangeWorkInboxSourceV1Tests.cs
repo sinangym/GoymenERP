@@ -138,6 +138,46 @@ public sealed class CounterpartyTaxIdentityChangeWorkInboxSourceV1Tests
         await Assert.ThrowsAsync<InvalidOperationException>(() => Source().ReadDecisionAsync(Caller(), row.Id, default));
     }
 
+    [Fact]
+    public async Task Native_250_character_names_keep_exact_human_proof_with_code_captions_without_widening_Work_or_serializing_sensitive_values()
+    {
+        var currentName = new string('A', 250);
+        var party = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000001"), PartyKind.LegalEntity, currentName);
+        await SeedAsync(CompanyA, db => { db.Parties.Add(party); db.CompanyPartyAccounts.Add(new CompanyPartyAccount(Guid.NewGuid(), CompanyA, party.Id, PartyRole.Customer)); });
+        var row = Request(CompanyA, party.Id, party.Version, Start);
+        await SeedAsync(CompanyA, db => db.PartyTaxIdentityChangeRequests.Add(row));
+        var value = await Source().ReadDecisionAsync(Caller(), row.Id, default); Assert.NotNull(value);
+        Assert.Equal("CAR-000001", value.Item.DocumentLabel); Assert.Equal("CAR-000001", Assert.Single(value.Item.References).Label);
+        var proof = Assert.IsType<WorkCounterpartyTaxIdentityChangePreviewV1>(value.CounterpartyTaxIdentityChange);
+        Assert.Equal((party.Id, row.Id, "1234567890", "9876543217", "vkn", row.Reason),
+            (proof.PartyId, proof.ChangeRequestId, proof.CurrentTaxIdentityNumber, proof.ProposedTaxIdentityNumber, proof.ProposedKind, proof.Reason));
+        var snapshotWire = System.Text.Json.JsonSerializer.Serialize(value);
+        Assert.DoesNotContain("1234567890", snapshotWire); Assert.DoesNotContain("9876543217", snapshotWire);
+        Assert.DoesNotContain(new string('B', 250), snapshotWire);
+        var inbox = await Source().ListPendingAsync(Caller(), 5, default);
+        Assert.Equal(NativeApprovalQueueOutcomeV1.Found, inbox.Outcome); var item = Assert.Single(inbox.Items!);
+        Assert.Equal("CAR-000001", item.DocumentLabel); Assert.Equal("CAR-000001", Assert.Single(item.References).Label);
+        var inboxWire = System.Text.Json.JsonSerializer.Serialize(inbox);
+        Assert.DoesNotContain("1234567890", inboxWire); Assert.DoesNotContain("9876543217", inboxWire);
+        Assert.DoesNotContain(new string('B', 250), inboxWire);
+        Assert.Equal(200, WorkInboxRulesV1.MaxDocumentLabelLength); Assert.Equal(200, WorkInboxRulesV1.MaxReferenceLabelLength);
+    }
+
+    [Fact]
+    public async Task Historical_current_tax_value_is_displayed_raw_under_the_native_stored_bounds_without_a_new_checksum_gate()
+    {
+        const string historical = "10000000147"; // Native TCKN checksum fails; the historical SQL shape is still 11 ASCII digits.
+        Assert.False(TaxIdentityNumber.TryParse(historical, out _, out _));
+        var party = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000001"), PartyKind.LegalEntity, "SENTETIK");
+        await SeedAsync(CompanyA, db => { db.Parties.Add(party); db.CompanyPartyAccounts.Add(new CompanyPartyAccount(Guid.NewGuid(), CompanyA, party.Id, PartyRole.Customer)); });
+        var row = new PartyTaxIdentityChangeRequest(Guid.NewGuid(), CompanyA, party.Id, historical,
+            TaxIdentityNumber.Parse("9876543217"), party.Version, "SENTETIK legacy correction", "SENTETIK-maker", Start);
+        await SeedAsync(CompanyA, db => db.PartyTaxIdentityChangeRequests.Add(row));
+        var value = await Source().ReadDecisionAsync(Caller(), row.Id, default); Assert.NotNull(value);
+        Assert.Equal(historical, value.CounterpartyTaxIdentityChange!.CurrentTaxIdentityNumber);
+        Assert.DoesNotContain(historical, System.Text.Json.JsonSerializer.Serialize(value));
+    }
+
     private static PartyTaxIdentityChangeRequest Request(Guid company, Guid partyId, long partyVersion, DateTimeOffset at) =>
         new(Guid.NewGuid(), company, partyId, "1234567890", TaxIdentityNumber.Parse("9876543217"), partyVersion,
             "SENTETIK neden", "SENTETIK-maker", at);

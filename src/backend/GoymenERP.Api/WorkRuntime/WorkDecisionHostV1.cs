@@ -27,7 +27,11 @@ public sealed record WorkDecisionPreviewV1(Guid CompanyId, string Kind, Guid Ite
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     WorkManufacturingPlanReapprovalOptionsV1? ManufacturingPlanReapproval = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    WorkInventoryTransferLossOptionsV1? InventoryTransferLoss = null);
+    WorkInventoryTransferLossOptionsV1? InventoryTransferLoss = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    WorkCounterpartyTaxIdentityChangePreviewV1? CounterpartyTaxIdentityChange = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    WorkCounterpartyLegalNameChangePreviewV1? CounterpartyLegalNameChange = null);
 public sealed record WorkDecisionResultV1(Guid CompanyId, string Kind, Guid ItemId, string State, bool Replayed, string OriginalCorrelationId);
 public sealed class WorkDecisionException(int status, string? code = null, bool replayed = false, string? original = null) : Exception(code)
 {
@@ -162,6 +166,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || snapshot.Item.References.Any(item => !WorkInboxRulesV1.IsValidReference(item))
             || snapshot.Item.Rules is null || snapshot.Item.Rules.Count > WorkInboxRulesV1.MaxRulesPerItem
             || snapshot.Item.Rules.Any(rule => !WorkInboxRulesV1.IsValidRule(source.Module, rule))
+            || !ValidCounterpartyIdentityProof(kind, snapshot)
             || (kind == InventoryTransferLoss ? !ValidInventoryTransferLossProof(snapshot)
                 : snapshot.InventoryTransferLoss is not null || snapshot.InventoryTransferLossProof is not null)
             || kind == ManufacturingPlan && snapshot.Pending
@@ -194,7 +199,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         return new(snapshot.CompanyId, kind, id, snapshot.Item.DocumentLabel, snapshot.SourceVersion, snapshot.Pending,
             kind is OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance or InventoryTransferLoss, snapshot.Item.References, rules, kind is not (PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance)
                 && !(kind == ManufacturingPlan && rules.Any(rule => rule.RuleCode == "manufacturing.plan-reapproval-after-order-cancel")),
-            snapshot.ManufacturingPlanReapproval, snapshot.InventoryTransferLoss);
+            snapshot.ManufacturingPlanReapproval, snapshot.InventoryTransferLoss,
+            snapshot.CounterpartyTaxIdentityChange, snapshot.CounterpartyLegalNameChange);
     }
 
     public async Task<WorkDecisionResultV1> DecideAsync(string kind, Guid id, WorkDecisionRequestV1 request, string key, CancellationToken token)

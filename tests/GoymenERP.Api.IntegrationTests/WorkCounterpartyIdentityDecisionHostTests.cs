@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json;
 using GoymenERP.Api.WorkRuntime;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
@@ -110,6 +111,72 @@ public sealed class WorkCounterpartyIdentityDecisionHostTests
             new(new(CounterpartyCommandResult.Created, 409, null, null, null, null), true, "SENTETIK-original") })
         { run.Answer = bad; Assert.Equal(503, (await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.DecideAsync(run.Source.Kind, Item, new("9", true, null), "key", default))).Status); }
     }
+    [Theory]
+    [InlineData(true)] [InlineData(false)]
+    public async Task Human_proposal_proof_is_exact_only_in_the_authorized_preview_and_never_in_snapshot_or_inbox_serialization(bool tax)
+    {
+        var run = new Run(tax); var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var snapshot = await run.Source.ReadDecisionAsync(new(Company, Actor, "SENTETIK", null), Item, default);
+        Assert.NotNull(snapshot);
+        var snapshotWire = JsonSerializer.Serialize(snapshot, options);
+        Assert.DoesNotContain("counterpartyTaxIdentityChange", snapshotWire); Assert.DoesNotContain("counterpartyLegalNameChange", snapshotWire);
+        Assert.DoesNotContain("1234567890", snapshotWire); Assert.DoesNotContain("9876543217", snapshotWire);
+        Assert.DoesNotContain("1234567890", JsonSerializer.Serialize(snapshot.Item, options));
+        if (!tax) run.Source.LegalProof = run.Source.LegalProof! with { CurrentLegalName = new string('A', 250), ProposedLegalName = new string('B', 250) };
+        var preview = await run.Host.PreviewAsync(run.Source.Kind, Item, default);
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(preview, options));
+        Assert.True(document.RootElement.TryGetProperty(tax ? "counterpartyTaxIdentityChange" : "counterpartyLegalNameChange", out var proof));
+        Assert.Equal(Party, proof.GetProperty("partyId").GetGuid()); Assert.Equal(Item, proof.GetProperty("changeRequestId").GetGuid());
+        Assert.Equal("SENTETIK reason", proof.GetProperty("reason").GetString());
+        if (tax)
+        { Assert.Equal("1234567890", proof.GetProperty("currentTaxIdentityNumber").GetString()); Assert.Equal("9876543217", proof.GetProperty("proposedTaxIdentityNumber").GetString()); Assert.Equal("vkn", proof.GetProperty("proposedKind").GetString()); }
+        else
+        { Assert.Equal(new string('A', 250), proof.GetProperty("currentLegalName").GetString()); Assert.Equal(new string('B', 250), proof.GetProperty("proposedLegalName").GetString()); }
+        Assert.False(document.RootElement.TryGetProperty(tax ? "counterpartyLegalNameChange" : "counterpartyTaxIdentityChange", out _));
+        var command = JsonSerializer.Serialize(new WorkDecisionRequestV1("9", true, null), options);
+        Assert.DoesNotContain("counterparty", command);
+    }
+
+    [Theory]
+    [InlineData(true)] [InlineData(false)]
+    public async Task Missing_misbound_wrong_kind_unjustified_or_out_of_native_bounds_human_proof_is_never_approvable(bool tax)
+    {
+        foreach (var fault in new[] { "missing", "party", "request", "wrong-kind", "reason", "value", "bounds", "kind" })
+        {
+            var run = new Run(tax);
+            if (tax)
+            {
+                var proof = run.Source.TaxProof!;
+                run.Source.TaxProof = fault switch {
+                    "missing" => null, "party" => proof with { PartyId = Guid.NewGuid() }, "request" => proof with { ChangeRequestId = Guid.NewGuid() },
+                    "reason" => proof with { Reason = " " }, "value" => proof with { ProposedTaxIdentityNumber = "9876543210" },
+                    "bounds" => proof with { Reason = new string('n', 1001) }, "kind" => proof with { ProposedKind = "tckn" }, _ => proof };
+                if (fault == "wrong-kind") run.Source.LegalProof = new(Party, Item, "old", "new", "SENTETIK");
+            }
+            else
+            {
+                var proof = run.Source.LegalProof!;
+                run.Source.LegalProof = fault switch {
+                    "missing" => null, "party" => proof with { PartyId = Guid.NewGuid() }, "request" => proof with { ChangeRequestId = Guid.NewGuid() },
+                    "reason" => proof with { Reason = " " }, "value" => proof with { ProposedLegalName = proof.CurrentLegalName },
+                    "bounds" => proof with { ProposedLegalName = new string('n', 251) }, "kind" => proof with { CurrentLegalName = " " }, _ => proof };
+                if (fault == "wrong-kind") run.Source.TaxProof = new(Party, Item, "1234567890", "9876543217", "vkn", "SENTETIK");
+            }
+            Assert.Equal(503, (await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.PreviewAsync(run.Source.Kind, Item, default))).Status);
+            Assert.Equal(503, (await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.DecideAsync(run.Source.Kind, Item, new("9", true, null), "key", default))).Status);
+            Assert.Empty(run.Calls);
+        }
+    }
+
+    [Fact]
+    public async Task Human_tax_proof_preserves_a_historical_checksum_invalid_current_value_for_correction_without_a_new_policy()
+    {
+        var run = new Run(true);
+        run.Source.TaxProof = run.Source.TaxProof! with { CurrentTaxIdentityNumber = "10000000147" };
+        var preview = await run.Host.PreviewAsync(run.Source.Kind, Item, default);
+        Assert.Equal("10000000147", preview.CounterpartyTaxIdentityChange!.CurrentTaxIdentityNumber);
+    }
+
     private sealed class Run
     {
         public Source Source; public RawAuthority Raw = new(); public Delegations Delegations; public WorkDecisionHostV1 Host;
@@ -144,12 +211,15 @@ public sealed class WorkCounterpartyIdentityDecisionHostTests
     private sealed class Source(bool tax) : IWorkApprovalDecisionSourceV1
     {
         public Guid CompanyId = Company; public bool Pending = true; public string Maker = "SENTETIK-maker";
+        public WorkCounterpartyTaxIdentityChangePreviewV1? TaxProof = tax ? new(Party, Item, "1234567890", "9876543217", "vkn", "SENTETIK reason") : null;
+        public WorkCounterpartyLegalNameChangePreviewV1? LegalProof = tax ? null : new(Party, Item, "SENTETIK current", "SENTETIK proposed", "SENTETIK reason");
         public IReadOnlyList<WorkApprovalReferenceV1> References = [new("party", "SENTETIK", Party, "/cari/" + Party)];
         public string Kind => tax ? WorkDecisionHostV1.CounterpartyTaxIdentity : WorkDecisionHostV1.CounterpartyLegalName;
         public string Module => "counterparty";
         public string ApproverPermission => tax ? CounterpartyTaxIdentityPermissionsV1.Approve : CounterpartyLegalNamePermissionsV1.Approve;
         public Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context, Guid itemId, CancellationToken token) =>
-            Task.FromResult<WorkApprovalDecisionSnapshotV1?>(new(CompanyId, new(Module, Kind, Item, "SENTETIK", DateTimeOffset.UtcNow, "/cari/" + Party, Maker, [], References), "9", Pending));
+            Task.FromResult<WorkApprovalDecisionSnapshotV1?>(new(CompanyId, new(Module, Kind, Item, "SENTETIK", DateTimeOffset.UtcNow, "/cari/" + Party, Maker, [], References), "9", Pending,
+                CounterpartyTaxIdentityChange: TaxProof, CounterpartyLegalNameChange: LegalProof));
         public Task<WorkInboxSourceResultV1> ListPendingAsync(WorkInboxSourceContextV1 context, int count, CancellationToken token) => throw new NotSupportedException();
     }
     private sealed class RawAuthority : IErpAuthorityRevalidationService

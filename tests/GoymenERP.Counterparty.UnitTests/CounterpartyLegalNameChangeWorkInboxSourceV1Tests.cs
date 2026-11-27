@@ -130,6 +130,32 @@ public sealed class CounterpartyLegalNameChangeWorkInboxSourceV1Tests
         await Assert.ThrowsAsync<InvalidOperationException>(() => Source().ReadDecisionAsync(Caller(), row.Id, default));
     }
 
+    [Fact]
+    public async Task Native_250_character_names_keep_exact_human_proof_with_code_captions_without_widening_Work_or_serializing_sensitive_values()
+    {
+        var currentName = new string('A', 250);
+        var party = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000001"), PartyKind.LegalEntity, currentName);
+        await SeedAsync(CompanyA, db => { db.Parties.Add(party); db.CompanyPartyAccounts.Add(new CompanyPartyAccount(Guid.NewGuid(), CompanyA, party.Id, PartyRole.Customer)); });
+        var row = new PartyLegalNameChangeRequest(Guid.NewGuid(), CompanyA, party.Id, currentName,
+            new string('B', 250), party.Version, "SENTETIK reason", "SENTETIK-maker", Start);
+        await SeedAsync(CompanyA, db => db.PartyLegalNameChangeRequests.Add(row));
+        var value = await Source().ReadDecisionAsync(Caller(), row.Id, default); Assert.NotNull(value);
+        Assert.Equal("CAR-000001", value.Item.DocumentLabel); Assert.Equal("CAR-000001", Assert.Single(value.Item.References).Label);
+        var proof = Assert.IsType<WorkCounterpartyLegalNameChangePreviewV1>(value.CounterpartyLegalNameChange);
+        Assert.Equal((party.Id, row.Id, currentName, new string('B', 250), row.Reason),
+            (proof.PartyId, proof.ChangeRequestId, proof.CurrentLegalName, proof.ProposedLegalName, proof.Reason));
+        var snapshotWire = System.Text.Json.JsonSerializer.Serialize(value);
+        Assert.DoesNotContain("1234567890", snapshotWire); Assert.DoesNotContain("9876543217", snapshotWire);
+        Assert.DoesNotContain(new string('B', 250), snapshotWire);
+        var inbox = await Source().ListPendingAsync(Caller(), 5, default);
+        Assert.Equal(NativeApprovalQueueOutcomeV1.Found, inbox.Outcome); var item = Assert.Single(inbox.Items!);
+        Assert.Equal("CAR-000001", item.DocumentLabel); Assert.Equal("CAR-000001", Assert.Single(item.References).Label);
+        var inboxWire = System.Text.Json.JsonSerializer.Serialize(inbox);
+        Assert.DoesNotContain("1234567890", inboxWire); Assert.DoesNotContain("9876543217", inboxWire);
+        Assert.DoesNotContain(new string('B', 250), inboxWire);
+        Assert.Equal(200, WorkInboxRulesV1.MaxDocumentLabelLength); Assert.Equal(200, WorkInboxRulesV1.MaxReferenceLabelLength);
+    }
+
     private static PartyLegalNameChangeRequest Request(Guid company, Guid partyId, long partyVersion, DateTimeOffset at) =>
         new(Guid.NewGuid(), company, partyId, "SENTETIK Eski Unvan A.Ş.", "SENTETIK Yeni Unvan A.Ş.", partyVersion,
             "SENTETIK neden", "SENTETIK-maker", at);

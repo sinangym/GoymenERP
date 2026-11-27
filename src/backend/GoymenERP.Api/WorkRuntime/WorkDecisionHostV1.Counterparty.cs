@@ -1,10 +1,38 @@
 using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
+using GoymenERP.Modules.Counterparty.Domain.Parties;
 
 namespace GoymenERP.Api.WorkRuntime;
 
 public sealed partial class WorkDecisionHostV1
 {
+    private static bool ValidCounterpartyIdentityProof(string kind, WorkApprovalDecisionSnapshotV1 snapshot)
+    {
+        if (kind is not (CounterpartyTaxIdentity or CounterpartyLegalName))
+            return snapshot.CounterpartyTaxIdentityChange is null && snapshot.CounterpartyLegalNameChange is null;
+        var parties = snapshot.Item.References.Where(reference => reference.Role == "party").ToArray();
+        if (parties.Length != 1 || parties[0].RecordId is not { } partyId || partyId == Guid.Empty) return false;
+        static bool Reason(string? value, int maximumLength) => !string.IsNullOrWhiteSpace(value) && value.Trim() == value
+            && value.Length <= maximumLength;
+        static bool Name(string? value) => !string.IsNullOrWhiteSpace(value) && value.Trim() == value
+            && value.Length <= Party.LegalNameMaximumLength;
+        if (kind == CounterpartyTaxIdentity)
+        {
+            return snapshot.CounterpartyLegalNameChange is null && snapshot.CounterpartyTaxIdentityChange is { } tax
+                && tax.PartyId == partyId && tax.ChangeRequestId == snapshot.Item.ItemId
+                && Reason(tax.Reason, PartyTaxIdentityChangeRequest.ReasonMaximumLength)
+                // A checksum-invalid historical current value can be the very reason for the approved correction.
+                && tax.CurrentTaxIdentityNumber is { Length: 10 or 11 } && tax.CurrentTaxIdentityNumber.All(char.IsAsciiDigit)
+                && TaxIdentityNumber.TryParse(tax.ProposedTaxIdentityNumber, out var proposed, out _)
+                && proposed.Value == tax.ProposedTaxIdentityNumber && tax.CurrentTaxIdentityNumber != proposed.Value
+                && tax.ProposedKind == (proposed.Kind == TaxIdentityKind.Vkn ? CounterpartyTaxIdentityKindsV1.Vkn : CounterpartyTaxIdentityKindsV1.Tckn);
+        }
+        return snapshot.CounterpartyTaxIdentityChange is null && snapshot.CounterpartyLegalNameChange is { } legal
+            && legal.PartyId == partyId && legal.ChangeRequestId == snapshot.Item.ItemId && Reason(legal.Reason, PartyLegalNameChangeRequest.ReasonMaximumLength)
+            && Name(legal.CurrentLegalName) && Name(legal.ProposedLegalName)
+            && legal.CurrentLegalName != legal.ProposedLegalName;
+    }
+
     private async Task<WorkDecisionResultV1> DecideCounterpartyIdentityAsync(string kind, Guid requestId,
         WorkDecisionRequestV1 request, string key, WorkApprovalDecisionSnapshotV1 snapshot, string actor,
         CancellationToken token)
