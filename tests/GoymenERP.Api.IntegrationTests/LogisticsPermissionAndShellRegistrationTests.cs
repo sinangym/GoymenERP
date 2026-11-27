@@ -95,14 +95,16 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
             .ToArray();
         // The list, the new-instruction workspace and the detail are published; each still requires its owner permission.
         // AT-025: plus the operations work list's two separate sections (L-01 sales, L-09 purchase), each behind its own name.
-        Assert.Equal(24, logistics.Length);
+        Assert.Equal(27, logistics.Length);
         string[] published =
         [
+            "logistics.customer-return.work-decision",
             "logistics.customer-returns.approve",
             "logistics.customer-returns.read",
             "logistics.customer-returns.reject",
             "logistics.customer-returns.request",
             "logistics.deliveries.record",
+            "logistics.dispatch-note.work-decision",
             "logistics.instructions.create",
             "logistics.instructions.detail",
             "logistics.instructions.list",
@@ -115,7 +117,7 @@ public sealed class LogisticsPermissionAndShellRegistrationTests
         ];
         Assert.Equal(published, logistics.Where(item => item.Declaration.ImplementationAvailable)
             .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
-        Assert.Equal(7, logistics.Count(item => item.Declaration.ParentCapabilityId == LogisticsShellCapabilityProvider.DetailCapabilityId));
+        Assert.Equal(8, logistics.Count(item => item.Declaration.ParentCapabilityId == LogisticsShellCapabilityProvider.DetailCapabilityId));
 
         var declarations = logistics.ToDictionary(item => item.Declaration.CapabilityId, item => item.Declaration,
             StringComparer.Ordinal);

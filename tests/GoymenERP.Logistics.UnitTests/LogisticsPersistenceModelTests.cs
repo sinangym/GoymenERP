@@ -907,11 +907,12 @@ public sealed class LogisticsPersistenceModelTests
         var provider = new LogisticsShellCapabilityProvider();
         var declarations = provider.GetDeclarations().Where(item =>
             !item.CapabilityId.StartsWith("logistics.subcontract-deliveries.", StringComparison.Ordinal)).ToList();
-        Assert.Equal("1.14", provider.ContractVersion);
-        Assert.Equal(18, declarations.Count);
+        Assert.Equal("1.15", provider.ContractVersion);
+        Assert.Equal(19, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             declaration.CapabilityId is not (LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId
-                or LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId), declaration.ImplementationAvailable));
+                or LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId
+                or LogisticsShellCapabilityProvider.CustomerReturnsWeighingRecordCapabilityId), declaration.ImplementationAvailable));
         var excessPrepare = Assert.Single(declarations, item => item.CapabilityId == LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId);
         Assert.Equal(LogisticsShellCapabilityProvider.DetailCapabilityId, excessPrepare.ParentCapabilityId);
         Assert.Equal([LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.LoadsRecord], excessPrepare.RequiredPermissions);
@@ -953,15 +954,17 @@ public sealed class LogisticsPersistenceModelTests
             }
             else Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(name));
         }
-        // AT-053: the weighbridge record has its own name and, like recording a load, no shell declaration (a server-measured command on the detail).
+        // AT-053 remains a server command; LOJ-D22 adds a distinct staged customer-return detail control.
         Assert.Equal("logistics.weighings.record", LogisticsPermissionManifestV1.WeighingsRecord);
-        Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(LogisticsPermissionManifestV1.WeighingsRecord));
+        Assert.Equal(LogisticsShellCapabilityProvider.CustomerReturnsWeighingRecordCapabilityId,
+            Assert.Single(declarations, declaration => declaration.RequiredPermissions.Contains(LogisticsPermissionManifestV1.WeighingsRecord)).CapabilityId);
         // Master v3 §27.8: L-02 is the instruction list, L-03 the new/edit workspace; the detail is a view of one L-02 row.
         Assert.Equal(
             [
                 ("logistics.customer-return.work-decision", "L-CUSTOMER-RETURN-WORK-DECISION"),
                 ("logistics.customer-returns.approve", "L-02-DETAIL"),
                 ("logistics.customer-returns.read", "L-02-DETAIL"),
+                ("logistics.customer-returns.record-weighing", "L-02-DETAIL"),
                 ("logistics.customer-returns.reject", "L-02-DETAIL"),
                 ("logistics.customer-returns.request", "L-02-DETAIL"),
                 ("logistics.deliveries.record", "L-02-DETAIL"),

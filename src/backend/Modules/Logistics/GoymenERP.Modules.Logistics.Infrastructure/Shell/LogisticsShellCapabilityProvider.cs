@@ -32,9 +32,10 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Shell;
 public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "LOGISTICS";
-    // WP8: the paired Work decision implementation; native screen availability and grants are unchanged.
+    // 1.15: LOJ-D22 stages the native return-weighing control under existing authority.
+    // WP8 paired Work decisions and all existing native screen availability remain unchanged.
     // Source availability is not SQL/browser/CI acceptance or environment activation.
-    public const string OwnerContractVersion = "1.14";
+    public const string OwnerContractVersion = "1.15";
     public const string TransferDeparturesCapabilityId = LogisticsPermissionManifestV1.TransferDeparturesRecord;
     public const string PlanExcessPrepareCapabilityId = "logistics.shipments.plan-excess.prepare";
     public const string PlanExcessApproveCapabilityId = "logistics.shipments.plan-excess.approve";
@@ -55,6 +56,7 @@ public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityP
     public const string CustomerReturnsReadCapabilityId = "logistics.customer-returns.read";
     public const string CustomerReturnsRequestCapabilityId = "logistics.customer-returns.request";
     public const string CustomerReturnsApproveCapabilityId = "logistics.customer-returns.approve";
+    public const string CustomerReturnsWeighingRecordCapabilityId = "logistics.customer-returns.record-weighing";
     public const string CustomerReturnsRejectCapabilityId = "logistics.customer-returns.reject";
     public const string CustomerReturnWorkDecisionCapabilityId = "logistics.customer-return.work-decision";
     public const string CustomerReturnWorkDecisionRoutePath = "/onaylarim/logistics.customer-return.v1/:approvalId";
@@ -134,6 +136,14 @@ public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityP
             [LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.CustomerReturnsRead,
                 LogisticsPermissionManifestV1.CustomerReturnsRequest],
             ImplementationAvailable: true, ParentCapabilityId: DetailCapabilityId),
+        // LOJ-D22: existing weighing authority, with the native detail/read gates for the human surface.
+        // Kept staged until paired weighing entry is integrated; this declaration grants nothing.
+        new ShellCapabilityDeclaration(CustomerReturnsWeighingRecordCapabilityId, DetailCapabilityId, DetailRoutePath, DetailScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.CustomerReturnsRead,
+                LogisticsPermissionManifestV1.WeighingsRecord],
+            ImplementationAvailable: false, ParentCapabilityId: DetailCapabilityId),
         new ShellCapabilityDeclaration(CustomerReturnsApproveCapabilityId, DetailCapabilityId, DetailRoutePath, DetailScreenId,
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
             ShellCapabilityScopeRequirement.CompanyWide,
