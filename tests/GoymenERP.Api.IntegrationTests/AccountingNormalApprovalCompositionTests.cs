@@ -1,5 +1,7 @@
 using System.Data;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Observability;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Infrastructure;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
@@ -39,6 +41,9 @@ public sealed class AccountingNormalApprovalCompositionTests
         });
         services.AddScoped<ISettingsPrerequisiteProvider>(_ =>
             new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(company));
+        services.AddScoped<ICurrentUser, AnonymousUser>();
+        services.AddScoped<IErpAuthorityRevalidationService, DenyAuthority>();
+        services.AddScoped<ICorrelationContext, CorrelationContext>();
         services.AddAuditModule(config);
         services.AddAccountingModule(config);
         using var provider = services.BuildServiceProvider(validateScopes: true);
@@ -52,6 +57,8 @@ public sealed class AccountingNormalApprovalCompositionTests
         Assert.Same(core, scope.GetRequiredService<IAccountingPostingStore>());
         var periods = scope.GetRequiredService<IAccountingPeriodStore>();
         Assert.Same(core, periods);
+        var api = scope.GetRequiredService<AccountingApiService>();
+        Assert.Same(api, scope.GetRequiredService<IAccountingPeriodDecisionReadV1>());
         var collector = scope.GetRequiredService<AuditEventCollector>();
         Assert.Same(collector, scope.GetRequiredService<IAuditEventCollector>());
         var writer = scope.GetRequiredService<IAuditTransactionWriterV1>();
@@ -89,5 +96,19 @@ public sealed class AccountingNormalApprovalCompositionTests
         Assert.True(writer.HasPendingDrafts);
         // Explicit caller teardown, after preservation assertions; never command-owned cleanup.
         writer.DiscardPending(); Assert.False(writer.HasPendingDrafts);
+    }
+
+    private sealed class AnonymousUser : ICurrentUser
+    {
+        public bool IsAuthenticated => false;
+        public string? UserId => null;
+        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid>();
+        public bool CanAccessCompany(Guid companyId) => false;
+    }
+
+    private sealed class DenyAuthority : IErpAuthorityRevalidationService
+    {
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
+            CancellationToken cancellationToken = default) => Task.FromResult(PermissionScope.Denied);
     }
 }
