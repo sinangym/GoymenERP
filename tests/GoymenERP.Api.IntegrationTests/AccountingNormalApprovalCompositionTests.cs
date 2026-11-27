@@ -16,8 +16,11 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed class AccountingNormalApprovalCompositionTests
 {
-    [Fact]
-    public async Task Real_module_approval_alias_preserves_caller_audit_added_during_its_fence_without_opening_SQL()
+    [Theory]
+    [InlineData(null)]
+    [InlineData(AccountingCommandNames.ApprovePeriod)]
+    [InlineData("accounting.period.reopening.approve.v1")]
+    public async Task Real_module_approval_alias_preserves_caller_audit_added_during_its_fence_without_opening_SQL(string? periodCommand)
     {
         var company = Guid.Parse("ac490000-0000-4000-8000-000000000001");
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -47,6 +50,8 @@ public sealed class AccountingNormalApprovalCompositionTests
         Assert.Same(guarded, scope.GetRequiredService<IAccountingNormalJournalDraftStore>());
         Assert.Same(core, scope.GetRequiredService<IAccountingCommandLog>());
         Assert.Same(core, scope.GetRequiredService<IAccountingPostingStore>());
+        var periods = scope.GetRequiredService<IAccountingPeriodStore>();
+        Assert.Same(core, periods);
         var collector = scope.GetRequiredService<AuditEventCollector>();
         Assert.Same(collector, scope.GetRequiredService<IAuditEventCollector>());
         var writer = scope.GetRequiredService<IAuditTransactionWriterV1>();
@@ -56,14 +61,18 @@ public sealed class AccountingNormalApprovalCompositionTests
             [], "{}", "{}", "SENTETIK caller draft", null, AuditAiInvolvement.None, null, "test", null, null,
             "SENTETIK-normal-composition", null, "SENTETIK-caller-key");
         var attempts = 0; var fences = 0;
-        var result = await guarded.RunNormalApprovalAsync(_ =>
+        Task<AccountingApiResult<NormalJournalDraftViewV1>> Attempt(bool replayOnly)
         {
             attempts++;
             throw new InvalidOperationException("A refused clean-entry boundary must not invoke the native attempt.");
-        }, _ =>
+        }
+        Task Fence(CancellationToken token)
         {
             fences++; collector.Enqueue(draft); return Task.CompletedTask;
-        });
+        }
+        var result = periodCommand is null
+            ? await guarded.RunNormalApprovalAsync(Attempt, Fence)
+            : await periods.RunPeriodApprovalAsync(periodCommand, Attempt, Fence);
         Assert.Equal(1, fences); Assert.Equal(0, attempts);
         Assert.Equal(AccountingApiStatus.Unavailable, result.Status); Assert.Null(result.Resource); Assert.False(result.IsReplay);
         // Only this exact caller draft was enqueued. The real writer still sees it after the refusal;
