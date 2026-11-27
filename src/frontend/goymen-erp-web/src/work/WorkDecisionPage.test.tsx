@@ -1074,3 +1074,76 @@ it('does not turn a fresh overage authority refusal into success or a new decisi
  expect(screen.queryByText(T.done)).toBeNull()
  expect(calls.filter(call=>call.url.includes(overagePath)&&call.method==='POST')).toHaveLength(1)
 })
+
+
+const weighingKind='logistics.weighing-difference.v1',weighingCap='logistics.weighing-difference.work-decision'
+const weighingNote='dddddddd-0000-4000-8000-000000000031',weighingInstruction='eeeeeeee-0000-4000-8000-000000000031',weighingProduct='ffffffff-0000-4000-8000-000000000031'
+const weighingEvaluation={dispatchNoteId:weighingNote,instructionId:weighingInstruction,theoreticalKg:'100',scaleKg:'103.125',differenceKg:'3.125',bandLevel:'NotEvaluated',
+ warningBandPercent:null,approvalBandPercent:null,blockBandPercent:null,totalExcessKg:'1.125',approvalRatePercent:null,decision:'ApprovalRequired',
+ products:[{productId:weighingProduct,noteKg:'100',scaleKg:'103.125',differenceKg:'3.125',remainingPhysicalKg:'2',physicallyCoveredKg:'2',excessKg:'1.125',targetLineNo:1}],
+ enteredBy:['SENTETIK-recorder','SENTETIK-scale-user'],enteredByComplete:true,recordedBy:'SENTETIK-recorder',recordedAtUtc:'2026-11-27T08:00:00Z'}
+const weighingPreview={...preview,kind:weighingKind,sourceVersion:'1',rejectionSupported:false,
+ references:[{role:'dispatch-note',label:'SENTETIK irsaliye',recordId:weighingNote,link:null},{role:'loading-instruction',label:'SENTETIK talimat',recordId:weighingInstruction,link:null}],logisticsWeighingDifference:weighingEvaluation}
+const weighingPath=`/work/decisions/${weighingKind}/${id}`
+const mountWeighing=()=>mount(`/onaylarim/${weighingKind}/${id}`,true)
+it('shows the immutable server evaluation and product rows with no editable number/reason or rejection',async()=>{
+ const calls=installFetch({capabilities:[weighingCap],respond:(url,init)=>url.includes(weighingPath)
+  ?init?.method==='POST'?json({companyId:COMPANY_A,kind:weighingKind,itemId:id,state:'Approved',replayed:false,originalCorrelationId:'original'}):json(weighingPreview):undefined})
+ mountWeighing();await screen.findByRole('heading',{name:T.weighingEvaluation})
+ expect(screen.getByRole('table',{name:T.weighingProducts})).toBeTruthy()
+ for(const value of [weighingNote,weighingInstruction,weighingProduct,weighingEvaluation.recordedAtUtc,T.weighingEnteredComplete,T.weighingReadOnly])expect(screen.getByText(value)).toBeTruthy()
+ expect(screen.getAllByText(weighingEvaluation.scaleKg).length).toBeGreaterThan(0)
+ expect(screen.getAllByText(weighingEvaluation.differenceKg).length).toBeGreaterThan(0)
+ expect(screen.getAllByText(T.weighingUnavailable)).toHaveLength(4)
+ expect(screen.queryByRole('textbox')).toBeNull();expect(screen.queryByRole('spinbutton')).toBeNull()
+ expect(screen.queryByRole('button',{name:T.reject})).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.method==='POST'&&call.url.includes(weighingPath))
+ expect(sent).toHaveLength(1);expect(sent[0]!.body).toEqual({expectedVersion:'1',approve:true,reason:null,delegationId:null})
+ expect(sent[0]!.headers['X-Company-Id']).toBe(COMPANY_A)
+})
+it('keeps the original weighing approval version and key after a terminal version two preview on unknown remount',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-weighing-bound-session'})
+ let reads=0,posts=0
+ const calls=installFetch({capabilities:[weighingCap],respond:(url,init)=>{
+  if(!url.includes(weighingPath))return undefined
+  if(init?.method==='POST')return ++posts===1?problem(503):json({companyId:COMPANY_A,kind:weighingKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'})
+  return json(++reads===1?weighingPreview:{...weighingPreview,sourceVersion:'2',pending:false})
+ }})
+ mountWeighing();await screen.findByRole('heading',{name:T.weighingEvaluation})
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ const journal=Object.values(sessionStorage).join('')
+ for(const value of [weighingEvaluation.recordedBy,'SENTETIK-scale-user',weighingEvaluation.scaleKg,weighingEvaluation.totalExcessKg,weighingProduct,weighingNote,weighingInstruction])expect(journal).not.toContain(value)
+ cleanup();mountWeighing();await screen.findByText(T.unknown);await screen.findByText(T.closed)
+ expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.method==='POST'&&call.url.includes(weighingPath))
+ expect(sent).toHaveLength(2);expect(sent[0]!.body).toEqual(sent[1]!.body)
+ expect(sent[0]!.headers['Idempotency-Key']).toBe(sent[1]!.headers['Idempotency-Key'])
+ expect(sent[1]!.body).toEqual({expectedVersion:'1',approve:true,reason:null,delegationId:null})
+})
+it.each([{companyId:COMPANY_B},{sourceVersion:'2147483648'},{rejectionSupported:true},{logisticsWeighingDifference:null},
+ {logisticsWeighingDifference:{...weighingEvaluation,dispatchNoteId:id}},{logisticsWeighingDifference:{...weighingEvaluation,enteredByComplete:false}},
+ {logisticsWeighingDifference:{...weighingEvaluation,products:[]}},{logisticsWeighingDifferenceProof:{}}])('refuses incomplete or foreign weighing preview %j',async delta=>{
+ const calls=installFetch({capabilities:[weighingCap],respond:url=>url.includes(weighingPath)?json({...weighingPreview,...delta}):undefined})
+ mountWeighing();await waitFor(()=>expect(calls.some(call=>call.url.includes(weighingPath))).toBe(true))
+ expect(screen.queryByRole('heading',{name:T.weighingEvaluation})).toBeNull();expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+ expect(calls.some(call=>call.method==='POST')).toBe(false)
+})
+it.each([{capabilities:[]},{capabilities:['logistics.weighing-differences.approve']},{capabilities:['logistics.plan-excess.work-decision']},
+ {capabilities:['logistics.instructions.detail']}])('does not read weighing records under a wrong or missing purpose capability %j',async({capabilities})=>{
+ const calls=installFetch({capabilities,respond:url=>url.includes(weighingPath)?json(weighingPreview):undefined})
+ mountWeighing();await waitFor(()=>expect(calls.some(call=>call.url.endsWith('/shell/capabilities'))).toBe(true))
+ expect(calls.some(call=>call.url.includes(weighingPath))).toBe(false)
+ expect(screen.queryByRole('heading',{name:T.weighingEvaluation})).toBeNull()
+})
+it('does not restore a weighing approval in a different authenticated session',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-weighing-old-session'})
+ const calls=installFetch({capabilities:[weighingCap],respond:(url,init)=>url.includes(weighingPath)?init?.method==='POST'?problem(503):json(weighingPreview):undefined})
+ mountWeighing();await screen.findByRole('heading',{name:T.weighingEvaluation})
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-weighing-new-session'})
+ mountWeighing();await screen.findByRole('heading',{name:T.weighingEvaluation})
+ expect(screen.queryByRole('button',{name:T.retry})).toBeNull()
+ expect(calls.filter(call=>call.url.includes(weighingPath)&&call.method==='POST')).toHaveLength(1)
+})

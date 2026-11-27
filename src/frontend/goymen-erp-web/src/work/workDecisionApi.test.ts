@@ -339,7 +339,7 @@ it('decodes exact loss options among the mounted owner kinds without changing ot
  const value={...preview,kind:lossKind,approvalReasonRequired:true,rejectionSupported:true,inventoryTransferLoss:lossOptions}
  expect(isWorkDecisionKind(lossKind)).toBe(true)
  expect(WORK_DECISION_KINDS.filter(kind=>kind===lossKind)).toHaveLength(1)
- expect(WORK_DECISION_KINDS).toHaveLength(19)
+ expect(WORK_DECISION_KINDS).toHaveLength(20)
  expect(decodeWorkDecisionPreview(value,company,lossKind,id)).not.toBeNull()
  for(const delta of [{companyId:id},{itemId:company},{sourceVersion:'0'},{approvalReasonRequired:false},{rejectionSupported:false},
   {inventoryTransferLoss:null},{inventoryTransferLoss:{...lossOptions,requestNumber:0}},{inventoryTransferLoss:{...lossOptions,requestNumber:1.5}},
@@ -389,7 +389,7 @@ it('mounts both Counterparty purposes once among seventeen and pins their actual
   'counterparty.tax-identity-change.v1':'cari.tax-identity-change.work-decision',
   'counterparty.legal-name-change.v1':'cari.legal-name-change.work-decision',
  })
- expect(WORK_DECISION_KINDS).toHaveLength(19)
+ expect(WORK_DECISION_KINDS).toHaveLength(20)
  for(const cp of cpKinds){
   expect(isWorkDecisionKind(cp)).toBe(true);expect(isCounterpartyWorkDecisionKind(cp)).toBe(true)
   expect(WORK_DECISION_KINDS.filter(kind=>kind===cp)).toEqual([cp])
@@ -524,7 +524,7 @@ const overageRequest={...request,reason:'İnsan karar gerekçesi',inventoryTrans
 it.each([null,0,2147483647])('keeps the exact nine-field human overage proposal and nullable pieces=%s',pieceCount=>{
  const value={...overagePreview,inventoryTransferOverage:{...overageProposal,pieceCount}}
  expect(WORK_DECISION_KINDS.filter(kind=>kind===overageKind)).toEqual([overageKind])
- expect(WORK_DECISION_KINDS).toHaveLength(19)
+ expect(WORK_DECISION_KINDS).toHaveLength(20)
  expect(decodeWorkDecisionPreview(value,company,overageKind,id)).toEqual(value)
 })
 it('refuses malformed, foreign, unbound or hidden overage proof instead of rendering a partial proposal',()=>{
@@ -563,4 +563,65 @@ it.each([true,false])('accepts only the exact immutable overage decision result 
   fetch.mockResolvedValueOnce(new Response(JSON.stringify({...result,...delta}),{status:200,headers}))
   expect((await sendWorkDecision(company,overageKind,id,command,'frozen-overage-key')).type).toBe('unknown')
  }
+})
+
+
+const weighingKind='logistics.weighing-difference.v1'
+const weighingNote='dddddddd-0000-4000-8000-000000000031',weighingInstruction='eeeeeeee-0000-4000-8000-000000000031',weighingProduct='ffffffff-0000-4000-8000-000000000031'
+const weighingEvaluation={dispatchNoteId:weighingNote,instructionId:weighingInstruction,theoreticalKg:'100',scaleKg:'103',differenceKg:'3',bandLevel:'NotEvaluated' as const,
+ warningBandPercent:null,approvalBandPercent:null,blockBandPercent:null,totalExcessKg:'1',approvalRatePercent:null,decision:'ApprovalRequired' as const,
+ products:[{productId:weighingProduct,noteKg:'100',scaleKg:'103',differenceKg:'3',remainingPhysicalKg:'2',physicallyCoveredKg:'2',excessKg:'1',targetLineNo:1}],
+ enteredBy:['SENTETIK-recorder','SENTETIK-scale-user'],enteredByComplete:true,recordedBy:'SENTETIK-recorder',recordedAtUtc:'2026-11-27T08:00:00Z'}
+const weighingPreview={...preview,kind:weighingKind,sourceVersion:'1',rejectionSupported:false,
+ references:[{role:'dispatch-note',label:'SENTETIK irsaliye',recordId:weighingNote,link:null},{role:'loading-instruction',label:'SENTETIK talimat',recordId:weighingInstruction,link:null}],logisticsWeighingDifference:weighingEvaluation}
+it('keeps exactly seventeen immutable evaluation fields and eight native product fields without numeric coercion',()=>{
+ expect(WORK_DECISION_KINDS.filter(kind=>kind===weighingKind)).toEqual([weighingKind]);expect(WORK_DECISION_KINDS).toHaveLength(20)
+ expect(Object.keys(weighingEvaluation)).toHaveLength(17);expect(Object.keys(weighingEvaluation.products[0]!)).toHaveLength(8)
+ expect(decodeWorkDecisionPreview(weighingPreview,company,weighingKind,id)).toEqual(weighingPreview)
+ for(const bandLevel of ['NotEvaluated','None','Warning','Approval','Block'])
+  expect(decodeWorkDecisionPreview({...weighingPreview,logisticsWeighingDifference:{...weighingEvaluation,bandLevel,warningBandPercent:'0.125',approvalBandPercent:'1.25',blockBandPercent:'5.5',approvalRatePercent:'0.5'}},company,weighingKind,id)).not.toBeNull()
+ expect(decodeWorkDecisionPreview({...weighingPreview,pending:false,sourceVersion:'2'},company,weighingKind,id)).not.toBeNull()
+ expect(decodeWorkDecisionPreview({...weighingPreview,sourceVersion:'2147483647'},company,weighingKind,id)).not.toBeNull()
+})
+it('refuses incomplete actor sets, source bindings, enum/decimal drift and other owner payloads',()=>{
+ for(const delta of [{companyId:id},{itemId:company},{sourceVersion:'2147483648'},{sourceVersion:'01'},{approvalReasonRequired:true},{rejectionSupported:true},
+  {logisticsWeighingDifference:null},{logisticsWeighingDifference:undefined},{logisticsWeighingDifferenceProof:{}},{logisticsPlanExcess:excessProposal},
+  {references:[]},{references:[...weighingPreview.references,weighingPreview.references[0]]}])
+  expect(decodeWorkDecisionPreview({...weighingPreview,...delta},company,weighingKind,id)).toBeNull()
+ for(const delta of [{dispatchNoteId:id},{instructionId:id},{theoreticalKg:100},{scaleKg:'-1'},{differenceKg:'NaN'},{totalExcessKg:'1e2'},
+  {bandLevel:'Unknown'},{decision:'Unknown'},{decision:'WithinRate'},{warningBandPercent:1},{approvalBandPercent:undefined},{approvalRatePercent:'bad'},
+  {enteredByComplete:false},{enteredBy:[]},{enteredBy:['other']},{enteredBy:['SENTETIK-recorder','SENTETIK-recorder']},
+  {enteredBy:['SENTETIK-recorder',' maker ']},{enteredBy:['SENTETIK-recorder',...Array.from({length:17},(_,i)=>`maker${i}`)]},
+  {recordedBy:''},{recordedAtUtc:'2026-11-27T08:00:00+03:00'},{extra:true},{products:[]},{products:[...weighingEvaluation.products,...weighingEvaluation.products]}])
+  expect(decodeWorkDecisionPreview({...weighingPreview,logisticsWeighingDifference:{...weighingEvaluation,...delta}},company,weighingKind,id)).toBeNull()
+ for(const delta of [{productId:'00000000-0000-0000-0000-000000000000'},
+  {noteKg:-1},{scaleKg:'1.0001'},{differenceKg:'wrong'},{remainingPhysicalKg:'-1'},{physicallyCoveredKg:'1e2'},
+  {excessKg:undefined},{targetLineNo:0},{targetLineNo:2147483648},{extra:true}])
+  expect(decodeWorkDecisionPreview({...weighingPreview,logisticsWeighingDifference:{...weighingEvaluation,products:[{...weighingEvaluation.products[0],...delta}]}},company,weighingKind,id)).toBeNull()
+ expect(decodeWorkDecisionPreview({...preview,logisticsWeighingDifference:weighingEvaluation},company,kind,id)).toBeNull()
+})
+it('requires only the four native fields for weighing approval, null reason and canonical positive Int32 version',()=>{
+ const command={...request,expectedVersion:'1'}
+ expect(isWorkDecisionRequest(command,weighingKind)).toBe(true)
+ expect(isWorkDecisionRequest({...command,expectedVersion:'2147483647'},weighingKind)).toBe(true)
+ for(const delta of [{approve:false},{reason:''},{reason:'onay'},{expectedVersion:'0'},{expectedVersion:'01'},{expectedVersion:'2147483648'},
+  {expectedVersion:'9007199254740993'},{logisticsWeighingDifference:weighingEvaluation},{inventoryTransferOverage:overageRequest.inventoryTransferOverage},
+  {inventoryTransferLoss:lossRequest.inventoryTransferLoss},{logisticsPlanExcess:{expectedInstructionVersion:'3'}},{manufacturingPlanReapproval:null}])
+  expect(isWorkDecisionRequest({...command,...delta},weighingKind)).toBe(false)
+})
+it('preserves the original weighing expected version/key and accepts only exact immutable Approved receipt',async()=>{
+ const command={...request,expectedVersion:'1'}
+ const result={companyId:company,kind:weighingKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'original'}
+ const headers={'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}
+ const fetch=vi.fn(async(_input:RequestInfo|URL,_init?:RequestInit)=>new Response(JSON.stringify(result),{status:200,headers}))
+ vi.stubGlobal('fetch',fetch)
+ expect((await sendWorkDecision(company,weighingKind,id,command,'weigh-key')).type).toBe('applied')
+ expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string)).toEqual(command)
+ for(const delta of [{state:'Rejected'},{state:'PendingApproval'},{state:'Recorded'},{companyId:id},{itemId:company},{kind:excessKind},{extra:true}]){
+  fetch.mockResolvedValueOnce(new Response(JSON.stringify({...result,...delta}),{status:200,headers}))
+  expect((await sendWorkDecision(company,weighingKind,id,command,'weigh-key')).type).toBe('unknown')
+ }
+ const count=fetch.mock.calls.length
+ expect((await sendWorkDecision(company,weighingKind,id,{...command,approve:false},'weigh-key')).type).toBe('unknown')
+ expect(fetch.mock.calls).toHaveLength(count)
 })

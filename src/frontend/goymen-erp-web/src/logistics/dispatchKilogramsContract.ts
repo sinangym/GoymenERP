@@ -1,6 +1,9 @@
 export const KG_TEXT = /^(0|[1-9][0-9]{0,14})(\.[0-9]{1,3})?$/
 const signed = /^-?(0|[1-9][0-9]{0,14})(\.[0-9]{1,3})?$/
 const decimal = /^-?(0|[1-9][0-9]*)(\.[0-9]+)?$/
+/** Native decimal-text guards reused by the human Work evaluation preview; never calculators. */
+export const KG_SIGNED_TEXT = signed
+export const KG_DECIMAL_TEXT = decimal
 export const KG_GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const object = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const exact = (v: Record<string, unknown>, keys: readonly string[]) => Object.keys(v).length === keys.length && keys.every(k => Object.hasOwn(v, k))
@@ -38,6 +41,11 @@ export interface RecordKilograms {
 }
 export type KgCommand = RecordKilograms | { readonly expectedVersion: number }
 export interface KgResponse { readonly record: DispatchKilograms; readonly isReplay: boolean; readonly originalCorrelationId: string }
+/** The native product row, shared unchanged by its read contract and the human Work preview. */
+export const isDispatchKilogramsProduct = (value: unknown): value is KgProduct => object(value) && exact(value, PRODUCT_FIELDS) && id(value.productId)
+  && ['noteKg', 'scaleKg', 'remainingPhysicalKg', 'physicallyCoveredKg', 'excessKg'].every(key => kg(value[key]))
+  && typeof value.differenceKg === 'string' && signed.test(value.differenceKg)
+  && (value.targetLineNo === null || Number.isSafeInteger(value.targetLineNo) && (value.targetLineNo as number) > 0)
 export function decodeDispatchKilograms(v: unknown, companyId: string, noteId: string): DispatchKilograms | null {
   if (!object(v) || !exact(v, RECORD_FIELDS) || v.companyId !== companyId || v.dispatchNoteId !== noteId || !id(v.recordId) || !id(v.instructionId)
     || !kg(v.theoreticalKg) || !kg(v.scaleKg) || !kg(v.totalExcessKg) || typeof v.differenceKg !== 'string' || !signed.test(v.differenceKg)
@@ -49,9 +57,7 @@ export function decodeDispatchKilograms(v: unknown, companyId: string, noteId: s
     || typeof v.recordedBy !== 'string' || !v.recordedBy || !instant(v.recordedAtUtc)
     || !(v.approvedBy === null || typeof v.approvedBy === 'string' && v.approvedBy.length > 0)
     || !(v.approvedAtUtc === null || instant(v.approvedAtUtc))) return null
-  if (new Set(v.products.map(x => object(x) ? x.productId : null)).size !== v.products.length || v.products.some(x => !object(x) || !exact(x, PRODUCT_FIELDS) || !id(x.productId)
-    || !['noteKg', 'scaleKg', 'remainingPhysicalKg', 'physicallyCoveredKg', 'excessKg'].every(k => kg(x[k]))
-    || typeof x.differenceKg !== 'string' || !signed.test(x.differenceKg) || !(x.targetLineNo === null || Number.isSafeInteger(x.targetLineNo) && (x.targetLineNo as number) > 0))) return null
+  if (new Set(v.products.map(x => object(x) ? x.productId : null)).size !== v.products.length || v.products.some(x => !isDispatchKilogramsProduct(x))) return null
   if (v.kilogramAllocation !== null) {
     const a = v.kilogramAllocation
     if (!object(a) || !exact(a, ['lines', 'finalizedDocument']) || !Array.isArray(a.lines) || !a.lines.length || a.lines.length > 200 || a.lines.some(x => !object(x) || !exact(x, LINE_FIELDS)

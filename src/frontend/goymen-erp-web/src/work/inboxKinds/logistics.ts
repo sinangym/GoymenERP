@@ -6,8 +6,8 @@ export const LOGISTICS_INBOX_KINDS: readonly WorkInboxKind[] = [
   // The Inventory transfer dispatch control requires `logistics.dispatch-notes.approve` (sufficient, not necessary).
   { kind: 'logistics.dispatch-note.v1', module: 'logistics', capability: TRANSFER_DISPATCH_CAPABILITIES.finalize },
   { kind: 'logistics.plan-excess.v1', module: 'logistics', capability: LOGISTICS_CAPABILITY.planExcessApprove },
-  // No frontend capability for `logistics.weighing-differences.approve` yet.
-  { kind: 'logistics.weighing-difference.v1', module: 'logistics', capability: null },
+  // The standalone human decision purpose uses the native weighing approval permission.
+  { kind: 'logistics.weighing-difference.v1', module: 'logistics', capability: 'logistics.weighing-difference.work-decision' },
   // WP6: no frontend capability for `logistics.customer-returns.decision` yet (the shell declares the control; no panel).
   { kind: 'logistics.customer-return.v1', module: 'logistics', capability: null },
 ]

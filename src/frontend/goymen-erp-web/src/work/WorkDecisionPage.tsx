@@ -1,5 +1,6 @@
 import { KIND_LABEL, TAX_IDENTITY_TEXT } from '../cari/taxIdentity'
 import { LEGAL_NAME_TEXT } from '../cari/legalName'
+import { DISPATCH_KG_TEXT as WEIGHING } from '../logistics/dispatchKilogramsText'
 import { PLAN_EXCESS_TEXT as PLAN_EXCESS } from '../logistics/planExcessText'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
@@ -112,6 +113,30 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       subject={T.title} onRetry={() => void query.refetch()} /> : <>
       <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
       {kind === 'inventory.opening-cost.v1' ? <p>{cost == null ? T.hiddenCost : `${T.cost}: ${cost}`}</p> : null}
+      {preview.logisticsWeighingDifference ? <section aria-label={T.weighingEvaluation}><h3>{T.weighingEvaluation}</h3><dl className={styles.facts}>
+        <dt>{T.weighingNote}</dt><dd>{preview.logisticsWeighingDifference.dispatchNoteId}</dd>
+        <dt>{PLAN_EXCESS.instruction}</dt><dd>{preview.logisticsWeighingDifference.instructionId}</dd>
+        <dt>{T.weighingTheoretical}</dt><dd>{preview.logisticsWeighingDifference.theoreticalKg}</dd>
+        <dt>{WEIGHING.total}</dt><dd>{preview.logisticsWeighingDifference.scaleKg}</dd>
+        <dt>{WEIGHING.difference}</dt><dd>{preview.logisticsWeighingDifference.differenceKg}</dd>
+        <dt>{T.weighingBand}</dt><dd>{T.weighingBands[preview.logisticsWeighingDifference.bandLevel]}</dd>
+        <dt>{T.weighingWarningBand}</dt><dd>{preview.logisticsWeighingDifference.warningBandPercent ?? T.weighingUnavailable}</dd>
+        <dt>{T.weighingApprovalBand}</dt><dd>{preview.logisticsWeighingDifference.approvalBandPercent ?? T.weighingUnavailable}</dd>
+        <dt>{T.weighingBlockBand}</dt><dd>{preview.logisticsWeighingDifference.blockBandPercent ?? T.weighingUnavailable}</dd>
+        <dt>{T.weighingExcess}</dt><dd>{preview.logisticsWeighingDifference.totalExcessKg}</dd>
+        <dt>{T.weighingRate}</dt><dd>{preview.logisticsWeighingDifference.approvalRatePercent ?? T.weighingUnavailable}</dd>
+        <dt>{T.weighingDecision}</dt><dd>{T.weighingDecisions[preview.logisticsWeighingDifference.decision]}</dd>
+        <dt>{T.weighingEnteredBy}</dt><dd>{preview.logisticsWeighingDifference.enteredBy.join(', ')}</dd>
+        <dt>{T.weighingRecordedBy}</dt><dd>{preview.logisticsWeighingDifference.recordedBy}</dd>
+        <dt>{T.weighingRecordedAt}</dt><dd>{preview.logisticsWeighingDifference.recordedAtUtc}</dd>
+      </dl><p>{T.weighingEnteredComplete}</p><p>{T.weighingReadOnly}</p>
+      <div className={styles.tableWrap} role="region" aria-label={T.weighingProducts} tabIndex={0}><table className={styles.table}><caption>{T.weighingProducts}</caption><thead><tr>
+        <th scope="col">{T.weighingProduct}</th><th scope="col">{T.weighingNoteKg}</th><th scope="col">{WEIGHING.scale}</th><th scope="col">{WEIGHING.difference}</th>
+        <th scope="col">{T.weighingRemaining}</th><th scope="col">{T.weighingCovered}</th><th scope="col">{T.weighingExcess}</th><th scope="col">{T.weighingTarget}</th>
+      </tr></thead><tbody>{preview.logisticsWeighingDifference.products.map(product => <tr key={product.productId}>
+        <th scope="row">{product.productId}</th><td>{product.noteKg}</td><td>{product.scaleKg}</td><td>{product.differenceKg}</td>
+        <td>{product.remainingPhysicalKg}</td><td>{product.physicallyCoveredKg}</td><td>{product.excessKg}</td><td>{product.targetLineNo ?? T.weighingUnavailable}</td>
+      </tr>)}</tbody></table></div></section> : null}
       {preview.inventoryTransferOverage ? <section aria-label={T.overageProposal}><h3>{T.overageProposal}</h3><dl>
         <dt>{T.overageTransfer}</dt><dd>{preview.inventoryTransferOverage.transferId}</dd>
         <dt>{T.overageLine}</dt><dd>{preview.inventoryTransferOverage.lineId}</dd>
@@ -153,7 +178,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         {frozen && frozenTransferRequest ? <p>{T.lossFrozenTime}: {frozenTransferRequest.decidedAtUtc}</p>
           : <p>{T.lossRequestedAt}: {transferRequest?.requestedAtUtc}</p>}
       </div> : null}
-      {preview.pending && !reconciledHistorical ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{kind === 'logistics.plan-excess.v1' ? T.planExcessApprovalOnly : kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
+      {preview.pending && !reconciledHistorical ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{kind === 'logistics.weighing-difference.v1' ? T.weighingApprovalOnly : kind === 'logistics.plan-excess.v1' ? T.planExcessApprovalOnly : kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
         {preview.rejectionSupported !== false || preview.approvalReasonRequired ? <label>{counterparty ? T.optionalNote : kind === 'manufacturing.plan.v1' ? T.manufacturingRejectReason : T.reason}<textarea value={lossReason} maxLength={reasonLimit} onChange={event => setReason(event.target.value)} /></label> : null}
         {kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? <p>{T.approvalReasonRequired(reasonLimit)}</p> : null}
         {kind === 'manufacturing.plan.v1' && preview.rejectionSupported ? <p>{T.manufacturingRejectHelp}</p> : null}
