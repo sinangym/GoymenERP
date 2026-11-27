@@ -95,11 +95,19 @@ describe('independent receipt entry shared quick Cari', () => {
     })
   it.each([403, 503] as const)('keeps native saving closed when the receipt owner rejects the current context: %s', async status => {
     const { commands, reads } = mount('', status); await selectCreated()
+    const form = screen.getByRole('button', { name: SAVE_DRAFT }).closest('form')
+    if (form === null) throw new Error('missing native receipt form')
     fireEvent.change(await screen.findByLabelText(FIELD_LABEL.treasuryAccountId), { target: { value: EXAMPLE_BANK } })
     fireEvent.change(screen.getByLabelText(FIELD_LABEL.occurredOn), { target: { value: '2026-09-13' } })
     await waitFor(() => expect(reads.some(read => read.method === 'draftContext')).toBe(true))
-    const save = screen.getByRole('button', { name: SAVE_DRAFT }); expect(save.matches(':disabled')).toBe(true)
-    const form = save.closest('form'); if (form === null) throw new Error('missing native receipt form')
+    if (status === 403) {
+      // Auth-boundary invalidation removes the whole form, including its old event handlers.
+      await waitFor(() => expect(screen.queryByRole('button', { name: SAVE_DRAFT })).toBeNull())
+      expect(document.body.contains(form)).toBe(false)
+      expect(screen.queryByRole('button', { name: 'SENTETIK quick create' })).toBeNull()
+    } else {
+      expect(screen.getByRole('button', { name: SAVE_DRAFT }).matches(':disabled')).toBe(true)
+    }
     fireEvent.submit(form); expect(commands).toHaveLength(0)
   })
   it('does not read eligibility for a foreign mutation response', async () => {
