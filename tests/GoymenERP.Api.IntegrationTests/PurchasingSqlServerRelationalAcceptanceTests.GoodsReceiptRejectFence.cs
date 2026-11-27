@@ -1,9 +1,11 @@
 using GoymenERP.Api.WorkRuntime;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Purchasing.Application;
 using GoymenERP.Modules.Purchasing.Domain.GoodsReceipts;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -14,6 +16,90 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
 {
+    [SqlServerFact]
+    public async Task Receipt_reject_native_service_save_conflict_without_winner_does_not_commit_a_ghost_audit_and_same_key_retries()
+    {
+        await using var run = await Run.StartAsync(); var seed = await BatchRejectSeedAsync(run);
+        var before = await BatchRejectCountsAsync(run, seed.BatchId);
+        var conflict = new BatchRejectSaveConflict();
+        const string key = "batch-no-winner-audit";
+        var request = new DecidePurchaseGoodsReceiptBatchV1("1", "SENTETIK ret");
+        await using (var writer = BatchRejectScopeFor(run, CompanyA, conflict))
+        {
+            var service = BatchRejectServiceFor(writer, OrderApprover);
+            var denied = await Assert.ThrowsAsync<PurchasingServiceException>(() => service.RejectGoodsReceiptBatchAsync(
+                seed.PurchaseOrderId, seed.BatchId, request, new(key, "SENTETIK-original", null, DateTimeOffset.UtcNow)));
+            Assert.Equal((409, PurchasingProblemCodesV1.ConcurrentChange), (denied.Status, denied.Code));
+            Assert.False(denied.IsReplay); Assert.Equal(1, conflict.Calls);
+            Assert.Empty(writer.Database.ChangeTracker.Entries()); Assert.False(writer.AuditWriter.HasPendingDrafts);
+        }
+        Assert.Equal(before, await BatchRejectCountsAsync(run, seed.BatchId));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseGoodsReceiptBatchAttempts WHERE CommandName=@command", ("@command", PurchaseGoodsReceiptBatchCommandsV1.RejectV1)));
+        await using (var retry = BatchRejectScopeFor(run, CompanyA))
+        {
+            var answer = await BatchRejectServiceFor(retry, OrderApprover).RejectGoodsReceiptBatchAsync(seed.PurchaseOrderId,
+                seed.BatchId, request, new(key, "SENTETIK-original", null, DateTimeOffset.UtcNow));
+            Assert.Equal(("Rejected", "2", false), (answer.Batch.Status, answer.Batch.Version, answer.IsReplay));
+        }
+        var committed = await BatchRejectCountsAsync(run, seed.BatchId);
+        Assert.Equal((2L, before.Attempts + 1, before.Audits + 1, 1), committed);
+        await using var replay = BatchRejectScopeFor(run, CompanyA);
+        var repeated = await BatchRejectServiceFor(replay, OrderApprover).RejectGoodsReceiptBatchAsync(seed.PurchaseOrderId,
+            seed.BatchId, request, new(key, "SENTETIK-later", null, DateTimeOffset.UtcNow));
+        Assert.True(repeated.IsReplay); Assert.Equal("SENTETIK-original", repeated.OriginalCorrelationId);
+        Assert.Equal(committed, await BatchRejectCountsAsync(run, seed.BatchId));
+    }
+
+    [SqlServerFact]
+    public async Task Receipt_reject_native_service_persists_only_a_proven_terminal_receipt_and_replays_its_original_correlation()
+    {
+        await using var run = await Run.StartAsync(); var seed = await BatchRejectSeedAsync(run);
+        var before = await BatchRejectCountsAsync(run, seed.BatchId);
+        var request = new DecidePurchaseGoodsReceiptBatchV1("1", "SENTETIK ret");
+        await using (var writer = BatchRejectScopeFor(run, CompanyA))
+        {
+            var service = BatchRejectServiceFor(writer, run.Actor); // The actual native maker/checker refusal.
+            var first = await Assert.ThrowsAsync<PurchasingServiceException>(() => service.RejectGoodsReceiptBatchAsync(seed.PurchaseOrderId,
+                seed.BatchId, request, new("batch-native-terminal", "SENTETIK-first", null, DateTimeOffset.UtcNow)));
+            Assert.Equal((409, PurchaseGoodsReceiptBatchRuleCodes.SameActor, false), (first.Status, first.Code, first.IsReplay));
+        }
+        await using (var reader = BatchRejectScopeFor(run, CompanyA))
+        {
+            var replay = await Assert.ThrowsAsync<PurchasingServiceException>(() => BatchRejectServiceFor(reader, run.Actor)
+                .RejectGoodsReceiptBatchAsync(seed.PurchaseOrderId, seed.BatchId, request,
+                    new("batch-native-terminal", "SENTETIK-later", null, DateTimeOffset.UtcNow)));
+            Assert.Equal((409, PurchaseGoodsReceiptBatchRuleCodes.SameActor, true, "SENTETIK-first"),
+                (replay.Status, replay.Code, replay.IsReplay, replay.OriginalCorrelationId));
+        }
+        Assert.Equal(before, await BatchRejectCountsAsync(run, seed.BatchId)); // Terminal receipt has no BatchId or business audit.
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseGoodsReceiptBatchAttempts WHERE CommandName=@command AND BatchId IS NULL AND Outcome=2",
+            ("@command", PurchaseGoodsReceiptBatchCommandsV1.RejectV1)));
+    }
+
+    [SqlServerFact]
+    public async Task Receipt_reject_native_service_reads_a_concurrent_winner_only_after_aborting_its_own_pending_audit()
+    {
+        await using var run = await Run.StartAsync(); var seed = await BatchRejectSeedAsync(run);
+        var before = await BatchRejectCountsAsync(run, seed.BatchId);
+        const string key = "batch-save-winner";
+        var request = new DecidePurchaseGoodsReceiptBatchV1("1", "SENTETIK ret");
+        var conflict = new BatchRejectSaveConflict(async () =>
+        {
+            // The original save has not reached SQL. This independent native attempt wins the same key.
+            await using var winner = BatchRejectScopeFor(run, CompanyA);
+            var won = await BatchRejectServiceFor(winner, OrderApprover).RejectGoodsReceiptBatchAsync(seed.PurchaseOrderId,
+                seed.BatchId, request, new(key, "SENTETIK-winner", null, DateTimeOffset.UtcNow));
+            Assert.False(won.IsReplay);
+        });
+        await using var loser = BatchRejectScopeFor(run, CompanyA, conflict);
+        var replay = await BatchRejectServiceFor(loser, OrderApprover).RejectGoodsReceiptBatchAsync(seed.PurchaseOrderId,
+            seed.BatchId, request, new(key, "SENTETIK-loser", null, DateTimeOffset.UtcNow));
+        Assert.True(replay.IsReplay); Assert.Equal("SENTETIK-winner", replay.OriginalCorrelationId);
+        Assert.Equal(1, conflict.Calls); Assert.False(loser.AuditWriter.HasPendingDrafts);
+        Assert.Empty(loser.Database.ChangeTracker.Entries());
+        Assert.Equal((2L, before.Attempts + 1, before.Audits + 1, 1), await BatchRejectCountsAsync(run, seed.BatchId));
+    }
+
     [SqlServerFact]
     public async Task Native_receipt_reject_refuses_authority_loss_after_label_reads_before_staging()
     {
@@ -248,6 +334,32 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         public IAuditEventCollector Collector => collector;
         public IAuditTransactionWriterV1 AuditWriter => writer;
         public PurchaseGoodsReceiptBatchStore Store => store;
+        public IServiceProvider Services => scope.ServiceProvider;
         public async ValueTask DisposeAsync() { await database.DisposeAsync(); await scope.DisposeAsync(); }
+    }
+
+    private static PurchasingService BatchRejectServiceFor(BatchRejectScope scope, string actor)
+    {
+        var services = scope.Services;
+        var correlation = services.GetRequiredService<ICorrelationContext>();
+        correlation.Set("SENTETIK-batch-native-service", null, "Web", null, null);
+        // Native service, Purchasing store and real Audit owner; authority remains explicitly synthetic.
+        return new PurchasingService(scope.Company, new NumberTestUser { UserId = actor }, new NumberTestAuthority(), correlation,
+            services.GetRequiredService<IPurchasingPartyAccountPortV1>(), services.GetService<IProductPurchaseEligibilityPortV1>(),
+            services.GetRequiredService<PurchaseUnitVerifier>(), services.GetRequiredService<IPurchasingStore>(),
+            new PurchasingServiceBindings(), TimeProvider.System, batchStore: scope.Store);
+    }
+
+    private sealed class BatchRejectSaveConflict(Func<Task>? beforeConflict = null) : SaveChangesInterceptor
+    {
+        public int Calls { get; private set; }
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            if (beforeConflict is not null) await beforeConflict();
+            // After the native store queued its audit, before SQL persisted its decision or receipt.
+            throw new DbUpdateConcurrencyException("SENTETIK no committed winner");
+        }
     }
 }

@@ -81,6 +81,25 @@ public sealed partial class PurchasingServiceTests
         Assert.Empty(runner.Stocks);
     }
 
+    [Fact]
+    public async Task Receipt_rejection_conflict_without_a_saved_winner_aborts_its_pending_audit_and_same_key_can_retry()
+    {
+        var (world, runner, orderId, batchId, store) = await RejectionWorldAsync();
+        store.FailDecisionConcurrency = true;
+        var request = new DecidePurchaseGoodsReceiptBatchV1("1", "SENTETIK ret");
+        var denied = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.AsApprover(() => world.Service()
+            .RejectGoodsReceiptBatchAsync(orderId, batchId, request, Metadata("batch-no-winner"))));
+        Assert.Equal((409, PurchasingProblemCodesV1.ConcurrentChange), (denied.Status, denied.Code));
+        Assert.False(store.OwnAuditPending); Assert.Equal(0, store.CommittedOwnAudits);
+        Assert.Equal((0, 0), (store.DecisionWrites, store.DecisionAttempts));
+        Assert.Equal(PurchaseGoodsReceiptBatchStatus.PendingApproval, (await store.FindAsync(orderId, batchId))!.Batch.Status);
+        store.FailDecisionConcurrency = false;
+        var accepted = await world.AsApprover(() => world.Service().RejectGoodsReceiptBatchAsync(orderId, batchId, request, Metadata("batch-no-winner")));
+        Assert.Equal("Rejected", accepted.Batch.Status); Assert.False(accepted.IsReplay);
+        Assert.Equal((1, 1, 1), (store.DecisionWrites, store.DecisionAttempts, store.CommittedOwnAudits));
+        Assert.Empty(runner.Stocks);
+    }
+
     private sealed class LegacyBatchStore(FakeBatchStore inner) : IPurchaseGoodsReceiptBatchStore
     {
         public Task<PurchaseGoodsReceiptBatchReplay?> FindReplayAsync(PurchasingWriteEnvelope e, string h, string c, CancellationToken t = default) => inner.FindReplayAsync(e, h, c, t);
@@ -110,16 +129,20 @@ public sealed partial class PurchasingServiceTests
         private readonly Dictionary<(string Command, string Key), (string Hash, PurchaseGoodsReceiptBatchReplay Result)> decisionReceipts = [];
         public Action? BeforeDecisionRead, AfterDecisionSave;
         public int DecisionWrites, DecisionAttempts;
+        public bool FailDecisionConcurrency, OwnAuditPending;
+        public int CommittedOwnAudits;
         public async Task<T> ExecuteRejectionGuardedAsync<T>(Func<CancellationToken, Task<T>> operation,
             Func<CancellationToken, Task> freshDecisionFence, CancellationToken cancellationToken = default)
         {
             var oldBatches = batches.ToArray(); var oldReceipts = decisionReceipts.ToArray();
             var oldWrites = DecisionWrites; var oldAttempts = DecisionAttempts;
             try { await freshDecisionFence(cancellationToken); var result = await operation(cancellationToken);
-                await freshDecisionFence(cancellationToken); return result; }
+                await freshDecisionFence(cancellationToken);
+                if (OwnAuditPending) { CommittedOwnAudits++; OwnAuditPending = false; }
+                return result; }
             catch { batches.Clear(); foreach (var item in oldBatches) batches.Add(item.Key, item.Value);
                 decisionReceipts.Clear(); foreach (var item in oldReceipts) decisionReceipts.Add(item.Key, item.Value);
-                DecisionWrites = oldWrites; DecisionAttempts = oldAttempts; throw; }
+                DecisionWrites = oldWrites; DecisionAttempts = oldAttempts; OwnAuditPending = false; throw; }
         }
         private PurchaseGoodsReceiptBatchReplay? ReadBatchDecisionReplay(PurchasingWriteEnvelope envelope, string hash, string command)
         {
@@ -131,6 +154,8 @@ public sealed partial class PurchasingServiceTests
             PurchasingWriteEnvelope envelope, string hash, string command)
         {
             var old = batches[decided.Id]; Assert.Equal(expected, old.Version);
+            OwnAuditPending = true;
+            if (FailDecisionConcurrency) throw new PurchasingStoreException(PurchasingStoreCodes.ConcurrentChange, "SENTETIK no persisted winner");
             var next = old with { Batch = old.Batch with { Status = decided.Status }, Version = decided.Version,
                 DecidedBy = decided.DecidedBy, DecisionReason = decided.Reason };
             batches[decided.Id] = next; DecisionWrites++; DecisionAttempts++;

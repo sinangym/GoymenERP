@@ -272,29 +272,46 @@ public sealed partial class PurchasingService
         {
             // Native terminal 409 receipts are committed before being answered. Authority/provider failures
             // still abort the owned operation, and replay uses the same fresh read/commit boundary.
-            PurchasingServiceException? terminal = null;
-            try
+            var replayOnly = false;
+            while (true)
             {
-                var result = await batches.ExecuteRejectionGuardedAsync<PurchaseGoodsReceiptBatchResponseV1?>(async token =>
+                PurchasingServiceException? terminal = null;
+                try
                 {
-                    try
+                    var result = await batches.ExecuteRejectionGuardedAsync<PurchaseGoodsReceiptBatchResponseV1?>(async token =>
                     {
-                        return await DecideGoodsReceiptBatchCoreAsync(scope, permission, batches, orderId, batchId, request,
-                            metadata, command, approve, expectedVersion, token);
-                    }
-                    catch (PurchasingServiceException exception) when (exception.Status == 409)
-                    {
-                        terminal = exception;
-                        return null;
-                    }
-                }, token => RequireStillAsync(scope, permission, token), cancellationToken);
-                if (terminal is not null) throw terminal;
-                return result ?? throw BatchUnavailable();
-            }
-            catch (PurchasingStoreException exception)
-            {
-                await RequireStillAsync(scope, permission, cancellationToken);
-                throw Store(exception);
+                        try
+                        {
+                            if (replayOnly)
+                            {
+                                var replayHash = PurchasingRequestHash.Compute(command, batchId, new { orderId, request });
+                                var replay = await FindBatchReplayAsync(scope, permission, batches, Envelope(scope, metadata, permission!), replayHash, command, token);
+                                if (replay is null) throw new PurchasingServiceException(409, PurchasingProblemCodesV1.ConcurrentChange);
+                                return await BatchReplayedAsync(scope, permission, batches, orderId, replay, token, captureRecordedTerminal: true);
+                            }
+                            return await DecideGoodsReceiptBatchCoreAsync(scope, permission, batches, orderId, batchId, request,
+                                metadata, command, approve, expectedVersion, token);
+                        }
+                        catch (RecordedBatchTerminal exception)
+                        {
+                            terminal = exception.Response;
+                            return null;
+                        }
+                    }, token => RequireStillAsync(scope, permission, token), cancellationToken);
+                    if (terminal is not null) throw terminal;
+                    return result ?? throw BatchUnavailable();
+                }
+                catch (BatchReplayAfterAbort) when (!replayOnly)
+                {
+                    // The failed save may have left an audit draft. Its owned transaction must abort
+                    // before a different attempt's receipt is read in a new, read-only boundary.
+                    replayOnly = true;
+                }
+                catch (PurchasingStoreException exception)
+                {
+                    await RequireStillAsync(scope, permission, cancellationToken);
+                    throw Store(exception);
+                }
             }
         }
         return await DecideGoodsReceiptBatchCoreAsync(scope, permission, batches, orderId, batchId, request, metadata,
@@ -308,7 +325,7 @@ public sealed partial class PurchasingService
         var requestHash = PurchasingRequestHash.Compute(command, batchId, new { orderId, request });
         var envelope = Envelope(scope, metadata, permission!);
         var replay = await FindBatchReplayAsync(scope, permission, batches, envelope, requestHash, command, cancellationToken);
-        if (replay is not null) return await BatchReplayedAsync(scope, permission, batches, orderId, replay, cancellationToken);
+        if (replay is not null) return await BatchReplayedAsync(scope, permission, batches, orderId, replay, cancellationToken, captureRecordedTerminal: !approve);
 
         var stored = await GuardedAsync(scope, permission, () => batches.FindAsync(orderId, batchId, cancellationToken), cancellationToken)
             ?? throw new PurchasingServiceException(404, "not_found");
@@ -323,18 +340,18 @@ public sealed partial class PurchasingService
         catch (PurchasingVersionConflictException)
         {
             return await BatchTerminalAsync(scope, permission, batches, orderId, envelope, requestHash, command,
-                new(409, PurchasingProblemCodesV1.VersionConflict, [new("expectedVersion", PurchasingProblemCodesV1.VersionConflict)]), cancellationToken);
+                new(409, PurchasingProblemCodesV1.VersionConflict, [new("expectedVersion", PurchasingProblemCodesV1.VersionConflict)]), cancellationToken, captureRecordedTerminal: !approve);
         }
         catch (PurchasingRuleException exception) when (exception.Code == PurchaseGoodsReceiptBatchRuleCodes.NotPending)
         {
             return await BatchTerminalAsync(scope, permission, batches, orderId, envelope, requestHash, command,
-                new(409, exception.Code, [new("status", exception.Code)]), cancellationToken);
+                new(409, exception.Code, [new("status", exception.Code)]), cancellationToken, captureRecordedTerminal: !approve);
         }
         catch (PurchasingRuleException exception) when (exception.Code is PurchaseGoodsReceiptBatchRuleCodes.SameActor
                                                              or PurchaseGoodsReceiptBatchRuleCodes.MakerUnknown)
         {
             return await BatchTerminalAsync(scope, permission, batches, orderId, envelope, requestHash, command,
-                new(409, exception.Code, [new("actor", exception.Code)]), cancellationToken);
+                new(409, exception.Code, [new("actor", exception.Code)]), cancellationToken, captureRecordedTerminal: !approve);
         }
         catch (PurchasingRuleException exception)
         {
@@ -374,7 +391,8 @@ public sealed partial class PurchasingService
         {
             await RequireStillAsync(scope, permission, cancellationToken);
             var won = await FindBatchReplayAsync(scope, permission, batches, envelope, requestHash, command, cancellationToken);
-            return won is null ? throw Store(exception) : await BatchReplayedAsync(scope, permission, batches, orderId, won, cancellationToken);
+            if (!approve && won is not null) throw new BatchReplayAfterAbort();
+            return won is null ? throw Store(exception) : await BatchReplayedAsync(scope, permission, batches, orderId, won, cancellationToken, captureRecordedTerminal: !approve);
         }
         catch (PurchasingStoreException exception)
         {
@@ -684,12 +702,21 @@ public sealed partial class PurchasingService
         }
     }
 
+    private sealed class RecordedBatchTerminal(PurchasingServiceException response) : Exception
+    {
+        public PurchasingServiceException Response => response;
+    }
+
+    private sealed class BatchReplayAfterAbort : Exception { }
+
     private async Task<PurchaseGoodsReceiptBatchResponseV1> BatchReplayedAsync(Scope scope, string? permission, IPurchaseGoodsReceiptBatchStore batches,
-        Guid orderId, PurchaseGoodsReceiptBatchReplay replay, CancellationToken cancellationToken)
+        Guid orderId, PurchaseGoodsReceiptBatchReplay replay, CancellationToken cancellationToken, bool captureRecordedTerminal = false)
     {
         if (replay.Refusal is { } refusal)
         {
-            throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true, originalCorrelationId: replay.OriginalCorrelationId, detail: refusal.Detail);
+            var response = new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true, originalCorrelationId: replay.OriginalCorrelationId, detail: refusal.Detail);
+            if (captureRecordedTerminal) throw new RecordedBatchTerminal(response);
+            throw response;
         }
 
         if (replay.BatchId is not { } batchId) throw new PurchasingServiceException(503, "service_unavailable");
@@ -701,24 +728,28 @@ public sealed partial class PurchasingService
     /// <summary>§7/§8: a terminal refusal is recorded under the key before it is answered; a same-key winner is answered as a replay.</summary>
     private async Task<PurchaseGoodsReceiptBatchResponseV1> BatchTerminalAsync(Scope scope, string? permission, IPurchaseGoodsReceiptBatchStore batches,
         Guid orderId, PurchasingWriteEnvelope envelope, string requestHash, string commandName, PurchasingTerminalRefusal refusal,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool captureRecordedTerminal = false)
     {
         await RequireStillAsync(scope, permission, cancellationToken);
+        var terminalRecorded = false;
         try
         {
             await batches.RecordRefusalAsync(envelope, requestHash, commandName, refusal, cancellationToken);
+            terminalRecorded = true;
         }
         catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.ConcurrentChange)
         {
             var won = await FindBatchReplayAsync(scope, permission, batches, envelope, requestHash, commandName, cancellationToken);
-            if (won is not null) return await BatchReplayedAsync(scope, permission, batches, orderId, won, cancellationToken);
+            if (won is not null) return await BatchReplayedAsync(scope, permission, batches, orderId, won, cancellationToken, captureRecordedTerminal);
         }
         catch (PurchasingStoreException exception)
         {
             throw Store(exception);
         }
 
-        throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, detail: refusal.Detail);
+        var response = new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, detail: refusal.Detail);
+        if (captureRecordedTerminal && terminalRecorded) throw new RecordedBatchTerminal(response);
+        throw response;
     }
 
     private static StoredPurchaseGoodsReceiptBatch RequireOwnBatch(Scope scope, Guid orderId, StoredPurchaseGoodsReceiptBatch stored) =>
