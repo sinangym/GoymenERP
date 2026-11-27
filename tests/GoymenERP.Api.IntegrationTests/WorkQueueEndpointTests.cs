@@ -6,6 +6,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Work;
+using GoymenERP.Modules.Inventory.Infrastructure.WorkInbox;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -141,6 +142,18 @@ public sealed class WorkQueueEndpointTests(GoymenErpApiFactory factory)
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<NativeApprovalQueueReadQueryV1>());
         Assert.All(scope.ServiceProvider.GetServices<INativeApprovalQueueAdapterV1>(), source =>
             Assert.True(NativeApprovalQueueRulesV1.IsValidKind(source.Module, source.Kind)));
+    }
+
+    [Fact]
+    public void Production_stock_count_inbox_has_one_owner_purpose_and_keeps_the_native_read_adapter()
+    {
+        using var scope = factory.Services.CreateScope();
+        var sources = scope.ServiceProvider.GetServices<IWorkInboxSourceV1>();
+        Assert.IsType<InventoryStockCountWorkInboxSourceV1>(
+            Assert.Single(sources, source => source.Kind == NativeApprovalKindsV1.InventoryStockCount));
+        Assert.IsType<InventoryStockCountPendingApprovalAdapterV1>(Assert.Single(
+            scope.ServiceProvider.GetServices<INativeApprovalReadAdapterV1>(),
+            source => source.Kind == NativeApprovalKindsV1.InventoryStockCount));
     }
 
     private WebApplicationFactory<Program> Host(
