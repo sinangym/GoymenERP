@@ -205,9 +205,10 @@ describe('existing role selection preview and explicit native commands', () => {
     const calls = installFetch({ capabilities: selectionCapabilities, respond: (url, init) => {
       if (init?.method === 'POST') return json({ id: assignmentId, version: '1', status: 'Active', roleAssignmentId: assignmentId }, 201)
       if (url.endsWith('/identity/access/users')) return json([userSummary(USER_ALICE, 'SENTETIK hedef'), userSummary(USER_BORA, 'SENTETIK başka')])
-      if (url.endsWith(`/identity/access/users/${USER_BORA}`)) return json(userDetail(USER_BORA, 'SENTETIK başka', { assignments: [], effectivePermissions: [] }))
+      if (url.endsWith(`/identity/access/users/${USER_BORA}`)) return json(userDetail(USER_BORA, 'SENTETIK başka', { effectivePermissions: [] }))
       if (url.endsWith(`/identity/access/users/${USER_ALICE}`) && (init?.headers as Record<string, string>)['X-Company-Id'] === COMPANY_B)
-        return json(userDetail(USER_ALICE, 'SENTETIK hedef', { assignments: [], effectivePermissions: [] }))
+        return json(userDetail(USER_ALICE, 'SENTETIK hedef', { assignments: [assignment(ROLE_OPERATOR, 'SENTETIK', 'SENTETIK rol',
+          { scopes: [{ type: 'Company', id: COMPANY_B }] })], effectivePermissions: [] }))
       return selectionResponse(url)
     } })
     renderAtSelected(); const user = await chooseRoleBasket()
