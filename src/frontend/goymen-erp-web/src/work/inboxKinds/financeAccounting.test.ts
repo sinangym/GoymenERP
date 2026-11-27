@@ -88,3 +88,9 @@ it('maps the expense approval only to its standalone purpose while retaining nat
  expect(FINANCE_INBOX_KINDS.filter(row=>row.kind==='finance.expense-payment.v1')).toEqual([{kind:'finance.expense-payment.v1',module:'finance',capability:'finance.expense-payment.work-decision'}])
  expect(inboxPermissionText('finance.expense-payment.approve')).not.toBe('finance.expense-payment.approve');expect(inboxRuleText('finance.expense-payment-approval-required')).not.toBeNull()
 })
+
+
+it.each(['finance.bank-credit-limit.v1','finance.opening-balance.v1','finance.opening-balance-reversal.v1'])('maps only the actual standalone decision authority for %s',kind=>{
+ expect(FINANCE_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'finance',capability:kind.replace('.v1','.work-decision')}])
+ expect(inboxPermissionText(kind==='finance.bank-credit-limit.v1'?'finance.credits.approve':'finance.opening-balances.approve')).not.toContain('.approve')
+})

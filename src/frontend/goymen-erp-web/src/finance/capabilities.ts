@@ -189,6 +189,10 @@ export const partyLedgerPath = (
 
 /** WP8: owner-published approval-only routes; declared by Finance, rendered by Work. No read/report grant is implied. */
 export const FINANCE_WORK_DECISION_CAPABILITIES = [
+  ['finance.bank-credit-limit.work-decision', '/onaylarim/finance.bank-credit-limit.v1/:approvalId'],
+  ['finance.opening-balance.work-decision', '/onaylarim/finance.opening-balance.v1/:approvalId'],
+  ['finance.opening-balance-reversal.work-decision', '/onaylarim/finance.opening-balance-reversal.v1/:approvalId'],
+
   ['finance.expense-payment.work-decision', '/onaylarim/finance.expense-payment.v1/:approvalId'],
   ['finance.manual-bank-payment-reversal.work-decision', '/onaylarim/finance.manual-bank-payment-reversal.v1/:approvalId'],
   ['finance.manual-receipt-reversal.work-decision', '/onaylarim/finance.manual-receipt-reversal.v1/:approvalId'],

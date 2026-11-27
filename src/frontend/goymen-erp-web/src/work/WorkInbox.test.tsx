@@ -684,3 +684,35 @@ it.each([{granted:['finance.expense-payment.work-decision'],visible:true},{grant
  if(visible){await screen.findByTestId('work-inbox-item');const card=cardOf(kind);expect(within(card).getByRole('link').getAttribute('href')).toBe(link);await userEvent.setup().click(within(card).getByRole('button',{name:T.explanationToggle}));expect(within(card).getByText('SENTETIK expense bank')).toBeTruthy();expect(api.inboxReads()).toHaveLength(1)}
  else{await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(api.inboxReads()).toHaveLength(0)}
 })
+
+
+it.each(['finance.bank-credit-limit.v1','finance.opening-balance.v1','finance.opening-balance-reversal.v1'])('opens %s from its purpose card while retaining native related record identities',async kind=>{
+ const capability=kind.replace('.v1','.work-decision'),permission=kind==='finance.bank-credit-limit.v1'?'finance.credits.approve':'finance.opening-balances.approve'
+ const link=`/onaylarim/${kind}/${LEGACY_ID}`
+ const item={...limitItem,kind,itemId:LEGACY_ID,documentLabel:'SENTETIK native Finance decision',link,awaitingPermission:permission,ruleVersion:RV(kind),
+  explanation:{rules:[{ruleCode:kind==='finance.bank-credit-limit.v1'?'finance.bank-credit-limit-approval-required':kind==='finance.opening-balance.v1'?'finance.opening-balance-approval-required':'finance.opening-balance-reversal-approval-required',threshold:null,actual:'1250.5',deviation:null,unit:null}],
+   references:[{role:kind==='finance.bank-credit-limit.v1'?'credit-account':'company-account',recordId:PAYMENT_ID,label:'SENTETIK native related record',link:null}]}}
+ const api=installFetch({granted:[capability],inbox:()=>json(inbox({items:[item],sources:[src('finance',kind,permission,'BusinessDays')]}))})
+ await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-item');const card=cardOf(kind)
+ expect(within(card).getByRole('link').getAttribute('href')).toBe(link)
+ await userEvent.setup().click(within(card).getByRole('button',{name:T.explanationToggle}))
+ expect(within(card).getByText('SENTETIK native related record')).toBeTruthy();expect(within(card).getAllByRole('link')).toHaveLength(1)
+ expect(api.inboxReads()).toHaveLength(1)
+})
+it.each(['finance.bank-credit-limit.v1','finance.opening-balance.v1','finance.opening-balance-reversal.v1'])('does not open the decision for %s through only its native control capability',async kind=>{
+ const permission=kind==='finance.bank-credit-limit.v1'?'finance.credits.approve':'finance.opening-balances.approve'
+ const api=installFetch({granted:[kind==='finance.bank-credit-limit.v1'?FINANCE_CAPABILITY.creditsApprove:FINANCE_CAPABILITY.openingBalancesApprove],
+  inbox:()=>json(inbox({items:[{...limitItem,kind,itemId:LEGACY_ID,link:`/onaylarim/${kind}/${LEGACY_ID}`,awaitingPermission:permission,ruleVersion:RV(kind)}],sources:[src('finance',kind,permission,'BusinessDays')]}))})
+ await renderAt('/onaylarim/kuyruk')
+ // CreditsApprove still owns other inbox kinds; returned owner cards do not grant the standalone decision route.
+ if(kind==='finance.bank-credit-limit.v1'){
+  await screen.findByTestId('work-inbox-item')
+  await userEvent.setup().click(within(cardOf(kind)).getByRole('link'))
+  await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+  expect(vi.mocked(globalThis.fetch).mock.calls.some(([url])=>String(url).includes(`/work/decisions/${kind}/`))).toBe(false)
+  expect(api.inboxReads()).toHaveLength(1)
+ }else{
+  await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+  expect(api.inboxReads()).toHaveLength(0)
+ }
+})

@@ -29,9 +29,9 @@ function preview(kind:NativeFinanceDecisionKind) {
 const input={expectedVersion:'1',approve:true,reason:null,delegationId:null}
 afterEach(()=>{cleanup();vi.unstubAllGlobals();sessionStorage.clear()})
 describe('three native Finance Work human contracts',()=>{
-  it.each(kinds)('keeps the candidate separate from the mounted set and native fields lossless: %s',kind=>{
+  it.each(kinds)('publishes each native purpose once with lossless owner fields: %s',kind=>{
     const value=preview(kind);expect(decodeWorkDecisionPreview(value,COMPANY_A,kind,id)).toEqual(value)
-    expect(WORK_DECISION_KINDS).toHaveLength(36);expect(WORK_DECISION_KINDS.some(k=>k===String(kind))).toBe(false)
+    expect(WORK_DECISION_KINDS).toHaveLength(39);expect(WORK_DECISION_KINDS.filter(k=>k===kind)).toEqual([kind])
   })
   it.each(kinds)('rejects malformed, cross-kind and foreign evidence: %s',kind=>{
     const value=preview(kind)

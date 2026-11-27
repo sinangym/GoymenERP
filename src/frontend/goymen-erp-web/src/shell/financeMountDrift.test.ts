@@ -325,3 +325,20 @@ it('mounts one expense approval purpose without opening its native workspace or 
  expect(FINANCE_CAPABILITY.expensePaymentsApprove).toBe('finance.expense-payments.approve')
  expect(financeRoutes.some(route=>route.path===FINANCE_ROUTE.expensePayments.slice(1))).toBe(true)
 })
+
+
+it.each([
+ [CAPABILITY.financeBankCreditLimitWorkDecision,'finance.bank-credit-limit.v1'],
+ [CAPABILITY.financeOpeningBalanceWorkDecision,'finance.opening-balance.v1'],
+ [CAPABILITY.financeOpeningBalanceReversalWorkDecision,'finance.opening-balance-reversal.v1'],
+] as const)('mounts the native Finance purpose %s without changing native Finance routes', (capability,kind)=>{
+ const path=`/onaylarim/${kind}/:approvalId`
+ expect(capability).toBe(kind.replace('.v1','.work-decision'));expect(CAPABILITY_ROUTE[capability]).toBe(path);expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
+ expect(FINANCE_WORK_DECISION_CAPABILITIES.filter(([id])=>id===capability)).toEqual([[capability,path]])
+ expect(WORK_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'finance',capability}])
+ const mounted=workRoutes.filter(route=>route.path===path.slice(1));expect(mounted).toHaveLength(1)
+ expect(matchRoutes(shellRoutes,path.replace(':approvalId','cccccccc-0000-4000-8000-0000000000f1'))?.at(-1)?.route).toBe(mounted[0])
+ expect(FINANCE_CAPABILITY.creditsApprove).toBe('finance.credits.approve');expect(FINANCE_CAPABILITY.openingBalancesApprove).toBe('finance.opening-balances.approve')
+ expect(financeRoutes.some(route=>route.path===FINANCE_ROUTE.creditsWorkspace.slice(1))).toBe(true)
+ expect(financeRoutes.some(route=>route.path===FINANCE_ROUTE.openingBalancesList.slice(1))).toBe(true)
+})
