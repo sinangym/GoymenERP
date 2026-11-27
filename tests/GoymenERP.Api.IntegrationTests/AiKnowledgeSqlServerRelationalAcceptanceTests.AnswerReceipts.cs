@@ -8,6 +8,8 @@ using GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -133,6 +135,25 @@ public sealed partial class AiKnowledgeSqlServerRelationalAcceptanceTests
             db.ChangeTracker.Clear();
             var sql = $"INSERT INTO ai.AnswerReceiptIdentities(CompanyId,AnswerId,ActorId,CorrelationId) VALUES('{TestCompanyIds.CompanyB:D}','{receipt.AnswerId:D}','SENTETIK','SENTETIK')";
             Assert.Equal(547, Sql(await Assert.ThrowsAnyAsync<Exception>(() => ExecAsync(connection, sql))).Number);
+        });
+    }
+
+    [SqlServerFact]
+    public async Task Answer_receipt_Down_allows_empty_tables_and_refuses_52312_while_receipt_or_separate_identity_exists()
+    {
+        await WithDatabaseAsync(async connection =>
+        {
+            await using var db = Db(connection, TestCompanyIds.CompanyA);
+            var migrations = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
+            Assert.EndsWith("_AddAiAnswerReceipts", migrations[^1]);
+            var previous = migrations[^2]; var migrator = db.GetService<IMigrator>();
+            await migrator.MigrateAsync(previous);
+            await migrator.MigrateAsync();
+            var receipt = AnswerReceipt();
+            Assert.True(await AnswerStore(db, receipt.CompanyId).TryAddAsync(receipt, AnswerIdentity(receipt), _ => Task.CompletedTask));
+            var failure = Sql(await Assert.ThrowsAnyAsync<Exception>(() => migrator.MigrateAsync(previous)));
+            Assert.Equal(52312, failure.Number);
+            Assert.Equal(1, await db.AnswerReceipts.CountAsync()); Assert.Equal(1, await db.AnswerReceiptIdentities.CountAsync());
         });
     }
 

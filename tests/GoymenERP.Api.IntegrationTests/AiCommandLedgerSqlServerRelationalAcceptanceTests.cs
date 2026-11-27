@@ -105,8 +105,10 @@ public sealed partial class AiKnowledgeSqlServerRelationalAcceptanceTests
             await using var db = Db(connectionString, TestCompanyIds.CompanyA);
             var migrator = db.GetService<IMigrator>();
             var migrations = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.EndsWith("_AddAiCommandLedger", migrations[^1]);
-            var beforeLedger = migrations[^2];
+            var ledgerMigration = Assert.Single(migrations, id => id.EndsWith("_AddAiCommandLedger", StringComparison.Ordinal));
+            var ledgerIndex = Array.IndexOf(migrations, ledgerMigration);
+            Assert.True(ledgerIndex > 0);
+            var beforeLedger = migrations[ledgerIndex - 1];
             await migrator.MigrateAsync(beforeLedger);
             await migrator.MigrateAsync();
             var record = CommandRecord();

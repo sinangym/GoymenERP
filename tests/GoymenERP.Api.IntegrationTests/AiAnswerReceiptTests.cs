@@ -6,8 +6,11 @@ using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.AiKnowledge.Domain;
 using GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence;
+using GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.Migrations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -88,7 +91,16 @@ public sealed class AiAnswerReceiptTests
         Assert.NotNull(identity.FindProperty("ActorId")); Assert.NotNull(identity.FindProperty("CorrelationId"));
         Assert.Contains(identity.GetForeignKeys(), fk => fk.PrincipalEntityType.ClrType == typeof(AiAnswerReceiptRow)
             && fk.Properties.Select(x => x.Name).SequenceEqual(["CompanyId", "AnswerId"]));
-        Assert.Contains("DATEADD(day,90", Assert.Single(receipt.GetCheckConstraints()).Sql);
+        Assert.Equal(AiKnowledgeDbContext.AnswerReceiptCheck, Assert.Single(receipt.GetCheckConstraints()).Sql);
+        Assert.Equal(AiKnowledgeDbContext.AnswerIdentityCheck, Assert.Single(identity.GetCheckConstraints()).Sql);
+        Assert.Contains(receipt.GetIndexes(), index => index.Properties.Select(x => x.Name).SequenceEqual(["CompanyId", "RetainUntilUtc", "AnswerId"]));
+        Assert.False(db.Database.HasPendingModelChanges());
+        Assert.EndsWith("_AddAiAnswerReceipts", db.Database.GetMigrations().Last());
+        var migration = new AddAiAnswerReceipts();
+        Assert.Equal(new[] { "AnswerReceipts", "AnswerReceiptIdentities" }, migration.UpOperations.OfType<CreateTableOperation>().Select(x => x.Name));
+        Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
+        Assert.Contains("THROW 52312", Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
     }
 
     [Fact]

@@ -22,6 +22,83 @@ namespace GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiAnswerReceiptIdentityRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AnswerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("CompanyId", "AnswerId");
+
+                    b.ToTable("AnswerReceiptIdentities", "ai", t =>
+                        {
+                            t.HasCheckConstraint("CK_AiAnswerReceiptIdentities_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [AnswerId] <> '00000000-0000-0000-0000-000000000000' AND LEN(LTRIM(RTRIM([ActorId]))) > 0 AND LEN(LTRIM(RTRIM([CorrelationId]))) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiAnswerReceiptRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AnswerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AnswerSha256")
+                        .IsRequired()
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .IsFixedLength();
+
+                    b.Property<string>("CitationsSha256")
+                        .IsRequired()
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .IsFixedLength();
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Feature")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ModelDeployment")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("PolicyVersion")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("RetainUntilUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("CompanyId", "AnswerId");
+
+                    b.HasIndex("CompanyId", "RetainUntilUtc", "AnswerId");
+
+                    b.ToTable("AnswerReceipts", "ai", t =>
+                        {
+                            t.HasCheckConstraint("CK_AiAnswerReceipts_Evidence", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [AnswerId] <> '00000000-0000-0000-0000-000000000000' AND (DATALENGTH([AnswerSha256]) = 64 AND [AnswerSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%') AND (DATALENGTH([CitationsSha256]) = 64 AND [CitationsSha256] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%') AND [Feature] = 'Panel' AND LEN(LTRIM(RTRIM([ModelDeployment]))) > 0 AND LEN(LTRIM(RTRIM([PolicyVersion]))) > 0 AND DATEPART(TZOFFSET,[CreatedAtUtc]) = 0 AND DATEPART(TZOFFSET,[RetainUntilUtc]) = 0 AND [RetainUntilUtc] = DATEADD(day,90,[CreatedAtUtc])");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiCommandEventRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -438,6 +515,24 @@ namespace GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.Migrations
                         {
                             t.ExcludeFromMigrations();
                         });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiAnswerReceiptIdentityRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiAnswerReceiptRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "AnswerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiAnswerReceiptRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiKnowledgeCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiCommandEventRow", b =>
