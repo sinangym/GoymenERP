@@ -905,7 +905,13 @@
           "01697d4f7",
           "8e4d4cb12",
           "0577612d4",
-          "345c427b6"
+          "345c427b6",
+          "5f60d107e",
+          "0d2324dc6",
+          "97d8321a2",
+          "9edcbed9f",
+          "5a1644b2a",
+          "119191f70"
         ],
         "local_checks": {
           "Finance.UnitTests": "1898 passed, 0 skipped; includes 22 new owner evidence tests",
@@ -921,9 +927,10 @@
           "existing admission/allocation/release commands in SQL source"
         ],
         "remaining": [
-          "Subcontract service invoice proof family is not composed yet; remains NoSource",
-          "Added SQL compilation and actual SQL execution",
-          "Native browser acceptance, train pins, full hosted CI and two independent K3 reviews"
+          "Run the corrected closure negative sources (58 closure cases expected) and preserve the prior83-run failure evidence.",
+          "Historical cancelled Logistics/released Inventory reservation proof is still Unreadable when lawful owner release evidence is unavailable.",
+          "Actual SQL and native human close for normal and two-way subcontract journeys; synthetic owner tests are not end-to-end acceptance.",
+          "Real browser, train pins/full CI and two independent K3 reviews."
         ],
         "sql": "NOT_RUN",
         "browser": "NOT_RUN",
@@ -943,7 +950,36 @@
           "development_duration": "NOT_SEPARATELY_MEASURED",
           "test_time": "Finance full suite ~5s excluding build",
           "rework": "Source beneficiary/global allocation proof strengthened; two compile-time contract mismatches corrected before successful build"
-        }
+        },
+        "increments": [
+          {
+            "source_commit": "5f60d107e",
+            "agent_source_commit": "7246f938fd7b33ed6419989491418c6136a2fc45",
+            "scope": "Subcontract source, billing and financial composition through Logistics, customer-owned Inventory and existing native Sales/Finance owner proofs. Physical kg is separate from service invoice net kg.",
+            "local_checks": "Integration build exit0, 0 errors/warnings and 41 host cases passed/0 skipped on agent7246 source; later historical cancellation increment has its own evidence.",
+            "sql": "One native owner-read SQL source plus existing cancellation assertions compiled, NOT_RUN."
+          },
+          {
+            "source_commit": "9edcbed9f",
+            "source_commits": [
+              "0d2324dc6",
+              "97d8321a2",
+              "9edcbed9f"
+            ],
+            "agent_source_commit": "bc871d1debe5ae779ab33bc099f12b5efdaa85e8",
+            "scope": "Finance OfficiallyReversed read evidence, separate from payment/Settled; native cancellation/admission receipts, original installment reversals and released allocations must agree.",
+            "local_checks": "1934/1934 Finance unit passed, 0 skipped; integration assembly compiled two native SQL sources. Root Finance and Finance unit source trees match agentbc871d1de.",
+            "sql": "NOT_RUN",
+            "limits": "Return-credit/reduction plus cancellation combination remains Unknown; no new money writer, schema or grants."
+          },
+          {
+            "source_commit": "5a1644b2a",
+            "agent_source_commit": "e21c8ad4b0c821268d0e082ad139344a9d947e9c",
+            "scope": "Retained historical cancelled invoice scope/original version and native outbox proof; active replacement requires Settled, cancelled original requires OfficiallyReversed.",
+            "local_checks": "Root integration assembly compiled; targeted combined run83:82 passed,1 failed,0 skipped. Wrong-scope fixture produces a new Guid per observation; diagnosis/fix pending, not accepted. Test fix119191f70 retains all original axis assertions, uses one stable wrong scope, and adds two changing-proof rejection cases. Rerun pending; prior failed log retained.",
+            "sql": "Existing normal and subcontract cancellation+replacement source assertions compiled; NOT_RUN."
+          }
+        ]
       }
     },
     {
@@ -1925,7 +1961,8 @@
           "finance.cash-account-reactivation.v1",
           "sales.order-draft.v1",
           "sales.invoice.v1",
-          "purchasing.request.v1"
+          "purchasing.request.v1",
+          "sales.subcontract-invoice.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -2021,12 +2058,48 @@
               "tsc": "exit 0",
               "scoped_lint": "exit 0; 0 warnings"
             },
-            "backend_checks": "Purchasing source link/provider and three C# test sources changed; compilation/tests for this increment NOT_RUN. Previous native backend1241/host27 evidence is for84b4d2343, not new declarations.",
+            "backend_checks": "Root9edcbed9f full Purchasing unit1241/1241 passed,0 skipped, including changed purpose/source link and provider declarations. API CSharp sources compiled at5a1644b2a. Pin-dependent actual registry/HTTP tests remain deferred; no runtime shell acceptance claimed.",
             "new_permissions": [],
             "remaining": [
               "Changed C# unit/declaration checks",
               "Real HTTP/browser, SQL/full CI/two K3 and train pins"
             ]
+          },
+          {
+            "source_commit": "71a74fe31",
+            "scope": "Purchasing approval replay accepts only a strictly identified native current Rejected projection; fresh wrong state and mismatched replay receipt remain Unknown.",
+            "local_checks": "6/6 frontend transport cases passed,0 skipped; tsc/scoped lint exit0 at agentd1d0a5a1f.",
+            "sql": "Root6549a5284 adds native approve-then-reject-then-original-key replay source; compiled in integration assembly, NOT_RUN."
+          },
+          {
+            "source_commit": "14d832b99",
+            "scope": "Ordinary Sales invoice native guarded decision: owner reads/staging and SaveChanges/precommit authority/price/delegation fence, own clean transaction, no postcommit refusal. Replay price disclosure is freshly checked.",
+            "local_checks": "Root9edcbed9f Sales unit2450/2450 passed,0 skipped including3 new cases. Native SQL late-loss rollback/replay source compiled in subsequent5a1644b2a integration assembly; NOT_RUN.",
+            "remaining": [
+              "Actual SQL and user/HTTP/browser acceptance; pins/full CI/two K3."
+            ]
+          },
+          {
+            "source_commit": "27bce08f2",
+            "agent_source_commit": "702dd5e05906429fbfe55d6f4331967b4660cd31",
+            "scope": "Subcontract invoice purpose decision/read/shell route reuses native lifecycle, optional max4000 reason, immutable outcome replay and approve+price permission. Native guarded lifecycle/refusal store rechecks before commit.",
+            "local_checks": "5 affected frontend files47/47 passed,0 skipped; tsc/scoped lint exit0/0 warnings. CSharp increment compilation/tests NOT_RUN.",
+            "sql": "New native lifecycle/attempt/audit rollback source written; NOT_RUN.",
+            "remaining": [
+              "Changed CSharp unit/host/shell checks and SQL execution.",
+              "Guarded ambient transaction refusal and ordinary current-state invoice replay followups.",
+              "Remaining owner kinds and all64 flow acceptance; no kind count is a flow completion count."
+            ]
+          },
+          {
+            "source_commit": "a02def7b2",
+            "source_commits": [
+              "a02def7b2",
+              "ef8e363c5"
+            ],
+            "scope": "Ordinary invoice approval current replay accepts only native Finalized/OfficiallyCancelled with matching receipt; subcontract guarded commands reject ambient/borrowed transactions.",
+            "local_checks": "9/9 transport frontend cases passed,0 skipped; tsc/lint exit0/0 warnings at a760a2829 agent source. Native ambient/borrowed SQL sources and lifecycle unit increment compilation NOT_RUN.",
+            "sql": "Three subcontract guard SQL facts total, NOT_RUN; no waiver of actual transaction acceptance."
           }
         ],
         "source_commits": [
@@ -2036,7 +2109,12 @@
           "e6acbdaca",
           "f4ccda30f",
           "25835fe7a",
-          "4dc4136b3"
+          "4dc4136b3",
+          "71a74fe31",
+          "14d832b99",
+          "27bce08f2",
+          "a02def7b2",
+          "ef8e363c5"
         ]
       }
     },
@@ -3029,7 +3107,30 @@
         "hosted_ci": "NOT_RUN",
         "independent_review": "PENDING",
         "integration_pins": "DEFERRED_TO_TRAIN_CLOSE",
-        "migration": "20261126181654_AddLeasingInstallmentVat; Down THROW 52360"
+        "migration": "20261126181654_AddLeasingInstallmentVat; Down THROW 52360",
+        "increments": [
+          {
+            "source_commit": "d28d94520",
+            "source_commits": [
+              "89296ec85",
+              "d28d94520"
+            ],
+            "agent_source_commit": "7cb0b38996cf1bce1e6164a97320a5715067a218",
+            "scope": "FNS-D124 approved Cash kind source plan and Spot/Installment maturity validation. Revolving/Overdraft/Card retain actual source movements without invented installments.",
+            "reuse": [
+              "FinanceCreditAccountProfilePolicy",
+              "native propose/approve/reject/replay and existing CreditAccount fixtures"
+            ],
+            "local_checks": "Finance unit1951/1951 passed,0 skipped at agent7cb; includes17 new cases. API compilation running, actual SQL NOT_RUN. Initial missing prerequisite field and immutable-row fixture failures retained, corrected without changing production guards.",
+            "sql": "One new native SQL fact;17 existing fixture-dependent SQL facts remain NOT_RUN.",
+            "remaining": [
+              "ForeignCurrencyIndexed currency/optional export reference fields.",
+              "NonCash risk, commission period/date and reimbursement proof/bank movement integration.",
+              "FNS-D126 document cross-credit uniqueness and explicit lawful release semantics; user question pending.",
+              "Factoring deduction/maturity fields; full group real SQL/browser/CI/K3 acceptance."
+            ]
+          }
+        ]
       }
     },
     {

@@ -304,7 +304,7 @@
         "Eski test sonucu yeni kullanım kabulü değildir"
       ],
       "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
-      "adaptations": "SAT-D478/479 owner composition preserves all axes and native close. Normal invoices use actual claims/settlement; subcontract remains NoSource pending its own proof family.",
+      "adaptations": "SAT-D478/479 preserves all axes and native close. Normal and subcontract owner composition exists; historical cancellations require separate original Finance reversal proof. Source/read tests are not native end-to-end acceptance.",
       "limitations": [
         "NoSource ve Unreadable sıfır/tamam sayılmaz; owner axes bağlı değilse kapanış açılamaz.",
         "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
