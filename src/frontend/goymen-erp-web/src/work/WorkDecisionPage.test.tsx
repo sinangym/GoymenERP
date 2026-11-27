@@ -2673,7 +2673,7 @@ describe('normal journal receipt context and late-read fences',()=>{
 // Paired routes use the actual shell router, auth boundary and standalone capability.
 function mountAccountingPeriod(kind: AccountingPeriodWorkKind,client?:QueryClient){ return mount(`/onaylarim/${kind}/${id}`,true,client) }
 describe('Work period paired native decision',()=>{
- it.each([openingPeriodKind,reopeningPeriodKind])('shows complete native human facts without private digests or general reads: %s',async kind=>{
+ it.each([openingPeriodKind,reopeningPeriodKind] as const)('shows complete native human facts without private digests or general reads: %s',async kind=>{
   const value=kind===openingPeriodKind?accountingOpeningFixture(COMPANY_A,id):accountingReopeningFixture(COMPANY_A,id)
   const path=`/work/decisions/${kind}/${id}`
   const calls=installFetch({capabilities:[ACCOUNTING_PERIOD_WORK_CAPABILITY[kind]],respond:(url,init)=>url.includes(path)?init?.method==='POST'?json({companyId:COMPANY_A,kind,itemId:id,state:'Approved',replayed:false,originalCorrelationId:'SENTETIK period'}):json(value):undefined})
@@ -2702,7 +2702,7 @@ describe('Work period paired native decision',()=>{
   expect(screen.getByRole('button',{name:T.approve}).matches(':disabled')).toBe(true)
   expect(screen.queryByRole('button',{name:T.reject})).toBeNull();expect(calls.some(c=>c.method==='POST')).toBe(false)
  })
- it.each([openingPeriodKind,reopeningPeriodKind])('reconciles the frozen original versions/key across unknown remount without another GET: %s',async kind=>{
+ it.each([openingPeriodKind,reopeningPeriodKind] as const)('reconciles the frozen original versions/key across unknown remount without another GET: %s',async kind=>{
   Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK period session'})
   const value=kind===openingPeriodKind?accountingOpeningFixture(COMPANY_A,id,'9007199254740993'):accountingReopeningFixture(COMPANY_A,id,'9007199254740993')
   const path=`/work/decisions/${kind}/${id}`;let posts=0
@@ -2720,7 +2720,7 @@ describe('Work period paired native decision',()=>{
    ...(kind===reopeningPeriodKind?{accountingPeriodReopening:{expectedPeriodVersion:'9007199254740993'}}:{})})
   expect(JSON.stringify(sessionStorage)).not.toContain('sourceFactsDigest');expect(JSON.stringify(sessionStorage)).not.toContain('SENTETIK yeniden açma gerekçesi')
  })
- it.each([openingPeriodKind,reopeningPeriodKind])('does not read with only legacy/native or missing approval capabilities: %s',async kind=>{
+ it.each([openingPeriodKind,reopeningPeriodKind] as const)('does not read with only legacy/native or missing approval capabilities: %s',async kind=>{
   const path=`/work/decisions/${kind}/${id}`
   const calls=installFetch({capabilities:['accounting.periods.list','accounting.periods.approve','accounting.periods.reopen'],respond:url=>url.includes(path)?problem(503):undefined})
   mountAccountingPeriod(kind);await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())

@@ -94,7 +94,7 @@ describe('Work period native projections',()=>{
     {...selected,accountingPeriodReopening:{expectedPeriodVersion:'3\n'}},{...selected,accountingPeriodReopening:{expectedPeriodVersion:'3',extra:true}}])
     expect(isWorkDecisionRequest(body,reopeningPeriodKind)).toBe(false)
  })
- it.each([openingPeriodKind,reopeningPeriodKind])('requires an exact Approved six-field native result for %s',async kind=>{
+ it.each([openingPeriodKind,reopeningPeriodKind] as const)('requires an exact Approved six-field native result for %s',async kind=>{
   const body=kind===reopeningPeriodKind?{...request,accountingPeriodReopening:{expectedPeriodVersion:'3'}}:request
   const result={companyId:company,kind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'SENTETIK original'}
   const response=(extra:object={})=>new Response(JSON.stringify({...result,...extra}),{status:200,headers:{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK original'}})
