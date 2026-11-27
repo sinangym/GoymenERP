@@ -203,6 +203,7 @@ public sealed partial class FinanceCreditMovementServiceV1(FinanceDbContext db, 
         if (source.ReplacesOpeningMovementId is { } originalId)
         {
             var original = await db.CreditMovements.AsNoTracking().SingleOrDefaultAsync(x => x.Id == originalId, ct);
+            if (ownedMovementDecision is not null && await Fence(context, action, ct) is { } afterOriginal) return afterOriginal;
             var pending = await db.CreditMovements.AsNoTracking().AnyAsync(x => x.ReplacesOpeningMovementId == originalId && x.Id != ownProposal && (x.Status == 1 || x.Status == 2), ct);
             if (await Fence(context, action, ct) is { } fenced) return fenced;
             if (original is null || original.CreditAccountId != source.CreditAccountId || original.Kind != 4 || original.Status != 2

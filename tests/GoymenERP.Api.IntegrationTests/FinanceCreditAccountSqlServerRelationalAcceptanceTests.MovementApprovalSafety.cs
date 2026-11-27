@@ -240,6 +240,64 @@ public sealed partial class FinanceCreditAccountSqlServerRelationalAcceptanceTes
         scope.AssertClean();
     }
 
+    [SqlServerFact]
+    public async Task Credit_opening_correction_original_read_fence_stops_before_pending_query_when_context_authority_or_cancellation_changes()
+    {
+        foreach (var fault in new[] { "permission", "company", "actor", "membership", "delegation", "cancel" })
+        {
+            await using var run = await Run.StartAsync(); var account = await ApprovedMovementAccount(run); var input = ActualInput(account) with { Kind = CreditMovementKindV1.OpeningBalance };
+            Guid original;
+            await using (var maker = run.OpenMovement(Maker)) original = (await maker.Service.ProposeAsync(maker.Context, Key("original-read-prepare"), input, default)).Resource!.Id;
+            await using (var checker = new MovementDecisionScope(run)) Assert.Equal(CommandOutcome.Succeeded, (await checker.Decide(original, "original-read-approve", true)).Outcome);
+            Guid replacement;
+            await using (var maker = run.OpenMovement(Maker)) replacement = (await maker.Service.ProposeAsync(maker.Context, Key("original-read-correction"), input with
+            { ReplacesOpeningMovementId = original, ExpectedOpeningMovementVersion = "2", SourceDocument = input.SourceDocument with { Revision = "2" } }, default)).Resource!.Id;
+            using var cancellation = new CancellationTokenSource(); var read = new MovementOriginalReadBoundary(original); var save = new MovementDecisionSave(replacement);
+            await using var scope = new MovementDecisionScope(run, save: save, extra: read);
+            read.AfterOriginal = () =>
+            {
+                if (fault == "company") scope.Company.Set(CompanyB);
+                else if (fault == "actor") scope.User.Actor = Maker;
+                else if (fault == "membership") scope.User.Member = false;
+                else if (fault == "cancel") cancellation.Cancel();
+                else scope.Permission.Check = () => PermissionDecision.Denied; // Includes the existing Work-decorated delegation refusal boundary.
+            };
+            var call = () => scope.Service.DecideAsync(new(CompanyA, Checker, scope.OriginalCorrelation, null), new("original-read-correction-approve"), new(replacement, "1", true, null), cancellation.Token);
+            if (fault == "cancel") await Assert.ThrowsAnyAsync<OperationCanceledException>(call);
+            else Assert.Equal(CommandOutcome.Denied, (await call()).Outcome);
+            Assert.True(read.Fired); Assert.Equal(0, read.PendingQueries); Assert.Equal(0, save.Attempts); scope.AssertClean();
+            Assert.Equal(1L, await run.ScalarAsync<long>("SELECT Version FROM finance.CreditMovements WHERE Id=@id", ("@id", replacement)));
+            Assert.Equal(2L, await run.ScalarAsync<long>("SELECT Version FROM finance.CreditMovements WHERE Id=@id", ("@id", original)));
+            Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CreditMovements WHERE Id=@id AND ReversedByMovementId IS NOT NULL", ("@id", original)));
+            Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CreditMovementCommands WHERE Command=N'finance.credit-movement.decide' AND KeyHash=@key", ("@key", FinanceCommandKeys.Hash("original-read-correction-approve"))));
+            Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutboxMessages"));
+            Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType=N'Finance.CreditMovement' AND EntityId=@id AND EventType=N'finance.credit-movement.approved.v1'", ("@id", replacement.ToString("D"))));
+        }
+    }
+
+    private sealed class MovementOriginalReadBoundary(Guid originalId) : DbCommandInterceptor
+    {
+        public bool Fired; public int PendingQueries; public Action? AfterOriginal;
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData data,
+            InterceptionResult<DbDataReader> result, CancellationToken token = default)
+        {
+            if (command.CommandText.Contains("CreditMovements", StringComparison.Ordinal)
+                && command.CommandText.Contains("EXISTS", StringComparison.OrdinalIgnoreCase)
+                && command.CommandText.Contains("ReplacesOpeningMovementId", StringComparison.Ordinal)) PendingQueries++;
+            return ValueTask.FromResult(result);
+        }
+        public override ValueTask<DbDataReader> ReaderExecutedAsync(DbCommand command, CommandExecutedEventData data,
+            DbDataReader result, CancellationToken token = default)
+        {
+            // Observe the actual original-ID SELECT boundary, not an arbitrary authority-call counter.
+            if (!Fired && command.CommandText.Contains("CreditMovements", StringComparison.Ordinal)
+                && command.CommandText.Contains("SELECT TOP(2)", StringComparison.OrdinalIgnoreCase)
+                && command.Parameters.Cast<DbParameter>().Any(p => p.Value is Guid value && value == originalId))
+            { Fired = true; AfterOriginal?.Invoke(); }
+            return ValueTask.FromResult(result);
+        }
+    }
+
     private static async Task<Guid> MovementSafetyPrepare(Run run)
     {
         var account = await ApprovedMovementAccount(run); await using var maker = run.OpenMovement(Maker);
