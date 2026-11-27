@@ -2647,7 +2647,13 @@ describe('normal journal receipt context and late-read fences',()=>{
  it.each(['company','session'] as const)('does not restore an unknown journal approval into another %s',async change=>{
   Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK journal original session'})
   const calls=installFetch({capabilities:[journalCap,'accounting.periods.list'],respond:(url,init)=>{
-   if(url.includes(journalOwnerPath)){if(init?.method==='POST')return problem(503);const current=(init?.headers as Record<string,string>)['X-Company-Id'] ?? COMPANY_A;return json(normalJournalFixture(current,id))}
+   if(url.includes(journalOwnerPath)){
+    if(init?.method==='POST')return problem(503)
+    const current=new Headers(init?.headers).get('X-Company-Id')
+    expect(current).not.toBeNull()
+    if(current===null)throw new Error('Owner GET requires its captured company header')
+    return json(normalJournalFixture(current,id))
+   }
    if(url.includes('/accounting/periods'))return json(journalPeriodPage)
    return undefined
   }})

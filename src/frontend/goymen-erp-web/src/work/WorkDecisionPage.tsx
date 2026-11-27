@@ -1,4 +1,5 @@
-import { WorkNormalJournalFacts, NORMAL_JOURNAL_WORK_CAPABILITY } from './workNormalJournalDecision'
+import { NORMAL_JOURNAL_WORK_CAPABILITY } from './workNormalJournalDecision'
+import { WorkNormalJournalFacts } from './WorkNormalJournalFacts'
 import { NormalJournalApprovalPeriod } from '../accounting/NormalJournalApprovalPeriod'
 import { ACCOUNTING_CAPABILITY } from '../accounting/capabilities'
 import { WorkMovementBookFacts } from './WorkMovementBookFacts'
