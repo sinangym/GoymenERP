@@ -1,6 +1,5 @@
 import { accountingOpeningFixture, accountingReopeningFixture, openingPeriodKind, reopeningPeriodKind } from './accountingPeriodDecisionFixture'
 import { ACCOUNTING_PERIOD_WORK_CAPABILITY, type AccountingPeriodWorkKind } from './workAccountingPeriodDecision'
-import { CapabilityRoute } from '../shell/CapabilityRoute'
 import { normalJournalFixture } from './normalJournalDecisionFixture'
 import { NORMAL_JOURNAL_WORK_KIND as journalKind, NORMAL_JOURNAL_WORK_CAPABILITY as journalCap } from './workNormalJournalDecision'
 import { NORMAL_JOURNAL_TEXT as JOURNAL } from '../accounting/accountingText'
@@ -2669,13 +2668,9 @@ describe('normal journal receipt context and late-read fences',()=>{
  })
 })
 
-// Candidate routes use the real shell/auth boundary; publication is a separate paired change.
-function mountAccountingPeriod(kind: AccountingPeriodWorkKind,client?:QueryClient){
- const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[{path:`onaylarim/${kind}/:approvalId`,
-  element:<CapabilityRoute capability={[ACCOUNTING_PERIOD_WORK_CAPABILITY[kind]]}><WorkDecisionPage kind={kind}/></CapabilityRoute>}]}],{initialEntries:[`/onaylarim/${kind}/${id}`]})
- render(<ShellProvider queryClient={client??new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})}><RouterProvider router={router}/></ShellProvider>)
-}
-describe('Work period native candidate',()=>{
+// Paired routes use the actual shell router, auth boundary and standalone capability.
+function mountAccountingPeriod(kind: AccountingPeriodWorkKind,client?:QueryClient){ return mount(`/onaylarim/${kind}/${id}`,true,client) }
+describe('Work period paired native decision',()=>{
  it.each([openingPeriodKind,reopeningPeriodKind])('shows complete native human facts without private digests or general reads: %s',async kind=>{
   const value=kind===openingPeriodKind?accountingOpeningFixture(COMPANY_A,id):accountingReopeningFixture(COMPANY_A,id)
   const path=`/work/decisions/${kind}/${id}`

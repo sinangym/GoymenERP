@@ -44,6 +44,8 @@ const ROUTED = [
   [CAPABILITY.accountingNormalDraftCreate, ACCOUNTING_CAPABILITY.normalDraftCreate, ACCOUNTING_ROUTE.normalDraftCreate],
   [CAPABILITY.accountingNormalDraftDetail, ACCOUNTING_CAPABILITY.normalDraftDetail, ACCOUNTING_ROUTE.normalDraftDetail],
   [CAPABILITY.accountingNormalDraftApprove, ACCOUNTING_CAPABILITY.normalDraftApprove, ACCOUNTING_ROUTE.normalDraftApprove],
+  [CAPABILITY.accountingPeriodOpeningWorkDecision, ACCOUNTING_CAPABILITY.periodOpeningWorkDecision, ACCOUNTING_ROUTE.periodOpeningWorkDecision],
+  [CAPABILITY.accountingPeriodReopeningWorkDecision, ACCOUNTING_CAPABILITY.periodReopeningWorkDecision, ACCOUNTING_ROUTE.periodReopeningWorkDecision],
   [CAPABILITY.accountingNormalDraftWorkDecision, ACCOUNTING_CAPABILITY.normalDraftWorkDecision, ACCOUNTING_ROUTE.normalDraftWorkDecision],
   [CAPABILITY.accountingPostingQueues, ACCOUNTING_CAPABILITY.postingQueues, ACCOUNTING_ROUTE.postingQueues],
   [CAPABILITY.accountingTrialBalance, ACCOUNTING_CAPABILITY.trialBalance, ACCOUNTING_ROUTE.trialBalance],
@@ -109,4 +111,17 @@ it('publishes the exact standalone normal-draft decision without changing native
  expect(ACCOUNTING_CAPABILITY.normalDraftApprove).toBe('accounting.normal-journal-drafts.approve')
  expect(ACCOUNTING_ROUTE.normalDraftApprove).toBe('/muhasebe/normal-fis-onay/:draftId')
  expect(ACCOUNTING_ROUTE.normalDraftDetail).toBe('/muhasebe/normal-fisler/:draftId')
+})
+
+it.each([
+ ['accounting.period-opening.v1',CAPABILITY.accountingPeriodOpeningWorkDecision,'accounting.period-opening.work-decision'],
+ ['accounting.period-reopening.v1',CAPABILITY.accountingPeriodReopeningWorkDecision,'accounting.period-reopening.work-decision'],
+] as const)('publishes only the exact standalone period route: %s',(kind,capability,expected)=>{
+ const path=`/onaylarim/${kind}/:approvalId`
+ expect(capability).toBe(expected);expect(CAPABILITY_ROUTE[capability]).toBe(path);expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
+ expect(WORK_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'accounting',capability}])
+ const mounted=workRoutes.filter(route=>route.path===path.slice(1));expect(mounted).toHaveLength(1)
+ expect(matchRoutes(shellRoutes,path.replace(':approvalId','cccccccc-0000-4000-8000-0000000000f1'))?.at(-1)?.route).toBe(mounted[0])
+ expect(ACCOUNTING_ROUTE.periodsList).toBe('/muhasebe/donemler')
+ expect(ACCOUNTING_CAPABILITY.periodsApprove).toBe('accounting.periods.approve');expect(ACCOUNTING_CAPABILITY.periodsReopen).toBe('accounting.periods.reopen')
 })

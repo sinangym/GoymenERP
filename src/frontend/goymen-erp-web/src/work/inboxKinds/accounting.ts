@@ -3,9 +3,9 @@ import type { WorkInboxKind } from './types'
 
 /** WP5: the Accounting approvals in the one inbox, each with the owner's existing approve control or route. */
 export const ACCOUNTING_INBOX_KINDS: readonly WorkInboxKind[] = [
-  { kind: 'accounting.period-opening.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.periodsApprove },
+  { kind: 'accounting.period-opening.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.periodOpeningWorkDecision },
   // ROL-D12: the reopening approval has its own name.
-  { kind: 'accounting.period-reopening.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.periodsReopen },
+  { kind: 'accounting.period-reopening.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.periodReopeningWorkDecision },
   { kind: 'accounting.normal-journal-draft.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.normalDraftWorkDecision },
   { kind: 'accounting.journal-reversal.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.journalReversalApprove },
   { kind: 'accounting.manufacturing-cost-difference.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.costDifferenceApprove },

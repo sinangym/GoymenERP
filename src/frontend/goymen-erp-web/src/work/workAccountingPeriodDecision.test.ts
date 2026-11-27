@@ -8,8 +8,8 @@ const company='aaaaaaaa-0000-4000-8000-000000000001', id='aaaaaaaa-0000-4000-800
 const request: WorkDecisionRequest={expectedVersion:'1',approve:true,reason:null,delegationId:null}
 afterEach(()=>vi.unstubAllGlobals())
 describe('Work period native projections',()=>{
- it('keeps both candidate kinds unmounted until paired publication and reuses exact full native shapes',()=>{
-  expect(WORK_DECISION_KINDS).toHaveLength(42)
+ it('publishes both paired kinds and reuses exact full native shapes',()=>{
+  expect(WORK_DECISION_KINDS).toHaveLength(44)
   const opening=accountingOpeningFixture(company,id,'9007199254740993'),reopening=accountingReopeningFixture(company,id,'9007199254740993')
   expect(decodeWorkDecisionPreview(opening,company,openingPeriodKind,id)?.accountingPeriodOpening).toEqual(opening.accountingPeriodOpening)
   expect(decodeWorkDecisionPreview(reopening,company,reopeningPeriodKind,id)?.accountingPeriodReopening).toEqual(reopening.accountingPeriodReopening)
@@ -87,7 +87,7 @@ describe('Work period native projections',()=>{
  it('requires only the seen closed-period version on reopening and rejects every cross-kind selection',()=>{
   const selected={...request,accountingPeriodReopening:{expectedPeriodVersion:'9007199254740993'}}
   expect(isWorkDecisionRequest(request,openingPeriodKind)).toBe(true);expect(isWorkDecisionRequest(selected,reopeningPeriodKind)).toBe(true)
-  for(const k of WORK_DECISION_KINDS)expect(isWorkDecisionRequest(selected,k)).toBe(false)
+  for(const k of WORK_DECISION_KINDS.filter(k=>k!==reopeningPeriodKind))expect(isWorkDecisionRequest(selected,k)).toBe(false)
   expect(isWorkDecisionRequest(selected,openingPeriodKind)).toBe(false);expect(isWorkDecisionRequest(request,reopeningPeriodKind)).toBe(false)
   for(const body of [{...selected,approve:false},{...selected,reason:''},{...selected,expectedVersion:'01'},
     {...selected,normalJournalDraft:{periodId:id}},{...selected,accountingPeriodReopening:{expectedPeriodVersion:'9223372036854775807'}},

@@ -756,3 +756,27 @@ it.each(['accounting.normal-journal-drafts.approve','accounting.normal-journal-d
  await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
  expect(api.inboxReads()).toHaveLength(0);expect(vi.mocked(globalThis.fetch).mock.calls.some(([url])=>String(url).includes(`/work/decisions/${kind}/`))).toBe(false)
 })
+
+it.each([
+ ['accounting.period-opening.v1','accounting.period-opening.work-decision','accounting.periods.approve','accounting.period-opening-approval-required'],
+ ['accounting.period-reopening.v1','accounting.period-reopening.work-decision','accounting.periods.reopen','accounting.period-reopening-requested'],
+])('opens the paired %s Work card while preserving native period references',(async(kind,capability,permission,rule)=>{
+ const link=`/onaylarim/${kind}/${LEGACY_ID}`,nativeLink='/muhasebe/donemler'
+ const item={...limitItem,module:'accounting',kind,itemId:LEGACY_ID,link,awaitingPermission:permission,ruleVersion:RV(kind),explanation:{
+  rules:[{ruleCode:rule,threshold:null,actual:null,deviation:null,unit:null}],
+  references:[{role:'period',recordId:PAYMENT_ID,label:'SENTETIK native period',link:nativeLink}]}}
+ const api=installFetch({granted:[capability],inbox:()=>json(inbox({items:[item],sources:[src('accounting',kind,permission,'BusinessDays')]}))})
+ await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-item');const card=cardOf(kind)
+ expect(within(card).getByRole('link').getAttribute('href')).toBe(link)
+ await userEvent.setup().click(within(card).getByRole('button',{name:T.explanationToggle}))
+ expect(within(card).getByText('SENTETIK native period')).toBeTruthy()
+ expect(item.explanation.references[0]!.link).toBe(nativeLink);expect(api.inboxReads()).toHaveLength(1)
+}))
+it.each([
+ ['accounting.period-opening.v1','accounting.periods.approve'],['accounting.period-opening.v1','accounting.periods.list'],
+ ['accounting.period-reopening.v1','accounting.periods.reopen'],['accounting.period-reopening.v1','accounting.periods.list'],
+])('does not read the standalone %s decision with only native %s',async(kind,capability)=>{
+ const api=installFetch({granted:[capability]});await renderAt(`/onaylarim/${kind}/${LEGACY_ID}`)
+ await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+ expect(api.inboxReads()).toHaveLength(0);expect(vi.mocked(globalThis.fetch).mock.calls.some(([url])=>String(url).includes(`/work/decisions/${kind}/`))).toBe(false)
+})

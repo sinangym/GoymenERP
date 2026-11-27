@@ -323,6 +323,8 @@ export const CAPABILITY = {
   accountingNormalDraftCreate: 'accounting.normal-journal-drafts.create',
   accountingNormalDraftDetail: 'accounting.normal-journal-drafts.detail',
   accountingNormalDraftApprove: 'accounting.normal-journal-drafts.approve',
+  accountingPeriodOpeningWorkDecision: 'accounting.period-opening.work-decision',
+  accountingPeriodReopeningWorkDecision: 'accounting.period-reopening.work-decision',
   accountingNormalDraftWorkDecision: 'accounting.normal-journal-draft.work-decision',
   /** M-01 Muhasebe Kontrol Merkezi — the posting queues, read-only. Route `/muhasebe/kontrol`. */
   accountingPostingQueues: 'accounting.posting-queues',
@@ -630,6 +632,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.accountingNormalDraftCreate]: '/muhasebe/normal-fisler/yeni',
   [CAPABILITY.accountingNormalDraftDetail]: '/muhasebe/normal-fisler/:draftId',
   [CAPABILITY.accountingNormalDraftApprove]: '/muhasebe/normal-fis-onay/:draftId',
+  [CAPABILITY.accountingPeriodOpeningWorkDecision]: '/onaylarim/accounting.period-opening.v1/:approvalId',
+  [CAPABILITY.accountingPeriodReopeningWorkDecision]: '/onaylarim/accounting.period-reopening.v1/:approvalId',
   [CAPABILITY.accountingNormalDraftWorkDecision]: '/onaylarim/accounting.normal-journal-draft.v1/:approvalId',
   [CAPABILITY.accountingPostingQueues]: '/muhasebe/kontrol',
   [CAPABILITY.accountingTrialBalance]: '/muhasebe/mizan',

@@ -49,6 +49,8 @@ export const ACCOUNTING_CAPABILITY = {
   normalDraftDetail: 'accounting.normal-journal-drafts.detail',
   /** ACC-V1 — read and approve a company draft with the narrow approval permission. */
   normalDraftApprove: 'accounting.normal-journal-drafts.approve',
+  periodOpeningWorkDecision: 'accounting.period-opening.work-decision',
+  periodReopeningWorkDecision: 'accounting.period-reopening.work-decision',
   normalDraftWorkDecision: 'accounting.normal-journal-draft.work-decision',
   /** M-01 Muhasebe Kontrol Merkezi — the posting queues, read-only. */
   postingQueues: 'accounting.posting-queues',
@@ -85,6 +87,8 @@ export const ACCOUNTING_ROUTE = {
   normalDraftCreate: '/muhasebe/normal-fisler/yeni',
   normalDraftDetail: '/muhasebe/normal-fisler/:draftId',
   normalDraftApprove: '/muhasebe/normal-fis-onay/:draftId',
+  periodOpeningWorkDecision: '/onaylarim/accounting.period-opening.v1/:approvalId',
+  periodReopeningWorkDecision: '/onaylarim/accounting.period-reopening.v1/:approvalId',
   normalDraftWorkDecision: '/onaylarim/accounting.normal-journal-draft.v1/:approvalId',
   postingQueues: '/muhasebe/kontrol',
   trialBalance: '/muhasebe/mizan',

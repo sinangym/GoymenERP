@@ -50,9 +50,9 @@ describe('WP5 Finance and Accounting inbox kinds', () => {
     expect(inboxPermissionText('inventory.opening-cost.approve')).toBe('Stok açılış maliyeti onayı')
   })
 
-  it('opens the period reopening only with its own ROL-D12 control', () => {
+  it('opens the period reopening only with its own ROL-D12 purpose', () => {
     const reopening = ACCOUNTING_INBOX_KINDS.find((entry) => entry.kind === 'accounting.period-reopening.v1')
-    expect(reopening?.capability).toBe('accounting.periods.reopen')
+    expect(reopening?.capability).toBe('accounting.period-reopening.work-decision')
     expect(inboxPermissionText('accounting.periods.reopen')).toBe('Dönem yeniden açma onayı')
   })
 
@@ -109,4 +109,9 @@ it('maps one normal-journal kind to the standalone purpose and keeps native perm
  expect(ACCOUNTING_INBOX_KINDS.filter(row=>row.kind==='accounting.normal-journal-draft.v1')).toEqual([{kind:'accounting.normal-journal-draft.v1',module:'accounting',capability:'accounting.normal-journal-draft.work-decision'}])
  expect(inboxPermissionText('accounting.normal-journal.draft.approve')).not.toBe('accounting.normal-journal.draft.approve')
  expect(inboxRuleText('accounting.normal-journal-draft-approval-required')).not.toBeNull()
+})
+
+it.each(['accounting.period-opening.v1','accounting.period-reopening.v1'])('maps %s to one standalone purpose without changing native permission words',kind=>{
+ expect(ACCOUNTING_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'accounting',capability:kind.replace('.v1','.work-decision')}])
+ expect(inboxPermissionText(kind==='accounting.period-opening.v1'?'accounting.periods.approve':'accounting.periods.reopen')).not.toContain('.periods.')
 })
