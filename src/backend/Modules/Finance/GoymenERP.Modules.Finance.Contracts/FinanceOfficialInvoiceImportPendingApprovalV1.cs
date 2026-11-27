@@ -25,3 +25,10 @@ public interface IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1
         Guid batchId,
         CancellationToken cancellationToken);
 }
+
+/// <summary>Same approval-purpose disclosure, including immutable terminal batches for an original-key retry.</summary>
+public interface IFinanceOfficialInvoiceImportDecisionReadServiceV1
+{
+    Task<ReadResult<FinanceOfficialInvoiceImportPendingBatchDetailV1>> GetDecisionAsync(
+        FinanceContext context, Guid batchId, CancellationToken cancellationToken);
+}

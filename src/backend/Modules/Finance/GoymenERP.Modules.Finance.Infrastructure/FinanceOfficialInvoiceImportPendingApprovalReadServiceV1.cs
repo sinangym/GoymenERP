@@ -9,13 +9,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Finance.Infrastructure;
 
-public sealed class FinanceOfficialInvoiceImportPendingApprovalReadServiceV1(
+public sealed partial class FinanceOfficialInvoiceImportPendingApprovalReadServiceV1(
     FinanceDbContext dbContext,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     IFinanceOfficialInvoiceImportParserV1 parser,
     IFinanceOfficialInvoiceImportApprovalAuthorityV1 authority)
-    : IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1
+    : IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1, IFinanceOfficialInvoiceImportDecisionReadServiceV1
 {
     private const int PageSize = 50;
     private const int MaximumOffset = 1_000_000;

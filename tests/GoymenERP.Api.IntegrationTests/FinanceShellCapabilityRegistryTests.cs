@@ -22,7 +22,22 @@ public sealed class FinanceShellCapabilityRegistryTests
         "finance.credits.approve", "finance.credits.propose", "finance.credits.workspace",
         "finance.official-sales-invoices.approve", "finance.official-sales-invoices.record", "finance.official-sales-invoices.withdraw",
         "finance.party-balance-transfers.record",
+        "finance.official-invoice-import.work-decision",
     ];
+
+    [Fact]
+    public void Import_purpose_stays_staged_single_company_company_wide_approve_only_without_source_browse()
+    {
+        var provider = new FinanceShellCapabilityProvider();
+        var registry = new ShellCapabilityRegistry([provider],
+            new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision([provider])]));
+        var purpose = Assert.Single(registry.Registrations, row => row.Declaration.CapabilityId == FinanceShellCapabilityProvider.OfficialInvoiceImportWorkDecisionCapabilityId).Declaration;
+        Assert.False(purpose.ImplementationAvailable); Assert.Null(purpose.ParentCapabilityId);
+        Assert.Equal("/onaylarim/finance.official-invoice-import.v1/:approvalId", purpose.RoutePath);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, purpose.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, purpose.ScopeRequirement);
+        Assert.Equal([FinanceOfficialInvoiceImportPermissionNamesV1.Approve], purpose.RequiredPermissions);
+    }
 
     [Fact]
     public void Party_balance_transfer_mount_preserves_the_staged_company_wide_record_and_amount_read_gate()
@@ -106,6 +121,7 @@ public sealed class FinanceShellCapabilityRegistryTests
                 ("finance.manual-bank-payments.reverse.propose", "F-02-PAYMENT-DETAIL", "finance.manual-bank-payments.detail"),
                 ("finance.official-invoice-import.approve", "F-02-OFFICIAL-INVOICE-APPROVALS", null),
                 ("finance.official-invoice-import.upload", "F-02-OFFICIAL-INVOICE-UPLOAD", null),
+                ("finance.official-invoice-import.work-decision", "F-OFFICIAL-INVOICE-IMPORT-WORK-DECISION", null),
                 ("finance.official-sales-invoices.approve", "F-005-OFFICIAL-APPROVAL", null),
                 ("finance.official-sales-invoices.record", "F-005-OFFICIAL", null),
                 ("finance.official-sales-invoices.withdraw", "F-005-OFFICIAL", "finance.official-sales-invoices.record"),
@@ -148,7 +164,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(providers,
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision(providers)]));
 
-        Assert.Equal(59, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
+        Assert.Equal(60, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
     }
 
     [Fact]

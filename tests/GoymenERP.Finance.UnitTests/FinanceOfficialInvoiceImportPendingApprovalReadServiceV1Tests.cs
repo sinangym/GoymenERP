@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Finance.UnitTests;
 
-public sealed class FinanceOfficialInvoiceImportPendingApprovalReadServiceV1Tests
+public sealed partial class FinanceOfficialInvoiceImportPendingApprovalReadServiceV1Tests
 {
     private static readonly Guid Company = Guid.Parse("91000000-0000-0000-0000-000000000001");
     private static readonly Guid Batch = Guid.Parse("92000000-0000-0000-0000-000000000002");

@@ -104,7 +104,7 @@ internal sealed class NativeApprovalWorkInboxSourceV1 : IWorkApprovalDecisionSou
         return WorkInboxSourceResultV1.Found(page.CompanyId, items, page.NextCursor is not null || page.Items.Count > maxCount);
     }
 
-    private WorkInboxItemV1? Item(NativeApprovalReadItemV1 native)
+    internal WorkInboxItemV1? Item(NativeApprovalReadItemV1 native)
     {
         if (!string.Equals(native.Kind, Kind, StringComparison.Ordinal) || native.ApprovalId == Guid.Empty)
         {

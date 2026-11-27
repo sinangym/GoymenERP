@@ -42,7 +42,13 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkBankAccountIbanChangeProofV1? BankAccountIbanChangeProof = null,
     [property: JsonIgnore] WorkProductPackageStandardProofV1? ProductPackageStandardProof = null,
     [property: JsonIgnore] WorkProductPriceListProofV1? ProductPriceListProof = null,
-    [property: JsonIgnore] WorkPartyCreditLimitProofV1? PartyCreditLimitProof = null);
+    [property: JsonIgnore] WorkPartyCreditLimitProofV1? PartyCreditLimitProof = null,
+    [property: JsonIgnore] WorkOfficialInvoiceImportProofV1? OfficialInvoiceImportProof = null);
+
+/// <summary>Price-free immutable import header; full canonical rows stay in the authorized human GET only.</summary>
+public sealed record WorkOfficialInvoiceImportProofV1(Guid CompanyId, Guid BatchId, string BatchVersion,
+    string BatchChecksum, string TemplateVersion, int RowCount, string UploadedBy, DateTimeOffset UploadedAtUtc,
+    string? ApprovedBy, DateTimeOffset? ApprovedAtUtc, string PreviewDigest);
 
 /// <summary>Existing Finance approval-only disclosure, released only by the authorized human purpose GET.</summary>
 public sealed record WorkPartyCreditLimitPreviewV1(Guid PartyId, Guid CompanyAccountId, string Kind,

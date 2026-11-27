@@ -30,7 +30,16 @@ public sealed record FinanceOfficialInvoiceImportApprovalResultV1(
     FinanceOfficialInvoiceImportBatchViewV1? Resource,
     bool IsReplay,
     string OriginalCorrelationId,
-    IReadOnlyList<ValidationIssue> Issues);
+    IReadOnlyList<ValidationIssue> Issues)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public FinanceOfficialInvoiceImportDecisionReceiptV1? DecisionReceipt { get; init; }
+}
+
+/// <summary>Owner-only provenance read from the original command, never a public response or reconstructed current row.</summary>
+public sealed record FinanceOfficialInvoiceImportDecisionReceiptV1(Guid CompanyId, Guid BatchId, Guid ApprovalId,
+    string CommandName, string IdempotencyKeyHash, string PayloadHash, string ActorId,
+    string ExpectedVersion, string ResultVersion, string OriginalCorrelationId, DateTimeOffset RecordedAtUtc);
 
 /// <summary>
 /// Fresh host-owned upload/approval authority. The two technical names above are declarations only;

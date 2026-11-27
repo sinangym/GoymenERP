@@ -42,6 +42,8 @@ public sealed partial class FinanceOfficialInvoiceImportApprovalServiceV1
                 transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, token);
                 await RequireFence();
                 var result = await ApproveCoreAsync(context, metadata, request, token);
+                if (result.Outcome == CommandOutcome.Succeeded)
+                    result = await WithDecisionReceiptAsync(context, metadata, request, result, token);
                 if (result.Outcome is CommandOutcome.Denied or CommandOutcome.Unavailable)
                     throw new ApprovalRefusal(result);
                 await RequireFence();

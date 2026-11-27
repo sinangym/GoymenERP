@@ -17,11 +17,12 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(59, declarations.Count);
+        Assert.Equal(60, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             !declaration.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)
             && !declaration.CapabilityId.StartsWith("finance.official-sales-invoices.", StringComparison.Ordinal)
             && declaration.CapabilityId != FinanceShellCapabilityProvider.PartyBalanceTransferCapabilityId
+            && declaration.CapabilityId != FinanceShellCapabilityProvider.OfficialInvoiceImportWorkDecisionCapabilityId
             && !declaration.CapabilityId.StartsWith("finance.cash-exchange-book-values.", StringComparison.Ordinal), declaration.ImplementationAvailable));
     }
 
@@ -44,9 +45,11 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.26", provider.ContractVersion);
+        Assert.Equal("1.27", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
+            ("finance.official-invoice-import.work-decision", "finance-official-invoice-import-work-decision", "/onaylarim/finance.official-invoice-import.v1/:approvalId", "F-OFFICIAL-INVOICE-IMPORT-WORK-DECISION",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinanceOfficialInvoiceImportPermissionNamesV1.Approve]),
             ("finance.party-credit-limit.work-decision", "finance-party-credit-limit-work-decision", "/onaylarim/finance.party-credit-limit.v1/:approvalId", "F-PARTY-CREDIT-LIMIT-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCreditLimitsApprove]),
             ("finance.manual-bank-payment.work-decision", "finance-manual-bank-payment-work-decision", "/onaylarim/finance.manual-bank-payment.v1/:approvalId", "F-MANUAL-BANK-PAYMENT-WORK-DECISION",
@@ -373,7 +376,7 @@ public sealed class FinanceShellCapabilityProviderTests
                 "F-02-PAYMENTS", "F-02-REVERSAL-APPROVAL", "F-03", "F-03-OPEN-ITEM-DETAIL",
                 "F-03-OPEN-ITEMS", "F-04", "F-04-NEW", "F-13-BANK-STATEMENT", "F-18-COLLATERALS", "F-18-CREDIT-LIMITS", "F-23-OPENING-BALANCES",
                 "F-25-EXPENSE-PAYMENTS", "F-32-CASH-TRANSFERS", "F-32-EXCHANGE-BOOK-APPROVE", "F-32-EXCHANGE-BOOK-PREPARE",
-                "F-32-PARTY-BALANCE-TRANSFER", "F-47-CREDITS", "F-BANK-ACCOUNT-IBAN-CHANGE-WORK-DECISION", "F-BANK-ACCOUNT-WORK-DECISION", "F-MANUAL-BANK-PAYMENT-WORK-DECISION", "F-PARTY-CREDIT-LIMIT-WORK-DECISION", "M-03", "W-FIN-CASH-ACCOUNT-01",
+                "F-32-PARTY-BALANCE-TRANSFER", "F-47-CREDITS", "F-BANK-ACCOUNT-IBAN-CHANGE-WORK-DECISION", "F-BANK-ACCOUNT-WORK-DECISION", "F-MANUAL-BANK-PAYMENT-WORK-DECISION", "F-OFFICIAL-INVOICE-IMPORT-WORK-DECISION", "F-PARTY-CREDIT-LIMIT-WORK-DECISION", "M-03", "W-FIN-CASH-ACCOUNT-01",
                 "W-FIN-CASH-ACCOUNT-PASSIVATION-01", "W-FIN-CASH-ACCOUNT-REACTIVATION-01", "W-FIN-CREDIT-ACCOUNT-01"],
             routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }

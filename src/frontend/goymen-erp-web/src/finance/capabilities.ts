@@ -12,6 +12,12 @@
  * it is a `hasCapability` check inside the list, and the server refuses a self-approval (Ö4) anyway.
  */
 
+// Source declaration only; not mounted or published before the paired approval UI exists.
+export const STAGED_OFFICIAL_INVOICE_IMPORT_PURPOSE = {
+  capabilityId: 'finance.official-invoice-import.work-decision',
+  routePath: '/onaylarim/finance.official-invoice-import.v1/:approvalId',
+} as const
+
 export const FINANCE_CAPABILITY = {
   /** WP12 (FNS-D13/D113) bank statement workspace; import and match are controls of it. */
   bankStatements: 'finance.bank-statements.read',

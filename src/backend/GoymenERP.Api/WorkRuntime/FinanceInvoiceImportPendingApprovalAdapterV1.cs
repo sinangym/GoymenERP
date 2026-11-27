@@ -2,7 +2,7 @@ using GoymenERP.Modules.Finance.Contracts;
 
 namespace GoymenERP.Api.WorkRuntime;
 
-internal sealed class FinanceInvoiceImportPendingApprovalAdapterV1(
+internal sealed partial class FinanceInvoiceImportPendingApprovalAdapterV1(
     IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1 owner)
     : INativeApprovalReadAdapterV1
 {

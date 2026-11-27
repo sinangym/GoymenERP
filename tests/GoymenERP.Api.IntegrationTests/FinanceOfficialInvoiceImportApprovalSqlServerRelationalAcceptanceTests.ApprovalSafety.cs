@@ -29,7 +29,8 @@ public sealed partial class FinanceOfficialInvoiceImportApprovalSqlServerRelatio
                     "before-audit" => staged && scope.Writer.HasPendingDrafts,
                     "after-audit" => seenAudit && staged && !scope.Writer.HasPendingDrafts,
                     "after-save" => probe.Saved,
-                    _ => probe.Saved && savedFences >= 3,
+                    // Save fence, receipt pre/post read, wrapper post-execute, then final precommit.
+                    _ => probe.Saved && savedFences >= 5,
                 };
                 return Task.FromResult(deny && reached ? PermissionDecision.Denied : PermissionDecision.Allowed);
             });
