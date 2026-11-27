@@ -16,6 +16,7 @@ import { matchPath, matchRoutes } from 'react-router'
 import { CAPABILITY, CAPABILITY_ROUTE, CAPABILITY_NAV_LABEL, type CapabilityId } from './capabilities'
 import {
   FINANCE_WORK_DECISION_CAPABILITIES,
+  STAGED_OFFICIAL_SALES_INVOICE_PURPOSE,
   FINANCE_CAPABILITY,
   FINANCE_ROUTE,
   manualBankPaymentDetailPath,
@@ -111,6 +112,21 @@ const CONTROLS: readonly string[] = [
 ]
 
 describe('shell ↔ Finance lane capability ids', () => {
+  it('mounts the exact official import purpose ahead of the legacy generic detail and keeps next sales approval staged', () => {
+    const capabilityId=CAPABILITY.financeOfficialInvoiceImportWorkDecision,routePath='/onaylarim/finance.official-invoice-import.v1/:approvalId'
+    expect(capabilityId).toBe('finance.official-invoice-import.work-decision')
+    expect(FINANCE_WORK_DECISION_CAPABILITIES).toContainEqual([capabilityId,routePath])
+    expect(CAPABILITY_ROUTE[capabilityId]).toBe(routePath);expect(CAPABILITY_NAV_LABEL[capabilityId]).toBe('')
+    const mounted=workRoutes.filter(route=>route.path===routePath.slice(1));expect(mounted).toHaveLength(1)
+    expect(matchRoutes(shellRoutes,routePath.replace(':approvalId','cccccccc-0000-4000-8000-0000000000f1'))?.at(-1)?.route).toBe(mounted[0])
+    expect(WORK_INBOX_KINDS.filter(row=>row.kind==='finance.official-invoice-import.v1')).toEqual([{kind:'finance.official-invoice-import.v1',module:'finance',capability:capabilityId}])
+    expect(FINANCE_CAPABILITY.officialInvoiceImportApprove).toBe('finance.official-invoice-import.approve')
+    expect(FINANCE_CAPABILITY.officialInvoiceImportUpload).toBe('finance.official-invoice-import.upload')
+    expect(Object.values(CAPABILITY)).not.toContain(STAGED_OFFICIAL_SALES_INVOICE_PURPOSE.capabilityId)
+    expect(FINANCE_WORK_DECISION_CAPABILITIES.some(([id])=>(id as string)===STAGED_OFFICIAL_SALES_INVOICE_PURPOSE.capabilityId)).toBe(false)
+    expect(workRoutes.some(route=>route.path===STAGED_OFFICIAL_SALES_INVOICE_PURPOSE.routePath.slice(1))).toBe(false)
+  })
+
   it('mounts the party credit limit purpose under its own capability without changing native F18 access', () => {
     const capabilityId=CAPABILITY.financePartyCreditLimitWorkDecision,routePath='/onaylarim/finance.party-credit-limit.v1/:approvalId'
     expect(capabilityId).toBe('finance.party-credit-limit.work-decision')

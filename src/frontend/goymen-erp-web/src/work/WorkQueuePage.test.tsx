@@ -25,7 +25,7 @@ const DIRECTORY = [
   { id: COMPANY, code: 'GDC', legalName: 'Göymen A', isPlaceholder: false },
   { id: OTHER_COMPANY, code: 'GSP', legalName: 'Göymen B', isPlaceholder: false },
 ]
-const APPROVE = CAPABILITY.financeOfficialInvoiceImportApprove
+const APPROVE = CAPABILITY.financeOfficialInvoiceImportWorkDecision
 const IMPORT_KIND = 'finance.official-invoice-import.v1'
 const COUNT_KIND = 'inventory.stock-count.v1'
 const FIRST = 'c6000000-0000-4000-8000-000000000001'

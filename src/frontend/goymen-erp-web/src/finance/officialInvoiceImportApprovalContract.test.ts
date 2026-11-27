@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decodeApprovalReply, decodePendingDetail, decodePendingPage, decodeUploadReply } from './officialInvoiceImportApprovalContract'
+import { decodeApprovalReply, decodeDecisionDetail, decodePendingDetail, decodePendingPage, decodeUploadReply } from './officialInvoiceImportApprovalContract'
 
 const batch = {
   batchId: '11111111-1111-4111-8111-111111111111', companyId: '10000000-0000-0000-0000-000000000001',
@@ -67,5 +67,52 @@ describe('official invoice pending approval contract', () => {
       originalCorrelationId: 'corr-upload', issues: [] })).toEqual({ ok: false })
     expect(decodeUploadReply({ outcome: 'VersionConflict', resource: {}, isReplay: false,
       originalCorrelationId: 'corr-upload', issues: [] })).toEqual({ ok: false })
+  })
+})
+
+
+describe('official invoice decision detail reuses the native preview without widening the legacy pending screen', () => {
+  const withRow = (change: Record<string, unknown>) => ({ ...detail, preview: { ...detail.preview,
+    batch: { ...detail.preview.batch, rows: [{ ...row, ...change }] } } })
+  it('accepts Pending1 and Approved2, preserving the complete native header and row', () => {
+    const terminal = { ...detail, batch: { ...batch, status: 'Approved', version: '2', approvedBy: 'checker', approvedAtUtc: '2026-09-30T13:00:00Z' } }
+    expect(decodeDecisionDetail(detail)).toEqual({ ok: true, value: detail })
+    expect(decodeDecisionDetail(terminal)).toEqual({ ok: true, value: terminal })
+    expect(decodePendingDetail(terminal)).toEqual({ ok: false })
+  })
+  it.each(['0001250.5000', '99999999999999999999999999999999999999999999999999', '0.' + '0'.repeat(40) + '1'])('retains native exact positive digit text %s without CLR narrowing', amount => {
+    const value = withRow({ amount })
+    expect(decodeDecisionDetail(value)).toEqual({ ok: true, value })
+  })
+  it.each(['0','000.000','-1','1e3','1\n',' 1','1 ','1.','NaN'])('refuses a non-native positive amount %j', amount => {
+    expect(decodeDecisionDetail(withRow({ amount }))).toEqual({ ok: false })
+  })
+  it('retains every row beyond the Work reference cap and the native 10000 row boundary', () => {
+    const rows = Array.from({ length: 10_000 }, (_, i) => ({ ...row,
+      openItemId: `33333333-3333-4333-8333-${String(i + 1).padStart(12, '0')}`,
+      sourceInstallmentId: `55555555-5555-4555-8555-${String(i + 1).padStart(12, '0')}` }))
+    const value = { ...detail, batch: { ...batch, rowCount: rows.length }, preview: { ...detail.preview,
+      batch: { ...detail.preview.batch, rows } } }
+    expect(decodeDecisionDetail(value)).toEqual({ ok: true, value })
+    expect(decodeDecisionDetail({ ...value, batch: { ...value.batch, rowCount: 10_001 }, preview: { ...value.preview,
+      batch: { ...value.preview.batch, rows: [...rows, { ...row, openItemId: '99999999-9999-4999-8999-999999999999' }] } } })).toEqual({ ok: false })
+  })
+  it('refuses duplicate tuples, invalid dates, hidden fields and mismatched header provenance', () => {
+    for (const value of [withRow({ dueOn: '2026-02-30' }), withRow({ sourceVersion: 'bad\nversion' }), withRow({ hidden: true }),
+      withRow({ documentKind: 'payment' }), { ...detail, batch: { ...batch, version: '2' } },
+      { ...detail, batch: { ...batch, batchChecksum: batch.batchChecksum + '\n' } },
+      { ...detail, preview: { ...detail.preview, batch: { ...detail.preview.batch, batchId: row.openItemId } } },
+      { ...detail, batch: { ...batch, rowCount: 2 }, preview: { ...detail.preview, batch: { ...detail.preview.batch, rows: [row, row] } } }])
+      expect(decodeDecisionDetail(value)).toEqual({ ok: false })
+  })
+  it('binds v2 tax warnings to their actual source rows and preserves their exact native values', () => {
+    const templateVersion = 'finance-official-invoice-installment-csv.v2'
+    const warning = { code: 'finance_official_invoice_tax_inconsistent', sourceDocumentId: row.sourceDocumentId,
+      expectedPayableFunctionalAmount: '-0001200.00', payableFunctionalAmount: '1200.01', differenceFunctionalAmount: '0.01' }
+    const value = { ...detail, batch: { ...batch, templateVersion }, preview: { ...detail.preview, templateVersion, taxWarnings: [warning] } }
+    expect(decodeDecisionDetail(value)).toEqual({ ok: true, value })
+    for (const change of [{ sourceDocumentId: null }, { sourceDocumentId: row.openItemId }, { code: 'made-up' },
+      { differenceFunctionalAmount: '0' }, { expectedPayableFunctionalAmount: '1\n' }])
+      expect(decodeDecisionDetail({ ...value, preview: { ...value.preview, taxWarnings: [{ ...warning, ...change }] } })).toEqual({ ok: false })
   })
 })

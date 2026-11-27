@@ -1537,7 +1537,7 @@ it('mounts dispatch as the 25th native purpose under its exact standalone capabi
  expect(route?.path).toBe(`onaylarim/${dispatchKind}/:approvalId`)
  const element=route?.element as ReactElement<{capability:readonly string[];children:ReactElement<{kind:string}>}>
  expect(element.props.capability).toEqual([dispatchCap]);expect(element.props.children.type).toBe(WorkDecisionPage);expect(element.props.children.props.kind).toBe(dispatchKind)
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(31)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(32)
 })
 it.each([{companyId:COMPANY_B},{logisticsDispatchNote:{...dispatchProof,dispatchNoteId:COMPANY_A}},{rejectionSupported:true}])('does not expose malformed/foreign dispatch proof %j',async(delta)=>{
  installFetch({capabilities:[dispatchCap],respond:url=>url.includes(dispatchPath)?json({...dispatchPreview,...delta}):undefined});mountDispatchPurpose()
@@ -1611,7 +1611,7 @@ it('mounts the customer return purpose under its exact standalone capability amo
  expect(route?.path).toBe(`onaylarim/${customerKind}/:approvalId`)
  expect(route).toBeDefined()
  expect((route!.element as ReactElement<{capability:readonly string[]}>).props.capability).toEqual([customerCap])
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(31)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(32)
 })
 it('does not restore a customer-return unknown attempt under another authentication session',async()=>{
  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-return-old'})
@@ -2100,4 +2100,120 @@ it('validates the native rejection note boundary without adding a reason to appr
  fireEvent.change(input,{target:{value:'x'.repeat(500)}});expect(reject.disabled).toBe(false)
  fireEvent.click(reject);await screen.findByText(T.done)
  expect(calls.find(call=>call.url.includes(limitPath)&&call.method==='POST')?.body).toEqual({expectedVersion:'1',approve:false,reason:'x'.repeat(500),delegationId:null})
+})
+
+
+const importKind='finance.official-invoice-import.v1',importCap='finance.official-invoice-import.work-decision'
+const importPath=`/work/decisions/${importKind}/${id}`,importRoute=`/onaylarim/${importKind}/${id}`
+const importBatch={batchId:id,companyId:COMPANY_A,batchVersion:'SENTETIK-file/7',batchChecksum:'c'.repeat(64),templateVersion:'finance-official-invoice-installment-csv.v2',status:'Pending',version:'1',rowCount:13,uploadedBy:'SENTETIK invoice uploader',uploadedAtUtc:'2026-11-27T08:00:00Z',approvedBy:null,approvedAtUtc:null}
+const importRows=Array.from({length:13},(_,i)=>({openItemId:`eeeeeeee-0000-4000-8000-${String(i+1).padStart(12,'0')}`,sourceDocumentId:'eeeeeeee-0000-4000-8000-000000000020',sourceInstallmentId:`ffffffff-0000-4000-8000-${String(i+1).padStart(12,'0')}`,sourceVersion:'SENTETIK-document/3',documentKind:'official-invoice-installment',partyId:'eeeeeeee-0000-4000-8000-000000000021',companyAccountId:'eeeeeeee-0000-4000-8000-000000000022',currencyId:'eeeeeeee-0000-4000-8000-000000000023',amount:i===12?'000999999999999999999999999999999999.0001':'0001250.5000',dueOn:i===12?null:'2026-12-31'}))
+const importWarning={code:'finance_official_invoice_tax_inconsistent',sourceDocumentId:importRows[0]!.sourceDocumentId,expectedPayableFunctionalAmount:'1200',payableFunctionalAmount:'1200.01',differenceFunctionalAmount:'0.01'}
+const importHuman={batch:importBatch,preview:{templateVersion:importBatch.templateVersion,sourceSha256:importBatch.batchChecksum,isValid:true,batch:{batchId:id,companyId:COMPANY_A,batchVersion:importBatch.batchVersion,batchChecksum:importBatch.batchChecksum,rows:importRows},issues:[],taxWarnings:[importWarning]}}
+const importPreview={companyId:COMPANY_A,kind:importKind,itemId:id,documentLabel:'SENTETIK immutable import',sourceVersion:'1',pending:true,approvalReasonRequired:false,rejectionSupported:false,references:[],rules:[{ruleCode:'finance.official-invoice-import-approval',threshold:null,actual:null,deviation:null,unit:null}],officialInvoiceImport:importHuman}
+const importTerminal={...importPreview,pending:false,sourceVersion:'2',officialInvoiceImport:{...importHuman,batch:{...importBatch,status:'Approved',version:'2',approvedBy:'SENTETIK checker',approvedAtUtc:'2026-11-27T09:00:00Z'}}}
+const importResult=(replayed=false)=>json({companyId:COMPANY_A,kind:importKind,itemId:id,state:'Approved',replayed,originalCorrelationId:'SENTETIK import original'},200,replayed?{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK import original'}:undefined)
+
+describe('WP8 official invoice import approval purpose',()=>{
+ it('shows the complete native header, all 13 rows and warning before an approve-only four-field decision',async()=>{
+  const calls=installFetch({capabilities:[importCap],respond:(url,init)=>url.includes(importPath)?init?.method==='POST'?importResult():json(importPreview):undefined})
+  mount(importRoute,true);const region=await screen.findByRole('region',{name:T.importProposal})
+  for(const value of [importBatch.batchId,importBatch.companyId,importBatch.batchVersion,importBatch.batchChecksum,importBatch.uploadedBy,importBatch.uploadedAtUtc])expect(within(region).getByText(value)).toBeTruthy()
+  expect(within(region).getByText(T.importPending)).toBeTruthy()
+  const table=within(region).getByRole('table',{name:T.importRows})
+  expect(within(table).getAllByRole('row')).toHaveLength(14)
+  expect(within(table).getAllByRole('columnheader')).toHaveLength(10)
+  expect(within(table).getByText(importRows[12]!.amount)).toBeTruthy();expect(within(table).getByText(T.importNoDue)).toBeTruthy()
+  expect(within(region).getByText(/1200\.01/)).toBeTruthy()
+  expect(screen.queryByRole('textbox',{name:T.reason})).toBeNull();expect(screen.queryByRole('button',{name:T.reject})).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done)
+  expect(calls.filter(call=>call.url.includes(importPath)&&call.method==='POST')).toHaveLength(1)
+  expect(calls.find(call=>call.url.includes(importPath)&&call.method==='POST')?.body).toEqual({expectedVersion:'1',approve:true,reason:null,delegationId:null})
+  expect(calls.filter(call=>call.url.includes(importPath)&&call.method==='GET')).toHaveLength(1)
+  expect(calls.some(call=>call.url.includes('/finance/'))).toBe(false)
+  expect(screen.queryByRole('region',{name:T.importProposal})).toBeNull()
+ })
+ it('keeps a terminal Approved2 detail read-only without inventing a new approval',async()=>{
+  const calls=installFetch({capabilities:[importCap],respond:url=>url.includes(importPath)?json(importTerminal):undefined})
+  mount(importRoute,true);const region=await screen.findByRole('region',{name:T.importProposal})
+  expect(within(region).getByText('SENTETIK checker')).toBeTruthy();expect(within(region).getByText(T.importApproved)).toBeTruthy()
+  expect(screen.queryByRole('button',{name:T.approve})).toBeNull();expect(screen.queryByRole('button',{name:T.reject})).toBeNull()
+  expect(calls.some(call=>call.method==='POST')).toBe(false)
+ })
+ it('restores only the frozen key and four-field original request, not current terminal facts or private source data',async()=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-import-session'});let posts=0
+  const calls=installFetch({capabilities:[importCap],respond:(url,init)=>url.includes(importPath)?init?.method==='POST'?++posts===1?problem(503):importResult(true):json(posts===0?importPreview:importTerminal):undefined})
+  mount(importRoute,true);await screen.findByRole('region',{name:T.importProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+  const journal=JSON.stringify(sessionStorage)
+  for(const secret of [importRows[12]!.amount,importRows[0]!.partyId,importRows[0]!.sourceDocumentId,importBatch.batchChecksum,importBatch.uploadedBy,'officialInvoiceImport'])expect(journal).not.toContain(secret)
+  cleanup();mount(importRoute,true);await screen.findByText(T.unknown);await screen.findByText(T.importRetained)
+  expect(screen.getByText(`${T.version}: 1`)).toBeTruthy();expect(screen.queryByRole('region',{name:T.importProposal})).toBeNull()
+  expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done);await screen.findByText(T.priorDecisionResolved)
+  const sent=calls.filter(call=>call.url.includes(importPath)&&call.method==='POST');expect(sent).toHaveLength(2)
+  expect(sent[1]!.body).toEqual(sent[0]!.body);expect(sent[1]!.body).toEqual({expectedVersion:'1',approve:true,reason:null,delegationId:null})
+  expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key'])
+  expect(calls.filter(call=>call.url.includes(importPath)&&call.method==='GET')).toHaveLength(1)
+  expect(screen.queryByRole('region',{name:T.importProposal})).toBeNull()
+ })
+ it('hides cached and late terminal GET facts before, during and after original receipt reconciliation',async()=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-import-late-session'})
+  const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}});let gets=0,posts=0,release!:(reply:Response)=>void
+  const late=new Promise<Response>(resolve=>{release=resolve})
+  const calls=installFetch({capabilities:[importCap],respond:(url,init)=>{
+   if(!url.includes(importPath))return undefined
+   if(init?.method==='POST')return ++posts===1?problem(503):importResult(true)
+   return ++gets===1?json(importPreview):late
+  }})
+  mount(importRoute,true,client);await screen.findByRole('region',{name:T.importProposal})
+  const matching=(query:{readonly queryKey:readonly unknown[]})=>query.queryKey.includes('work-decision')
+  let refetch!:Promise<void>;act(()=>{refetch=client.refetchQueries({predicate:matching})});await waitFor(()=>expect(gets).toBe(2))
+  fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+  expect(screen.queryByRole('region',{name:T.importProposal})).toBeNull()
+  await act(async()=>{release(json(importTerminal));await refetch})
+  expect(client.getQueryCache().findAll({predicate:matching})[0]?.state.data).toMatchObject({type:'ok-single',data:{sourceVersion:'2',officialInvoiceImport:{batch:{status:'Approved'}}}})
+  expect(screen.queryByRole('region',{name:T.importProposal})).toBeNull();expect(screen.getByText(`${T.version}: 1`)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done);await screen.findByText(T.priorDecisionResolved)
+  expect(screen.queryByRole('region',{name:T.importProposal})).toBeNull();expect(gets).toBe(2)
+  const sent=calls.filter(call=>call.url.includes(importPath)&&call.method==='POST');expect(sent[1]!.body).toEqual(sent[0]!.body);expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key']);client.clear()
+ })
+ it.each([{capabilities:[]},{capabilities:['finance.official-invoice-import.approve']},{capabilities:['finance.official-invoice-import.upload']},{capabilities:['finance.party-credit-limit.work-decision']}])('requires the exact import purpose capability %j',async({capabilities})=>{
+  const calls=installFetch({capabilities,respond:url=>url.includes(importPath)?json(importPreview):undefined});mount(importRoute,true)
+  await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(calls.some(call=>call.url.includes(importPath))).toBe(false)
+ })
+ it.each([{companyId:COMPANY_B},{officialInvoiceImport:null},{officialInvoiceImport:{...importHuman,preview:{...importHuman.preview,sourceSha256:'d'.repeat(64)}}}])('withholds missing, foreign and inconsistent import proof %j',async delta=>{
+  installFetch({capabilities:[importCap],respond:url=>url.includes(importPath)?json({...importPreview,...delta}):undefined});mount(importRoute,true)
+  await waitFor(()=>expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
+  expect(screen.queryByRole('region',{name:T.importProposal})).toBeNull();expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+ })
+ it.each([401,403])('preserves the native import command HTTP %s authority boundary',async status=>{
+  const capabilities=[importCap]
+  const calls=installFetch({capabilities,respond:(url,init)=>{if(!url.includes(importPath))return undefined;if(init?.method==='POST'){capabilities.splice(0);return problem(status)}return json(importPreview)}})
+  mount(importRoute,true);await screen.findByRole('region',{name:T.importProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}))
+  await waitFor(()=>expect(document.querySelector(`[data-state="${status===401?'unauthenticated':'not-found'}"]`)).not.toBeNull())
+  expect(screen.queryByRole('region',{name:T.importProposal})).toBeNull();expect(screen.queryByRole('button',{name:T.retry})).toBeNull()
+  expect(calls.filter(call=>call.url.includes(importPath)&&call.method==='POST')).toHaveLength(1)
+ })
+ it('does not restore the import decision into a revoked capability or a different session',async()=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-import-old'});const capabilities=[importCap]
+  const calls=installFetch({capabilities,respond:(url,init)=>url.includes(importPath)?init?.method==='POST'?problem(503):json(importPreview):undefined})
+  mount(importRoute,true);await screen.findByRole('region',{name:T.importProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+  cleanup();capabilities.splice(0);mount(importRoute,true);await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(screen.queryByRole('button',{name:T.retry})).toBeNull()
+  cleanup();capabilities.push(importCap);Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-import-new'});mount(importRoute,true);await screen.findByRole('region',{name:T.importProposal})
+  expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.url.includes(importPath)&&call.method==='POST')).toHaveLength(1)
+ })
+})
+
+it('does not transfer retained import proof or its original operation to another company',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-import-company-session'})
+ const calls=installFetch({capabilities:[importCap],respond:(url,init)=>{
+  if(!url.includes(importPath))return undefined
+  const company=(init?.headers as Record<string,string>)?.['X-Company-Id']??COMPANY_A
+  const native={...importHuman,batch:{...importBatch,companyId:company},preview:{...importHuman.preview,batch:{...importHuman.preview.batch,companyId:company}}}
+  return init?.method==='POST'?problem(503):json({...importPreview,companyId:company,officialInvoiceImport:native})
+ }})
+ mount(importRoute,true);await screen.findByRole('region',{name:T.importProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ await userEvent.setup().selectOptions(screen.getByRole('combobox',{name:'Şirket'}),COMPANY_B)
+ await waitFor(()=>expect(calls.some(call=>call.url.includes(importPath)&&call.method==='GET'&&call.headers['X-Company-Id']===COMPANY_B)).toBe(true))
+ expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(screen.queryByText(T.importRetained)).toBeNull()
+ expect(calls.filter(call=>call.url.includes(importPath)&&call.method==='POST')).toHaveLength(1)
 })

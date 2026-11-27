@@ -11,6 +11,7 @@ import { LEGAL_NAME_TEXT } from '../cari/legalName'
 import { DISPATCH_KG_TEXT as WEIGHING } from '../logistics/dispatchKilogramsText'
 import { PLAN_EXCESS_TEXT as PLAN_EXCESS } from '../logistics/planExcessText'
 import { useState } from 'react'
+import { OfficialInvoiceTaxWarningList } from '../finance/OfficialInvoiceImportPanel'
 import { Link, useParams } from 'react-router'
 import { useInfiniteQuery, useQuery, type InfiniteData } from '@tanstack/react-query'
 import { useShellState } from '../shell/shellContext'
@@ -70,7 +71,8 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const priceList = kind === 'product.price-list-version.v1'
   const ibanChange = kind === 'finance.bank-account-iban-change.v1'
   const partyCreditLimit = kind === 'finance.party-credit-limit.v1'
-  const receiptRetryKind = partyCreditLimit || priceList || ibanChange || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.transfer-overage.v1'
+  const officialImport = kind === 'finance.official-invoice-import.v1'
+  const receiptRetryKind = officialImport || partyCreditLimit || priceList || ibanChange || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.transfer-overage.v1'
   const historicalRetry = receiptRetryKind && attempt.hasPendingRetry
   const [reconcilingHistorical, setReconcilingHistorical] = useState(historicalRetry)
   const query = useQuery({ queryKey: [namespace, shell.routeEntryGeneration, 'work-decision', kind, id],
@@ -82,7 +84,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   if (company === null || capabilityFailClosed(shell)) return <StateBlock state={{ kind: 'no-authorized-company' }} subject={T.title} />
   // Disabling a query does not erase cached data or a refetch already in flight.
   // A receipt retry must never display current proposal/revision facts as its original human evidence.
-  const suppressReceiptPreview = (partyCreditLimit || priceList || ibanChange) && (attempt.hasPendingRetry || reconcilingHistorical || attempt.status.kind === 'applied')
+  const suppressReceiptPreview = (officialImport || partyCreditLimit || priceList || ibanChange) && (attempt.hasPendingRetry || reconcilingHistorical || attempt.status.kind === 'applied')
   const preview = !suppressReceiptPreview && query.data?.type === 'ok-single' ? query.data.data : null
   const frozen = attempt.status.kind === 'busy' || attempt.hasPendingRetry
   const reconciledHistorical = reconcilingHistorical && !attempt.hasPendingRetry && (attempt.status.kind === 'applied' || attempt.status.kind === 'refused')
@@ -129,7 +131,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       ...(loss ? { inventoryTransferLoss: { requestNumber: preview.inventoryTransferLoss!.requestNumber, decidedAtUtc: workDecisionLocalUtc(decisionTime)! } } : {}),
       ...(kind === 'manufacturing.plan.v1' && options !== undefined ? { manufacturingPlanReapproval: { selectedLabelIds: [...selectedLabels] } } : {}) })
     if (answer.type === 'applied') {
-      if (partyCreditLimit || ibanChange || priceList) setReconcilingHistorical(true)
+      if (officialImport || partyCreditLimit || ibanChange || priceList) setReconcilingHistorical(true)
       else void query.refetch()
     }
   }
@@ -145,7 +147,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
     <Link to="/onaylarim/kuyruk">{T.back}</Link>
     {preview === null ? reconciledHistorical ? <p>{T.priorDecisionResolved}</p> : historicalRetry ? <div><p>{T.priorDecisionPending}</p>
       <p>{T.version}: {attempt.pendingPayload?.expectedVersion}</p>
-      {partyCreditLimit ? <p>{T.creditLimitRetained}</p> : priceList ? <p>{T.priceListRetained}</p> : ibanChange ? <p>{T.ibanRetained}</p> : <><p>{overage ? T.overageRequestNumber : T.lossRequestNumber}: {frozenTransferRequest?.requestNumber}</p>
+      {officialImport ? <p>{T.importRetained}</p> : partyCreditLimit ? <p>{T.creditLimitRetained}</p> : priceList ? <p>{T.priceListRetained}</p> : ibanChange ? <p>{T.ibanRetained}</p> : <><p>{overage ? T.overageRequestNumber : T.lossRequestNumber}: {frozenTransferRequest?.requestNumber}</p>
       <p>{T.lossFrozenTime}: {frozenTransferRequest?.decidedAtUtc}</p></>}
     </div> : <StateBlock state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
       subject={T.title} onRetry={() => void query.refetch()} /> : <>
@@ -229,6 +231,33 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       <tbody>{preview.productPackageStandard.entries.map(entry => <tr key={`${entry.productId}:${entry.customerId ?? ''}`}>
         <td>{entry.productId}</td><td>{entry.customerId ?? T.packageDefault}</td><td>{entry.piecesPerPackage}</td>
       </tr>)}</tbody></table></section> : null}
+      {preview.officialInvoiceImport ? <section aria-label={T.importProposal}><h3>{T.importProposal}</h3>
+        <dl className={styles.facts}>
+          <dt>{T.importBatch}</dt><dd>{preview.officialInvoiceImport.batch.batchId}</dd>
+          <dt>{T.importCompany}</dt><dd>{preview.officialInvoiceImport.batch.companyId}</dd>
+          <dt>{T.importBatchVersion}</dt><dd>{preview.officialInvoiceImport.batch.batchVersion}</dd>
+          <dt>{T.importChecksum}</dt><dd>{preview.officialInvoiceImport.batch.batchChecksum}</dd>
+          <dt>{T.importTemplate}</dt><dd>{preview.officialInvoiceImport.batch.templateVersion}</dd>
+          <dt>{T.importStatus}</dt><dd>{preview.officialInvoiceImport.batch.status === 'Pending' ? T.importPending : T.importApproved}</dd>
+          <dt>{T.version}</dt><dd>{preview.officialInvoiceImport.batch.version}</dd>
+          <dt>{T.importRowCount}</dt><dd>{preview.officialInvoiceImport.batch.rowCount}</dd>
+          <dt>{T.importUploadedBy}</dt><dd>{preview.officialInvoiceImport.batch.uploadedBy}</dd>
+          <dt>{T.importUploadedAt}</dt><dd>{preview.officialInvoiceImport.batch.uploadedAtUtc}</dd>
+          <dt>{T.importApprovedBy}</dt><dd>{preview.officialInvoiceImport.batch.approvedBy ?? T.importNotApproved}</dd>
+          <dt>{T.importApprovedAt}</dt><dd>{preview.officialInvoiceImport.batch.approvedAtUtc ?? T.importNotApproved}</dd>
+        </dl>
+        <div className={styles.tableWrap} role="region" aria-label={T.importRows} tabIndex={0}><table className={styles.table}>
+          <caption>{T.importRows}</caption><thead><tr>
+            <th scope="col">{T.importOpenItem}</th><th scope="col">{T.importDocument}</th><th scope="col">{T.importInstallment}</th>
+            <th scope="col">{T.importSourceVersion}</th><th scope="col">{T.importDocumentKind}</th><th scope="col">{T.importParty}</th>
+            <th scope="col">{T.importCompanyAccount}</th><th scope="col">{T.importCurrency}</th><th scope="col">{T.importAmount}</th><th scope="col">{T.importDue}</th>
+          </tr></thead><tbody>{preview.officialInvoiceImport.preview.batch.rows.map(row => <tr key={row.openItemId}>
+            <td>{row.openItemId}</td><td>{row.sourceDocumentId}</td><td>{row.sourceInstallmentId}</td><td>{row.sourceVersion}</td>
+            <td>{T.importDocumentKindValue}</td><td>{row.partyId}</td><td>{row.companyAccountId}</td><td>{row.currencyId}</td>
+            <td>{row.amount}</td><td>{row.dueOn ?? T.importNoDue}</td>
+          </tr>)}</tbody></table></div>
+        <OfficialInvoiceTaxWarningList warnings={preview.officialInvoiceImport.preview.taxWarnings ?? []} />
+      </section> : null}
       {preview.partyCreditLimit ? <section aria-label={T.creditLimitProposal}><h3>{T.creditLimitProposal}</h3><dl className={styles.facts}>
         <dt>{CREDIT_LIMIT.partyId}</dt><dd>{preview.partyCreditLimit.partyId}</dd>
         <dt>{CREDIT_LIMIT.companyAccountId}</dt><dd>{preview.partyCreditLimit.companyAccountId}</dd>
@@ -362,7 +391,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       </div> : null}
       {kind === 'sales.order-draft.v1' && hasCapability(shell, AI_PANEL_CAPABILITY) && hasCapability(shell, 'sales.drafts.detail')
         ? <WorkSalesSummary companyId={preview.companyId} draftId={preview.itemId} expectedVersion={preview.sourceVersion} /> : null}
-      {preview.pending && !reconciledHistorical ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{kind === 'logistics.dispatch-note.v1' ? T.dispatchApprovalOnly : kind === 'finance.bank-account.v1' ? T.bankApprovalOnly : kind === 'logistics.weighing-difference.v1' ? T.weighingApprovalOnly : kind === 'logistics.plan-excess.v1' ? T.planExcessApprovalOnly : kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
+      {preview.pending && !reconciledHistorical ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{officialImport ? T.importApprovalOnly : kind === 'logistics.dispatch-note.v1' ? T.dispatchApprovalOnly : kind === 'finance.bank-account.v1' ? T.bankApprovalOnly : kind === 'logistics.weighing-difference.v1' ? T.weighingApprovalOnly : kind === 'logistics.plan-excess.v1' ? T.planExcessApprovalOnly : kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
         {preview.rejectionSupported !== false || preview.approvalReasonRequired ? <label>{customerReturn ? CUSTOMER_RETURN.note : counterparty ? T.optionalNote : kind === 'manufacturing.plan.v1' ? T.manufacturingRejectReason : T.reason}<textarea value={lossReason} maxLength={customerReturn?undefined:reasonLimit} onChange={event => setReason(event.target.value)} /></label> : null}
         {packageStandard ? <><label>{T.packageEffectiveFrom}<input type="date" value={displayedPackageDate}
           onChange={event => { setPackageDate(event.target.value); setPackageDateVersion(preview.sourceVersion) }} /></label><p>{T.packageDecisionHelp}</p></> : null}

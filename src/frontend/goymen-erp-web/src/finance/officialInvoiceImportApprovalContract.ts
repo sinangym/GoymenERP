@@ -1,3 +1,4 @@
+import { isNonNegativeDecimalText, isPositiveDecimalText } from './decimalText'
 import { decodeOfficialInvoiceTaxWarning, type OfficialInvoiceTaxWarning } from './officialSalesInvoiceApi'
 
 export type DecodeResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false }
@@ -63,6 +64,10 @@ export interface OfficialInvoiceApprovedBatch extends Omit<OfficialInvoicePendin
   readonly approvedAtUtc: string
 }
 
+export interface OfficialInvoiceDecisionDetail extends Omit<OfficialInvoicePendingDetail, 'batch'> {
+  readonly batch: OfficialInvoicePendingBatch | OfficialInvoiceApprovedBatch
+}
+
 export type OfficialInvoiceApprovalReply =
   | { readonly kind: 'succeeded'; readonly replayed: boolean; readonly batch: OfficialInvoiceApprovedBatch }
   | { readonly kind: 'refused'; readonly issues: readonly { readonly field: string; readonly code: string }[] }
@@ -113,7 +118,7 @@ export function decodePendingBatch(value: unknown): DecodeResult<OfficialInvoice
   return { ok: true, value: value as unknown as OfficialInvoicePendingBatch }
 }
 
-function decodeRow(value: unknown): DecodeResult<OfficialInvoicePendingRow> {
+function decodeRow(value: unknown, decision = false): DecodeResult<OfficialInvoicePendingRow> {
   const keys = ['openItemId', 'sourceDocumentId', 'sourceInstallmentId', 'sourceVersion', 'documentKind', 'partyId',
     'companyAccountId', 'currencyId', 'amount', 'dueOn'] as const
   if (!object(value) || !exact(value, keys)
@@ -121,7 +126,8 @@ function decodeRow(value: unknown): DecodeResult<OfficialInvoicePendingRow> {
       .every((key) => canonicalGuid(value[key]))
     || typeof value.sourceVersion !== 'string' || value.sourceVersion.length === 0
     || value.documentKind !== 'official-invoice-installment'
-    || typeof value.amount !== 'string' || !decimal.test(value.amount)
+    || typeof value.amount !== 'string' || (decision ? value.amount !== value.amount.trim()
+      || !nativePositiveAmount(value.amount) : !decimal.test(value.amount))
     || !(value.dueOn === null || (typeof value.dueOn === 'string' && date.test(value.dueOn)))) return { ok: false }
   return { ok: true, value: value as unknown as OfficialInvoicePendingRow }
 }
@@ -135,9 +141,9 @@ export function decodePendingPage(value: unknown): DecodeResult<OfficialInvoiceP
   return { ok: true, value: { companyId: value.companyId, items: items.map((item) => item.ok ? item.value : never()), nextCursor: value.nextCursor } }
 }
 
-export function decodePendingDetail(value: unknown): DecodeResult<OfficialInvoicePendingDetail> {
+function decodeDetail(value: unknown, decision: boolean): DecodeResult<OfficialInvoiceDecisionDetail> {
   if (!object(value) || !exact(value, ['batch', 'preview'])) return { ok: false }
-  const summary = decodePendingBatch(value.batch)
+  const summary = decision ? decodeDecisionBatch(value.batch) : decodePendingBatch(value.batch)
   if (!summary.ok || !object(value.preview)
     || !exact(value.preview, ['templateVersion', 'sourceSha256', 'batch', 'issues', 'isValid',
       ...('taxWarnings' in value.preview ? ['taxWarnings'] : [])])
@@ -151,9 +157,67 @@ export function decodePendingDetail(value: unknown): DecodeResult<OfficialInvoic
     || value.preview.batch.batchId !== summary.value.batchId || value.preview.batch.companyId !== summary.value.companyId
     || value.preview.batch.batchVersion !== summary.value.batchVersion
     || value.preview.batch.batchChecksum !== summary.value.batchChecksum || !Array.isArray(value.preview.batch.rows)) return { ok: false }
-  const rows = value.preview.batch.rows.map(decodeRow)
+  const rows = value.preview.batch.rows.map(row => decodeRow(row, decision))
   if (rows.length !== summary.value.rowCount || rows.some((row) => !row.ok)) return { ok: false }
-  return { ok: true, value: value as unknown as OfficialInvoicePendingDetail }
+  if (decision) {
+    const itemIds = new Set<string>(), identities = new Set<string>()
+    for (const decoded of rows) {
+      if (!decoded.ok) return { ok: false }
+      const row = decoded.value
+      const ids = [row.openItemId,row.sourceDocumentId,row.sourceInstallmentId,row.partyId,row.companyAccountId,row.currencyId]
+      const identity = `${row.sourceDocumentId.toLowerCase()}:${row.sourceInstallmentId.toLowerCase()}`
+      if (ids.some(id => id !== id.trim()) || !nativeToken(row.sourceVersion)
+        || itemIds.has(row.openItemId.toLowerCase()) || identities.has(identity)
+        || row.dueOn !== null && !realDate(row.dueOn)) return { ok: false }
+      itemIds.add(row.openItemId.toLowerCase()); identities.add(identity)
+    }
+    if (value.preview.taxWarnings != null && (summary.value.templateVersion === 'finance-official-invoice-installment-csv.v1'
+      || (value.preview.taxWarnings as readonly OfficialInvoiceTaxWarning[]).some(warning => warning.sourceDocumentId === null
+        || !rows.some(row => row.ok && row.value.sourceDocumentId === warning.sourceDocumentId)
+        || warning.code !== 'finance_official_invoice_tax_inconsistent'
+        || !nativeNonNegativeAmount(warning.expectedPayableFunctionalAmount.startsWith('-') ? warning.expectedPayableFunctionalAmount.slice(1) : warning.expectedPayableFunctionalAmount)
+        || !nativeNonNegativeAmount(warning.payableFunctionalAmount) || !nativePositiveAmount(warning.differenceFunctionalAmount)))) return { ok: false }
+  }
+  return { ok: true, value: value as unknown as OfficialInvoiceDecisionDetail }
+}
+
+// Preserve the existing pending-only API/legacy screen contract; the new purpose alone accepts terminal detail.
+export function decodePendingDetail(value: unknown): DecodeResult<OfficialInvoicePendingDetail> {
+  return decodeDetail(value, false) as DecodeResult<OfficialInvoicePendingDetail>
+}
+export function decodeDecisionDetail(value: unknown): DecodeResult<OfficialInvoiceDecisionDetail> {
+  return decodeDetail(value, true)
+}
+
+function decodeDecisionBatch(value: unknown): DecodeResult<OfficialInvoicePendingBatch | OfficialInvoiceApprovedBatch> {
+  if (!object(value)) return { ok: false }
+  const terminal = value.status === 'Approved'
+  const base = decodePendingBatch(terminal ? { ...value, status: 'Pending', version: '1', approvedBy: null, approvedAtUtc: null } : value)
+  if (!base.ok || !nativeToken(base.value.batchVersion) || base.value.batchId !== base.value.batchId.trim()
+    || base.value.companyId !== base.value.companyId.trim() || base.value.batchChecksum.length !== 64 || base.value.rowCount > 10_000
+    || base.value.uploadedBy !== base.value.uploadedBy.trim() || base.value.uploadedBy.length > 128 || !nativeUtc(base.value.uploadedAtUtc)
+    || !['finance-official-invoice-installment-csv.v1','finance-official-invoice-installment-csv.v2','finance-official-invoice-installment-csv.v3'].includes(base.value.templateVersion)
+    || terminal && (value.version !== '2' || typeof value.approvedBy !== 'string' || value.approvedBy.trim() !== value.approvedBy
+      || value.approvedBy.length === 0 || value.approvedBy.length > 128 || value.approvedBy === value.uploadedBy || !nativeUtc(value.approvedAtUtc)
+      || Date.parse(value.approvedAtUtc) < Date.parse(base.value.uploadedAtUtc))) return { ok: false }
+  return { ok: true, value: value as unknown as OfficialInvoicePendingBatch | OfficialInvoiceApprovedBatch }
+}
+// FinanceExactDecimalText uses exact digit text/BigInteger, not CLR decimal or a UI amount calculation.
+function nativeNonNegativeAmount(value: string): boolean {
+  return value === value.trim() && isNonNegativeDecimalText(value)
+}
+function nativePositiveAmount(value: string): boolean {
+  return value === value.trim() && isPositiveDecimalText(value)
+}
+function nativeToken(value: string): boolean {
+  return value.length > 0 && value.length <= 128 && value === value.trim() && /^[a-zA-Z0-9._:/-]+$/.test(value)
+}
+function nativeUtc(value: unknown): value is string {
+  return timestamp(value) && value === value.trim() && /(?:Z|\+00:00)$/.test(value)
+}
+function realDate(value: string): boolean {
+  const parsed = new Date(`${value}T00:00:00Z`)
+  return !value.startsWith('0000-') && Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
 }
 
 export function decodeApprovalReply(value: unknown): DecodeResult<OfficialInvoiceApprovalReply> {

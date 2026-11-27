@@ -1,3 +1,5 @@
+import { AppShell } from '../shell/AppShell'
+import { workRoutes } from './workRoutes'
 /**
  * D-05 "Onaylarım" in the REAL shell (router, CapabilityRoute, ShellProvider, auth boundary) over a stubbed fetch that
  * plays #639's Work read. Component evidence only: the server's authority, company fence and separation of duties are
@@ -83,8 +85,12 @@ function installFetch(granted: readonly string[], served: Served = {}) {
 }
 
 /** `staleTime`: 0 by default; 30_000 is the production ShellProvider cache timing. */
-async function renderAt(path: string, staleTime = 0) {
-  const router = createMemoryRouter(shellRoutes, { initialEntries: [path] })
+async function renderAt(path: string, staleTime = 0, legacyDetail = false) {
+  // Explicit legacy component evidence only. The real Finance kind route now belongs to WorkDecisionPage;
+  // its exact-purpose capability/route precedence is covered by WorkDecisionPage and financeMountDrift.
+  const legacyRoute = workRoutes.find(route => route.path === 'onaylarim/:kind/:approvalId')!
+  const routes = legacyDetail ? [{ path: '/', element: <AppShell />, children: [legacyRoute] }] : shellRoutes
+  const router = createMemoryRouter(routes, { initialEntries: [path] })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime } } })
   render(<ShellProvider queryClient={queryClient}><RouterProvider router={router} /></ShellProvider>)
   await screen.findByText('Onaycı', undefined, { timeout: 5000 })
@@ -290,7 +296,7 @@ describe('/onaylarim — the Finance pilot inbox', () => {
 
   it('a detail of another approval than the one asked for is not shown', async () => {
     installFetch([APPROVE], { detail: () => json({ ...detail, item: { ...item, approvalId: '22222222-2222-4222-8222-222222222222' } }) })
-    await renderAt(`/onaylarim/finance.official-invoice-import.v1/${APPROVAL}`)
+    await renderAt(`/onaylarim/finance.official-invoice-import.v1/${APPROVAL}`, 0, true)
     await waitFor(() => expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
     expect(screen.queryByTestId('work-approval-facts')).toBeNull()
   })
@@ -1095,7 +1101,7 @@ describe('/onaylarim — Inventory label code under Work approval contract 2.0 (
     ['Sales', [SALES_CAPABILITY.ordersApprove], `/onaylarim/sales.order-draft.v1/${DRAFT}`, () => json(salesDetail)],
   ])('reads a %s detail without the selector and needs no acknowledgment for it', async (_, granted, path, answer) => {
     const { work } = installFetch(granted, { detail: answer })
-    await renderAt(path)
+    await renderAt(path, 0, path.includes('/finance.official-invoice-import.v1/'))
     await screen.findByTestId('work-approval-facts')
     expect(work().map((call) => call.contract)).toEqual([null])
   })

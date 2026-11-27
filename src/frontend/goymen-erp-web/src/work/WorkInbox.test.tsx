@@ -22,7 +22,7 @@ import { WORK_INBOX_TEXT as T, INBOX_FILTER_PARAM } from './workInboxText'
 const USER = '11111111-1111-1111-1111-111111111111'
 const DIRECTORY = [{ id: COMPANY, code: 'GDC', legalName: 'Göymen A', isPlaceholder: false }]
 const INBOX_CAP = CAPABILITY.financePartyCreditLimitWorkDecision
-const LEGACY_CAP = CAPABILITY.financeOfficialInvoiceImportApprove
+const LEGACY_CAP = CAPABILITY.financeOfficialInvoiceImportWorkDecision
 
 const LIMIT_KIND = 'finance.party-credit-limit.v1'
 const PAYMENT_KIND = 'finance.manual-bank-payment.v1'
@@ -645,4 +645,11 @@ it.each([{granted:['price-lists.package-standard-version.work-decision'],visible
   await userEvent.setup().click(within(cardOf(kind)).getByRole('button',{name:T.explanationToggle}))
   expect(within(cardOf(kind)).getByRole('link',{name:'SENTETIK ürün'}).getAttribute('href')).toBe(`/urun/${PARTY_ID}`)
  }else{expect(api.inboxReads()).toHaveLength(0);expect(screen.queryByTestId('work-inbox-item')).toBeNull()}
+})
+
+it('does not expose official import cards through the native general approval screen capability alone',async()=>{
+ const api=installFetch({granted:[CAPABILITY.financeOfficialInvoiceImportApprove]})
+ await renderAt('/onaylarim/kuyruk')
+ await screen.findByTestId('work-inbox-no-authority')
+ expect(screen.queryByTestId('work-inbox-list')).toBeNull();expect(api.inboxReads()).toEqual([]);expect(screen.queryByRole('link',{name:/Resmî fatura içe alma onayı/})).toBeNull()
 })

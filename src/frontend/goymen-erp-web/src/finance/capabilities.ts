@@ -12,12 +12,6 @@
  * it is a `hasCapability` check inside the list, and the server refuses a self-approval (Ö4) anyway.
  */
 
-// Source declaration only; not mounted or published before the paired approval UI exists.
-export const STAGED_OFFICIAL_INVOICE_IMPORT_PURPOSE = {
-  capabilityId: 'finance.official-invoice-import.work-decision',
-  routePath: '/onaylarim/finance.official-invoice-import.v1/:approvalId',
-} as const
-
 export const FINANCE_CAPABILITY = {
   /** WP12 (FNS-D13/D113) bank statement workspace; import and match are controls of it. */
   bankStatements: 'finance.bank-statements.read',
@@ -195,6 +189,7 @@ export const partyLedgerPath = (
 
 /** WP8: owner-published approval-only routes; declared by Finance, rendered by Work. No read/report grant is implied. */
 export const FINANCE_WORK_DECISION_CAPABILITIES = [
+  ['finance.official-invoice-import.work-decision', '/onaylarim/finance.official-invoice-import.v1/:approvalId'],
   ['finance.party-credit-limit.work-decision', '/onaylarim/finance.party-credit-limit.v1/:approvalId'],
   ['finance.manual-bank-payment.work-decision', '/onaylarim/finance.manual-bank-payment.v1/:approvalId'],
   ['finance.bank-account-iban-change.work-decision', '/onaylarim/finance.bank-account-iban-change.v1/:approvalId'],
@@ -204,3 +199,9 @@ export const FINANCE_WORK_DECISION_CAPABILITIES = [
   ['finance.cash-account-passivation.work-decision', '/onaylarim/finance.cash-account-passivation.v1/:approvalId'],
   ['finance.cash-account-reactivation.work-decision', '/onaylarim/finance.cash-account-reactivation.v1/:approvalId'],
 ] as const
+
+/** Next owner purpose is not a published or mounted frontend capability. */
+export const STAGED_OFFICIAL_SALES_INVOICE_PURPOSE = {
+  capabilityId: 'finance.official-sales-invoice.work-decision',
+  routePath: '/onaylarim/finance.official-sales-invoice.v1/:approvalId',
+} as const
