@@ -23,6 +23,7 @@ public sealed partial class AccountingSqlServerRelationalAcceptanceTests
         foreach (var fault in new[] { "after-audit", "after-save", "precommit", "company", "actor", "member", "delegation", "cancel", "postcommit" })
         {
             await using var run = await Run.StartAsync(); var id = await ReversalSafetyPrepare(run);
+            var periodVersion = await run.ScalarAsync<long>("SELECT p.Version FROM accounting.Periods p JOIN accounting.JournalReversalProposals r ON r.PeriodId=p.Id AND r.CompanyId=p.CompanyId WHERE r.Id=@id", ("@id", id));
             var save = new ReversalApprovalSave(id); var committed = new NormalApprovalCommitted();
             await using var scope = new ReversalApprovalScope(run, save, committed);
             var deny = true; var observed = false; var pendingSeen = false; var savedFences = 0;
@@ -33,7 +34,7 @@ public sealed partial class AccountingSqlServerRelationalAcceptanceTests
                 if (staged && scope.Writer.HasPendingDrafts) pendingSeen = true;
                 if (save.Saved) savedFences++;
                 var reached = fault == "after-audit" ? pendingSeen && !scope.Writer.HasPendingDrafts && !save.Saved
-                    : fault == "precommit" ? savedFences == 3 : fault == "postcommit" ? committed.Commits > 0 : save.Saved;
+                    : fault == "precommit" ? savedFences == 10 : fault == "postcommit" ? committed.Commits > 0 : save.Saved;
                 if (!deny || !reached) return true;
                 observed = true;
                 if (fault == "company") { scope.Company.Set(CompanyB); return true; }
@@ -45,8 +46,9 @@ public sealed partial class AccountingSqlServerRelationalAcceptanceTests
             if (fault == "cancel") await Assert.ThrowsAnyAsync<OperationCanceledException>(() => scope.Approve(id, "reversal-owned", cancellation.Token));
             else { var refused = await scope.Approve(id, "reversal-owned"); Assert.Equal(AccountingApiStatus.Denied, refused.Status); Assert.Null(refused.Code); }
             Assert.True(observed);
-            if (fault == "precommit") Assert.Equal(3, savedFences); // Saved fence1, native-result validation2, final precommit3.
+            if (fault == "precommit") Assert.Equal(10, savedFences); // Saved1; receipt entry2/command3/source entry4/proposal5/journals6/cancellation actor7/release8; owner9/precommit10.
             scope.AssertClean(); await ReversalSafetyDurable(run, id, fault == "postcommit");
+            Assert.Equal(periodVersion + (fault == "postcommit" ? 1 : 0), await run.ScalarAsync<long>("SELECT p.Version FROM accounting.Periods p JOIN accounting.JournalReversalProposals r ON r.PeriodId=p.Id AND r.CompanyId=p.CompanyId WHERE r.Id=@id", ("@id", id)));
             deny = false; scope.Company.Set(CompanyA); scope.User.Actor = run.Actor; scope.User.Member = true;
             var success = await scope.Approve(id, "reversal-owned"); var replay = await scope.Approve(id, "reversal-owned");
             Assert.Equal(AccountingApiStatus.Ok, success.Status); Assert.True(replay.IsReplay);
@@ -136,6 +138,8 @@ public sealed partial class AccountingSqlServerRelationalAcceptanceTests
         Assert.Equal(approved ? 2 : 1, await run.ScalarAsync<int>("SELECT Version FROM accounting.JournalReversalProposals WHERE Id=@id", ("@id", id)));
         Assert.Equal(approved ? 2 : 1, await run.ScalarAsync<int>("SELECT Status FROM accounting.JournalReversalProposals WHERE Id=@id", ("@id", id)));
         Assert.Equal(approved ? 1 : 0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Journals j JOIN accounting.JournalReversalProposals p ON p.ReversalJournalId=j.Id AND p.CompanyId=j.CompanyId WHERE p.Id=@id", ("@id", id)));
+        Assert.Equal(approved ? 2 : 0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.JournalLines l JOIN accounting.JournalReversalProposals p ON p.ReversalJournalId=l.JournalId AND p.CompanyId=l.CompanyId WHERE p.Id=@id", ("@id", id)));
+        if (approved) Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM (SELECT l.AccountId FROM accounting.JournalLines l JOIN accounting.JournalReversalProposals p ON p.CompanyId=l.CompanyId AND (p.SourceJournalId=l.JournalId OR p.ReversalJournalId=l.JournalId) WHERE p.Id=@id GROUP BY l.AccountId HAVING SUM(l.Debit-l.Credit)<>0) net", ("@id", id)));
         Assert.Equal(approved ? 1 : 0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Commands WHERE CommandName=@n", ("@n", AccountingJournalReversalCommandNamesV1.Approve)));
         Assert.Equal(approved ? 1 : 0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId=@id AND EventType=N'accounting.journal-reversal.approved.v1'", ("@id", id.ToString("D"))));
     }

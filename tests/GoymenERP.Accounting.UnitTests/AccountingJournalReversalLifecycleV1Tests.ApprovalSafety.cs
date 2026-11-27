@@ -45,8 +45,11 @@ public sealed partial class AccountingJournalReversalLifecycleV1Tests
     [Fact]
     public void Native_reversal_public_contract_remains_sixteen_resource_and_eight_envelope_fields()
     {
-        var view = typeof(AccountingJournalReversalProposalViewV1).GetProperties(); Assert.Equal(16, view.Length);
-        Assert.Equal(8, typeof(AccountingApiResult<AccountingJournalReversalProposalViewV1>).GetProperties().Length);
+        var view = new AccountingJournalReversalProposalViewV1(Proposal, Company, Guid.NewGuid(), null, Guid.NewGuid(),
+            new(2026, 9, 25), new(2026, 9, 25), null, "SENTETIK", Maker, Now, "Pending", null, null, null, 1);
+        var json = System.Text.Json.JsonSerializer.SerializeToElement(new AccountingApiResult<AccountingJournalReversalProposalViewV1>(AccountingApiStatus.Ok, view, false, null));
+        Assert.Equal(16, json.GetProperty("Resource").EnumerateObject().Count());
+        Assert.Equal(8, json.EnumerateObject().Count());
     }
 
     [Theory] [InlineData(false)] [InlineData(true)]

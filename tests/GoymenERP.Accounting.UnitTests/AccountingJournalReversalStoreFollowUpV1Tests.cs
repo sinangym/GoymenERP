@@ -413,6 +413,7 @@ public sealed class AccountingJournalReversalStoreFollowUpV1Tests
             {
                 var replay = await attempt(true);
                 return replay.Status == AccountingApiStatus.Conflict && !replay.IsReplay
+                    && (replay.Code == AccountingStoreCodes.ConcurrentChange || race.NoWinnerCode == AccountingJournalReversalStoreCodesV1.PostingConflict && replay.Code == AccountingApiCodes.IdempotencyConflict)
                     ? replay with { Code = race.NoWinnerCode } : replay;
             }
         }

@@ -73,7 +73,10 @@ public sealed record AccountingJournalReversalProposalViewV1(
     Guid? DecidedBy,
     DateTimeOffset? DecidedAtUtc,
     string? DecisionReason,
-    int Version);
+    int Version)
+{
+    [System.Text.Json.Serialization.JsonIgnore] public AccountingJournalReversalApprovalReceiptV1? ApprovalReceipt { get; init; }
+}
 
 public interface IAccountingJournalReversalProposalStoreV1
 {
@@ -190,7 +193,9 @@ public sealed partial class AccountingJournalReversalServiceV1(
         var capturedActorId = currentUser.UserId!;
         return proposals.RunApprovalAsync(async replayOnly =>
         {
-            try { return await RunAsync(
+            try
+            {
+                var answer = await RunAsync(
             AccountingJournalReversalPermissionNamesV1.Approve,
             AccountingJournalReversalCommandNamesV1.Approve,
             idempotencyKey,
@@ -210,7 +215,10 @@ public sealed partial class AccountingJournalReversalServiceV1(
                     AccountingApiStatus.Ok, View(stored), false, null);
             },
             stored => View((AccountingJournalReversalProposalV1)stored),
-            cancellationToken, capturedCompany, capturedActor, capturedActorId, replayOnly); }
+            cancellationToken, capturedCompany, capturedActor, capturedActorId, replayOnly);
+                return await AttachJournalReversalReceiptAsync(answer, proposalId, expectedVersion, idempotencyKey,
+                    capturedCompany, capturedActor, capturedActorId, cancellationToken);
+            }
             catch (AccountingJournalReversalAuthorityDeniedException) { throw new NormalJournalAuthorityDeniedException(); }
         },
             async token =>

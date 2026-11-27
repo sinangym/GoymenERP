@@ -245,6 +245,7 @@ public sealed partial class AccountingJournalReversalLifecycleV1Tests
             {
                 var answer = await attempt(true);
                 return answer.Status == AccountingApiStatus.Conflict && !answer.IsReplay
+                    && (answer.Code == AccountingStoreCodes.ConcurrentChange || race.NoWinnerCode == AccountingJournalReversalStoreCodesV1.PostingConflict && answer.Code == AccountingApiCodes.IdempotencyConflict)
                     ? answer with { Code = race.NoWinnerCode } : answer;
             }
         }
