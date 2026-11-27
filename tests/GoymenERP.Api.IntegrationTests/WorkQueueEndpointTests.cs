@@ -156,6 +156,18 @@ public sealed class WorkQueueEndpointTests(GoymenErpApiFactory factory)
             source => source.Kind == NativeApprovalKindsV1.InventoryStockCount));
     }
 
+    [Fact]
+    public void Production_stock_scrap_inbox_has_one_owner_purpose_and_keeps_the_native_read_adapter()
+    {
+        using var scope = factory.Services.CreateScope();
+        var sources = scope.ServiceProvider.GetServices<IWorkInboxSourceV1>();
+        Assert.IsType<InventoryStockScrapWorkInboxSourceV1>(
+            Assert.Single(sources, source => source.Kind == NativeApprovalKindsV1.InventoryStockScrap));
+        Assert.IsType<InventoryStockScrapPendingApprovalAdapterV1>(Assert.Single(
+            scope.ServiceProvider.GetServices<INativeApprovalReadAdapterV1>(),
+            source => source.Kind == NativeApprovalKindsV1.InventoryStockScrap));
+    }
+
     private WebApplicationFactory<Program> Host(
         IReadOnlyList<INativeApprovalQueueAdapterV1> sources,
         Action<IServiceCollection>? configure = null) =>

@@ -218,8 +218,6 @@ builder.Services.AddWorkDelegationsV1(builder.Configuration);
 builder.Services.AddScoped<IWorkInboxSourceV1>(provider => new NativeApprovalWorkInboxSourceV1(
     ActivatorUtilities.CreateInstance<FinanceInvoiceImportPendingApprovalAdapterV1>(provider)));
 builder.Services.AddScoped<IWorkInboxSourceV1>(provider => new NativeApprovalWorkInboxSourceV1(
-    ActivatorUtilities.CreateInstance<InventoryStockScrapPendingApprovalAdapterV1>(provider)));
-builder.Services.AddScoped<IWorkInboxSourceV1>(provider => new NativeApprovalWorkInboxSourceV1(
     ActivatorUtilities.CreateInstance<SalesOrderDraftPendingApprovalAdapterV1>(provider)));
 builder.Services.AddScoped<WorkInboxReadQueryV1>();
 // WP-A3c: Work READ tools for the AI catalog over the same inbox query (maker ≠ checker, owner permissions) and the
