@@ -1,10 +1,33 @@
 using System.Text.Json;
 using GoymenERP.Modules.Accounting.Application;
+using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Api.IntegrationTests;
 
 public sealed partial class ManufacturingCostDifferenceSqlServerRelationalAcceptanceTests
 {
+    [SqlServerFact]
+    public async Task Cost_difference_purpose_read_rejects_mismatched_or_noncanonical_stored_signed_total_before_human_release()
+    {
+        await using var run = await Run.StartAsync(); var id = await SafetyPrepare(run); var counts = await SafetyCounts(run);
+        await using var scope = new CostApprovalScope(run);
+        var genuine = await scope.Service.ReadDecisionAsync(id, _ => Task.CompletedTask);
+        Assert.Equal(AccountingApiStatus.Ok, genuine.Status); Assert.Equal("600", genuine.Resource?.Proposal.SignedTlDifference);
+        foreach (var invalid in new[] { "601", "600.0" })
+        {
+            // Adversarial retained-row fixture, outside the native EF mutation protocol. No SQL guard/trigger is disabled.
+            // Only purpose disclosure is exercised; this does not claim that a subsequent native mutation was rolled back.
+            Assert.Equal(1, await scope.Db.Database.ExecuteSqlInterpolatedAsync($"UPDATE accounting.ManufacturingCostDifferences SET SignedTlDifference={invalid} WHERE CompanyId={Company} AND Id={id}"));
+            var refused = await scope.Service.ReadDecisionAsync(id, _ => Task.CompletedTask);
+            Assert.Equal(AccountingApiStatus.Unavailable, refused.Status); Assert.Null(refused.Resource);
+            Assert.Equal(counts, await SafetyCounts(run)); scope.AssertClean();
+        }
+        Assert.Equal(1, await scope.Db.Database.ExecuteSqlInterpolatedAsync($"UPDATE accounting.ManufacturingCostDifferences SET SignedTlDifference={"600"} WHERE CompanyId={Company} AND Id={id}"));
+        var restored = await scope.Service.ReadDecisionAsync(id, _ => Task.CompletedTask);
+        Assert.Equal(AccountingApiStatus.Ok, restored.Status); Assert.Equal(genuine.Resource?.SourceFactsDigest, restored.Resource?.SourceFactsDigest);
+        Assert.Equal(counts, await SafetyCounts(run)); scope.AssertClean();
+    }
+
     [SqlServerFact]
     public async Task Cost_difference_purpose_read_preserves_full_recorded_facts_without_live_plan_and_refuses_maker_or_final_consumer_loss()
     {

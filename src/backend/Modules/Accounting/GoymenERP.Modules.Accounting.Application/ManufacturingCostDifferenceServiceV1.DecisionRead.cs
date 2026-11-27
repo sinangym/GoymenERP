@@ -56,6 +56,17 @@ public sealed partial class ManufacturingCostDifferenceServiceV1 : IManufacturin
             output.UsdUnitCostPerKg is { } usd ? Text(usd) : null, Text(output.OriginalTlAmount!.Value))).ToArray();
     private static string Text(decimal value) => value.ToString("0.############################", CultureInfo.InvariantCulture);
 
+    /// <summary>The exact existing native admission aggregate and text; no new cost or rounding policy.</summary>
+    public static bool TryCostDifferenceSignedTotal(ManufacturingCostDifferenceEventV1 source, out decimal amount, out string text)
+    {
+        amount = default; text = "";
+        if (source.Outputs is null || source.Outputs.Any(x => x is null || !x.ConsumedTlDifference.HasValue)) return false;
+        var exact = source.Outputs.Aggregate(AccountingInventoryCostAmountsV1.FromDecimal(0), (sum, output) =>
+            AccountingInventoryCostAmountsV1.Add(sum, AccountingInventoryCostAmountsV1.FromDecimal(output.ConsumedTlDifference!.Value)));
+        if (!AccountingInventoryCostAmountsV1.TryExactDecimal(exact, 28, out amount)) return false;
+        text = Text(amount); return true;
+    }
+
     private static bool ValidCostDifferenceSource(ManufacturingCostDifferenceDecisionSourceV1 source, Guid companyId, Guid id)
     {
         if (source.Proposal is not { } p || p.CompanyId != companyId || p.ProposalId != id || companyId == Guid.Empty || id == Guid.Empty
@@ -79,6 +90,7 @@ public sealed partial class ManufacturingCostDifferenceServiceV1 : IManufacturin
         if (frozen is null || frozen.CompanyId != companyId || frozen.CostDifferenceEventId != id
             || frozen.ManufacturingOrderId != p.ManufacturingOrderId || frozen.GenerationId != p.GenerationId
             || frozen.GenerationVersion != p.GenerationVersion || !ReadableCostDifferenceOutputs(frozen)
+            || !TryCostDifferenceSignedTotal(frozen, out _, out var signedTotal) || p.SignedTlDifference != signedTotal
             || JsonSerializer.Serialize(CostDifferenceOutputs(frozen), Json) != JsonSerializer.Serialize(p.Outputs, Json)) return false;
         return p.Status == "Prepared" && p.ApprovedBy is null && p.JournalId is null && source.ApprovedAtUtc is null
             || p.Status == "Posted" && p.ApprovedBy is { } checker && checker != Guid.Empty && checker != p.PreparedBy

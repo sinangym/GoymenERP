@@ -50,6 +50,7 @@ public sealed partial class ManufacturingCostDifferenceV1Tests
     [InlineData("null-view")] [InlineData("company")] [InlineData("proposal")] [InlineData("source-hash")]
     [InlineData("source-json")] [InlineData("source-identity")] [InlineData("output-amount")]
     [InlineData("prepared-time")] [InlineData("currency")] [InlineData("plan")] [InlineData("journal")]
+    [InlineData("signed-total")] [InlineData("signed-format")]
     public async Task Purpose_read_malformed_or_foreign_retained_facts_are_unavailable_not_human_success(string fault)
     {
         var store = new SyntheticCostDecisionProtocolStore(); var source = store.Source!;
@@ -59,6 +60,8 @@ public sealed partial class ManufacturingCostDifferenceV1Tests
             "proposal" => source with { Proposal = source.Proposal with { ProposalId = Guid.NewGuid() } }, "source-hash" => source with { SourceHash = new('F', 64) },
             "source-json" => source with { SourceJson = "{", SourceHash = Hash("{") }, "source-identity" => source with { Proposal = source.Proposal with { GenerationId = Guid.NewGuid() } },
             "output-amount" => source with { Proposal = source.Proposal with { Outputs = [source.Proposal.Outputs[0] with { ConsumedTlDifference = "601" }] } },
+            "signed-total" => source with { Proposal = source.Proposal with { SignedTlDifference = "601" } },
+            "signed-format" => source with { Proposal = source.Proposal with { SignedTlDifference = "600.0" } },
             "prepared-time" => source with { PreparedAtUtc = null }, "currency" => source with { CurrencyId = null },
             "plan" => source with { Proposal = source.Proposal with { AccountPlan = null } },
             _ => source with { Proposal = source.Proposal with { Status = "Posted", ApprovedBy = Checker, JournalId = Guid.NewGuid() }, ApprovedAtUtc = DecisionAt, JournalBound = false },
@@ -136,6 +139,32 @@ public sealed partial class ManufacturingCostDifferenceV1Tests
             RemainingQuantityKgRatio = new("2", "3"), ConsumedQuantityKgRatio = new("1", "3") }] };
         var ratio = Assert.Single(ManufacturingCostDifferenceServiceV1.CostDifferenceOutputs(source));
         Assert.Equal("2 / 3", ratio.RemainingQuantityKg); Assert.Equal("1 / 3", ratio.ConsumedQuantityKg); Assert.Equal("600", ratio.ConsumedTlDifference);
+    }
+
+    [Fact]
+    public void Native_admission_total_helper_keeps_signed_exact_aggregate_and_canonical_text()
+    {
+        var source = Source();
+        foreach (var value in new[] { 600m, -600m, 33.3400m, 0m })
+        {
+            var frozen = source with { Outputs = [source.Outputs[0] with { ConsumedTlDifference = value }] };
+            Assert.True(ManufacturingCostDifferenceServiceV1.TryCostDifferenceSignedTotal(frozen, out var total, out var text));
+            Assert.Equal(value, total); Assert.Equal(value.ToString("0.############################", System.Globalization.CultureInfo.InvariantCulture), text);
+        }
+        var overflow = source with { Outputs = [source.Outputs[0] with { ConsumedTlDifference = decimal.MaxValue }, source.Outputs[0] with { ConsumedTlDifference = 1m }] };
+        Assert.False(ManufacturingCostDifferenceServiceV1.TryCostDifferenceSignedTotal(overflow, out _, out _));
+    }
+
+    [Fact]
+    public async Task Invalid_owner_total_after_native_success_keeps_native_answer_without_forging_receipt_or_claiming_rollback()
+    {
+        var store = new SyntheticCostDecisionProtocolStore(); store.Source = store.Source! with { Proposal = store.Source!.Proposal with { SignedTlDifference = "601" } };
+        var service = DecisionService(store); var first = await service.ApproveAsync(EventId, 2, "invalid-source-total");
+        Assert.Equal(AccountingApiStatus.Ok, first.Status); Assert.Null(first.Resource?.ApprovalReceipt);
+        Assert.Equal(1, store.Effects); Assert.Single(store.Commands); // Explicit protocol effects remain; this is no rollback proof.
+        var replay = await service.ApproveAsync(EventId, 2, "invalid-source-total");
+        Assert.True(replay.IsReplay); Assert.Equal("601", replay.Resource?.SignedTlDifference); Assert.Null(replay.Resource?.ApprovalReceipt);
+        Assert.Equal(1, store.Effects); Assert.Single(store.Commands);
     }
 
     private static readonly DateTimeOffset DecisionAt = DateTimeOffset.Parse("2026-11-18T10:00:00Z");

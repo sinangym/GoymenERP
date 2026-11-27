@@ -28,6 +28,8 @@ public sealed partial class ManufacturingCostDifferenceStoreV1 : IManufacturingC
         var bound = false; string? journalCorrelation = null;
         if (row.JournalId is { } journalId)
         {
+            // Header identity only. Complete line amounts are trusted through the genuine native Commands result/owned commit,
+            // not claimed as an independently re-read journal-line proof by this purpose read.
             var journal = await db.Journals.AsNoTracking().Where(x => x.CompanyId == companyId && x.Id == journalId)
                 .Select(x => new { x.SourceId, x.PeriodId, x.CurrencyId, x.TransactionDate, x.AccountingDate, x.StoredBy, x.CorrelationId })
                 .SingleOrDefaultAsync(cancellationToken);

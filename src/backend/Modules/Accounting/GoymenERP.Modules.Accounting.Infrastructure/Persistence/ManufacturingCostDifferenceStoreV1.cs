@@ -42,16 +42,14 @@ public sealed partial class ManufacturingCostDifferenceStoreV1(AccountingDbConte
             if (previous.SourceHash != hash) throw Refuse("cost_difference_source_conflict");
             return;
         }
-        var exactAmount = source.Outputs.Aggregate(AccountingInventoryCostAmountsV1.FromDecimal(0), (sum, output) =>
-            AccountingInventoryCostAmountsV1.Add(sum, AccountingInventoryCostAmountsV1.FromDecimal(output.ConsumedTlDifference!.Value)));
-        if (!AccountingInventoryCostAmountsV1.TryExactDecimal(exactAmount, 28, out var amount))
+        if (!ManufacturingCostDifferenceServiceV1.TryCostDifferenceSignedTotal(source, out var amount, out var signedTotal))
             throw Refuse("cost_difference_amount_unreadable");
         var row = new ManufacturingCostDifferenceRow
         {
             Id = envelope.EventId, CompanyId = companyId, ManufacturingOrderId = source.ManufacturingOrderId,
             GenerationId = source.GenerationId, GenerationVersion = source.GenerationVersion, SourceHash = hash,
             SourceJson = envelope.PayloadJson, SourceOccurredAtUtc = envelope.OccurredAtUtc,
-            SourceCorrelationId = envelope.CorrelationId, SignedTlDifference = Text(amount), Status = amount == 0 ? 4 : 1, Version = 1,
+            SourceCorrelationId = envelope.CorrelationId, SignedTlDifference = signedTotal, Status = amount == 0 ? 4 : 1, Version = 1,
         };
         db.ManufacturingCostDifferences.Add(row);
         var actor = "inbox." + ManufacturingCostDifferenceInboxV1.ConsumerName;
