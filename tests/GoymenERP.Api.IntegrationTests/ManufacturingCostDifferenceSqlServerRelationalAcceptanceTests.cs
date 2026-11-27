@@ -7,17 +7,19 @@ using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Application.Inbox;
 using GoymenERP.Modules.Accounting.Domain.Journals;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>Real owner stores, SQL constraints and Audit interceptor; plans, currency and actors are SENTETIK.</summary>
-public sealed class ManufacturingCostDifferenceSqlServerRelationalAcceptanceTests
+public sealed partial class ManufacturingCostDifferenceSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid Company = TestCompanyIds.CompanyA;
     private static readonly Guid Maker = Guid.Parse("c0621000-0000-4000-8000-000000000001");
@@ -214,7 +216,7 @@ public sealed class ManufacturingCostDifferenceSqlServerRelationalAcceptanceTest
             catch { await run.DisposeAsync(); throw; }
         }
         public SqlServerRelationalApiFactory Factory => factory;
-        public Scope Scope(Guid? company = null) => new(factory.DatabaseConnectionString, company ?? Company);
+        public Scope Scope(Guid? company = null) => new(factory.DatabaseConnectionString, company ?? Company, factory.Services);
         public async Task<Guid> OpenPeriod()
         {
             await using var scope = Scope();
@@ -244,23 +246,26 @@ public sealed class ManufacturingCostDifferenceSqlServerRelationalAcceptanceTest
     }
     private sealed class Scope : IAsyncDisposable
     {
-        public CompanyContext Company { get; }
+        private readonly IServiceScope auditScope;
+        public ICompanyContext Company { get; }
         public AccountingDbContext Db { get; }
         public AccountingStore Posting { get; }
         public ManufacturingCostDifferenceStoreV1 Store { get; }
-        public Scope(string connection, Guid company)
+        public Scope(string connection, Guid company, IServiceProvider services)
         {
-            Company = new CompanyContext(); Company.Set(company);
-            var audit = new AuditEventCollector();
+            auditScope = services.CreateScope();
+            Company = auditScope.ServiceProvider.GetRequiredService<ICompanyContext>(); Company.Set(company);
+            var audit = auditScope.ServiceProvider.GetRequiredService<AuditEventCollector>();
+            var writer = auditScope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
             Db = new AccountingDbContext(new DbContextOptionsBuilder<AccountingDbContext>()
                 .UseSqlServer(connection, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", AccountingDbContext.Schema))
                 .AddInterceptors(new AuditSaveChangesInterceptor(audit, Company)).Options, Company);
             Posting = new(Db, Company, audit, TimeProvider.System,
-                new AccountingAmountScaleVerifier(new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(company)));
+                new AccountingAmountScaleVerifier(new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(company)), normalApprovalAuditWriter: writer);
             Store = new(Db, Posting, Company, new Plan(), new Currencies(), audit, TimeProvider.System);
         }
         public ManufacturingCostDifferenceServiceV1 Service(Guid actor) => new(Store, Posting, new Authority(), Company, new User(actor), new Correlation());
-        public ValueTask DisposeAsync() => Db.DisposeAsync();
+        public async ValueTask DisposeAsync() { try { await Db.DisposeAsync(); } finally { auditScope.Dispose(); } }
     }
     private sealed class Plan : IActiveAccountPlanReaderV1
     {
