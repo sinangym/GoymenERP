@@ -1,3 +1,4 @@
+import { AI_FEEDBACK_TEXT as FEEDBACK } from './aiFeedbackText'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -28,7 +29,7 @@ type AskHandler = (body: unknown, companyId: string | null) => Response | Promis
 
 function installFetch(
   capabilities: readonly string[] = [],
-  ai: { readonly capabilities?: () => Response; readonly ask?: AskHandler; readonly identity?: () => { userId: string; authenticationSessionBinding: string } } = {},
+  ai: { readonly capabilities?: () => Response; readonly ask?: AskHandler; readonly feedback?: (url: string, init?: RequestInit) => Response; readonly identity?: () => { userId: string; authenticationSessionBinding: string } } = {},
 ) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString()
@@ -58,6 +59,7 @@ function installFetch(
     }
     // Plan AI-3: the server is the authority on whether AI may be used; by default it says AI is off.
     if (url.endsWith('/ai/capabilities')) return ai.capabilities ? ai.capabilities() : json(DISABLED)
+    if (url.includes('/ai/answers/') && ai.feedback) return ai.feedback(url,init)
     if (url.endsWith('/ai/ask') && init?.method === 'POST' && ai.ask) {
       return ai.ask(JSON.parse(String(init.body)), companyId)
     }
@@ -589,4 +591,21 @@ describe('B1 open-record question binding', () => {
     expect(askCalls(fetch)).toHaveLength(1)
   })
 
+})
+
+it.each(['grounded','legacy','general','cannot-answer'] as const)('opens feedback only for a server-issued grounded answer identity: %s',async variant=>{
+ const answerId='dddddddd-0000-4000-8000-000000000001'
+ const response=variant==='general'?GENERAL_RESPONSE:variant==='cannot-answer'?{outcome:'cannot_answer',toolResults:[],answer:null}:variant==='grounded'?{...ERP_RESPONSE,answer:{...ERP_RESPONSE.answer,answerId}}:ERP_RESPONSE
+ const fetch=installFetch([AI_PANEL_CAPABILITY],{capabilities:()=>json(READY),ask:()=>json(response),feedback:()=>json({answerId,version:'0',kind:null,reasonCode:null})})
+ renderShell();const panel=await openPanel();await within(panel).findByRole('textbox',{name:AI_TEXT.questionLabel})
+ if(variant==='general')await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.generalMode}))
+ await userEvent.type(within(panel).getByRole('textbox',{name:AI_TEXT.questionLabel}),'SENTETIK soru');await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.submit}))
+ if(variant==='grounded'){
+  await within(panel).findByLabelText(FEEDBACK.kind)
+  expect(fetch.mock.calls.filter(([url])=>String(url).includes(`/ai/answers/${answerId}/feedback`))).toHaveLength(1)
+ }else{
+  await within(panel).findByText(variant==='cannot-answer'?AI_TEXT.cannotAnswer:variant==='general'?GENERAL_RESPONSE.answer.text:ERP_RESPONSE.answer.text)
+  expect(within(panel).queryByRole('region',{name:FEEDBACK.heading})).toBeNull()
+  expect(fetch.mock.calls.some(([url])=>String(url).includes('/ai/answers/'))).toBe(false)
+ }
 })

@@ -1,3 +1,4 @@
+import { AiFeedbackPanel } from './AiFeedbackPanel'
 /**
  * Plan AI-5 — her sayfada sağ AI paneli; plan AI-3 — salt-okuma runtime'ı.
  *
@@ -345,12 +346,12 @@ function AskForm({ companyId, tools, mode, recordScreen }: { readonly companyId:
           {pending ? AI_TEXT.submitting : AI_TEXT.submit}
         </button>
       </form>
-      <AskResult view={view} />
+      <AskResult view={view} companyId={companyId} />
     </div>
   )
 }
 
-function AskResult({ view }: { readonly view: AskView }) {
+function AskResult({ view, companyId }: { readonly view: AskView; readonly companyId: string }) {
   switch (view.kind) {
     case 'pending':
       return <StateBlock state={{ kind: 'initial-loading' }} subject={AI_TEXT.stateSubject} />
@@ -370,7 +371,8 @@ function AskResult({ view }: { readonly view: AskView }) {
             {AI_TEXT.answerHeading}
           </h3>
           {view.answer.answer !== null ? (
-            <ComposedAnswerView answer={view.answer.answer} />
+            <><ComposedAnswerView answer={view.answer.answer} />
+            {view.answer.mode !== AI_ASK_MODE.generalChat && view.answer.answer.grounded !== false && view.answer.answer.answerId !== undefined ? <AiFeedbackPanel key={view.answer.answer.answerId} companyId={companyId} answerId={view.answer.answer.answerId}/> : null}</>
           ) : (
             <p data-ai-answer="cannot-answer">{view.answer.mode === AI_ASK_MODE.generalChat ? AI_TEXT.generalCannotAnswer : AI_TEXT.cannotAnswer}</p>
           )}
