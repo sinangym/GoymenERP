@@ -3,6 +3,7 @@ using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -131,6 +132,66 @@ public sealed partial class FinanceOfficialSalesInvoiceSqlServerRelationalAccept
             Assert.Contains(error.InnerExceptions, item => item is SqlException { Number: 1205 });
             Assert.Single(boundaries); Assert.Equal(1, rollback.Attempts); scope.AssertClean();
             await OfficialSafetyDurable(run, id, 1, 1, 0, 0);
+        }
+    }
+
+    [SqlServerFact]
+    public async Task Injected_sql_deadlock_victim_after_provider_rollback_skips_second_rollback_and_reads_only_original_receipt()
+    {
+        await using var run = await Run.StartAsync();
+        foreach (var approve in new[] { true, false })
+        foreach (var wrapped in new[] { false, true })
+        foreach (var publishWinner in new[] { false, true })
+        {
+            var id = await OfficialSafetyPrepare(run); var save = new OfficialSafetySaveProbe(id);
+            var secondRollback = new OfficialSafetyRollbackFault();
+            await using var scope = new OfficialSafetyScope(run, probe: save, extra: secondRollback);
+            var seenPending = false; var providerCompleted = false; var reconciled = false;
+            var key = "official-provider-abort-" + id; var boundaries = new HashSet<Guid>();
+            FinanceOfficialSalesInvoiceResultV1? winner = null;
+            scope.Authority.BeforeRead = () =>
+            {
+                if (scope.Writer.HasPendingDrafts) seenPending = true;
+                return PermissionDecision.Allowed;
+            };
+            scope.Authority.AfterRead = async () =>
+            {
+                var transaction = scope.Database.Database.CurrentTransaction;
+                if (transaction is not null) boundaries.Add(transaction.TransactionId);
+                if (!providerCompleted && seenPending && !scope.Writer.HasPendingDrafts && transaction is not null)
+                {
+                    // Complete the real provider transaction, then inject the existing 1205 primitive; no real deadlock claim.
+                    var sql = Assert.IsType<SqlTransaction>(transaction.GetDbTransaction());
+                    await sql.RollbackAsync(); Assert.Null(sql.Connection); providerCompleted = true;
+                    var victim = SqlConcurrencyWrapperPolicyTests.SqlFailure(1205);
+                    if (wrapped) throw new DbUpdateException("SENTETIK provider-aborted victim", victim);
+                    throw victim;
+                }
+                if (!providerCompleted || reconciled || transaction is not null) return;
+                reconciled = true; scope.AssertClean();
+                if (!publishWinner) return;
+                await using var actual = new OfficialSafetyScope(run);
+                winner = await actual.Decide(id, approve, key);
+                Assert.Equal(CommandOutcome.Succeeded, winner.Outcome); Assert.False(winner.IsReplay);
+            };
+            var result = await scope.Decide(id, approve, key);
+            Assert.True(providerCompleted); Assert.True(reconciled); Assert.Equal(0, secondRollback.Attempts);
+            Assert.Equal(2, boundaries.Count); Assert.Equal(0, save.Attempts); scope.AssertClean();
+            if (publishWinner)
+            {
+                Assert.NotNull(winner); Assert.Equal(CommandOutcome.Succeeded, result.Outcome); Assert.True(result.IsReplay);
+                Assert.Equal(System.Text.Json.JsonSerializer.Serialize(winner.Resource, FinanceJson.CreateOptions()),
+                    System.Text.Json.JsonSerializer.Serialize(result.Resource, FinanceJson.CreateOptions()));
+                Assert.Equal(winner.OriginalCorrelationId, result.OriginalCorrelationId);
+                await OfficialSafetyDurable(run, id, 2, approve ? 2 : 3, 1, 1);
+            }
+            else
+            {
+                Assert.Equal(CommandOutcome.VersionConflict, result.Outcome); Assert.False(result.IsReplay);
+                await OfficialSafetyDurable(run, id, 1, 1, 0, 0);
+                Assert.Equal(CommandOutcome.Succeeded, (await scope.Decide(id, approve, key)).Outcome);
+                await OfficialSafetyDurable(run, id, 2, approve ? 2 : 3, 1, 1);
+            }
         }
     }
 

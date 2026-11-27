@@ -58,10 +58,18 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1
             }
             catch (Exception failure)
             {
+                var deadlock = failure is SqlException { Number: 1205 }
+                    or DbUpdateException { InnerException: SqlException { Number: 1205 } };
                 var faults = new List<Exception>();
                 if (transaction is not null)
                 {
-                    if (!committed) try { await transaction.RollbackAsync(CancellationToken.None); } catch (Exception error) { faults.Add(error); }
+                    if (!committed) try
+                    {
+                        // SQL Server already aborts a deadlock victim. Only its invalid provider transaction skips a second rollback.
+                        if (!deadlock || transaction.GetDbTransaction() is not SqlTransaction { Connection: null })
+                            await transaction.RollbackAsync(CancellationToken.None);
+                    }
+                    catch (Exception error) { faults.Add(error); }
                     try { await transaction.DisposeAsync(); } catch (Exception error) { faults.Add(error); }
                 }
                 try { dbContext.ChangeTracker.Clear(); } catch (Exception error) { faults.Add(error); }
@@ -69,8 +77,6 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1
                 if (faults.Count > 0) throw new AggregateException("Official sales invoice cleanup failed; replay is unsafe.", [failure, .. faults]);
                 if (failure is InvoiceDecisionRefusal refusal) return refusal.Result;
                 // Serializable reads and the actual Audit write can lose a deadlock before owner SaveChanges.
-                var deadlock = failure is SqlException { Number: 1205 }
-                    or DbUpdateException { InnerException: SqlException { Number: 1205 } };
                 if (!replayOnly && !committed && (deadlock
                     || state.SaveAttempted && !state.Saved && failure is DbUpdateException update && IsLostRace(update)))
                     throw new InvoiceDecisionSaveRace();
