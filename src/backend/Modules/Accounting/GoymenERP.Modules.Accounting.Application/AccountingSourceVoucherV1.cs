@@ -31,7 +31,7 @@ public interface IAccountingSourceVoucherStoreV1
         Task.FromResult(new AccountingApiResult<AccountingSourceVoucherViewV1>(AccountingApiStatus.Unavailable, null, false, null));
     Task RecordApprovalAttemptAsync(AccountingCommandRecord record, Func<CancellationToken, Task> freshFence,
         CancellationToken token = default) => Task.FromException(new AccountingStoreException(
-            "source_voucher_source_unavailable", "Kaynak fiþ onay sýnýrý kullanýlamýyor."));
+            "source_voucher_source_unavailable", "Kaynak fiÅŸ onay sÄ±nÄ±rÄ± kullanÄ±lamÄ±yor."));
 
     Task<IReadOnlyList<AccountingSourceVoucherViewV1>> ListAsync(CancellationToken cancellationToken = default);
     Task<AccountingSourceVoucherViewV1?> FindAsync(Guid id, CancellationToken cancellationToken = default);
