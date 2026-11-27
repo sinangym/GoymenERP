@@ -1962,7 +1962,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Compile/check final Counterparty human proof/publication with Logistics plan-excess purpose and AI mode cohort. Preserve17 versus64 acceptance distinction and all closure gates.",
+      "next_action": "Finish paired Logistics source/UI checks and native Inventory overage adapter independently; retain all64-flow SQL/HTTP/browser/CI/K3 acceptance gates.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2044,7 +2044,12 @@
         "tests/GoymenERP.Sales.UnitTests/SalesInvoiceWorkDecisionSourceV1Tests.cs",
         "tests/GoymenERP.Sales.UnitTests/SalesOrderWorkDecisionReadV1Tests.cs",
         "tests/GoymenERP.Sales.UnitTests/SalesRemainingApprovalWorkInboxSourcesV1Tests.cs",
-        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs"
+        "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs",
+        "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.LogisticsPlanExcess.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Shell/LogisticsShellCapabilityProvider.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/WorkInbox/LogisticsPlanExcessWorkInboxSourceV1.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkLogisticsPlanExcessDecisionHostTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsInstructionSqlServerRelationalAcceptanceTests.WorkPlanExcess.cs"
       ],
       "ownership_lease": {
         "branch": "codex/erp-completion-20261126",
@@ -2415,6 +2420,34 @@
             ],
             "new_permissions": [],
             "migration": null
+          },
+          {
+            "source_commit": "11657e046",
+            "source_commits": [
+              "f4ec2db35",
+              "7265b9e2f",
+              "6955c5e63",
+              "2dd74372b",
+              "8f00dfad4",
+              "11657e046",
+              "83aac68e6"
+            ],
+            "scope": "Logistics plan-excess native approval composition, immutable two-version receipt proof, human-only proposal preview, paired typed Work screen and native route/reference preservation. Existing transaction/audit/fresh-authority/delegation infrastructure reused; no new permission/migration/grant/activation.",
+            "local_checks": {
+              "Counterparty": "403/403 passed skip0 at74c65ee95",
+              "Logistics": "579/579 passed skip0 at7265b9e2f; publication11657 source checks pending",
+              "API": "331/331 passed skip0 at2dd74372b: Work217 and AI114; includes19 Counterparty and7 Logistics host cases. Actual HTTP/SQL not run.",
+              "UI": "Final combined frontend tree equals agenta0c12a670:3 Work files173 passed skip0; full tsc and14-file lint exit0 (only existing AI test warning). B5 four files98 passed skip0 at unchangedeb64; no redundant AI rerun. Earlier8f172-case/2-warning log retained; new Work warning fixed without suppression."
+            },
+            "sql": "3 Work plan-excess facts added to inventory and compiled by the331-case integration build; actual SQL NOT_RUN. Existing4 native boundary and12 native/6 Work Counterparty facts remain unexecuted.",
+            "review": "Bounded nonauthor backend/source/UI reviews; ScreenId tuple and missing human context fixed by7265b9e2f/2dd74372b. Paired publication11657e046 reviewed with no concrete P0/P1/P2. Not full K3 or runtime acceptance.",
+            "remaining": [
+              "Remaining owner adapters/all64 runtime acceptance",
+              "Inventory loss locator/history scale1000",
+              "Real SQL/HTTP/browser, final pins/full CI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null
           }
         ],
         "source_commits": [
@@ -2468,9 +2501,16 @@
           "609ff89b5",
           "05f0af264",
           "b80e19b44",
-          "d058e0c5a"
+          "d058e0c5a",
+          "f4ec2db35",
+          "7265b9e2f",
+          "6955c5e63",
+          "2dd74372b",
+          "8f00dfad4",
+          "11657e046",
+          "83aac68e6"
         ],
-        "kind_count_scope": "17 connected source kinds; not17 accepted flows. Counterparty human-only immutable proposal proof and native links are paired. All64 actual runtime acceptances remain open.",
+        "kind_count_scope": "18 paired source kinds; not18 accepted flows. Logistics purpose/native approval uses frozen exception+instruction versions and an authorized human-only proposal preview. All64 runtime acceptances remain open.",
         "staged_kinds": []
       }
     },
@@ -2713,7 +2753,7 @@
       "backlog_parent": "W5-AIGATEWAY",
       "title": "Genel sohbet modu",
       "group": "TREN2",
-      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
+      "status": "SOURCE_IMPLEMENTED_LOCAL",
       "priority": "P1",
       "risk": "K2",
       "scope": "ERP araçları kapalı; ERP modunda web kapalı.",
@@ -2733,7 +2773,7 @@
       "source_findings": [
         "Existing /ai/ask optional mode binds to same gateway: ERP is default; general-chat has no planner/catalog tools or grounding.",
         "Existing budget/classification/local placement and fresh actor/company/permission release fences reused; actual Fake does not opt in to general chat.",
-        "AI flags/provider/AllowedTools remain unchanged and closed. UI mode switch and actual provider/HTTP/browser acceptance remain pending."
+        "The paired existing panel defaults to ERP and clears/aborts state on mode/company changes. General requests contain only question/mode; strict response decoding rejects ERP tools/citations. Actual provider/HTTP/browser acceptance remains pending, with flags/Fake unchanged and closed."
       ],
       "decisions": [
         "AI-D28"
@@ -2753,7 +2793,7 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "Preserve unavailable Fake and closed flags; complete real HTTP/browser and mandatory train checks. Real provider/budget/legal/activation remain separate human gates; B5 is not a CUTOVER prerequisite.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2768,17 +2808,27 @@
         "tests/GoymenERP.Api.IntegrationTests/AiAskServiceTests.Modes.cs",
         "tests/GoymenERP.Api.IntegrationTests/AiAskServiceTests.cs",
         "tests/GoymenERP.Api.IntegrationTests/AiGatewayTests.Modes.cs",
-        "tests/GoymenERP.Api.IntegrationTests/AiGatewayTests.cs"
+        "tests/GoymenERP.Api.IntegrationTests/AiGatewayTests.cs",
+        "src/frontend/goymen-erp-web/src/ai/AiPanel.tsx",
+        "src/frontend/goymen-erp-web/src/ai/aiApi.ts",
+        "src/frontend/goymen-erp-web/src/ai/aiContract.ts",
+        "src/frontend/goymen-erp-web/src/ai/aiText.ts",
+        "src/frontend/goymen-erp-web/src/ai/AiPanel.test.tsx",
+        "src/frontend/goymen-erp-web/src/ai/aiContract.test.ts"
       ],
       "execution": {
         "source_commit": "5e86e5aaaa442b69c1bfc7c10e8bf5da7ab68526",
-        "local_checks": "28 new source cases (18 Ask/10 Gateway); compilation/execution NOT_RUN. Existing4field wire roundtrip covered in source.",
-        "review": "Root bounded source review; additional nonauthor review pending, not K3.",
-        "next_action": "Run affected Ask/Gateway cohort, then bind separate general UI without making it a CUTOVER gate.",
+        "local_checks": "AI Ask75/Gateway39=114 passed skip0 within331-case2dd74372b cohort, including28 new mode cases. Frontend4files98 passed skip0 at agenteb64d7202; combined full frontend tsc/14-file lint exit0 at agenta0c12a670 with only existing AI test warning. Root all frontend blobs matcha0c12a670. Actual provider/HTTP/browser NOT_RUN.",
+        "review": "Backend all8 files and frontend all6 files received bounded nonauthor source reviews with no concrete P0/P1/P2; not full K3/runtime acceptance.",
+        "next_action": "Preserve unavailable Fake and closed flags; complete real HTTP/browser and mandatory train checks. Real provider/budget/legal/activation remain separate human gates; B5 is not a CUTOVER prerequisite.",
         "measurements": {
           "token": "NOT_AVAILABLE",
           "duration": "NOT_SEPARATELY_MEASURED"
-        }
+        },
+        "source_commits": [
+          "5e86e5aaa",
+          "9f3be09e0"
+        ]
       }
     },
     {
