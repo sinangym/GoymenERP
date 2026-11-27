@@ -27,12 +27,12 @@ public sealed partial class AccountingStore
                 {
                     var result = await attempt(replayOnly);
                     RequireOwnedInvoiceLineCogsApproval(caller, candidateDb, candidateCollector, candidateWriter);
-                    // A native late refusal can follow staged journal pairs, before their first Save.
+                    // A native late refusal can follow staged pairs or a completed Save whose interceptor threw before Saved was set.
                     // Abort only our owned work; a clean early refusal keeps the native read-only path.
                     if (!replayOnly && ownedNormalApproval is { } state
                         && result.Status is AccountingApiStatus.Unprocessable or AccountingApiStatus.Conflict or AccountingApiStatus.NotFound
                         && (dbContext.ChangeTracker.HasChanges() || state.Writer.HasPendingDrafts
-                            || state.Saved && state.Command?.ResultJson != JsonSerializer.Serialize(result with { IsReplay = false, OriginalCorrelationId = null }, Json)))
+                            || state.Command is { } command && command.ResultJson != JsonSerializer.Serialize(result with { IsReplay = false, OriginalCorrelationId = null }, Json)))
                         throw new InvoiceLineCogsRollbackAnswer(result);
                     return result;
                 }

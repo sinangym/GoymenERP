@@ -4,6 +4,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.Accounting.Domain;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
@@ -218,6 +219,40 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         }
     }
 
+    [SqlServerFact]
+    public async Task Cogs_saved_changes_domain_refusal_after_EF_acceptance_rolls_back_saved_OK_command_and_never_masks_cleanup_faults()
+    {
+        foreach (var cleanupFault in new[] { "none", "rollback", "dispose" })
+        {
+            await using var run = await Run.Start(); var id = await CogsSafetyPrepare(run); var before = await CogsCountsOf(run);
+            var save = new CogsApprovalSave { DomainAfterAccept = true };
+            var cleanup = cleanupFault == "none" ? null : new CogsApprovalCleanup(cleanupFault == "dispose");
+            await using var scope = new CogsApprovalScope(run, save, cleanup);
+            if (cleanup is null)
+            {
+                var refused = await scope.Approve(id, "post-save-domain");
+                Assert.Equal(AccountingApiStatus.Unprocessable, refused.Status);
+                Assert.Equal(InvoiceLineCogsCorrectionCodesV1.PostingEvidenceInvalid, refused.Code);
+                Assert.Null(refused.Resource); Assert.False(refused.IsReplay);
+            }
+            else
+            {
+                var failure = await Assert.ThrowsAsync<AggregateException>(() => scope.Approve(id, "post-save-domain"));
+                Assert.Contains(failure.InnerExceptions, error => error is InvalidOperationException); Assert.True(cleanup.Failed);
+            }
+            Assert.True(save.ObservedAcceptedTracker); Assert.Equal(1, save.Attempts); Assert.Equal(1, scope.Writer.Discards);
+            Assert.False(scope.Db.ChangeTracker.HasChanges()); Assert.False(scope.Writer.HasPendingDrafts);
+            Assert.Equal(before, await CogsCountsOf(run));
+            if (cleanup is null)
+            {
+                scope.AssertClean(); var accepted = await scope.Approve(id, "post-save-domain");
+                Assert.Equal(AccountingApiStatus.Ok, accepted.Status); Assert.False(accepted.IsReplay); Assert.Equal(2, save.Attempts);
+                Assert.Equal(before with { Journals = before.Journals + 2, Revisions = before.Revisions + 1, Commands = before.Commands + 1, Audits = before.Audits + 1 }, await CogsCountsOf(run));
+                Assert.True((await scope.Approve(id, "post-save-domain")).IsReplay); scope.AssertClean();
+            }
+        }
+    }
+
     private static async Task<(Guid InvalidProposal, Guid ValidProposal, Guid EarlyRefusalProposal, Guid Period, AttributionLineage Physical)> CogsLateRefusalPrepare(Run run)
     {
         var period = await run.Period(); var physical = new AttributionLineage(run.Source.Facts);
@@ -292,7 +327,7 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
     { public int Writes, Discards; public bool AuditDeadlock, Injected; public bool HasPendingDrafts => actual.HasPendingDrafts; public Task WritePendingAsync(System.Data.IDbTransaction tx, CancellationToken token = default) { Writes++; if (AuditDeadlock && !Injected) { Injected = true; throw SqlConcurrencyWrapperPolicyTests.SqlFailure(1205); } return actual.WritePendingAsync(tx, token); } public void DiscardPending() { Discards++; actual.DiscardPending(); } }
     private sealed class CogsApprovalSave : SaveChangesInterceptor
     {
-        public string? Fault; public bool Injected, Saved; public int Attempts;
+        public string? Fault; public bool Injected, Saved, DomainAfterAccept, ObservedAcceptedTracker; public int Attempts;
         public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData data, InterceptionResult<int> result, CancellationToken token = default)
         {
             if (data.Context is AccountingDbContext db && db.ChangeTracker.Entries<InvoiceLineCogsRevisionRow>().Any(e => e.State == EntityState.Added))
@@ -300,7 +335,19 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
             return ValueTask.FromResult(result);
         }
         public override ValueTask<int> SavedChangesAsync(SaveChangesCompletedEventData data, int result, CancellationToken token = default)
-        { if (Attempts > 0) Saved = true; return ValueTask.FromResult(result); }
+        {
+            if (Attempts > 0)
+            {
+                Saved = true;
+                if (DomainAfterAccept && !Injected)
+                {
+                    ObservedAcceptedTracker = data.Context is not null && !data.Context.ChangeTracker.HasChanges();
+                    Injected = true;
+                    throw new AccountingDomainException(AccountingErrorCodes.InvalidReference, "SENTETIK post-AcceptAllChanges domain refusal");
+                }
+            }
+            return ValueTask.FromResult(result);
+        }
     }
     private sealed class CogsApprovalCommits : DbTransactionInterceptor
     { public int Commits; public override Task TransactionCommittedAsync(DbTransaction transaction, TransactionEndEventData data, CancellationToken token = default) { Commits++; return Task.CompletedTask; } }
