@@ -148,7 +148,7 @@ public sealed class PurchasingPersistenceModelTests
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
         Assert.Equal("1.17", PurchasingShellCapabilityProvider.OwnerContractVersion);
-        Assert.Equal(30, declarations.Count);
+        Assert.Equal(31, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(!declaration.CapabilityId.StartsWith("purchasing.invoices.", StringComparison.Ordinal), declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
         var purpose = byId[PurchasingShellCapabilityProvider.RequestWorkDecisionCapabilityId];
