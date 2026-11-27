@@ -290,7 +290,7 @@ describe('/onaylarim/kuyruk — Benden karar bekleyen', () => {
     await screen.findByTestId('work-inbox-list')
     await userEvent.setup().click(within(cardOf(LIMIT_KIND)).getByRole('link', { name: T.openOwnerLabel('Cari kredi limiti teklifi', 'LIM-0001') }))
     await waitFor(() => expect(router.state.location.pathname).toBe(`/onaylarim/${LIMIT_KIND}/${LIMIT_ID}`))
-    expect(router.state.location.search).toBe(`?oneri=${LIMIT_ID}`)
+    expect(router.state.location.search).toBe('')
     await waitFor(() => expect(api.events()).toHaveLength(1))
     expect((api.events()[0].body as { eventType: string }).eventType).toBe('OwnerScreenOpened')
     expect((api.events()[0].body as { itemId: string }).itemId).toBe(LIMIT_ID)
