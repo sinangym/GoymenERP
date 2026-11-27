@@ -2457,13 +2457,26 @@
           {
             "source_commit": "19294d8a6",
             "scope": "Inventory overage native approve/reject with original transfer version, numbered request/time and reason. Existing loss owned transaction/audit/fresh-authority/delegation and immutable command receipt pattern reused; native browse/inbox link unchanged; staged capability=false. No new permission/migration/grant.",
-            "local_checks": "34 new source cases (22 host/8 owner-source/4 SQL facts); compilation/execution NOT_RUN. Final Logistics publication checks also pending.",
+            "local_checks": "534107b38: full Inventory2283/2283 and Logistics579/579; focused API353/353 (Work239/AI114), all skip0. Includes22 new overage host cases and8 owner cases;4 SQL facts compiled, not executed. Paired Logistics publication included. Source receipts are not HTTP/SQL acceptance.",
             "sql": "4 new facts inventoried. Existing corrections SQL borrowed-approval block now explicitly asserts safe caller-state entry refusal; normal approval/materialization/audit/replay assertions preserved. Actual SQL NOT_RUN.",
-            "review": "Root source read and production caller inventory; independent bounded full source review in progress, not K3.",
+            "review": "Bounded nonauthor full15-file source review completed without concrete open P0/P1/P2; production caller inventory and caller-owned-state preservation checked. Not full K3.",
             "remaining": [
               "Owner history/locator1000 scale readiness",
               "Paired typed overage UI and source availability",
               "Actual SQL/HTTP/browser,pins/full CI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null
+          },
+          {
+            "source_commit": "4399288c3",
+            "scope": "Native weighing record/approval commands reuse the existing scoped audit writer and clean owned transaction boundary. Borrowed/ambient/dirty/pending-audit/missing-writer entry refuses without caller cleanup. Captured company and fresh authority are checked through audit and precommit; owned failure rolls back/disposes before clearing its own tracker/drafts. Immutable key replay retains original business semantics.",
+            "local_checks": "Source reviewed;2 unit rows and4 SQL facts (20 inner scenarios) written. Build/test/SQL NOT_RUN for this new increment.",
+            "sql": "4 facts inventoried, same real scoped writer/collector/interceptor fixture reused; actual SQL NOT_RUN.",
+            "remaining": [
+              "Compile and targeted local cohort",
+              "Weighing Work purpose/UI pairing",
+              "Actual SQL/HTTP/browser, final pins/full CI/two independent K3"
             ],
             "new_permissions": [],
             "migration": null
