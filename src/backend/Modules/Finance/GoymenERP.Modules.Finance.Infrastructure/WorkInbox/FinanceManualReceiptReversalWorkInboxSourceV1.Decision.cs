@@ -18,9 +18,9 @@ internal sealed partial class FinanceManualReceiptReversalWorkInboxSourceV1
         if (answer.Outcome == ReadOutcome.Denied) throw new UnauthorizedAccessException();
         if (answer.Outcome != ReadOutcome.Found || answer.Resource is not { } detail || detail.CompanyId != context.CompanyId
             || detail.Proposal is null || detail.OriginalReceipt is null || detail.Proposal.Id != itemId || detail.Proposal.OriginalSourceId != detail.OriginalReceipt.SourceId
-            || detail.Proposal.ProposedBy == context.UserId
             || FinanceWorkInboxRead.Amount(detail.OriginalReceipt.AmountText) is null)
             throw new InvalidOperationException("Receipt reversal decision read unavailable.");
+        if (detail.Proposal.ProposedBy == context.UserId) throw new UnauthorizedAccessException();
         var proposal = detail.Proposal; var original = detail.OriginalReceipt;
         var item = ReversalProposalService.DecisionItem(detail)
             ?? throw new InvalidOperationException("Receipt reversal decision item is invalid.");
