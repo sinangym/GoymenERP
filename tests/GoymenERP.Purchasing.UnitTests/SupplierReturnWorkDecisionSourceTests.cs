@@ -21,6 +21,8 @@ public sealed class SupplierReturnWorkDecisionSourceTests
         await world.SeedAsync(CompanyA,db=>{db.Orders.Add(order);db.SupplierReturns.Add(row);});
         var source=new PurchaseSupplierReturnCostExceptionWorkInboxSourceV1(world.Context(CompanyA),world.Fence(CompanyA));
         var answer=await source.ReadDecisionAsync(world.Caller(CompanyA),row.ReturnId,default);Assert.NotNull(answer);Assert.Equal(!terminal,answer.Pending);
+        Assert.Equal("/onaylarim/purchasing.supplier-return-cost-exception.v1/"+row.ReturnId.ToString("D"),answer.Item.Link);
+        Assert.Equal("/satinalma/siparisler/"+order.Id.ToString("D"),Assert.Single(answer.Item.References).Link);
         var proof=Assert.IsType<WorkSupplierReturnCostExceptionProofV1>(answer.SupplierReturnCostExceptionProof);
         Assert.Equal(("3","7","1"),(proof.RecordedExpectedPurchaseOrderVersion,proof.CurrentPurchaseOrderVersion,proof.UndoQuantity));
         Assert.Equal(prices?"12.3456":null,answer.Item.Rules[0].Actual);Assert.DoesNotContain(PurchasingPermissionManifestV1.OrdersRead,world.AskedPermissions);

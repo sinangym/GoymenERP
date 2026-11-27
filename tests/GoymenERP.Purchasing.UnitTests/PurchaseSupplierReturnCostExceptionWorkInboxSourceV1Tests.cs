@@ -45,7 +45,8 @@ public sealed class PurchaseSupplierReturnCostExceptionWorkInboxSourceV1Tests
         AssertContractShape("purchasing", first);
         Assert.Equal("purchasing.supplier-return-cost-exception.v1", first.Kind);
         Assert.Equal("SENTETIK-PO-R1", first.DocumentLabel);
-        Assert.Equal("/satinalma/siparisler/" + order.Id.ToString("D"), first.Link);
+        Assert.Equal("/onaylarim/purchasing.supplier-return-cost-exception.v1/" + older.ReturnId.ToString("D"), first.Link);
+        Assert.Equal("/satinalma/siparisler/" + order.Id.ToString("D"), first.References[0].Link);
         Assert.Equal(Start, first.WaitingSinceUtc);
         Assert.Equal(Maker, first.PreparedBy);
         Assert.Equal(

@@ -129,7 +129,7 @@ public sealed class WorkSupplierReturnCostExceptionDecisionHostTests
         Assert.DoesNotContain("supplierReturnCostException",JsonSerializer.Serialize(new WorkDecisionPreviewV1(Company,WorkDecisionHostV1.OpeningCost,Id,"SENTETIK","1",true,true,[],[]),options));
         Assert.DoesNotContain("supplierReturnCostExceptionProof",JsonSerializer.Serialize(await run.Source.ReadDecisionAsync(new(Company,Actor,"SENTETIK",null),Id,default),options));
         var cap=Assert.Single(new PurchasingShellCapabilityProvider().GetDeclarations(), c=>c.CapabilityId==PurchasingShellCapabilityProvider.SupplierReturnWorkDecisionCapabilityId);
-        Assert.False(cap.ImplementationAvailable);Assert.Null(cap.ParentCapabilityId);Assert.Equal([PurchasingPermissionManifestV1.OrdersApprove],cap.RequiredPermissions);
+        Assert.True(cap.ImplementationAvailable);Assert.Null(cap.ParentCapabilityId);Assert.Equal([PurchasingPermissionManifestV1.OrdersApprove],cap.RequiredPermissions);
     }
 
     private sealed class Rig

@@ -124,6 +124,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
             PurchasingShellCapabilityProvider.ServiceOrderDetailCapabilityId,
             PurchasingShellCapabilityProvider.ServiceOrderListCapabilityId,
             PurchasingShellCapabilityProvider.ServiceOrderRevisePricesCapabilityId,
+            PurchasingShellCapabilityProvider.SupplierReturnWorkDecisionCapabilityId,
             PurchasingShellCapabilityProvider.SupplierReturnCapabilityId,
         ];
         Assert.Equal(published, purchasing.Where(item => item.Declaration.ImplementationAvailable)
@@ -131,18 +132,17 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         string[] staged = [PurchasingShellCapabilityProvider.InvoiceApproveVarianceCapabilityId,
             PurchasingShellCapabilityProvider.InvoiceDetailCapabilityId, PurchasingShellCapabilityProvider.InvoiceFinalizeCapabilityId,
             PurchasingShellCapabilityProvider.InvoiceImportCapabilityId,
-            PurchasingShellCapabilityProvider.InvoiceListCapabilityId, PurchasingShellCapabilityProvider.InvoiceMatchCapabilityId,
-            PurchasingShellCapabilityProvider.SupplierReturnWorkDecisionCapabilityId];
+            PurchasingShellCapabilityProvider.InvoiceListCapabilityId, PurchasingShellCapabilityProvider.InvoiceMatchCapabilityId];
         Assert.Equal(staged, purchasing.Where(item => !item.Declaration.ImplementationAvailable)
             .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
-        Assert.All(purchasing.Where(item => !item.Declaration.ImplementationAvailable && item.Declaration.CapabilityId != PurchasingShellCapabilityProvider.SupplierReturnWorkDecisionCapabilityId), item =>
+        Assert.All(purchasing.Where(item => !item.Declaration.ImplementationAvailable), item =>
         {
             Assert.Contains(PurchaseIncomingInvoicePermissionNamesV1.Read, item.Declaration.RequiredPermissions);
             Assert.Contains(PurchasingPermissionManifestV1.OrdersPriceRead, item.Declaration.RequiredPermissions);
         });
 
         var returnPurpose = Assert.Single(purchasing, item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.SupplierReturnWorkDecisionCapabilityId).Declaration;
-        Assert.False(returnPurpose.ImplementationAvailable);
+        Assert.True(returnPurpose.ImplementationAvailable);
         Assert.Null(returnPurpose.ParentCapabilityId);
         Assert.Equal("/onaylarim/purchasing.supplier-return-cost-exception.v1/:approvalId", returnPurpose.RoutePath);
         Assert.Equal([PurchasingPermissionManifestV1.OrdersApprove], returnPurpose.RequiredPermissions);

@@ -47,7 +47,7 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PURCHASING";
     // WP8 1.19: standalone purpose declarations preserve each native decision permission; invoice variance also requires its existing price read.
-    public const string OwnerContractVersion = "1.21";
+    public const string OwnerContractVersion = "1.22";
     public const string AdditionalCostReadCapabilityId = "purchasing.additional-costs.read";
     public const string AdditionalCostRecordCapabilityId = "purchasing.additional-costs.record";
 
@@ -125,7 +125,7 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
             new ShellCapabilityDeclaration(SupplierReturnWorkDecisionCapabilityId, "purchasing-supplier-return-cost-exception-work-decision",
                 "/onaylarim/purchasing.supplier-return-cost-exception.v1/:approvalId", "W-PURCHASING-SUPPLIER-RETURN-COST-EXCEPTION-01",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
-                ShellCapabilityScopeRequirement.CompanyWide, [PurchasingPermissionManifestV1.OrdersApprove], ImplementationAvailable: false),
+                ShellCapabilityScopeRequirement.CompanyWide, [PurchasingPermissionManifestV1.OrdersApprove], ImplementationAvailable: true),
             new ShellCapabilityDeclaration(GoodsReceiptBatchWorkDecisionCapabilityId, "purchasing-goods-receipt-batch-work-decision",
                 "/onaylarim/purchasing.goods-receipt-batch.v1/:approvalId", "W-PURCHASING-GOODS-RECEIPT-BATCH-01",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,

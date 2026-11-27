@@ -10,7 +10,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.WorkInbox;
 /// WP7 (AI-D31, AI-D32, YOL-D18): the returns to supplier whose invoice unit cost could not be read and whose manual cost waits
 /// for its exception approval (SAT-D393), as Purchasing lists them for the Work inbox. A return waits while it is
 /// PendingCostException — exactly what <c>ApprovePurchaseSupplierReturnCostExceptionV1</c> accepts; it is decided on the
-/// order's own screen (the return panel) under <c>purchasing.orders.approve</c> (SAT-D396) by someone other than the person
+/// Work purpose using the order owner's native command under <c>purchasing.orders.approve</c> (SAT-D396) by someone other than the person
 /// who entered it (ALS-D128, E-75, completing SAT-D396; <see cref="PurchaseSupplierReturnRuleCodes.SameActor"/>). Every pending
 /// return of the company is returned, the enterer's own included: Work hides it from its maker.
 /// <para>
@@ -26,6 +26,7 @@ internal sealed partial class PurchaseSupplierReturnCostExceptionWorkInboxSource
 {
     public const string ModuleName = "purchasing";
     public const string KindName = "purchasing.supplier-return-cost-exception.v1";
+    public const string DecisionScreenPath = "/onaylarim/purchasing.supplier-return-cost-exception.v1/:approvalId";
 
     /// <summary>The invoice cost could not be read; the manual unit cost (TRY/kg) needs its exception approval (SAT-D393).</summary>
     public const string ManualCostRule = "purchasing.supplier-return-manual-cost";
@@ -125,7 +126,8 @@ internal sealed partial class PurchaseSupplierReturnCostExceptionWorkInboxSource
                 : new(ManualCostRule, null, null, null, null),
             new(QuantityRule, null, WorkInboxRulesV1.Decimal(row.QuantityKg), null, KilogramUnit),
         };
-        item = new WorkInboxItemV1(ModuleName, KindName, row.ReturnId, orderLabel, row.RequestedAtUtc.ToUniversalTime(), orderLink,
+        item = new WorkInboxItemV1(ModuleName, KindName, row.ReturnId, orderLabel, row.RequestedAtUtc.ToUniversalTime(),
+            DecisionScreenPath.Replace(":approvalId", row.ReturnId.ToString("D"), StringComparison.Ordinal),
             row.RequestedBy, rules, [new("purchase-order", orderLabel, row.OrderId, orderLink)]);
         return true;
     }
