@@ -44,6 +44,9 @@ public sealed record WorkCounterpartyLegalNameChangePreviewV1(Guid PartyId, Guid
 
 /// <summary>Current native instruction version for the human's frozen approval request; not a POST default.</summary>
 public sealed record WorkLogisticsPlanExcessOptionsV1(string InstructionVersion);
+/// <summary>Exact immutable proposal for the authorized human decision GET only. Never Inbox/AI metadata.</summary>
+public sealed record WorkLogisticsPlanExcessPreviewV1(string InstructionVersion, Guid InstructionId, Guid LineId,
+    string Quantity, string Reason, string ProposedBy, DateTimeOffset ProposedAtUtc);
 /// <summary>Owner-only immutable proposal binding for validating the original native receipt.</summary>
 public sealed record WorkLogisticsPlanExcessProofV1(Guid CompanyId, Guid ExceptionId, Guid InstructionId, Guid LineId,
     string Quantity, string Reason, string ProposedBy, DateTimeOffset ProposedAtUtc);

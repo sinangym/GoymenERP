@@ -64,10 +64,24 @@ public sealed class WorkLogisticsPlanExcessDecisionHostTests
         var wire = JsonSerializer.Serialize(Body(), options);
         Assert.Contains("\"logisticsPlanExcess\":{\"expectedInstructionVersion\":\"3\"}", wire);
         var snapshot = await run.Source.ReadDecisionAsync(new(Company, Actor, "SENTETIK", null), Item, default);
-        Assert.DoesNotContain("logisticsPlanExcessProof", JsonSerializer.Serialize(snapshot, options));
-        var previewWire = JsonSerializer.Serialize(await run.Host.PreviewAsync(run.Source.Kind, Item, default), options);
-        Assert.Contains("\"logisticsPlanExcess\":{\"instructionVersion\":\"99\"}", previewWire);
-        Assert.DoesNotContain("SENTETIK proposal reason", previewWire);
+        var snapshotWire = JsonSerializer.Serialize(snapshot, options);
+        Assert.DoesNotContain("logisticsPlanExcessProof", snapshotWire);
+        Assert.DoesNotContain("SENTETIK proposal reason", snapshotWire);
+        Assert.DoesNotContain("SENTETIK proposal reason", JsonSerializer.Serialize(snapshot!.Item, options));
+        var preview = await run.Host.PreviewAsync(run.Source.Kind, Item, default);
+        Assert.Equal(new WorkLogisticsPlanExcessPreviewV1("99", Instruction, Line, "20", "SENTETIK proposal reason", Maker, Proposed), preview.LogisticsPlanExcess);
+        var previewWire = JsonSerializer.Serialize(preview, options);
+        using var document = JsonDocument.Parse(previewWire);
+        var human = document.RootElement.TryGetProperty("logisticsPlanExcess", out var value) ? value : throw new InvalidOperationException();
+        Assert.Equal("99", human.TryGetProperty("instructionVersion", out value) ? value.GetString() : null);
+        Assert.Equal(Instruction, human.TryGetProperty("instructionId", out value) ? value.GetGuid() : Guid.Empty);
+        Assert.Equal(Line, human.TryGetProperty("lineId", out value) ? value.GetGuid() : Guid.Empty);
+        Assert.Equal("20", human.TryGetProperty("quantity", out value) ? value.GetString() : null);
+        Assert.Equal("SENTETIK proposal reason", human.TryGetProperty("reason", out value) ? value.GetString() : null);
+        Assert.Equal(Maker, human.TryGetProperty("proposedBy", out value) ? value.GetString() : null);
+        Assert.Equal(Proposed, human.TryGetProperty("proposedAtUtc", out value) ? value.GetDateTimeOffset() : default);
+        Assert.Equal(7, human.EnumerateObject().Count());
+        Assert.DoesNotContain("logisticsPlanExcessProof", previewWire);
     }
 
     [Fact]

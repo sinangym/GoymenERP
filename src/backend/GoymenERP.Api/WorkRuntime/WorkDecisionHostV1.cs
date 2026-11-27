@@ -37,7 +37,7 @@ public sealed record WorkDecisionPreviewV1(Guid CompanyId, string Kind, Guid Ite
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     WorkCounterpartyLegalNameChangePreviewV1? CounterpartyLegalNameChange = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    WorkLogisticsPlanExcessOptionsV1? LogisticsPlanExcess = null);
+    WorkLogisticsPlanExcessPreviewV1? LogisticsPlanExcess = null);
 public sealed record WorkDecisionResultV1(Guid CompanyId, string Kind, Guid ItemId, string State, bool Replayed, string OriginalCorrelationId);
 public sealed class WorkDecisionException(int status, string? code = null, bool replayed = false, string? original = null) : Exception(code)
 {
@@ -205,11 +205,16 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
                 throw new WorkDecisionException(403);
         }
         await RequireDecisionAuthorityAsync(kind,sources.Single(source => source.Kind == kind).ApproverPermission,snapshot.CompanyId,actor!,token);
+        // SnapshotAsync validated the immutable binding; only this authorized human GET exposes the proposal.
+        var logisticsPreview = snapshot.LogisticsPlanExcessProof is { } proposal && snapshot.LogisticsPlanExcess is { } logisticsOptions
+            ? new WorkLogisticsPlanExcessPreviewV1(logisticsOptions.InstructionVersion, proposal.InstructionId, proposal.LineId,
+                proposal.Quantity, proposal.Reason, proposal.ProposedBy, proposal.ProposedAtUtc)
+            : null;
         return new(snapshot.CompanyId, kind, id, snapshot.Item.DocumentLabel, snapshot.SourceVersion, snapshot.Pending,
             kind is OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance or InventoryTransferLoss, snapshot.Item.References, rules, kind is not (PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance or LogisticsPlanExcess)
                 && !(kind == ManufacturingPlan && rules.Any(rule => rule.RuleCode == "manufacturing.plan-reapproval-after-order-cancel")),
             snapshot.ManufacturingPlanReapproval, snapshot.InventoryTransferLoss,
-            snapshot.CounterpartyTaxIdentityChange, snapshot.CounterpartyLegalNameChange, snapshot.LogisticsPlanExcess);
+            snapshot.CounterpartyTaxIdentityChange, snapshot.CounterpartyLegalNameChange, logisticsPreview);
     }
 
     public async Task<WorkDecisionResultV1> DecideAsync(string kind, Guid id, WorkDecisionRequestV1 request, string key, CancellationToken token)
