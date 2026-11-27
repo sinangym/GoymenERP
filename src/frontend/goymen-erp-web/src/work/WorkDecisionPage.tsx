@@ -85,7 +85,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       {kind === 'inventory.opening-cost.v1' ? <p>{cost == null ? T.hiddenCost : `${T.cost}: ${cost}`}</p> : null}
       <h3>{T.reference}</h3><ul>{preview.references.map((ref, i) => <li key={i}>{inboxRoleText(ref.role) ?? T.reference}: {ref.label}</li>)}</ul>
       {(options !== undefined || frozen && selected.length > 0) ? <fieldset disabled={frozen}><legend>{T.reapprovalLabels}</legend><p>{T.reapprovalHelp}</p>
-        {(frozen ? selected : options ?? []).map(labelId => <label key={labelId}><input type="checkbox" checked={selected.includes(labelId)}
+        {(frozen ? selected : options ?? []).map(labelId => <label key={labelId}><input type="checkbox" disabled={frozen} checked={selected.includes(labelId)}
           onChange={event => {
             setSelectionVersion(preview.sourceVersion)
             setSelectedLabels(event.target.checked ? [...selected, labelId] : selected.filter(id => id !== labelId))
