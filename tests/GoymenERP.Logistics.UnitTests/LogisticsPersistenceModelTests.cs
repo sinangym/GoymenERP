@@ -960,7 +960,7 @@ public sealed class LogisticsPersistenceModelTests
                 ("logistics.instructions.list", "L-02"),
                 ("logistics.operations-work.purchase", "L-09"),
                 ("logistics.operations-work.sales", "L-01"),
-                ("logistics.plan-excess.work-decision", "/onaylarim/logistics.plan-excess.v1/:approvalId", LogisticsPermissionManifestV1.ShipmentPlanExcessApprove),
+                ("logistics.plan-excess.work-decision", "L-PLAN-EXCESS-WORK-DECISION"),
                 ("logistics.shipments.plan-excess.approve", "L-PLAN-EXCESS-APPROVE"),
                 ("logistics.shipments.plan-excess.prepare", "L-02-DETAIL"),
                 ("logistics.shipments.record", "L-02-DETAIL"),
