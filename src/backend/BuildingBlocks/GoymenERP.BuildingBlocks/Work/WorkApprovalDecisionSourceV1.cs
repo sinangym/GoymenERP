@@ -46,7 +46,12 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkOfficialInvoiceImportProofV1? OfficialInvoiceImportProof = null,
     [property: JsonIgnore] WorkOfficialSalesInvoiceProofV1? OfficialSalesInvoiceProof = null,
     [property: JsonIgnore] WorkManualBankPaymentReversalProofV1? ManualBankPaymentReversalProof = null,
-    [property: JsonIgnore] WorkManualReceiptReversalProofV1? ManualReceiptReversalProof = null);
+    [property: JsonIgnore] WorkManualReceiptReversalProofV1? ManualReceiptReversalProof = null,
+    [property: JsonIgnore] WorkExpensePaymentProofV1? ExpensePaymentProof = null);
+
+/// <summary>Private owner identity and draft binding; full expense facts belong only to the authorized human GET.</summary>
+public sealed record WorkExpensePaymentProofV1(Guid CompanyId, Guid PaymentId, string PreparedBy,
+    DateTimeOffset PreparedAtUtc, string Status, string DraftFactsDigest, string PreviewDigest);
 
 /// <summary>Scalar native proposal/recorded-source binding only; full money facts belong to the authorized human GET.</summary>
 public sealed record WorkManualBankPaymentReversalProofV1(Guid CompanyId, Guid ProposalId, Guid PaymentId,
