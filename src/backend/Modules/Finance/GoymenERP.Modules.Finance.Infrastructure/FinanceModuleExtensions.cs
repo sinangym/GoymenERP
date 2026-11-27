@@ -141,9 +141,8 @@ public static class FinanceModuleExtensions
         // balance guard above to answer Sufficient (FNS-D11).
         services.TryAddScoped<IFinanceCurrencyExchangeRateRule, UnavailableCurrencyExchangeRateRule>();
         services.AddScoped<ICashTransferService>(CreateCashTransferService);
-        services.AddScoped(CreateReversalProposalService);
         services.AddScoped<IReversalProposalService>(provider =>
-            provider.GetRequiredService<ReversalProposalService>());
+            CreateReversalProposalService(provider).WithApprovalSafety());
         services.AddScoped<IPaymentReversalProposalService>(provider =>
             CreatePaymentReversalProposalService(provider).WithApprovalSafety());
         services.AddScoped<IFinanceAllocationService>(CreateAllocationService);

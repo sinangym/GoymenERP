@@ -1,6 +1,7 @@
 using System.Data;
 using System.Transactions;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
@@ -8,6 +9,7 @@ using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Finance.UnitTests;
 
@@ -75,6 +77,26 @@ public sealed class ReversalProposalServiceApprovalSafetyTests
         Assert.True(db.ChangeTracker.HasChanges()); Assert.True(writer.HasPendingDrafts); Assert.Equal((0, 0), (writer.Writes, writer.Discards));
     }
 
+    [Fact]
+    public async Task Actual_module_factory_exposes_only_guarded_receipt_reversal_runtime()
+    {
+        var company = new CompanyContext(); company.Set(Company);
+        await using var database = Database(company);
+        var services = new ServiceCollection(); services.AddFinanceServices();
+        services.AddSingleton<ICompanyContext>(company); services.AddSingleton<ICurrentUser>(new User());
+        services.AddSingleton<IErpAuthorityRevalidationService>(new RegistrationAuthority()); services.AddSingleton(database);
+        services.AddSingleton<ICorrelationContext>(new CorrelationContext()); services.AddSingleton<IAuditEventCollector>(new AuditEventCollector());
+        services.AddSingleton<IAuditTransactionWriterV1>(new EntryWriter()); services.AddSingleton<IFinanceRecordPeriodRule>(new OpenPeriod()); services.AddSingleton(TimeProvider.System);
+        Assert.Single(services, item => item.ServiceType == typeof(IReversalProposalService));
+        using var provider = services.BuildServiceProvider(); using var scope = provider.CreateScope();
+        var service = Assert.IsType<GuardedReversalProposalService>(scope.ServiceProvider.GetRequiredService<IReversalProposalService>());
+        Assert.Null(scope.ServiceProvider.GetService<ReversalProposalService>());
+        var result = await service.ApproveAsync(new(Company, "SENTETIK-checker", "SENTETIK-original", null),
+            new("SENTETIK-key"), new(Guid.NewGuid(), "1"), default);
+        Assert.Equal(CommandOutcome.Denied, result.Outcome); Assert.Null(result.Resource);
+        Assert.False(database.ChangeTracker.HasChanges()); Assert.Null(database.Database.CurrentTransaction);
+    }
+
     private static FinanceDbContext Database(ICompanyContext company) => new(new DbContextOptionsBuilder<FinanceDbContext>()
         .UseInMemoryDatabase("receipt-reversal-entry-" + Guid.NewGuid()).Options, company);
     private static ReversalProposalService Core(FinanceDbContext db, ICompanyContext company, ICurrentUser user, IFinancePermissionPort permission, IAuditTransactionWriterV1? writer) =>
@@ -97,4 +119,6 @@ public sealed class ReversalProposalServiceApprovalSafetyTests
     { public bool HasPendingDrafts { get; set; } public int Writes, Discards;
       public Task WritePendingAsync(IDbTransaction tx, CancellationToken t = default) { Writes++; throw new InvalidOperationException("Entry cannot write."); }
       public void DiscardPending() { Discards++; HasPendingDrafts = false; } }
+    private sealed class RegistrationAuthority : IErpAuthorityRevalidationService
+    { public Task<PermissionScope> RevalidatePermissionScopeAsync(string p, Guid c, CancellationToken t = default) => Task.FromResult(PermissionScope.Denied); }
 }
