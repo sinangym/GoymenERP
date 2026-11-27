@@ -22,7 +22,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.WorkInbox;
 /// </summary>
 internal sealed class PurchaseServiceOrderWorkInboxSourceV1(
     PurchasingDbContext dbContext,
-    PurchasingWorkInboxFence fence) : IWorkInboxSourceV1
+    PurchasingWorkInboxFence fence) : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "purchasing";
     public const string KindName = "purchasing.service-order.v1";
@@ -41,6 +41,26 @@ internal sealed class PurchaseServiceOrderWorkInboxSourceV1(
     public string Kind => KindName;
 
     public string ApproverPermission => PurchasingPermissionManifestV1.OrdersApprove;
+
+    public async Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context, Guid itemId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (itemId == Guid.Empty || await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+        var row = await (from parent in dbContext.ServiceOrders.AsNoTracking()
+            where parent.CompanyId == context.CompanyId && parent.OrderId == itemId
+            join revision in dbContext.ServiceOrderRevisions.AsNoTracking()
+                on new { parent.CompanyId, parent.OrderId, parent.Version }
+                equals new { revision.CompanyId, revision.OrderId, revision.Version }
+            select revision).SingleOrDefaultAsync(cancellationToken);
+        if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null || row is null) return null;
+        var value = Restore(context.CompanyId, row);
+        PurchaseServiceOrder.Validate(value);
+        if (string.IsNullOrWhiteSpace(value.DocumentNumber) || value.DocumentNumber.Length > 64 || !TryItem(value, out var item))
+            throw new InvalidOperationException("Hizmet siparişi karar kaynağı geçersiz.");
+        return new(context.CompanyId, item, value.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            value.Status == PurchaseServiceOrderStatus.Draft);
+    }
 
     public async Task<WorkInboxSourceResultV1> ListPendingAsync(
         WorkInboxSourceContextV1 context,
@@ -137,7 +157,7 @@ internal sealed class PurchaseServiceOrderWorkInboxSourceV1(
             new("company-account", PurchasingWorkInboxFence.ShortReference(value.CompanyAccountId), value.CompanyAccountId, null),
         };
         item = new WorkInboxItemV1(ModuleName, KindName, value.OrderId, label, value.UpdatedAtUtc.ToUniversalTime(),
-            PurchasingWorkInboxFence.Link(PurchasingWorkInboxFence.ServiceOrderScreenPath, value.OrderId), value.PreparedBy,
+            $"/onaylarim/{KindName}/{value.OrderId:D}", value.PreparedBy,
             rules, references);
         return true;
     }

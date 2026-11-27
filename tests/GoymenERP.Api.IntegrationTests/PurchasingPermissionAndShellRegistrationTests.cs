@@ -94,7 +94,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         var purchasing = registry.Registrations
             .Where(item => item.Owner == PurchasingShellCapabilityProvider.OwnerId)
             .ToArray();
-        Assert.Equal(30, purchasing.Length);
+        Assert.Equal(31, purchasing.Length);
         string[] published =
         [
             PurchasingShellCapabilityProvider.AdditionalCostReadCapabilityId,
@@ -115,6 +115,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
             PurchasingShellCapabilityProvider.RequestListCapabilityId,
             PurchasingShellCapabilityProvider.RequestSubmitCapabilityId,
             PurchasingShellCapabilityProvider.RequestWithdrawCapabilityId,
+            PurchasingShellCapabilityProvider.ServiceOrderWorkDecisionCapabilityId,
             PurchasingShellCapabilityProvider.ServiceOrderAcceptCapabilityId,
             PurchasingShellCapabilityProvider.ServiceOrderApproveCapabilityId,
             PurchasingShellCapabilityProvider.ServiceOrderCreateCapabilityId,
@@ -160,6 +161,15 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, orderPurpose.ScopeRequirement);
         Assert.Equal([PurchasingPermissionManifestV1.OrdersApprove], orderPurpose.RequiredPermissions);
         Assert.True(orderPurpose.ImplementationAvailable);
+
+        var servicePurpose = Assert.Single(purchasing,
+            item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.ServiceOrderWorkDecisionCapabilityId).Declaration;
+        Assert.Equal("/onaylarim/purchasing.service-order.v1/:approvalId", servicePurpose.RoutePath);
+        Assert.Equal("purchasing-service-order-work-decision", servicePurpose.RouteId);
+        Assert.Equal("W-PURCHASING-SERVICE-ORDER-01", servicePurpose.ScreenId);
+        Assert.Null(servicePurpose.ParentCapabilityId);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersApprove], servicePurpose.RequiredPermissions);
+        Assert.True(servicePurpose.ImplementationAvailable);
 
         var create = Assert.Single(purchasing,
             item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.CreateCapabilityId);

@@ -13,7 +13,7 @@ namespace GoymenERP.Purchasing.UnitTests;
 /// Draft, oldest change first, measured with the order approval permission; an approved order reopened by a price revision
 /// says so. SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class PurchaseServiceOrderWorkInboxSourceV1Tests
+public sealed partial class PurchaseServiceOrderWorkInboxSourceV1Tests
 {
     private static readonly DateTimeOffset Start = new(2026, 11, 18, 6, 0, 0, TimeSpan.Zero);
 
@@ -37,7 +37,7 @@ public sealed class PurchaseServiceOrderWorkInboxSourceV1Tests
         AssertContractShape("purchasing", first);
         Assert.Equal("purchasing.service-order.v1", first.Kind);
         Assert.Equal("SENTETIK-HS-1", first.DocumentLabel);
-        Assert.Equal("/satinalma/hizmet-siparisleri/" + older.OrderId.ToString("D"), first.Link);
+        Assert.Equal("/onaylarim/purchasing.service-order.v1/" + older.OrderId.ToString("D"), first.Link);
         Assert.Equal(Start, first.WaitingSinceUtc);
         Assert.Equal(Maker, first.PreparedBy);
         Assert.Equal([new WorkApprovalRuleResultV1(PurchaseServiceOrderWorkInboxSourceV1.ApprovalRequiredRule, null, null, null, null)],

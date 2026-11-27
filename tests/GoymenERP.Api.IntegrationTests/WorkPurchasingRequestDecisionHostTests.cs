@@ -97,22 +97,22 @@ public sealed partial class WorkPurchasingRequestDecisionHostTests
         public bool NativeEffect;
         public Guid ResultCompany = Company, ResultId = Item;
         public string OrderState = "Approved";
-        public Run(bool order = false, bool ownerAvailable = true)
+        public Run(bool order = false, bool ownerAvailable = true, bool serviceOrder = false)
         {
-            Source = new(order ? WorkDecisionHostV1.PurchaseOrder : WorkDecisionHostV1.PurchaseRequest);
+            Source = new(serviceOrder ? WorkDecisionHostV1.PurchaseServiceOrder : order ? WorkDecisionHostV1.PurchaseOrder : WorkDecisionHostV1.PurchaseRequest);
             Delegations = new(Source.ApproverPermission);
             var company = new CompanyContext(); company.Set(Company);
             var correlation = new CorrelationContext(); correlation.Set("SENTETIK-correlation", null, "api", null, null);
             var fence = new WorkDecisionExecutionFenceV1(); var authority = new WorkDecisionAuthorityV1(Raw, fence);
             var owner = DispatchProxy.Create<IPurchasingService, NativeOwnerProxy>();
-            async Task NativeFence(MethodInfo method, object?[] args)
+            async Task NativeFence(MethodInfo method, object?[] args, bool effect = true)
             {
                 Calls.Add((method.Name, (Guid)args[0]!, args[1]!, (PurchasingCommandMetadata)args[2]!));
                 BeforeFence?.Invoke();
                 if (!(await authority.RevalidatePermissionScopeAsync(Source.ApproverPermission, Company)).IsGranted)
                     throw new PurchasingServiceException(403, "forbidden");
                 if (Refusal is not null) throw Refusal;
-                NativeEffect = true;
+                NativeEffect = effect;
             }
             async Task<PurchaseRequestResponse> AnswerRequest(MethodInfo method, object?[] args)
             {
@@ -128,7 +128,18 @@ public sealed partial class WorkPurchasingRequestDecisionHostTests
             }
             ((NativeOwnerProxy)(object)owner).Handler = (method, args) => method.Name == "ApproveOrderAsync"
                 ? AnswerOrder(method, args) : AnswerRequest(method, args);
-            Host = new(company, new User(), correlation, authority, [Source], Delegations, fence, null!, null!, purchasing: ownerAvailable ? owner : null);
+            var serviceOwner = DispatchProxy.Create<IPurchaseServiceOrderServiceV1, NativeOwnerProxy>();
+            async Task<PurchaseServiceOrderResponseV1> AnswerService(MethodInfo method, object?[] args)
+            {
+                await NativeFence(method, args, effect: false);
+                try { GoymenERP.Modules.Purchasing.Domain.Services.PurchaseServiceOrder.RequireReason(((ApprovePurchaseServiceOrderV1)args[1]!).Reason); }
+                catch (ArgumentException) { throw new PurchasingServiceException(422, "validation_failed"); }
+                NativeEffect = true;
+                return new(new(ResultCompany, ResultId, "SENTETIK-HIZ", "9", "ServicePurchase", OrderState,
+                    Company, Company, new DateOnly(2026, 11, 27), Company, "TRY", true, "Withheld", [], [], [], []), true, "SENTETIK-original");
+            }
+            ((NativeOwnerProxy)(object)serviceOwner).Handler = (method, args) => AnswerService(method, args);
+            Host = new(company, new User(), correlation, authority, [Source], Delegations, fence, null!, null!, purchasing: ownerAvailable ? owner : null, purchasingServiceOrders: ownerAvailable ? serviceOwner : null);
         }
     }
     public class NativeOwnerProxy : DispatchProxy
@@ -150,7 +161,7 @@ public sealed partial class WorkPurchasingRequestDecisionHostTests
         public string Maker = "SENTETIK-maker", Submitter = "SENTETIK-submitter";
         public string Module => "purchasing";
         public string Kind => kind;
-        public string ApproverPermission => kind == WorkDecisionHostV1.PurchaseOrder ? PurchasingPermissionManifestV1.OrdersApprove : PurchasingPermissionManifestV1.RequestsApprove;
+        public string ApproverPermission => kind is WorkDecisionHostV1.PurchaseOrder or WorkDecisionHostV1.PurchaseServiceOrder ? PurchasingPermissionManifestV1.OrdersApprove : PurchasingPermissionManifestV1.RequestsApprove;
         public Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context, Guid itemId, CancellationToken cancellationToken) =>
             Task.FromResult<WorkApprovalDecisionSnapshotV1?>(new(CompanyId, new(Module, Kind, itemId, "SENTETIK", DateTimeOffset.UtcNow,
                 "/onaylarim/" + Kind + "/" + itemId, Maker, [], [], kind == WorkDecisionHostV1.PurchaseRequest ? [Submitter] : null), "8", Pending));

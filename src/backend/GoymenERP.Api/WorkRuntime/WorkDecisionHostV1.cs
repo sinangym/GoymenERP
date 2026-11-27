@@ -81,7 +81,7 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
     IErpAuthorityRevalidationService authority, IEnumerable<IWorkInboxSourceV1> sources,
     IWorkDelegationReaderV1 delegations, WorkDecisionExecutionFenceV1 executionFence,
     IFinanceCashAccountMaster cash, IInventoryOpeningCostCommandV1 openingCost,
-    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null)
+    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null)
 {
     public const string OpeningCost = "inventory.opening-cost.v1";
     public const string SalesOrder = "sales.order-draft.v1";
@@ -89,9 +89,10 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
     public const string SalesSubcontractInvoice = "sales.subcontract-invoice.v1";
     public const string CreditAccount = "finance.credit-account.v1";
     public const string PurchaseRequest = "purchasing.request.v1";
+    public const string PurchaseServiceOrder = "purchasing.service-order.v1";
     public const string PurchaseOrder = "purchasing.order.v1";
     public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([OpeningCost, "finance.cash-account.v1",
-        "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest, PurchaseOrder, CreditAccount], StringComparer.Ordinal);
+        "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest, PurchaseOrder, PurchaseServiceOrder, CreditAccount], StringComparer.Ordinal);
 
     private async Task RequireDecisionAuthorityAsync(string kind,string permission,Guid companyId,string actor,CancellationToken token)
     {
@@ -151,7 +152,7 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
         }
         await RequireDecisionAuthorityAsync(kind,sources.Single(source => source.Kind == kind).ApproverPermission,snapshot.CompanyId,actor!,token);
         return new(snapshot.CompanyId, kind, id, snapshot.Item.DocumentLabel, snapshot.SourceVersion, snapshot.Pending,
-            kind == OpeningCost, snapshot.Item.References, rules, kind != PurchaseOrder);
+            kind is OpeningCost or PurchaseServiceOrder, snapshot.Item.References, rules, kind is not (PurchaseOrder or PurchaseServiceOrder));
     }
 
     public async Task<WorkDecisionResultV1> DecideAsync(string kind, Guid id, WorkDecisionRequestV1 request, string key, CancellationToken token)
@@ -160,15 +161,29 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
         var actor = user.UserId;
         var snapshot = await SnapshotAsync(kind, id, token);
         if (user.UserId != actor) throw new WorkDecisionException(403);
-        if (kind == PurchaseOrder && !request.Approve
+        if (kind is (PurchaseOrder or PurchaseServiceOrder) && !request.Approve
             || string.IsNullOrWhiteSpace(request.ExpectedVersion) || request.ExpectedVersion.Length > 128
             || (kind == OpeningCost && request.ExpectedVersion != snapshot.SourceVersion)
             || ((kind == OpeningCost || !request.Approve && kind is not (SalesOrder or SalesInvoice or SalesSubcontractInvoice or PurchaseRequest)) && (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 500))
-            || (kind != OpeningCost && request.Approve && request.Reason is not null)) throw new WorkDecisionException(400, "work_decision_invalid");
+            || (kind is not (OpeningCost or PurchaseServiceOrder) && request.Approve && request.Reason is not null)) throw new WorkDecisionException(400, "work_decision_invalid");
         async Task<bool> Verify(CancellationToken ct) => request.DelegationId is not { } delegation
             || await delegations.FindForActorAsync(delegation, snapshot.Item, ct) is not null;
         if (!await Verify(token)) throw new WorkDecisionException(403);
         using var lease = executionFence.Enter(Verify);
+        if (kind == PurchaseServiceOrder)
+        {
+            if (purchasingServiceOrders is null) throw new WorkDecisionException(503);
+            try
+            {
+                var answer = await purchasingServiceOrders.ApproveAsync(id,
+                    new(request.ExpectedVersion, request.Reason!),
+                    new(key, correlation.CorrelationId, correlation.CausationId, DateTimeOffset.UtcNow), token);
+                if (answer.Order.OrderId != id || answer.Order.CompanyId != snapshot.CompanyId) throw new WorkDecisionException(503);
+                return new(snapshot.CompanyId, kind, id, answer.Order.Status, answer.IsReplay, answer.OriginalCorrelationId);
+            }
+            catch (PurchasingServiceException error)
+            { throw new WorkDecisionException(error.Status, error.Code, error.IsReplay, error.OriginalCorrelationId); }
+        }
         if (kind is PurchaseRequest or PurchaseOrder)
         {
             if (purchasing is null) throw new WorkDecisionException(503);
