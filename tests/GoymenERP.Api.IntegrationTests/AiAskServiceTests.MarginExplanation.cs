@@ -124,7 +124,7 @@ public sealed partial class AiAskServiceTests
         public AiAskService Service() => new(Microsoft.Extensions.Options.Options.Create(Options), new TestHostEnvironment("Development"),
             Common.Provider, new AiToolCatalog([tool], Microsoft.Extensions.Options.Options.Create(Options)),
             new TestUser(Actor, Company), Common.CompanyScope, Authority, new FixedSessionResolver(), Common.Correlation,
-            Common.Writer, TimeProvider.System, AiGatewayTestDoubles.Gateway(Options, Common.GatewayStore, [Composer]));
+            Common.Writer, TimeProvider.System, AiGatewayTestDoubles.Gateway(Options, Common.GatewayStore, [Composer]), Common.ReceiptWriter);
     }
 
     /// <summary>Only an injected untrusted-composition fixture; no new production model/provider.</summary>

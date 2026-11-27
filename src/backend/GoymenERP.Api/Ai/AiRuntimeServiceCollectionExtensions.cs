@@ -56,6 +56,8 @@ public static class AiRuntimeServiceCollectionExtensions
         services.AddSingleton<IAiAnswerComposerV1>(_ => new FakeAiAnswerComposer(AiModelPlacementV1.OnPremises));
         services.AddScoped<IAiGatewayV1, AiGateway>();
         services.AddScoped<AiAskService>();
+        services.TryAddScoped<Answers.IAiAnswerReceiptWriterV1>(provider => new Answers.AiAnswerReceiptWriterV1(
+            provider.GetService<IAiAnswerReceiptPersistenceV1>(), provider.GetRequiredService<TimeProvider>()));
         services.AddScoped<IAiOwnerToolV1>(provider => new Tools.SalesLineMarginExplanationAiToolV1(
             provider.GetService<GoymenERP.Modules.Sales.Application.Contracts.ISalesDraftService>(),
             provider.GetService<GoymenERP.BuildingBlocks.Multitenancy.ICompanyContext>(),
