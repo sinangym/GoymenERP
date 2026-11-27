@@ -49,7 +49,8 @@ public sealed class FinanceBankCreditLimitWorkInboxSourceV1Tests : FinanceWorkIn
 
         var item = Assert.Single(result.Items!);
         Assert.Equal(limit.Id.ToString("D")[..8], item.DocumentLabel);
-        Assert.Equal("/finans/krediler", item.Link);
+        Assert.Equal($"/onaylarim/finance.bank-credit-limit.v1/{limit.Id:D}", item.Link);
+        Assert.Equal("/finans/krediler", FinanceBankCreditLimitWorkInboxSourceV1.ScreenPath);
         Assert.Equal(
             [new WorkApprovalRuleResultV1(FinanceBankCreditLimitWorkInboxSourceV1.ApprovalRequiredRule, null, "250000.5", null, null)],
             item.Rules);
