@@ -70,7 +70,7 @@ public sealed class SalesLineMarginExplanationAiToolV1(ISalesDraftService? sales
             answer.Sources.Select(source => new SalesLineMarginAiSourceV1(source.Kind, source.RecordId, source.Revision,
                 source.RecordedAtUtc)).ToArray(), answer.RuleReferences);
         var json = JsonSerializer.Serialize(content, Json);
-        var source = new AiSourceV1(ToolId, ToolVersion, TargetKind, draftId.Value, "Satış satırı marj hesap izi",
+        var source = new AiSourceV1(ToolId, ToolVersion, TargetKind, draftId.Value, AiToolTextV1.SalesLineMarginTrace,
             AiSourceVersionV1.Of([json]), time.GetUtcNow().ToUniversalTime(), AiDataClassV1.Confidential);
         return new(AiToolOutcomeV1.Succeeded, json, source);
 

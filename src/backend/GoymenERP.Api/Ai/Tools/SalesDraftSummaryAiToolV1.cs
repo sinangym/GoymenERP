@@ -62,7 +62,7 @@ public sealed class SalesDraftSummaryAiToolV1(ISalesDraftService? sales, ICompan
             detail.Lines.Select(line => new SalesDraftSummaryAiLineV1(line.LineId, line.LineNo, line.ProductId,
                 line.OrderUnitId, line.Quantity)).ToArray());
         var json = JsonSerializer.Serialize(content, Json);
-        return new(AiToolOutcomeV1.Succeeded, json, new(ToolId, ToolVersion, TargetKind, draft.Id, "Satış taslağı özeti",
+        return new(AiToolOutcomeV1.Succeeded, json, new(ToolId, ToolVersion, TargetKind, draft.Id, AiToolTextV1.SalesDraftSummary,
             AiSourceVersionV1.Of([json]), time.GetUtcNow().ToUniversalTime(), AiDataClassV1.Internal));
 
         bool Current() => context.CompanyId != Guid.Empty && company is { IsResolved: true } && company.CompanyId == context.CompanyId
