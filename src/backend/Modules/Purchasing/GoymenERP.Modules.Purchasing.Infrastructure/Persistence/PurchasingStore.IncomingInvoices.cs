@@ -60,6 +60,7 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
     public async Task<PurchasingIncomingInvoiceWriteResult?> FindIncomingInvoiceAttemptAsync(string command,
         PurchasingWriteEnvelope envelope, string requestHash, CancellationToken cancellationToken = default)
     {
+        RequireInvoiceTransactionOwnership();
         RequireInvoiceCommand(command); RequireEnvelope(envelope); RequireHash(requestHash);
         var company = RequireResolvedCompany(); var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         var row = await dbContext.IncomingInvoiceAttempts.AsNoTracking()
@@ -67,7 +68,10 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
         if (row is null) return null;
         if (row.CompanyId != company || row.ActorId != envelope.ActorId.Trim() || row.RequestHash != requestHash)
             throw Refused(PurchasingStoreCodes.SameKeyPayloadMismatch, "Aynı işlem anahtarı farklı içerik veya aktörle kullanılamaz.");
-        return new(row.SnapshotJson is null ? null : ReadInvoiceSnapshot(row.SnapshotJson),
+        var snapshot = row.SnapshotJson is null ? null : ReadInvoiceSnapshot(row.SnapshotJson);
+        if (command == PurchaseIncomingInvoiceCommandsV1.ApproveVariance && snapshot is not null)
+            await RequireInvoiceVarianceDeciderAsync(snapshot.Restore(), envelope.ActorId.Trim(), cancellationToken, replay: true);
+        return new(snapshot,
             row.RefusalJson is null ? null : JsonSerializer.Deserialize<PurchasingTerminalRefusal>(row.RefusalJson, Json)
                 ?? throw new InvalidOperationException("Fatura ret kaydı okunamadı."), true, row.CorrelationId);
     }
@@ -85,32 +89,38 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
             throw new ArgumentException("Denetim notu geçersiz.", nameof(auditNote));
         ArgumentNullException.ThrowIfNull(invoice); ArgumentNullException.ThrowIfNull(requireStillAuthorized);
         RequireInvoiceTransactionOwnership();
-        await requireStillAuthorized(cancellationToken);
-        var replay = await FindIncomingInvoiceAttemptAsync(PurchaseIncomingInvoiceCommandsV1.Record, envelope, requestHash, cancellationToken);
-        if (replay is not null) { await requireStillAuthorized(cancellationToken); return replay; }
-        var company = RequireResolvedCompany();
-        if (invoice.CompanyId != company || invoice.Version != 1 || invoice.Status != PurchaseIncomingInvoiceStatus.Recorded
-            || invoice.RecordedBy != envelope.ActorId.Trim()) throw new InvalidOperationException("Fatura kayıt kapsamı uyuşmuyor.");
-        var now = timeProvider.GetUtcNow();
-        var snapshot = PurchaseIncomingInvoiceSnapshot.Capture(invoice); var json = JsonSerializer.Serialize(snapshot, Json);
-        await using var owned = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-        await requireStillAuthorized(cancellationToken);
-        dbContext.IncomingInvoices.Add(new()
+        try
         {
-            CompanyId = company, InvoiceId = invoice.Id, SupplierPartyId = invoice.SupplierPartyId, Ettn = invoice.Source.Ettn,
-            OfficialNumber = invoice.Source.OfficialNumber, DocumentId = invoice.Source.DocumentId, DocumentVersion = invoice.Source.DocumentVersion,
-            DocumentSha256 = invoice.Source.Sha256, InvoiceDate = invoice.Source.InvoiceDate, CurrencyId = invoice.CurrencyId,
-            PayableAmount = invoice.Amounts.Payable,
-        });
-        AddInvoiceRevision(snapshot, json, now);
-        AddInvoiceAttempt(company, PurchaseIncomingInvoiceCommandsV1.Record, envelope, requestHash, json, null, now);
-        Audit(envelope, company, "Purchasing.IncomingInvoice", invoice.Id, "purchasing.incoming-invoice.recorded.v1", "Record",
-            null, invoice.Version, "{}", json,
-            auditNote is null ? "Resmî alış faturası içe aktarıldı" : "Resmî alış faturası içe aktarıldı; " + auditNote);
-        await SaveAsync(cancellationToken);
-        await RequireIncomingInvoiceCommitAsync(requireStillAuthorized, cancellationToken);
-        await owned.CommitAsync(cancellationToken);
-        return new(snapshot, null, false, envelope.CorrelationId.Trim());
+            await requireStillAuthorized(cancellationToken);
+            var replay = await FindIncomingInvoiceAttemptAsync(PurchaseIncomingInvoiceCommandsV1.Record, envelope, requestHash, cancellationToken);
+            if (replay is not null) { await requireStillAuthorized(cancellationToken); return replay; }
+            var company = RequireResolvedCompany();
+            if (invoice.CompanyId != company || invoice.Version != 1 || invoice.Status != PurchaseIncomingInvoiceStatus.Recorded
+                || invoice.RecordedBy != envelope.ActorId.Trim()) throw new InvalidOperationException("Fatura kayıt kapsamı uyuşmuyor.");
+            var now = timeProvider.GetUtcNow();
+            var snapshot = PurchaseIncomingInvoiceSnapshot.Capture(invoice); var json = JsonSerializer.Serialize(snapshot, Json);
+            await using var owned = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+            await requireStillAuthorized(cancellationToken);
+            dbContext.IncomingInvoices.Add(new()
+            {
+                CompanyId = company, InvoiceId = invoice.Id, SupplierPartyId = invoice.SupplierPartyId, Ettn = invoice.Source.Ettn,
+                OfficialNumber = invoice.Source.OfficialNumber, DocumentId = invoice.Source.DocumentId, DocumentVersion = invoice.Source.DocumentVersion,
+                DocumentSha256 = invoice.Source.Sha256, InvoiceDate = invoice.Source.InvoiceDate, CurrencyId = invoice.CurrencyId,
+                PayableAmount = invoice.Amounts.Payable,
+            });
+            AddInvoiceRevision(snapshot, json, now);
+            AddInvoiceAttempt(company, PurchaseIncomingInvoiceCommandsV1.Record, envelope, requestHash, json, null, now);
+            Audit(envelope, company, "Purchasing.IncomingInvoice", invoice.Id, "purchasing.incoming-invoice.recorded.v1", "Record",
+                null, invoice.Version, "{}", json,
+                auditNote is null ? "Resmî alış faturası içe aktarıldı" : "Resmî alış faturası içe aktarıldı; " + auditNote);
+            await SaveAsync(cancellationToken);
+            await RequireIncomingInvoiceCommitAsync(requireStillAuthorized, cancellationToken);
+            await owned.CommitAsync(cancellationToken);
+            return new(snapshot, null, false, envelope.CorrelationId.Trim());
+        }
+        catch { dbContext.ChangeTracker.Clear(); throw; }
+        finally { decisionAuditWriter?.DiscardPending(); }
+
     }
 
     public async Task<PurchasingIncomingInvoiceWriteResult?> MutateIncomingInvoiceAsync(Guid invoiceId, string command,
@@ -120,60 +130,70 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
     {
         RequireInvoiceCommand(command); ArgumentNullException.ThrowIfNull(orderIdsToLock);
         RequireInvoiceTransactionOwnership();
-        ArgumentNullException.ThrowIfNull(mutate); ArgumentNullException.ThrowIfNull(requireStillAuthorized);
-        if (command == PurchaseIncomingInvoiceCommandsV1.Record) throw new ArgumentException("Kayıt komutu ayrı uygulanır.", nameof(command));
-        await requireStillAuthorized(cancellationToken);
-        var replay = await FindIncomingInvoiceAttemptAsync(command, envelope, requestHash, cancellationToken);
-        if (replay is not null) { await requireStillAuthorized(cancellationToken); return replay; }
-        var company = RequireResolvedCompany();
-        await using var owned = await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
-        var lockedOrders = orderIdsToLock.Distinct().OrderBy(value => value).ToArray();
-        if (lockedOrders.Contains(Guid.Empty)) throw new ArgumentException("Sipariş kimliği boş olamaz.");
-        var generalLineIds = await dbContext.OrderLines.AsNoTracking()
-            .Where(line => lockedOrders.Contains(line.OrderId) && line.Kind == (int)PurchaseOrderLineKind.General)
-            .Select(line => line.LineId).ToArrayAsync(cancellationToken);
-        var serviceLineIds = await dbContext.ServiceAcceptances.AsNoTracking().Where(row => lockedOrders.Contains(row.OrderId))
-            .Select(row => row.LineId).Distinct().ToArrayAsync(cancellationToken);
-        var expenseIds = await dbContext.AdditionalCosts.AsNoTracking().Where(row => lockedOrders.Contains(row.OrderId))
-            .Select(row => row.CostId).ToArrayAsync(cancellationToken);
         try
         {
-            await PurchaseLineSerializationLock.Bind(dbContext.Database.GetDbConnection(), owned.GetDbTransaction(), company)
-                .AcquireAllAsync(generalLineIds.Concat(serviceLineIds).Concat(expenseIds), cancellationToken);
-        }
-        catch (PurchaseLineBusyException exception)
-        { throw Refused(PurchasingStoreCodes.LineBusy, "Sipariş satırı başka bir işlem tarafından kilitli; hiçbir şey kaydedilmedi.", exception); }
-        var before = await FindIncomingInvoiceAsync(invoiceId, cancellationToken);
-        if (before is null) return null;
-        var invoice = before.Restore();
-        await requireStillAuthorized(cancellationToken); await mutate(invoice, cancellationToken);
-        if (invoice.Version != before.Version + 1 || !ValidInvoiceTransition(command, before.Status, invoice.Status))
-            throw new InvalidOperationException("Fatura komutu tek bir geçerli sürüm adımı yazmalıdır.");
-        Action? stageBindings = command == PurchaseIncomingInvoiceCommandsV1.Match
-            ? await PrepareIncomingInvoiceReceiptBindingsAsync(invoice, lockedOrders, cancellationToken) : null;
-        var now = timeProvider.GetUtcNow(); var after = PurchaseIncomingInvoiceSnapshot.Capture(invoice);
-        var json = JsonSerializer.Serialize(after, Json);
-        await requireStillAuthorized(cancellationToken);
-        stageBindings?.Invoke();
-        if (command == PurchaseIncomingInvoiceCommandsV1.Finalize)
-        {
-            var payload = PurchaseIncomingInvoiceFinalizationV1.Event(invoice);
-            dbContext.OutboxMessages.Add(new()
+            ArgumentNullException.ThrowIfNull(mutate); ArgumentNullException.ThrowIfNull(requireStillAuthorized);
+            if (command == PurchaseIncomingInvoiceCommandsV1.Record) throw new ArgumentException("Kayıt komutu ayrı uygulanır.", nameof(command));
+            await requireStillAuthorized(cancellationToken);
+            var replay = await FindIncomingInvoiceAttemptAsync(command, envelope, requestHash, cancellationToken);
+            if (replay is not null) { await requireStillAuthorized(cancellationToken); return replay; }
+            var company = RequireResolvedCompany();
+            await using var owned = await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+            var lockedOrders = orderIdsToLock.Distinct().OrderBy(value => value).ToArray();
+            if (lockedOrders.Contains(Guid.Empty)) throw new ArgumentException("Sipariş kimliği boş olamaz.");
+            var generalLineIds = await dbContext.OrderLines.AsNoTracking()
+                .Where(line => lockedOrders.Contains(line.OrderId) && line.Kind == (int)PurchaseOrderLineKind.General)
+                .Select(line => line.LineId).ToArrayAsync(cancellationToken);
+            var serviceLineIds = await dbContext.ServiceAcceptances.AsNoTracking().Where(row => lockedOrders.Contains(row.OrderId))
+                .Select(row => row.LineId).Distinct().ToArrayAsync(cancellationToken);
+            var expenseIds = await dbContext.AdditionalCosts.AsNoTracking().Where(row => lockedOrders.Contains(row.OrderId))
+                .Select(row => row.CostId).ToArrayAsync(cancellationToken);
+            try
             {
-                Id = Guid.NewGuid(), CompanyId = company, EventType = PurchaseInvoiceFinalizedEventV1.EventType,
-                SchemaVersion = PurchaseInvoiceFinalizedEventV1.SchemaVersion, SourceOperation = command,
-                AggregateType = "Purchasing.IncomingInvoice", AggregateId = invoice.Id, AggregateVersion = payload.Version, Sequence = 1,
-                PayloadJson = JsonSerializer.Serialize(payload, Json), OccurredAtUtc = invoice.FinalizedAtUtc!.Value,
-                CorrelationId = envelope.CorrelationId.Trim(), CausationId = envelope.CausationId, RecordedAtUtc = now,
-            });
+                await PurchaseLineSerializationLock.Bind(dbContext.Database.GetDbConnection(), owned.GetDbTransaction(), company)
+                    .AcquireAllAsync(generalLineIds.Concat(serviceLineIds).Concat(expenseIds), cancellationToken);
+            }
+            catch (PurchaseLineBusyException exception)
+            { throw Refused(PurchasingStoreCodes.LineBusy, "Sipariş satırı başka bir işlem tarafından kilitli; hiçbir şey kaydedilmedi.", exception); }
+            var before = await FindIncomingInvoiceAsync(invoiceId, cancellationToken);
+            if (before is null) return null;
+            var invoice = before.Restore();
+            if (command == PurchaseIncomingInvoiceCommandsV1.ApproveVariance)
+                await RequireInvoiceVarianceDeciderAsync(invoice, envelope.ActorId.Trim(), cancellationToken);
+            await requireStillAuthorized(cancellationToken); await mutate(invoice, cancellationToken);
+            if (invoice.Version != before.Version + 1 || !ValidInvoiceTransition(command, before.Status, invoice.Status))
+                throw new InvalidOperationException("Fatura komutu tek bir geçerli sürüm adımı yazmalıdır.");
+            Action? stageBindings = command == PurchaseIncomingInvoiceCommandsV1.Match
+                ? await PrepareIncomingInvoiceReceiptBindingsAsync(invoice, lockedOrders, cancellationToken) : null;
+            var now = timeProvider.GetUtcNow(); var after = PurchaseIncomingInvoiceSnapshot.Capture(invoice);
+            var json = JsonSerializer.Serialize(after, Json);
+            await requireStillAuthorized(cancellationToken);
+            stageBindings?.Invoke();
+            if (command == PurchaseIncomingInvoiceCommandsV1.Finalize)
+            {
+                var payload = PurchaseIncomingInvoiceFinalizationV1.Event(invoice);
+                dbContext.OutboxMessages.Add(new()
+                {
+                    Id = Guid.NewGuid(), CompanyId = company, EventType = PurchaseInvoiceFinalizedEventV1.EventType,
+                    SchemaVersion = PurchaseInvoiceFinalizedEventV1.SchemaVersion, SourceOperation = command,
+                    AggregateType = "Purchasing.IncomingInvoice", AggregateId = invoice.Id, AggregateVersion = payload.Version, Sequence = 1,
+                    PayloadJson = JsonSerializer.Serialize(payload, Json), OccurredAtUtc = invoice.FinalizedAtUtc!.Value,
+                    CorrelationId = envelope.CorrelationId.Trim(), CausationId = envelope.CausationId, RecordedAtUtc = now,
+                });
+            }
+            AddInvoiceRevision(after, json, now); AddInvoiceAttempt(company, command, envelope, requestHash, json, null, now);
+            Audit(envelope, company, "Purchasing.IncomingInvoice", invoice.Id, command.Replace(".v1", ".recorded.v1", StringComparison.Ordinal),
+                command, before.Version, after.Version, JsonSerializer.Serialize(before, Json), json, "Alış faturası işlem geçmişi");
+            await SaveAsync(cancellationToken);
+            if (command == PurchaseIncomingInvoiceCommandsV1.ApproveVariance)
+                await RequireInvoiceVarianceDeciderAsync(invoice, envelope.ActorId.Trim(), cancellationToken);
+            await requireStillAuthorized(cancellationToken);
+            await owned.CommitAsync(cancellationToken);
+            return new(after, null, false, envelope.CorrelationId.Trim());
         }
-        AddInvoiceRevision(after, json, now); AddInvoiceAttempt(company, command, envelope, requestHash, json, null, now);
-        Audit(envelope, company, "Purchasing.IncomingInvoice", invoice.Id, command.Replace(".v1", ".recorded.v1", StringComparison.Ordinal),
-            command, before.Version, after.Version, JsonSerializer.Serialize(before, Json), json, "Alış faturası işlem geçmişi");
-        await SaveAsync(cancellationToken);
-        await requireStillAuthorized(cancellationToken);
-        await owned.CommitAsync(cancellationToken);
-        return new(after, null, false, envelope.CorrelationId.Trim());
+        catch { dbContext.ChangeTracker.Clear(); throw; }
+        finally { decisionAuditWriter?.DiscardPending(); }
+
     }
 
     public async Task<PurchasingIncomingInvoiceWriteResult> RecordIncomingInvoiceRefusalAsync(string command,
@@ -182,18 +202,24 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
     {
         ArgumentNullException.ThrowIfNull(refusal); ArgumentNullException.ThrowIfNull(requireStillAuthorized);
         RequireInvoiceTransactionOwnership();
-        if (refusal.Status is not (409 or 422) || string.IsNullOrWhiteSpace(refusal.Code))
-            throw new ArgumentException("Yalnız kalıcı iş kuralı retleri kaydedilir.", nameof(refusal));
-        await requireStillAuthorized(cancellationToken);
-        var replay = await FindIncomingInvoiceAttemptAsync(command, envelope, requestHash, cancellationToken);
-        if (replay is not null) { await requireStillAuthorized(cancellationToken); return replay; }
-        await using var owned = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-        await requireStillAuthorized(cancellationToken);
-        AddInvoiceAttempt(RequireResolvedCompany(), command, envelope, requestHash, null, JsonSerializer.Serialize(refusal, Json), timeProvider.GetUtcNow());
-        await SaveAsync(cancellationToken);
-        await RequireIncomingInvoiceCommitAsync(requireStillAuthorized, cancellationToken);
-        await owned.CommitAsync(cancellationToken);
-        return new(null, refusal, false, envelope.CorrelationId.Trim());
+        try
+        {
+            if (refusal.Status is not (409 or 422) || string.IsNullOrWhiteSpace(refusal.Code))
+                throw new ArgumentException("Yalnız kalıcı iş kuralı retleri kaydedilir.", nameof(refusal));
+            await requireStillAuthorized(cancellationToken);
+            var replay = await FindIncomingInvoiceAttemptAsync(command, envelope, requestHash, cancellationToken);
+            if (replay is not null) { await requireStillAuthorized(cancellationToken); return replay; }
+            await using var owned = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+            await requireStillAuthorized(cancellationToken);
+            AddInvoiceAttempt(RequireResolvedCompany(), command, envelope, requestHash, null, JsonSerializer.Serialize(refusal, Json), timeProvider.GetUtcNow());
+            await SaveAsync(cancellationToken);
+            await RequireIncomingInvoiceCommitAsync(requireStillAuthorized, cancellationToken);
+            await owned.CommitAsync(cancellationToken);
+            return new(null, refusal, false, envelope.CorrelationId.Trim());
+        }
+        catch { dbContext.ChangeTracker.Clear(); throw; }
+        finally { decisionAuditWriter?.DiscardPending(); }
+
     }
 
     // A permission revoked while SQL saved is still a refusal: the owned transaction
@@ -272,10 +298,27 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
     }
     // ALS-D64: Purchasing commits its own pending invoice first; Finance is a separate idempotent owner call.
     // Refuse ambient/borrowed transactions rather than depending on SQL savepoints (which MARS may disable).
+    // ROL-D10: reuse the domain's recorder/matcher/order-approver exclusion; no role names or new grant.
+    private async Task RequireInvoiceVarianceDeciderAsync(PurchaseIncomingInvoice invoice, string actor, CancellationToken token, bool replay = false)
+    {
+        var company = RequireResolvedCompany();
+        if (invoice.CompanyId != company) throw new PurchasingServiceException(503, "service_unavailable");
+        var orders = await PurchaseInvoiceVarianceOrderProof.ReadAsync(dbContext, company, invoice, token);
+        if (RequireResolvedCompany() != company || orders is null)
+            throw new PurchasingServiceException(503, "service_unavailable");
+        if (invoice.VarianceDeciderExclusions(orders.Values.SelectMany(x => x.Approvers)).Contains(actor, StringComparer.Ordinal))
+        {
+            if (replay) throw new PurchasingServiceException(403, "forbidden");
+            throw new PurchasingRuleException(PurchaseIncomingInvoice.MakerChecker, "Siparişi veya faturayı hazırlayan farkı onaylayamaz.");
+        }
+    }
+
     private void RequireInvoiceTransactionOwnership()
     {
-        if (dbContext.Database.CurrentTransaction is not null || System.Transactions.Transaction.Current is not null)
-            throw new InvalidOperationException("Alış faturası yazımı kendi işlemini tamamlar; başka bir transaction'a katılmaz.");
+        if (!dbContext.Database.IsRelational() || dbContext.Database.CurrentTransaction is not null
+            || System.Transactions.Transaction.Current is not null || dbContext.ChangeTracker.HasChanges()
+            || decisionAuditWriter?.HasPendingDrafts == true)
+            throw new InvalidOperationException("Alış faturası komutu kendi temiz işlemini gerektirir.");
     }
     private static bool ValidInvoiceTransition(string command, PurchaseIncomingInvoiceStatus before, PurchaseIncomingInvoiceStatus after) => command switch
     {
@@ -285,4 +328,60 @@ public sealed partial class PurchasingStore : IPurchasingIncomingInvoiceStoreV1
         PurchaseIncomingInvoiceCommandsV1.AcknowledgeFinance => before == PurchaseIncomingInvoiceStatus.FinancePending && after == PurchaseIncomingInvoiceStatus.FinanceAccepted,
         _ => false,
     };
+}
+
+/// <summary>ROL-D10 approval identities of exactly the order versions frozen by this invoice, without amounts.
+/// Native decisions and purpose reads use the same owner history proof; missing or ambiguous approval is unavailable.</summary>
+internal static class PurchaseInvoiceVarianceOrderProof
+{
+    internal sealed record Facts(string? DocumentNumber, IReadOnlyList<string> Approvers);
+
+    internal static async Task<Dictionary<Guid, Facts>?> ReadAsync(PurchasingDbContext database, Guid company,
+        PurchaseIncomingInvoice invoice, CancellationToken token)
+    {
+        var shares = invoice.Matches.Select(x => (Id: x.OrderId, Version: x.OrderVersion))
+            .Concat(invoice.AdditionalCosts.Select(x => (Id: x.OrderId, Version: x.SourceOrderVersion))).Distinct().ToArray();
+        var ids = shares.Select(x => x.Id).Distinct().ToArray();
+        if (invoice.CompanyId != company || ids.Length == 0 || shares.Any(x => x.Id == Guid.Empty || x.Version < 1)) return null;
+        var rows = await database.Orders.AsNoTracking().Where(x => x.CompanyId == company && ids.Contains(x.Id)).ToArrayAsync(token);
+        if (rows.Length != ids.Length) return null;
+        var result = new Dictionary<Guid, Facts>();
+        try
+        {
+            foreach (var row in rows)
+            {
+                var history = PurchaseSupplierRevisionHistory.Read(row);
+                _ = history?.ReplayActions(row);
+                var actors = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var version in shares.Where(x => x.Id == row.Id).Select(x => x.Version))
+                {
+                    if (version > row.Version) return null;
+                    var candidates = new List<PurchaseOrderApproval>();
+                    if (history is null)
+                    {
+                        if (row.Status != (int)PurchaseOrderStatus.Approved && row.Status != (int)PurchaseOrderStatus.Cancelled
+                            || row.ApprovedAtUtc is null || string.IsNullOrWhiteSpace(row.ApprovedBy)) return null;
+                        candidates.Add(new(row.ApprovedBy, row.ApprovedAtUtc.Value));
+                    }
+                    else
+                    {
+                        candidates.AddRange(history.Revisions.Where(x => x.PreviousApprovalVersion <= version && version < x.OrderVersionAfter)
+                            .Select(x => x.PreviousApproval));
+                        if (history.CurrentApprovalVersion is { } current && current <= version && version <= row.Version)
+                        {
+                            if (row.ApprovedAtUtc is null || string.IsNullOrWhiteSpace(row.ApprovedBy)) return null;
+                            candidates.Add(new(row.ApprovedBy, row.ApprovedAtUtc.Value));
+                        }
+                    }
+                    if (candidates.Count != 1 || candidates[0] is not { } approval || string.IsNullOrWhiteSpace(approval.ApprovedBy)
+                        || approval.ApprovedAtUtc == default) return null;
+                    actors.Add(approval.ApprovedBy.Trim());
+                }
+                result.Add(row.Id, new(row.DocumentNumber, actors.ToArray()));
+            }
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or JsonException or NullReferenceException)
+        { return null; }
+        return result;
+    }
 }

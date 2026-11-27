@@ -14,7 +14,7 @@ namespace GoymenERP.Purchasing.UnitTests;
 /// Matched with an undecided variance (what the variance approval accepts), oldest first, the matcher's own included; the rule
 /// numbers are the frozen Ayarlar tolerance and the variance the owner's restored match computed. SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1Tests
+public sealed partial class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1Tests
 {
     private static readonly DateTimeOffset Start = new(2026, 11, 4, 9, 0, 0, TimeSpan.Zero);
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -55,7 +55,7 @@ public sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1Tests
         AssertContractShape("purchasing", first);
         Assert.Equal("purchasing.incoming-invoice-variance.v1", first.Kind);
         Assert.Equal("SENTETIK-INV-OLD", first.DocumentLabel);
-        Assert.Equal("/satinalma/faturalar/" + olderInvoice.Id.ToString("D"), first.Link);
+        Assert.Equal("/onaylarim/purchasing.incoming-invoice-variance.v1/" + olderInvoice.Id.ToString("D"), first.Link);
         Assert.Equal(Start, first.WaitingSinceUtc);
         Assert.Contains(first.References, reference => reference.Role == "purchase-order" && reference.Label == "SENTETIK-PO-INV"
             && reference.RecordId == order.Id);

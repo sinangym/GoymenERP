@@ -7,7 +7,7 @@ using GoymenERP.Modules.Purchasing.Domain.Invoices;
 
 namespace GoymenERP.Purchasing.UnitTests;
 
-public sealed class PurchaseIncomingInvoiceWorkflowTests
+public sealed partial class PurchaseIncomingInvoiceWorkflowTests
 {
     private static readonly Guid Company = Guid.Parse("b0d19f04-3b9d-4871-9ca6-c0ba77c12760");
     private static readonly DateTimeOffset Now = new(2026, 11, 17, 10, 0, 0, TimeSpan.Zero);
@@ -291,9 +291,14 @@ public sealed class PurchaseIncomingInvoiceWorkflowTests
     private sealed class Authority : IErpAuthorityRevalidationService
     {
         public string? Denied { get; set; }
-        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new PermissionScope(permission != Denied, true, new HashSet<string> { "SENTETIK-role" },
+        public Action<string>? AfterMeasure;
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default)
+        {
+            var granted = permission != Denied;
+            AfterMeasure?.Invoke(permission);
+            return Task.FromResult(new PermissionScope(granted, true, new HashSet<string> { "SENTETIK-role" },
                 new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
+        }
     }
     private sealed class Correlation : ICorrelationContext
     {
@@ -325,6 +330,7 @@ public sealed class PurchaseIncomingInvoiceWorkflowTests
     }
     private sealed class Store(PurchaseIncomingInvoice initial) : IPurchasingIncomingInvoiceStoreV1
     {
+        public Action? BeforeReplayAnswer;
         public PurchaseIncomingInvoiceSnapshot Current { get; private set; } = PurchaseIncomingInvoiceSnapshot.Capture(initial);
         public int Reads { get; private set; }
         public bool InMutation { get; private set; }
@@ -347,6 +353,7 @@ public sealed class PurchaseIncomingInvoiceWorkflowTests
             Reads++;
             if (!attempts.TryGetValue((command, envelope.IdempotencyKey), out var result)) return Task.FromResult<PurchasingIncomingInvoiceWriteResult?>(null);
             if (result.Hash != requestHash || result.Actor != envelope.ActorId) throw new PurchasingStoreException(PurchasingStoreCodes.SameKeyPayloadMismatch, "SENTETIK");
+            BeforeReplayAnswer?.Invoke();
             return Task.FromResult<PurchasingIncomingInvoiceWriteResult?>(result.Result with { IsReplay = true });
         }
         public async Task<PurchasingIncomingInvoiceWriteResult?> MutateIncomingInvoiceAsync(Guid invoiceId, string command,

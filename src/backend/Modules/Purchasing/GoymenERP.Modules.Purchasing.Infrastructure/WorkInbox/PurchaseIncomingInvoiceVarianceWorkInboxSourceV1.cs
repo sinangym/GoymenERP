@@ -28,7 +28,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.WorkInbox;
 /// </summary>
 internal sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1(
     PurchasingDbContext dbContext,
-    PurchasingWorkInboxFence fence) : IWorkInboxSourceV1
+    PurchasingWorkInboxFence fence) : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "purchasing";
     public const string KindName = "purchasing.incoming-invoice-variance.v1";
@@ -58,6 +58,28 @@ internal sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1(
 
     public string ApproverPermission => PurchaseIncomingInvoicePermissionNamesV1.ApproveVariance;
 
+
+    public async Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context, Guid itemId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        async Task<bool> Allowed() => await fence.CheckAsync(context, PurchasingPermissionManifestV1.OrdersPriceRead, cancellationToken) is null
+            && await fence.CheckAsync(context, ApproverPermission, cancellationToken) is null;
+        if (itemId == Guid.Empty || !await Allowed()) return null;
+        var row = await dbContext.IncomingInvoiceRevisions.AsNoTracking()
+            .Where(x => x.CompanyId == context.CompanyId && x.InvoiceId == itemId).OrderByDescending(x => x.Version)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (!await Allowed() || row is null) return null;
+        var invoice = Restore(context.CompanyId, row);
+        var proof = await PurchaseInvoiceVarianceOrderProof.ReadAsync(dbContext, context.CompanyId, invoice, cancellationToken);
+        if (!await Allowed()) return null;
+        if (proof is null) throw new InvalidOperationException("Fatura sipariş onay geçmişi okunamadı.");
+        var orders = proof.ToDictionary(x => x.Key, x => new OrderFacts(x.Value.DocumentNumber, null, x.Value.Approvers));
+        if (!TryItem(new(invoice, row.RecordedAtUtc.ToUniversalTime()), orders, out var item))
+            throw new InvalidOperationException("Fatura farkı karar kaynağı okunamadı.");
+        return new(context.CompanyId, item, invoice.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            invoice.Status == PurchaseIncomingInvoiceStatus.Matched && invoice.Variances.Count > 0 && invoice.VarianceDecision is null);
+    }
 
     public async Task<WorkInboxSourceResultV1> ListPendingAsync(
         WorkInboxSourceContextV1 context,
@@ -180,14 +202,14 @@ internal sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1(
             return false;
         }
 
-        var excluded = invoice.VarianceDeciderExclusions(matchedOrderIds.Select(orderId => orders[orderId].ApprovedBy));
+        var excluded = invoice.VarianceDeciderExclusions(matchedOrderIds.SelectMany(orderId => orders[orderId].HistoricalApprovers?.Cast<string?>() ?? new[] { orders[orderId].ApprovedBy }));
         if (excluded.Count > WorkInboxRulesV1.MaxExcludedDecidersPerItem)
         {
             return false;
         }
 
         item = new WorkInboxItemV1(ModuleName, KindName, invoice.Id, label, entry.WaitingSinceUtc,
-            PurchasingWorkInboxFence.Link(PurchasingWorkInboxFence.InvoiceScreenPath, invoice.Id), invoice.MatchedBy,
+            $"/onaylarim/{KindName}/{invoice.Id:D}", invoice.MatchedBy,
             rules, references, excluded);
         return true;
     }
@@ -218,5 +240,5 @@ internal sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1(
 
     private sealed record Pending(PurchaseIncomingInvoice Invoice, DateTimeOffset WaitingSinceUtc);
 
-    private sealed record OrderFacts(string? DocumentNumber, string? ApprovedBy);
+    private sealed record OrderFacts(string? DocumentNumber, string? ApprovedBy, IReadOnlyList<string>? HistoricalApprovers = null);
 }

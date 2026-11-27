@@ -46,8 +46,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PURCHASING";
-    // WP8 1.18: native request, order and service-order purpose decisions use existing approval names without browse/price grants.
-    public const string OwnerContractVersion = "1.18";
+    // WP8 1.19: standalone purpose declarations preserve each native decision permission; invoice variance also requires its existing price read.
+    public const string OwnerContractVersion = "1.19";
     public const string AdditionalCostReadCapabilityId = "purchasing.additional-costs.read";
     public const string AdditionalCostRecordCapabilityId = "purchasing.additional-costs.record";
 
@@ -58,6 +58,7 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
     public const string ServiceOrderAcceptCapabilityId = "purchasing.service-orders.accept";
     public const string ServiceOrderRevisePricesCapabilityId = "purchasing.service-orders.prices-revise";
 
+    public const string InvoiceVarianceWorkDecisionCapabilityId = "purchasing.invoice-variance.work-decision";
     public const string InvoiceListCapabilityId = "purchasing.invoices.list";
     public const string InvoiceImportCapabilityId = "purchasing.invoices.import";
     public const string InvoiceDetailCapabilityId = "purchasing.invoices.detail";
@@ -119,6 +120,11 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 
         return
         [
+            new ShellCapabilityDeclaration(InvoiceVarianceWorkDecisionCapabilityId, "purchasing-invoice-variance-work-decision",
+                "/onaylarim/purchasing.incoming-invoice-variance.v1/:approvalId", "W-PURCHASING-INVOICE-VARIANCE-01",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [PurchaseIncomingInvoicePermissionNamesV1.ApproveVariance, PurchasingPermissionManifestV1.OrdersPriceRead], ImplementationAvailable: true),
             new ShellCapabilityDeclaration(ServiceOrderWorkDecisionCapabilityId, "purchasing-service-order-work-decision",
                 "/onaylarim/purchasing.service-order.v1/:approvalId", "W-PURCHASING-SERVICE-ORDER-01",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,

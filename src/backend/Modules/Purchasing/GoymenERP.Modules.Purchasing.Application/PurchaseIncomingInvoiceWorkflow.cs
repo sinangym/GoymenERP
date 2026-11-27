@@ -226,6 +226,12 @@ public sealed class PurchaseIncomingInvoiceWorkflow(ICompanyContext company, ICu
         if (!measured.IsGranted || !measured.IsCompanyWide || !Same(companyId, actor)) throw new PurchasingServiceException(403, "forbidden");
         var price = await authority.RevalidatePermissionScopeAsync(PurchasingPermissionManifestV1.OrdersPriceRead, companyId, token);
         if (!price.IsGranted || !price.IsCompanyWide || !Same(companyId, actor)) throw new PurchasingServiceException(403, "forbidden");
+        if (permission == PurchaseIncomingInvoicePermissionNamesV1.ApproveVariance)
+        {
+            // The price permission is another owner await; the deciding permission/delegation must be fresh after it.
+            measured = await authority.RevalidatePermissionScopeAsync(permission, companyId, token);
+            if (!measured.IsGranted || !measured.IsCompanyWide || !Same(companyId, actor)) throw new PurchasingServiceException(403, "forbidden");
+        }
         return new(companyId, actor, permission, measured.RoleCodes.Order(StringComparer.Ordinal).ToArray());
     }
 
