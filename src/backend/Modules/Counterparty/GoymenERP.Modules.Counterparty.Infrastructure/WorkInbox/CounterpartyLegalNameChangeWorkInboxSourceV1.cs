@@ -18,7 +18,7 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.WorkInbox;
 /// </summary>
 internal sealed class CounterpartyLegalNameChangeWorkInboxSourceV1(
     CounterpartyDbContext database,
-    WorkInboxCompanyWideFenceV1 fence) : IWorkInboxSourceV1
+    WorkInboxCompanyWideFenceV1 fence) : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "counterparty";
     public const string KindName = "counterparty.legal-name-change.v1";
@@ -40,6 +40,54 @@ internal sealed class CounterpartyLegalNameChangeWorkInboxSourceV1(
     public string Kind => KindName;
 
     public string ApproverPermission => CounterpartyLegalNamePermissionsV1.Approve;
+
+    /// <summary>Native decision purpose: terminal requests remain readable for the owner's immutable replay.
+    /// Party visibility uses the native company-account existence rule, including inactive accounts.
+    /// No tax identity, source command body or decision note leaves this owner read.</summary>
+    public async Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context, Guid itemId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (itemId == Guid.Empty || await fence.CheckAsync(context, Permissions, cancellationToken) is not null) return null;
+        var row = await database.PartyLegalNameChangeRequests.AsNoTracking()
+            .Where(request => request.CompanyId == context.CompanyId && request.Id == itemId)
+            .Select(request => new { request.Id, request.CompanyId, request.PartyId, request.Version, request.Status,
+                request.PartyVersionAtRequest, request.RequestedBy, request.RequestedAtUtc, request.ProposedLegalName })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (row is null) { await fence.CheckAsync(context, Permissions, cancellationToken); return null; }
+        var party = await database.Parties.AsNoTracking()
+            .Where(party => party.Id == row.PartyId && database.CompanyPartyAccounts.Any(account =>
+                account.CompanyId == context.CompanyId && account.PartyId == party.Id))
+            .Select(party => new { party.Id, party.LegalName, party.Version }).SingleOrDefaultAsync(cancellationToken);
+        if (await fence.CheckAsync(context, Permissions, cancellationToken) is not null || party is null) return null;
+        if (row.Id == Guid.Empty || row.PartyId == Guid.Empty || row.Version < 1 || row.PartyVersionAtRequest < 1
+            || party.Version < 1 || !Enum.IsDefined(row.Status) || string.IsNullOrWhiteSpace(row.RequestedBy)
+            || row.RequestedAtUtc == default || string.IsNullOrWhiteSpace(party.LegalName)
+            || party.LegalName.Length > WorkInboxRulesV1.MaxDocumentLabelLength || string.IsNullOrWhiteSpace(row.ProposedLegalName)
+            || row.ProposedLegalName.Length > WorkInboxRulesV1.MaxDocumentLabelLength)
+            throw new InvalidOperationException("The native identity decision source is malformed.");
+        // Do not combine a newer request status/party version with an earlier projection. No retry or mutation.
+        var finalRequest = await database.PartyLegalNameChangeRequests.AsNoTracking()
+            .Where(request => request.CompanyId == context.CompanyId && request.Id == itemId)
+            .Select(request => new { request.Version, request.Status }).SingleOrDefaultAsync(cancellationToken);
+        var finalVersion = await database.Parties.AsNoTracking()
+            .Where(candidate => candidate.Id == row.PartyId && database.CompanyPartyAccounts.Any(account =>
+                account.CompanyId == context.CompanyId && account.PartyId == candidate.Id))
+            .Select(candidate => (long?)candidate.Version).SingleOrDefaultAsync(cancellationToken);
+        if (await fence.CheckAsync(context, Permissions, cancellationToken) is not null) return null;
+        if (finalRequest is null || finalRequest.Version != row.Version || finalRequest.Status != row.Status
+            || finalVersion != party.Version)
+            throw new InvalidOperationException("The native identity decision source changed while it was read.");
+        var rules = new List<WorkApprovalRuleResultV1> { new(ApprovalRequiredRule, null, null, null, null) };
+        if (party.Version != row.PartyVersionAtRequest) rules.Add(new(StaleRule, null, null, null, null));
+        var link = WorkInboxCompanyWideFenceV1.Link(PartyScreenPath, row.PartyId);
+        var item = new WorkInboxItemV1(ModuleName, KindName, row.Id, row.ProposedLegalName,
+            row.RequestedAtUtc.ToUniversalTime(), link, row.RequestedBy, rules,
+            [new("party", party.LegalName, row.PartyId, link)]);
+        return new(context.CompanyId, item, party.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            row.Status == PartyLegalNameChangeStatus.Pending);
+    }
 
     public async Task<WorkInboxSourceResultV1> ListPendingAsync(
         WorkInboxSourceContextV1 context,

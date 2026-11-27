@@ -2,6 +2,8 @@ using System.Net.Http.Json;
 using System.Globalization;
 using System.Text.Json;
 using System.Transactions;
+using GoymenERP.Api.WorkRuntime;
+using GoymenERP.Modules.Work.Infrastructure.Delegations;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
@@ -21,7 +23,7 @@ namespace GoymenERP.Api.IntegrationTests;
 
 // Existing disposable SQL fixtures prepare real parties/proposals through native HTTP commands.
 // The controlled principal/authority model only the later native decision boundary, not real grants or Work UI.
-public sealed class CounterpartyIdentityDecisionSafetySqlServerRelationalAcceptanceTests
+public sealed partial class CounterpartyIdentityDecisionSafetySqlServerRelationalAcceptanceTests
 {
     [SqlServerFact]
     public Task Identity_decisions_roll_back_late_authority_actor_company_and_delegation_loss_then_retry_and_replay_the_original_204_tax_approve() =>
@@ -271,13 +273,17 @@ public sealed class CounterpartyIdentityDecisionSafetySqlServerRelationalAccepta
     {
         public readonly Case Data; public readonly User User = new(); public readonly Authority Authority = new();
         public readonly WebApplicationFactory<Program> Factory;
-        public Harness(Case data, SaveProbe probe)
+        public Harness(Case data, SaveProbe probe, bool workFence = false, IWorkDelegationReaderV1? workDelegations = null)
         {
             Data = data;
             Factory = data.Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<ICurrentUser>(); services.AddSingleton<ICurrentUser>(User);
-                services.RemoveAll<IErpAuthorityRevalidationService>(); services.AddSingleton<IErpAuthorityRevalidationService>(Authority);
+                services.RemoveAll<IErpAuthorityRevalidationService>();
+                services.AddScoped<IErpAuthorityRevalidationService>(provider => workFence
+                    ? new WorkDecisionAuthorityV1(Authority, provider.GetRequiredService<WorkDecisionExecutionFenceV1>()) : Authority);
+                if (workDelegations is not null)
+                { services.RemoveAll<IWorkDelegationReaderV1>(); services.AddSingleton<IWorkDelegationReaderV1>(workDelegations); }
                 services.RemoveAll<IErpAuthorizationService>(); services.AddSingleton<IErpAuthorizationService>(Authority);
                 services.AddDbContext<CounterpartyDbContext>((_, options) => options.AddInterceptors(probe));
             }));

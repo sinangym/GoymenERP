@@ -1,12 +1,13 @@
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Counterparty.Application.Contracts;
 
 namespace GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 
 public sealed class CounterpartyShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/CARI";
-    public const string OwnerContractVersion = "1.6";
+    public const string OwnerContractVersion = "1.7";
     public const string ListCapabilityId = "cari.parties.list";
     public const string ListRouteId = "cari.list";
     public const string ListRoutePath = "/cari";
@@ -31,6 +32,11 @@ public sealed class CounterpartyShellCapabilityProvider : IShellCapabilityProvid
     /// </summary>
     public const string PartyIbansReadCapabilityId = "cari.party-ibans.read";
     public const string PartyIbansManageCapabilityId = "cari.party-ibans.manage";
+
+    public const string TaxIdentityWorkDecisionCapabilityId = "cari.tax-identity-change.work-decision";
+    public const string LegalNameWorkDecisionCapabilityId = "cari.legal-name-change.work-decision";
+    public const string TaxIdentityWorkDecisionRoutePath = "/onaylarim/counterparty.tax-identity-change.v1/:approvalId";
+    public const string LegalNameWorkDecisionRoutePath = "/onaylarim/counterparty.legal-name-change.v1/:approvalId";
 
     public string Owner => OwnerId;
 
@@ -83,6 +89,16 @@ public sealed class CounterpartyShellCapabilityProvider : IShellCapabilityProvid
                     ErpPermissions.CounterpartyPartiesRead,
                 ],
                 ImplementationAvailable: false),
+            new ShellCapabilityDeclaration(TaxIdentityWorkDecisionCapabilityId, "cari.tax-identity-change.work-decision",
+                TaxIdentityWorkDecisionRoutePath, "CARI-TAXIDENTITY-WORK-DECISION-001",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [CounterpartyTaxIdentityPermissionsV1.Approve, ErpPermissions.CounterpartyPartiesRead], ImplementationAvailable: false),
+            new ShellCapabilityDeclaration(LegalNameWorkDecisionCapabilityId, "cari.legal-name-change.work-decision",
+                LegalNameWorkDecisionRoutePath, "CARI-LEGALNAME-WORK-DECISION-001",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [CounterpartyLegalNamePermissionsV1.Approve, ErpPermissions.CounterpartyPartiesRead], ImplementationAvailable: false),
             detail,
             detail with
             {

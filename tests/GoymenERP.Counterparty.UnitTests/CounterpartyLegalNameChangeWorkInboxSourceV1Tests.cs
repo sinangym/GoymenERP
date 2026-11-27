@@ -3,6 +3,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
+using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure.WorkInbox;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +23,7 @@ public sealed class CounterpartyLegalNameChangeWorkInboxSourceV1Tests
     private readonly string database = "counterparty-legal-name-inbox-" + Guid.NewGuid().ToString("N");
     private readonly HashSet<string> withheld = new(StringComparer.Ordinal);
     private readonly List<string> asked = [];
+    private Func<Task>? beforeFresh;
 
     [Fact]
     public async Task Pending_legal_name_requests_of_the_caller_company_are_listed_with_the_proposed_name_and_the_proposer_as_maker()
@@ -62,6 +64,72 @@ public sealed class CounterpartyLegalNameChangeWorkInboxSourceV1Tests
         Assert.Null(result.Items);
     }
 
+    [Theory]
+    [InlineData("Pending")] [InlineData("Approved")] [InlineData("Rejected")]
+    public async Task Decision_purpose_keeps_native_company_account_and_terminal_maker_metadata_without_tax_data(string state)
+    {
+        var party = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000001"), PartyKind.LegalEntity, "SENTETIK Metal");
+        await SeedAsync(CompanyA, db => { db.Parties.Add(party); db.CompanyPartyAccounts.Add(new CompanyPartyAccount(Guid.NewGuid(), CompanyA, party.Id, PartyRole.Customer)); });
+        var row = Request(CompanyA, party.Id, party.Version, Start);
+        if (state == "Approved") row.Approve("SENTETIK-checker", null, Start.AddHours(1));
+        if (state == "Rejected") row.Reject("SENTETIK-checker", null, Start.AddHours(1));
+        await SeedAsync(CompanyA, db => db.PartyLegalNameChangeRequests.Add(row));
+        // The native global-party fence needs an account's existence, not an invented active-account rule.
+        await using (var db = Context(CompanyA))
+        {
+            var account = await db.CompanyPartyAccounts.SingleAsync();
+            account.Deactivate();
+            await db.SaveChangesAsync();
+        }
+        var value = await Source().ReadDecisionAsync(Caller(), row.Id, default);
+        Assert.NotNull(value); Assert.Equal("1", value.SourceVersion); Assert.Equal(state == "Pending", value.Pending);
+        Assert.Equal("SENTETIK-maker", value.Item.PreparedBy);
+        Assert.Equal(row.Id, value.Item.ItemId); Assert.Equal(CompanyA, value.CompanyId);
+        Assert.Equal(("party", (Guid?)party.Id), (Assert.Single(value.Item.References).Role, Assert.Single(value.Item.References).RecordId));
+        Assert.Equal("/cari/" + party.Id.ToString("D"), value.Item.Link);
+        var wire = System.Text.Json.JsonSerializer.Serialize(value);
+        Assert.DoesNotContain("1234567890", wire); Assert.DoesNotContain("9876543217", wire);
+    }
+
+    [Fact]
+    public async Task Decision_purpose_never_discloses_a_request_without_the_native_company_account_or_both_permissions()
+    {
+        var party = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000001"), PartyKind.LegalEntity, "SENTETIK Metal");
+        await SeedAsync(CompanyA, db => db.Parties.Add(party));
+        var row = Request(CompanyA, party.Id, party.Version, Start);
+        await SeedAsync(CompanyA, db => db.PartyLegalNameChangeRequests.Add(row));
+        var foreign = Request(CompanyB, party.Id, party.Version, Start);
+        await SeedAsync(CompanyB, db => db.PartyLegalNameChangeRequests.Add(foreign));
+        Assert.Null(await Source().ReadDecisionAsync(Caller(), row.Id, default));
+        Assert.Null(await Source().ReadDecisionAsync(Caller(), foreign.Id, default));
+        await SeedAsync(CompanyA, db => db.CompanyPartyAccounts.Add(new CompanyPartyAccount(Guid.NewGuid(), CompanyA, party.Id, PartyRole.Customer)));
+        foreach (var permission in new[] { ErpPermissions.CounterpartyPartiesRead, CounterpartyLegalNamePermissionsV1.Approve })
+        { withheld.Clear(); withheld.Add(permission); Assert.Null(await Source().ReadDecisionAsync(Caller(), row.Id, default)); }
+    }
+
+    [Theory]
+    [InlineData(true)] [InlineData(false)]
+    public async Task Decision_purpose_refuses_a_request_or_party_changed_during_the_bounded_projection_instead_of_mixing_status_and_version(bool requestChanged)
+    {
+        var party = new Party(Guid.NewGuid(), PartyCode.Parse("CAR-000001"), PartyKind.LegalEntity, "SENTETIK Metal");
+        await SeedAsync(CompanyA, db => { db.Parties.Add(party); db.CompanyPartyAccounts.Add(new CompanyPartyAccount(Guid.NewGuid(), CompanyA, party.Id, PartyRole.Customer)); });
+        var row = Request(CompanyA, party.Id, party.Version, Start);
+        await SeedAsync(CompanyA, db => db.PartyLegalNameChangeRequests.Add(row));
+        beforeFresh = async () =>
+        {
+            if (asked.Count != 3) return;
+            await using var db = Context(CompanyA);
+            if (requestChanged)
+            {
+                var current = await db.PartyLegalNameChangeRequests.SingleAsync();
+                current.Reject("SENTETIK-other-checker", null, Start.AddHours(1));
+            }
+            else (await db.Parties.SingleAsync()).ChangeTradeName("SENTETIK later trade name", Start.AddHours(1));
+            await db.SaveChangesAsync();
+        };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Source().ReadDecisionAsync(Caller(), row.Id, default));
+    }
+
     private static PartyLegalNameChangeRequest Request(Guid company, Guid partyId, long partyVersion, DateTimeOffset at) =>
         new(Guid.NewGuid(), company, partyId, "SENTETIK Eski Unvan A.Ş.", "SENTETIK Yeni Unvan A.Ş.", partyVersion,
             "SENTETIK neden", "SENTETIK-maker", at);
@@ -98,11 +166,12 @@ public sealed class CounterpartyLegalNameChangeWorkInboxSourceV1Tests
 
     private sealed class Authority(CounterpartyLegalNameChangeWorkInboxSourceV1Tests test) : IErpAuthorityRevalidationService
     {
-        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default)
+        public async Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default)
         {
             test.asked.Add(permission);
-            return Task.FromResult(new PermissionScope(!test.withheld.Contains(permission), true, new HashSet<string>(StringComparer.Ordinal),
-                new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
+            if (test.beforeFresh is not null) await test.beforeFresh();
+            return new PermissionScope(!test.withheld.Contains(permission), true, new HashSet<string>(StringComparer.Ordinal),
+                new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>());
         }
     }
 }

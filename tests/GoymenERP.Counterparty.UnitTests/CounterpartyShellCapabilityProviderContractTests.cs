@@ -18,8 +18,8 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
         var root = document.RootElement;
         var provider = new CounterpartyShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
-        // Four routes plus the two FNS-D121 IBAN controls inside C-03 (Counterparty 1.6).
-        Assert.Equal(6, declarations.Count);
+        // Existing six declarations plus two standalone staged native identity purposes (Counterparty 1.7).
+        Assert.Equal(8, declarations.Count);
         var declaration = Assert.Single(
             declarations,
             item => item.CapabilityId
@@ -30,7 +30,9 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
                 .GetProperty("businessAndCariFeature")
                 .GetString(),
             provider.Owner);
-        Assert.Equal(root.GetProperty("contractVersion").GetString(), provider.ContractVersion);
+        // The accepted 1.6 browse declarations remain unchanged; 1.7 adds only the separately tested staged purposes.
+        Assert.Equal("1.6", root.GetProperty("contractVersion").GetString());
+        Assert.Equal("1.7", provider.ContractVersion);
 
         var route = root.GetProperty("routes")
             .EnumerateArray()
@@ -92,7 +94,9 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
                 .GetProperty("businessAndCariFeature")
                 .GetString(),
             provider.Owner);
-        Assert.Equal(root.GetProperty("contractVersion").GetString(), provider.ContractVersion);
+        // The accepted 1.6 browse declarations remain unchanged; 1.7 adds only the separately tested staged purposes.
+        Assert.Equal("1.6", root.GetProperty("contractVersion").GetString());
+        Assert.Equal("1.7", provider.ContractVersion);
 
         var route = root.GetProperty("routes")
             .EnumerateArray()
@@ -147,7 +151,9 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
                 .GetProperty("businessAndCariFeature")
                 .GetString(),
             provider.Owner);
-        Assert.Equal(root.GetProperty("contractVersion").GetString(), provider.ContractVersion);
+        // The accepted 1.6 browse declarations remain unchanged; 1.7 adds only the separately tested staged purposes.
+        Assert.Equal("1.6", root.GetProperty("contractVersion").GetString());
+        Assert.Equal("1.7", provider.ContractVersion);
 
         var route = root.GetProperty("routes")
             .EnumerateArray()
@@ -204,7 +210,9 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
                 .GetProperty("businessAndCariFeature")
                 .GetString(),
             provider.Owner);
-        Assert.Equal(root.GetProperty("contractVersion").GetString(), provider.ContractVersion);
+        // The accepted 1.6 browse declarations remain unchanged; 1.7 adds only the separately tested staged purposes.
+        Assert.Equal("1.6", root.GetProperty("contractVersion").GetString());
+        Assert.Equal("1.7", provider.ContractVersion);
 
         var route = root.GetProperty("routes")
             .EnumerateArray()
@@ -259,7 +267,7 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
         var manage = Assert.Single(declarations,
             item => item.CapabilityId == CounterpartyShellCapabilityProvider.PartyIbansManageCapabilityId);
 
-        Assert.Equal("1.6", provider.ContractVersion);
+        Assert.Equal("1.7", provider.ContractVersion);
         foreach (var control in new[] { read, manage })
         {
             Assert.Equal(CounterpartyShellCapabilityProvider.DetailCapabilityId, control.ParentCapabilityId);
@@ -272,6 +280,24 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
             read.RequiredPermissions);
         Assert.Equal([ErpPermissions.CounterpartyPartiesRead, ErpPermissions.CounterpartyPartyIbansRead,
             ErpPermissions.CounterpartyPartyIbansManage], manage.RequiredPermissions);
+    }
+
+    [Theory]
+    [InlineData(true)] [InlineData(false)]
+    public void Native_identity_decision_purposes_are_standalone_staged_and_keep_both_native_companywide_permissions(bool tax)
+    {
+        var provider = new CounterpartyShellCapabilityProvider();
+        var capability = tax ? CounterpartyShellCapabilityProvider.TaxIdentityWorkDecisionCapabilityId : CounterpartyShellCapabilityProvider.LegalNameWorkDecisionCapabilityId;
+        var value = Assert.Single(provider.GetDeclarations(), item => item.CapabilityId == capability);
+        Assert.False(value.ImplementationAvailable); Assert.Null(value.ParentCapabilityId);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, value.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, value.ScopeRequirement);
+        Assert.Equal(tax ? CounterpartyShellCapabilityProvider.TaxIdentityWorkDecisionRoutePath : CounterpartyShellCapabilityProvider.LegalNameWorkDecisionRoutePath, value.RoutePath);
+        Assert.EndsWith("/:approvalId", value.RoutePath);
+        Assert.Equal([tax ? GoymenERP.Modules.Counterparty.Application.Contracts.CounterpartyTaxIdentityPermissionsV1.Approve
+            : GoymenERP.Modules.Counterparty.Application.Contracts.CounterpartyLegalNamePermissionsV1.Approve,
+            ErpPermissions.CounterpartyPartiesRead], value.RequiredPermissions);
+        Assert.True(ErpPermissions.IsCritical(GoymenERP.Modules.Counterparty.Application.Contracts.CounterpartyTaxIdentityPermissionsV1.Approve));
     }
 
     private static string FindRepositoryRoot()
