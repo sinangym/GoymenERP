@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { COMPANY_A, IDENTITY, ROLE_OPERATOR, ROLE_AUDITOR, USER_ALICE, USER_BORA, assignment, installFetch, json, renderAt, roleDetail, roleSummary, userDetail, userSummary } from './testHarness'
+import { COMPANY_A, COMPANY_B, IDENTITY, ROLE_OPERATOR, ROLE_AUDITOR, USER_ALICE, USER_BORA, assignment, installFetch, json, renderAt, roleDetail, roleSummary, userDetail, userSummary } from './testHarness'
 import { IDENTITY_ACCESS_CONTROL as CONTROL, IDENTITY_CAPABILITY, accessListPath } from './capabilities'
 import { ACCESS_GRANT_TEXT as T } from './identityText'
 
@@ -200,5 +200,30 @@ describe('existing role selection preview and explicit native commands', () => {
     expect(screen.queryByRole('region', { name: T.selectedPermissions })).toBeNull()
     expect(screen.getByRole('button', { name: `${T.prepareRole} · SENTETIK maker` }).hasAttribute('disabled')).toBe(true)
     expect(calls.filter(call => call.method === 'POST')).toEqual([])
+  })
+  it.each(['user', 'company'] as const)('remounts selection, recorded steps and prepared role when the %s changes', async target => {
+    const calls = installFetch({ capabilities: selectionCapabilities, respond: (url, init) => {
+      if (init?.method === 'POST') return json({ id: assignmentId, version: '1', status: 'Active', roleAssignmentId: assignmentId }, 201)
+      if (url.endsWith('/identity/access/users')) return json([userSummary(USER_ALICE, 'SENTETIK hedef'), userSummary(USER_BORA, 'SENTETIK başka')])
+      if (url.endsWith(`/identity/access/users/${USER_BORA}`)) return json(userDetail(USER_BORA, 'SENTETIK başka', { assignments: [], effectivePermissions: [] }))
+      if (url.endsWith(`/identity/access/users/${USER_ALICE}`) && (init?.headers as Record<string, string>)['X-Company-Id'] === COMPANY_B)
+        return json(userDetail(USER_ALICE, 'SENTETIK hedef', { assignments: [], effectivePermissions: [] }))
+      return selectionResponse(url)
+    } })
+    renderAtSelected(); const user = await chooseRoleBasket()
+    await user.click(screen.getByRole('button', { name: `${T.prepareRole} · SENTETIK maker` }))
+    await user.type(screen.getByLabelText(T.reason), 'SENTETIK original context')
+    await user.click(screen.getByRole('button', { name: T.assign }))
+    await screen.findByText(T.roleStepRecorded)
+    await user.click(screen.getByRole('button', { name: `${T.prepareRole} · SENTETIK reviewer` }))
+    if (target === 'user') await user.click(screen.getByRole('link', { name: /^SENTETIK başka/ }))
+    else await user.selectOptions(screen.getByRole('combobox', { name: 'Şirket' }), COMPANY_B)
+    await screen.findByText(`${T.remainingRoles}: 0`)
+    expect(screen.queryByText(T.roleStepRecorded)).toBeNull()
+    expect(screen.queryByLabelText(T.reason)).toBeNull()
+    expect(screen.getByRole('checkbox', { name: 'SENTETIK maker' })).toHaveProperty('checked', false)
+    expect(screen.getByRole('checkbox', { name: `SENTETIK reviewer · ${T.requiresApproval}` })).toHaveProperty('checked', false)
+    expect(calls.filter(call => call.method === 'POST')).toHaveLength(1)
+    if (target === 'company') expect(screen.getByText(`${T.company}: GSP · Göymen Sac Profil`)).toBeTruthy()
   })
 })
