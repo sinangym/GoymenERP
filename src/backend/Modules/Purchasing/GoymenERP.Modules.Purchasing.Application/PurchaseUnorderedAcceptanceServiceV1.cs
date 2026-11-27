@@ -60,6 +60,7 @@ public sealed class PurchaseUnorderedAcceptanceServiceV1(ICompanyContext company
     {
         token.ThrowIfCancellationRequested();
         if (!user.IsAuthenticated || string.IsNullOrWhiteSpace(user.UserId)) throw Failure(401);
+        if (!company.IsResolved) throw Failure(403);
         var id = company.CompanyId; var actor = user.UserId;
         if (!Same(id, actor)) throw Failure(403);
         var measured = await authority.RevalidatePermissionScopeAsync(PurchasingPermissionManifestV1.GoodsReceiptsRecord, id, token);

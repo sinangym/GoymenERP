@@ -40,7 +40,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseOrders"));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseAcceptanceShares"));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.IncomingInvoices"));
-        // These tests invoke the real Purchasing/Audit owners. Supplier, unit, Documents and exception prerequisites
+        // These tests invoke the real Purchasing/Audit owners. Actual supplier, subject, unit and Documents validations
         // are synthetic prepare facts, not an operational admission or an Inventory/Finance acceptance claim.
     }
 

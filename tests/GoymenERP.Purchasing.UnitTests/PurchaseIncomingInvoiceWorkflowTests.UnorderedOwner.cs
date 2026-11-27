@@ -1,4 +1,6 @@
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Purchasing.Application;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 
@@ -30,6 +32,7 @@ public sealed partial class PurchaseIncomingInvoiceWorkflowTests
         Assert.Equal(request.UnitId, result.Record.Source.UnitId); Assert.Equal(request.UnitProfile, result.Record.UnitProfile);
         Assert.Equal(("10", "10", 1L), (result.Record.Source.AcceptedQuantity, result.Record.Source.UninvoicedQuantity, result.Record.Source.Version));
         Assert.Equal(request.Evidence, result.Record.Source.Evidence); Assert.Equal(world.User.Actor, result.Record.RecordedBy);
+        Assert.Empty(request.ControlEvidence); Assert.Empty(result.Record.Source.ControlEvidence);
         Assert.Equal(Now, result.Record.RecordedAtUtc); Assert.Empty(world.Finance.Offers);
         var json = JsonSerializer.Serialize(result.Record, PurchasingJson.Options);
         Assert.DoesNotContain("purchaseOrderId", json, StringComparison.OrdinalIgnoreCase);
@@ -37,6 +40,21 @@ public sealed partial class PurchaseIncomingInvoiceWorkflowTests
         var roundTrip = JsonSerializer.Deserialize<PurchaseUnorderedAcceptanceRecordV1>(json, PurchasingJson.Options)!;
         Assert.Equal(request.Subject, roundTrip.Source.Subject);
         Assert.True(PurchaseUnorderedAcceptanceOwnerContractV1.Valid(roundTrip));
+    }
+
+    [Theory]
+    [InlineData(true, 403)]
+    [InlineData(false, 401)]
+    public async Task Unresolved_company_is_refused_without_reading_its_throwing_identity_or_any_owner(bool authenticated, int expected)
+    {
+        var world = new World(); var company = new UnresolvedUnorderedCompany(); var store = new UnorderedMemoryStore();
+        var prerequisite = new UnorderedPrerequisites(); var authorityReads = 0;
+        world.Authority.AfterMeasure = _ => authorityReads++;
+        var service = new PurchaseUnorderedAcceptanceServiceV1(company, new UnorderedAuthentication(authenticated),
+            world.Authority, new Correlation(), store, new Clock(), prerequisite);
+        var denied = await Assert.ThrowsAsync<PurchasingServiceException>(() => service.RecordAsync(UnorderedRecordRequest(), Metadata("unordered-no-company")));
+        Assert.Equal(expected, denied.Status); Assert.Equal(0, company.IdentityReads); Assert.Equal(0, authorityReads);
+        Assert.Equal(0, store.Calls); Assert.Equal(0, prerequisite.Calls); Assert.Null(store.Saved);
     }
 
     [Fact]
@@ -136,11 +154,13 @@ public sealed partial class PurchaseIncomingInvoiceWorkflowTests
     private sealed class UnorderedMemoryStore : IPurchaseUnorderedAcceptanceStoreV1
     {
         public PurchaseUnorderedAcceptanceWriteV1? Saved { get; private set; }
+        public int Calls { get; private set; }
         private string? hash; private string? key;
         public async Task<PurchaseUnorderedAcceptanceWriteV1> RecordAsync(Guid companyId, RecordPurchaseUnorderedAcceptanceV1 request,
             PurchasingWriteEnvelope envelope, string requestHash, Func<CancellationToken, Task<PurchaseUnorderedAcceptanceRecordV1>> prepare,
             Func<CancellationToken, Task> requireStill, CancellationToken cancellationToken)
         {
+            Calls++;
             await requireStill(cancellationToken);
             if (Saved is not null && key == envelope.IdempotencyKey)
             {
@@ -151,7 +171,21 @@ public sealed partial class PurchaseIncomingInvoiceWorkflowTests
             hash = requestHash; key = envelope.IdempotencyKey; return Saved = new(record, false, envelope.CorrelationId);
         }
     }
-    // Synthetic external prerequisite; actual supplier/Documents/Settings authorization is still a required integration.
+    private sealed class UnresolvedUnorderedCompany : ICompanyContext
+    {
+        public bool IsResolved => false;
+        public int IdentityReads { get; private set; }
+        public Guid CompanyId { get { IdentityReads++; throw new InvalidOperationException("Unresolved company identity cannot be read."); } }
+        public void Set(Guid id) => throw new InvalidOperationException("Test context remains unresolved.");
+    }
+    private sealed class UnorderedAuthentication(bool authenticated) : ICurrentUser
+    {
+        public bool IsAuthenticated => authenticated;
+        public string UserId => "SENTETIK-actor";
+        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { Company };
+        public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
+    }
+    // Synthetic external prerequisite; actual supplier/subject/Documents/Settings validation is still a required integration.
     private sealed class UnorderedPrerequisites : IPurchaseUnorderedAcceptancePrerequisitesV1
     {
         public int Calls { get; private set; } public Guid CompanyId { get; private set; }

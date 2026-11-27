@@ -21,10 +21,11 @@ public interface IPurchaseUnorderedAcceptanceServiceV1
         PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default);
 }
 
-/// <summary>Required actual owner bridge for DEC-PUR-001 / ALS-D130. Validate this company's authorized
-/// unordered-receipt exception, active supplier/account and their versions, exact goods/service identity/version,
-/// approved unit profile/scale, and clean immutable Documents evidence/version/hash. It grants no commercial,
-/// accounting or payment approval. It must fence consumer authority after its awaited owner reads.
+/// <summary>Required actual owner bridge for ALS-D130: validate the actual company, active supplier/account and
+/// their versions, exact goods/service identity/version, approved unit profile/scale, and clean immutable Documents
+/// evidence/version/hash. The service checks the existing recording permission. Recording an actual occurrence does
+/// not require prior departmental need, commercial, accounting or payment approval. Control evidence may be empty
+/// or still pending; recording it never means those controls are approved. Fence consumer authority after awaited owner reads.
 /// No permissive implementation is registered here: missing bridge means 503 and no new acceptance.</summary>
 public interface IPurchaseUnorderedAcceptancePrerequisitesV1
 {
