@@ -25,7 +25,8 @@ public sealed class FinanceOpenItemSourceAdmissionService(
     IFinancePartyAccountPort parties,
     IAuditEventCollector auditEvents,
     FinanceAuditEnvelope envelope,
-    TimeProvider timeProvider) : IFinanceOpenItemSourceAdmissionService
+    TimeProvider timeProvider,
+    IFinanceSalesInvoiceIdentityReadPortV1? salesIdentities = null) : IFinanceOpenItemSourceAdmissionService
 {
     internal const string CommandName = "finance.open-item-source.admit.v1";
     private const int IdentityMaximumLength = 128;
@@ -209,8 +210,8 @@ public sealed class FinanceOpenItemSourceAdmissionService(
     /// FIN-S5 / FNS-D19 (D5): a v2 file's documents claim their official number and ETTN. The claim is refused while
     /// the current holder (another acceptance) still has a not-cancelled open item, whatever its remaining balance
     /// (D5's safe reading of "open"; the narrower reading is a Sinan decision). Installments of the same document
-    /// share one claim. A v1 file or a non-file source carries no official identity and claims nothing. Comparison
-    /// with Sales finalization identities waits for the Sales contract fields (FNS-D28 (3), #1103).
+    /// share one claim. A v1 file or a non-file source carries no official identity and claims nothing.
+    /// Native Sales admissions claim through the same policy and Finance admission-receipt holder (FNS-D28).
     /// FNS-D76 / KLN-D104: an approved manual (D1) record with the same official number or ETTN wins over the import;
     /// the admission is not refused for it, but every field on which the two disagree is collected into
     /// <paramref name="sourceDifferences"/> and written to the audit trail as a warning with the admission.
@@ -239,6 +240,9 @@ public sealed class FinanceOpenItemSourceAdmissionService(
             return Refused(context, CommandOutcome.Unavailable,
                 new ValidationIssue("source", FinanceOfficialSalesInvoiceImportCodesV2.DocumentsUnavailable));
         }
+
+        if (await RefuseUnclaimedNativeIdentityAsync(context, batch, documents, cancellationToken) is { } legacyRefusal)
+            return legacyRefusal;
 
         var officialNos = documents.Select(document => document.OfficialNo).ToArray();
         var ettns = documents.Select(document => document.Ettn).ToArray();
@@ -294,6 +298,83 @@ public sealed class FinanceOpenItemSourceAdmissionService(
                 CorrelationId = context.CorrelationId,
                 CausationId = context.CausationId,
             });
+        }
+        return null;
+    }
+
+    // Only this party's live claimless non-file AR receipts need historical Sales proof. Settled AR still counts;
+    // cancellation alone removes a live obligation. Never infer identity from amount/date or write historical claims.
+    private async Task<FinanceOpenItemAdmissionResult?> RefuseUnclaimedNativeIdentityAsync(FinanceContext context,
+        ApprovedFinanceOpenItemSourceBatch batch, IReadOnlyList<FinanceOfficialSalesInvoiceImportDocumentV2> documents,
+        CancellationToken cancellationToken)
+    {
+        const int maximumCandidates = 128;
+        var partiesInBatch = batch.Rows.Select(x => x.PartyId).Distinct().ToArray();
+        var candidates = await dbContext.OpenItems.AsNoTracking().Where(x => x.CompanyId == context.CompanyId
+                && x.SourceKind == FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment
+                && x.Status != FinanceOpenItemStatuses.Cancelled && partiesInBatch.Contains(x.PartyId)
+                && !dbContext.OfficialInvoiceImportBatches.Any(upload => upload.CompanyId == context.CompanyId && upload.Id == x.SourceBatchId)
+                && !dbContext.OfficialInvoiceIdentityClaims.Any(claim => claim.CompanyId == context.CompanyId
+                    && claim.HolderBatchId == x.SourceBatchId && claim.HolderSourceDocumentId == x.SourceId))
+            .Select(x => new { x.SourceId, x.SourceVersion, x.SourceBatchId, x.SourceBatchVersion, x.SourceBatchChecksum,
+                x.PartyId, x.CompanyAccountId }).Distinct().OrderBy(x => x.SourceId).Take(maximumCandidates + 1)
+            .ToArrayAsync(cancellationToken);
+        if (await FenceAsync(context, batch.BatchId, cancellationToken) is { } candidateFence) return candidateFence;
+        if (candidates.Length == 0) return null;
+        FinanceOpenItemAdmissionResult Unavailable() => Refused(context, CommandOutcome.Unavailable,
+            new ValidationIssue("source", "finance_legacy_invoice_identity_unavailable"));
+        if (candidates.Length > maximumCandidates || salesIdentities is null
+            || candidates.Select(x => x.SourceId).Distinct().Count() != candidates.Length) return Unavailable();
+        var requests = new List<FinanceSalesInvoiceIdentityRequestV1>();
+        foreach (var candidate in candidates)
+        {
+            if (candidate.SourceId == Guid.Empty || candidate.SourceBatchId == Guid.Empty
+                || !long.TryParse(candidate.SourceVersion, System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out var version) || version < 2
+                || candidate.SourceVersion != version.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                || candidate.SourceBatchVersion != candidate.SourceVersion) return Unavailable();
+            requests.Add(new(candidate.SourceId, version));
+        }
+        var receiptIds = candidates.Select(x => x.SourceBatchId).ToArray();
+        var receipts = await dbContext.OpenItemSourceBatches.AsNoTracking()
+            .Where(x => x.CompanyId == context.CompanyId && receiptIds.Contains(x.Id)).ToArrayAsync(cancellationToken);
+        if (await FenceAsync(context, batch.BatchId, cancellationToken) is { } receiptFence) return receiptFence;
+        if (candidates.Any(x => receipts.SingleOrDefault(r => r.Id == x.SourceBatchId) is not { } receipt
+                || receipt.SourceKind != FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment
+                || receipt.SourceVersion != x.SourceVersion || receipt.SourceChecksum != x.SourceBatchChecksum)) return Unavailable();
+        FinanceOpenItemAdmissionResult? callbackRefusal = null;
+        async Task ConsumerFence(CancellationToken token)
+        {
+            callbackRefusal = await FenceAsync(context, batch.BatchId, token);
+            if (callbackRefusal is not null) throw new UnauthorizedAccessException();
+        }
+        FinanceSalesInvoiceIdentityBatchV1 answer;
+        try
+        {
+            await ConsumerFence(cancellationToken);
+            answer = await salesIdentities.ReadAsync(context.CompanyId, requests, ConsumerFence, cancellationToken);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception) { return callbackRefusal ?? Unavailable(); }
+        if (callbackRefusal is not null) return callbackRefusal;
+        if (await FenceAsync(context, batch.BatchId, cancellationToken) is { } releaseFence) return releaseFence;
+        if (!answer.Available || answer.CompanyId != context.CompanyId || answer.Items.Count != candidates.Length
+            || answer.Items.Select(x => x.InvoiceId).Distinct().Count() != candidates.Length) return Unavailable();
+        foreach (var candidate in candidates)
+        {
+            var proof = answer.Items.SingleOrDefault(x => x.InvoiceId == candidate.SourceId);
+            if (proof is null || proof.CompanyId != context.CompanyId || proof.AdmissionId != candidate.SourceBatchId
+                || proof.OriginalFinalizedVersion.ToString(System.Globalization.CultureInfo.InvariantCulture) != candidate.SourceVersion
+                || proof.PartyId != candidate.PartyId || proof.CompanyAccountId != candidate.CompanyAccountId
+                || proof.FinalizedEventId == Guid.Empty || string.IsNullOrWhiteSpace(proof.SourceVersion)
+                || string.IsNullOrWhiteSpace(proof.OfficialInvoiceNo) || proof.OfficialInvoiceNo.Trim() != proof.OfficialInvoiceNo
+                || !Guid.TryParseExact(proof.Ettn, "D", out var ettn) || ettn == Guid.Empty || proof.Ettn != ettn.ToString("D")) return Unavailable();
+            if (documents.Any(x => x.OfficialNo == proof.OfficialInvoiceNo))
+                return Refused(context, CommandOutcome.ValidationFailed,
+                    new ValidationIssue("officialInvoiceNo", FinanceOfficialSalesInvoiceImportCodesV2.OfficialNoAlreadyOpen));
+            if (documents.Any(x => x.Ettn == proof.Ettn))
+                return Refused(context, CommandOutcome.ValidationFailed,
+                    new ValidationIssue("ettn", FinanceOfficialSalesInvoiceImportCodesV2.EttnAlreadyOpen));
         }
         return null;
     }

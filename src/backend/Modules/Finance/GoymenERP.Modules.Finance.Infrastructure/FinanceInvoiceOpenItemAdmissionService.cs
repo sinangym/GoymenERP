@@ -74,6 +74,12 @@ public sealed class FinanceInvoiceOpenItemAdmissionService(
             return prior;
         }
 
+        // Additive owner proof is checked only for a new admission. Existing keys retain their immutable
+        // pre-D5 result/hash when Sales re-drives an offer with the now-available matched official fields.
+        var identityIssues = OfficialIdentity(invoice, out var officialIdentity);
+        if (identityIssues.Count > 0)
+            return Refused(context, CommandOutcome.ValidationFailed, [.. identityIssues]);
+
         var partyRead = await parties.GetAuthorizedAsync(context, invoice.PartyId, invoice.CompanyAccountId,
             cancellationToken);
         if (!SameContext(context))
@@ -118,6 +124,9 @@ public sealed class FinanceInvoiceOpenItemAdmissionService(
         var now = timeProvider.GetUtcNow();
         if (!reused)
         {
+            if (officialIdentity is not null
+                && await ClaimOfficialIdentityAsync(context, invoice, officialIdentity, now, cancellationToken) is { } claimRefusal)
+                return claimRefusal;
             foreach (var installment in invoice.Installments)
             {
                 dbContext.OpenItems.Add(new FinanceOpenItemRow
@@ -380,7 +389,62 @@ public sealed class FinanceInvoiceOpenItemAdmissionService(
 
     private static string PayloadHash(FinanceInvoiceOpenItemAdmissionV1 invoice) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-            CommandName + "|" + JsonSerializer.Serialize(invoice, Json)))).ToLowerInvariant();
+            // Preserve the exact historical V1 shape/order. Official identity is owner proof, not a change
+            // to the financial payload of an already recorded admission (Sales contract FNS-D28).
+            CommandName + "|" + JsonSerializer.Serialize(new
+            {
+                invoice.AdmissionId, invoice.Producer, invoice.InvoiceId, invoice.InvoiceVersion, invoice.PartyId,
+                invoice.CompanyAccountId, invoice.CurrencyId, invoice.ExchangeRate, invoice.Installments,
+            }, Json)))).ToLowerInvariant();
+
+    internal static IReadOnlyList<ValidationIssue> OfficialIdentity(FinanceInvoiceOpenItemAdmissionV1 invoice,
+        out FinanceOfficialInvoiceIdentityClaimPolicy.Document? document)
+    {
+        document = null;
+        if (invoice.OfficialInvoiceNo is null && invoice.Ettn is null) return [];
+        var issues = new List<ValidationIssue>();
+        if (invoice.Producer != FinanceInvoiceProducerV1.Sales)
+            issues.Add(new("producer", "finance_invoice_official_identity_producer_invalid"));
+        if (string.IsNullOrWhiteSpace(invoice.OfficialInvoiceNo) || invoice.OfficialInvoiceNo != invoice.OfficialInvoiceNo.Trim()
+            || invoice.OfficialInvoiceNo.Length > FinanceDbContext.OfficialSalesInvoiceMaximumOfficialNoLength
+            || invoice.OfficialInvoiceNo.Any(char.IsControl))
+            issues.Add(new("officialInvoiceNo", FinanceOfficialSalesInvoiceImportCodesV2.OfficialNoInvalid));
+        if (invoice.Ettn is null || invoice.Ettn.Length != FinanceDbContext.OfficialSalesInvoiceEttnLength
+            || !Guid.TryParseExact(invoice.Ettn, "D", out var ettn) || ettn == Guid.Empty)
+            issues.Add(new("ettn", FinanceOfficialSalesInvoiceImportCodesV2.EttnInvalid));
+        if (issues.Count == 0)
+            document = new(invoice.InvoiceId, invoice.OfficialInvoiceNo!, Guid.Parse(invoice.Ettn!).ToString("D"), "officialInvoiceNo", "ettn");
+        return issues;
+    }
+
+    private async Task<FinanceOpenItemAdmissionResult?> ClaimOfficialIdentityAsync(FinanceContext context,
+        FinanceInvoiceOpenItemAdmissionV1 invoice, FinanceOfficialInvoiceIdentityClaimPolicy.Document document,
+        DateTimeOffset now, CancellationToken token)
+    {
+        var claims = await dbContext.OfficialInvoiceIdentityClaims.AsNoTracking().Where(claim => claim.CompanyId == context.CompanyId
+            && (claim.IdentityKind == FinanceOfficialInvoiceIdentityKinds.OfficialNo && claim.IdentityValue == document.OfficialNo
+                || claim.IdentityKind == FinanceOfficialInvoiceIdentityKinds.Ettn && claim.IdentityValue == document.Ettn)).ToListAsync(token);
+        if (await FenceAsync(context, invoice, token) is { } afterClaims) return afterClaims;
+        var holders = FinanceOfficialInvoiceIdentityClaimPolicy.CurrentHolders(claims);
+        var holderIds = holders.Values.Select(row => row.HolderBatchId).Distinct().ToArray();
+        var live = (await dbContext.OpenItems.AsNoTracking().Where(item => item.CompanyId == context.CompanyId
+                && item.SourceKind == FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment
+                && holderIds.Contains(item.SourceBatchId) && item.Status != FinanceOpenItemStatuses.Cancelled)
+            .Select(item => new { item.SourceBatchId, item.SourceId }).Distinct().ToListAsync(token))
+            .Select(item => (item.SourceBatchId, item.SourceId)).ToHashSet();
+        if (await FenceAsync(context, invoice, token) is { } afterItems) return afterItems;
+        var decision = FinanceOfficialInvoiceIdentityClaimPolicy.Decide(invoice.AdmissionId, [document], holders, live);
+        if (decision.Issues.Count > 0) return Refused(context, CommandOutcome.ValidationFailed, [.. decision.Issues]);
+        foreach (var claim in decision.Claims)
+            dbContext.OfficialInvoiceIdentityClaims.Add(new FinanceOfficialInvoiceIdentityClaimRow
+            {
+                Id = Guid.NewGuid(), CompanyId = context.CompanyId, IdentityKind = claim.Kind, IdentityValue = claim.Value,
+                Generation = claim.Generation, HolderBatchId = invoice.AdmissionId, HolderSourceDocumentId = invoice.InvoiceId,
+                ClaimedBy = context.ActorId, ClaimedAtUtc = now, CorrelationId = context.CorrelationId, CausationId = context.CausationId,
+            });
+        // Claims, source receipt and installments are persisted by the same existing owner SaveChanges transaction.
+        return null;
+    }
 
     private static FinanceOpenItemAdmissionResult Refused(FinanceContext context, CommandOutcome outcome,
         params ValidationIssue[] issues) =>

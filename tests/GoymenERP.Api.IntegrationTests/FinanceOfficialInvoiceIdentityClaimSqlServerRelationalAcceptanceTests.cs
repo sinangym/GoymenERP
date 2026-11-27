@@ -196,7 +196,8 @@ public sealed partial class FinanceOfficialInvoiceIdentityClaimSqlServerRelation
             return new Approved(batchId, source.Resource!);
         }
 
-        public async Task<FinanceOpenItemAdmissionResult> AdmitAsync(Approved approved, string key)
+        public async Task<FinanceOpenItemAdmissionResult> AdmitAsync(Approved approved, string key,
+            IFinanceSalesInvoiceIdentityReadPortV1? legacyIdentities = null)
         {
             var company = CompanyScope();
             var collector = new AuditEventCollector();
@@ -205,7 +206,7 @@ public sealed partial class FinanceOfficialInvoiceIdentityClaimSqlServerRelation
             var service = new FinanceOpenItemSourceAdmissionService(db, company, new User(actor),
                 new AllowSourceAuthority(), new FixedApprovedSource(approved.Batch), new ActiveParty(), collector,
                 new FinanceAuditEnvelope("synthetic.finance.open-item-source.admit", ["SENTETIK-FINANCE"], "Integration"),
-                TimeProvider.System);
+                TimeProvider.System, legacyIdentities);
             return await service.AdmitAsync(new FinanceContext(Company, actor, $"fin-s5-{Guid.NewGuid():N}", null),
                 new CommandMetadata(key),
                 new FinanceOpenItemSourceReference(approved.BatchId, approved.Batch.BatchVersion,

@@ -479,8 +479,8 @@ public sealed partial class FinanceDbContext(DbContextOptions<FinanceDbContext> 
             .HasDatabaseName("IX_OfficialInvoiceIdentityClaims_Holder");
         claim.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
-        // The holder is always an uploaded file of the same company.
-        claim.HasOne<FinanceOfficialInvoiceImportBatchRow>().WithMany()
+        // Both CSV and native Sales admissions own this Finance receipt. No synthetic upload parent is created.
+        claim.HasOne<FinanceOpenItemSourceBatchRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.HolderBatchId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);

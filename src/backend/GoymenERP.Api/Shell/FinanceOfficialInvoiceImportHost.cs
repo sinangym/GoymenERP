@@ -33,6 +33,7 @@ public static class FinanceOfficialInvoiceImportHostExtensions
         services.AddScoped<IFinanceOfficialInvoiceImportReadPortV1, FinanceOfficialInvoiceImportReadPortV1>();
         services.AddScoped<IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1>(CreatePendingApprovalReadService);
         services.AddScoped<IFinanceOpenItemSourceAdmissionService>(CreateAdmissionService);
+        services.AddScoped<IFinanceSalesInvoiceIdentityReadPortV1, FinanceSalesInvoiceIdentityReadAdapterV1>();
         services.AddScoped<IFinanceOpenItemSourceSelectionService, FinanceOpenItemSourceSelectionService>();
         services.AddScoped<IFinanceOfficialInvoiceImportApplicationServiceV1,
             FinanceOfficialInvoiceImportApplicationServiceV1>();
@@ -81,7 +82,8 @@ public static class FinanceOfficialInvoiceImportHostExtensions
             provider.GetRequiredService<IFinancePartyAccountPort>(),
             provider.GetRequiredService<IAuditEventCollector>(),
             Envelope(FinancePermissionNames.DraftRead, permissions.RoleCodesOf(FinanceAction.ReadSources), correlation),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<IFinanceSalesInvoiceIdentityReadPortV1>());
     }
 
     private static FinanceAuditEnvelope Envelope(string permission,

@@ -60,7 +60,7 @@ public sealed class SalesFinanceAdmissionAdapterV1(IFinanceInvoiceOpenItemAdmiss
             request.CurrencyId,
             request.ExchangeRate,
             [.. request.Instalments.Select(item => new FinanceInvoiceInstallmentV1(item.OpenItemId, item.InstallmentId,
-                item.SequenceNo, item.DueDate, item.Amount, item.FunctionalAmount))]);
+                item.SequenceNo, item.DueDate, item.Amount, item.FunctionalAmount))], request.OfficialInvoiceNo, request.Ettn);
         var result = await finance.AdmitAsync(
             new FinanceContext(request.CompanyId, request.ActorId, request.CorrelationId, request.CausationId),
             new CommandMetadata(request.IdempotencyKey), invoice, cancellationToken);

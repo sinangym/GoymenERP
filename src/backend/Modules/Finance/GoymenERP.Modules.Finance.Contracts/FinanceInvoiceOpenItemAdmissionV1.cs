@@ -48,7 +48,9 @@ public sealed record FinanceInvoiceOpenItemAdmissionV1(
     Guid CompanyAccountId,
     Guid CurrencyId,
     string? ExchangeRate,
-    IReadOnlyList<FinanceInvoiceInstallmentV1> Installments);
+    IReadOnlyList<FinanceInvoiceInstallmentV1> Installments,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? OfficialInvoiceNo = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Ettn = null);
 
 /// <summary>
 /// The Finance side of MOD-04. It writes open items only. The producing module measures its own finalisation authority

@@ -201,7 +201,7 @@ public sealed class SalesFinalizedShipmentClaimReadPortV1(SalesDbContext db, ICo
             claim, lifecycles, sourceVersion, HistoricalFinalizedClaims: historical.Count == 0 ? null : historical);
     }
 
-    private static void RequireUniqueProperties(JsonElement element)
+    internal static void RequireUniqueProperties(JsonElement element)
     {
         if (element.ValueKind == JsonValueKind.Object)
         {

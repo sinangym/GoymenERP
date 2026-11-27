@@ -15,6 +15,8 @@ internal static class FinanceOfficialInvoiceIdentityClaimPolicy
 
     internal sealed record Decision(IReadOnlyList<ValidationIssue> Issues, IReadOnlyList<PlannedClaim> Claims);
 
+    internal sealed record Document(Guid SourceDocumentId, string OfficialNo, string Ettn, string OfficialNoField, string EttnField);
+
     /// <summary>
     /// The documents of the uploaded v2 file, re-parsed from its exact bytes; null when the file no longer yields
     /// exactly the approved batch's documents (the stored bytes, checksum, version or document set disagree).
@@ -81,15 +83,22 @@ internal static class FinanceOfficialInvoiceIdentityClaimPolicy
         IReadOnlyList<FinanceOfficialSalesInvoiceImportDocumentV2> documents,
         IReadOnlyDictionary<(string Kind, string Value), FinanceOfficialInvoiceIdentityClaimRow> holders,
         IReadOnlySet<(Guid BatchId, Guid DocumentId)> liveHolders)
+        => Decide(batch.BatchId, documents.Select(document => new Document(document.SourceDocumentId, document.OfficialNo,
+            document.Ettn, $"rows[{FirstRowIndex(batch, document.SourceDocumentId)}].officialNo",
+            $"rows[{FirstRowIndex(batch, document.SourceDocumentId)}].ettn")).ToArray(), holders, liveHolders);
+
+    /// <summary>The same FNS-D19 decision for a native or CSV admission receipt; no amount matching or merging.</summary>
+    public static Decision Decide(Guid admissionId, IReadOnlyList<Document> documents,
+        IReadOnlyDictionary<(string Kind, string Value), FinanceOfficialInvoiceIdentityClaimRow> holders,
+        IReadOnlySet<(Guid BatchId, Guid DocumentId)> liveHolders)
     {
         var issues = new List<ValidationIssue>();
         var claims = new List<PlannedClaim>();
         foreach (var document in documents)
         {
-            var rowIndex = FirstRowIndex(batch, document.SourceDocumentId);
-            Claim(FinanceOfficialInvoiceIdentityKinds.OfficialNo, document.OfficialNo, $"rows[{rowIndex}].officialNo",
+            Claim(FinanceOfficialInvoiceIdentityKinds.OfficialNo, document.OfficialNo, document.OfficialNoField,
                 FinanceOfficialSalesInvoiceImportCodesV2.OfficialNoAlreadyOpen);
-            Claim(FinanceOfficialInvoiceIdentityKinds.Ettn, document.Ettn, $"rows[{rowIndex}].ettn",
+            Claim(FinanceOfficialInvoiceIdentityKinds.Ettn, document.Ettn, document.EttnField,
                 FinanceOfficialSalesInvoiceImportCodesV2.EttnAlreadyOpen);
 
             void Claim(string kind, string value, string field, string code)
@@ -99,7 +108,7 @@ internal static class FinanceOfficialInvoiceIdentityClaimPolicy
                     claims.Add(new PlannedClaim(kind, value, 1, document.SourceDocumentId));
                     return;
                 }
-                if (holder.HolderBatchId == batch.BatchId && holder.HolderSourceDocumentId == document.SourceDocumentId)
+                if (holder.HolderBatchId == admissionId && holder.HolderSourceDocumentId == document.SourceDocumentId)
                 {
                     return;
                 }

@@ -40,7 +40,7 @@ public sealed class FinanceOfficialInvoiceIdentityClaimPersistenceModelTests
         Assert.Equal(["CompanyId", "IdentityKind", "IdentityValue", "Generation"],
             unique.Properties.Select(property => property.Name));
         Assert.Contains(claims.GetForeignKeys(), key =>
-            key.PrincipalEntityType.ClrType == typeof(FinanceOfficialInvoiceImportBatchRow)
+            key.PrincipalEntityType.ClrType == typeof(FinanceOpenItemSourceBatchRow)
             && key.DeleteBehavior == DeleteBehavior.Restrict
             && key.Properties.Select(property => property.Name).SequenceEqual(
                 [nameof(FinanceOfficialInvoiceIdentityClaimRow.CompanyId),

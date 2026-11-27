@@ -60,6 +60,7 @@ public static class SalesModuleExtensions
         services.AddScoped<ISalesOfficialInvoiceCancellationServiceV1, SalesOfficialInvoiceCancellationServiceV1>();
         services.AddScoped<ISalesOrderDraftStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         services.AddScoped<ISalesOrderInvoicedQuantityReadPortV1, SalesOrderInvoicedQuantityReadPortV1>();
+        services.AddScoped<ISalesFinalizedInvoiceIdentityReadPortV1, SalesFinalizedInvoiceIdentityReadPortV1>();
         // API-20 / API-21: the sales request store is the same Sales store (one context, one attempt table).
         services.AddScoped<ISalesRequestStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         // API-22…24: the sales quote store is the same Sales store (the conversion writes the order in the quote's one save).
