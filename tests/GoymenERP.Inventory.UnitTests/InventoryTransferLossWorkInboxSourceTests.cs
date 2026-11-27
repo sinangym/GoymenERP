@@ -14,7 +14,7 @@ namespace GoymenERP.Inventory.UnitTests;
 /// requests with neither a decision nor a withdrawal, oldest first, the requester as the owner's maker, the dispatch kilograms
 /// as the rule number and a renewal marked as such. SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class InventoryTransferLossWorkInboxSourceTests
+public sealed partial class InventoryTransferLossWorkInboxSourceTests
 {
     private const string Kind = "inventory.transfer-loss.v1";
 

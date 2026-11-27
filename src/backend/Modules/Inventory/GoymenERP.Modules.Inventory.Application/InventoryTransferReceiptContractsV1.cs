@@ -213,7 +213,10 @@ public sealed record InventoryTransferReceiptResultV1(
     InventoryTransferViewV1 Transfer,
     InventoryTransferReceiptFactsViewV1 Facts,
     bool IsReplay,
-    string OriginalCorrelationId);
+    string OriginalCorrelationId,
+    // Internal owner proof: the loss boundary stored a command or read its exact immutable key receipt.
+    // A domain-level prior decision can also have IsReplay=true; that alone does not prove a key receipt.
+    [property: JsonIgnore] bool CommandReceiptProven = false);
 
 /// <summary>
 /// The B-22c refusals beyond <see cref="InventoryTransferCodesV1"/>. Every refusal here is a 409 except

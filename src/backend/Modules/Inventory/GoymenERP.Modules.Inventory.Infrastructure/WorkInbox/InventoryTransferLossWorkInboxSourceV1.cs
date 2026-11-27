@@ -19,7 +19,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.WorkInbox;
 /// destination location (D11); the owner's decision accepts only a company-wide grant, so a scoped holder is not asked.
 /// </para>
 /// </summary>
-internal sealed class InventoryTransferLossWorkInboxSourceV1 : IWorkInboxSourceV1
+internal sealed partial class InventoryTransferLossWorkInboxSourceV1 : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "inventory";
     public const string KindName = "inventory.transfer-loss.v1";

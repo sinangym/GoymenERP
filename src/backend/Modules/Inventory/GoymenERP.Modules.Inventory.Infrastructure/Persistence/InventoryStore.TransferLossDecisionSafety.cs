@@ -65,7 +65,7 @@ public sealed partial class InventoryStore
                     await owned.RollbackAsync(CancellationToken.None);
                     dbContext.ChangeTracker.Clear();
                 }
-                return result;
+                return result is null ? null : result with { CommandReceiptProven = lossDecisionReceiptProven };
             }
             catch (Exception exception)
             {
