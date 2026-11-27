@@ -1,12 +1,14 @@
 using System.Text.Json;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Audit.Application.Contracts;
+using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 
 public sealed partial class AccountingStore
 {
     private ManufacturingCostDifferenceStoreV1? ownedManufacturingCostDifferenceCaller;
+    private HashSet<object>? manufacturingCostDifferenceTrackedAtEntry;
     internal async Task<AccountingApiResult<ManufacturingCostDifferenceViewV1>> RunManufacturingCostDifferenceApprovalAsync(
         ManufacturingCostDifferenceStoreV1 caller, AccountingDbContext candidateDb, IAuditEventCollector candidateCollector,
         Func<bool, Task<AccountingApiResult<ManufacturingCostDifferenceViewV1>>> attempt,
@@ -22,19 +24,23 @@ public sealed partial class AccountingStore
                 if (ownedManufacturingCostDifferenceCaller is not null || ownedNormalApproval?.CommandName != ManufacturingCostDifferenceCommandNamesV1.Approve)
                     throw new InvalidOperationException("Cost difference approval requires its exact core-owned command boundary.");
                 ownedManufacturingCostDifferenceCaller = caller;
+                manufacturingCostDifferenceTrackedAtEntry = dbContext.ChangeTracker.Entries().Select(entry => entry.Entity).ToHashSet(ReferenceEqualityComparer.Instance);
                 try
                 {
                     var result = await attempt(replayOnly);
                     RequireOwnedManufacturingCostDifferenceApproval(caller, candidateDb, candidateCollector);
-                    // A late attribution business refusal must roll the earlier journal/OK command back,
-                    // without weakening the shared runner's exact saved-result check or consuming this key.
-                    if (!replayOnly && ownedNormalApproval is { Saved: true } state
+                    // EF may accept the SQL writes before a SavedChanges callback throws and before Saved=true.
+                    // Retain this attempt's writes even when its tracker is clean; prior successful tracked rows are not ours.
+                    if (!replayOnly && ownedNormalApproval is { } state
                         && result.Status is AccountingApiStatus.Unprocessable or AccountingApiStatus.Conflict or AccountingApiStatus.NotFound
+                        && (state.Saved || state.Command is not null || dbContext.ChangeTracker.HasChanges() || state.Writer.HasPendingDrafts
+                            || dbContext.ChangeTracker.Entries<JournalRow>().Any(entry => !manufacturingCostDifferenceTrackedAtEntry!.Contains(entry.Entity))
+                            || dbContext.ChangeTracker.Entries<DeliveryRow>().Any(entry => !manufacturingCostDifferenceTrackedAtEntry!.Contains(entry.Entity)))
                         && state.Command?.ResultJson != JsonSerializer.Serialize(result with { IsReplay = false, OriginalCorrelationId = null }, Json))
                         throw new CostDifferenceRollbackAnswer(result);
                     return result;
                 }
-                finally { ownedManufacturingCostDifferenceCaller = null; }
+                finally { ownedManufacturingCostDifferenceCaller = null; manufacturingCostDifferenceTrackedAtEntry = null; }
             }, fence, token);
         }
         catch (CostDifferenceRollbackAnswer refused)
