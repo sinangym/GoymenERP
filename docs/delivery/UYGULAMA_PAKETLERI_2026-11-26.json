@@ -4095,9 +4095,9 @@
           "runtime_acceptance": "NOT_RUN"
         },
         "catalog_owner_mapping_native_checkpoint": {
-          "source_commit": "c3fd261c351986a8b1906a68cd13adcf71e0d3ca",
+          "source_commit": "f22eea8e51d88cdcfed96e752b4b7e97f40523bf",
           "evidence_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#catalog_owner_mapping_native_checkpoint",
-          "delivery_scope": "Flow51 owner read/receipt+Work source/DTO and Flow52 owner read/receipt; host ongoing/frontend pending, no new paired Work purposes",
+          "delivery_scope": "Flow51 WorkHost registered/frontend pending; Flow52 Work source/DTO implemented/host ongoing. Current46backend/45frontend/1staged catalog purpose; no runtime acceptance.",
           "runtime_acceptance": "NOT_RUN"
         }
       }
