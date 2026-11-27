@@ -28,7 +28,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// ledger's amounts are checked against a SYNTHETIC scale-2 money profile here (these cases are about the
 /// ledger, not the Settings source — the Settings answer itself is proven in the ACC-V0 cases).
 /// </summary>
-public sealed class AccountingSqlServerRelationalAcceptanceTests
+public sealed partial class AccountingSqlServerRelationalAcceptanceTests
 {
     private const string Consumer = "synthetic-accounting-consumer";
     private const string Purpose = "synthetic-purpose-a";
@@ -271,7 +271,7 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
         var binding = new NormalJournalPermissionBindingV1();
         var authority = new GrantedAuthority();
         return new NormalJournalDraftServiceV1(
-            scope.Drafts,
+            scope.GuardedDrafts,
             scope.Commands,
             new NormalJournalDraftApprovalPolicyV1(binding, authority, companyContext, user),
             binding,
@@ -887,7 +887,8 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
             return new StoreScope(dbContext, new AccountingStore(dbContext, companyContext, collector, TimeProvider.System,
                 new AccountingAmountScaleVerifier(new SyntheticMoneyProfiles(company)),
                 AccountingPeriodCarrySqlFixture.Port(dbContext, companyContext, collector,
-                    auditScope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>(), Actor)), auditScope);
+                    auditScope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>(), Actor),
+                auditScope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>()), auditScope);
         }
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
@@ -925,7 +926,8 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
     {
         public IAccountingPeriodStore Periods => store;
         public IAccountingPostingStore Postings => store;
-        public IAccountingNormalJournalDraftStore Drafts => store;
+        public IAccountingNormalJournalDraftStore Drafts => store; // Direct core store/protocol fixture path.
+        public IAccountingNormalJournalDraftStore GuardedDrafts => store.WithNormalDraftApprovalSafety();
         public IAccountingCommandLog Commands => store;
 
         public async ValueTask DisposeAsync()

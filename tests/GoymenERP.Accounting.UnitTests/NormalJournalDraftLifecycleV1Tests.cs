@@ -7,7 +7,7 @@ using GoymenERP.Modules.Accounting.Domain.Posting;
 
 namespace GoymenERP.Accounting.UnitTests;
 
-public sealed class NormalJournalDraftLifecycleV1Tests
+public sealed partial class NormalJournalDraftLifecycleV1Tests
 {
     private static readonly Guid Company = Guid.Parse("a0000000-0000-4000-8000-0000000000a1");
     private static readonly Guid Actor = Guid.Parse("a0000000-0000-4000-8000-0000000000b1");
@@ -306,6 +306,20 @@ public sealed class NormalJournalDraftLifecycleV1Tests
     private sealed class MemoryStore(NormalJournalDraftRecordV1 record)
         : IAccountingNormalJournalDraftStore, IAccountingCommandLog
     {
+        // Explicit synthetic native protocol port. No relational transaction or Audit rollback claim.
+        public async Task<AccountingApiResult<NormalJournalDraftViewV1>> RunNormalApprovalAsync(
+            Func<bool, Task<AccountingApiResult<NormalJournalDraftViewV1>>> attempt,
+            Func<CancellationToken, Task> fence, CancellationToken token = default)
+        {
+            try { return await attempt(false); }
+            catch (NormalJournalApprovalRaceException race)
+            {
+                var result = await attempt(true);
+                return !result.IsReplay && (result.Code == AccountingStoreCodes.ConcurrentChange
+                    || race.NoWinnerCode == NormalJournalDraftStoreCodesV1.PostingConflict && result.Code == AccountingApiCodes.IdempotencyConflict)
+                    ? result with { Code = race.NoWinnerCode } : result;
+            }
+        }
         private readonly List<AccountingCommandRecord> commands = [];
         public NormalJournalDraftRecordV1 Record { get; private set; } = record;
         public int Approvals { get; private set; }

@@ -65,9 +65,10 @@ public sealed class NormalJournalDraftApprovalRaceV1Tests
         var winnerKey = race == "other-key" ? "racing-draft-b" : loserKey;
         var winnerActor = race == "same-key" ? Checker : SecondChecker;
 
-        // Calls 1-2 are the lifecycle's revalidations, 3-4 the approval policy's; call 5 is the store's first fence,
-        // after it read the pending draft and its lines.
-        var gate = new GatedAuthority(gateAtCall: 5);
+        // Capture/release fences: initial authority=1, command-read release=2, pre-write=3, snapshot release=4,
+        // policy=5/6, policy release=7. Call 8 is still the REAL store's first fence after its pending draft read,
+        // before its line read/posting, preserving the original forced interleaving (not merely the old counter).
+        var gate = new GatedAuthority(gateAtCall: 8);
         var parked = book.ApproveAsync(Checker, draft.Id, loserKey, gate);
         await gate.Reached.Task.WaitAsync(GateTimeout);
         var winner = await book.ApproveAsync(winnerActor, draft.Id, winnerKey, correlation: "racing-draft-winner");
@@ -346,7 +347,7 @@ public sealed class NormalJournalDraftApprovalRaceV1Tests
             var binding = new NormalJournalPermissionBindingV1();
             var grants = authority ?? new FixedAuthority();
             var lifecycle = new NormalJournalDraftServiceV1(
-                store,
+                new SyntheticNormalApprovalProtocolPort(store),
                 store,
                 new NormalJournalDraftApprovalPolicyV1(binding, grants, companyContext, user),
                 binding,
@@ -499,6 +500,25 @@ public sealed class NormalJournalDraftApprovalRaceV1Tests
         public NormalJournalDraftServiceV1 Lifecycle { get; } = lifecycle;
 
         public ValueTask DisposeAsync() => Db.DisposeAsync();
+    }
+
+    // Preserve this test's explicit InMemory interleaving/protocol evidence. Production uses the real relational facade.
+    private sealed class SyntheticNormalApprovalProtocolPort(AccountingStore core) : IAccountingNormalJournalDraftStore
+    {
+        public async Task<AccountingApiResult<NormalJournalDraftViewV1>> RunNormalApprovalAsync(Func<bool, Task<AccountingApiResult<NormalJournalDraftViewV1>>> attempt,
+            Func<CancellationToken, Task> fence, CancellationToken token = default)
+        { try { return await attempt(false); } catch (NormalJournalApprovalRaceException race)
+            {
+                var result = await attempt(true);
+                return !result.IsReplay && (result.Code == AccountingStoreCodes.ConcurrentChange
+                    || race.NoWinnerCode == NormalJournalDraftStoreCodesV1.PostingConflict && result.Code == AccountingApiCodes.IdempotencyConflict)
+                    ? result with { Code = race.NoWinnerCode } : result;
+            } }
+        public Task<(NormalJournalDraftRecordV1 Record, AccountingWriteOutcome Outcome)> CreateNormalDraftAsync(NormalJournalDraftV1 draft,
+            Func<CancellationToken, Task> fence, AccountingCommandMetadata metadata, CancellationToken token = default) => core.CreateNormalDraftAsync(draft, fence, metadata, token);
+        public Task<NormalJournalDraftRecordV1?> FindNormalDraftAsync(Guid id, CancellationToken token = default) => core.FindNormalDraftAsync(id, token);
+        public Task<NormalJournalDraftRecordV1> ApproveAndPostNormalDraftAsync(Guid id, long version, Guid period, Guid actor,
+            Func<CancellationToken, Task> fence, AccountingCommandMetadata metadata, CancellationToken token = default) => core.ApproveAndPostNormalDraftAsync(id, version, period, actor, fence, metadata, token);
     }
 
     private sealed class NullAuditCollector : IAuditEventCollector

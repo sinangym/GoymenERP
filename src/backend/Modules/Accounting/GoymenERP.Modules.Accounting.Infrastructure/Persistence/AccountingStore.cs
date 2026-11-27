@@ -43,7 +43,7 @@ public sealed partial class AccountingStore(
     IAuditEventCollector auditEvents,
     TimeProvider timeProvider,
     AccountingAmountScaleVerifier amounts,
-    IAccountingPeriodCarryForwardPortV1? periodCarry = null) : IAccountingPeriodStore, IAccountingPostingStore, IAccountingCommandLog,
+    IAccountingPeriodCarryForwardPortV1? periodCarry = null, IAuditTransactionWriterV1? normalApprovalAuditWriter = null) : IAccountingPeriodStore, IAccountingPostingStore, IAccountingCommandLog,
     IAccountingNormalJournalDraftStore, IAccountingJournalReversalProposalStoreV1, IAccountingPeriodReopeningStoreV1
 {
     private const int Open = 1;
@@ -369,7 +369,9 @@ public sealed partial class AccountingStore(
             throw new ArgumentException("Taslak, sürüm, dönem ve onaylayan kimliği zorunludur.", nameof(draftId));
         }
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        // Raw core remains the policy/golden path; production resolves the guarded normal-draft facade.
+        // Only that facade can install the private owned marker and reuse its transaction.
+        await using var transaction = ownedNormalApproval is null ? await dbContext.Database.BeginTransactionAsync(cancellationToken) : null;
         try
         {
             var row = await dbContext.NormalJournalDrafts
@@ -443,12 +445,13 @@ public sealed partial class AccountingStore(
                 approvalContext);
             Complete(metadata, companyId, record);
             await SaveAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
             return record;
         }
         catch
         {
-            await transaction.RollbackAsync(CancellationToken.None);
+            if (ownedNormalApproval is not null) throw; // The outer owned boundary aborts/disposes before clearing its own work.
+            await transaction!.RollbackAsync(CancellationToken.None);
             dbContext.ChangeTracker.Clear();
             throw;
         }
@@ -844,7 +847,14 @@ public sealed partial class AccountingStore(
         }
     }
 
-    private void AddCommand(Guid companyId, AccountingCommandRecord record) =>
+    private void AddCommand(Guid companyId, AccountingCommandRecord record)
+    {
+        if (ownedNormalApproval is { } owner)
+        {
+            if (owner.ReplayOnly || companyId != owner.CompanyId || record.CommandName != NormalJournalCommandNamesV1.ApproveDraft)
+                throw new InvalidOperationException("Normal approval boundary cannot record another command.");
+            owner.Command = record;
+        }
         dbContext.Commands.Add(new AccountingCommandRow
         {
             CompanyId = companyId,
@@ -856,6 +866,7 @@ public sealed partial class AccountingStore(
             CorrelationId = record.OriginalCorrelationId,
             RecordedAtUtc = timeProvider.GetUtcNow(),
         });
+    }
 
     /// <summary>The caller's version is the stored one, or the write is a terminal version conflict (§7).</summary>
     private static void RequireVersion(PeriodRow row, long expectedVersion)
@@ -1185,7 +1196,8 @@ public sealed partial class AccountingStore(
     {
         try
         {
-            await dbContext.SaveChangesAsync(cancellationToken);
+            if (ownedNormalApproval is not null) await SaveOwnedNormalApprovalAsync(cancellationToken);
+            else await dbContext.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException exception)
         {

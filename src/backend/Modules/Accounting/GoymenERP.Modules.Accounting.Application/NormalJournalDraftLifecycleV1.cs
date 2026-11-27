@@ -107,6 +107,12 @@ public static class NormalJournalDraftStoreCodesV1
 
 public interface IAccountingNormalJournalDraftStore
 {
+    /// <summary>Only the real guarded owner supplies this boundary. Unsupported ports cannot execute an approval.</summary>
+    Task<AccountingApiResult<NormalJournalDraftViewV1>> RunNormalApprovalAsync(
+        Func<bool, Task<AccountingApiResult<NormalJournalDraftViewV1>>> nativeAttempt,
+        Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new AccountingApiResult<NormalJournalDraftViewV1>(AccountingApiStatus.Unavailable, null, false, null));
+
     Task<(NormalJournalDraftRecordV1 Record, AccountingWriteOutcome Outcome)> CreateNormalDraftAsync(
         NormalJournalDraftV1 draft,
         Func<CancellationToken, Task> freshAuthorityFence,
@@ -127,7 +133,12 @@ public interface IAccountingNormalJournalDraftStore
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>Signals that the final authority fence failed. It is never persisted as a successful command.</summary>
+/// <summary>A lost native approval must abort before its one original-key read-only pass.</summary>
+public sealed class NormalJournalApprovalRaceException(string noWinnerCode, Exception inner)
+    : Exception("The owned normal approval must abort before reading its original winner.", inner)
+{ public string NoWinnerCode { get; } = noWinnerCode; }
+
+/// <summary>Signals fresh authority loss; never persisted as a successful command.</summary>
 public sealed class NormalJournalAuthorityDeniedException()
     : Exception("The normal journal approval authority is no longer valid.")
 {
@@ -269,7 +280,11 @@ public sealed class NormalJournalDraftServiceV1(
             return Task.FromResult(Invalid("draft"));
         }
 
-        return RunAsync(
+        if (string.IsNullOrWhiteSpace(idempotencyKey)) return Task.FromResult(new AccountingApiResult<NormalJournalDraftViewV1>(
+            AccountingApiStatus.Invalid, null, false, AccountingApiCodes.RequestInvalid, "idempotencyKey"));
+        if (!HasContext() || ActorGuid() is not { } capturedActor) return Task.FromResult(Denied());
+        var capturedCompany = companyContext.CompanyId;
+        return drafts.RunNormalApprovalAsync(replayOnly => RunAsync(
             permissions.ApprovePermission,
             idempotencyKey,
             NormalJournalCommandNamesV1.ApproveDraft,
@@ -278,7 +293,9 @@ public sealed class NormalJournalDraftServiceV1(
             async (metadata, actor) =>
             {
                 var snapshot = await drafts.FindNormalDraftAsync(draftId, cancellationToken);
+                await FenceAsync(permissions.ApprovePermission, actor, cancellationToken, capturedCompany);
                 var eligible = await approvalPolicy.CheckAsync(snapshot, expectedVersion, cancellationToken);
+                await FenceAsync(permissions.ApprovePermission, actor, cancellationToken, capturedCompany);
                 if (eligible.Status != AccountingApiStatus.Ok)
                 {
                     return new AccountingApiResult<NormalJournalDraftViewV1>(eligible.Status, null, false,
@@ -293,7 +310,7 @@ public sealed class NormalJournalDraftServiceV1(
                         expectedVersion,
                         periodId,
                         actor,
-                        token => FenceAsync(permissions.ApprovePermission, actor, token),
+                        token => FenceAsync(permissions.ApprovePermission, actor, token, capturedCompany),
                         metadata,
                         cancellationToken);
                 }
@@ -311,7 +328,8 @@ public sealed class NormalJournalDraftServiceV1(
                 return new AccountingApiResult<NormalJournalDraftViewV1>(AccountingApiStatus.Ok, View(record), false, null);
             },
             stored => View((NormalJournalDraftRecordV1)stored),
-            cancellationToken);
+            cancellationToken, capturedCompany, replayOnly),
+            token => FenceAsync(permissions.ApprovePermission, capturedActor, token, capturedCompany), cancellationToken);
     }
 
     public async Task<AccountingApiResult<NormalJournalDraftViewV1>> ReadAsync(
@@ -351,7 +369,7 @@ public sealed class NormalJournalDraftServiceV1(
         AccountingApiStatus successStatus,
         Func<AccountingCommandMetadata, Guid, Task<AccountingApiResult<T>>> write,
         Func<object, T> view,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, Guid? approvalCompany = null, bool replayOnly = false)
         where T : class
     {
         if (string.IsNullOrWhiteSpace(idempotencyKey))
@@ -365,9 +383,12 @@ public sealed class NormalJournalDraftServiceV1(
             return Denied<T>();
         }
 
-        var company = companyContext.CompanyId;
+        var company = approvalCompany ?? companyContext.CompanyId;
+        if (approvalCompany is not null) cancellationToken.ThrowIfCancellationRequested();
         var scope = await authority.RevalidatePermissionScopeAsync(permission, company, cancellationToken);
-        if (!scope.IsGranted || !scope.IsCompanyWide || !HasContext())
+        if (approvalCompany is not null) cancellationToken.ThrowIfCancellationRequested();
+        if (!scope.IsGranted || !scope.IsCompanyWide || !HasContext()
+            || approvalCompany is not null && (companyContext.CompanyId != company || ActorGuid() != actor))
         {
             return Denied<T>();
         }
@@ -375,14 +396,17 @@ public sealed class NormalJournalDraftServiceV1(
         var actorId = currentUser.UserId!;
         var keyHash = AccountingApiService.Sha256(idempotencyKey.Trim());
         var requestHash = AccountingApiService.Sha256(commandName + "|" + JsonSerializer.Serialize(canonicalRequest, Json));
-        if (await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } prior)
-        {
-            return Answer<T>(prior, actorId, requestHash);
-        }
+        var prior = await commands.FindCommandAsync(commandName, keyHash, cancellationToken);
+        if (approvalCompany is not null && !await ApprovalRelease()) return Denied<T>();
+        if (prior is not null) return Answer<T>(prior, actorId, requestHash);
+        // A save loser may read only this original key after owned abort/dispose. Never invoke write or record a synthetic 409.
+        if (replayOnly) return new(AccountingApiStatus.Conflict, null, false, AccountingStoreCodes.ConcurrentChange);
 
         var second = await authority.RevalidatePermissionScopeAsync(permission, company, cancellationToken);
+        if (approvalCompany is not null) cancellationToken.ThrowIfCancellationRequested();
         if (!second.IsGranted || !second.IsCompanyWide || !HasContext()
-            || !string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal))
+            || !string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal)
+            || approvalCompany is not null && companyContext.CompanyId != company)
         {
             return Denied<T>();
         }
@@ -426,6 +450,7 @@ public sealed class NormalJournalDraftServiceV1(
         }
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ConcurrentChange)
         {
+            if (approvalCompany is not null) throw new NormalJournalApprovalRaceException(exception.Code, exception);
             return await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
                 ? Answer<T>(winner, actorId, requestHash)
                 : new AccountingApiResult<T>(AccountingApiStatus.Conflict, null, false, exception.Code);
@@ -434,6 +459,7 @@ public sealed class NormalJournalDraftServiceV1(
             exception.Code == NormalJournalDraftStoreCodesV1.PostingConflict
             && string.Equals(commandName, NormalJournalCommandNamesV1.ApproveDraft, StringComparison.Ordinal))
         {
+            if (approvalCompany is not null) throw new NormalJournalApprovalRaceException(exception.Code, exception);
             // An approval that read the draft pending while a racing approval of it committed is refused by the store
             // (nothing of it is saved). When that winner answered under THIS key with the same actor and request, its
             // recorded answer is this key's replay (ADR-011), exactly as for a lost save; otherwise it stays 409.
@@ -464,6 +490,7 @@ public sealed class NormalJournalDraftServiceV1(
 
         if (completed is not null && result.Status == successStatus)
         {
+            if (approvalCompany is not null && !await ApprovalRelease()) return Denied<T>();
             return result;
         }
 
@@ -477,14 +504,22 @@ public sealed class NormalJournalDraftServiceV1(
 
         try
         {
+            if (approvalCompany is not null && !await ApprovalRelease()) return Denied<T>();
             await commands.RecordCommandAsync(Record(commandName, keyHash, actorId, requestHash, result), cancellationToken);
+            if (approvalCompany is not null && !await ApprovalRelease()) return Denied<T>();
             return result;
         }
         catch (AccountingStoreException exception) when (exception.Code == AccountingStoreCodes.ConcurrentChange)
         {
+            if (approvalCompany is not null) throw new NormalJournalApprovalRaceException(exception.Code, exception);
             return await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
                 ? Answer<T>(winner, actorId, requestHash)
                 : result;
+        }
+        async Task<bool> ApprovalRelease()
+        {
+            try { await FenceAsync(permission, actor, cancellationToken, company); return true; }
+            catch (NormalJournalAuthorityDeniedException) { return false; }
         }
     }
 
@@ -529,11 +564,13 @@ public sealed class NormalJournalDraftServiceV1(
         return prior is null ? null : Answer<NormalJournalDraftViewV1>(prior, actorId, requestHash);
     }
 
-    private async Task FenceAsync(string permission, Guid actor, CancellationToken cancellationToken)
+    private async Task FenceAsync(string permission, Guid actor, CancellationToken cancellationToken, Guid? capturedCompany = null)
     {
-        var company = companyContext.CompanyId;
+        if (capturedCompany is not null) cancellationToken.ThrowIfCancellationRequested();
+        var company = capturedCompany ?? companyContext.CompanyId;
         var scope = await authority.RevalidatePermissionScopeAsync(permission, company, cancellationToken);
-        if (!scope.IsGranted || !scope.IsCompanyWide || !HasContext()
+        if (capturedCompany is not null) cancellationToken.ThrowIfCancellationRequested();
+        if (!scope.IsGranted || !scope.IsCompanyWide || !HasContext() || capturedCompany is not null && companyContext.CompanyId != company
             || !Guid.TryParse(currentUser.UserId, out var currentActor) || currentActor != actor)
         {
             throw new NormalJournalAuthorityDeniedException();
