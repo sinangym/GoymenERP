@@ -2,13 +2,48 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
+using GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
 public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
 {
+    [SqlServerFact]
+    public async Task Unordered_Down_52320_accepts_empty_tables_but_preserves_actual_occurrence_original_attempt_and_audit()
+    {
+        await using var run = await Run.StartAsync(configureNumbers: false);
+        var guard = Assert.IsType<SqlOperation>(new AddPurchaseUnorderedAcceptanceFacts().DownOperations[0]).Sql;
+        // Execute the actual first Down operation only. Pure model tests separately bind the generated drops/order.
+        await run.ExecuteAsync(guard); Assert.Equal((0, 0, 0), await UnorderedCounts(run));
+        var request = UnorderedSqlRequest(false); var envelope = UnorderedEnvelope(run, "SENTETIK-unordered-down");
+        await using var scope = UnorderedSqlScope(run, CompanyA);
+        Assert.False((await RecordUnordered(scope, request, envelope)).IsReplay);
+        var before = await UnorderedCounts(run); Assert.Equal((1, 1, 1), before);
+        var facts = await run.ScalarAsync<string>("SELECT RecordJson FROM purchasing.UnorderedAcceptanceFacts WHERE CompanyId=@company AND AcceptanceId=@id AND AcceptanceLineId=@line",
+            ("@company", CompanyA), ("@id", request.AcceptanceId), ("@line", request.AcceptanceLineId));
+        var attempt = await run.ScalarAsync<string>("SELECT RecordJson FROM purchasing.UnorderedAcceptanceAttempts WHERE CompanyId=@company AND AcceptanceId=@id AND AcceptanceLineId=@line",
+            ("@company", CompanyA), ("@id", request.AcceptanceId), ("@line", request.AcceptanceLineId));
+        var audit = await run.ScalarAsync<string>("SELECT IntegrityHash FROM audit.AuditEvents WHERE CompanyId=@company AND EventType=N'purchasing.unordered-acceptance.recorded.v1'",
+            ("@company", CompanyA));
+        var refused = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(guard));
+        Assert.Equal(PurchaseUnorderedAcceptanceOwnerContractV1.DownDataGuard, refused.Number);
+        Assert.Equal(before, await UnorderedCounts(run));
+        Assert.Equal(facts, await run.ScalarAsync<string>("SELECT RecordJson FROM purchasing.UnorderedAcceptanceFacts WHERE CompanyId=@company AND AcceptanceId=@id AND AcceptanceLineId=@line",
+            ("@company", CompanyA), ("@id", request.AcceptanceId), ("@line", request.AcceptanceLineId)));
+        Assert.Equal(attempt, await run.ScalarAsync<string>("SELECT RecordJson FROM purchasing.UnorderedAcceptanceAttempts WHERE CompanyId=@company AND AcceptanceId=@id AND AcceptanceLineId=@line",
+            ("@company", CompanyA), ("@id", request.AcceptanceId), ("@line", request.AcceptanceLineId)));
+        Assert.Equal(audit, await run.ScalarAsync<string>("SELECT IntegrityHash FROM audit.AuditEvents WHERE CompanyId=@company AND EventType=N'purchasing.unordered-acceptance.recorded.v1'",
+            ("@company", CompanyA)));
+        var replay = await scope.Store.RecordAsync(CompanyA, request, envelope with { CorrelationId = "SENTETIK-after-down-refusal" },
+            UnorderedRequestHash(request), _ => throw new InvalidOperationException("Original receipt must survive"), _ => Task.CompletedTask, default);
+        Assert.True(replay.IsReplay); Assert.Equal(envelope.CorrelationId, replay.OriginalCorrelationId);
+        Assert.Equal(before, await UnorderedCounts(run));
+    }
+
     [SqlServerFact]
     public async Task Unordered_goods_and_service_occurrences_retain_original_receipts_without_orders_stock_or_Finance_effects()
     {

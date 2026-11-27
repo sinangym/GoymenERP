@@ -2,9 +2,11 @@ using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
+using GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Purchasing.UnitTests;
 
@@ -31,6 +33,27 @@ public sealed class PurchaseUnorderedAcceptancePersistenceTests
             .SequenceEqual(["CompanyId", "AcceptanceId", "AcceptanceLineId"]));
         Assert.Contains(model.FindEntityType(typeof(PurchaseInvoiceReceiptBindingRow))!.GetForeignKeys(),
             x => x.PrincipalEntityType.ClrType == typeof(PurchaseAcceptanceRow));
+        Assert.False(db.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void Unordered_migration_is_only_additive_DDL_and_blocks_any_retained_fact_or_attempt_before_generated_drops()
+    {
+        var migration = new AddPurchaseUnorderedAcceptanceFacts();
+        Assert.Empty(migration.UpOperations.OfType<SqlOperation>());
+        Assert.All(migration.UpOperations, operation => Assert.True(operation is CreateTableOperation or CreateIndexOperation));
+        var created = migration.UpOperations.OfType<CreateTableOperation>().OrderBy(x => x.Name, StringComparer.Ordinal).ToArray();
+        Assert.Equal(new[] { "UnorderedAcceptanceAttempts", "UnorderedAcceptanceFacts" }, created.Select(x => x.Name));
+        Assert.All(created, table => Assert.Equal("purchasing", table.Schema));
+        var sql = Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql;
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.Contains("THROW " + PurchaseUnorderedAcceptanceOwnerContractV1.DownDataGuard, sql, StringComparison.Ordinal);
+        Assert.Contains("[purchasing].[UnorderedAcceptanceFacts]", sql, StringComparison.Ordinal);
+        Assert.Contains("[purchasing].[UnorderedAcceptanceAttempts]", sql, StringComparison.Ordinal);
+        Assert.Contains("OR EXISTS", sql, StringComparison.OrdinalIgnoreCase);
+        var drops = migration.DownOperations.Skip(1).Select(operation => Assert.IsType<DropTableOperation>(operation)).ToArray();
+        Assert.Equal(new[] { "UnorderedAcceptanceAttempts", "UnorderedAcceptanceFacts" }, drops.Select(x => x.Name));
+        Assert.All(drops, table => Assert.Equal("purchasing", table.Schema));
     }
 
     [Fact]
