@@ -1,6 +1,7 @@
 using System.Data.Common;
 using System.Transactions;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Finance.Contracts;
