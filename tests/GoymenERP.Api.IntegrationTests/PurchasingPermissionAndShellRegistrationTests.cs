@@ -94,7 +94,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         var purchasing = registry.Registrations
             .Where(item => item.Owner == PurchasingShellCapabilityProvider.OwnerId)
             .ToArray();
-        Assert.Equal(31, purchasing.Length);
+        Assert.Equal(32, purchasing.Length);
         string[] published =
         [
             PurchasingShellCapabilityProvider.AdditionalCostReadCapabilityId,
