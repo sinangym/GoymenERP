@@ -1,6 +1,6 @@
 using System.Text.Json;
 using GoymenERP.Api.WorkRuntime;
-using GoymenERP.BuildingBlocks.Correlation;
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Work;
@@ -9,6 +9,7 @@ using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
+using GoymenERP.Modules.Work.Infrastructure.Delegations;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Api.IntegrationTests;
