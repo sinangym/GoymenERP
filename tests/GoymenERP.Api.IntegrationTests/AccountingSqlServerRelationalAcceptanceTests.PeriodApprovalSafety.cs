@@ -26,6 +26,7 @@ public sealed partial class AccountingSqlServerRelationalAcceptanceTests
         {
             await using var run = await Run.StartAsync(); var prepared = await PreparePeriodApproval(run, reopen);
             var save = new PeriodApprovalSave(prepared.Period); await using var scope = new PeriodApprovalScope(run, save);
+            var precommitFence = reopen ? 10 : 8;
             var deny = true; var savedFences = 0; var observed = false; var sawPending = false;
             using var cancellation = new CancellationTokenSource();
             scope.Authority.Read = () =>
@@ -34,7 +35,7 @@ public sealed partial class AccountingSqlServerRelationalAcceptanceTests
                 if (staged && scope.Writer.HasPendingDrafts) sawPending = true;
                 if (save.Saved) savedFences++;
                 var reached = fault == "after-audit" ? staged && sawPending && !scope.Writer.HasPendingDrafts
-                    : fault == "precommit" ? savedFences == 3 : save.Saved;
+                    : fault == "precommit" ? savedFences == precommitFence : save.Saved;
                 if (!deny || !reached) return true;
                 observed = true;
                 if (fault == "actor") { scope.User.Actor = run.Preparer; return true; }
@@ -45,7 +46,9 @@ public sealed partial class AccountingSqlServerRelationalAcceptanceTests
             };
             if (fault == "cancel") await Assert.ThrowsAnyAsync<OperationCanceledException>(() => scope.Approve(prepared, "period-late", cancellation.Token));
             else Assert.Equal(AccountingApiStatus.Denied, (await scope.Approve(prepared, "period-late")).Status);
-            Assert.True(observed); if (fault == "precommit") Assert.Equal(3, savedFences); // Save completion, native result, precommit.
+            Assert.True(observed); if (fault == "precommit") Assert.Equal(precommitFence, savedFences);
+            // Save1, receipt entry2/command3/source entry4, opening row5/release6/owner7/precommit8;
+            // reopening proposal5/period6/closure7/release8/owner9/precommit10.
             scope.AssertClean(); await AssertPeriodApprovalDurable(run, prepared, false);
             deny = false; scope.User.Actor = run.Actor; scope.User.Member = true; scope.Company.Set(CompanyA); save.Saved = false;
             var success = await scope.Approve(prepared, "period-late"); var replay = await scope.Approve(prepared, "period-late");

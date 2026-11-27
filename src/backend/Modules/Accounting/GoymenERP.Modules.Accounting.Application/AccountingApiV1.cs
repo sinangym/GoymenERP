@@ -28,7 +28,10 @@ public sealed record PeriodCommandRequestV1(long ExpectedVersion);
 public sealed record PeriodViewV1(
     Guid PeriodId, Guid CompanyId, DateOnly StartsOn, DateOnly EndsOn, string Status, long Version,
     Guid PreparedByUserId, DateTimeOffset PreparedAtUtc, Guid? ApprovedByUserId, DateTimeOffset? ApprovedAtUtc,
-    Guid? ClosedByUserId, DateTimeOffset? ClosedAtUtc, bool IsOwnProposal);
+    Guid? ClosedByUserId, DateTimeOffset? ClosedAtUtc, bool IsOwnProposal)
+{
+    [System.Text.Json.Serialization.JsonIgnore] public AccountingPeriodApprovalReceiptV1? ApprovalReceipt { get; init; }
+}
 
 public sealed record PeriodPageV1(IReadOnlyList<PeriodViewV1> Items, string? NextCursor);
 
@@ -394,8 +397,12 @@ public sealed partial class AccountingApiService(
         if (approvalScope is null && commandName is AccountingCommandNames.ApprovePeriod or "accounting.period.reopening.approve.v1")
         {
             return await periods.RunPeriodApprovalAsync(commandName,
-                onlyReplay => RunAsync(permission, idempotencyKey, commandName, canonicalRequest, successStatus, write, view,
-                    cancellationToken, scope, onlyReplay), async token =>
+                async onlyReplay =>
+                {
+                    var answer = await RunAsync(permission, idempotencyKey, commandName, canonicalRequest, successStatus, write, view,
+                        cancellationToken, scope, onlyReplay);
+                    return await AttachPeriodApprovalReceiptAsync(answer, commandName, canonicalRequest, idempotencyKey, scope, permission, cancellationToken);
+                }, async token =>
                 {
                     token.ThrowIfCancellationRequested();
                     try { await RequireStillAsync(scope, permission, token); }

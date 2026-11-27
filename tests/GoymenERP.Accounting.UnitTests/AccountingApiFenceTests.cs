@@ -262,7 +262,7 @@ public sealed partial class AccountingApiFenceTests
         }
     }
 
-    private sealed class Stores : IAccountingPeriodStore, IAccountingPostingStore, IAccountingCommandLog, IAccountingPeriodReopeningStoreV1
+    private sealed partial class Stores : IAccountingPeriodStore, IAccountingPostingStore, IAccountingCommandLog, IAccountingPeriodReopeningStoreV1
     {
         // Synthetic lifecycle protocol fixture: real owned transaction behavior has separate SQL coverage.
         public Task<AccountingApiResult<T>> RunPeriodApprovalAsync<T>(string commandName,
@@ -362,10 +362,11 @@ public sealed partial class AccountingApiFenceTests
     private sealed class MutableUser(MutableCompany company) : ICurrentUser
     {
         public bool IsAuthenticated { get; set; } = true;
+        public bool Member { get; set; } = true;
         public string? ActorId { get; set; } = Actor.ToString("D");
         public string? UserId => ActorId;
         public IReadOnlySet<Guid> AllowedCompanyIds => new HashSet<Guid>([company.CompanyId]);
-        public bool CanAccessCompany(Guid companyId) => IsAuthenticated && companyId == company.CompanyId;
+        public bool CanAccessCompany(Guid companyId) => Member && IsAuthenticated && companyId == company.CompanyId;
     }
 
     private sealed class FixedCorrelation : ICorrelationContext

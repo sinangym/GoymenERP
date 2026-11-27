@@ -24,7 +24,10 @@ public sealed record ProposeAccountingPeriodReopeningV1(long ExpectedVersion, Gu
 public sealed record ApproveAccountingPeriodReopeningV1(long ExpectedVersion, long ExpectedPeriodVersion);
 public sealed record AccountingPeriodReopeningViewV1(Guid Id, Guid CompanyId, Guid PeriodId, Guid ClosureId,
     long ClosedPeriodVersion, Guid ProposedBy, DateTimeOffset ProposedAtUtc, string Reason,
-    Guid? ApprovedBy, DateTimeOffset? ApprovedAtUtc, long Version);
+    Guid? ApprovedBy, DateTimeOffset? ApprovedAtUtc, long Version)
+{
+    [System.Text.Json.Serialization.JsonIgnore] public AccountingPeriodApprovalReceiptV1? ApprovalReceipt { get; init; }
+}
 
 public sealed record AccountingPeriodClosureViewV1(Guid Id, Guid CompanyId, Guid PeriodId,
     long ClosedPeriodVersion, Guid TargetPeriodId, Guid CarryVoucherId, string SourceHash, int LineCount,
