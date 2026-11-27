@@ -3865,8 +3865,11 @@ public sealed partial class ManufacturingCommandServiceTests
             return Task.FromResult(stored);
         }
 
+        public int RecordCommandCalls { get; private set; }
+
         public Task RecordCommandAsync(ManufacturingCommandRecord record, CancellationToken cancellationToken = default)
         {
+            RecordCommandCalls++;
             if (RecordCommandFault is { } fault)
             {
                 throw new ManufacturingStoreException(fault, "sentetik komut kaydı reddi");

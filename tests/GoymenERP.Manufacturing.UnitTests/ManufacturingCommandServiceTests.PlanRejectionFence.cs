@@ -10,7 +10,7 @@ public sealed partial class ManufacturingCommandServiceTests
     {
         var fixture = new Fixture();
         var service = RejectionFenceService(fixture, new LegacyRejectionAdapter());
-        var result = await service.RejectPlanAsync(Guid.NewGuid(), new(1, "Ýnsan gerekçesi"), "reject",
+        var result = await service.RejectPlanAsync(Guid.NewGuid(), new(1, "Ä°nsan gerekÃ§esi"), "reject",
             "manufacturing.plans.approve", CancellationToken.None);
         Assert.Equal(ManufacturingApiStatus.Unavailable, result.Status);
         Assert.Empty(fixture.Calls);
@@ -23,10 +23,10 @@ public sealed partial class ManufacturingCommandServiceTests
         var fixture = new Fixture();
         var id = Guid.NewGuid();
         SeedLegacyPlanReplay(fixture, ManufacturingCommandNames.RejectPlan, "reject",
-            new { planId = id, expectedVersion = 1L, reason = "Ýnsan gerekçesi" }, ManufacturingApiStatus.Ok,
+            new { planId = id, expectedVersion = 1L, reason = "Ä°nsan gerekÃ§esi" }, ManufacturingApiStatus.Ok,
             LegacyPlanView(id, 2));
         var owner = new RejectionExecutionAdapter();
-        var result = await RejectionFenceService(fixture, owner).RejectPlanAsync(id, new(1, "Ýnsan gerekçesi"),
+        var result = await RejectionFenceService(fixture, owner).RejectPlanAsync(id, new(1, "Ä°nsan gerekÃ§esi"),
             "reject", "manufacturing.plans.approve", CancellationToken.None);
         Assert.Equal((ManufacturingApiStatus.Ok, true, "corr-legacy"),
             (result.Status, result.IsReplay, result.OriginalCorrelationId));
@@ -44,7 +44,7 @@ public sealed partial class ManufacturingCommandServiceTests
         var fixture = new Fixture();
         var id = Guid.NewGuid();
         SeedLegacyPlanReplay(fixture, ManufacturingCommandNames.RejectPlan, "reject",
-            new { planId = id, expectedVersion = 1L, reason = "Ýnsan gerekçesi" }, ManufacturingApiStatus.Ok,
+            new { planId = id, expectedVersion = 1L, reason = "Ä°nsan gerekÃ§esi" }, ManufacturingApiStatus.Ok,
             LegacyPlanView(id, 2));
         var owner = new RejectionExecutionAdapter
         {
@@ -55,7 +55,7 @@ public sealed partial class ManufacturingCommandServiceTests
                 if (fault == "company") fixture.CompanyContext.SwitchForTest(Guid.NewGuid());
             },
         };
-        var result = await RejectionFenceService(fixture, owner).RejectPlanAsync(id, new(1, "Ýnsan gerekçesi"),
+        var result = await RejectionFenceService(fixture, owner).RejectPlanAsync(id, new(1, "Ä°nsan gerekÃ§esi"),
             "reject", "manufacturing.plans.approve", CancellationToken.None);
         Assert.Equal((ManufacturingApiStatus.Denied, false), (result.Status, result.IsReplay));
         Assert.Equal(0, owner.Mutations);
@@ -67,12 +67,17 @@ public sealed partial class ManufacturingCommandServiceTests
     {
         var fixture = new Fixture();
         var owner = new RejectionExecutionAdapter { Race = true };
-        var result = await RejectionFenceService(fixture, owner).RejectPlanAsync(Guid.NewGuid(), new(1, "Ýnsan gerekçesi"),
+        var commandReads = 0;
+        fixture.Store.AfterFindCommand = _ => commandReads++;
+        var result = await RejectionFenceService(fixture, owner).RejectPlanAsync(Guid.NewGuid(), new(1, "Ä°nsan gerekÃ§esi"),
             "reject", "manufacturing.plans.approve", CancellationToken.None);
         Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingStoreCodes.ConcurrentChange), (result.Status, result.Code));
         Assert.Equal(2, owner.Executions);
         Assert.Equal(1, owner.Mutations);
         Assert.True(owner.Aborted);
+        Assert.Equal(2, commandReads); // First attempt and one fresh replay-only lookup; no refusal/winner loop.
+        Assert.Equal(0, fixture.Store.RecordCommandCalls);
+        Assert.Empty(fixture.Store.Writes);
         Assert.Empty(fixture.Store.Commands);
     }
 
@@ -85,10 +90,10 @@ public sealed partial class ManufacturingCommandServiceTests
         {
             Race = true,
             AfterAbort = () => SeedLegacyPlanReplay(fixture, ManufacturingCommandNames.RejectPlan, "reject",
-                new { planId = id, expectedVersion = 1L, reason = "Ýnsan gerekçesi" }, ManufacturingApiStatus.Ok,
+                new { planId = id, expectedVersion = 1L, reason = "Ä°nsan gerekÃ§esi" }, ManufacturingApiStatus.Ok,
                 LegacyPlanView(id, 2)),
         };
-        var result = await RejectionFenceService(fixture, owner).RejectPlanAsync(id, new(1, "Ýnsan gerekçesi"),
+        var result = await RejectionFenceService(fixture, owner).RejectPlanAsync(id, new(1, "Ä°nsan gerekÃ§esi"),
             "reject", "manufacturing.plans.approve", CancellationToken.None);
         Assert.Equal((ManufacturingApiStatus.Ok, true), (result.Status, result.IsReplay));
         Assert.Equal("corr-legacy", result.OriginalCorrelationId);

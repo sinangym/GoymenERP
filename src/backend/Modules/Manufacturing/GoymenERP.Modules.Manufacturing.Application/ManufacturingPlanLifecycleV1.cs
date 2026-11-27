@@ -41,11 +41,6 @@ public sealed partial class ManufacturingCommandService
             new { planId, expectedVersion = request.ExpectedVersion, reason }, ManufacturingApiStatus.Ok,
             async (metadata, actor, companyId) =>
             {
-                // After a rolled-back save race, only inspect a possible winning receipt; never retry the mutation.
-                if (replayOnly)
-                    return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Conflict, null, false,
-                        ManufacturingStoreCodes.ConcurrentChange);
-
                 if (await plans.FindPlanAsync(planId, cancellationToken) is { } current)
                 {
                     // U2-d (URT-D2): as the approval, the preparer of the current Draft version is refused before the
@@ -68,7 +63,7 @@ public sealed partial class ManufacturingCommandService
                     timeProvider.GetUtcNow(), reason, metadata, cancellationToken);
                 return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(rejected, live), false,
                     null);
-            }, stored => PlanView((ProductionPlan)stored, live), cancellationToken, abortOnConcurrentChange: true);
+            }, stored => PlanView((ProductionPlan)stored, live), cancellationToken, abortOnConcurrentChange: true, replayOnly: replayOnly);
 
         async Task<ManufacturingApiResult<PlanViewV1>> ExecuteRejectionAsync()
         {

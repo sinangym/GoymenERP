@@ -31,7 +31,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             var refusal = await Assert.ThrowsAsync<ManufacturingStoreException>(() => scope.Lifecycle.ExecutePlanRejectionAsync(
                 async token =>
                 {
-                    await scope.Lifecycle.RejectPlanAsync(plan.Id, 1, run.Approver, At, "Gerçek insan gerekçesi",
+                    await scope.Lifecycle.RejectPlanAsync(plan.Id, 1, run.Approver, At, "GerÃ§ek insan gerekÃ§esi",
                         RejectionReceiptMetadata(run, "revoke"), token);
                     return RejectionOk();
                 }, _ => probe.Saved
@@ -46,7 +46,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using var retry = run.Store(CompanyA);
         var answer = await retry.Lifecycle.ExecutePlanRejectionAsync(async token =>
         {
-            await retry.Lifecycle.RejectPlanAsync(plan.Id, 1, run.Approver, At, "Gerçek insan gerekçesi",
+            await retry.Lifecycle.RejectPlanAsync(plan.Id, 1, run.Approver, At, "GerÃ§ek insan gerekÃ§esi",
                 RejectionReceiptMetadata(run, "revoke"), token);
             return RejectionOk();
         }, _ => Task.CompletedTask);
@@ -64,7 +64,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         await using var scope = run.Store(CompanyA, new RejectionSaveProbe { Fail = true });
         await Assert.ThrowsAsync<InvalidOperationException>(() => scope.Lifecycle.ExecutePlanRejectionAsync(async token =>
         {
-            await scope.Lifecycle.RejectPlanAsync(plan.Id, 1, run.Approver, At, "Gerçek insan gerekçesi",
+            await scope.Lifecycle.RejectPlanAsync(plan.Id, 1, run.Approver, At, "GerÃ§ek insan gerekÃ§esi",
                 RejectionReceiptMetadata(run, "failure"), token);
             return RejectionOk();
         }, _ => Task.CompletedTask));
@@ -83,7 +83,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             await seed.Plans.SavePlanAsync(plan, Metadata(run));
             await seed.Lifecycle.ExecutePlanRejectionAsync(async token =>
             {
-                await seed.Lifecycle.RejectPlanAsync(plan.Id, 1, run.Approver, At, "Gerçek insan gerekçesi",
+                await seed.Lifecycle.RejectPlanAsync(plan.Id, 1, run.Approver, At, "GerÃ§ek insan gerekÃ§esi",
                     RejectionReceiptMetadata(run, "replay"), token);
                 return RejectionOk();
             }, _ => Task.CompletedTask);
@@ -202,7 +202,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         var audit = services.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
         async Task<ManufacturingApiResult<PlanViewV1>> Execute(CancellationToken token)
         {
-            await owner.RejectPlanAsync(plan.Id, 1, run.Approver, At, "Gerçek insan gerekçesi",
+            await owner.RejectPlanAsync(plan.Id, 1, run.Approver, At, "GerÃ§ek insan gerekÃ§esi",
                 RejectionReceiptMetadata(run, "same-context"), token);
             return RejectionOk();
         }
@@ -236,7 +236,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         var owner = new ManufacturingStore(context, company, collector, TimeProvider.System, writer);
         var answer = await owner.ExecutePlanRejectionAsync(async token =>
         {
-            await owner.RejectPlanAsync(plan.Id, 1, run.Approver, At, "Gerçek insan gerekçesi",
+            await owner.RejectPlanAsync(plan.Id, 1, run.Approver, At, "GerÃ§ek insan gerekÃ§esi",
                 RejectionReceiptMetadata(run, "writer-fallback"), token);
             return RejectionOk();
         }, _ => Task.CompletedTask);
@@ -257,7 +257,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
         var result = await scope.Lifecycle.ExecutePlanRejectionAsync(async token =>
         {
             // Native business save without a completion is a legacy store call, not a command receipt.
-            await scope.Lifecycle.RejectPlanAsync(plan.Id, 1, run.Approver, At, "Gerçek insan gerekçesi", Metadata(run), token);
+            await scope.Lifecycle.RejectPlanAsync(plan.Id, 1, run.Approver, At, "GerÃ§ek insan gerekÃ§esi", Metadata(run), token);
             return new(ManufacturingApiStatus.Conflict, null, false, GoymenERP.Modules.Manufacturing.Domain.Common.ManufacturingRuleCodes.VersionConflict);
         }, _ => Task.CompletedTask);
         Assert.Equal(ManufacturingApiStatus.Conflict, result.Status);
@@ -316,7 +316,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             new SavePlanRequestV1(id, tube, [new PlannedInputRequestV1(roll.Id, "1000", roll.Version)], null));
         using var decider = await run.ApproverAsync(CompanyA);
         var decided = await PlanAsync(decider, HttpStatusCode.OK, $"{Base}/plans/{id}/rejection",
-            new RejectPlanRequestV1(1, "Ýnsan gerekçesi"), "reject-owned-ok");
+            new RejectPlanRequestV1(1, "Ä°nsan gerekÃ§esi"), "reject-owned-ok");
         Assert.Equal(("Draft", 2L, 1), (decided.Status, decided.Version, decided.Rejections!.Count));
         var missing = Guid.NewGuid();
         foreach (var (planId, status, key) in new[]
@@ -324,10 +324,10 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
                    (missing, HttpStatusCode.NotFound, "reject-owned-missing") })
         {
             using var first = await decider.PostWithKeyAsync($"{Base}/plans/{planId}/rejection",
-                new RejectPlanRequestV1(1, "Ýnsan gerekçesi"), key);
+                new RejectPlanRequestV1(1, "Ä°nsan gerekÃ§esi"), key);
             Assert.Equal(status, first.StatusCode);
             using var replay = await decider.PostWithKeyAsync($"{Base}/plans/{planId}/rejection",
-                new RejectPlanRequestV1(1, "Ýnsan gerekçesi"), key);
+                new RejectPlanRequestV1(1, "Ä°nsan gerekÃ§esi"), key);
             Assert.Equal(status, replay.StatusCode);
             Assert.Equal("true", Assert.Single(replay.Headers.GetValues("Idempotency-Replayed")));
         }

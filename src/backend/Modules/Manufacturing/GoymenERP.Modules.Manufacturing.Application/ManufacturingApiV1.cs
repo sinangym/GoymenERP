@@ -2531,7 +2531,7 @@ public sealed partial class ManufacturingCommandService(
     private async Task<ManufacturingApiResult<T>> RunAsync<T>(string permission, string idempotencyKey, string commandName,
         object canonicalRequest, ManufacturingApiStatus successStatus,
         Func<ManufacturingCommandMetadata, Guid, Guid, Task<ManufacturingApiResult<T>>> write, Func<object, T> view,
-        CancellationToken cancellationToken, string? storedAnswerPermission = null, bool abortOnConcurrentChange = false)
+        CancellationToken cancellationToken, string? storedAnswerPermission = null, bool abortOnConcurrentChange = false, bool replayOnly = false)
         where T : class
     {
         if (!HasContext() || ActorGuid() is not { } actor)
@@ -2585,6 +2585,16 @@ public sealed partial class ManufacturingCommandService(
         if (await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } prior)
         {
             return await AnswerStoredAsync(prior);
+        }
+
+        // A failed owned decision may inspect a winning receipt after rollback, but never retry a
+        // mutation or create a new terminal receipt when that one bounded lookup finds no winner.
+        if (replayOnly)
+        {
+            if (await FenceCapturedAsync<T>(permission, companyId, actor, cancellationToken) is { } noReplayFenced)
+                return noReplayFenced;
+            return new ManufacturingApiResult<T>(ManufacturingApiStatus.Conflict, null, false,
+                ManufacturingStoreCodes.ConcurrentChange);
         }
 
         if (await FenceCapturedAsync<T>(permission, companyId, actor, cancellationToken) is { } preWriteFenced)
