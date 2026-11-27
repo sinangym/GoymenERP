@@ -1,4 +1,9 @@
 export const WORK_DECISION_TEXT = {
+  lossRequestNumber: 'Karar verilecek kayıp talebi numarası',
+  lossRequestedAt: 'Talep zamanı (UTC)',
+  lossDecisionTime: 'Karar zamanı (yerel saat)',
+  lossFrozenTime: 'İlk istekteki karar zamanı (UTC)',
+  lossReason: 'Onay ve ret için insan gerekçesi zorunludur; en fazla 500 karakterdir. Karar zamanını kendiniz seçin.',
   manufacturingReapprovalOnly: 'Bu plan yeniden onay bekliyor. Etiketleri seçerek yeniden onaylayabilirsiniz.',
   manufacturingRejectReason: 'Ret gerekçesi',
   manufacturingRejectHelp: 'Ret gerekçesi zorunludur ve en fazla 256 karakterdir. Bu alan yalnız ret işleminde kaydedilir.',

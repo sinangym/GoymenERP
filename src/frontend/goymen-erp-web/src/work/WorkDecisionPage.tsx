@@ -9,7 +9,7 @@ import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useScopedCommandAttempt } from '../settings/useCommandAttempt'
 import { Button } from '../ui/Button'
 import { inboxKindText, inboxRoleText } from './workInboxText'
-import { fetchWorkDecision, sendWorkDecision, isWorkDecisionRequest, isSalesWorkDecisionKind, workDecisionReasonLimit, type WorkDecisionKind, type WorkDecisionRequest, type WorkDecisionResult } from './workDecisionApi'
+import { fetchWorkDecision, sendWorkDecision, workDecisionLocalUtc, isWorkDecisionRequest, isSalesWorkDecisionKind, workDecisionReasonLimit, type WorkDecisionKind, type WorkDecisionRequest, type WorkDecisionResult } from './workDecisionApi'
 import { fetchDelegations, type DelegationPage } from './workDelegationApi'
 import { delegationPersonLabel } from './delegationPersonLabel'
 import type { ViewOutcome } from '../shell/uiState'
@@ -31,6 +31,8 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const namespace = context === null ? null : contextKeyString(context)
   const [selectedLabels, setSelectedLabels] = useState<readonly string[]>([])
   const [selectionVersion, setSelectionVersion] = useState<string | null>(null)
+  const [decisionTime, setDecisionTime] = useState('')
+  const [lossTimeBinding, setLossTimeBinding] = useState<string | null>(null)
   const [reason, setReason] = useState('')
   const [useDelegation, setUseDelegation] = useState(false); const [delegationId, setDelegationId] = useState('')
   const delegations = useInfiniteQuery<DelegationPage,DelegationReadFailure,InfiniteData<DelegationPage>,readonly unknown[],number>({ queryKey: [namespace, shell.routeEntryGeneration, 'work-decision-delegations'],
@@ -61,14 +63,20 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const selected = frozen ? attempt.pendingPayload?.manufacturingPlanReapproval?.selectedLabelIds ?? [] : selectionVersion === preview?.sourceVersion ? selectedLabels : []
   const selectionInvalid = options !== undefined && (selectionVersion !== preview?.sourceVersion || selectedLabels.length !== options.length
     || selectedLabels.some(id => !options.includes(id)))
+  const loss = kind === 'inventory.transfer-loss.v1'
+  const lossRequest = frozen ? attempt.pendingPayload?.inventoryTransferLoss?.requestNumber : preview?.inventoryTransferLoss?.requestNumber
+  const lossReason = loss && frozen ? attempt.pendingPayload?.reason ?? '' : reason
+  const currentLossBinding = preview?.inventoryTransferLoss === undefined ? null : `${preview.sourceVersion}:${preview.inventoryTransferLoss.requestNumber}`
+  const invalidLossTime = loss && (currentLossBinding === null || lossTimeBinding !== currentLossBinding || workDecisionLocalUtc(decisionTime) === null)
   const reasonLimit = workDecisionReasonLimit(kind)
   const batch = kind === 'purchasing.goods-receipt-batch.v1'
   const reasonRequired = (approve: boolean) => preview?.approvalReasonRequired || !approve && !isSalesWorkDecisionKind(kind)
   const invalidReason = (approve: boolean) => reasonRequired(approve) && reason.trim() === '' || (preview?.approvalReasonRequired || !approve || batch) && (batch ? reason.length : reason.trim().length) > reasonLimit
   const submit = async (approve: boolean) => {
-    if (preview === null || !approve && preview.rejectionSupported === false || frozen || approve && selectionInvalid || invalidReason(approve) || useDelegation && !delegationId) return
+    if (preview === null || !approve && preview.rejectionSupported === false || frozen || approve && selectionInvalid || invalidLossTime || invalidReason(approve) || useDelegation && !delegationId) return
     const answer = await attempt.run({ expectedVersion: preview.sourceVersion, approve,
       reason: batch ? reason === '' ? null : reason : preview.approvalReasonRequired || !approve ? reason.trim() || null : null, delegationId: useDelegation ? delegationId : null,
+      ...(loss ? { inventoryTransferLoss: { requestNumber: preview.inventoryTransferLoss!.requestNumber, decidedAtUtc: workDecisionLocalUtc(decisionTime)! } } : {}),
       ...(kind === 'manufacturing.plan.v1' && options !== undefined ? { manufacturingPlanReapproval: { selectedLabelIds: [...selectedLabels] } } : {}) })
     if (answer.type === 'applied') void query.refetch()
   }
@@ -92,11 +100,16 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
           }} />{labelId}</label>)}
         <Button type="button" onClick={() => { setSelectedLabels([]); setSelectionVersion(null) }}>{T.clearLabels}</Button>
       </fieldset> : null}
+      {loss ? <div><p>{T.lossRequestNumber}: {lossRequest}</p>
+        {frozen && attempt.pendingPayload?.inventoryTransferLoss ? <p>{T.lossFrozenTime}: {attempt.pendingPayload.inventoryTransferLoss.decidedAtUtc}</p>
+          : <p>{T.lossRequestedAt}: {preview.inventoryTransferLoss?.requestedAtUtc}</p>}
+      </div> : null}
       {preview.pending ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{kind === 'manufacturing.plan.v1' ? T.manufacturingReapprovalOnly : kind === 'purchasing.incoming-invoice-variance.v1' ? T.varianceApprovalOnly : T.approvalOnly}</p> : null}
-        {preview.rejectionSupported !== false || preview.approvalReasonRequired ? <label>{kind === 'manufacturing.plan.v1' ? T.manufacturingRejectReason : T.reason}<textarea value={reason} maxLength={reasonLimit} onChange={event => setReason(event.target.value)} /></label> : null}
+        {preview.rejectionSupported !== false || preview.approvalReasonRequired ? <label>{kind === 'manufacturing.plan.v1' ? T.manufacturingRejectReason : T.reason}<textarea value={lossReason} maxLength={reasonLimit} onChange={event => setReason(event.target.value)} /></label> : null}
         {kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? <p>{T.approvalReasonRequired(reasonLimit)}</p> : null}
         {kind === 'manufacturing.plan.v1' && preview.rejectionSupported ? <p>{T.manufacturingRejectHelp}</p> : null}
         {kind === 'purchasing.request.v1' ? <p>{T.rejectionReasonRequired(reasonLimit)}</p> : null}
+        {loss ? <><label>{T.lossDecisionTime}<input type="datetime-local" step="1" disabled={frozen} value={decisionTime} onChange={event => { setDecisionTime(event.target.value); setLossTimeBinding(currentLossBinding) }} /></label><p>{T.lossReason}</p></> : null}
         {batch ? <p>{T.batchReason(reasonLimit)}</p> : null}
         <label><input type="checkbox" checked={useDelegation} onChange={event => { setUseDelegation(event.target.checked); setDelegationId('') }} />{T.delegation}</label>
         {useDelegation ? <><label>{T.delegationChoice}<select value={delegationId} onChange={event => setDelegationId(event.target.value)}><option value="">{T.choose}</option>
@@ -107,8 +120,8 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
             : candidates.length === 0 ? <p>{delegations.hasNextPage ? T.delegationNoMatchesYet : T.delegationEmpty}</p> : null}
           {delegations.hasNextPage ? <><p>{T.delegationMoreAvailable}</p><Button type="button" disabled={delegations.isFetchingNextPage}
             onClick={() => void delegations.fetchNextPage()}>{T.delegationMore}</Button></> : null}</> : null}
-        <div className={styles.actions}><Button type="button" disabled={selectionInvalid || useDelegation && !delegationId || invalidReason(true)} onClick={() => void submit(true)}>{T.approve}</Button>
-          {preview.rejectionSupported !== false ? <Button type="button" variant="secondary" disabled={useDelegation && !delegationId || invalidReason(false)} onClick={() => void submit(false)}>{T.reject}</Button> : null}</div></fieldset> : <p>{T.closed}</p>}
+        <div className={styles.actions}><Button type="button" disabled={invalidLossTime || selectionInvalid || useDelegation && !delegationId || invalidReason(true)} onClick={() => void submit(true)}>{T.approve}</Button>
+          {preview.rejectionSupported !== false ? <Button type="button" variant="secondary" disabled={invalidLossTime || useDelegation && !delegationId || invalidReason(false)} onClick={() => void submit(false)}>{T.reject}</Button> : null}</div></fieldset> : <p>{T.closed}</p>}
     </>}
     {attempt.status.kind === 'unknown' ? <div role="alert"><p>{T.unknown}</p><Button type="button" onClick={() => void retry()}>{T.retry}</Button></div> : null}
     {attempt.status.kind === 'refused' ? <p role="alert">{T.refused} ({attempt.status.status})</p> : null}

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { decodeWorkDecisionPreview, sendWorkDecision, isWorkDecisionRequest, isWorkDecisionKind, isSalesWorkDecisionKind, workDecisionReasonLimit } from './workDecisionApi'
+import { decodeWorkDecisionPreview, sendWorkDecision, isWorkDecisionRequest, isWorkDecisionKind, isSalesWorkDecisionKind, workDecisionReasonLimit, workDecisionLocalUtc, WORK_DECISION_KINDS } from './workDecisionApi'
 import { decodeDelegation, decodeDelegationPage, decodePeople } from './workDelegationApi'
 const company='aaaaaaaa-0000-4000-8000-000000000001', id='cccccccc-0000-4000-8000-000000000001'
 const kind='finance.cash-account.v1' as const
@@ -326,5 +326,49 @@ it.each([true,false])('keeps Manufacturing immutable decision states strict (app
  for(const delta of [{state:approve?'Draft':'Approved'},{state:'Released'},{state:'Rejected'},{companyId:id},{itemId:company},{extra:true},{replayed:true}]) {
   fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,...delta}),{status:200}))
   expect((await sendWorkDecision(company,mfg,id,command,'key')).type).toBe('unknown')
+ }
+})
+
+
+const lossKind='inventory.transfer-loss.v1'
+const lossOptions={requestNumber:2,requestedAtUtc:'2026-11-26T08:00:00Z'}
+const lossRequest={...request,reason:'İnsan kararı',inventoryTransferLoss:{requestNumber:2,decidedAtUtc:'2026-11-26T09:00:00Z'}}
+it('decodes exact loss options without adding the staged kind to mounted kinds or changing other owner wires', () => {
+ const value={...preview,kind:lossKind,approvalReasonRequired:true,rejectionSupported:true,inventoryTransferLoss:lossOptions}
+ expect(isWorkDecisionKind(lossKind)).toBe(true)
+ expect(WORK_DECISION_KINDS.some(kind=>String(kind)===lossKind)).toBe(false)
+ expect(decodeWorkDecisionPreview(value,company,lossKind,id)).not.toBeNull()
+ for(const delta of [{companyId:id},{itemId:company},{sourceVersion:'0'},{approvalReasonRequired:false},{rejectionSupported:false},
+  {inventoryTransferLoss:null},{inventoryTransferLoss:{...lossOptions,requestNumber:0}},{inventoryTransferLoss:{...lossOptions,requestNumber:1.5}},
+  {inventoryTransferLoss:{...lossOptions,requestedAtUtc:'2026-11-26T08:00:00+03:00'}},{inventoryTransferLoss:{...lossOptions,extra:true}},
+  {manufacturingPlanReapproval:{parentRollIds:[id]}}])
+  expect(decodeWorkDecisionPreview({...value,...delta},company,lossKind,id)).toBeNull()
+ expect(decodeWorkDecisionPreview({...preview,inventoryTransferLoss:lossOptions},company,kind,id)).toBeNull()
+ expect(isWorkDecisionRequest(lossRequest,lossKind)).toBe(true)
+ for(const delta of [{reason:''},{reason:'R'.repeat(501)},{inventoryTransferLoss:null},
+  {inventoryTransferLoss:{...lossRequest.inventoryTransferLoss,requestNumber:2147483648}},
+  {inventoryTransferLoss:{...lossRequest.inventoryTransferLoss,decidedAtUtc:'bad'}},
+  {inventoryTransferLoss:{...lossRequest.inventoryTransferLoss,extra:true}},
+  {manufacturingPlanReapproval:{selectedLabelIds:[id]}}])
+  expect(isWorkDecisionRequest({...lossRequest,...delta},lossKind)).toBe(false)
+ expect(isWorkDecisionRequest(lossRequest,kind)).toBe(false)
+ expect(isWorkDecisionRequest(lossRequest,'manufacturing.plan.v1')).toBe(false)
+})
+it('converts a human local time with the native UTC validation and never substitutes current time', () => {
+ const input='2026-11-26T11:30:00'
+ expect(workDecisionLocalUtc(input)).toBe(new Date(input).toISOString())
+ for(const input of ['', 'bad', '0000-01-01T00:00:00']) expect(workDecisionLocalUtc(input)).toBeNull()
+})
+it.each([true,false])('accepts only the matching immutable native loss state, action and scope (approve=%s)', async approve => {
+ const result={companyId:company,kind:lossKind,itemId:id,state:approve?'Approved':'Rejected',replayed:true,originalCorrelationId:'original'}
+ const headers={'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}
+ const fetch=vi.fn(async(_input: RequestInfo | URL, _init?: RequestInit)=>new Response(JSON.stringify(result),{status:200,headers}))
+ vi.stubGlobal('fetch',fetch)
+ const command={...lossRequest,approve}
+ expect((await sendWorkDecision(company,lossKind,id,command,'frozen-key')).type).toBe('applied')
+ expect(JSON.parse((fetch.mock.calls[0]![1] as RequestInit).body as string)).toEqual(command)
+ for(const delta of [{state:approve?'Rejected':'Approved'},{state:'Pending'},{state:'Withdrawn'},{companyId:id},{kind},{itemId:company},{extra:true},{originalCorrelationId:'other'}]) {
+  fetch.mockImplementation(async()=>new Response(JSON.stringify({...result,...delta}),{status:200,headers}))
+  expect((await sendWorkDecision(company,lossKind,id,command,'frozen-key')).type).toBe('unknown')
  }
 })

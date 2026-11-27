@@ -1,3 +1,4 @@
+import { transferDispatchUtc } from '../inventory/transferDispatchApi'
 import { API_BASE, devHeaders } from '../finance/http'
 import { isBoundUuid, isPositiveInt64Text } from '../finance/contract'
 import { hasExactKeys, replayHeadersAgree } from '../finance/wireShape'
@@ -5,15 +6,17 @@ import { readJson, type CommandOutcome } from '../settings/discountLimitApi'
 
 export const WORK_DECISION_KINDS = ['inventory.opening-cost.v1', 'finance.cash-account.v1',
   'finance.credit-account.v1', 'finance.cash-account-passivation.v1', 'finance.cash-account-reactivation.v1','sales.order-draft.v1','sales.invoice.v1','sales.subcontract-invoice.v1','purchasing.request.v1','purchasing.order.v1','purchasing.service-order.v1','purchasing.incoming-invoice-variance.v1','purchasing.goods-receipt-batch.v1','manufacturing.plan.v1'] as const
-export type WorkDecisionKind = typeof WORK_DECISION_KINDS[number]
+// Transfer loss is a source-only candidate until its owner purpose is published and mounted.
+export type WorkDecisionKind = typeof WORK_DECISION_KINDS[number] | 'inventory.transfer-loss.v1'
 export const isSalesWorkDecisionKind = (kind: WorkDecisionKind) => kind === 'sales.order-draft.v1' || kind === 'sales.invoice.v1' || kind === 'sales.subcontract-invoice.v1'
 /** Native owner reason bounds; optional rejection remains Sales-only. */
 export const workDecisionReasonLimit = (kind: WorkDecisionKind) => kind === 'manufacturing.plan.v1' ? 256 : kind === 'purchasing.incoming-invoice-variance.v1' ? 2000 : kind === 'purchasing.service-order.v1' ? 1000 : isSalesWorkDecisionKind(kind) || kind === 'purchasing.request.v1' ? 4000 : 500
-export const isWorkDecisionKind = (value: string): value is WorkDecisionKind => WORK_DECISION_KINDS.some(kind => kind === value)
-export interface WorkDecisionRequest { readonly expectedVersion: string; readonly approve: boolean; readonly reason: string | null; readonly delegationId: string | null; readonly manufacturingPlanReapproval?: { readonly selectedLabelIds?: readonly string[] | null } | null }
+export const isWorkDecisionKind = (value: string): value is WorkDecisionKind => value === 'inventory.transfer-loss.v1' || WORK_DECISION_KINDS.some(kind => kind === value)
+export interface WorkDecisionRequest { readonly expectedVersion: string; readonly approve: boolean; readonly reason: string | null; readonly delegationId: string | null; readonly inventoryTransferLoss?: { readonly requestNumber: number; readonly decidedAtUtc: string }; readonly manufacturingPlanReapproval?: { readonly selectedLabelIds?: readonly string[] | null } | null }
 export interface WorkDecisionPreview {
   readonly companyId: string; readonly kind: WorkDecisionKind; readonly itemId: string; readonly documentLabel: string
   readonly sourceVersion: string; readonly pending: boolean; readonly approvalReasonRequired: boolean
+  readonly inventoryTransferLoss?: { readonly requestNumber: number; readonly requestedAtUtc: string }
   readonly manufacturingPlanReapproval?: { readonly parentRollIds: readonly string[] }
   readonly rejectionSupported?: boolean
   readonly references: readonly { readonly role: string; readonly label: string; readonly recordId: string | null; readonly link: string | null }[]
@@ -25,29 +28,46 @@ const text = (value: unknown): value is string => typeof value === 'string' && v
 const nullableText = (value: unknown) => value === null || typeof value === 'string'
 const same = (value: unknown, expected: string) => typeof value === 'string' && value.toLowerCase() === expected.toLowerCase()
 const path = (kind: WorkDecisionKind, id: string) => `/work/decisions/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`
+const requestNumber = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 2147483647
+/** Same user-local conversion and native UTC validator as TransferReceiptPanel; never called by retry. */
+export const workDecisionLocalUtc = (value: string): string | null => {
+  const date = value === '' ? null : new Date(value)
+  const utc = date !== null && Number.isFinite(date.getTime()) ? date.toISOString() : null
+  return transferDispatchUtc(utc) ? utc : null
+}
 const labelIds = (value: unknown): value is readonly string[] => Array.isArray(value) && value.length > 0
   && value.every(isBoundUuid) && new Set(value.map(id => id.toLowerCase())).size === value.length
 export const isWorkDecisionRequest = (value: unknown, kind?: WorkDecisionKind): value is WorkDecisionRequest => {
-  if (!record(value) || !hasExactKeys(value, ['expectedVersion', 'approve', 'reason', 'delegationId'], kind === 'manufacturing.plan.v1' ? ['manufacturingPlanReapproval'] : [])
-    || !text(value.expectedVersion) || kind === 'manufacturing.plan.v1' && !isPositiveInt64Text(value.expectedVersion) || typeof value.approve !== 'boolean' || !nullableText(value.reason)
+  if (!record(value) || !hasExactKeys(value, ['expectedVersion', 'approve', 'reason', 'delegationId'], kind === 'inventory.transfer-loss.v1' ? ['inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['manufacturingPlanReapproval'] : [])
+    || !text(value.expectedVersion) || (kind === 'manufacturing.plan.v1' || kind === 'inventory.transfer-loss.v1') && !isPositiveInt64Text(value.expectedVersion) || typeof value.approve !== 'boolean' || !nullableText(value.reason)
     || value.delegationId !== null && !isBoundUuid(value.delegationId)) return false
+  if (kind === 'inventory.transfer-loss.v1') {
+    const loss = value.inventoryTransferLoss
+    return record(loss) && hasExactKeys(loss, ['requestNumber', 'decidedAtUtc']) && requestNumber(loss.requestNumber)
+      && transferDispatchUtc(loss.decidedAtUtc) && typeof value.reason === 'string' && value.reason.trim().length > 0 && value.reason.length <= 500
+  }
   const selection = value.manufacturingPlanReapproval
   return selection === undefined || selection === null || value.approve && record(selection)
     && hasExactKeys(selection, [], ['selectedLabelIds'])
     && (selection.selectedLabelIds === undefined || selection.selectedLabelIds === null || labelIds(selection.selectedLabelIds))
 }
 export function decodeWorkDecisionPreview(value: unknown, company: string, kind: WorkDecisionKind, id: string): WorkDecisionPreview | null {
-  if (!record(value) || !hasExactKeys(value, ['companyId', 'kind', 'itemId', 'documentLabel', 'sourceVersion', 'pending', 'approvalReasonRequired', 'references', 'rules'], kind === 'manufacturing.plan.v1' ? ['rejectionSupported', 'manufacturingPlanReapproval'] : ['rejectionSupported'])
+  if (!record(value) || !hasExactKeys(value, ['companyId', 'kind', 'itemId', 'documentLabel', 'sourceVersion', 'pending', 'approvalReasonRequired', 'references', 'rules'], kind === 'inventory.transfer-loss.v1' ? ['rejectionSupported', 'inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['rejectionSupported', 'manufacturingPlanReapproval'] : ['rejectionSupported'])
     || !same(value.companyId, company) || value.kind !== kind || !same(value.itemId, id) || !text(value.documentLabel)
     || (kind === 'inventory.opening-cost.v1' ? value.sourceVersion !== `submission/${id}` : !isPositiveInt64Text(value.sourceVersion))
-    || typeof value.pending !== 'boolean' || value.approvalReasonRequired !== (kind === 'inventory.opening-cost.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1')
-    || (kind === 'manufacturing.plan.v1' ? typeof value.rejectionSupported !== 'boolean' : kind === 'purchasing.goods-receipt-batch.v1' ? value.rejectionSupported !== true : kind === 'purchasing.order.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? value.rejectionSupported !== false : value.rejectionSupported !== undefined && value.rejectionSupported !== true)
+    || typeof value.pending !== 'boolean' || value.approvalReasonRequired !== (kind === 'inventory.transfer-loss.v1' || kind === 'inventory.opening-cost.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1')
+    || (kind === 'manufacturing.plan.v1' ? typeof value.rejectionSupported !== 'boolean' : kind === 'purchasing.goods-receipt-batch.v1' || kind === 'inventory.transfer-loss.v1' ? value.rejectionSupported !== true : kind === 'purchasing.order.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? value.rejectionSupported !== false : value.rejectionSupported !== undefined && value.rejectionSupported !== true)
     || !Array.isArray(value.references) || value.references.length > 12 || !value.references.every(ref => record(ref)
       && hasExactKeys(ref, ['role', 'label', 'recordId', 'link']) && text(ref.role) && text(ref.label)
       && (ref.recordId === null || isBoundUuid(ref.recordId)) && nullableText(ref.link))
     || !Array.isArray(value.rules) || value.rules.length > 8 || !value.rules.every(rule => record(rule)
       && hasExactKeys(rule, ['ruleCode', 'threshold', 'actual', 'deviation', 'unit']) && text(rule.ruleCode)
       && [rule.threshold, rule.actual, rule.deviation, rule.unit].every(nullableText))) return null
+  if (kind === 'inventory.transfer-loss.v1') {
+    const loss = value.inventoryTransferLoss
+    if (!record(loss) || !hasExactKeys(loss, ['requestNumber', 'requestedAtUtc']) || !requestNumber(loss.requestNumber)
+      || !transferDispatchUtc(loss.requestedAtUtc)) return null
+  }
   if (kind === 'manufacturing.plan.v1') {
     const options = value.manufacturingPlanReapproval
     if (options !== undefined && options !== null && (!record(options) || !hasExactKeys(options, ['parentRollIds'])
