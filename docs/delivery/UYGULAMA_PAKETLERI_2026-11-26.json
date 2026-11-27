@@ -2088,11 +2088,12 @@
           "Finance latest full unit suite": "1986/1986 passed, 0 skipped at aa10817d3; credit profile fields and native credit Work fences included.",
           "Sales latest full unit suite": "2469/2469 passed, 0 skipped at 324b9da8c; native order/invoice/subcontract guards included.",
           "Purchasing latest full unit suite": "1296/1296 passed, 0 skipped at f1e7d5269; invoice variance and receipt purpose/native fences included.",
-          "Latest owner/Work composition": "157/157 passed, 0 skipped at 3a85da1790a839d0425cea45104f40ba5053c841; five Work decision host classes including typed reapproval. Synthetic composition, not actual HTTP/SQL/browser. Subsequent publication declaration check pending.",
-          "Prior failed runs": "83-run wrong-scope fixture corrected; later 93-run contained 91 pass and two failures (pure Sales declaration expectation corrected; normal HTTP authority pin remains NOT_ACCEPTED). New service fixture run1259 pass/1 failure correctly hit immutable history; fixture corrected without weakening native guards. Original logs retained.",
-          "Manufacturing latest full unit suite": "1560/1560 passed, 0 skipped at 3a85da1790a839d0425cea45104f40ba5053c841; typed first/reapproval native receipt proof. Subsequent publication/provider checks pending.",
+          "Latest owner/Work composition": "158/158 passed, 0 skipped at 255453f729163a83f30d6405546bfdb3f007b213; five owner host classes plus pure Manufacturing declaration. New SQL sources compiled, actual SQL/HTTP/browser NOT_RUN.",
+          "Prior failed runs": "83-run wrong-scope fixture corrected; later 93-run contained 91 pass and two failures (pure Sales declaration expectation corrected; normal HTTP authority pin remains NOT_ACCEPTED). New service fixture run1259 pass/1 failure correctly hit immutable history; fixture corrected without weakening native guards. Original logs retained. New SQL refusal fixture CS8619 at9bef fixed by separate await branches e5fd8ae07; no assertions changed. UI159 pass/1 failed test wrongly assumed no legacy route; corrected to exact existing fallback component/path and final160 passed.",
+          "Manufacturing latest full unit suite": "1560/1560 passed, 0 skipped at 9bef612e9; publication/provider source included. Manufacturing module tree unchanged through 255453f72.",
           "Deferred host pins": "Earlier 78-case run at 6920c495e had 76 pass/2 normal-host authority-pin failures; retained NOT_ACCEPTED. Pins deferred to train close, no gate waived.",
-          "Manufacturing Work UI": "128/128, 0 skipped in five files; tsc/scoped lint exit0 at b0272a054efd3de73c1c0f0a598bdc309f1435e1. Entire frontend tree matches integrated dcd641d6a. Earlier checkbox and TypeScript failures retained and corrected without weakening assertions."
+          "Manufacturing Work UI": "160/160, 0 skipped in 8 files at 0ec55126efd55506128845a0ea7e6d3a2b64683a; tsc/scoped lint exit0, one unchanged baseline lint warning. Whole frontend tree parity verified at root631da552f; includes plural native capability fix and staged typed-loss UI. Earlier128 synthetic cases did not prove backend capability parity; original failures retained.",
+          "Inventory latest full unit suite": "2266/2266 passed, 0 skipped at 9bef612e9; native loss owned boundary. Later 2c35e5842 typed purpose/provenance changes pending checks."
         },
         "reuse": [
           "existing FinanceCashAccountService commands and durable receipts",
@@ -2330,6 +2331,32 @@
             ],
             "new_permissions": [],
             "migration": null
+          },
+          {
+            "source_commit": "2c35e5842",
+            "source_commits": [
+              "e5fd8ae07",
+              "255453f72",
+              "fb1312d62",
+              "bff583b9c",
+              "631da552f",
+              "2c35e5842"
+            ],
+            "scope": "Native loss request/time typed contract and owner proof, exact command-receipt provenance through unchanged native command and staged UI. Manufacturing actual capability literal fixed; existing opening-cost shell catalog parity completed.",
+            "local_checks": {
+              "Inventory": "2266/2266 skip0 at9bef; later purpose increment pending",
+              "Manufacturing": "1560/1560 skip0 at9bef",
+              "API composition/declaration": "158/158 skip0 at255453f72; subsequent loss backend pending",
+              "Frontend": "160/160 skip0; tsc/lint exit0 at0ec55126e; one unchanged baseline warning; exact full-tree parity verified"
+            },
+            "sql": "Three new loss purpose sources inventoried, NOT_RUN. Earlier two Manufacturing/eight loss safety sources compiled at255453f72; actual SQL NOT_RUN.",
+            "limitations": [
+              "Purpose locator and retained history each bounded to1000; overflow explicit503, scale acceptance pending",
+              "Loss capability remains false and original item/native route retained until final backend/UI validation",
+              "Real SQL/HTTP/browser, pins/full CI/two independent K3 remain"
+            ],
+            "new_permissions": [],
+            "migration": null
           }
         ],
         "source_commits": [
@@ -2364,10 +2391,22 @@
           "f72ef515e",
           "94331601f",
           "dcd641d6a",
-          "874a78e54"
+          "874a78e54",
+          "e5fd8ae07",
+          "255453f72",
+          "fb1312d62",
+          "bff583b9c",
+          "631da552f",
+          "2c35e5842"
         ],
         "kind_count_scope": "14 connected source kinds; not 14 accepted flows. Manufacturing native initial approval/reapproval and explicit input-label Work contract/UI are connected. All 64-flow runtime acceptance remains open.",
-        "staged_kinds": []
+        "staged_kinds": [
+          {
+            "kind": "inventory.transfer-loss.v1",
+            "implementation_available": false,
+            "scope": "Native numbered-request purpose and immutable key receipt provenance, bounded owner history and typed user UTC UI candidate are source-connected. Capability false, native item link/legacy route retained; new backend checks pending."
+          }
+        ]
       }
     },
     {
