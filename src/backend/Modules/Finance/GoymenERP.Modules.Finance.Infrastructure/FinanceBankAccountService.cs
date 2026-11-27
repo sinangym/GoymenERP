@@ -321,7 +321,11 @@ public sealed class FinanceBankAccountService(
                 finally
                 {
                     try { await owned.DisposeAsync(); }
-                    finally { dbContext.ChangeTracker.Clear(); approvalAuditWriter.DiscardPending(); }
+                    finally
+                    {
+                        try { dbContext.ChangeTracker.Clear(); }
+                        finally { approvalAuditWriter.DiscardPending(); }
+                    }
                 }
                 if (error is BankApprovalRefusal refused) return refused.Result;
                 if (error is DbUpdateException update && (update is DbUpdateConcurrencyException
