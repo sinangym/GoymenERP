@@ -176,8 +176,8 @@
           "path": "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchasingService.cs",
           "line": 263,
           "anchor": "public async Task<PurchaseOrderResponse> CreateOrderAsync(CreatePurchaseOrderRequest request, PurchasingCommandMetadata metadata,",
-          "sha256": "d52ca29ce9d2eeaf17751a2085dec14719d5133b788db5e4fe36b66fb3c35558",
-          "git_blob": "06cefb000de10082dca0349a0556ac9e3bc5c266"
+          "sha256": "31b1859e62d7d64294d585f0a73f00d1db97db7c0ed3c1f20fc6c486379f8923",
+          "git_blob": "4bb3f182f289e0d9a103ad5dac234f4567be4239"
         }
       ],
       "tests": [
@@ -185,11 +185,11 @@
           "path": "tests/GoymenERP.Purchasing.UnitTests/PurchasingServiceTests.cs",
           "line": 36,
           "anchor": "public async Task A_request_and_an_order_bound_to_it_are_stored_once_with_the_owners_product_version_and_the_fences_measured()",
-          "sha256": "161dee5e879f9529adddcbd0351aba0f4153559b9515e051256b17ddee697b7c",
-          "git_blob": "9882904394d09ee84a9c0cd17f401a4a1188640f"
+          "sha256": "a1bc3d9050e2a44dc3774f299854f79a4cfca3e9ddb40d302a3f8829c31bfc3c",
+          "git_blob": "bfe2f3194b166e753401085169fd1a2047541a97"
         }
       ],
-      "source_commit": "25835fe7ab8f0983b4a01554ee6b43f958883cf7",
+      "source_commit": "43d4e5063b3e98eb367c26cb43bed42947e2b254",
       "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
@@ -201,7 +201,7 @@
         "Eski test sonucu yeni kullanım kabulü değildir"
       ],
       "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
-      "adaptations": "Mevcut satır desteği karma mal/hizmet belgesinin tamamlandığı anlamına gelmez; ALS-D129.",
+      "adaptations": "Mevcut çok satır oluşturma ve native onay kullanılır. WP8 taze yetki/delegasyon fence farkı 68ca412f7 ile uygulanır; karma mal/hizmet kabulü ve gerçek SQL ayrı kabul gerektirir (ALS-D129).",
       "limitations": [
         "Mevcut satır desteği karma mal/hizmet belgesinin tamamlandığı anlamına gelmez; ALS-D129.",
         "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
