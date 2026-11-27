@@ -775,18 +775,23 @@
       "approver_proposal": "SATM, OPM, GM",
       "duration_cell": "2 iş günü",
       "decision_note": "ÖNERİ.",
-      "candidate_inbox_sources": [],
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/WorkInbox/LogisticsCustomerReturnWorkInboxSourceV1.cs"
+      ],
       "candidate_tests": [
         "tests/GoymenERP.Api.IntegrationTests/LogisticsPermissionAndShellRegistrationTests.cs:41",
         "tests/GoymenERP.Logistics.UnitTests/LogisticsCustomerReturnWorkInboxSourceTests.cs:102",
-        "tests/GoymenERP.Logistics.UnitTests/LogisticsCustomerReturnWorkInboxSourceTests.cs:25"
+        "tests/GoymenERP.Logistics.UnitTests/LogisticsCustomerReturnWorkInboxSourceTests.cs:25",
+        "tests/GoymenERP.Api.IntegrationTests/WorkLogisticsCustomerReturnDecisionHostTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsCustomerReturnSqlServerRelationalAcceptanceTests.PieceWeighing.cs",
+        "src/frontend/goymen-erp-web/src/work/WorkDecisionPage.test.tsx"
       ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Native owner/Work paired source implemented under LOJ-D22 with readonly actual weighing proof and original receipt replay. Source review/local tests are distinct from real SQL/HTTP/browser/CI/K3; runtime acceptance remains NOT_RUN."
     },
     {
       "flow": 28,

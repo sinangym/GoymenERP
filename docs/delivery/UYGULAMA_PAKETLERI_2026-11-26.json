@@ -1496,7 +1496,8 @@
       "source_findings": [
         "Mevcut V2 completion read portu ve teslim ekranı var; iki yönün tam kullanıcı zinciri ayrıca kabul bekler.",
         "Targeted native customer-return inspection found Piece quantity passed to Inventory as QuantityKg without unit/piece provenance (LogisticsCustomerReturnService -> runtime.Stage). Existing Piece/unit approval is not accepted; a native fail-closed guard and real owner kg/piece binding are required, with actual movement/replay negative proof. Do not compute a replacement conversion in Work/UI.",
-        "LOJ-D22 is directly approved: actual returned pieces and measured netkg with weighing proof, theoretical weight comparison only. Missing weighing remains Pending with no final stock entry; current native guard prevents Piece becoming kilograms. Existing weighing/unit ports must be reused; actual binding acceptance pending."
+        "LOJ-D22 is directly approved: actual returned pieces and measured netkg with weighing proof, theoretical weight comparison only. Missing weighing remains Pending with no final stock entry; current native guard prevents Piece becoming kilograms. Existing weighing/unit ports must be reused; actual binding acceptance pending.",
+        "LOJ-D22 native source5f4/947/9e69 and generatedEF56fc integrated as a956/9fda/003/ea9. Seven immutable nullable weighing facts, parent CAS and existing Inventory kg/piece mapping implemented. The old persistence allowlist/state guard was fixed without weakening immutable source/decision fields;13 negative guard cases and5 SQL source facts added. Initial API compile passed, final generated-tree validation running; actual SQL/native UI/browser pending."
       ],
       "decisions": [
         "URT-D15",
@@ -1522,7 +1523,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Implement approved LOJ-D22 native weighing/piece source binding using existing owner ports and add real SQL/replay/negative acceptance; no invented conversion or tolerance.",
+      "next_action": "Verify implemented LOJ-D22 native weighing/piece binding, migration and paired native/Work UI; then complete genuine SQL/replay/rollback and full two-direction subcontract acceptance.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -1533,7 +1534,60 @@
         "tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommandServiceTests.SubcontractCompletionV2.cs",
         "tests/GoymenERP.Purchasing.UnitTests/PurchaseIncomingInvoiceWorkflowTests.cs"
       ],
-      "change_files": []
+      "change_files": [
+        "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Work/WorkApprovalDecisionSourceV1.cs",
+        "src/backend/GoymenERP.Api/Endpoints/LogisticsCustomerReturnEndpoints.cs",
+        "src/backend/GoymenERP.Api/LogisticsRuntime/LogisticsCustomerReturnRuntime.cs",
+        "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.LogisticsCustomerReturn.cs",
+        "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Application/Contracts/LogisticsCustomerReturnContractsV1.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Application/LogisticsCustomerReturnService.Weighing.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Application/LogisticsCustomerReturnService.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Domain/Returns/CustomerReturn.Weighing.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Domain/Returns/CustomerReturn.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/CustomerReturnRows.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsCustomerReturnStore.Weighing.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsCustomerReturnStore.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsDbContext.CustomerReturnGuards.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsDbContext.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261127091944_AddCustomerReturnWeighing.Designer.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261127091944_AddCustomerReturnWeighing.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/LogisticsDbContextModelSnapshot.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/WorkInbox/LogisticsCustomerReturnWorkInboxSourceV1.Decision.cs",
+        "src/backend/Modules/Logistics/README.md",
+        "tests/GoymenERP.Api.IntegrationTests/InventorySqlServerRelationalAcceptanceTests.CustomerReturnPieceWeighing.cs",
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsCustomerReturnPersistenceGuardTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsCustomerReturnSqlServerRelationalAcceptanceTests.PieceWeighing.cs",
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsCustomerReturnSqlServerRelationalAcceptanceTests.WeighingGuards.cs",
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsCustomerReturnSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkLogisticsCustomerReturnDecisionHostTests.cs",
+        "tests/GoymenERP.Logistics.UnitTests/LogisticsCustomerReturnServiceTests.Weighing.cs",
+        "tests/GoymenERP.Logistics.UnitTests/LogisticsCustomerReturnServiceTests.cs",
+        "tests/GoymenERP.Logistics.UnitTests/LogisticsCustomerReturnWeighingModelTests.cs",
+        "tests/GoymenERP.Logistics.UnitTests/LogisticsCustomerReturnWorkInboxSourceTests.Decision.cs",
+        "tests/GoymenERP.Logistics.UnitTests/LogisticsPersistenceModelTests.cs"
+      ],
+      "execution": {
+        "source_commits": [
+          "a956fc2fc",
+          "9fda9c514",
+          "003bcd16e",
+          "ea9d10803",
+          "8be2c6e0c"
+        ],
+        "reuse": [
+          "existing WeighbridgeCalculator.Net",
+          "existing native CustomerReturn owned transaction/receipt/audit/fresh fence",
+          "existing Inventory customer-return participant and actual shipment trace"
+        ],
+        "migration": "20261127091944_AddCustomerReturnWeighing;7nullable fields,no historical rewrite;filtered company/weighing unique;Downfirst52353 before destructive operations.52352 reserved unused. Designer/snapshot normalized model body ordinal equal.",
+        "local_checks": "9e690 API compile0errors0warnings196.10s; generated56fc API compile0errors0warnings188.41s; EF10.0.8 has-pending-model-changes EXIT0 No changes. Scoped tests RUNNING, actual SQL NOT_RUN.",
+        "sql": "4Logistics+1Inventory actual SQL facts inventoried/NOT_RUN. Inventory mapping test has controlled Logistics delivery/weighing source, not full cross-owner E2E.",
+        "browser": "NOT_RUN",
+        "hosted_ci": "NOT_RUN",
+        "independent_review": "Bounded root/nonauthor source reviews, no full K3 acceptance.",
+        "new_permissions": []
+      }
     },
     {
       "id": "W3-LOJISTIK/EXIT-EVIDENCE",
@@ -2017,7 +2071,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Complete staged customer-return paired UI and LOJ-D22 native measured kg/piece binding; verify latest publication and remaining owner adapters.25 paired source kinds do not close64-flow actual acceptance.",
+      "next_action": "Verify LOJ-D22 measured return paired source and B2 source-bound summary, complete native weighing-entry UI and remaining owner adapters.26 paired source kinds do not close64-flow actual acceptance.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2038,6 +2092,10 @@
         "src/backend/GoymenERP.Api/Endpoints/WorkDecisionEndpoints.cs",
         "src/backend/GoymenERP.Api/Endpoints/WorkDelegationEndpoints.cs",
         "src/backend/GoymenERP.Api/Program.cs",
+        "src/backend/GoymenERP.Api/WorkRuntime/NativeApprovalWorkInboxSourceV1.cs",
+        "src/backend/GoymenERP.Api/WorkRuntime/SalesOrderDraftPendingApprovalAdapterV1.cs",
+        "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.InventoryTransferOverage.cs",
+        "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.LogisticsPlanExcess.cs",
         "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs",
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCashAccountService.cs",
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceTreasuryTransaction.cs",
@@ -2045,41 +2103,10 @@
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceCashAccountWorkInboxSourcesV1.cs",
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Shell/InventoryShellCapabilityProvider.cs",
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/WorkInbox/InventoryOpeningCostWorkInboxSourceV1.cs",
-        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Shell/WorkShellCapabilityProvider.cs",
-        "src/frontend/goymen-erp-web/src/finance/capabilities.ts",
-        "src/frontend/goymen-erp-web/src/shell/AppShell.navigation.test.tsx",
-        "src/frontend/goymen-erp-web/src/shell/AppShell.tsx",
-        "src/frontend/goymen-erp-web/src/shell/capabilities.ts",
-        "src/frontend/goymen-erp-web/src/shell/navigation.ts",
-        "src/frontend/goymen-erp-web/src/work/WorkDecisionPage.test.tsx",
-        "src/frontend/goymen-erp-web/src/work/WorkDecisionPage.tsx",
-        "src/frontend/goymen-erp-web/src/work/WorkManagementPage.tsx",
-        "src/frontend/goymen-erp-web/src/work/WorkQueuePage.tsx",
-        "src/frontend/goymen-erp-web/src/work/collaborationApi.ts",
-        "src/frontend/goymen-erp-web/src/work/inboxKinds/finance.ts",
-        "src/frontend/goymen-erp-web/src/work/inboxKinds/financeAccounting.test.ts",
-        "src/frontend/goymen-erp-web/src/work/inboxKinds/inventory.ts",
-        "src/frontend/goymen-erp-web/src/work/workDecisionApi.test.ts",
-        "src/frontend/goymen-erp-web/src/work/workDecisionApi.ts",
-        "src/frontend/goymen-erp-web/src/work/workDecisionText.ts",
-        "src/frontend/goymen-erp-web/src/work/workDelegationApi.ts",
-        "src/frontend/goymen-erp-web/src/work/workManagementText.ts",
-        "src/frontend/goymen-erp-web/src/work/workRoutes.tsx",
-        "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.WorkDecisions.cs",
-        "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.cs",
-        "tests/GoymenERP.Api.IntegrationTests/WorkDecisionHostTests.cs",
-        "tests/GoymenERP.Api.IntegrationTests/WorkShellCapabilityProviderTests.cs",
-        "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs",
-        "tests/GoymenERP.Inventory.UnitTests/InventoryOpeningCostWorkInboxSourceTests.cs",
-        "tests/GoymenERP.Inventory.UnitTests/InventoryShellCapabilityProviderTests.cs",
-        "tools/relational_inventory/finance.txt",
-        "src/frontend/goymen-erp-web/src/settings/workApprovalRulesApi.ts",
-        "src/frontend/goymen-erp-web/src/settings/workApprovalRulesContract.ts",
-        "src/frontend/goymen-erp-web/src/work/WorkApprovalRuleEditor.tsx",
-        "src/frontend/goymen-erp-web/src/work/WorkApprovalRuleEditor.test.tsx",
-        "src/frontend/goymen-erp-web/src/work/WorkApprovalRuleEditorText.ts",
-        "src/backend/GoymenERP.Api/WorkRuntime/NativeApprovalWorkInboxSourceV1.cs",
-        "src/backend/GoymenERP.Api/WorkRuntime/SalesOrderDraftPendingApprovalAdapterV1.cs",
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/WorkInbox/InventoryTransferOverageWorkInboxSourceV1.Decision.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Shell/LogisticsShellCapabilityProvider.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/WorkInbox/LogisticsCustomerReturnWorkInboxSourceV1.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/WorkInbox/LogisticsPlanExcessWorkInboxSourceV1.cs",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.WorkDecisions.cs",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.cs",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/SalesModuleExtensions.cs",
@@ -2089,27 +2116,64 @@
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesWorkInboxApprovalStoreV1.Decisions.cs",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesWorkInboxApprovalStoreV1.cs",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesWorkInboxSourceBaseV1.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Shell/WorkShellCapabilityProvider.cs",
+        "src/frontend/goymen-erp-web/src/finance/capabilities.ts",
         "src/frontend/goymen-erp-web/src/sales/capabilities.ts",
+        "src/frontend/goymen-erp-web/src/settings/workApprovalRulesApi.ts",
+        "src/frontend/goymen-erp-web/src/settings/workApprovalRulesContract.ts",
+        "src/frontend/goymen-erp-web/src/shell/AppShell.navigation.test.tsx",
+        "src/frontend/goymen-erp-web/src/shell/AppShell.tsx",
+        "src/frontend/goymen-erp-web/src/shell/capabilities.ts",
+        "src/frontend/goymen-erp-web/src/shell/logisticsMountDrift.test.ts",
+        "src/frontend/goymen-erp-web/src/shell/navigation.ts",
+        "src/frontend/goymen-erp-web/src/work/WorkApprovalRuleEditor.test.tsx",
+        "src/frontend/goymen-erp-web/src/work/WorkApprovalRuleEditor.tsx",
+        "src/frontend/goymen-erp-web/src/work/WorkApprovalRuleEditorText.ts",
+        "src/frontend/goymen-erp-web/src/work/WorkDecisionPage.test.tsx",
+        "src/frontend/goymen-erp-web/src/work/WorkDecisionPage.tsx",
+        "src/frontend/goymen-erp-web/src/work/WorkInbox.test.tsx",
+        "src/frontend/goymen-erp-web/src/work/WorkManagementPage.tsx",
+        "src/frontend/goymen-erp-web/src/work/WorkQueuePage.tsx",
         "src/frontend/goymen-erp-web/src/work/WorkSalesDecisionPage.test.tsx",
+        "src/frontend/goymen-erp-web/src/work/collaborationApi.ts",
+        "src/frontend/goymen-erp-web/src/work/inboxKinds/finance.ts",
+        "src/frontend/goymen-erp-web/src/work/inboxKinds/financeAccounting.test.ts",
+        "src/frontend/goymen-erp-web/src/work/inboxKinds/inventory.ts",
+        "src/frontend/goymen-erp-web/src/work/inboxKinds/logistics.ts",
         "src/frontend/goymen-erp-web/src/work/inboxKinds/sales.test.ts",
         "src/frontend/goymen-erp-web/src/work/inboxKinds/sales.ts",
+        "src/frontend/goymen-erp-web/src/work/inboxKinds/wp6InboxKinds.test.ts",
+        "src/frontend/goymen-erp-web/src/work/workDecisionApi.test.ts",
+        "src/frontend/goymen-erp-web/src/work/workDecisionApi.ts",
+        "src/frontend/goymen-erp-web/src/work/workDecisionText.ts",
+        "src/frontend/goymen-erp-web/src/work/workDelegationApi.ts",
+        "src/frontend/goymen-erp-web/src/work/workManagementText.ts",
+        "src/frontend/goymen-erp-web/src/work/workRoutes.tsx",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.WorkDecisions.cs",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/InventoryTransferOverageWorkPurposeSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/LogisticsInstructionSqlServerRelationalAcceptanceTests.WorkPlanExcess.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkDecisionHostTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInventoryTransferOverageDecisionHostTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkLogisticsPlanExcessDecisionHostTests.cs",
         "tests/GoymenERP.Api.IntegrationTests/WorkSalesDecisionHostTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkShellCapabilityProviderTests.cs",
+        "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryOpeningCostWorkInboxSourceTests.cs",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryShellCapabilityProviderTests.cs",
+        "tests/GoymenERP.Inventory.UnitTests/InventoryTransferOverageWorkInboxSourceTests.Decision.cs",
+        "tests/GoymenERP.Logistics.UnitTests/LogisticsCustomerReturnPurposeCapabilityTests.cs",
+        "tests/GoymenERP.Logistics.UnitTests/LogisticsCustomerReturnWorkInboxSourceTests.Decision.cs",
+        "tests/GoymenERP.Logistics.UnitTests/LogisticsCustomerReturnWorkInboxSourceTests.cs",
+        "tests/GoymenERP.Logistics.UnitTests/LogisticsPersistenceModelTests.cs",
+        "tests/GoymenERP.Logistics.UnitTests/LogisticsPlanExcessWorkInboxSourceTests.cs",
         "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.WorkDecisions.cs",
         "tests/GoymenERP.Sales.UnitTests/SalesDraftServiceTests.cs",
         "tests/GoymenERP.Sales.UnitTests/SalesInvoiceWorkDecisionSourceV1Tests.cs",
         "tests/GoymenERP.Sales.UnitTests/SalesOrderWorkDecisionReadV1Tests.cs",
         "tests/GoymenERP.Sales.UnitTests/SalesRemainingApprovalWorkInboxSourcesV1Tests.cs",
         "tests/GoymenERP.Sales.UnitTests/SalesShellCapabilityProviderContractTests.cs",
-        "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.LogisticsPlanExcess.cs",
-        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Shell/LogisticsShellCapabilityProvider.cs",
-        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/WorkInbox/LogisticsPlanExcessWorkInboxSourceV1.cs",
-        "tests/GoymenERP.Api.IntegrationTests/WorkLogisticsPlanExcessDecisionHostTests.cs",
-        "tests/GoymenERP.Api.IntegrationTests/LogisticsInstructionSqlServerRelationalAcceptanceTests.WorkPlanExcess.cs",
-        "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.InventoryTransferOverage.cs",
-        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/WorkInbox/InventoryTransferOverageWorkInboxSourceV1.Decision.cs",
-        "tests/GoymenERP.Api.IntegrationTests/WorkInventoryTransferOverageDecisionHostTests.cs",
-        "tests/GoymenERP.Api.IntegrationTests/InventoryTransferOverageWorkPurposeSqlServerRelationalAcceptanceTests.cs",
-        "tests/GoymenERP.Inventory.UnitTests/InventoryTransferOverageWorkInboxSourceTests.Decision.cs"
+        "tools/relational_inventory/finance.txt"
       ],
       "ownership_lease": {
         "branch": "codex/erp-completion-20261126",
@@ -2146,7 +2210,8 @@
           "inventory.stock-count.v1",
           "finance.bank-account.v1",
           "inventory.stock-scrap.v1",
-          "logistics.dispatch-note.v1"
+          "logistics.dispatch-note.v1",
+          "logistics.customer-return.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -2862,6 +2927,24 @@
               "CustomerReturn paired UI and real measured Piece binding",
               "SQL/HTTP/browser/pins/fullCI/twoK3"
             ]
+          },
+          {
+            "source_commits": [
+              "47d4773a9",
+              "7fa0da2d7",
+              "a956fc2fc",
+              "9fda9c514",
+              "003bcd16e",
+              "ea9d10803",
+              "9a6190efb",
+              "fac8445dd"
+            ],
+            "scope": "CustomerReturn paired Work purpose is source-published; LOJ-D22 native actual weighing/pieces and readonly7field proof bind Pending1->weighed2->terminal3, immutable original receipts, no UI kg conversion. Existing weighbridge/Inventory owner participants reused. Separate native weighing-entry control is still staged pending its UI. B2 optional sales-only summary mounts after evidence, uses actual owner version and answer receipt, and never blocks Work.",
+            "local_checks": "Initial native9e690 API build0errors0warnings196.10s; final generated56fc validation RUNNING. New a43/B2 source deltas NOT_RUN. Historical033 API389/389 and frozen2e9 UI275/275 scopes are recorded underC9; they do not cover these new changes.",
+            "remaining": [
+              "Native weighing entry paired UI and final scoped validation",
+              "SQL/HTTP/browser/pins/fullCI/twoK3"
+            ]
           }
         ],
         "source_commits": [
@@ -2976,12 +3059,13 @@
           "22eb68d51",
           "7db6ec69e",
           "b70ad2cb6",
-          "4cb71878b"
+          "4cb71878b",
+          "47d4773a9",
+          "7fa0da2d7",
+          "9a6190efb"
         ],
-        "kind_count_scope": "25 paired source kinds +1 staged customer-return backend; not26 accepted flows. All64 actual SQL/HTTP/browser/CI/K3 acceptance remains open.",
-        "staged_kinds": [
-          "logistics.customer-return.v1"
-        ]
+        "kind_count_scope": "26 paired source kinds; not26 accepted flows. All64 actual SQL/HTTP/browser/CI/K3 acceptance remains open.",
+        "staged_kinds": []
       }
     },
     {
@@ -3210,9 +3294,12 @@
         "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs"
       ],
       "change_files": [
+        "src/frontend/goymen-erp-web/src/work/WorkDecisionPage.test.tsx",
         "src/frontend/goymen-erp-web/src/work/WorkDecisionPage.tsx",
+        "src/frontend/goymen-erp-web/src/work/WorkSalesSummary.test.tsx",
+        "src/frontend/goymen-erp-web/src/work/WorkSalesSummary.tsx",
         "src/frontend/goymen-erp-web/src/work/workDecisionText.ts",
-        "src/frontend/goymen-erp-web/src/work/WorkDecisionPage.test.tsx"
+        "src/frontend/goymen-erp-web/src/work/workSalesSummaryText.ts"
       ],
       "ownership_lease": {
         "branch": "codex/ai-answer-receipt-20261127",
@@ -3256,6 +3343,20 @@
             "Six genuine SQL/rollback/restart/FK/Down cases and caller-preservation evidence",
             "B2 actual AI summary/risk UI and C9 accepted/corrected/rejected/reversed events",
             "Final SQL/browser/pins/fullCI/twoK3"
+          ]
+        },
+        "source_bound_summary_increment": {
+          "source_commits": [
+            "a57404e8a",
+            "2014cdf77",
+            "c880b9229",
+            "9a6190efb"
+          ],
+          "scope": "Optional source-bound sales order summary reuses Ask/capabilities/strict owner tool content and actual AnswerId feedback; exact company/draft/version/citation digest proof, separate read authority, explicit human request.29component+10mount test cases authored. No recommendation/risk score/automatic Ask. Other B2 families and refusal/risk semantics remain open.",
+          "local_checks": "NOT_RUN for this source delta; no old UI/API proof transferred.",
+          "remaining": [
+            "Scoped Node/tsc/lint",
+            "Real SQL/runtime/browser/CI/K3 and other B2 families"
           ]
         }
       }
@@ -3902,7 +4003,38 @@
         "tests/GoymenERP.Api.IntegrationTests/AiKnowledgeApprovalTests.cs",
         "tests/GoymenERP.Work.UnitTests/WorkCollaborationServiceTests.Wp9.cs"
       ],
-      "change_files": [],
+      "change_files": [
+        "src/backend/GoymenERP.Api/Ai/AiRuntimeServiceCollectionExtensions.cs",
+        "src/backend/GoymenERP.Api/Ai/Feedback/AiFeedbackAcceptanceCountSourceV1.cs",
+        "src/backend/GoymenERP.Api/Ai/Feedback/AiFeedbackServiceV1.cs",
+        "src/backend/GoymenERP.Api/Endpoints/AiEndpoints.Feedback.cs",
+        "src/backend/GoymenERP.Api/Endpoints/AiEndpoints.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Domain/AiFeedbackPersistenceV1.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/AiFeedbackPersistenceV1.Counts.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/AiFeedbackPersistenceV1.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/AiKnowledgeModuleExtensions.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/Persistence/AiFeedbackRows.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/Persistence/AiKnowledgeDbContext.Feedback.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/Persistence/AiKnowledgeDbContext.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/Persistence/Migrations/20261127084023_AddAiAnswerFeedback.Designer.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/Persistence/Migrations/20261127084023_AddAiAnswerFeedback.cs",
+        "src/backend/Modules/AiKnowledge/GoymenERP.Modules.AiKnowledge.Infrastructure/Persistence/Migrations/AiKnowledgeDbContextModelSnapshot.cs",
+        "src/frontend/goymen-erp-web/src/ai/AiFeedbackPanel.test.tsx",
+        "src/frontend/goymen-erp-web/src/ai/AiFeedbackPanel.tsx",
+        "src/frontend/goymen-erp-web/src/ai/AiPanel.test.tsx",
+        "src/frontend/goymen-erp-web/src/ai/AiPanel.tsx",
+        "src/frontend/goymen-erp-web/src/ai/aiFeedbackApi.test.ts",
+        "src/frontend/goymen-erp-web/src/ai/aiFeedbackApi.ts",
+        "src/frontend/goymen-erp-web/src/ai/aiFeedbackContract.ts",
+        "src/frontend/goymen-erp-web/src/ai/aiFeedbackText.ts",
+        "tests/GoymenERP.Api.IntegrationTests/AiAnswerReceiptTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiFeedbackEndpointContractTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiFeedbackTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiKnowledgeSqlServerRelationalAcceptanceTests.AnswerReceipts.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiKnowledgeSqlServerRelationalAcceptanceTests.Feedback.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiKnowledgeSqlServerRelationalAcceptanceTests.FeedbackCleanup.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiKnowledgeSqlServerRelationalAcceptanceTests.FeedbackMigration.cs"
+      ],
       "execution": {
         "source_commits": [
           "5963901b9410ae80f0acb05fd7c40004cbe050c3",
@@ -3918,8 +4050,8 @@
           "api_build": "PASS0errors0warnings204.5s",
           "ef_generation": "PASS EF10.0.8; root Designer/snapshot body equality checked",
           "selected_tests": "41/41 PASS0skip (Feedback28+Receipt10+Ledger3); integration assembly compiled",
-          "combined_root_runtime": "RUNNING at03328; not acceptance",
-          "frontend": "NOT_RUN for C9 UI"
+          "combined_root_runtime": "03328b9ba: Release API build0errors0warnings; integration assembly compiled;350/350 selected non-SQL tests and39/39 Logistics tests PASS0skip. Includes prior41cases, not an additional total. Later LOJ-D22/provider/UI changes are not covered.",
+          "frontend": "frozen2e9: workDecisionApi275/275PASS0skip and fulltsc exit0; e7 WorkInbox38+AiFeedbackPanel12=50/50PASS0skip. Earlier925 suite882PASS/1FAIL retained; fixture fix e7 preserved assertions. Scoped31pathlint exit0/2warnings. Current LOJ-D22/B2 delta NOT_RUN."
         },
         "reuse": [
           "AiKnowledge existing receipt/context/filter/EF",
