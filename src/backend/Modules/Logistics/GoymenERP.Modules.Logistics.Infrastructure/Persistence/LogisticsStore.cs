@@ -24,8 +24,9 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 /// (no owner source yet): a blocked line is restored with one block at the end, and a line that was
 /// blocked and unblocked cannot be represented — LOG-5 stores the block source's events.
 /// </summary>
-public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents, TimeProvider timeProvider)
-    : ILogisticsInstructionStore, ILogisticsAggregateLoadStoreV1, ILogisticsShipmentRiskGateStoreV1
+public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents, TimeProvider timeProvider,
+    IAuditTransactionWriterV1? dispatchNoteAuditWriter = null)
+    : ILogisticsInstructionStore, ILogisticsAggregateLoadStoreV1, ILogisticsShipmentRiskGateStoreV1, ILogisticsDispatchNoteApprovalStoreV1
 {
     private const string EntityType = "Logistics.LoadingInstruction";
     private const int ActorMaximumLength = 128;
@@ -214,6 +215,7 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
         RequireCommand(commandName);
         RequireResolvedCompany();
         var attempt = await FindAttemptAsync(commandName, IdempotencyKeyHash(envelope.IdempotencyKey), cancellationToken);
+        await DispatchApprovalFenceAsync(cancellationToken);
         if (attempt is null)
         {
             return null;
@@ -326,6 +328,7 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         var actorId = envelope.ActorId.Trim();
         var attempt = await FindAttemptAsync(commandName, keyHash, cancellationToken);
+        await DispatchApprovalFenceAsync(cancellationToken);
         if (attempt is not null)
         {
             RequireSameContent(attempt, actorId, requestHash);
@@ -376,6 +379,7 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
             await RequireAggregateLoadLimitAsync(companyId, row.EffectiveOn, instruction, aggregateLoadLimit, cancellationToken);
         }
         var versionBefore = instruction.Version;
+        await DispatchApprovalFenceAsync(cancellationToken);
         var before = MutationSnapshot(instruction, aggregateLoadLimit);
         var sharesBefore = instruction.Shares.Count;
         var weighingBefore = instruction.Weighing;
@@ -582,7 +586,17 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
         }
         foreach (var gate in subcontractGates ?? []) AddShipmentRiskGateRows(companyId, instruction.Id, gate, envelope, actorId, now);
 
-        dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, instruction.Id, now));
+        var mutationAttempt = Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, instruction.Id, now);
+        if (dispatchApprovalFence is not null)
+        {
+            if (commandName != LogisticsCommands.ApproveDispatchNoteV1 || changedNote is not { Status: DispatchNoteStatus.Approved }
+                || changedNote.ApprovedBy != actorId || changedNote.ApprovedAtUtc is not { } approvedAt || instruction.Version != versionBefore + 1)
+                throw new InvalidOperationException("Dispatch approval receipt must name the just-saved transition.");
+            mutationAttempt.ResultJson = JsonSerializer.Serialize(new LogisticsDispatchNoteApprovalReceiptV1(companyId, commandName,
+                instruction.Id, changedNote.DispatchNoteId, versionBefore, instruction.Version, actorId, approvedAt,
+                envelope.CorrelationId.Trim(), requestHash), Json);
+        }
+        dbContext.Attempts.Add(mutationAttempt);
         // LOJ-D17 (2): an unload difference is a warning written to the audit record, never a refusal.
         var reason = unloadAdded && instruction.UnloadWeighing is { DifferenceWarning: true } && !string.IsNullOrWhiteSpace(audit.WarningReason)
             ? audit.WarningReason
@@ -1482,7 +1496,9 @@ public sealed partial class LogisticsStore(LogisticsDbContext dbContext, ICompan
     {
         try
         {
+            await FlushDispatchApprovalAuditAsync(cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
+            await DispatchApprovalFenceAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException exception)
         {

@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using GoymenERP.Modules.Logistics.Domain.Loading;
 
 namespace GoymenERP.Modules.Logistics.Application.Contracts;
@@ -86,7 +87,11 @@ public sealed class LogisticsStoreException(string code, string message, Excepti
 public sealed record StoredLoadingInstruction(
     LoadingInstruction Instruction, DateOnly EffectiveOn, IReadOnlyDictionary<Guid, string>? ShareRecordedBy = null);
 
-public sealed record LogisticsStoreResult(StoredLoadingInstruction Instruction, LogisticsWriteOutcome Outcome, string OriginalCorrelationId);
+public sealed record LogisticsStoreResult(StoredLoadingInstruction Instruction, LogisticsWriteOutcome Outcome, string OriginalCorrelationId,
+    [property: JsonIgnore] LogisticsDispatchNoteApprovalReceiptV1? DispatchNoteApprovalReceipt = null)
+{
+    [JsonIgnore] public bool CommandReceiptProven => DispatchNoteApprovalReceipt is not null;
+}
 
 /// <summary>
 /// A Sales-resolved OPEN-004 ceiling prepared for the Logistics store. The maximum is already in the
@@ -131,7 +136,11 @@ public sealed record LogisticsOrderLineAggregateLoadLimit(
 public sealed record LogisticsTerminalRefusal(int Status, string Code, IReadOnlyList<LogisticsFieldError> Errors, string? Detail = null);
 
 /// <summary>What the key holds: the stored instruction or the recorded refusal, never both.</summary>
-public sealed record LogisticsReplay(StoredLoadingInstruction? Instruction, LogisticsTerminalRefusal? Refusal, string OriginalCorrelationId);
+public sealed record LogisticsReplay(StoredLoadingInstruction? Instruction, LogisticsTerminalRefusal? Refusal, string OriginalCorrelationId,
+    [property: JsonIgnore] LogisticsDispatchNoteApprovalReceiptV1? DispatchNoteApprovalReceipt = null)
+{
+    [JsonIgnore] public bool CommandReceiptProven => DispatchNoteApprovalReceipt is not null;
+}
 
 public sealed record LogisticsInstructionPage(IReadOnlyList<StoredLoadingInstruction> Items, string? NextCursor);
 

@@ -917,7 +917,7 @@ public sealed partial class LogisticsInstructionService(
                 originalCorrelationId: replay.OriginalCorrelationId, detail: refusal.Detail);
         }
 
-        return Response(replay.Instruction!, isReplay: true, replay.OriginalCorrelationId);
+        return Response(replay.Instruction!, isReplay: true, replay.OriginalCorrelationId, replay.DispatchNoteApprovalReceipt);
     }
 
     /// <summary>
@@ -1043,8 +1043,9 @@ public sealed partial class LogisticsInstructionService(
 
     // ---- mapping --------------------------------------------------------------------------------
 
-    private static LoadingInstructionResponse Response(StoredLoadingInstruction stored, bool isReplay, string originalCorrelationId) =>
-        new(Detail(stored), isReplay, originalCorrelationId);
+    private static LoadingInstructionResponse Response(StoredLoadingInstruction stored, bool isReplay, string originalCorrelationId,
+        LogisticsDispatchNoteApprovalReceiptV1? dispatchNoteApprovalReceipt = null) =>
+        new(Detail(stored), isReplay, originalCorrelationId, dispatchNoteApprovalReceipt);
 
     private static string Text(Quantity quantity) => quantity.Value.ToString(CultureInfo.InvariantCulture);
 

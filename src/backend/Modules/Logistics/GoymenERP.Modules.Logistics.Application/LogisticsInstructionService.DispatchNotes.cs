@@ -54,12 +54,7 @@ public sealed partial class LogisticsInstructionService
     {
         ArgumentNullException.ThrowIfNull(request);
         RequireNoteId(dispatchNoteId);
-        // The number is the store's (the company series, in the same save); the domain only moves the state.
-        return MutateAsync(instructionId, new { dispatchNoteId, request }, request.ExpectedVersion, metadata, LogisticsCommands.ApproveDispatchNoteV1,
-            bindings.DispatchNoteApprovePermission,
-            (instruction, expected, now, _, actorId) => instruction.ApproveDispatchNote(expected, dispatchNoteId, actorId, now),
-            new LogisticsMutationAudit("logistics.loading-instruction.dispatch-note-approved.v1", "ApproveDispatchNote", "İrsaliye onaylandı ve numaralandı"),
-            prepare: null, cancellationToken);
+        return ApproveDispatchNoteGuardedAsync(instructionId, dispatchNoteId, request, metadata, cancellationToken);
     }
 
     public Task<LoadingInstructionResponse> CancelDispatchNoteAsync(Guid instructionId, Guid dispatchNoteId, CancelDispatchNoteRequest request,

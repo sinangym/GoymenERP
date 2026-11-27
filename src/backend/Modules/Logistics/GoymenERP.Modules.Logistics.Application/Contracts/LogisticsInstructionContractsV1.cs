@@ -191,7 +191,11 @@ public sealed record SalesOrderDispatchNoteView(Guid DispatchNoteId, Guid Instru
 /// <summary>One line of the draft on the asked order: the order line, the shipment and the shipped quantity (exact text) in its unit.</summary>
 public sealed record SalesOrderDispatchNoteLineView(int LineNo, Guid SourceOrderLineId, Guid ShipmentId, Guid UnitId, string Quantity);
 
-public sealed record LoadingInstructionResponse(LoadingInstructionDetailView Detail, bool IsReplay, string OriginalCorrelationId);
+public sealed record LoadingInstructionResponse(LoadingInstructionDetailView Detail, bool IsReplay, string OriginalCorrelationId,
+    [property: JsonIgnore] LogisticsDispatchNoteApprovalReceiptV1? DispatchNoteApprovalReceipt = null)
+{
+    [JsonIgnore] public bool CommandReceiptProven => DispatchNoteApprovalReceipt is not null;
+}
 
 public sealed record LoadingInstructionListResponse(IReadOnlyList<LoadingInstructionSummaryView> Items, string? NextCursor);
 
