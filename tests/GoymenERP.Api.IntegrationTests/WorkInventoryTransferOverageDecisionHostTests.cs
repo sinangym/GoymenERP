@@ -85,7 +85,7 @@ public sealed class WorkInventoryTransferOverageDecisionHostTests
     }
 
     [Fact]
-    public async Task Wire_and_staged_declaration_keep_owner_proof_private_and_existing_native_browse_available()
+    public async Task Wire_and_paired_declaration_keep_owner_proof_private_and_existing_native_browse_available()
     {
         var run = new Rig(); var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
         Assert.DoesNotContain("inventoryTransferOverage", JsonSerializer.Serialize(new WorkDecisionRequestV1("2", true, null), options));
@@ -94,7 +94,7 @@ public sealed class WorkInventoryTransferOverageDecisionHostTests
         Assert.Contains("SENTETIK corrected reason", JsonSerializer.Serialize(await run.Host.PreviewAsync(run.Source.Kind, Item, default), options));
         var declarations = new InventoryShellCapabilityProvider().GetDeclarations();
         var row = Assert.Single(declarations, row => row.CapabilityId == "inventory.transfer-overage.work-decision");
-        Assert.False(row.ImplementationAvailable); Assert.Null(row.ParentCapabilityId);
+        Assert.True(row.ImplementationAvailable); Assert.Null(row.ParentCapabilityId);
         Assert.Equal("/onaylarim/inventory.transfer-overage.v1/:approvalId", row.RoutePath);
         Assert.Equal([InventoryPermissionManifestV1.StockTransferOverageApprove], row.RequiredPermissions);
         Assert.Contains(declarations, row => row.RoutePath == "/stok/transferler/fazla-kabul-onaylari" && row.ImplementationAvailable);

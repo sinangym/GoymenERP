@@ -56,7 +56,7 @@ public sealed partial class InventoryTransferOverageWorkInboxSourceTests
         Assert.Equal(["ETK-4", "ETK-1"], result.Items!.Select(item => item.DocumentLabel));
         var first = result.Items![0];
         Assert.Equal((InventoryWorkInboxFence.TransferLineItemId(Kind, F.Id(2), F.Id(14)), F.T0.AddMinutes(10).ToUniversalTime(),
-                "/stok/transferler/fazla-kabul-onaylari", F.Receiver),
+                "/onaylarim/inventory.transfer-overage.v1/" + InventoryWorkInboxFence.TransferLineItemId(Kind, F.Id(2), F.Id(14)).ToString("D"), F.Receiver),
             (first.ItemId, first.WaitingSinceUtc, first.Link, first.PreparedBy));
         Assert.Null(first.ExcludedDeciders);
         Assert.Equal(["inventory-label", "inventory-transfer"], first.References.Select(reference => reference.Role));

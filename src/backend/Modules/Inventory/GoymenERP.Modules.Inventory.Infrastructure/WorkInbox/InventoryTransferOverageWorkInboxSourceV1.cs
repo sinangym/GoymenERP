@@ -5,7 +5,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.WorkInbox;
 
 /// <summary>
 /// WP6 (AI-D31, AI-D32, DALGA_PLANI_v2 1.4; KLN-D24, KLN-D107, KLN-D119): the transfer receipt excesses waiting for a decision,
-/// as Inventory lists them for the Work inbox. Two requests wait, both decided on the transfer excess approval screen by a
+/// as Inventory lists them for the Work inbox. Two requests wait, both decided through the native owner command from the paired Work screen by a
 /// company-wide holder of <c>inventory.stock-transfer.overage-approve</c> (<c>DecideInventoryTransferOverageV1</c>; the inbox
 /// decides nothing):
 /// <list type="bullet">
@@ -38,6 +38,9 @@ internal sealed partial class InventoryTransferOverageWorkInboxSourceV1 : IWorkA
 
     /// <summary>The pieces of a piece-tracked label: threshold = dispatched, actual = received, deviation = excess pieces.</summary>
     public const string ExcessPiecesRule = "inventory.transfer-overage-pieces";
+
+    internal const string DecisionScreenPath = "/onaylarim/inventory.transfer-overage.v1/:approvalId";
+    private static string DecisionLink(Guid itemId) => "/onaylarim/inventory.transfer-overage.v1/" + itemId.ToString("D");
 
     private const int FirstRequestNumber = 1;
     private const string KilogramUnit = "kg";
@@ -250,7 +253,7 @@ internal sealed partial class InventoryTransferOverageWorkInboxSourceV1 : IWorkA
         IReadOnlyList<string>? excluded = WorkInboxRulesV1.SameUser(receiver, requester) ? null : [receiver];
         item = new WorkInboxItemV1(ModuleName, KindName,
             InventoryWorkInboxFence.TransferLineItemId(KindName, row.TransferId, row.LineId), row.LabelCode,
-            row.WaitingSinceUtc.ToUniversalTime(), InventoryWorkInboxFence.TransferOverageApprovalPath, requester, rules,
+            row.WaitingSinceUtc.ToUniversalTime(), DecisionLink(InventoryWorkInboxFence.TransferLineItemId(KindName, row.TransferId, row.LineId)), requester, rules,
             [
                 new WorkApprovalReferenceV1("inventory-label", row.LabelCode, row.LabelId,
                     InventoryWorkInboxFence.LabelLink(row.LabelId)),

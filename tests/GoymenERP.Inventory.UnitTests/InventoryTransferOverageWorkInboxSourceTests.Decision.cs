@@ -1,5 +1,7 @@
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Inventory.Infrastructure.Shell;
 using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Inventory.Infrastructure.WorkInbox;
 using F = GoymenERP.Inventory.UnitTests.InventoryWorkInboxTestFixture;
@@ -26,7 +28,8 @@ public sealed partial class InventoryTransferOverageWorkInboxSourceTests
         Assert.Equal(0, proof.Requests[1].PieceCount);
         Assert.DoesNotContain("SENTETIK human-only reason", JsonSerializer.Serialize(next));
         Assert.DoesNotContain("InventoryTransferOverageProof", JsonSerializer.Serialize(next));
-        Assert.Equal("/stok/transferler/fazla-kabul-onaylari", next.Item.Link); // staged purpose does not activate an inbox link.
+        Assert.Equal("/onaylarim/inventory.transfer-overage.v1/" + id.ToString("D"), next.Item.Link);
+        Assert.Equal("/stok/transferler/fazla-kabul-onaylari", next.Item.References.Single(reference => reference.Role == "inventory-transfer").Link);
     }
 
     [Theory]
@@ -65,6 +68,20 @@ public sealed partial class InventoryTransferOverageWorkInboxSourceTests
         var source = new InventoryTransferOverageWorkInboxSourceV1(f.Rows, f.Fence);
         await Assert.ThrowsAsync<InvalidOperationException>(() => source.ReadDecisionAsync(f.Context(), InventoryWorkInboxFence.TransferLineItemId(Kind, F.Id(1), F.Id(11)), default));
         Assert.Equal(1, f.Rows.Reads);
+    }
+
+    [Fact]
+    public void Overage_purpose_is_standalone_under_the_existing_native_permission_and_preserves_native_browse()
+    {
+        var declarations = new InventoryShellCapabilityProvider().GetDeclarations();
+        var row = Assert.Single(declarations, row => row.CapabilityId == "inventory.transfer-overage.work-decision");
+        Assert.True(row.ImplementationAvailable); Assert.Null(row.ParentCapabilityId);
+        Assert.Equal(InventoryTransferOverageWorkInboxSourceV1.DecisionScreenPath, row.RoutePath);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, row.ScopeRequirement);
+        Assert.Equal([ErpPermissions.InventoryStockTransferOverageApprove], row.RequiredPermissions);
+        var native = Assert.Single(declarations, row => row.CapabilityId == ErpPermissions.InventoryStockTransferOverageApprove);
+        Assert.True(native.ImplementationAvailable);
+        Assert.Equal("/stok/transferler/fazla-kabul-onaylari", native.RoutePath);
     }
 
     private static F PurposeFixture()
