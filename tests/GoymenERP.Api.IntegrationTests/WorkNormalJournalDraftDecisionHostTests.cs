@@ -35,9 +35,9 @@ public sealed class WorkNormalJournalDraftDecisionHostTests
         var first = await rig.Decide(); Assert.Equal("Approved", first.State); Assert.False(first.Replayed);
         Assert.Equal(Period, rig.Port.SelectedPeriod); Assert.Equal(version, rig.Port.Expected); Assert.Equal(Key, rig.Port.Key);
         Assert.Equal(2, rig.Port.Reads); // One source read and the genuine receipt's retained-source read; no second human POST GET.
-        Assert.Equal(1, rig.Port.Approvals); Assert.Equal(1, rig.Port.Commands.Count);
+        Assert.Equal(1, rig.Port.Approvals); Assert.Single(rig.Port.Commands);
         var replay = await rig.Decide(); Assert.True(replay.Replayed); Assert.Equal(Correlation, replay.OriginalCorrelationId);
-        Assert.Equal(version + 1, rig.Port.Record.Version); Assert.Equal(1, rig.Port.Approvals); Assert.Equal(1, rig.Port.Commands.Count);
+        Assert.Equal(version + 1, rig.Port.Record.Version); Assert.Equal(1, rig.Port.Approvals); Assert.Single(rig.Port.Commands);
     }
 
     [Theory] [InlineData(false, null, "1")][InlineData(true, "", "1")][InlineData(true, "note", "1")]
@@ -180,7 +180,7 @@ public sealed class WorkNormalJournalDraftDecisionHostTests
         Assert.DoesNotContain("normalJournalDraftProof", JsonSerializer.Serialize(snapshot, json), StringComparison.OrdinalIgnoreCase);
         using var body = JsonDocument.Parse(JsonSerializer.Serialize(rig.Request, json));
         Assert.Equal(5, body.RootElement.EnumerateObject().Count()); Assert.Equal(Period, body.RootElement.GetProperty("normalJournalDraft").GetProperty("periodId").GetGuid());
-        Assert.Equal(1, body.RootElement.GetProperty("normalJournalDraft").EnumerateObject().Count());
+        Assert.Single(body.RootElement.GetProperty("normalJournalDraft").EnumerateObject());
         Assert.DoesNotContain("lines", body.RootElement.GetRawText(), StringComparison.OrdinalIgnoreCase);
         using var legacy = JsonDocument.Parse(JsonSerializer.Serialize(new WorkDecisionRequestV1("1", true, null), json));
         Assert.Equal(4, legacy.RootElement.EnumerateObject().Count()); Assert.False(legacy.RootElement.TryGetProperty("normalJournalDraft", out _));
