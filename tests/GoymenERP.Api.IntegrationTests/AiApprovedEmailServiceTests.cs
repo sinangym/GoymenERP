@@ -97,8 +97,9 @@ public sealed class AiApprovedEmailServiceTests
         public Task<AiEmailReceiptV1> EnqueueApprovedOnceAsync(AiEmailApprovalV1 approval, CancellationToken cancellationToken)
         {
             Enqueues++;
-            Receipt = new(approval.OperationId, approval.Scope.CompanyId, approval.Digest, AiEmailStateV1.Queued);
-            return Task.FromResult(Receipt);
+            var receipt = new AiEmailReceiptV1(approval.OperationId, approval.Scope.CompanyId, approval.Digest, AiEmailStateV1.Queued);
+            Receipt = receipt;
+            return Task.FromResult(receipt);
         }
     }
     private sealed class Contacts : ICounterpartyContactInformationService
