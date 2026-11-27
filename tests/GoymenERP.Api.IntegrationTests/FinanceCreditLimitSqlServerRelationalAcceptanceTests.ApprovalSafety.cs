@@ -299,7 +299,7 @@ public sealed partial class FinanceCreditLimitSqlServerRelationalAcceptanceTests
         public Task<PartyCreditLimitCommandResult> Decide(Guid id, bool approve, string key, string version = "1", string reason = Reason, string actor = Approver) => approve
             ? service.ApproveAsync(new(company, actor, Correlation, null), new(key), new(id, version), default)
             : service.RejectAsync(new(company, actor, Correlation, null), new(key), new(id, version, reason), default);
-        public void AssertClean() { Assert.Empty(Database.ChangeTracker.Entries().Where(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)); Assert.False(Writer.HasPendingDrafts); Assert.Null(Database.Database.CurrentTransaction); }
+        public void AssertClean() { Assert.DoesNotContain(Database.ChangeTracker.Entries(), entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted); Assert.False(Writer.HasPendingDrafts); Assert.Null(Database.Database.CurrentTransaction); }
         public async ValueTask DisposeAsync() { try { await Database.DisposeAsync(); } finally { owner.Dispose(); } }
     }
     private sealed class LimitSafetyCompany : ICompanyContext
