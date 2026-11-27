@@ -1962,7 +1962,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Continue native owner adapters against the 64-flow map. Management rule editor and delegation name/paging UI are source-delivered. Actual SQL/browser, train pins/full CI and two independent K3 reviews remain.",
+      "next_action": "Continue remaining native owner kinds after Inventory native loss safety checks. Manufacturing Work initial/reapproval explicit selection is source-connected; actual SQL/HTTP/browser, all64 flow evidence, pins/full CI/two K3 remain.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2069,7 +2069,8 @@
           "purchasing.order.v1",
           "purchasing.service-order.v1",
           "purchasing.incoming-invoice-variance.v1",
-          "purchasing.goods-receipt-batch.v1"
+          "purchasing.goods-receipt-batch.v1",
+          "manufacturing.plan.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -2087,10 +2088,11 @@
           "Finance latest full unit suite": "1986/1986 passed, 0 skipped at aa10817d3; credit profile fields and native credit Work fences included.",
           "Sales latest full unit suite": "2469/2469 passed, 0 skipped at 324b9da8c; native order/invoice/subcontract guards included.",
           "Purchasing latest full unit suite": "1296/1296 passed, 0 skipped at f1e7d5269; invoice variance and receipt purpose/native fences included.",
-          "Latest owner/Work composition": "115/115 passed, 0 skipped at c56d32a456115a9d03d8a7f3ab6cf9ae6ff4eeb3; five Work*DecisionHostTests classes. Synthetic owner/store composition, not actual HTTP/SQL/browser. Full integration test assembly compiled the new SQL sources.",
+          "Latest owner/Work composition": "157/157 passed, 0 skipped at 3a85da1790a839d0425cea45104f40ba5053c841; five Work decision host classes including typed reapproval. Synthetic composition, not actual HTTP/SQL/browser. Subsequent publication declaration check pending.",
           "Prior failed runs": "83-run wrong-scope fixture corrected; later 93-run contained 91 pass and two failures (pure Sales declaration expectation corrected; normal HTTP authority pin remains NOT_ACCEPTED). New service fixture run1259 pass/1 failure correctly hit immutable history; fixture corrected without weakening native guards. Original logs retained.",
-          "Manufacturing latest full unit suite": "1551/1551 passed, 0 skipped at c56d32a456115a9d03d8a7f3ab6cf9ae6ff4eeb3; native rejection, approval/reapproval allocation fences and staged purpose. Three earlier reapproval fixture failures retained; captured Settings proof corrected using existing At044 fixture, guards/assertions unchanged.",
-          "Deferred host pins": "Earlier 78-case run at 6920c495e had 76 pass/2 normal-host authority-pin failures; retained NOT_ACCEPTED. Pins deferred to train close, no gate waived."
+          "Manufacturing latest full unit suite": "1560/1560 passed, 0 skipped at 3a85da1790a839d0425cea45104f40ba5053c841; typed first/reapproval native receipt proof. Subsequent publication/provider checks pending.",
+          "Deferred host pins": "Earlier 78-case run at 6920c495e had 76 pass/2 normal-host authority-pin failures; retained NOT_ACCEPTED. Pins deferred to train close, no gate waived.",
+          "Manufacturing Work UI": "128/128, 0 skipped in five files; tsc/scoped lint exit0 at b0272a054efd3de73c1c0f0a598bdc309f1435e1. Entire frontend tree matches integrated dcd641d6a. Earlier checkbox and TypeScript failures retained and corrected without weakening assertions."
         },
         "reuse": [
           "existing FinanceCashAccountService commands and durable receipts",
@@ -2297,6 +2299,37 @@
               "development_duration": "NOT_SEPARATELY_MEASURED",
               "rework": "Original failures retained; immutable receipt-label fixtures, frozen supplier approval fixtures, xUnit predicate Single, and captured Settings reapproval proof corrected without loosening native business guards."
             }
+          },
+          {
+            "source_commit": "874a78e54",
+            "source_commits": [
+              "6d3af96b4",
+              "3a85da179",
+              "b593dec13",
+              "f72ef515e",
+              "94331601f",
+              "dcd641d6a",
+              "874a78e54"
+            ],
+            "scope": "Manufacturing initial approval and explicit-label reapproval through native commands, full parent-ID options, immutable native receipt proof, purpose publication and scoped journal UI. Inventory native loss owned-transaction, audit/fresh fences and bounded race replay safety; transfer-loss Work purpose is not yet connected.",
+            "reuse": [
+              "ManufacturingCommandService and existing native allocation/receipt proof",
+              "Work generic purpose transport, explicit typed extension and scoped durable attempt",
+              "InventoryStore native loss decisions, audit writer and existing relational acceptance fixture"
+            ],
+            "local_checks": {
+              "Manufacturing": "1560/1560 skip0 at3a85da179; publication declaration/source delta pending",
+              "Work composition": "157/157 skip0 at3a85da179; final declaration check pending",
+              "Frontend": "128/128 skip0, tsc/lint exit0 atb0272a054; integrated whole-tree parity verified",
+              "Inventory safety": "SOURCE_READY; eight unit cases/eight SQL facts; build and execution pending"
+            },
+            "sql": "Two new Manufacturing purpose facts and eight Inventory native safety facts inventoried. Actual SQL NOT_RUN.",
+            "remaining": [
+              "Native Inventory loss purpose and remaining owner adapters",
+              "Actual SQL/HTTP/browser, train pins/full CI and two independent K3 reviews"
+            ],
+            "new_permissions": [],
+            "migration": null
           }
         ],
         "source_commits": [
@@ -2324,16 +2357,17 @@
           "ddf1ee359",
           "9611044e0",
           "c9aa4e299",
-          "0d0197c3b"
+          "0d0197c3b",
+          "6d3af96b4",
+          "3a85da179",
+          "b593dec13",
+          "f72ef515e",
+          "94331601f",
+          "dcd641d6a",
+          "874a78e54"
         ],
-        "kind_count_scope": "13 connected source kinds; not 13 accepted flows. Manufacturing plan is staged separately with ImplementationAvailable=false; 64-flow runtime acceptance remains open.",
-        "staged_kinds": [
-          {
-            "kind": "manufacturing.plan.v1",
-            "implementation_available": false,
-            "scope": "Native Reject and bounded purpose metadata source; Approve/Reapprove unavailable in Work. Explicit reapproval input-label selection is not in the generic Work DTO."
-          }
-        ]
+        "kind_count_scope": "14 connected source kinds; not 14 accepted flows. Manufacturing native initial approval/reapproval and explicit input-label Work contract/UI are connected. All 64-flow runtime acceptance remains open.",
+        "staged_kinds": []
       }
     },
     {
