@@ -6,6 +6,7 @@ using GoymenERP.Api.Contracts;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
+using GoymenERP.Modules.Idempotency.Domain.Executions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -236,6 +237,49 @@ public sealed class CounterpartyMutationViewProjectorTests
         var replayJson = await replay.Content.ReadAsStringAsync();
         Assert.Equal(firstJson, replayJson);
         AssertSafeWireShape(replayJson, CompanyId);
+    }
+
+    [Fact]
+    public void Optional_tax_omitted_or_null_preserves_the_original_four_field_wire_and_hash()
+    {
+        var legacy = new CreateCounterparty(PartyKind.LegalEntity, "Legacy", null, PartyRole.Customer);
+        var explicitNull = legacy with { TaxIdentityNumber = null };
+        var oldShape = new { legacy.Kind, legacy.LegalName, legacy.TradeName, legacy.Roles };
+        Assert.Equal(JsonSerializer.Serialize(oldShape), JsonSerializer.Serialize(legacy));
+        Assert.Equal(IdempotencyHash.ComputePayload(oldShape), IdempotencyHash.ComputePayload(explicitNull));
+        var json = JsonSerializer.Serialize(explicitNull, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        using var document = JsonDocument.Parse(json);
+        Assert.Equal(["kind", "legalName", "roles", "tradeName"], document.RootElement.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void Atomic_tax_create_requires_its_exact_private_hash_proof_and_emits_only_the_existing_public_shape()
+    {
+        var source = ValidResource() with { Version = 2 };
+        var command = new CreateCounterparty(source.Kind, $" {source.LegalName} ", source.TradeName,
+            source.CompanyAccounts[0].Roles, " 1234567890 ");
+        var hash = IdempotencyHash.ComputePayload(new CounterpartyCreateTaxIdentityFingerprintV1(source.Kind,
+            source.LegalName, source.TradeName, command.Roles, "1234567890"));
+        var evidence = new CounterpartyCreatedTaxIdentityEvidenceV1(CounterpartyCreatedTaxIdentityEvidenceV1.CreateCommandName,
+            source.Id, CompanyId, 2, hash);
+        var result = CounterpartyMutationViewProjector.ProjectPartyCreate(source, CompanyId, command, evidence);
+        Assert.Equal("2", result.Version);
+        var json = JsonSerializer.Serialize(result, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        AssertSafeWireShape(json, CompanyId);
+        Assert.DoesNotContain("1234567890", json, StringComparison.Ordinal);
+        Assert.DoesNotContain(hash, json, StringComparison.Ordinal);
+        var response = new CounterpartyCommandResponse(CounterpartyCommandResult.Created, 201, null, null, source, null)
+            { CreatedTaxIdentityEvidence = evidence };
+        Assert.DoesNotContain("CreatedTaxIdentityEvidence", JsonSerializer.Serialize(response), StringComparison.Ordinal);
+        Assert.DoesNotContain(hash, JsonSerializer.Serialize(response), StringComparison.Ordinal);
+        Assert.Throws<InvalidOperationException>(() => CounterpartyMutationViewProjector.ProjectPartyCreate(source, CompanyId, command));
+        foreach (var malformed in new[] { evidence with { CommandName = "other" }, evidence with { PartyId = Guid.NewGuid() },
+            evidence with { CompanyId = Guid.NewGuid() }, evidence with { PartyVersion = 1 }, evidence with { PayloadHash = "bad" } })
+            Assert.Throws<InvalidOperationException>(() => CounterpartyMutationViewProjector.ProjectPartyCreate(source, CompanyId, command, malformed));
+        Assert.Throws<InvalidOperationException>(() => CounterpartyMutationViewProjector.ProjectPartyCreate(source with { Version = 1 }, CompanyId, command, evidence));
+        Assert.Throws<InvalidOperationException>(() => CounterpartyMutationViewProjector.ProjectPartyCreate(source with { Version = 3 }, CompanyId, command, evidence));
+        Assert.Throws<InvalidOperationException>(() => CounterpartyMutationViewProjector.ProjectPartyCreate(source, CompanyId, command with { TaxIdentityNumber = "9876543217" }, evidence));
+        Assert.Throws<InvalidOperationException>(() => CounterpartyMutationViewProjector.ProjectPartyCreate(ValidResource(), CompanyId, command with { TaxIdentityNumber = null }, evidence));
     }
 
     private static void AssertSafeWireShape(string json, Guid expectedCompanyId)

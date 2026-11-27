@@ -32,7 +32,24 @@ public sealed record CreateCounterparty(
     PartyKind Kind,
     string LegalName,
     string? TradeName = null,
-    PartyRole Roles = PartyRole.None);
+    PartyRole Roles = PartyRole.None,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TaxIdentityNumber = null);
+
+/// <summary>Canonical hash shape for the optional atomic first-entry branch; never the legacy four-field fingerprint.</summary>
+public sealed record CounterpartyCreateTaxIdentityFingerprintV1(
+    PartyKind Kind, string LegalName, string? TradeName, PartyRole Roles, string TaxIdentityNumber);
+
+/// <summary>Immutable native creation evidence. No tax number, input text or grant is copied into this proof.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record CounterpartyCreatedTaxIdentityEvidenceV1(
+    [property: JsonRequired] string CommandName,
+    [property: JsonRequired] Guid PartyId,
+    [property: JsonRequired] Guid CompanyId,
+    [property: JsonRequired] long PartyVersion,
+    [property: JsonRequired] string PayloadHash)
+{
+    public const string CreateCommandName = "counterparty.party.create.v1";
+}
 
 public sealed record CreateCompanyPartyAccount(
     PartyRole Roles = PartyRole.None);
@@ -307,7 +324,12 @@ public sealed record CounterpartyCommandResponse(
     string? Title,
     string? Detail,
     PartyCoreView? Resource,
-    CounterpartyVersionConflict? Conflict);
+    CounterpartyVersionConflict? Conflict)
+{
+    /// <summary>Owner/API validation only. It is persisted explicitly in the schema-2 native envelope, never public wire.</summary>
+    [JsonIgnore]
+    public CounterpartyCreatedTaxIdentityEvidenceV1? CreatedTaxIdentityEvidence { get; init; }
+}
 
 public sealed record CounterpartyCommandExecution(
     CounterpartyCommandResponse Response,

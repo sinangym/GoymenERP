@@ -13,6 +13,7 @@ using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
 namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
@@ -49,6 +50,8 @@ internal sealed partial class CounterpartyCommandService(
     {
         ArgumentNullException.ThrowIfNull(command);
         ValidateCommandMetadata(metadata);
+        if (command.TaxIdentityNumber is not null)
+            return await CreateWithTaxIdentityAsync(command, metadata, cancellationToken);
 
         var scope = await RequireCompanyWidePermissionAsync(
             ErpPermissions.CounterpartyPartiesCreate,
@@ -411,6 +414,10 @@ internal sealed partial class CounterpartyCommandService(
             decision.KeyHash = idempotencyKeyHash;
             decision.RequestHash = requestHash;
         }
+        if (createWithTaxIdentity is { } atomic && (commandName != CreateCommandName
+            || requestHash != atomic.PayloadHash || metadata.CompanyId != atomic.CompanyId
+            || idempotencyKeyHash != IdempotencyHash.ComputeKey(metadata.IdempotencyKey)))
+            throw new InvalidOperationException("Atomic creation cannot write an unrelated native receipt.");
         dbContext.CommandExecutions.Add(CommandExecution.Complete(new CommandExecutionData(
             Guid.NewGuid(),
             metadata.CompanyId,
@@ -420,20 +427,27 @@ internal sealed partial class CounterpartyCommandService(
             metadata.ActorId,
             response.Result.ToString(),
             response.StatusCode,
-            JsonSerializer.Serialize(response),
+            createWithTaxIdentity is { } creation ? SerializeAtomicCreateReceipt(response, creation) : JsonSerializer.Serialize(response),
             metadata.CorrelationId,
             DateTimeOffset.UtcNow,
-            CommandExecutionSchemaVersion)));
+            createWithTaxIdentity is null ? CommandExecutionSchemaVersion : AtomicCreateReceiptSchemaVersion)));
 
         try
         {
             if (identityDecision is { } savingDecision) await savingDecision.Fence(cancellationToken);
+            if (createWithTaxIdentity is { } savingCreation) await savingCreation.Fence(cancellationToken);
             if (beforeSave is not null)
             {
                 await beforeSave(cancellationToken);
             }
 
+            if (createWithTaxIdentity is { } attemptingCreation) attemptingCreation.SaveAttempted = true;
             await dbContext.SaveChangesAsync(cancellationToken);
+            if (createWithTaxIdentity is { } savedCreation)
+            {
+                savedCreation.Saved = true;
+                await savedCreation.Fence(cancellationToken);
+            }
             if (identityDecision is { } savedDecision)
             {
                 savedDecision.ReceiptProven = true;
@@ -445,7 +459,7 @@ internal sealed partial class CounterpartyCommandService(
                 metadata.CorrelationId);
         }
         catch (DbUpdateException exception) when (
-            identityDecision is null && concurrencyContext is not null
+            identityDecision is null && createWithTaxIdentity is null && concurrencyContext is not null
             && (exception is DbUpdateConcurrencyException || IsDatedHistoryRace(exception)))
         {
             dbContext.ChangeTracker.Clear();
@@ -482,7 +496,7 @@ internal sealed partial class CounterpartyCommandService(
                 cancellationToken: cancellationToken,
                 beforeSave: beforeSave);
         }
-        catch (DbUpdateException) when (identityDecision is null)
+        catch (DbUpdateException) when (identityDecision is null && createWithTaxIdentity is null)
         {
             dbContext.ChangeTracker.Clear();
             var winner = await FindCommandExecutionAsync(
@@ -573,6 +587,8 @@ internal sealed partial class CounterpartyCommandService(
                 metadata.CorrelationId);
         }
 
+        if (execution.SchemaVersion == AtomicCreateReceiptSchemaVersion)
+            return RestoreAtomicCreateReceipt(execution, metadata);
         if (execution.SchemaVersion != CommandExecutionSchemaVersion)
         {
             throw new InvalidOperationException(
@@ -624,6 +640,7 @@ internal sealed partial class CounterpartyCommandService(
         try
         {
             await using var command = connection.CreateCommand();
+            command.Transaction = dbContext.Database.CurrentTransaction?.GetDbTransaction();
             command.CommandText =
                 "SELECT NEXT VALUE FOR [counterparty].[PartyCodeSequence];";
             var value = await command.ExecuteScalarAsync(cancellationToken);

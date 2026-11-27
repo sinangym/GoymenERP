@@ -2,6 +2,7 @@ using System.Globalization;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
+using GoymenERP.Modules.Idempotency.Domain.Executions;
 
 namespace GoymenERP.Api.Contracts;
 
@@ -35,18 +36,35 @@ internal static class CounterpartyMutationViewProjector
     public static CounterpartyMutationView ProjectPartyCreate(
         PartyCoreView source,
         Guid activeCompanyId,
-        CreateCounterparty submittedCommand)
+        CreateCounterparty submittedCommand,
+        CounterpartyCreatedTaxIdentityEvidenceV1? createdTaxIdentityEvidence = null)
     {
         ArgumentNullException.ThrowIfNull(submittedCommand);
         var normalizedTradeName = string.IsNullOrWhiteSpace(submittedCommand.TradeName)
             ? null
             : submittedCommand.TradeName.Trim();
+        var expectedVersion = 1L;
+        if (submittedCommand.TaxIdentityNumber is null)
+        {
+            if (createdTaxIdentityEvidence is not null) throw InvalidProjection();
+        }
+        else
+        {
+            if (!TaxIdentityNumber.TryParse(submittedCommand.TaxIdentityNumber, out var number, out _)) throw InvalidProjection();
+            var expectedHash = IdempotencyHash.ComputePayload(new CounterpartyCreateTaxIdentityFingerprintV1(
+                submittedCommand.Kind, submittedCommand.LegalName.Trim(), normalizedTradeName, submittedCommand.Roles, number.Value));
+            if (createdTaxIdentityEvidence is not { } evidence
+                || evidence.CommandName != CounterpartyCreatedTaxIdentityEvidenceV1.CreateCommandName
+                || source is null || evidence.PartyId != source.Id || evidence.CompanyId != activeCompanyId
+                || evidence.PartyVersion != 2 || evidence.PayloadHash != expectedHash) throw InvalidProjection();
+            expectedVersion = 2;
+        }
         var result = ProjectCore(
             source,
             activeCompanyId,
             expectedPartyId: null,
             submittedCommand.Roles,
-            requirePartyVersionOne: true);
+            expectedPartyVersion: expectedVersion);
         if (result.Kind != submittedCommand.Kind
             || !string.Equals(
                 result.LegalName,
@@ -80,7 +98,7 @@ internal static class CounterpartyMutationViewProjector
             activeCompanyId,
             expectedPartyId,
             submittedCommand.Roles,
-            requirePartyVersionOne: false);
+            expectedPartyVersion: null);
     }
 
     private static CounterpartyMutationView ProjectCore(
@@ -88,7 +106,7 @@ internal static class CounterpartyMutationViewProjector
         Guid activeCompanyId,
         Guid? expectedPartyId,
         PartyRole expectedRoles,
-        bool requirePartyVersionOne)
+        long? expectedPartyVersion)
     {
         ArgumentNullException.ThrowIfNull(source);
 
@@ -99,7 +117,7 @@ internal static class CounterpartyMutationViewProjector
             || !IsCanonicalRequiredText(source.LegalName, 250)
             || !IsCanonicalOptionalText(source.TradeName, 200)
             || source.Version <= 0
-            || (requirePartyVersionOne && source.Version != 1)
+            || (expectedPartyVersion.HasValue && source.Version != expectedPartyVersion.Value)
             || !source.IsActive
             || source.CompanyAccounts is null
             || source.CompanyAccounts.Count != 1)

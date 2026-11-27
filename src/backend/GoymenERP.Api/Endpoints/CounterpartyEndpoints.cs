@@ -201,18 +201,26 @@ public static partial class CounterpartyEndpoints
                 return InvalidCommandMetadata();
             }
 
-            var execution = await service.CreateAsync(
-                command,
-                metadata,
-                cancellationToken);
-            var result = await ToPartyCreateHttpResultAsync(
-                execution.Response,
-                companyContext.CompanyId,
-                command,
-                relationshipVerifier,
-                cancellationToken);
-            ApplyReplayHeaders(httpContext, execution);
-            return result;
+            try
+            {
+                var execution = await service.CreateAsync(command, metadata, cancellationToken);
+                var result = await ToPartyCreateHttpResultAsync(execution.Response, companyContext.CompanyId,
+                    command, relationshipVerifier, cancellationToken);
+                ApplyReplayHeaders(httpContext, execution);
+                return result;
+            }
+            catch (CounterpartyTaxIdentityInvalidException exception) when (command.TaxIdentityNumber is not null)
+            {
+                return TaxIdentityInvalid(exception.Message);
+            }
+            catch (UnauthorizedAccessException) when (command.TaxIdentityNumber is not null)
+            {
+                return Results.Problem(statusCode: StatusCodes.Status403Forbidden);
+            }
+            catch (InvalidOperationException) when (command.TaxIdentityNumber is not null)
+            {
+                return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
         }).RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.CounterpartyPartiesCreate)
             .WithIdempotencyContract(StatusCodes.Status201Created)
@@ -221,7 +229,9 @@ public static partial class CounterpartyEndpoints
             .Produces<CounterpartyMutationView>(StatusCodes.Status201Created)
             .ProducesErpBadRequest(
                 CounterpartyProblemCodesV1.ValidationFailed,
-                CounterpartyProblemCodesV1.CommandMetadataInvalid)
+                CounterpartyProblemCodesV1.CommandMetadataInvalid,
+                CounterpartyProblemCodesV1.TaxIdentityInvalid)
+            .ProducesErpServiceUnavailable()
             .ProducesErpUnsupportedMediaType()
             .ProducesErpConflict(
                 CounterpartyProblemCodesV1.IdempotencyConflict,
@@ -542,7 +552,8 @@ public static partial class CounterpartyEndpoints
             var resource = CounterpartyMutationViewProjector.ProjectPartyCreate(
                 response.Resource,
                 activeCompanyId,
-                submittedCommand);
+                submittedCommand,
+                response.CreatedTaxIdentityEvidence);
             await RequireVerifiedMutationRelationshipAsync(
                 resource,
                 relationshipVerifier,
