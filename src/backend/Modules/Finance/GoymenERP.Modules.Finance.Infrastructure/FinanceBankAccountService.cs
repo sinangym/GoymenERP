@@ -279,17 +279,22 @@ public sealed class FinanceBankAccountService(
 
     private async Task<BankAccountCommandResult> RunBankApprovalAsync(FinanceContext context, CommandMetadata metadata,
         BankAccountApproveRequest request, CancellationToken token)
+        => await RunBankApprovalAsync(context, FinanceAction.ApproveBankAccount, request.AccountId,
+            (replayOnly, current) => ApproveCoreAsync(context, metadata, request, replayOnly, current), token);
+
+    private async Task<BankAccountCommandResult> RunBankApprovalAsync(FinanceContext context, FinanceAction action,
+        Guid accountId, Func<bool, CancellationToken, Task<BankAccountCommandResult>> execute, CancellationToken token)
     {
-        try { return await RunOwnedBankApprovalAsync(context, metadata, request, false, token); }
+        try { return await RunOwnedBankApprovalAsync(context, action, accountId, execute, false, token); }
         catch (BankApprovalSaveRace)
         {
             // The failed writer has rolled back and disposed before this bounded, read-only receipt lookup.
-            return await RunOwnedBankApprovalAsync(context, metadata, request, true, token);
+            return await RunOwnedBankApprovalAsync(context, action, accountId, execute, true, token);
         }
     }
 
-    private async Task<BankAccountCommandResult> RunOwnedBankApprovalAsync(FinanceContext context, CommandMetadata metadata,
-        BankAccountApproveRequest request, bool replayOnly, CancellationToken token)
+    private async Task<BankAccountCommandResult> RunOwnedBankApprovalAsync(FinanceContext context, FinanceAction action,
+        Guid accountId, Func<bool, CancellationToken, Task<BankAccountCommandResult>> execute, bool replayOnly, CancellationToken token)
     {
         // Caller work is refused before the owned cleanup scope. The public auth/body preflight reads no Finance row.
         if (approvalAuditWriter is null || System.Transactions.Transaction.Current is not null
@@ -302,16 +307,16 @@ public sealed class FinanceBankAccountService(
             await using var owned = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, token);
             try
             {
-                await RequireBankApprovalFenceAsync(context, request.AccountId, token);
-                var result = await ApproveCoreAsync(context, metadata, request, replayOnly, token);
-                await RequireBankApprovalFenceAsync(context, request.AccountId, token);
+                await RequireBankApprovalFenceAsync(context, accountId, token, action);
+                var result = await execute(replayOnly, token);
+                await RequireBankApprovalFenceAsync(context, accountId, token, action);
                 if (approvalAuditWriter.HasPendingDrafts)
                 {
                     await approvalAuditWriter.WritePendingAsync(owned.GetDbTransaction(), token);
-                    await RequireBankApprovalFenceAsync(context, request.AccountId, token);
+                    await RequireBankApprovalFenceAsync(context, accountId, token, action);
                 }
                 if (approvalAuditWriter.HasPendingDrafts) throw new InvalidOperationException("Bank approval audit is still pending.");
-                await RequireBankApprovalFenceAsync(context, request.AccountId, token);
+                await RequireBankApprovalFenceAsync(context, accountId, token, action);
                 await owned.CommitAsync(token);
                 return result;
             }
@@ -341,32 +346,34 @@ public sealed class FinanceBankAccountService(
         finally { bankApprovalActive = false; }
     }
 
-    private async Task RequireBankApprovalFenceAsync(FinanceContext context, Guid accountId, CancellationToken token)
+    private async Task RequireBankApprovalFenceAsync(FinanceContext context, Guid accountId, CancellationToken token,
+        FinanceAction action = FinanceAction.ApproveBankAccount)
     {
-        if (await FenceAsync(context, FinanceAction.ApproveBankAccount, accountId, token) is { } refusal)
+        if (await FenceAsync(context, action, accountId, token) is { } refusal)
             throw new BankApprovalRefusal(refusal);
     }
 
     private async Task<BankAccountCommandResult> SaveBankApprovalAsync(FinanceContext context, Guid? accountId,
-        BankAccountCommandResult result, CancellationToken token)
+        BankAccountCommandResult result, CancellationToken token, FinanceAction action = FinanceAction.ApproveBankAccount)
     {
-        if (await FenceAsync(context, FinanceAction.ApproveBankAccount, accountId, token) is { } refusal)
+        if (await FenceAsync(context, action, accountId, token) is { } refusal)
             throw new BankApprovalRefusal(refusal);
         // Flush the actual collector in this same transaction before Save; no interceptor-attached batch can survive a failed save.
         await approvalAuditWriter!.WritePendingAsync(dbContext.Database.CurrentTransaction!.GetDbTransaction(), token);
-        if (await FenceAsync(context, FinanceAction.ApproveBankAccount, accountId, token) is { } afterAudit)
+        if (await FenceAsync(context, action, accountId, token) is { } afterAudit)
             throw new BankApprovalRefusal(afterAudit);
         await dbContext.SaveChangesAsync(token);
-        if (await FenceAsync(context, FinanceAction.ApproveBankAccount, accountId, token) is { } afterSave)
+        if (await FenceAsync(context, action, accountId, token) is { } afterSave)
             throw new BankApprovalRefusal(afterSave);
         return result;
     }
 
     private Task<BankAccountCommandResult> BankApprovalTerminalAsync(FinanceContext context, CommandMetadata metadata,
-        string payloadHash, Guid? accountId, BankAccountCommandResult refusal, CancellationToken token)
+        string payloadHash, Guid? accountId, BankAccountCommandResult refusal, CancellationToken token,
+        FinanceAction action = FinanceAction.ApproveBankAccount, string command = ApproveCommand)
     {
-        AddCommand(context, metadata, ApproveCommand, payloadHash, accountId, refusal, timeProvider.GetUtcNow());
-        return SaveBankApprovalAsync(context, accountId, refusal, token);
+        AddCommand(context, metadata, command, payloadHash, accountId, refusal, timeProvider.GetUtcNow());
+        return SaveBankApprovalAsync(context, accountId, refusal, token, action);
     }
 
     private sealed class BankApprovalRefusal(BankAccountCommandResult result) : Exception
@@ -507,6 +514,13 @@ public sealed class FinanceBankAccountService(
             return Refused(context, CommandOutcome.ValidationFailed, Issue("expectedVersion", "identity_required"));
         }
 
+        return await RunBankApprovalAsync(context, FinanceAction.ApproveBankAccountIbanChange, request.AccountId,
+            (replayOnly, token) => ApproveIbanChangeCoreAsync(context, metadata, request, replayOnly, token), cancellationToken);
+    }
+
+    private async Task<BankAccountCommandResult> ApproveIbanChangeCoreAsync(FinanceContext context, CommandMetadata metadata,
+        BankAccountIbanChangeApproveRequest request, bool replayOnly, CancellationToken cancellationToken)
+    {
         var payloadHash = PayloadHash(ApproveIbanChangeCommand, request);
         if (await PriorAsync(context, metadata, FinanceAction.ApproveBankAccountIbanChange, ApproveIbanChangeCommand,
             payloadHash, cancellationToken) is { } prior)
@@ -514,20 +528,21 @@ public sealed class FinanceBankAccountService(
             return prior;
         }
 
+        if (replayOnly) return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
+
         var row = await dbContext.BankAccounts.SingleOrDefaultAsync(candidate => candidate.Id == request.AccountId, cancellationToken);
         if (row is null)
         {
-            return await TerminalAsync(context, metadata, FinanceAction.ApproveBankAccountIbanChange, ApproveIbanChangeCommand,
-                payloadHash, accountId: null,
+            return await BankApprovalTerminalAsync(context, metadata, payloadHash, accountId: null,
                 Refused(context, CommandOutcome.ValidationFailed, Issue("accountId", "bank_account_not_found")),
-                cancellationToken);
+                cancellationToken, FinanceAction.ApproveBankAccountIbanChange, ApproveIbanChangeCommand);
         }
 
         if (!string.Equals(VersionText(row.Version), request.ExpectedVersion, StringComparison.Ordinal))
         {
-            return await TerminalAsync(context, metadata, FinanceAction.ApproveBankAccountIbanChange, ApproveIbanChangeCommand,
-                payloadHash, row.Id, Refused(context, CommandOutcome.VersionConflict, Issue("expectedVersion", "version_conflict")),
-                cancellationToken);
+            return await BankApprovalTerminalAsync(context, metadata, payloadHash, row.Id,
+                Refused(context, CommandOutcome.VersionConflict, Issue("expectedVersion", "version_conflict")),
+                cancellationToken, FinanceAction.ApproveBankAccountIbanChange, ApproveIbanChangeCommand);
         }
 
         if (row.PendingIban is not { } pendingIban || row.PendingIbanProposedBy is not { } pendingBy
@@ -560,8 +575,7 @@ public sealed class FinanceBankAccountService(
         Audit(context, metadata, envelopes.Approve, row.Id, "finance.bank-account.iban-change-approved.v1",
             "ApproveIbanChange", versionBefore, row.Version, before, AccountAudit(row), approval,
             "Finans banka hesabı IBAN değişikliği onayı (öneren≠onaylayan; eski değer audit'te korunur)");
-        return await SaveAsync(context, metadata, FinanceAction.ApproveBankAccountIbanChange, ApproveIbanChangeCommand, payloadHash,
-            result, cancellationToken);
+        return await SaveBankApprovalAsync(context, row.Id, result, cancellationToken, FinanceAction.ApproveBankAccountIbanChange);
     }
 
     /// <summary>
