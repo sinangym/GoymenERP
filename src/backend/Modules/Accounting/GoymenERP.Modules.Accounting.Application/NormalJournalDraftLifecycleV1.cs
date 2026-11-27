@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
@@ -67,7 +68,10 @@ public sealed record NormalJournalDraftViewV1(
     DateOnly TransactionDate,
     DateOnly AccountingDate,
     DateOnly? ValueDate,
-    IReadOnlyList<NormalJournalDraftLineViewV1> Lines);
+    IReadOnlyList<NormalJournalDraftLineViewV1> Lines)
+{
+    [JsonIgnore] public NormalJournalDraftApprovalReceiptV1? ApprovalReceipt { get; init; }
+}
 
 public sealed record NormalJournalPreparedCreateLineV2(Guid AccountId, PostingSide Side, decimal Amount);
 
@@ -173,7 +177,7 @@ public interface INormalJournalDraftLifecycleV1
 /// binds actor, exact permission, ADR-011 replay, approval eligibility and the store's final fence.
 /// It registers or grants no permission and imports no account-plan file.
 /// </summary>
-public sealed class NormalJournalDraftServiceV1(
+public sealed partial class NormalJournalDraftServiceV1(
     IAccountingNormalJournalDraftStore drafts,
     IAccountingCommandLog commands,
     NormalJournalDraftApprovalPolicyV1 approvalPolicy,
@@ -284,7 +288,9 @@ public sealed class NormalJournalDraftServiceV1(
             AccountingApiStatus.Invalid, null, false, AccountingApiCodes.RequestInvalid, "idempotencyKey"));
         if (!HasContext() || ActorGuid() is not { } capturedActor) return Task.FromResult(Denied());
         var capturedCompany = companyContext.CompanyId;
-        return drafts.RunNormalApprovalAsync(replayOnly => RunAsync(
+        return drafts.RunNormalApprovalAsync(async replayOnly =>
+        {
+            var answer = await RunAsync(
             permissions.ApprovePermission,
             idempotencyKey,
             NormalJournalCommandNamesV1.ApproveDraft,
@@ -328,7 +334,9 @@ public sealed class NormalJournalDraftServiceV1(
                 return new AccountingApiResult<NormalJournalDraftViewV1>(AccountingApiStatus.Ok, View(record), false, null);
             },
             stored => View((NormalJournalDraftRecordV1)stored),
-            cancellationToken, capturedCompany, replayOnly),
+            cancellationToken, capturedCompany, replayOnly);
+            return await AttachNormalApprovalReceiptAsync(answer, draftId, expectedVersion, periodId, idempotencyKey, capturedCompany, capturedActor, cancellationToken);
+        },
             token => FenceAsync(permissions.ApprovePermission, capturedActor, token, capturedCompany), cancellationToken);
     }
 

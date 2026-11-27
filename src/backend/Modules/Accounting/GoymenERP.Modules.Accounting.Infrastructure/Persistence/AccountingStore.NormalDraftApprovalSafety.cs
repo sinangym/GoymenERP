@@ -111,7 +111,7 @@ public sealed partial class AccountingStore
     { internal bool Saved; internal AccountingCommandRecord? Command; }
     private sealed class NormalApprovalRace(string noWinnerCode) : Exception { internal string NoWinnerCode { get; } = noWinnerCode; }
     private sealed class NormalApprovalUnavailable : Exception;
-    private sealed class GuardedNormalDraftStore(AccountingStore core) : IAccountingNormalJournalDraftStore
+    private sealed class GuardedNormalDraftStore(AccountingStore core) : IAccountingNormalJournalDraftStore, IAccountingNormalJournalDraftDecisionStoreV1
     {
         public Task<AccountingApiResult<NormalJournalDraftViewV1>> RunNormalApprovalAsync(Func<bool, Task<AccountingApiResult<NormalJournalDraftViewV1>>> attempt,
             Func<CancellationToken, Task> fence, CancellationToken token = default) => core.RunOwnedNormalApprovalAsync(attempt, fence, token);
@@ -121,6 +121,7 @@ public sealed partial class AccountingStore
                 : throw new InvalidOperationException("Guarded normal approval requires its owned command boundary.");
         public Task<(NormalJournalDraftRecordV1 Record, AccountingWriteOutcome Outcome)> CreateNormalDraftAsync(NormalJournalDraftV1 draft,
             Func<CancellationToken, Task> fence, AccountingCommandMetadata metadata, CancellationToken token = default) => core.CreateNormalDraftAsync(draft, fence, metadata, token);
+        public Task<NormalJournalDraftRecordV1?> ReadNormalDraftDecisionAsync(Guid id, Func<CancellationToken, Task> fence, CancellationToken token = default) => core.ReadNormalDraftDecisionAsync(id, fence, token);
         public Task<NormalJournalDraftRecordV1?> FindNormalDraftAsync(Guid id, CancellationToken token = default) => core.FindNormalDraftAsync(id, token);
     }
 }

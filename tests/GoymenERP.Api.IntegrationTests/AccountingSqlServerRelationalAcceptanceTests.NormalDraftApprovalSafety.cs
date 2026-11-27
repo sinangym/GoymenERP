@@ -32,7 +32,7 @@ public sealed partial class AccountingSqlServerRelationalAcceptanceTests
                 var staged = scope.Db.ChangeTracker.Entries<NormalJournalDraftRow>().Any(x => x.Entity.Id == id && x.Entity.Version == 2);
                 if (staged && scope.Writer.HasPendingDrafts) pending = true;
                 if (save.FinalSaved) savedFences++;
-                var reached = fault == "after-audit" ? staged && pending && !scope.Writer.HasPendingDrafts : fault == "precommit" ? savedFences == 4 : save.FinalSaved;
+                var reached = fault == "after-audit" ? staged && pending && !scope.Writer.HasPendingDrafts : fault == "precommit" ? savedFences == 10 : save.FinalSaved;
                 if (!deny || !reached) return true;
                 observed = true;
                 if (fault == "company") { scope.Company.Set(CompanyB); return true; }
@@ -43,7 +43,7 @@ public sealed partial class AccountingSqlServerRelationalAcceptanceTests
             };
             if (fault == "cancel") await Assert.ThrowsAnyAsync<OperationCanceledException>(() => scope.Approve(id, period, "normal-owned-late", cancellation.Token));
             else Assert.Equal(AccountingApiStatus.Denied, (await scope.Approve(id, period, "normal-owned-late")).Status);
-            Assert.True(observed); if (fault == "precommit") Assert.Equal(4, savedFences); // post-final-Save1, service result release2, owner result3, precommit4.
+            Assert.True(observed); if (fault == "precommit") Assert.Equal(10, savedFences); // Save1, result release2, receipt entry3/command4, source entry5/header6/lines7/release8, owner9, precommit10.
             scope.AssertClean(); await NormalSafetyDurable(run, id, false);
             Assert.Equal(periodVersion, await run.ScalarAsync<long>("SELECT Version FROM accounting.Periods WHERE Id=@id", ("@id", period)));
             deny = false; scope.Company.Set(CompanyA); scope.User.Actor = run.Actor; scope.User.Member = true; save.FinalSaved = false;
