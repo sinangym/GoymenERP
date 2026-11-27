@@ -20,6 +20,10 @@ it('shows only the released own digest source and raw per-kind counts with no AI
  const calls=installFetch({capabilities:[cap],respond:url=>url.endsWith(path)?json(value):undefined});mount()
  const region=await screen.findByRole('region',{name:T.heading});await within(region).findByText(value.scheduleVersion)
  expect(within(region).getByText(value.slotUtc)).toBeTruthy();expect(within(region).getByText(digest)).toBeTruthy()
+ const source=within(region).getByText(T.source).closest('details')!
+ expect(source.open).toBe(false);expect(source.contains(within(region).getByText(value.scheduleVersion))).toBe(true);expect(source.contains(within(region).getByText(digest))).toBe(true)
+ expect(source.contains(within(region).getByText(value.slotUtc))).toBe(false)
+ await userEvent.setup().click(within(region).getByText(T.source));expect(source.open).toBe(true)
  expect(within(region).getByRole('rowheader',{name:MORNING_KIND_TEXT['task-assigned']})).toBeTruthy()
  expect(within(region).getAllByRole('cell').map(cell=>cell.textContent)).toEqual(['7','3'])
  expect(calls.filter(call=>call.url.endsWith(path))).toHaveLength(1);expect(calls.find(call=>call.url.endsWith(path))!.headers['X-Company-Id']).toBe(COMPANY_A)

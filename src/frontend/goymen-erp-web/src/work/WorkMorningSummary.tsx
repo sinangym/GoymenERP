@@ -27,7 +27,8 @@ function Summary({namespace,generation,company}:{readonly namespace:string;reado
   {result===undefined?<StateBlock state={{kind:'initial-loading'}} subject={T.heading}/>:result.type!=='ok-single'?<>
     {result.type==='http' && result.status===503?<p role="status">{T.unavailable}</p>:null}<StateBlock state={classifyOutcome(result)} subject={T.heading}/>
    </>:value===null?<p>{T.empty}</p>:<><dl className={styles.facts}><dt>{T.slot}</dt><dd><time dateTime={value.slotUtc}>{value.slotUtc}</time></dd>
-    <dt>{T.schedule}</dt><dd>{value.scheduleVersion}</dd><dt>{T.digest}</dt><dd>{value.digestId}</dd></dl>
+    </dl>
+    <details><summary>{T.source}</summary><dl className={styles.facts}><dt>{T.schedule}</dt><dd>{value.scheduleVersion}</dd><dt>{T.digest}</dt><dd>{value.digestId}</dd></dl></details>
     {value.counts.length===0?<p>{T.emptyCounts}</p>:<table><thead><tr><th scope="col">{T.kind}</th><th scope="col">{T.count}</th></tr></thead><tbody>{value.counts.map(row=><tr key={row.kind}><th scope="row">{MORNING_KIND_TEXT[row.kind]}</th><td>{row.count}</td></tr>)}</tbody></table>}
    </>}
   <Button type="button" disabled={query.isFetching} onClick={()=>void query.refetch()}>{T.retry}</Button>
