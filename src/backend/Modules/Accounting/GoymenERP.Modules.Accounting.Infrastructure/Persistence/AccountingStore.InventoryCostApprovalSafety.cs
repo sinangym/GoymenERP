@@ -1,6 +1,7 @@
 using System.Text.Json;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Audit.Application.Contracts;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
@@ -80,11 +81,20 @@ public sealed partial class AccountingStore
             throw new InventoryCostRollbackAnswer(JsonSerializer.Deserialize<AccountingApiResult<AccountingInventoryCostProposalV1>>(command.ResultJson, Json)
                 ?? throw new InvalidOperationException("Inventory cost refusal result is unavailable."));
         AddCommand(RequireResolvedCompany(), command);
-        return SaveOwnedNormalApprovalAsync(token);
+        return SaveOwnedInventoryCostCommandAsync(token);
     }
     internal Task SaveOwnedInventoryCostApprovalAsync(AccountingInventoryCostStoreV1 caller, AccountingDbContext candidateDb,
         IAuditEventCollector candidateCollector, IAuditTransactionWriterV1 candidateWriter, CancellationToken token)
-    { RequireOwnedInventoryCostApproval(caller, candidateDb, candidateCollector, candidateWriter); return SaveOwnedNormalApprovalAsync(token); }
+    { RequireOwnedInventoryCostApproval(caller, candidateDb, candidateCollector, candidateWriter); return SaveOwnedInventoryCostCommandAsync(token); }
+    private async Task SaveOwnedInventoryCostCommandAsync(CancellationToken token)
+    {
+        try { await SaveOwnedNormalApprovalAsync(token); }
+        catch (DbUpdateConcurrencyException failure)
+        { throw new NormalJournalApprovalRaceException(AccountingStoreCodes.ConcurrentChange, failure); }
+        catch (DbUpdateException failure) when (failure.GetBaseException() is SqlException { Number: 2601 or 2627 })
+        { throw new NormalJournalApprovalRaceException(AccountingStoreCodes.ConcurrentChange, failure); }
+        // SQL1205 remains the shared owner's deadlock path, including auto-aborted transaction cleanup.
+    }
     internal Task ReadOwnedInventoryCostApprovalAsync(AccountingInventoryCostStoreV1 caller, AccountingDbContext candidateDb,
         IAuditEventCollector candidateCollector, IAuditTransactionWriterV1 candidateWriter, CancellationToken token)
     { RequireOwnedInventoryCostApproval(caller, candidateDb, candidateCollector, candidateWriter); return NormalApprovalFence(token); }

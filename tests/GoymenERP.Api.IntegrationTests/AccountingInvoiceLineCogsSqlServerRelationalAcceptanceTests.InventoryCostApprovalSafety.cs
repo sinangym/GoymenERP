@@ -127,6 +127,62 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         }
     }
     [SqlServerFact]
+    public async Task Inventory_cost_final_proposal_save_race_aborts_before_one_original_key_read_without_repeating_mutation()
+    {
+        foreach (var status in new[] { "Posted", "RoundedNoCost", "Stale" })
+        foreach (var fault in new[] { "final-concurrency", "final-2601", "final-2627" })
+        foreach (var winner in new[] { false, true })
+        {
+            await using var run = await Run.Start(); var setup = await InventoryApprovalPrepare(run, zero: status == "RoundedNoCost");
+            if (status == "Stale") setup.Profiles.Version++;
+            var before = await InventoryApprovalCounts(run); var save = new InventoryApprovalSave { Fault = fault }; var tx = new InventoryApprovalTransactions();
+            await using var owner = new InventoryApprovalSqlScope(run, setup.Reader, setup.Profiles, save, tx);
+            var won = false; string? original = null;
+            owner.Authority.BeforeRead = async () =>
+            {
+                if (!winner || won || !save.Injected || owner.Db.Database.CurrentTransaction is not null) return;
+                won = true; await using var other = new InventoryApprovalSqlScope(run, setup.Reader, setup.Profiles);
+                var answer = await other.Approve(setup.Id, setup.Kind, "final-race");
+                Assert.Equal(status, answer.Resource?.Status); original = other.CorrelationId;
+            };
+            var result = await owner.Approve(setup.Id, setup.Kind, "final-race");
+            Assert.True(save.Injected); Assert.Equal(status == "Posted" ? 2 : 1, save.Attempts);
+            Assert.Equal(2, tx.Starts); Assert.Equal(1, owner.Writer.Discards); owner.AssertClean();
+            Assert.Equal(winner, result.IsReplay); Assert.Equal(winner && status != "Stale" ? AccountingApiStatus.Ok : AccountingApiStatus.Conflict, result.Status);
+            if (winner) { Assert.Equal(status, result.Resource?.Status); Assert.Equal(3L, result.Resource?.Version); Assert.Equal(original, result.OriginalCorrelationId); }
+            else { Assert.Equal(AccountingStoreCodes.ConcurrentChange, result.Code); Assert.Null(result.Resource); }
+            var posted = winner && status == "Posted" ? 1 : 0;
+            Assert.Equal(before with { Proposals = before.Proposals + (winner ? 1 : 0), Commands = before.Commands + (winner ? 1 : 0),
+                Journals = before.Journals + posted, Deliveries = before.Deliveries + posted, Audits = before.Audits + (winner ? 1 : 0) + posted }, await InventoryApprovalCounts(run));
+            // The failure is injected only at the final proposal/Commands save on real SQL, after the journal save when Posted.
+        }
+    }
+    [SqlServerFact]
+    public async Task Inventory_cost_terminal_refusal_save_race_aborts_before_one_original_key_read_without_repeating_command()
+    {
+        foreach (var fault in new[] { "terminal-concurrency", "terminal-2601", "terminal-2627" })
+        foreach (var winner in new[] { false, true })
+        {
+            await using var run = await Run.Start(); var setup = await InventoryApprovalPrepare(run); var before = await InventoryApprovalCounts(run);
+            var save = new InventoryApprovalSave { Fault = fault }; var tx = new InventoryApprovalTransactions();
+            await using var owner = new InventoryApprovalSqlScope(run, setup.Reader, setup.Profiles, save, tx);
+            var won = false; string? original = null;
+            owner.Authority.BeforeRead = async () =>
+            {
+                if (!winner || won || !save.Injected || owner.Db.Database.CurrentTransaction is not null) return;
+                won = true; await using var other = new InventoryApprovalSqlScope(run, setup.Reader, setup.Profiles);
+                var answer = await other.Service.ApproveAsync(setup.Id, setup.Kind, 99, "terminal-race");
+                Assert.Equal(AccountingApiCodes.VersionConflict, answer.Code); original = other.CorrelationId;
+            };
+            var result = await owner.Service.ApproveAsync(setup.Id, setup.Kind, 99, "terminal-race");
+            Assert.True(save.Injected); Assert.Equal(1, save.Attempts); Assert.Equal(2, tx.Starts); Assert.Equal(1, owner.Writer.Discards); owner.AssertClean();
+            Assert.Equal(AccountingApiStatus.Conflict, result.Status); Assert.Equal(winner, result.IsReplay); Assert.Null(result.Resource);
+            Assert.Equal(winner ? AccountingApiCodes.VersionConflict : AccountingStoreCodes.ConcurrentChange, result.Code);
+            if (winner) { Assert.Equal(99L, result.ExpectedVersion); Assert.Equal(2L, result.CurrentVersion); Assert.Equal(original, result.OriginalCorrelationId); }
+            Assert.Equal(before with { Commands = before.Commands + (winner ? 1 : 0) }, await InventoryApprovalCounts(run));
+        }
+    }
+    [SqlServerFact]
     public async Task Inventory_cost_cleanup_fault_preserves_aggregate_failure_and_still_clears_tracker_and_owned_audit()
     {
         foreach (var dispose in new[] { false, true })
@@ -252,12 +308,16 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData data, InterceptionResult<int> result, CancellationToken token = default)
         {
             if (data.Context is AccountingDbContext db && (db.ChangeTracker.Entries<JournalRow>().Any(e => e.State == EntityState.Added)
-                || db.ChangeTracker.Entries<AccountingInventoryCostProposalRow>().Any(e => e.State == EntityState.Added && e.Entity.Status is 3 or 6 or 7)))
+                || db.ChangeTracker.Entries<AccountingInventoryCostProposalRow>().Any(e => e.State == EntityState.Added && e.Entity.Status is 3 or 6 or 7)
+                || Fault?.StartsWith("terminal-", StringComparison.Ordinal) == true && db.ChangeTracker.Entries<AccountingCommandRow>().Any(e => e.State == EntityState.Added)))
             {
                 Attempts++; proposalSave = db.ChangeTracker.Entries<AccountingInventoryCostProposalRow>().Any(e => e.State == EntityState.Added && e.Entity.Status is 3 or 6 or 7);
-                if (Fault is not null && Fault != "after-save-domain" && !Injected)
+                var targetReached = Fault?.StartsWith("final-", StringComparison.Ordinal) != true || proposalSave;
+                if (Fault is not null && Fault != "after-save-domain" && !Injected && targetReached)
                 {
-                    Injected = true; if (Fault == "concurrency") throw new DbUpdateConcurrencyException("SENTETIK inventory approval race");
+                    Injected = true; if (Fault is "concurrency" or "final-concurrency" or "terminal-concurrency") throw new DbUpdateConcurrencyException("SENTETIK inventory approval race");
+                    if (Fault is "final-2601" or "terminal-2601" or "final-2627" or "terminal-2627")
+                        throw new DbUpdateException("SENTETIK final inventory command duplicate", SqlConcurrencyWrapperPolicyTests.SqlFailure(Fault.EndsWith("2601", StringComparison.Ordinal) ? 2601 : 2627));
                     if (Fault == "completed-provider") db.Database.CurrentTransaction!.GetDbTransaction().Rollback();
                     var failure = SqlConcurrencyWrapperPolicyTests.SqlFailure(1205); if (Fault == "wrapped") throw new DbUpdateException("SENTETIK wrapped provider failure", failure); throw failure;
                 }
