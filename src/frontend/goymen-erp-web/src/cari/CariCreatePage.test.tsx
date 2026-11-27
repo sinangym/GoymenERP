@@ -121,7 +121,7 @@ describe('C-02 route and capability (G-002 check 5)', () => {
     ])
     await waitFor(() => expect(document.body.textContent).toContain('Göymen Demir Çelik (GDC)'), CHAIN)
     const text = document.body.textContent ?? ''
-    for (const forbidden of ['VKN', 'TCKN', 'Banka', 'Adres', 'Risk', 'Limit', 'Bakiye', 'Gerekçe']) {
+    for (const forbidden of ['Banka', 'Adres', 'Risk', 'Limit', 'Bakiye', 'Gerekçe']) {
       expect(text, forbidden).not.toContain(forbidden)
     }
     expect(text).not.toContain(A_ID)

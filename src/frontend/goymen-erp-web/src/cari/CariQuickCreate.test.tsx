@@ -281,12 +281,16 @@ it('atomic post-commit 403 remount keeps the original key/body and retries only 
     }
     return response
   }))
-  const {onCreated}=mount();let dialog=await openAndFill()
+  const {router,onCreated}=mount();let dialog=await openAndFill()
   await userEvent.type(within(dialog).getByLabelText('VKN / TCKN (isteğe bağlı)'),'1234567890')
   await userEvent.click(within(dialog).getByRole('button',{name:'Cari oluştur'}))
-  await waitFor(()=>expect(generation).toBeGreaterThan(1))
-  // Authority refresh can remount and close the portal; reopening must not mint another attempt.
-  if(screen.queryByRole('dialog')===null)await userEvent.click(await screen.findByRole('button',{name:T.open}))
+  await screen.findByText(T.denied)
+  expect(log.creates()).toHaveLength(1)
+  // A 403 closes authority; only explicit re-entry can obtain a new current grant.
+  await act(async()=>{await router.navigate('/')})
+  await act(async()=>{await router.navigate('/quick')})
+  await userEvent.click(await screen.findByRole('button',{name:T.open}))
+  expect(generation).toBeGreaterThan(1)
   dialog=screen.getByRole('dialog')
   await within(dialog).findByText(/İşlem sonucu belirsiz/)
   expect(log.creates()).toHaveLength(1)
