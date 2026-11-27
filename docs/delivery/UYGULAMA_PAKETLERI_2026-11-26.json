@@ -1962,7 +1962,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Finish paired Logistics source/UI checks and native Inventory overage adapter independently; retain all64-flow SQL/HTTP/browser/CI/K3 acceptance gates.",
+      "next_action": "Complete weighing purpose/UI and remaining native owner adapters; all64-flow SQL/HTTP/browser/CI/K3 acceptance gates remain. Paired19 is source coverage only.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2462,7 +2462,6 @@
             "review": "Bounded nonauthor full15-file source review completed without concrete open P0/P1/P2; production caller inventory and caller-owned-state preservation checked. Not full K3.",
             "remaining": [
               "Owner history/locator1000 scale readiness",
-              "Paired typed overage UI and source availability",
               "Actual SQL/HTTP/browser,pins/full CI/two independent K3"
             ],
             "new_permissions": [],
@@ -2477,6 +2476,24 @@
               "Compile and targeted local cohort",
               "Weighing Work purpose/UI pairing",
               "Actual SQL/HTTP/browser, final pins/full CI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null
+          },
+          {
+            "source_commit": "0528e81cd",
+            "source_commits": [
+              "842209abe",
+              "da4c23289",
+              "702e17473",
+              "0528e81cd"
+            ],
+            "scope": "Paired Inventory overage human preview, native approve/reject and frozen request/time/version/key reconciliation. Validated historical loss/overage receipts bypass only the newer pending preview; real POST authority/403 is preserved. Source capability and inbox link paired; native browse/reference unchanged.",
+            "local_checks": "Agent0e40076d7 fourfiles209 passed skip0/full tsc exit0. Final521afa9bac only2-line mount test cast delta:8 passed skip0,8file lint0errors0warnings; production/Work tests unchanged. Root entire frontend equals521afa9bac. New C# publication0528e81cd awaits cohort.",
+            "review": "Two bounded source P2 findings (post-replay preview403 refence and silent invalid-control reason) reproduced/fixed in da4c23289; nonauthor source delta closed. Publication source review pending final6-file delta; not K3.",
+            "remaining": [
+              "Real SQL/HTTP/browser, final pins/full CI/two independent K3",
+              "History/locator1000 scale readiness"
             ],
             "new_permissions": [],
             "migration": null
@@ -2541,12 +2558,16 @@
           "8f00dfad4",
           "11657e046",
           "83aac68e6",
-          "19294d8a6"
+          "19294d8a6",
+          "4399288c3",
+          "034efea3a",
+          "842209abe",
+          "da4c23289",
+          "702e17473",
+          "0528e81cd"
         ],
-        "kind_count_scope": "18 paired source kinds plus1 staged Inventory overage backend; not19 accepted flows. All64 runtime acceptances remain open.",
-        "staged_kinds": [
-          "inventory.transfer-overage.v1"
-        ]
+        "kind_count_scope": "19 paired source kinds; not19 accepted flows. All64 runtime acceptances remain open.",
+        "staged_kinds": []
       }
     },
     {
