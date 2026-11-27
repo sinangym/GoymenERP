@@ -44,6 +44,7 @@ public sealed class AccountingNormalApprovalCompositionTests
         services.AddScoped<ISettingsPrerequisiteProvider>(_ =>
             new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(company));
         services.AddScoped<ISettingsMoneyCandidateReader, UnusedMoneyCandidates>();
+        services.AddScoped<IManufacturingAttributionLineageReaderV1, UnusedManufacturingLineage>();
         services.AddScoped<ICurrentUser, AnonymousUser>();
         services.AddScoped<IErpAuthorityRevalidationService, DenyAuthority>();
         services.AddScoped<ICorrelationContext, CorrelationContext>();
@@ -129,6 +130,13 @@ public sealed class AccountingNormalApprovalCompositionTests
         Assert.True(writer.HasPendingDrafts);
         // Explicit caller teardown, after preservation assertions; never command-owned cleanup.
         writer.DiscardPending(); Assert.False(writer.HasPendingDrafts);
+    }
+
+    private sealed class UnusedManufacturingLineage : IManufacturingAttributionLineageReaderV1
+    {
+        public Task<ManufacturingAttributionLineageV1> ReadAsync(ManufacturingCostDifferenceEventV1 source,
+            Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("A composition-only alias resolution must not read manufacturing lineage.");
     }
 
     private sealed class UnusedMoneyCandidates : ISettingsMoneyCandidateReader
