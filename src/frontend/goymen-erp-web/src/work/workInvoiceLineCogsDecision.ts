@@ -28,6 +28,7 @@ const utc=(v:unknown):v is string=>transferDispatchUtc(v)&&v===v.trim()
 // Close native regex end anchors at the Work boundary, while preserving every validated raw character.
 const hashFields=new Set(['sourceSha256','sourceFingerprint','fingerprint','sourcePayloadSha256','lineageSha256','historySha256','sourceProofSha256','physicalSourceSha256','attributionFingerprint'])
 const numberTextFields=new Set(['amount','journalTotal','signedAmount','signedRoundingResidue','currentJournalTotal','roundedSignedAmount','numerator','denominator','generationVersion'])
+const int32Fields=new Set(['dispatchNoteLineNo','invoiceLineNo','cogsJournalLineNumber','counterJournalLineNumber','movementLineNumber','moneyScale'])
 function completeWire(value:unknown):boolean {
   if(Array.isArray(value))return value.every(completeWire)
   if(!object(value))return true
@@ -35,6 +36,7 @@ function completeWire(value:unknown):boolean {
     if(v!==null&&(key.endsWith('Id')||key==='preparedBy'||key==='approvedBy'||key==='ettn')&&!guid(v))return false
     if(hashFields.has(key)&&(typeof v!=='string'||v.length!==64||v!==v.trim()))return false
     if(numberTextFields.has(key)&&(typeof v!=='string'||v!==v.trim()))return false
+    if(int32Fields.has(key)&&(typeof v!=='number'||!Number.isInteger(v)||v<(key==='moneyScale'?0:1)||v>2147483647))return false
     return completeWire(v)
   })
 }
@@ -46,7 +48,7 @@ export function validInvoiceLineCogsPreview(value:Record<string,unknown>,company
   const p=human.proposal,s=human.source
   if(!guid(p.invoiceId)||!guid(p.invoiceLineId)||!guid(p.proposalId)||!same(p.proposalId,id))return false
   const validDate=(v:unknown)=>date(v)&&v!=='0001-01-01'
-  const wire:CostProofWireValidation={long:cogsWorkLong,date:validDate,utc}
+  const wire:CostProofWireValidation={long:cogsWorkLong,date:validDate,utc,allowEmptyNoReturns:true}
   if(!validCogsProposalWire(p,company,p.invoiceId,p.invoiceLineId,{...wire,instant:utc,exactVersion:(v,n)=>v===String(n),
       manufacturingShare:(v,c)=>validPostedManufacturingCostShare(v,c,undefined,wire),
       purchaseShare:(v,c,product)=>validPostedPurchaseCostShare(v,c,product,wire)})

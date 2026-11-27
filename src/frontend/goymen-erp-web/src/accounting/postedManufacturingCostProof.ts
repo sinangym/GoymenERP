@@ -2,6 +2,7 @@ import { isDateOnly } from '../finance/dateOnly'
 import { exactKeys } from './exactKeys'
 
 export interface CostProofWireValidation {
+  readonly allowEmptyNoReturns?: boolean
   readonly long?: (value: unknown, minimum: number) => boolean
   readonly date?: (value: unknown) => boolean
   readonly utc?: (value: unknown) => boolean
@@ -78,7 +79,8 @@ export function validPostedManufacturingCostShare(value: unknown, company: strin
       if (ids.has(identity) || movements.has(movement)) return false
       ids.add(identity); movements.add(movement)
     }
-  } else if ((shipment.hasReturns !== undefined && shipment.hasReturns !== false) || shipment.returns !== undefined) return false
+  } else if ((shipment.hasReturns !== undefined && shipment.hasReturns !== false)
+    || shipment.returns !== undefined && !(wire.allowEmptyNoReturns === true && Array.isArray(shipment.returns) && shipment.returns.length === 0)) return false
   return ['shipmentId', 'movementId', 'productId'].every(key => guid(shipment[key]))
     && (product === undefined || same(shipment.productId, product)) && positiveInteger(shipment.movementLineNumber)
     && typeof shipment.physicalQuantityKg === 'number' && Number.isFinite(shipment.physicalQuantityKg) && shipment.physicalQuantityKg > 0

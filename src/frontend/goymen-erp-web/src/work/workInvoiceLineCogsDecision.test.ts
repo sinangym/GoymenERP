@@ -39,6 +39,31 @@ describe('source-ready invoice-line COGS Work transport',()=>{
   expect(decoded?.proposal.attributedEvidence).toHaveLength(13);expect(decoded?.proposal.purchaseAttributedEvidence?.[0].currentJournalId).toBeNull()
   expect(decoded?.proposal.purchaseAttributedEvidence?.[0].source.approval.status).toBe('RoundedNoCost')
  })
+ it.each([{returns:undefined},{returns:[]}])('accepts retained false/empty or omitted returns without a new physical calculation: %j',({returns})=>{
+  const v=fixture(company),shipment=v.invoiceLineCogs.proposal.attributedEvidence[0]!.source.shipment
+  shipment.hasReturns=false;shipment.netRootQuantityKg={numerator:'1',denominator:'3'}
+  if(returns===undefined)Reflect.deleteProperty(shipment,'returns');else shipment.returns=returns
+  expect(decodeWorkDecisionPreview(v,company,kind,id)?.invoiceLineCogs).toEqual(v.invoiceLineCogs)
+ })
+ it('refuses false plus nonempty returns and preserves the native default rejection of a false empty list',()=>{
+  const v=fixture(company),m=v.invoiceLineCogs.proposal.attributedEvidence[0]!.source
+  m.shipment.hasReturns=false
+  expect(decodeWorkDecisionPreview(v,company,kind,id)).toBeNull()
+  const native={...m,moneyProfileVersion:2,shipment:{...m.shipment,provenOriginalSequence:null,returns:[]}}
+  expect(postedManufacturingCostShare(native,company)).toBe(false)
+ })
+ it.each(['invoice-line','dispatch-line','manufacturing-shipment','manufacturing-return','purchase-shipment','purchase-return'])('keeps exact native Int32 bounds in %s',branch=>{
+  for(const value of [2147483647,2147483648]){
+   const v=fixture(company),p=v.invoiceLineCogs.proposal,m=p.attributedEvidence[0]!.source.shipment,q=p.purchaseAttributedEvidence[0]!.source
+   if(branch==='invoice-line')v.invoiceLineCogs.source.invoiceLineNo=value
+   else if(branch==='dispatch-line')v.invoiceLineCogs.source.dispatchNoteLineNo=value
+   else if(branch==='manufacturing-shipment')m.movementLineNumber=value
+   else if(branch==='manufacturing-return')m.returns[0]!.movementLineNumber=value
+   else if(branch==='purchase-shipment'){q.movementLineNumber=value;q.candidates[0]!.shipment.movementLineNumber=value}
+   else q.candidates[0]!.shipment.returns[0]!.movementLineNumber=value
+   expect(decodeWorkDecisionPreview(v,company,kind,id)!==null,`${branch}/${value}`).toBe(value===2147483647)
+  }
+ })
  it('shows a stale prepared proposal read-only and distinguishes current line revision from proposal version',()=>{
   const v=fixture(company,false,'9007199254740993')
   expect(v.pending).toBe(false);expect(decodeWorkDecisionPreview(v,company,kind,id)?.sourceVersion).toBe('1')
