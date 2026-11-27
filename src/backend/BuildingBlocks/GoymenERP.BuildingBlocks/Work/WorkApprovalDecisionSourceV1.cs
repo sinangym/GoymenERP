@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.BuildingBlocks.Work;
 
 /// <summary>WP8 purpose read over the owner's own record. No price, cost or permission override.
@@ -11,4 +13,9 @@ public interface IWorkApprovalDecisionSourceV1 : IWorkInboxSourceV1
 }
 
 public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxItemV1 Item,
-    string SourceVersion, bool Pending);
+    string SourceVersion, bool Pending,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    WorkManufacturingPlanReapprovalOptionsV1? ManufacturingPlanReapproval = null);
+
+/// <summary>Approval-purpose identities from the current plan revision, never an implicit user selection.</summary>
+public sealed record WorkManufacturingPlanReapprovalOptionsV1(IReadOnlyList<Guid> ParentRollIds);

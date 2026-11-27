@@ -16,6 +16,8 @@ namespace GoymenERP.Manufacturing.UnitTests;
 internal sealed class ManufacturingInMemoryWorkInboxRows : ManufacturingWorkInboxRows
 {
     public List<PlanRow> PlanRows { get; } = [];
+    public List<PlanInputRow> InputRows { get; } = [];
+    public List<PlanRevisionInputRow> RevisionInputRows { get; } = [];
     public List<PlanRevisionRow> RevisionRows { get; } = [];
     public List<PlanRejectionRow> RejectionRows { get; } = [];
     public List<PlanReapprovalRow> ReapprovalRows { get; } = [];
@@ -25,6 +27,8 @@ internal sealed class ManufacturingInMemoryWorkInboxRows : ManufacturingWorkInbo
 
     public override IQueryable<PlanRow> Plans => PlanRows.AsQueryable();
     public override IQueryable<PlanRevisionRow> PlanRevisions => RevisionRows.AsQueryable();
+    public override IQueryable<PlanInputRow> PlanInputs => InputRows.AsQueryable();
+    public override IQueryable<PlanRevisionInputRow> PlanRevisionInputs => RevisionInputRows.AsQueryable();
     public override IQueryable<PlanRejectionRow> PlanRejections => RejectionRows.AsQueryable();
     public override IQueryable<PlanReapprovalRow> PlanReapprovals => ReapprovalRows.AsQueryable();
     public override IQueryable<OrderRow> Orders => OrderRows.AsQueryable();
@@ -55,6 +59,8 @@ internal sealed class ManufacturingSqlTranslatingWorkInboxRows : ManufacturingWo
 
     public override IQueryable<PlanRow> Plans => inner.Plans;
     public override IQueryable<PlanRevisionRow> PlanRevisions => inner.PlanRevisions;
+    public override IQueryable<PlanInputRow> PlanInputs => inner.PlanInputs;
+    public override IQueryable<PlanRevisionInputRow> PlanRevisionInputs => inner.PlanRevisionInputs;
     public override IQueryable<PlanRejectionRow> PlanRejections => inner.PlanRejections;
     public override IQueryable<PlanReapprovalRow> PlanReapprovals => inner.PlanReapprovals;
     public override IQueryable<OrderRow> Orders => inner.Orders;

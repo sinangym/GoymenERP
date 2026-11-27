@@ -13,7 +13,7 @@ using GoymenERP.Modules.Work.Infrastructure.Delegations;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>Real native command replay/validation composed with synthetic stores/authority. No SQL/browser acceptance.</summary>
-public sealed class WorkManufacturingPlanDecisionHostTests
+public sealed partial class WorkManufacturingPlanDecisionHostTests
 {
     private static readonly Guid Company = Guid.Parse("e8230000-0000-4000-8000-000000000001");
     private static readonly Guid PlanId = Guid.Parse("e8230000-0000-4000-8000-000000000002");
@@ -36,12 +36,12 @@ public sealed class WorkManufacturingPlanDecisionHostTests
     }
 
     [Fact]
-    public async Task Reapproval_remains_unavailable_without_invoking_any_native_command_or_selecting_labels()
+    public async Task Current_reapproval_requires_explicit_selection_without_invoking_any_native_command_or_selecting_labels()
     {
         var run = new Run(); run.Source.Reapproval = true;
         var preview = await run.Host.PreviewAsync(WorkDecisionHostV1.ManufacturingPlan, PlanId, default);
         Assert.False(preview.RejectionSupported);
-        Assert.Equal(503, (await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.DecideAsync(
+        Assert.Equal(400, (await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.DecideAsync(
             WorkDecisionHostV1.ManufacturingPlan, PlanId, new("1", true, null), "no-implicit-selection", default))).Status);
         Assert.Equal(0, run.CommandReads);
     }
@@ -171,7 +171,8 @@ public sealed class WorkManufacturingPlanDecisionHostTests
     {
         public readonly RawAuthority Raw = new(); public readonly Source Source;
         public readonly Delegations Delegations = new(); public readonly WorkDecisionHostV1 Host;
-        public Action? BeforeNativeFence; public int CommandReads; public bool ApprovalAnswer;
+        public Action? BeforeNativeFence; public int CommandReads; public bool ApprovalAnswer, ReapprovalAnswer;
+        public Guid[] StoredSelection = [LabelA, LabelB];
         public string StoredActor = Actor; public string? StoredHash;
         public PlanViewV1 View = new(PlanId, Company, Company, "Slitting", "Draft", 2, [], null, null, null,
             Rejections: [new(1, "SENTETIK red", ActorId, DateTimeOffset.UtcNow, 2)]);
@@ -187,9 +188,10 @@ public sealed class WorkManufacturingPlanDecisionHostTests
             {
                 if (method.Name != "FindCommandAsync") throw new NotSupportedException();
                 CommandReads++;
-                var command = ApprovalAnswer ? ManufacturingCommandNames.ApprovePlan : ManufacturingCommandNames.RejectPlan;
+                var command = ReapprovalAnswer ? ManufacturingCommandNames.ReapprovePlan : ApprovalAnswer ? ManufacturingCommandNames.ApprovePlan : ManufacturingCommandNames.RejectPlan;
                 Assert.Equal(command, args[0]);
-                object payload = ApprovalAnswer ? new { planId = PlanId, expectedVersion = 1L }
+                object payload = ReapprovalAnswer ? new { planId = PlanId, expectedVersion = 1L, selectedLabelIds = StoredSelection.Order().ToArray() }
+                    : ApprovalAnswer ? new { planId = PlanId, expectedVersion = 1L }
                     : new { planId = PlanId, expectedVersion = 1L, reason = "SENTETIK red" };
                 var canonical = JsonSerializer.Serialize(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web));
                 var record = new ManufacturingCommandRecord(command, (string)args[1]!, StoredActor,
@@ -221,13 +223,15 @@ public sealed class WorkManufacturingPlanDecisionHostTests
     private sealed class Source(string kind) : IWorkApprovalDecisionSourceV1
     {
         public string? Maker = Guid.NewGuid().ToString("D"); public bool Pending = true, Reapproval;
+        public string Version = "1";
+        public WorkManufacturingPlanReapprovalOptionsV1? Options = new([LabelA, LabelB]);
         public string OwnerModule = "manufacturing";
         public string Module => OwnerModule; public string Kind => kind;
         public string ApproverPermission => ManufacturingPermissionManifestV1.PlansApprove;
         public Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context, Guid itemId, CancellationToken cancellationToken) =>
             Task.FromResult<WorkApprovalDecisionSnapshotV1?>(new(Company, new(Module, Kind, itemId, "SENTETIK plan", DateTimeOffset.UtcNow,
                 "/uretim/plan/" + itemId, Maker, Reapproval ? [new("manufacturing.plan-reapproval-after-order-cancel", null, null, null, null)]
-                    : Pending ? [new("manufacturing.plan-first-approval", null, null, null, null)] : [], []), "1", Pending));
+                    : Pending ? [new("manufacturing.plan-first-approval", null, null, null, null)] : [], []), Version, Pending, Reapproval ? Options : null));
         public Task<WorkInboxSourceResultV1> ListPendingAsync(WorkInboxSourceContextV1 context, int maxCount, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
     private sealed class User : ICurrentUser

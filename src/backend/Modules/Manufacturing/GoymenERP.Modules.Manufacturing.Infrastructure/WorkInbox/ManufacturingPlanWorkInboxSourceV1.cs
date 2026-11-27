@@ -109,13 +109,33 @@ internal sealed class ManufacturingPlanWorkInboxSourceV1 : IWorkApprovalDecision
                 PurposeLink(itemId), string.IsNullOrWhiteSpace(maker) ? null : maker.Trim(), [], [],
                 Scope: new WorkInboxItemScopeV1(null, null, row.WorkCenterId));
         }
+        WorkManufacturingPlanReapprovalOptionsV1? reapproval = null;
+        if (pending is [{ Reapproval: true }])
+        {
+            // PlanInputs is revision zero. A later Draft revision owns the approved plan's actual inputs.
+            // Read the complete identity set, not the inbox's capped references; never preselect it for a caller.
+            var revisions = await rows.ListAsync(rows.PlanRevisions.Where(revision => revision.CompanyId == context.CompanyId
+                && revision.PlanId == itemId && revision.PlanVersion <= capturedVersion)
+                .OrderByDescending(revision => revision.RevisionNo).Select(revision => revision.RevisionNo).Take(1), cancellationToken);
+            if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+            var labels = revisions.Count == 0
+                ? await rows.ListAsync(rows.PlanInputs.Where(input => input.CompanyId == context.CompanyId && input.PlanId == itemId)
+                    .OrderBy(input => input.Sequence).Select(input => input.ParentRollId), cancellationToken)
+                : await rows.ListAsync(rows.PlanRevisionInputs.Where(input => input.CompanyId == context.CompanyId
+                    && input.PlanId == itemId && input.RevisionNo == revisions[0])
+                    .OrderBy(input => input.Sequence).Select(input => input.ParentRollId), cancellationToken);
+            if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+            if (labels.Count == 0 || labels.Contains(Guid.Empty) || labels.Distinct().Count() != labels.Count)
+                throw new InvalidOperationException("Manufacturing reapproval input projection is invalid.");
+            reapproval = new(labels.ToArray());
+        }
         var final = await rows.ListAsync(rows.Plans.Where(plan => plan.CompanyId == context.CompanyId && plan.Id == itemId)
             .Select(plan => new { plan.CompanyId, plan.Id, plan.Version, plan.Status }).Take(2), cancellationToken);
         if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
         if (final.Count != 1 || final[0].CompanyId != context.CompanyId || final[0].Id != itemId
             || final[0].Version != capturedVersion || final[0].Status != capturedStatus)
             throw new InvalidOperationException("Manufacturing decision changed while reading.");
-        return new(context.CompanyId, item, capturedVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), pending.Length == 1);
+        return new(context.CompanyId, item, capturedVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), pending.Length == 1, reapproval);
     }
 
     public async Task<WorkInboxSourceResultV1> ListPendingAsync(

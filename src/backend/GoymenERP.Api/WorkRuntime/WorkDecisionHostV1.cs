@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
@@ -11,10 +12,16 @@ using GoymenERP.Modules.Manufacturing.Application;
 
 namespace GoymenERP.Api.WorkRuntime;
 
-public sealed record WorkDecisionRequestV1(string ExpectedVersion, bool Approve, string? Reason, Guid? DelegationId = null);
+public sealed record WorkDecisionRequestV1(string ExpectedVersion, bool Approve, string? Reason, Guid? DelegationId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    WorkManufacturingPlanReapprovalSelectionV1? ManufacturingPlanReapproval = null);
+/// <summary>The human's explicit selection. Only the Manufacturing reapproval command accepts it.</summary>
+public sealed record WorkManufacturingPlanReapprovalSelectionV1(IReadOnlyList<Guid>? SelectedLabelIds = null);
 public sealed record WorkDecisionPreviewV1(Guid CompanyId, string Kind, Guid ItemId, string DocumentLabel,
     string SourceVersion, bool Pending, bool ApprovalReasonRequired, IReadOnlyList<WorkApprovalReferenceV1> References,
-    IReadOnlyList<WorkApprovalRuleResultV1> Rules, bool RejectionSupported = true);
+    IReadOnlyList<WorkApprovalRuleResultV1> Rules, bool RejectionSupported = true,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    WorkManufacturingPlanReapprovalOptionsV1? ManufacturingPlanReapproval = null);
 public sealed record WorkDecisionResultV1(Guid CompanyId, string Kind, Guid ItemId, string State, bool Replayed, string OriginalCorrelationId);
 public sealed class WorkDecisionException(int status, string? code = null, bool replayed = false, string? original = null) : Exception(code)
 {
@@ -140,7 +147,14 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || snapshot.Item.References is null || snapshot.Item.References.Count > WorkInboxRulesV1.MaxReferencesPerItem
             || snapshot.Item.References.Any(item => !WorkInboxRulesV1.IsValidReference(item))
             || snapshot.Item.Rules is null || snapshot.Item.Rules.Count > WorkInboxRulesV1.MaxRulesPerItem
-            || snapshot.Item.Rules.Any(rule => !WorkInboxRulesV1.IsValidRule(source.Module, rule)))
+            || snapshot.Item.Rules.Any(rule => !WorkInboxRulesV1.IsValidRule(source.Module, rule))
+            || kind == ManufacturingPlan && snapshot.Pending
+                && snapshot.Item.Rules.Any(rule => rule.RuleCode == "manufacturing.plan-reapproval-after-order-cancel")
+                && snapshot.ManufacturingPlanReapproval is null
+            || snapshot.ManufacturingPlanReapproval is { } options && (kind != ManufacturingPlan || !snapshot.Pending
+                || !snapshot.Item.Rules.Any(rule => rule.RuleCode == "manufacturing.plan-reapproval-after-order-cancel")
+                || options.ParentRollIds is not { Count: > 0 } || options.ParentRollIds.Contains(Guid.Empty)
+                || options.ParentRollIds.Distinct().Count() != options.ParentRollIds.Count))
             throw new WorkDecisionException(503);
         if (snapshot.Item.Excludes(actor)) throw new WorkDecisionException(403);
         return snapshot;
@@ -161,7 +175,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         await RequireDecisionAuthorityAsync(kind,sources.Single(source => source.Kind == kind).ApproverPermission,snapshot.CompanyId,actor!,token);
         return new(snapshot.CompanyId, kind, id, snapshot.Item.DocumentLabel, snapshot.SourceVersion, snapshot.Pending,
             kind is OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance, snapshot.Item.References, rules, kind is not (PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance)
-                && !(kind == ManufacturingPlan && rules.Any(rule => rule.RuleCode == "manufacturing.plan-reapproval-after-order-cancel")));
+                && !(kind == ManufacturingPlan && rules.Any(rule => rule.RuleCode == "manufacturing.plan-reapproval-after-order-cancel")),
+            snapshot.ManufacturingPlanReapproval);
     }
 
     public async Task<WorkDecisionResultV1> DecideAsync(string kind, Guid id, WorkDecisionRequestV1 request, string key, CancellationToken token)
@@ -170,7 +185,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         var actor = user.UserId;
         var snapshot = await SnapshotAsync(kind, id, token);
         if (user.UserId != actor) throw new WorkDecisionException(403);
-        if (kind is (PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance) && !request.Approve
+        if (request.ManufacturingPlanReapproval is not null && (kind != ManufacturingPlan || !request.Approve)
+            || kind is (PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance) && !request.Approve
             || string.IsNullOrWhiteSpace(request.ExpectedVersion) || request.ExpectedVersion.Length > 128
             || (kind == OpeningCost && request.ExpectedVersion != snapshot.SourceVersion)
             || ((kind == OpeningCost || !request.Approve && kind is not (SalesOrder or SalesInvoice or SalesSubcontractInvoice or PurchaseRequest or PurchaseGoodsReceiptBatch or ManufacturingPlan)) && (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 500))

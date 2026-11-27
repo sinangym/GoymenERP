@@ -14,6 +14,10 @@ internal abstract class ManufacturingWorkInboxRows
 
     public abstract IQueryable<PlanRevisionRow> PlanRevisions { get; }
 
+    public abstract IQueryable<PlanInputRow> PlanInputs { get; }
+
+    public abstract IQueryable<PlanRevisionInputRow> PlanRevisionInputs { get; }
+
     public abstract IQueryable<PlanRejectionRow> PlanRejections { get; }
 
     public abstract IQueryable<PlanReapprovalRow> PlanReapprovals { get; }
@@ -29,6 +33,10 @@ internal sealed class ManufacturingWorkInboxDbRows(ManufacturingDbContext dbCont
     public override IQueryable<PlanRow> Plans => dbContext.Plans.AsNoTracking();
 
     public override IQueryable<PlanRevisionRow> PlanRevisions => dbContext.PlanRevisions.AsNoTracking();
+
+    public override IQueryable<PlanInputRow> PlanInputs => dbContext.PlanInputs.AsNoTracking();
+
+    public override IQueryable<PlanRevisionInputRow> PlanRevisionInputs => dbContext.PlanRevisionInputs.AsNoTracking();
 
     public override IQueryable<PlanRejectionRow> PlanRejections => dbContext.PlanRejections.AsNoTracking();
 

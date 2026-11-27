@@ -19,6 +19,7 @@ public sealed partial class ManufacturingPlanWorkInboxSourceTests
         var snapshot = await Source().ReadDecisionAsync(Context(), Id(1), default);
         Assert.NotNull(snapshot); Assert.Equal("7", snapshot.SourceVersion); Assert.True(snapshot.Pending);
         Assert.Equal(maker, snapshot.Item.PreparedBy);
+        Assert.Null(snapshot.ManufacturingPlanReapproval);
         Assert.Equal("/onaylarim/manufacturing.plan.v1/" + Id(1).ToString("D"), snapshot.Item.Link);
         Assert.Equal(new WorkInboxItemScopeV1(null, null, Id(8001)), snapshot.Item.Scope);
         Assert.All(authority.Calls, call => Assert.Equal((ManufacturingPermissionManifestV1.PlansApprove, CompanyA), call));
@@ -31,6 +32,7 @@ public sealed partial class ManufacturingPlanWorkInboxSourceTests
     {
         Plan(Id(1), 2, 0, version: 4);
         Revision(Id(1), 1, 3, 20);
+        rows.RevisionInputRows.Add(new() { CompanyId = CompanyA, PlanId = Id(1), RevisionNo = 1, ParentRollId = Id(71) });
         Order(Id(1), Id(91), 3, planVersionAfterCancel: 4, cancelledMinutes: 50);
         var snapshot = await Source().ReadDecisionAsync(Context(), Id(1), default);
         Assert.NotNull(snapshot); Assert.True(snapshot.Pending); Assert.Equal("4", snapshot.SourceVersion);
@@ -38,6 +40,7 @@ public sealed partial class ManufacturingPlanWorkInboxSourceTests
         Assert.Equal(ManufacturingPlanWorkInboxSourceV1.ReapprovalRule, Assert.Single(snapshot.Item.Rules).RuleCode);
         var reference = Assert.Single(snapshot.Item.References);
         Assert.Equal(("manufacturing-order", Id(91)), (reference.Role, reference.RecordId));
+        Assert.Equal([Id(71)], snapshot.ManufacturingPlanReapproval!.ParentRollIds);
     }
 
     [Theory]
@@ -48,6 +51,7 @@ public sealed partial class ManufacturingPlanWorkInboxSourceTests
         Plan(Id(1), status, 0, version: 5, createdBy: null);
         var snapshot = await Source().ReadDecisionAsync(Context(), Id(1), default);
         Assert.NotNull(snapshot); Assert.False(snapshot.Pending); Assert.Equal("5", snapshot.SourceVersion);
+        Assert.Null(snapshot.ManufacturingPlanReapproval);
         Assert.Null(snapshot.Item.PreparedBy); Assert.Empty(snapshot.Item.Rules);
     }
 
@@ -124,11 +128,72 @@ public sealed partial class ManufacturingPlanWorkInboxSourceTests
             ? ManufacturingWorkInboxTestAuthority.CompanyWide : PermissionScope.Denied;
         Assert.Null(await Source().ReadDecisionAsync(Context(), Id(1), default));
     }
+    [Fact]
+    public async Task Reapproval_options_are_the_complete_current_revision_identity_set_not_the_twelve_reference_cap()
+    {
+        Plan(Id(1), 2, 0, version: 4);
+        Revision(Id(1), 1, 3, 20);
+        Order(Id(1), Id(91), 3, planVersionAfterCancel: 4, cancelledMinutes: 50);
+        rows.InputRows.Add(new() { CompanyId = CompanyA, PlanId = Id(1), ParentRollId = Id(70) });
+        var ids = Enumerable.Range(100, 15).Select(Id).ToArray();
+        foreach (var (id, ordinal) in ids.Select((id, ordinal) => (id, ordinal)))
+            rows.RevisionInputRows.Add(new() { CompanyId = CompanyA, PlanId = Id(1), RevisionNo = 1, ParentRollId = id, Sequence = ordinal });
+        rows.RevisionInputRows.Add(new() { CompanyId = CompanyB, PlanId = Id(1), RevisionNo = 1, ParentRollId = Id(80) });
+        rows.RevisionInputRows.Add(new() { CompanyId = CompanyA, PlanId = Id(2), RevisionNo = 1, ParentRollId = Id(81) });
+        var snapshot = await Source().ReadDecisionAsync(Context(), Id(1), default);
+        Assert.NotNull(snapshot); Assert.Equal(ids, snapshot.ManufacturingPlanReapproval!.ParentRollIds);
+        Assert.Single(snapshot.Item.References);
+        Assert.True(snapshot.ManufacturingPlanReapproval.ParentRollIds.Count > WorkInboxRulesV1.MaxReferencesPerItem);
+        Assert.All(authority.Calls, call => Assert.Equal((ManufacturingPermissionManifestV1.PlansApprove, CompanyA), call));
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("empty-id")]
+    [InlineData("duplicate")]
+    public async Task Invalid_reapproval_label_projection_never_returns_partial_options(string fault)
+    {
+        Plan(Id(1), 2, 0, version: 3);
+        Order(Id(1), Id(91), 3, planVersionAfterCancel: 3, cancelledMinutes: 50);
+        if (fault != "missing") rows.InputRows.Add(new() { CompanyId = CompanyA, PlanId = Id(1), ParentRollId = fault == "empty-id" ? Guid.Empty : Id(70) });
+        if (fault == "duplicate") rows.InputRows.Add(new() { CompanyId = CompanyA, PlanId = Id(1), ParentRollId = Id(70) });
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Source().ReadDecisionAsync(Context(), Id(1), default));
+    }
+
+    [Theory]
+    [InlineData(4)]
+    [InlineData(5)]
+    public async Task Reapproval_option_queries_cannot_mix_a_new_version_with_the_initial_snapshot(int changedAfterRead)
+    {
+        Plan(Id(1), 2, 0, version: 3);
+        Order(Id(1), Id(91), 3, planVersionAfterCancel: 3, cancelledMinutes: 50);
+        rows.InputRows.Add(new() { CompanyId = CompanyA, PlanId = Id(1), ParentRollId = Id(70) });
+        var racing = new ChangingDecisionRows(rows, read => { if (read == changedAfterRead) rows.PlanRows.Single().Version++; });
+        var source = new ManufacturingPlanWorkInboxSourceV1(racing, Fence());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => source.ReadDecisionAsync(Context(), Id(1), default));
+        Assert.Equal(6, racing.Reads);
+    }
+
+    [Theory]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    public async Task Reapproval_options_never_escape_fresh_authority_loss(int revokedAt)
+    {
+        Plan(Id(1), 2, 0, version: 3);
+        Order(Id(1), Id(91), 3, planVersionAfterCancel: 3, cancelledMinutes: 50);
+        rows.InputRows.Add(new() { CompanyId = CompanyA, PlanId = Id(1), ParentRollId = Id(70) });
+        authority.Answer = (_, _) => authority.Calls.Count < revokedAt ? ManufacturingWorkInboxTestAuthority.CompanyWide : PermissionScope.Denied;
+        Assert.Null(await Source().ReadDecisionAsync(Context(), Id(1), default));
+    }
+
     private sealed class ChangingDecisionRows(ManufacturingWorkInboxRows inner, Action<int> afterRead) : ManufacturingWorkInboxRows
     {
         public int Reads { get; private set; }
         public override IQueryable<PlanRow> Plans => inner.Plans;
         public override IQueryable<PlanRevisionRow> PlanRevisions => inner.PlanRevisions;
+        public override IQueryable<PlanInputRow> PlanInputs => inner.PlanInputs;
+        public override IQueryable<PlanRevisionInputRow> PlanRevisionInputs => inner.PlanRevisionInputs;
         public override IQueryable<PlanRejectionRow> PlanRejections => inner.PlanRejections;
         public override IQueryable<PlanReapprovalRow> PlanReapprovals => inner.PlanReapprovals;
         public override IQueryable<OrderRow> Orders => inner.Orders;
