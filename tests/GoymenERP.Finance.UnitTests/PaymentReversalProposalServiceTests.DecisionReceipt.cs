@@ -46,6 +46,7 @@ public sealed partial class PaymentReversalProposalServiceTests
     [InlineData("terminal-version")]
     [InlineData("unknown-member")]
     [InlineData("malformed-json")]
+    [InlineData("missing-resource")]
     [InlineData("failure")]
     [InlineData("maker")]
     public void Missing_or_malformed_original_provenance_never_becomes_a_Work_receipt(string fault)
@@ -64,6 +65,7 @@ public sealed partial class PaymentReversalProposalServiceTests
             case "terminal-version": row.ResultJson = JsonSerializer.Serialize(result = result with { Resource = result.Resource! with { Version = "3" } }, FinanceJson.CreateOptions()); break;
             case "unknown-member": row.ResultJson = row.ResultJson[..^1] + ",\"unknown\":true}"; break;
             case "malformed-json": row.ResultJson = "{"; break;
+            case "missing-resource": row.ResultJson = JsonSerializer.Serialize(result = result with { Resource = null }, FinanceJson.CreateOptions()); break;
             case "failure": row.ResultJson = JsonSerializer.Serialize(result = result with { Outcome = CommandOutcome.VersionConflict }, FinanceJson.CreateOptions()); break;
             case "maker": row.ResultJson = JsonSerializer.Serialize(result = result with { Resource = result.Resource! with { ProposedBy = context.ActorId } }, FinanceJson.CreateOptions()); break;
         }

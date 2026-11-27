@@ -14,7 +14,9 @@ public sealed partial class PaymentReversalProposalService
     {
         await Fence();
         var key = FinanceCommandKeys.Hash(metadata.IdempotencyKey);
-        var paymentId = result.Resource!.PaymentId;
+        // A legacy bare answer still has its native outcome; missing resource cannot become purpose provenance.
+        if (result.Resource is not { } resource) { await Fence(); return null; }
+        var paymentId = resource.PaymentId;
         // One company-scoped query, exact original command key. Source facts are the immutable recorded payment/event,
         // never today's proposal state or a replacement proposal. No history scan or new receipt persistence.
         var found = await (from receipt in dbContext.Commands.AsNoTracking()
