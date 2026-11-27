@@ -283,8 +283,11 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Contains("purchasing.orders.price.read", PurchasingPermissionManifestV1.Names);
         Assert.All(declarations.Where(declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersPriceRead)),
             declaration => Assert.True(declaration.CapabilityId.StartsWith("purchasing.invoices.", StringComparison.Ordinal)
+                || declaration.CapabilityId == PurchasingShellCapabilityProvider.InvoiceVarianceWorkDecisionCapabilityId
                 || declaration.CapabilityId == PurchasingShellCapabilityProvider.AdditionalCostReadCapabilityId
                 || declaration.CapabilityId == PurchasingShellCapabilityProvider.AdditionalCostRecordCapabilityId));
+        Assert.Equal([PurchaseIncomingInvoicePermissionNamesV1.ApproveVariance, PurchasingPermissionManifestV1.OrdersPriceRead],
+            byId[PurchasingShellCapabilityProvider.InvoiceVarianceWorkDecisionCapabilityId].RequiredPermissions);
         Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersPriceRead],
             byId[PurchasingShellCapabilityProvider.AdditionalCostReadCapabilityId].RequiredPermissions);
         Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersPriceRead, PurchasingPermissionManifestV1.OrdersRevise],
