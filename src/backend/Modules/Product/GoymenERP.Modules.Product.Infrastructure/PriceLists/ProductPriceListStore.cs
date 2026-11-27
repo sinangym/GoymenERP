@@ -57,7 +57,7 @@ internal static class PriceListStoreCodes
 /// is never stored; the same key with the same content and actor answers the stored result, another content or actor
 /// is one conflict.
 /// </summary>
-internal sealed class ProductPriceListStore(
+internal sealed partial class ProductPriceListStore(
     ProductPriceListDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
@@ -88,6 +88,7 @@ internal sealed class ProductPriceListStore(
                 throw new InvalidOperationException("Kayıtlı denemenin özgün fiyat listesi cevabı okunamadı.");
             }
 
+            if (ownedPublish is not null && commandName == ProductPriceListCommandsV1.PublishV1) ownedPublish.ReplayProven = true;
             // An answer recorded before MOD-02 carries no scope member: every list of that time was company-wide.
             return new PriceListReplay(result.Scope is null ? result with { Scope = PriceListScopeViewV1.Company } : result, null,
                 attempt.CorrelationId);
@@ -99,12 +100,15 @@ internal sealed class ProductPriceListStore(
             throw new InvalidOperationException("Kayıtlı terminal ret okunamadı.");
         }
 
+        if (ownedPublish is not null && commandName == ProductPriceListCommandsV1.PublishV1) ownedPublish.ReplayProven = true;
         return new PriceListReplay(null, refusal, attempt.CorrelationId);
     }
 
     public async Task RecordRefusalAsync(PriceListWriteEnvelope envelope, string requestHash, string commandName,
         PriceListTerminalRefusal refusal, Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken)
     {
+        if (ownedPublish is not null && commandName != ProductPriceListCommandsV1.PublishV1)
+            throw new InvalidOperationException("Publish boundary cannot store another command.");
         var companyId = RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         if (await FindAttemptAsync(commandName, keyHash, cancellationToken) is not null)
@@ -112,6 +116,7 @@ internal sealed class ProductPriceListStore(
             throw new PriceListStoreException(PriceListStoreCodes.ConcurrentChange, "Bu anahtar zaten bir deneme taşıyor.");
         }
 
+        if (ownedPublish is { ReplayOnly: true }) throw new InvalidOperationException("Read-only publish cannot record a refusal.");
         dbContext.ChangeTracker.Clear();
         var row = Attempt(companyId, commandName, keyHash, requestHash, envelope, null, null);
         row.Outcome = AttemptOutcomeRefused;
@@ -119,6 +124,7 @@ internal sealed class ProductPriceListStore(
         dbContext.Attempts.Add(row);
         await BeforeCommitAsync(beforeCommit, cancellationToken);
         await SaveAsync(cancellationToken);
+        if (ownedPublish is not null && commandName == ProductPriceListCommandsV1.PublishV1) ownedPublish.RefusalSaved = true;
     }
 
     public Task<bool> NameExistsAsync(string name, Guid? exceptPriceListId, CancellationToken cancellationToken) =>
@@ -127,6 +133,7 @@ internal sealed class ProductPriceListStore(
     public async Task<PriceListStoreResult> CreateAsync(PriceListWriteEnvelope envelope, string requestHash, PriceList priceList,
         PriceListViewV1 result, Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken)
     {
+        if (ownedPublish is not null) throw new InvalidOperationException("Publish boundary cannot create a list.");
         var companyId = RequireResolvedCompany();
         if (priceList.CompanyId != companyId)
         {
@@ -183,6 +190,8 @@ internal sealed class ProductPriceListStore(
         Func<PriceList, CancellationToken, Task<PriceListViewV1>> captureResult,
         Func<CancellationToken, Task> beforeCommit, PriceListAudit audit, CancellationToken cancellationToken)
     {
+        if (ownedPublish is { ReplayOnly: true } || ownedPublish is not null && commandName != ProductPriceListCommandsV1.PublishV1)
+            throw new InvalidOperationException("Publish boundary cannot run another mutation or a read-only mutation.");
         var companyId = RequireResolvedCompany();
         var row = await dbContext.PriceLists.SingleOrDefaultAsync(candidate => candidate.Id == priceListId, cancellationToken);
         if (row is null)
@@ -527,6 +536,11 @@ internal sealed class ProductPriceListStore(
 
     private async Task SaveAsync(CancellationToken cancellationToken)
     {
+        if (ownedPublish is not null)
+        {
+            await SaveOwnedPublishAsync(cancellationToken);
+            return;
+        }
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);

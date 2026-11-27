@@ -16,7 +16,8 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 /// <item><b>Authority:</b> read = <see cref="ProductPriceListPermissionsV1.Read"/>, create / draft revision / new version /
 /// product options = <see cref="ProductPriceListPermissionsV1.Write"/>, publication = <see cref="ProductPriceListPermissionsV1.Publish"/>;
 /// each company-wide, measured fresh before anything is read (the replay included) and again right before the single
-/// save; none after the commit. An unregistered name is 503; a denied, narrower or lost grant, another actor or company
+/// save. Runtime Publish additionally uses the owned transaction/release facade; other core commands retain their boundary.
+/// An unregistered name is 503; a denied, narrower or lost grant, another actor or company
 /// is 403; no identity is 401.</item>
 /// <item><b>Idempotency (ADR-011):</b> one attempt per (company, command, key hash); the same key + content + actor
 /// answers the stored list with <c>isReplay</c>; another content or actor is 409 <c>idempotency_conflict</c>. A stale
@@ -26,7 +27,7 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 /// invisible (404).</item>
 /// </list>
 /// </summary>
-public sealed class ProductPriceListService : IProductPriceListServiceV1
+public sealed partial class ProductPriceListService : IProductPriceListServiceV1
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -267,6 +268,9 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
         {
             return replay;
         }
+
+        // A collision recovery may only read the original receipt, never mutate or record a synthetic conflict.
+        if (store.IsPublishReplayOnly) throw new ProductPriceListException(409, ProductPriceListCodesV1.ConcurrentChange);
 
         return await MutateAsync(envelope, requestHash, ProductPriceListCommandsV1.PublishV1, priceListId, permission, scope,
             new PriceListAudit("product.price-list.version-published.v1", "Publish", $"Fiyat sürümü {request.VersionNo} yayımlandı"),

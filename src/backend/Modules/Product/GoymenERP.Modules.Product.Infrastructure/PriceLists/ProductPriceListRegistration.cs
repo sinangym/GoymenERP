@@ -47,7 +47,7 @@ public static class ProductPriceListRegistration
         Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddScoped<GoymenERP.BuildingBlocks.Work.WorkInboxCompanyWideFenceV1>(services);
         services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1, WorkInbox.ProductPackageStandardWorkInboxSourceV1>();
         services.AddScoped<GoymenERP.BuildingBlocks.Work.IWorkInboxSourceV1, WorkInbox.ProductPriceListVersionWorkInboxSourceV1>();
-        services.AddScoped<IProductPriceListServiceV1>(CreateService);
+        services.AddScoped<IProductPriceListServiceV1>(CreateGuardedPriceListService);
         services.AddScoped<IProductPriceReferenceReaderV1>(CreateReader);
         services.AddScoped<IProductQuantityPriceReferenceReaderV1>(CreateReader);
         // MOD-02: the SAT-D9 tier chain beside the unchanged V1 readers.
@@ -109,6 +109,9 @@ public static class ProductPriceListRegistration
         serviceProvider.GetRequiredService<ICompanyContext>(),
         serviceProvider.GetRequiredService<IAuditEventCollector>(),
         serviceProvider.GetRequiredService<TimeProvider>());
+
+    private static IProductPriceListServiceV1 CreateGuardedPriceListService(IServiceProvider provider) =>
+        new GuardedProductPriceListService(CreateService(provider), provider.GetRequiredService<IAuditTransactionWriterV1>());
 
     private static ProductPriceListService CreateService(IServiceProvider serviceProvider) => new(
         serviceProvider.GetRequiredService<ICompanyContext>(),
