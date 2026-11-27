@@ -125,10 +125,15 @@ public static class WorkCollaborationEndpoints
         .ProducesErpUnprocessableEntity([WorkCollaborationProblemCodesV1.ValidationFailed, .. unprocessable])
         .ProducesErpUnsupportedMediaType().ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
 
-    private static async Task<IResult> ReadAsync<T>(HttpContext http, ICorrelationContext correlation, Func<Task<T>> read)
+    internal static async Task<IResult> ReadAsync<T>(HttpContext http, ICorrelationContext correlation, Func<Task<T>> read,
+        bool noContentWhenNull = false)
     {
         NoStore(http.Response);
-        try { return Results.Json(await read()); }
+        try
+        {
+            var value = await read();
+            return noContentWhenNull && value is null ? Results.NoContent() : Results.Json(value);
+        }
         catch (WorkCollaborationException exception) { return Problem(exception, correlation); }
     }
 
