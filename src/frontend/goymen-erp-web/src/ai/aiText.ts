@@ -2,6 +2,12 @@
  * AI Merkezi — sağ AI paneli Türkçe metinleri (plan AI-5 + AI-3 salt-okuma). Kullanıcı metinleri yalnız bu dosyadadır.
  */
 export const AI_TEXT = {
+  recordContextNotice: 'Bu soru açık kayıtla sınırlıdır. Kayıt bilgileri yetkili kaynak aracıyla okunur; soru alanına kayıt içeriğini kopyalamanız gerekmez.',
+  recordContextUnavailable: 'Açık kayıt için detay yeteneği veya ilgili AI okuma aracı kullanılamıyor. Bu ekrandan başka bir kayda yönelik soru gönderilemez.',
+  recordContextInvalid: 'Açık kayıt bağlamı doğrulanamadı. Kaydı yeniden açıp deneyin.',
+  recordParty: 'Açık cari kaydı',
+  recordInstruction: 'Açık yükleme talimatı',
+
   modesLabel: 'Sohbet modu',
   erpMode: 'ERP',
   generalMode: 'Genel sohbet',

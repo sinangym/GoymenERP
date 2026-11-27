@@ -41,7 +41,7 @@ export const AI_ASK_OUTCOME = { answered: 'answered', cannotAnswer: 'cannot_answ
 export type AiAskOutcome = (typeof AI_ASK_OUTCOME)[keyof typeof AI_ASK_OUTCOME]
 
 /** The fields the server names in `invalidFields` of an `ai_request_invalid` problem. */
-export const AI_INVALID_FIELDS = ['question', 'tool', 'arguments', 'mode'] as const
+export const AI_INVALID_FIELDS = ['question', 'tool', 'arguments', 'mode', 'openRecordContext'] as const
 export type AiInvalidField = (typeof AI_INVALID_FIELDS)[number]
 
 export interface AiToolCapability {
@@ -99,7 +99,13 @@ export interface AiAskAnswer {
   readonly answer: AiComposedAnswer | null
 }
 
+export interface AiOpenRecordContext {
+  readonly targetKind: 'counterparty.party.summary' | 'logistics.loading-instruction.shipment-status'
+  readonly targetId: string
+}
+
 export interface AiErpAskRequest {
+  readonly openRecordContext?: AiOpenRecordContext | null
   readonly mode?: typeof AI_ASK_MODE.erp
   readonly question: string
   readonly toolId: string | null
@@ -110,7 +116,7 @@ export interface AiErpAskRequest {
 export interface AiGeneralChatRequest {
   readonly question: string
   readonly mode: typeof AI_ASK_MODE.generalChat
-  readonly toolId?: never; readonly toolVersion?: never; readonly arguments?: never
+  readonly toolId?: never; readonly toolVersion?: never; readonly arguments?: never; readonly openRecordContext?: never
 }
 export type AiAskRequest = AiErpAskRequest | AiGeneralChatRequest
 

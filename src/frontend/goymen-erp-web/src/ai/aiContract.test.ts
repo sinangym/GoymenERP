@@ -154,3 +154,24 @@ describe('WP-B5 explicit mode wire isolation',()=>{
   expect(problemInvalidFields({invalidFields:['mode','question','context']})).toEqual(['question','mode'])
  })
 })
+
+
+describe('B1 open-record wire isolation', () => {
+  it.each(['counterparty.party.summary', 'logistics.loading-instruction.shipment-status'] as const)('sends only a typed reference, not hint arguments or UI source version: %s', async targetKind => {
+    const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ outcome: 'cannot_answer', toolResults: [], answer: null }), { status: 200 }))
+    vi.stubGlobal('fetch', fetch)
+    const openRecordContext = { targetKind, targetId: SOURCE.targetId }
+    await askAi({ question: 'Kayıt sorusu', toolId: null, toolVersion: null, arguments: null, openRecordContext }, SOURCE.targetId)
+    expect(JSON.parse(String(fetch.mock.calls[0]![1]!.body))).toEqual({ question: 'Kayıt sorusu', openRecordContext })
+  })
+  it('null context preserves the legacy four fields exactly', async () => {
+    const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response('{}', { status: 503 }))
+    vi.stubGlobal('fetch', fetch)
+    const legacy = { question: 'Kayıt sorusu', toolId: TOOL.toolId, toolVersion: '1', arguments: { partyId: SOURCE.targetId } }
+    await askAi({ ...legacy, openRecordContext: null }, SOURCE.targetId)
+    expect(JSON.parse(String(fetch.mock.calls[0]![1]!.body))).toEqual(legacy)
+  })
+  it('recognizes only the native context invalid field', () => {
+    expect(problemInvalidFields({ invalidFields: ['openRecordContext', 'partyId', 'sourceVersion'] })).toEqual(['openRecordContext'])
+  })
+})

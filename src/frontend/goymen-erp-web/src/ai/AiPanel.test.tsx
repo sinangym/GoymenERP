@@ -28,7 +28,7 @@ type AskHandler = (body: unknown, companyId: string | null) => Response | Promis
 
 function installFetch(
   capabilities: readonly string[] = [],
-  ai: { readonly capabilities?: () => Response; readonly ask?: AskHandler } = {},
+  ai: { readonly capabilities?: () => Response; readonly ask?: AskHandler; readonly identity?: () => { userId: string; authenticationSessionBinding: string } } = {},
 ) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString()
@@ -40,6 +40,7 @@ function installFetch(
         email: 'test@example.com',
         allowedCompanyIds: [A_ID, B_ID],
         mustChangePassword: false, localCredentialVersion: null, authenticationSessionBinding: `v1.${'a1'.repeat(32)}`,
+        ...ai.identity?.(),
       })
     }
     if (url.includes('/organization/companies')) {
@@ -75,14 +76,15 @@ async function openPanel() {
   return screen.getByRole('complementary', { name: AI_TEXT.panelLabel })
 }
 
-function renderShell() {
-  const router = createMemoryRouter(shellRoutes, { initialEntries: ['/'] })
+function renderShell(path = '/') {
+  const router = createMemoryRouter(shellRoutes, { initialEntries: [path] })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
   render(
     <ShellProvider queryClient={queryClient}>
       <RouterProvider router={router} />
     </ShellProvider>,
   )
+  return { router, queryClient }
 }
 
 beforeEach(() => {
@@ -479,4 +481,112 @@ describe('WP-B5 existing panel mode boundary',()=>{
   expect((within(next).getByRole('textbox',{name:AI_TEXT.questionLabel}) as HTMLTextAreaElement).value).toBe('')
   expect(askCalls(fetch)).toHaveLength(1)
  })
+})
+
+
+describe('B1 open-record question binding', () => {
+  const partyTool = { toolId: 'counterparty.party-summary.v1', version: '1', ownerModule: 'counterparty', dataClass: 'Internal' }
+  const instructionTool = { toolId: 'logistics.instruction-shipment-status.v1', version: '1', ownerModule: 'logistics', dataClass: 'Internal' }
+  const cannotAnswer = { outcome: 'cannot_answer', toolResults: [], answer: null }
+  it.each([
+    [`/cari/${TARGET_ID}`, 'cari.parties.detail', partyTool, 'counterparty.party.summary'],
+    [`/lojistik/yukleme-talimatlari/${TARGET_ID}`, 'logistics.instructions.detail', instructionTool, 'logistics.loading-instruction.shipment-status'],
+  ])('asks from %s without manual tool or JSON and never sends a UI row version', async (path, capability, tool, targetKind) => {
+    const fetch = installFetch([capability], { capabilities: () => json({ ...READY, tools: [tool] }), ask: () => json(cannotAnswer) })
+    renderShell(path)
+    const panel = await openPanel()
+    const question = await within(panel).findByRole('textbox', { name: AI_TEXT.questionLabel })
+    expect(within(panel).queryByLabelText(AI_TEXT.toolLabel)).toBeNull()
+    expect(within(panel).queryByLabelText(AI_TEXT.argumentsLabel)).toBeNull()
+    await userEvent.type(question, 'Bu kaydı açıkla')
+    await userEvent.click(within(panel).getByRole('button', { name: AI_TEXT.submit }))
+    await within(panel).findByText(AI_TEXT.cannotAnswer)
+    expect(askCalls(fetch)).toHaveLength(1)
+    expect(JSON.parse(String(askCalls(fetch)[0]![1]!.body))).toEqual({ question: 'Bu kaydı açıkla', openRecordContext: { targetKind, targetId: TARGET_ID } })
+  })
+  it.each([
+    { capabilities: [], tools: [partyTool] },
+    { capabilities: ['cari.parties.detail'], tools: [READY_TOOL] },
+    { capabilities: ['cari.parties.detail'], tools: [{ ...partyTool, version: '2' }] },
+  ])('does not fall back to a different record/tool when detail or exact server tool is unavailable: %j', async ({ capabilities, tools }) => {
+    const fetch = installFetch(capabilities, { capabilities: () => json({ ...READY, tools }) })
+    renderShell(`/cari/${TARGET_ID}`)
+    const panel = await openPanel()
+    expect(await within(panel).findByText(AI_TEXT.recordContextUnavailable)).toBeTruthy()
+    expect(within(panel).queryByRole('textbox')).toBeNull()
+    expect(askCalls(fetch)).toHaveLength(0)
+    await userEvent.click(within(panel).getByRole('button', { name: AI_TEXT.generalMode }))
+    expect(await within(panel).findByRole('textbox', { name: AI_TEXT.questionLabel })).toBeTruthy()
+  })
+  it.each([`/cari/${B_ID}`, '/', `/cari/${TARGET_ID}/bilgiler`])('aborts a pending record answer and clears question on route change to %s', async nextPath => {
+    let release!: (response: Response) => void
+    const fetch = installFetch(['cari.parties.detail'], { capabilities: () => json({ ...READY, tools: [partyTool] }), ask: () => new Promise(resolve => { release = resolve }) })
+    const { router } = renderShell(`/cari/${TARGET_ID}`)
+    const panel = await openPanel()
+    await userEvent.type(await within(panel).findByRole('textbox', { name: AI_TEXT.questionLabel }), 'Eski kayıt sorusu')
+    await userEvent.click(within(panel).getByRole('button', { name: AI_TEXT.submit }))
+    await waitFor(() => expect(askCalls(fetch)).toHaveLength(1))
+    const signal = askCalls(fetch)[0]![1]!.signal!
+    await act(async () => { await router.navigate(nextPath) })
+    expect(signal.aborted).toBe(true)
+    await act(async () => { release(json(ERP_RESPONSE)); await Promise.resolve() })
+    expect(within(panel).queryByText(ERP_RESPONSE.answer.text)).toBeNull()
+    expect((await within(panel).findByRole('textbox', { name: AI_TEXT.questionLabel }) as HTMLTextAreaElement).value).toBe('')
+  })
+  it('general chat on a supported record carries no record context', async () => {
+    const fetch = installFetch(['cari.parties.detail'], { capabilities: () => json({ ...READY, tools: [partyTool] }), ask: () => json(GENERAL_RESPONSE) })
+    renderShell(`/cari/${TARGET_ID}`)
+    const panel = await openPanel()
+    await within(panel).findByText(AI_TEXT.recordContextNotice, { exact: false })
+    await userEvent.click(within(panel).getByRole('button', { name: AI_TEXT.generalMode }))
+    await userEvent.type(await within(panel).findByRole('textbox', { name: AI_TEXT.questionLabel }), 'Genel soru')
+    await userEvent.click(within(panel).getByRole('button', { name: AI_TEXT.submit }))
+    await within(panel).findByText(GENERAL_RESPONSE.answer.text)
+    expect(JSON.parse(String(askCalls(fetch)[0]![1]!.body))).toEqual({ question: 'Genel soru', mode: 'general-chat' })
+  })
+  it.each(['mode', 'company'])('aborts a bound request on %s isolation changes and drops its late answer', async change => {
+    let release!: (response: Response) => void
+    const fetch = installFetch(['cari.parties.detail'], { capabilities: () => json({ ...READY, tools: [partyTool] }), ask: () => new Promise(resolve => { release = resolve }) })
+    renderShell(`/cari/${TARGET_ID}`)
+    const panel = await openPanel()
+    await userEvent.type(await within(panel).findByRole('textbox', { name: AI_TEXT.questionLabel }), 'Eski kayıt sorusu')
+    await userEvent.click(within(panel).getByRole('button', { name: AI_TEXT.submit }))
+    await waitFor(() => expect(askCalls(fetch)).toHaveLength(1))
+    const signal = askCalls(fetch)[0]![1]!.signal!
+    if (change === 'mode') await userEvent.click(within(panel).getByRole('button', { name: AI_TEXT.generalMode }))
+    else {
+      await userEvent.selectOptions(screen.getByRole('combobox'), B_ID)
+      await waitFor(() => expect(screen.queryByRole('complementary', { name: AI_TEXT.panelLabel })).toBeNull())
+    }
+    expect(signal.aborted).toBe(true)
+    await act(async () => { release(json(ERP_RESPONSE)); await Promise.resolve() })
+    const next = change === 'mode' ? panel : await openPanel()
+    expect((await within(next).findByRole('textbox', { name: AI_TEXT.questionLabel }) as HTMLTextAreaElement).value).toBe('')
+    expect(within(next).queryByText(ERP_RESPONSE.answer.text)).toBeNull()
+    expect(askCalls(fetch)).toHaveLength(1)
+  })
+
+  it.each(['actor', 'session'])('drops a bound late answer when the authenticated %s changes', async change => {
+    let release!: (response: Response) => void
+    let identity = { userId: USER_A, authenticationSessionBinding: `v1.${'a1'.repeat(32)}` }
+    const fetch = installFetch(['cari.parties.detail'], {
+      identity: () => identity,
+      capabilities: () => json({ ...READY, tools: [partyTool] }),
+      ask: () => new Promise(resolve => { release = resolve }),
+    })
+    const { queryClient } = renderShell(`/cari/${TARGET_ID}`)
+    const panel = await openPanel()
+    await userEvent.type(await within(panel).findByRole('textbox', { name: AI_TEXT.questionLabel }), 'Önceki oturum sorusu')
+    await userEvent.click(within(panel).getByRole('button', { name: AI_TEXT.submit }))
+    await waitFor(() => expect(askCalls(fetch)).toHaveLength(1))
+    const signal = askCalls(fetch)[0]![1]!.signal!
+    identity = { userId: change === 'actor' ? B_ID : USER_A, authenticationSessionBinding: `v1.${'b2'.repeat(32)}` }
+    await act(async () => { await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] }) })
+    await waitFor(() => expect(signal.aborted).toBe(true))
+    await act(async () => { release(json(ERP_RESPONSE)); await Promise.resolve() })
+    expect(screen.queryByText(ERP_RESPONSE.answer.text)).toBeNull()
+    expect(screen.queryByDisplayValue('Önceki oturum sorusu')).toBeNull()
+    expect(askCalls(fetch)).toHaveLength(1)
+  })
+
 })

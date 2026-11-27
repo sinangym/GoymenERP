@@ -34,6 +34,7 @@ import {
   type AiToolCapability,
   type AiToolResult,
 } from './aiContract'
+import { hasOpenRecordTool, type AiOpenRecordScreen } from './aiOpenRecordContext'
 import { AI_DATA_CLASS_LABEL, AI_TEXT } from './aiText'
 import { DocumentDraftPanel } from './DocumentDraftPanel'
 import { DRAFT_TEXT } from './documentDraftText'
@@ -44,7 +45,11 @@ export const AI_PANEL_ID = 'ai-panel'
 export function AiPanel({
   onClose,
   returnFocusRef,
+  routeKey, recordScreen, recordAllowed,
 }: {
+  readonly routeKey: string
+  readonly recordScreen: AiOpenRecordScreen | null
+  readonly recordAllowed: boolean
   readonly onClose: () => void
   readonly returnFocusRef: RefObject<HTMLButtonElement | null>
 }) {
@@ -98,7 +103,7 @@ export function AiPanel({
         <PanelNotice kind="disabled" />
       ) : (
         // Remounted per committed context: nothing of one company's AI state survives into another.
-        <AiPanelBody key={namespace} namespace={namespace} companyId={companyId} />
+        <AiPanelBody key={namespace} namespace={namespace} companyId={companyId} routeKey={routeKey} recordScreen={recordScreen} recordAllowed={recordAllowed} />
       )}
     </aside>
   )
@@ -132,7 +137,13 @@ function noticeFor(capabilities: AiCapabilities): NoticeKind | null {
   return null
 }
 
-function AiPanelBody({ namespace, companyId }: { readonly namespace: string; readonly companyId: string }) {
+interface RecordProps {
+  readonly routeKey: string
+  readonly recordScreen: AiOpenRecordScreen | null
+  readonly recordAllowed: boolean
+}
+
+function AiPanelBody({ namespace, companyId, ...recordProps }: { readonly namespace: string; readonly companyId: string } & RecordProps) {
   const boundary = useAuthBoundary()
   const read = useQuery({
     queryKey: [namespace, 'ai-capabilities'],
@@ -156,10 +167,10 @@ function AiPanelBody({ namespace, companyId }: { readonly namespace: string; rea
   // A closed, unready or forbidden panel shows only its notice. A usable panel without read tools still offers the
   // document draft section (WP-B3); the server checks that section's own permissions on every request.
   if (notice !== null && notice !== 'no-tools') return <PanelNotice kind={notice} />
-  return <PanelSections companyId={companyId} tools={outcome.data.tools} />
+  return <PanelSections key={`${recordProps.routeKey}:${recordProps.recordAllowed}`} companyId={companyId} tools={outcome.data.tools} {...recordProps} />
 }
 
-function PanelSections({ companyId, tools }: { readonly companyId: string; readonly tools: readonly AiToolCapability[] }) {
+function PanelSections({ companyId, tools, recordScreen, recordAllowed }: { readonly companyId: string; readonly tools: readonly AiToolCapability[] } & RecordProps) {
   const [section, setSection] = useState<'ask' | 'draft'>('ask')
   const [mode, setMode] = useState<AiAskMode>(AI_ASK_MODE.erp)
   return (
@@ -179,8 +190,10 @@ function PanelSections({ companyId, tools }: { readonly companyId: string; reado
           <button type="button" aria-pressed={mode === AI_ASK_MODE.erp} onClick={() => setMode(AI_ASK_MODE.erp)}>{AI_TEXT.erpMode}</button>
           <button type="button" aria-pressed={mode === AI_ASK_MODE.generalChat} onClick={() => setMode(AI_ASK_MODE.generalChat)}>{AI_TEXT.generalMode}</button>
         </div>
-        {mode === AI_ASK_MODE.erp && tools.length === 0 ? <PanelNotice kind="no-tools" />
-          : <AskForm key={mode} mode={mode} companyId={companyId} tools={tools} />}
+        {mode === AI_ASK_MODE.erp && recordScreen !== null && (!recordAllowed || !hasOpenRecordTool(recordScreen, tools))
+          ? <p role="status" className={styles.state}>{AI_TEXT.recordContextUnavailable}</p>
+          : mode === AI_ASK_MODE.erp && tools.length === 0 ? <PanelNotice kind="no-tools" />
+          : <AskForm key={mode} mode={mode} companyId={companyId} tools={tools} recordScreen={recordScreen} />}
       </>}
 
     </>
@@ -222,8 +235,9 @@ function toolKey(tool: AiToolCapability): string {
   return `${tool.toolId}@${tool.version}`
 }
 
-function AskForm({ companyId, tools, mode }: { readonly companyId: string; readonly tools: readonly AiToolCapability[]; readonly mode: AiAskMode }) {
+function AskForm({ companyId, tools, mode, recordScreen }: { readonly companyId: string; readonly tools: readonly AiToolCapability[]; readonly mode: AiAskMode; readonly recordScreen: AiOpenRecordScreen | null }) {
   const general = mode === AI_ASK_MODE.generalChat
+  const bound = !general && recordScreen !== null
   const boundary = useAuthBoundary()
   const [question, setQuestion] = useState('')
   const [selected, setSelected] = useState(() => (tools.length > 0 ? toolKey(tools[0] as AiToolCapability) : ''))
@@ -243,12 +257,13 @@ function AskForm({ companyId, tools, mode }: { readonly companyId: string; reado
     const parsedArguments = parseToolArguments(argumentsText)
     const invalid: AiInvalidField[] = []
     if (trimmed === '') invalid.push('question')
-    if (!general && tool === undefined) invalid.push('tool')
-    if (!general && parsedArguments === 'invalid') invalid.push('arguments')
+    if (!general && !bound && tool === undefined) invalid.push('tool')
+    if (!general && !bound && parsedArguments === 'invalid') invalid.push('arguments')
     setLocalInvalid(invalid)
     if (invalid.length > 0) return
     let request: AiAskRequest
     if (general) request = { question: trimmed, mode: AI_ASK_MODE.generalChat }
+    else if (bound) request = { question: trimmed, toolId: null, toolVersion: null, arguments: null, openRecordContext: recordScreen.context }
     else {
       if (tool === undefined || parsedArguments === 'invalid') return
       request = { question: trimmed, toolId: tool.toolId, toolVersion: tool.version, arguments: parsedArguments }
@@ -277,6 +292,7 @@ function AskForm({ companyId, tools, mode }: { readonly companyId: string; reado
   return (
     <div className={styles.ask}>
       <p className={styles.hint}>{general ? AI_TEXT.generalNotice : AI_TEXT.readOnlyNotice}</p>
+      {bound ? <p className={styles.hint}>{recordScreen.context.targetKind === 'counterparty.party.summary' ? AI_TEXT.recordParty : AI_TEXT.recordInstruction}: {recordScreen.context.targetId}. {AI_TEXT.recordContextNotice}</p> : null}
       <form className={styles.form} onSubmit={(event) => void submit(event)} noValidate aria-busy={pending || undefined}>
         <label className={styles.field}>
           {AI_TEXT.questionLabel}
@@ -294,7 +310,7 @@ function AskForm({ companyId, tools, mode }: { readonly companyId: string; reado
         <p id="ai-question-sensitive" className={styles.hint}>
           {general ? AI_TEXT.generalSensitiveReminder : AI_TEXT.questionSensitiveReminder}
         </p>
-        {!general ? <><label className={styles.field}>
+        {!general && !bound ? <><label className={styles.field}>
           {AI_TEXT.toolLabel}
           <select
             value={selected}
@@ -323,6 +339,7 @@ function AskForm({ companyId, tools, mode }: { readonly companyId: string; reado
         <p id="ai-arguments-hint" className={isInvalid('arguments') ? styles.fieldError : styles.hint}>
           {isInvalid('arguments') ? AI_TEXT.argumentsInvalid : AI_TEXT.argumentsHint}
         </p></> : null}
+        {isInvalid('openRecordContext') ? <p className={styles.fieldError}>{AI_TEXT.recordContextInvalid}</p> : null}
         {isInvalid('mode') ? <p className={styles.fieldError}>{AI_TEXT.modeInvalid}</p> : null}
         <button type="submit" className={styles.submitButton} disabled={pending}>
           {pending ? AI_TEXT.submitting : AI_TEXT.submit}

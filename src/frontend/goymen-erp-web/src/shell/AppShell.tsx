@@ -15,7 +15,7 @@
 
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
-import { capabilityFailClosed } from './shellState'
+import { capabilityFailClosed, hasCapability } from './shellState'
 import { useShellDispatch, useShellState } from './shellContext'
 import { useShellOrchestrator } from './useShellOrchestrator'
 import { StateBlock } from './StateBlock'
@@ -27,6 +27,7 @@ import { LogoutControl } from '../identity/LogoutControl'
 import { SwitchConfirmDialog } from './SwitchConfirmDialog'
 import { GlobalSearchBox } from '../search/GlobalSearchBox'
 import { AI_PANEL_ID, AiPanel } from '../ai/AiPanel'
+import { openRecordScreen } from '../ai/aiOpenRecordContext'
 import { AI_TEXT } from '../ai/aiText'
 import { NAV_CAPABILITIES, NAV_HOME, NAV_TEXT, type NavGroupId } from './navigation'
 import { activeGroupOf } from './activeGroup'
@@ -193,6 +194,11 @@ export function AppShell() {
     return null
   })()
   const { pathname } = useLocation()
+  const aiRecordScreen = openRecordScreen(pathname)
+  const aiRecordAllowed = aiRecordScreen !== null
+    && state.routeEntryKey === pathname
+    && state.routeEntryGeneration === state.verifiedEntryGeneration
+    && hasCapability(state, aiRecordScreen.detailCapability)
   const compact = useSyncExternalStore(subscribeCompact, readCompact, () => false)
 
   const groups = drawnGroups(state)
@@ -611,7 +617,7 @@ export function AppShell() {
             <Outlet />
           )}
         </main>
-        {aiOpen ? <AiPanel onClose={closeAi} returnFocusRef={aiToggleRef} /> : null}
+        {aiOpen ? <AiPanel onClose={closeAi} returnFocusRef={aiToggleRef} routeKey={pathname} recordScreen={aiRecordScreen} recordAllowed={aiRecordAllowed} /> : null}
         </div>
       </div>
     </div>

@@ -64,7 +64,10 @@ export function askAi(request: AiAskRequest, companyId: string, signal?: AbortSi
     {
       method: 'POST',
       headers: { ...headers(companyId), 'Content-Type': 'application/json' },
-      body: JSON.stringify(request.mode === AI_ASK_MODE.generalChat ? { question: request.question, mode: AI_ASK_MODE.generalChat } : {
+      body: JSON.stringify(request.mode === AI_ASK_MODE.generalChat ? { question: request.question, mode: AI_ASK_MODE.generalChat } : request.openRecordContext ? {
+        question: request.question,
+        openRecordContext: { targetKind: request.openRecordContext.targetKind, targetId: request.openRecordContext.targetId },
+      } : {
         question: request.question,
         toolId: request.toolId,
         toolVersion: request.toolVersion,
