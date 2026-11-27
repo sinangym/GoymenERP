@@ -62,7 +62,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// (<see cref="FinanceBankAccountEnvelopes"/>).</item>
 /// </list>
 /// </summary>
-public sealed class FinanceBankAccountService(
+public sealed partial class FinanceBankAccountService(
     FinanceDbContext dbContext,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
@@ -477,7 +477,9 @@ public sealed class FinanceBankAccountService(
         row.UpdatedAtUtc = now;
         row.Version = checked(row.Version + 1);
         var result = Succeeded(context, row);
-        AddCommand(context, metadata, ProposeIbanChangeCommand, payloadHash, row.Id, result, now);
+        AddCommand(context, metadata, ProposeIbanChangeCommand, payloadHash, row.Id, result, now,
+            new(ProposeIbanChangeCommand, context.CompanyId, row.Id, context.ActorId, now.ToUniversalTime(), row.Version, null,
+                payloadHash, IbanChangeFactsDigest(row.Iban, proposedIban, request.Reason)));
         Audit(context, metadata, envelopes.Propose, row.Id, "finance.bank-account.iban-change-proposed.v1",
             "ProposeIbanChange", versionBefore, row.Version, before, AccountAudit(row), approvalContextJson: null,
             "Finans banka hesabı IBAN değişikliği önerisi (onaya kadar para yolunda kullanılmaz)");
@@ -560,6 +562,7 @@ public sealed class FinanceBankAccountService(
         var versionBefore = row.Version;
         var before = AccountAudit(row);
         var previousIban = row.Iban;
+        var proposedAt = row.PendingIbanProposedAtUtc;
         row.Iban = pendingIban;
         row.PendingIban = null;
         row.PendingIbanProposedBy = null;
@@ -568,7 +571,11 @@ public sealed class FinanceBankAccountService(
         row.UpdatedAtUtc = now;
         row.Version = checked(row.Version + 1);
         var result = Succeeded(context, row);
-        AddCommand(context, metadata, ApproveIbanChangeCommand, payloadHash, row.Id, result, now);
+        AddCommand(context, metadata, ApproveIbanChangeCommand, payloadHash, row.Id, result, now,
+            proposedAt is { } knownProposalTime && versionBefore > 1 && !string.IsNullOrWhiteSpace(pendingBy)
+                ? new(ApproveIbanChangeCommand, context.CompanyId, row.Id, pendingBy, knownProposalTime.ToUniversalTime(),
+                    versionBefore, row.Version, payloadHash, IbanChangeFactsDigest(previousIban, pendingIban, pendingReason))
+                : null); // Native legacy approval remains valid; an absent original fact is never invented.
         var approval = JsonSerializer.Serialize(
             new { rule = "O4", proposedBy = pendingBy, approvedBy = context.ActorId, previousIban, newIban = pendingIban, reason = pendingReason },
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
@@ -865,8 +872,7 @@ public sealed class FinanceBankAccountService(
             return fenced;
         }
 
-        var stored = JsonSerializer.Deserialize<BankAccountCommandResult>(prior.ResultJson, Json)
-            ?? throw new InvalidOperationException("Kayıtlı komut sonucu okunamadı.");
+        var stored = RestoreBankCommandResult(prior);
         return stored with
         {
             IsReplay = true,
@@ -972,7 +978,7 @@ public sealed class FinanceBankAccountService(
         && companyContext.CompanyId == context.CompanyId && currentUser.CanAccessCompany(context.CompanyId);
 
     private void AddCommand(FinanceContext context, CommandMetadata metadata, string command, string payloadHash,
-        Guid? accountId, BankAccountCommandResult result, DateTimeOffset now) =>
+        Guid? accountId, BankAccountCommandResult result, DateTimeOffset now, IbanChangeReceiptProof? ibanProof = null) =>
         dbContext.Commands.Add(new FinanceCommandRow
         {
             CompanyId = context.CompanyId,
@@ -981,7 +987,7 @@ public sealed class FinanceBankAccountService(
             ActorId = context.ActorId,
             PayloadHash = payloadHash,
             BankAccountId = accountId,
-            ResultJson = JsonSerializer.Serialize(result, Json),
+            ResultJson = ibanProof is null ? JsonSerializer.Serialize(result, Json) : SerializeIbanChangeReceipt(result, ibanProof),
             CorrelationId = context.CorrelationId,
             RecordedAtUtc = now,
         });
