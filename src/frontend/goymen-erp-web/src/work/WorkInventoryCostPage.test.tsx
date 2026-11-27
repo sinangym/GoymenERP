@@ -71,7 +71,7 @@ describe('staged two-kind inventory cost human Work decisions',()=>{
  it('keeps max-version and source-cancelled prepared proposals read-only without inventing an increment',async()=>{
   const kind=kinds[0]!,v=fixture(COMPANY_A,kind,'Prepared','9223372036854775807')
   const calls=installFetch({capabilities:[purposes[kind].capabilityId],respond:url=>url.includes(path(kind))?json(v):undefined});mount(kind)
-  await screen.findByRole('region',{name:T.inventoryCostTitle});expect(screen.getByRole('button',{name:T.approve})).toBeDisabled();expect(calls.some(c=>c.method==='POST')).toBe(false)
+  await screen.findByRole('region',{name:T.inventoryCostTitle});expect((screen.getByRole('button',{name:T.approve}) as HTMLButtonElement).disabled).toBe(true);expect(calls.some(c=>c.method==='POST')).toBe(false)
   cleanup();v.pending=false;mount(kind);await screen.findByRole('region',{name:T.inventoryCostTitle});expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
  })
  it('keeps native Stale 409 as a refused conflict, never a successful Work result',async()=>{
