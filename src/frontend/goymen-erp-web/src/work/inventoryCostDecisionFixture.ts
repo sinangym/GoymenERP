@@ -39,7 +39,7 @@ export function successionCostFixture(company:string) {
   const physical={shipmentId:inventoryCostGuid(30),movementId:inventoryCostGuid(31),movementLineNumber:1,productId:p.component.productId,quantityKg:1}
   Object.assign(p.component,{salesPhysicalClaims:[physical],claimSuccession:{previousEventId:inventoryCostGuid(32),previousInvoiceId:inventoryCostGuid(33),previousInvoiceLineId:inventoryCostGuid(34),previousAdmissionId:inventoryCostGuid(35),
     previousFinalizedVersion:'9007199254740993',previousProposalId:inventoryCostGuid(36),previousProposalVersion:'9223372036854775807',cancellationId:inventoryCostGuid(37),invoiceLineRevision:'0',
-    claims:[{physical,previousGeneration:'9223372036854775807'}],reversedComponents:[{origin:'Known',sourceJournalId:inventoryCostGuid(38),journalSourceId:inventoryCostGuid(39),postingPurpose:'SENTETIK original COGS',currencyId:inventoryCostGuid(12),journalTotal:'100.01',signedAmount:'100.01',cogsAccountId:inventoryCostGuid(14),counterAccountId:inventoryCostGuid(15),reversingJournalId:inventoryCostGuid(40)}],
+    claims:[{physical:{...physical},previousGeneration:'9223372036854775807'}],reversedComponents:[{origin:'Known',sourceJournalId:inventoryCostGuid(38),journalSourceId:inventoryCostGuid(39),postingPurpose:'SENTETIK original COGS',currencyId:inventoryCostGuid(12),journalTotal:'100.01',signedAmount:'100.01',cogsAccountId:inventoryCostGuid(14),counterAccountId:inventoryCostGuid(15),reversingJournalId:inventoryCostGuid(40)}],
     originalSourceAmount:ratio,knownBaseAmount:ratio,restoredAmount:ratio}})
   Object.assign(p,{renewedFrom:{previousProposalId:inventoryCostGuid(41),previousClosedVersion:'6',closureEventId:inventoryCostGuid(42)}})
   return v

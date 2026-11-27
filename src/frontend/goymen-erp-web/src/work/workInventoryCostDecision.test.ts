@@ -60,7 +60,7 @@ describe('inventory cost Work closed human whitelist',()=>{
   const v=successionCostFixture(company),p=v.inventoryCost.proposal
   expect(decode(v)?.inventoryCost?.proposal.component.claimSuccession?.claims[0].previousGeneration).toBe('9223372036854775807')
   v.pending=false;expect(decode(v)?.pending).toBe(false)
-  Object.assign(p.component.claimSuccession!.claims[0].physical,{quantityKg:2});expect(decode(v)).toBeNull()
+  Object.assign(p.component.claimSuccession!.claims[0].physical,{quantityKg:2});expect(p.component.salesPhysicalClaims![0]!.quantityKg).toBe(1);expect(decode(v)).toBeNull()
  })
  it('keeps source and preparation rounding profiles separate without recomputing either',()=>{
   const v=firstPurchaseCostFixture(company)
