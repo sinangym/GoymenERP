@@ -59,7 +59,15 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
 {
     // Body property keeps existing constructor callers unchanged. Human package rows stay in the owner read.
     [JsonIgnore] public WorkApprovedSourceCatalogProofV1? ApprovedSourceCatalogProof { get; init; }
+
+    // Routing identity and immutable native proof remain separate from the human account-plan preview.
+    [JsonIgnore] public WorkPostingAccountMappingProofV1? PostingAccountMappingProof { get; init; }
 }
+
+/// <summary>Private mapping identity; a genuine original receipt binds complete rows and prepared plan facts.</summary>
+public sealed record WorkPostingAccountMappingProofV1(Guid CompanyId, long MappingVersion, Guid PreparedBy,
+    DateTimeOffset PreparedAtUtc, string Status, long Version, long ActiveMappingVersion,
+    string SourceFactsDigest, string PreviewDigest);
 
 /// <summary>Private catalog identity; full package facts require the owner's read or genuine original receipt.</summary>
 public sealed record WorkApprovedSourceCatalogProofV1(Guid CompanyId, Guid PackageId, Guid PreparedBy,

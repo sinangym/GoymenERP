@@ -36,6 +36,21 @@ public sealed class WorkApprovedSourceCatalogMakerExceptionTests
         Assert.Equal(JsonSerializer.Serialize(snapshot, options), JsonSerializer.Serialize(privateSnapshot, options));
     }
 
+    [Fact]
+    public void Mapping_scalar_proof_keeps_constructor_and_public_wire_without_weakening_maker_exclusion()
+    {
+        var item = Item("accounting", "accounting.posting-mapping.v1");
+        var snapshot = new WorkApprovalDecisionSnapshotV1(Guid.NewGuid(), item, "2", true);
+        var proof = new WorkPostingAccountMappingProofV1(snapshot.CompanyId, long.MaxValue, Guid.NewGuid(),
+            item.WaitingSinceUtc, "Prepared", 2, 1, new string('C', 64), new string('D', 64));
+        var privateSnapshot = snapshot with { PostingAccountMappingProof = proof };
+        Assert.Same(proof, privateSnapshot.PostingAccountMappingProof);
+        Assert.Equal(long.MaxValue, privateSnapshot.PostingAccountMappingProof.MappingVersion);
+        Assert.True(privateSnapshot.Item.Excludes("SENTETIK-maker"));
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        Assert.Equal(JsonSerializer.Serialize(snapshot, options), JsonSerializer.Serialize(privateSnapshot, options));
+    }
+
     private static WorkInboxItemV1 Item(string module, string kind) => new(module, kind, Guid.NewGuid(),
         "SENTETIK", DateTimeOffset.UnixEpoch, "/SENTETIK", "SENTETIK-maker", [], [], ["SENTETIK-excluded"]);
 }
