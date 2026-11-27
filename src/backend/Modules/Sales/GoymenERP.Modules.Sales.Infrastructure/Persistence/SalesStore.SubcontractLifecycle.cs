@@ -63,6 +63,8 @@ public sealed partial class SalesStore : ISalesSubcontractInvoiceLifecycleStoreV
         SalesDraftStateAudit audit, Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(freshFence);
+        if (System.Transactions.Transaction.Current is not null)
+            throw new InvalidOperationException("A guarded subcontract invoice command cannot join an ambient transaction.");
         return UpdateLifecycleTransactionAsync(envelope, requestHash, commandName, invoiceId, mutate, audit, freshFence, cancellationToken);
     }
 
@@ -71,6 +73,8 @@ public sealed partial class SalesStore : ISalesSubcontractInvoiceLifecycleStoreV
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(freshFence);
+        if (System.Transactions.Transaction.Current is not null)
+            throw new InvalidOperationException("A guarded subcontract invoice command cannot join an ambient transaction.");
         return InSubcontractTransactionAsync(async () =>
         {
             await freshFence(cancellationToken);
