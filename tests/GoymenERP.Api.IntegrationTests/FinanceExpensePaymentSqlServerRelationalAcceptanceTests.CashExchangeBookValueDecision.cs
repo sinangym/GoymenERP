@@ -60,6 +60,20 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
     }
 
     [SqlServerFact]
+    public async Task Book_value_final_consumer_normal_completion_after_authority_revocation_returns_Denied_without_human_facts()
+    {
+        await using var run = await Run.StartAsync(); var transfer = await run.RecordBookValueExchangeAsync(); CashExchangeBookValueViewV1 pending;
+        await using (var maker = run.OpenBookValue("SENTETIK-book-maker")) pending = (await maker.Service.ProposeAsync(maker.Context, Key("book-final-fence-p"), BookRequest(transfer), default)).Resource!;
+        var authority = new BookAuthority(); await using var checker = run.OpenBookValue("SENTETIK-book-checker", authority: authority); var calls = 0;
+        var result = await checker.Service.ReadDecisionAsync(checker.Context, pending.Id,
+            _ => { if (++calls == 6) authority.Granted = false; return Task.CompletedTask; }, default);
+        Assert.Equal(6, calls); Assert.False(authority.Granted); Assert.Equal(ReadOutcome.Denied, result.Outcome); Assert.Null(result.Resource);
+        Assert.False(checker.Db.ChangeTracker.HasChanges()); Assert.Null(checker.Db.Database.CurrentTransaction);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashExchangeBookValueDecisions"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.CashExchangeBookValueCommands"));
+    }
+
+    [SqlServerFact]
     public async Task Book_value_receipt_before_after_commands_and_source_read_revocation_roll_back_actual_decision_audit_outbox_then_retry_once()
     {
         // Existing native Save: postSave(1), audit-scope(2), postAudit(3), receipt-before/afterCommands/afterSource(4/5/6).

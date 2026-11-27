@@ -45,10 +45,14 @@ public sealed partial class CashExchangeBookValueServiceV1 : ICashExchangeBookVa
         { return new(await Fence() ? ReadOutcome.Unavailable : ReadOutcome.Denied, null); }
         async Task<bool> Fence()
         {
+            ct.ThrowIfCancellationRequested();
             await freshConsumerFence(ct); ct.ThrowIfCancellationRequested();
             var allowed = await Allowed(context, CashExchangeBookValuePermissionsV1.Approve, ct);
             await freshConsumerFence(ct); ct.ThrowIfCancellationRequested();
-            return allowed && Same(context);
+            if (!allowed || !Same(context)) return false;
+            var releaseAllowed = await Allowed(context, CashExchangeBookValuePermissionsV1.Approve, ct);
+            ct.ThrowIfCancellationRequested();
+            return releaseAllowed && Same(context);
         }
     }
 
