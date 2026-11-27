@@ -12,7 +12,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
         CancellationToken token)
     {
         var claims = await ApprovalReadAsync(() => InvoiceCogsClaimHistoryV1.CurrentForInvoiceAsync(db, source.CompanyId, source.InvoiceId,
-            source.InvoiceLineId, source.FinalizedVersion, () => RequireCompany(source.CompanyId), token), token);
+            source.InvoiceLineId, source.FinalizedVersion, () => RequireCompany(source.CompanyId), token, ApprovalReadFenceAsync), token);
         RequireCompany(source.CompanyId);
         if (claims.Count == 0) return null;
         if (claims.Any(x => x.Origin is not (1 or 2) || x.AdmissionId != source.FinalizationAdmissionId || x.ShipmentId != source.ShipmentId))
@@ -83,7 +83,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
     {
         if (evidence is null) return;
         var claims = await ApprovalReadAsync(() => InvoiceCogsClaimHistoryV1.CurrentForInvoiceAsync(db, source.CompanyId, source.InvoiceId,
-            source.InvoiceLineId, source.FinalizedVersion, () => RequireCompany(source.CompanyId), token), token);
+            source.InvoiceLineId, source.FinalizedVersion, () => RequireCompany(source.CompanyId), token, ApprovalReadFenceAsync), token);
         RequireCompany(source.CompanyId);
         if (!claims.Any(x => x.Origin == 1)
             || claims.Any(x => x.Origin is not (1 or 2) || x.AdmissionId != source.FinalizationAdmissionId || x.ShipmentId != source.ShipmentId)

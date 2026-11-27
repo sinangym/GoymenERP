@@ -79,7 +79,7 @@ public sealed partial class InvoiceLineCogsCorrectionStoreV1
         CogsEvidenceIdentityV1 source, CancellationToken token)
     {
         var claims = await ApprovalReadAsync(() => InvoiceCogsClaimHistoryV1.CurrentForInvoiceAsync(db, source.CompanyId, source.InvoiceId,
-            source.InvoiceLineId, source.FinalizedVersion, () => RequireCompany(source.CompanyId), token), token);
+            source.InvoiceLineId, source.FinalizedVersion, () => RequireCompany(source.CompanyId), token, ApprovalReadFenceAsync), token);
         RequireCompany(source.CompanyId);
         if (claims.Count == 0) return null;
         var revisions = await ApprovalReadAsync(() => Revisions(source).AsNoTracking().OrderBy(x => x.Version).Select(x => x.RevisionJson).ToListAsync(token), token);
