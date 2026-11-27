@@ -66,6 +66,27 @@ describe('Plan AI-3 — AI sözleşme çözücüleri', () => {
     expect(answer).toEqual({ outcome: 'cannot_answer', toolResults: [], answer: null })
   })
 
+  it('kaynaklı cevapta isteğe bağlı sunucu makbuzunu korur; eski gövdeye kimlik uydurmaz', () => {
+    const answerId = 'aaaaaaaa-0000-0000-0000-000000000001'
+    const body = { outcome: 'answered', toolResults: [RESULT], answer: COMPOSED }
+    expect(decodeAiAskAnswer(body)?.answer).not.toHaveProperty('answerId')
+    expect(decodeAiAskAnswer({ ...body, answer: { ...COMPOSED, answerId } })?.answer?.answerId).toBe(answerId)
+  })
+
+  it.each([null, undefined, '', 'SENTETIK-key', '00000000-0000-0000-0000-000000000000', 1])(
+    'kaynaklı cevapta geçersiz makbuz kimliğini reddeder: %s', (answerId) => {
+      expect(decodeAiAskAnswer({ outcome: 'answered', toolResults: [RESULT], answer: { ...COMPOSED, answerId } })).toBeNull()
+    },
+  )
+
+  it('genel sohbette, kaynaksız ve cevaplanmamış sonuçta makbuz kabul etmez', () => {
+    const answerId = 'aaaaaaaa-0000-0000-0000-000000000001'
+    expect(decodeAiAskAnswer({ outcome: 'answered', mode: 'general-chat', toolResults: [],
+      answer: { ...COMPOSED, citations: [], grounded: false, answerId } }, 'general-chat')).toBeNull()
+    expect(decodeAiAskAnswer({ outcome: 'answered', toolResults: [], answer: { ...COMPOSED, answerId } })).toBeNull()
+    expect(decodeAiAskAnswer({ outcome: 'cannot_answer', toolResults: [], answer: null, answerId })).toBeNull()
+  })
+
   it.each([
     ['cevaplandı ama metin yok', { outcome: 'answered', toolResults: [RESULT], answer: null }],
     ['cevap veremem ama metin var', { outcome: 'cannot_answer', toolResults: [RESULT], answer: COMPOSED }],

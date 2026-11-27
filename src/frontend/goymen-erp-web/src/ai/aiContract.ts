@@ -86,6 +86,7 @@ export interface AiCitation {
 
 export interface AiComposedAnswer {
   readonly grounded?: false
+  readonly answerId?: string
   readonly text: string
   readonly citations: readonly AiCitation[]
   readonly modelDeployment: string
@@ -239,9 +240,12 @@ function decodeCitation(value: unknown, released: readonly AiToolResult[]): AiCi
 }
 
 function decodeComposed(value: unknown, released: readonly AiToolResult[]): AiComposedAnswer | null {
-  const composed = exact(value, COMPOSED_KEYS)
+  const hasAnswerId = typeof value === 'object' && value !== null && Object.hasOwn(value, 'answerId')
+  const composed = exact(value, hasAnswerId ? [...COMPOSED_KEYS, 'answerId'] : COMPOSED_KEYS)
   if (composed === null || !isText(composed.text) || !Array.isArray(composed.citations)) return null
   if (!isText(composed.modelDeployment) || !isText(composed.policyVersion)) return null
+  if (hasAnswerId && (typeof composed.answerId !== 'string' || !UUID.test(composed.answerId)
+    || composed.answerId === '00000000-0000-0000-0000-000000000000')) return null
   const citations: AiCitation[] = []
   for (const entry of composed.citations as unknown[]) {
     const citation = decodeCitation(entry, released)
@@ -250,7 +254,8 @@ function decodeComposed(value: unknown, released: readonly AiToolResult[]): AiCo
   }
   // A sourced answer always cites at least one source.
   if (citations.length === 0) return null
-  return { text: composed.text, citations, modelDeployment: composed.modelDeployment, policyVersion: composed.policyVersion }
+  return { text: composed.text, citations, modelDeployment: composed.modelDeployment, policyVersion: composed.policyVersion,
+    ...(hasAnswerId ? { answerId: composed.answerId as string } : {}) }
 }
 
 export function decodeAiAskAnswer(value: unknown, mode: AiAskMode = AI_ASK_MODE.erp): AiAskAnswer | null {
