@@ -42,6 +42,49 @@ public sealed class ProductPriceListPublishSafetyTests
     }
 
     [Fact]
+    public async Task Unresolved_company_keeps_native_authentication_then_membership_refusal_without_database_access()
+    {
+        foreach (var authenticated in new[] { false, true })
+        {
+            var company = new CompanyContext(); var user = new User { Authenticated = authenticated };
+            var authority = new Authority(); var writer = new Writer();
+            await using var database = new ProductPriceListDbContext(new DbContextOptionsBuilder<ProductPriceListDbContext>()
+                .UseSqlServer("Server=unused.invalid;Database=unused;Connect Timeout=1;").Options, company);
+            var core = new ProductPriceListService(company, user, authority,
+                new(database, company, new AuditEventCollector(), TimeProvider.System), TimeProvider.System, null, _ => true);
+            var facade = new GuardedProductPriceListService(core, writer);
+            var error = await Assert.ThrowsAsync<ProductPriceListException>(() => facade.PublishAsync(Guid.NewGuid(), new("1", 1),
+                new(user.UserId, ProductPriceListPermissionsV1.Publish, [], "SENTETIK", null, "key", "Web")));
+            Assert.Equal(authenticated ? 403 : 401, error.Status);
+            Assert.Equal(0, authority.Calls); Assert.Equal(0, writer.Writes); Assert.False(database.ChangeTracker.HasChanges());
+            // This clean entry reached the owned scope but never opened a database transaction.
+            Assert.Null(database.Database.CurrentTransaction);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, "dirty")] [InlineData(true, "dirty")] [InlineData(false, "audit")] [InlineData(true, "audit")]
+    public async Task Unresolved_company_entry_guard_still_preserves_caller_work_before_any_owned_cleanup(bool authenticated, string boundary)
+    {
+        var company = new CompanyContext(); var user = new User { Authenticated = authenticated }; var authority = new Authority();
+        var writer = new Writer { HasPendingDrafts = boundary == "audit" };
+        await using var database = new ProductPriceListDbContext(new DbContextOptionsBuilder<ProductPriceListDbContext>()
+            .UseSqlServer("Server=unused.invalid;Database=unused;Connect Timeout=1;").Options, company);
+        var caller = new ProductPackageStandardDecisionRow { CompanyId = Guid.NewGuid(), Version = 1, DecisionId = Guid.NewGuid() };
+        if (boundary == "dirty") database.PackageStandardDecisions.Add(caller);
+        var core = new ProductPriceListService(company, user, authority,
+            new(database, company, new AuditEventCollector(), TimeProvider.System), TimeProvider.System, null, _ => true);
+        var facade = new GuardedProductPriceListService(core, writer);
+        var error = await Assert.ThrowsAsync<ProductPriceListException>(() => facade.PublishAsync(Guid.NewGuid(), new("1", 1),
+            new(user.UserId, ProductPriceListPermissionsV1.Publish, [], "SENTETIK", null, "key", "Web")));
+        Assert.Equal((503, ProductPriceListCodesV1.Unavailable), (error.Status, error.Code));
+        Assert.Equal(0, authority.Calls); Assert.Equal((0, 0), (writer.Writes, writer.Discards));
+        Assert.Equal(boundary == "audit", writer.HasPendingDrafts);
+        Assert.Equal(boundary == "dirty", database.ChangeTracker.HasChanges());
+        if (boundary == "dirty") Assert.Same(caller, Assert.Single(database.ChangeTracker.Entries()).Entity);
+    }
+
+    [Fact]
     public void Runtime_price_list_interface_resolves_only_the_native_guarded_facade()
     {
         var company = new CompanyContext(); company.Set(Guid.NewGuid());
@@ -59,7 +102,7 @@ public sealed class ProductPriceListPublishSafetyTests
         Assert.DoesNotContain(services, registration => registration.ServiceType == typeof(ProductPriceListService));
     }
     private sealed class User : ICurrentUser
-    { public bool IsAuthenticated => true; public string UserId => "SENTETIK-publisher"; public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid>(); public bool CanAccessCompany(Guid id) => true; }
+    { public bool Authenticated = true; public bool IsAuthenticated => Authenticated; public string UserId => "SENTETIK-publisher"; public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid>(); public bool CanAccessCompany(Guid id) => true; }
     private sealed class Authority : IErpAuthorityRevalidationService
     { public int Calls; public Task<PermissionScope> RevalidatePermissionScopeAsync(string p, Guid c, CancellationToken t = default) { Calls++; return Task.FromResult(PermissionScope.Denied); } }
     private sealed class Writer : IAuditTransactionWriterV1

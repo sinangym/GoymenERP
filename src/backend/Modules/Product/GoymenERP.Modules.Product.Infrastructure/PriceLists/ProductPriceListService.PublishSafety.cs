@@ -9,7 +9,8 @@ public sealed partial class ProductPriceListService
         ProductPriceListCommandMetadata metadata, IAuditTransactionWriterV1? writer, CancellationToken token)
     {
         // Capture, never rebind, the company/actor across the owned boundary and every asynchronous release fence.
-        var captured = new Scope(companyContext.CompanyId, currentUser.UserId ?? string.Empty, []);
+        var captured = new Scope(companyContext.IsResolved ? companyContext.CompanyId : Guid.Empty,
+            currentUser.UserId ?? string.Empty, []);
         var first = true;
         return store.RunOwnedPublishAsync(writer, Fence, ct => PublishAsync(id, request, metadata, ct), token);
         async Task Fence(CancellationToken ct)
