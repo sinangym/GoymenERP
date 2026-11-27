@@ -1,3 +1,4 @@
+using System.Text.Json;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Audit.Application.Contracts;
 
@@ -6,23 +7,47 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 public sealed partial class AccountingStore
 {
     private ManufacturingCostDifferenceStoreV1? ownedManufacturingCostDifferenceCaller;
-    internal Task<AccountingApiResult<ManufacturingCostDifferenceViewV1>> RunManufacturingCostDifferenceApprovalAsync(
+    internal async Task<AccountingApiResult<ManufacturingCostDifferenceViewV1>> RunManufacturingCostDifferenceApprovalAsync(
         ManufacturingCostDifferenceStoreV1 caller, AccountingDbContext candidateDb, IAuditEventCollector candidateCollector,
         Func<bool, Task<AccountingApiResult<ManufacturingCostDifferenceViewV1>>> attempt,
         Func<CancellationToken, Task> fence, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(attempt); ArgumentNullException.ThrowIfNull(fence);
         if (!SameManufacturingCostDifferenceScope(candidateDb, candidateCollector))
-            return Task.FromResult(new AccountingApiResult<ManufacturingCostDifferenceViewV1>(AccountingApiStatus.Unavailable, null, false, null));
-        return RunOwnedAccountingApprovalAsync(ManufacturingCostDifferenceCommandNamesV1.Approve, async replayOnly =>
+            return new(AccountingApiStatus.Unavailable, null, false, null);
+        try
         {
-            if (ownedManufacturingCostDifferenceCaller is not null || ownedNormalApproval?.CommandName != ManufacturingCostDifferenceCommandNamesV1.Approve)
-                throw new InvalidOperationException("Cost difference approval requires its exact core-owned command boundary.");
-            ownedManufacturingCostDifferenceCaller = caller;
-            try { return await attempt(replayOnly); }
-            finally { ownedManufacturingCostDifferenceCaller = null; }
-        }, fence, token);
+            return await RunOwnedAccountingApprovalAsync(ManufacturingCostDifferenceCommandNamesV1.Approve, async replayOnly =>
+            {
+                if (ownedManufacturingCostDifferenceCaller is not null || ownedNormalApproval?.CommandName != ManufacturingCostDifferenceCommandNamesV1.Approve)
+                    throw new InvalidOperationException("Cost difference approval requires its exact core-owned command boundary.");
+                ownedManufacturingCostDifferenceCaller = caller;
+                try
+                {
+                    var result = await attempt(replayOnly);
+                    RequireOwnedManufacturingCostDifferenceApproval(caller, candidateDb, candidateCollector);
+                    // A late attribution business refusal must roll the earlier journal/OK command back,
+                    // without weakening the shared runner's exact saved-result check or consuming this key.
+                    if (!replayOnly && ownedNormalApproval is { Saved: true } state
+                        && result.Status is AccountingApiStatus.Unprocessable or AccountingApiStatus.Conflict or AccountingApiStatus.NotFound
+                        && state.Command?.ResultJson != JsonSerializer.Serialize(result with { IsReplay = false, OriginalCorrelationId = null }, Json))
+                        throw new CostDifferenceRollbackAnswer(result);
+                    return result;
+                }
+                finally { ownedManufacturingCostDifferenceCaller = null; }
+            }, fence, token);
+        }
+        catch (CostDifferenceRollbackAnswer refused)
+        {
+            // Only a direct rethrow proves that the existing owner finished abort/dispose/clear/discard.
+            // Cleanup faults are AggregateException and deliberately do not enter this business-answer path.
+            try { await fence(token); token.ThrowIfCancellationRequested(); }
+            catch (NormalJournalAuthorityDeniedException) { return new(AccountingApiStatus.Denied, null, false, AccountingApiCodes.AuthorityDenied); }
+            return refused.Answer;
+        }
     }
+    private sealed class CostDifferenceRollbackAnswer(AccountingApiResult<ManufacturingCostDifferenceViewV1> answer) : Exception
+    { internal AccountingApiResult<ManufacturingCostDifferenceViewV1> Answer { get; } = answer; }
     private bool SameManufacturingCostDifferenceScope(AccountingDbContext candidateDb, IAuditEventCollector candidateCollector) =>
         ReferenceEquals(dbContext, candidateDb) && ReferenceEquals(auditEvents, candidateCollector) && normalApprovalAuditWriter is not null;
     internal bool IsOwnedManufacturingCostDifferenceApproval(ManufacturingCostDifferenceStoreV1 caller, AccountingDbContext candidateDb, IAuditEventCollector candidateCollector) =>

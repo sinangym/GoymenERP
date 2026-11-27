@@ -189,7 +189,9 @@ public sealed partial class ManufacturingCostDifferenceSqlServerRelationalAccept
         public CostApprovalPlan CurrentPlan { get; } = new(); public CostApprovalCurrencies Currencies { get; } = new();
         public string CorrelationId { get; } = Guid.NewGuid().ToString("N"); public AccountingDbContext Db { get; }
         public AuditEventCollector Collector { get; } public CostApprovalWriter Writer { get; } public ManufacturingCostDifferenceServiceV1 Service { get; }
-        public CostApprovalScope(Run run, CostApprovalSave? save = null, IInterceptor? extra = null, string? entryFault = null, bool auditDeadlock = false)
+        public CostApprovalScope(Run run, CostApprovalSave? save = null, IInterceptor? extra = null, string? entryFault = null, bool auditDeadlock = false,
+            IManufacturingAttributionLineageReaderV1? lineage = null,
+            GoymenERP.Modules.Settings.Application.Contracts.V1.ISettingsPrerequisiteProvider? attributionMoney = null)
         {
             auditScope = run.Factory.Services.CreateScope(); auditScope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(ManufacturingCostDifferenceSqlServerRelationalAcceptanceTests.Company);
             Collector = auditScope.ServiceProvider.GetRequiredService<AuditEventCollector>();
@@ -203,7 +205,9 @@ public sealed partial class ManufacturingCostDifferenceSqlServerRelationalAccept
                 entryFault == "other-collector" ? new AuditEventCollector() : Collector, TimeProvider.System,
                 new AccountingAmountScaleVerifier(new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(ManufacturingCostDifferenceSqlServerRelationalAcceptanceTests.Company)),
                 normalApprovalAuditWriter: entryFault == "missing-writer" ? null : Writer);
-            var store = new ManufacturingCostDifferenceStoreV1(Db, core, Company, CurrentPlan, Currencies, Collector, TimeProvider.System);
+            var attribution = lineage is null ? null : new ManufacturingPostedCostAttributionStoreV1(Db, Company, lineage,
+                new AccountingAmountScaleVerifier(attributionMoney ?? new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(ManufacturingCostDifferenceSqlServerRelationalAcceptanceTests.Company)), TimeProvider.System);
+            var store = new ManufacturingCostDifferenceStoreV1(Db, core, Company, CurrentPlan, Currencies, Collector, TimeProvider.System, attribution);
             var correlation = new CorrelationContext(); correlation.Set(CorrelationId, null, "Web", null, null);
             Service = new(store, core, Authority, Company, User, correlation);
         }
@@ -223,9 +227,9 @@ public sealed partial class ManufacturingCostDifferenceSqlServerRelationalAccept
     }
     private sealed class CostApprovalPlan : IActiveAccountPlanReaderV1
     {
-        public int Reads; public Action? AfterRead;
+        public int Reads; public bool Missing; public Action? AfterRead;
         public async Task<ApprovedAccountingSourceCatalogRecordV1?> ReadActiveAsync(CancellationToken token = default)
-        { Reads++; var answer = await new Plan().ReadActiveAsync(token); AfterRead?.Invoke(); return answer; }
+        { Reads++; var answer = await new Plan().ReadActiveAsync(token); AfterRead?.Invoke(); return Missing ? null : answer; }
     }
     private sealed class CostApprovalCurrencies : GoymenERP.Modules.Settings.Application.Contracts.V1.ISettingsMoneyCandidateReader
     {

@@ -117,6 +117,19 @@ public sealed partial class ManufacturingCostDifferenceV1Tests
         Assert.Equal(1, store.Effects); Assert.Single(store.Commands);
     }
 
+    [Fact]
+    public async Task Synthetic_native_business_refusal_before_save_keeps_its_status_code_and_leaves_the_key_available()
+    {
+        var store = new SyntheticCostApprovalProtocolStore { FailureBeforeWrite = "cost_difference_account_plan_missing" };
+        var service = new ManufacturingCostDifferenceServiceV1(store, store, new CostAuthority(), new CostCompany(), new CostUser(), new Correlation());
+        var answer = await service.ApproveAsync(EventId, 2, "business-before-save");
+        Assert.Equal(AccountingApiStatus.Unprocessable, answer.Status); Assert.Equal("cost_difference_account_plan_missing", answer.Code);
+        Assert.Equal(0, store.Effects); Assert.Empty(store.Commands);
+        store.FailureBeforeWrite = null;
+        Assert.Equal(AccountingApiStatus.Ok, (await service.ApproveAsync(EventId, 2, "business-before-save")).Status);
+        Assert.Equal(1, store.Effects); Assert.Single(store.Commands);
+    }
+
     private static AccountingDbContext CostDb(ICompanyContext company) => new(new DbContextOptionsBuilder<AccountingDbContext>()
         .UseInMemoryDatabase("cost-entry-" + Guid.NewGuid()).Options, company);
     private static AccountingCommandRow CostCaller() => new() { CompanyId = Company, CommandName = "SENTETIK caller", IdempotencyKeyHash = "caller", ActorId = "caller", PayloadHash = "hash", ResultJson = "{}", CorrelationId = "corr" };
@@ -141,7 +154,7 @@ public sealed partial class ManufacturingCostDifferenceV1Tests
     // Explicit synthetic lifecycle protocol only. It proves no relational transaction, rollback or durable Audit.
     private sealed class SyntheticCostApprovalProtocolStore : IManufacturingCostDifferenceStoreV1, IAccountingCommandLog
     {
-        public bool ReplayOnly; public Action? AfterFind; public int Effects, Finds; public List<AccountingCommandRecord> Commands { get; } = [];
+        public bool ReplayOnly; public string? FailureBeforeWrite; public Action? AfterFind; public int Effects, Finds; public List<AccountingCommandRecord> Commands { get; } = [];
         public async Task<AccountingApiResult<ManufacturingCostDifferenceViewV1>> RunApprovalAsync(Func<bool, Task<AccountingApiResult<ManufacturingCostDifferenceViewV1>>> attempt,
             Func<CancellationToken, Task> fence, CancellationToken token = default)
         {
@@ -152,7 +165,7 @@ public sealed partial class ManufacturingCostDifferenceV1Tests
         { Finds++; var answer = Commands.SingleOrDefault(c => c.CommandName == command && c.IdempotencyKeyHash == key); AfterFind?.Invoke(); return Task.FromResult(answer); }
         public Task RecordCommandAsync(AccountingCommandRecord command, CancellationToken token = default) { Commands.Add(command); return Task.CompletedTask; }
         public async Task<ManufacturingCostDifferenceViewV1> ApproveAsync(Guid id, long version, Guid actor, Func<CancellationToken, Task> fence, AccountingCommandMetadata metadata, CancellationToken token = default)
-        { await fence(token); Effects++; var value = View() with { Status = "Posted", Version = version + 1, ApprovedBy = actor, JournalId = Guid.NewGuid() }; Commands.Add(metadata.Completion!(value)); return value; }
+        { await fence(token); if (FailureBeforeWrite is { } failure) throw new AccountingStoreException(failure, "SENTETIK native refusal before save"); Effects++; var value = View() with { Status = "Posted", Version = version + 1, ApprovedBy = actor, JournalId = Guid.NewGuid() }; Commands.Add(metadata.Completion!(value)); return value; }
         public Task AcceptAsync(GoymenERP.BuildingBlocks.Messaging.WorkInboxEventV1 envelope, ManufacturingCostDifferenceEventV1 source, CancellationToken token = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<ManufacturingCostDifferenceViewV1>> ListAsync(CancellationToken token = default) => throw new NotSupportedException();
         public Task<ManufacturingCostDifferenceViewV1?> FindAsync(Guid id, CancellationToken token = default) => throw new NotSupportedException();
