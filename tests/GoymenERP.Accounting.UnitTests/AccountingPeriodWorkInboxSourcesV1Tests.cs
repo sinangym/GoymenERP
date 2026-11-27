@@ -37,7 +37,7 @@ public sealed class AccountingPeriodOpeningWorkInboxSourceV1Tests
         Assert.Null(first.ExcludedDeciders);
         Assert.Equal("2026-12-01 / 2026-12-31", first.DocumentLabel);
         Assert.Equal(Kit.Start.ToUniversalTime(), first.WaitingSinceUtc);
-        Assert.Equal(AccountingPeriodOpeningWorkInboxSourceV1.ScreenPath, first.Link);
+        Assert.Equal(AccountingWorkInboxFence.Link(AccountingPeriodOpeningWorkInboxSourceV1.ScreenPath, first.ItemId), first.Link);
         Assert.Equal([new WorkApprovalRuleResultV1(AccountingPeriodOpeningWorkInboxSourceV1.OpeningApprovalRequiredRule,
             null, null, null, null)], first.Rules);
         Assert.Equal(new WorkApprovalReferenceV1("period", "2026-12-01 / 2026-12-31", older.Id, "/muhasebe/donemler"),
@@ -150,7 +150,7 @@ public sealed partial class AccountingPeriodReopeningWorkInboxSourceV1Tests
         Assert.Null(first.ExcludedDeciders);
         Assert.Equal("2026-10-01 / 2026-10-31", first.DocumentLabel);
         Assert.Equal(Kit.Start.ToUniversalTime(), first.WaitingSinceUtc);
-        Assert.Equal(AccountingPeriodReopeningWorkInboxSourceV1.ScreenPath, first.Link);
+        Assert.Equal(AccountingWorkInboxFence.Link(AccountingPeriodReopeningWorkInboxSourceV1.ScreenPath, first.ItemId), first.Link);
         Assert.Equal([new WorkApprovalRuleResultV1(AccountingPeriodReopeningWorkInboxSourceV1.ReopeningRequestedRule,
             null, null, null, null)], first.Rules);
         Assert.Equal(["period", "period-closure"], first.References.Select(reference => reference.Role));

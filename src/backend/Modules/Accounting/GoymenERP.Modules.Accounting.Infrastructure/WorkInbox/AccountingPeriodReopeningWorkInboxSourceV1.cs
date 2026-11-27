@@ -10,7 +10,7 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.WorkInbox;
 /// W1-A (AI-D31, AI-D32): the proposals to reopen a closed accounting period (FNS-D42), as Accounting lists them for the
 /// Work inbox. A proposal waits while it has no approval and the close it names is still the period's current close (the
 /// approve command requires the closed period at that version and the close not yet reopened); it waits since it was
-/// proposed. It is approved on the periods screen by someone other than its proposer
+/// proposed. It is approved through the native command from the Work purpose view by someone other than its proposer
 /// (<c>AccountingPeriodReopening.Approve</c>: "the reopening preparer cannot approve it"); no other user is refused.
 /// <para>
 /// ROL-D12: reopening is approved under its own permission, <c>accounting.periods.reopen</c>. The approve command accepts
@@ -24,7 +24,8 @@ internal sealed partial class AccountingPeriodReopeningWorkInboxSourceV1(
 {
     public const string ModuleName = "accounting";
     public const string KindName = "accounting.period-reopening.v1";
-    public const string ScreenPath = "/muhasebe/donemler";
+    public const string ScreenPath = "/onaylarim/accounting.period-reopening.v1";
+    public const string NativeScreenPath = "/muhasebe/donemler";
 
     /// <summary>A closed period is reopened (its carry voucher reversed) only with a different person's approval.</summary>
     public const string ReopeningRequestedRule = "accounting.period-reopening-requested";
@@ -95,9 +96,9 @@ internal sealed partial class AccountingPeriodReopeningWorkInboxSourceV1(
         if (laterPeriodClosed) rules.Add(new(LaterPeriodClosedRule, null, null, null, null));
         var label = AccountingWorkInboxFence.PeriodLabel(startsOn, endsOn);
         return new WorkInboxItemV1(ModuleName, KindName, proposalId, label, proposedAt.ToUniversalTime(),
-            ScreenPath, AccountingWorkInboxFence.Actor(proposedBy), rules,
+            AccountingWorkInboxFence.Link(ScreenPath, proposalId), AccountingWorkInboxFence.Actor(proposedBy), rules,
             [
-                new WorkApprovalReferenceV1("period", label, periodId, ScreenPath),
+                new WorkApprovalReferenceV1("period", label, periodId, NativeScreenPath),
                 new WorkApprovalReferenceV1("period-closure", AccountingWorkInboxFence.ShortReference(closureId), closureId, null),
             ]);
     }

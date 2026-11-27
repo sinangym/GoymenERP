@@ -9,7 +9,7 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.WorkInbox;
 /// <summary>
 /// W1-A (AI-D31, AI-D32): the accounting periods proposed for opening (Ö4), as Accounting lists them for the Work inbox. A
 /// period waits while its status is Proposed (<c>AccountingPeriod.Approve</c> accepts only a proposal) since it was prepared;
-/// it is approved on the periods screen by a company-wide holder of <c>accounting.periods.approve</c> other than its
+/// it is approved through the native command from the Work purpose view by a company-wide holder of <c>accounting.periods.approve</c> other than its
 /// preparer (<c>accounting_period_self_approval</c>). The approve command names no other excluded user.
 /// <para>
 /// Closing an open period is a single authorised act (Ö5, <c>accounting.periods.close</c>) with no pending approval, so it
@@ -23,7 +23,8 @@ internal sealed partial class AccountingPeriodOpeningWorkInboxSourceV1(
 {
     public const string ModuleName = "accounting";
     public const string KindName = "accounting.period-opening.v1";
-    public const string ScreenPath = "/muhasebe/donemler";
+    public const string ScreenPath = "/onaylarim/accounting.period-opening.v1";
+    public const string NativeScreenPath = "/muhasebe/donemler";
 
     /// <summary>A proposed period opens for posting only with one approval by someone other than its preparer (Ö4).</summary>
     public const string OpeningApprovalRequiredRule = "accounting.period-opening-approval-required";
@@ -62,9 +63,9 @@ internal sealed partial class AccountingPeriodOpeningWorkInboxSourceV1(
     {
         if (id == Guid.Empty || preparedBy == Guid.Empty || endsOn < startsOn) return null;
         var label = AccountingWorkInboxFence.PeriodLabel(startsOn, endsOn);
-        return new WorkInboxItemV1(ModuleName, KindName, id, label, preparedAt.ToUniversalTime(), ScreenPath,
+        return new WorkInboxItemV1(ModuleName, KindName, id, label, preparedAt.ToUniversalTime(), AccountingWorkInboxFence.Link(ScreenPath, id),
             AccountingWorkInboxFence.Actor(preparedBy),
             [new WorkApprovalRuleResultV1(OpeningApprovalRequiredRule, null, null, null, null)],
-            [new WorkApprovalReferenceV1("period", label, id, ScreenPath)]);
+            [new WorkApprovalReferenceV1("period", label, id, NativeScreenPath)]);
     }
 }

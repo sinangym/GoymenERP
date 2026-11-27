@@ -18,7 +18,7 @@ public sealed class AccountingPeriodDecisionWorkSourceTests
         Assert.Equal(pending, snapshot.Pending); Assert.Equal(owner.Opening.Period.Version.ToString(System.Globalization.CultureInfo.InvariantCulture), snapshot.SourceVersion);
         Assert.Equal(owner.Opening.Period.Version, snapshot.AccountingPeriodOpeningProof!.Version);
         Assert.Equal(owner.Opening.SourceFactsDigest, snapshot.AccountingPeriodOpeningProof.SourceFactsDigest);
-        Assert.Equal(AccountingPeriodOpeningWorkInboxSourceV1.ScreenPath, snapshot.Item.Link);
+        Assert.Equal(AccountingWorkInboxFence.Link(AccountingPeriodOpeningWorkInboxSourceV1.ScreenPath, snapshot.Item.ItemId), snapshot.Item.Link);
         Assert.Equal(owner.Opening.Period.PeriodId, Assert.Single(snapshot.Item.References).RecordId);
         Assert.Equal(AccountingPeriodOpeningWorkInboxSourceV1.OpeningApprovalRequiredRule, Assert.Single(snapshot.Item.Rules).RuleCode);
         Assert.True(AccountingPeriodOpeningDecisionBindingV1.MatchesDecisionItem(snapshot.Item, owner.Opening));
@@ -36,7 +36,7 @@ public sealed class AccountingPeriodDecisionWorkSourceTests
         Assert.Equal(!approved, snapshot.Pending); Assert.Equal(approved ? "2" : "1", snapshot.SourceVersion);
         Assert.Equal(approved ? 30 : 3, proof.PeriodVersion); Assert.Equal(3, proof.ClosedPeriodVersion);
         Assert.Equal(later, proof.LaterPeriodClosed); Assert.Equal(approved, proof.Approved);
-        Assert.Equal(AccountingPeriodReopeningWorkInboxSourceV1.ScreenPath, snapshot.Item.Link);
+        Assert.Equal(AccountingWorkInboxFence.Link(AccountingPeriodReopeningWorkInboxSourceV1.ScreenPath, snapshot.Item.ItemId), snapshot.Item.Link);
         Assert.Equal(new[] { "period", "period-closure" }, snapshot.Item.References.Select(x => x.Role));
         Assert.Equal(later ? 2 : 1, snapshot.Item.Rules.Count);
         Assert.Equal(later, snapshot.Item.Rules.Any(x => x.RuleCode == AccountingPeriodReopeningWorkInboxSourceV1.LaterPeriodClosedRule));
