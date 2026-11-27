@@ -9,7 +9,7 @@ import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useScopedCommandAttempt } from '../settings/useCommandAttempt'
 import { Button } from '../ui/Button'
 import { inboxKindText, inboxRoleText } from './workInboxText'
-import { fetchWorkDecision, sendWorkDecision, isWorkDecisionRequest, isSalesWorkDecisionKind, workDecisionReasonLimit, type WorkDecisionKind } from './workDecisionApi'
+import { fetchWorkDecision, sendWorkDecision, isWorkDecisionRequest, isSalesWorkDecisionKind, workDecisionReasonLimit, type WorkDecisionKind, type WorkDecisionRequest, type WorkDecisionResult } from './workDecisionApi'
 import { fetchDelegations, type DelegationPage } from './workDelegationApi'
 import { delegationPersonLabel } from './delegationPersonLabel'
 import type { ViewOutcome } from '../shell/uiState'
@@ -52,7 +52,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       if (result.type === 'http') boundary.report(result.status, captured)
       return result
     } })
-  const attempt = useScopedCommandAttempt(`work-decision:${kind}:${id}`,
+  const attempt = useScopedCommandAttempt<WorkDecisionRequest, WorkDecisionResult>(`work-decision:${kind}:${id}`,
     (payload, key) => sendWorkDecision(company!, kind, id, payload, key), payload => isWorkDecisionRequest(payload, kind))
   if (company === null || capabilityFailClosed(shell)) return <StateBlock state={{ kind: 'no-authorized-company' }} subject={T.title} />
   const preview = query.data?.type === 'ok-single' ? query.data.data : null
