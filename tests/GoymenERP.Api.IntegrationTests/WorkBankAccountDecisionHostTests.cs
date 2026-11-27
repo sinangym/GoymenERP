@@ -61,7 +61,7 @@ public sealed class WorkBankAccountDecisionHostTests
         Assert.Equal((409,true,"SENTETIK-terminal"),(result.Status,result.Replayed,result.OriginalCorrelationId));
     }
     [Fact]
-    public async Task Human_safe_projection_and_staged_capability_never_disclose_bank_card_or_change_legacy_wire()
+    public async Task Human_safe_projection_and_published_capability_never_disclose_bank_card_or_change_legacy_wire()
     {
         var run=new Rig();var options=new JsonSerializerOptions(JsonSerializerDefaults.Web);
         var wire=JsonSerializer.Serialize(await run.Host.PreviewAsync(run.Source.Kind,Id,default),options);
@@ -70,7 +70,7 @@ public sealed class WorkBankAccountDecisionHostTests
         using var request=JsonDocument.Parse(JsonSerializer.Serialize(new WorkDecisionRequestV1("1",true,null),options));Assert.Equal(4,request.RootElement.EnumerateObject().Count());
         Assert.DoesNotContain("bankAccount",JsonSerializer.Serialize(new WorkDecisionPreviewV1(Company,WorkDecisionHostV1.OpeningCost,Id,"SENTETIK","1",true,true,[],[]),options));
         var cap=Assert.Single(new FinanceShellCapabilityProvider().GetDeclarations(),c=>c.CapabilityId==FinanceShellCapabilityProvider.BankAccountWorkDecisionCapabilityId);
-        Assert.False(cap.ImplementationAvailable);Assert.Null(cap.ParentCapabilityId);Assert.Equal([ErpPermissions.FinanceBankAccountApprove],cap.RequiredPermissions);
+        Assert.True(cap.ImplementationAvailable);Assert.Null(cap.ParentCapabilityId);Assert.Equal([ErpPermissions.FinanceBankAccountApprove],cap.RequiredPermissions);
     }
     private sealed class Rig
     {
