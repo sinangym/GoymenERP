@@ -24,7 +24,7 @@ public sealed partial class WorkDecisionHostV1
             && request.ProductPackageStandard is null;
 
     private static bool ValidApprovedSourceCatalogProof(string kind, WorkApprovalDecisionSnapshotV1 snapshot) =>
-        snapshot.PostingAccountMappingProof is null && (kind != ApprovedSourceCatalog ? snapshot.ApprovedSourceCatalogProof is null
+        (kind == PostingAccountMapping || snapshot.PostingAccountMappingProof is null) && (kind != ApprovedSourceCatalog ? snapshot.ApprovedSourceCatalogProof is null
         : snapshot.ApprovedSourceCatalogProof is { } p && p.CompanyId == snapshot.CompanyId
             && p.PackageId == snapshot.Item.ItemId && p.PackageVersion > 0 && p.ActiveCatalogVersion >= 0
             && snapshot.SourceVersion == p.PackageVersion.ToString(CultureInfo.InvariantCulture)

@@ -32,7 +32,8 @@ public sealed record WorkDecisionRequestV1(string ExpectedVersion, bool Approve,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkProductPackageStandardSelectionV1? ProductPackageStandard = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkNormalJournalDraftSelectionV1? NormalJournalDraft = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkAccountingPeriodReopeningSelectionV1? AccountingPeriodReopening = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkApprovedSourceCatalogSelectionV1? ApprovedSourceCatalogSelection = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkApprovedSourceCatalogSelectionV1? ApprovedSourceCatalogSelection = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkPostingAccountMappingSelectionV1? PostingAccountMappingSelection = null);
 public sealed record WorkAccountingPeriodReopeningSelectionV1(string ExpectedPeriodVersion);
 public sealed record WorkNormalJournalDraftSelectionV1(Guid PeriodId);
 public sealed record WorkProductPackageStandardSelectionV1(string EffectiveFrom);
@@ -90,7 +91,8 @@ public sealed record WorkDecisionPreviewV1(Guid CompanyId, string Kind, Guid Ite
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkAccountingPeriodOpeningPreviewV1? AccountingPeriodOpening = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkAccountingPeriodReopeningPreviewV1? AccountingPeriodReopening = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkJournalReversalDecisionPreviewV1? AccountingJournalReversal = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkApprovedSourceCatalogPreviewV1? ApprovedSourceCatalog = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkApprovedSourceCatalogPreviewV1? ApprovedSourceCatalog = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkPostingAccountMappingPreviewV1? PostingAccountMapping = null);
 public sealed record WorkDecisionResultV1(Guid CompanyId, string Kind, Guid ItemId, string State, bool Replayed, string OriginalCorrelationId);
 public sealed class WorkDecisionException(int status, string? code = null, bool replayed = false, string? original = null) : Exception(code)
 {
@@ -158,8 +160,9 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
     IErpAuthorityRevalidationService authority, IEnumerable<IWorkInboxSourceV1> sources,
     IWorkDelegationReaderV1 delegations, WorkDecisionExecutionFenceV1 executionFence,
     IFinanceCashAccountMaster cash, IInventoryOpeningCostCommandV1 openingCost,
-    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null, IPurchaseGoodsReceiptBatchServiceV1? goodsReceiptBatches = null, ManufacturingCommandService? manufacturingPlans = null, IInventoryTransferReceiptCommandV1? inventoryTransferReceipts = null, ICounterpartyTaxIdentityService? counterpartyTaxIdentity = null, ICounterpartyLegalNameService? counterpartyLegalName = null, ILogisticsPlanExcessServiceV1? logisticsPlanExcess = null, ILogisticsWeighingDifferenceServiceV1? logisticsWeighingDifferences = null, IPurchaseSupplierReturnServiceV1? supplierReturns = null, IInventoryStockCountCommandV1? stockCounts = null, IFinanceBankAccountMaster? bankAccounts = null, IInventoryStockScrapCommandV1? stockScraps = null, ILogisticsInstructionService? logisticsInstructions = null, ILogisticsCustomerReturnServiceV1? logisticsCustomerReturns = null, IManualBankPaymentService? manualBankPayments = null, GoymenERP.Modules.Organization.Application.Contracts.IOrganizationService? bankAccountCompanies = null, IProductPackageStandardServiceV3? productPackageStandards = null, IProductPriceListServiceV1? productPriceLists = null, IFinancePartyCreditLimitMaster? partyCreditLimits = null, IFinanceOfficialInvoiceImportApprovalServiceV1? officialInvoiceImports = null, IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1? officialInvoiceImportReads = null, IFinanceOfficialSalesInvoiceServiceV1? officialSalesInvoices = null, IPaymentReversalProposalService? manualBankPaymentReversals = null, IReversalProposalService? manualReceiptReversals = null, IExpensePaymentService? expensePayments = null, IFinanceCreditLimitServiceV1? bankCreditLimits = null, IFinanceOpeningBalanceService? openingBalances = null, IFinanceCreditMovementServiceV1? creditMovements = null, ICashExchangeBookValueServiceV1? cashExchangeBookValues = null, NormalJournalDraftServiceV1? normalJournalDrafts = null, AccountingApiService? accountingPeriods = null, AccountingJournalReversalServiceV1? accountingJournalReversals = null, ApprovedAccountingSourceCatalogServiceV1? approvedSourceCatalogs = null)
+    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null, IPurchaseGoodsReceiptBatchServiceV1? goodsReceiptBatches = null, ManufacturingCommandService? manufacturingPlans = null, IInventoryTransferReceiptCommandV1? inventoryTransferReceipts = null, ICounterpartyTaxIdentityService? counterpartyTaxIdentity = null, ICounterpartyLegalNameService? counterpartyLegalName = null, ILogisticsPlanExcessServiceV1? logisticsPlanExcess = null, ILogisticsWeighingDifferenceServiceV1? logisticsWeighingDifferences = null, IPurchaseSupplierReturnServiceV1? supplierReturns = null, IInventoryStockCountCommandV1? stockCounts = null, IFinanceBankAccountMaster? bankAccounts = null, IInventoryStockScrapCommandV1? stockScraps = null, ILogisticsInstructionService? logisticsInstructions = null, ILogisticsCustomerReturnServiceV1? logisticsCustomerReturns = null, IManualBankPaymentService? manualBankPayments = null, GoymenERP.Modules.Organization.Application.Contracts.IOrganizationService? bankAccountCompanies = null, IProductPackageStandardServiceV3? productPackageStandards = null, IProductPriceListServiceV1? productPriceLists = null, IFinancePartyCreditLimitMaster? partyCreditLimits = null, IFinanceOfficialInvoiceImportApprovalServiceV1? officialInvoiceImports = null, IFinanceOfficialInvoiceImportPendingApprovalReadServiceV1? officialInvoiceImportReads = null, IFinanceOfficialSalesInvoiceServiceV1? officialSalesInvoices = null, IPaymentReversalProposalService? manualBankPaymentReversals = null, IReversalProposalService? manualReceiptReversals = null, IExpensePaymentService? expensePayments = null, IFinanceCreditLimitServiceV1? bankCreditLimits = null, IFinanceOpeningBalanceService? openingBalances = null, IFinanceCreditMovementServiceV1? creditMovements = null, ICashExchangeBookValueServiceV1? cashExchangeBookValues = null, NormalJournalDraftServiceV1? normalJournalDrafts = null, AccountingApiService? accountingPeriods = null, AccountingJournalReversalServiceV1? accountingJournalReversals = null, ApprovedAccountingSourceCatalogServiceV1? approvedSourceCatalogs = null, AccountingPostingAccountMappingServiceV1? postingAccountMappings = null)
 {
+    public const string PostingAccountMapping = AccountingPostingAccountMappingDecisionBindingV1.KindName;
     public const string ApprovedSourceCatalog = AccountingApprovedSourceCatalogDecisionBindingV1.KindName;
     public const string JournalReversal = "accounting.journal-reversal.v1";
     public const string AccountingPeriodOpening = "accounting.period-opening.v1";
@@ -203,7 +206,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
     public const string PurchaseInvoiceVariance = "purchasing.incoming-invoice-variance.v1";
     public const string PurchaseServiceOrder = "purchasing.service-order.v1";
     public const string PurchaseOrder = "purchasing.order.v1";
-    public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([ApprovedSourceCatalog, JournalReversal, AccountingPeriodOpening, AccountingPeriodReopening, NormalJournalDraft, CreditMovement, CashExchangeBookValue, BankCreditLimit, OpeningBalance, OpeningBalanceReversal, ExpensePayment, ManualBankPaymentReversal, ManualReceiptReversal, OfficialSalesInvoice, OfficialInvoiceImport, PartyCreditLimit, ProductPriceList, ProductPackageStandard, BankAccountIbanChange, ManualBankPayment, LogisticsCustomerReturn, LogisticsDispatchNote, InventoryStockScrap, InventoryStockCount, BankAccount, SupplierReturnCostException, LogisticsWeighingDifference, InventoryTransferOverage, LogisticsPlanExcess, CounterpartyTaxIdentity, CounterpartyLegalName, InventoryTransferLoss, OpeningCost, "finance.cash-account.v1",
+    public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([PostingAccountMapping, ApprovedSourceCatalog, JournalReversal, AccountingPeriodOpening, AccountingPeriodReopening, NormalJournalDraft, CreditMovement, CashExchangeBookValue, BankCreditLimit, OpeningBalance, OpeningBalanceReversal, ExpensePayment, ManualBankPaymentReversal, ManualReceiptReversal, OfficialSalesInvoice, OfficialInvoiceImport, PartyCreditLimit, ProductPriceList, ProductPackageStandard, BankAccountIbanChange, ManualBankPayment, LogisticsCustomerReturn, LogisticsDispatchNote, InventoryStockScrap, InventoryStockCount, BankAccount, SupplierReturnCostException, LogisticsWeighingDifference, InventoryTransferOverage, LogisticsPlanExcess, CounterpartyTaxIdentity, CounterpartyLegalName, InventoryTransferLoss, OpeningCost, "finance.cash-account.v1",
         "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest, PurchaseOrder, PurchaseServiceOrder, PurchaseInvoiceVariance, PurchaseGoodsReceiptBatch, ManufacturingPlan, CreditAccount], StringComparer.Ordinal);
 
     private async Task RequireDecisionAuthorityAsync(string kind,string permission,Guid companyId,string actor,CancellationToken token)
@@ -245,11 +248,12 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
                 : await source.ReadDecisionAsync(context, id, token);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
-        catch (UnauthorizedAccessException) when (kind is ApprovedSourceCatalog or JournalReversal or AccountingPeriodOpening or AccountingPeriodReopening or NormalJournalDraft or CreditMovement or CashExchangeBookValue or BankCreditLimit or OpeningBalance or OpeningBalanceReversal or OfficialInvoiceImport or OfficialSalesInvoice or ManualBankPaymentReversal or ManualReceiptReversal or ExpensePayment) { await Fence(); throw new WorkDecisionException(403); }
+        catch (UnauthorizedAccessException) when (kind is PostingAccountMapping or ApprovedSourceCatalog or JournalReversal or AccountingPeriodOpening or AccountingPeriodReopening or NormalJournalDraft or CreditMovement or CashExchangeBookValue or BankCreditLimit or OpeningBalance or OpeningBalanceReversal or OfficialInvoiceImport or OfficialSalesInvoice or ManualBankPaymentReversal or ManualReceiptReversal or ExpensePayment) { await Fence(); throw new WorkDecisionException(403); }
         catch { await Fence(); throw new WorkDecisionException(503); }
         await Fence();
         if (snapshot is null) throw new WorkDecisionException(404);
-        if (kind == ApprovedSourceCatalog && (source.Module != AccountingApprovedSourceCatalogDecisionBindingV1.ModuleName || source.ApproverPermission != ApprovedAccountingSourceCatalogPermissionNamesV1.Activate)
+        if (kind == PostingAccountMapping && (source.Module != AccountingPostingAccountMappingDecisionBindingV1.ModuleName || source.ApproverPermission != AccountingPostingAccountMappingPermissionNamesV1.Activate)
+            || kind == ApprovedSourceCatalog && (source.Module != AccountingApprovedSourceCatalogDecisionBindingV1.ModuleName || source.ApproverPermission != ApprovedAccountingSourceCatalogPermissionNamesV1.Activate)
             || kind == JournalReversal && (source.Module != "accounting" || source.ApproverPermission != AccountingJournalReversalPermissionNamesV1.Approve)
             || kind == AccountingPeriodOpening && (source.Module != "accounting" || source.ApproverPermission != AccountingPermissionManifestV1.PeriodsApprove)
             || kind == AccountingPeriodReopening && (source.Module != "accounting" || source.ApproverPermission != AccountingPermissionManifestV1.PeriodsReopen)
@@ -304,6 +308,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || !ValidExpensePaymentProof(kind, snapshot)
             || !ValidBankCreditLimitProof(kind, snapshot)
             || !ValidOpeningBalanceProof(kind, snapshot)
+            || !ValidPostingAccountMappingProof(kind, snapshot)
             || !ValidApprovedSourceCatalogProof(kind, snapshot)
             || !ValidJournalReversalProof(kind, snapshot)
             || !ValidAccountingPeriodProof(kind, snapshot)
@@ -375,6 +380,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         var paymentReversalPreview = kind == ManualBankPaymentReversal ? await ManualBankPaymentReversalHumanPreviewAsync(snapshot, actor!, token) : null;
         var receiptReversalPreview = kind == ManualReceiptReversal ? await ManualReceiptReversalHumanPreviewAsync(snapshot, actor!, token) : null;
         var expensePreview = kind == ExpensePayment ? await ExpensePaymentHumanPreviewAsync(snapshot, actor!, token) : null;
+        var postingAccountMappingPreview = kind == PostingAccountMapping ? await PostingAccountMappingHumanPreviewAsync(snapshot, actor!, token) : null;
         var approvedSourceCatalogPreview = kind == ApprovedSourceCatalog ? await ApprovedSourceCatalogHumanPreviewAsync(snapshot, actor!, token) : null;
         var journalReversalPreview = kind == JournalReversal ? await JournalReversalHumanPreviewAsync(snapshot, actor!, token) : null;
         var accountingPeriodOpeningPreview = kind == AccountingPeriodOpening ? await AccountingPeriodOpeningHumanPreviewAsync(snapshot, actor!, token) : null;
@@ -385,7 +391,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         var bankCreditLimitPreview = kind == BankCreditLimit ? await BankCreditLimitHumanPreviewAsync(snapshot, actor!, token) : null;
         var openingPreview = kind is OpeningBalance or OpeningBalanceReversal ? await OpeningBalanceHumanPreviewAsync(snapshot, actor!, token) : null;
         return new(snapshot.CompanyId, kind, id, snapshot.Item.DocumentLabel, snapshot.SourceVersion, snapshot.Pending,
-            kind is ProductPackageStandard or InventoryStockScrap or InventoryStockCount or OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance or InventoryTransferLoss or InventoryTransferOverage, snapshot.Item.References, rules, kind is not (ApprovedSourceCatalog or JournalReversal or AccountingPeriodOpening or AccountingPeriodReopening or NormalJournalDraft or ExpensePayment or OfficialInvoiceImport or PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance or LogisticsPlanExcess or LogisticsWeighingDifference or LogisticsDispatchNote or BankAccount or BankAccountIbanChange or ManualBankPayment or ProductPriceList)
+            kind is ProductPackageStandard or InventoryStockScrap or InventoryStockCount or OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance or InventoryTransferLoss or InventoryTransferOverage, snapshot.Item.References, rules, kind is not (PostingAccountMapping or ApprovedSourceCatalog or JournalReversal or AccountingPeriodOpening or AccountingPeriodReopening or NormalJournalDraft or ExpensePayment or OfficialInvoiceImport or PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance or LogisticsPlanExcess or LogisticsWeighingDifference or LogisticsDispatchNote or BankAccount or BankAccountIbanChange or ManualBankPayment or ProductPriceList)
                 && !(kind == ManufacturingPlan && rules.Any(rule => rule.RuleCode == "manufacturing.plan-reapproval-after-order-cancel")),
             snapshot.ManufacturingPlanReapproval, snapshot.InventoryTransferLoss,
             snapshot.CounterpartyTaxIdentityChange, snapshot.CounterpartyLegalNameChange, logisticsPreview,
@@ -401,13 +407,14 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
                 : kind == CashExchangeBookValue ? cashExchangeBookValuePreview!.Proposal.TargetFunctionalValueTl is not null
                 : kind == AccountingPeriodReopening ? !accountingPeriodReopeningPreview!.LaterPeriodClosed : null,
             ibanPreview, kind == ProductPackageStandard ? snapshot.ProductPackageStandardProof!.Table : null, priceListPreview,
-            kind == PartyCreditLimit ? snapshot.PartyCreditLimitProof!.Proposal : null, importPreview, officialSalesPreview, paymentReversalPreview, receiptReversalPreview, expensePreview, bankCreditLimitPreview, openingPreview, creditMovementPreview, cashExchangeBookValuePreview, normalJournalDraftPreview, accountingPeriodOpeningPreview, accountingPeriodReopeningPreview, journalReversalPreview, approvedSourceCatalogPreview);
+            kind == PartyCreditLimit ? snapshot.PartyCreditLimitProof!.Proposal : null, importPreview, officialSalesPreview, paymentReversalPreview, receiptReversalPreview, expensePreview, bankCreditLimitPreview, openingPreview, creditMovementPreview, cashExchangeBookValuePreview, normalJournalDraftPreview, accountingPeriodOpeningPreview, accountingPeriodReopeningPreview, journalReversalPreview, approvedSourceCatalogPreview, postingAccountMappingPreview);
     }
 
     public async Task<WorkDecisionResultV1> DecideAsync(string kind, Guid id, WorkDecisionRequestV1 request, string key, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (!ValidApprovedSourceCatalogRequest(kind, request)
+        if (!ValidPostingAccountMappingRequest(kind, request)
+            || !ValidApprovedSourceCatalogRequest(kind, request)
             || kind == JournalReversal && !ValidJournalReversalRequest(request)
             || !ValidAccountingPeriodRequest(kind, request)
             || kind == NormalJournalDraft && !ValidNormalJournalDraftRequest(request)
@@ -485,6 +492,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         }
         if (!await Verify(token)) throw new WorkDecisionException(403);
         using var lease = executionFence.Enter(Verify);
+        if (kind == PostingAccountMapping)
+            return await DecidePostingAccountMappingAsync(id, request, key, snapshot, actor!, token);
         if (kind == ApprovedSourceCatalog)
             return await DecideApprovedSourceCatalogAsync(id, request, key, snapshot, actor!, token);
         if (kind == JournalReversal)

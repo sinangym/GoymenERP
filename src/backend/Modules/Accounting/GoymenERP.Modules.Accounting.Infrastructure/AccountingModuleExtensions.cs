@@ -145,6 +145,7 @@ public static class AccountingModuleExtensions
         services.AddScoped<IWorkInboxSourceV1, WorkInbox.AccountingNormalJournalDraftWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, WorkInbox.AccountingJournalReversalWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, WorkInbox.AccountingApprovedSourceCatalogWorkInboxSourceV1>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.AccountingPostingAccountMappingWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, WorkInbox.AccountingManufacturingCostDifferenceWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, WorkInbox.AccountingInvoiceLineCogsCorrectionWorkInboxSourceV1>();
         services.AddScoped<IWorkInboxSourceV1, WorkInbox.AccountingInvoicedShipmentCostWorkInboxSourceV1>();
