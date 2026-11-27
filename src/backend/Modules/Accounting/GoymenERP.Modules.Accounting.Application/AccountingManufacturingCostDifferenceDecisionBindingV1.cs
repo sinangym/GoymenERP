@@ -15,7 +15,7 @@ public static class AccountingManufacturingCostDifferenceDecisionBindingV1
         Guid maker, DateTimeOffset preparedAt, decimal signedDifference)
     {
         if (id == Guid.Empty || order == Guid.Empty || period == Guid.Empty || debit == Guid.Empty || credit == Guid.Empty || maker == Guid.Empty) return null;
-        return new(ModuleName, KindName, id, Caption(id), preparedAt.ToUniversalTime(), ScreenPath, maker.ToString("D", CultureInfo.InvariantCulture),
+        return new(ModuleName, KindName, id, Caption(id), preparedAt.ToUniversalTime(), PurposePath + "/" + id.ToString("D", CultureInfo.InvariantCulture), maker.ToString("D", CultureInfo.InvariantCulture),
             [new(ApprovalRequiredRule, null, WorkInboxRulesV1.Decimal(signedDifference), null, "TRY")],
             [new("manufacturing-order", Caption(order), order, null), new("period", Caption(period), period, null),
              new("debit-ledger-account", Caption(debit), debit, null), new("credit-ledger-account", Caption(credit), credit, null)]);

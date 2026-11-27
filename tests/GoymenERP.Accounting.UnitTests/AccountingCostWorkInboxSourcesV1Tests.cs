@@ -39,7 +39,7 @@ public sealed class AccountingManufacturingCostDifferenceWorkInboxSourceV1Tests
         var first = result.Items![0];
         Assert.Equal(Kit.CallerText, first.PreparedBy);
         Assert.Null(first.ExcludedDeciders);
-        Assert.Equal(AccountingManufacturingCostDifferenceWorkInboxSourceV1.ScreenPath, first.Link);
+        Assert.Equal(AccountingWorkInboxFence.Link(AccountingManufacturingCostDifferenceWorkInboxSourceV1.WorkDecisionPath, first.ItemId), first.Link);
         Assert.Equal(Kit.Start.ToUniversalTime(), first.WaitingSinceUtc);
         Assert.Equal([new WorkApprovalRuleResultV1(AccountingManufacturingCostDifferenceWorkInboxSourceV1.ApprovalRequiredRule,
             null, "-125.5", null, "TRY")], first.Rules);

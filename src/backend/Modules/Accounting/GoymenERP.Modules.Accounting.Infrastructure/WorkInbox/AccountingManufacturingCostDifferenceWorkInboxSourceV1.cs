@@ -24,6 +24,7 @@ internal sealed partial class AccountingManufacturingCostDifferenceWorkInboxSour
     public const string ModuleName = "accounting";
     public const string KindName = "accounting.manufacturing-cost-difference.v1";
     public const string ScreenPath = "/muhasebe/uretim-maliyet-farki-onay";
+    public const string WorkDecisionPath = AccountingManufacturingCostDifferenceDecisionBindingV1.PurposePath;
 
     /// <summary>The stored status the approve command accepts (Prepared).</summary>
     internal const int PreparedStatus = 2;

@@ -23,7 +23,7 @@ public sealed partial class ManufacturingCostDifferenceV1Tests
         Assert.Equal(Company, proof.CompanyId); Assert.Equal(Maker, proof.PreparedBy); Assert.Equal(p.ManufacturingOrderId, proof.ManufacturingOrderId);
         Assert.True(AccountingManufacturingCostDifferenceDecisionBindingV1.MatchesDecisionProof(snapshot.Item, proof));
         Assert.True(AccountingManufacturingCostDifferenceDecisionBindingV1.MatchesDecisionItem(snapshot.Item, detail));
-        Assert.Equal(AccountingManufacturingCostDifferenceWorkInboxSourceV1.ScreenPath, snapshot.Item.Link);
+        Assert.Equal(AccountingWorkInboxFence.Link(AccountingManufacturingCostDifferenceWorkInboxSourceV1.WorkDecisionPath, snapshot.Item.ItemId), snapshot.Item.Link);
         Assert.Equal("600", Assert.Single(snapshot.Item.Rules).Actual); Assert.Equal("TRY", snapshot.Item.Rules[0].Unit);
         Assert.Equal(new[] { "manufacturing-order", "period", "debit-ledger-account", "credit-ledger-account" }, snapshot.Item.References.Select(x => x.Role));
         Assert.Null(snapshot.Item.Scope); Assert.Null(snapshot.Item.ExcludedDeciders); Assert.True(snapshot.Item.Excludes(Maker.ToString("D")));
