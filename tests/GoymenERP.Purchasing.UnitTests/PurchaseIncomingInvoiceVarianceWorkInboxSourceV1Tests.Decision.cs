@@ -61,9 +61,13 @@ public sealed partial class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1Test
     {
         var world = new PurchasingWorkInboxTestWorld();
         var order = Order(CompanyA, "SENTETIK-UNKNOWN"); order.Version = 3;
+        order.ApprovedBy = null; order.ApprovedAtUtc = null;
         var (invoice, revisions) = Matched(CompanyA, "SENTETIK-UNKNOWN", order.Id, 50m, Start);
         await world.SeedAsync(CompanyA, db => { db.Orders.Add(order); db.IncomingInvoiceRevisions.AddRange(revisions); });
         await Assert.ThrowsAsync<InvalidOperationException>(() => Source(world).ReadDecisionAsync(world.Caller(CompanyA), invoice.Id, default));
+        var listed = await Source(world).ListPendingAsync(world.Caller(CompanyA), 5, default);
+        Assert.Equal(NativeApprovalQueueOutcomeV1.Unavailable, listed.Outcome);
+        Assert.Null(listed.Items);
     }
 
     [Theory]
@@ -95,5 +99,31 @@ public sealed partial class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1Test
         var answer = await Source(world).ReadDecisionAsync(world.Caller(CompanyA), invoice.Id, default);
         Assert.NotNull(answer);
         Assert.True(answer.Item.Excludes("SENTETIK-original-order-approver"));
+        var listed = Assert.Single((await Source(world).ListPendingAsync(world.Caller(CompanyA), 5, default)).Items!);
+        Assert.True(listed.Excludes("SENTETIK-original-order-approver"));
+        Assert.Equal(answer.Item.ExcludedDeciders, listed.ExcludedDeciders);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Variance_amounts_are_withheld_without_current_price_permission_before_or_after_the_list_read(bool revokeAfterRead)
+    {
+        var world = new PurchasingWorkInboxTestWorld();
+        var order = Order(CompanyA, "SENTETIK-PRICE-FENCE");
+        var (_, revisions) = Matched(CompanyA, "SENTETIK-PRICE-FENCE", order.Id, 50m, Start);
+        await world.SeedAsync(CompanyA, db => { db.Orders.Add(order); db.IncomingInvoiceRevisions.AddRange(revisions); });
+        if (!revokeAfterRead) world.Withheld.Add(PurchasingPermissionManifestV1.OrdersPriceRead);
+        else world.BeforePermissionAnswer = permission =>
+        {
+            if (permission == PurchasingPermissionManifestV1.OrdersPriceRead
+                && world.AskedPermissions.Count(value => value == permission) == 2)
+                world.Withheld.Add(permission);
+        };
+        var result = await Source(world).ListPendingAsync(world.Caller(CompanyA), 5, default);
+        Assert.Equal(NativeApprovalQueueOutcomeV1.Denied, result.Outcome);
+        Assert.Null(result.Items);
+        Assert.Equal(revokeAfterRead ? 2 : 1,
+            world.AskedPermissions.Count(value => value == PurchasingPermissionManifestV1.OrdersPriceRead));
     }
 }

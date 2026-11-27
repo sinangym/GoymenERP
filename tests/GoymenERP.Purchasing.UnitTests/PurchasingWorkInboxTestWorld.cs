@@ -33,6 +33,8 @@ internal sealed class PurchasingWorkInboxTestWorld
     /// <summary>WP7: every permission the fence asked about, in order.</summary>
     public List<string> AskedPermissions { get; } = [];
 
+    public Action<string>? BeforePermissionAnswer { get; set; }
+
     public string UserId { get; set; } = Approver;
 
     public PurchasingDbContext Context(Guid company)
@@ -88,6 +90,7 @@ internal sealed class PurchasingWorkInboxTestWorld
         {
             world.LastPermission = permission;
             world.AskedPermissions.Add(permission);
+            world.BeforePermissionAnswer?.Invoke(permission);
             return Task.FromResult(new PermissionScope(world.Granted && !world.Withheld.Contains(permission), world.CompanyWide,
                 new HashSet<string>(StringComparer.Ordinal), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
         }

@@ -160,7 +160,8 @@ public sealed partial class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1Test
     private static PurchaseOrderRow Order(Guid company, string number) => new()
     {
         Id = Guid.NewGuid(), CompanyId = company, SupplierPartyId = Guid.NewGuid(), CompanyAccountId = Guid.NewGuid(),
-        Status = (int)PurchaseOrderStatus.Approved, Version = 2, RowVersion = [1], EffectiveOn = new DateOnly(2026, 11, 1),
+        Status = (int)PurchaseOrderStatus.Approved, Version = 3, RowVersion = [1], EffectiveOn = new DateOnly(2026, 11, 1),
+        ApprovedBy = "SENTETIK-order-approver", ApprovedAtUtc = Start.AddDays(-4),
         CreatedAtUtc = Start.AddDays(-5), UpdatedAtUtc = Start.AddDays(-5), CreatedBy = "SENTETIK-buyer",
         CorrelationId = "SENTETIK-correlation", DocumentNumber = number,
     };

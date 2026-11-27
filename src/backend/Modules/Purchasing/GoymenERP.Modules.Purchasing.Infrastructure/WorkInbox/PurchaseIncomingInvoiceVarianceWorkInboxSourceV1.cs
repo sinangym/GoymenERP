@@ -63,8 +63,7 @@ internal sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
-        async Task<bool> Allowed() => await fence.CheckAsync(context, PurchasingPermissionManifestV1.OrdersPriceRead, cancellationToken) is null
-            && await fence.CheckAsync(context, ApproverPermission, cancellationToken) is null;
+        async Task<bool> Allowed() => await CheckDisclosureAsync(context, cancellationToken) is null;
         if (itemId == Guid.Empty || !await Allowed()) return null;
         var row = await dbContext.IncomingInvoiceRevisions.AsNoTracking()
             .Where(x => x.CompanyId == context.CompanyId && x.InvoiceId == itemId).OrderByDescending(x => x.Version)
@@ -74,8 +73,7 @@ internal sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1(
         var proof = await PurchaseInvoiceVarianceOrderProof.ReadAsync(dbContext, context.CompanyId, invoice, cancellationToken);
         if (!await Allowed()) return null;
         if (proof is null) throw new InvalidOperationException("Fatura sipariş onay geçmişi okunamadı.");
-        var orders = proof.ToDictionary(x => x.Key, x => new OrderFacts(x.Value.DocumentNumber, null, x.Value.Approvers));
-        if (!TryItem(new(invoice, row.RecordedAtUtc.ToUniversalTime()), orders, out var item))
+        if (!TryItem(new(invoice, row.RecordedAtUtc.ToUniversalTime()), proof, out var item))
             throw new InvalidOperationException("Fatura farkı karar kaynağı okunamadı.");
         return new(context.CompanyId, item, invoice.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
             invoice.Status == PurchaseIncomingInvoiceStatus.Matched && invoice.Variances.Count > 0 && invoice.VarianceDecision is null);
@@ -89,13 +87,13 @@ internal sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1(
         ArgumentNullException.ThrowIfNull(context);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCount);
         cancellationToken.ThrowIfCancellationRequested();
-        if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is { } refused)
+        if (await CheckDisclosureAsync(context, cancellationToken) is { } refused)
         {
             return refused;
         }
 
         List<Pending> pending;
-        Dictionary<Guid, OrderFacts> orders;
+        var items = new List<WorkInboxItemV1>(maxCount);
         try
         {
             var matched = (int)PurchaseIncomingInvoiceStatus.Matched;
@@ -116,35 +114,35 @@ internal sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1(
             }
 
             pending = pending.OrderBy(item => item.WaitingSinceUtc).ThenBy(item => item.Invoice.Id).ToList();
-            var orderIds = pending.Take(maxCount).SelectMany(item => OrderIds(item.Invoice)).Distinct().ToArray();
-            orders = await dbContext.Orders.AsNoTracking()
-                .Where(row => row.CompanyId == context.CompanyId && orderIds.Contains(row.Id))
-                .ToDictionaryAsync(row => row.Id, row => new OrderFacts(row.DocumentNumber, row.ApprovedBy), cancellationToken);
+            // Match revisions freeze particular order versions. The list and decision command must
+            // exclude the same historical approvers, not whichever actor approves the order today.
+            foreach (var entry in pending.Take(maxCount))
+            {
+                var proof = await PurchaseInvoiceVarianceOrderProof.ReadAsync(dbContext, context.CompanyId, entry.Invoice, cancellationToken);
+                if (proof is null || !TryItem(entry, proof, out var item))
+                    throw new InvalidOperationException("Fatura sipariş onay geçmişi okunamadı.");
+                items.Add(item);
+            }
         }
         catch (Exception) when (!cancellationToken.IsCancellationRequested)
         {
-            return await fence.CheckAsync(context, ApproverPermission, cancellationToken)
+            return await CheckDisclosureAsync(context, cancellationToken)
                 ?? WorkInboxSourceResultV1.Unavailable();
         }
 
-        if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is { } afterRead)
+        if (await CheckDisclosureAsync(context, cancellationToken) is { } afterRead)
         {
             return afterRead;
         }
 
-        var items = new List<WorkInboxItemV1>(Math.Min(pending.Count, maxCount));
-        foreach (var entry in pending.Take(maxCount))
-        {
-            if (!TryItem(entry, orders, out var item))
-            {
-                return WorkInboxSourceResultV1.Unavailable();
-            }
-
-            items.Add(item);
-        }
-
         return WorkInboxSourceResultV1.Found(context.CompanyId, items, pending.Count > maxCount);
     }
+
+    // Both reads expose native price variance amounts. Keep the owner price permission and
+    // the current decision permission on the same pre/post-read path; neither grants the other.
+    private async Task<WorkInboxSourceResultV1?> CheckDisclosureAsync(WorkInboxSourceContextV1 context, CancellationToken token) =>
+        await fence.CheckAsync(context, PurchasingPermissionManifestV1.OrdersPriceRead, token)
+        ?? await fence.CheckAsync(context, ApproverPermission, token);
 
     /// <summary>The store's own reading rule (PurchasingStore.FindIncomingInvoiceAsync): an inconsistent history throws.</summary>
     private static PurchaseIncomingInvoice Restore(Guid companyId, PurchaseIncomingInvoiceRevisionRow row)
@@ -163,7 +161,7 @@ internal sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1(
     private static IEnumerable<Guid> OrderIds(PurchaseIncomingInvoice invoice) =>
         invoice.Matches.Select(match => match.OrderId).Concat(invoice.AdditionalCosts.Select(cost => cost.OrderId));
 
-    private static bool TryItem(Pending entry, IReadOnlyDictionary<Guid, OrderFacts> orders, out WorkInboxItemV1 item)
+    private static bool TryItem(Pending entry, IReadOnlyDictionary<Guid, PurchaseInvoiceVarianceOrderProof.Facts> orders, out WorkInboxItemV1 item)
     {
         item = null!;
         var invoice = entry.Invoice;
@@ -202,7 +200,7 @@ internal sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1(
             return false;
         }
 
-        var excluded = invoice.VarianceDeciderExclusions(matchedOrderIds.SelectMany(orderId => orders[orderId].HistoricalApprovers?.Cast<string?>() ?? new[] { orders[orderId].ApprovedBy }));
+        var excluded = invoice.VarianceDeciderExclusions(matchedOrderIds.SelectMany(orderId => orders[orderId].Approvers));
         if (excluded.Count > WorkInboxRulesV1.MaxExcludedDecidersPerItem)
         {
             return false;
@@ -240,5 +238,4 @@ internal sealed class PurchaseIncomingInvoiceVarianceWorkInboxSourceV1(
 
     private sealed record Pending(PurchaseIncomingInvoice Invoice, DateTimeOffset WaitingSinceUtc);
 
-    private sealed record OrderFacts(string? DocumentNumber, string? ApprovedBy, IReadOnlyList<string>? HistoricalApprovers = null);
 }
