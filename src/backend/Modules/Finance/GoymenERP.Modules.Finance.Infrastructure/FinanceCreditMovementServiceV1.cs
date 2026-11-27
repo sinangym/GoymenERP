@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 
 /// <summary>FNS-D97/D101/D108: source actuals, maker/checker, one transactional bank fact and outbox event.
 /// A contract approval or a planned installment never creates an actual movement.</summary>
-public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompanyContext company, ICurrentUser user,
+public sealed partial class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompanyContext company, ICurrentUser user,
     IFinancePermissionPort permissions, ISettingsPrerequisiteProvider settings, IFinanceOpeningPeriodReader openingPeriod,
     IFinanceCreditAccountingPeriodPortV1 accountingPeriod, IFinanceTreasuryBalanceGuard treasury,
     IAuditEventCollector audit, FinanceCreditAccountEnvelopes envelopes, TimeProvider time,
@@ -73,13 +73,12 @@ public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompany
         ArgumentNullException.ThrowIfNull(request);
         const FinanceAction action = FinanceAction.ApproveCredit;
         if (await Start(context, metadata, action, cancellationToken) is { } denied) return denied;
-        if (request.MovementId == Guid.Empty || !FinanceCreditMovementPolicyV1.Text(request.ExpectedVersion, 64)
-            || (!request.Approve && !FinanceCreditMovementPolicyV1.Text(request.Reason, 1000)) || (request.Approve && request.Reason is not null))
-            return Failure(context, CommandOutcome.ValidationFailed, new ValidationIssue("request", "credit_movement_decision_invalid"));
+        if (DecisionShapeRefusal(context, request) is { } shapeRefusal) return shapeRefusal;
         var payload = FinanceCreditAccountService.PayloadHash(DecideCommand, request);
         return await Transaction(context, async () =>
         {
             if (await Prior(context, metadata, action, DecideCommand, payload, cancellationToken) is { } prior) return prior;
+            if (ownedMovementDecision?.ReplayOnly == true) return Failure(context, CommandOutcome.VersionConflict, new ValidationIssue("request", "concurrent_change"));
             var row = await db.CreditMovements.SingleOrDefaultAsync(x => x.Id == request.MovementId, cancellationToken);
             if (await Fence(context, action, cancellationToken) is { } fenced) return fenced;
             if (row is null) return await Terminal(context, metadata, action, DecideCommand, payload, CommandOutcome.ValidationFailed, cancellationToken, new ValidationIssue("movementId", "credit_movement_not_found"));
@@ -119,6 +118,7 @@ public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompany
                 if (source.ReplacesOpeningMovementId is { } originalId)
                 {
                     var original = await db.CreditMovements.SingleAsync(x => x.Id == originalId, cancellationToken);
+                    if (ownedMovementDecision is not null && await Fence(context, action, cancellationToken) is { } afterOriginal) return afterOriginal;
                     var originalBefore = JsonSerializer.Serialize(View(original, context.ActorId), Json);
                     var originalVersion = original.Version;
                     original.ReversedByMovementId = row.Id; original.Version++;
@@ -239,8 +239,10 @@ public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompany
     }
     private async Task<CreditMovementResultV1?> Fence(FinanceContext context, FinanceAction action, CancellationToken ct)
     {
+        if (ownedMovementDecision is not null) ct.ThrowIfCancellationRequested();
         if (!Same(context)) return Failure(context, CommandOutcome.Denied);
         var answer = await permissions.CheckAsync(context, action, null, ct);
+        if (ownedMovementDecision is not null) ct.ThrowIfCancellationRequested();
         if (!Same(context) || answer == PermissionDecision.Denied) return Failure(context, CommandOutcome.Denied);
         return answer == PermissionDecision.Allowed ? null : Failure(context, CommandOutcome.Unavailable);
     }
@@ -261,7 +263,12 @@ public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompany
         if (await Fence(context, action, ct) is { } fenced) { db.ChangeTracker.Clear(); auditOwner?.DiscardPending(); return fenced; }
         db.CreditMovementCommands.Add(new FinanceCreditMovementCommandRow() { CompanyId = context.CompanyId, Command = command, KeyHash = FinanceCommandKeys.Hash(metadata.IdempotencyKey),
             ActorId = context.ActorId, PayloadHash = payload, ResultJson = JsonSerializer.Serialize(result, Json) });
-        await db.SaveChangesAsync(ct);
+        if (ownedMovementDecision is not null)
+        {
+            if (command != DecideCommand) throw new InvalidOperationException("Credit movement ownership is for another command.");
+            await SaveOwnedMovementDecisionAsync(context, ct);
+        }
+        else await db.SaveChangesAsync(ct);
         return result;
     }
     private Task<CreditMovementResultV1> Terminal(FinanceContext context, CommandMetadata metadata, FinanceAction action, string command,
@@ -271,7 +278,7 @@ public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompany
         return Save(context, metadata, action, command, payload, Failure(context, outcome, issues), ct);
     }
     private Task<CreditMovementResultV1> Transaction(FinanceContext context, Func<Task<CreditMovementResultV1>> action, CancellationToken ct) =>
-        FinanceTreasuryTransaction.ExecuteAsync(db, action, async () => await Fence(context, FinanceAction.ReadCredits, ct)
+        ownedMovementDecision is not null ? action() : FinanceTreasuryTransaction.ExecuteAsync(db, action, async () => await Fence(context, FinanceAction.ReadCredits, ct)
             ?? Failure(context, CommandOutcome.Unavailable, new ValidationIssue("request", "credit_movement_transaction_unavailable")), auditOwner, ct);
     private void Audit(FinanceContext context, CommandMetadata metadata, FinanceAuditEnvelope envelope, FinanceCreditMovementRow row,
         string eventType, long? previousVersion, string before, string reason) => audit.Enqueue(new AuditEventDraft(context.CompanyId, eventType,
@@ -287,6 +294,10 @@ public sealed class FinanceCreditMovementServiceV1(FinanceDbContext db, ICompany
         (CreditMovementStatusV1)row.Status, ReadSource(row), row.CurrencyId, row.ProposedBy == actor, row.ProposedAtUtc, row.DecidedAtUtc,
         row.RejectionReason, row.ReversedByMovementId, row.OpeningPeriodVersion,
         JsonSerializer.Deserialize<CreditPlanToleranceSnapshotV1>(row.MoneyProfileJson, Json) ?? throw new InvalidOperationException("Kredi para profili okunamadı."));
+    private static CreditMovementResultV1? DecisionShapeRefusal(FinanceContext context, CreditMovementDecisionV1 request) =>
+        request.MovementId == Guid.Empty || !FinanceCreditMovementPolicyV1.Text(request.ExpectedVersion, 64)
+            || (!request.Approve && !FinanceCreditMovementPolicyV1.Text(request.Reason, 1000)) || (request.Approve && request.Reason is not null)
+            ? Failure(context, CommandOutcome.ValidationFailed, new ValidationIssue("request", "credit_movement_decision_invalid")) : null;
     private static CreditMovementResultV1 Success(FinanceContext context, FinanceCreditMovementRow row) => new CreditMovementResultV1(CommandOutcome.Succeeded, View(row, context.ActorId), false, context.CorrelationId, []);
     private static CreditMovementResultV1 Failure(FinanceContext context, CommandOutcome outcome, params ValidationIssue[] issues) => new CreditMovementResultV1(outcome, null, false, context.CorrelationId, issues);
     private static ReadOutcome ReadFailure(CreditMovementResultV1 failure) => failure.Outcome == CommandOutcome.Denied ? ReadOutcome.Denied : ReadOutcome.Unavailable;
