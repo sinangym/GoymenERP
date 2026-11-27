@@ -333,10 +333,11 @@ it.each([true,false])('keeps Manufacturing immutable decision states strict (app
 const lossKind='inventory.transfer-loss.v1'
 const lossOptions={requestNumber:2,requestedAtUtc:'2026-11-26T08:00:00Z'}
 const lossRequest={...request,reason:'İnsan kararı',inventoryTransferLoss:{requestNumber:2,decidedAtUtc:'2026-11-26T09:00:00Z'}}
-it('decodes exact loss options without adding the staged kind to mounted kinds or changing other owner wires', () => {
+it('decodes exact loss options in the fifteen mounted kinds without changing other owner wires', () => {
  const value={...preview,kind:lossKind,approvalReasonRequired:true,rejectionSupported:true,inventoryTransferLoss:lossOptions}
  expect(isWorkDecisionKind(lossKind)).toBe(true)
- expect(WORK_DECISION_KINDS.some(kind=>String(kind)===lossKind)).toBe(false)
+ expect(WORK_DECISION_KINDS.filter(kind=>kind===lossKind)).toHaveLength(1)
+ expect(WORK_DECISION_KINDS).toHaveLength(15)
  expect(decodeWorkDecisionPreview(value,company,lossKind,id)).not.toBeNull()
  for(const delta of [{companyId:id},{itemId:company},{sourceVersion:'0'},{approvalReasonRequired:false},{rejectionSupported:false},
   {inventoryTransferLoss:null},{inventoryTransferLoss:{...lossOptions,requestNumber:0}},{inventoryTransferLoss:{...lossOptions,requestNumber:1.5}},

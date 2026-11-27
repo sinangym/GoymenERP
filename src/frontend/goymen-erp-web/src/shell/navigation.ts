@@ -357,6 +357,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'accounting.purchase-cost-differences.approve': 'Alış maliyeti farkı onayı',
   // NAV-OPENING-01: the one-time opening count is set-up work, drawn under Ayarlar (see NAV_GROUPS). Same route,
   // same capability; only the sidebar place and its wording changed.
+  'inventory.transfer-loss.work-decision': '',
   'inventory.opening-cost.work-decision': '',
   'inventory.opening-stock.record': 'Açılış stokları',
   'inventory.stock-positions.list': 'Stok / Malzeme Pozisyonu',

@@ -543,3 +543,18 @@ it('opens the credit inbox under the narrow purpose capability and retains the o
  expect(within(cardOf(kind)).getByRole('link',{name:T.openOwnerLabel('Kredi hesabı','SENTETIK kredi')}).getAttribute('href')).toBe(link)
  expect(api.inboxReads()).toHaveLength(1);expect(api.inboxReads()[0].companyId).toBe(COMPANY);expect(api.queueReads()).toHaveLength(0)
 })
+
+
+it('opens loss inbox under the exact Work purpose capability and follows its separate owner purpose link', async () => {
+ const kind='inventory.transfer-loss.v1',permission='inventory.stock-transfer.loss-approve',id='cccccccc-0000-4000-8000-0000000000f3'
+ const link=`/onaylarim/${kind}/${id}`
+ const item={...limitItem,module:'inventory',kind,itemId:id,documentLabel:'SENTETIK kayıp',link,awaitingPermission:permission,ruleVersion:RV(kind),
+  explanation:{rules:[{ruleCode:'inventory.transfer-loss-request',threshold:null,actual:'10',deviation:null,unit:'kg'}],references:[]}}
+ const api=installFetch({granted:[CAPABILITY.inventoryTransferLossWorkDecision],inbox:()=>json({companyId:COMPANY,view:'awaiting-my-decision',generatedAtUtc:'2026-11-26T08:00:00Z',items:[item],
+  sources:[{module:'inventory',kind,awaitingPermission:permission,durationClass:'BusinessDays',ruleVersion:RV(kind),state:'Ready',hasMore:false}]})})
+ await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-list')
+ expect(within(cardOf(kind)).getByRole('link',{name:T.openOwnerLabel('Transfer yolda kayıp onayı','SENTETIK kayıp')}).getAttribute('href')).toBe(link)
+ expect(api.inboxReads()).toHaveLength(1)
+ expect(api.inboxReads()[0].companyId).toBe(COMPANY)
+ expect(api.queueReads()).toHaveLength(0)
+})

@@ -113,3 +113,16 @@ it('registers the existing native opening-cost purpose literal and its separate 
   .toBe('onaylarim/inventory.opening-cost.v1/:approvalId')
  expect(inventoryRoutes).toHaveLength(16)
 })
+
+
+it('mounts the loss Work purpose separately from the unchanged native loss approval screen', () => {
+ expect(CAPABILITY.inventoryTransferLossWorkDecision).toBe('inventory.transfer-loss.work-decision')
+ expect(CAPABILITY_ROUTE[CAPABILITY.inventoryTransferLossWorkDecision]).toBe('/onaylarim/inventory.transfer-loss.v1/:approvalId')
+ expect(CAPABILITY_NAV_LABEL[CAPABILITY.inventoryTransferLossWorkDecision]).toBe('')
+ expect(matchRoutes(workRoutes,'/onaylarim/inventory.transfer-loss.v1/cccccccc-0000-4000-8000-000000000001')?.at(-1)?.route.path)
+  .toBe('onaylarim/inventory.transfer-loss.v1/:approvalId')
+ expect(CAPABILITY.inventoryTransferLossApproval).toBe('inventory.stock-transfer.loss-approve')
+ expect(CAPABILITY_ROUTE[CAPABILITY.inventoryTransferLossApproval]).toBe('/stok/transferler/kayip-onaylari')
+ expect(matchRoutes(inventoryRoutes,'/stok/transferler/kayip-onaylari')?.at(-1)?.route.path).toBe('stok/transferler/kayip-onaylari')
+ expect(inventoryRoutes).toHaveLength(16)
+})

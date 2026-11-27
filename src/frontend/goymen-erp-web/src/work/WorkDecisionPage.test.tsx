@@ -1,5 +1,4 @@
 import type { ReactElement } from 'react'
-import { ApprovalInboxDetailPage } from './ApprovalInboxPages'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -617,19 +616,15 @@ it('retains the complete 256-character Manufacturing rejection and rejects an ov
 })
 
 
-// Direct candidate component harness: production workRoutes intentionally has no loss purpose mount yet.
-const lossKind='inventory.transfer-loss.v1'
+// Final publication candidate: exercise the real dedicated route and native purpose capability.
+const lossKind='inventory.transfer-loss.v1',lossCap='inventory.transfer-loss.work-decision'
 const lossPreview={...preview,kind:lossKind,approvalReasonRequired:true,rejectionSupported:true,
  inventoryTransferLoss:{requestNumber:1,requestedAtUtc:'2026-11-26T08:00:00Z'}}
-function mountLossCandidate(){
- const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[{path:'loss-candidate/:approvalId',element:<WorkDecisionPage kind={lossKind}/>}]}],{initialEntries:[`/loss-candidate/${id}`]})
- render(<ShellProvider queryClient={new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})}><RouterProvider router={router}/></ShellProvider>)
- return router
-}
+function mountLossPurpose(){ return mount(`/onaylarim/${lossKind}/${id}`) }
 it.each([true,false])('requires a human time and complete 500-character reason for loss approve=%s', async approve => {
- const calls=installFetch({capabilities:[cap],respond:(url,init)=>url.includes(`/work/decisions/${lossKind}/${id}`)
+ const calls=installFetch({capabilities:[lossCap],respond:(url,init)=>url.includes(`/work/decisions/${lossKind}/${id}`)
   ?init?.method==='POST'?json({companyId:COMPANY_A,kind:lossKind,itemId:id,state:approve?'Approved':'Rejected',replayed:false,originalCorrelationId:'original'}):json(lossPreview):undefined})
- mountLossCandidate()
+ mountLossPurpose()
  const time=await screen.findByLabelText(T.lossDecisionTime)
  const button=screen.getByRole('button',{name:approve?T.approve:T.reject}) as HTMLButtonElement
  expect(button.disabled).toBe(true)
@@ -648,7 +643,7 @@ it.each([true,false])('requires a human time and complete 500-character reason f
 })
 it.each(['renewed','closed'] as const)('replays the frozen loss number/time/reason/body/key after %s preview', async state => {
  let reads=0,posts=0
- const calls=installFetch({capabilities:[cap],respond:(url,init)=>{
+ const calls=installFetch({capabilities:[lossCap],respond:(url,init)=>{
   if(!url.includes(`/work/decisions/${lossKind}/${id}`))return undefined
   if(init?.method==='POST')return ++posts===1?problem(503):json({companyId:COMPANY_A,kind:lossKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'})
   return json(++reads===1?lossPreview:{...lossPreview,pending:state!=='closed',sourceVersion:'9',inventoryTransferLoss:{requestNumber:2,requestedAtUtc:'2026-11-27T08:00:00Z'}})
@@ -657,13 +652,13 @@ it.each(['renewed','closed'] as const)('replays the frozen loss number/time/reas
  vi.stubGlobal('fetch',vi.fn((input:RequestInfo|URL,init?:RequestInit)=>String(input).endsWith('/identity/me')
   ? Promise.resolve(json({userId:'99999999-9999-4999-8999-999999999999',displayName:'SENTETIK',email:null,allowedCompanyIds:[COMPANY_A],mustChangePassword:false,localCredentialVersion:null,authenticationSessionBinding:'SENTETIK-loss-session'}))
   : baseFetch(input,init)))
- mountLossCandidate()
+ mountLossPurpose()
  const time=await screen.findByLabelText(T.lossDecisionTime)
  fireEvent.change(time,{target:{value:'2026-11-26T11:30:00'}})
  fireEvent.change(screen.getByLabelText(T.reason),{target:{value:'İnsan kayıp kararı'}})
  fireEvent.click(screen.getByRole('button',{name:T.approve}))
  await screen.findByText(T.unknown)
- cleanup();mountLossCandidate();await screen.findByText(T.unknown)
+ cleanup();mountLossPurpose();await screen.findByText(T.unknown)
  await screen.findByText(T.lossFrozenTime,{exact:false})
  fireEvent.click(screen.getByRole('button',{name:T.retry}))
  await screen.findByText(T.done)
@@ -675,17 +670,29 @@ it.each(['renewed','closed'] as const)('replays the frozen loss number/time/reas
 })
 
 
-it('keeps the staged loss candidate out of production and preserves the existing legacy detail fallback', () => {
+it('mounts the exact loss purpose and component under the actual native purpose capability', () => {
  const route=matchRoutes(workRoutes,`/onaylarim/${lossKind}/${id}`)?.at(-1)?.route
- expect(route?.path).toBe('onaylarim/:kind/:approvalId')
- const element=route?.element as ReactElement<{children:ReactElement}>
- expect(element.props.children.type).toBe(ApprovalInboxDetailPage)
+ expect(route?.path).toBe('onaylarim/inventory.transfer-loss.v1/:approvalId')
+ const element=route?.element as ReactElement<{capability:readonly string[];children:ReactElement<{kind:string}>}>
+ expect(element.props.capability).toEqual(['inventory.transfer-loss.work-decision'])
+ expect(element.props.children.type).toBe(WorkDecisionPage)
+ expect(element.props.children.props.kind).toBe(lossKind)
 })
 it.each([{companyId:COMPANY_B},{inventoryTransferLoss:null},{inventoryTransferLoss:{requestNumber:1,requestedAtUtc:'bad'}}])('fails closed on malformed or foreign loss preview %j', async delta => {
- const calls=installFetch({capabilities:[cap],respond:url=>url.includes(`/work/decisions/${lossKind}/${id}`)?json({...lossPreview,...delta}):undefined})
- mountLossCandidate()
+ const calls=installFetch({capabilities:[lossCap],respond:url=>url.includes(`/work/decisions/${lossKind}/${id}`)?json({...lossPreview,...delta}):undefined})
+ mountLossPurpose()
  await waitFor(()=>expect(calls.some(call=>call.url.includes(`/work/decisions/${lossKind}/`))).toBe(true))
  expect(screen.queryByLabelText(T.lossDecisionTime)).toBeNull()
  expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
  expect(calls.some(call=>call.method==='POST')).toBe(false)
+})
+
+
+it.each([{capabilities:[]},{capabilities:['inventory.stock-transfer.loss-approve']},{capabilities:['inventory.transfer-loss-decision']},
+ {capabilities:['finance.cash-account.work-decision']}])('does not fetch a loss owner under missing or wrong capability %j', async ({capabilities}) => {
+ const calls=installFetch({capabilities,respond:url=>url.includes(`/work/decisions/${lossKind}/`)?json(lossPreview):undefined})
+ mountLossPurpose()
+ await waitFor(()=>expect(calls.some(call=>call.url.endsWith('/shell/capabilities'))).toBe(true))
+ expect(calls.some(call=>call.url.includes(`/work/decisions/${lossKind}/`))).toBe(false)
+ expect(screen.queryByLabelText(T.lossDecisionTime)).toBeNull()
 })

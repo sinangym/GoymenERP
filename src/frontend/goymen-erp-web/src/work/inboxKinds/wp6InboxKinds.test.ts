@@ -35,10 +35,11 @@ describe('WP6 iş kutusu türleri (Stok / Lojistik)', () => {
     expect(inboxRuleText('inventory.opening-cost-submitted')).toBeNull()
   })
 
-  it('mevcut transfer onay yetenekleri kutuyu açar; ekranı olmayan müşteri iadesi açmaz', () => {
+  it('transfer fazlası native yeteneği ve kayıp purpose yeteneği kutuyu açar; müşteri iadesi açmaz', () => {
     expect(WORK_INBOX_CAPABILITIES).toEqual(expect.arrayContaining([
-      'inventory.stock-transfer.overage-approve', 'inventory.stock-transfer.loss-approve',
+      'inventory.stock-transfer.overage-approve', 'inventory.transfer-loss.work-decision',
     ]))
+    expect(WORK_INBOX_KINDS.filter(entry => entry.kind === 'inventory.transfer-loss.v1')).toEqual([{kind:'inventory.transfer-loss.v1',module:'inventory',capability:'inventory.transfer-loss.work-decision'}])
     expect(WORK_INBOX_KINDS.find((entry) => entry.kind === 'logistics.customer-return.v1')?.capability).toBeNull()
   })
 
