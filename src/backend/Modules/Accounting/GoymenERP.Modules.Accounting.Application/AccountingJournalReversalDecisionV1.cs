@@ -17,7 +17,11 @@ public sealed record AccountingJournalReversalDecisionDetailV1(AccountingJournal
 public sealed record AccountingJournalReversalApprovalReceiptV1(Guid CompanyId, Guid ProposalId, Guid SourceJournalId,
     Guid ReversalJournalId, Guid PeriodId, string CommandName, string IdempotencyKeyHash, string PayloadHash,
     Guid ActorId, int ExpectedVersion, int ResultVersion, string OriginalCorrelationId, DateTimeOffset ApprovedAtUtc,
-    string SourceFactsDigest, string OriginalResultDigest);
+    string SourceFactsDigest, string OriginalResultDigest)
+{
+    [JsonIgnore] public Guid? CancellationSourceActorId { get; init; }
+    [JsonIgnore] public bool CancellationSourceActorProofEstablished { get; init; }
+}
 public sealed record AccountingJournalReversalDecisionSourceV1(AccountingJournalReversalProposalV1 Proposal,
     bool SourceJournalExists, bool ReversalJournalBound, string? ReversalCorrelationId, Guid? CancellationSourceActorId);
 public interface IAccountingJournalReversalDecisionStoreV1

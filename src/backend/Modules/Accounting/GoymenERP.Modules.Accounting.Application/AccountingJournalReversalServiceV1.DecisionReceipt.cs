@@ -57,6 +57,7 @@ public sealed partial class AccountingJournalReversalServiceV1
             || JsonSerializer.Serialize(original, Json) != JsonSerializer.Serialize(answer.Resource, Json)) return null;
         return new(proposal.CompanyId, proposal.ProposalId, proposal.SourceJournalId, reversal, proposal.PeriodId,
             command.CommandName, command.IdempotencyKeyHash, command.RequestHash, actor, expectedVersion, original.Version,
-            command.OriginalCorrelationId, approved, JournalReversalSourceFactsDigest(original), AccountingApiService.Sha256(command.ResultJson));
+            command.OriginalCorrelationId, approved, JournalReversalSourceFactsDigest(original), AccountingApiService.Sha256(command.ResultJson))
+        { CancellationSourceActorId = source.CancellationSourceActorId, CancellationSourceActorProofEstablished = true };
     }
 }

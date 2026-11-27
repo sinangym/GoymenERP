@@ -54,7 +54,8 @@ public sealed partial class AccountingJournalReversalLifecycleV1Tests
     {
         var (command, source, answer) = ReceiptFixture();
         var proof = AccountingJournalReversalServiceV1.BindJournalReversalApprovalReceipt(command, source, answer, 1, "key", Checker);
-        Assert.NotNull(proof); Assert.Equal(AccountingApiService.Sha256(command.ResultJson), proof.OriginalResultDigest);
+        Assert.NotNull(proof); Assert.True(proof.CancellationSourceActorProofEstablished); Assert.Null(proof.CancellationSourceActorId);
+        Assert.Equal(AccountingApiService.Sha256(command.ResultJson), proof.OriginalResultDigest);
         var withProof = answer with { Resource = answer.Resource! with { ApprovalReceipt = proof } };
         Assert.Equal(command.ResultJson, JsonSerializer.Serialize(withProof, ReversalJson));
         Assert.Equal(AccountingApiService.Sha256(command.ResultJson), AccountingJournalReversalServiceV1.JournalReversalOriginalResultDigest(withProof));
@@ -63,6 +64,22 @@ public sealed partial class AccountingJournalReversalLifecycleV1Tests
         Assert.Equal(16, JsonSerializer.SerializeToElement(withProof.Resource, ReversalJson).EnumerateObject().Count());
         // Approval changes mutable status/version only, never the proposal's recorded source digest.
         Assert.Equal(AccountingJournalReversalServiceV1.JournalReversalSourceFactsDigest(DecisionView(Pending())), proof.SourceFactsDigest);
+    }
+
+    [Fact]
+    public void Genuine_reversal_receipt_privately_binds_actual_cancellation_actor_and_distinguishes_unestablished_proof()
+    {
+        var (command, source, answer) = ReceiptFixture(); var cancellationActor = Guid.NewGuid();
+        var bound = AccountingJournalReversalServiceV1.BindJournalReversalApprovalReceipt(command,
+            source with { CancellationSourceActorId = cancellationActor }, answer, 1, "key", Checker);
+        Assert.NotNull(bound); Assert.True(bound.CancellationSourceActorProofEstablished); Assert.Equal(cancellationActor, bound.CancellationSourceActorId);
+        var json = JsonSerializer.SerializeToElement(bound, ReversalJson);
+        Assert.Equal(15, json.EnumerateObject().Count()); Assert.False(json.TryGetProperty("cancellationSourceActorId", out _));
+        Assert.False(json.TryGetProperty("cancellationSourceActorProofEstablished", out _));
+        var serializedView = JsonSerializer.Serialize(answer with { Resource = answer.Resource! with { ApprovalReceipt = bound } }, ReversalJson);
+        Assert.Equal(command.ResultJson, serializedView);
+        var legacyBody = JsonSerializer.Deserialize<AccountingJournalReversalApprovalReceiptV1>(JsonSerializer.Serialize(bound, ReversalJson), ReversalJson);
+        Assert.NotNull(legacyBody); Assert.False(legacyBody.CancellationSourceActorProofEstablished);
     }
 
     [Theory]
