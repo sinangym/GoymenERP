@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter } from 'react-router'
@@ -355,4 +355,128 @@ describe('Plan AI-5 — sağ AI paneli', () => {
     await waitFor(() => expect(screen.queryByRole('complementary', { name: AI_TEXT.panelLabel })).toBeNull())
     expect(screen.getByRole('button', { name: AI_TEXT.toggle }).getAttribute('aria-expanded')).toBe('false')
   })
+})
+
+
+const GENERAL_RESPONSE={outcome:'answered',mode:'general-chat',toolResults:[],answer:{text:'SENTETIK genel sohbet cevabı',grounded:false,citations:[],modelDeployment:'sentetik',policyVersion:'policy:1'}}
+const ERP_SOURCE={targetKind:'test-item',targetId:TARGET_ID,title:'SENTETIK ERP kaynağı',sourceVersion:'1',asOfUtc:'2026-11-27T00:00:00Z',dataClass:'Internal'}
+const ERP_RESPONSE={outcome:'answered',toolResults:[{toolId:TOOL_ID,toolVersion:'1',outcome:'succeeded',contentJson:'{}',source:ERP_SOURCE}],
+ answer:{text:'SENTETIK eski ERP cevabı',citations:[{toolId:TOOL_ID,toolVersion:'1',targetKind:ERP_SOURCE.targetKind,targetId:TARGET_ID,title:ERP_SOURCE.title,sourceVersion:'1',asOfUtc:ERP_SOURCE.asOfUtc}],modelDeployment:'sentetik',policyVersion:'policy:1'}}
+
+describe('WP-B5 existing panel mode boundary',()=>{
+ it('defaults to ERP with no tools, yet allows an explicit general request and honestly shows unsupported Fake availability',async()=>{
+  const fetch=installFetch([],{capabilities:()=>json({...READY,tools:[]}),ask:()=>json({status:503,code:'service_unavailable'},503)})
+  renderShell();const panel=await openPanel()
+  expect(await within(panel).findByText(AI_TEXT.noToolsTitle)).toBeTruthy()
+  expect(within(panel).getByRole('button',{name:AI_TEXT.erpMode}).getAttribute('aria-pressed')).toBe('true')
+  await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.generalMode}))
+  const question=within(panel).getByRole('textbox',{name:AI_TEXT.questionLabel})
+  expect(within(panel).queryByRole('combobox')).toBeNull()
+  expect(within(panel).queryByRole('textbox',{name:AI_TEXT.argumentsLabel})).toBeNull()
+  await userEvent.type(question,'SENTETIK genel soru')
+  await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.submit}))
+  await waitFor(()=>expect(panel.querySelector('[data-state="service-unavailable"]')).not.toBeNull())
+  const call=askCalls(fetch)[0]!
+  expect(JSON.parse(String(call[1]!.body))).toEqual({question:'SENTETIK genel soru',mode:'general-chat'})
+  expect((call[1]!.headers as Record<string,string>)['X-Company-Id']).toBe(A_ID)
+  expect(within(panel).queryByText(AI_TEXT.answerHeading)).toBeNull()
+ })
+ it('shows only ungrounded general text, never ERP sources or citation headings',async()=>{
+  installFetch([],{capabilities:()=>json(READY),ask:()=>json(GENERAL_RESPONSE)})
+  renderShell();const panel=await openPanel()
+  await within(panel).findByRole('textbox',{name:AI_TEXT.questionLabel})
+  await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.generalMode}))
+  await userEvent.type(within(panel).getByRole('textbox',{name:AI_TEXT.questionLabel}),'SENTETIK soru')
+  await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.submit}))
+  expect(await within(panel).findByText(GENERAL_RESPONSE.answer.text)).toBeTruthy()
+  expect(within(panel).getByText(AI_TEXT.generalUngrounded)).toBeTruthy()
+  expect(within(panel).queryByText(AI_TEXT.readSourcesHeading)).toBeNull()
+  expect(within(panel).queryByText(AI_TEXT.citationsHeading)).toBeNull()
+ })
+ it('uses the general cannot-answer notice without a fabricated answer or ERP source claim',async()=>{
+  installFetch([],{capabilities:()=>json(READY),ask:()=>json({...GENERAL_RESPONSE,outcome:'cannot_answer',answer:null})})
+  renderShell();const panel=await openPanel()
+  await within(panel).findByRole('textbox',{name:AI_TEXT.questionLabel})
+  await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.generalMode}))
+  await userEvent.type(within(panel).getByRole('textbox',{name:AI_TEXT.questionLabel}),'SENTETIK soru')
+  await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.submit}))
+  expect(await within(panel).findByText(AI_TEXT.generalCannotAnswer)).toBeTruthy()
+  expect(within(panel).queryByText(AI_TEXT.cannotAnswer)).toBeNull()
+  expect(within(panel).queryByText(AI_TEXT.readSourcesHeading)).toBeNull()
+ })
+ it.each([
+  ['ERP response',ERP_RESPONSE],['ERP results',{...GENERAL_RESPONSE,toolResults:ERP_RESPONSE.toolResults}],
+  ['ERP citations',{...GENERAL_RESPONSE,answer:{...GENERAL_RESPONSE.answer,citations:ERP_RESPONSE.answer.citations}}],
+  ['grounded answer',{...GENERAL_RESPONSE,answer:{...GENERAL_RESPONSE.answer,grounded:true}}],
+  ['missing mode',{...GENERAL_RESPONSE,mode:undefined}],['wrong mode',{...GENERAL_RESPONSE,mode:'erp'}],
+ ])('refuses general %s rather than displaying cross-mode or malformed text',async(_label,response)=>{
+  installFetch([],{capabilities:()=>json(READY),ask:()=>json(response)})
+  renderShell();const panel=await openPanel()
+  await within(panel).findByRole('textbox',{name:AI_TEXT.questionLabel})
+  await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.generalMode}))
+  await userEvent.type(within(panel).getByRole('textbox',{name:AI_TEXT.questionLabel}),'SENTETIK soru')
+  await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.submit}))
+  await waitFor(()=>expect(panel.querySelector('[data-state="malformed-response"]')).not.toBeNull())
+  expect(within(panel).queryByText(GENERAL_RESPONSE.answer.text)).toBeNull()
+  expect(within(panel).queryByText(ERP_RESPONSE.answer.text)).toBeNull()
+ })
+ it('clears question, previous answer, selected tool and arguments when switching modes',async()=>{
+  const other={...READY_TOOL,toolId:'test.other-summary.v1'}
+  const fetch=installFetch([],{capabilities:()=>json({...READY,tools:[READY_TOOL,other]}),ask:body=>json((body as {mode?:string}).mode==='general-chat'?GENERAL_RESPONSE:ERP_RESPONSE)})
+  renderShell();const panel=await openPanel()
+  const question=await within(panel).findByRole('textbox',{name:AI_TEXT.questionLabel})
+  await userEvent.selectOptions(within(panel).getByRole('combobox'),`${other.toolId}@1`)
+  await userEvent.type(question,'SENTETIK önceki ERP soru')
+  fireEvent.change(within(panel).getByRole('textbox',{name:AI_TEXT.argumentsLabel}),{target:{value:JSON.stringify({id:'SENTETIK'})}})
+  await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.submit}))
+  await within(panel).findByText(ERP_RESPONSE.answer.text)
+  await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.generalMode}))
+  expect((within(panel).getByRole('textbox',{name:AI_TEXT.questionLabel}) as HTMLTextAreaElement).value).toBe('')
+  expect(within(panel).queryByText(ERP_RESPONSE.answer.text)).toBeNull()
+  await userEvent.type(within(panel).getByRole('textbox',{name:AI_TEXT.questionLabel}),'SENTETIK genel soru')
+  await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.submit}))
+  await within(panel).findByText(GENERAL_RESPONSE.answer.text)
+  expect(JSON.parse(String(askCalls(fetch)[1]![1]!.body))).toEqual({question:'SENTETIK genel soru',mode:'general-chat'})
+  await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.erpMode}))
+  expect((within(panel).getByRole('textbox',{name:AI_TEXT.questionLabel}) as HTMLTextAreaElement).value).toBe('')
+  expect((within(panel).getByRole('textbox',{name:AI_TEXT.argumentsLabel}) as HTMLTextAreaElement).value).toBe('')
+  expect((within(panel).getByRole('combobox') as HTMLSelectElement).value).toBe(`${TOOL_ID}@1`)
+  expect(within(panel).queryByText(GENERAL_RESPONSE.answer.text)).toBeNull()
+ })
+ it.each([false,true])('aborts and ignores a late old-mode response, initially general=%s',async general=>{
+  let release!:(response:Response)=>void
+  const fetch=installFetch([],{capabilities:()=>json(READY),ask:()=>new Promise<Response>(resolve=>{release=resolve})})
+  renderShell();const panel=await openPanel()
+  await within(panel).findByRole('textbox',{name:AI_TEXT.questionLabel})
+  if(general)await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.generalMode}))
+  await userEvent.type(within(panel).getByRole('textbox',{name:AI_TEXT.questionLabel}),'SENTETIK eski soru')
+  await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.submit}))
+  const signal=askCalls(fetch)[0]![1]!.signal!
+  await userEvent.click(within(panel).getByRole('button',{name:general?AI_TEXT.erpMode:AI_TEXT.generalMode}))
+  expect(signal.aborted).toBe(true)
+  await act(async()=>{release(json(general?GENERAL_RESPONSE:ERP_RESPONSE));await Promise.resolve()})
+  expect(within(panel).queryByText(GENERAL_RESPONSE.answer.text)).toBeNull()
+  expect(within(panel).queryByText(ERP_RESPONSE.answer.text)).toBeNull()
+  expect((within(panel).getByRole('textbox',{name:AI_TEXT.questionLabel}) as HTMLTextAreaElement).value).toBe('')
+  expect(askCalls(fetch)).toHaveLength(1)
+ })
+ it('does not carry a late general response or mode into a newly committed company',async()=>{
+  let release!:(response:Response)=>void
+  const fetch=installFetch([],{capabilities:()=>json(READY),ask:()=>new Promise<Response>(resolve=>{release=resolve})})
+  renderShell();const panel=await openPanel()
+  await within(panel).findByRole('textbox',{name:AI_TEXT.questionLabel})
+  await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.generalMode}))
+  await userEvent.type(within(panel).getByRole('textbox',{name:AI_TEXT.questionLabel}),'SENTETIK eski şirket sorusu')
+  await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.submit}))
+  await userEvent.selectOptions(screen.getByRole('combobox'),B_ID)
+  await waitFor(()=>expect(screen.queryByRole('complementary',{name:AI_TEXT.panelLabel})).toBeNull())
+  expect(askCalls(fetch)[0]![1]!.signal!.aborted).toBe(true)
+  await act(async()=>{release(json(GENERAL_RESPONSE));await Promise.resolve()})
+  const next=await openPanel()
+  await within(next).findByRole('textbox',{name:AI_TEXT.questionLabel})
+  expect(within(next).getByRole('button',{name:AI_TEXT.erpMode}).getAttribute('aria-pressed')).toBe('true')
+  expect(within(next).queryByText(GENERAL_RESPONSE.answer.text)).toBeNull()
+  expect((within(next).getByRole('textbox',{name:AI_TEXT.questionLabel}) as HTMLTextAreaElement).value).toBe('')
+  expect(askCalls(fetch)).toHaveLength(1)
+ })
 })

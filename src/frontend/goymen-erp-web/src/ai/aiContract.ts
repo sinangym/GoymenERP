@@ -6,7 +6,7 @@
  *
  * WP-A1: `answer` is the gateway-composed text with its citations (every number in it comes from a cited source); it is
  * present exactly when `outcome` is `answered` and null when `outcome` is `cannot_answer`. Every citation must name a
- * source the response itself released.
+ * source the response itself released. General chat instead requires an explicit mode, zero tools/citations and grounded:false.
  *
  * The company is request context (`X-Company-Id`), never a body member and never a tool argument: the server refuses a
  * `companyId` argument. These decoders take EXACTLY the contract's members and fail closed (null → `malformed`) on
@@ -34,11 +34,14 @@ export const AI_PROBLEM_CODE = {
   budgetExhausted: 'ai_budget_exhausted',
 } as const
 
+export const AI_ASK_MODE = { erp: 'erp', generalChat: 'general-chat' } as const
+export type AiAskMode = (typeof AI_ASK_MODE)[keyof typeof AI_ASK_MODE]
+
 export const AI_ASK_OUTCOME = { answered: 'answered', cannotAnswer: 'cannot_answer' } as const
 export type AiAskOutcome = (typeof AI_ASK_OUTCOME)[keyof typeof AI_ASK_OUTCOME]
 
 /** The fields the server names in `invalidFields` of an `ai_request_invalid` problem. */
-export const AI_INVALID_FIELDS = ['question', 'tool', 'arguments'] as const
+export const AI_INVALID_FIELDS = ['question', 'tool', 'arguments', 'mode'] as const
 export type AiInvalidField = (typeof AI_INVALID_FIELDS)[number]
 
 export interface AiToolCapability {
@@ -82,6 +85,7 @@ export interface AiCitation {
 }
 
 export interface AiComposedAnswer {
+  readonly grounded?: false
   readonly text: string
   readonly citations: readonly AiCitation[]
   readonly modelDeployment: string
@@ -89,17 +93,26 @@ export interface AiComposedAnswer {
 }
 
 export interface AiAskAnswer {
+  readonly mode?: typeof AI_ASK_MODE.generalChat
   readonly outcome: AiAskOutcome
   readonly toolResults: readonly AiToolResult[]
   readonly answer: AiComposedAnswer | null
 }
 
-export interface AiAskRequest {
+export interface AiErpAskRequest {
+  readonly mode?: typeof AI_ASK_MODE.erp
   readonly question: string
   readonly toolId: string | null
   readonly toolVersion: string | null
   readonly arguments: Readonly<Record<string, unknown>> | null
 }
+
+export interface AiGeneralChatRequest {
+  readonly question: string
+  readonly mode: typeof AI_ASK_MODE.generalChat
+  readonly toolId?: never; readonly toolVersion?: never; readonly arguments?: never
+}
+export type AiAskRequest = AiErpAskRequest | AiGeneralChatRequest
 
 const CAPABILITIES_KEYS = ['availability', 'panelAvailable', 'tools'] as const
 const TOOL_KEYS = ['toolId', 'version', 'ownerModule', 'dataClass'] as const
@@ -234,7 +247,20 @@ function decodeComposed(value: unknown, released: readonly AiToolResult[]): AiCo
   return { text: composed.text, citations, modelDeployment: composed.modelDeployment, policyVersion: composed.policyVersion }
 }
 
-export function decodeAiAskAnswer(value: unknown): AiAskAnswer | null {
+export function decodeAiAskAnswer(value: unknown, mode: AiAskMode = AI_ASK_MODE.erp): AiAskAnswer | null {
+  if (mode !== AI_ASK_MODE.erp && mode !== AI_ASK_MODE.generalChat) return null
+  if (mode === AI_ASK_MODE.generalChat) {
+    const body = exact(value, [...ANSWER_KEYS, 'mode'])
+    if (body === null || body.mode !== AI_ASK_MODE.generalChat || !Array.isArray(body.toolResults) || body.toolResults.length !== 0) return null
+    if (body.outcome === AI_ASK_OUTCOME.cannotAnswer)
+      return body.answer === null ? { outcome: AI_ASK_OUTCOME.cannotAnswer, toolResults: [], answer: null, mode: AI_ASK_MODE.generalChat } : null
+    if (body.outcome !== AI_ASK_OUTCOME.answered) return null
+    const answer = exact(body.answer, [...COMPOSED_KEYS, 'grounded'])
+    if (answer === null || answer.grounded !== false || !isText(answer.text) || !isText(answer.modelDeployment)
+      || !isText(answer.policyVersion) || !Array.isArray(answer.citations) || answer.citations.length !== 0) return null
+    return { outcome: AI_ASK_OUTCOME.answered, toolResults: [], mode: AI_ASK_MODE.generalChat,
+      answer: { text: answer.text, citations: [], modelDeployment: answer.modelDeployment, policyVersion: answer.policyVersion, grounded: false } }
+  }
   const body = exact(value, ANSWER_KEYS)
   if (body === null || !Array.isArray(body.toolResults)) return null
   if (body.outcome !== AI_ASK_OUTCOME.answered && body.outcome !== AI_ASK_OUTCOME.cannotAnswer) return null

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { askAi } from './aiApi'
 import { decodeAiAskAnswer, decodeAiCapabilities, parseToolArguments, problemCode, problemInvalidFields } from './aiContract'
 
 const TOOL = { toolId: 'test.item-summary.v1', version: '1', ownerModule: 'test', dataClass: 'Internal' }
@@ -104,4 +105,52 @@ describe('Plan AI-3 — AI sözleşme çözücüleri', () => {
     expect(parseToolArguments('"metin"')).toBe('invalid')
     expect(parseToolArguments('{bozuk')).toBe('invalid')
   })
+})
+
+
+const GENERAL = { outcome:'answered',mode:'general-chat',toolResults:[],
+ answer:{text:'SENTETIK genel cevap',grounded:false,citations:[],modelDeployment:'sentetik',policyVersion:'policy:1'} }
+afterEach(()=>vi.unstubAllGlobals())
+describe('WP-B5 explicit mode wire isolation',()=>{
+ it('accepts only general ungrounded empty-tool responses and its explicit cannot-answer shape',()=>{
+  expect(decodeAiAskAnswer(GENERAL,'general-chat')).toEqual(GENERAL)
+  expect(decodeAiAskAnswer({...GENERAL,outcome:'cannot_answer',answer:null},'general-chat'))
+   .toEqual({...GENERAL,outcome:'cannot_answer',answer:null})
+  expect(decodeAiAskAnswer(GENERAL)).toBeNull()
+  expect(decodeAiAskAnswer({outcome:'answered',toolResults:[RESULT],answer:COMPOSED},'general-chat')).toBeNull()
+ })
+ it.each([
+  ['missing mode',{...GENERAL,mode:undefined}],['wrong mode',{...GENERAL,mode:'erp'}],['future mode',{...GENERAL,mode:'future'}],
+  ['ERP results',{...GENERAL,toolResults:[RESULT]}],['ERP citations',{...GENERAL,answer:{...GENERAL.answer,citations:[CITATION]}}],
+  ['grounded true',{...GENERAL,answer:{...GENERAL.answer,grounded:true}}],['grounded missing',{...GENERAL,answer:{...GENERAL.answer,grounded:undefined}}],
+  ['answer missing',{...GENERAL,answer:null}],['cannot-answer text',{...GENERAL,outcome:'cannot_answer'}],
+  ['extra context',{...GENERAL,context:{}}],['extra provider',{...GENERAL,answer:{...GENERAL.answer,provider:'invented'}}],
+  ['unknown outcome',{...GENERAL,outcome:'partial'}],
+ ])('rejects general %s without releasing ERP material',(_label,body)=>{
+  expect(decodeAiAskAnswer(body,'general-chat')).toBeNull()
+ })
+ it('retains the unchanged ERP four-field request and consumes only its matching response mode',async()=>{
+  const fetch=vi.fn(async(_input:RequestInfo|URL,_init?:RequestInit)=>new Response(JSON.stringify({outcome:'answered',toolResults:[RESULT],answer:COMPOSED}),{status:200}))
+  vi.stubGlobal('fetch',fetch)
+  const request={question:'SENTETIK ERP',toolId:TOOL.toolId,toolVersion:'1',arguments:{id:SOURCE.targetId}}
+  expect((await askAi(request,SOURCE.targetId)).type).toBe('ok-single')
+  expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string)).toEqual(request)
+  expect((fetch.mock.calls[0]![1]!.headers as Record<string,string>)['X-Company-Id']).toBe(SOURCE.targetId)
+  fetch.mockImplementation(async()=>new Response(JSON.stringify(GENERAL),{status:200}))
+  expect((await askAi(request,SOURCE.targetId)).type).toBe('malformed')
+ })
+ it('sends only question and general-chat mode on the same endpoint, never owner context or a tool',async()=>{
+  const fetch=vi.fn(async(_input:RequestInfo|URL,_init?:RequestInit)=>new Response(JSON.stringify(GENERAL),{status:200}))
+  vi.stubGlobal('fetch',fetch)
+  const answer=await askAi({question:'SENTETIK genel',mode:'general-chat'},SOURCE.targetId)
+  expect(answer.type).toBe('ok-single')
+  expect(String(fetch.mock.calls[0]![0])).toMatch(/\/ai\/ask$/)
+  expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string)).toEqual({question:'SENTETIK genel',mode:'general-chat'})
+  expect((fetch.mock.calls[0]![1]!.headers as Record<string,string>)['X-Company-Id']).toBe(SOURCE.targetId)
+  fetch.mockImplementation(async()=>new Response(JSON.stringify({outcome:'answered',toolResults:[RESULT],answer:COMPOSED}),{status:200}))
+  expect((await askAi({question:'SENTETIK genel',mode:'general-chat'},SOURCE.targetId)).type).toBe('malformed')
+ })
+ it('recognizes the native invalid mode field without displaying unknown fields',()=>{
+  expect(problemInvalidFields({invalidFields:['mode','question','context']})).toEqual(['question','mode'])
+ })
 })

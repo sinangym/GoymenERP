@@ -2,10 +2,11 @@
  * Plan AI-5 — her sayfada sağ AI paneli; plan AI-3 — salt-okuma runtime'ı.
  *
  * Panel açılınca sunucunun AI yeteneğini okur (`GET /api/v1/ai/capabilities`, şirket istek bağlamıdır). AI kapalıysa,
- * yapılandırma hazır değilse, yetki yoksa veya okunabilir araç yoksa yalnız dürüst durum çizilir: giriş alanı, sahte
+ * yapılandırma hazır değilse veya yetki yoksa yalnız dürüst durum çizilir: giriş alanı, sahte
  * cevap veya çalışmayan düğme yoktur (ERP-000J §17, DEC-AI-001). Araç varsa soru, sunucunun izin verdiği salt-okuma
  * araçlarından biriyle sorulur; cevap yalnız sunucunun döndürdüğü araç sonucu ve kaynak kaydıdır. Şirket bilgisi
- * gövdede veya araç argümanında gönderilmez. ERP akışı panelden bağımsızdır.
+ * gövdede veya araç argümanında gönderilmez. Genel sohbet ayrı moddur, ERP aracı ve kaynak taşımadan aynı API’ye gider.
+ * ERP akışı panelden bağımsızdır.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type RefObject } from 'react'
@@ -18,12 +19,15 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { askAi, fetchAiCapabilities } from './aiApi'
 import {
   AI_AVAILABILITY,
+  AI_ASK_MODE,
+  type AiAskMode,
   AI_PROBLEM_CODE,
   AI_TOOL_RESULT_OUTCOME,
   parseToolArguments,
   problemCode,
   problemInvalidFields,
   type AiAskAnswer,
+  type AiAskRequest,
   type AiCapabilities,
   type AiComposedAnswer,
   type AiInvalidField,
@@ -157,6 +161,7 @@ function AiPanelBody({ namespace, companyId }: { readonly namespace: string; rea
 
 function PanelSections({ companyId, tools }: { readonly companyId: string; readonly tools: readonly AiToolCapability[] }) {
   const [section, setSection] = useState<'ask' | 'draft'>('ask')
+  const [mode, setMode] = useState<AiAskMode>(AI_ASK_MODE.erp)
   return (
     <>
       <div role="group" aria-label={DRAFT_TEXT.tabsLabel} className={styles.form}>
@@ -169,11 +174,15 @@ function PanelSections({ companyId, tools }: { readonly companyId: string; reado
       </div>
       {section === 'draft' ? (
         <DocumentDraftPanel companyId={companyId} />
-      ) : tools.length === 0 ? (
-        <PanelNotice kind="no-tools" />
-      ) : (
-        <AskForm companyId={companyId} tools={tools} />
-      )}
+      ) : <>
+        <div role="group" aria-label={AI_TEXT.modesLabel} className={styles.form}>
+          <button type="button" aria-pressed={mode === AI_ASK_MODE.erp} onClick={() => setMode(AI_ASK_MODE.erp)}>{AI_TEXT.erpMode}</button>
+          <button type="button" aria-pressed={mode === AI_ASK_MODE.generalChat} onClick={() => setMode(AI_ASK_MODE.generalChat)}>{AI_TEXT.generalMode}</button>
+        </div>
+        {mode === AI_ASK_MODE.erp && tools.length === 0 ? <PanelNotice kind="no-tools" />
+          : <AskForm key={mode} mode={mode} companyId={companyId} tools={tools} />}
+      </>}
+
     </>
   )
 }
@@ -213,7 +222,8 @@ function toolKey(tool: AiToolCapability): string {
   return `${tool.toolId}@${tool.version}`
 }
 
-function AskForm({ companyId, tools }: { readonly companyId: string; readonly tools: readonly AiToolCapability[] }) {
+function AskForm({ companyId, tools, mode }: { readonly companyId: string; readonly tools: readonly AiToolCapability[]; readonly mode: AiAskMode }) {
+  const general = mode === AI_ASK_MODE.generalChat
   const boundary = useAuthBoundary()
   const [question, setQuestion] = useState('')
   const [selected, setSelected] = useState(() => (tools.length > 0 ? toolKey(tools[0] as AiToolCapability) : ''))
@@ -223,7 +233,7 @@ function AskForm({ companyId, tools }: { readonly companyId: string; readonly to
   const inFlight = useRef<AbortController | null>(null)
 
   // A late answer never lands after the panel closed or the context changed (the body remounts per context).
-  useEffect(() => () => inFlight.current?.abort(), [])
+  useLayoutEffect(() => () => { inFlight.current?.abort(); inFlight.current = null }, [])
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -233,10 +243,16 @@ function AskForm({ companyId, tools }: { readonly companyId: string; readonly to
     const parsedArguments = parseToolArguments(argumentsText)
     const invalid: AiInvalidField[] = []
     if (trimmed === '') invalid.push('question')
-    if (tool === undefined) invalid.push('tool')
-    if (parsedArguments === 'invalid') invalid.push('arguments')
+    if (!general && tool === undefined) invalid.push('tool')
+    if (!general && parsedArguments === 'invalid') invalid.push('arguments')
     setLocalInvalid(invalid)
-    if (invalid.length > 0 || tool === undefined || parsedArguments === 'invalid') return
+    if (invalid.length > 0) return
+    let request: AiAskRequest
+    if (general) request = { question: trimmed, mode: AI_ASK_MODE.generalChat }
+    else {
+      if (tool === undefined || parsedArguments === 'invalid') return
+      request = { question: trimmed, toolId: tool.toolId, toolVersion: tool.version, arguments: parsedArguments }
+    }
 
     inFlight.current?.abort()
     const controller = new AbortController()
@@ -244,7 +260,7 @@ function AskForm({ companyId, tools }: { readonly companyId: string; readonly to
     setView({ kind: 'pending' })
     const snapshot = boundary.capture()
     const outcome = await askAi(
-      { question: trimmed, toolId: tool.toolId, toolVersion: tool.version, arguments: parsedArguments },
+      request,
       companyId,
       controller.signal,
     )
@@ -260,7 +276,7 @@ function AskForm({ companyId, tools }: { readonly companyId: string; readonly to
 
   return (
     <div className={styles.ask}>
-      <p className={styles.hint}>{AI_TEXT.readOnlyNotice}</p>
+      <p className={styles.hint}>{general ? AI_TEXT.generalNotice : AI_TEXT.readOnlyNotice}</p>
       <form className={styles.form} onSubmit={(event) => void submit(event)} noValidate aria-busy={pending || undefined}>
         <label className={styles.field}>
           {AI_TEXT.questionLabel}
@@ -276,9 +292,9 @@ function AskForm({ companyId, tools }: { readonly companyId: string; readonly to
           {isInvalid('question') ? AI_TEXT.questionInvalid : AI_TEXT.questionHint}
         </p>
         <p id="ai-question-sensitive" className={styles.hint}>
-          {AI_TEXT.questionSensitiveReminder}
+          {general ? AI_TEXT.generalSensitiveReminder : AI_TEXT.questionSensitiveReminder}
         </p>
-        <label className={styles.field}>
+        {!general ? <><label className={styles.field}>
           {AI_TEXT.toolLabel}
           <select
             value={selected}
@@ -306,7 +322,8 @@ function AskForm({ companyId, tools }: { readonly companyId: string; readonly to
         </label>
         <p id="ai-arguments-hint" className={isInvalid('arguments') ? styles.fieldError : styles.hint}>
           {isInvalid('arguments') ? AI_TEXT.argumentsInvalid : AI_TEXT.argumentsHint}
-        </p>
+        </p></> : null}
+        {isInvalid('mode') ? <p className={styles.fieldError}>{AI_TEXT.modeInvalid}</p> : null}
         <button type="submit" className={styles.submitButton} disabled={pending}>
           {pending ? AI_TEXT.submitting : AI_TEXT.submit}
         </button>
@@ -338,14 +355,15 @@ function AskResult({ view }: { readonly view: AskView }) {
           {view.answer.answer !== null ? (
             <ComposedAnswerView answer={view.answer.answer} />
           ) : (
-            <p data-ai-answer="cannot-answer">{AI_TEXT.cannotAnswer}</p>
+            <p data-ai-answer="cannot-answer">{view.answer.mode === AI_ASK_MODE.generalChat ? AI_TEXT.generalCannotAnswer : AI_TEXT.cannotAnswer}</p>
           )}
+          {view.answer.mode === AI_ASK_MODE.generalChat ? null : <>
           <h4 className={styles.answerHeading}>{AI_TEXT.readSourcesHeading}</h4>
           {view.answer.toolResults.length === 0 ? (
             <p>{AI_TEXT.answerEmpty}</p>
           ) : (
             view.answer.toolResults.map((result, index) => <ToolResultView key={`${result.toolId}-${index}`} result={result} />)
-          )}
+          )}</>}
         </section>
       )
     default:
@@ -358,6 +376,7 @@ function ComposedAnswerView({ answer }: { readonly answer: AiComposedAnswer }) {
     <div data-ai-answer="answered">
       {/* Composed text is shown as text, never as markup. */}
       <p className={styles.content}>{answer.text}</p>
+      {answer.grounded === false ? <p className={styles.hint}>{AI_TEXT.generalUngrounded}</p> : <>
       <h4 className={styles.answerHeading}>{AI_TEXT.citationsHeading}</h4>
       <ul>
         {answer.citations.map((citation) => (
@@ -366,7 +385,7 @@ function ComposedAnswerView({ answer }: { readonly answer: AiComposedAnswer }) {
             <time dateTime={citation.asOfUtc}>{citation.asOfUtc}</time>
           </li>
         ))}
-      </ul>
+      </ul></>}
     </div>
   )
 }

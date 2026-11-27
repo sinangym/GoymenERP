@@ -7,6 +7,7 @@
 import type { ViewOutcome } from '../shell/uiState'
 import {
   AI_ASK_PATH,
+  AI_ASK_MODE,
   AI_CAPABILITIES_PATH,
   decodeAiAskAnswer,
   decodeAiCapabilities,
@@ -63,14 +64,14 @@ export function askAi(request: AiAskRequest, companyId: string, signal?: AbortSi
     {
       method: 'POST',
       headers: { ...headers(companyId), 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+      body: JSON.stringify(request.mode === AI_ASK_MODE.generalChat ? { question: request.question, mode: AI_ASK_MODE.generalChat } : {
         question: request.question,
         toolId: request.toolId,
         toolVersion: request.toolVersion,
         arguments: request.arguments,
       }),
     },
-    decodeAiAskAnswer,
+    body => decodeAiAskAnswer(body, request.mode ?? AI_ASK_MODE.erp),
     signal,
   )
 }

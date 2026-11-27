@@ -2,6 +2,15 @@
  * AI Merkezi — sağ AI paneli Türkçe metinleri (plan AI-5 + AI-3 salt-okuma). Kullanıcı metinleri yalnız bu dosyadadır.
  */
 export const AI_TEXT = {
+  modesLabel: 'Sohbet modu',
+  erpMode: 'ERP',
+  generalMode: 'Genel sohbet',
+  modeInvalid: 'Sohbet modu geçerli değil. Modu yeniden seçip deneyin.',
+  generalNotice: 'Genel sohbet ERP kayıtlarını ve araçlarını kullanmaz. Mod değiştirildiğinde soru ve önceki cevap temizlenir.',
+  generalUngrounded: 'Bu genel sohbet cevabı ERP kayıtlarına dayanmıyor. Bir iş kararı veya doğrulanmış kayıt bilgisi olarak kullanmayın.',
+  generalCannotAnswer: 'Genel sohbet bu soruya cevap veremedi.',
+  generalSensitiveReminder: 'Kişisel veya şirkete özel hassas bilgileri yazmayın. İçerik şirketin veri sınıfı ve model yönlendirme kurallarına göre işlenir.',
+
   toggle: 'AI asistan',
   panelLabel: 'AI asistan',
   heading: 'AI asistan',
