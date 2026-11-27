@@ -78,8 +78,7 @@ public sealed partial class WorkCollaborationServiceTests
         var member = new MorningPeople { DenyAt = 3 };
         Assert.Equal(403, (await Assert.ThrowsAsync<WorkCollaborationException>(() =>
             MorningReader(harness, database, people: member).ReadAsync())).Status);
-        var company = new CompanyContext();
-        company.Set(Company);
+        var company = new MorningMutableCompany(Company);
         var records = new MorningRecords { AfterRead = () => company.Set(OtherCompany) };
         Assert.Equal(403, (await Assert.ThrowsAsync<WorkCollaborationException>(() =>
             MorningReader(harness, database, records, company: company).ReadAsync())).Status);
@@ -160,7 +159,7 @@ public sealed partial class WorkCollaborationServiceTests
     }
 
     private static WorkMorningSummaryReadV1 MorningReader(Harness harness, WorkDbContext database,
-        MorningRecords? records = null, MorningPeople? people = null, CompanyContext? company = null,
+        MorningRecords? records = null, MorningPeople? people = null, ICompanyContext? company = null,
         Guid? actor = null, WorkDigestScheduleV1? schedule = null)
     {
         if (company is null) { company = new CompanyContext(); company.Set(Company); }
@@ -193,5 +192,13 @@ public sealed partial class WorkCollaborationServiceTests
             Task.FromResult(++calls < DenyAt && companyId == Company ? WorkPersonOutcomeV1.Found : WorkPersonOutcomeV1.Denied);
         public Task<WorkPeopleAnswerV1> ResolveAsync(Guid companyId, IReadOnlyList<Guid> userIds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<WorkPeopleAnswerV1> SearchAsync(Guid companyId, string? query, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    // Controlled source boundary, like WorkQueueEndpointTests.MutableCompanyContext; production CompanyContext remains immutable.
+    private sealed class MorningMutableCompany(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => CompanyId != Guid.Empty;
+        public Guid CompanyId { get; private set; } = companyId;
+        public void Set(Guid value) => CompanyId = value;
     }
 }
