@@ -77,12 +77,20 @@ public sealed class InventoryStockCountWorkInboxSourceTests
         var f = new F(); Add(f, 1);
         if (fault == "denied") f.Authority.Answer = (_, _) => InventoryWorkInboxTestAuthority.CompanyWide with { IsGranted = false };
         if (fault == "site-only") f.Authority.Answer = (_, _) => InventoryWorkInboxTestAuthority.SiteOnly;
-        if (fault == "company") f.Company.Set(F.CompanyB);
+        var context = f.Context();
+        if (fault == "company")
+        {
+            // The real resolved context is immutable. A caller's different company must be denied
+            // even when the user can reach both companies; do not fail inside fixture setup.
+            Assert.IsType<HashSet<Guid>>(f.User.AllowedCompanyIds).Add(F.CompanyB);
+            context = f.Context(companyId: F.CompanyB);
+        }
         if (fault == "actor") f.User.UserId = "other";
         var source = new InventoryStockCountWorkInboxSourceV1(f.Rows, f.Fence);
-        var answer = await source.ListPendingAsync(f.Context(), 10, default);
+        var answer = await source.ListPendingAsync(context, 10, default);
+        Assert.Equal(NativeApprovalQueueOutcomeV1.Denied, answer.Outcome);
         Assert.Null(answer.Items); Assert.Equal(0, f.Rows.Reads);
-        Assert.Null(await source.ReadDecisionAsync(f.Context(), F.Id(1), default)); Assert.Equal(0, f.Rows.Reads);
+        Assert.Null(await source.ReadDecisionAsync(context, F.Id(1), default)); Assert.Equal(0, f.Rows.Reads);
     }
 
     [Fact]
