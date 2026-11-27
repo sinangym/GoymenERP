@@ -192,7 +192,7 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
     const quantityOrder=(v: string)=>{const [whole,fraction='']=v.split('.');return whole!.padStart(15,'0')+'.'+fraction.padEnd(3,'0')}
     if(!record(facts) || !hasExactKeys(facts,['loadingInstructionId','loadingInstructionLineId','sourceDeliveryId','sourceShipmentId','sourceOrderId','sourceOrderLineId','unitId','quantityUnit','quantity','sourceDeliveredQuantity','reason','requestedBy','occurredAtUtc','requestedAtUtc','status'])
       || !dispatchGuid(value.companyId) || !dispatchGuid(value.itemId)
-      || ![facts.loadingInstructionId,facts.loadingInstructionLineId,facts.sourceDeliveryId,facts.sourceShipmentId,facts.sourceOrderId,facts.sourceOrderLineId,facts.unitId].every(dispatchGuid)
+      || !dispatchGuid(facts.loadingInstructionId) || ![facts.loadingInstructionLineId,facts.sourceDeliveryId,facts.sourceShipmentId,facts.sourceOrderId,facts.sourceOrderLineId,facts.unitId].every(dispatchGuid)
       || facts.quantityUnit!=='Kilogram' && facts.quantityUnit!=='Piece' || !quantity(facts.quantity) || !quantity(facts.sourceDeliveredQuantity)
       || quantityOrder(facts.quantity)>quantityOrder(facts.sourceDeliveredQuantity)
       || facts.quantityUnit==='Piece' && [facts.quantity,facts.sourceDeliveredQuantity].some(q=>q.includes('.') && /[1-9]/.test(q.split('.')[1]!))
