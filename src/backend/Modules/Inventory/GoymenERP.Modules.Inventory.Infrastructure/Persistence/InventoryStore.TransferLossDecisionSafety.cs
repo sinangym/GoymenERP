@@ -82,10 +82,16 @@ public sealed partial class InventoryStore
             }
             catch (Exception exception)
             {
-                await owned.RollbackAsync(CancellationToken.None);
-                await owned.DisposeAsync();
-                dbContext.ChangeTracker.Clear();
-                lossDecisionAuditWriter.DiscardPending();
+                try { await owned.RollbackAsync(CancellationToken.None); }
+                finally
+                {
+                    try { await owned.DisposeAsync(); }
+                    finally
+                    {
+                        try { dbContext.ChangeTracker.Clear(); }
+                        finally { lossDecisionAuditWriter.DiscardPending(); }
+                    }
+                }
                 if (exception is DbUpdateException update
                     && (update is DbUpdateConcurrencyException || IsUniqueConstraintViolation(update)))
                     throw new LossDecisionSaveRace(update);
