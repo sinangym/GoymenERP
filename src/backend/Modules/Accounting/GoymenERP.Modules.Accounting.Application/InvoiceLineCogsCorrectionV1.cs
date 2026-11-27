@@ -76,7 +76,10 @@ public sealed record InvoiceLineCogsCorrectionViewV1(Guid ProposalId, Guid Compa
     Guid? ReversingCorrectionJournalId, Guid? ReplacementCorrectionJournalId,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<InvoiceLineCogsAttributedEvidenceV1>? AttributedEvidence = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<InvoiceLineCogsAttributedCorrectionV1>? AttributedCorrections = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<InvoiceLineCogsPurchaseAttributedEvidenceV1>? PurchaseAttributedEvidence = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<InvoiceLineCogsPurchaseAttributedEvidenceV1>? PurchaseAttributedEvidence = null)
+{
+    [JsonIgnore] public InvoiceLineCogsApprovalReceiptV1? ApprovalReceipt { get; init; }
+}
 
 public sealed record InvoiceLineCogsHistoryV1(Guid CompanyId, Guid InvoiceId, Guid InvoiceLineId,
     FinalizedInvoiceLineReferenceV1 Source, long LineVersion, InvoiceLineCogsRevisionViewV1? Current,

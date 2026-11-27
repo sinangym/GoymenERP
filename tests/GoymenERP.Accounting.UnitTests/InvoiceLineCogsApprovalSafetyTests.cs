@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Accounting.UnitTests;
 
-public sealed class InvoiceLineCogsApprovalSafetyTests
+public sealed partial class InvoiceLineCogsApprovalSafetyTests
 {
     private static readonly Guid Company = Guid.Parse("c0540000-0000-4000-8000-000000000001");
     private static readonly Guid Maker = Guid.Parse("c0540000-0000-4000-8000-000000000002");

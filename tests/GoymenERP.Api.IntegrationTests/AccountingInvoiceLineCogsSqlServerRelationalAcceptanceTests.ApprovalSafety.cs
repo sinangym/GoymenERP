@@ -73,9 +73,9 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
             scope.Authority.Read = () =>
             {
                 if (scope.Writer.HasPendingDrafts) seenPending = true; if (save.Saved) savedFences++;
-                // After Save: owned Save fence=1, service result fence=2, runner result=3, precommit=4, release=5.
+                // After Save: owned Save1/service2/receipt-before3/Commands4/source-before5/source-after6/receipt-final7/runner8/precommit9/release10.
                 var reached = fault == "before-audit" ? scope.Writer.HasPendingDrafts : fault == "after-audit" ? seenPending && !scope.Writer.HasPendingDrafts && !save.Saved
-                    : fault == "precommit" ? savedFences == 4 : fault == "postcommit" ? commits.Commits > 0 : save.Saved;
+                    : fault == "precommit" ? savedFences == 9 : fault == "postcommit" ? commits.Commits > 0 : save.Saved;
                 if (!deny || !reached) return true; observed = true;
                 if (fault == "company") { scope.Company.Set(TestCompanyIds.CompanyB); return true; }
                 if (fault == "actor") { scope.User.Actor = Maker; return true; } if (fault == "member") { scope.User.Member = false; return true; }

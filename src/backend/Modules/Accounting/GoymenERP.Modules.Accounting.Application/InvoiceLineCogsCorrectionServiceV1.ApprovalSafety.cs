@@ -12,10 +12,14 @@ public sealed partial class InvoiceLineCogsCorrectionServiceV1
             return Task.FromResult(new AccountingApiResult<InvoiceLineCogsCorrectionViewV1>(AccountingApiStatus.Invalid, null, false, AccountingApiCodes.RequestInvalid));
         if (!Capture(out var companyId, out var actor, out var actorText)) return Task.FromResult(Denied<InvoiceLineCogsCorrectionViewV1>());
         var capture = new ApprovalCapture(companyId, actor, actorText);
-        return store.RunApprovalAsync(replayOnly => Run("approve", AccountingJournalReversalPermissionNamesV1.Approve,
-            invoiceId, lineId, new { proposalId, request }, key,
-            (facts, checker, fence, metadata) => store.ApproveAsync(facts, proposalId, request.ExpectedVersion, checker, fence, metadata, token),
-            token, capture, replayOnly), ct => ApprovalFenceAsync(capture, ct), token);
+        return store.RunApprovalAsync(async replayOnly =>
+        {
+            var answer = await Run("approve", AccountingJournalReversalPermissionNamesV1.Approve,
+                invoiceId, lineId, new { proposalId, request }, key,
+                (facts, checker, fence, metadata) => store.ApproveAsync(facts, proposalId, request.ExpectedVersion, checker, fence, metadata, token),
+                token, capture, replayOnly);
+            return await AttachCogsReceiptAsync(answer, invoiceId, lineId, proposalId, request, key, capture, token);
+        }, ct => ApprovalFenceAsync(capture, ct), token);
     }
     private async Task ApprovalFenceAsync(ApprovalCapture captured, CancellationToken token)
     {

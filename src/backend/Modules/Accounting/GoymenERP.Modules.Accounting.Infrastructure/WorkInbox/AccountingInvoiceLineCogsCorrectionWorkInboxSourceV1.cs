@@ -17,9 +17,10 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.WorkInbox;
 /// approve command accepts only a company-wide grant (D11: no scoped approver).
 /// </para>
 /// </summary>
-internal sealed class AccountingInvoiceLineCogsCorrectionWorkInboxSourceV1(
+internal sealed partial class AccountingInvoiceLineCogsCorrectionWorkInboxSourceV1(
     AccountingDbContext dbContext,
-    AccountingWorkInboxFence fence) : IWorkInboxSourceV1
+    AccountingWorkInboxFence fence,
+    IInvoiceLineCogsDecisionReadV1? owner = null) : IWorkInboxSourceV1
 {
     public const string ModuleName = "accounting";
     public const string KindName = "accounting.invoice-line-cogs-correction.v1";
@@ -51,6 +52,8 @@ internal sealed class AccountingInvoiceLineCogsCorrectionWorkInboxSourceV1(
                             .Max(revision => (long?)revision.Version) ?? 0) == row.ExpectedLineVersion)
                     .OrderBy(row => row.PreparedAtUtc).ThenBy(row => row.Id)
                     .Take(maxCount + 1)
+                    .Select(row => new InvoiceLineCogsProposalRow { Id = row.Id, CompanyId = row.CompanyId, InvoiceId = row.InvoiceId,
+                        InvoiceLineId = row.InvoiceLineId, ExpectedLineVersion = row.ExpectedLineVersion, PreparedBy = row.PreparedBy, PreparedAtUtc = row.PreparedAtUtc })
                     .ToListAsync(token);
             },
             rows => AccountingWorkInboxFence.Page(rows, maxCount, Item),
@@ -64,13 +67,6 @@ internal sealed class AccountingInvoiceLineCogsCorrectionWorkInboxSourceV1(
             return null;
         }
 
-        return new WorkInboxItemV1(ModuleName, KindName, row.Id, AccountingWorkInboxFence.ShortReference(row.Id),
-            row.PreparedAtUtc.ToUniversalTime(), ScreenPath, AccountingWorkInboxFence.Actor(row.PreparedBy),
-            [new WorkApprovalRuleResultV1(ApprovalRequiredRule, null, null, null, null)],
-            [
-                new WorkApprovalReferenceV1("invoice", AccountingWorkInboxFence.ShortReference(row.InvoiceId), row.InvoiceId, null),
-                new WorkApprovalReferenceV1("invoice-line", AccountingWorkInboxFence.ShortReference(row.InvoiceLineId),
-                    row.InvoiceLineId, null),
-            ]);
+        return AccountingInvoiceLineCogsDecisionBindingV1.Item(row.Id, row.InvoiceId, row.InvoiceLineId, row.PreparedBy, row.PreparedAtUtc);
     }
 }
