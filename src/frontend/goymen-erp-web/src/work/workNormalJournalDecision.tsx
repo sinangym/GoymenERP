@@ -16,7 +16,7 @@ export interface WorkNormalJournalPreview {
 const object = (v: unknown): v is Record<string,unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
 const guid = (v: unknown): v is string => typeof v === 'string' && v.length === 36 && isBoundUuid(v)
 const same = (v: unknown, id: string) => typeof v === 'string' && v.toLowerCase() === id.toLowerCase()
-const digest = (v: unknown) => typeof v === 'string' && v.length === 64 && /^[0-9A-F]+$/.test(v)
+const digest = (v: unknown) => typeof v === 'string' && v.length === 64 && /^[0-9A-F]{64}$/.test(v)
 export const normalJournalVersion = (v: unknown): string | null => typeof v === 'string' && v === v.trim()
   && isPositiveInt64Text(v) ? v : null
 

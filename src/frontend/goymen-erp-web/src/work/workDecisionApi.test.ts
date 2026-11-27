@@ -1461,3 +1461,14 @@ describe('WP8 normal journal published typed owner contract',()=>{
   function jsonJournalResult(change:Record<string,unknown>={}){return new Response(JSON.stringify({companyId:company,kind:journalKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'SENTETIK-original',...change}),{status:200,headers:{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK-original'}})}
  })
 })
+
+
+it.each([
+ ['sourceFactsDigest','\n'],['sourceFactsDigest','\r'],['sourceFactsDigest','\r\n'],
+ ['previewDigest','\n'],['previewDigest','\r'],['previewDigest','\r\n'],
+] as const)('normal-journal %s never accepts a replacement line ending %j at total length64',(field,suffix)=>{
+ const value=normalJournalFixture(company,id)
+ value.normalJournalDraft[field]='A'.repeat(64-suffix.length)+suffix
+ expect(value.normalJournalDraft[field]).toHaveLength(64)
+ expect(decodeWorkDecisionPreview(value,company,journalKind,id)).toBeNull()
+})
