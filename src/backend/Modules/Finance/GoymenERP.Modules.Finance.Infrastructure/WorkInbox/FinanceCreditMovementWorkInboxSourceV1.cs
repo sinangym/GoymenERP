@@ -19,9 +19,10 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// as the actual value; the movement's components live in the owner's source document and are read on the owner's screen.
 /// </para>
 /// </summary>
-internal sealed class FinanceCreditMovementWorkInboxSourceV1(
+internal sealed partial class FinanceCreditMovementWorkInboxSourceV1(
     FinanceDbContext dbContext,
-    FinanceWorkInboxFence fence) : IWorkInboxSourceV1
+    FinanceWorkInboxFence fence,
+    IFinanceCreditMovementServiceV1? owner = null) : IWorkInboxSourceV1
 {
     public const string ModuleName = "finance";
     public const string KindName = "finance.credit-movement.v1";

@@ -21,7 +21,17 @@ public sealed partial class FinanceCreditMovementServiceV1
                 && movement.CompanyId == context.CompanyId && movement.Id == request.MovementId
             select new { Command = command, Movement = movement }).SingleOrDefaultAsync(token);
         await ReceiptFence();
-        return found is null ? null : RestoreDecisionReceipt(found.Command, found.Movement, context, metadata, request, result);
+        var receipt = found is null ? null : RestoreDecisionReceipt(found.Command, found.Movement, context, metadata, request, result);
+        if (receipt is not null && result.Resource!.Source.BankEffect is { } bank)
+        {
+            await ReceiptFence();
+            var bankName = await db.BankAccounts.AsNoTracking().Where(x => x.CompanyId == context.CompanyId && x.Id == bank.BankAccountId)
+                .Select(x => x.DisplayName).SingleOrDefaultAsync(token);
+            await ReceiptFence();
+            // Existing formatter supplies Name(id) when missing; no history reconstruction or general bank-card grant.
+            receipt = receipt with { BankDisplayName = bankName };
+        }
+        return receipt;
         async Task ReceiptFence()
         {
             token.ThrowIfCancellationRequested();
