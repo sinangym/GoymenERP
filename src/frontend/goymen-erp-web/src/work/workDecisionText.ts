@@ -1,4 +1,11 @@
 export const WORK_DECISION_TEXT = {
+  journalReversalTitle: 'Onaylanacak ters kayıt önerisi',
+  journalReversalRetained: 'Önceki onayınız yeniden doğrulanıyor. Karar verdiğiniz öneri ve sürüm korunuyor; güncel fiş bilgileri bu isteğin yerine kullanılmıyor.',
+  journalReversalFields: { proposalId: 'Öneri kaydı', companyId: 'Şirket', sourceJournalId: 'Asıl fiş', reversalJournalId: 'Ters fiş', periodId: 'Dönem',
+    transactionDate: 'İşlem tarihi', accountingDate: 'Muhasebe tarihi', valueDate: 'Valör tarihi', reason: 'Kayıtlı gerekçe',
+    proposedBy: 'Öneren', proposedAtUtc: 'Önerilme zamanı (UTC)', status: 'Durum', decidedBy: 'Onaylayan', decidedAtUtc: 'Onay zamanı (UTC)',
+    decisionReason: 'Karar gerekçesi', version: 'Sürüm' },
+
   accountingPeriodTitle: 'Açılması onaylanacak dönem', accountingReopeningTitle: 'Yeniden açılması onaylanacak dönem',
   accountingClosureTitle: 'Kayıtlı kapanış ve devir', accountingReopeningProposal: 'Yeniden açma önerisi',
   accountingLaterClosed: 'Daha sonraki bir dönem kapalı. Önce o dönemin yeniden açılması gerekir.',

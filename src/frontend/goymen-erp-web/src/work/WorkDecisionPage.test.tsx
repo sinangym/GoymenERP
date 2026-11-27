@@ -1,3 +1,6 @@
+import { JOURNAL_REVERSAL_WORK_KIND as journalReversalKind, JOURNAL_REVERSAL_WORK_CAPABILITY as journalReversalCap } from './workJournalReversalDecision'
+import { journalReversalFixture } from './journalReversalDecisionFixture'
+import { CapabilityRoute } from '../shell/CapabilityRoute'
 import { accountingOpeningFixture, accountingReopeningFixture, openingPeriodKind, reopeningPeriodKind } from './accountingPeriodDecisionFixture'
 import { ACCOUNTING_PERIOD_WORK_CAPABILITY, type AccountingPeriodWorkKind } from './workAccountingPeriodDecision'
 import { normalJournalFixture } from './normalJournalDecisionFixture'
@@ -2757,4 +2760,88 @@ describe('Work period paired native decision',()=>{
   else {cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK period new session'});mountAccountingPeriod(openingPeriodKind)}
   await screen.findByRole('region',{name:T.accountingPeriodTitle});expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(c=>c.method==='POST')).toHaveLength(1)
  })
+})
+
+function mountJournalReversalCandidate(client?:QueryClient){
+ const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[{path:`onaylarim/${journalReversalKind}/:approvalId`,
+  element:<CapabilityRoute capability={[journalReversalCap]}><WorkDecisionPage kind={journalReversalKind}/></CapabilityRoute>}]}],{initialEntries:[`/onaylarim/${journalReversalKind}/${id}`]})
+ render(<ShellProvider queryClient={client??new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})}><RouterProvider router={router}/></ShellProvider>)
+}
+const journalReversalPath=`/work/decisions/${journalReversalKind}/${id}`
+describe('staged native journal reversal Work core',()=>{
+ it('shows complete native facts but no hashes, period selection, rejection or new reason',async()=>{
+  const value=journalReversalFixture(COMPANY_A,id)
+  const calls=installFetch({capabilities:[journalReversalCap],respond:(url,init)=>url.includes(journalReversalPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:journalReversalKind,itemId:id,state:'Approved',replayed:false,originalCorrelationId:'SENTETIK reversal'}):json(value):undefined})
+  mountJournalReversalCandidate();const region=await screen.findByRole('region',{name:T.journalReversalTitle})
+  expect(within(region).getByText(value.accountingJournalReversal.proposal.reason)).toBeTruthy()
+  expect(within(region).getByText('2026-11-25')).toBeTruthy();expect(within(region).getByText('2026-11-26')).toBeTruthy()
+  expect(region.querySelectorAll('dt')).toHaveLength(16)
+  expect(region.textContent).not.toContain(value.accountingJournalReversal.sourceFactsDigest);expect(region.textContent).not.toContain(value.accountingJournalReversal.previewDigest)
+  expect(screen.queryByRole('button',{name:T.reject})).toBeNull();expect(screen.queryByRole('textbox',{name:T.reason})).toBeNull()
+  expect(within(region).queryByRole('combobox')).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done)
+  expect(calls.filter(c=>c.method==='POST').map(c=>c.body)).toEqual([{expectedVersion:'1',approve:true,reason:null,delegationId:null}])
+  expect(calls.some(c=>c.url.includes('/accounting/'))).toBe(false);expect(screen.queryByRole('region',{name:T.journalReversalTitle})).toBeNull()
+ })
+ it('keeps the staged purpose outside the published shell routes',()=>{
+  expect(workRoutes.some(route=>route.path===`onaylarim/${journalReversalKind}/:approvalId`)).toBe(false)
+ })
+ it('retains the same original four fields and key across unknown remount without another human GET',async()=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK journal reversal session'})
+  const value=journalReversalFixture(COMPANY_A,id);let posts=0
+  const calls=installFetch({capabilities:[journalReversalCap],respond:(url,init)=>url.includes(journalReversalPath)?init?.method==='POST'?++posts===1?problem(503):json({companyId:COMPANY_A,kind:journalReversalKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'SENTETIK original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK original'}):json(value):undefined})
+  mountJournalReversalCandidate();await screen.findByRole('region',{name:T.journalReversalTitle});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+  const reads=calls.filter(c=>c.url.includes(journalReversalPath)&&c.method==='GET').length
+  cleanup();mountJournalReversalCandidate();await screen.findByText(T.unknown)
+  expect(calls.filter(c=>c.url.includes(journalReversalPath)&&c.method==='GET')).toHaveLength(reads);expect(screen.queryByRole('region',{name:T.journalReversalTitle})).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+  const sent=calls.filter(c=>c.method==='POST');expect(sent).toHaveLength(2);expect(sent[1]!.body).toEqual(sent[0]!.body)
+  expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key'])
+  expect(JSON.stringify(sessionStorage)).not.toContain('sourceFactsDigest');expect(JSON.stringify(sessionStorage)).not.toContain(value.accountingJournalReversal.proposal.reason)
+ })
+ it('suppresses an already inflight current preview after the command becomes unknown',async()=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK journal reversal late'})
+  const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})
+  let gets=0,release!:(value:Response)=>void;const late=new Promise<Response>(resolve=>{release=resolve})
+  const calls=installFetch({capabilities:[journalReversalCap],respond:(url,init)=>url.includes(journalReversalPath)?init?.method==='POST'?problem(503):++gets===1?json(journalReversalFixture(COMPANY_A,id)):late:undefined})
+  mountJournalReversalCandidate(client);await screen.findByRole('region',{name:T.journalReversalTitle})
+  let refetch!:Promise<void>;act(()=>{refetch=client.refetchQueries({predicate:q=>q.queryKey.includes('work-decision')})});await waitFor(()=>expect(gets).toBe(2))
+  fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+  const current=journalReversalFixture(COMPANY_A,id,2);current.pending=false;Object.assign(current.accountingJournalReversal.proposal,{status:'Approved',reversalJournalId:COMPANY_A,decidedBy:COMPANY_A,decidedAtUtc:'2026-11-27T10:00:00Z',reason:'SENTETIK late private reason'})
+  await act(async()=>{release(json(current));await refetch})
+  expect(screen.queryByText('SENTETIK late private reason')).toBeNull();expect(screen.queryByRole('region',{name:T.journalReversalTitle})).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.unknown)
+  const sent=calls.filter(c=>c.method==='POST');expect(sent).toHaveLength(2);expect(sent[1]!.body).toEqual(sent[0]!.body);expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key']);client.clear()
+ })
+ it.each([403,503])('does not show facts or dispatch on owner refusal %s',async status=>{
+  const calls=installFetch({capabilities:[journalReversalCap],respond:url=>url.includes(journalReversalPath)?problem(status):undefined})
+  mountJournalReversalCandidate();await waitFor(()=>expect(calls.some(c=>c.url.includes(journalReversalPath))).toBe(true))
+  expect(screen.queryByRole('region',{name:T.journalReversalTitle})).toBeNull();expect(screen.queryByRole('button',{name:T.approve})).toBeNull();expect(calls.some(c=>c.method==='POST')).toBe(false)
+ })
+ it('never reads the purpose using native approval or general journal read alone',async()=>{
+  const calls=installFetch({capabilities:['accounting.journal-reversals.approve','accounting.journals.detail'],respond:url=>url.includes(journalReversalPath)?problem(503):undefined})
+  mountJournalReversalCandidate();await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+  expect(calls.some(c=>c.url.includes(journalReversalPath))).toBe(false)
+ })
+ it.each(['company','session'] as const)('does not restore the frozen reversal request into another %s',async change=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK reversal first session'})
+  const calls=installFetch({capabilities:[journalReversalCap],respond:(url,init)=>{
+   if(!url.includes(journalReversalPath))return undefined
+   if(init?.method==='POST')return problem(503)
+   const company=new Headers(init?.headers).get('X-Company-Id');if(company===null)throw new Error('Captured company required')
+   return json(journalReversalFixture(company,id))
+  }})
+  mountJournalReversalCandidate();await screen.findByRole('region',{name:T.journalReversalTitle});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+  if(change==='company')await userEvent.setup().selectOptions(screen.getByRole('combobox',{name:'Şirket'}),COMPANY_B)
+  else {cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK reversal new session'});mountJournalReversalCandidate()}
+  await screen.findByRole('region',{name:T.journalReversalTitle});expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(c=>c.method==='POST')).toHaveLength(1)
+ })
+})
+
+it('shows full native Int32-max journal revision but cannot send a nonincrementable approval',async()=>{
+ const value=journalReversalFixture(COMPANY_A,id,2147483647)
+ const calls=installFetch({capabilities:[journalReversalCap],respond:url=>url.includes(journalReversalPath)?json(value):undefined})
+ mountJournalReversalCandidate();await screen.findByRole('region',{name:T.journalReversalTitle})
+ expect(screen.getByRole('button',{name:T.approve}).matches(':disabled')).toBe(true)
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));expect(calls.some(c=>c.method==='POST')).toBe(false)
 })

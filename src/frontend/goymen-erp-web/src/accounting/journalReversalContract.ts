@@ -84,14 +84,14 @@ export function sameGuid(left: string | null | undefined, right: string | null |
   return typeof left === 'string' && typeof right === 'string' && left.toLowerCase() === right.toLowerCase()
 }
 
-export function decodeJournalReversalProposal(value: unknown, companyId: string): JournalReversalProposal | null {
+export function decodeJournalReversalProposal(value: unknown, companyId: string, dateValidator: (value: unknown) => value is string = date): JournalReversalProposal | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
   const v = value as Record<string, unknown>
   const own = Object.keys(v)
   if (own.length !== KEYS.length || !KEYS.every((key) => Object.prototype.hasOwnProperty.call(v, key))) return null
   if (!isReversalGuid(v.proposalId) || !isReversalGuid(v.companyId) || !sameGuid(v.companyId, companyId)) return null
   if (!isReversalGuid(v.sourceJournalId) || !nullableGuid(v.reversalJournalId) || !isReversalGuid(v.periodId)) return null
-  if (!date(v.transactionDate) || !date(v.accountingDate) || !(v.valueDate === null || date(v.valueDate))) return null
+  if (!dateValidator(v.transactionDate) || !dateValidator(v.accountingDate) || !(v.valueDate === null || dateValidator(v.valueDate))) return null
   if (typeof v.reason !== 'string' || v.reason.trim().length === 0 || v.reason.length > JOURNAL_REVERSAL_REASON_MAX) return null
   if (!isReversalGuid(v.proposedBy) || !instant(v.proposedAtUtc)) return null
   if (typeof v.status !== 'string' || !(JOURNAL_REVERSAL_STATUSES as readonly string[]).includes(v.status)) return null
