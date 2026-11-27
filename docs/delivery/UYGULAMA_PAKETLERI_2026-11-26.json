@@ -2178,7 +2178,7 @@
         "Native PartyCreditLimit approve/reject safety5080752e0637a77b2364d0c9df9dcacaccfa052c/root2b0b99f05: existing owned Serializable/Audit/fresh company-actor-permission fences, clean-entry caller preservation, owned cleanup and one readonly original-key winner read reused. FNS-D27a maker rule and FNS-D56/57 single-step Set/Remove unchanged. Flow40 Work purpose/UI is not implemented by this prerequisite.",
         "Flow47/48 period and Flow50 journal reversal purposes paired in source45/45/0; exact-head local checks and retained failures: docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#journal_reversal_paired_checkpoint. ActualSQL/HTTP/browser/fullCI/K3/business acceptance pending; no new policy/grant/activation.",
         "Flow51 native catalog activation safety prerequisite: existing owned runner/actual scoped Audit/current authority and original-key receipt preserved; Work owner-purpose/source/host/UI pending. Counts remain45/45/0; evidence: docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#catalog_activation_native_checkpoint.",
-        "Flow51 owner full-package read/original receipt plus Work source/DTO implemented, WorkHost ongoing/frontend pending; Flow52 owner read/original activation receipt implemented, WorkHost/frontend pending. Existing Work kinds remain45/45/0. Canonical exact-head evidence: docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#catalog_owner_mapping_native_checkpoint."
+        "Current Flow51 catalog and Flow52 mapping are paired owner/source/DTO/host/full human UI47/47/0. Native53 safety is a prerequisite, not a48th Work purpose. Existing code/fixtures/owned runner reused; exact proofs/failures remain in WORK_ONAY_KAPSAM_HARITASI_v1.json#catalog_owner_mapping_native_checkpoint."
       ],
       "decisions": [
         "YOL-D41",
@@ -2322,8 +2322,10 @@
         "activation": "No grants/flags/provider changes"
       },
       "execution": {
-        "source_commit": "28637ed9592f3d27df3a0ac438c78133874d781a",
+        "source_commit": "a2b216afa3b9245bda3ab9dffd094a1a4608d547",
         "implemented_kinds": [
+          "accounting.posting-mapping.v1",
+          "accounting.approved-source-catalog.v1",
           "accounting.journal-reversal.v1",
           "accounting.period-opening.v1",
           "accounting.period-reopening.v1",
@@ -3510,7 +3512,7 @@
           "7898cc30397ab51d38464c5ac674de2422890d07",
           "9f9442c4e9382033ea97f54e62d7238ab50e91c4"
         ],
-        "kind_count_scope": "Source sets45 backend/45 paired frontend/0 staged kinds. Runtime acceptance remains0/64.",
+        "kind_count_scope": "Source sets47 backend/47 paired frontend/0 staged kinds; runtime acceptance remains0/64.",
         "staged_kinds": [],
         "historical_kind_count_scope": "29 paired source kinds/29 native kinds with exact set equality atcc379ff28f74d5810ed51ad537ebece821440d72, including Product package-standard; staged0. Native price-list publish safety is a prerequisite, not a30th Work purpose. All64 runtime flows remain NOT_VERIFIED/NOT_RUN; source pairing is not acceptance.",
         "historical_kind_count_scopes": [
@@ -4095,9 +4097,9 @@
           "runtime_acceptance": "NOT_RUN"
         },
         "catalog_owner_mapping_native_checkpoint": {
-          "source_commit": "f22eea8e51d88cdcfed96e752b4b7e97f40523bf",
+          "source_commit": "a2b216afa3b9245bda3ab9dffd094a1a4608d547",
           "evidence_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#catalog_owner_mapping_native_checkpoint",
-          "delivery_scope": "Flow51 WorkHost registered/frontend pending; Flow52 Work source/DTO implemented/host ongoing. Current46backend/45frontend/1staged catalog purpose; no runtime acceptance.",
+          "delivery_scope": "Flow51 catalog and Flow52 posting mapping owner/source/DTO/WorkHost/full human UI are paired in source:47 backend/47 frontend/0 staged. Flow53 native whole-approval safety integrated; owner read follow-up is frozen in its separate author branch, not yet integrated. Source pairing is not runtime acceptance.",
           "runtime_acceptance": "NOT_RUN"
         }
       }

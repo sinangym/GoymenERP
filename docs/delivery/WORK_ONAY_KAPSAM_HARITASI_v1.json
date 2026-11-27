@@ -1739,10 +1739,10 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native owner/source/DTO/WorkHost registered; frontend pending, one staged catalog purpose. All64 semantic/runtime flags remainNOT_VERIFIED/NOT_RUN; exact-head checks and failures: catalog_owner_mapping_native_checkpoint.",
+      "limitation": "Catalog native owner/source/DTO/WorkHost/full human UI paired in source;47 backend/47 frontend/0 staged. All64 semantic/runtime flags remainNOT_VERIFIED/NOT_RUN; exact-head checks and failures: catalog_owner_mapping_native_checkpoint.",
       "latest_source_evidence": {
-        "source_commit": "f22eea8e51d88cdcfed96e752b4b7e97f40523bf",
-        "scope": "Native owner/source/DTO/WorkHost registered; frontend pending, one staged catalog purpose. All64 semantic/runtime flags remainNOT_VERIFIED/NOT_RUN; exact-head checks and failures: catalog_owner_mapping_native_checkpoint.",
+        "source_commit": "a2b216afa3b9245bda3ab9dffd094a1a4608d547",
+        "scope": "Catalog native owner/source/DTO/WorkHost/full human UI paired in source;47 backend/47 frontend/0 staged. All64 semantic/runtime flags remainNOT_VERIFIED/NOT_RUN; exact-head checks and failures: catalog_owner_mapping_native_checkpoint.",
         "evidence_ref": "#catalog_owner_mapping_native_checkpoint",
         "sql": "NOT_RUN",
         "runtime_acceptance": "NOT_RUN"
@@ -1776,10 +1776,10 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native owner/source/binding/DTO implemented; WorkHost ongoing/frontend pending, no mapping kind registration yet. All64 semantic/runtime flags remainNOT_VERIFIED/NOT_RUN; exact-head checks and failures: catalog_owner_mapping_native_checkpoint.",
+      "limitation": "Posting mapping native owner/source/DTO/WorkHost/full human UI paired in source;47 backend/47 frontend/0 staged. All64 semantic/runtime flags remainNOT_VERIFIED/NOT_RUN; exact-head checks and failures: catalog_owner_mapping_native_checkpoint.",
       "latest_source_evidence": {
-        "source_commit": "f22eea8e51d88cdcfed96e752b4b7e97f40523bf",
-        "scope": "Native owner/source/binding/DTO implemented; WorkHost ongoing/frontend pending, no mapping kind registration yet. All64 semantic/runtime flags remainNOT_VERIFIED/NOT_RUN; exact-head checks and failures: catalog_owner_mapping_native_checkpoint.",
+        "source_commit": "a2b216afa3b9245bda3ab9dffd094a1a4608d547",
+        "scope": "Posting mapping native owner/source/DTO/WorkHost/full human UI paired in source;47 backend/47 frontend/0 staged. All64 semantic/runtime flags remainNOT_VERIFIED/NOT_RUN; exact-head checks and failures: catalog_owner_mapping_native_checkpoint.",
         "evidence_ref": "#catalog_owner_mapping_native_checkpoint",
         "sql": "NOT_RUN",
         "runtime_acceptance": "NOT_RUN"
@@ -1789,20 +1789,27 @@
       "flow": 53,
       "name": "Üretim maliyet farkı",
       "permission_cell": "doğrulanmadı",
-      "registered_permission_candidates": [],
+      "registered_permission_candidates": [
+        "accounting.journal.reverse.approve"
+      ],
       "source_row": 683,
       "preparer_proposal": "sistem",
       "approver_proposal": "ÖNERİ: MUHM, GM",
       "duration_cell": "2 iş günü",
       "decision_note": "—",
       "candidate_inbox_sources": [],
-      "candidate_tests": [],
+      "candidate_tests": [
+        "tests/GoymenERP.Accounting.UnitTests/ManufacturingCostDifferenceV1Tests.ApprovalSafety.cs",
+        "tests/GoymenERP.Accounting.UnitTests/AccountingJournalReversalStoreFollowUpV1Tests.ManufacturingCostDifferenceNoOp.cs",
+        "tests/GoymenERP.Api.IntegrationTests/ManufacturingCostDifferenceSqlServerRelationalAcceptanceTests.ApprovalSafety.cs",
+        "tests/GoymenERP.Api.IntegrationTests/ManufacturingCostDifferenceSqlServerRelationalAcceptanceTests.ApprovalRefusal.cs"
+      ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Native approval safety integrated with existing permission/owned runner/actual scoped Audit; owner decision-read source is frozen in a separate branch, Work purpose/host/UI not yet integrated. Source-only prerequisite, actualSQL/runtime acceptance NOT_RUN. See catalog_owner_mapping_native_checkpoint."
     },
     {
       "flow": 54,
@@ -2742,8 +2749,8 @@
     "limits": "All64 semanticsNOT_VERIFIED/runtimeNOT_RUN/verified_runtime_flows0;41packages/50references unchanged. ActualSQL/normalHTTP/browser/fullCI/pins/two independent K3 and business acceptance pending. Previous45 paired checkpoint and failures retained at their original heads."
   },
   "catalog_owner_mapping_native_checkpoint": {
-    "source_commit": "f22eea8e51d88cdcfed96e752b4b7e97f40523bf",
-    "scope": "Flow51 native owner/source/DTO/WorkHost registered; human frontend pending. Flow52 native owner/receipt plus Work source/binding/DTO implemented; WorkHost ongoing. Current46 backend/45 paired frontend/1 staged catalog kind. Source readiness is not runtime acceptance.",
+    "source_commit": "a2b216afa3b9245bda3ab9dffd094a1a4608d547",
+    "scope": "Flow51 catalog and Flow52 posting mapping owner/source/DTO/WorkHost/full human UI are paired in source:47 backend/47 frontend/0 staged. Flow53 native whole-approval safety integrated; owner read follow-up is frozen in its separate author branch, not yet integrated. Source pairing is not runtime acceptance.",
     "checks": {
       "owner_and_mapping_native": {
         "source_commit": "238f49c244e2497c5cdac7c11941fe84ccf6e7e4",
@@ -2802,26 +2809,157 @@
         "artifact": "mapping-work-source-registration-fixed-20261128",
         "accounting": "1338/1338PASS0skip35.2500561s",
         "fix": "Added actual catalog type/permission to existing exact registration/factory/shared refusal table; no assertion removal. All95 mapping source cases and seven extra reused source cases included."
+      },
+      "paired_shell_initial": {
+        "source_commit": "1802c4b42e0539c2ce462c3c4b9d06e8d1258ec6",
+        "artifact": "catalog-paired-mapping-host-20261128",
+        "accounting": "1345total1344PASS1FAIL0skip35.7646366s: exact screen list omitted catalog screen; later phases NOT_RUN, original log retained"
+      },
+      "paired_shell_screen_fixed": {
+        "source_commit": "1b235aaf163a1c041b1f1d14c58687d4d522d203",
+        "artifact": "catalog-paired-mapping-host-screen-fixed-20261128",
+        "accounting": {
+          "source_commit": "1b235aaf163a1c041b1f1d14c58687d4d522d203",
+          "passed": 1346,
+          "failed": 0,
+          "skipped": 0,
+          "seconds": 34.5823242,
+          "exit": 0
+        },
+        "api_refresh": {
+          "exit": 0,
+          "seconds": 23.4047773,
+          "head": "1b235aaf163a1c041b1f1d14c58687d4d522d203",
+          "freeGiB": 3.781341552734375
+        },
+        "controlled_host": {
+          "source_commit": "1b235aaf163a1c041b1f1d14c58687d4d522d203",
+          "passed": 1588,
+          "failed": 0,
+          "skipped": 0,
+          "seconds": 64.8532466,
+          "exit": 0
+        },
+        "runner_error": "TSC did not reach compiler: missing newline kept runner in repo root, MODULE_NOT_FOUND exit1/0.1602982s. Temp runner fixed; no product/compiler claim. Lint/frontend NOT_RUN in this artifact."
+      },
+      "catalog_ui_initial": {
+        "source_commit": "1b235aaf163a1c041b1f1d14c58687d4d522d203",
+        "artifact": "catalog-paired-ui-cwd-fixed-20261128",
+        "total": 1408,
+        "passed": 1406,
+        "failed": 2,
+        "skipped": 0,
+        "seconds": 123.8113045,
+        "exit": 1,
+        "detail": "19 full files1408total1406PASS2FAIL0skip; exact ROUTED list and Accounting inbox count omitted catalog; all67 new catalog cases passed. TSC/lint exit0. Failures retained."
+      },
+      "catalog_ui_inventory_fixed": {
+        "source_commit": "59ce8e2c414829037f31d5986ec15519b7ecb554",
+        "artifact": "catalog-paired-inventory-fixed-20261128",
+        "total": 28,
+        "passed": 28,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": 15.0627003,
+        "exit": 0,
+        "detail": "Only two changed full test files28/28PASS; TSC/lint exit0. Earlier17 file results remain at their own head, not a combined1408 same-head pass."
+      },
+      "mapping_ui_core": {
+        "source_commit": "038b9bd92e94087860c0c359881df65ad9d7d1c6",
+        "artifact": "mapping-work-ui-core-20261128",
+        "total": 1170,
+        "passed": 1170,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": 80.5721746,
+        "exit": 0,
+        "detail": "8 full files1170PASS0skip; staged Mapping core plus existing Catalog/Page/API regressions; TSC/lint exit0."
+      },
+      "mapping_paired_cost_compile_initial": {
+        "source_commit": "efa43f9025b951fa2ed98fe64ed289edb373e540",
+        "artifact": "mapping-paired-cost-safety-20261128",
+        "accounting": "compileFAILCS0103/29.2237109s in two new unit partial files (PostingOutcomeKind/JsonSerializer imports); tests and later phases NOT_RUN. Production compiled. Original log retained; ddc adds only2 using declarations."
+      },
+      "mapping_paired_cost_import_fixed": {
+        "source_commit": "ddc827910dac55262b00266a2476a7a011cdf15c",
+        "artifact": "mapping-paired-cost-safety-import-fixed-20261128",
+        "accounting": {
+          "source_commit": "ddc827910dac55262b00266a2476a7a011cdf15c",
+          "passed": 1373,
+          "failed": 0,
+          "skipped": 0,
+          "seconds": 35.4237321,
+          "exit": 0
+        },
+        "api_refresh": {
+          "head": "ddc827910dac55262b00266a2476a7a011cdf15c",
+          "freeGiB": 3.725933074951172,
+          "exit": 0,
+          "seconds": 22.1863317
+        },
+        "controlled_host": {
+          "source_commit": "ddc827910dac55262b00266a2476a7a011cdf15c",
+          "passed": 1588,
+          "failed": 0,
+          "skipped": 0,
+          "seconds": 64.0261859,
+          "exit": 0
+        },
+        "frontend": {
+          "source_commit": "ddc827910dac55262b00266a2476a7a011cdf15c",
+          "artifact": "mapping-paired-cost-safety-import-fixed-20261128",
+          "total": 1314,
+          "passed": 1313,
+          "failed": 1,
+          "skipped": 0,
+          "seconds": 92.1644974,
+          "exit": 1
+        },
+        "tsc": {
+          "head": "ddc827910dac55262b00266a2476a7a011cdf15c",
+          "freeGiB": 3.8426055908203125,
+          "exit": 0,
+          "seconds": 51.7839411
+        },
+        "lint": {
+          "head": "ddc827910dac55262b00266a2476a7a011cdf15c",
+          "freeGiB": 3.764812469482422,
+          "exit": 0,
+          "seconds": 0.2289304
+        },
+        "limits": "API references=false after fresh Accounting dependencies, not a new all-reference API build. Controlled host compiles SQL sources but does not execute actualSQL/HTTP/browser. All counts parsed from TRX/Vitest JSON; frontend1314total1313PASS1FAIL0skip because cross-kind fixture still included its now-published own kind. Original failure retained."
+      },
+      "mapping_paired_crosskind_fixed": {
+        "source_commit": "a2b216afa3b9245bda3ab9dffd094a1a4608d547",
+        "artifact": "mapping-paired-crosskind-fixed-20261128",
+        "total": 77,
+        "passed": 77,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": 2.4544868,
+        "exit": 0,
+        "detail": "One test-only loop excludes its own kind while preserving every other cross-kind refusal. One full file passed, lint exit0; earlier12 files remain separate ddc head evidence, not a1314 same-head pass. TSC/backend not rerun after this test-only correction."
       }
     },
-    "source_peers": "Catalog7c09 owner8files read; null Record P2 fixed985b with negative case. Mapping5645752f full8files,09aee9d2 two-file SQL/unit delta, root985b full4file alias/composition delta read; unread0/no remaining concrete P0/P1/P2 in these bounded scopes. Not formal K3. Flow51 c766 full5files+calls read by root; Flow52 4ea full7files+native chain and06e7 full2file SQL delta+called helpers read; unread0/no concrete P0/P1/P2, not formal K3. Actual precommit fence11 and final consumer12 source-aligned. Flow51 host1162 full4files+called owner/WP3 chain, Flow52 owner4ea full7files+06e7 full2file SQL followup, Work source7b70 full4files+called chain, root327 DTO+568 DI additions read: unread0/no concrete P0/P1/P2 in these bounded scopes; not formal K3. Root read0eb SQL92line followup, no actualSQL.",
-    "native_boundaries": "Catalog Activate-only companywide read emits full stored accounts/bindings and two frozen versions; public15/result8/hash unchanged. Private14-field JsonIgnore receipt binds original command/key/hash/actor/company/correlation and original Active2 despite current Superseded3. Mapping native maker Self403 terminal receipt alone can commit under exact owned mapping marker/saved command; all other Denied paths rollback. No mutation retry or new business policy/grant. Mapping full12-header/8-row human facts retain prepared-plan reference separately from current active plan; private13-field JsonIgnore receipt binds two original expectations and genuine Commands JSON. Original Active2 receipt survives current Superseded3/active-plan replacement.",
-    "sql": "Accounting189 unique ordinal source names, including mapping owner3 and Work source2 plus catalog Work source1. Compiled-source inventory only; actualSQL NOT_RUN. Controlled1205 is not a natural two-session deadlock.",
+    "source_peers": "Catalog7c09 owner8files read; null Record P2 fixed985b with negative case. Mapping5645752f full8files,09aee9d2 two-file SQL/unit delta, root985b full4file alias/composition delta read; unread0/no remaining concrete P0/P1/P2 in these bounded scopes. Not formal K3. Flow51 c766 full5files+calls read by root; Flow52 4ea full7files+native chain and06e7 full2file SQL delta+called helpers read; unread0/no concrete P0/P1/P2, not formal K3. Actual precommit fence11 and final consumer12 source-aligned. Flow51 host1162 full4files+called owner/WP3 chain, Flow52 owner4ea full7files+06e7 full2file SQL followup, Work source7b70 full4files+called chain, root327 DTO+568 DI additions read: unread0/no concrete P0/P1/P2 in these bounded scopes; not formal K3. Root read0eb SQL92line followup, no actualSQL. Catalog frontend02cee predecessor87ea and Mapping core02cee full8-file/native call-chain peer unread0/no P0-P2. Root publication874..efa full22-file peer unread0/no P0-P2. Native53 daa3+e68+02ece full/delta peer found late422 masking then new SQL before-plan discard expectation; production02ece and test-onlyd399 source-closed after full relevant cleanup/replay chain read. No tests run by peers, not formal K3.",
+    "native_boundaries": "Catalog Activate-only companywide read emits full stored accounts/bindings and two frozen versions; public15/result8/hash unchanged. Private14-field JsonIgnore receipt binds original command/key/hash/actor/company/correlation and original Active2 despite current Superseded3. Mapping native maker Self403 terminal receipt alone can commit under exact owned mapping marker/saved command; all other Denied paths rollback. No mutation retry or new business policy/grant. Mapping full12-header/8-row human facts retain prepared-plan reference separately from current active plan; private13-field JsonIgnore receipt binds two original expectations and genuine Commands JSON. Original Active2 receipt survives current Superseded3/active-plan replacement. Native53 uses the same owned runner/actual scoped Audit and13 exact marker-only posting read fences. Late attribution422 rolls back the earlier journal/OK receipt then returns original business answer; cleanup AggregateException is not masked. Before-plan no-save422 has discard0, late refusals discard1. No formula/native public wire/hash/policy change.",
+    "sql": "Accounting199 unique ordinal source names, including10 new Flow53 safety SQLFacts. Full integration source compiled at ddc; actualSQL NOT_RUN. Controlled1205 is not a natural two-session deadlock.",
     "reference_provenance": "Existing REF-JOURNAL-01 and REF-JOURNAL-02 source/test blobs, SHA256 and anchors still exactly match28637; their original source commits/local proofs/CI histories unchanged. No exact catalog/mapping reference exists; no new ID or Settings REF-CATALOG-01 substitution. All50 reference bodies preserved. Existing optional working-source verifier reports13 source drift entries; NOT_PASS, no automatic provenance repin and no transfer of old CI acceptance to new code.",
-    "limits": "41packages/50references/64flow rows unchanged; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN/verified_runtime_flows0.45/45/0 denotes existing Work kinds only, not Flow51/52 completion. ActualSQL/normalHTTP/browser/fullCI/pins/two independent K3/business acceptance pending. Artifact folder dates20261127 retained; record updated2026-11-28.",
-    "previous_source_commit": "28637ed9592f3d27df3a0ac438c78133874d781a",
+    "limits": "41packages/50references/64flow rows unchanged; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN/verified_runtime_flows0.47/47/0 counts paired Work source kinds, not64 business acceptance. ActualSQL/normalHTTP/browser/fullCI/pins/two independent K3/business acceptance pending. Previous failures and exact-head proofs retained.",
+    "previous_source_commit": "f22eea8e51d88cdcfed96e752b4b7e97f40523bf",
     "source_updates": {
       "catalog_source": "c766/root4c2f; missing PostingSide namespace fixed by root582 using-only",
       "mapping_owner": "4ea/rootec045; SQL06e7/rootc3fd",
       "catalog_work_dto": "4ef/rootf487;7 DTO source cases NOT_RUN",
-      "dto_scope": "7 DTO source cases written; fullAPI/Host/SQL NOT_RUN at current checkpoint head"
+      "dto_scope": "Catalog7 and Mapping5 DTO cases passed in b52 Host1502 and ddc Host1588; native numbers remain unchanged, Work Int64 fields are canonical text.",
+      "catalog_paired": "355c core/35f root pairing/59ce exact frontend inventory fixes",
+      "mapping_host_and_ui": "78b WorkHost/038 core/caaf paired publication/efa inventory order",
+      "manufacturing_cost_native_safety": "8142/1cf3/277e/874 integrated4 author commits; ddc two test-only imports"
     },
     "source_kinds": {
-      "backend": 46,
-      "paired_frontend": 45,
-      "staged": [
-        "accounting.approved-source-catalog.v1"
-      ]
+      "backend": 47,
+      "paired_frontend": 47,
+      "staged": []
     }
   }
 }
