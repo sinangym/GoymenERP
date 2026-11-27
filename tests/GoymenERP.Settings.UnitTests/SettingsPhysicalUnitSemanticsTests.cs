@@ -25,6 +25,24 @@ public sealed class SettingsPhysicalUnitSemanticsTests
         Assert.Equal(kg.SourceVersion, tonne.SourceVersion); Assert.NotNull(kg.SourceVersion);
     }
 
+    public static TheoryData<Guid> IdentityOnlyUnits => new()
+    {
+        SettingsUnitIdentitiesV1.Litre, SettingsUnitIdentitiesV1.Kit, SettingsUnitIdentitiesV1.Set,
+        SettingsUnitIdentitiesV1.Hour, SettingsUnitIdentitiesV1.Day, SettingsUnitIdentitiesV1.Service,
+    };
+
+    [Theory]
+    [MemberData(nameof(IdentityOnlyUnits))]
+    public async Task A_known_business_unit_does_not_inherit_piece_or_mass_conversion_semantics(Guid unit)
+    {
+        var identities = new ApprovedSettingsUnitIdentityCatalog();
+        Assert.NotNull(await identities.ReadAsync(unit));
+        var result = await new ApprovedSettingsPhysicalUnitSemanticsV1(identities).ReadAsync(unit);
+        Assert.Equal(SettingsPhysicalUnitStatusV1.Unavailable, result.Status);
+        Assert.Equal(unit, result.UnitId);
+        Assert.Null(result.Kind); Assert.Null(result.KgPerUnit); Assert.Null(result.SourceVersion);
+    }
+
     [Fact]
     public async Task Unknown_identity_is_not_found_while_a_kg_named_foreign_identity_or_inconsistent_source_is_unavailable()
     {

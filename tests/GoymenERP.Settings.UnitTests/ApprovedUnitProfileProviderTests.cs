@@ -124,6 +124,29 @@ public sealed class ApprovedUnitProfileProviderTests
         Assert.Equal(SettingsPrerequisiteCodesV1.UnitProfileNotFound, failure.Code);
     }
 
+    public static TheoryData<Guid, Guid> IdentityOnlyUnitsWithoutCompanyProfiles
+    {
+        get
+        {
+            var cases = new TheoryData<Guid, Guid>();
+            foreach (var company in new[] { Gdc, Gsp, ApprovedUnitProfileCatalog.GinCompanyId })
+            foreach (var unit in new[] { SettingsUnitIdentitiesV1.Litre, SettingsUnitIdentitiesV1.Kit, SettingsUnitIdentitiesV1.Set,
+                         SettingsUnitIdentitiesV1.Hour, SettingsUnitIdentitiesV1.Day, SettingsUnitIdentitiesV1.Service })
+                cases.Add(company, unit);
+            return cases;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(IdentityOnlyUnitsWithoutCompanyProfiles))]
+    public async Task A_new_global_identity_never_creates_or_activates_a_company_profile(Guid company, Guid unit)
+    {
+        Assert.DoesNotContain(ApprovedUnitProfileCatalog.Approved.Entries, entry => entry.UnitId == unit);
+        var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() => Provider(company)
+            .GetUnitProfileAsync(unit, new DateOnly(2026, 11, 26)));
+        Assert.Equal(SettingsPrerequisiteCodesV1.UnitProfileNotFound, failure.Code);
+    }
+
     [Theory]
     [InlineData("10000000-0000-0000-0000-000000000002", "0002612c-0804-5b12-a3bc-d94d1e84f25a")] // GSP
     [InlineData("10000000-0000-0000-0000-000000000003", "220904ee-a6ff-5cc4-9169-336c66328cd5")] // GIN

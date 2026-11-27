@@ -18,9 +18,13 @@ public sealed class ApprovedSettingsPhysicalUnitSemanticsV1(ISettingsUnitIdentit
         var expected = SettingsUnitIdentitiesV1.Standard.SingleOrDefault(unit => unit.UnitId == unitId);
         if (expected is null || identity != expected)
             return new(SettingsPhysicalUnitStatusV1.Unavailable, unitId, null, null, null);
-        var kind = unitId == SettingsUnitIdentitiesV1.Kilogram ? SettingsPhysicalUnitKindV1.Kilogram
+        SettingsPhysicalUnitKindV1? kind = unitId == SettingsUnitIdentitiesV1.Kilogram ? SettingsPhysicalUnitKindV1.Kilogram
             : unitId == SettingsUnitIdentitiesV1.Tonne ? SettingsPhysicalUnitKindV1.Tonne
-            : unitId == SettingsUnitIdentitiesV1.Metre ? SettingsPhysicalUnitKindV1.Metre : SettingsPhysicalUnitKindV1.Piece;
+            : unitId == SettingsUnitIdentitiesV1.Metre ? SettingsPhysicalUnitKindV1.Metre
+            : unitId == SettingsUnitIdentitiesV1.Piece ? SettingsPhysicalUnitKindV1.Piece : null;
+        // A recognized business identity is not necessarily a supported physical meaning. In particular,
+        // volume, time, kit/set and service identities must never fall through to the piece conversion path.
+        if (kind is null) return new(SettingsPhysicalUnitStatusV1.Unavailable, unitId, null, null, null);
         decimal? factor = kind == SettingsPhysicalUnitKindV1.Kilogram ? 1m
             : kind == SettingsPhysicalUnitKindV1.Tonne ? 1000m : null;
         return new(SettingsPhysicalUnitStatusV1.Found, unitId, kind, factor, CatalogVersion);

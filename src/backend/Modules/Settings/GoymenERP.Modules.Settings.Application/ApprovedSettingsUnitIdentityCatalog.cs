@@ -5,8 +5,8 @@ namespace GoymenERP.Modules.Settings.Application;
 /// <summary>
 /// The unit identities of the approved unit-profile catalog (PRD-UNIT-1): one identity per unit that
 /// has an approved profile, with the code, dimension and kilogram flag that catalog carries. Today that
-/// includes kg plus the explicit standard identities tonne/metre/piece (Master §28.1, ALS-D43/D51).
-/// Adding an identity does not create or activate any company unit profile.
+/// includes kg plus the explicit tonne/metre/piece identities (Master §28.1, ALS-D43/D51), and the UNIT-SCOPE
+/// litre/kit/set/hour/day/service identities. Adding an identity creates no company profile or conversion.
 /// <para>
 /// Identities are company-independent, so every profile of one unit must agree on its code, dimension
 /// and kilogram flag, and two units may not share a code. Otherwise the whole source is refused with

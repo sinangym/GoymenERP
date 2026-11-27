@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
@@ -21,12 +23,42 @@ public sealed class ApprovedUnitIdentityCatalogTests
             new UnitIdentityV1(Guid.Parse("5e0cbe45-61cc-541a-834a-366355de36e5"), "adet", "count", false), expected,
             new UnitIdentityV1(Guid.Parse("564b68b4-02a8-5e72-af2a-4f5cb9b91702"), "m", "length", false),
             new UnitIdentityV1(Guid.Parse("ab3cea5c-850e-515f-8de5-16f192ad7771"), "t", "weight", false),
-        }, await catalog.ListAsync());
+            new UnitIdentityV1(Guid.Parse("c92ed9ca-7d92-5a55-a199-6f2d580b87f6"), "l", "volume", false),
+            new UnitIdentityV1(Guid.Parse("c6ff7aab-f645-50df-ad31-dbd2fb30fbc5"), "takım", "count", false),
+            new UnitIdentityV1(Guid.Parse("7bb486df-a533-5f54-b5fa-a86277488bc9"), "set", "count", false),
+            new UnitIdentityV1(Guid.Parse("addb2ea5-bf3f-519b-98d4-7e5e568f7aaf"), "saat", "time", false),
+            new UnitIdentityV1(Guid.Parse("ac628f64-616f-5099-a22a-43620e571e63"), "gün", "time", false),
+            new UnitIdentityV1(Guid.Parse("da00d1f1-4649-59e1-889e-f8d9accd280a"), "hizmet", "count", false),
+        }.OrderBy(identity => identity.Code, StringComparer.Ordinal), await catalog.ListAsync());
         // AK-1: kg and piece carry company profiles; metre and tonne remain identities only.
         Assert.Equal(6, ApprovedUnitProfileCatalog.Approved.Entries.Count);
         Assert.All(ApprovedUnitProfileCatalog.Approved.Entries,
             entry => Assert.Contains(entry.UnitId, new[] { Kg, SettingsUnitIdentitiesV1.Piece }));
         Assert.Equal(expected, await catalog.ReadAsync(Kg));
+    }
+
+    public static TheoryData<string, Guid> TechnicalUnitNames => new()
+    {
+        { "kg", SettingsUnitIdentitiesV1.Kilogram }, { "tonne", SettingsUnitIdentitiesV1.Tonne },
+        { "metre", SettingsUnitIdentitiesV1.Metre }, { "piece", SettingsUnitIdentitiesV1.Piece },
+        { "litre", SettingsUnitIdentitiesV1.Litre }, { "kit", SettingsUnitIdentitiesV1.Kit },
+        { "set", SettingsUnitIdentitiesV1.Set }, { "hour", SettingsUnitIdentitiesV1.Hour },
+        { "day", SettingsUnitIdentitiesV1.Day }, { "service", SettingsUnitIdentitiesV1.Service },
+    };
+
+    [Theory]
+    [MemberData(nameof(TechnicalUnitNames))]
+    public void Unit_identities_keep_the_documented_uuid_v5_namespace_and_stable_technical_names(string name, Guid identity)
+    {
+        // Same RFC UUIDv5/network-byte-order pattern as ExchangeRateCurrencyIdentitiesV1;
+        // the existing four fixed identities also anchor the namespace and recipe.
+        var space = Guid.Parse("18b5cbb9-98ca-5999-b418-aa53c41f0ffb");
+        var hash = SHA1.HashData([.. space.ToByteArray(bigEndian: true), .. Encoding.UTF8.GetBytes("unit:" + name)]);
+        var bytes = hash.AsSpan(0, 16).ToArray();
+        bytes[6] = (byte)((bytes[6] & 0x0F) | 0x50);
+        bytes[8] = (byte)((bytes[8] & 0x3F) | 0x80);
+        Assert.Equal(new Guid(bytes, bigEndian: true), identity);
+        Assert.Equal(5, identity.Version);
     }
 
     [Fact]

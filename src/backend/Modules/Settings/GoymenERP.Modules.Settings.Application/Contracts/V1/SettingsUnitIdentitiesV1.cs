@@ -22,7 +22,23 @@ public static class SettingsUnitIdentitiesV1
     /// <summary>Piece (ALS-D43/D51). UUIDv5 name "unit:piece"; identity only, no company profile.</summary>
     public static readonly Guid Piece = Guid.Parse("5e0cbe45-61cc-541a-834a-366355de36e5");
 
+    // UNIT-SCOPE: technical identities only. No company profile, precision, family default or conversion is implied.
+    /// <summary>Litre. UUIDv5 name "unit:litre" in the existing unit-profiles namespace.</summary>
+    public static readonly Guid Litre = Guid.Parse("c92ed9ca-7d92-5a55-a199-6f2d580b87f6");
+    /// <summary>Takım (kit). UUIDv5 name "unit:kit"; not interchangeable with a piece or set.</summary>
+    public static readonly Guid Kit = Guid.Parse("c6ff7aab-f645-50df-ad31-dbd2fb30fbc5");
+    /// <summary>Set. UUIDv5 name "unit:set"; its content is not inferred.</summary>
+    public static readonly Guid Set = Guid.Parse("7bb486df-a533-5f54-b5fa-a86277488bc9");
+    /// <summary>Hour. UUIDv5 name "unit:hour"; no billing or time conversion rule is implied.</summary>
+    public static readonly Guid Hour = Guid.Parse("addb2ea5-bf3f-519b-98d4-7e5e568f7aaf");
+    /// <summary>Day. UUIDv5 name "unit:day"; no working-day, shift or hour conversion is implied.</summary>
+    public static readonly Guid Day = Guid.Parse("ac628f64-616f-5099-a22a-43620e571e63");
+    /// <summary>One service unit. UUIDv5 name "unit:service"; no physical stock meaning is implied.</summary>
+    public static readonly Guid Service = Guid.Parse("da00d1f1-4649-59e1-889e-f8d9accd280a");
+
     public static IReadOnlyList<UnitIdentityV1> Standard { get; } = Array.AsReadOnly<UnitIdentityV1>(
     [new(Kilogram, "kg", "weight", true), new(Tonne, "t", "weight", false),
-        new(Metre, "m", "length", false), new(Piece, "adet", "count", false)]);
+        new(Metre, "m", "length", false), new(Piece, "adet", "count", false),
+        new(Litre, "l", "volume", false), new(Kit, "takım", "count", false), new(Set, "set", "count", false),
+        new(Hour, "saat", "time", false), new(Day, "gün", "time", false), new(Service, "hizmet", "count", false)]);
 }
