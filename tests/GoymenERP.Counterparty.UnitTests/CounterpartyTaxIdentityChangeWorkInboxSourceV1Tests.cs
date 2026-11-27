@@ -42,7 +42,8 @@ public sealed class CounterpartyTaxIdentityChangeWorkInboxSourceV1Tests
         var first = result.Items![0];
         Assert.Equal(("counterparty", "counterparty.tax-identity-change.v1"), (first.Module, first.Kind));
         Assert.Equal("SENTETIK Metal A.Ş.", first.DocumentLabel);
-        Assert.Equal("/cari/" + party.Id.ToString("D"), first.Link);
+        Assert.Equal("/onaylarim/counterparty.tax-identity-change.v1/" + older.Id.ToString("D"), first.Link);
+        Assert.Equal("/cari/" + party.Id.ToString("D"), Assert.Single(first.References).Link);
         Assert.Equal("SENTETIK-maker", first.PreparedBy);
         Assert.Contains(CounterpartyTaxIdentityChangeWorkInboxSourceV1.StaleRule, first.Rules.Select(rule => rule.RuleCode));
         Assert.DoesNotContain(CounterpartyTaxIdentityChangeWorkInboxSourceV1.StaleRule, result.Items[1].Rules.Select(rule => rule.RuleCode));
@@ -94,7 +95,8 @@ public sealed class CounterpartyTaxIdentityChangeWorkInboxSourceV1Tests
         Assert.Equal("SENTETIK-maker", value.Item.PreparedBy);
         Assert.Equal(row.Id, value.Item.ItemId); Assert.Equal(CompanyA, value.CompanyId);
         Assert.Equal(("party", (Guid?)party.Id), (Assert.Single(value.Item.References).Role, Assert.Single(value.Item.References).RecordId));
-        Assert.Equal("/cari/" + party.Id.ToString("D"), value.Item.Link);
+        Assert.Equal("/onaylarim/counterparty.tax-identity-change.v1/" + row.Id.ToString("D"), value.Item.Link);
+        Assert.Equal("/cari/" + party.Id.ToString("D"), Assert.Single(value.Item.References).Link);
         var wire = System.Text.Json.JsonSerializer.Serialize(value);
         Assert.DoesNotContain("1234567890", wire); Assert.DoesNotContain("9876543217", wire);
     }

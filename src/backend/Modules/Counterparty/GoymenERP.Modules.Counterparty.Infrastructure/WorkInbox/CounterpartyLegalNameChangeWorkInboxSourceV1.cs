@@ -31,6 +31,7 @@ internal sealed class CounterpartyLegalNameChangeWorkInboxSourceV1(
 
     /// <summary>The party screen (<c>CAPABILITY.cariPartiesDetail</c>, <c>/cari/:partyId</c>).</summary>
     internal const string PartyScreenPath = "/cari";
+    internal const string DecisionScreenPath = "/onaylarim/counterparty.legal-name-change.v1";
 
     private static readonly IReadOnlyList<string> Permissions =
         [CounterpartyLegalNamePermissionsV1.Approve, ErpPermissions.CounterpartyPartiesRead];
@@ -91,7 +92,7 @@ internal sealed class CounterpartyLegalNameChangeWorkInboxSourceV1(
         var label = row.ProposedLegalName.Length <= WorkInboxRulesV1.MaxDocumentLabelLength ? row.ProposedLegalName : party.Code.Value;
         var referenceLabel = party.LegalName.Length <= WorkInboxRulesV1.MaxReferenceLabelLength ? party.LegalName : party.Code.Value;
         var item = new WorkInboxItemV1(ModuleName, KindName, row.Id, label,
-            row.RequestedAtUtc.ToUniversalTime(), link, row.RequestedBy, rules,
+            row.RequestedAtUtc.ToUniversalTime(), WorkInboxCompanyWideFenceV1.Link(DecisionScreenPath, row.Id), row.RequestedBy, rules,
             [new("party", referenceLabel, row.PartyId, link)]);
         return new(context.CompanyId, item, party.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
             row.Status == PartyLegalNameChangeStatus.Pending, CounterpartyLegalNameChange: new(row.PartyId, row.Id, row.CurrentLegalName, row.ProposedLegalName, row.Reason));
@@ -161,7 +162,7 @@ internal sealed class CounterpartyLegalNameChangeWorkInboxSourceV1(
 
             var label = row.ProposedLegalName.Length <= WorkInboxRulesV1.MaxDocumentLabelLength ? row.ProposedLegalName : party.Code;
             var referenceLabel = party.LegalName.Length <= WorkInboxRulesV1.MaxReferenceLabelLength ? party.LegalName : party.Code;
-            items.Add(new WorkInboxItemV1(ModuleName, KindName, row.Id, label, row.RequestedAtUtc.ToUniversalTime(), link,
+            items.Add(new WorkInboxItemV1(ModuleName, KindName, row.Id, label, row.RequestedAtUtc.ToUniversalTime(), WorkInboxCompanyWideFenceV1.Link(DecisionScreenPath, row.Id),
                 row.RequestedBy, rules, [new("party", referenceLabel, row.PartyId, link)]));
         }
 

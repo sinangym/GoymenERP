@@ -7,7 +7,7 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 public sealed class CounterpartyShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/CARI";
-    public const string OwnerContractVersion = "1.7";
+    public const string OwnerContractVersion = "1.8";
     public const string ListCapabilityId = "cari.parties.list";
     public const string ListRouteId = "cari.list";
     public const string ListRoutePath = "/cari";
@@ -93,12 +93,12 @@ public sealed class CounterpartyShellCapabilityProvider : IShellCapabilityProvid
                 TaxIdentityWorkDecisionRoutePath, "CARI-TAXIDENTITY-WORK-DECISION-001",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
                 ShellCapabilityScopeRequirement.CompanyWide,
-                [CounterpartyTaxIdentityPermissionsV1.Approve, ErpPermissions.CounterpartyPartiesRead], ImplementationAvailable: false),
+                [CounterpartyTaxIdentityPermissionsV1.Approve, ErpPermissions.CounterpartyPartiesRead], ImplementationAvailable: true),
             new ShellCapabilityDeclaration(LegalNameWorkDecisionCapabilityId, "cari.legal-name-change.work-decision",
                 LegalNameWorkDecisionRoutePath, "CARI-LEGALNAME-WORK-DECISION-001",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
                 ShellCapabilityScopeRequirement.CompanyWide,
-                [CounterpartyLegalNamePermissionsV1.Approve, ErpPermissions.CounterpartyPartiesRead], ImplementationAvailable: false),
+                [CounterpartyLegalNamePermissionsV1.Approve, ErpPermissions.CounterpartyPartiesRead], ImplementationAvailable: true),
             detail,
             detail with
             {
