@@ -23,10 +23,23 @@ namespace GoymenERP.Api.IntegrationTests;
 // The controlled principal/authority model only the later native decision boundary, not real grants or Work UI.
 public sealed class CounterpartyIdentityDecisionSafetySqlServerRelationalAcceptanceTests
 {
-    [SqlServerTheory]
-    [InlineData(true, true)] [InlineData(true, false)]
-    [InlineData(false, true)] [InlineData(false, false)]
-    public async Task Identity_decisions_roll_back_late_authority_actor_company_and_delegation_loss_then_retry_and_replay_the_original_204(bool tax, bool approve)
+    [SqlServerFact]
+    public Task Identity_decisions_roll_back_late_authority_actor_company_and_delegation_loss_then_retry_and_replay_the_original_204_tax_approve() =>
+        Identity_decisions_roll_back_late_authority_actor_company_and_delegation_loss_then_retry_and_replay_the_original_204(true, true);
+
+    [SqlServerFact]
+    public Task Identity_decisions_roll_back_late_authority_actor_company_and_delegation_loss_then_retry_and_replay_the_original_204_tax_reject() =>
+        Identity_decisions_roll_back_late_authority_actor_company_and_delegation_loss_then_retry_and_replay_the_original_204(true, false);
+
+    [SqlServerFact]
+    public Task Identity_decisions_roll_back_late_authority_actor_company_and_delegation_loss_then_retry_and_replay_the_original_204_legal_name_approve() =>
+        Identity_decisions_roll_back_late_authority_actor_company_and_delegation_loss_then_retry_and_replay_the_original_204(false, true);
+
+    [SqlServerFact]
+    public Task Identity_decisions_roll_back_late_authority_actor_company_and_delegation_loss_then_retry_and_replay_the_original_204_legal_name_reject() =>
+        Identity_decisions_roll_back_late_authority_actor_company_and_delegation_loss_then_retry_and_replay_the_original_204(false, false);
+
+    private static async Task Identity_decisions_roll_back_late_authority_actor_company_and_delegation_loss_then_retry_and_replay_the_original_204(bool tax, bool approve)
     {
         await using var data = await Case.CreateAsync(tax);
         var probe = new SaveProbe(); await using var harness = new Harness(data, probe);
@@ -91,9 +104,15 @@ public sealed class CounterpartyIdentityDecisionSafetySqlServerRelationalAccepta
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => denied.DecideAsync(approve, "same-safe-key", "SENTETIK-revoked", note: new string('n', 1000)));
     }
 
-    [SqlServerTheory]
-    [InlineData(true)] [InlineData(false)]
-    public async Task Identity_decision_entry_refusals_preserve_borrowed_handles_dirty_entities_and_real_caller_audit(bool tax)
+    [SqlServerFact]
+    public Task Identity_decision_entry_refusals_preserve_borrowed_handles_dirty_entities_and_real_caller_audit_tax() =>
+        Identity_decision_entry_refusals_preserve_borrowed_handles_dirty_entities_and_real_caller_audit(true);
+
+    [SqlServerFact]
+    public Task Identity_decision_entry_refusals_preserve_borrowed_handles_dirty_entities_and_real_caller_audit_legal_name() =>
+        Identity_decision_entry_refusals_preserve_borrowed_handles_dirty_entities_and_real_caller_audit(false);
+
+    private static async Task Identity_decision_entry_refusals_preserve_borrowed_handles_dirty_entities_and_real_caller_audit(bool tax)
     {
         await using var data = await Case.CreateAsync(tax); await using var harness = new Harness(data, new());
         foreach (var boundary in new[] { "borrowed", "dirty", "audit", "ambient" })
@@ -118,10 +137,23 @@ public sealed class CounterpartyIdentityDecisionSafetySqlServerRelationalAccepta
         Assert.Equal(0, await data.CommandCountAsync()); Assert.Equal("Pending", await data.StatusAsync());
     }
 
-    [SqlServerTheory]
-    [InlineData(true, false)] [InlineData(false, false)]
-    [InlineData(true, true)] [InlineData(false, true)]
-    public async Task Identity_save_race_rolls_back_before_one_bounded_native_receipt_lookup_and_never_retries_the_mutation(bool tax, bool winner)
+    [SqlServerFact]
+    public Task Identity_save_race_rolls_back_before_one_bounded_native_receipt_lookup_and_never_retries_the_mutation_tax_without_winner() =>
+        Identity_save_race_rolls_back_before_one_bounded_native_receipt_lookup_and_never_retries_the_mutation(true, false);
+
+    [SqlServerFact]
+    public Task Identity_save_race_rolls_back_before_one_bounded_native_receipt_lookup_and_never_retries_the_mutation_legal_name_without_winner() =>
+        Identity_save_race_rolls_back_before_one_bounded_native_receipt_lookup_and_never_retries_the_mutation(false, false);
+
+    [SqlServerFact]
+    public Task Identity_save_race_rolls_back_before_one_bounded_native_receipt_lookup_and_never_retries_the_mutation_tax_with_winner() =>
+        Identity_save_race_rolls_back_before_one_bounded_native_receipt_lookup_and_never_retries_the_mutation(true, true);
+
+    [SqlServerFact]
+    public Task Identity_save_race_rolls_back_before_one_bounded_native_receipt_lookup_and_never_retries_the_mutation_legal_name_with_winner() =>
+        Identity_save_race_rolls_back_before_one_bounded_native_receipt_lookup_and_never_retries_the_mutation(false, true);
+
+    private static async Task Identity_save_race_rolls_back_before_one_bounded_native_receipt_lookup_and_never_retries_the_mutation(bool tax, bool winner)
     {
         await using var data = await Case.CreateAsync(tax);
         var probe = new SaveProbe { FailNextSave = true }; await using var harness = new Harness(data, probe);
@@ -156,9 +188,15 @@ public sealed class CounterpartyIdentityDecisionSafetySqlServerRelationalAccepta
         else Assert.Equal("SENTETIK-winner", answer.OriginalCorrelationId);
     }
 
-    [SqlServerTheory]
-    [InlineData(true)] [InlineData(false)]
-    public async Task Identity_foreign_account_and_maker_refusals_remain_native_terminal_receipts_and_optional_note_is_not_mandatory(bool tax)
+    [SqlServerFact]
+    public Task Identity_foreign_account_and_maker_refusals_remain_native_terminal_receipts_and_optional_note_is_not_mandatory_tax() =>
+        Identity_foreign_account_and_maker_refusals_remain_native_terminal_receipts_and_optional_note_is_not_mandatory(true);
+
+    [SqlServerFact]
+    public Task Identity_foreign_account_and_maker_refusals_remain_native_terminal_receipts_and_optional_note_is_not_mandatory_legal_name() =>
+        Identity_foreign_account_and_maker_refusals_remain_native_terminal_receipts_and_optional_note_is_not_mandatory(false);
+
+    private static async Task Identity_foreign_account_and_maker_refusals_remain_native_terminal_receipts_and_optional_note_is_not_mandatory(bool tax)
     {
         await using var data = await Case.CreateAsync(tax); await using var harness = new Harness(data, new());
         await using (var foreign = harness.Scope(TestCompanyIds.CompanyB))
