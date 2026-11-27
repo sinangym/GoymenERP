@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Transactions;
+using GoymenERP.Api.Contracts;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
@@ -251,6 +252,76 @@ public sealed partial class CounterpartyTaxIdentitySqlServerRelationalAcceptance
         command.Parameters.AddWithValue("@correlation", "SENTETIK-malformed-" + Guid.NewGuid().ToString("N"));
         command.Parameters.AddWithValue("@schema", schema);
         Assert.Equal(1, await command.ExecuteNonQueryAsync());
+    }
+
+    [SqlServerFact]
+    public async Task Atomic_create_withholds_committed_and_replayed_201_when_relationship_verification_revokes_release_authority()
+    {
+        var authority = new PreCreateProbeAuthority();
+        await using var test = new TaxTest(freshAuthority: authority);
+        var probe = new AtomicCreateReleaseProbe();
+        await using var factory = test.Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            var native = services.Last(item => item.ServiceType == typeof(ICounterpartyMutationRelationshipVerifier));
+            Assert.NotNull(native.ImplementationType);
+            services.RemoveAll<ICounterpartyMutationRelationshipVerifier>();
+            services.AddScoped<ICounterpartyMutationRelationshipVerifier>(provider => new AtomicCreateReleaseVerifier(
+                (ICounterpartyMutationRelationshipVerifier)ActivatorUtilities.CreateInstance(provider, native.ImplementationType!), probe));
+        }));
+        using var maker = factory.CreateClient();
+        maker.DefaultRequestHeaders.Add("X-Development-User", TestUsers.GroupAdmin);
+        maker.DefaultRequestHeaders.Add("X-Company-Id", TestCompanyIds.CompanyA.ToString("D"));
+        if (!maker.DefaultRequestHeaders.Contains(CounterpartyClientContract.HeaderName))
+            maker.DefaultRequestHeaders.Add(CounterpartyClientContract.HeaderName, CounterpartyClientContract.Version);
+        foreach (var permission in new[] { ErpPermissions.CounterpartyPartiesCreate,
+            ErpPermissions.CounterpartyPartiesRead, CounterpartyTaxIdentityPermissionsV1.Update })
+        {
+            authority.Reset(); var key = Guid.NewGuid().ToString("N"); NewKey(maker, key);
+            var originalCorrelation = maker.DefaultRequestHeaders.GetValues("X-Correlation-Id").Single();
+            var command = AtomicCreateCommand("SENTETIK final release " + key, Vkn);
+            var reads = probe.VerifiedReads;
+            probe.AfterVerified = () => authority.DeniedPermission = permission;
+            using (var suppressed = await maker.PostAsJsonAsync("/api/v1/counterparties", command))
+            {
+                Assert.Equal(HttpStatusCode.Forbidden, suppressed.StatusCode);
+                Assert.DoesNotContain(Vkn, await suppressed.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+                Assert.False(suppressed.Headers.Contains("Idempotency-Replayed"));
+            }
+            Assert.Equal(reads + 1, probe.VerifiedReads); var party = probe.PartyId;
+            // Commit already happened before the verifier read: suppression never claims to undo it.
+            Assert.Equal(2L, await test.ScalarAsync<long>("SELECT Version FROM counterparty.Parties WHERE Id=@Party", party));
+            Assert.Equal(1, await test.ScalarAsync<int>("SELECT COUNT(*) FROM counterparty.PartyIdentityRevisions WHERE PartyId=@Party AND Sequence=2", party));
+            Assert.Equal(2, await test.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId=CONVERT(nvarchar(36),@Party) AND EventType IN (N'counterparty.party.created.v1',N'counterparty.party.tax-identity.entered.v1')", party));
+            var durable = await AtomicCreateFootprintAsync(test);
+            authority.Reset(); NewKey(maker, key);
+            using (var suppressedReplay = await maker.PostAsJsonAsync("/api/v1/counterparties", command))
+            {
+                Assert.Equal(HttpStatusCode.Forbidden, suppressedReplay.StatusCode);
+                Assert.False(suppressedReplay.Headers.Contains("Idempotency-Replayed"));
+            }
+            Assert.Equal(reads + 2, probe.VerifiedReads);
+            Assert.Equal(durable, await AtomicCreateFootprintAsync(test));
+            authority.Reset(); probe.AfterVerified = null; NewKey(maker, key);
+            using var restored = await maker.PostAsJsonAsync("/api/v1/counterparties", command);
+            Assert.Equal(HttpStatusCode.Created, restored.StatusCode);
+            Assert.Equal("true", restored.Headers.GetValues("Idempotency-Replayed").Single());
+            Assert.Equal(originalCorrelation, restored.Headers.GetValues("Idempotency-Original-Correlation-Id").Single());
+            Assert.Equal(party, (await JsonAsync(restored)).GetProperty("id").GetGuid());
+            Assert.Equal(durable, await AtomicCreateFootprintAsync(test));
+        }
+    }
+
+    private sealed class AtomicCreateReleaseProbe
+    { public Action? AfterVerified; public int VerifiedReads; public Guid PartyId; }
+    private sealed class AtomicCreateReleaseVerifier(ICounterpartyMutationRelationshipVerifier native, AtomicCreateReleaseProbe probe)
+        : ICounterpartyMutationRelationshipVerifier
+    {
+        public async Task<bool> IsAccountOwnedByPartyAsync(Guid partyId, Guid accountId, Guid companyId, CancellationToken token)
+        {
+            var verified = await native.IsAccountOwnedByPartyAsync(partyId, accountId, companyId, token);
+            if (verified) { probe.PartyId = partyId; probe.VerifiedReads++; probe.AfterVerified?.Invoke(); }
+            return verified;
+        }
     }
 
     private static CreateCounterparty AtomicCreateCommand(string name, string? number) =>

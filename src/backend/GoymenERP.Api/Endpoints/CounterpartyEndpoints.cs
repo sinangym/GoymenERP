@@ -180,6 +180,7 @@ public static partial class CounterpartyEndpoints
                 ICounterpartyMutationRelationshipVerifier relationshipVerifier,
                 ICurrentUser currentUser,
                 ICompanyContext companyContext,
+                IErpAuthorityRevalidationService authority,
                 ICorrelationContext correlationContext,
                 HttpContext httpContext,
                 CancellationToken cancellationToken) =>
@@ -204,8 +205,13 @@ public static partial class CounterpartyEndpoints
             try
             {
                 var execution = await service.CreateAsync(command, metadata, cancellationToken);
-                var result = await ToPartyCreateHttpResultAsync(execution.Response, companyContext.CompanyId,
+                var result = await ToPartyCreateHttpResultAsync(execution.Response,
+                    command.TaxIdentityNumber is null ? companyContext.CompanyId : metadata.CompanyId,
                     command, relationshipVerifier, cancellationToken);
+                // Relationship verification awaits its owner read after the native transaction has completed.
+                // Recheck the original context before releasing this atomic result, including immutable replays.
+                if (command.TaxIdentityNumber is not null)
+                    await RequireAtomicCreateReleaseAsync(metadata, currentUser, companyContext, authority, cancellationToken);
                 ApplyReplayHeaders(httpContext, execution);
                 return result;
             }
@@ -533,6 +539,29 @@ public static partial class CounterpartyEndpoints
             response.Title,
             response.Detail,
             response.Conflict);
+    }
+
+    private static async Task RequireAtomicCreateReleaseAsync(CounterpartyCommandMetadata metadata,
+        ICurrentUser user, ICompanyContext company, IErpAuthorityRevalidationService authority, CancellationToken token)
+    {
+        foreach (var permission in new[] { ErpPermissions.CounterpartyPartiesCreate,
+            ErpPermissions.CounterpartyPartiesRead, CounterpartyTaxIdentityPermissionsV1.Update })
+        {
+            RequireContext();
+            var scope = await authority.RevalidatePermissionScopeAsync(permission, metadata.CompanyId, token);
+            token.ThrowIfCancellationRequested();
+            RequireContext();
+            if (!scope.IsGranted || !scope.IsCompanyWide)
+                throw new UnauthorizedAccessException("Atomic create response authority changed.");
+        }
+        void RequireContext()
+        {
+            token.ThrowIfCancellationRequested();
+            if (!user.IsAuthenticated || string.IsNullOrWhiteSpace(user.UserId) || user.UserId != metadata.ActorId
+                || !company.IsResolved || metadata.CompanyId == Guid.Empty || company.CompanyId != metadata.CompanyId
+                || !user.CanAccessCompany(metadata.CompanyId))
+                throw new UnauthorizedAccessException("Atomic create response context changed.");
+        }
     }
 
     private static async Task<IResult> ToPartyCreateHttpResultAsync(
