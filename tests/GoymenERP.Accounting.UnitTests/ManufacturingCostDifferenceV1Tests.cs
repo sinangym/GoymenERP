@@ -8,7 +8,7 @@ using GoymenERP.Modules.Accounting.Application.Inbox;
 
 namespace GoymenERP.Accounting.UnitTests;
 
-public sealed class ManufacturingCostDifferenceV1Tests
+public sealed partial class ManufacturingCostDifferenceV1Tests
 {
     private static readonly Guid Company = Guid.Parse("c0620000-0000-4000-8000-000000000001");
     private static readonly Guid Maker = Guid.Parse("c0620000-0000-4000-8000-000000000002");

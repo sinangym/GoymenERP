@@ -220,6 +220,7 @@ public sealed partial class AccountingStore(
 
         var requestHash = ReceiveHash(request);
         var replay = await ReplayAsync(request.Consumer, request.MessageId, requestHash, cancellationToken);
+        await ManufacturingCostDifferenceApprovalReadFenceAsync(cancellationToken);
         if (replay is not null)
         {
             return replay;
@@ -228,21 +229,28 @@ public sealed partial class AccountingStore(
         // Ö2 (ACC-V0): every known amount at the currency's approved scale, before anything is decided.
         await VerifyAmountsAsync(request.Source.CompanyId, request.CurrencyId, request.Dates.AccountingDate,
             request.Lines.Where(line => line.Amount is not null).Select(line => line.Amount!.Value), cancellationToken);
+        await ManufacturingCostDifferenceApprovalReadFenceAsync(cancellationToken);
 
         var (periodRow, period) = await LoadPeriodAsync(periodId, cancellationToken);
+        await ManufacturingCostDifferenceApprovalReadFenceAsync(cancellationToken);
         var sourceId = request.Source.SourceId;
         var purpose = request.Source.PostingPurpose;
         var originalRows = await dbContext.Journals.AsNoTracking()
             .Where(row => row.Kind == (int)JournalKind.Original && row.SourceId == sourceId && row.PostingPurpose == purpose)
             .ToListAsync(cancellationToken);
+        await ManufacturingCostDifferenceApprovalReadFenceAsync(cancellationToken);
         var exceptionRow = await dbContext.PostingExceptions
             .SingleOrDefaultAsync(row => row.SourceId == sourceId && row.PostingPurpose == purpose, cancellationToken);
+        await ManufacturingCostDifferenceApprovalReadFenceAsync(cancellationToken);
         var pendingRow = await dbContext.PendingValuations
             .SingleOrDefaultAsync(row => row.SourceId == sourceId && row.PostingPurpose == purpose, cancellationToken);
+        await ManufacturingCostDifferenceApprovalReadFenceAsync(cancellationToken);
+        var originalJournals = await RestoreJournalsAsync(originalRows, cancellationToken);
+        await ManufacturingCostDifferenceApprovalReadFenceAsync(cancellationToken);
 
         var ledger = SourcePostingLedger.FromStored(
             request.Source.CompanyId,
-            await RestoreJournalsAsync(originalRows, cancellationToken),
+            originalJournals,
             [],
             exceptionRow is { Status: Open } ? [ToException(exceptionRow)] : [],
             pendingRow is { Status: Open } ? [ToPending(pendingRow)] : []);
@@ -253,12 +261,14 @@ public sealed partial class AccountingStore(
         if (outcome.Kind == PostingOutcomeKind.Posted)
         {
             await AddJournalAsync(outcome.Journal!, periodRow, correctionId: null, metadata, cancellationToken);
+            await ManufacturingCostDifferenceApprovalReadFenceAsync(cancellationToken);
         }
 
         SyncException(exceptionRow, ledger.FindOpenException(sourceId, purpose), request.Source, metadata);
         SyncPending(pendingRow, ledger.FindPendingValuation(sourceId, purpose), request.Source, metadata);
         AddDelivery(request.Consumer, request.MessageId, requestHash, outcome, metadata);
         await SaveAsync(cancellationToken);
+        await ManufacturingCostDifferenceApprovalReadFenceAsync(cancellationToken);
         return outcome;
     }
 
@@ -819,6 +829,7 @@ public sealed partial class AccountingStore(
         var delivery = await dbContext.Deliveries.AsNoTracking()
             .SingleOrDefaultAsync(row => row.Consumer == consumer && row.MessageId == messageId, cancellationToken);
         await JournalReversalApprovalFenceAsync(cancellationToken);
+        await ManufacturingCostDifferenceApprovalReadFenceAsync(cancellationToken);
         if (delivery is null)
         {
             return null;
@@ -835,6 +846,7 @@ public sealed partial class AccountingStore(
         {
             var rows = await dbContext.Journals.AsNoTracking().Where(row => row.Id == journalId).ToListAsync(cancellationToken);
             await JournalReversalApprovalFenceAsync(cancellationToken);
+            await ManufacturingCostDifferenceApprovalReadFenceAsync(cancellationToken);
             journal = (await RestoreJournalsAsync(rows, cancellationToken)).Single();
         }
 
@@ -919,6 +931,7 @@ public sealed partial class AccountingStore(
         var lines = await dbContext.JournalLines.AsNoTracking().Where(line => ids.Contains(line.JournalId))
             .ToListAsync(cancellationToken);
         await JournalReversalApprovalFenceAsync(cancellationToken);
+        await ManufacturingCostDifferenceApprovalReadFenceAsync(cancellationToken);
         return [.. rows.DistinctBy(row => row.Id).Select(row => Journal.Restore(
             row.Id,
             (JournalKind)row.Kind,
@@ -1015,6 +1028,7 @@ public sealed partial class AccountingStore(
     {
         var journalExists = await dbContext.Journals.AsNoTracking().AnyAsync(row => row.Id == journal.Id, cancellationToken);
         await JournalReversalApprovalFenceAsync(cancellationToken);
+        await ManufacturingCostDifferenceApprovalReadFenceAsync(cancellationToken);
         if (journalExists)
         {
             throw Refused(AccountingStoreCodes.JournalIdTaken, "Bu fiş kimliği şirketin başka bir fişinde kullanılıyor.");

@@ -55,8 +55,19 @@ public sealed record PrepareManufacturingCostDifferenceV1(Guid ProposalId, long 
     Guid PeriodId, DateOnly AccountingDate, DateOnly TransactionDate, Guid DebitAccountId, Guid CreditAccountId,
     string Reason);
 
+public static class ManufacturingCostDifferenceCommandNamesV1
+{
+    public const string Approve = "accounting.manufacturing-cost-difference.approve.v1";
+}
+
 public interface IManufacturingCostDifferenceStoreV1
 {
+    // The runtime owns the entire approval command, including terminal receipts and original-key reads.
+    Task<AccountingApiResult<ManufacturingCostDifferenceViewV1>> RunApprovalAsync(
+        Func<bool, Task<AccountingApiResult<ManufacturingCostDifferenceViewV1>>> attempt,
+        Func<CancellationToken, Task> freshFence, CancellationToken token = default) =>
+        Task.FromResult(new AccountingApiResult<ManufacturingCostDifferenceViewV1>(AccountingApiStatus.Unavailable, null, false, null));
+
     Task AcceptAsync(WorkInboxEventV1 envelope, ManufacturingCostDifferenceEventV1 source,
         CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ManufacturingCostDifferenceViewV1>> ListAsync(CancellationToken cancellationToken = default);

@@ -18,7 +18,7 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 
 /// <summary>Own-table inbox and human proposal; only the existing Accounting posting store writes a journal.</summary>
-public sealed class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
+public sealed partial class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
     AccountingStore posting, ICompanyContext company, IActiveAccountPlanReaderV1 accountPlans,
     ISettingsMoneyCandidateReader currencies, IAuditEventCollector audit, TimeProvider clock,
     ManufacturingPostedCostAttributionStoreV1? attributions = null)
@@ -131,19 +131,20 @@ public sealed class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
         var companyId = Company();
         await freshAuthorityFence(cancellationToken);
         RequireActor(actorId, metadata);
-        await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        var owned = IsOwnedApproval;
+        await using var transaction = owned ? null : await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
         try
         {
-            var row = await Load(proposalId, expectedVersion, cancellationToken);
+            var row = await Load(proposalId, expectedVersion, cancellationToken, owned ? freshAuthorityFence : null);
             if (row.Status != 2 || row.PreparedBy is null || actorId == Guid.Empty || row.PreparedBy == actorId)
                 throw Refuse("cost_difference_approval_refused");
-            await RequireOpenPeriod(row.PeriodId!.Value, row.AccountingDate!.Value, cancellationToken);
-            var plan = await ActivePlan(companyId, row.DebitAccountId!.Value, row.CreditAccountId!.Value, cancellationToken);
+            await RequireOpenPeriod(row.PeriodId!.Value, row.AccountingDate!.Value, cancellationToken, owned ? freshAuthorityFence : null);
+            var plan = await ActivePlan(companyId, row.DebitAccountId!.Value, row.CreditAccountId!.Value, cancellationToken, owned ? freshAuthorityFence : null);
             var preparedPlan = JsonSerializer.Deserialize<ManufacturingCostDifferenceAccountPlanV1>(row.AccountPlanProofJson!, Json);
             if (plan.AccountPlanSourceVersion != row.AccountPlanVersion || plan.AccountsSourceSha256 != row.AccountPlanSha256
                 || preparedPlan is null || preparedPlan.PackageId != plan.PackageId || preparedPlan.PackageVersion != plan.Version
                 || preparedPlan.CatalogVersion != plan.CatalogVersion
-                || await TlCurrency(cancellationToken) != row.CurrencyId) throw Refuse("cost_difference_source_changed");
+                || await TlCurrency(cancellationToken, owned ? freshAuthorityFence : null) != row.CurrencyId) throw Refuse("cost_difference_source_changed");
             await freshAuthorityFence(cancellationToken);
             RequireCompany(companyId);
             var before = JsonSerializer.Serialize(View(row), Json);
@@ -176,16 +177,18 @@ public sealed class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
             {
                 if (attributions is null) throw Refuse("manufacturing_attribution_owner_unavailable");
                 await attributions.RecordPostedAsync(row.Id, freshAuthorityFence, cancellationToken);
+                if (owned) await freshAuthorityFence(cancellationToken);
                 await Save(cancellationToken);
             }
             await freshAuthorityFence(cancellationToken);
             RequireCompany(companyId);
-            await transaction.CommitAsync(cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
             return result;
         }
         catch (Exception exception)
         {
-            await transaction.RollbackAsync(CancellationToken.None);
+            if (owned) throw; // The whole-command owner alone aborts/disposes/cleans before a single original-key read.
+            await transaction!.RollbackAsync(CancellationToken.None);
             db.ChangeTracker.Clear();
             // SQL Server already selected this posting transaction as the deadlock victim. EF's SQL Server
             // execution strategy wraps that precise save failure; no other InvalidOperationException is a conflict.
@@ -196,24 +199,30 @@ public sealed class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
         }
     }
 
-    private async Task<ManufacturingCostDifferenceRow> Load(Guid id, long version, CancellationToken cancellationToken)
+    private async Task<ManufacturingCostDifferenceRow> Load(Guid id, long version, CancellationToken cancellationToken,
+        Func<CancellationToken, Task>? approvalFence = null)
     {
         var row = await db.ManufacturingCostDifferences.SingleOrDefaultAsync(x => x.Id == id, cancellationToken)
             ?? throw Refuse("cost_difference_not_found");
+        if (approvalFence is not null) await approvalFence(cancellationToken);
         if (version < 1 || row.Version != version) throw new AccountingVersionConflictException(version, row.Version);
         return row;
     }
 
-    private async Task RequireOpenPeriod(Guid periodId, DateOnly date, CancellationToken cancellationToken)
+    private async Task RequireOpenPeriod(Guid periodId, DateOnly date, CancellationToken cancellationToken,
+        Func<CancellationToken, Task>? approvalFence = null)
     {
         var record = await posting.FindPeriodAsync(periodId, cancellationToken);
+        if (approvalFence is not null) await approvalFence(cancellationToken);
         if (record is null || record.Period.Status != AccountingPeriodStatus.Open || date < record.Period.StartsOn
             || date > record.Period.EndsOn) throw Refuse("cost_difference_open_period_required");
     }
 
-    private async Task<ApprovedAccountingSourceCatalogRecordV1> ActivePlan(Guid companyId, Guid debit, Guid credit, CancellationToken cancellationToken)
+    private async Task<ApprovedAccountingSourceCatalogRecordV1> ActivePlan(Guid companyId, Guid debit, Guid credit, CancellationToken cancellationToken,
+        Func<CancellationToken, Task>? approvalFence = null)
     {
         var plan = await accountPlans.ReadActiveAsync(cancellationToken);
+        if (approvalFence is not null) await approvalFence(cancellationToken);
         if (plan is null || plan.CompanyId != companyId || plan.Status != ApprovedAccountingSourceCatalogStatusV1.Active
             || plan.Package.Mirror.CompanyId != companyId) throw Refuse("cost_difference_account_plan_missing");
         if (plan.Package.Mirror.Lookup(new AccountRef(companyId, debit)) is null
@@ -221,9 +230,11 @@ public sealed class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
         return plan;
     }
 
-    private async Task<Guid> TlCurrency(CancellationToken cancellationToken)
+    private async Task<Guid> TlCurrency(CancellationToken cancellationToken, Func<CancellationToken, Task>? approvalFence = null)
     {
-        var candidates = MoneyCurrencyCandidatesV1.EnsureWellFormed(await currencies.GetMoneyCurrencyCandidatesAsync(cancellationToken));
+        var current = await currencies.GetMoneyCurrencyCandidatesAsync(cancellationToken);
+        if (approvalFence is not null) await approvalFence(cancellationToken);
+        var candidates = MoneyCurrencyCandidatesV1.EnsureWellFormed(current);
         var matches = candidates.Where(x => x.Code == "TRY").ToArray();
         if (matches.Length != 1) throw Refuse("cost_difference_tl_currency_unavailable");
         return matches[0].CurrencyId;
@@ -232,6 +243,7 @@ public sealed class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
     private void Complete(AccountingCommandMetadata metadata, Guid companyId, ManufacturingCostDifferenceViewV1 view)
     {
         if (metadata.Completion?.Invoke(view) is not { } command) return;
+        if (IsOwnedApproval) { posting.CompleteOwnedManufacturingCostDifferenceApproval(this, db, audit, command); return; }
         db.Commands.Add(new AccountingCommandRow { CompanyId = companyId, CommandName = command.CommandName,
             IdempotencyKeyHash = command.IdempotencyKeyHash, ActorId = command.ActorId, PayloadHash = command.RequestHash,
             ResultJson = command.ResultJson, CorrelationId = command.OriginalCorrelationId, RecordedAtUtc = clock.GetUtcNow() });
@@ -277,15 +289,19 @@ public sealed class ManufacturingCostDifferenceStoreV1(AccountingDbContext db,
 
     private async Task Save(CancellationToken cancellationToken)
     {
-        try { await db.SaveChangesAsync(cancellationToken); }
+        try
+        {
+            if (IsOwnedApproval) await posting.SaveOwnedManufacturingCostDifferenceApprovalAsync(this, db, audit, cancellationToken);
+            else await db.SaveChangesAsync(cancellationToken);
+        }
         catch (DbUpdateConcurrencyException)
         {
-            db.ChangeTracker.Clear();
+            if (!IsOwnedApproval) db.ChangeTracker.Clear();
             throw Refuse(AccountingStoreCodes.ConcurrentChange);
         }
         catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
-            db.ChangeTracker.Clear();
+            if (!IsOwnedApproval) db.ChangeTracker.Clear();
             throw Refuse(AccountingStoreCodes.ConcurrentChange);
         }
     }

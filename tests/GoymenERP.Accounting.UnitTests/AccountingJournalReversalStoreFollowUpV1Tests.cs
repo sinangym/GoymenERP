@@ -31,7 +31,7 @@ namespace GoymenERP.Accounting.UnitTests;
 /// effect. It does not force any particular interleaving.
 /// </para>
 /// </summary>
-public sealed class AccountingJournalReversalStoreFollowUpV1Tests
+public sealed partial class AccountingJournalReversalStoreFollowUpV1Tests
 {
     private static readonly Guid Maker = Guid.Parse("e1000000-0000-4000-8000-000000000001");
     private static readonly Guid Checker = Guid.Parse("e1000000-0000-4000-8000-000000000002");
