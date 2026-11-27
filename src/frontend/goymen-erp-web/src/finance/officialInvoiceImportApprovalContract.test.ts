@@ -116,3 +116,17 @@ describe('official invoice decision detail reuses the native preview without wid
       expect(decodeDecisionDetail({ ...value, preview: { ...value.preview, taxWarnings: [{ ...warning, ...change }] } })).toEqual({ ok: false })
   })
 })
+
+
+it.each(['2026-02-30T08:00:00Z','2026-01-01T24:00:00Z','2026-01-01T23:60:00Z','0001-01-01T00:00:00Z','0001-01-01T00:00:00.0000000+00:00'])('refuses normalized or default native recorded timestamps %s',at=>{
+ expect(decodeDecisionDetail({...detail,batch:{...batch,uploadedAtUtc:at}})).toEqual({ok:false})
+ expect(decodeDecisionDetail({...detail,batch:{...batch,status:'Approved',version:'2',approvedBy:'checker',approvedAtUtc:at}})).toEqual({ok:false})
+})
+it('keeps native UTC fractional tick order and exact timestamp text',()=>{
+ const uploadedAtUtc='2026-09-30T12:00:00.0000002+00:00',approvedAtUtc='2026-09-30T12:00:00.0000003Z'
+ const value={...detail,batch:{...batch,uploadedAtUtc,status:'Approved',version:'2',approvedBy:'checker',approvedAtUtc}}
+ expect(decodeDecisionDetail(value)).toEqual({ok:true,value})
+ expect(decodeDecisionDetail({...value,batch:{...value.batch,approvedAtUtc:'2026-09-30T12:00:00.0000001Z'}})).toEqual({ok:false})
+ const earliest={...detail,batch:{...batch,uploadedAtUtc:'0001-01-01T00:00:00.0000001Z'}}
+ expect(decodeDecisionDetail(earliest)).toEqual({ok:true,value:earliest})
+})

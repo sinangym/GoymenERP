@@ -199,7 +199,7 @@ function decodeDecisionBatch(value: unknown): DecodeResult<OfficialInvoicePendin
     || !['finance-official-invoice-installment-csv.v1','finance-official-invoice-installment-csv.v2','finance-official-invoice-installment-csv.v3'].includes(base.value.templateVersion)
     || terminal && (value.version !== '2' || typeof value.approvedBy !== 'string' || value.approvedBy.trim() !== value.approvedBy
       || value.approvedBy.length === 0 || value.approvedBy.length > 128 || value.approvedBy === value.uploadedBy || !nativeUtc(value.approvedAtUtc)
-      || Date.parse(value.approvedAtUtc) < Date.parse(base.value.uploadedAtUtc))) return { ok: false }
+      || nativeUtcKey(value.approvedAtUtc) < nativeUtcKey(base.value.uploadedAtUtc))) return { ok: false }
   return { ok: true, value: value as unknown as OfficialInvoicePendingBatch | OfficialInvoiceApprovedBatch }
 }
 // FinanceExactDecimalText uses exact digit text/BigInteger, not CLR decimal or a UI amount calculation.
@@ -213,7 +213,17 @@ function nativeToken(value: string): boolean {
   return value.length > 0 && value.length <= 128 && value === value.trim() && /^[a-zA-Z0-9._:/-]+$/.test(value)
 }
 function nativeUtc(value: unknown): value is string {
-  return timestamp(value) && value === value.trim() && /(?:Z|\+00:00)$/.test(value)
+  if (typeof value !== 'string' || value !== value.trim()) return false
+  const parts = /^(\d{4}-\d{2}-\d{2})T([0-2]\d):([0-5]\d):([0-5]\d)(?:\.(\d{1,7}))?(?:Z|\+00:00)$/.exec(value)
+  if (parts === null || parts[0] !== value || !realDate(parts[1]!) || parts[2]! > '23') return false
+  // DateTimeOffset default is not a native recorded instant. Preserve fractional ticks verbatim.
+  return !(parts[1] === '0001-01-01' && parts[2] === '00' && parts[3] === '00' && parts[4] === '00'
+    && /^0*$/.test(parts[5] ?? ''))
+}
+function nativeUtcKey(value: string): string {
+  // Both inputs already passed nativeUtc; comparing seven fractional digits preserves .NET tick ordering.
+  const fraction = value.slice(19).replace(/(?:Z|\+00:00)$/, '').replace(/^\./, '')
+  return value.slice(0, 19) + '.' + fraction.padEnd(7, '0')
 }
 function realDate(value: string): boolean {
   const parsed = new Date(`${value}T00:00:00Z`)
