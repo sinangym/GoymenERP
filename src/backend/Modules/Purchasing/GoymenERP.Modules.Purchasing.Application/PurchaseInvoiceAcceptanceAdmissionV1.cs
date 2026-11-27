@@ -81,15 +81,18 @@ public sealed class PurchaseInvoiceAcceptanceAdmissionV1(IPurchaseAcceptanceSour
         if (answer is null) return Unavailable();
         if (answer.Outcome == PurchaseUnorderedAcceptanceSourceOutcomeV1.NotFound && answer.Source is null) return NotFound();
         if (answer.Outcome == PurchaseUnorderedAcceptanceSourceOutcomeV1.Unavailable && answer.Source is null) return Unavailable();
-        if (answer.Outcome != PurchaseUnorderedAcceptanceSourceOutcomeV1.Found || answer.Source is not { } source
-            || source.CompanyId != invoice.CompanyId || source.AcceptanceId != selected.AcceptanceId
+        if (answer.Outcome != PurchaseUnorderedAcceptanceSourceOutcomeV1.Found || answer.Source is not { } ownerSource
+            || ownerSource.ControlEvidence is null) return Unavailable();
+        // Freeze before validation: the final consumer fence may await while the owner still holds its list.
+        var source = ownerSource with { ControlEvidence = Array.AsReadOnly(ownerSource.ControlEvidence.ToArray()) };
+        if (source.CompanyId != invoice.CompanyId || source.AcceptanceId != selected.AcceptanceId
             || source.AcceptanceLineId != selected.AcceptanceLineId || source.Version < 1
             || source.SupplierPartyId != invoice.SupplierPartyId || source.CompanyAccountId != invoice.CompanyAccountId
             || source.UnitId != line.UnitId || !SubjectMatches(source.Subject, line)
             || !PurchaseInvoiceAcceptanceSelectionContractV1.TryQuantity(source.AcceptedQuantity, false, out var accepted)
             || !PurchaseInvoiceAcceptanceSelectionContractV1.TryQuantity(source.UninvoicedQuantity, true, out var available)
             || available > accepted || quantity > available || source.OccurredAtUtc.Offset != TimeSpan.Zero
-            || !ValidEvidence(source.Evidence) || source.ControlEvidence is null
+            || !ValidEvidence(source.Evidence)
             || source.ControlEvidence.Any(evidence => !ValidEvidence(evidence))
             || source.ControlEvidence.Select(evidence => (evidence.DocumentId, evidence.DocumentVersion, evidence.SourceLineId))
                 .Distinct().Count() != source.ControlEvidence.Count) return Unavailable();

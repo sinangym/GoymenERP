@@ -162,13 +162,46 @@ public sealed partial class PurchaseIncomingInvoiceWorkflowTests
         var reader = new UnorderedAcceptanceReader(original); var selected = UnorderedSelection(invoice, original);
         var result = await new PurchaseInvoiceAcceptanceAdmissionV1(unordered: reader).ReadAsync(invoice, selected, _ => Task.CompletedTask);
         Assert.Equal(PurchaseInvoiceAcceptanceAdmissionOutcomeV1.Found, result.Outcome);
-        Assert.Same(original, Assert.IsType<PurchaseInvoiceUnorderedAcceptanceFactsV1>(result.Facts).Source);
+        var actual = Assert.IsType<PurchaseInvoiceUnorderedAcceptanceFactsV1>(result.Facts).Source;
+        Assert.Equal(original with { ControlEvidence = actual.ControlEvidence }, actual);
+        Assert.NotSame(original.ControlEvidence, actual.ControlEvidence);
+        Assert.Equal(original.ControlEvidence.ToArray(), actual.ControlEvidence.ToArray());
         Assert.Equal((invoice.CompanyId, original.AcceptanceId, original.AcceptanceLineId), reader.Request);
         Assert.Empty(original.ControlEvidence);
         IPurchaseIncomingInvoiceMatchSourceV1 matcher = new VariantMatcher();
         Assert.Equal(503, (await Assert.ThrowsAsync<PurchasingServiceException>(() => matcher.ReadAcceptanceVariantsAsync(invoice, [selected]))).Status);
         Assert.Equal(PurchaseIncomingInvoiceStatus.Recorded, invoice.Status);
         Assert.Empty(invoice.Matches);
+        Assert.Null(invoice.AdmissionId);
+    }
+
+    [Fact]
+    public async Task Final_fence_mutation_of_the_owner_list_cannot_replace_validated_control_evidence()
+    {
+        var invoice = Invoice(false, false); var original = UnorderedSource(invoice);
+        var controls = new List<PurchaseAcceptanceDocumentEvidenceV1> { original.Evidence };
+        original = original with { ControlEvidence = controls };
+        var reader = new UnorderedAcceptanceReader(original); var fences = 0;
+        var result = await new PurchaseInvoiceAcceptanceAdmissionV1(unordered: reader)
+            .ReadAsync(invoice, UnorderedSelection(invoice, original), _ =>
+            {
+                if (++fences == 2)
+                {
+                    controls.Add(original.Evidence with { DocumentVersion = 0 });
+                    controls.Add(original.Evidence);
+                }
+                return Task.CompletedTask;
+            });
+        Assert.Equal(2, fences);
+        Assert.Equal(3, controls.Count);
+        Assert.Equal(PurchaseInvoiceAcceptanceAdmissionOutcomeV1.Found, result.Outcome);
+        var actual = Assert.IsType<PurchaseInvoiceUnorderedAcceptanceFactsV1>(result.Facts).Source;
+        Assert.Equal(original with { ControlEvidence = actual.ControlEvidence }, actual);
+        Assert.NotSame(controls, actual.ControlEvidence);
+        Assert.Equal(original.Evidence, Assert.Single(actual.ControlEvidence));
+        Assert.True(Assert.IsAssignableFrom<ICollection<PurchaseAcceptanceDocumentEvidenceV1>>(actual.ControlEvidence).IsReadOnly);
+        Assert.Equal(PurchaseIncomingInvoiceStatus.Recorded, invoice.Status);
+        Assert.Equal(1, invoice.Version);
         Assert.Null(invoice.AdmissionId);
     }
 
