@@ -47,7 +47,16 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkOfficialSalesInvoiceProofV1? OfficialSalesInvoiceProof = null,
     [property: JsonIgnore] WorkManualBankPaymentReversalProofV1? ManualBankPaymentReversalProof = null,
     [property: JsonIgnore] WorkManualReceiptReversalProofV1? ManualReceiptReversalProof = null,
-    [property: JsonIgnore] WorkExpensePaymentProofV1? ExpensePaymentProof = null);
+    [property: JsonIgnore] WorkExpensePaymentProofV1? ExpensePaymentProof = null,
+    [property: JsonIgnore] WorkBankCreditLimitProofV1? BankCreditLimitProof = null,
+    [property: JsonIgnore] WorkOpeningBalanceProofV1? OpeningBalanceProof = null);
+
+/// <summary>Scalar owner identity only; full bank limit and opening facts stay in the authorized purpose GET.</summary>
+public sealed record WorkBankCreditLimitProofV1(Guid CompanyId, Guid LimitId, string ProposedBy,
+    DateTimeOffset ProposedAtUtc, string Status, string SourceFactsDigest, string PreviewDigest);
+public sealed record WorkOpeningBalanceProofV1(Guid CompanyId, Guid OpeningBalanceId, Guid? ReversalId,
+    string OpeningProposedBy, string ProposedBy, DateTimeOffset ProposedAtUtc, string Status, string Version,
+    string OpeningFactsDigest, string? ReversalFactsDigest, string PreviewDigest);
 
 /// <summary>Private owner identity and draft binding; full expense facts belong only to the authorized human GET.</summary>
 public sealed record WorkExpensePaymentProofV1(Guid CompanyId, Guid PaymentId, string PreparedBy,
