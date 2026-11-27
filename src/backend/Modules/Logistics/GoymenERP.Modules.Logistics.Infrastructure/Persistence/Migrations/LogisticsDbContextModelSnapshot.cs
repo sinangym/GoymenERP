@@ -264,6 +264,10 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                     b.Property<string>("DecisionNote")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<decimal?>("FirstWeighingKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
                     b.Property<Guid?>("InventoryMovementId")
                         .HasColumnType("uniqueidentifier");
 
@@ -272,6 +276,10 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("LoadingInstructionLineId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("NetWeighingKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
 
                     b.Property<DateTimeOffset>("OccurredAtUtc")
                         .HasColumnType("datetimeoffset");
@@ -307,6 +315,10 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
+                    b.Property<decimal?>("SecondWeighingKg")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
                     b.Property<decimal>("SourceDeliveredQuantity")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
@@ -333,9 +345,27 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("bigint");
 
+                    b.Property<int?>("WeighingDirection")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("WeighingId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("WeighingRecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("WeighingRecordedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.HasKey("CompanyId", "CustomerReturnId");
 
                     b.HasIndex("CompanyId", "LoadingInstructionId");
+
+                    b.HasIndex("CompanyId", "WeighingId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_CustomerReturns_WeighingId")
+                        .HasFilter("[WeighingId] IS NOT NULL");
 
                     b.HasIndex("CompanyId", "SourceOrderId", "SourceOrderLineId")
                         .HasDatabaseName("IX_CustomerReturns_SourceOrderLine");
@@ -351,7 +381,9 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_CustomerReturns_Quantity", "[QuantityUnit] IN (1, 2) AND [Quantity] > 0 AND [SourceDeliveredQuantity] > 0 AND [Quantity] <= [SourceDeliveredQuantity]");
 
-                            t.HasCheckConstraint("CK_CustomerReturns_State", "([Status] = 1 AND [Version] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [InventoryMovementId] IS NULL AND [OriginalLabelId] IS NULL AND [OriginalShipmentMovementId] IS NULL) OR ([Status] = 2 AND [Version] = 2 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND [InventoryMovementId] IS NOT NULL AND [OriginalLabelId] IS NOT NULL AND [OriginalShipmentMovementId] IS NOT NULL) OR ([Status] = 3 AND [Version] = 2 AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND [InventoryMovementId] IS NULL AND [OriginalLabelId] IS NULL AND [OriginalShipmentMovementId] IS NULL)");
+                            t.HasCheckConstraint("CK_CustomerReturns_State", "([Status] = 1 AND [Version] = CASE WHEN [WeighingId] IS NULL THEN 1 ELSE 2 END AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [InventoryMovementId] IS NULL AND [OriginalLabelId] IS NULL AND [OriginalShipmentMovementId] IS NULL) OR ([Status] = 2 AND [Version] = CASE WHEN [WeighingId] IS NULL THEN 2 ELSE 3 END AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND [InventoryMovementId] IS NOT NULL AND [OriginalLabelId] IS NOT NULL AND [OriginalShipmentMovementId] IS NOT NULL) OR ([Status] = 3 AND [Version] = CASE WHEN [WeighingId] IS NULL THEN 2 ELSE 3 END AND [DecidedBy] IS NOT NULL AND [DecidedAtUtc] IS NOT NULL AND [InventoryMovementId] IS NULL AND [OriginalLabelId] IS NULL AND [OriginalShipmentMovementId] IS NULL)");
+
+                            t.HasCheckConstraint("CK_CustomerReturns_Weighing", "([WeighingId] IS NULL AND [WeighingDirection] IS NULL AND [FirstWeighingKg] IS NULL AND [SecondWeighingKg] IS NULL AND [NetWeighingKg] IS NULL AND [WeighingRecordedBy] IS NULL AND [WeighingRecordedAtUtc] IS NULL) OR ([WeighingId] IS NOT NULL AND [WeighingId] <> '00000000-0000-0000-0000-000000000000' AND [QuantityUnit] = 2 AND [WeighingDirection] IS NOT NULL AND [FirstWeighingKg] IS NOT NULL AND [FirstWeighingKg] > 0 AND [SecondWeighingKg] IS NOT NULL AND [SecondWeighingKg] > 0 AND [NetWeighingKg] IS NOT NULL AND [NetWeighingKg] > 0 AND [WeighingRecordedBy] IS NOT NULL AND LEN([WeighingRecordedBy]) > 0 AND [WeighingRecordedAtUtc] IS NOT NULL AND (([WeighingDirection] = 1 AND [NetWeighingKg] = [SecondWeighingKg] - [FirstWeighingKg]) OR ([WeighingDirection] = 2 AND [NetWeighingKg] = [FirstWeighingKg] - [SecondWeighingKg])))");
                         });
                 });
 

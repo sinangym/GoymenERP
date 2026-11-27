@@ -185,7 +185,8 @@ public sealed class LogisticsPersistenceModelTests
     public void Company_share_identity_migration_preflights_existing_collisions_and_refuses_history_losing_rollback()
     {
         using var context = Context();
-        Assert.EndsWith("_AddCompanyWideLoadingShareIdentity", context.Database.GetMigrations().Last(), StringComparison.Ordinal);
+        Assert.EndsWith("_AddCompanyWideLoadingShareIdentity", context.Database.GetMigrations().SkipLast(1).Last(), StringComparison.Ordinal);
+        Assert.EndsWith("_AddCustomerReturnWeighing", context.Database.GetMigrations().Last(), StringComparison.Ordinal);
         Assert.False(context.Database.HasPendingModelChanges());
         var migration = new GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations.AddCompanyWideLoadingShareIdentity();
         var up = migration.UpOperations;
