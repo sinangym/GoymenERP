@@ -340,7 +340,7 @@ it('decodes exact loss options among the mounted owner kinds without changing ot
  const value={...preview,kind:lossKind,approvalReasonRequired:true,rejectionSupported:true,inventoryTransferLoss:lossOptions}
  expect(isWorkDecisionKind(lossKind)).toBe(true)
  expect(WORK_DECISION_KINDS.filter(kind=>kind===lossKind)).toHaveLength(1)
- expect(WORK_DECISION_KINDS).toHaveLength(32)
+ expect(WORK_DECISION_KINDS).toHaveLength(33)
  expect(decodeWorkDecisionPreview(value,company,lossKind,id)).not.toBeNull()
  for(const delta of [{companyId:id},{itemId:company},{sourceVersion:'0'},{approvalReasonRequired:false},{rejectionSupported:false},
   {inventoryTransferLoss:null},{inventoryTransferLoss:{...lossOptions,requestNumber:0}},{inventoryTransferLoss:{...lossOptions,requestNumber:1.5}},
@@ -390,7 +390,7 @@ it('mounts both Counterparty purposes once among seventeen and pins their actual
   'counterparty.tax-identity-change.v1':'cari.tax-identity-change.work-decision',
   'counterparty.legal-name-change.v1':'cari.legal-name-change.work-decision',
  })
- expect(WORK_DECISION_KINDS).toHaveLength(32)
+ expect(WORK_DECISION_KINDS).toHaveLength(33)
  for(const cp of cpKinds){
   expect(isWorkDecisionKind(cp)).toBe(true);expect(isCounterpartyWorkDecisionKind(cp)).toBe(true)
   expect(WORK_DECISION_KINDS.filter(kind=>kind===cp)).toEqual([cp])
@@ -525,7 +525,7 @@ const overageRequest={...request,reason:'İnsan karar gerekçesi',inventoryTrans
 it.each([null,0,2147483647])('keeps the exact nine-field human overage proposal and nullable pieces=%s',pieceCount=>{
  const value={...overagePreview,inventoryTransferOverage:{...overageProposal,pieceCount}}
  expect(WORK_DECISION_KINDS.filter(kind=>kind===overageKind)).toEqual([overageKind])
- expect(WORK_DECISION_KINDS).toHaveLength(32)
+ expect(WORK_DECISION_KINDS).toHaveLength(33)
  expect(decodeWorkDecisionPreview(value,company,overageKind,id)).toEqual(value)
 })
 it('refuses malformed, foreign, unbound or hidden overage proof instead of rendering a partial proposal',()=>{
@@ -576,7 +576,7 @@ const weighingEvaluation={dispatchNoteId:weighingNote,instructionId:weighingInst
 const weighingPreview={...preview,kind:weighingKind,sourceVersion:'1',rejectionSupported:false,
  references:[{role:'dispatch-note',label:'SENTETIK irsaliye',recordId:weighingNote,link:null},{role:'loading-instruction',label:'SENTETIK talimat',recordId:weighingInstruction,link:null}],logisticsWeighingDifference:weighingEvaluation}
 it('keeps exactly seventeen immutable evaluation fields and eight native product fields without numeric coercion',()=>{
- expect(WORK_DECISION_KINDS.filter(kind=>kind===weighingKind)).toEqual([weighingKind]);expect(WORK_DECISION_KINDS).toHaveLength(32)
+ expect(WORK_DECISION_KINDS.filter(kind=>kind===weighingKind)).toEqual([weighingKind]);expect(WORK_DECISION_KINDS).toHaveLength(33)
  expect(Object.keys(weighingEvaluation)).toHaveLength(17);expect(Object.keys(weighingEvaluation.products[0]!)).toHaveLength(8)
  expect(decodeWorkDecisionPreview(weighingPreview,company,weighingKind,id)).toEqual(weighingPreview)
  for(const bandLevel of ['NotEvaluated','None','Warning','Approval','Block'])
@@ -870,7 +870,7 @@ const customerRequest={expectedVersion:'1',approve:true,reason:null,delegationId
 it('publishes customer-return among the exact 27 purposes and preserves all native human fields and the minimum occurrence instant',()=>{
  const decoded=decodeWorkDecisionPreview(customerPreview,company,customerKind,id)
  expect(decoded?.logisticsCustomerReturn).toEqual(customerFacts);expect(Object.keys(decoded!.logisticsCustomerReturn!)).toHaveLength(15)
- expect(isWorkDecisionKind(customerKind)).toBe(true);expect(WORK_DECISION_KINDS.filter(kind=>kind===customerKind)).toEqual([customerKind]);expect(WORK_DECISION_KINDS).toHaveLength(32)
+ expect(isWorkDecisionKind(customerKind)).toBe(true);expect(WORK_DECISION_KINDS.filter(kind=>kind===customerKind)).toEqual([customerKind]);expect(WORK_DECISION_KINDS).toHaveLength(33)
  expect(workDecisionReasonLimit(customerKind)).toBeUndefined()
  for(const status of ['Approved','Rejected'])expect(decodeWorkDecisionPreview({...customerPreview,pending:false,sourceVersion:'2',logisticsCustomerReturn:{...customerFacts,status}},company,customerKind,id)).not.toBeNull()
  expect(decodeWorkDecisionPreview({...preview,logisticsCustomerReturn:customerFacts},company,kind,id)).toBeNull()
@@ -938,7 +938,7 @@ const manualPaymentPreview={...preview,kind:manualPaymentKind,rejectionSupported
  {role:'bank-account',recordId:id,label:'SENTETIK banka hesabı',link:null},{role:'currency',recordId:id,label:'SENTETIK döviz',link:null}],
  rules:[{ruleCode:'finance.manual-bank-payment-approval-required',threshold:null,actual:'125.25',deviation:null,unit:null}]}
 it('publishes the 27th manual payment purpose with the existing generic owner-authorized preview and no new typed body',()=>{
- expect(WORK_DECISION_KINDS).toHaveLength(32);expect(WORK_DECISION_KINDS.filter(kind=>kind===manualPaymentKind)).toEqual([manualPaymentKind])
+ expect(WORK_DECISION_KINDS).toHaveLength(33);expect(WORK_DECISION_KINDS.filter(kind=>kind===manualPaymentKind)).toEqual([manualPaymentKind])
  expect(decodeWorkDecisionPreview(manualPaymentPreview,company,manualPaymentKind,id)).not.toBeNull()
  expect(decodeWorkDecisionPreview({...manualPaymentPreview,pending:false},company,manualPaymentKind,id)).not.toBeNull()
  for(const delta of [{companyId:id},{itemId:company},{kind:'finance.cash-account.v1'},{sourceVersion:'0'},{sourceVersion:'01'},{sourceVersion:'7\n'},
@@ -969,7 +969,7 @@ const ibanPreview={...preview,kind:ibanKind,rejectionSupported:false,bankAccount
  references:[{role:'bank-account',recordId:id,label:'SENTETIK banka hesabı',link:null}],
  rules:[{ruleCode:'finance.bank-account-iban-change-approval-required',threshold:null,actual:null,deviation:null,unit:null}]}
 it('accepts the exact eight-field human IBAN proposal and leaves historical current values unchanged',()=>{
- expect(WORK_DECISION_KINDS).toHaveLength(32)
+ expect(WORK_DECISION_KINDS).toHaveLength(33)
  expect(decodeWorkDecisionPreview(ibanPreview,company,ibanKind,id)?.bankAccountIbanChange).toEqual(ibanHuman)
  const current='SENTETIK eski değer'
  expect(decodeWorkDecisionPreview({...ibanPreview,bankAccountIbanChange:{...ibanHuman,currentIban:current}},company,ibanKind,id)?.bankAccountIbanChange?.currentIban).toBe(current)
@@ -1009,7 +1009,7 @@ const packagePreview={...preview,kind:packageKind,documentLabel:'v7',approvalRea
 const packageRequest={...request,reason:'SENTETIK karar',productPackageStandard:{effectiveFrom:'2026-12-01'}}
 describe('Product package standard native purpose',()=>{
  it('binds the exact version id and full human table without changing the native header version',()=>{
-  expect(WORK_DECISION_KINDS).toHaveLength(32)
+  expect(WORK_DECISION_KINDS).toHaveLength(33)
   expect(decodeWorkDecisionPreview(packagePreview,company,packageKind,id)).toEqual(packagePreview)
   expect(decodeWorkDecisionPreview({...packagePreview,pending:false},company,packageKind,id)).not.toBeNull()
   expect(decodeWorkDecisionPreview({...packagePreview,sourceVersion:'9223372036854775807',documentLabel:'v9223372036854775807'},company,packageKind,id)).not.toBeNull()
@@ -1107,7 +1107,7 @@ describe('WP8 party credit limit native purpose',()=>{
   expect(decodeWorkDecisionPreview({...value,partyCreditLimit:{...human,amount}},company,limitKind,id)).toBeNull()
  })
  it('decodes exactly nine human fields and preserves native Set text and Remove nulls',()=>{
-  expect(WORK_DECISION_KINDS).toHaveLength(32);expect(WORK_DECISION_KINDS.filter(item=>item===limitKind)).toEqual([limitKind])
+  expect(WORK_DECISION_KINDS).toHaveLength(33);expect(WORK_DECISION_KINDS.filter(item=>item===limitKind)).toEqual([limitKind])
   expect(decodeWorkDecisionPreview(value,company,limitKind,id)?.partyCreditLimit).toEqual(human)
   expect(decodeWorkDecisionPreview({...value,pending:false,sourceVersion:'3',partyCreditLimit:{...human,currentRevision:'4'}},company,limitKind,id)?.partyCreditLimit?.amount).toBe('00123.4500')
   expect(decodeWorkDecisionPreview({...value,references:refs.slice(0,2),partyCreditLimit:{...human,kind:'Remove',currencyId:null,amount:null}},company,limitKind,id)?.partyCreditLimit?.amount).toBeNull()
@@ -1158,7 +1158,7 @@ describe('WP8 official invoice import immutable human preview', () => {
  const value={...preview,kind:importKind,sourceVersion:'1',rejectionSupported:false,officialInvoiceImport:human,rules:[{ruleCode:'finance.official-invoice-import-approval',threshold:null,actual:null,deviation:null,unit:null}]}
  const body={expectedVersion:'1',approve:true,reason:null,delegationId:null}
  it('accepts exact Pending1 and terminal Approved2 while retaining native amount text',()=>{
-  expect(isWorkDecisionKind(importKind)).toBe(true);expect(WORK_DECISION_KINDS).toHaveLength(32)
+  expect(isWorkDecisionKind(importKind)).toBe(true);expect(WORK_DECISION_KINDS).toHaveLength(33)
   expect(decodeWorkDecisionPreview(value,company,importKind,id)).toEqual(value)
   const approved={...value,pending:false,sourceVersion:'2',officialInvoiceImport:{...human,batch:{...batch,status:'Approved',version:'2',approvedBy:'SENTETIK checker',approvedAtUtc:'2026-11-27T09:00:00Z'}}}
   expect(decodeWorkDecisionPreview(approved,company,importKind,id)).toEqual(approved)
@@ -1191,5 +1191,71 @@ describe('WP8 official invoice import immutable human preview', () => {
   expect(fetch.mock.calls[0]![1].headers['Idempotency-Key']).toBe('SENTETIK original key')
   fetch.mockResolvedValue(new Response(JSON.stringify({companyId:company,kind:importKind,itemId:id,state:'Rejected',replayed:false,originalCorrelationId:'wrong'}),{status:200}))
   expect((await sendWorkDecision(company,importKind,id,body,'SENTETIK original key')).type).toBe('unknown')
+ })
+})
+
+
+describe('WP8 official sales invoice native decision proof',()=>{
+ const officialKind='finance.official-sales-invoice.v1'
+ const invoice={invoiceId:id,companyId:company,officialNo:'SENTETIK-RESMI-1',ettn:'eeeeeeee-0000-4000-8000-000000000030',customerPartyId:'eeeeeeee-0000-4000-8000-000000000031',currencyId:'eeeeeeee-0000-4000-8000-000000000032',payableAmount:'00123.4500',payableFunctionalAmount:'00123.4500',taxBaseFunctionalAmount:'0',vatFunctionalAmount:'0',withholdingFunctionalAmount:'0',pdfDocumentId:'eeeeeeee-0000-4000-8000-000000000033',pdfDocumentVersionNo:7,pdfSha256:'a'.repeat(64),status:'PendingApproval',version:'1',recordedBy:'SENTETIK recorder',recordedAtUtc:'2026-11-27T08:00:00.0000001Z',approvedBy:null,approvedAtUtc:null,rejectedBy:null,rejectedAtUtc:null,rejectionReason:null,withdrawnBy:null,withdrawnAtUtc:null}
+ const refs=[{role:'customer',recordId:invoice.customerPartyId,label:'SENTETIK müşteri',link:null},{role:'currency',recordId:invoice.currencyId,label:'SENTETIK para',link:null},{role:'pdf-document',recordId:invoice.pdfDocumentId,label:'SENTETIK PDF',link:null}]
+ const rule={ruleCode:'finance.official-sales-invoice-approval-required',threshold:null,actual:'123.45',deviation:null,unit:null}
+ const value={...preview,kind:officialKind,documentLabel:invoice.officialNo,sourceVersion:'1',rejectionSupported:true,references:refs,rules:[rule],officialSalesInvoice:invoice}
+ const body={expectedVersion:'1',approve:true,reason:null,delegationId:null}
+ it('reuses the native decoder, binds case-insensitive GUID context and retains raw exact amounts',()=>{
+  expect(WORK_DECISION_KINDS).toHaveLength(33);expect(isWorkDecisionKind(officialKind)).toBe(true);expect(workDecisionReasonLimit(officialKind)).toBe(1000)
+  expect(decodeWorkDecisionPreview(value,company.toUpperCase(),officialKind,id.toUpperCase())).toBe(value)
+  expect(decodeWorkDecisionPreview(value,company,officialKind,id)?.officialSalesInvoice?.payableAmount).toBe('00123.4500')
+ })
+ it.each([
+  {status:'Approved',approvedBy:'SENTETIK checker',approvedAtUtc:'2026-11-27T09:00:00Z'},
+  {status:'Rejected',rejectedBy:'SENTETIK checker',rejectedAtUtc:'2026-11-27T09:00:00Z',rejectionReason:'SENTETIK native ret'},
+  {status:'Withdrawn',withdrawnBy:invoice.recordedBy,withdrawnAtUtc:'2026-11-27T09:00:00Z'}
+ ])('accepts only a consistent terminal version2 %j',change=>{
+  const terminal={...value,pending:false,sourceVersion:'2',officialSalesInvoice:{...invoice,...change,version:'2'}}
+  expect(decodeWorkDecisionPreview(terminal,company,officialKind,id)).toBe(terminal)
+  expect(decodeWorkDecisionPreview({...terminal,sourceVersion:'1'},company,officialKind,id)).toBeNull()
+ })
+ it.each([{officialSalesInvoice:null},{companyId:id},{itemId:company},{sourceVersion:'2'},{pending:false},{rejectionSupported:false},
+  {references:refs.slice(0,2)},{references:[refs[0],refs[1],refs[1]]},{rules:[{...rule,actual:'00123.4500'}]},{rules:[{...rule,actual:'123.46'}]},{rules:[{...rule,threshold:'1'}]},
+  {officialSalesInvoice:{...invoice,companyId:id}},{officialSalesInvoice:{...invoice,invoiceId:company}}])('refuses missing, foreign or misbound invoice evidence %j',change=>{
+  expect(decodeWorkDecisionPreview({...value,...change},company,officialKind,id)).toBeNull()
+ })
+ it.each([{payableAmount:'0'},{payableFunctionalAmount:'0'},{vatFunctionalAmount:'-1'},{taxBaseFunctionalAmount:'1\n'},
+  {payableAmount:'79228162514264337593543950336'},{payableAmount:'0.00000000000000000000000000001'},
+  {officialNo:'x'.repeat(65)},{ettn:invoice.ettn+'\n'},{pdfSha256:'A'.repeat(64)},{recordedBy:' x'},
+  {recordedAtUtc:'2026-02-30T08:00:00Z'},{recordedAtUtc:'2026-01-01T24:00:00Z'},{invoiceDate:'2026-02-30'},
+  {sourceDifferences:[{hidden:true}]},{taxWarning:{hidden:true}}])('refuses malformed native scalar/derived facts %j',change=>{
+  expect(decodeWorkDecisionPreview({...value,officialSalesInvoice:{...invoice,...change}},company,officialKind,id)).toBeNull()
+ })
+ it.each(['79228162514264337593543950335','0.0000000000000000000000000001','0'.repeat(80)+'1.00000'])('keeps every lossless native CLR amount without a new length policy %s',amount=>{
+  const actual=amount.startsWith('0.000')?amount:amount.startsWith('0')?'1':amount
+  const candidate={...value,rules:[{...rule,actual}],officialSalesInvoice:{...invoice,payableAmount:amount}}
+  expect(decodeWorkDecisionPreview(candidate,company,officialKind,id)).toBe(candidate)
+ })
+ it.each(['0001-01-01','0099-12-31'])('accepts the full native DateOnly year boundary without changing the legacy decoder default %s',invoiceDate=>{
+  const candidate={...value,officialSalesInvoice:{...invoice,invoiceDate}}
+  expect(decodeWorkDecisionPreview(candidate,company,officialKind,id)).toBe(candidate)
+ })
+ it.each(['0000-01-01','0099-02-29','0100-02-29'])('refuses impossible native DateOnly values %s',invoiceDate=>{
+  expect(decodeWorkDecisionPreview({...value,officialSalesInvoice:{...invoice,invoiceDate}},company,officialKind,id)).toBeNull()
+ })
+ it('binds the complete optional date, source differences and tax warning without recomputing them',()=>{
+  const facts={...invoice,invoiceDate:'2026-11-27',sourceDifferences:[{importBatchId:id,sourceDocumentId:invoice.ettn,officialNo:invoice.officialNo,ettn:invoice.ettn,fields:['invoiceDate','payableFunctionalAmount'],invoiceDate:'2026-11-26',payableFunctionalAmount:'120.0000',winner:'manual'}],taxWarning:{code:'finance_official_invoice_tax_inconsistent',sourceDocumentId:null,expectedPayableFunctionalAmount:'0',payableFunctionalAmount:'123.4500',differenceFunctionalAmount:'123.4500'}}
+  const candidate={...value,officialSalesInvoice:facts};expect(decodeWorkDecisionPreview(candidate,company,officialKind,id)).toBe(candidate)
+  expect(decodeWorkDecisionPreview({...preview,officialSalesInvoice:facts},company,kind,id)).toBeNull()
+ })
+ it('keeps the four-field native command strict: null approval reason and canonical required rejection up to1000',()=>{
+  expect(isWorkDecisionRequest(body,officialKind)).toBe(true)
+  expect(isWorkDecisionRequest({...body,approve:false,reason:'x'.repeat(1000)},officialKind)).toBe(true)
+  for(const change of [{expectedVersion:'2'},{expectedVersion:'01'},{reason:'approval note'},{approve:false},{approve:false,reason:' x '},{approve:false,reason:'x'.repeat(1001)},{officialSalesInvoice:invoice},{productPackageStandard:{effectiveFrom:'2026-11-27'}}])expect(isWorkDecisionRequest({...body,...change},officialKind)).toBe(false)
+ })
+ it.each([true,false])('accepts only matching immutable native decision receipts and original correlation (approve=%s)',async approve=>{
+  const input={...body,approve,reason:approve?null:'SENTETIK native ret'}
+  const fetch=vi.fn().mockResolvedValue(new Response(JSON.stringify({companyId:company,kind:officialKind,itemId:id,state:approve?'Approved':'Rejected',replayed:true,originalCorrelationId:'SENTETIK original'}),{status:200,headers:{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK original'}}))
+  vi.stubGlobal('fetch',fetch);expect((await sendWorkDecision(company,officialKind,id,input,'SENTETIK unchanged key')).type).toBe('applied')
+  expect(JSON.parse(fetch.mock.calls[0]![1].body as string)).toEqual(input)
+  fetch.mockResolvedValue(new Response(JSON.stringify({companyId:company,kind:officialKind,itemId:id,state:'Withdrawn',replayed:false,originalCorrelationId:'wrong'}),{status:200}))
+  expect((await sendWorkDecision(company,officialKind,id,input,'SENTETIK unchanged key')).type).toBe('unknown')
  })
 })

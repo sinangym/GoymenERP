@@ -1,3 +1,4 @@
+import { OFFICIAL_SALES_INVOICE_TEXT as OFFICIAL } from '../finance/officialSalesInvoiceText'
 import { priceKind, priceCap, priceHuman } from './priceListDecisionFixture'
 import { PRICE_LIST_TEXT as PRICE } from '../product/priceLists/priceListText'
 import { AI_PANEL_CAPABILITY } from '../ai/aiCapabilities'
@@ -1537,7 +1538,7 @@ it('mounts dispatch as the 25th native purpose under its exact standalone capabi
  expect(route?.path).toBe(`onaylarim/${dispatchKind}/:approvalId`)
  const element=route?.element as ReactElement<{capability:readonly string[];children:ReactElement<{kind:string}>}>
  expect(element.props.capability).toEqual([dispatchCap]);expect(element.props.children.type).toBe(WorkDecisionPage);expect(element.props.children.props.kind).toBe(dispatchKind)
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(32)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(33)
 })
 it.each([{companyId:COMPANY_B},{logisticsDispatchNote:{...dispatchProof,dispatchNoteId:COMPANY_A}},{rejectionSupported:true}])('does not expose malformed/foreign dispatch proof %j',async(delta)=>{
  installFetch({capabilities:[dispatchCap],respond:url=>url.includes(dispatchPath)?json({...dispatchPreview,...delta}):undefined});mountDispatchPurpose()
@@ -1611,7 +1612,7 @@ it('mounts the customer return purpose under its exact standalone capability amo
  expect(route?.path).toBe(`onaylarim/${customerKind}/:approvalId`)
  expect(route).toBeDefined()
  expect((route!.element as ReactElement<{capability:readonly string[]}>).props.capability).toEqual([customerCap])
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(32)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(33)
 })
 it('does not restore a customer-return unknown attempt under another authentication session',async()=>{
  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-return-old'})
@@ -2216,4 +2217,122 @@ it('does not transfer retained import proof or its original operation to another
  await waitFor(()=>expect(calls.some(call=>call.url.includes(importPath)&&call.method==='GET'&&call.headers['X-Company-Id']===COMPANY_B)).toBe(true))
  expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(screen.queryByText(T.importRetained)).toBeNull()
  expect(calls.filter(call=>call.url.includes(importPath)&&call.method==='POST')).toHaveLength(1)
+})
+
+
+const officialKind='finance.official-sales-invoice.v1',officialCap='finance.official-sales-invoice.work-decision'
+const officialPath=`/work/decisions/${officialKind}/${id}`,officialRoute=`/onaylarim/${officialKind}/${id}`
+const officialHuman={invoiceId:id,companyId:COMPANY_A,officialNo:'SENTETIK-RESMI-001',ettn:'eeeeeeee-0000-4000-8000-000000000040',customerPartyId:'eeeeeeee-0000-4000-8000-000000000041',currencyId:'eeeeeeee-0000-4000-8000-000000000042',payableAmount:'00123.4500',payableFunctionalAmount:'00123.4500',taxBaseFunctionalAmount:'0',vatFunctionalAmount:'0',withholdingFunctionalAmount:'0',pdfDocumentId:'eeeeeeee-0000-4000-8000-000000000043',pdfDocumentVersionNo:7,pdfSha256:'d'.repeat(64),status:'PendingApproval',version:'1',recordedBy:'SENTETIK official recorder',recordedAtUtc:'2026-11-27T08:00:00.0000001Z',approvedBy:null,approvedAtUtc:null,rejectedBy:null,rejectedAtUtc:null,rejectionReason:null,withdrawnBy:null,withdrawnAtUtc:null,invoiceDate:'2026-11-26',sourceDifferences:[{importBatchId:'eeeeeeee-0000-4000-8000-000000000044',sourceDocumentId:'eeeeeeee-0000-4000-8000-000000000045',officialNo:'SENTETIK-CSV-002',ettn:'eeeeeeee-0000-4000-8000-000000000046',fields:['invoiceDate','payableFunctionalAmount'],invoiceDate:'2026-11-25',payableFunctionalAmount:'120.0000',winner:'manual'}],taxWarning:{code:'finance_official_invoice_tax_inconsistent',sourceDocumentId:null,expectedPayableFunctionalAmount:'0',payableFunctionalAmount:'123.4500',differenceFunctionalAmount:'123.4500'}}
+const officialRefs=[{role:'customer',recordId:officialHuman.customerPartyId,label:'SENTETIK müşteri',link:null},{role:'currency',recordId:officialHuman.currencyId,label:'SENTETIK para',link:null},{role:'pdf-document',recordId:officialHuman.pdfDocumentId,label:'SENTETIK PDF',link:null}]
+const officialPreview={companyId:COMPANY_A,kind:officialKind,itemId:id,documentLabel:officialHuman.officialNo,sourceVersion:'1',pending:true,approvalReasonRequired:false,rejectionSupported:true,references:officialRefs,rules:[{ruleCode:'finance.official-sales-invoice-approval-required',threshold:null,actual:'123.45',deviation:null,unit:null}],officialSalesInvoice:officialHuman}
+const officialTerminal={...officialPreview,pending:false,sourceVersion:'2',officialSalesInvoice:{...officialHuman,status:'Approved',version:'2',approvedBy:'SENTETIK official checker',approvedAtUtc:'2026-11-27T09:00:00Z'}}
+const officialResult=(approve=true,replayed=false)=>json({companyId:COMPANY_A,kind:officialKind,itemId:id,state:approve?'Approved':'Rejected',replayed,originalCorrelationId:'SENTETIK official original'},200,replayed?{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK official original'}:undefined)
+
+describe('WP8 official sales invoice purpose',()=>{
+ it.each([true,false])('renders all 28 native human fields and sends only the explicit four-field decision (approve=%s)',async approve=>{
+  const calls=installFetch({capabilities:[officialCap],respond:(url,init)=>url.includes(officialPath)?init?.method==='POST'?officialResult(approve):json(officialPreview):undefined})
+  mount(officialRoute,true);const region=await screen.findByRole('region',{name:T.officialSalesProposal})
+  for(const value of [officialHuman.companyId,officialHuman.ettn,officialHuman.customerPartyId,officialHuman.currencyId,officialHuman.pdfDocumentId,officialHuman.pdfSha256,officialHuman.recordedBy,officialHuman.recordedAtUtc,officialHuman.invoiceDate])expect(within(region).getByText(value)).toBeTruthy()
+  expect(within(region).getByText(officialHuman.officialNo)).toBeTruthy();expect(within(region).getAllByText(officialHuman.payableAmount)).toHaveLength(2)
+  expect(within(region).getByText(OFFICIAL.statuses.PendingApproval)).toBeTruthy()
+  const differences=within(region).getByRole('region',{name:OFFICIAL.differences})
+  for(const value of [officialHuman.sourceDifferences[0]!.importBatchId,officialHuman.sourceDifferences[0]!.sourceDocumentId,officialHuman.sourceDifferences[0]!.ettn,'120.0000'])expect(within(differences).getByText(value)).toBeTruthy()
+  expect(within(within(region).getByRole('note')).getByText(/123\.4500/)).toBeTruthy()
+  const reason=screen.getByRole('textbox',{name:T.reason}) as HTMLTextAreaElement
+  expect(reason.maxLength).toBe(1000);expect((screen.getByRole('button',{name:T.reject}) as HTMLButtonElement).disabled).toBe(true)
+  if(!approve)fireEvent.change(reason,{target:{value:'  SENTETIK official ret  '}})
+  fireEvent.click(screen.getByRole('button',{name:approve?T.approve:T.reject}));await screen.findByText(T.done)
+  const sent=calls.filter(call=>call.url.includes(officialPath)&&call.method==='POST');expect(sent).toHaveLength(1)
+  expect(sent[0]!.body).toEqual({expectedVersion:'1',approve,reason:approve?null:'SENTETIK official ret',delegationId:null})
+  expect(calls.some(call=>call.url.includes('/finance/')||call.url.includes('/documents/')||call.url.includes('/cari/'))).toBe(false)
+  expect(calls.filter(call=>call.url.includes(officialPath)&&call.method==='GET')).toHaveLength(1)
+  expect(screen.queryByRole('region',{name:T.officialSalesProposal})).toBeNull()
+ })
+ it.each([
+  {status:'Approved',approvedBy:'SENTETIK checker',approvedAtUtc:'2026-11-27T09:00:00Z'},
+  {status:'Rejected',rejectedBy:'SENTETIK checker',rejectedAtUtc:'2026-11-27T09:00:00Z',rejectionReason:'SENTETIK original reason'},
+  {status:'Withdrawn',withdrawnBy:officialHuman.recordedBy,withdrawnAtUtc:'2026-11-27T09:00:00Z'}
+ ])('shows terminal2 native facts read-only %j',async change=>{
+  const calls=installFetch({capabilities:[officialCap],respond:url=>url.includes(officialPath)?json({...officialPreview,pending:false,sourceVersion:'2',officialSalesInvoice:{...officialHuman,...change,version:'2'}}):undefined})
+  mount(officialRoute,true);const region=await screen.findByRole('region',{name:T.officialSalesProposal})
+  expect(within(region).getByText(OFFICIAL.statuses[change.status as keyof typeof OFFICIAL.statuses])).toBeTruthy()
+  expect(screen.queryByRole('button',{name:T.approve})).toBeNull();expect(screen.queryByRole('button',{name:T.reject})).toBeNull();expect(calls.some(call=>call.method==='POST')).toBe(false)
+ })
+ it.each([true,false])('restores only original key/version/decision across a terminal preview remount (approve=%s)',async approve=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-official-session'});let posts=0
+  const calls=installFetch({capabilities:[officialCap],respond:(url,init)=>url.includes(officialPath)?init?.method==='POST'?++posts===1?problem(503):officialResult(approve,true):json(posts===0?officialPreview:officialTerminal):undefined})
+  mount(officialRoute,true);await screen.findByRole('region',{name:T.officialSalesProposal})
+  if(!approve)fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:'SENTETIK original ret'}})
+  fireEvent.click(screen.getByRole('button',{name:approve?T.approve:T.reject}));await screen.findByText(T.unknown)
+  const journal=JSON.stringify(sessionStorage);for(const secret of [officialHuman.ettn,officialHuman.pdfSha256,officialHuman.payableAmount,officialHuman.customerPartyId,officialHuman.recordedBy,'officialSalesInvoice'])expect(journal).not.toContain(secret)
+  cleanup();mount(officialRoute,true);await screen.findByText(T.unknown);await screen.findByText(T.officialSalesRetained)
+  expect(screen.getByText(`${T.version}: 1`)).toBeTruthy();expect(screen.queryByRole('region',{name:T.officialSalesProposal})).toBeNull();expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done);await screen.findByText(T.priorDecisionResolved)
+  const sent=calls.filter(call=>call.url.includes(officialPath)&&call.method==='POST');expect(sent).toHaveLength(2)
+  expect(sent[1]!.body).toEqual(sent[0]!.body);expect(sent[1]!.body).toEqual({expectedVersion:'1',approve,reason:approve?null:'SENTETIK original ret',delegationId:null});expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key'])
+  expect(calls.filter(call=>call.url.includes(officialPath)&&call.method==='GET')).toHaveLength(1);expect(screen.queryByRole('region',{name:T.officialSalesProposal})).toBeNull()
+ })
+ it('hides cached and late terminal invoice facts throughout receipt reconciliation and after success',async()=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-official-late'})
+  const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}});let gets=0,posts=0,release!:(reply:Response)=>void
+  const late=new Promise<Response>(resolve=>{release=resolve})
+  const calls=installFetch({capabilities:[officialCap],respond:(url,init)=>{if(!url.includes(officialPath))return undefined;if(init?.method==='POST')return ++posts===1?problem(503):officialResult(true,true);return ++gets===1?json(officialPreview):late}})
+  mount(officialRoute,true,client);await screen.findByRole('region',{name:T.officialSalesProposal})
+  const matching=(query:{readonly queryKey:readonly unknown[]})=>query.queryKey.includes('work-decision')
+  let refetch!:Promise<void>;act(()=>{refetch=client.refetchQueries({predicate:matching})});await waitFor(()=>expect(gets).toBe(2))
+  fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+  await act(async()=>{release(json(officialTerminal));await refetch})
+  expect(client.getQueryCache().findAll({predicate:matching})[0]?.state.data).toMatchObject({type:'ok-single',data:{sourceVersion:'2',officialSalesInvoice:{status:'Approved'}}})
+  expect(screen.queryByRole('region',{name:T.officialSalesProposal})).toBeNull();expect(screen.getByText(`${T.version}: 1`)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done);await screen.findByText(T.priorDecisionResolved)
+  expect(screen.queryByRole('region',{name:T.officialSalesProposal})).toBeNull();expect(gets).toBe(2)
+  const sent=calls.filter(call=>call.url.includes(officialPath)&&call.method==='POST');expect(sent[1]!.body).toEqual(sent[0]!.body);expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key']);client.clear()
+ })
+ it('keeps the native rejection limit without cutting content or requiring a note for approval',async()=>{
+  const calls=installFetch({capabilities:[officialCap],respond:(url,init)=>url.includes(officialPath)?init?.method==='POST'?officialResult(false):json(officialPreview):undefined})
+  mount(officialRoute,true);await screen.findByRole('region',{name:T.officialSalesProposal})
+  const input=screen.getByRole('textbox',{name:T.reason}),reject=screen.getByRole('button',{name:T.reject}) as HTMLButtonElement
+  fireEvent.change(input,{target:{value:'x'.repeat(1001)}});expect(reject.disabled).toBe(true)
+  expect((screen.getByRole('button',{name:T.approve}) as HTMLButtonElement).disabled).toBe(false)
+  fireEvent.change(input,{target:{value:'x'.repeat(1000)}});expect(reject.disabled).toBe(false);fireEvent.click(reject);await screen.findByText(T.done)
+  expect(calls.find(call=>call.url.includes(officialPath)&&call.method==='POST')?.body).toEqual({expectedVersion:'1',approve:false,reason:'x'.repeat(1000),delegationId:null})
+ })
+ it.each([{capabilities:[]},{capabilities:['finance.official-sales-invoices.approve']},{capabilities:['finance.official-sales-invoices.record']},{capabilities:['finance.official-invoice-import.work-decision']}])('requires the exact purpose capability %j',async({capabilities})=>{
+  const calls=installFetch({capabilities,respond:url=>url.includes(officialPath)?json(officialPreview):undefined});mount(officialRoute,true)
+  await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(calls.some(call=>call.url.includes(officialPath))).toBe(false)
+ })
+ it.each([{companyId:COMPANY_B},{officialSalesInvoice:null},{officialSalesInvoice:{...officialHuman,payableAmount:'123.4501'}}])('does not render missing, foreign or mismatched invoice proof %j',async change=>{
+  installFetch({capabilities:[officialCap],respond:url=>url.includes(officialPath)?json({...officialPreview,...change}):undefined});mount(officialRoute,true)
+  await waitFor(()=>expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull());expect(screen.queryByRole('region',{name:T.officialSalesProposal})).toBeNull()
+ })
+ it.each([401,403])('preserves the native official decision HTTP %s boundary',async status=>{
+  const capabilities=[officialCap]
+  const calls=installFetch({capabilities,respond:(url,init)=>{if(!url.includes(officialPath))return undefined;if(init?.method==='POST'){capabilities.splice(0);return problem(status)}return json(officialPreview)}})
+  mount(officialRoute,true);await screen.findByRole('region',{name:T.officialSalesProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}))
+  await waitFor(()=>expect(document.querySelector(`[data-state="${status===401?'unauthenticated':'not-found'}"]`)).not.toBeNull())
+  expect(screen.queryByRole('region',{name:T.officialSalesProposal})).toBeNull();expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+ })
+ it('does not transfer a retained decision to a revoked purpose or a changed authentication session',async()=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-official-old'});const capabilities=[officialCap]
+  const calls=installFetch({capabilities,respond:(url,init)=>url.includes(officialPath)?init?.method==='POST'?problem(503):json(officialPreview):undefined})
+  mount(officialRoute,true);await screen.findByRole('region',{name:T.officialSalesProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+  cleanup();capabilities.splice(0);mount(officialRoute,true);await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(screen.queryByRole('button',{name:T.retry})).toBeNull()
+  cleanup();capabilities.push(officialCap);Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-official-new'});mount(officialRoute,true);await screen.findByRole('region',{name:T.officialSalesProposal})
+  expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+ })
+})
+
+it('does not carry a retained official invoice command into a different company context',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-official-company'})
+ const calls=installFetch({capabilities:[officialCap],respond:(url,init)=>{
+  if(!url.includes(officialPath))return undefined
+  const company=(init?.headers as Record<string,string>)?.['X-Company-Id']??COMPANY_A
+  const amount=company===COMPANY_A?officialHuman.payableAmount:'987.6500'
+  return init?.method==='POST'?problem(503):json({...officialPreview,companyId:company,rules:[{...officialPreview.rules[0],actual:company===COMPANY_A?'123.45':'987.65'}],officialSalesInvoice:{...officialHuman,companyId:company,payableAmount:amount,payableFunctionalAmount:amount}})
+ }})
+ mount(officialRoute,true);await screen.findByRole('region',{name:T.officialSalesProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ await userEvent.setup().selectOptions(screen.getByRole('combobox',{name:'Şirket'}),COMPANY_B)
+ await waitFor(()=>expect(calls.some(call=>call.url.includes(officialPath)&&call.method==='GET'&&call.headers['X-Company-Id']===COMPANY_B)).toBe(true))
+ expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(screen.queryByText(T.officialSalesRetained)).toBeNull();expect(screen.queryByText(officialHuman.payableAmount)).toBeNull()
+ expect(calls.filter(call=>call.url.includes(officialPath)&&call.method==='POST')).toHaveLength(1)
 })

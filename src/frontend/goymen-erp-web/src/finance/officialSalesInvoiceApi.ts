@@ -65,10 +65,10 @@ const RESERVATION_FIELDS = ['companyId', 'invoiceId', 'reservedAtUtc', 'reserved
 const INVOICE_RESULT_FIELDS = [...COMMAND_RESULT_FIELDS, 'existingOfficialNo']
 const ISSUE_FIELDS = ['code', 'field']
 const differenceFields = ['officialNo', 'ettn', 'customerPartyId', 'currencyId', ...OFFICIAL_AMOUNT_FIELDS, 'invoiceDate']
-export function decodeOfficialInvoice(value: unknown, company: string): OfficialInvoice | null {
+export function decodeOfficialInvoice(value: unknown, company: string, validateDate: (value: unknown) => boolean = date): OfficialInvoice | null {
   if (!record(value) || !hasExactKeys(value, INVOICE_REQUIRED, INVOICE_OPTIONAL) || !isBoundUuid(value.invoiceId) || value.companyId !== company || !text(value.officialNo) || !isBoundUuid(value.ettn)
     || !isBoundUuid(value.customerPartyId) || !isBoundUuid(value.currencyId) || OFFICIAL_AMOUNT_FIELDS.some(k => !isNonNegativeDecimalText(value[k]))
-    || value.invoiceDate != null && !date(value.invoiceDate) || !isBoundUuid(value.pdfDocumentId) || !Number.isSafeInteger(value.pdfDocumentVersionNo) || (value.pdfDocumentVersionNo as number) < 1
+    || value.invoiceDate != null && !validateDate(value.invoiceDate) || !isBoundUuid(value.pdfDocumentId) || !Number.isSafeInteger(value.pdfDocumentVersionNo) || (value.pdfDocumentVersionNo as number) < 1
     || typeof value.pdfSha256 !== 'string' || !/^[0-9a-f]{64}$/i.test(value.pdfSha256) || !isOpaqueVersion(value.version)
     || !['PendingApproval', 'Approved', 'Rejected', 'Withdrawn'].includes(value.status as string) || !text(value.recordedBy) || !isInstant(value.recordedAtUtc)
     || !nullableText(value.approvedBy) || !nullableInstant(value.approvedAtUtc) || !nullableText(value.rejectedBy) || !nullableInstant(value.rejectedAtUtc)
@@ -82,7 +82,7 @@ export function decodeOfficialInvoice(value: unknown, company: string): Official
     || value.status === 'Withdrawn' && [value.approvedBy, value.approvedAtUtc, value.rejectedBy, value.rejectedAtUtc, value.rejectionReason].some(x => x !== null)) return null
   if (value.sourceDifferences != null && (!Array.isArray(value.sourceDifferences) || value.sourceDifferences.some(x => !record(x) || !hasExactKeys(x, DIFFERENCE_FIELDS) || !isBoundUuid(x.importBatchId)
     || !isBoundUuid(x.sourceDocumentId) || !text(x.officialNo) || !isBoundUuid(x.ettn) || !Array.isArray(x.fields) || x.fields.length === 0
-    || x.fields.some(k => typeof k !== 'string' || !differenceFields.includes(k)) || x.invoiceDate !== null && !date(x.invoiceDate)
+    || x.fields.some(k => typeof k !== 'string' || !differenceFields.includes(k)) || x.invoiceDate !== null && !validateDate(x.invoiceDate)
     || x.payableFunctionalAmount !== null && !isNonNegativeDecimalText(x.payableFunctionalAmount) || !['manual', 'approved-import'].includes(x.winner as string)))) return null
   if (value.taxWarning != null && decodeOfficialInvoiceTaxWarning(value.taxWarning) === null) return null
   return value as unknown as OfficialInvoice

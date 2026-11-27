@@ -1,4 +1,9 @@
 export const WORK_DECISION_TEXT = {
+  officialSalesProposal: 'Karar verilecek resmî satış faturası', officialSalesId: 'Fatura kaydı', officialSalesPdfId: 'Sabitlenen PDF belgesi', officialSalesPdfHash: 'PDF özeti (SHA-256)',
+  officialSalesRecordedBy: 'Kaydeden', officialSalesRecordedAt: 'Kayıt zamanı (UTC)', officialSalesRejectedBy: 'Reddeden', officialSalesRejectedAt: 'Ret zamanı (UTC)',
+  officialSalesWithdrawnBy: 'Geri çeken', officialSalesWithdrawnAt: 'Geri çekme zamanı (UTC)', officialSalesAbsent: 'Kayıtlı değil',
+  officialSalesWinner: 'Esas alınan kaynak', officialSalesManualWinner: 'Onaylı manuel kayıt', officialSalesImportedWinner: 'Onaylı içe alma kaydı', officialSalesNoDifferences: 'Kaynak farkı kaydedilmemiş.',
+  officialSalesRetained: 'Önceki fatura kararının sürümü ve işlem anahtarı korunuyor. Güncel fatura bilgileri önceki isteğin kanıtı olarak gösterilmez.',
   importProposal: 'Karar verilecek resmî fatura taksit kaynağı', importBatch: 'Kaynak kaydı', importCompany: 'Şirket',
   importBatchVersion: 'Kaynak dosyası sürümü', importChecksum: 'Kaynak dosyası özeti (SHA-256)', importTemplate: 'Dosya şablonu',
   importStatus: 'Onay durumu', importPending: 'Onay bekliyor', importApproved: 'Onaylandı', importRowCount: 'Taksit satırı sayısı',

@@ -1,3 +1,5 @@
+import { OFFICIAL_AMOUNT_FIELDS } from '../finance/officialSalesInvoiceApi'
+import { OFFICIAL_SALES_INVOICE_TEXT as OFFICIAL } from '../finance/officialSalesInvoiceText'
 import { PRICE_LIST_TEXT as PRICE } from '../product/priceLists/priceListText'
 import { CREDIT_LIMIT_TEXT as CREDIT_LIMIT } from '../finance/CreditLimitText'
 import { AI_PANEL_CAPABILITY } from '../ai/aiCapabilities'
@@ -28,6 +30,8 @@ import { delegationPersonLabel } from './delegationPersonLabel'
 import type { ViewOutcome } from '../shell/uiState'
 import { WORK_DECISION_TEXT as T } from './workDecisionText'
 import styles from './Work.module.css'
+
+const officialDifferenceLabels: Readonly<Record<string,string>> = {officialNo:OFFICIAL.officialNo,ettn:OFFICIAL.ettn,customerPartyId:OFFICIAL.customer,currencyId:OFFICIAL.currency,invoiceDate:OFFICIAL.date,payableAmount:OFFICIAL.payableAmount,payableFunctionalAmount:OFFICIAL.payableFunctionalAmount,taxBaseFunctionalAmount:OFFICIAL.taxBaseFunctionalAmount,vatFunctionalAmount:OFFICIAL.vatFunctionalAmount,withholdingFunctionalAmount:OFFICIAL.withholdingFunctionalAmount}
 
 class DelegationReadFailure extends Error {
   readonly outcome: ViewOutcome<unknown>
@@ -72,7 +76,8 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const ibanChange = kind === 'finance.bank-account-iban-change.v1'
   const partyCreditLimit = kind === 'finance.party-credit-limit.v1'
   const officialImport = kind === 'finance.official-invoice-import.v1'
-  const receiptRetryKind = officialImport || partyCreditLimit || priceList || ibanChange || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.transfer-overage.v1'
+  const officialSales = kind === 'finance.official-sales-invoice.v1'
+  const receiptRetryKind = officialSales || officialImport || partyCreditLimit || priceList || ibanChange || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.transfer-overage.v1'
   const historicalRetry = receiptRetryKind && attempt.hasPendingRetry
   const [reconcilingHistorical, setReconcilingHistorical] = useState(historicalRetry)
   const query = useQuery({ queryKey: [namespace, shell.routeEntryGeneration, 'work-decision', kind, id],
@@ -84,7 +89,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   if (company === null || capabilityFailClosed(shell)) return <StateBlock state={{ kind: 'no-authorized-company' }} subject={T.title} />
   // Disabling a query does not erase cached data or a refetch already in flight.
   // A receipt retry must never display current proposal/revision facts as its original human evidence.
-  const suppressReceiptPreview = (officialImport || partyCreditLimit || priceList || ibanChange) && (attempt.hasPendingRetry || reconcilingHistorical || attempt.status.kind === 'applied')
+  const suppressReceiptPreview = (officialSales || officialImport || partyCreditLimit || priceList || ibanChange) && (attempt.hasPendingRetry || reconcilingHistorical || attempt.status.kind === 'applied')
   const preview = !suppressReceiptPreview && query.data?.type === 'ok-single' ? query.data.data : null
   const frozen = attempt.status.kind === 'busy' || attempt.hasPendingRetry
   const reconciledHistorical = reconcilingHistorical && !attempt.hasPendingRetry && (attempt.status.kind === 'applied' || attempt.status.kind === 'refused')
@@ -102,7 +107,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const transferRequest = overage ? preview?.inventoryTransferOverage : preview?.inventoryTransferLoss
   const frozenTransferRequest = overage ? attempt.pendingPayload?.inventoryTransferOverage : attempt.pendingPayload?.inventoryTransferLoss
   const lossRequest = frozen ? frozenTransferRequest?.requestNumber : transferRequest?.requestNumber
-  const lossReason = (packageStandard || customerReturn || timedTransfer || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'purchasing.supplier-return-cost-exception.v1') && frozen ? attempt.pendingPayload?.reason ?? '' : reason
+  const lossReason = (officialSales || packageStandard || customerReturn || timedTransfer || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'purchasing.supplier-return-cost-exception.v1') && frozen ? attempt.pendingPayload?.reason ?? '' : reason
   const currentLossBinding = transferRequest === undefined ? null : `${preview?.sourceVersion}:${transferRequest.requestNumber}`
   const selectedUtc = workDecisionLocalUtc(decisionTime)
   const invalidLossTime = timedTransfer && (currentLossBinding === null || lossTimeBinding !== currentLossBinding || selectedUtc === null
@@ -131,7 +136,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       ...(loss ? { inventoryTransferLoss: { requestNumber: preview.inventoryTransferLoss!.requestNumber, decidedAtUtc: workDecisionLocalUtc(decisionTime)! } } : {}),
       ...(kind === 'manufacturing.plan.v1' && options !== undefined ? { manufacturingPlanReapproval: { selectedLabelIds: [...selectedLabels] } } : {}) })
     if (answer.type === 'applied') {
-      if (officialImport || partyCreditLimit || ibanChange || priceList) setReconcilingHistorical(true)
+      if (officialSales || officialImport || partyCreditLimit || ibanChange || priceList) setReconcilingHistorical(true)
       else void query.refetch()
     }
   }
@@ -147,11 +152,11 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
     <Link to="/onaylarim/kuyruk">{T.back}</Link>
     {preview === null ? reconciledHistorical ? <p>{T.priorDecisionResolved}</p> : historicalRetry ? <div><p>{T.priorDecisionPending}</p>
       <p>{T.version}: {attempt.pendingPayload?.expectedVersion}</p>
-      {officialImport ? <p>{T.importRetained}</p> : partyCreditLimit ? <p>{T.creditLimitRetained}</p> : priceList ? <p>{T.priceListRetained}</p> : ibanChange ? <p>{T.ibanRetained}</p> : <><p>{overage ? T.overageRequestNumber : T.lossRequestNumber}: {frozenTransferRequest?.requestNumber}</p>
+      {officialSales ? <p>{T.officialSalesRetained}</p> : officialImport ? <p>{T.importRetained}</p> : partyCreditLimit ? <p>{T.creditLimitRetained}</p> : priceList ? <p>{T.priceListRetained}</p> : ibanChange ? <p>{T.ibanRetained}</p> : <><p>{overage ? T.overageRequestNumber : T.lossRequestNumber}: {frozenTransferRequest?.requestNumber}</p>
       <p>{T.lossFrozenTime}: {frozenTransferRequest?.decidedAtUtc}</p></>}
     </div> : <StateBlock state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
       subject={T.title} onRetry={() => void query.refetch()} /> : <>
-      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(priceList || packageStandard || ibanChange || customerReturn || supplierReturn || kind === 'logistics.dispatch-note.v1' || kind === 'finance.manual-bank-payment.v1' || kind === 'finance.bank-account.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
+      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(officialSales || priceList || packageStandard || ibanChange || customerReturn || supplierReturn || kind === 'logistics.dispatch-note.v1' || kind === 'finance.manual-bank-payment.v1' || kind === 'finance.bank-account.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
       <section aria-label={INBOX.rulesHeading}><h3>{INBOX.rulesHeading}</h3>
         {preview.rules.length === 0 ? <p>{T.rulesUnavailable}</p> : <ul>{preview.rules.map((rule, index) => <li key={`${rule.ruleCode}:${index}`}>
           <p>{inboxRuleText(rule.ruleCode) ?? <>{INBOX.ruleUnknown} <code>{rule.ruleCode}</code></>}</p>
@@ -231,6 +236,26 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       <tbody>{preview.productPackageStandard.entries.map(entry => <tr key={`${entry.productId}:${entry.customerId ?? ''}`}>
         <td>{entry.productId}</td><td>{entry.customerId ?? T.packageDefault}</td><td>{entry.piecesPerPackage}</td>
       </tr>)}</tbody></table></section> : null}
+      {preview.officialSalesInvoice ? <section aria-label={T.officialSalesProposal}><h3>{T.officialSalesProposal}</h3><dl className={styles.facts}>
+        <dt>{T.officialSalesId}</dt><dd>{preview.officialSalesInvoice.invoiceId}</dd><dt>{T.importCompany}</dt><dd>{preview.officialSalesInvoice.companyId}</dd>
+        <dt>{OFFICIAL.officialNo}</dt><dd>{preview.officialSalesInvoice.officialNo}</dd><dt>{OFFICIAL.ettn}</dt><dd>{preview.officialSalesInvoice.ettn}</dd>
+        <dt>{OFFICIAL.customer}</dt><dd>{preview.officialSalesInvoice.customerPartyId}</dd><dt>{OFFICIAL.currency}</dt><dd>{preview.officialSalesInvoice.currencyId}</dd>
+        {OFFICIAL_AMOUNT_FIELDS.map(field=><div key={field}><dt>{OFFICIAL[field]}</dt><dd>{preview.officialSalesInvoice![field]}</dd></div>)}
+        <dt>{OFFICIAL.date}</dt><dd>{preview.officialSalesInvoice.invoiceDate ?? OFFICIAL.sourceDateMissing}</dd>
+        <dt>{T.officialSalesPdfId}</dt><dd>{preview.officialSalesInvoice.pdfDocumentId}</dd><dt>{OFFICIAL.pinnedPdf}</dt><dd>{preview.officialSalesInvoice.pdfDocumentVersionNo}</dd>
+        <dt>{T.officialSalesPdfHash}</dt><dd>{preview.officialSalesInvoice.pdfSha256}</dd><dt>{OFFICIAL.status}</dt><dd>{OFFICIAL.statuses[preview.officialSalesInvoice.status]}</dd>
+        <dt>{T.version}</dt><dd>{preview.officialSalesInvoice.version}</dd><dt>{T.officialSalesRecordedBy}</dt><dd>{preview.officialSalesInvoice.recordedBy}</dd>
+        <dt>{T.officialSalesRecordedAt}</dt><dd>{preview.officialSalesInvoice.recordedAtUtc}</dd><dt>{T.importApprovedBy}</dt><dd>{preview.officialSalesInvoice.approvedBy ?? T.officialSalesAbsent}</dd>
+        <dt>{T.importApprovedAt}</dt><dd>{preview.officialSalesInvoice.approvedAtUtc ?? T.officialSalesAbsent}</dd><dt>{T.officialSalesRejectedBy}</dt><dd>{preview.officialSalesInvoice.rejectedBy ?? T.officialSalesAbsent}</dd>
+        <dt>{T.officialSalesRejectedAt}</dt><dd>{preview.officialSalesInvoice.rejectedAtUtc ?? T.officialSalesAbsent}</dd><dt>{OFFICIAL.reason}</dt><dd>{preview.officialSalesInvoice.rejectionReason ?? T.officialSalesAbsent}</dd>
+        <dt>{T.officialSalesWithdrawnBy}</dt><dd>{preview.officialSalesInvoice.withdrawnBy ?? T.officialSalesAbsent}</dd><dt>{T.officialSalesWithdrawnAt}</dt><dd>{preview.officialSalesInvoice.withdrawnAtUtc ?? T.officialSalesAbsent}</dd>
+      </dl><section aria-label={OFFICIAL.differences}><h4>{OFFICIAL.differences}</h4>
+        {preview.officialSalesInvoice.sourceDifferences?.length ? <ul>{preview.officialSalesInvoice.sourceDifferences.map((difference,index)=><li key={`${difference.importBatchId}:${index}`}><dl className={styles.facts}>
+          <dt>{T.importBatch}</dt><dd>{difference.importBatchId}</dd><dt>{T.importDocument}</dt><dd>{difference.sourceDocumentId}</dd><dt>{OFFICIAL.officialNo}</dt><dd>{difference.officialNo}</dd><dt>{OFFICIAL.ettn}</dt><dd>{difference.ettn}</dd>
+          <dt>{OFFICIAL.sourceDifference}</dt><dd>{difference.fields.map(field=>officialDifferenceLabels[field] ?? OFFICIAL.sourceDifference).join(', ')}</dd>
+          <dt>{OFFICIAL.date}</dt><dd>{difference.invoiceDate ?? OFFICIAL.sourceUnknown}</dd><dt>{OFFICIAL.payableFunctionalAmount}</dt><dd>{difference.payableFunctionalAmount ?? OFFICIAL.sourceUnknown}</dd><dt>{T.officialSalesWinner}</dt><dd>{difference.winner === 'manual' ? T.officialSalesManualWinner : T.officialSalesImportedWinner}</dd>
+        </dl></li>)}</ul> : <p>{T.officialSalesNoDifferences}</p>}
+      </section><OfficialInvoiceTaxWarningList warnings={preview.officialSalesInvoice.taxWarning ? [preview.officialSalesInvoice.taxWarning] : []} /></section> : null}
       {preview.officialInvoiceImport ? <section aria-label={T.importProposal}><h3>{T.importProposal}</h3>
         <dl className={styles.facts}>
           <dt>{T.importBatch}</dt><dd>{preview.officialInvoiceImport.batch.batchId}</dd>

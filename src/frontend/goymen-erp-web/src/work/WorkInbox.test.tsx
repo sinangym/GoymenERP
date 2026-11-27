@@ -653,3 +653,13 @@ it('does not expose official import cards through the native general approval sc
  await screen.findByTestId('work-inbox-no-authority')
  expect(screen.queryByTestId('work-inbox-list')).toBeNull();expect(api.inboxReads()).toEqual([]);expect(screen.queryByRole('link',{name:/Resmî fatura içe alma onayı/})).toBeNull()
 })
+
+
+it.each([{granted:['finance.official-sales-invoice.work-decision'],visible:true},{granted:[FINANCE_CAPABILITY.officialInvoicesApprove],visible:false}])('uses the exact official sales invoice purpose for the native owner link %j',async({granted,visible})=>{
+ const kind='finance.official-sales-invoice.v1',link=`/onaylarim/${kind}/${LEGACY_ID}`
+ const item={...limitItem,kind,itemId:LEGACY_ID,documentLabel:'SENTETIK RESMI',link,awaitingPermission:'finance.official-sales-invoices.approve',ruleVersion:RV(kind),explanation:{rules:[{ruleCode:'finance.official-sales-invoice-approval-required',threshold:null,actual:'123.45',deviation:null,unit:null}],references:[]}}
+ const api=installFetch({granted,inbox:()=>json(inbox({items:[item],sources:[src('finance',kind,'finance.official-sales-invoices.approve','BusinessDays')]}))})
+ await renderAt('/onaylarim/kuyruk')
+ if(visible){await screen.findByTestId('work-inbox-item');expect(within(cardOf(kind)).getByRole('link',{name:T.openOwnerLabel('Resmî satış faturası onayı','SENTETIK RESMI')}).getAttribute('href')).toBe(link)}
+ else{await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(api.inboxReads()).toHaveLength(0)}
+})

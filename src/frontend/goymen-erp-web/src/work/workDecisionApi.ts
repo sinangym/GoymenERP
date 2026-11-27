@@ -1,7 +1,8 @@
 import { decodePriceListLine, decodePriceListScope, type PriceListLine, type PriceListScope } from '../product/priceLists/contract'
 import { isPiecesPerPackage } from '../product/packageImportApi'
 import { isRevisionText, type CreditLimitKind } from '../finance/CreditLimitContract'
-import { isPositiveDecimalText } from '../finance/decimalText'
+import { isNonNegativeDecimalText, isPositiveDecimalText } from '../finance/decimalText'
+import { decodeOfficialInvoice, OFFICIAL_AMOUNT_FIELDS, type OfficialInvoice } from '../finance/officialSalesInvoiceApi'
 import { decodeDecisionDetail, type OfficialInvoiceDecisionDetail } from '../finance/officialInvoiceImportApprovalContract'
 import { isCountedKilogramText, isPieceCount } from '../inventory/stockCountContract'
 import { KG_TEXT, KG_SIGNED_TEXT, KG_DECIMAL_TEXT, isDispatchKilogramsProduct, type DispatchKilograms } from '../logistics/dispatchKilogramsContract'
@@ -14,7 +15,7 @@ import { hasExactKeys, replayHeadersAgree } from '../finance/wireShape'
 import { readJson, type CommandOutcome } from '../settings/discountLimitApi'
 
 export const WORK_DECISION_KINDS = ['inventory.opening-cost.v1', 'finance.cash-account.v1',
-  'finance.credit-account.v1', 'finance.cash-account-passivation.v1', 'finance.cash-account-reactivation.v1','sales.order-draft.v1','sales.invoice.v1','sales.subcontract-invoice.v1','purchasing.request.v1','purchasing.order.v1','purchasing.service-order.v1','purchasing.incoming-invoice-variance.v1','purchasing.goods-receipt-batch.v1','manufacturing.plan.v1','inventory.transfer-loss.v1','counterparty.tax-identity-change.v1','counterparty.legal-name-change.v1','logistics.plan-excess.v1','inventory.transfer-overage.v1','logistics.weighing-difference.v1','purchasing.supplier-return-cost-exception.v1','inventory.stock-count.v1','finance.bank-account.v1','inventory.stock-scrap.v1','logistics.dispatch-note.v1','logistics.customer-return.v1','finance.manual-bank-payment.v1','finance.bank-account-iban-change.v1','product.package-standard-version.v1','product.price-list-version.v1','finance.party-credit-limit.v1','finance.official-invoice-import.v1'] as const
+  'finance.credit-account.v1', 'finance.cash-account-passivation.v1', 'finance.cash-account-reactivation.v1','sales.order-draft.v1','sales.invoice.v1','sales.subcontract-invoice.v1','purchasing.request.v1','purchasing.order.v1','purchasing.service-order.v1','purchasing.incoming-invoice-variance.v1','purchasing.goods-receipt-batch.v1','manufacturing.plan.v1','inventory.transfer-loss.v1','counterparty.tax-identity-change.v1','counterparty.legal-name-change.v1','logistics.plan-excess.v1','inventory.transfer-overage.v1','logistics.weighing-difference.v1','purchasing.supplier-return-cost-exception.v1','inventory.stock-count.v1','finance.bank-account.v1','inventory.stock-scrap.v1','logistics.dispatch-note.v1','logistics.customer-return.v1','finance.manual-bank-payment.v1','finance.bank-account-iban-change.v1','product.package-standard-version.v1','product.price-list-version.v1','finance.party-credit-limit.v1','finance.official-invoice-import.v1','finance.official-sales-invoice.v1'] as const
 // Native owner purposes: kind prefixes do not define their actual capability ids.
 export const COUNTERPARTY_WORK_DECISION_CAPABILITY = {
   'counterparty.tax-identity-change.v1': 'cari.tax-identity-change.work-decision',
@@ -32,7 +33,7 @@ export const isCounterpartyWorkDecisionKind = (kind: string): kind is Counterpar
   Object.hasOwn(COUNTERPARTY_WORK_DECISION_CAPABILITY, kind)
 export const isSalesWorkDecisionKind = (kind: WorkDecisionKind) => kind === 'sales.order-draft.v1' || kind === 'sales.invoice.v1' || kind === 'sales.subcontract-invoice.v1'
 /** Native owner reason/note bounds; Counterparty notes and Sales rejection reasons are optional. */
-export const workDecisionReasonLimit = (kind: WorkDecisionKind) => kind === 'logistics.customer-return.v1' ? undefined : kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || isCounterpartyWorkDecisionKind(kind) ? 1000 : kind === 'manufacturing.plan.v1' ? 256 : kind === 'purchasing.incoming-invoice-variance.v1' ? 2000 : kind === 'purchasing.service-order.v1' ? 1000 : isSalesWorkDecisionKind(kind) || kind === 'purchasing.request.v1' || kind === 'product.package-standard-version.v1' ? 4000 : 500
+export const workDecisionReasonLimit = (kind: WorkDecisionKind) => kind === 'finance.official-sales-invoice.v1' ? 1000 : kind === 'logistics.customer-return.v1' ? undefined : kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || isCounterpartyWorkDecisionKind(kind) ? 1000 : kind === 'manufacturing.plan.v1' ? 256 : kind === 'purchasing.incoming-invoice-variance.v1' ? 2000 : kind === 'purchasing.service-order.v1' ? 1000 : isSalesWorkDecisionKind(kind) || kind === 'purchasing.request.v1' || kind === 'product.package-standard-version.v1' ? 4000 : 500
 export const isWorkDecisionKind = (value: string): value is WorkDecisionKind => value === 'product.package-standard-version.v1' || value === 'logistics.customer-return.v1' || value === 'logistics.dispatch-note.v1' || isCounterpartyWorkDecisionKind(value) || WORK_DECISION_KINDS.some(kind => kind === value)
 export interface WorkDecisionRequest { readonly productPackageStandard?: { readonly effectiveFrom: string }; readonly logisticsCustomerReturn?: { readonly inventoryMovementId: string }; readonly expectedVersion: string; readonly approve: boolean; readonly reason: string | null; readonly delegationId: string | null; readonly supplierReturnCostException?: { readonly expectedPurchaseOrderVersion?: string }; readonly inventoryTransferOverage?: { readonly requestNumber: number; readonly decidedAtUtc: string }; readonly logisticsPlanExcess?: { readonly expectedInstructionVersion: string }; readonly inventoryTransferLoss?: { readonly requestNumber: number; readonly decidedAtUtc: string }; readonly manufacturingPlanReapproval?: { readonly selectedLabelIds?: readonly string[] | null } | null }
 export interface CounterpartyTaxIdentityProof {
@@ -113,6 +114,7 @@ export interface WorkProductPriceListPreview {
   readonly lines: readonly PriceListLine[]; readonly scope: PriceListScope
 }
 export interface WorkDecisionPreview {
+  readonly officialSalesInvoice?: OfficialInvoice
   readonly officialInvoiceImport?: OfficialInvoiceDecisionDetail
   readonly partyCreditLimit?: WorkPartyCreditLimitPreview
   readonly productPriceList?: WorkProductPriceListPreview
@@ -149,8 +151,12 @@ const dispatchGuid = (value: unknown): value is string => typeof value === 'stri
 const dispatchVersion = (value: unknown): value is string => typeof value === 'string' && value === value.trim() && isPositiveInt64Text(value)
 const creditLimitRevision = (value: unknown): value is string => typeof value === 'string' && value === value.trim() && isRevisionText(value)
 const creditLimitAmount = (value: unknown): value is string => {
-  if (typeof value !== 'string' || value !== value.trim() || nativeControls(value) || value.length > 64 || !isPositiveDecimalText(value)) return false
-  // Native IsExactAmount requires lossless CLR decimal representation (96-bit coefficient, scale <= 28).
+  return typeof value === 'string' && value.length <= 64 && exactNativeClrAmount(value, true)
+}
+const exactNativeClrAmount = (value: unknown, positive: boolean): value is string => {
+  if (typeof value !== 'string' || value !== value.trim() || nativeControls(value)
+    || !(positive ? isPositiveDecimalText(value) : isNonNegativeDecimalText(value))) return false
+  // Native credit-limit IsExactAmount and official-invoice Amount require lossless CLR decimal representation.
   // Strip only representational zeros for validation; return/display the original wire text unchanged.
   const [whole, fraction = ''] = value.split('.')
   const significantFraction = fraction.replace(/0+$/, '')
@@ -192,6 +198,9 @@ export const isWorkDecisionRequest = (value: unknown, kind?: WorkDecisionKind): 
   if (!record(value) || !hasExactKeys(value, ['expectedVersion', 'approve', 'reason', 'delegationId'], kind === 'product.package-standard-version.v1' ? ['productPackageStandard'] : kind === 'logistics.customer-return.v1' ? ['logisticsCustomerReturn'] : kind === 'purchasing.supplier-return-cost-exception.v1' ? ['supplierReturnCostException'] : kind === 'inventory.transfer-overage.v1' ? ['inventoryTransferOverage'] : kind === 'logistics.plan-excess.v1' ? ['logisticsPlanExcess'] : kind === 'inventory.transfer-loss.v1' ? ['inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['manufacturingPlanReapproval'] : [])
     || !text(value.expectedVersion) || (kind === 'inventory.transfer-overage.v1' || kind === 'logistics.plan-excess.v1' || kind === 'manufacturing.plan.v1' || kind === 'inventory.transfer-loss.v1' || kind !== undefined && isCounterpartyWorkDecisionKind(kind)) && !isPositiveInt64Text(value.expectedVersion) || typeof value.approve !== 'boolean' || !nullableText(value.reason)
     || value.delegationId !== null && !isBoundUuid(value.delegationId)) return false
+  if (kind === 'finance.official-sales-invoice.v1') return value.expectedVersion === '1'
+    && (value.delegationId === null || dispatchGuid(value.delegationId))
+    && (value.approve ? value.reason === null : typeof value.reason === 'string' && value.reason === value.reason.trim() && value.reason.length > 0 && value.reason.length <= 1000)
   if (kind === 'finance.official-invoice-import.v1') return value.approve && value.reason === null && value.expectedVersion === '1'
     && (value.delegationId === null || dispatchGuid(value.delegationId))
   if (kind === 'product.price-list-version.v1') return value.approve && value.reason === null && dispatchVersion(value.expectedVersion) && value.expectedVersion !== '9223372036854775807' && (value.delegationId === null || dispatchGuid(value.delegationId))
@@ -240,11 +249,11 @@ export const isWorkDecisionRequest = (value: unknown, kind?: WorkDecisionKind): 
     && (selection.selectedLabelIds === undefined || selection.selectedLabelIds === null || labelIds(selection.selectedLabelIds))
 }
 export function decodeWorkDecisionPreview(value: unknown, company: string, kind: WorkDecisionKind, id: string): WorkDecisionPreview | null {
-  if (!record(value) || !hasExactKeys(value, ['companyId', 'kind', 'itemId', 'documentLabel', 'sourceVersion', 'pending', 'approvalReasonRequired', 'references', 'rules'], kind === 'finance.official-invoice-import.v1' ? ['rejectionSupported','officialInvoiceImport'] : kind === 'finance.party-credit-limit.v1' ? ['rejectionSupported','partyCreditLimit'] : kind === 'product.price-list-version.v1' ? ['rejectionSupported','productPriceList'] : kind === 'product.package-standard-version.v1' ? ['rejectionSupported','productPackageStandard'] : kind === 'logistics.customer-return.v1' ? ['rejectionSupported','approvalSupported','logisticsCustomerReturn'] : kind === 'logistics.dispatch-note.v1' ? ['rejectionSupported', 'logisticsDispatchNote'] : kind === 'inventory.stock-scrap.v1' ? ['rejectionSupported', 'inventoryStockScrap'] : kind === 'finance.bank-account-iban-change.v1' ? ['rejectionSupported', 'bankAccountIbanChange'] : kind === 'finance.bank-account.v1' ? ['rejectionSupported', 'bankAccount'] : kind === 'inventory.stock-count.v1' ? ['rejectionSupported', 'inventoryStockCount'] : kind === 'purchasing.supplier-return-cost-exception.v1' ? ['rejectionSupported', 'supplierReturnCostException'] : kind === 'logistics.weighing-difference.v1' ? ['rejectionSupported', 'logisticsWeighingDifference'] : kind === 'inventory.transfer-overage.v1' ? ['rejectionSupported', 'inventoryTransferOverage'] : kind === 'logistics.plan-excess.v1' ? ['rejectionSupported', 'logisticsPlanExcess'] : kind === 'inventory.transfer-loss.v1' ? ['rejectionSupported', 'inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['rejectionSupported', 'manufacturingPlanReapproval'] : kind === 'counterparty.tax-identity-change.v1' ? ['rejectionSupported', 'counterpartyTaxIdentityChange'] : kind === 'counterparty.legal-name-change.v1' ? ['rejectionSupported', 'counterpartyLegalNameChange'] : ['rejectionSupported'])
+  if (!record(value) || !hasExactKeys(value, ['companyId', 'kind', 'itemId', 'documentLabel', 'sourceVersion', 'pending', 'approvalReasonRequired', 'references', 'rules'], kind === 'finance.official-sales-invoice.v1' ? ['rejectionSupported','officialSalesInvoice'] : kind === 'finance.official-invoice-import.v1' ? ['rejectionSupported','officialInvoiceImport'] : kind === 'finance.party-credit-limit.v1' ? ['rejectionSupported','partyCreditLimit'] : kind === 'product.price-list-version.v1' ? ['rejectionSupported','productPriceList'] : kind === 'product.package-standard-version.v1' ? ['rejectionSupported','productPackageStandard'] : kind === 'logistics.customer-return.v1' ? ['rejectionSupported','approvalSupported','logisticsCustomerReturn'] : kind === 'logistics.dispatch-note.v1' ? ['rejectionSupported', 'logisticsDispatchNote'] : kind === 'inventory.stock-scrap.v1' ? ['rejectionSupported', 'inventoryStockScrap'] : kind === 'finance.bank-account-iban-change.v1' ? ['rejectionSupported', 'bankAccountIbanChange'] : kind === 'finance.bank-account.v1' ? ['rejectionSupported', 'bankAccount'] : kind === 'inventory.stock-count.v1' ? ['rejectionSupported', 'inventoryStockCount'] : kind === 'purchasing.supplier-return-cost-exception.v1' ? ['rejectionSupported', 'supplierReturnCostException'] : kind === 'logistics.weighing-difference.v1' ? ['rejectionSupported', 'logisticsWeighingDifference'] : kind === 'inventory.transfer-overage.v1' ? ['rejectionSupported', 'inventoryTransferOverage'] : kind === 'logistics.plan-excess.v1' ? ['rejectionSupported', 'logisticsPlanExcess'] : kind === 'inventory.transfer-loss.v1' ? ['rejectionSupported', 'inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['rejectionSupported', 'manufacturingPlanReapproval'] : kind === 'counterparty.tax-identity-change.v1' ? ['rejectionSupported', 'counterpartyTaxIdentityChange'] : kind === 'counterparty.legal-name-change.v1' ? ['rejectionSupported', 'counterpartyLegalNameChange'] : ['rejectionSupported'])
     || !same(value.companyId, company) || value.kind !== kind || !same(value.itemId, id) || !text(value.documentLabel)
     || (kind === 'inventory.opening-cost.v1' ? value.sourceVersion !== `submission/${id}` : !isPositiveInt64Text(value.sourceVersion))
     || typeof value.pending !== 'boolean' || value.approvalReasonRequired !== (kind === 'product.package-standard-version.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'inventory.transfer-overage.v1' || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.opening-cost.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1')
-    || (kind === 'manufacturing.plan.v1' ? typeof value.rejectionSupported !== 'boolean' : kind === 'finance.party-credit-limit.v1' || kind === 'product.package-standard-version.v1' || kind === 'logistics.customer-return.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'purchasing.supplier-return-cost-exception.v1' || kind === 'purchasing.goods-receipt-batch.v1' || kind === 'inventory.transfer-overage.v1' || kind === 'inventory.transfer-loss.v1' || isCounterpartyWorkDecisionKind(kind) ? value.rejectionSupported !== true : kind === 'finance.official-invoice-import.v1' || kind === 'product.price-list-version.v1' || kind === 'finance.bank-account-iban-change.v1' || kind === 'finance.manual-bank-payment.v1' || kind === 'logistics.dispatch-note.v1' || kind === 'finance.bank-account.v1' || kind === 'logistics.weighing-difference.v1' || kind === 'logistics.plan-excess.v1' || kind === 'purchasing.order.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? value.rejectionSupported !== false : value.rejectionSupported !== undefined && value.rejectionSupported !== true)
+    || (kind === 'manufacturing.plan.v1' ? typeof value.rejectionSupported !== 'boolean' : kind === 'finance.official-sales-invoice.v1' || kind === 'finance.party-credit-limit.v1' || kind === 'product.package-standard-version.v1' || kind === 'logistics.customer-return.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'purchasing.supplier-return-cost-exception.v1' || kind === 'purchasing.goods-receipt-batch.v1' || kind === 'inventory.transfer-overage.v1' || kind === 'inventory.transfer-loss.v1' || isCounterpartyWorkDecisionKind(kind) ? value.rejectionSupported !== true : kind === 'finance.official-invoice-import.v1' || kind === 'product.price-list-version.v1' || kind === 'finance.bank-account-iban-change.v1' || kind === 'finance.manual-bank-payment.v1' || kind === 'logistics.dispatch-note.v1' || kind === 'finance.bank-account.v1' || kind === 'logistics.weighing-difference.v1' || kind === 'logistics.plan-excess.v1' || kind === 'purchasing.order.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? value.rejectionSupported !== false : value.rejectionSupported !== undefined && value.rejectionSupported !== true)
     || !Array.isArray(value.references) || value.references.length > 12 || !value.references.every(ref => record(ref)
       && hasExactKeys(ref, ['role', 'label', 'recordId', 'link']) && text(ref.role) && text(ref.label)
       && (ref.recordId === null || isBoundUuid(ref.recordId)) && nullableText(ref.link))
@@ -374,6 +383,27 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
       || value.references.filter(ref => record(ref) && ref.role === 'currency' && same(ref.recordId, account.currencyId)).length !== 1
       || value.rules.length !== 1 || !record(value.rules[0]) || value.rules[0].ruleCode !== 'finance.bank-account-approval-required'
       || [value.rules[0].threshold,value.rules[0].actual,value.rules[0].deviation,value.rules[0].unit].some(field => field !== null)) return null
+  }
+  if (kind === 'finance.official-sales-invoice.v1') {
+    const raw = value.officialSalesInvoice
+    if (!record(raw) || !dispatchGuid(raw.companyId)) return null
+    const invoice = decodeOfficialInvoice(raw, raw.companyId, isWorkPackageEffectiveDate)
+    if (invoice === null || !same(invoice.companyId, company) || !same(invoice.invoiceId, id)
+      || ![invoice.invoiceId,invoice.customerPartyId,invoice.currencyId,invoice.pdfDocumentId,invoice.ettn].every(dispatchGuid)
+      || invoice.ettn !== invoice.ettn.toLowerCase() || !canonicalOwnerText(invoice.officialNo,64) || invoice.officialNo !== value.documentLabel
+      || OFFICIAL_AMOUNT_FIELDS.some(field => !exactNativeClrAmount(invoice[field], field === 'payableAmount' || field === 'payableFunctionalAmount'))
+      || invoice.pdfSha256.length !== 64 || !/^[0-9a-f]+$/.test(invoice.pdfSha256)
+      || invoice.version !== (invoice.status === 'PendingApproval' ? '1' : '2') || invoice.version !== value.sourceVersion
+      || value.pending !== (invoice.status === 'PendingApproval') || !canonicalOwnerText(invoice.recordedBy,128) || !officialSalesUtc(invoice.recordedAtUtc)
+      || [invoice.approvedBy,invoice.rejectedBy,invoice.withdrawnBy].some(actor => actor !== null && !canonicalOwnerText(actor,128))
+      || [invoice.approvedAtUtc,invoice.rejectedAtUtc,invoice.withdrawnAtUtc].some(at => at !== null && !officialSalesUtc(at))
+      || invoice.rejectionReason !== null && (!canonicalOwnerText(invoice.rejectionReason,1000))
+      || invoice.invoiceDate != null && !isWorkPackageEffectiveDate(invoice.invoiceDate)
+      || !validOfficialSalesDynamicFacts(invoice) || value.references.length !== 3
+      || [['customer',invoice.customerPartyId],['currency',invoice.currencyId],['pdf-document',invoice.pdfDocumentId]].some(([role,target]) => value.references.filter(ref=>record(ref)&&ref.role===role&&same(ref.recordId,target!)).length!==1)
+      || value.rules.length !== 1 || !record(value.rules[0]) || value.rules[0].ruleCode !== 'finance.official-sales-invoice-approval-required'
+      || value.rules[0].threshold !== null || value.rules[0].deviation !== null || value.rules[0].unit !== null
+      || !exactNativeClrAmount(value.rules[0].actual,true) || value.rules[0].actual !== exactAmountIdentity(invoice.payableAmount)) return null
   }
   if (kind === 'finance.official-invoice-import.v1') {
     const decoded = decodeDecisionDetail(value.officialInvoiceImport)
@@ -519,6 +549,28 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
     if ((options != null) !== (value.pending && value.rules.some(rule => record(rule) && rule.ruleCode === 'manufacturing.plan-reapproval-after-order-cancel'))) return null
   }
   return value as unknown as WorkDecisionPreview
+}
+const canonicalOwnerText = (value: unknown, max: number): value is string => typeof value === 'string' && value.trim().length > 0 && value === value.trim() && value.length <= max
+const officialSalesUtc = (value: unknown): value is string => transferDispatchUtc(value) && value === value.trim()
+  && /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,7})?(?:Z|\+00:00)$/.test(value)
+// Exact digit identity only; no amount calculation, conversion or rewriting of the displayed native text.
+const exactAmountIdentity = (value: string): string => {
+  const [whole,fraction=''] = value.split('.')
+  const tail = fraction.replace(/0+$/, '')
+  return (whole!.replace(/^0+/, '') || '0') + (tail === '' ? '' : '.' + tail)
+}
+const nativeAmountText = (value: string) => value === value.trim() && isNonNegativeDecimalText(value)
+const validOfficialSalesDynamicFacts = (invoice: OfficialInvoice): boolean => {
+  if (invoice.sourceDifferences?.some(diff => !dispatchGuid(diff.importBatchId) || !dispatchGuid(diff.sourceDocumentId)
+    || !canonicalOwnerText(diff.officialNo,64) || !dispatchGuid(diff.ettn)
+    || diff.invoiceDate !== null && !isWorkPackageEffectiveDate(diff.invoiceDate)
+    || diff.payableFunctionalAmount !== null && !nativeAmountText(diff.payableFunctionalAmount))) return false
+  const warning = invoice.taxWarning
+  return warning == null || warning.code === 'finance_official_invoice_tax_inconsistent'
+    && (warning.sourceDocumentId === null || dispatchGuid(warning.sourceDocumentId))
+    && nativeAmountText(warning.expectedPayableFunctionalAmount.startsWith('-') ? warning.expectedPayableFunctionalAmount.slice(1) : warning.expectedPayableFunctionalAmount)
+    && nativeAmountText(warning.payableFunctionalAmount) && nativeAmountText(warning.differenceFunctionalAmount)
+    && isPositiveDecimalText(warning.differenceFunctionalAmount)
 }
 export const fetchWorkDecision = (company: string, kind: WorkDecisionKind, id: string, signal?: AbortSignal) =>
   readJson(path(kind, id), company, value => decodeWorkDecisionPreview(value, company, kind, id), signal)
