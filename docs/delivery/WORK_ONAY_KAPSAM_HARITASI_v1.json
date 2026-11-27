@@ -1835,14 +1835,25 @@
       "approver_proposal": "ÖNERİ: MUHM, GM",
       "duration_cell": "2 iş günü",
       "decision_note": "—",
-      "candidate_inbox_sources": [],
-      "candidate_tests": [],
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingInvoiceLineCogsCorrectionWorkInboxSourceV1.cs",
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingInvoiceLineCogsCorrectionWorkInboxSourceV1.Decision.cs",
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/InvoiceLineCogsCorrectionServiceV1.DecisionRead.cs"
+      ],
+      "candidate_tests": [
+        "tests/GoymenERP.Accounting.UnitTests/InvoiceLineCogsApprovalSafetyTests.DecisionRead.cs",
+        "tests/GoymenERP.Api.IntegrationTests/InvoiceLineCogsWorkDecisionHostTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInvoiceLineCogsDecisionPreviewV1Tests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingInvoiceLineCogsSqlServerRelationalAcceptanceTests.DecisionRead.cs",
+        "src/frontend/goymen-erp-web/src/work/workInvoiceLineCogsDecision.test.ts",
+        "src/frontend/goymen-erp-web/src/work/WorkInvoiceLineCogsPage.test.tsx"
+      ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Paired owner/Host/UI source and bounded local evidence only; all runtime semantics remain NOT_VERIFIED. Native numeric defaults preserved; Work-only Int32/empty-return guards added. Actual SQL/browser/CI/K3 pending."
     },
     {
       "flow": 55,
@@ -1854,14 +1865,25 @@
       "approver_proposal": "ÖNERİ: MUHM, GM",
       "duration_cell": "2 iş günü",
       "decision_note": "—",
-      "candidate_inbox_sources": [],
-      "candidate_tests": [],
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingInvoicedShipmentCostWorkInboxSourceV1.cs",
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingPurchaseCostDifferenceWorkInboxSourceV1.cs",
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingInventoryCostWorkInboxSourceBaseV1.Decision.cs"
+      ],
+      "candidate_tests": [
+        "tests/GoymenERP.Accounting.UnitTests/AccountingInventoryCostServiceFenceTests.DecisionRead.cs",
+        "tests/GoymenERP.Accounting.UnitTests/AccountingInventoryCostServiceFenceTests.WorkSource.cs",
+        "tests/GoymenERP.Api.IntegrationTests/InventoryCostWorkDecisionHostTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkInventoryCostDecisionPreviewV1Tests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingInvoiceLineCogsSqlServerRelationalAcceptanceTests.InventoryCostDecisionRead.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingInvoiceLineCogsSqlServerRelationalAcceptanceTests.InventoryCostDecisionRead.ClaimSuccession.cs"
+      ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Both native purpose Host adapters have bounded local evidence; paired frontend remains pending. Actual SQL/runtime/CI/K3 acceptance NOT_RUN."
     },
     {
       "flow": 56,
@@ -1873,14 +1895,20 @@
       "approver_proposal": "ÖNERİ: MUHM, GM",
       "duration_cell": "2 iş günü",
       "decision_note": "—",
-      "candidate_inbox_sources": [],
-      "candidate_tests": [],
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingInventoryCostCancellationWorkInboxSourceV1.cs",
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingStore.InventoryCostCancellationApprovalSafety.cs"
+      ],
+      "candidate_tests": [
+        "tests/GoymenERP.Accounting.UnitTests/AccountingInventoryCostServiceFenceTests.CancellationApprovalSafety.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingInvoiceLineCogsSqlServerRelationalAcceptanceTests.CancellationApprovalSafety.cs"
+      ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Native safety prerequisite/source tests only; purpose owner/read/receipt/Host/UI not yet implemented. Separate outer/cancellation versions are preserved. Actual SQL NOT_RUN."
     },
     {
       "flow": 57,
@@ -3139,5 +3167,122 @@
     "source_peers": "Bounded full native53 owner/source/WorkHost/UI and native54/55 safety peers, shared composition/inventory peer; publication peers found link/count/duplicate issues and source-closed finalc1. Some reviewers authored earlier native pieces; none of these are formal independent exact-head K3 acceptance.",
     "limits": "41packages/50references/64 flow rows unchanged; all64 semantics NOT_VERIFIED/runtime NOT_RUN/verified_runtime_flows0. Old CI does not transfer. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3/business acceptance remain pending. Provider/grant/role/Critical/deployment/AI activation unchanged. Token telemetry unavailable; phase durations are measured local artifacts."
   },
-  "current_checkpoint_ref": "native_cost_work_checkpoint"
+  "current_checkpoint_ref": "invoice_and_inventory_cost_work_checkpoint",
+  "invoice_and_inventory_cost_work_checkpoint": {
+    "source_commit": "f35e223a84f388a7a76ee897ecaf07daaff5377f",
+    "status": "SOURCE_AND_BOUNDED_LOCAL_TESTS_ONLY",
+    "backend_supported_kinds": 51,
+    "frontend_paired_kinds": 49,
+    "staged_frontend_kinds": [
+      "accounting.invoiced-shipment-cost.v1",
+      "accounting.purchase-cost-difference.v1"
+    ],
+    "flow54": "Retained invoice-line COGS owner, private original Commands receipt, full human Work5/25 transport and paired purpose under the existing company-wide journal reversal approval. Native proposal1→2 remains separate from current invoice-line revision. No new permission. Work-only empty return-list and exact Int32 boundaries source-reviewed; native numeric decoder defaults unchanged.",
+    "flow55": "Both cost kinds have retained owner reads, genuine original receipt and typed Host preview with all native business/claim/rounding/attribution facts; nested Int64 values are lossless text. Native Posted/RoundedNoCost remain success and Stale remains genuine409. Opaque EconomicKey and raw proof JSON/hash data are excluded from this new human whitelist. Frontend pair is pending.",
+    "flow56_prerequisite": "Native component cancellation now uses the existing exact owned command boundary, same Db/collector/actual audit writer, all-await fences including nested claim/evidence reads, late-refusal rollback and one readonly original-key reconciliation. Outer cost version is unchanged; only cancellation version increments. Owner/read/receipt/Work purpose remains pending. No schema/formula/permission policy changed.",
+    "local_evidence": {
+      "accounting": {
+        "freeGiB": 3.8304176330566406,
+        "exit": 0,
+        "seconds": 35.3984781,
+        "source_commit": "4ddc779b286bb95d50621a1503433c56816b7ad5",
+        "artifact": "inventory-cost-host-cancellation-native-20261128",
+        "total": 1622,
+        "passed": 1622,
+        "failed": 0,
+        "skipped": 0
+      },
+      "api_refresh": {
+        "freeGiB": 3.9328269958496094,
+        "exit": 0,
+        "seconds": 21.4159939,
+        "source_commit": "4ddc779b286bb95d50621a1503433c56816b7ad5",
+        "artifact": "inventory-cost-host-cancellation-native-20261128"
+      },
+      "controlled_host": {
+        "freeGiB": 3.9026832580566406,
+        "seconds": 70.4838698,
+        "exit": 0,
+        "source_commit": "f35e223a84f388a7a76ee897ecaf07daaff5377f",
+        "artifact": "inventory-cost-host-source-tests-fixed-20261128",
+        "total": 1815,
+        "passed": 1815,
+        "failed": 0,
+        "skipped": 0
+      },
+      "work": {
+        "freeGiB": 3.8244705200195312,
+        "seconds": 21.2668909,
+        "exit": 0,
+        "source_commit": "f35e223a84f388a7a76ee897ecaf07daaff5377f",
+        "artifact": "inventory-cost-host-source-tests-fixed-20261128",
+        "total": 195,
+        "passed": 195,
+        "failed": 0,
+        "skipped": 0
+      },
+      "full_api_prior_source": {
+        "freeGiB": 3.712970733642578,
+        "exit": 0,
+        "seconds": 197.295807,
+        "source_commit": "5f62990916f4af7415af647b352b70cb3e085862",
+        "artifact": "cost-owners-api-full-20261128"
+      },
+      "frontend_tsc": {
+        "exit": 0,
+        "seconds": 51.6385215,
+        "freeGiB": 3.663494110107422,
+        "source_commit": "6550a4913029576fb8cd5b816d12d4161e6d24cf",
+        "artifact": "invoice-cogs-work-types-fixed-20261128"
+      },
+      "frontend_lint": {
+        "exit": 0,
+        "seconds": 0.809243,
+        "freeGiB": 3.627269744873047,
+        "source_commit": "6550a4913029576fb8cd5b816d12d4161e6d24cf",
+        "artifact": "invoice-cogs-work-types-fixed-20261128"
+      },
+      "frontend": {
+        "exit": 0,
+        "seconds": 117.0059644,
+        "freeGiB": 3.606945037841797,
+        "source_commit": "6550a4913029576fb8cd5b816d12d4161e6d24cf",
+        "artifact": "invoice-cogs-work-types-fixed-20261128",
+        "files": 20,
+        "total": 1469,
+        "passed": 1469,
+        "failed": 0,
+        "skipped": 0
+      }
+    },
+    "evidence_scope": "Each phase retains its own exact source SHA; these are distinct artifacts, not a fresh full-CI result at this head. Frontend files are byte-identical to tested6550 at this source. Controlled host compiled all SQL test sources but did not execute SQL tests. API refresh disables project-reference rebuild after Accounting dependencies were rebuilt; the separate full API build is explicitly prior-source.",
+    "retained_failures": [
+      {
+        "source_commit": "8ad468ad6a98affade9f125cc9174efd43e9003c",
+        "artifact": "invoice-cogs-owner-host-20261128",
+        "phase": "accounting compile",
+        "exit": 1,
+        "reason": "Cross-assembly internal SHA helper access; corrected by identical existing public cost-source helper, without visibility expansion."
+      },
+      {
+        "seconds": 56.803461,
+        "exit": 2,
+        "freeGiB": 3.757354736328125,
+        "source_commit": "c051b4a0104ccda4fc28057dfeeeb04a71cafb93",
+        "artifact": "invoice-cogs-work-paired-20261128",
+        "reason": "Two callback type-predicate inference errors; explicit existing BOOLEAN validator parameter annotations preserve runtime behavior. Lint/frontend were NOT_RUN after this failure."
+      },
+      {
+        "freeGiB": 3.9108314514160156,
+        "exit": 1,
+        "seconds": 48.8868726,
+        "source_commit": "4ddc779b286bb95d50621a1503433c56816b7ad5",
+        "artifact": "inventory-cost-host-cancellation-native-20261128",
+        "reason": "Test-source CS8602 and two xUnit2031 errors; explicit nonnull assertion and Assert.Single predicate overload retain/strengthen assertions. Host execution and Work were NOT_RUN in this failed phase."
+      }
+    ],
+    "sql": "243 unique ordinal-sorted Accounting source names;16 added Fact sources since227 (4 COGS decision-read,4 inventory decision-read including nested succession fence,8 native cancellation safety). All new sources compiled in the terminal controlled Host run. Actual SQL execution NOT_RUN; injected1205 does not establish a natural simultaneous deadlock.",
+    "bounded_source_peers": "Full bounded native54 owner/Host/UI, native55 owner/Host, native56 safety/source tests and publication/integration deltas were read. Two frontend P2 and two Host/test P2 findings were source-closed with followup regressions; actual local results are recorded separately. Some reviewers authored dependency pieces; this is not the two independent exact-head K3 acceptance.",
+    "limits": "41 packages/50 references/64 flow rows retained; verified_runtime_flows=0 and all64 runtime NOT_RUN/semantics NOT_VERIFIED. ActualSQL/normalHTTP/browser/fullCI/pins/two independent K3/business acceptance remain pending. No grants/roles/Critical/provider/secrets/deployment/AI activation. Token telemetry unavailable; measured local phase durations are retained."
+  }
 }
