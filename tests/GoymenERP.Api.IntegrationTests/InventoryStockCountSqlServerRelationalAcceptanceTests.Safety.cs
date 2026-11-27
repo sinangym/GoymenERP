@@ -1,6 +1,8 @@
+using System.Data.Common;
 using System.Transactions;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Application.Contracts;
+using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
@@ -221,19 +223,121 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Empty(replayScope.DbContext.ChangeTracker.Entries()); Assert.False(replayScope.AuditWriter.HasPendingDrafts);
     }
 
+    [SqlServerFact]
+    public async Task Stock_count_rollback_or_dispose_failure_still_discards_owned_tracker_and_audit_without_starting_winner_replay()
+    {
+        await using var run = await Run.StartAsync();
+        foreach (var operation in new[] { "record", "approve", "reject" })
+        foreach (var failure in new[] { "rollback", "dispose", "both" })
+        {
+            var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-COUNT-CLEANUP-" + Guid.NewGuid().ToString("N"), 100m);
+            var request = Count(source.LabelId, source.LabelVersion, "101");
+            if (operation != "record")
+                await using (var seed = run.Store(CompanyA))
+                    await seed.Store.RecordStockCountAsync(request, Metadata(run), static _ => Task.CompletedTask);
+            var baseline = await CountEffectsAsync(run, source.LabelId);
+            var fault = new InventoryOwnedCleanupFaultProbe(failure != "dispose", failure != "rollback");
+            await using var scope = InventoryOwnedCleanupFaultStore(run, fault);
+            var metadata = Metadata(run) with { ActorId = Guid.NewGuid().ToString("D") };
+            Task Fence(CancellationToken _)
+            {
+                if (scope.AuditWriter.HasPendingDrafts)
+                {
+                    Assert.NotEmpty(scope.DbContext.ChangeTracker.Entries());
+                    fault.Armed = true;
+                    // Controlled original failure at the native before-audit fence. Real SQL owns the TX;
+                    // pending native drafts and mutations must be removed even when rollback/dispose fails.
+                    throw new DbUpdateConcurrencyException("SENTETİK original count failure before audit flush.");
+                }
+                return Task.CompletedTask;
+            }
+            var error = await Assert.ThrowsAsync<InventoryOwnedCleanupFaultException>(() => operation == "record"
+                ? scope.Store.RecordStockCountAsync(request, metadata, Fence)
+                : scope.Store.DecideStockCountAsync(request.CountId,
+                    new(operation == "approve" ? InventoryStockCountDecisionKindV1.Approve : InventoryStockCountDecisionKindV1.Reject, "Sayım kararı."), metadata, Fence));
+            Assert.Equal(failure == "rollback" ? "rollback" : "dispose", error.Stage);
+            Assert.Equal(1, fault.Starts); Assert.Equal(1, fault.RollbackAttempts);
+            Assert.Equal(failure != "dispose", fault.RollbackFailed);
+            Assert.Equal(failure != "rollback", fault.DisposeFailed);
+            Assert.Empty(scope.DbContext.ChangeTracker.Entries()); Assert.False(scope.AuditWriter.HasPendingDrafts);
+            Assert.Equal(baseline, await CountEffectsAsync(run, source.LabelId));
+
+            // EF may retain its disposed transaction handle when disposal diagnostics itself fails.
+            // A retained handle is refused without touching caller state; otherwise this same scope can retry.
+            var retained = scope.DbContext.Database.CurrentTransaction;
+            Task<InventoryStockCountResultV1> Retry(Func<CancellationToken, Task> fence) => operation == "record"
+                ? scope.Store.RecordStockCountAsync(request, metadata, fence)
+                : scope.Store.DecideStockCountAsync(request.CountId,
+                    new(operation == "approve" ? InventoryStockCountDecisionKindV1.Approve : InventoryStockCountDecisionKindV1.Reject, "Sayım kararı."), metadata, fence);
+            if (retained is not null)
+            {
+                var called = false;
+                var refusal = await Assert.ThrowsAsync<InventoryStockCountException>(() => Retry(_ => { called = true; return Task.CompletedTask; }));
+                Assert.Equal((503, InventoryStockCountCodesV1.Unavailable), (refusal.Status, refusal.Code));
+                Assert.False(called); Assert.Same(retained, scope.DbContext.Database.CurrentTransaction);
+                Assert.Equal(1, fault.Starts);
+            }
+            else
+            {
+                Assert.False((await Retry(static _ => Task.CompletedTask)).IsReplay);
+                Assert.Equal(2, fault.Starts);
+            }
+            Assert.DoesNotContain(scope.DbContext.ChangeTracker.Entries(), entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted);
+            Assert.False(scope.AuditWriter.HasPendingDrafts);
+        }
+    }
+
     private static StoreScope StockCountSafetyStoreWithoutInterceptor(Run run, params IInterceptor[] interceptors)
+        => StockCountSafetyCreateStore(run, false, null, interceptors);
+
+    private static StoreScope InventoryOwnedCleanupFaultStore(Run run, InventoryOwnedCleanupFaultProbe fault)
+        => StockCountSafetyCreateStore(run, true, fault, fault);
+
+    private static StoreScope StockCountSafetyCreateStore(Run run, bool auditInterceptor,
+        InventoryOwnedCleanupFaultProbe? cleanup, params IInterceptor[] interceptors)
     {
         var auditScope = run.Factory.Services.CreateScope();
         var company = auditScope.ServiceProvider.GetRequiredService<ICompanyContext>(); company.Set(CompanyA);
         var collector = auditScope.ServiceProvider.GetRequiredService<AuditEventCollector>();
         var writer = auditScope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
-        var db = new InventoryDbContext(new DbContextOptionsBuilder<InventoryDbContext>()
-            .UseSqlServer(run.Factory.DatabaseConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", InventoryDbContext.Schema))
-            .AddInterceptors(interceptors).Options, company);
+        var options = new DbContextOptionsBuilder<InventoryDbContext>()
+            .UseSqlServer(run.Factory.DatabaseConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", InventoryDbContext.Schema));
+        if (auditInterceptor) options.AddInterceptors(new AuditSaveChangesInterceptor(collector, company));
+        options.AddInterceptors(interceptors);
+        cleanup?.Configure(options);
+        var db = new InventoryDbContext(options.Options, company);
         var settings = new ApprovedSettingsPrerequisiteProvider(company, new FixedCurrentUser(run.Actor, CompanyA));
         return new(db, new InventoryStore(db, company, collector, new InventoryKilogramScale(settings), TimeProvider.System,
             lossDecisionAuditWriter: writer), auditScope);
     }
+
+    // EF 10.0.8 has rollback interception but no transaction-dispose interceptor override. TransactionDisposed
+    // diagnostics inject a one-shot failure after the real SQL transaction is disposed, without a fake TX.
+    private sealed class InventoryOwnedCleanupFaultProbe(bool failRollback, bool failDispose) : DbTransactionInterceptor
+    {
+        public bool Armed; public int Starts; public int RollbackAttempts; public bool RollbackFailed; public bool DisposeFailed;
+        public void Configure(DbContextOptionsBuilder<InventoryDbContext> options) => options.LogTo(
+            (id, _) => id == RelationalEventId.TransactionDisposed,
+            _ =>
+            {
+                if (Armed && failDispose && !DisposeFailed)
+                { DisposeFailed = true; throw new InventoryOwnedCleanupFaultException("dispose"); }
+            });
+        public override ValueTask<DbTransaction> TransactionStartedAsync(DbConnection connection, TransactionEndEventData data,
+            DbTransaction result, CancellationToken token = default)
+        { Starts++; return ValueTask.FromResult(result); }
+        public override ValueTask<InterceptionResult> TransactionRollingBackAsync(DbTransaction transaction, TransactionEventData data,
+            InterceptionResult result, CancellationToken token = default)
+        {
+            RollbackAttempts++;
+            if (Armed && failRollback && !RollbackFailed)
+            { RollbackFailed = true; throw new InventoryOwnedCleanupFaultException("rollback"); }
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    private sealed class InventoryOwnedCleanupFaultException(string stage) : Exception("SENTETİK owned transaction cleanup " + stage)
+    { public string Stage { get; } = stage; }
 
     private sealed class StockCountSafetySaveProbe(Guid count) : SaveChangesInterceptor
     {
