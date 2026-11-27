@@ -29,8 +29,9 @@ public sealed class AiSalesDraftSummaryToolTests
         Assert.Equal([SalesPermissionManifestV1.DraftsRead], f.Tool.Descriptor.RequiredPermissions);
         Assert.DoesNotContain("PRIVATE", answer.ContentJson!);
         using var json = JsonDocument.Parse(answer.ContentJson!);
-        Assert.Equal(["draftId", "version", "revision", "state", "approvalState", "lines"], json.RootElement.EnumerateObject().Select(p => p.Name));
-        Assert.Equal(["lineId", "lineNo", "productId", "orderUnitId", "quantity"],
+        // AiReadResultV1 canonicalizes JSON object keys; verify the exact canonical surface, including nested keys.
+        Assert.Equal(["approvalState", "draftId", "lines", "revision", "state", "version"], json.RootElement.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(["lineId", "lineNo", "orderUnitId", "productId", "quantity"],
             json.RootElement.GetProperty("lines")[0].EnumerateObject().Select(p => p.Name));
         f.Owner.Answer = f.Owner.Answer with { Draft = f.Owner.Answer.Draft with { Version = "8" } };
         Assert.NotEqual(answer.Source.SourceVersion, (await f.Read()).Source!.SourceVersion);
