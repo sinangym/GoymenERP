@@ -1,4 +1,5 @@
 export const WORK_DECISION_TEXT = {
+  rulesUnavailable: 'Bu kayıt için kural sonucu iletilmedi.',
   weighingEvaluation: 'Karar verilecek tartım değerlendirmesi', weighingNote: 'İrsaliye', weighingTheoretical: 'Teorik toplam (kg)',
   weighingBand: 'Raporlama bandı', weighingWarningBand: 'Uyarı bandı (%)', weighingApprovalBand: 'Onay bandı (%)', weighingBlockBand: 'Blok bandı (%)',
   weighingExcess: 'Karşılanamayan fazla (kg)', weighingRate: 'Fazla onay oranı (%)', weighingDecision: 'Değerlendirme sonucu',

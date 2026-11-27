@@ -14,7 +14,7 @@ import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useScopedCommandAttempt } from '../settings/useCommandAttempt'
 import { Button } from '../ui/Button'
-import { WORK_INBOX_TEXT as INBOX, inboxKindText, inboxRoleText, inboxRuleText } from './workInboxText'
+import { WORK_INBOX_TEXT as INBOX, inboxKindText, inboxRoleText, inboxRuleText, formatWithUnit } from './workInboxText'
 import { fetchWorkDecision, sendWorkDecision, workDecisionLocalUtc, isWorkDecisionRequest, isSalesWorkDecisionKind, isCounterpartyWorkDecisionKind, isWorkTransferOverageReason, isWorkStockCountReason, isWorkSupplierReturnReason, isWorkSupplierReturnVersion, workDecisionReasonLimit, type WorkDecisionKind, type WorkDecisionRequest, type WorkDecisionResult } from './workDecisionApi'
 import { fetchDelegations, type DelegationPage } from './workDelegationApi'
 import { delegationPersonLabel } from './delegationPersonLabel'
@@ -126,6 +126,16 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
     </div> : <StateBlock state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
       subject={T.title} onRetry={() => void query.refetch()} /> : <>
       <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(supplierReturn || kind === 'finance.bank-account.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
+      <section aria-label={INBOX.rulesHeading}><h3>{INBOX.rulesHeading}</h3>
+        {preview.rules.length === 0 ? <p>{T.rulesUnavailable}</p> : <ul>{preview.rules.map((rule, index) => <li key={`${rule.ruleCode}:${index}`}>
+          <p>{inboxRuleText(rule.ruleCode) ?? <>{INBOX.ruleUnknown} <code>{rule.ruleCode}</code></>}</p>
+          {rule.threshold !== null || rule.actual !== null || rule.deviation !== null ? <dl className={styles.facts}>
+            {rule.threshold !== null ? <><dt>{INBOX.threshold}</dt><dd>{formatWithUnit(rule.threshold, rule.unit)}</dd></> : null}
+            {rule.actual !== null ? <><dt>{INBOX.actual}</dt><dd>{formatWithUnit(rule.actual, rule.unit)}</dd></> : null}
+            {rule.deviation !== null ? <><dt>{INBOX.deviation}</dt><dd>{formatWithUnit(rule.deviation, rule.unit)}</dd></> : null}
+          </dl> : null}
+        </li>)}</ul>}
+      </section>
       {kind === 'inventory.opening-cost.v1' ? <p>{cost == null ? T.hiddenCost : `${T.cost}: ${cost}`}</p> : null}
       {preview.bankAccount ? <section aria-label={T.bankProposal}><h3>{T.bankProposal}</h3><dl className={styles.facts}>
         <dt>{BANK_COLUMN.name}</dt><dd>{preview.bankAccount.account.displayName}</dd>
@@ -148,10 +158,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         <dt>{stockScrap ? T.scrapAt : T.countAt}</dt><dd>{preview.inventoryStockScrap?.scrappedAtUtc ?? preview.inventoryStockCount?.countedAtUtc}</dd><dt>{stockScrap ? T.scrapReason : T.countReason}</dt><dd>{stockProof.reason}</dd>
         <dt>{stockScrap ? T.scrapRecordedBy : T.countRecordedBy}</dt><dd>{stockProof.recordedBy}</dd><dt>{T.countRecordedAt}</dt><dd>{stockProof.recordedAtUtc}</dd>
         <dt>{T.countBookPieces}</dt><dd>{stockProof.bookPieceCount ?? T.countNoPieces}</dd><dt>{stockScrap ? T.scrapPieces : T.countActualPieces}</dt><dd>{(stockScrap ? preview.inventoryStockScrap?.scrapPieceCount : preview.inventoryStockCount?.countedPieceCount) ?? T.countNoPieces}</dd>
-      </dl><h4>{INBOX.rulesHeading}</h4><ul>{preview.rules.map((rule,index) => <li key={`${rule.ruleCode}:${index}`}>
-        <p>{inboxRuleText(rule.ruleCode) ?? INBOX.ruleUnknown}</p><dl className={styles.facts}>
-          <dt>{INBOX.actual}</dt><dd>{rule.actual} {rule.unit}</dd>{rule.deviation !== null ? <><dt>{INBOX.deviation}</dt><dd>{rule.deviation} {rule.unit}</dd></> : null}
-        </dl></li>)}</ul><p>{stockScrap ? T.scrapReadOnly : T.countReadOnly}</p></section> : null}
+      </dl><p>{stockScrap ? T.scrapReadOnly : T.countReadOnly}</p></section> : null}
       {supplierProof ? <section aria-label={T.supplierReturnProposal}><h3>{T.supplierReturnProposal}</h3><dl className={styles.facts}>
         <dt>{T.supplierReturnOrder}</dt><dd>{supplierProof.purchaseOrderId}</dd>
         <dt>{T.supplierReturnLine}</dt><dd>{supplierProof.purchaseOrderLineId}</dd>
@@ -170,9 +177,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
           <dt>{T.supplierReturnCurrentOrderVersion}</dt><dd>{supplierProof.currentPurchaseOrderVersion}</dd>
           <dt>{SUPPLIER_RETURN.undoQuantity}</dt><dd>{supplierProof.undoQuantity}</dd></> : null}
       </dl><p>{T.supplierReturnReadOnly}</p>
-      {measuredSupplierReturn && (preview.pending || frozen) ? <label>{T.supplierReturnSelectedOrderVersion}<input type="text" inputMode="numeric" autoComplete="off" disabled={frozen}
-        value={displayedSupplierVersion} onChange={event => { setSupplierOrderVersion(event.target.value); setSupplierVersionBinding(currentSupplierBinding) }} /></label> : null}
-      {measuredSupplierReturn && (preview.pending || frozen) ? <p>{T.supplierReturnVersionHelp}</p> : null}</section> : null}
+      </section> : null}
       {preview.logisticsWeighingDifference ? <section aria-label={T.weighingEvaluation}><h3>{T.weighingEvaluation}</h3><dl className={styles.facts}>
         <dt>{T.weighingNote}</dt><dd>{preview.documentLabel}</dd>
         <dt>{PLAN_EXCESS.instruction}</dt><dd>{preview.logisticsWeighingDifference.instructionId}</dd>
@@ -225,7 +230,11 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         <dt>{LEGAL_NAME_TEXT.proposedLabel}</dt><dd>{preview.counterpartyLegalNameChange.proposedLegalName}</dd>
         <dt>{LEGAL_NAME_TEXT.reasonLabel}</dt><dd>{preview.counterpartyLegalNameChange.reason}</dd>
       </dl></section> : null}
-      <h3>{T.reference}</h3><ul>{preview.references.map((ref, i) => <li key={i}>{inboxRoleText(ref.role) ?? T.reference}: {ref.label}</li>)}</ul>
+      <section aria-label={T.reference}><h3>{T.reference}</h3>{preview.references.length === 0 ? <p>{INBOX.noReferences}</p>
+        : <ul>{preview.references.map((ref, i) => <li key={i}>{inboxRoleText(ref.role) ?? T.reference}: {ref.label}</li>)}</ul>}</section>
+      {measuredSupplierReturn && (preview.pending || frozen) ? <label>{T.supplierReturnSelectedOrderVersion}<input type="text" inputMode="numeric" autoComplete="off" disabled={frozen}
+        value={displayedSupplierVersion} onChange={event => { setSupplierOrderVersion(event.target.value); setSupplierVersionBinding(currentSupplierBinding) }} /></label> : null}
+      {measuredSupplierReturn && (preview.pending || frozen) ? <p>{T.supplierReturnVersionHelp}</p> : null}
       {(options !== undefined || frozen && selected.length > 0) ? <fieldset disabled={frozen}><legend>{T.reapprovalLabels}</legend><p>{T.reapprovalHelp}</p>
         {(frozen ? selected : options ?? []).map(labelId => <label key={labelId}><input type="checkbox" disabled={frozen} checked={selected.includes(labelId)}
           onChange={event => {

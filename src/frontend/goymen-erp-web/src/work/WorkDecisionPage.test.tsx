@@ -2,7 +2,7 @@ import { CAPABILITY, CAPABILITY_ROUTE, CAPABILITY_NAV_LABEL } from '../shell/cap
 import { COUNTERPARTY_WORK_DECISION_CAPABILITY } from './workDecisionApi'
 import type { ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter, matchRoutes } from 'react-router'
@@ -14,6 +14,7 @@ import type { CounterpartyWorkDecisionKind, WorkDecisionPreview } from './workDe
 import { WorkDecisionPage } from './WorkDecisionPage'
 import { workRoutes } from './workRoutes'
 import { WORK_DECISION_TEXT as T } from './workDecisionText'
+import { WORK_INBOX_TEXT as INBOX } from './workInboxText'
 const id='cccccccc-0000-4000-8000-0000000000f1',kind='finance.cash-account.v1',cap='finance.cash-account.work-decision'
 const path=`/work/decisions/${kind}/${id}`
 const preview={companyId:COMPANY_A,kind,itemId:id,documentLabel:'SENTETIK kasa',sourceVersion:'7',pending:true,approvalReasonRequired:false,references:[],rules:[]}
@@ -1255,7 +1256,7 @@ it.each([true,false])('shows all price-free immutable count facts and posts only
  const calls=installFetch({capabilities:[countCap],respond:(url,init)=>url.includes(countPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:countKind,itemId:id,state:approve?'Approved':'Rejected',replayed:false,originalCorrelationId:'original'}):json(countPreview):undefined})
  mountCount();await screen.findByRole('heading',{name:T.countProposal})
  const region=screen.getByRole('region',{name:T.countProposal})
- expect(region.querySelectorAll('dt')).toHaveLength(20)
+ expect(region.querySelectorAll('dt')).toHaveLength(18)
  for(const fact of [countLabel,countProduct,countLocation,countHuman.reason,countHuman.recordedBy,countHuman.countedAtUtc,countHuman.recordedAtUtc,T.countBlocks.Blocked])expect(region.textContent).toContain(fact)
  expect(screen.getAllByText('0').length).toBeGreaterThanOrEqual(2)
  expect(screen.queryByRole('spinbutton')).toBeNull();expect(screen.getAllByRole('textbox')).toHaveLength(1)
@@ -1374,7 +1375,7 @@ const scrapPath=`/work/decisions/${scrapKind}/${id}`,mountScrap=()=>mount(`/onay
 it.each([true,false])('shows the retained scrap, remaining kg and zero pieces without recalculation and submits the explicit decision, approve=%s',async approve=>{
  const calls=installFetch({capabilities:[scrapCap],respond:(url,init)=>url.includes(scrapPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:scrapKind,itemId:id,state:approve?'Approved':'Rejected',replayed:false,originalCorrelationId:'original'}):json(scrapPreview):undefined})
  mountScrap();await screen.findByRole('heading',{name:T.scrapProposal});const region=screen.getByRole('region',{name:T.scrapProposal})
- expect(region.querySelectorAll('dt')).toHaveLength(19)
+ expect(region.querySelectorAll('dt')).toHaveLength(18)
  for(const fact of [countLabel,countProduct,countLocation,scrapHuman.bookKg,scrapHuman.remainingKg,scrapHuman.reason,scrapHuman.recordedBy,scrapHuman.scrappedAtUtc,T.scrapReadOnly,T.scrapLabelVersion])expect(region.textContent).toContain(fact)
  expect(screen.getByText('0')).toBeTruthy();expect(screen.queryByText(T.countNoPieces)).toBeNull();expect(screen.queryByRole('spinbutton')).toBeNull()
  const reason=screen.getByRole('textbox',{name:T.reason}) as HTMLTextAreaElement;expect(reason.maxLength).toBe(1000)
@@ -1422,4 +1423,63 @@ it('does not restore a scrap decision into another authenticated session',async(
  cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-scrap-new'});mountScrap();await screen.findByRole('heading',{name:T.scrapProposal})
  expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect((screen.getByRole('textbox',{name:T.reason}) as HTMLTextAreaElement).value).toBe('')
  expect(calls.filter(call=>call.url.includes(scrapPath)&&call.method==='POST')).toHaveLength(1)
+})
+
+
+describe('B2 deterministic evidence-first approval card',()=>{
+ it('shows owner rules and references before the human decision, preserving exact server numbers without an AI call',async()=>{
+  const evidence={...preview,rules:[{ruleCode:'SENTETIK-unmapped-rule',threshold:'1000.25',actual:'0',deviation:'-1000.25',unit:'kg'}],
+   references:[{role:'purchase-order',recordId:COMPANY_B,label:'SENTETIK dayanak',link:null}]}
+  const calls=installFetch({capabilities:[cap],respond:url=>url.includes(path)?json(evidence):undefined})
+  mount();const rules=await screen.findByRole('region',{name:INBOX.rulesHeading})
+  const references=screen.getByRole('region',{name:T.reference}),reason=screen.getByRole('textbox',{name:T.reason})
+  expect(rules.compareDocumentPosition(references)&Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  expect(references.compareDocumentPosition(reason)&Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  expect(within(rules).getByText(INBOX.ruleUnknown,{exact:false})).toBeTruthy()
+  expect(within(rules).getByText('SENTETIK-unmapped-rule')).toBeTruthy()
+  expect(within(rules).getByText('1.000,25 kg')).toBeTruthy();expect(within(rules).getByText('0 kg')).toBeTruthy()
+  expect(within(rules).getByText('-1.000,25 kg')).toBeTruthy()
+  expect(within(references).getByText('SENTETIK dayanak',{exact:false})).toBeTruthy()
+  expect(calls.some(call=>call.url.includes('/ai/')||call.method==='POST')).toBe(false)
+  expect(screen.queryByText(/yapay zekâ özeti|öneriye katılmıyorum|güven yüzdesi|hesap izi|ekler ve geçmiş/i)).toBeNull()
+ })
+ it('reports absent rule results and references without inventing an explanation or recommendation',async()=>{
+  installFetch({capabilities:[cap],respond:url=>url.includes(path)?json(preview):undefined});mount()
+  const rules=await screen.findByRole('region',{name:INBOX.rulesHeading})
+  expect(within(rules).getByText(T.rulesUnavailable)).toBeTruthy();expect(rules.querySelector('dl')).toBeNull()
+  expect(within(screen.getByRole('region',{name:T.reference})).getByText(INBOX.noReferences)).toBeTruthy()
+  expect(screen.queryByRole('button',{name:/öneri|katılmıyorum/i})).toBeNull()
+ })
+ it.each(['count','scrap'] as const)('renders %s rules once before the immutable owner facts and references',async owner=>{
+  const count=owner==='count',ownerPath=count?countPath:scrapPath,ownerPreview=count?countPreview:scrapPreview
+  const calls=installFetch({capabilities:[count?countCap:scrapCap],respond:url=>url.includes(ownerPath)?json(ownerPreview):undefined})
+  if(count)mountCount();else mountScrap()
+  const proof=await screen.findByRole('region',{name:count?T.countProposal:T.scrapProposal})
+  const rules=screen.getByRole('region',{name:INBOX.rulesHeading}),references=screen.getByRole('region',{name:T.reference})
+  expect(screen.getAllByRole('heading',{name:INBOX.rulesHeading})).toHaveLength(1)
+  expect(proof.querySelectorAll('dt')).toHaveLength(18);expect(within(proof).queryByText(INBOX.actual)).toBeNull()
+  expect(rules.compareDocumentPosition(proof)&Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  expect(proof.compareDocumentPosition(references)&Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  expect(references.compareDocumentPosition(screen.getByRole('textbox',{name:T.reason}))&Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  expect(within(rules).getByText(count?'0 kg':'12,125 kg')).toBeTruthy()
+  if(count)expect(within(rules).getByText('-10 kg')).toBeTruthy()
+  expect(calls.some(call=>call.url.includes('/ai/')||call.method==='POST')).toBe(false)
+ })
+ it('keeps supplier version selection after the readonly proof and references, with no implicit approval version',async()=>{
+  installFetch({capabilities:[supplierCap],respond:url=>url.includes(supplierPath)?json(supplierPreview):undefined})
+  mountSupplier();const proof=await screen.findByRole('region',{name:T.supplierReturnProposal})
+  const references=screen.getByRole('region',{name:T.reference}),version=screen.getByRole('textbox',{name:T.supplierReturnSelectedOrderVersion}) as HTMLInputElement
+  expect(proof.compareDocumentPosition(references)&Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  expect(references.compareDocumentPosition(version)&Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  expect(version.value).toBe('');expect((screen.getByRole('button',{name:T.approve}) as HTMLButtonElement).disabled).toBe(true)
+ })
+ it('keeps withheld opening cost hidden in both the common rule section and the owner evidence',async()=>{
+  const openingKind='inventory.opening-cost.v1',openingPath=`/work/decisions/${openingKind}/${id}`
+  installFetch({capabilities:['inventory.opening-cost.work-decision'],respond:url=>url.includes(openingPath)?json({...preview,kind:openingKind,
+   sourceVersion:`submission/${id}`,approvalReasonRequired:true,rules:[{ruleCode:'inventory.opening-cost-unit-cost',threshold:null,actual:null,deviation:null,unit:null}]}):undefined})
+  mount(`/onaylarim/${openingKind}/${id}`);await screen.findByText(T.hiddenCost)
+  const rules=screen.getByRole('region',{name:INBOX.rulesHeading})
+  expect(rules.querySelector('dl')).toBeNull();expect(screen.queryByText(T.cost,{exact:false})).toBeNull()
+  expect((screen.getByRole('button',{name:T.approve}) as HTMLButtonElement).disabled).toBe(true)
+ })
 })
