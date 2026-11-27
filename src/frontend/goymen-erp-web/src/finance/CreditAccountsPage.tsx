@@ -51,6 +51,13 @@ function Workspace({ namespace }: { readonly namespace: string | null }) {
   }
   const state = (query.isPending ? { kind: 'initial-loading' } : classifyOutcome(query.data ?? { type: 'malformed' })) as RemoteViewState<readonly CreditAccount[]>
   const row = state.kind === 'ready' ? state.data.find(item => item.id === selected) : undefined
+  // Presence hint only. The native owner revalidates the actual source, authority and plan at execution.
+  const missingSourceEvidence = row !== undefined && (row.profile === null
+    || row.profile.cash?.kind === 'ForeignCurrencyIndexed' && row.profile.cash.indexCurrencyId == null
+    || row.profile.cash && ['Spot', 'Installment'].includes(row.profile.cash.kind) && row.profile.cash.maturityDate === null
+    || row.profile.nonCash && row.profile.nonCash.riskAmount == null
+    || row.profile.instrumentAndFactoring && (row.profile.instrumentAndFactoring.maturityDate == null || row.profile.instrumentAndFactoring.deductions == null)
+    || row.profile.leasing && row.profile.leasing.contractDate == null)
   return <section className={styles.page} aria-labelledby="credits-title"><h1 id="credits-title">{T.title}</h1><p>{T.intro}</p>
     {!single ? <StateBlock state={{ kind: 'no-authorized-company' }} subject={T.subject} /> : <>
       {hasCapability(shell, 'finance.credits.propose') ? <button type="button" disabled={frozen} onClick={() => { setCreating(value => !value); setOutcome(null) }}>{creating ? T.list : T.create}</button> : null}
@@ -69,16 +76,34 @@ function Workspace({ namespace }: { readonly namespace: string | null }) {
               {row.profile ? <><dt>{T.source}</dt><dd>{row.profile.sourceDocument.reference} · {row.profile.sourceDocument.revision}</dd>
                 <dt>{T.documentDate}</dt><dd>{row.profile.sourceDocument.documentDate}</dd><dt>{T.plan}</dt><dd>{row.profile.planNature === 'Installments' ? T.installments : T.movements}</dd>
                 {row.profile.cash ? <><dt>{T.kind}</dt><dd>{T.cashKinds[row.profile.cash.kind as keyof typeof T.cashKinds]}</dd><dt>{T.maturity}</dt><dd>{row.profile.cash.maturityDate ?? '—'}</dd></> : null}
+                {row.profile.cash?.indexCurrencyId ? <><dt>{T.indexCurrency}</dt><dd>{currencyShown(row.profile.cash.indexCurrencyId, null)}</dd></> : null}
+                {row.profile.cash?.exportCommitmentReference ? <><dt>{T.exportReference}</dt><dd>{row.profile.cash.exportCommitmentReference}</dd></> : null}
                 {row.profile.nonCash ? <><dt>{T.kind}</dt><dd>{T.nonCashKinds[row.profile.nonCash.kind as keyof typeof T.nonCashKinds]}</dd><dt>{T.beneficiary}</dt><dd>{row.profile.nonCash.beneficiaryReference}</dd>
-                  <dt>{T.expiry}</dt><dd>{row.profile.nonCash.isIndefinite ? T.indefinite : row.profile.nonCash.expiryDate}</dd></> : null}
+                  <dt>{T.expiry}</dt><dd>{row.profile.nonCash.isIndefinite ? T.indefinite : row.profile.nonCash.expiryDate}</dd>
+                  <dt>{T.riskAmount}</dt><dd>{row.profile.nonCash.riskAmount ?? T.notDocumented}</dd>
+                  {row.profile.nonCash.relatedCommercialDocumentReference ? <><dt>{T.commercialReference}</dt><dd>{row.profile.nonCash.relatedCommercialDocumentReference}</dd></> : null}
+                  {row.profile.nonCash.commission ? <><dt>{T.commissionAmount}</dt><dd>{row.profile.nonCash.commission.amount}</dd>
+                    <dt>{T.commissionDate}</dt><dd>{row.profile.nonCash.commission.commissionDate}</dd><dt>{T.commissionPeriod}</dt><dd>{row.profile.nonCash.commission.period ?? T.notDocumented}</dd>
+                    <dt>{T.commissionReference}</dt><dd>{row.profile.nonCash.commission.sourceDocument.reference} · {row.profile.nonCash.commission.sourceDocument.revision}</dd>
+                    <dt>{T.commissionDocumentDate}</dt><dd>{row.profile.nonCash.commission.sourceDocument.documentDate}</dd></> : null}
+                  {row.profile.nonCash.returnEvidence ? <><dt>{T.returnedOn}</dt><dd>{row.profile.nonCash.returnEvidence.returnedOn}</dd>
+                    <dt>{T.returnReference}</dt><dd>{row.profile.nonCash.returnEvidence.sourceDocument.reference} · {row.profile.nonCash.returnEvidence.sourceDocument.revision}</dd>
+                    <dt>{T.returnDocumentDate}</dt><dd>{row.profile.nonCash.returnEvidence.sourceDocument.documentDate}</dd></> : null}
+                </> : null}
                 {row.profile.instrumentAndFactoring ? <><dt>{T.kind}</dt><dd>{T.instrumentKinds[row.profile.instrumentAndFactoring.kind as keyof typeof T.instrumentKinds]}</dd>
                   {row.profile.instrumentAndFactoring.withRecourse !== null ? <><dt>{T.recourse}</dt><dd>{row.profile.instrumentAndFactoring.withRecourse ? T.withRecourse : T.withoutRecourse}</dd></> : null}
-                  <dt>{T.receivables}</dt><dd>{row.profile.instrumentAndFactoring.receivableDocumentReferences.join(' · ')}</dd></> : null}
-                {row.profile.leasing ? <><dt>{T.asset}</dt><dd>{row.profile.leasing.assetReference}</dd><dt>{T.leaseStart}</dt><dd>{row.profile.leasing.leaseStartDate}</dd><dt>{T.leaseEnd}</dt><dd>{row.profile.leasing.leaseEndDate}</dd></> : null}
+                  <dt>{T.receivables}</dt><dd>{row.profile.instrumentAndFactoring.receivableDocumentReferences.join(' · ')}</dd>
+                  <dt>{T.maturity}</dt><dd>{row.profile.instrumentAndFactoring.maturityDate ?? T.notDocumented}</dd>
+                  {row.profile.instrumentAndFactoring.deductions ? <><dt>{T.deductionInterest}</dt><dd>{row.profile.instrumentAndFactoring.deductions.interest}</dd>
+                    <dt>{T.deductionCommission}</dt><dd>{row.profile.instrumentAndFactoring.deductions.commission}</dd><dt>{T.deductionBsmv}</dt><dd>{row.profile.instrumentAndFactoring.deductions.bsmv}</dd></> : null}
+                </> : null}
+                {row.profile.leasing ? <><dt>{T.asset}</dt><dd>{row.profile.leasing.assetReference}</dd><dt>{T.leaseStart}</dt><dd>{row.profile.leasing.leaseStartDate}</dd><dt>{T.leaseEnd}</dt><dd>{row.profile.leasing.leaseEndDate}</dd>
+                  <dt>{T.contractDate}</dt><dd>{row.profile.leasing.contractDate ?? T.notDocumented}</dd>
+                  {row.profile.leasing.purchaseOptionAmount != null ? <><dt>{T.purchaseOption}</dt><dd>{row.profile.leasing.purchaseOptionAmount}</dd></> : null}</> : null}
               </> : null}
               {row.tolerance ? <><dt>{T.tolerance}</dt><dd>{row.tolerance.smallestCurrencyUnit}</dd></> : null}
             </dl>
-            {row.profile === null ? <p>{T.legacy}</p> : null}
+            {missingSourceEvidence ? <p>{T.legacy}</p> : null}
             {row.installments.length > 0 ? <div className={styles.tableWrap}><table aria-label={`${T.installments} · ${row.contractReference}`} className={styles.table}><thead><tr>{T.columns.map(label => <th scope="col" key={label}>{label}</th>)}<th scope="col">{T.vat}</th><th scope="col">{T.fee}</th></tr></thead>
               <tbody>{row.installments.map(line => <tr key={line.sequence}><td>{line.sequence}</td><td>{line.dueDate}</td>
                 {['installment', 'principal', 'interest', 'bsmv', 'kkdf'].map(key => <td key={key}>{line[key as 'installment']}</td>)}
@@ -87,7 +112,7 @@ function Workspace({ namespace }: { readonly namespace: string | null }) {
               {row.planTotals.vat !== undefined ? <> · {T.vat}: {row.planTotals.vat}</> : null}
               {row.planTotals.charges ? <> · {T.feesIncluded}: {row.planTotals.charges.includedInInstallment} · {T.feesSeparate}: {row.planTotals.charges.collectedSeparately}</> : null}</p> : null}
             {row.status === 'Proposed' && hasCapability(shell, 'finance.credits.approve') ? row.isOwnProposal ? <p>{T.own}</p> : <fieldset disabled={frozen}>
-              <button type="button" disabled={row.profile === null} onClick={() => void send({ operation: 'approve', key: crypto.randomUUID(), id: row.id, request: { expectedVersion: row.version } })}>{T.approve}</button>
+              <button type="button" disabled={!!missingSourceEvidence} onClick={() => void send({ operation: 'approve', key: crypto.randomUUID(), id: row.id, request: { expectedVersion: row.version } })}>{T.approve}</button>
               <label>{T.reason}<textarea value={reason} maxLength={500} onChange={event => setReason(event.target.value)} /></label>
               <button type="button" disabled={reason.trim() === ''} onClick={() => void send({ operation: 'reject', key: crypto.randomUUID(), id: row.id, request: { expectedVersion: row.version, reason: reason.trim() } })}>{T.reject}</button>
             </fieldset> : null}

@@ -128,6 +128,31 @@ function sourcePlan() {
     [T.columns[4], '0'], [T.columns[5], '0'], [T.columns[6], '0']]) fireEvent.change(line.getByLabelText(label), { target: { value } })
 }
 describe('approved group profile form fields', () => {
+  it('shows documented noncash evidence to the existing authorized reviewer without treating it as a payment or release', async () => {
+    const profile = { ...fixture().profile, cash: undefined, planNature: 'SourceMovements', nonCash: {
+      kind: 'Guarantee', beneficiaryReference: 'SENTETIK-beneficiary', isIndefinite: true, expiryDate: null, riskAmount: '12000.00001',
+      commission: { amount: '12.34567', commissionDate: '2026-11-17', period: 'SENTETIK-period', sourceDocument: { reference: 'SENTETIK-commission', documentDate: '2026-11-16', revision: 'R1' } },
+      returnEvidence: { returnedOn: '2026-11-18', sourceDocument: { reference: 'SENTETIK-return', documentDate: '2026-11-18', revision: 'R2' } }
+    } }
+    vi.stubGlobal('fetch', vi.fn(async () => json({ companyId: Company, items: [fixture({ group: 'NonCash', profile })] })))
+    mount(); fireEvent.click(await screen.findByRole('button', { name: T.select }))
+    expect(screen.getByText('12000.00001')).toBeTruthy(); expect(screen.getByText('12.34567')).toBeTruthy()
+    expect(screen.getByText('SENTETIK-commission · R1')).toBeTruthy(); expect(screen.getByText('SENTETIK-return · R2')).toBeTruthy()
+    expect(screen.getByRole('button', { name: T.approve }).hasAttribute('disabled')).toBe(false)
+  })
+  it.each(['Cash', 'NonCash', 'InstrumentAndFactoring', 'Leasing'] as const)('keeps legacy %s records visible but explains missing required source fields before a new approval', async group => {
+    const base = fixture().profile
+    const profile = { lenderPartyId: Party, lenderCompanyPartyAccountId: Account, sourceDocument: base.sourceDocument, planNature: 'SourceMovements',
+      ...(group === 'Cash' ? { cash: { kind: 'ForeignCurrencyIndexed', maturityDate: null } } : {}),
+      ...(group === 'NonCash' ? { nonCash: { kind: 'Guarantee', beneficiaryReference: 'SENTETIK', isIndefinite: true, expiryDate: null } } : {}),
+      ...(group === 'InstrumentAndFactoring' ? { instrumentAndFactoring: { kind: 'Factoring', withRecourse: true, instrumentIds: [], receivableDocumentReferences: ['SENTETIK'] } } : {}),
+      ...(group === 'Leasing' ? { leasing: { assetReference: 'SENTETIK', leaseStartDate: '2026-11-17', leaseEndDate: '2027-11-17' } } : {}) }
+    vi.stubGlobal('fetch', vi.fn(async () => json({ companyId: Company, items: [fixture({ group, profile })] })))
+    mount(); fireEvent.click(await screen.findByRole('button', { name: T.select }))
+    expect(screen.getByText(T.legacy)).toBeTruthy()
+    expect(screen.getByRole('button', { name: T.approve }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByLabelText(T.reason)).toBeTruthy()
+  })
   it.each(['Spot', 'Installment', 'ForeignCurrencyIndexed', 'Export', 'Revolving', 'Overdraft', 'CreditCard'])('uses the approved %s plan nature without a conflicting choice or a synthetic installment', async kind => {
     const { send, fill } = await proposal('Cash')
     fill(T.kind, kind)
