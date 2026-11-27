@@ -1,6 +1,6 @@
 import {afterEach,describe,expect,it,vi} from 'vitest'
 import {inventoryCostFixture as fixture,successionCostFixture,firstPurchaseCostFixture,cancellationCostFixture,inventoryCostId as id,inventoryCostGuid} from './inventoryCostDecisionFixture'
-import {isInventoryCostWorkKind,inventoryCostWorkLong,type InventoryCostWorkKind} from './workInventoryCostDecision'
+import {isInventoryCostWorkKind,inventoryCostWorkLong} from './workInventoryCostDecision'
 import {decodeWorkDecisionPreview,isWorkDecisionRequest,isWorkDecisionKind,sendWorkDecision} from './workDecisionApi'
 import {decodeInventoryCost,costRatio,roundingProof} from '../accounting/inventoryCostApi'
 const company='aaaaaaaa-0000-4000-8000-000000000001',other='bbbbbbbb-0000-4000-8000-000000000001'
