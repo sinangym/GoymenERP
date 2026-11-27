@@ -70,7 +70,7 @@ public sealed partial class AccountingInventoryCostStoreV1
             foreach (var physical in claims)
             {
                 var history = await ApprovalRead(() => InvoiceCogsClaimHistoryV1.ReadAsync(db, view.CompanyId, physical.MovementId, physical.MovementLineNumber,
-                    () => RequireCompany(view.CompanyId), token, IsOwnedApproval ? ApprovalReadFence : null), token);
+                    () => RequireCompany(view.CompanyId), token, IsOwnedApproval || decisionReadFence is not null ? ApprovalReadFence : null), token);
                 var own = history.SingleOrDefault(x => x.Claim.SalesEventId == view.EventId && x.Claim.InvoiceLineId == component.InvoiceLineId);
                 if (own?.Succession is null || Encode(own.Succession) != Encode(succession)) throw Refuse("inventory_cost_source_unavailable");
             }
