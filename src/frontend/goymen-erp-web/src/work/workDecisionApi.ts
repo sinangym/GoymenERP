@@ -146,8 +146,17 @@ const path = (kind: WorkDecisionKind, id: string) => `/work/decisions/${encodeUR
 const dispatchGuid = (value: unknown): value is string => typeof value === 'string' && value.length === 36 && isBoundUuid(value)
 const dispatchVersion = (value: unknown): value is string => typeof value === 'string' && value === value.trim() && isPositiveInt64Text(value)
 const creditLimitRevision = (value: unknown): value is string => typeof value === 'string' && value === value.trim() && isRevisionText(value)
-const creditLimitAmount = (value: unknown): value is string => typeof value === 'string' && value === value.trim()
-  && !nativeControls(value) && value.length <= 64 && isPositiveDecimalText(value)
+const creditLimitAmount = (value: unknown): value is string => {
+  if (typeof value !== 'string' || value !== value.trim() || nativeControls(value) || value.length > 64 || !isPositiveDecimalText(value)) return false
+  // Native IsExactAmount requires lossless CLR decimal representation (96-bit coefficient, scale <= 28).
+  // Strip only representational zeros for validation; return/display the original wire text unchanged.
+  const [whole, fraction = ''] = value.split('.')
+  const significantFraction = fraction.replace(/0+$/, '')
+  const coefficient = (whole! + significantFraction).replace(/^0+/, '')
+  const maximumCoefficient = '79228162514264337593543950335'
+  return significantFraction.length <= 28 && (coefficient.length < maximumCoefficient.length
+    || coefficient.length === maximumCoefficient.length && coefficient <= maximumCoefficient)
+}
 const requestNumber = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 2147483647
 const positiveInt32Text = (value: unknown): value is string => typeof value === 'string' && /^[1-9][0-9]*$/.test(value)
   && (value.length < 10 || value.length === 10 && value <= '2147483647')

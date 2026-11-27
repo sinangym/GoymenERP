@@ -1098,6 +1098,14 @@ describe('WP8 party credit limit native purpose',()=>{
  const human={partyId:party,companyAccountId:account,kind:'Set',currencyId:currency,amount:'00123.4500',baseRevision:'0',currentRevision:'0',proposedBy:'SENTETIK proposer',proposedAtUtc:'2026-11-27T08:00:00Z'}
  const refs=[{role:'party',label:'SENTETIK cari',recordId:party,link:null},{role:'company-account',label:'SENTETIK hesap',recordId:account,link:null},{role:'currency',label:'SENTETIK para',recordId:currency,link:null}]
  const value={...preview,kind:limitKind,sourceVersion:'1',rejectionSupported:true,references:refs,partyCreditLimit:human}
+ it.each(['79228162514264337593543950335','0.'+'0'.repeat(27)+'1','00123.4500','00079228162514264337593543950335.000',
+  '0.'+'0'.repeat(27)+'100000','1.'+'0'.repeat(40),'7.9228162514264337593543950335','7922816251426433759354395033.50'])('preserves exact CLR decimal text without rounding or normalization %s',amount=>{
+  expect(decodeWorkDecisionPreview({...value,partyCreditLimit:{...human,amount}},company,limitKind,id)?.partyCreditLimit?.amount).toBe(amount)
+ })
+ it.each(['9'.repeat(30),'79228162514264337593543950336','0.'+'0'.repeat(28)+'1','0.'+'0'.repeat(40)+'1',
+  '1.'+'0'.repeat(28)+'1','7.9228162514264337593543950336','79228162514264337593543950335.1','0.'+'0'.repeat(40)])('refuses nonrepresentable CLR decimal overflow or nonzero excess scale %s',amount=>{
+  expect(decodeWorkDecisionPreview({...value,partyCreditLimit:{...human,amount}},company,limitKind,id)).toBeNull()
+ })
  it('decodes exactly nine human fields and preserves native Set text and Remove nulls',()=>{
   expect(WORK_DECISION_KINDS).toHaveLength(31);expect(WORK_DECISION_KINDS.filter(item=>item===limitKind)).toEqual([limitKind])
   expect(decodeWorkDecisionPreview(value,company,limitKind,id)?.partyCreditLimit).toEqual(human)
