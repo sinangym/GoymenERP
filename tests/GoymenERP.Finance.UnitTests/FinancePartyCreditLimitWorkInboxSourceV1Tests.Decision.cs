@@ -37,7 +37,8 @@ public sealed partial class FinancePartyCreditLimitWorkInboxSourceV1Tests
         Assert.Equal("Remove", snapshot!.PartyCreditLimitProof!.Proposal.Kind);
         Assert.Null(snapshot.PartyCreditLimitProof.Proposal.CurrencyId); Assert.Null(snapshot.PartyCreditLimitProof.Proposal.Amount);
         Assert.Equal("1", snapshot.PartyCreditLimitProof.Proposal.CurrentRevision);
-        Assert.Equal("987.50", Assert.Single(snapshot.Item.Rules).Threshold);
+        Assert.Equal("987.5", Assert.Single(snapshot.Item.Rules).Threshold);
+        Assert.Equal("987.50", (await run.Db.PartyCreditLimits.FindAsync(effective.Id))!.AmountText);
     }
 
     [Theory]
