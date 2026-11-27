@@ -91,11 +91,14 @@ public sealed partial class PurchaseIncomingInvoiceWorkflowTests
     public async Task Unordered_source_absence_is_explicit_never_a_fabricated_receipt(string defect,
         PurchaseInvoiceAcceptanceAdmissionOutcomeV1 expected)
     {
-        var invoice = Invoice(false, false); var source = new UnorderedAcceptanceReader(UnorderedSource(invoice));
+        var invoice = Invoice(false, false);
+        var source = new UnorderedAcceptanceReader(UnorderedSource(invoice))
+        {
+            AfterRead = defect == "exception" ? () => throw new InvalidOperationException("SENTETIK owner unavailable") : null,
+        };
         if (defect == "not-found") source.Answer = new(PurchaseUnorderedAcceptanceSourceOutcomeV1.NotFound, null);
         if (defect == "unavailable") source.Answer = new(PurchaseUnorderedAcceptanceSourceOutcomeV1.Unavailable, null);
         if (defect == "contradictory") source.Answer = source.Answer with { Outcome = PurchaseUnorderedAcceptanceSourceOutcomeV1.NotFound };
-        if (defect == "exception") source.AfterRead = () => throw new InvalidOperationException("SENTETIK owner unavailable");
         var result = await new PurchaseInvoiceAcceptanceAdmissionV1(unordered: defect == "missing-owner" ? null : source)
             .ReadAsync(invoice, UnorderedSelection(invoice, source.Answer.Source ?? UnorderedSource(invoice)), _ => Task.CompletedTask);
         Assert.Equal(expected, result.Outcome);
