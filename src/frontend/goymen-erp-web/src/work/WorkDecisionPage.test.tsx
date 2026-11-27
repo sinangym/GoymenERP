@@ -1538,7 +1538,7 @@ it('mounts dispatch as the 25th native purpose under its exact standalone capabi
  expect(route?.path).toBe(`onaylarim/${dispatchKind}/:approvalId`)
  const element=route?.element as ReactElement<{capability:readonly string[];children:ReactElement<{kind:string}>}>
  expect(element.props.capability).toEqual([dispatchCap]);expect(element.props.children.type).toBe(WorkDecisionPage);expect(element.props.children.props.kind).toBe(dispatchKind)
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(33)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(35)
 })
 it.each([{companyId:COMPANY_B},{logisticsDispatchNote:{...dispatchProof,dispatchNoteId:COMPANY_A}},{rejectionSupported:true}])('does not expose malformed/foreign dispatch proof %j',async(delta)=>{
  installFetch({capabilities:[dispatchCap],respond:url=>url.includes(dispatchPath)?json({...dispatchPreview,...delta}):undefined});mountDispatchPurpose()
@@ -1612,7 +1612,7 @@ it('mounts the customer return purpose under its exact standalone capability amo
  expect(route?.path).toBe(`onaylarim/${customerKind}/:approvalId`)
  expect(route).toBeDefined()
  expect((route!.element as ReactElement<{capability:readonly string[]}>).props.capability).toEqual([customerCap])
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(33)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(35)
 })
 it('does not restore a customer-return unknown attempt under another authentication session',async()=>{
  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-return-old'})
@@ -2335,4 +2335,105 @@ it('does not carry a retained official invoice command into a different company 
  await waitFor(()=>expect(calls.some(call=>call.url.includes(officialPath)&&call.method==='GET'&&call.headers['X-Company-Id']===COMPANY_B)).toBe(true))
  expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(screen.queryByText(T.officialSalesRetained)).toBeNull();expect(screen.queryByText(officialHuman.payableAmount)).toBeNull()
  expect(calls.filter(call=>call.url.includes(officialPath)&&call.method==='POST')).toHaveLength(1)
+})
+
+const reversalKinds = ['finance.manual-bank-payment-reversal.v1','finance.manual-receipt-reversal.v1'] as const
+const reversalOriginal='dddddddd-0000-4000-8000-000000000001', reversalParty='dddddddd-0000-4000-8000-000000000002', reversalAccount='dddddddd-0000-4000-8000-000000000003', reversalBank='dddddddd-0000-4000-8000-000000000004', reversalCurrency='dddddddd-0000-4000-8000-000000000005', reversalEvent='dddddddd-0000-4000-8000-000000000006'
+function reversalPreview(k: typeof reversalKinds[number], companyId: string, itemId: string) {
+ const payment=k===reversalKinds[0]
+ const proposal={id:itemId,...(payment?{paymentId:reversalOriginal}:{originalSourceId:reversalOriginal}),occurredOn:'0001-01-01',reason:'SENTETIK immutable reversal reason',status:'Pending',proposedBy:'SENTETIK preparer',proposedAtUtc:'0001-01-01T00:00:00Z',decidedBy:null,decidedAtUtc:null,decisionReason:null,...(payment?{reversalEventId:null}:{reversalSourceId:null}),version:'1'}
+ const original={partyId:reversalParty,companyAccountId:reversalAccount,treasuryAccountId:reversalBank,currencyId:reversalCurrency,originalEventId:reversalEvent}
+ return {companyId,kind:k,itemId,documentLabel:'SENTETIK reversal',sourceVersion:'1',pending:true,approvalReasonRequired:false,rejectionSupported:true,
+ references:[[payment?'manual-bank-payment':'manual-receipt',reversalOriginal],[ 'party',reversalParty],['bank-account',reversalBank],['currency',reversalCurrency]].map(([role,recordId])=>({role:role!,recordId:recordId!,label:'SENTETIK '+role,link:recordId===reversalOriginal?(payment?'/finans/odemeler/':'/finans/tahsilatlar/')+recordId:null})),
+ rules:[{ruleCode:payment?'finance.manual-bank-payment-reversal-approval-required':'finance.manual-receipt-reversal-approval-required',threshold:null,actual:'123.45',deviation:null,unit:null}],
+ ...(payment?{manualBankPaymentReversal:{companyId,proposal,paymentDocumentNumber:'SENTETIK PAY-1',...original,amount:'000123.4500',paymentOccurredOn:'0001-01-01',paymentValueOn:null,paymentRecordedBy:'SENTETIK payment recorder',paymentRecordedAtUtc:'0001-01-01T00:00:00Z',recordedFactsDigest:'a'.repeat(64),treasuryAccountLabel:'SENTETIK named bank'}}:
+ {manualReceiptReversal:{companyId,proposal,originalReceipt:{sourceId:reversalOriginal,sourceVersion:'9223372036854775807',documentNumber:'SENTETIK REC-1',...original,amountText:'000123.4500',occurredOn:'0001-01-01',valueOn:null,posCommissionAmountText:'000.000',posBankNetAmountText:'000123.4500',posCommissionBearer:'Company',recordedBy:'SENTETIK receipt recorder',recordedAtUtc:'0001-01-01T00:00:00Z'},treasuryAccountLabel:'SENTETIK named bank'}})}
+}
+
+describe('native reversal decisions',()=>{
+ it.each(reversalKinds.flatMap(kind=>[true,false].map(approve=>({kind,approve}))))('shows immutable native human values and sends no human proof %j',async({kind:k,approve})=>{
+  const ownerPath=`/work/decisions/${k}/${id}`,value=reversalPreview(k,COMPANY_A,id)
+  const calls=installFetch({capabilities:[k.replace('.v1','.work-decision')],respond:(url,init)=>url.includes(ownerPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:k,itemId:id,state:approve?'Approved':'Rejected',replayed:false,originalCorrelationId:'SENTETIK reversal'}):json(value):undefined})
+  mount(`/onaylarim/${k}/${id}`,true);const region=await screen.findByRole('region',{name:T.reversalProposal})
+  for(const text of ['000123.4500','SENTETIK named bank','SENTETIK immutable reversal reason','SENTETIK preparer','0001-01-01T00:00:00Z'])expect(within(region).getAllByText(text).length).toBeGreaterThan(0)
+  expect(within(region).getByText(reversalAccount)).toBeTruthy();expect(within(region).getByText(reversalEvent)).toBeTruthy()
+  const input=screen.getByRole('textbox',{name:T.reason}) as HTMLTextAreaElement;expect(input.maxLength).toBe(1000)
+  expect((screen.getByRole('button',{name:T.reject}) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.change(input,{target:{value:'x'.repeat(1001)}});expect((screen.getByRole('button',{name:T.reject}) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.change(input,{target:{value:'  SENTETIK rejection  '}})
+  fireEvent.click(screen.getByRole('button',{name:approve?T.approve:T.reject}));await screen.findByText(T.done)
+  const sent=calls.filter(call=>call.url.includes(ownerPath)&&call.method==='POST');expect(sent).toHaveLength(1);expect(sent[0]!.body).toEqual({expectedVersion:'1',approve,reason:approve?null:'SENTETIK rejection',delegationId:null})
+  expect(screen.queryByRole('region',{name:T.reversalProposal})).toBeNull();expect(calls.some(call=>call.url.includes('/finance/'))).toBe(false)
+ })
+ it.each(reversalKinds)('restores frozen command without GET, human journal or new maker/version binding: %s',async k=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-reversal-session'})
+  let posts=0;const ownerPath=`/work/decisions/${k}/${id}`
+  const calls=installFetch({capabilities:[k.replace('.v1','.work-decision')],respond:(url,init)=>url.includes(ownerPath)?init?.method==='POST'?++posts===1?problem(503):json({companyId:COMPANY_A,kind:k,itemId:id,state:'Rejected',replayed:true,originalCorrelationId:'SENTETIK-original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK-original'}):posts?problem(503):json(reversalPreview(k,COMPANY_A,id)):undefined})
+  mount(`/onaylarim/${k}/${id}`,true);await screen.findByRole('region',{name:T.reversalProposal});fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:'SENTETIK original decision'}});fireEvent.click(screen.getByRole('button',{name:T.reject}));await screen.findByText(T.unknown)
+  for(const secret of ['000123.4500','SENTETIK named bank','SENTETIK immutable reversal reason',reversalAccount,'manualReceiptReversal','manualBankPaymentReversal'])expect(JSON.stringify(sessionStorage)).not.toContain(secret)
+  cleanup();mount(`/onaylarim/${k}/${id}`,true);await screen.findByText(T.unknown);await screen.findByText(T.reversalRetained)
+  expect(screen.queryByRole('region',{name:T.reversalProposal})).toBeNull();expect(screen.getByText(`${T.version}: 1`)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+  const sent=calls.filter(call=>call.url.includes(ownerPath)&&call.method==='POST');expect(sent).toHaveLength(2);expect(sent[1]!.body).toEqual(sent[0]!.body);expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key']);expect(calls.filter(call=>call.url.includes(ownerPath)&&call.method==='GET')).toHaveLength(1)
+ })
+ it.each(reversalKinds)('requires actual purpose capability rather than native browse or another decision: %s',async k=>{
+  const calls=installFetch({capabilities:['finance.manual-bank-payment.reverse.approve','finance.manual-receipt.reverse.approve','finance.cash-account.work-decision'],respond:url=>url.includes(`/work/decisions/${k}/`)?json(reversalPreview(k,COMPANY_A,id)):undefined})
+  mount(`/onaylarim/${k}/${id}`,true);await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(calls.some(call=>call.url.includes(`/work/decisions/${k}/`))).toBe(false)
+ })
+})
+
+it.each(reversalKinds)('hides cached and in-flight replacement proof through original reversal receipt reconciliation: %s',async k=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-reversal-late'})
+ const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}});let gets=0,posts=0,release!:(reply:Response)=>void
+ const late=new Promise<Response>(resolve=>{release=resolve}),ownerPath=`/work/decisions/${k}/${id}`
+ const calls=installFetch({capabilities:[k.replace('.v1','.work-decision')],respond:(url,init)=>{
+  if(!url.includes(ownerPath))return undefined
+  if(init?.method==='POST')return ++posts===1?problem(503):json({companyId:COMPANY_A,kind:k,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'SENTETIK-original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK-original'})
+  return ++gets===1?json(reversalPreview(k,COMPANY_A,id)):late
+ }})
+ mount(`/onaylarim/${k}/${id}`,true,client);await screen.findByRole('region',{name:T.reversalProposal})
+ const matching=(query:{readonly queryKey:readonly unknown[]})=>query.queryKey.includes('work-decision')
+ let refetch!:Promise<void>;act(()=>{refetch=client.refetchQueries({predicate:matching})});await waitFor(()=>expect(gets).toBe(2))
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ const replacement=reversalPreview(k,COMPANY_A,id),h=k===reversalKinds[0]?'manualBankPaymentReversal':'manualReceiptReversal'
+ const human=(replacement as unknown as Record<string,{treasuryAccountLabel:string;proposal:{proposedBy:string}}>)[h]!
+ human.treasuryAccountLabel='SENTETIK DIFFERENT BANK';human.proposal.proposedBy='SENTETIK DIFFERENT PREPARER'
+ await act(async()=>{release(json(replacement));await refetch})
+ expect(client.getQueryCache().findAll({predicate:matching})[0]?.state.data).toMatchObject({type:'ok-single',data:{[h]:{treasuryAccountLabel:'SENTETIK DIFFERENT BANK'}}})
+ expect(screen.queryByRole('region',{name:T.reversalProposal})).toBeNull();expect(screen.queryByText('SENTETIK DIFFERENT BANK')).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+ expect(screen.queryByRole('region',{name:T.reversalProposal})).toBeNull();expect(gets).toBe(2)
+ const sent=calls.filter(call=>call.url.includes(ownerPath)&&call.method==='POST');expect(sent[1]!.body).toEqual(sent[0]!.body);expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key']);client.clear()
+})
+it.each(reversalKinds.flatMap(kind=>[401,403].map(status=>({kind,status}))))('keeps reversal authority loss closed %j',async({kind:k,status})=>{
+ const capabilities=[k.replace('.v1','.work-decision')],ownerPath=`/work/decisions/${k}/${id}`
+ const calls=installFetch({capabilities,respond:(url,init)=>{if(!url.includes(ownerPath))return undefined;if(init?.method==='POST'){capabilities.splice(0);return problem(status)}return json(reversalPreview(k,COMPANY_A,id))}})
+ mount(`/onaylarim/${k}/${id}`,true);await screen.findByRole('region',{name:T.reversalProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}))
+ await waitFor(()=>expect(document.querySelector(`[data-state="${status===401?'unauthenticated':'not-found'}"]`)).not.toBeNull())
+ expect(screen.queryByRole('region',{name:T.reversalProposal})).toBeNull();expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+})
+
+it.each(reversalKinds)('does not restore a reversal request in a new session or with a revoked purpose: %s',async k=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK reversal old'})
+ const capabilities=[k.replace('.v1','.work-decision')],ownerPath=`/work/decisions/${k}/${id}`
+ const calls=installFetch({capabilities,respond:(url,init)=>url.includes(ownerPath)?init?.method==='POST'?problem(503):json(reversalPreview(k,COMPANY_A,id)):undefined})
+ mount(`/onaylarim/${k}/${id}`,true);await screen.findByRole('region',{name:T.reversalProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ cleanup();capabilities.splice(0);mount(`/onaylarim/${k}/${id}`,true);await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(screen.queryByRole('button',{name:T.retry})).toBeNull()
+ cleanup();capabilities.push(k.replace('.v1','.work-decision'));Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK reversal new'});mount(`/onaylarim/${k}/${id}`,true);await screen.findByRole('region',{name:T.reversalProposal})
+ expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+})
+it.each(reversalKinds)('does not carry original reversal command or human proof into another company: %s',async k=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK reversal company'})
+ const ownerPath=`/work/decisions/${k}/${id}`
+ const calls=installFetch({capabilities:[k.replace('.v1','.work-decision')],respond:(url,init)=>{
+  if(!url.includes(ownerPath))return undefined
+  const company=(init?.headers as Record<string,string>)?.['X-Company-Id']??COMPANY_A
+  const value=reversalPreview(k,company,id),h=k===reversalKinds[0]?'manualBankPaymentReversal':'manualReceiptReversal'
+  const human=(value as unknown as Record<string,{treasuryAccountLabel:string}>)[h]!
+  human.treasuryAccountLabel=company===COMPANY_A?'SENTETIK company A bank':'SENTETIK company B bank'
+  return init?.method==='POST'?problem(503):json(value)
+ }})
+ mount(`/onaylarim/${k}/${id}`,true);await screen.findByRole('region',{name:T.reversalProposal});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ await userEvent.setup().selectOptions(screen.getByRole('combobox',{name:'Şirket'}),COMPANY_B)
+ await screen.findByText('SENTETIK company B bank');expect(screen.queryByText('SENTETIK company A bank')).toBeNull();expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
 })

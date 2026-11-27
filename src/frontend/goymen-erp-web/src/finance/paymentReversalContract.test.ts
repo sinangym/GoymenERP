@@ -64,3 +64,10 @@ describe('API-23 payment reversal decoders', () => {
     expect(decodePaymentReversalCommandResult(result('Denied', pending())).ok).toBe(false)
   })
 })
+
+it('keeps the legacy calendar validator default and allows an explicit caller-owned DateOnly validator',()=>{
+ const value=pending({occurredOn:'0001-01-01'})
+ expect(decodePaymentReversalProposal(value).ok).toBe(false)
+ expect(decodePaymentReversalProposal(value,date=>date==='0001-01-01').ok).toBe(true)
+ expect(decodePaymentReversalProposal({...value,extra:true},()=>true).ok).toBe(false)
+})

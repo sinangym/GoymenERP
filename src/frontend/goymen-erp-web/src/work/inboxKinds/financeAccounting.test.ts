@@ -78,3 +78,8 @@ it('maps IBAN approval to one standalone purpose without adding a bank read perm
  expect(inboxPermissionText('finance.bank-account.approve')).not.toBe('finance.bank-account.approve')
  expect(inboxRuleText('finance.bank-account-iban-change-approval-required')).not.toBeNull()
 })
+
+it.each(['finance.manual-bank-payment-reversal.v1','finance.manual-receipt-reversal.v1'])('maps one reversal purpose without changing native permission words: %s',kind=>{
+ expect(FINANCE_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'finance',capability:kind.replace('.v1','.work-decision')}])
+ expect(inboxPermissionText(kind==='finance.manual-bank-payment-reversal.v1'?'finance.manual-bank-payment.reverse.approve':'finance.manual-receipt.reverse.approve')).not.toContain('.approve')
+})

@@ -663,3 +663,15 @@ it.each([{granted:['finance.official-sales-invoice.work-decision'],visible:true}
  if(visible){await screen.findByTestId('work-inbox-item');expect(within(cardOf(kind)).getByRole('link',{name:T.openOwnerLabel('Resmî satış faturası onayı','SENTETIK RESMI')}).getAttribute('href')).toBe(link)}
  else{await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(api.inboxReads()).toHaveLength(0)}
 })
+
+it.each(['finance.manual-bank-payment-reversal.v1','finance.manual-receipt-reversal.v1'])('opens the reversal purpose and keeps its native original-record reference: %s',async kind=>{
+ const payment=kind==='finance.manual-bank-payment-reversal.v1',permission=payment?'finance.manual-bank-payment.reverse.approve':'finance.manual-receipt.reverse.approve',link=`/onaylarim/${kind}/${LEGACY_ID}`,nativeLink=(payment?'/finans/odemeler/':'/finans/tahsilatlar/')+PAYMENT_ID
+ const item={...limitItem,kind,itemId:LEGACY_ID,documentLabel:'SENTETIK reversal',link,awaitingPermission:permission,ruleVersion:RV(kind),explanation:{rules:[{ruleCode:payment?'finance.manual-bank-payment-reversal-approval-required':'finance.manual-receipt-reversal-approval-required',threshold:null,actual:'123.45',deviation:null,unit:null}],references:[{role:payment?'manual-bank-payment':'manual-receipt',label:'SENTETIK original record',recordId:PAYMENT_ID,link:nativeLink}]}}
+ const api=installFetch({granted:[kind.replace('.v1','.work-decision')],inbox:()=>json(inbox({items:[item],sources:[src('finance',kind,permission,'BusinessDays')]}))})
+ await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-item');const card=cardOf(kind)
+ expect(within(card).getByRole('link').getAttribute('href')).toBe(link);await userEvent.setup().click(within(card).getByRole('button',{name:T.explanationToggle}))
+ expect(within(card).getByRole('link',{name:'SENTETIK original record'}).getAttribute('href')).toBe(nativeLink);expect(api.inboxReads()).toHaveLength(1)
+})
+it.each(['finance.manual-bank-payment.reverse.approve','finance.manual-receipt.reverse.approve'])('does not grant Work inbox reads from native reversal-only control: %s',async native=>{
+ const api=installFetch({granted:[native]});await renderAt('/onaylarim/kuyruk');await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(api.inboxReads()).toHaveLength(0)
+})

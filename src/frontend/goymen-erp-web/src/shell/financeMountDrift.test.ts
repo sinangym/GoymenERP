@@ -301,3 +301,15 @@ it('mounts the separate IBAN human purpose with its exact capability and preserv
  expect(matchRoutes(financeRoutes,FINANCE_ROUTE.bankAccountsList)?.at(-1)?.route.path).toBe(FINANCE_ROUTE.bankAccountsList.slice(1))
  expect(FINANCE_CAPABILITY.bankAccountsApprove).toBe('finance.bank-accounts.approve')
 })
+
+it.each([
+ {kind:'finance.manual-bank-payment-reversal.v1',capability:CAPABILITY.financeManualBankPaymentReversalWorkDecision,native:FINANCE_CAPABILITY.manualBankPaymentsReverseApprove},
+ {kind:'finance.manual-receipt-reversal.v1',capability:CAPABILITY.financeManualReceiptReversalWorkDecision,native:FINANCE_CAPABILITY.receiptsReverseApprove},
+])('publishes only the standalone reversal purpose while preserving native read/decision routes: $kind',({kind,capability,native})=>{
+ const path=`/onaylarim/${kind}/:approvalId`
+ expect(capability).toBe(kind.replace('.v1','.work-decision'));expect(CAPABILITY_ROUTE[capability]).toBe(path);expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
+ expect(FINANCE_WORK_DECISION_CAPABILITIES).toContainEqual([capability,path]);expect(WORK_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'finance',capability}])
+ const mounted=workRoutes.filter(route=>route.path===path.slice(1));expect(mounted).toHaveLength(1)
+ expect(matchRoutes(shellRoutes,path.replace(':approvalId','cccccccc-0000-4000-8000-0000000000f1'))?.at(-1)?.route).toBe(mounted[0])
+ expect(native).not.toBe(capability);expect(CAPABILITY_ROUTE[native]).not.toBe(path)
+})

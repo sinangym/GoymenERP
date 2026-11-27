@@ -465,12 +465,12 @@ const REVERSAL_PROPOSAL_KEYS = [
   'decidedBy', 'decidedAtUtc', 'decisionReason', 'reversalSourceId', 'version',
 ] as const
 
-export function decodeReversalProposal(value: unknown): Decoded<ReversalProposalView> {
+export function decodeReversalProposal(value: unknown, dateValidator: (value: string) => boolean = isDateOnly): Decoded<ReversalProposalView> {
   if (!isRecord(value) || !hasExactKeys(value, REVERSAL_PROPOSAL_KEYS)) return FAIL
   if (
     !isBoundUuid(value.id) ||
     !isBoundUuid(value.originalSourceId) ||
-    typeof value.occurredOn !== 'string' || !isDateOnly(value.occurredOn) ||
+    typeof value.occurredOn !== 'string' || !dateValidator(value.occurredOn) ||
     typeof value.reason !== 'string' || value.reason.trim() !== value.reason || value.reason.length === 0 ||
     !['Pending', 'Approved', 'Rejected'].includes(value.status as string) ||
     typeof value.proposedBy !== 'string' || value.proposedBy.length === 0 ||

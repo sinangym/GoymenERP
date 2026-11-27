@@ -90,11 +90,11 @@ const isTrimmedText = (value: unknown): value is string =>
 
 const isNullableText = (value: unknown): value is string | null => value === null || isTrimmedText(value)
 
-export function decodePaymentReversalProposal(value: unknown): Decoded<PaymentReversalProposalView> {
+export function decodePaymentReversalProposal(value: unknown, dateValidator: (value: string) => boolean = isDateOnly): Decoded<PaymentReversalProposalView> {
   if (!isRecord(value) || !hasExactKeys(value, VIEW_KEYS)) return FAIL
   const { id, paymentId, occurredOn, reason, status, proposedBy, proposedAtUtc, decidedBy, decidedAtUtc,
     decisionReason, reversalEventId, version } = value
-  if (!isBoundUuid(id) || !isBoundUuid(paymentId) || typeof occurredOn !== 'string' || !isDateOnly(occurredOn)
+  if (!isBoundUuid(id) || !isBoundUuid(paymentId) || typeof occurredOn !== 'string' || !dateValidator(occurredOn)
     || !isTrimmedText(reason) || typeof status !== 'string' || !STATUSES.includes(status)
     || !isTrimmedText(proposedBy) || !isInstant(proposedAtUtc) || !isNullableText(decidedBy)
     || !(decidedAtUtc === null || isInstant(decidedAtUtc)) || !isNullableText(decisionReason)

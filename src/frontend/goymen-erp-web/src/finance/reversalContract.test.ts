@@ -70,3 +70,10 @@ describe('FIN-T06 reversal proposal contract', () => {
     expect(decodeReversalProposal(rejected).ok).toBe(true)
   })
 })
+
+it('keeps the legacy calendar validator default and allows an explicit caller-owned DateOnly validator',()=>{
+ const value={...pending,occurredOn:'0001-01-01'}
+ expect(decodeReversalProposal(value).ok).toBe(false)
+ expect(decodeReversalProposal(value,date=>date==='0001-01-01').ok).toBe(true)
+ expect(decodeReversalProposal({...value,extra:true},()=>true).ok).toBe(false)
+})
