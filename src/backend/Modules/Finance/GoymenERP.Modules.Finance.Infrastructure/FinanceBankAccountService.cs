@@ -271,7 +271,8 @@ public sealed class FinanceBankAccountService(
         Audit(context, metadata, envelopes.Approve, row.Id, "finance.bank-account.approved.v1", "Approve", versionBefore,
             row.Version, before, AccountAudit(row), approval,
             "Finans banka hesabı onayı (hazırlayandan farklı tek onay; para etkisi yok)");
-        return await SaveBankApprovalAsync(context, row.Id, result, cancellationToken);
+        var saved = await SaveBankApprovalAsync(context, row.Id, result, cancellationToken);
+        return saved with { ApprovalReceipt = new(context.CompanyId, row.Id, ApproveCommand, context.ActorId, now) };
     }
 
     private bool bankApprovalActive;
@@ -702,7 +703,7 @@ public sealed class FinanceBankAccountService(
     /// back door, and a card whose declaration is NULL stays unusable however complete it looks.
     /// </para>
     /// </summary>
-    private static BankAccountView View(BankAccountRow row) =>
+    internal static BankAccountView View(BankAccountRow row) =>
         new BankAccountView(row.Id, row.CompanyId, row.CurrencyId, row.DisplayName,
             IsActive: row.Status == Approved,
             IsUsableForReceipt: row.Status == Approved && row.MoneyMovementEligible == true,
@@ -852,7 +853,14 @@ public sealed class FinanceBankAccountService(
 
         var stored = JsonSerializer.Deserialize<BankAccountCommandResult>(prior.ResultJson, Json)
             ?? throw new InvalidOperationException("Kayıtlı komut sonucu okunamadı.");
-        return stored with { IsReplay = true };
+        return stored with
+        {
+            IsReplay = true,
+            // The command row and its immutable original JSON own this evidence. Later card/IBAN changes are irrelevant.
+            ApprovalReceipt = command == ApproveCommand && stored.Outcome == CommandOutcome.Succeeded
+                && stored.Resource is { } approved && prior.BankAccountId == approved.Id && prior.CompanyId == approved.CompanyId
+                ? new(prior.CompanyId, approved.Id, prior.CommandName, prior.ActorId, prior.RecordedAtUtc) : null,
+        };
     }
 
     /// <summary>The currency must be one of Settings' candidates now; an unavailable source refuses.</summary>

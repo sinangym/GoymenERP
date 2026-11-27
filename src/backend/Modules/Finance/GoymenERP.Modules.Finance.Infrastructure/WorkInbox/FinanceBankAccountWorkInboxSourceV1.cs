@@ -18,9 +18,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// carried into the inbox; the card is read on the owner's screen.
 /// </para>
 /// </summary>
-internal sealed class FinanceBankAccountWorkInboxSourceV1(
+internal sealed partial class FinanceBankAccountWorkInboxSourceV1(
     FinanceDbContext dbContext,
-    FinanceWorkInboxFence fence) : IWorkInboxSourceV1
+    FinanceWorkInboxFence fence) : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "finance";
     public const string KindName = "finance.bank-account.v1";

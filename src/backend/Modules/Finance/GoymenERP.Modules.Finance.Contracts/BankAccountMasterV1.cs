@@ -66,7 +66,11 @@ public sealed record BankAccountIbanChangeProposeRequest(Guid AccountId, string 
 public sealed record BankAccountIbanChangeApproveRequest(Guid AccountId, string ExpectedVersion);
 
 public sealed record BankAccountCommandResult(CommandOutcome Outcome, BankAccountView? Resource,
-    bool IsReplay, string OriginalCorrelationId, IReadOnlyList<ValidationIssue> Issues);
+    bool IsReplay, string OriginalCorrelationId, IReadOnlyList<ValidationIssue> Issues,
+    [property: JsonIgnore] BankAccountApprovalReceiptV1? ApprovalReceipt = null);
+
+/// <summary>In-process proof from a genuine saved approval command, never serialized or sourced from a current card.</summary>
+public sealed record BankAccountApprovalReceiptV1(Guid CompanyId, Guid AccountId, string CommandName, string ActorId, DateTimeOffset RecordedAtUtc);
 
 // FIN-UI-1 HTTP: the approval body. The account is the route's; only the expected version travels.
 // D4 reuses it for the IBAN change's approval: that decision carries no payload of its own either —

@@ -51,7 +51,9 @@ public sealed record WorkDecisionPreviewV1(Guid CompanyId, string Kind, Guid Ite
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     WorkSupplierReturnCostExceptionPreviewV1? SupplierReturnCostException = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    WorkInventoryStockCountPreviewV1? InventoryStockCount = null);
+    WorkInventoryStockCountPreviewV1? InventoryStockCount = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    WorkBankAccountPreviewV1? BankAccount = null);
 public sealed record WorkDecisionResultV1(Guid CompanyId, string Kind, Guid ItemId, string State, bool Replayed, string OriginalCorrelationId);
 public sealed class WorkDecisionException(int status, string? code = null, bool replayed = false, string? original = null) : Exception(code)
 {
@@ -119,9 +121,10 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
     IErpAuthorityRevalidationService authority, IEnumerable<IWorkInboxSourceV1> sources,
     IWorkDelegationReaderV1 delegations, WorkDecisionExecutionFenceV1 executionFence,
     IFinanceCashAccountMaster cash, IInventoryOpeningCostCommandV1 openingCost,
-    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null, IPurchaseGoodsReceiptBatchServiceV1? goodsReceiptBatches = null, ManufacturingCommandService? manufacturingPlans = null, IInventoryTransferReceiptCommandV1? inventoryTransferReceipts = null, ICounterpartyTaxIdentityService? counterpartyTaxIdentity = null, ICounterpartyLegalNameService? counterpartyLegalName = null, ILogisticsPlanExcessServiceV1? logisticsPlanExcess = null, ILogisticsWeighingDifferenceServiceV1? logisticsWeighingDifferences = null, IPurchaseSupplierReturnServiceV1? supplierReturns = null, IInventoryStockCountCommandV1? stockCounts = null)
+    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null, IPurchaseGoodsReceiptBatchServiceV1? goodsReceiptBatches = null, ManufacturingCommandService? manufacturingPlans = null, IInventoryTransferReceiptCommandV1? inventoryTransferReceipts = null, ICounterpartyTaxIdentityService? counterpartyTaxIdentity = null, ICounterpartyLegalNameService? counterpartyLegalName = null, ILogisticsPlanExcessServiceV1? logisticsPlanExcess = null, ILogisticsWeighingDifferenceServiceV1? logisticsWeighingDifferences = null, IPurchaseSupplierReturnServiceV1? supplierReturns = null, IInventoryStockCountCommandV1? stockCounts = null, IFinanceBankAccountMaster? bankAccounts = null)
 {
     public const string InventoryStockCount = "inventory.stock-count.v1";
+    public const string BankAccount = "finance.bank-account.v1";
     public const string SupplierReturnCostException = "purchasing.supplier-return-cost-exception.v1";
     public const string LogisticsWeighingDifference = "logistics.weighing-difference.v1";
     public const string LogisticsPlanExcess = "logistics.plan-excess.v1";
@@ -140,7 +143,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
     public const string PurchaseInvoiceVariance = "purchasing.incoming-invoice-variance.v1";
     public const string PurchaseServiceOrder = "purchasing.service-order.v1";
     public const string PurchaseOrder = "purchasing.order.v1";
-    public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([InventoryStockCount, SupplierReturnCostException, LogisticsWeighingDifference, InventoryTransferOverage, LogisticsPlanExcess, CounterpartyTaxIdentity, CounterpartyLegalName, InventoryTransferLoss, OpeningCost, "finance.cash-account.v1",
+    public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([InventoryStockCount, BankAccount, SupplierReturnCostException, LogisticsWeighingDifference, InventoryTransferOverage, LogisticsPlanExcess, CounterpartyTaxIdentity, CounterpartyLegalName, InventoryTransferLoss, OpeningCost, "finance.cash-account.v1",
         "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest, PurchaseOrder, PurchaseServiceOrder, PurchaseInvoiceVariance, PurchaseGoodsReceiptBatch, ManufacturingPlan, CreditAccount], StringComparer.Ordinal);
 
     private async Task RequireDecisionAuthorityAsync(string kind,string permission,Guid companyId,string actor,CancellationToken token)
@@ -178,6 +181,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         await Fence();
         if (snapshot is null) throw new WorkDecisionException(404);
         if (kind == InventoryStockCount && (source.Module != "inventory" || source.ApproverPermission != InventoryPermissionManifestV1.StockCountApprove)
+            || kind == BankAccount && (source.Module != "finance" || source.ApproverPermission != ErpPermissions.FinanceBankAccountApprove)
             || kind == SupplierReturnCostException && (source.Module != "purchasing" || source.ApproverPermission != PurchasingPermissionManifestV1.OrdersApprove)
             || kind is (CounterpartyTaxIdentity or CounterpartyLegalName) && source.Module != "counterparty"
             || kind == InventoryTransferOverage && (source.Module != "inventory" || source.ApproverPermission != InventoryPermissionManifestV1.StockTransferOverageApprove)
@@ -197,6 +201,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || snapshot.Item.Rules is null || snapshot.Item.Rules.Count > WorkInboxRulesV1.MaxRulesPerItem
             || snapshot.Item.Rules.Any(rule => !WorkInboxRulesV1.IsValidRule(source.Module, rule))
             || !ValidInventoryStockCountProof(kind, snapshot)
+            || !ValidBankAccountProof(kind, snapshot)
             || !ValidSupplierReturnProof(kind, snapshot)
             || !ValidCounterpartyIdentityProof(kind, snapshot)
             || !ValidLogisticsPlanExcessProof(kind, snapshot)
@@ -252,14 +257,15 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
                 proposal.Quantity, proposal.Reason, proposal.ProposedBy, proposal.ProposedAtUtc)
             : null;
         return new(snapshot.CompanyId, kind, id, snapshot.Item.DocumentLabel, snapshot.SourceVersion, snapshot.Pending,
-            kind is InventoryStockCount or OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance or InventoryTransferLoss or InventoryTransferOverage, snapshot.Item.References, rules, kind is not (PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance or LogisticsPlanExcess or LogisticsWeighingDifference)
+            kind is InventoryStockCount or OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance or InventoryTransferLoss or InventoryTransferOverage, snapshot.Item.References, rules, kind is not (PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance or LogisticsPlanExcess or LogisticsWeighingDifference or BankAccount)
                 && !(kind == ManufacturingPlan && rules.Any(rule => rule.RuleCode == "manufacturing.plan-reapproval-after-order-cancel")),
             snapshot.ManufacturingPlanReapproval, snapshot.InventoryTransferLoss,
             snapshot.CounterpartyTaxIdentityChange, snapshot.CounterpartyLegalNameChange, logisticsPreview,
             kind == InventoryTransferOverage ? OveragePreview(snapshot) : null,
             kind == LogisticsWeighingDifference ? WeighingHumanPreview(snapshot.LogisticsWeighingDifferenceProof!) : null,
             kind == SupplierReturnCostException ? SupplierReturnHumanPreview(snapshot) : null,
-            kind == InventoryStockCount ? snapshot.InventoryStockCountProof!.Count : null);
+            kind == InventoryStockCount ? snapshot.InventoryStockCountProof!.Count : null,
+            kind == BankAccount ? BankAccountHumanPreview(snapshot) : null);
     }
 
     public async Task<WorkDecisionResultV1> DecideAsync(string kind, Guid id, WorkDecisionRequestV1 request, string key, CancellationToken token)
@@ -268,7 +274,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         var actor = user.UserId;
         var snapshot = await SnapshotAsync(kind, id, token, request.InventoryTransferLoss?.RequestNumber, request.InventoryTransferOverage?.RequestNumber);
         if (user.UserId != actor) throw new WorkDecisionException(403);
-        if (request.SupplierReturnCostException is not null && kind != SupplierReturnCostException
+        if (kind == BankAccount && (!request.Approve || request.Reason is not null || !BankAccountVersion(request.ExpectedVersion))
+            || request.SupplierReturnCostException is not null && kind != SupplierReturnCostException
             || kind == SupplierReturnCostException && !ValidSupplierReturnRequest(snapshot, request)
             || kind == LogisticsWeighingDifference && (!request.Approve || request.Reason is not null || !PositiveWeighingVersion(request.ExpectedVersion))
             || request.InventoryTransferOverage is not null && kind != InventoryTransferOverage
@@ -304,6 +311,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         using var lease = executionFence.Enter(Verify);
         if (kind == InventoryStockCount)
             return await DecideInventoryStockCountAsync(id, request, key, snapshot, actor!, token);
+        if (kind == BankAccount)
+            return await DecideBankAccountAsync(id, request, key, snapshot, actor!, token);
         if (kind == SupplierReturnCostException)
             return await DecideSupplierReturnAsync(id, request, key, snapshot, actor!, token);
         if (kind == LogisticsWeighingDifference)

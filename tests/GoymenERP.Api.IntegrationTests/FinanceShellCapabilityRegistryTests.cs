@@ -21,7 +21,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         "finance.cash-exchange-book-values.approve", "finance.cash-exchange-book-values.prepare",
         "finance.credits.approve", "finance.credits.propose", "finance.credits.workspace",
         "finance.official-sales-invoices.approve", "finance.official-sales-invoices.record", "finance.official-sales-invoices.withdraw",
-        "finance.party-balance-transfers.record",
+        "finance.party-balance-transfers.record", "finance.bank-account.work-decision",
     ];
 
     [Fact]
@@ -47,6 +47,7 @@ public sealed class FinanceShellCapabilityRegistryTests
             [
                 ("finance.allocations.list", "F-03", null),
                 ("finance.allocations.write", "F-03", "finance.allocations.list"),
+                ("finance.bank-account.work-decision", "F-BANK-ACCOUNT-WORK-DECISION", null),
                 ("finance.bank-accounts.approve", "F-04", "finance.bank-accounts.list"),
                 ("finance.bank-accounts.list", "F-04", null),
                 ("finance.bank-accounts.propose", "F-04-NEW", null),
@@ -130,7 +131,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(providers,
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision(providers)]));
 
-        Assert.Equal(55, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
+        Assert.Equal(56, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
     }
 
     [Fact]

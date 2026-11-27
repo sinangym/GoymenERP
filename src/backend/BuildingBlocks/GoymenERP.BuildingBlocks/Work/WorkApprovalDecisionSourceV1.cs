@@ -26,7 +26,8 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkInventoryTransferOverageProofV1? InventoryTransferOverageProof = null,
     [property: JsonIgnore] WorkLogisticsWeighingDifferenceProofV1? LogisticsWeighingDifferenceProof = null,
     [property: JsonIgnore] WorkSupplierReturnCostExceptionProofV1? SupplierReturnCostExceptionProof = null,
-    [property: JsonIgnore] WorkInventoryStockCountProofV1? InventoryStockCountProof = null);
+    [property: JsonIgnore] WorkInventoryStockCountProofV1? InventoryStockCountProof = null,
+    [property: JsonIgnore] WorkBankAccountProofV1? BankAccountProof = null);
 
 /// <summary>Immutable, price-free native count evidence, exposed only by the authorized human purpose GET.</summary>
 public sealed record WorkInventoryStockCountPreviewV1(Guid LabelId, string LabelVersion,
@@ -89,3 +90,7 @@ public sealed record WorkSupplierReturnCostExceptionProofV1(Guid CompanyId, Guid
     string SourceBlock, string QuantityKg, string CostBasis, bool ReplacementExpected, string Reason,
     DateTimeOffset OccurredAtUtc, string RequestedBy, DateTimeOffset RequestedAtUtc,
     string? RecordedExpectedPurchaseOrderVersion, string? CurrentPurchaseOrderVersion, string? UndoQuantity);
+
+/// <summary>Safe native account view and immutable proposer identity. No card/IBAN/account-number data.</summary>
+public sealed record WorkBankAccountProofV1(Guid CompanyId, Guid AccountId, Guid CurrencyId, string DisplayName,
+    bool IsActive, bool IsUsableForReceipt, string ProposedBy, DateTimeOffset ProposedAtUtc);

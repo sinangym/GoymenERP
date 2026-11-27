@@ -17,11 +17,12 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(55, declarations.Count);
+        Assert.Equal(56, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             !declaration.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)
             && !declaration.CapabilityId.StartsWith("finance.official-sales-invoices.", StringComparison.Ordinal)
             && declaration.CapabilityId != FinanceShellCapabilityProvider.PartyBalanceTransferCapabilityId
+            && declaration.CapabilityId != FinanceShellCapabilityProvider.BankAccountWorkDecisionCapabilityId
             && !declaration.CapabilityId.StartsWith("finance.cash-exchange-book-values.", StringComparison.Ordinal), declaration.ImplementationAvailable));
     }
 
@@ -44,9 +45,11 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.20", provider.ContractVersion);
+        Assert.Equal("1.21", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
+            ("finance.bank-account.work-decision", "finance-bank-account-work-decision", "/onaylarim/finance.bank-account.v1/:approvalId", "F-BANK-ACCOUNT-WORK-DECISION",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceBankAccountApprove]),
             ("finance.credit-account.work-decision", "finance.credit-account-work-decision", "/onaylarim/finance.credit-account.v1/:approvalId", "W-FIN-CREDIT-ACCOUNT-01",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCreditsApprove]),
             ("finance.cash-account.work-decision", "finance.cash-account-work-decision", "/onaylarim/finance.cash-account.v1/:approvalId", "W-FIN-CASH-ACCOUNT-01",
@@ -319,7 +322,10 @@ public sealed class FinanceShellCapabilityProviderTests
         // FIN-UI-1b: src/finance/capabilities.ts read from the repository, so a drift is red here.
         var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(),
             "src/frontend/goymen-erp-web/src/finance/capabilities.ts"));
-        foreach (var declaration in new FinanceShellCapabilityProvider().GetDeclarations())
+        // Bank purpose is deliberately backend-staged; its paired frontend is not published by this slice.
+        var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
+        Assert.False(Assert.Single(declarations, item => item.CapabilityId == FinanceShellCapabilityProvider.BankAccountWorkDecisionCapabilityId).ImplementationAvailable);
+        foreach (var declaration in declarations.Where(item => item.CapabilityId != FinanceShellCapabilityProvider.BankAccountWorkDecisionCapabilityId))
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
             Assert.Contains($"'{declaration.RoutePath}'", source);
@@ -351,7 +357,7 @@ public sealed class FinanceShellCapabilityProviderTests
                 "F-02-PAYMENTS", "F-02-REVERSAL-APPROVAL", "F-03", "F-03-OPEN-ITEM-DETAIL",
                 "F-03-OPEN-ITEMS", "F-04", "F-04-NEW", "F-13-BANK-STATEMENT", "F-18-COLLATERALS", "F-18-CREDIT-LIMITS", "F-23-OPENING-BALANCES",
                 "F-25-EXPENSE-PAYMENTS", "F-32-CASH-TRANSFERS", "F-32-EXCHANGE-BOOK-APPROVE", "F-32-EXCHANGE-BOOK-PREPARE",
-                "F-32-PARTY-BALANCE-TRANSFER", "F-47-CREDITS", "M-03", "W-FIN-CASH-ACCOUNT-01",
+                "F-32-PARTY-BALANCE-TRANSFER", "F-47-CREDITS", "F-BANK-ACCOUNT-WORK-DECISION", "M-03", "W-FIN-CASH-ACCOUNT-01",
                 "W-FIN-CASH-ACCOUNT-PASSIVATION-01", "W-FIN-CASH-ACCOUNT-REACTIVATION-01", "W-FIN-CREDIT-ACCOUNT-01"],
             routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
