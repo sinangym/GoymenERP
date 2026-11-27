@@ -49,7 +49,15 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkManualReceiptReversalProofV1? ManualReceiptReversalProof = null,
     [property: JsonIgnore] WorkExpensePaymentProofV1? ExpensePaymentProof = null,
     [property: JsonIgnore] WorkBankCreditLimitProofV1? BankCreditLimitProof = null,
-    [property: JsonIgnore] WorkOpeningBalanceProofV1? OpeningBalanceProof = null);
+    [property: JsonIgnore] WorkOpeningBalanceProofV1? OpeningBalanceProof = null,
+    [property: JsonIgnore] WorkCreditMovementProofV1? CreditMovementProof = null,
+    [property: JsonIgnore] WorkCashExchangeBookValueProofV1? CashExchangeBookValueProof = null);
+
+/// <summary>Scalar native source bindings only; full money facts stay in the authorized human purpose GET.</summary>
+public sealed record WorkCreditMovementProofV1(Guid CompanyId, Guid MovementId, string ProposedBy,
+    DateTimeOffset ProposedAtUtc, string Status, string SourceFactsDigest, string PreviewDigest);
+public sealed record WorkCashExchangeBookValueProofV1(Guid CompanyId, Guid ProposalId, Guid TransferId, string PreparedBy,
+    DateTimeOffset PreparedAtUtc, string Status, string Version, string TransferSourceHash, string ProposalFactsDigest, string PreviewDigest);
 
 /// <summary>Scalar owner identity only; full bank limit and opening facts stay in the authorized purpose GET.</summary>
 public sealed record WorkBankCreditLimitProofV1(Guid CompanyId, Guid LimitId, string ProposedBy,
