@@ -41,7 +41,9 @@ public sealed class ReversalProposalDecisionReadTests
         var authority = new FinancePartyCreditLimitWorkInboxSourceV1Tests.FixedAuthority(true, true);
         var fence = new FinanceWorkInboxFence(fixture.Company, fixture.User, authority);
         var source = new FinanceManualReceiptReversalWorkInboxSourceV1(fixture.Database, fence, fixture.Core.WithApprovalSafety());
-        var snapshot = await source.ReadDecisionAsync(new(Company, "checker"), fixture.Proposal.Id, default);
+        var snapshot = await source.ReadDecisionAsync(new(Company, "checker", "SENTETIK-source-trace", "SENTETIK-source-cause"), fixture.Proposal.Id, default);
+        Assert.All(fixture.Permissions.Contexts, c => { Assert.Equal("SENTETIK-source-trace", c.CorrelationId); Assert.Equal("SENTETIK-source-cause", c.CausationId); });
+        Assert.NotEmpty(fixture.Permissions.Contexts);
         Assert.NotNull(snapshot); Assert.True(snapshot.Pending); Assert.Equal("1", snapshot.SourceVersion);
         var human = (await fixture.Core.ReadDecisionAsync(fixture.Context, fixture.Proposal.Id, _ => Task.CompletedTask, default)).Resource!;
         Assert.True(ReversalProposalService.MatchesDecisionSnapshot(human, snapshot));
@@ -57,7 +59,7 @@ public sealed class ReversalProposalDecisionReadTests
         Assert.DoesNotContain("SENTETIK reason", wire); Assert.Equal(FinanceManualReceiptReversalWorkInboxSourceV1.ScreenPath, snapshot.Item.Link);
         Assert.All(authority.Asked, query => Assert.Equal(FinancePermissionNames.ReverseApprove, query.Permission));
         var missingOwner = new FinanceManualReceiptReversalWorkInboxSourceV1(fixture.Database, fence);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => missingOwner.ReadDecisionAsync(new(Company, "checker"), fixture.Proposal.Id, default));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => missingOwner.ReadDecisionAsync(new(Company, "checker", "SENTETIK-source-trace", "SENTETIK-source-cause"), fixture.Proposal.Id, default));
     }
 
     [Theory]
@@ -181,9 +183,9 @@ public sealed class ReversalProposalDecisionReadTests
     { public string Actor = "checker"; public bool IsAuthenticated => true; public string? UserId => Actor;
       public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { Company }; public bool CanAccessCompany(Guid id) => AllowedCompanyIds.Contains(id); }
     private sealed class Permissions : IFinancePermissionPort
-    { public bool Allowed = true; public bool ProposeOnly; public List<FinanceAction> Actions { get; } = [];
+    { public bool Allowed = true; public bool ProposeOnly; public List<FinanceAction> Actions { get; } = []; public List<FinanceContext> Contexts { get; } = [];
       public Task<PermissionDecision> CheckAsync(FinanceContext c, FinanceAction action, Guid? id, CancellationToken t)
-      { Actions.Add(action); return Task.FromResult(Allowed && (ProposeOnly ? action == FinanceAction.ProposeReversal : action == FinanceAction.ApproveReversal) ? PermissionDecision.Allowed : PermissionDecision.Denied); } }
+      { Contexts.Add(c); Actions.Add(action); return Task.FromResult(Allowed && (ProposeOnly ? action == FinanceAction.ProposeReversal : action == FinanceAction.ApproveReversal) ? PermissionDecision.Allowed : PermissionDecision.Denied); } }
     private sealed class OpenPeriod : IFinanceRecordPeriodRule
     { public Task<RecordPeriodAnswer> CheckAsync(FinanceContext c, DateOnly d, DateOnly? v, DateTimeOffset n, CancellationToken t) => Task.FromResult(new RecordPeriodAnswer(RecordPeriodOutcome.Open, null)); }
     private sealed class NoAllocations : IFinanceReversalAllocationGate

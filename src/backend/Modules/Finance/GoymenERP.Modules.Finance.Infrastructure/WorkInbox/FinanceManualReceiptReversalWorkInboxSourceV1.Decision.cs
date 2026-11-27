@@ -10,7 +10,7 @@ internal sealed partial class FinanceManualReceiptReversalWorkInboxSourceV1
         await Fence();
         if (reversalService is not IReceiptReversalDecisionReadV1 reader)
             throw new InvalidOperationException("Receipt reversal decision owner is unavailable.");
-        var answer = await reader.ReadDecisionAsync(new(context.CompanyId, context.UserId, "work-receipt-reversal-preview", null), itemId,
+        var answer = await reader.ReadDecisionAsync(new(context.CompanyId, context.UserId, context.CorrelationId, context.CausationId), itemId,
             _ => Fence(), token);
         await Fence();
         if (answer.Outcome == ReadOutcome.NotFound) return null;
