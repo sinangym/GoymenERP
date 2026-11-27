@@ -44,7 +44,15 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkProductPriceListProofV1? ProductPriceListProof = null,
     [property: JsonIgnore] WorkPartyCreditLimitProofV1? PartyCreditLimitProof = null,
     [property: JsonIgnore] WorkOfficialInvoiceImportProofV1? OfficialInvoiceImportProof = null,
-    [property: JsonIgnore] WorkOfficialSalesInvoiceProofV1? OfficialSalesInvoiceProof = null);
+    [property: JsonIgnore] WorkOfficialSalesInvoiceProofV1? OfficialSalesInvoiceProof = null,
+    [property: JsonIgnore] WorkManualBankPaymentReversalProofV1? ManualBankPaymentReversalProof = null,
+    [property: JsonIgnore] WorkManualReceiptReversalProofV1? ManualReceiptReversalProof = null);
+
+/// <summary>Scalar native proposal/recorded-source binding only; full money facts belong to the authorized human GET.</summary>
+public sealed record WorkManualBankPaymentReversalProofV1(Guid CompanyId, Guid ProposalId, Guid PaymentId,
+    string ProposedBy, DateTimeOffset ProposedAtUtc, string Status, string RecordedFactsDigest, string PreviewDigest);
+public sealed record WorkManualReceiptReversalProofV1(Guid CompanyId, Guid ProposalId, Guid OriginalSourceId,
+    string ProposedBy, DateTimeOffset ProposedAtUtc, string Status, string RecordedFactsDigest, string PreviewDigest);
 
 /// <summary>Scalar owner binding only. Full monetary/document facts are released only by authorized human GET.</summary>
 public sealed record WorkOfficialSalesInvoiceProofV1(Guid CompanyId, Guid InvoiceId, string OfficialNo,
