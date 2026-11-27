@@ -1,3 +1,5 @@
+import { CAPABILITY, CAPABILITY_ROUTE, CAPABILITY_NAV_LABEL } from '../shell/capabilities'
+import { COUNTERPARTY_WORK_DECISION_CAPABILITY } from './workDecisionApi'
 import type { ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -8,7 +10,6 @@ import { ShellProvider } from '../shell/ShellProvider'
 import { AppShell } from '../shell/AppShell'
 import { COMPANY_A, COMPANY_B, IDENTITY, installFetch, json, problem } from '../settings/testHarness'
 import { shellRoutes } from '../shell/router'
-import { ApprovalInboxDetailPage } from './ApprovalInboxPages'
 import type { CounterpartyWorkDecisionKind, WorkDecisionPreview } from './workDecisionApi'
 import { WorkDecisionPage } from './WorkDecisionPage'
 import { workRoutes } from './workRoutes'
@@ -700,22 +701,19 @@ it.each([{capabilities:[]},{capabilities:['inventory.stock-transfer.loss-approve
 })
 
 
-// Component-only candidate harness: the two owner capabilities remain staged, with no production purpose mount.
+// Native purposes mount under the owner's exact independent capabilities; no browse capability is required.
 const cpKinds=['counterparty.tax-identity-change.v1','counterparty.legal-name-change.v1'] as const
 const cpProofPreview = (cp: typeof cpKinds[number]): WorkDecisionPreview => ({
  ...preview,kind:cp,rejectionSupported:true,references:[{role:'party',label:'CAR-000001',recordId:id,link:null}],
  ...(cp==='counterparty.tax-identity-change.v1'
-  ? {counterpartyTaxIdentityChange:{partyId:id,changeRequestId:id,currentTaxIdentityNumber:'1234567890',proposedTaxIdentityNumber:'10000000146',proposedKind:'tckn' as const,reason:'SENTETIK vergi düzeltme gerekçesi'}}
+  ? {counterpartyTaxIdentityChange:{partyId:id,changeRequestId:id,currentTaxIdentityNumber:'10000000147',proposedTaxIdentityNumber:'10000000146',proposedKind:'tckn' as const,reason:'SENTETIK vergi düzeltme gerekçesi'}}
   : {counterpartyLegalNameChange:{partyId:id,changeRequestId:id,currentLegalName:'E'.repeat(250),proposedLegalName:'Y'.repeat(250),reason:'SENTETIK unvan değişikliği gerekçesi'}}),
 })
-function mountCounterpartyCandidate(cp:CounterpartyWorkDecisionKind){
- const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[{path:'cp-candidate/:approvalId',element:<WorkDecisionPage kind={cp}/>}]}],{initialEntries:[`/cp-candidate/${id}`]})
- render(<ShellProvider queryClient={new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})}><RouterProvider router={router}/></ShellProvider>)
- return router
-}
+function mountCounterpartyCandidate(cp:CounterpartyWorkDecisionKind){ return mount(`/onaylarim/${cp}/${id}`,true) }
+
 const cpCases=cpKinds.flatMap(cp=>[true,false].map(approve=>({cp,approve})))
 it.each(cpCases)('allows empty native optional note for $cp approve=$approve and retains four-field wire', async ({cp,approve}) => {
- const calls=installFetch({capabilities:[cap],respond:(url,init)=>url.includes(`/work/decisions/${cp}/${id}`)
+ const calls=installFetch({capabilities:[COUNTERPARTY_WORK_DECISION_CAPABILITY[cp]],respond:(url,init)=>url.includes(`/work/decisions/${cp}/${id}`)
   ?init?.method==='POST'?json({companyId:COMPANY_A,kind:cp,itemId:id,state:approve?'Approved':'Rejected',replayed:false,originalCorrelationId:'original'}):json(cpProofPreview(cp)):undefined})
  mountCounterpartyCandidate(cp)
  const note=await screen.findByLabelText(T.optionalNote)
@@ -729,7 +727,7 @@ it.each(cpCases)('allows empty native optional note for $cp approve=$approve and
  expect(sent[0]!.body).toEqual({expectedVersion:'7',approve,reason:null,delegationId:null})
 })
 it.each(cpCases)('sends the full native optional note, trimming only edges for $cp approve=$approve', async ({cp,approve}) => {
- const calls=installFetch({capabilities:[cap],respond:(url,init)=>url.includes(`/work/decisions/${cp}/${id}`)
+ const calls=installFetch({capabilities:[COUNTERPARTY_WORK_DECISION_CAPABILITY[cp]],respond:(url,init)=>url.includes(`/work/decisions/${cp}/${id}`)
   ?init?.method==='POST'?json({companyId:COMPANY_A,kind:cp,itemId:id,state:approve?'Approved':'Rejected',replayed:false,originalCorrelationId:'original'}):json(cpProofPreview(cp)):undefined})
  mountCounterpartyCandidate(cp)
  const input=await screen.findByLabelText(T.optionalNote)
@@ -744,7 +742,7 @@ it.each(cpCases)('sends the full native optional note, trimming only edges for $
 })
 it.each(cpCases)('freezes the original native optional note/version/key across unknown remount for $cp approve=$approve', async ({cp,approve}) => {
  let posts=0,reads=0
- const calls=installFetch({capabilities:[cap],respond:(url,init)=>{
+ const calls=installFetch({capabilities:[COUNTERPARTY_WORK_DECISION_CAPABILITY[cp]],respond:(url,init)=>{
   if(!url.includes(`/work/decisions/${cp}/${id}`))return undefined
   if(init?.method==='POST')return ++posts===1?problem(503):json({companyId:COMPANY_A,kind:cp,itemId:id,state:approve?'Approved':'Rejected',replayed:true,originalCorrelationId:'original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'})
   return json({...cpProofPreview(cp),sourceVersion:++reads===1?'7':'9',pending:reads===1})
@@ -775,13 +773,25 @@ it.each(cpCases)('freezes the original native optional note/version/key across u
  expect(sent[0]!.headers['Idempotency-Key']).toBe(sent[1]!.headers['Idempotency-Key'])
  expect(sent[1]!.body).toEqual({expectedVersion:'7',approve,reason:approve?'İnsan tarafından yazılan isteğe bağlı not':null,delegationId:null})
 })
-it.each(cpKinds)('keeps staged %s on the existing legacy route without mounting the candidate', cp => {
+it.each(cpKinds)('mounts %s under its exact native capability and preserves Cari browse routes', cp => {
  const route=matchRoutes(workRoutes,`/onaylarim/${cp}/${id}`)?.at(-1)?.route
- expect(route?.path).toBe('onaylarim/:kind/:approvalId')
- expect((route?.element as ReactElement<{children:ReactElement}>).props.children.type).toBe(ApprovalInboxDetailPage)
+ expect(route).toBeDefined()
+ expect(route!.path).toBe(`onaylarim/${cp}/:approvalId`)
+ const element=route!.element as ReactElement<{capability:readonly string[];children:ReactElement}>
+ expect(element.props.capability).toEqual([COUNTERPARTY_WORK_DECISION_CAPABILITY[cp]])
+ expect(element.props.children.type).toBe(WorkDecisionPage)
+ expect(CAPABILITY_ROUTE[COUNTERPARTY_WORK_DECISION_CAPABILITY[cp]]).toBe(`/onaylarim/${cp}/:approvalId`)
+ expect(CAPABILITY_NAV_LABEL[COUNTERPARTY_WORK_DECISION_CAPABILITY[cp]]).toBe('')
+ expect(CAPABILITY.cariTaxIdentityWorkDecision).toBe('cari.tax-identity-change.work-decision')
+ expect(CAPABILITY.cariLegalNameWorkDecision).toBe('cari.legal-name-change.work-decision')
+ for(const [path,capability] of [['/cari',CAPABILITY.cariPartiesList],[`/cari/${id}`,CAPABILITY.cariPartiesDetail]]){
+  const native=matchRoutes(shellRoutes,path)?.at(-1)?.route
+  expect(native).toBeDefined()
+  expect((native!.element as ReactElement<{capability:string}>).props.capability).toBe(capability)
+ }
 })
 it.each(cpKinds.flatMap(cp=>[{companyId:COMPANY_B},{kind:'finance.cash-account.v1'},{approvalReasonRequired:true},{sourceVersion:'0'}].map(delta=>({cp,delta}))))('refuses foreign or malformed $cp preview $delta without a decision', async ({cp,delta}) => {
- const calls=installFetch({capabilities:[cap],respond:url=>url.includes(`/work/decisions/${cp}/${id}`)?json({...cpProofPreview(cp),...delta}):undefined})
+ const calls=installFetch({capabilities:[COUNTERPARTY_WORK_DECISION_CAPABILITY[cp]],respond:url=>url.includes(`/work/decisions/${cp}/${id}`)?json({...cpProofPreview(cp),...delta}):undefined})
  mountCounterpartyCandidate(cp)
  await waitFor(()=>expect(calls.some(call=>call.url.includes(`/work/decisions/${cp}/`))).toBe(true))
  expect(screen.queryByLabelText(T.optionalNote)).toBeNull()
@@ -795,7 +805,7 @@ it.each(cpKinds)('renders the complete owner proof for %s and refuses missing or
  const proof=value[field]!
  for(const delta of [{[field]:null},{[field]:{...proof,changeRequestId:COMPANY_B}},
   {[field]:{...proof,partyId:COMPANY_B}},{[other]:proof}]){
-  const calls=installFetch({capabilities:[cap],respond:url=>url.includes(`/work/decisions/${cp}/${id}`)?json({...value,...delta}):undefined})
+  const calls=installFetch({capabilities:[COUNTERPARTY_WORK_DECISION_CAPABILITY[cp]],respond:url=>url.includes(`/work/decisions/${cp}/${id}`)?json({...value,...delta}):undefined})
   mountCounterpartyCandidate(cp)
   await waitFor(()=>expect(calls.some(call=>call.url.includes(`/work/decisions/${cp}/`))).toBe(true))
   expect(screen.queryByRole('region',{name:T.identityProof})).toBeNull()
@@ -804,4 +814,23 @@ it.each(cpKinds)('renders the complete owner proof for %s and refuses missing or
   expect(calls.some(call=>call.method==='POST')).toBe(false)
   cleanup()
  }
+})
+
+it.each(cpKinds.flatMap(cp=>[[],['counterparty.'+(cp.includes('tax-identity')?'tax-identity-change':'legal-name-change')+'.work-decision'],
+ [cp==='counterparty.tax-identity-change.v1'?'cari.legal-name-change.work-decision':'cari.tax-identity-change.work-decision'],
+ [CAPABILITY.cariPartiesDetail]].map(capabilities=>({cp,capabilities}))))('never reads $cp for missing, guessed, other-kind, or browse-only capabilities $capabilities',async({cp,capabilities})=>{
+ const calls=installFetch({capabilities,respond:url=>url.includes(`/work/decisions/${cp}/${id}`)?json(cpProofPreview(cp)):undefined})
+ mountCounterpartyCandidate(cp)
+ await waitFor(()=>expect(calls.some(call=>call.url.endsWith('/shell/capabilities'))).toBe(true))
+ expect(calls.some(call=>call.url.includes(`/work/decisions/${cp}/`))).toBe(false)
+ expect(screen.queryByRole('region',{name:T.identityProof})).toBeNull()
+ expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+})
+it.each(cpKinds)('does not grant native Cari browse through the standalone %s decision purpose',async cp=>{
+ const calls=installFetch({capabilities:[COUNTERPARTY_WORK_DECISION_CAPABILITY[cp]],respond:url=>url.includes(`/work/decisions/${cp}/${id}`)?json(cpProofPreview(cp)):undefined})
+ const router=mountCounterpartyCandidate(cp)
+ await screen.findByLabelText(T.optionalNote)
+ await act(()=>router.navigate('/cari'))
+ await waitFor(()=>expect(calls.filter(call=>call.url.endsWith('/shell/capabilities')).length).toBeGreaterThan(1))
+ expect(calls.some(call=>call.url.includes('/counterparties'))).toBe(false)
 })

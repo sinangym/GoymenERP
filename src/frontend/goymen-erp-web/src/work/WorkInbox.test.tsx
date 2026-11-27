@@ -558,3 +558,18 @@ it('opens loss inbox under the exact Work purpose capability and follows its sep
  expect(api.inboxReads()[0].companyId).toBe(COMPANY)
  expect(api.queueReads()).toHaveLength(0)
 })
+
+it.each([
+ ['counterparty.tax-identity-change.v1',CAPABILITY.cariTaxIdentityWorkDecision,'counterparty.parties.tax-identity.approve','counterparty.tax-identity-change-approval-required'],
+ ['counterparty.legal-name-change.v1',CAPABILITY.cariLegalNameWorkDecision,'counterparties.legal_name.approve','counterparty.legal-name-change-approval-required'],
+])('opens %s inbox only through its exact Cari purpose and follows the owner purpose link', async(kind,capability,permission,ruleCode)=>{
+ const id='cccccccc-0000-4000-8000-0000000000f4',link=`/onaylarim/${kind}/${id}`
+ const item={...limitItem,module:'counterparty',kind,itemId:id,documentLabel:'CAR-000001',link,awaitingPermission:permission,ruleVersion:RV(kind),
+  explanation:{rules:[{ruleCode,threshold:null,actual:null,deviation:null,unit:null}],references:[]}}
+ const api=installFetch({granted:[capability],inbox:()=>json({companyId:COMPANY,view:'awaiting-my-decision',generatedAtUtc:'2026-11-26T08:00:00Z',items:[item],
+  sources:[{module:'counterparty',kind,awaitingPermission:permission,durationClass:'BusinessDays',ruleVersion:RV(kind),state:'Ready',hasMore:false}]})})
+ await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-list')
+ expect(within(cardOf(kind)).getByRole('link').getAttribute('href')).toBe(link)
+ expect(api.inboxReads()).toHaveLength(1);expect(api.inboxReads()[0].companyId).toBe(COMPANY)
+ expect(api.queueReads()).toHaveLength(0)
+})

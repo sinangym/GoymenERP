@@ -1,3 +1,4 @@
+import { checkTaxIdentity } from '../cari/taxIdentity'
 import type { WorkDecisionPreview } from './workDecisionApi'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { decodeWorkDecisionPreview, sendWorkDecision, isWorkDecisionRequest, isWorkDecisionKind, isSalesWorkDecisionKind, workDecisionReasonLimit, workDecisionLocalUtc, WORK_DECISION_KINDS, COUNTERPARTY_WORK_DECISION_CAPABILITY, isCounterpartyWorkDecisionKind } from './workDecisionApi'
@@ -334,11 +335,11 @@ it.each([true,false])('keeps Manufacturing immutable decision states strict (app
 const lossKind='inventory.transfer-loss.v1'
 const lossOptions={requestNumber:2,requestedAtUtc:'2026-11-26T08:00:00Z'}
 const lossRequest={...request,reason:'İnsan kararı',inventoryTransferLoss:{requestNumber:2,decidedAtUtc:'2026-11-26T09:00:00Z'}}
-it('decodes exact loss options in the fifteen mounted kinds without changing other owner wires', () => {
+it('decodes exact loss options among the mounted owner kinds without changing other owner wires', () => {
  const value={...preview,kind:lossKind,approvalReasonRequired:true,rejectionSupported:true,inventoryTransferLoss:lossOptions}
  expect(isWorkDecisionKind(lossKind)).toBe(true)
  expect(WORK_DECISION_KINDS.filter(kind=>kind===lossKind)).toHaveLength(1)
- expect(WORK_DECISION_KINDS).toHaveLength(15)
+ expect(WORK_DECISION_KINDS).toHaveLength(17)
  expect(decodeWorkDecisionPreview(value,company,lossKind,id)).not.toBeNull()
  for(const delta of [{companyId:id},{itemId:company},{sourceVersion:'0'},{approvalReasonRequired:false},{rejectionSupported:false},
   {inventoryTransferLoss:null},{inventoryTransferLoss:{...lossOptions,requestNumber:0}},{inventoryTransferLoss:{...lossOptions,requestNumber:1.5}},
@@ -380,18 +381,18 @@ const cpKinds=['counterparty.tax-identity-change.v1','counterparty.legal-name-ch
 const cpProofPreview = (cp: typeof cpKinds[number]): WorkDecisionPreview => ({
  ...preview,kind:cp,rejectionSupported:true,references:[{role:'party',label:'CAR-000001',recordId:id,link:null}],
  ...(cp==='counterparty.tax-identity-change.v1'
-  ? {counterpartyTaxIdentityChange:{partyId:id,changeRequestId:id,currentTaxIdentityNumber:'1234567890',proposedTaxIdentityNumber:'10000000146',proposedKind:'tckn' as const,reason:'SENTETIK vergi düzeltme gerekçesi'}}
+  ? {counterpartyTaxIdentityChange:{partyId:id,changeRequestId:id,currentTaxIdentityNumber:'10000000147',proposedTaxIdentityNumber:'10000000146',proposedKind:'tckn' as const,reason:'SENTETIK vergi düzeltme gerekçesi'}}
   : {counterpartyLegalNameChange:{partyId:id,changeRequestId:id,currentLegalName:'E'.repeat(250),proposedLegalName:'Y'.repeat(250),reason:'SENTETIK unvan değişikliği gerekçesi'}}),
 })
-it('keeps both staged Counterparty purposes out of the mounted fifteen and pins their actual cari capability ids', () => {
+it('mounts both Counterparty purposes once among seventeen and pins their actual cari capability ids', () => {
  expect(COUNTERPARTY_WORK_DECISION_CAPABILITY).toEqual({
   'counterparty.tax-identity-change.v1':'cari.tax-identity-change.work-decision',
   'counterparty.legal-name-change.v1':'cari.legal-name-change.work-decision',
  })
- expect(WORK_DECISION_KINDS).toHaveLength(15)
+ expect(WORK_DECISION_KINDS).toHaveLength(17)
  for(const cp of cpKinds){
   expect(isWorkDecisionKind(cp)).toBe(true);expect(isCounterpartyWorkDecisionKind(cp)).toBe(true)
-  expect(WORK_DECISION_KINDS.some(kind=>String(kind)===cp)).toBe(false)
+  expect(WORK_DECISION_KINDS.filter(kind=>kind===cp)).toEqual([cp])
   expect(workDecisionReasonLimit(cp)).toBe(1000)
  }
 })
@@ -442,6 +443,8 @@ it.each(cpKinds)('requires one exact request-bound and party-bound human proof f
 })
 it('validates native tax kind and number shape, and preserves both full 250-character legal names',()=>{
  const cp=cpKinds[0],value=cpProofPreview(cp),proof=value.counterpartyTaxIdentityChange!
+ expect(checkTaxIdentity(proof.currentTaxIdentityNumber).ok).toBe(false)
+ expect(decodeWorkDecisionPreview(value,company,cp,id)?.counterpartyTaxIdentityChange?.currentTaxIdentityNumber).toBe('10000000147')
  for(const delta of [{proposedKind:'VKN'},{proposedKind:1},{proposedKind:'vkn'},
   {proposedTaxIdentityNumber:'bad'},{proposedTaxIdentityNumber:'10000000147'},
   {proposedTaxIdentityNumber:' 10000000146'},{currentTaxIdentityNumber:null},{currentTaxIdentityNumber:'bad'},{currentTaxIdentityNumber:'1'.repeat(12)}])

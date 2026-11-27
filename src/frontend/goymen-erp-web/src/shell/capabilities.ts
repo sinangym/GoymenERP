@@ -14,6 +14,8 @@ export const CAPABILITY = {
   workManagement: 'work.delegations.manage',
   /** C-01 Cari Kartlar list. Route `/cari`, owner CHATGPT-BUSINESS/CARI. */
   cariPartiesList: 'cari.parties.list',
+  cariTaxIdentityWorkDecision: 'cari.tax-identity-change.work-decision',
+  cariLegalNameWorkDecision: 'cari.legal-name-change.work-decision',
   /**
    * C-02 Yeni Cari — the create subset (`scopeVariant=create-subset` is route
    * metadata, not part of the screen id). Route `/cari/yeni`, permission
@@ -468,6 +470,8 @@ export type CapabilityId = (typeof CAPABILITY)[keyof typeof CAPABILITY]
 export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.workManagement]: '/calisma-yonetimi',
   [CAPABILITY.cariPartiesList]: '/cari',
+  [CAPABILITY.cariTaxIdentityWorkDecision]: '/onaylarim/counterparty.tax-identity-change.v1/:approvalId',
+  [CAPABILITY.cariLegalNameWorkDecision]: '/onaylarim/counterparty.legal-name-change.v1/:approvalId',
   [CAPABILITY.cariPartiesCreate]: '/cari/yeni',
   [CAPABILITY.cariAccountsLink]: '/cari/sirkete-bagla',
   [CAPABILITY.cariPartiesDetail]: '/cari/:partyId',

@@ -239,6 +239,8 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
 export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'work.delegations.manage': 'Work yönetimi',
   'cari.parties.list': 'Cari Kartlar',
+  'cari.tax-identity-change.work-decision': '',
+  'cari.legal-name-change.work-decision': '',
   // No nav entry, and this one is a DECISION rather than the usual "reached from a row": K5 (Sinan,
   // 20 Eylül 2026, #66 5748258299) puts creation inside the relevant list as a single authorised
   // "Yeni …" action and names cari among the modules whose parallel sidebar-create must not be
