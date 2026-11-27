@@ -39,6 +39,8 @@ public sealed partial class FinanceCreditMovementServiceV1
                 // Exact native authority, maker/checker, source/parent versions, literal reason, attempt and Audit behavior.
                 var result = await DecideAsync(context, metadata, request, token);
                 if (result.Outcome is CommandOutcome.Denied or CommandOutcome.Unavailable) throw new MovementDecisionRefusal(result);
+                if (result.Outcome == CommandOutcome.Succeeded && (state.Saved || result.IsReplay))
+                    result = result with { DecisionReceipt = await ReadDecisionReceiptAsync(context, metadata, request, result, token) };
                 await RequireFence(); RequireFlushed();
                 if (result.Outcome == CommandOutcome.Succeeded && !result.IsReplay && !state.Saved)
                     throw new InvalidOperationException("Credit movement decision has no saved native command receipt.");
@@ -118,8 +120,9 @@ public sealed partial class FinanceCreditMovementServiceV1
     private sealed class MovementDecisionRace : Exception;
 }
 
-internal sealed class GuardedFinanceCreditMovementServiceV1(FinanceCreditMovementServiceV1 core) : IFinanceCreditMovementServiceV1
+internal sealed class GuardedFinanceCreditMovementServiceV1(FinanceCreditMovementServiceV1 core) : IFinanceCreditMovementServiceV1, IFinanceCreditMovementDecisionReadV1
 {
+    public Task<ReadResult<FinanceCreditMovementDecisionDetailV1>> ReadDecisionAsync(FinanceContext c, Guid id, Func<CancellationToken, Task> fence, CancellationToken t) => core.ReadDecisionAsync(c, id, fence, t);
     public Task<CreditMovementResultV1> DecideAsync(FinanceContext c, CommandMetadata m, CreditMovementDecisionV1 r, CancellationToken t) => core.RunOwnedDecisionAsync(c, m, r, t);
     public Task<CreditMovementResultV1> ProposeAsync(FinanceContext c, CommandMetadata m, CreditMovementProposeV1 r, CancellationToken t) => core.ProposeAsync(c, m, r, t);
     public Task<ReadResult<CreditMovementPageV1>> ListAsync(FinanceContext c, Guid id, CancellationToken t) => core.ListAsync(c, id, t);

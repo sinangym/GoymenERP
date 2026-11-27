@@ -22,7 +22,10 @@ public sealed record CreditMovementViewV1(Guid Id, Guid CompanyId, string Versio
     string? OpeningPeriodVersion, CreditPlanToleranceSnapshotV1 MoneyProfile);
 public sealed record CreditMovementPageV1(Guid CompanyId, IReadOnlyList<CreditMovementViewV1> Items);
 public sealed record CreditMovementResultV1(CommandOutcome Outcome, CreditMovementViewV1? Resource, bool IsReplay,
-    string OriginalCorrelationId, IReadOnlyList<ValidationIssue> Issues);
+    string OriginalCorrelationId, IReadOnlyList<ValidationIssue> Issues)
+{
+    [JsonIgnore] public FinanceCreditMovementDecisionReceiptV1? DecisionReceipt { get; init; }
+}
 public interface IFinanceCreditMovementServiceV1
 {
     Task<CreditMovementResultV1> ProposeAsync(FinanceContext context, CommandMetadata metadata,

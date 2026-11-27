@@ -35,7 +35,7 @@ public sealed partial class FinanceCreditAccountSqlServerRelationalAcceptanceTes
                 if (save.Saved) savedFences++;
                 var reached = phase == "before-save" ? staged && scope.Writer.HasPendingDrafts
                     : phase == "after-audit" ? staged && sawPending && !scope.Writer.HasPendingDrafts
-                    : phase == "precommit" ? savedFences >= 3 : save.Saved;
+                    : phase == "precommit" ? savedFences >= 5 : save.Saved;
                 if (!deny || !reached) return PermissionDecision.Allowed;
                 observed = true;
                 if (phase == "actor") { scope.User.Actor = Maker; return PermissionDecision.Allowed; }
@@ -46,7 +46,7 @@ public sealed partial class FinanceCreditAccountSqlServerRelationalAcceptanceTes
             };
             var key = "movement-late-" + phase; var result = await scope.Decide(id, key, approve);
             Assert.Equal(CommandOutcome.Denied, result.Outcome); Assert.True(observed); Assert.Equal(phase is not ("before-save" or "after-audit"), save.Saved);
-            if (phase == "precommit") Assert.Equal(3, savedFences); // post-Save (1), post-native (2), final precommit (3); no extra receipt query.
+            if (phase == "precommit") Assert.Equal(5, savedFences); // post-Save (1), before/after exact receipt read (2/3), post-native (4), final precommit (5).
             scope.AssertClean(); await MovementSafetyDurable(run, id, null);
             deny = false; scope.User.Actor = Checker; scope.User.Member = true; scope.Company.Set(CompanyA); save.Saved = false;
             var success = await scope.Decide(id, key, approve); Assert.Equal(CommandOutcome.Succeeded, success.Outcome);
