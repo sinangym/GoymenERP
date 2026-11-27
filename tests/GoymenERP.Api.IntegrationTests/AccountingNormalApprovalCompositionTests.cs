@@ -22,6 +22,7 @@ public sealed class AccountingNormalApprovalCompositionTests
     [InlineData(null)]
     [InlineData(AccountingCommandNames.ApprovePeriod)]
     [InlineData("accounting.period.reopening.approve.v1")]
+    [InlineData(ApprovedAccountingSourceCatalogCommandNamesV1.Activate)]
     public async Task Real_module_approval_alias_preserves_caller_audit_added_during_its_fence_without_opening_SQL(string? periodCommand)
     {
         var company = Guid.Parse("ac490000-0000-4000-8000-000000000001");
@@ -60,6 +61,9 @@ public sealed class AccountingNormalApprovalCompositionTests
         var api = scope.GetRequiredService<AccountingApiService>();
         Assert.Same(api, scope.GetRequiredService<IAccountingPeriodDecisionReadV1>());
         Assert.Same(scope.GetRequiredService<AccountingJournalReversalServiceV1>(), scope.GetRequiredService<IAccountingJournalReversalDecisionReadV1>());
+        var catalog = scope.GetRequiredService<ApprovedAccountingSourceCatalogStoreV1>();
+        Assert.Same(catalog, scope.GetRequiredService<IApprovedAccountingSourceCatalogStoreV1>());
+        Assert.Same(catalog, scope.GetRequiredService<IApprovedNormalJournalSourceBindingCatalogV1>());
         var collector = scope.GetRequiredService<AuditEventCollector>();
         Assert.Same(collector, scope.GetRequiredService<IAuditEventCollector>());
         var writer = scope.GetRequiredService<IAuditTransactionWriterV1>();
@@ -78,11 +82,23 @@ public sealed class AccountingNormalApprovalCompositionTests
         {
             fences++; collector.Enqueue(draft); return Task.CompletedTask;
         }
-        var result = periodCommand is null
-            ? await guarded.RunNormalApprovalAsync(Attempt, Fence)
-            : await periods.RunPeriodApprovalAsync(periodCommand, Attempt, Fence);
+        if (periodCommand == ApprovedAccountingSourceCatalogCommandNamesV1.Activate)
+        {
+            var result = await catalog.RunActivationAsync(_ =>
+            {
+                attempts++;
+                throw new InvalidOperationException("A refused catalog boundary must preserve the caller draft.");
+            }, Fence);
+            Assert.Equal(AccountingApiStatus.Unavailable, result.Status); Assert.Null(result.Resource); Assert.False(result.IsReplay);
+        }
+        else
+        {
+            var result = periodCommand is null
+                ? await guarded.RunNormalApprovalAsync(Attempt, Fence)
+                : await periods.RunPeriodApprovalAsync(periodCommand, Attempt, Fence);
+            Assert.Equal(AccountingApiStatus.Unavailable, result.Status); Assert.Null(result.Resource); Assert.False(result.IsReplay);
+        }
         Assert.Equal(1, fences); Assert.Equal(0, attempts);
-        Assert.Equal(AccountingApiStatus.Unavailable, result.Status); Assert.Null(result.Resource); Assert.False(result.IsReplay);
         // Only this exact caller draft was enqueued. The real writer still sees it after the refusal;
         // an owner DiscardPending/WritePending cleanup would have emptied this same collector.
         Assert.True(writer.HasPendingDrafts);
