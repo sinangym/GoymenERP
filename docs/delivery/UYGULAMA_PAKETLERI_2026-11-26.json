@@ -2091,7 +2091,7 @@
         "Cash owner gained an optional post-flush/pre-commit fence in the existing transaction helper; existing native command receipts remain authoritative.",
         "64-flow acceptance, remaining owner adapters and rule editing are not complete.",
         "Sales invoice/order native commands and terminal decision metadata connected; approve-only purpose read avoids adding DraftsRead. Invoice command also requires existing price-read authority. Optional native reject reasons retained.",
-        "At be282c2df native Work kinds contain29 and paired frontend kinds28, including FNS-D128 IBAN. Product package-standard is the remaining staged backend kind, without its purpose UI/publication; neither count is64-flow runtime acceptance.",
+        "At cc379ff28f74d5810ed51ad537ebece821440d72 native and paired frontend Work kind sets both contain29, including IBAN and Product package-standard; exact sets match and staged kinds=0. This is source pairing, not64-flow runtime acceptance.",
         "Product package-standard purpose uses the immutable native table version, human effective date and required native reason; approval/rejection does not increment that version. Exact command/key/actor/company/receipt binds original replay, not a later pending table."
       ],
       "decisions": [
@@ -2117,7 +2117,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Pair the staged Product package-standard human date/reason UI and complete remaining owner adapters/64-flow actual SQL/HTTP/browser acceptance. B2 recommendations and other unsupported families remain closed.",
+      "next_action": "Complete remaining owner adapters/64-flow actual SQL/HTTP/browser acceptance and paired Product publication warm checks. B2 recommendations and other unsupported families remain closed.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2265,7 +2265,8 @@
           "logistics.dispatch-note.v1",
           "logistics.customer-return.v1",
           "finance.manual-bank-payment.v1",
-          "finance.bank-account-iban-change.v1"
+          "finance.bank-account-iban-change.v1",
+          "product.package-standard-version.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -3102,6 +3103,28 @@
             ],
             "new_permissions": [],
             "migration": null
+          },
+          {
+            "source_commit": "3b8cc1d98edf17101c8d8390972bb52d3f75be6c",
+            "agent_source_commit": "825ac14452992444d958cc94665f9c0c2b4925ec",
+            "scope": "Native Product price-list Publish owned transaction/actual Audit/fresh authority and original receipt safety (7096 then1c77/deb643/825ac; root9e8e/d631/5bb/e16). P2 unresolved company preserves native401/403; fresh-await entry refusal preserves caller dirty work/pending Audit. No new Work kind or policy.",
+            "local_checks": "Exact3b8cc API build0errors/0warnings196.39s; Product1174/1174PASS0skip16.79s includes13new PublishSafety cases; complete integration-source build0errors/0warnings57.70s. Seven new SQL Facts compiled NOT_RUN. Bounded independent source peer closed P2, notK3.",
+            "remaining": [
+              "Actual SQL/HTTP/browser/fullCI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null
+          },
+          {
+            "source_commit": "cc379ff28f74d5810ed51ad537ebece821440d72",
+            "agent_source_commit": "2f6c996d7bde61904da60d25cfae8ec794013d2c",
+            "scope": "Paired Product package-standard human purpose: strict9header/3entry evidence with complete5000+5000 tables, explicit effective date and mandatorytrim1..4000 reason; reject omits date and native version stays unchanged. Existing frozen key/body/date/version and native browse references retained. PRODUCT-PRICE-LISTS1.1 standalone CompanyWide approve; no global Product registry exception/grant/activation.",
+            "local_checks": "Full19-file nonauthor source peer found no concrete P0/P1/P2, notK3. At2f6 seven-file Node batch752total:751PASS/1FAIL0skip78.53s; new Inbox assertion missed opening the collapsed native reference. API350/Page313/nativeApproval16/Import14 passed within that batch; not an additional sum. Test-only fixture correction/full Inbox rerun and tsc/lint pending. New C# publication warm checks pending.",
+            "remaining": [
+              "Actual SQL/HTTP/browser/pins/fullCI/two independent K3; verified_runtime_flows stays0"
+            ],
+            "new_permissions": [],
+            "migration": null
           }
         ],
         "source_commits": [
@@ -3237,12 +3260,12 @@
           "2852361f4",
           "3dd66ab9d8209ba93104c878be931e387e522bcb",
           "46c6b06c4",
-          "ab9596fa19d80241e7cf62cd4514cdfbdb7644c3"
+          "ab9596fa19d80241e7cf62cd4514cdfbdb7644c3",
+          "3b8cc1d98edf17101c8d8390972bb52d3f75be6c",
+          "cc379ff28f74d5810ed51ad537ebece821440d72"
         ],
-        "kind_count_scope": "28 paired source kinds including IBAN plus1 staged Product package-standard backend (29 native kinds/28 frontend kinds atbe282c2df). All64 runtime flows remain NOT_VERIFIED/NOT_RUN; source pairing is not acceptance.",
-        "staged_kinds": [
-          "product.package-standard-version.v1"
-        ]
+        "kind_count_scope": "29 paired source kinds/29 native kinds with exact set equality atcc379ff28f74d5810ed51ad537ebece821440d72, including Product package-standard; staged0. Native price-list publish safety is a prerequisite, not a30th Work purpose. All64 runtime flows remain NOT_VERIFIED/NOT_RUN; source pairing is not acceptance.",
+        "staged_kinds": []
       }
     },
     {
