@@ -263,8 +263,9 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
     private sealed class BookAuthority : IErpAuthorityRevalidationService
     {
         public bool Granted { get; set; } = true;
-        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Granted ? new PermissionScope(true, true, new HashSet<string> { "SENTETIK-accountant" }, new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()) : PermissionScope.Denied);
+        public Action<string>? BeforeRead;
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default)
+        { BeforeRead?.Invoke(permission); return Task.FromResult(Granted ? new PermissionScope(true, true, new HashSet<string> { "SENTETIK-accountant" }, new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()) : PermissionScope.Denied); }
     }
     private sealed class SyntheticBookEvidence(ReadOutcome answer) : ICashExchangeBookValueEvidencePortV1
     { public Task<ReadOutcome> CheckAsync(FinanceContext context, CashExchangeBookValueEvidenceV1 evidence, CancellationToken cancellationToken) => Task.FromResult(answer); }

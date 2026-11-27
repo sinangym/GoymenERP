@@ -35,7 +35,10 @@ public sealed record CashExchangeBookValueWorkspaceV1(Guid CompanyId, CashTransf
 public sealed record CashExchangeBookValueCandidatePageV1(Guid CompanyId, IReadOnlyList<CashTransferView> Items,
     Guid? NextCursor);
 public sealed record CashExchangeBookValueCommandResultV1(CommandOutcome Outcome,
-    CashExchangeBookValueViewV1? Resource, bool IsReplay, string OriginalCorrelationId, string? Code);
+    CashExchangeBookValueViewV1? Resource, bool IsReplay, string OriginalCorrelationId, string? Code)
+{
+    [JsonIgnore] public CashExchangeBookValueDecisionReceiptV1? DecisionReceipt { get; init; }
+}
 
 /// <summary>Pinned, actually readable Documents version/hash; unavailable is never a successful attestation.</summary>
 public interface ICashExchangeBookValueEvidencePortV1

@@ -19,7 +19,7 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// FIN-S14 / #1189/6960684942 (GOV-D16). Documents-backed carrying value, explicitly entered by Accounting and approved by
 /// another Accounting actor. Serializable Finance-owned proof transaction; no balance movement or journal posting.
 /// </summary>
-public sealed class CashExchangeBookValueServiceV1(FinanceDbContext db, ICompanyContext company, ICurrentUser user,
+public sealed partial class CashExchangeBookValueServiceV1(FinanceDbContext db, ICompanyContext company, ICurrentUser user,
     IErpAuthorityRevalidationService authority, ICashExchangeBookValueEvidencePortV1 evidence,
     IAuditEventCollector audit, IAuditTransactionWriterV1 auditWriter, ICorrelationContext correlation,
     TimeProvider time) : ICashExchangeBookValueServiceV1
@@ -107,8 +107,11 @@ public sealed class CashExchangeBookValueServiceV1(FinanceDbContext db, ICompany
         DecideCashExchangeBookValueV1 request, CancellationToken ct)
     {
         const string permission = CashExchangeBookValuePermissionsV1.Approve;
+        var cleanBeforeAuthority = DecisionCleanEntry();
         if (!await Allowed(context, permission, ct)) return Failure(context, CommandOutcome.Denied);
         if (!Metadata(context, metadata) || request is null) return Failure(context, CommandOutcome.ValidationFailed, "cash_exchange_book_value_invalid");
+        // Refuse without owning or clearing caller work, including work added during the first authority await.
+        if (!cleanBeforeAuthority || !DecisionCleanEntry()) return Failure(context, CommandOutcome.Unavailable);
         return await Transaction(context, permission, async () =>
         {
             var payloadHash = Hash(JsonSerializer.Serialize(request, Json));
@@ -143,7 +146,7 @@ public sealed class CashExchangeBookValueServiceV1(FinanceDbContext db, ICompany
             var result = View(row, decision);
             if (request.Approve) FinanceFinancialMovementOutboxV1.ExchangeBookValue(db, context, source, result);
             return await Save(context, metadata, DecideCommand, permission, payloadHash, result, request.Reason ?? pending.Reason, ct, pending);
-        }, ct);
+        }, ct, async result => result with { DecisionReceipt = await ReadDecisionReceiptAsync(context, metadata, request, result, ct) });
     }
 
     private async Task<CashExchangeBookValueCommandResultV1?> Evidence(FinanceContext context, CashExchangeBookValueEvidenceV1 input, string permission, CancellationToken ct)
@@ -197,7 +200,8 @@ public sealed class CashExchangeBookValueServiceV1(FinanceDbContext db, ICompany
     }
 
     private async Task<CashExchangeBookValueCommandResultV1> Transaction(FinanceContext context, string permission,
-        Func<Task<CashExchangeBookValueCommandResultV1>> operation, CancellationToken ct)
+        Func<Task<CashExchangeBookValueCommandResultV1>> operation, CancellationToken ct,
+        Func<CashExchangeBookValueCommandResultV1, Task<CashExchangeBookValueCommandResultV1>>? beforeCommit = null)
     {
         if (!db.Database.IsRelational() || db.Database.CurrentTransaction is not null || db.ChangeTracker.HasChanges() || auditWriter.HasPendingDrafts)
             return Failure(context, CommandOutcome.Unavailable);
@@ -210,16 +214,26 @@ public sealed class CashExchangeBookValueServiceV1(FinanceDbContext db, ICompany
         try
         {
             var result = await operation();
+            if (result.Outcome == CommandOutcome.Succeeded && beforeCommit is not null) result = await beforeCommit(result);
+            if (beforeCommit is not null) ct.ThrowIfCancellationRequested();
             if (result.Outcome != CommandOutcome.Succeeded || !await Allowed(context, permission, ct))
             {
                 await tx.RollbackAsync(CancellationToken.None);
                 return await Allowed(context, permission, ct) ? result : Failure(context, CommandOutcome.Denied);
             }
-            await tx.CommitAsync(ct); committed = true; return result;
+            await tx.CommitAsync(ct); committed = true;
+            if (beforeCommit is not null)
+            {
+                ct.ThrowIfCancellationRequested();
+                // A release refusal suppresses the response; the committed decision is not undone.
+                if (!await Allowed(context, permission, ct)) return Failure(context, CommandOutcome.Denied);
+                ct.ThrowIfCancellationRequested();
+            }
+            return result;
         }
         catch (Exception ex) when (ex is DbException or DbUpdateException or JsonException or InvalidOperationException)
         {
-            await Rollback();
+            if (!committed) await Rollback();
             return Failure(context, await Allowed(context, permission, ct) ? CommandOutcome.Unavailable : CommandOutcome.Denied);
         }
         finally

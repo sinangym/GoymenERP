@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace GoymenERP.Finance.UnitTests;
 
-public sealed class CashExchangeBookValueProofTests
+public sealed partial class CashExchangeBookValueProofTests
 {
     private static readonly Guid Company = Guid.Parse("f1400000-0000-4000-8000-000000000001");
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
