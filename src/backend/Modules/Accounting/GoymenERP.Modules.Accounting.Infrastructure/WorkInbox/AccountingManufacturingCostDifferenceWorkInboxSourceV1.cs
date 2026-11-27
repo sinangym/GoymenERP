@@ -16,9 +16,10 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.WorkInbox;
 /// exists. The approve command accepts only a company-wide grant (D11: no scoped approver).
 /// </para>
 /// </summary>
-internal sealed class AccountingManufacturingCostDifferenceWorkInboxSourceV1(
+internal sealed partial class AccountingManufacturingCostDifferenceWorkInboxSourceV1(
     AccountingDbContext dbContext,
-    AccountingWorkInboxFence fence) : IWorkInboxSourceV1
+    AccountingWorkInboxFence fence,
+    IManufacturingCostDifferenceDecisionReadV1? owner = null) : IWorkInboxSourceV1
 {
     public const string ModuleName = "accounting";
     public const string KindName = "accounting.manufacturing-cost-difference.v1";
@@ -48,6 +49,11 @@ internal sealed class AccountingManufacturingCostDifferenceWorkInboxSourceV1(
                 .Where(row => row.CompanyId == context.CompanyId && row.Status == PreparedStatus)
                 .OrderBy(row => row.PreparedAtUtc).ThenBy(row => row.Id)
                 .Take(maxCount + 1)
+                // The existing rule's signed scalar is retained; full source JSON/output/plan facts are not inbox data.
+                .Select(row => new ManufacturingCostDifferenceRow { Id = row.Id, CompanyId = row.CompanyId,
+                    ManufacturingOrderId = row.ManufacturingOrderId, PreparedBy = row.PreparedBy, PreparedAtUtc = row.PreparedAtUtc,
+                    PeriodId = row.PeriodId, DebitAccountId = row.DebitAccountId, CreditAccountId = row.CreditAccountId,
+                    SignedTlDifference = row.SignedTlDifference, ApprovedBy = row.ApprovedBy, JournalId = row.JournalId })
                 .ToListAsync(token),
             rows => AccountingWorkInboxFence.Page(rows, maxCount, Item),
             cancellationToken);
@@ -65,15 +71,7 @@ internal sealed class AccountingManufacturingCostDifferenceWorkInboxSourceV1(
             return null;
         }
 
-        return new WorkInboxItemV1(ModuleName, KindName, row.Id, AccountingWorkInboxFence.ShortReference(row.Id),
-            preparedAt.ToUniversalTime(), ScreenPath, AccountingWorkInboxFence.Actor(preparedBy),
-            [new WorkApprovalRuleResultV1(ApprovalRequiredRule, null, WorkInboxRulesV1.Decimal(difference), null, TlUnit)],
-            [
-                new WorkApprovalReferenceV1("manufacturing-order",
-                    AccountingWorkInboxFence.ShortReference(row.ManufacturingOrderId), row.ManufacturingOrderId, null),
-                new WorkApprovalReferenceV1("period", AccountingWorkInboxFence.ShortReference(period), period, null),
-                new WorkApprovalReferenceV1("debit-ledger-account", AccountingWorkInboxFence.ShortReference(debit), debit, null),
-                new WorkApprovalReferenceV1("credit-ledger-account", AccountingWorkInboxFence.ShortReference(credit), credit, null),
-            ]);
+        return AccountingManufacturingCostDifferenceDecisionBindingV1.Item(row.Id, row.ManufacturingOrderId,
+            period, debit, credit, preparedBy, preparedAt, difference);
     }
 }

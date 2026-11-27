@@ -62,6 +62,8 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
 
     // Routing identity and immutable native proof remain separate from the human account-plan preview.
     [JsonIgnore] public WorkPostingAccountMappingProofV1? PostingAccountMappingProof { get; init; }
+
+    [JsonIgnore] public WorkManufacturingCostDifferenceProofV1? ManufacturingCostDifferenceProof { get; init; }
 }
 
 /// <summary>Private mapping identity; a genuine original receipt binds complete rows and prepared plan facts.</summary>
