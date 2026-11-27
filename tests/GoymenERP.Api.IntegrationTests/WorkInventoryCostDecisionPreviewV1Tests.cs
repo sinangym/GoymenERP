@@ -34,6 +34,7 @@ public sealed class WorkInventoryCostDecisionPreviewV1Tests
         Assert.Equal(text,human.Proposal.ComponentCancellation!.MoneyProfiles[0].Version);
         Assert.Equal(text,human.Proposal.StaleClosure!.PreparedVersion);Assert.Equal(text,human.Proposal.RenewedFrom!.PreviousClosedVersion);
         Assert.Equal("-2.0100",human.Proposal.Component.AlreadyPostedComponents[0].SignedAmount);
+        Assert.NotNull(detail.Proposal.Component.AlreadyPostedComponents);
         Assert.Equal(detail.Proposal.Component.AlreadyPostedComponents[0].ExactSignedAmount,human.Proposal.Component.AlreadyPostedComponents[0].ExactSignedAmount);
     }
     [Fact]

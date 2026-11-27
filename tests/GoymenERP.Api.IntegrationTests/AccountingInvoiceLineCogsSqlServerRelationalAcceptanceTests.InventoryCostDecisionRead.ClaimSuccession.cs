@@ -22,12 +22,12 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
             await CancelCostInvoice(seed, facts);
             var raw = SuccessionCosts(seed, new CancellationCostReader(nextReader, nextFacts), ledger);
             await raw.AcceptAsync(nextReader.Envelope);
-            var pending = Assert.Single((await raw.ListAsync(AccountingInventoryCostKindV1.SalesInvoicedShipment))
-                .Where(x => x.InvoiceId == nextFacts.InvoiceId));
+            var pending = Assert.Single(await raw.ListAsync(AccountingInventoryCostKindV1.SalesInvoicedShipment),
+                x => x.InvoiceId == nextFacts.InvoiceId);
             proposalId = pending.ProposalId;
             await raw.PrepareAsync(proposalId, pending.Kind, CostPreparation(period), Maker, Fence, Metadata(Maker));
             // The existing raw caller has no decision-read scope: its optional history callback remains a no-op.
-            Assert.NotNull(Assert.Single((await raw.ListAsync(pending.Kind)).Where(x => x.ProposalId == proposalId)).Component.ClaimSuccession);
+            Assert.NotNull(Assert.Single(await raw.ListAsync(pending.Kind), x => x.ProposalId == proposalId).Component.ClaimSuccession);
         }
         var before = await InventoryApprovalCounts(run);
         var claims = await run.Count("accounting.InvoiceCogsEconomicClaims");
