@@ -107,7 +107,7 @@ export const WORK_DECISION_TEXT = {
   scrapReadOnly: 'Bu bilgiler kaydedilen hurda talebine aittir. Onaylanan miktar stoktan çıkar; ret stok miktarını değiştirmez.',
   expenseProposal: 'Karar verilecek masraf ödemesi', expensePaymentId: 'Masraf ödeme kaydı', expenseProfile: 'Para profili', expenseProfileVersion: 'Para profili sürümü', expenseRevisers: 'Taslağı düzenleyenler', expenseConfirmed: 'Ödemenin gerçekleştiği kaydedilmiş',
   expenseApprovalOnly: 'Bu işlem yalnız taslağı onaylar. Ödemenin gerçekleşmesi ve kesin kayıt ilgili modülün ayrı işlemidir; burada karar gerekçesi kaydedilmez.',
-  expenseRetained: 'Önceki onayınız aynı sürüm ve işlem anahtarıyla yeniden doğrulanıyor. Güncel ödeme bilgileri bu isteğin yerine kullanılmıyor.',
+  expenseRetained: 'Önceki onayınız yeniden doğrulanıyor. Karar verdiğiniz sürüm korunuyor; güncel ödeme bilgileri bu isteğin yerine kullanılmıyor.',
   reversalProposal: 'Karar verilecek ters kayıt', reversalRequest: 'Ters kayıt önerisi', reversalOriginal: 'Orijinal tahsilat', reversalAbsent: 'Kayıtlı değil',
   reversalReadOnly: 'Bu bilgiler kayıtlı öneriye aittir. Onay ayrı ve bağlantılı bir karşı hareket oluşturur; orijinal kaydı değiştirmez. Ret için gerekçe zorunludur; onayda karar gerekçesi kaydedilmez.',
   reversalRetained: 'Önceki kararınız yeniden doğrulanıyor. Karar verdiğiniz sürüm korunuyor; güncel öneri bilgileri bu isteğin yerine kullanılmıyor.',

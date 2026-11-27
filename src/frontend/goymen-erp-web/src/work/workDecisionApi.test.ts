@@ -1341,7 +1341,7 @@ it.each(reversalKinds)('keeps amount, full source references and optional POS sh
  }
 })
 
-const expenseKind='finance.expense-payment.v1' as const,expenseCap='finance.expense-payment.work-decision'
+const expenseKind='finance.expense-payment.v1' as const
 function expensePreview(companyId:string,itemId:string,version='9007199254740993') {
  return {companyId,kind:expenseKind,itemId,documentLabel:'SENTETIK expense draft',sourceVersion:version,pending:true,approvalReasonRequired:false,rejectionSupported:false,
  references:[{role:'bank-account',recordId:reversalBank,label:'SENTETIK expense bank',link:null},{role:'expense-item',recordId:reversalParty,label:'SENTETIK expense item',link:null},{role:'currency',recordId:reversalCurrency,label:'SENTETIK currency',link:null}],
