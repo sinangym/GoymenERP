@@ -114,7 +114,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
       {kind === 'inventory.opening-cost.v1' ? <p>{cost == null ? T.hiddenCost : `${T.cost}: ${cost}`}</p> : null}
       {preview.logisticsWeighingDifference ? <section aria-label={T.weighingEvaluation}><h3>{T.weighingEvaluation}</h3><dl className={styles.facts}>
-        <dt>{T.weighingNote}</dt><dd>{preview.logisticsWeighingDifference.dispatchNoteId}</dd>
+        <dt>{T.weighingNote}</dt><dd>{preview.documentLabel}</dd>
         <dt>{PLAN_EXCESS.instruction}</dt><dd>{preview.logisticsWeighingDifference.instructionId}</dd>
         <dt>{T.weighingTheoretical}</dt><dd>{preview.logisticsWeighingDifference.theoreticalKg}</dd>
         <dt>{WEIGHING.total}</dt><dd>{preview.logisticsWeighingDifference.scaleKg}</dd>

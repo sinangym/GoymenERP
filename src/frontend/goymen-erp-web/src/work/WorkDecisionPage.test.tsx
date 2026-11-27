@@ -1091,7 +1091,7 @@ it('shows the immutable server evaluation and product rows with no editable numb
   ?init?.method==='POST'?json({companyId:COMPANY_A,kind:weighingKind,itemId:id,state:'Approved',replayed:false,originalCorrelationId:'original'}):json(weighingPreview):undefined})
  mountWeighing();await screen.findByRole('heading',{name:T.weighingEvaluation})
  expect(screen.getByRole('table',{name:T.weighingProducts})).toBeTruthy()
- for(const value of [weighingNote,weighingInstruction,weighingProduct,weighingEvaluation.recordedAtUtc,T.weighingEnteredComplete,T.weighingReadOnly])expect(screen.getByText(value)).toBeTruthy()
+ for(const value of [weighingPreview.documentLabel,weighingInstruction,weighingProduct,weighingEvaluation.recordedAtUtc,T.weighingEnteredComplete,T.weighingReadOnly])expect(screen.getByText(value)).toBeTruthy()
  expect(screen.getAllByText(weighingEvaluation.scaleKg).length).toBeGreaterThan(0)
  expect(screen.getAllByText(weighingEvaluation.differenceKg).length).toBeGreaterThan(0)
  expect(screen.getAllByText(T.weighingUnavailable)).toHaveLength(4)
