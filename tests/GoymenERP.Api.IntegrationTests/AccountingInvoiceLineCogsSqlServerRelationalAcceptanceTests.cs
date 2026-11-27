@@ -377,9 +377,9 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
         public IAuditEventCollector Audit => scope.ServiceProvider.GetRequiredService<IAuditEventCollector>();
         public IAuditTransactionWriterV1 AuditWriter => scope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
         public AccountingStore Posting => new(Db, company, scope.ServiceProvider.GetRequiredService<IAuditEventCollector>(), TimeProvider.System,
-            new AccountingAmountScaleVerifier(new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(Company)));
+            new AccountingAmountScaleVerifier(new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(Company)), normalApprovalAuditWriter: AuditWriter);
         public InvoiceLineCogsCorrectionStoreV1 Store => new(Db, company, new Plan(), scope.ServiceProvider.GetRequiredService<IAuditEventCollector>(),
-            scope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>(), TimeProvider.System);
+            scope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>(), TimeProvider.System, approvalSafetyOwner: Posting);
         private static ICompanyContext Context(AsyncServiceScope scope, Guid companyId)
         { var context = scope.ServiceProvider.GetRequiredService<ICompanyContext>(); context.Set(companyId); return context; }
         public ValueTask DisposeAsync() => scope.DisposeAsync();
