@@ -55,10 +55,10 @@ public sealed partial class AccountingJournalReversalLifecycleV1Tests
         var (command, source, answer) = ReceiptFixture();
         var proof = AccountingJournalReversalServiceV1.BindJournalReversalApprovalReceipt(command, source, answer, 1, "key", Checker);
         Assert.NotNull(proof); Assert.True(proof.CancellationSourceActorProofEstablished); Assert.Null(proof.CancellationSourceActorId);
-        Assert.Equal(AccountingApiService.Sha256(command.ResultJson), proof.OriginalResultDigest);
+        Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(command.ResultJson))), proof.OriginalResultDigest);
         var withProof = answer with { Resource = answer.Resource! with { ApprovalReceipt = proof } };
         Assert.Equal(command.ResultJson, JsonSerializer.Serialize(withProof, ReversalJson));
-        Assert.Equal(AccountingApiService.Sha256(command.ResultJson), AccountingJournalReversalServiceV1.JournalReversalOriginalResultDigest(withProof));
+        Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(command.ResultJson))), AccountingJournalReversalServiceV1.JournalReversalOriginalResultDigest(withProof));
         var replay = withProof with { IsReplay = true, OriginalCorrelationId = command.OriginalCorrelationId };
         Assert.Equal(proof, AccountingJournalReversalServiceV1.BindJournalReversalApprovalReceipt(command, source, replay, 1, "key", Checker));
         Assert.Equal(16, JsonSerializer.SerializeToElement(withProof.Resource, ReversalJson).EnumerateObject().Count());
