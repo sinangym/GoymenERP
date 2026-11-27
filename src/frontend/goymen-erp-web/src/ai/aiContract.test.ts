@@ -73,7 +73,9 @@ describe('Plan AI-3 — AI sözleşme çözücüleri', () => {
     expect(decodeAiAskAnswer({ ...body, answer: { ...COMPOSED, answerId } })?.answer?.answerId).toBe(answerId)
   })
 
-  it.each([null, undefined, '', 'SENTETIK-key', '00000000-0000-0000-0000-000000000000', 1])(
+  it.each([null, undefined, '', 'SENTETIK-key', '00000000-0000-0000-0000-000000000000', 1,
+    '00000000-0000-0000-0000-000000000000\n', 'aaaaaaaa-0000-0000-0000-000000000001\n',
+    'aaaaaaaa-0000-0000-0000-000000000001\r'])(
     'kaynaklı cevapta geçersiz makbuz kimliğini reddeder: %s', (answerId) => {
       expect(decodeAiAskAnswer({ outcome: 'answered', toolResults: [RESULT], answer: { ...COMPOSED, answerId } })).toBeNull()
     },

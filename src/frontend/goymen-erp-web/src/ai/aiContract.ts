@@ -245,7 +245,7 @@ function decodeComposed(value: unknown, released: readonly AiToolResult[]): AiCo
   if (composed === null || !isText(composed.text) || !Array.isArray(composed.citations)) return null
   if (!isText(composed.modelDeployment) || !isText(composed.policyVersion)) return null
   const answerId = composed.answerId
-  if (hasAnswerId && (typeof answerId !== 'string' || !UUID.test(answerId)
+  if (hasAnswerId && (typeof answerId !== 'string' || answerId.length !== 36 || !UUID.test(answerId)
     || answerId === '00000000-0000-0000-0000-000000000000')) return null
   const citations: AiCitation[] = []
   for (const entry of composed.citations as unknown[]) {
