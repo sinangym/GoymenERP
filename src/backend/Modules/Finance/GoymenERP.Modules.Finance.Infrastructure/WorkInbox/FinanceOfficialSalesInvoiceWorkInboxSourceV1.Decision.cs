@@ -16,7 +16,7 @@ internal sealed partial class FinanceOfficialSalesInvoiceWorkInboxSourceV1 : IWo
         if (result.Outcome != ReadOutcome.Found || !FinanceOfficialSalesInvoiceServiceV1.ValidDecisionView(context.CompanyId, itemId, result.Resource))
             throw new InvalidOperationException("Official invoice decision evidence is unavailable.");
         var v = result.Resource!;
-        // Preserve the legacy native caption, amount rule, references and link while the purpose is staged.
+        // Preserve the native caption, amount rule and references; the paired purpose owns only its decision route.
         var item = Item(new() { Id = v.InvoiceId, CompanyId = v.CompanyId, OfficialNo = v.OfficialNo,
             CustomerPartyId = v.CustomerPartyId, CurrencyId = v.CurrencyId, PdfDocumentId = v.PdfDocumentId,
             RecordedBy = v.RecordedBy, RecordedAtUtc = v.RecordedAtUtc, PayableAmountText = v.PayableAmount }, true)

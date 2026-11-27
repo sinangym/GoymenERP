@@ -65,7 +65,7 @@ internal sealed partial class FinanceOfficialSalesInvoiceWorkInboxSourceV1(
         }
 
         return new WorkInboxItemV1(ModuleName, KindName, row.Id, FinanceWorkInboxRead.Label(row.OfficialNo, row.Id),
-            row.RecordedAtUtc.ToUniversalTime(), ScreenPath, row.RecordedBy,
+            row.RecordedAtUtc.ToUniversalTime(), $"/onaylarim/{KindName}/{row.Id:D}", row.RecordedBy,
             [new WorkApprovalRuleResultV1(ApprovalRequiredRule, null, amount, null, null)],
             [
                 FinanceWorkInboxRead.Reference("customer", row.CustomerPartyId),

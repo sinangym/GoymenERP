@@ -22,7 +22,6 @@ public sealed class FinanceShellCapabilityRegistryTests
         "finance.credits.approve", "finance.credits.propose", "finance.credits.workspace",
         "finance.official-sales-invoices.approve", "finance.official-sales-invoices.record", "finance.official-sales-invoices.withdraw",
         "finance.party-balance-transfers.record",
-        "finance.official-sales-invoice.work-decision",
     ];
 
     [Fact]
@@ -40,13 +39,13 @@ public sealed class FinanceShellCapabilityRegistryTests
     }
 
     [Fact]
-    public void Official_sales_invoice_purpose_stays_staged_with_only_native_companywide_approve()
+    public void Official_sales_invoice_purpose_is_paired_with_only_native_companywide_approve()
     {
         var provider = new FinanceShellCapabilityProvider();
         var registry = new ShellCapabilityRegistry([provider],
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision([provider])]));
         var purpose = Assert.Single(registry.Registrations, row => row.Declaration.CapabilityId == FinanceShellCapabilityProvider.OfficialSalesInvoiceWorkDecisionCapabilityId).Declaration;
-        Assert.False(purpose.ImplementationAvailable); Assert.Null(purpose.ParentCapabilityId);
+        Assert.True(purpose.ImplementationAvailable); Assert.Null(purpose.ParentCapabilityId);
         Assert.Equal("/onaylarim/finance.official-sales-invoice.v1/:approvalId", purpose.RoutePath);
         Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, purpose.ContextRequirement);
         Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, purpose.ScopeRequirement);

@@ -20,7 +20,7 @@ public sealed partial class FinanceOfficialSalesInvoiceServiceV1Tests
         var source = new FinanceOfficialSalesInvoiceWorkInboxSourceV1(fixture.Db, new(company, user, authority), owner);
         var snapshot = await source.ReadDecisionAsync(new(Company, "checker", "source", null), Invoice, default);
         Assert.NotNull(snapshot); Assert.Equal(!terminal, snapshot.Pending); Assert.Equal(terminal ? "2" : "1", snapshot.SourceVersion);
-        Assert.Equal("/finans/resmi-satis-faturasi-onaylari", snapshot.Item.Link);
+        Assert.Equal($"/onaylarim/finance.official-sales-invoice.v1/{Invoice:D}", snapshot.Item.Link);
         Assert.Equal("maker", snapshot.Item.PreparedBy); Assert.Equal(Request().OfficialNo, snapshot.Item.DocumentLabel);
         Assert.Equal(3, snapshot.Item.References.Count); Assert.Equal("1250.5", Assert.Single(snapshot.Item.Rules).Actual);
         var header = (await owner.GetAsync(Context("checker"), Invoice, default)).Resource!;

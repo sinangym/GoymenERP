@@ -50,7 +50,7 @@ public sealed class FinanceOfficialSalesInvoiceWorkInboxSourceV1Tests : FinanceW
 
         var item = Assert.Single(result.Items!);
         Assert.Equal(invoice.OfficialNo, item.DocumentLabel);
-        Assert.Equal("/finans/resmi-satis-faturasi-onaylari", item.Link);
+        Assert.Equal($"/onaylarim/finance.official-sales-invoice.v1/{item.ItemId:D}", item.Link);
         Assert.Equal(
             [new WorkApprovalRuleResultV1(FinanceOfficialSalesInvoiceWorkInboxSourceV1.ApprovalRequiredRule, null, "1250.5", null, null)],
             item.Rules);
