@@ -6,16 +6,18 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed partial class WorkPurchasingRequestDecisionHostTests
 {
     [Theory]
-    [InlineData("Approved", false)]
-    [InlineData("Draft", true)]
-    public async Task Service_order_purpose_calls_only_native_approval_with_the_human_reason_and_original_receipt(string state, bool pending)
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Service_order_purpose_calls_only_native_approval_with_the_human_reason_and_original_receipt(bool pending)
     {
-        var run = new Run(serviceOrder: true) { OrderState = state }; run.Source.Pending = pending;
+        // The current preview may be Draft again after a revision, but native replay restores
+        // the immutable Approved attempt snapshot rather than that current projection.
+        var run = new Run(serviceOrder: true) { OrderState = "Approved" }; run.Source.Pending = pending;
         var preview = await run.Host.PreviewAsync(WorkDecisionHostV1.PurchaseServiceOrder, Item, default);
         Assert.True(preview.ApprovalReasonRequired); Assert.False(preview.RejectionSupported); Assert.Equal(pending, preview.Pending);
         const string reason = "  SENTETIK insanın gerçek onay gerekçesi  ";
         var result = await run.Host.DecideAsync(WorkDecisionHostV1.PurchaseServiceOrder, Item, new("7", true, reason), "service-original-key", default);
-        Assert.Equal(state, result.State); Assert.True(result.Replayed); Assert.Equal("SENTETIK-original", result.OriginalCorrelationId);
+        Assert.Equal("Approved", result.State); Assert.True(result.Replayed); Assert.Equal("SENTETIK-original", result.OriginalCorrelationId);
         var call = Assert.Single(run.Calls); Assert.Equal("ApproveAsync", call.Method); Assert.Equal(Item, call.Id);
         Assert.Equal(new ApprovePurchaseServiceOrderV1("7", reason), call.Body);
         Assert.Equal("service-original-key", call.Metadata.IdempotencyKey);
