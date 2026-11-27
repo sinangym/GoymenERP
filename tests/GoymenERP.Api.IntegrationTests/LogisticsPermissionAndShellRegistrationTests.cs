@@ -23,6 +23,25 @@ namespace GoymenERP.Api.IntegrationTests;
 /// </summary>
 public sealed class LogisticsPermissionAndShellRegistrationTests
 {
+    [Fact]
+    public void Return_weighing_control_preserves_the_real_registry_parent_contract_before_normal_host_repin()
+    {
+        IShellCapabilityProvider[] providers = [new LogisticsShellCapabilityProvider()];
+        // Validates the actual registry rules, without replacing a reviewed normal-host authority pin.
+        var candidate = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
+        var registry = new ShellCapabilityRegistry(providers, new ShellCapabilityAuthorityCatalog([candidate]));
+        var parent = Assert.Single(registry.Registrations,
+            item => item.Declaration.CapabilityId == LogisticsShellCapabilityProvider.DetailCapabilityId).Declaration;
+        var control = Assert.Single(registry.Registrations,
+            item => item.Declaration.CapabilityId == LogisticsShellCapabilityProvider.CustomerReturnsWeighingRecordCapabilityId).Declaration;
+        Assert.Equal(parent.ContextRequirement, control.ContextRequirement);
+        Assert.Equal(parent.ScopeRequirement, control.ScopeRequirement);
+        Assert.Equal(parent.CapabilityId, control.ParentCapabilityId);
+        Assert.True(control.ImplementationAvailable);
+        Assert.Equal([LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.CustomerReturnsRead,
+            LogisticsPermissionManifestV1.WeighingsRecord], control.RequiredPermissions);
+    }
+
     [Theory]
     [InlineData(LogisticsPermissionManifestV1.InstructionsCreate, ErpPermissions.LogisticsLoadingInstructionsCreate)]
     [InlineData(LogisticsPermissionManifestV1.InstructionsRead, ErpPermissions.LogisticsLoadingInstructionsRead)]

@@ -907,7 +907,7 @@ public sealed class LogisticsPersistenceModelTests
         var provider = new LogisticsShellCapabilityProvider();
         var declarations = provider.GetDeclarations().Where(item =>
             !item.CapabilityId.StartsWith("logistics.subcontract-deliveries.", StringComparison.Ordinal)).ToList();
-        Assert.Equal("1.16", provider.ContractVersion);
+        Assert.Equal("1.17", provider.ContractVersion);
         Assert.Equal(19, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             declaration.CapabilityId is not (LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId
