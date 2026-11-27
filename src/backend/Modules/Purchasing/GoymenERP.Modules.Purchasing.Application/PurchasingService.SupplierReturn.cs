@@ -240,10 +240,50 @@ public sealed partial class PurchasingService
         catch (JsonException) { throw new PurchasingServiceException(400, "validation_failed"); }
         var expectedVersion = ParseVersion(request.ExpectedVersion);
         var returns = returnStore ?? throw ReturnUnavailable();
+        if (!approve)
+        {
+            var replayOnly = false;
+            while (true)
+            {
+                PurchasingServiceException? terminal = null;
+                try
+                {
+                    var result = await returns.ExecuteRejectionGuardedAsync<PurchaseSupplierReturnResponseV1?>(async token =>
+                    {
+                        try
+                        {
+                            if (replayOnly)
+                            {
+                                var hash = PurchasingRequestHash.Compute(command, returnId, new { orderId, request });
+                                var replay = await FindReturnReplayAsync(scope, permission, returns, Envelope(scope, metadata, permission!), hash, command, token);
+                                if (replay is null) throw new PurchasingServiceException(409, PurchasingProblemCodesV1.ConcurrentChange);
+                                return await ReturnReplayedAsync(scope, permission, returns, orderId, replay, token, captureRecordedTerminal: true);
+                            }
+                            return await DecideSupplierReturnCoreAsync(scope, permission, returns, orderId, returnId, request,
+                                metadata, command, approve, expectedVersion, token);
+                        }
+                        catch (RecordedReturnTerminal exception) { terminal = exception.Response; return null; }
+                    }, token => RequireStillAsync(scope, permission, token), cancellationToken);
+                    if (terminal is not null) throw terminal;
+                    return result ?? throw ReturnUnavailable();
+                }
+                catch (ReturnReplayAfterAbort) when (!replayOnly) { replayOnly = true; }
+                catch (PurchasingStoreException exception)
+                { await RequireStillAsync(scope, permission, cancellationToken); throw Store(exception); }
+            }
+        }
+        return await DecideSupplierReturnCoreAsync(scope, permission, returns, orderId, returnId, request, metadata,
+            command, approve, expectedVersion, cancellationToken);
+    }
+
+    private async Task<PurchaseSupplierReturnResponseV1> DecideSupplierReturnCoreAsync(Scope scope, string? permission,
+        IPurchaseSupplierReturnStore returns, Guid orderId, Guid returnId, DecidePurchaseSupplierReturnV1 request,
+        PurchasingCommandMetadata metadata, string command, bool approve, long expectedVersion, CancellationToken cancellationToken)
+    {
         var requestHash = PurchasingRequestHash.Compute(command, returnId, new { orderId, request });
         var envelope = Envelope(scope, metadata, permission!);
         var replay = await FindReturnReplayAsync(scope, permission, returns, envelope, requestHash, command, cancellationToken);
-        if (replay is not null) return await ReturnReplayedAsync(scope, permission, returns, orderId, replay, cancellationToken);
+        if (replay is not null) return await ReturnReplayedAsync(scope, permission, returns, orderId, replay, cancellationToken, captureRecordedTerminal: !approve);
 
         var stored = await GuardedAsync(scope, permission, () => returns.FindAsync(orderId, returnId, cancellationToken), cancellationToken)
             ?? throw new PurchasingServiceException(404, "not_found");
@@ -261,18 +301,18 @@ public sealed partial class PurchasingService
         catch (PurchasingVersionConflictException)
         {
             return await ReturnTerminalAsync(scope, permission, returns, orderId, envelope, requestHash, command,
-                new(409, PurchasingProblemCodesV1.VersionConflict, [new("expectedVersion", PurchasingProblemCodesV1.VersionConflict)]), cancellationToken);
+                new(409, PurchasingProblemCodesV1.VersionConflict, [new("expectedVersion", PurchasingProblemCodesV1.VersionConflict)]), cancellationToken, captureRecordedTerminal: !approve);
         }
         catch (PurchasingRuleException exception) when (exception.Code == PurchaseSupplierReturnRuleCodes.NotPending)
         {
             return await ReturnTerminalAsync(scope, permission, returns, orderId, envelope, requestHash, command,
-                new(409, exception.Code, [new("status", exception.Code)]), cancellationToken);
+                new(409, exception.Code, [new("status", exception.Code)]), cancellationToken, captureRecordedTerminal: !approve);
         }
         catch (PurchasingRuleException exception) when (exception.Code is PurchaseSupplierReturnRuleCodes.SameActor
                                                              or PurchaseSupplierReturnRuleCodes.MakerUnknown)
         {
             return await ReturnTerminalAsync(scope, permission, returns, orderId, envelope, requestHash, command,
-                new(409, exception.Code, [new("actor", exception.Code)]), cancellationToken);
+                new(409, exception.Code, [new("actor", exception.Code)]), cancellationToken, captureRecordedTerminal: !approve);
         }
         catch (PurchasingRuleException exception)
         {
@@ -316,6 +356,7 @@ public sealed partial class PurchasingService
         }
         catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.ConcurrentChange)
         {
+            if (!approve) throw new ReturnReplayAfterAbort();
             var won = await FindReturnReplayAsync(scope, permission, returns, envelope, requestHash, command, cancellationToken);
             return won is null ? throw Store(exception) : await ReturnReplayedAsync(scope, permission, returns, orderId, won, cancellationToken);
         }
@@ -421,12 +462,18 @@ public sealed partial class PurchasingService
         }
     }
 
+    private sealed class RecordedReturnTerminal(PurchasingServiceException response) : Exception
+    { public PurchasingServiceException Response { get; } = response; }
+    private sealed class ReturnReplayAfterAbort : Exception { }
+
     private async Task<PurchaseSupplierReturnResponseV1> ReturnReplayedAsync(Scope scope, string? permission, IPurchaseSupplierReturnStore returns,
-        Guid orderId, PurchaseSupplierReturnReplay replay, CancellationToken cancellationToken)
+        Guid orderId, PurchaseSupplierReturnReplay replay, CancellationToken cancellationToken, bool captureRecordedTerminal = false)
     {
         if (replay.Refusal is { } refusal)
         {
-            throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true, originalCorrelationId: replay.OriginalCorrelationId, detail: refusal.Detail);
+            var response = new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true, originalCorrelationId: replay.OriginalCorrelationId, detail: refusal.Detail);
+            if (captureRecordedTerminal) throw new RecordedReturnTerminal(response);
+            throw response;
         }
 
         if (replay.ReturnId is not { } returnId) throw new PurchasingServiceException(503, "service_unavailable");
@@ -444,7 +491,7 @@ public sealed partial class PurchasingService
     /// <summary>§7/§8: a terminal refusal is recorded under the key before it is answered; a same-key winner is answered as a replay.</summary>
     private async Task<PurchaseSupplierReturnResponseV1> ReturnTerminalAsync(Scope scope, string? permission, IPurchaseSupplierReturnStore returns,
         Guid orderId, PurchasingWriteEnvelope envelope, string requestHash, string commandName, PurchasingTerminalRefusal refusal,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool captureRecordedTerminal = false)
     {
         await RequireStillAsync(scope, permission, cancellationToken);
         try
@@ -453,6 +500,7 @@ public sealed partial class PurchasingService
         }
         catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.ConcurrentChange)
         {
+            if (captureRecordedTerminal) throw new ReturnReplayAfterAbort();
             var won = await FindReturnReplayAsync(scope, permission, returns, envelope, requestHash, commandName, cancellationToken);
             if (won is not null) return await ReturnReplayedAsync(scope, permission, returns, orderId, won, cancellationToken);
         }
@@ -461,7 +509,9 @@ public sealed partial class PurchasingService
             throw Store(exception);
         }
 
-        throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, detail: refusal.Detail);
+        var response = new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors, detail: refusal.Detail);
+        if (captureRecordedTerminal) throw new RecordedReturnTerminal(response);
+        throw response;
     }
 
     private static StoredPurchaseSupplierReturn RequireOwnReturn(Scope scope, Guid orderId, StoredPurchaseSupplierReturn stored) =>

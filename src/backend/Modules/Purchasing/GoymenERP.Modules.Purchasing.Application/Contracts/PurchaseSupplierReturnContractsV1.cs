@@ -274,6 +274,12 @@ public sealed record PurchaseSupplierReturnReplay(Guid? ReturnId, PurchasingTerm
 /// </summary>
 public interface IPurchaseSupplierReturnStore
 {
+    /// <summary>Only rejection owns this clean transaction; existing approval participants stay unchanged.
+    /// A legacy store must fail closed, never substitute its unguarded SaveDecision.</summary>
+    Task<T> ExecuteRejectionGuardedAsync<T>(Func<CancellationToken, Task<T>> operation,
+        Func<CancellationToken, Task> freshDecisionFence, CancellationToken cancellationToken = default) =>
+        throw new PurchasingServiceException(503, PurchaseSupplierReturnCodesV1.Unavailable);
+
     Task<PurchaseSupplierReturnReplay?> FindReplayAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
         CancellationToken cancellationToken = default);
     Task<StoredPurchaseSupplierReturn?> FindAsync(Guid orderId, Guid returnId, CancellationToken cancellationToken = default);

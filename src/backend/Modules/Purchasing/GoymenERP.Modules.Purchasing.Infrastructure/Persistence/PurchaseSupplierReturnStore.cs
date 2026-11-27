@@ -6,6 +6,9 @@ using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Domain.Returns;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using System.Data;
+using GoymenERP.Modules.Purchasing.Application;
 
 namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 
@@ -17,8 +20,56 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 /// the return's own attempt table.
 /// </summary>
 public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, ICompanyContext companyContext, IAuditEventCollector auditEvents,
-    TimeProvider timeProvider) : IPurchaseSupplierReturnStore
+    TimeProvider timeProvider, IAuditTransactionWriterV1? decisionAuditWriter = null) : IPurchaseSupplierReturnStore
 {
+    private Func<CancellationToken, Task>? rejectionDecisionFence;
+
+    public async Task<T> ExecuteRejectionGuardedAsync<T>(Func<CancellationToken, Task<T>> operation,
+        Func<CancellationToken, Task> freshDecisionFence, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        ArgumentNullException.ThrowIfNull(freshDecisionFence);
+        // Refusal precedes owned cleanup: caller handles, staged work and audit drafts are untouched.
+        if (decisionAuditWriter is null || System.Transactions.Transaction.Current is not null
+            || !dbContext.Database.IsRelational() || dbContext.Database.CurrentTransaction is not null
+            || dbContext.ChangeTracker.HasChanges() || decisionAuditWriter.HasPendingDrafts || rejectionDecisionFence is not null)
+            throw new PurchasingServiceException(503, PurchaseSupplierReturnCodesV1.Unavailable);
+        var companyId = RequireResolvedCompany();
+        async Task Fence(CancellationToken token)
+        {
+            if (RequireResolvedCompany() != companyId) throw Refused(PurchasingStoreCodes.CompanyContextMismatch, "Company changed.");
+            await freshDecisionFence(token);
+            if (RequireResolvedCompany() != companyId) throw Refused(PurchasingStoreCodes.CompanyContextMismatch, "Company changed.");
+        }
+        await using var owned = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            rejectionDecisionFence = Fence;
+            await Fence(cancellationToken);
+            var result = await operation(cancellationToken);
+            await Fence(cancellationToken);
+            if (decisionAuditWriter.HasPendingDrafts)
+            {
+                await decisionAuditWriter.WritePendingAsync(owned.GetDbTransaction(), cancellationToken);
+                await Fence(cancellationToken);
+            }
+            if (decisionAuditWriter.HasPendingDrafts) throw new InvalidOperationException("Pending supplier return rejection audit.");
+            await Fence(cancellationToken);
+            await owned.CommitAsync(cancellationToken);
+            return result;
+        }
+        catch
+        {
+            try { await owned.RollbackAsync(CancellationToken.None); }
+            finally
+            {
+                try { await owned.DisposeAsync(); }
+                finally { dbContext.ChangeTracker.Clear(); decisionAuditWriter.DiscardPending(); }
+            }
+            throw;
+        }
+        finally { rejectionDecisionFence = null; }
+    }
     private const string ReturnEntityType = "Purchasing.SupplierReturn";
     private const int ActorMaximumLength = 128;
     private const int KeyMaximumLength = 200;
@@ -254,6 +305,12 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
         }
 
         var before = Restore(row, companyId);
+        if (rejectionDecisionFence is not null)
+        {
+            if (commandName != PurchaseSupplierReturnCommandsV1.RejectCostExceptionV1 || decided.Status != PurchaseSupplierReturnStatus.Rejected)
+                throw new InvalidOperationException("The owned rejection cannot approve or stage a stock exit.");
+            await rejectionDecisionFence(cancellationToken);
+        }
         var now = timeProvider.GetUtcNow();
         row.Status = (int)decided.Status;
         row.DecidedBy = actorId;
@@ -488,7 +545,9 @@ public sealed class PurchaseSupplierReturnStore(PurchasingDbContext dbContext, I
     {
         try
         {
+            if (rejectionDecisionFence is not null) await rejectionDecisionFence(cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
+            if (rejectionDecisionFence is not null) await rejectionDecisionFence(cancellationToken);
         }
         catch (DbUpdateConcurrencyException exception)
         {

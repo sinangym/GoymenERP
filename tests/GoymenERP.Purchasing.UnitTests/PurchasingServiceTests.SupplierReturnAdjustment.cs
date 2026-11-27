@@ -249,7 +249,7 @@ public sealed partial class PurchasingServiceTests
         }
     }
 
-    private sealed class ReturnStoreFake(Guid lineId) : IPurchaseSupplierReturnStore
+    private sealed partial class ReturnStoreFake(Guid lineId) : IPurchaseSupplierReturnStore
     {
         private readonly Dictionary<(string Command, string Key), (string Actor, string Hash, PurchaseSupplierReturnReplay Replay)> attempts = [];
         public StoredPurchaseSupplierReturn? Stored { get; private set; }
@@ -296,6 +296,7 @@ public sealed partial class PurchasingServiceTests
             DecisionWrites++; Stored = Stored! with { Return = Stored!.Return with { Status = decided.Status }, Version = decided.Version,
                 DecidedBy = envelope.ActorId, DecidedAtUtc = DateTimeOffset.UnixEpoch, DecisionReason = decided.Reason };
             Remember(envelope, hash, command, new(decided.Id, null, envelope.CorrelationId, Stored));
+            AfterDecisionSave?.Invoke();
             AfterAccess?.Invoke();
             return Task.FromResult(Stored);
         }
