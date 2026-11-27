@@ -78,7 +78,7 @@ public static class WorkDecisionRegistrationV1
 
 /// <summary>WP8 host composition only. Owner commands retain all writes, receipts, versions, maker checks and audit.
 /// Four YOL-D41 screenless kinds first; an unregistered kind never becomes an arbitrary command/route.</summary>
-public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser user, ICorrelationContext correlation,
+public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrentUser user, ICorrelationContext correlation,
     IErpAuthorityRevalidationService authority, IEnumerable<IWorkInboxSourceV1> sources,
     IWorkDelegationReaderV1 delegations, WorkDecisionExecutionFenceV1 executionFence,
     IFinanceCashAccountMaster cash, IInventoryOpeningCostCommandV1 openingCost,
@@ -180,33 +180,7 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
         if (!await Verify(token)) throw new WorkDecisionException(403);
         using var lease = executionFence.Enter(Verify);
         if (kind == ManufacturingPlan)
-        {
-            // This partial delivery opens only guarded rejection. Approval awaits the allocation final-fence
-            // dependency and its acceptance; re-approval also needs explicit selected labels absent here.
-            if (request.Approve || manufacturingPlans is null) throw new WorkDecisionException(503);
-            if (!long.TryParse(request.ExpectedVersion, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var expected)
-                || expected < 1 || expected.ToString(System.Globalization.CultureInfo.InvariantCulture) != request.ExpectedVersion)
-                throw new WorkDecisionException(400, "work_decision_invalid");
-            var answer = await manufacturingPlans.RejectPlanAsync(id, new(expected, request.Reason), key,
-                ManufacturingPermissionManifestV1.PlansApprove, token);
-            if (answer.Status != ManufacturingApiStatus.Ok)
-                throw new WorkDecisionException(answer.Status switch
-                {
-                    ManufacturingApiStatus.Invalid => 400, ManufacturingApiStatus.Denied => 403,
-                    ManufacturingApiStatus.NotFound => 404, ManufacturingApiStatus.Conflict => 409,
-                    ManufacturingApiStatus.Unprocessable => 422, _ => 503,
-                }, answer.Code, answer.IsReplay, answer.OriginalCorrelationId);
-            var plan = answer.Resource;
-            var rejections = plan is null ? null : plan.Rejections?.Where(rejection => rejection.PlanVersion == plan.Version).ToArray();
-            if (plan is null || plan.CompanyId != snapshot.CompanyId || plan.PlanId != id || plan.Status != "Draft"
-                || expected == long.MaxValue || plan.Version != expected + 1 || rejections is not { Length: 1 }
-                || !Guid.TryParse(actor, out var actorId) || rejections[0].RejectedByUserId != actorId
-                || rejections[0].Reason != request.Reason?.Trim() || rejections[0].RejectedAtUtc == default
-                || (plan.PreparedBy is not null && (string.IsNullOrWhiteSpace(plan.PreparedBy) || WorkInboxRulesV1.SameUser(plan.PreparedBy, actor))))
-                throw new WorkDecisionException(503);
-            return new(snapshot.CompanyId, kind, id, plan.Status, answer.IsReplay,
-                answer.OriginalCorrelationId ?? (answer.IsReplay ? throw new WorkDecisionException(503) : correlation.CorrelationId));
-        }
+            return await DecideManufacturingPlanAsync(id, request, key, snapshot, actor, token);
         if (kind == PurchaseGoodsReceiptBatch)
         {
             if (goodsReceiptBatches is null) throw new WorkDecisionException(503);

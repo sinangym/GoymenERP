@@ -35,18 +35,75 @@ public sealed class WorkManufacturingPlanDecisionHostTests
         Assert.All(run.Raw.Asked, permission => Assert.Equal(ManufacturingPermissionManifestV1.PlansApprove, permission));
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task First_approval_and_reapproval_are_unavailable_without_invoking_a_native_command(bool reapproval)
+    [Fact]
+    public async Task Reapproval_remains_unavailable_without_invoking_any_native_command_or_selecting_labels()
     {
-        var run = new Run(); run.Source.Reapproval = reapproval;
+        var run = new Run(); run.Source.Reapproval = true;
         var preview = await run.Host.PreviewAsync(WorkDecisionHostV1.ManufacturingPlan, PlanId, default);
-        Assert.Equal(!reapproval, preview.RejectionSupported);
+        Assert.False(preview.RejectionSupported);
         Assert.Equal(503, (await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.DecideAsync(
             WorkDecisionHostV1.ManufacturingPlan, PlanId, new("1", true, null), "no-implicit-selection", default))).Status);
         Assert.Equal(0, run.CommandReads);
     }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task First_approval_immutable_native_plan_receipt_replays_from_pending_or_terminal_purpose_metadata(bool pending)
+    {
+        var run = new Run { ApprovalAnswer = true }; run.Source.Pending = pending; run.Source.Maker = null;
+        run.View = ApprovalView();
+        var result = await run.Host.DecideAsync(WorkDecisionHostV1.ManufacturingPlan, PlanId,
+            new("1", true, null), "native-key", default);
+        Assert.Equal(("Approved", true, "SENTETIK-original"), (result.State, result.Replayed, result.OriginalCorrelationId));
+        Assert.Equal(1, run.CommandReads);
+        Assert.All(run.Raw.Asked, permission => Assert.Equal(ManufacturingPermissionManifestV1.PlansApprove, permission));
+    }
+
+    [Theory]
+    [InlineData("company")]
+    [InlineData("id")]
+    [InlineData("status")]
+    [InlineData("version")]
+    [InlineData("approver")]
+    [InlineData("approval-time")]
+    [InlineData("reapproval-required")]
+    [InlineData("reapproval-history")]
+    [InlineData("order")]
+    [InlineData("maker")]
+    public async Task First_approval_never_accepts_an_unproven_or_reapproval_native_plan_receipt(string fault)
+    {
+        var run = new Run { ApprovalAnswer = true }; var view = ApprovalView();
+        run.View = fault switch
+        {
+            "company" => view with { CompanyId = Guid.NewGuid() }, "id" => view with { PlanId = Guid.NewGuid() },
+            "status" => view with { Status = "Draft" }, "version" => view with { Version = 3 },
+            "approver" => view with { ApprovedByUserId = Guid.NewGuid() }, "approval-time" => view with { ApprovedAtUtc = null },
+            "reapproval-required" => view with { RequiresReapproval = true },
+            "reapproval-history" => view with { Reapprovals = [new(1, ActorId, DateTimeOffset.UtcNow, 2)] },
+            "order" => view with { OrderId = Guid.NewGuid() }, "maker" => view with { PreparedBy = Actor },
+            _ => throw new NotSupportedException(),
+        };
+        Assert.Equal(503, (await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.DecideAsync(
+            WorkDecisionHostV1.ManufacturingPlan, PlanId, new("1", true, null), "native-key", default))).Status);
+    }
+
+    [Theory]
+    [InlineData("actor")]
+    [InlineData("fingerprint")]
+    public async Task First_approval_preserves_native_immutable_receipt_actor_and_fingerprint_conflicts(string mismatch)
+    {
+        var run = new Run { ApprovalAnswer = true }; run.View = ApprovalView();
+        if (mismatch == "actor") run.StoredActor = Guid.NewGuid().ToString("D");
+        else run.StoredHash = Hash("different canonical approval");
+        var refusal = await Assert.ThrowsAsync<WorkDecisionException>(() => run.Host.DecideAsync(
+            WorkDecisionHostV1.ManufacturingPlan, PlanId, new("1", true, null), "native-key", default));
+        Assert.Equal((409, ManufacturingApiCodes.IdempotencyConflict), (refusal.Status, refusal.Code));
+        Assert.Equal(1, run.CommandReads);
+    }
+
+    private static PlanViewV1 ApprovalView() => new(PlanId, Company, Company, "Slitting", "Approved", 2,
+        [], null, ActorId, DateTimeOffset.UtcNow, Reapprovals: []);
 
     [Theory]
     [InlineData("other-owner")]
@@ -114,7 +171,8 @@ public sealed class WorkManufacturingPlanDecisionHostTests
     {
         public readonly RawAuthority Raw = new(); public readonly Source Source;
         public readonly Delegations Delegations = new(); public readonly WorkDecisionHostV1 Host;
-        public Action? BeforeNativeFence; public int CommandReads;
+        public Action? BeforeNativeFence; public int CommandReads; public bool ApprovalAnswer;
+        public string StoredActor = Actor; public string? StoredHash;
         public PlanViewV1 View = new(PlanId, Company, Company, "Slitting", "Draft", 2, [], null, null, null,
             Rejections: [new(1, "SENTETIK red", ActorId, DateTimeOffset.UtcNow, 2)]);
         public Run(string kind = WorkDecisionHostV1.ManufacturingPlan)
@@ -129,9 +187,13 @@ public sealed class WorkManufacturingPlanDecisionHostTests
             {
                 if (method.Name != "FindCommandAsync") throw new NotSupportedException();
                 CommandReads++;
-                var canonical = JsonSerializer.Serialize(new { planId = PlanId, expectedVersion = 1L, reason = "SENTETIK red" }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
-                var record = new ManufacturingCommandRecord(ManufacturingCommandNames.RejectPlan, (string)args[1]!, Actor,
-                    Hash(ManufacturingCommandNames.RejectPlan + "|" + canonical),
+                var command = ApprovalAnswer ? ManufacturingCommandNames.ApprovePlan : ManufacturingCommandNames.RejectPlan;
+                Assert.Equal(command, args[0]);
+                object payload = ApprovalAnswer ? new { planId = PlanId, expectedVersion = 1L }
+                    : new { planId = PlanId, expectedVersion = 1L, reason = "SENTETIK red" };
+                var canonical = JsonSerializer.Serialize(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                var record = new ManufacturingCommandRecord(command, (string)args[1]!, StoredActor,
+                    StoredHash ?? Hash(command + "|" + canonical),
                     JsonSerializer.Serialize(new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, View, false, null), new JsonSerializerOptions(JsonSerializerDefaults.Web)), "SENTETIK-original");
                 return Task.FromResult<ManufacturingCommandRecord?>(record);
             };
@@ -164,7 +226,8 @@ public sealed class WorkManufacturingPlanDecisionHostTests
         public string ApproverPermission => ManufacturingPermissionManifestV1.PlansApprove;
         public Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context, Guid itemId, CancellationToken cancellationToken) =>
             Task.FromResult<WorkApprovalDecisionSnapshotV1?>(new(Company, new(Module, Kind, itemId, "SENTETIK plan", DateTimeOffset.UtcNow,
-                "/uretim/plan/" + itemId, Maker, Reapproval ? [new("manufacturing.plan-reapproval-after-order-cancel", null, null, null, null)] : [], []), "1", Pending));
+                "/uretim/plan/" + itemId, Maker, Reapproval ? [new("manufacturing.plan-reapproval-after-order-cancel", null, null, null, null)]
+                    : Pending ? [new("manufacturing.plan-first-approval", null, null, null, null)] : [], []), "1", Pending));
         public Task<WorkInboxSourceResultV1> ListPendingAsync(WorkInboxSourceContextV1 context, int maxCount, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
     private sealed class User : ICurrentUser
