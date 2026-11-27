@@ -9,14 +9,19 @@ import { decodeCustomerInstrumentPage, type CustomerInstrumentPage } from './cus
 export type CreditGroup = 'Cash' | 'NonCash' | 'InstrumentAndFactoring' | 'Leasing'
 export interface CreditCharge { readonly description: string; readonly amount: string; readonly treatment: 'IncludedInInstallment' | 'CollectedSeparately'; readonly sourceDocumentReference: string }
 export interface CreditInstallment { readonly sequence: number; readonly dueDate: string; readonly installment: string; readonly principal: string; readonly interest: string; readonly bsmv: string; readonly kkdf: string; readonly charges?: readonly CreditCharge[]; readonly vat?: string }
+export interface CreditSourceDocument { readonly reference: string; readonly documentDate: string; readonly revision: string }
+export interface CreditNonCashCommission { readonly amount: string; readonly commissionDate: string; readonly sourceDocument: CreditSourceDocument; readonly period?: string | null }
+export interface CreditNonCashReturn { readonly returnedOn: string; readonly sourceDocument: CreditSourceDocument }
 export interface CreditProfile {
   readonly lenderPartyId: string; readonly lenderCompanyPartyAccountId: string
-  readonly sourceDocument: { readonly reference: string; readonly documentDate: string; readonly revision: string }
+  readonly sourceDocument: CreditSourceDocument
   readonly planNature: 'Installments' | 'SourceMovements'
-  readonly cash?: { readonly kind: string; readonly maturityDate: string | null } | null
-  readonly nonCash?: { readonly kind: string; readonly beneficiaryReference: string; readonly isIndefinite: boolean; readonly expiryDate: string | null } | null
-  readonly instrumentAndFactoring?: { readonly kind: string; readonly withRecourse: boolean | null; readonly instrumentIds: readonly string[]; readonly receivableDocumentReferences: readonly string[] } | null
-  readonly leasing?: { readonly assetReference: string; readonly leaseStartDate: string; readonly leaseEndDate: string } | null
+  readonly cash?: { readonly kind: string; readonly maturityDate: string | null; readonly indexCurrencyId?: string | null; readonly exportCommitmentReference?: string | null } | null
+  readonly nonCash?: { readonly kind: string; readonly beneficiaryReference: string; readonly isIndefinite: boolean; readonly expiryDate: string | null
+    readonly riskAmount?: string | null; readonly commission?: CreditNonCashCommission | null; readonly relatedCommercialDocumentReference?: string | null; readonly returnEvidence?: CreditNonCashReturn | null } | null
+  readonly instrumentAndFactoring?: { readonly kind: string; readonly withRecourse: boolean | null; readonly instrumentIds: readonly string[]; readonly receivableDocumentReferences: readonly string[]
+    readonly maturityDate?: string | null; readonly deductions?: { readonly interest: string; readonly commission: string; readonly bsmv: string } | null } | null
+  readonly leasing?: { readonly assetReference: string; readonly leaseStartDate: string; readonly leaseEndDate: string; readonly contractDate?: string | null; readonly purchaseOptionAmount?: string | null } | null
 }
 export interface CreditProposal {
   readonly group: CreditGroup; readonly lenderName: string; readonly contractReference: string; readonly currencyId: string
@@ -49,9 +54,13 @@ const PROFILE_REQUIRED = ['lenderCompanyPartyAccountId', 'lenderPartyId', 'planN
 const PROFILE_OPTIONAL = ['cash', 'instrumentAndFactoring', 'leasing', 'nonCash']
 const SOURCE_DOCUMENT_FIELDS = ['documentDate', 'reference', 'revision']
 const CASH_FIELDS = ['kind', 'maturityDate']
+const CASH_OPTIONAL = ['indexCurrencyId', 'exportCommitmentReference']
 const NONCASH_FIELDS = ['beneficiaryReference', 'expiryDate', 'isIndefinite', 'kind']
+const NONCASH_OPTIONAL = ['riskAmount', 'commission', 'relatedCommercialDocumentReference', 'returnEvidence']
 const INSTRUMENT_FIELDS = ['instrumentIds', 'kind', 'receivableDocumentReferences', 'withRecourse']
+const INSTRUMENT_OPTIONAL = ['maturityDate', 'deductions']
 const LEASING_FIELDS = ['assetReference', 'leaseEndDate', 'leaseStartDate']
+const LEASING_OPTIONAL = ['contractDate', 'purchaseOptionAmount']
 const AMOUNT_FIELDS = ['bsmv', 'installment', 'interest', 'kkdf', 'principal']
 const INSTALLMENT_REQUIRED = [...AMOUNT_FIELDS, 'dueDate', 'sequence']
 const CHARGE_FIELDS = ['amount', 'description', 'sourceDocumentReference', 'treatment']
@@ -63,6 +72,14 @@ const ACCOUNT_OPTIONAL = ['profile', 'tolerance']
 const LIST_FIELDS = ['companyId', 'items']
 const CURRENCY_FIELDS = ['code', 'currencyId', 'displayLabel']
 const ISSUE_FIELDS = ['code', 'field']
+const optional = (value: Record<string, unknown>, key: string, valid: (item: unknown) => boolean) => value[key] === undefined || value[key] === null || valid(value[key])
+const sourceDocument = (value: unknown) => record(value) && hasExactKeys(value, SOURCE_DOCUMENT_FIELDS)
+  && text(value.reference) && date(value.documentDate) && text(value.revision)
+const commission = (value: unknown) => record(value) && hasExactKeys(value, ['amount', 'commissionDate', 'sourceDocument'], ['period'])
+  && isNonNegativeDecimalText(value.amount) && date(value.commissionDate) && sourceDocument(value.sourceDocument) && optional(value, 'period', text)
+const returned = (value: unknown) => record(value) && hasExactKeys(value, ['returnedOn', 'sourceDocument']) && date(value.returnedOn) && sourceDocument(value.sourceDocument)
+const deductions = (value: unknown) => record(value) && hasExactKeys(value, ['interest', 'commission', 'bsmv'])
+  && ['interest', 'commission', 'bsmv'].every(key => isNonNegativeDecimalText(value[key]))
 export function decodeCreditProfile(value: unknown, group: CreditGroup): CreditProfile | null {
   if (!record(value) || !hasExactKeys(value, PROFILE_REQUIRED, PROFILE_OPTIONAL) || !isBoundUuid(value.lenderPartyId)
     || !isBoundUuid(value.lenderCompanyPartyAccountId) || !record(value.sourceDocument)
@@ -70,20 +87,25 @@ export function decodeCreditProfile(value: unknown, group: CreditGroup): CreditP
     || !text(value.sourceDocument.revision) || !inSet(value.planNature, ['Installments', 'SourceMovements'])) return null
   const shapes = [value.cash, value.nonCash, value.instrumentAndFactoring, value.leasing].filter(item => item !== null && item !== undefined)
   if (shapes.length !== 1) return null
-  if (group === 'Cash' && (!record(value.cash) || !hasExactKeys(value.cash, CASH_FIELDS) || !inSet(value.cash.kind, CASH) || !nullableDate(value.cash.maturityDate))) return null
-  if (group === 'NonCash' && (!record(value.nonCash) || !hasExactKeys(value.nonCash, NONCASH_FIELDS) || !inSet(value.nonCash.kind, NONCASH) || !text(value.nonCash.beneficiaryReference)
+  if (group === 'Cash' && (!record(value.cash) || !hasExactKeys(value.cash, CASH_FIELDS, CASH_OPTIONAL) || !inSet(value.cash.kind, CASH) || !nullableDate(value.cash.maturityDate)
+    || !optional(value.cash, 'indexCurrencyId', isBoundUuid) || !optional(value.cash, 'exportCommitmentReference', text))) return null
+  if (group === 'NonCash' && (!record(value.nonCash) || !hasExactKeys(value.nonCash, NONCASH_FIELDS, NONCASH_OPTIONAL) || !inSet(value.nonCash.kind, NONCASH) || !text(value.nonCash.beneficiaryReference)
     || typeof value.nonCash.isIndefinite !== 'boolean' || !nullableDate(value.nonCash.expiryDate)
-    || value.nonCash.isIndefinite !== (value.nonCash.expiryDate === null) || value.planNature !== 'SourceMovements')) return null
+    || value.nonCash.isIndefinite !== (value.nonCash.expiryDate === null) || value.planNature !== 'SourceMovements'
+    || !optional(value.nonCash, 'riskAmount', isNonNegativeDecimalText) || !optional(value.nonCash, 'commission', commission)
+    || !optional(value.nonCash, 'relatedCommercialDocumentReference', text) || !optional(value.nonCash, 'returnEvidence', returned))) return null
   if (group === 'InstrumentAndFactoring') {
     const item = value.instrumentAndFactoring
-    if (!record(item) || !hasExactKeys(item, INSTRUMENT_FIELDS) || !inSet(item.kind, INSTRUMENT) || item.withRecourse !== null && typeof item.withRecourse !== 'boolean'
+    if (!record(item) || !hasExactKeys(item, INSTRUMENT_FIELDS, INSTRUMENT_OPTIONAL) || !inSet(item.kind, INSTRUMENT) || item.withRecourse !== null && typeof item.withRecourse !== 'boolean'
       || !Array.isArray(item.instrumentIds) || item.instrumentIds.some(id => !isBoundUuid(id))
       || new Set(item.instrumentIds).size !== item.instrumentIds.length || !Array.isArray(item.receivableDocumentReferences)
       || item.receivableDocumentReferences.some(reference => !text(reference))
-      || (item.kind === 'Factoring' ? typeof item.withRecourse !== 'boolean' || item.receivableDocumentReferences.length === 0 : item.instrumentIds.length === 0)) return null
+      || (item.kind === 'Factoring' ? typeof item.withRecourse !== 'boolean' || item.receivableDocumentReferences.length === 0 : item.instrumentIds.length === 0)
+      || !optional(item, 'maturityDate', date) || !optional(item, 'deductions', deductions)) return null
   }
-  if (group === 'Leasing' && (!record(value.leasing) || !hasExactKeys(value.leasing, LEASING_FIELDS) || !text(value.leasing.assetReference) || !date(value.leasing.leaseStartDate)
-    || !date(value.leasing.leaseEndDate) || value.leasing.leaseEndDate < value.leasing.leaseStartDate)) return null
+  if (group === 'Leasing' && (!record(value.leasing) || !hasExactKeys(value.leasing, LEASING_FIELDS, LEASING_OPTIONAL) || !text(value.leasing.assetReference) || !date(value.leasing.leaseStartDate)
+    || !date(value.leasing.leaseEndDate) || value.leasing.leaseEndDate < value.leasing.leaseStartDate
+    || !optional(value.leasing, 'contractDate', date) || !optional(value.leasing, 'purchaseOptionAmount', isNonNegativeDecimalText))) return null
   return value as unknown as CreditProfile
 }
 function installment(value: unknown, index: number): value is CreditInstallment {

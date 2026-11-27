@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { decodeCreditAccount, sendCreditAccount, type CreditAccount } from './creditAccountApi'
+import { decodeCreditAccount, decodeCreditProfile, sendCreditAccount, type CreditAccount, type CreditGroup } from './creditAccountApi'
 import { decodeCreditMovement, sendCreditMovement } from './creditMovementApi'
 import { decodeCreditLimitWorkspace, sendCreditLimit } from './creditLimitApi'
 import { decideOfficialInvoice, decodeOfficialInvoice } from './officialSalesInvoiceApi'
@@ -46,6 +46,49 @@ const envelope = (resource: unknown, isReplay: boolean, extra: Record<string, un
 const respond = (body: unknown, headers: Record<string, string> = {}) =>
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json', ...headers } })))
 const REPLAY = { 'Idempotency-Replayed': 'true', 'Idempotency-Original-Correlation-Id': 'SENTETIK-original' }
+
+describe('approved credit source metadata wire contract', () => {
+  const document = { reference: 'SENTETIK', documentDate: '2026-11-17', revision: '1' }
+  const profile = (group: CreditGroup, shape: unknown) => ({ lenderPartyId: Party, lenderCompanyPartyAccountId: Id, sourceDocument: document,
+    planNature: group === 'NonCash' ? 'SourceMovements' : 'Installments',
+    [group === 'Cash' ? 'cash' : group === 'NonCash' ? 'nonCash' : group === 'Leasing' ? 'leasing' : 'instrumentAndFactoring']: shape })
+  const nonCash = { kind: 'Guarantee', beneficiaryReference: 'SENTETIK', isIndefinite: true, expiryDate: null, riskAmount: '12000.00001',
+    commission: { amount: '12.34567', commissionDate: '2026-11-17', sourceDocument: document, period: 'SENTETIK-period' },
+    relatedCommercialDocumentReference: 'SENTETIK-order', returnEvidence: { returnedOn: '2026-11-18', sourceDocument: document } }
+  it.each([
+    ['Cash', { kind: 'ForeignCurrencyIndexed', maturityDate: null, indexCurrencyId: Currency, exportCommitmentReference: 'SENTETIK-export' }],
+    ['NonCash', nonCash],
+    ['InstrumentAndFactoring', { kind: 'Factoring', withRecourse: true, instrumentIds: [], receivableDocumentReferences: ['SENTETIK-invoice'], maturityDate: '2026-12-17', deductions: { interest: '1.23456', commission: '0', bsmv: '0.00001' } }],
+    ['Leasing', { assetReference: 'SENTETIK-asset', leaseStartDate: '2026-11-17', leaseEndDate: '2027-11-17', contractDate: '2026-11-16', purchaseOptionAmount: '123.456789' }],
+  ] as const)('decodes %s source fields without converting or filling amounts', (group, shape) => {
+    const value = profile(group, shape)
+    expect(decodeCreditProfile(value, group)).toEqual(value)
+  })
+  it.each([
+    ['Cash', { kind: 'ForeignCurrencyIndexed', maturityDate: null }],
+    ['NonCash', { kind: 'Guarantee', beneficiaryReference: 'SENTETIK', isIndefinite: true, expiryDate: null }],
+    ['InstrumentAndFactoring', { kind: 'Factoring', withRecourse: true, instrumentIds: [], receivableDocumentReferences: ['SENTETIK-invoice'] }],
+    ['Leasing', { assetReference: 'SENTETIK-asset', leaseStartDate: '2026-11-17', leaseEndDate: '2027-11-17' }],
+  ] as const)('preserves legacy %s metadata with absent new fields instead of manufacturing required evidence', (group, shape) => {
+    const value = profile(group, shape)
+    expect(decodeCreditProfile(value, group)).toEqual(value)
+  })
+  it.each([
+    { ...nonCash, riskAmount: 12000 },
+    { ...nonCash, commission: { ...nonCash.commission, rate: '0.01' } },
+    { ...nonCash, commission: { ...nonCash.commission, amount: '1,23' } },
+    { ...nonCash, commission: { ...nonCash.commission, sourceDocument: { ...document, extra: true } } },
+    { ...nonCash, returnEvidence: { ...nonCash.returnEvidence, releaseRisk: true } },
+    { ...nonCash, returnEvidence: { ...nonCash.returnEvidence, returnedOn: '2026-02-30' } },
+  ])('refuses malformed source metadata instead of discarding unknown fields', shape => {
+    expect(decodeCreditProfile(profile('NonCash', shape), 'NonCash')).toBeNull()
+  })
+  it('does not accept numeric deductions or an unknown index currency shape', () => {
+    expect(decodeCreditProfile(profile('InstrumentAndFactoring', { kind: 'Factoring', withRecourse: true, instrumentIds: [],
+      receivableDocumentReferences: ['SENTETIK'], deductions: { interest: 0, commission: '0', bsmv: '0' } }), 'InstrumentAndFactoring')).toBeNull()
+    expect(decodeCreditProfile(profile('Cash', { kind: 'ForeignCurrencyIndexed', maturityDate: null, indexCurrencyId: 'TRY' }), 'Cash')).toBeNull()
+  })
+})
 
 describe('credit account decoder and command (exact keys, replay headers)', () => {
   it('rejects an unknown or missing key at every level and accepts absent optional properties', () => {

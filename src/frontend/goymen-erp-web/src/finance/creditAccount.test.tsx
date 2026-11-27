@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CreditAccountsPage } from './CreditAccountsPage'
-import { CREDIT_PLAN_HEADER, decodeCreditAccount, parseCreditPlanFile, sendCreditAccount } from './creditAccountApi'
+import { CREDIT_PLAN_HEADER, decodeCreditAccount, parseCreditPlanFile, sendCreditAccount, type CreditGroup } from './creditAccountApi'
+import { CreditAccountProposalForm } from './CreditAccountProposalForm'
+import { CREDIT_TEXT as T } from './creditAccountText'
 
 const Company = 'cd471111-1111-4111-8111-111111111111'
 const Id = 'cd472222-2222-4222-8222-222222222222'
@@ -99,5 +101,94 @@ describe('source backed credit account workflow', () => {
   it('refuses malformed success without creating a new key or claiming refusal', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => json({ outcome: 'Succeeded', resource: fixture({ companyId: Id }) })))
     expect(await sendCreditAccount(Company, { operation: 'approve', key: 'same-key', id: Id, request: { expectedVersion: '1' } })).toEqual({ type: 'unknown' })
+  })
+})
+
+async function proposal(group: CreditGroup) {
+  vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL) => String(url).endsWith('/currency-candidates')
+    ? json({ companyId: Company, items: [{ currencyId: Currency, code: 'TRY', displayLabel: 'SENTETIK TL' }] })
+    : json({ items: [{ id: Party, code: 'SENTETIK', kind: 1, legalName: 'SENTETIK lender', tradeName: null, isActive: true, version: 1,
+      companyAccounts: [{ id: Account, companyId: Company, roles: 1, isActive: true, version: 1 }] }], nextCursor: null, hasMore: false, totalCount: null, countScope: null })))
+  const send = vi.fn()
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <CreditAccountProposalForm company={Company} namespace={`SENTETIK-fields-${shell.generation}`} frozen={false} send={send} />
+  </QueryClientProvider>)
+  fireEvent.change(screen.getByLabelText(T.group), { target: { value: group } })
+  fireEvent.change(await screen.findByLabelText(T.lender), { target: { value: Party } })
+  await screen.findByRole('option', { name: 'TRY · SENTETIK TL' })
+  const fill = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } })
+  fill(T.sourceName, 'SENTETIK lender'); fill(T.contract, 'SENTETIK-contract'); fill(T.currency, Currency)
+  fill(T.principal, '1000'); fill(T.start, '2026-11-17'); fill(T.source, 'SENTETIK-source'); fill(T.documentDate, '2026-11-17'); fill(T.revision, '1')
+  return { send, fill }
+}
+function sourcePlan() {
+  fireEvent.click(screen.getByRole('button', { name: T.add }))
+  const line = within(screen.getByRole('group', { name: `${T.columns[0]} 1` }))
+  for (const [label, value] of [[T.columns[1], '2026-12-17'], [T.columns[2], '1000.00000'], [T.columns[3], '1000'],
+    [T.columns[4], '0'], [T.columns[5], '0'], [T.columns[6], '0']]) fireEvent.change(line.getByLabelText(label), { target: { value } })
+}
+describe('approved group profile form fields', () => {
+  it.each(['Spot', 'Installment', 'ForeignCurrencyIndexed', 'Export', 'Revolving', 'Overdraft', 'CreditCard'])('uses the approved %s plan nature without a conflicting choice or a synthetic installment', async kind => {
+    const { send, fill } = await proposal('Cash')
+    fill(T.kind, kind)
+    expect(screen.queryByLabelText(T.plan)).toBeNull()
+    const movements = ['Revolving', 'Overdraft', 'CreditCard'].includes(kind)
+    if (['Spot', 'Installment'].includes(kind)) {
+      expect(screen.getByRole('button', { name: T.propose }).hasAttribute('disabled')).toBe(true)
+      fill(T.maturity, '2026-12-17')
+    }
+    if (kind === 'ForeignCurrencyIndexed') fill(T.indexCurrency, Currency)
+    if (kind === 'Export') fill(T.exportReference, 'SENTETIK-export')
+    if (!movements) sourcePlan()
+    fireEvent.click(screen.getByRole('button', { name: T.propose }))
+    expect(send).toHaveBeenCalledTimes(1)
+    const request = send.mock.calls[0][0].request
+    expect(request.profile.planNature).toBe(movements ? 'SourceMovements' : 'Installments')
+    expect(request.installments).toHaveLength(movements ? 0 : 1)
+    if (!movements) expect(request.installments[0].installment).toBe('1000.00000')
+    expect(request.profile.cash).toEqual({ kind, maturityDate: ['Spot', 'Installment'].includes(kind) ? '2026-12-17' : null,
+      ...(kind === 'ForeignCurrencyIndexed' ? { indexCurrencyId: Currency } : {}), ...(kind === 'Export' ? { exportCommitmentReference: 'SENTETIK-export' } : {}) })
+  })
+  it('requires documented noncash risk and optional commission/return evidence without making a bank event', async () => {
+    const { send, fill } = await proposal('NonCash')
+    fill(T.kind, 'Guarantee'); fill(T.beneficiary, 'SENTETIK-beneficiary'); fireEvent.click(screen.getByLabelText(T.indefinite))
+    expect(screen.getByRole('button', { name: T.propose }).hasAttribute('disabled')).toBe(true)
+    fill(T.riskAmount, '12000.00001'); fill(T.commercialReference, 'SENTETIK-order')
+    fireEvent.click(screen.getByLabelText(T.hasCommission)); fireEvent.click(screen.getByLabelText(T.hasReturnEvidence))
+    expect(screen.getByRole('button', { name: T.propose }).hasAttribute('disabled')).toBe(true)
+    fill(T.commissionAmount, '12.34567'); fill(T.commissionDate, '2026-11-17'); fill(T.commissionPeriod, 'SENTETIK-period')
+    fill(T.commissionReference, 'SENTETIK-commission'); fill(T.commissionDocumentDate, '2026-11-16'); fill(T.commissionRevision, 'R1')
+    fill(T.returnedOn, '2026-11-18'); fill(T.returnReference, 'SENTETIK-return'); fill(T.returnDocumentDate, '2026-11-18'); fill(T.returnRevision, 'R2')
+    fireEvent.click(screen.getByRole('button', { name: T.propose }))
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send.mock.calls[0][0].request.profile.nonCash).toEqual({ kind: 'Guarantee', beneficiaryReference: 'SENTETIK-beneficiary', isIndefinite: true,
+      expiryDate: null, riskAmount: '12000.00001', relatedCommercialDocumentReference: 'SENTETIK-order',
+      commission: { amount: '12.34567', commissionDate: '2026-11-17', period: 'SENTETIK-period', sourceDocument: { reference: 'SENTETIK-commission', documentDate: '2026-11-16', revision: 'R1' } },
+      returnEvidence: { returnedOn: '2026-11-18', sourceDocument: { reference: 'SENTETIK-return', documentDate: '2026-11-18', revision: 'R2' } } })
+    expect(send.mock.calls[0][0].request.installments).toEqual([])
+    expect(send.mock.calls[0][0].request).not.toHaveProperty('bankEffect')
+  })
+  it('requires source factoring deductions and maturity without inventing withheld amounts or a repayment plan', async () => {
+    const { send, fill } = await proposal('InstrumentAndFactoring')
+    fill(T.kind, 'Factoring'); fill(T.recourse, 'yes'); fill(T.receivables, 'SENTETIK-invoice'); fill(T.plan, 'SourceMovements')
+    expect(screen.getByRole('button', { name: T.propose }).hasAttribute('disabled')).toBe(true)
+    fill(T.maturity, '2026-12-17'); fill(T.deductionInterest, '1.23456'); fill(T.deductionCommission, '0'); fill(T.deductionBsmv, '0.00001')
+    fireEvent.click(screen.getByRole('button', { name: T.propose }))
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send.mock.calls[0][0].request.profile.instrumentAndFactoring).toEqual({ kind: 'Factoring', withRecourse: true, instrumentIds: [],
+      receivableDocumentReferences: ['SENTETIK-invoice'], maturityDate: '2026-12-17', deductions: { interest: '1.23456', commission: '0', bsmv: '0.00001' } })
+    expect(send.mock.calls[0][0].request.installments).toEqual([])
+  })
+  it('requires a leasing contract date and imported plan while keeping an absent purchase option omitted', async () => {
+    const { send, fill } = await proposal('Leasing')
+    fill(T.asset, 'SENTETIK-asset'); fill(T.leaseStart, '2026-11-17'); fill(T.leaseEnd, '2027-11-17')
+    sourcePlan()
+    expect(screen.getByRole('button', { name: T.propose }).hasAttribute('disabled')).toBe(true)
+    fill(T.contractDate, '2026-11-16')
+    fireEvent.click(screen.getByRole('button', { name: T.propose }))
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send.mock.calls[0][0].request.profile.leasing).toEqual({ assetReference: 'SENTETIK-asset', leaseStartDate: '2026-11-17', leaseEndDate: '2027-11-17', contractDate: '2026-11-16' })
+    expect(send.mock.calls[0][0].request.profile.planNature).toBe('Installments')
+    expect(send.mock.calls[0][0].request.installments[0]).not.toHaveProperty('vat')
   })
 })

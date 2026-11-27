@@ -8,6 +8,7 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import type { CustomerInstrumentPage } from './customerInstrumentContract'
 import { fetchCreditCurrencies, fetchCreditInstruments, parseCreditPlanFile, type CreditAttempt, type CreditCurrency, type CreditGroup, type CreditInstallment, type CreditProfile } from './creditAccountApi'
 import { CREDIT_TEXT as T } from './creditAccountText'
+import { isNonNegativeDecimalText } from './decimalText'
 import styles from './Finance.module.css'
 
 interface Props { readonly company: string; readonly namespace: string; readonly frozen: boolean; readonly send: (attempt: CreditAttempt) => void }
@@ -23,12 +24,19 @@ function Form({ company, namespace, frozen, send, group }: Props & { readonly gr
   const [lenderName, setLenderName] = useState(''); const [contract, setContract] = useState(''); const [currency, setCurrency] = useState('')
   const [principal, setPrincipal] = useState(''); const [start, setStart] = useState(''); const [reference, setReference] = useState('')
   const [documentDate, setDocumentDate] = useState(''); const [revision, setRevision] = useState('')
-  const [nature, setNature] = useState<CreditProfile['planNature'] | ''>(group === 'NonCash' ? 'SourceMovements' : '')
+  const [chosenNature, setChosenNature] = useState<CreditProfile['planNature'] | ''>('')
   const [kind, setKind] = useState(''); const [maturity, setMaturity] = useState(''); const [beneficiary, setBeneficiary] = useState('')
   const [indefinite, setIndefinite] = useState(false); const [expiry, setExpiry] = useState(''); const [recourse, setRecourse] = useState('')
   const [receivables, setReceivables] = useState(''); const [asset, setAsset] = useState(''); const [leaseStart, setLeaseStart] = useState(''); const [leaseEnd, setLeaseEnd] = useState('')
   const [instrumentCursor, setInstrumentCursor] = useState<string | null>(null); const [instruments, setInstruments] = useState<Readonly<Record<string, string>>>({})
   const [lines, setLines] = useState<readonly CreditInstallment[]>([]); const [fileError, setFileError] = useState(false)
+  const [sourceFields, setSourceFields] = useState({ indexCurrency: '', exportReference: '', riskAmount: '', commissionAmount: '', commissionDate: '', commissionPeriod: '',
+    commissionReference: '', commissionDocumentDate: '', commissionRevision: '', commercialReference: '', returnedOn: '', returnReference: '', returnDocumentDate: '', returnRevision: '',
+    deductionInterest: '', deductionCommission: '', deductionBsmv: '', contractDate: '', purchaseOption: '' })
+  const [commissionEnabled, setCommissionEnabled] = useState(false); const [returnEnabled, setReturnEnabled] = useState(false)
+  const field = (key: keyof typeof sourceFields) => (value: string) => setSourceFields(previous => ({ ...previous, [key]: value }))
+  const nature = group === 'NonCash' ? 'SourceMovements' : group === 'Leasing' ? 'Installments' : group === 'Cash'
+    ? kind === '' ? '' : ['Revolving', 'Overdraft', 'CreditCard'].includes(kind) ? 'SourceMovements' : 'Installments' : chosenNature
   const fileGeneration = useRef(0)
   useEffect(() => { ++fileGeneration.current; return () => { ++fileGeneration.current } }, [frozen])
   const parties = useQuery({ queryKey: [namespace, 'credit-lenders', submittedSearch, cursor], queryFn: async ({ signal }) => {
@@ -53,18 +61,37 @@ function Form({ company, namespace, frozen, send, group }: Props & { readonly gr
   const input = (label: string, value: string, change: (value: string) => void, type = 'text', required = true, maximum = 200) => <label>{label}<input type={type} required={required} maxLength={maximum} value={value} onChange={event => change(event.target.value)} /></label>
   const instrumentValid = group !== 'InstrumentAndFactoring' || (kind === 'Factoring'
     ? recourse !== '' && receivables.trim() !== '' : Object.keys(instruments).length > 0)
+  const sourceValid = group === 'Cash' ? (!['Spot', 'Installment'].includes(kind) || maturity !== '')
+    && (kind !== 'ForeignCurrencyIndexed' || currencyState.kind === 'ready' && currencyState.data.some(item => item.currencyId === sourceFields.indexCurrency))
+    : group === 'NonCash' ? isNonNegativeDecimalText(sourceFields.riskAmount)
+      && (!commissionEnabled || isNonNegativeDecimalText(sourceFields.commissionAmount) && sourceFields.commissionDate !== ''
+        && sourceFields.commissionReference.trim() !== '' && sourceFields.commissionDocumentDate !== '' && sourceFields.commissionRevision.trim() !== '')
+      && (!returnEnabled || sourceFields.returnedOn !== '' && sourceFields.returnReference.trim() !== '' && sourceFields.returnDocumentDate !== '' && sourceFields.returnRevision.trim() !== '')
+      : group === 'InstrumentAndFactoring' ? maturity !== '' && [sourceFields.deductionInterest, sourceFields.deductionCommission, sourceFields.deductionBsmv].every(isNonNegativeDecimalText)
+        : sourceFields.contractDate !== '' && (sourceFields.purchaseOption === '' || isNonNegativeDecimalText(sourceFields.purchaseOption))
   const valid = selectedAccount !== undefined && currencyState.kind === 'ready' && currencyState.data.some(item => item.currencyId === currency)
     && nature !== '' && (nature !== 'Installments' || lines.length > 0)
-    && instrumentValid
+    && instrumentValid && sourceValid && (group === 'Leasing' || kind !== '')
   const submit = (event: FormEvent) => {
     event.preventDefault(); if (!valid || frozen || !selectedParty || !selectedAccount) return
     const profile: CreditProfile = { lenderPartyId: selectedParty.id, lenderCompanyPartyAccountId: selectedAccount.id,
       sourceDocument: { reference: reference.trim(), documentDate, revision: revision.trim() }, planNature: nature,
-      ...(group === 'Cash' ? { cash: { kind, maturityDate: maturity || null } } : {}),
-      ...(group === 'NonCash' ? { nonCash: { kind, beneficiaryReference: beneficiary.trim(), isIndefinite: indefinite, expiryDate: indefinite ? null : expiry } } : {}),
+      ...(group === 'Cash' ? { cash: { kind, maturityDate: maturity || null,
+        ...(kind === 'ForeignCurrencyIndexed' ? { indexCurrencyId: sourceFields.indexCurrency } : {}),
+        ...(kind === 'Export' && sourceFields.exportReference.trim() !== '' ? { exportCommitmentReference: sourceFields.exportReference.trim() } : {}) } } : {}),
+      ...(group === 'NonCash' ? { nonCash: { kind, beneficiaryReference: beneficiary.trim(), isIndefinite: indefinite, expiryDate: indefinite ? null : expiry,
+        riskAmount: sourceFields.riskAmount,
+        ...(sourceFields.commercialReference.trim() !== '' ? { relatedCommercialDocumentReference: sourceFields.commercialReference.trim() } : {}),
+        ...(commissionEnabled ? { commission: { amount: sourceFields.commissionAmount, commissionDate: sourceFields.commissionDate,
+          sourceDocument: { reference: sourceFields.commissionReference.trim(), documentDate: sourceFields.commissionDocumentDate, revision: sourceFields.commissionRevision.trim() },
+          ...(sourceFields.commissionPeriod.trim() !== '' ? { period: sourceFields.commissionPeriod.trim() } : {}) } } : {}),
+        ...(returnEnabled ? { returnEvidence: { returnedOn: sourceFields.returnedOn, sourceDocument: {
+          reference: sourceFields.returnReference.trim(), documentDate: sourceFields.returnDocumentDate, revision: sourceFields.returnRevision.trim() } } } : {}) } } : {}),
       ...(group === 'InstrumentAndFactoring' ? { instrumentAndFactoring: { kind, withRecourse: kind === 'Factoring' ? recourse === 'yes' : null,
-        instrumentIds: kind === 'Factoring' ? [] : Object.keys(instruments), receivableDocumentReferences: kind === 'Factoring' ? receivables.split('\n').map(item => item.trim()).filter(Boolean) : [] } } : {}),
-      ...(group === 'Leasing' ? { leasing: { assetReference: asset.trim(), leaseStartDate: leaseStart, leaseEndDate: leaseEnd } } : {}),
+        instrumentIds: kind === 'Factoring' ? [] : Object.keys(instruments), receivableDocumentReferences: kind === 'Factoring' ? receivables.split('\n').map(item => item.trim()).filter(Boolean) : [],
+        maturityDate: maturity, deductions: { interest: sourceFields.deductionInterest, commission: sourceFields.deductionCommission, bsmv: sourceFields.deductionBsmv } } } : {}),
+      ...(group === 'Leasing' ? { leasing: { assetReference: asset.trim(), leaseStartDate: leaseStart, leaseEndDate: leaseEnd, contractDate: sourceFields.contractDate,
+        ...(sourceFields.purchaseOption !== '' ? { purchaseOptionAmount: sourceFields.purchaseOption } : {}) } } : {}),
     }
     send({ operation: 'propose', key: crypto.randomUUID(), request: { group, lenderName: lenderName.trim(), contractReference: contract.trim(),
       currencyId: currency, principalAmount: principal, startDate: start, installments: nature === 'Installments' ? lines : [], profile } })
@@ -86,12 +113,35 @@ function Form({ company, namespace, frozen, send, group }: Props & { readonly gr
         <option value="">{T.choose}</option>{currencyState.data.map(item => <option key={item.currencyId} value={item.currencyId}>{item.code} · {item.displayLabel}</option>)}</select></label>}
     {input(T.principal, principal, setPrincipal)}{input(T.start, start, setStart, 'date')}
     {input(T.source, reference, setReference, 'text', true, 100)}{input(T.documentDate, documentDate, setDocumentDate, 'date')}{input(T.revision, revision, setRevision, 'text', true, 100)}
-    {group !== 'Leasing' ? <label>{T.kind}<select value={kind} required onChange={event => { setKind(event.target.value); setInstruments({}) }}><option value="">{T.choose}</option>
+    {group !== 'Leasing' ? <label>{T.kind}<select value={kind} required onChange={event => { setKind(event.target.value); setInstruments({}); if (group === 'Cash') { ++fileGeneration.current; setLines([]); setFileError(false) } }}><option value="">{T.choose}</option>
       {Object.entries(kindLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label> : null}
-    {group === 'Cash' ? input(T.maturity, maturity, setMaturity, 'date', false) : null}
+    {group === 'Cash' ? <>{input(T.maturity, maturity, setMaturity, 'date', ['Spot', 'Installment'].includes(kind))}
+      {kind === 'ForeignCurrencyIndexed' && currencyState.kind === 'ready' ? <label>{T.indexCurrency}<select required value={sourceFields.indexCurrency} onChange={event => field('indexCurrency')(event.target.value)}>
+        <option value="">{T.choose}</option>{currencyState.data.map(item => <option key={item.currencyId} value={item.currencyId}>{item.code} · {item.displayLabel}</option>)}</select></label> : null}
+      {kind === 'Export' ? input(T.exportReference, sourceFields.exportReference, field('exportReference'), 'text', false) : null}</> : null}
     {group === 'NonCash' ? <>{input(T.beneficiary, beneficiary, setBeneficiary)}<label><input type="checkbox" checked={indefinite} onChange={event => setIndefinite(event.target.checked)} />{T.indefinite}</label>
-      {!indefinite ? input(T.expiry, expiry, setExpiry, 'date') : null}</> : null}
-    {group === 'Leasing' ? <>{input(T.asset, asset, setAsset)}{input(T.leaseStart, leaseStart, setLeaseStart, 'date')}{input(T.leaseEnd, leaseEnd, setLeaseEnd, 'date')}</> : null}
+      {!indefinite ? input(T.expiry, expiry, setExpiry, 'date') : null}
+      {input(T.riskAmount, sourceFields.riskAmount, field('riskAmount'), 'text', true, 128)}
+      {input(T.commercialReference, sourceFields.commercialReference, field('commercialReference'), 'text', false)}
+      <label><input type="checkbox" checked={commissionEnabled} onChange={event => setCommissionEnabled(event.target.checked)} />{T.hasCommission}</label>
+      {commissionEnabled ? <fieldset><legend>{T.commissionEvidence}</legend>
+        {input(T.commissionAmount, sourceFields.commissionAmount, field('commissionAmount'), 'text', true, 128)}
+        {input(T.commissionDate, sourceFields.commissionDate, field('commissionDate'), 'date')}{input(T.commissionPeriod, sourceFields.commissionPeriod, field('commissionPeriod'), 'text', false)}
+        {input(T.commissionReference, sourceFields.commissionReference, field('commissionReference'), 'text', true, 100)}
+        {input(T.commissionDocumentDate, sourceFields.commissionDocumentDate, field('commissionDocumentDate'), 'date')}{input(T.commissionRevision, sourceFields.commissionRevision, field('commissionRevision'), 'text', true, 100)}
+      </fieldset> : null}
+      <label><input type="checkbox" checked={returnEnabled} onChange={event => setReturnEnabled(event.target.checked)} />{T.hasReturnEvidence}</label>
+      {returnEnabled ? <fieldset><legend>{T.returnEvidence}</legend>
+        {input(T.returnedOn, sourceFields.returnedOn, field('returnedOn'), 'date')}{input(T.returnReference, sourceFields.returnReference, field('returnReference'), 'text', true, 100)}
+        {input(T.returnDocumentDate, sourceFields.returnDocumentDate, field('returnDocumentDate'), 'date')}{input(T.returnRevision, sourceFields.returnRevision, field('returnRevision'), 'text', true, 100)}
+      </fieldset> : null}</> : null}
+    {group === 'Leasing' ? <>{input(T.asset, asset, setAsset)}{input(T.leaseStart, leaseStart, setLeaseStart, 'date')}{input(T.leaseEnd, leaseEnd, setLeaseEnd, 'date')}
+      {input(T.contractDate, sourceFields.contractDate, field('contractDate'), 'date')}{input(T.purchaseOption, sourceFields.purchaseOption, field('purchaseOption'), 'text', false, 128)}</> : null}
+    {group === 'InstrumentAndFactoring' ? <>{input(T.maturity, maturity, setMaturity, 'date')}<fieldset><legend>{T.sourceDeductions}</legend>
+      {input(T.deductionInterest, sourceFields.deductionInterest, field('deductionInterest'), 'text', true, 128)}
+      {input(T.deductionCommission, sourceFields.deductionCommission, field('deductionCommission'), 'text', true, 128)}
+      {input(T.deductionBsmv, sourceFields.deductionBsmv, field('deductionBsmv'), 'text', true, 128)}
+    </fieldset></> : null}
     {group === 'InstrumentAndFactoring' && kind === 'Factoring' ? <><label>{T.recourse}<select required value={recourse} onChange={event => setRecourse(event.target.value)}><option value="">{T.choose}</option><option value="yes">{T.withRecourse}</option><option value="no">{T.withoutRecourse}</option></select></label>
       <label>{T.receivables}<textarea required value={receivables} onChange={event => setReceivables(event.target.value)} /></label></> : null}
     {group === 'InstrumentAndFactoring' && kind !== '' && kind !== 'Factoring' ? <fieldset><legend>{T.instruments}</legend>
@@ -101,7 +151,8 @@ function Form({ company, namespace, frozen, send, group }: Props & { readonly gr
         {instrumentState.data.nextCursor ? <button type="button" onClick={() => setInstrumentCursor(instrumentState.data.nextCursor)}>{T.instrumentMore}</button> : null}
       </>}{Object.values(instruments).map(serial => <p key={serial}>{serial}</p>)}
     </fieldset> : null}
-    {group !== 'NonCash' ? <label>{T.plan}<select required value={nature} onChange={event => { setNature(event.target.value as typeof nature); setLines([]) }}><option value="">{T.choose}</option><option value="Installments">{T.installments}</option><option value="SourceMovements">{T.movements}</option></select></label> : null}
+    {group === 'InstrumentAndFactoring' ? <label>{T.plan}<select required value={chosenNature} onChange={event => { setChosenNature(event.target.value as typeof chosenNature); ++fileGeneration.current; setLines([]); setFileError(false) }}><option value="">{T.choose}</option><option value="Installments">{T.installments}</option><option value="SourceMovements">{T.movements}</option></select></label>
+      : nature !== '' ? <p>{T.plan}: {nature === 'Installments' ? T.installments : T.movements}</p> : null}
     {nature === 'Installments' ? <><p>{T.sourcePlanNotice}</p><p>{T.fileHint}</p><label>{T.file}<input type="file" accept=".csv,text/csv" onChange={async event => {
       const file = event.target.files?.[0]; const stamp = ++fileGeneration.current; if (!file) return
       try { const parsed = file.size > 1_000_000 ? null : parseCreditPlanFile(await file.text()); if (stamp !== fileGeneration.current) return
