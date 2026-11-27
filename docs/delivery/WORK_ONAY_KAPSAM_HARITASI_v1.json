@@ -1075,20 +1075,30 @@
       "flow": 36,
       "name": "IBAN değişikliği",
       "permission_cell": "doğrulanmadı (servis `finance.bank-account.propose/approve` kullanıyor; Critical)",
-      "registered_permission_candidates": [],
+      "registered_permission_candidates": [
+        "finance.bank-account.approve"
+      ],
       "source_row": 666,
       "preparer_proposal": "FIN",
       "approver_proposal": "FINM (IK)",
       "duration_cell": "2 iş günü",
       "decision_note": "🔴 SoD-08.",
-      "candidate_inbox_sources": [],
-      "candidate_tests": [],
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceBankAccountIbanChangeWorkInboxSourceV1.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceBankAccountIbanChangeWorkInboxSourceV1.Decision.cs"
+      ],
+      "candidate_tests": [
+        "tests/GoymenERP.Finance.UnitTests/FinanceBankAccountIbanPurposeSourceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkBankAccountIbanDecisionHostTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceBankAccountSqlServerRelationalAcceptanceTests.IbanWorkPurpose.cs"
+      ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Historical matrix permission_cell is retained as source context; current native approve permission is verified in source only. Staged backend does not prove runtime acceptance or paired UI.",
+      "source_evidence": "FNS-D128 staged owner/host8d439c452: API build0/0,7owner+25host cases passed within2051Finance/494host at4dad. ActualSQL/normalHTTP/browser/fullCI/K3 and UI/pairedpublication pending; no role/grant/Critical change."
     },
     {
       "flow": 37,
@@ -1867,5 +1877,5 @@
     }
   ],
   "closure": "For each flow verify real inbox listing, owner decision, company/scope, maker-checker exceptions, expected version, replay and audit. Do not replace owner rules with proposal cells.",
-  "source_extension": "27 paired WP8 source kinds. Native manual and IBAN approval safety source compiled; Finance2026pass/skip0 at522. IBAN Work purpose/UI not yet published. All64 runtime acceptances remain NOT_RUN; actual SQL/browser/CI/K3 pending."
+  "source_extension": "27 paired WP8 source kinds plus1 staged IBAN backend; Finance2051 and DecisionHost494PASS0skip at4dad. All64 actual SQL/HTTP/browser/CI/K3 acceptances remain NOT_RUN; UI pairing pending."
 }

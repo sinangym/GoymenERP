@@ -326,7 +326,7 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Validate native optional-tax source and bind the existing create form to the owner probe and single atomic command; preserve warning-only duplicate policy, legacy body and unknown original-key replay. Remaining request/entry/browser/train acceptance stay open.",
+      "next_action": "Complete unauthorized creation-request and incoming-document/independent receipt entry contracts within this package; preserve native atomic optional-tax form and warning-only duplicate policy. Actual API/browser/SQL/train acceptance remains required.",
       "planned_owner": "Claude ekran; Codex mevcut owner sözleşmesi",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -366,7 +366,12 @@
           "f3ebf4963",
           "816a146ef",
           "75c7b7762",
-          "1bde68553"
+          "1bde68553",
+          "7d22a81d5",
+          "49f85174e",
+          "cadf87b35",
+          "65c518e6f",
+          "b4873fa36"
         ],
         "agent_source_commit": "7b2ed4d6fa93f318a467a4c9cdbc073e77e05313",
         "local_checks": {
@@ -375,23 +380,24 @@
           "lint": "exit 0; 0 errors, 12 existing hook/memo warnings; no broad cleanup.",
           "Tax identity increment": "120/120 in seven affected files, skip0, tsc/scoped lint exit0 at agent e667 source integrated f3ebf4963; six pre-existing lint warnings. Source evidence, not browser/API acceptance.",
           "Pre-create duplicate read": "5 native SQL facts compiled at c1adee420; actual SQL NOT_RUN.",
-          "Atomic create": "Exactf7aafd03c10c14d11b7c0c866f4df1d174337009: API Release and complete integration-source builds0errors/0warnings; selected API98 total97pass/1fail0skip. The two new pure projector Facts passed; old normal-host CreateAndReplay test stopped at deferred shell accepted-provider pin before endpoint invocation. Original failure retained; no filter/assertion/skip change. Exact52274cbc183933228923609e46b2842dc7c0537d: Counterparty403/403 passed,skip0. Seven atomic and5 precreate SQL facts compiled, actual SQL NOT_RUN. Early atomic UI source is in progress, not accepted."
+          "Atomic create": "Exactf7aafd03c10c14d11b7c0c866f4df1d174337009: API Release and complete integration-source builds0errors/0warnings; selected API98 total97pass/1fail0skip. The two new pure projector Facts passed; old normal-host CreateAndReplay test stopped at deferred shell accepted-provider pin before endpoint invocation. Original failure retained; no filter/assertion/skip change. Exact52274cbc183933228923609e46b2842dc7c0537d: Counterparty403/403 passed,skip0. Seven atomic and5 precreate SQL facts compiled, actual SQL NOT_RUN. Atomic UI evidence is recorded separately below; business/runtime acceptance remains open.",
+          "Atomic create UI": "Agent exact2e7ef11885e2973b28017c9443d972c39cbfbe92: complete CariCreatePage35/35PASS0skip54.84s, fulltsc0/51.05s,14explicitlint0zero warnings. QuickCreate14/14PASS0skip at7f582c2a0cfdd767883c9b438f267bab71ac337c; other132 passes at2dc are separate-head evidence. Original2dc178pass/2fail, d7 47pass/1fail and7f48pass/1fail logs retained; route/attribute fixture corrections do not weaken production authority or same-key/body assertions. Root entire frontend tree equals2e7. No claim of181tests passed at one head or real HTTP/browser acceptance."
         },
         "reuse": [
           "CariCreatePage native form/probe/useCommandAttempt and strict mutation decoder",
           "Existing Sales/Purchasing owner option queries",
           "Existing Finance Cari list and canonical draft-context validation",
-          "Existing native EnterTaxIdentity command and duplicate warning/confirmation; Create remains the existing four-field contract",
+          "Existing native tax validation/duplicate warning and explicit confirmation; omitted/null tax keeps the four-field wire, non-null tax uses the existing single atomic create/account/initial-tax command.",
           "Existing company-fenced FindDuplicates/TaxIdentityNumber and fresh actor/company/member/permission fence for pre-create probe",
           "Native create/account, EnterTaxIdentity, initial identity revision, audit writer and immutable receipt; optional tax composes these, without a second create service."
         ],
         "remaining": [
-          "Early pre-create warning and atomic optional-tax UI binding remain; current UI still performs separate create/tax steps. Foreign identity and complete duplicate acceptance are not implemented.",
+          "Foreign identity and full duplicate/quick-selection business acceptance remain open; native pre-create warning and optional atomic tax UI source are implemented, with bounded local evidence only.",
           "Unauthorized creation request contract/service",
           "Incoming-document and independent receipt-start entry points",
           "Real browser/API, SQL/full CI and independent review"
         ],
-        "behavior": "Unknown create attempt is preserved on close/reopen with the same key/body; parent submit is blocked while unresolved. Scope change aborts late eligibility reads. New business-party Customer/Supplier role defaults are visible/editable; no Identity role/grant is assigned.",
+        "behavior": "Unknown create attempt is preserved on close/reopen with the same key/body; parent submit is blocked while unresolved. Scope change aborts late eligibility reads. New business-party Customer/Supplier role defaults are visible/editable; no Identity role/grant is assigned. Optional initial VKN/TCKN uses the existing native owner probe and one atomic command. Possibly-committed403 retains original key/body only in ephemeral same actor/company/session/origin memory; current route grant and fresh acknowledged owner GET are required before explicit retry. Atomic abandoned remains frozen; no new key or raw browser storage/log/URL.",
         "browser": "NOT_RUN",
         "real_sql": "NOT_RUN",
         "hosted_ci": "NOT_RUN",
@@ -400,7 +406,9 @@
           "token": "NOT_AVAILABLE",
           "test_time": "126.13s",
           "source_delta": "12 frontend files, 401 added/21 removed lines including reuse and tests"
-        }
+        },
+        "atomic_ui_source_commit": "2e7ef11885e2973b28017c9443d972c39cbfbe92",
+        "atomic_ui_review": "Independent nonauthor complete13file2dc delta/native transport chain and root full final source/test delta read; no concrete open P0/P1/P2. Not K3."
       }
     },
     {
@@ -1199,7 +1207,16 @@
         "hosted_ci": "NOT_RUN",
         "browser": "NOT_RUN",
         "independent_k3": "PENDING",
-        "reuse": "Existing V1 exact-decimal receivables calculator, Finance admission/reversal and Sales immutable native invoice/share history; no schema, formula, grant or production activation change."
+        "reuse": "Existing V1 exact-decimal receivables calculator, Finance admission/reversal and Sales immutable native invoice/share history; no schema, formula, grant or production activation change.",
+        "second_shipment_owner_sql_source": {
+          "source_commit": "b84be19cb",
+          "agent_source_commit": "0b0f323355f2e2d7e3f9de6014e1a8e0df920a5c",
+          "scope": "Three SQL source Facts reuse disposable Logistics hosted fixture with real Sales risk and FinanceV2 membership/AR readers. Unsettled/full native settlement no double-count; original shipment replay; actual Identity grant revocation after Finance read; foreign-company fence. Native store fixture setup retained; external line/overdelivery/Product/Settings/period/bank inputs remain synthetic and explicit.",
+          "local_checks": "Initial compile atb84be19cb791d0bbfcba39a36c28a72ce0d48e5f failed2fixture errors: private Run constructor and PartyAccountEligibility positional binding. Original log retained. New-file-only8+/2- fix5d793 keeps assertions/production unchanged. Complete integration-source compile at3086ca656 passed0errors/0warnings53.33s, including3risk+2postcommitSQLFacts. ActualSQL/CI/K3 NOT_RUN; not a simultaneous race.",
+          "production_changes": false,
+          "fix_commit": "5d793f457",
+          "agent_fix_commit": "8d58553e2605c1cec5a603553b1a31cf3ea86333"
+        }
       }
     },
     {
@@ -2260,7 +2277,7 @@
           "delegation_display_HTTP": "6 attempted, 6 host-start failures: shell authority pins deferred by train policy; NOT_ACCEPTED",
           "Sales decision frontend": "Agent source 005184 (integrated 60a3b7998): shell registry, mount and access checks 35 passed, 0 skipped; tsc/lint passed. Hosted shell authority pins remain deferred.",
           "Sales backend": "Sales.UnitTests at f4ccda30f: 2440 passed, 0 failed, 0 skipped. Existing native approval fixtures now use independent maker/checker actors under YOL-D23; negative fences preserved.",
-          "Finance latest full unit suite": "2044/2044PASS0skip at bcf457bbd0fafa1efed51aaee54e59dd7dbdc47e; includes18 private IBAN receipt cases. Actual SQL NOT_RUN.",
+          "Finance latest full unit suite": "2051/2051PASS0skip at4dadc4db182937517395af902633fbab0b96b3b7; includes7newIBAN purpose owner cases and18receipt cases. Actual SQL NOT_RUN.",
           "Sales latest full unit suite": "2469/2469 passed, 0 skipped at 324b9da8c; native order/invoice/subcontract guards included.",
           "Purchasing latest full unit suite": "1318/1318 passed skip0 at022f727828d3e42b608ae1542003362d76ebf6ee; supplier-return Work owner, native receipt provenance and paired source1.22 declaration included. Actual SQL NOT_RUN.",
           "Latest owner/Work composition": "406/406 Work/native-boundary passed skip0 at4df90f171e986c7452a30932cee8e7855d5bc4f8, including paired Scrap publication. Same572-case API batch had163AI pass/3AI fixture failures; retained failure logs. Test-only825b corrects explicit context-drift double and valid malformed-digest fixture; AI166/166 passed atfb4cc4d2d095157ec47372a7c8fcc7abccbd66e1 using unchanged4df compiled production references. Entire integration assembly compiled; actual Program factory/SQL/HTTP/browser/full CI acceptance still open.",
@@ -2276,7 +2293,8 @@
           "Historical API compile failure at2ba0032c8": "At2ba0032c8 integration assembly failed CS0246: nonexistent SqlServerTheory. Corrected by19a6351ee to12 existing SqlServerFact wrappers sharing unchanged assertion bodies. API host execution NOT_RUN for this increment; failure log retained.",
           "API compile failure at022f72782": "Integration assembly failed CS0246: missing Security using for ICurrentUser in new bank SQL fixture. Test-only import00b72c031 corrects namespace; API host tests NOT_RUN in failed batch; rerun pending. Native assertions unchanged, failure log retained. Second00b72 compilation found wrong AuditAiInvolvement namespace/missing Audit.Persistence using.6f901 test-only references corrected both;135selected API passed. All original failure logs retained.",
           "Inventory failed attempts retained": "62d run stopped on ambiguous JsonSerializerOptions overload;40fe test-only explicit options corrected it. Subsequent2301pass/1fail Count source fixture tried reassigning immutable resolved CompanyContext;1c2f fixes request-vs-server scope and adds Denied assertion, full2302 passed.6f72 full2321pass/1fail Scrap fixture hit same setup error; c170 same request-scope correction, full2322 passed. No production guards or existing assertions weakened; original logs retained.",
-          "Product native package-standard safety": "1158/1158PASS0skip at65c518e6f9e8cfdbf37ee3b78148cabea9da18ce after native restore; first no-assets exit0 was NOT_RUN. ProductInfrastructure/integration-source warm builds0/0;6SQLsourceFacts compiled, not executed."
+          "Product native package-standard safety": "1158/1158PASS0skip at65c518e6f9e8cfdbf37ee3b78148cabea9da18ce after native restore; first no-assets exit0 was NOT_RUN. ProductInfrastructure/integration-source warm builds0/0;6SQLsourceFacts compiled, not executed.",
+          "Latest Work host regression": "494/494PASS0skip at4dadc4db182937517395af902633fbab0b96b3b7, including25newIBAN decision cases. Full API build0/0; complete integration sources compiled. Controlled host tests are not normal HTTP/browser, actual SQL or full CI/K3."
         },
         "reuse": [
           "existing FinanceCashAccountService commands and durable receipts",
@@ -3032,6 +3050,28 @@
             ],
             "new_permissions": [],
             "migration": null
+          },
+          {
+            "source_commit": "8d439c452",
+            "agent_source_commit": "552eec132c39da9c6c0b1fbb04e48f65943463ff",
+            "scope": "FNS-D128 staged IBAN approve-only human purpose, exact Organization LegalName owner and raw old/new IBAN/reason. Snapshot/native proof JsonIgnore; POST/journal carries no raw facts. Original version selects immutable exact actor/company/account/native payload receipt, never current pending maker. Existing native approval only; no payment/list/AI/export access or grant.",
+            "local_checks": "Exact4dadc4db182937517395af902633fbab0b96b3b7: full API Release build0errors/0warnings199.44s, full Finance2051/2051PASS0skip17.25s (7new owner cases), complete integration-source build and all494DecisionHostTestsPASS0skip68.03s (25newIBAN cases). One new SQL Fact compiled; actual SQL NOT_RUN. TRX counters independently read.",
+            "review": "Root and independent nonauthor complete11file573+/16- delta/called native Finance audit/version/Organization/delegation chain read; no concrete open P0/P1/P2. Not K3.",
+            "remaining": [
+              "Paired strict human UI and standalone purpose publication",
+              "Actual SQL/HTTP/browser/pins/fullCI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null
+          },
+          {
+            "source_commit": "3086ca656",
+            "agent_source_commit": "a63d29add4be287f731dcbf3153a1cbb929424f5",
+            "scope": "Two new Product package-standard SQL source Facts cover actual commit followed by controlled permission/actor/membership loss: response suppressed, immutable decision/attempt/actual Audit retained exactly once, restored authority same-key replay returns original correlation. Native disposable SQL fixture/guarded service/audit helpers reused; no production/test-assertion changes.",
+            "local_checks": "Complete131line root source read; complete integration-source build0errors/0warnings at3086ca656. Two SQL Facts with3controlled revocation cases each are source counts only; actualSQL NOT_RUN.",
+            "remaining": [
+              "Actual SQL execution and final CI/K3; no actual Identity or simultaneous race claim"
+            ]
           }
         ],
         "source_commits": [
@@ -3161,10 +3201,14 @@
           "52274cbc1",
           "e2556450d",
           "bcf457bbd",
-          "bf4dee5a0"
+          "bf4dee5a0",
+          "8d439c452",
+          "3086ca656"
         ],
-        "kind_count_scope": "27 paired source kinds, not27 accepted flows. Manual native approval P1 source repair compiled and unit-tested; actual safety SQL and all64 SQL/HTTP/browser/CI/K3 acceptance remain open.",
-        "staged_kinds": []
+        "kind_count_scope": "27 paired source kinds plus1 staged IBAN backend; not28 accepted flows. All64 SQL/HTTP/browser/fullCI/twoK3 acceptance remains open.",
+        "staged_kinds": [
+          "finance.bank-account-iban-change.v1"
+        ]
       }
     },
     {
