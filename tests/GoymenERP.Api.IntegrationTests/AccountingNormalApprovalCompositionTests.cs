@@ -45,6 +45,8 @@ public sealed class AccountingNormalApprovalCompositionTests
             new AccountingSqlServerRelationalAcceptanceTests.SyntheticMoneyProfiles(company));
         services.AddScoped<ISettingsMoneyCandidateReader, UnusedMoneyCandidates>();
         services.AddScoped<IManufacturingAttributionLineageReaderV1, UnusedManufacturingLineage>();
+        services.AddScoped<IAccountingFinalizedInvoiceLineSourceV1, UnusedInvoiceLineSource>();
+        services.AddScoped<IAccountingInvoiceLineProductReferenceV1, UnusedInvoiceLineProducts>();
         services.AddScoped<ICurrentUser, AnonymousUser>();
         services.AddScoped<IErpAuthorityRevalidationService, DenyAuthority>();
         services.AddScoped<ICorrelationContext, CorrelationContext>();
@@ -72,6 +74,7 @@ public sealed class AccountingNormalApprovalCompositionTests
         Assert.Same(mappings, scope.GetRequiredService<IAccountingPostingAccountMappingStoreV1>());
         Assert.Same(scope.GetRequiredService<AccountingPostingAccountMappingServiceV1>(), scope.GetRequiredService<IAccountingPostingAccountMappingDecisionReadV1>());
         Assert.Same(scope.GetRequiredService<ManufacturingCostDifferenceServiceV1>(), scope.GetRequiredService<IManufacturingCostDifferenceDecisionReadV1>());
+        Assert.Same(scope.GetRequiredService<InvoiceLineCogsCorrectionServiceV1>(), scope.GetRequiredService<IInvoiceLineCogsDecisionReadV1>());
         var collector = scope.GetRequiredService<AuditEventCollector>();
         Assert.Same(collector, scope.GetRequiredService<IAuditEventCollector>());
         var writer = scope.GetRequiredService<IAuditTransactionWriterV1>();
@@ -130,6 +133,24 @@ public sealed class AccountingNormalApprovalCompositionTests
         Assert.True(writer.HasPendingDrafts);
         // Explicit caller teardown, after preservation assertions; never command-owned cleanup.
         writer.DiscardPending(); Assert.False(writer.HasPendingDrafts);
+    }
+
+    private sealed class UnusedInvoiceLineSource : IAccountingFinalizedInvoiceLineSourceV1
+    {
+        public Task<FinalizedInvoiceCogsSelectionReadV1> FindAsync(Guid companyId, string officialInvoiceNumber,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("A composition-only alias resolution must not search invoice lines.");
+
+        public Task<FinalizedInvoiceLineSourceReadV1> GetAsync(Guid companyId, Guid invoiceId, Guid invoiceLineId,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("A composition-only alias resolution must not read invoice lines.");
+    }
+
+    private sealed class UnusedInvoiceLineProducts : IAccountingInvoiceLineProductReferenceV1
+    {
+        public Task<InvoiceLineCogsProductReferenceV1> GetAsync(Guid companyId, Guid productId,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("A composition-only alias resolution must not read product references.");
     }
 
     private sealed class UnusedManufacturingLineage : IManufacturingAttributionLineageReaderV1
