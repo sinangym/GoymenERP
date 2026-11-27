@@ -42,8 +42,8 @@ public sealed partial class AccountingSqlServerRelationalAcceptanceTests
         Assert.Equal(run.Actor.ToString("D"), Assert.Single(result.Items![0].ExcludedDeciders!)); Assert.True(result.Items[0].Excludes(run.Actor.ToString("D")));
         Assert.Null(result.Items[1].ExcludedDeciders); // Another company's cancellation is not this company's KLN-D17 source.
         Assert.Equal(2, probe.Commands.Count);
-        Assert.Single(probe.Commands.Where(x => x.Contains("JournalReversalProposals", StringComparison.Ordinal)));
-        Assert.Single(probe.Commands.Where(x => x.Contains("SourceDocumentVoucherDrafts", StringComparison.Ordinal) && x.Contains("SourceInvoiceCancellations", StringComparison.Ordinal)));
+        Assert.Single(probe.Commands, x => x.Contains("JournalReversalProposals", StringComparison.Ordinal));
+        Assert.Single(probe.Commands, x => x.Contains("SourceDocumentVoucherDrafts", StringComparison.Ordinal) && x.Contains("SourceInvoiceCancellations", StringComparison.Ordinal));
         scope.AssertClean();
         probe.Commands.Clear(); scope.Authority.Read = () => probe.Commands.Count < 2;
         var denied = await source.ListPendingAsync(context, 2, default);
