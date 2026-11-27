@@ -1453,7 +1453,7 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native owned approval safety and actual guarded DI implemented and included in Finance2445 atba5. Narrow owner read/receipt69a remains unintegrated source-only NOT_RUN; full Work source/host and paired UI are separate pending work. ActualSQL/HTTP/browser/CI/K3 NOT_RUN; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN."
+      "limitation": "Native owner safety/read/original receipt and full authorized Work human/source/command adapter implemented and compiled at0046. Finance2516/controlledHost1198PASS0skip atsamehead; paired frontend/standalone publication pending. ActualSQL/HTTP/browser/CI/K3 NOT_RUN; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN."
     },
     {
       "flow": 44,
@@ -1539,7 +1539,7 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native owned approval safety, guarded DI, narrow owner read/receipt prerequisites implemented; included in Finance2445 atba5. Full Work source/host and paired UI integration is separate pending work. ActualSQL/HTTP/browser/CI/K3 NOT_RUN; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN."
+      "limitation": "Native owner safety/read/original receipt and full authorized Work human/source/command adapter implemented and compiled at0046. Finance2516/controlledHost1198PASS0skip atsamehead; paired frontend/standalone publication pending. ActualSQL/HTTP/browser/CI/K3 NOT_RUN; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN."
     },
     {
       "flow": 47,
@@ -2021,7 +2021,7 @@
     }
   ],
   "closure": "For each flow verify real inbox listing, owner decision, company/scope, maker-checker exceptions, expected version, replay and audit. Do not replace owner rules with proposal cells.",
-  "source_extension": "At8046fd301ca682a4dda01eb4dbdd71cfc9735b42:39 native/39 paired frontend/0 staged; Finance1.32/67. Source pairing and bounded local checks only;41packages/50references/64flows unchanged. verified_runtime_flows0, all64 semanticsNOT_VERIFIED/runtimeNOT_RUN.",
+  "source_extension": "At0046bc8947740b963b7d7a88885de6b8dab97b87:41 native/39 paired frontend/2 staged CreditMovement/CashExchangeBookValue; no unknown frontend kind. All64 semanticsNOT_VERIFIED/runtimeNOT_RUN;verified_runtime_flows0;41packages/50references unchanged.",
   "historical_source_extension": "Atcc379ff28f74d5810ed51ad537ebece821440d72 exact source sets match29native/29paired frontend kinds, including Product package-standard; staged0. Native Product Publish safety is not a30th purpose. verified_runtime_flows stays0; all64 actualSQL/HTTP/browser/CI/K3 acceptances remain NOT_RUN. Earlier exact-head evidence stays separate; new Node batch751PASS/1FAIL is not752PASS.",
   "historical_source_extensions": [
     "Atb1cacee89f805a05959b5b79af034270b80b8103 source-derived sets:30native/29paired frontend; only product.price-list-version.v1 staged, no unknown frontend kind. Historicalcc379 exact29/29 remains valid only at that head. verified_runtime_flows=0; all64 semantics/runtime remain NOT_VERIFIED/NOT_RUN.",
@@ -2234,5 +2234,27 @@
     "original_failures": "75cc Finance2442PASS/3FAIL: pending frontend publication and obsolete exact screen/link fixtures. ba5 controlledHost1053PASS/1FAIL: expected registry ordering;7ccb moves the one expected tuple without weakening exact-set checks.7ccb frontendTSC exit2/56.3697791s: fixture union narrowing and unsupported matcher;804 test-only delta fixes these, no production/schema relaxation. Original logs retained; no skipped/removed tests.",
     "limits": "41packages/50references/64flows unchanged; verified_runtime_flows0, all64 semanticsNOT_VERIFIED/runtimeNOT_RUN. ActualSQL/normalHTTP/browser/fullCI/pins/two exact-head K3 pending.",
     "reference": "UYGULAMA_PAKETLERI_2026-11-26.json -> T2/WP8.execution.native_finance_paired_checkpoint"
+  },
+  "credit_movement_and_book_value_backend_checkpoint": {
+    "source_commit": "0046bc8947740b963b7d7a88885de6b8dab97b87",
+    "scope": "Flow43 credit movement and Flow46 cash-exchange book-value owner receipt/read, exact existing inbox formatter, private scalar snapshot, authorized full human GET and native original-key decision adapter compiled and locally verified. Frontend and standalone capability publication remain pending; native links unchanged.",
+    "source_kinds": {
+      "native": 41,
+      "paired_frontend": 39,
+      "staged": [
+        "finance.cash-exchange-book-value.v1",
+        "finance.credit-movement.v1"
+      ]
+    },
+    "checks": {
+      "api_full": "Release all project references0errors/0warnings193.3745028s",
+      "finance_unit": "2516/2516PASS0skip17.5554754s",
+      "controlled_host": "1198/1198PASS0skip68.5121947s; complete integration source compiled including real SQL sources. Root independently parsed TRX counters."
+    },
+    "reuse": "Native finance commands, guarded scoped writer/collector, current authority/consumer fences, exact stored Commands JSON and immutable original receipts; pure original inbox formatter matches. No second human POST read, no inferred finance/stock event.",
+    "peers": "Full independent bounded69a/385/a423 and root common0046 differences read; no concrete open P0/P1/P2. Not K3.",
+    "sql": "417 unique ordinal Finance SQL source names;5 added real SQL Fact sources compiled, actual SQL NOT_RUN. No new migration in this increment.",
+    "limits": "Actual SQL/normal HTTP/browser/full CI/pins/two independent exact-head K3 pending. All64 semanticsNOT_VERIFIED/runtimeNOT_RUN;41packages/50references unchanged.",
+    "reference": "UYGULAMA_PAKETLERI_2026-11-26.json -> T2/WP8.execution.credit_movement_and_book_value_backend_checkpoint"
   }
 }
