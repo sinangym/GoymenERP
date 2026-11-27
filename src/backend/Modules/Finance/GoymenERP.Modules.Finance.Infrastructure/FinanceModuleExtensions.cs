@@ -103,7 +103,7 @@ public static class FinanceModuleExtensions
         // FIN-SC47 (FNS-D87/FNS-D88/FNS-D93/FNS-D94): the credit account with its imported plan; no grant.
         services.AddScoped<IFinanceCreditAccountService>(CreateCreditAccountService);
         services.TryAddScoped<IFinanceCreditAccountingPeriodPortV1, UnavailableFinanceCreditAccountingPeriodPortV1>();
-        services.AddScoped<IFinanceCreditMovementServiceV1>(CreateCreditMovementService);
+        services.AddScoped<IFinanceCreditMovementServiceV1>(provider => CreateCreditMovementService(provider).WithApprovalSafety());
         services.AddScoped<IFinanceCreditLimitServiceV1>(provider => CreateCreditLimitService(provider).WithApprovalSafety());
         // F018 §L3 (FNS-D27 (2), FNS-D31 (4)): the Cari card's Finance panel read — the credit limit, open receivables,
         // collateral, its utilization and the documentary risk from the calculators above. It writes nothing.

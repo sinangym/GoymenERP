@@ -98,6 +98,7 @@ public sealed class FinanceShellCapabilityRegistryTests
                 ("finance.bank-statements.import", "F-13-BANK-STATEMENT", "finance.bank-statements.read"),
                 ("finance.bank-statements.match", "F-13-BANK-STATEMENT", "finance.bank-statements.read"),
                 ("finance.bank-statements.read", "F-13-BANK-STATEMENT", null),
+                ("finance.bank-credit-limit.work-decision", "F-BANK-CREDIT-LIMIT-WORK-DECISION", null),
                 ("finance.cash-account-passivation.work-decision", "W-FIN-CASH-ACCOUNT-PASSIVATION-01", null),
                 ("finance.cash-account-reactivation.work-decision", "W-FIN-CASH-ACCOUNT-REACTIVATION-01", null),
                 ("finance.cash-account.work-decision", "W-FIN-CASH-ACCOUNT-01", null),
@@ -144,6 +145,8 @@ public sealed class FinanceShellCapabilityRegistryTests
                 ("finance.official-sales-invoices.withdraw", "F-005-OFFICIAL", "finance.official-sales-invoices.record"),
                 ("finance.open-items.detail", "F-03-OPEN-ITEM-DETAIL", null),
                 ("finance.open-items.list", "F-03-OPEN-ITEMS", null),
+                ("finance.opening-balance-reversal.work-decision", "F-OPENING-BALANCE-REVERSAL-WORK-DECISION", null),
+                ("finance.opening-balance.work-decision", "F-OPENING-BALANCE-WORK-DECISION", null),
                 // FIN-S9 (Finance 1.13, FNS-D23): propose and approve are controls of the opening balance list.
                 ("finance.opening-balances.approve", "F-23-OPENING-BALANCES", "finance.opening-balances.list"),
                 ("finance.opening-balances.list", "F-23-OPENING-BALANCES", null),
@@ -181,7 +184,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(providers,
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision(providers)]));
 
-        Assert.Equal(64, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
+        Assert.Equal(67, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
     }
 
     [Fact]

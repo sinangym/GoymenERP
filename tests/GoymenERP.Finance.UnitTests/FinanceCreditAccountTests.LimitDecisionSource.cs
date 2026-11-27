@@ -25,7 +25,8 @@ public sealed partial class FinanceCreditAccountTests
         var snapshot = await source.ReadDecisionAsync(context, id, default); Assert.NotNull(snapshot);
         Assert.Equal(!terminal, snapshot.Pending); Assert.Equal(terminal ? "2" : "1", snapshot.SourceVersion);
         Assert.Equal(Maker, snapshot.Item.PreparedBy); Assert.True(snapshot.Item.Excludes(Maker)); Assert.Null(snapshot.Item.ExcludedDeciders);
-        Assert.Equal("/finans/krediler", snapshot.Item.Link); // Staged adapter never changes the existing native inbox destination.
+        Assert.Equal($"/onaylarim/finance.bank-credit-limit.v1/{id:D}", snapshot.Item.Link);
+        Assert.Equal("/finans/krediler", FinanceBankCreditLimitWorkInboxSourceV1.ScreenPath);
         var human = await core.ReadDecisionAsync(Ctx(Checker), id, _ => Task.CompletedTask, default); Assert.Equal(ReadOutcome.Found, human.Outcome);
         Assert.True(FinanceCreditLimitServiceV1.MatchesDecisionItem(snapshot.Item, human.Resource));
         var queue = await source.ListPendingAsync(context, 10, default);

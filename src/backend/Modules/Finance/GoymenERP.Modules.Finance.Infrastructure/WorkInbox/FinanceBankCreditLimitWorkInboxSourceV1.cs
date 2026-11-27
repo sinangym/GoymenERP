@@ -65,7 +65,7 @@ internal sealed partial class FinanceBankCreditLimitWorkInboxSourceV1(
         }
 
         return new WorkInboxItemV1(ModuleName, KindName, row.Id, FinanceWorkInboxFence.ShortReference(row.Id),
-            row.ProposedAtUtc.ToUniversalTime(), ScreenPath, row.ProposedBy,
+            row.ProposedAtUtc.ToUniversalTime(), $"/onaylarim/{KindName}/{row.Id:D}", row.ProposedBy,
             [new WorkApprovalRuleResultV1(ApprovalRequiredRule, null, amount, null, null)],
             [
                 FinanceWorkInboxRead.Reference("credit-account", row.CreditAccountId),

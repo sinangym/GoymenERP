@@ -76,7 +76,7 @@ internal sealed partial class FinanceOpeningBalanceReversalWorkInboxSourceV1(
 
         references.Insert(0, FinanceWorkInboxRead.Reference("opening-balance", opening.Id));
         return new WorkInboxItemV1(ModuleName, KindName, row.Id, FinanceWorkInboxFence.ShortReference(opening.Id),
-            row.ProposedAtUtc.ToUniversalTime(), ScreenPath, row.ProposedBy,
+            row.ProposedAtUtc.ToUniversalTime(), $"/onaylarim/{KindName}/{row.Id:D}", row.ProposedBy,
             [new WorkApprovalRuleResultV1(ApprovalRequiredRule, null, amount, null, null)],
             references);
     }

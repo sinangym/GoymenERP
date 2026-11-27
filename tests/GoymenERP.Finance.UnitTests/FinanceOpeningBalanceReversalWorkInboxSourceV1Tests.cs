@@ -51,7 +51,8 @@ public sealed class FinanceOpeningBalanceReversalWorkInboxSourceV1Tests : Financ
         Assert.Equal(Start.ToUniversalTime(), item.WaitingSinceUtc);
         Assert.False(item.Excludes("SENTETIK-opening-proposer"));
         Assert.Equal(opening.Id.ToString("D")[..8], item.DocumentLabel);
-        Assert.Equal("/finans/acilis-bakiyeleri", item.Link);
+        Assert.Equal($"/onaylarim/finance.opening-balance-reversal.v1/{item.ItemId:D}", item.Link);
+        Assert.Equal("/finans/acilis-bakiyeleri", FinanceOpeningBalanceReversalWorkInboxSourceV1.ScreenPath);
         Assert.Equal(
             [new WorkApprovalRuleResultV1(FinanceOpeningBalanceReversalWorkInboxSourceV1.ApprovalRequiredRule, null, "420.5", null, null)],
             item.Rules);

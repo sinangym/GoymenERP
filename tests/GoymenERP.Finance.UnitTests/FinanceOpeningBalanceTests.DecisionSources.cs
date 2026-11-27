@@ -20,7 +20,7 @@ public sealed partial class FinanceOpeningBalanceTests
         var queue = Assert.Single((await source.ListPendingAsync(context, 10, default)).Items!);
         var snapshot = await source.ReadDecisionAsync(context, id, default); Assert.NotNull(snapshot); Assert.Equal(queue.DocumentLabel, snapshot.Item.DocumentLabel); Assert.Equal(queue.PreparedBy, snapshot.Item.PreparedBy);
         Assert.Equal(queue.Rules.ToArray(), snapshot.Item.Rules.ToArray()); Assert.Equal(queue.References.ToArray(), snapshot.Item.References.ToArray());
-        Assert.True(snapshot.Pending); Assert.Equal("1", snapshot.SourceVersion); Assert.Equal("/finans/acilis-bakiyeleri", snapshot.Item.Link);
+        Assert.True(snapshot.Pending); Assert.Equal("1", snapshot.SourceVersion); Assert.Equal($"/onaylarim/{source.Kind}/{id:D}", snapshot.Item.Link);
         var detail = reversal ? await scope.Service.ReadReversalDecisionAsync(scope.Context, id, _ => Task.CompletedTask, default)
             : await scope.Service.ReadOpeningDecisionAsync(scope.Context, id, _ => Task.CompletedTask, default);
         Assert.True(FinanceOpeningBalanceService.MatchesDecisionItem(source.Kind, snapshot.Item, detail.Resource));

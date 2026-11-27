@@ -17,7 +17,7 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(64, declarations.Count);
+        Assert.Equal(67, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             !declaration.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)
             && !declaration.CapabilityId.StartsWith("finance.official-sales-invoices.", StringComparison.Ordinal)
@@ -37,6 +37,22 @@ public sealed class FinanceShellCapabilityProviderTests
         Assert.All(declarations.Where(row => row.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)), row => Assert.False(row.ImplementationAvailable));
     }
 
+    [Theory]
+    [InlineData("finance.bank-credit-limit.work-decision", ErpPermissions.FinanceCreditsApprove)]
+    [InlineData("finance.opening-balance.work-decision", ErpPermissions.FinanceOpeningBalancesApprove)]
+    [InlineData("finance.opening-balance-reversal.work-decision", ErpPermissions.FinanceOpeningBalancesApprove)]
+    public void Native_bank_and_opening_purposes_require_only_the_existing_company_wide_decision_permission(string capability, string permission)
+    {
+        var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
+        var purpose = Assert.Single(declarations, row => row.CapabilityId == capability);
+        Assert.True(purpose.ImplementationAvailable); Assert.Null(purpose.ParentCapabilityId);
+        Assert.Equal([permission], purpose.RequiredPermissions);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, purpose.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, purpose.ScopeRequirement);
+        Assert.All(declarations.Where(row => row.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)), row => Assert.False(row.ImplementationAvailable));
+        Assert.Equal([ErpPermissions.FinanceOpeningBalancesRead], Assert.Single(declarations, row => row.CapabilityId == "finance.opening-balances.list").RequiredPermissions);
+    }
+
     [Fact]
     public void The_routes_screens_and_permissions_are_the_cards()
     {
@@ -44,9 +60,15 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.31", provider.ContractVersion);
+        Assert.Equal("1.32", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
+            ("finance.bank-credit-limit.work-decision", "finance-bank-credit-limit-work-decision", "/onaylarim/finance.bank-credit-limit.v1/:approvalId", "F-BANK-CREDIT-LIMIT-WORK-DECISION",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceCreditsApprove]),
+            ("finance.opening-balance.work-decision", "finance-opening-balance-work-decision", "/onaylarim/finance.opening-balance.v1/:approvalId", "F-OPENING-BALANCE-WORK-DECISION",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceOpeningBalancesApprove]),
+            ("finance.opening-balance-reversal.work-decision", "finance-opening-balance-reversal-work-decision", "/onaylarim/finance.opening-balance-reversal.v1/:approvalId", "F-OPENING-BALANCE-REVERSAL-WORK-DECISION",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceOpeningBalancesApprove]),
             ("finance.expense-payment.work-decision", "finance-expense-payment-work-decision", "/onaylarim/finance.expense-payment.v1/:approvalId", "F-EXPENSE-PAYMENT-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinancePermissionNames.ExpensePaymentApprove]),
             ("finance.manual-bank-payment-reversal.work-decision", "finance-manual-bank-payment-reversal-work-decision", "/onaylarim/finance.manual-bank-payment-reversal.v1/:approvalId", "F-MANUAL-BANK-PAYMENT-REVERSAL-WORK-DECISION",

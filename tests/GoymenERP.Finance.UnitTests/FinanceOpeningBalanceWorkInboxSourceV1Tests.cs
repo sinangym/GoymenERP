@@ -55,7 +55,8 @@ public sealed class FinanceOpeningBalanceWorkInboxSourceV1Tests : FinanceWorkInb
         Assert.Equal(
             [new WorkApprovalRuleResultV1(FinanceOpeningBalanceWorkInboxSourceV1.ApprovalRequiredRule, null, "1000", null, null)],
             items[cash.Id].Rules);
-        Assert.Equal("/finans/acilis-bakiyeleri", items[cash.Id].Link);
+        Assert.Equal($"/onaylarim/finance.opening-balance.v1/{cash.Id:D}", items[cash.Id].Link);
+        Assert.Equal("/finans/acilis-bakiyeleri", FinanceOpeningBalanceWorkInboxSourceV1.ScreenPath);
         Assert.Contains(items[cash.Id].References, reference => reference.Role == "cash-account" && reference.RecordId == cash.TargetId);
         Assert.Contains(items[cash.Id].References, reference => reference.Role == "currency" && reference.RecordId == Try);
         Assert.Contains(items[party.Id].References, reference => reference.Role == "company-account" && reference.RecordId == party.TargetId);
