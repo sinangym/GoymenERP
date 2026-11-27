@@ -1,4 +1,3 @@
-import { PURCHASING_CAPABILITY } from '../../purchasing/capabilities'
 import type { WorkInboxKind } from './types'
 
 export const PURCHASING_INBOX_KINDS: readonly WorkInboxKind[] = [
@@ -8,6 +7,6 @@ export const PURCHASING_INBOX_KINDS: readonly WorkInboxKind[] = [
   // WP7
   { kind: 'purchasing.request.v1', module: 'purchasing', capability: 'purchasing.request.work-decision' },
   // SAT-D396: the supplier return cost exception is decided under the order approval permission.
-  { kind: 'purchasing.supplier-return-cost-exception.v1', module: 'purchasing', capability: PURCHASING_CAPABILITY.orderApprove },
+  { kind: 'purchasing.supplier-return-cost-exception.v1', module: 'purchasing', capability: 'purchasing.supplier-return-cost-exception.work-decision' },
   { kind: 'purchasing.service-order.v1', module: 'purchasing', capability: 'purchasing.service-order.work-decision' },
 ]

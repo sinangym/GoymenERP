@@ -8,7 +8,7 @@ import { hasExactKeys, replayHeadersAgree } from '../finance/wireShape'
 import { readJson, type CommandOutcome } from '../settings/discountLimitApi'
 
 export const WORK_DECISION_KINDS = ['inventory.opening-cost.v1', 'finance.cash-account.v1',
-  'finance.credit-account.v1', 'finance.cash-account-passivation.v1', 'finance.cash-account-reactivation.v1','sales.order-draft.v1','sales.invoice.v1','sales.subcontract-invoice.v1','purchasing.request.v1','purchasing.order.v1','purchasing.service-order.v1','purchasing.incoming-invoice-variance.v1','purchasing.goods-receipt-batch.v1','manufacturing.plan.v1','inventory.transfer-loss.v1','counterparty.tax-identity-change.v1','counterparty.legal-name-change.v1','logistics.plan-excess.v1','inventory.transfer-overage.v1','logistics.weighing-difference.v1'] as const
+  'finance.credit-account.v1', 'finance.cash-account-passivation.v1', 'finance.cash-account-reactivation.v1','sales.order-draft.v1','sales.invoice.v1','sales.subcontract-invoice.v1','purchasing.request.v1','purchasing.order.v1','purchasing.service-order.v1','purchasing.incoming-invoice-variance.v1','purchasing.goods-receipt-batch.v1','manufacturing.plan.v1','inventory.transfer-loss.v1','counterparty.tax-identity-change.v1','counterparty.legal-name-change.v1','logistics.plan-excess.v1','inventory.transfer-overage.v1','logistics.weighing-difference.v1','purchasing.supplier-return-cost-exception.v1'] as const
 // Native owner purposes: kind prefixes do not define their actual capability ids.
 export const COUNTERPARTY_WORK_DECISION_CAPABILITY = {
   'counterparty.tax-identity-change.v1': 'cari.tax-identity-change.work-decision',
@@ -22,7 +22,7 @@ export const isSalesWorkDecisionKind = (kind: WorkDecisionKind) => kind === 'sal
 /** Native owner reason/note bounds; Counterparty notes and Sales rejection reasons are optional. */
 export const workDecisionReasonLimit = (kind: WorkDecisionKind) => isCounterpartyWorkDecisionKind(kind) ? 1000 : kind === 'manufacturing.plan.v1' ? 256 : kind === 'purchasing.incoming-invoice-variance.v1' ? 2000 : kind === 'purchasing.service-order.v1' ? 1000 : isSalesWorkDecisionKind(kind) || kind === 'purchasing.request.v1' ? 4000 : 500
 export const isWorkDecisionKind = (value: string): value is WorkDecisionKind => isCounterpartyWorkDecisionKind(value) || WORK_DECISION_KINDS.some(kind => kind === value)
-export interface WorkDecisionRequest { readonly expectedVersion: string; readonly approve: boolean; readonly reason: string | null; readonly delegationId: string | null; readonly inventoryTransferOverage?: { readonly requestNumber: number; readonly decidedAtUtc: string }; readonly logisticsPlanExcess?: { readonly expectedInstructionVersion: string }; readonly inventoryTransferLoss?: { readonly requestNumber: number; readonly decidedAtUtc: string }; readonly manufacturingPlanReapproval?: { readonly selectedLabelIds?: readonly string[] | null } | null }
+export interface WorkDecisionRequest { readonly expectedVersion: string; readonly approve: boolean; readonly reason: string | null; readonly delegationId: string | null; readonly supplierReturnCostException?: { readonly expectedPurchaseOrderVersion?: string }; readonly inventoryTransferOverage?: { readonly requestNumber: number; readonly decidedAtUtc: string }; readonly logisticsPlanExcess?: { readonly expectedInstructionVersion: string }; readonly inventoryTransferLoss?: { readonly requestNumber: number; readonly decidedAtUtc: string }; readonly manufacturingPlanReapproval?: { readonly selectedLabelIds?: readonly string[] | null } | null }
 export interface CounterpartyTaxIdentityProof {
   readonly partyId: string; readonly changeRequestId: string; readonly currentTaxIdentityNumber: string
   readonly proposedTaxIdentityNumber: string; readonly proposedKind: TaxIdentityKind; readonly reason: string
@@ -42,7 +42,15 @@ export interface InventoryTransferOverageProof {
 export type LogisticsWeighingDifferenceProof = Pick<DispatchKilograms, 'dispatchNoteId' | 'instructionId' | 'theoreticalKg' | 'scaleKg' | 'differenceKg' | 'bandLevel'
   | 'warningBandPercent' | 'approvalBandPercent' | 'blockBandPercent' | 'totalExcessKg' | 'approvalRatePercent' | 'decision' | 'products' | 'enteredBy'
   | 'enteredByComplete' | 'recordedBy' | 'recordedAtUtc'>
+export interface SupplierReturnCostExceptionProof {
+  readonly purchaseOrderId: string; readonly purchaseOrderLineId: string; readonly goodsAcceptanceId: string; readonly inventoryMovementId: string
+  readonly sourceBlock: 'Free' | 'Blocked'; readonly quantityKg: string; readonly replacementExpected: boolean; readonly reason: string
+  readonly occurredAtUtc: string; readonly requestedBy: string; readonly requestedAtUtc: string
+  readonly recordedExpectedPurchaseOrderVersion: string | null; readonly currentPurchaseOrderVersion: string | null; readonly undoQuantity: string | null
+  readonly priceDisclosure: 'Visible' | 'Withheld'; readonly unitCostTryPerKg?: string
+}
 export interface WorkDecisionPreview {
+  readonly supplierReturnCostException?: SupplierReturnCostExceptionProof
   readonly logisticsWeighingDifference?: LogisticsWeighingDifferenceProof
   readonly inventoryTransferOverage?: InventoryTransferOverageProof
   readonly logisticsPlanExcess?: LogisticsPlanExcessProof
@@ -71,6 +79,12 @@ export const isWorkTransferOverageReason = (value: unknown): value is string => 
   && value.trim().length > 0 && value.trim().length <= 500 && !nativeControls(value.trim())
 // Native decimal(18,3) rendered as 0.###; no quantity calculation or conversion.
 const canonicalPositiveQuantity = (value: unknown): value is string => typeof value === 'string' && /^(?:0|[1-9]\d{0,14})(?:\.\d{0,2}[1-9])?$/.test(value) && value !== '0'
+/** Native supplier-return wire permits LF/CR/TAB, but no other control characters. */
+const supplierControls = (value: string) => Array.from(value).some(character => character !== '\n' && character !== '\r' && character !== '\t' && nativeControls(character))
+export const isWorkSupplierReturnReason = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
+  && value.length <= 500 && !supplierControls(value)
+export const isWorkSupplierReturnVersion = (value: unknown): value is string => isPositiveInt64Text(value) && value !== '9223372036854775807'
+const positiveSupplierUnitCost = (value: unknown): value is string => typeof value === 'string' && /^(?:0|[1-9]\d{0,13})(?:\.\d{0,3}[1-9])?$/.test(value) && value !== '0'
 /** Same user-local conversion and native UTC validator as TransferReceiptPanel; never called by retry. */
 export const workDecisionLocalUtc = (value: string): string | null => {
   const date = value === '' ? null : new Date(value)
@@ -80,9 +94,14 @@ export const workDecisionLocalUtc = (value: string): string | null => {
 const labelIds = (value: unknown): value is readonly string[] => Array.isArray(value) && value.length > 0
   && value.every(isBoundUuid) && new Set(value.map(id => id.toLowerCase())).size === value.length
 export const isWorkDecisionRequest = (value: unknown, kind?: WorkDecisionKind): value is WorkDecisionRequest => {
-  if (!record(value) || !hasExactKeys(value, ['expectedVersion', 'approve', 'reason', 'delegationId'], kind === 'inventory.transfer-overage.v1' ? ['inventoryTransferOverage'] : kind === 'logistics.plan-excess.v1' ? ['logisticsPlanExcess'] : kind === 'inventory.transfer-loss.v1' ? ['inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['manufacturingPlanReapproval'] : [])
+  if (!record(value) || !hasExactKeys(value, ['expectedVersion', 'approve', 'reason', 'delegationId'], kind === 'purchasing.supplier-return-cost-exception.v1' ? ['supplierReturnCostException'] : kind === 'inventory.transfer-overage.v1' ? ['inventoryTransferOverage'] : kind === 'logistics.plan-excess.v1' ? ['logisticsPlanExcess'] : kind === 'inventory.transfer-loss.v1' ? ['inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['manufacturingPlanReapproval'] : [])
     || !text(value.expectedVersion) || (kind === 'inventory.transfer-overage.v1' || kind === 'logistics.plan-excess.v1' || kind === 'manufacturing.plan.v1' || kind === 'inventory.transfer-loss.v1' || kind !== undefined && isCounterpartyWorkDecisionKind(kind)) && !isPositiveInt64Text(value.expectedVersion) || typeof value.approve !== 'boolean' || !nullableText(value.reason)
     || value.delegationId !== null && !isBoundUuid(value.delegationId)) return false
+  if (kind === 'purchasing.supplier-return-cost-exception.v1') {
+    const selected = value.supplierReturnCostException
+    return isWorkSupplierReturnVersion(value.expectedVersion) && (value.approve ? value.reason === null : isWorkSupplierReturnReason(value.reason))
+      && (selected === undefined || value.approve && record(selected) && hasExactKeys(selected, ['expectedPurchaseOrderVersion']) && isWorkSupplierReturnVersion(selected.expectedPurchaseOrderVersion))
+  }
   if (kind === 'logistics.weighing-difference.v1') return value.approve && value.reason === null && positiveInt32Text(value.expectedVersion)
   if (kind === 'inventory.transfer-overage.v1') {
     const selected = value.inventoryTransferOverage
@@ -106,17 +125,37 @@ export const isWorkDecisionRequest = (value: unknown, kind?: WorkDecisionKind): 
     && (selection.selectedLabelIds === undefined || selection.selectedLabelIds === null || labelIds(selection.selectedLabelIds))
 }
 export function decodeWorkDecisionPreview(value: unknown, company: string, kind: WorkDecisionKind, id: string): WorkDecisionPreview | null {
-  if (!record(value) || !hasExactKeys(value, ['companyId', 'kind', 'itemId', 'documentLabel', 'sourceVersion', 'pending', 'approvalReasonRequired', 'references', 'rules'], kind === 'logistics.weighing-difference.v1' ? ['rejectionSupported', 'logisticsWeighingDifference'] : kind === 'inventory.transfer-overage.v1' ? ['rejectionSupported', 'inventoryTransferOverage'] : kind === 'logistics.plan-excess.v1' ? ['rejectionSupported', 'logisticsPlanExcess'] : kind === 'inventory.transfer-loss.v1' ? ['rejectionSupported', 'inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['rejectionSupported', 'manufacturingPlanReapproval'] : kind === 'counterparty.tax-identity-change.v1' ? ['rejectionSupported', 'counterpartyTaxIdentityChange'] : kind === 'counterparty.legal-name-change.v1' ? ['rejectionSupported', 'counterpartyLegalNameChange'] : ['rejectionSupported'])
+  if (!record(value) || !hasExactKeys(value, ['companyId', 'kind', 'itemId', 'documentLabel', 'sourceVersion', 'pending', 'approvalReasonRequired', 'references', 'rules'], kind === 'purchasing.supplier-return-cost-exception.v1' ? ['rejectionSupported', 'supplierReturnCostException'] : kind === 'logistics.weighing-difference.v1' ? ['rejectionSupported', 'logisticsWeighingDifference'] : kind === 'inventory.transfer-overage.v1' ? ['rejectionSupported', 'inventoryTransferOverage'] : kind === 'logistics.plan-excess.v1' ? ['rejectionSupported', 'logisticsPlanExcess'] : kind === 'inventory.transfer-loss.v1' ? ['rejectionSupported', 'inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['rejectionSupported', 'manufacturingPlanReapproval'] : kind === 'counterparty.tax-identity-change.v1' ? ['rejectionSupported', 'counterpartyTaxIdentityChange'] : kind === 'counterparty.legal-name-change.v1' ? ['rejectionSupported', 'counterpartyLegalNameChange'] : ['rejectionSupported'])
     || !same(value.companyId, company) || value.kind !== kind || !same(value.itemId, id) || !text(value.documentLabel)
     || (kind === 'inventory.opening-cost.v1' ? value.sourceVersion !== `submission/${id}` : !isPositiveInt64Text(value.sourceVersion))
     || typeof value.pending !== 'boolean' || value.approvalReasonRequired !== (kind === 'inventory.transfer-overage.v1' || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.opening-cost.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1')
-    || (kind === 'manufacturing.plan.v1' ? typeof value.rejectionSupported !== 'boolean' : kind === 'purchasing.goods-receipt-batch.v1' || kind === 'inventory.transfer-overage.v1' || kind === 'inventory.transfer-loss.v1' || isCounterpartyWorkDecisionKind(kind) ? value.rejectionSupported !== true : kind === 'logistics.weighing-difference.v1' || kind === 'logistics.plan-excess.v1' || kind === 'purchasing.order.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? value.rejectionSupported !== false : value.rejectionSupported !== undefined && value.rejectionSupported !== true)
+    || (kind === 'manufacturing.plan.v1' ? typeof value.rejectionSupported !== 'boolean' : kind === 'purchasing.supplier-return-cost-exception.v1' || kind === 'purchasing.goods-receipt-batch.v1' || kind === 'inventory.transfer-overage.v1' || kind === 'inventory.transfer-loss.v1' || isCounterpartyWorkDecisionKind(kind) ? value.rejectionSupported !== true : kind === 'logistics.weighing-difference.v1' || kind === 'logistics.plan-excess.v1' || kind === 'purchasing.order.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? value.rejectionSupported !== false : value.rejectionSupported !== undefined && value.rejectionSupported !== true)
     || !Array.isArray(value.references) || value.references.length > 12 || !value.references.every(ref => record(ref)
       && hasExactKeys(ref, ['role', 'label', 'recordId', 'link']) && text(ref.role) && text(ref.label)
       && (ref.recordId === null || isBoundUuid(ref.recordId)) && nullableText(ref.link))
     || !Array.isArray(value.rules) || value.rules.length > 8 || !value.rules.every(rule => record(rule)
       && hasExactKeys(rule, ['ruleCode', 'threshold', 'actual', 'deviation', 'unit']) && text(rule.ruleCode)
       && [rule.threshold, rule.actual, rule.deviation, rule.unit].every(nullableText))) return null
+  if (kind === 'purchasing.supplier-return-cost-exception.v1') {
+    const proof = value.supplierReturnCostException
+    const orders = value.references.filter(ref => record(ref) && ref.role === 'purchase-order')
+    if (!isWorkSupplierReturnVersion(value.sourceVersion) || !record(proof)
+      || !hasExactKeys(proof, ['purchaseOrderId', 'purchaseOrderLineId', 'goodsAcceptanceId', 'inventoryMovementId', 'sourceBlock', 'quantityKg', 'replacementExpected', 'reason', 'occurredAtUtc', 'requestedBy', 'requestedAtUtc', 'recordedExpectedPurchaseOrderVersion', 'currentPurchaseOrderVersion', 'undoQuantity', 'priceDisclosure'], ['unitCostTryPerKg'])
+      || !['purchaseOrderId', 'purchaseOrderLineId', 'goodsAcceptanceId', 'inventoryMovementId'].every(key => isBoundUuid(proof[key]))
+      || orders.length !== 1 || !record(orders[0]) || !same(orders[0].recordId, proof.purchaseOrderId as string)
+      || (proof.sourceBlock !== 'Free' && proof.sourceBlock !== 'Blocked') || !canonicalPositiveQuantity(proof.quantityKg)
+      || typeof proof.replacementExpected !== 'boolean' || !isWorkSupplierReturnReason(proof.reason)
+      || !transferDispatchUtc(proof.occurredAtUtc) || !transferDispatchUtc(proof.requestedAtUtc) || !text(proof.requestedBy)
+      || (proof.recordedExpectedPurchaseOrderVersion === null
+        ? proof.currentPurchaseOrderVersion !== null || proof.undoQuantity !== null
+        : !isWorkSupplierReturnVersion(proof.recordedExpectedPurchaseOrderVersion) || !isWorkSupplierReturnVersion(proof.currentPurchaseOrderVersion) || !canonicalPositiveQuantity(proof.undoQuantity))
+      || value.rules.length !== 2
+      || value.rules.filter(rule => record(rule) && rule.ruleCode === 'purchasing.supplier-return-quantity' && rule.actual === proof.quantityKg && rule.unit === 'kg' && rule.threshold === null && rule.deviation === null).length !== 1
+      || value.rules.filter(rule => record(rule) && rule.ruleCode === 'purchasing.supplier-return-manual-cost' && rule.threshold === null && rule.deviation === null
+        && (proof.priceDisclosure === 'Visible' ? rule.actual === proof.unitCostTryPerKg && rule.unit === 'TRY' : rule.actual === null && rule.unit === null)).length !== 1
+      || (proof.priceDisclosure === 'Visible' ? !positiveSupplierUnitCost(proof.unitCostTryPerKg)
+        : proof.priceDisclosure !== 'Withheld' || Object.hasOwn(proof, 'unitCostTryPerKg'))) return null
+  }
   if (kind === 'logistics.weighing-difference.v1') {
     const evaluation = value.logisticsWeighingDifference
     const notes = value.references.filter(ref => record(ref) && ref.role === 'dispatch-note')
@@ -205,7 +244,7 @@ export async function sendWorkDecision(company: string, kind: WorkDecisionKind, 
   catch { return { type: 'unknown', reason: 'network-error' } }
   const body: unknown = await response.json().catch(() => null)
   if (response.status === 200) {
-    const state = kind === 'manufacturing.plan.v1' ? request.approve ? 'Approved' : 'Draft' : kind === 'purchasing.goods-receipt-batch.v1' ? request.approve ? 'Posted' : 'Rejected' : kind === 'purchasing.incoming-invoice-variance.v1' ? 'Matched' : kind === 'finance.cash-account-passivation.v1' ? request.approve ? 'Passive' : 'Approved'
+    const state = kind === 'purchasing.supplier-return-cost-exception.v1' ? request.approve ? 'Recorded' : 'Rejected' : kind === 'manufacturing.plan.v1' ? request.approve ? 'Approved' : 'Draft' : kind === 'purchasing.goods-receipt-batch.v1' ? request.approve ? 'Posted' : 'Rejected' : kind === 'purchasing.incoming-invoice-variance.v1' ? 'Matched' : kind === 'finance.cash-account-passivation.v1' ? request.approve ? 'Passive' : 'Approved'
       : kind === 'finance.cash-account-reactivation.v1' ? request.approve ? 'Approved' : 'Passive' : request.approve ? 'Approved' : 'Rejected'
     // Purchasing replays its current request. A successful approval can later be rejected natively;
     // withdrawal/draft/submission cannot follow a recorded approval, and rejection is terminal.

@@ -1147,3 +1147,96 @@ it('does not restore a weighing approval in a different authenticated session',a
  expect(screen.queryByRole('button',{name:T.retry})).toBeNull()
  expect(calls.filter(call=>call.url.includes(weighingPath)&&call.method==='POST')).toHaveLength(1)
 })
+
+
+const supplierKind='purchasing.supplier-return-cost-exception.v1',supplierCap='purchasing.supplier-return-cost-exception.work-decision'
+const supplierOrder='dddddddd-0000-4000-8000-000000000041',supplierLine='eeeeeeee-0000-4000-8000-000000000041'
+const supplierHuman={purchaseOrderId:supplierOrder,purchaseOrderLineId:supplierLine,goodsAcceptanceId:'ffffffff-0000-4000-8000-000000000041',inventoryMovementId:'aaaaaaaa-0000-4000-8000-000000000041',
+ sourceBlock:'Free',quantityKg:'12.125',replacementExpected:true,reason:'SENTETIK kalıcı iade gerekçesi',occurredAtUtc:'2026-11-27T08:00:00Z',requestedBy:'SENTETIK-iade-giren',requestedAtUtc:'2026-11-27T09:00:00Z',
+ recordedExpectedPurchaseOrderVersion:'4',currentPurchaseOrderVersion:'9',undoQuantity:'2',priceDisclosure:'Withheld'}
+const supplierPreview={...preview,kind:supplierKind,documentLabel:'SENTETIK tedarikçi iadesi',sourceVersion:'1',rejectionSupported:true,
+ references:[{role:'purchase-order',recordId:supplierOrder,label:'SENTETIK alış siparişi',link:null}],
+ rules:[{ruleCode:'purchasing.supplier-return-manual-cost',threshold:null,actual:null,deviation:null,unit:null},{ruleCode:'purchasing.supplier-return-quantity',threshold:null,actual:'12.125',deviation:null,unit:'kg'}],supplierReturnCostException:supplierHuman}
+const supplierPath=`/work/decisions/${supplierKind}/${id}`
+const mountSupplier=()=>mount(`/onaylarim/${supplierKind}/${id}`,true)
+it('shows the retained supplier return without a price grant, starts the measured PO selection empty and sends the human selected version separately',async()=>{
+ const calls=installFetch({capabilities:[supplierCap],respond:(url,init)=>url.includes(supplierPath)?init?.method==='POST'
+  ?json({companyId:COMPANY_A,kind:supplierKind,itemId:id,state:'Recorded',replayed:false,originalCorrelationId:'original'}):json(supplierPreview):undefined})
+ mountSupplier();await screen.findByRole('heading',{name:T.supplierReturnProposal})
+ for(const fact of [supplierHuman.purchaseOrderId,supplierHuman.purchaseOrderLineId,supplierHuman.goodsAcceptanceId,supplierHuman.inventoryMovementId,supplierHuman.reason,supplierHuman.requestedBy,supplierHuman.occurredAtUtc,supplierHuman.requestedAtUtc])expect(screen.getByText(fact)).toBeTruthy()
+ expect(screen.getByText('Fiyat görme yetkiniz bulunmuyor.')).toBeTruthy()
+ const input=screen.getByRole('textbox',{name:T.supplierReturnSelectedOrderVersion}) as HTMLInputElement
+ expect(input.value).toBe('');expect((screen.getByRole('button',{name:T.approve}) as HTMLButtonElement).disabled).toBe(true)
+ for(const value of ['0','09','9223372036854775807']){fireEvent.change(input,{target:{value}});expect((screen.getByRole('button',{name:T.approve}) as HTMLButtonElement).disabled).toBe(true)}
+ expect((screen.getByRole('button',{name:T.reject}) as HTMLButtonElement).disabled).toBe(true)
+ fireEvent.change(input,{target:{value:'9'}});fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:'Onayda gönderilmeyecek'}})
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.url.includes(supplierPath)&&call.method==='POST')
+ expect(sent).toHaveLength(1);expect(sent[0]!.body).toEqual({expectedVersion:'1',approve:true,reason:null,delegationId:null,supplierReturnCostException:{expectedPurchaseOrderVersion:'9'}})
+ expect(calls.some(call=>call.url.includes('/purchasing/')||call.url.includes('/identity/access'))).toBe(false)
+})
+it('shows an explicitly disclosed cost and approves an unmeasured return without inventing a PO version',async()=>{
+ const data={...supplierPreview,rules:[{...supplierPreview.rules[0]!,actual:'3.125',unit:'TRY'},supplierPreview.rules[1]!],supplierReturnCostException:{...supplierHuman,recordedExpectedPurchaseOrderVersion:null,currentPurchaseOrderVersion:null,undoQuantity:null,priceDisclosure:'Visible',unitCostTryPerKg:'3.125'}}
+ const calls=installFetch({capabilities:[supplierCap],respond:(url,init)=>url.includes(supplierPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:supplierKind,itemId:id,state:'Recorded',replayed:false,originalCorrelationId:'original'}):json(data):undefined})
+ mountSupplier();await screen.findByRole('heading',{name:T.supplierReturnProposal});expect(screen.getByText('3.125')).toBeTruthy()
+ expect(screen.queryByRole('textbox',{name:T.supplierReturnSelectedOrderVersion})).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done)
+ expect(calls.find(call=>call.url.includes(supplierPath)&&call.method==='POST')?.body).toEqual({expectedVersion:'1',approve:true,reason:null,delegationId:null})
+})
+it('rejects without a PO selection, requires a native bounded reason and preserves permitted line breaks',async()=>{
+ const calls=installFetch({capabilities:[supplierCap],respond:(url,init)=>url.includes(supplierPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:supplierKind,itemId:id,state:'Rejected',replayed:false,originalCorrelationId:'original'}):json(supplierPreview):undefined})
+ mountSupplier();await screen.findByRole('heading',{name:T.supplierReturnProposal})
+ const reject=screen.getByRole('button',{name:T.reject}) as HTMLButtonElement,reason=screen.getByRole('textbox',{name:T.reason})
+ for(const value of ['  ','Ret\u0085yasak']){fireEvent.change(reason,{target:{value}});expect(reject.disabled).toBe(true)}
+ fireEvent.change(reason,{target:{value:'  Ret\nİkinci satır  '}});expect(reject.disabled).toBe(false)
+ fireEvent.click(reject);await screen.findByText(T.done)
+ expect(calls.find(call=>call.url.includes(supplierPath)&&call.method==='POST')?.body).toEqual({expectedVersion:'1',approve:false,reason:'Ret\nİkinci satır',delegationId:null})
+})
+it('freezes both supplier versions and original key across an unknown remount after current PO and terminal return versions change',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-supplier-session'})
+ let reads=0,posts=0
+ const calls=installFetch({capabilities:[supplierCap],respond:(url,init)=>{
+  if(!url.includes(supplierPath))return undefined
+  if(init?.method==='POST')return ++posts===1?problem(503):json({companyId:COMPANY_A,kind:supplierKind,itemId:id,state:'Recorded',replayed:true,originalCorrelationId:'original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'})
+  return json(++reads===1?supplierPreview:{...supplierPreview,pending:false,sourceVersion:'2',supplierReturnCostException:{...supplierHuman,currentPurchaseOrderVersion:'10'}})
+ }})
+ mountSupplier();await screen.findByRole('heading',{name:T.supplierReturnProposal});fireEvent.change(screen.getByRole('textbox',{name:T.supplierReturnSelectedOrderVersion}),{target:{value:'9'}})
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ const journal=Object.values(sessionStorage).join('')
+ for(const value of [supplierHuman.reason,supplierHuman.requestedBy,supplierHuman.quantityKg,supplierOrder,supplierLine,supplierHuman.goodsAcceptanceId,supplierHuman.inventoryMovementId])expect(journal).not.toContain(value)
+ cleanup();mountSupplier();await screen.findByText(T.unknown);await screen.findByText(T.closed)
+ expect((screen.getByRole('textbox',{name:T.supplierReturnSelectedOrderVersion}) as HTMLInputElement).value).toBe('9')
+ expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.url.includes(supplierPath)&&call.method==='POST');expect(sent).toHaveLength(2)
+ expect(sent[1]!.body).toEqual(sent[0]!.body);expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key'])
+ expect(sent[1]!.body).toEqual({expectedVersion:'1',approve:true,reason:null,delegationId:null,supplierReturnCostException:{expectedPurchaseOrderVersion:'9'}})
+})
+it.each([{companyId:COMPANY_B},{sourceVersion:'9223372036854775807'},{supplierReturnCostException:null},{supplierReturnCostExceptionProof:{}},
+ {supplierReturnCostException:{...supplierHuman,purchaseOrderId:id}},{supplierReturnCostException:{...supplierHuman,unitCostTryPerKg:'3.125'}},{supplierReturnCostException:{...supplierHuman,currentPurchaseOrderVersion:null}}])('does not render a foreign or malformed supplier proposal %j',async delta=>{
+ const calls=installFetch({capabilities:[supplierCap],respond:url=>url.includes(supplierPath)?json({...supplierPreview,...delta}):undefined})
+ mountSupplier();await waitFor(()=>expect(calls.some(call=>call.url.includes(supplierPath))).toBe(true))
+ expect(screen.queryByRole('heading',{name:T.supplierReturnProposal})).toBeNull();expect(screen.queryByRole('button',{name:T.approve})).toBeNull();expect(calls.some(call=>call.method==='POST')).toBe(false)
+})
+it.each([[],['purchasing.orders.approve'],['purchasing.orders.detail'],['purchasing.goods-receipt-batch.work-decision']])('refuses supplier reads without the exact purpose capability %j',async capabilities=>{
+ const calls=installFetch({capabilities,respond:url=>url.includes(supplierPath)?json(supplierPreview):undefined})
+ mountSupplier();await waitFor(()=>expect(calls.some(call=>call.url.endsWith('/shell/capabilities'))).toBe(true))
+ expect(calls.some(call=>call.url.includes(supplierPath))).toBe(false);expect(screen.queryByRole('heading',{name:T.supplierReturnProposal})).toBeNull()
+})
+it('does not restore a supplier frozen command under a different authenticated session',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-supplier-session-old'})
+ const calls=installFetch({capabilities:[supplierCap],respond:(url,init)=>url.includes(supplierPath)?init?.method==='POST'?problem(503):json(supplierPreview):undefined})
+ mountSupplier();await screen.findByRole('heading',{name:T.supplierReturnProposal});fireEvent.change(screen.getByRole('textbox',{name:T.supplierReturnSelectedOrderVersion}),{target:{value:'9'}})
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-supplier-session-new'});mountSupplier();await screen.findByRole('heading',{name:T.supplierReturnProposal})
+ expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.url.includes(supplierPath)&&call.method==='POST')).toHaveLength(1)
+ expect((screen.getByRole('textbox',{name:T.supplierReturnSelectedOrderVersion}) as HTMLInputElement).value).toBe('')
+})
+
+it('preserves a native expired supplier decision refusal without displaying success or rewriting either version',async()=>{
+ const calls=installFetch({capabilities:[supplierCap],respond:(url,init)=>url.includes(supplierPath)?init?.method==='POST'?problem(409):json(supplierPreview):undefined})
+ mountSupplier();await screen.findByRole('heading',{name:T.supplierReturnProposal});fireEvent.change(screen.getByRole('textbox',{name:T.supplierReturnSelectedOrderVersion}),{target:{value:'9'}})
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByRole('alert')
+ expect(screen.queryByText(T.done)).toBeNull();expect(screen.queryByRole('button',{name:T.retry})).toBeNull()
+ expect(calls.find(call=>call.url.includes(supplierPath)&&call.method==='POST')?.body).toEqual({expectedVersion:'1',approve:true,reason:null,delegationId:null,supplierReturnCostException:{expectedPurchaseOrderVersion:'9'}})
+})

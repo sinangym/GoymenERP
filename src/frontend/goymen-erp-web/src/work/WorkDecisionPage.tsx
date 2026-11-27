@@ -1,3 +1,4 @@
+import { SUPPLIER_RETURN_TEXT as SUPPLIER_RETURN, SUPPLIER_RETURN_SOURCE_BLOCK_TEXT } from '../purchasing/supplierReturnText'
 import { KIND_LABEL, TAX_IDENTITY_TEXT } from '../cari/taxIdentity'
 import { LEGAL_NAME_TEXT } from '../cari/legalName'
 import { DISPATCH_KG_TEXT as WEIGHING } from '../logistics/dispatchKilogramsText'
@@ -13,7 +14,7 @@ import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useScopedCommandAttempt } from '../settings/useCommandAttempt'
 import { Button } from '../ui/Button'
 import { inboxKindText, inboxRoleText } from './workInboxText'
-import { fetchWorkDecision, sendWorkDecision, workDecisionLocalUtc, isWorkDecisionRequest, isSalesWorkDecisionKind, isCounterpartyWorkDecisionKind, isWorkTransferOverageReason, workDecisionReasonLimit, type WorkDecisionKind, type WorkDecisionRequest, type WorkDecisionResult } from './workDecisionApi'
+import { fetchWorkDecision, sendWorkDecision, workDecisionLocalUtc, isWorkDecisionRequest, isSalesWorkDecisionKind, isCounterpartyWorkDecisionKind, isWorkTransferOverageReason, isWorkSupplierReturnReason, isWorkSupplierReturnVersion, workDecisionReasonLimit, type WorkDecisionKind, type WorkDecisionRequest, type WorkDecisionResult } from './workDecisionApi'
 import { fetchDelegations, type DelegationPage } from './workDelegationApi'
 import { delegationPersonLabel } from './delegationPersonLabel'
 import type { ViewOutcome } from '../shell/uiState'
@@ -37,6 +38,8 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const [selectionVersion, setSelectionVersion] = useState<string | null>(null)
   const [decisionTime, setDecisionTime] = useState('')
   const [lossTimeBinding, setLossTimeBinding] = useState<string | null>(null)
+  const [supplierOrderVersion, setSupplierOrderVersion] = useState('')
+  const [supplierVersionBinding, setSupplierVersionBinding] = useState<string | null>(null)
   const [reason, setReason] = useState('')
   const [useDelegation, setUseDelegation] = useState(false); const [delegationId, setDelegationId] = useState('')
   const delegations = useInfiniteQuery<DelegationPage,DelegationReadFailure,InfiniteData<DelegationPage>,readonly unknown[],number>({ queryKey: [namespace, shell.routeEntryGeneration, 'work-decision-delegations'],
@@ -77,20 +80,28 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const transferRequest = overage ? preview?.inventoryTransferOverage : preview?.inventoryTransferLoss
   const frozenTransferRequest = overage ? attempt.pendingPayload?.inventoryTransferOverage : attempt.pendingPayload?.inventoryTransferLoss
   const lossRequest = frozen ? frozenTransferRequest?.requestNumber : transferRequest?.requestNumber
-  const lossReason = timedTransfer && frozen ? attempt.pendingPayload?.reason ?? '' : reason
+  const lossReason = (timedTransfer || kind === 'purchasing.supplier-return-cost-exception.v1') && frozen ? attempt.pendingPayload?.reason ?? '' : reason
   const currentLossBinding = transferRequest === undefined ? null : `${preview?.sourceVersion}:${transferRequest.requestNumber}`
   const selectedUtc = workDecisionLocalUtc(decisionTime)
   const invalidLossTime = timedTransfer && (currentLossBinding === null || lossTimeBinding !== currentLossBinding || selectedUtc === null
     || overage && transferRequest !== undefined && selectedUtc !== null && Date.parse(selectedUtc) < Date.parse(transferRequest.requestedAtUtc))
+  const supplierReturn = kind === 'purchasing.supplier-return-cost-exception.v1'
+  const supplierProof = preview?.supplierReturnCostException
+  const measuredSupplierReturn = supplierProof !== undefined && supplierProof.recordedExpectedPurchaseOrderVersion !== null
+  const currentSupplierBinding = supplierProof === undefined ? null : `${preview?.sourceVersion}:${supplierProof.currentPurchaseOrderVersion}`
+  const displayedSupplierVersion = frozen ? attempt.pendingPayload?.supplierReturnCostException?.expectedPurchaseOrderVersion ?? ''
+    : supplierVersionBinding === currentSupplierBinding ? supplierOrderVersion : ''
+  const invalidSupplierVersion = measuredSupplierReturn && (supplierVersionBinding !== currentSupplierBinding || !isWorkSupplierReturnVersion(supplierOrderVersion))
   const reasonLimit = workDecisionReasonLimit(kind)
   const batch = kind === 'purchasing.goods-receipt-batch.v1'
   const counterparty = isCounterpartyWorkDecisionKind(kind)
   const reasonRequired = (approve: boolean) => preview?.approvalReasonRequired || !approve && !isSalesWorkDecisionKind(kind) && !counterparty
-  const invalidReason = (approve: boolean) => overage && !isWorkTransferOverageReason(reason) || reasonRequired(approve) && reason.trim() === '' || (preview?.approvalReasonRequired || !approve || batch || counterparty) && (batch ? reason.length : reason.trim().length) > reasonLimit
+  const invalidReason = (approve: boolean) => supplierReturn && !approve && !isWorkSupplierReturnReason(reason.trim()) || overage && !isWorkTransferOverageReason(reason) || reasonRequired(approve) && reason.trim() === '' || (preview?.approvalReasonRequired || !approve || batch || counterparty) && (batch ? reason.length : reason.trim().length) > reasonLimit
   const submit = async (approve: boolean) => {
-    if (preview === null || !approve && preview.rejectionSupported === false || frozen || approve && selectionInvalid || invalidLossTime || invalidReason(approve) || useDelegation && !delegationId) return
+    if (preview === null || !approve && preview.rejectionSupported === false || frozen || approve && (selectionInvalid || invalidSupplierVersion) || invalidLossTime || invalidReason(approve) || useDelegation && !delegationId) return
     const answer = await attempt.run({ expectedVersion: preview.sourceVersion, approve,
       reason: batch ? reason === '' ? null : reason : preview.approvalReasonRequired || !approve || counterparty ? reason.trim() || null : null, delegationId: useDelegation ? delegationId : null,
+      ...(supplierReturn && approve && measuredSupplierReturn ? { supplierReturnCostException: { expectedPurchaseOrderVersion: supplierOrderVersion } } : {}),
       ...(kind === 'logistics.plan-excess.v1' ? { logisticsPlanExcess: { expectedInstructionVersion: preview.logisticsPlanExcess!.instructionVersion } } : {}),
       ...(overage ? { inventoryTransferOverage: { requestNumber: preview.inventoryTransferOverage!.requestNumber, decidedAtUtc: workDecisionLocalUtc(decisionTime)! } } : {}),
       ...(loss ? { inventoryTransferLoss: { requestNumber: preview.inventoryTransferLoss!.requestNumber, decidedAtUtc: workDecisionLocalUtc(decisionTime)! } } : {}),
@@ -111,8 +122,29 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       <p>{T.lossFrozenTime}: {frozenTransferRequest?.decidedAtUtc}</p>
     </div> : <StateBlock state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
       subject={T.title} onRetry={() => void query.refetch()} /> : <>
-      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
+      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(supplierReturn || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
       {kind === 'inventory.opening-cost.v1' ? <p>{cost == null ? T.hiddenCost : `${T.cost}: ${cost}`}</p> : null}
+      {supplierProof ? <section aria-label={T.supplierReturnProposal}><h3>{T.supplierReturnProposal}</h3><dl className={styles.facts}>
+        <dt>{T.supplierReturnOrder}</dt><dd>{supplierProof.purchaseOrderId}</dd>
+        <dt>{T.supplierReturnLine}</dt><dd>{supplierProof.purchaseOrderLineId}</dd>
+        <dt>{T.supplierReturnAcceptance}</dt><dd>{supplierProof.goodsAcceptanceId}</dd>
+        <dt>{T.supplierReturnMovement}</dt><dd>{supplierProof.inventoryMovementId}</dd>
+        <dt>{SUPPLIER_RETURN.sourceBlock}</dt><dd>{SUPPLIER_RETURN_SOURCE_BLOCK_TEXT[supplierProof.sourceBlock]}</dd>
+        <dt>{SUPPLIER_RETURN.quantityKg}</dt><dd>{supplierProof.quantityKg}</dd>
+        <dt>{SUPPLIER_RETURN.costBasis}</dt><dd>{T.supplierReturnManualCost}</dd>
+        <dt>{SUPPLIER_RETURN.unitCost}</dt><dd>{supplierProof.priceDisclosure === 'Visible' ? supplierProof.unitCostTryPerKg : SUPPLIER_RETURN.priceWithheld}</dd>
+        <dt>{SUPPLIER_RETURN.reason}</dt><dd>{supplierProof.reason}</dd>
+        <dt>{SUPPLIER_RETURN.occurredAtUtc}</dt><dd>{supplierProof.occurredAtUtc}</dd>
+        <dt>{SUPPLIER_RETURN.requestedBy}</dt><dd>{supplierProof.requestedBy}</dd>
+        <dt>{SUPPLIER_RETURN.requestedAtUtc}</dt><dd>{supplierProof.requestedAtUtc}</dd>
+        <dt>{T.supplierReturnReplacement}</dt><dd>{supplierProof.replacementExpected ? SUPPLIER_RETURN.replacementExpected : SUPPLIER_RETURN.definitiveReturn}</dd>
+        {measuredSupplierReturn ? <><dt>{SUPPLIER_RETURN.expectedOrderVersion}</dt><dd>{supplierProof.recordedExpectedPurchaseOrderVersion}</dd>
+          <dt>{T.supplierReturnCurrentOrderVersion}</dt><dd>{supplierProof.currentPurchaseOrderVersion}</dd>
+          <dt>{SUPPLIER_RETURN.undoQuantity}</dt><dd>{supplierProof.undoQuantity}</dd></> : null}
+      </dl><p>{T.supplierReturnReadOnly}</p>
+      {measuredSupplierReturn && (preview.pending || frozen) ? <label>{T.supplierReturnSelectedOrderVersion}<input type="text" inputMode="numeric" autoComplete="off" disabled={frozen}
+        value={displayedSupplierVersion} onChange={event => { setSupplierOrderVersion(event.target.value); setSupplierVersionBinding(currentSupplierBinding) }} /></label> : null}
+      {measuredSupplierReturn && (preview.pending || frozen) ? <p>{T.supplierReturnVersionHelp}</p> : null}</section> : null}
       {preview.logisticsWeighingDifference ? <section aria-label={T.weighingEvaluation}><h3>{T.weighingEvaluation}</h3><dl className={styles.facts}>
         <dt>{T.weighingNote}</dt><dd>{preview.documentLabel}</dd>
         <dt>{PLAN_EXCESS.instruction}</dt><dd>{preview.logisticsWeighingDifference.instructionId}</dd>
@@ -182,7 +214,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         {preview.rejectionSupported !== false || preview.approvalReasonRequired ? <label>{counterparty ? T.optionalNote : kind === 'manufacturing.plan.v1' ? T.manufacturingRejectReason : T.reason}<textarea value={lossReason} maxLength={reasonLimit} onChange={event => setReason(event.target.value)} /></label> : null}
         {kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? <p>{T.approvalReasonRequired(reasonLimit)}</p> : null}
         {kind === 'manufacturing.plan.v1' && preview.rejectionSupported ? <p>{T.manufacturingRejectHelp}</p> : null}
-        {kind === 'purchasing.request.v1' ? <p>{T.rejectionReasonRequired(reasonLimit)}</p> : null}
+        {kind === 'purchasing.request.v1' || supplierReturn ? <p>{T.rejectionReasonRequired(reasonLimit)}</p> : null}
         {counterparty ? <p>{T.optionalNoteHelp}</p> : null}
         {timedTransfer ? <><label>{T.lossDecisionTime}<input type="datetime-local" step="1" disabled={frozen} value={decisionTime} onChange={event => { setDecisionTime(event.target.value); setLossTimeBinding(currentLossBinding) }} /></label><p>{overage ? T.overageReasonHelp : T.lossReason}</p></> : null}
         {batch ? <p>{T.batchReason(reasonLimit)}</p> : null}
@@ -195,7 +227,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
             : candidates.length === 0 ? <p>{delegations.hasNextPage ? T.delegationNoMatchesYet : T.delegationEmpty}</p> : null}
           {delegations.hasNextPage ? <><p>{T.delegationMoreAvailable}</p><Button type="button" disabled={delegations.isFetchingNextPage}
             onClick={() => void delegations.fetchNextPage()}>{T.delegationMore}</Button></> : null}</> : null}
-        <div className={styles.actions}><Button type="button" disabled={invalidLossTime || selectionInvalid || useDelegation && !delegationId || invalidReason(true)} onClick={() => void submit(true)}>{T.approve}</Button>
+        <div className={styles.actions}><Button type="button" disabled={invalidLossTime || selectionInvalid || invalidSupplierVersion || useDelegation && !delegationId || invalidReason(true)} onClick={() => void submit(true)}>{T.approve}</Button>
           {preview.rejectionSupported !== false ? <Button type="button" variant="secondary" disabled={invalidLossTime || useDelegation && !delegationId || invalidReason(false)} onClick={() => void submit(false)}>{T.reject}</Button> : null}</div></fieldset> : <p>{reconciledHistorical ? T.priorDecisionResolved : T.closed}</p>}
     </>}
     {attempt.status.kind === 'unknown' ? <div role="alert"><p>{T.unknown}</p><Button type="button" onClick={() => void retry()}>{T.retry}</Button></div> : null}

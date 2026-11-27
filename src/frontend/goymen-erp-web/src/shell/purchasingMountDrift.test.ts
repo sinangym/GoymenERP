@@ -9,6 +9,7 @@ import {
   purchaseOrderDetailPath,
   purchaseRequestDetailPath,
 } from '../purchasing/capabilities'
+import { WORK_INBOX_KINDS } from '../work/workInboxKinds'
 import { workRoutes } from '../work/workRoutes'
 import { WORK_ROUTE } from '../work/workText'
 import { NAV_CAPABILITIES } from './navigation'
@@ -18,6 +19,7 @@ describe('shell ↔ Purchasing lane route catalogue', () => {
   it.each([
     [CAPABILITY.purchasingRequestWorkDecision, 'purchasing.request.v1'],
     [CAPABILITY.purchasingOrderWorkDecision, 'purchasing.order.v1'],
+    [CAPABILITY.purchasingSupplierReturnWorkDecision, 'purchasing.supplier-return-cost-exception.v1'],
     [CAPABILITY.purchasingGoodsReceiptBatchWorkDecision, 'purchasing.goods-receipt-batch.v1'],
     [CAPABILITY.purchasingInvoiceVarianceWorkDecision, 'purchasing.incoming-invoice-variance.v1'],
     [CAPABILITY.purchasingServiceOrderWorkDecision, 'purchasing.service-order.v1'],
@@ -26,6 +28,7 @@ describe('shell ↔ Purchasing lane route catalogue', () => {
     expect(CAPABILITY_ROUTE[capability]).toBe(path)
     expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
     expect(NAV_CAPABILITIES).not.toContain(capability)
+    expect(WORK_INBOX_KINDS.find(row => row.kind === kind)?.capability).toBe(capability)
     const routes = workRoutes.filter(route => route.path === path.slice(1))
     expect(routes).toHaveLength(1)
     const url = path.replace(':approvalId', 'cccccccc-0000-4000-8000-0000000000f1')
@@ -47,6 +50,7 @@ describe('shell ↔ Purchasing lane route catalogue', () => {
     expect([...shellIds].sort()).toEqual([
       CAPABILITY.purchasingRequestWorkDecision,
       CAPABILITY.purchasingOrderWorkDecision,
+      CAPABILITY.purchasingSupplierReturnWorkDecision,
       CAPABILITY.purchasingGoodsReceiptBatchWorkDecision,
       CAPABILITY.purchasingInvoiceVarianceWorkDecision,
       CAPABILITY.purchasingServiceOrderWorkDecision,
