@@ -104,7 +104,9 @@ public sealed record WorkInboxItemV1(
     public bool Excludes(string userId) =>
         // ROL-D18: this exact owner kind permits an authorized preparer to publish. Keep preparer metadata for audit/My requests.
         !(Module == "product" && Kind == "product.price-list-version.v1")
-        && (WorkInboxRulesV1.SameUser(PreparedBy, userId)
+        && (!(Module == "accounting" && Kind == "accounting.approved-source-catalog.v1")
+                // Native catalog activation explicitly permits a preparer holding the separate activation permission.
+                && WorkInboxRulesV1.SameUser(PreparedBy, userId)
             || ExcludedDeciders is { } excluded && excluded.Any(candidate => WorkInboxRulesV1.SameUser(candidate, userId)));
 }
 

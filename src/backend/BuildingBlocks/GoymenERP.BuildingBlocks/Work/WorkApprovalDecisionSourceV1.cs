@@ -55,7 +55,16 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkNormalJournalDraftProofV1? NormalJournalDraftProof = null,
     [property: JsonIgnore] WorkAccountingPeriodOpeningProofV1? AccountingPeriodOpeningProof = null,
     [property: JsonIgnore] WorkAccountingPeriodReopeningProofV1? AccountingPeriodReopeningProof = null,
-    [property: JsonIgnore] WorkJournalReversalProofV1? JournalReversalProof = null);
+    [property: JsonIgnore] WorkJournalReversalProofV1? JournalReversalProof = null)
+{
+    // Body property keeps existing constructor callers unchanged. Human package rows stay in the owner read.
+    [JsonIgnore] public WorkApprovedSourceCatalogProofV1? ApprovedSourceCatalogProof { get; init; }
+}
+
+/// <summary>Private catalog identity; full package facts require the owner's read or genuine original receipt.</summary>
+public sealed record WorkApprovedSourceCatalogProofV1(Guid CompanyId, Guid PackageId, Guid PreparedBy,
+    DateTimeOffset PreparedAtUtc, string Status, long PackageVersion, long ActiveCatalogVersion,
+    string SourceFactsDigest, string PreviewDigest);
 
 /// <summary>Private journal reversal identity. Full native proposal and reason stay in the authorized purpose read.</summary>
 public sealed record WorkJournalReversalProofV1(Guid CompanyId, Guid ProposalId, Guid SourceJournalId,
