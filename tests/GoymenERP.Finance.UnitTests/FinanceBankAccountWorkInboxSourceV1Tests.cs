@@ -47,7 +47,7 @@ public sealed class FinanceBankAccountWorkInboxSourceV1Tests : FinanceWorkInboxS
 
         var item = Assert.Single(result.Items!);
         Assert.Equal(account.Id.ToString("D")[..8], item.DocumentLabel);
-        Assert.Equal("/finans/banka-hesaplari", item.Link);
+        Assert.Equal($"/onaylarim/{FinanceBankAccountWorkInboxSourceV1.KindName}/{account.Id:D}", item.Link);
         Assert.Equal([new WorkApprovalRuleResultV1(FinanceBankAccountWorkInboxSourceV1.ApprovalRequiredRule, null, null, null, null)],
             item.Rules);
         Assert.Contains(item.References, reference => reference.Role == "bank-account" && reference.RecordId == account.Id

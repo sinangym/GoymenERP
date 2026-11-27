@@ -15,7 +15,7 @@ namespace GoymenERP.Inventory.UnitTests;
 public sealed class InventoryStockCountWorkInboxSourceTests
 {
     [Fact]
-    public void Registration_is_single_and_purpose_is_staged_approve_only_without_browse_or_price_grants()
+    public void Registration_is_single_and_purpose_uses_approve_permission_without_browse_or_price_grants()
     {
         var services = new ServiceCollection().AddInventoryTransfers().AddInventoryStockCounts();
         Assert.Single(services, row => row.ServiceType == typeof(IWorkInboxSourceV1)
@@ -23,7 +23,7 @@ public sealed class InventoryStockCountWorkInboxSourceTests
         Assert.Single(services, row => row.ServiceType == typeof(InventoryWorkInboxFence));
         var declarations = new InventoryShellCapabilityProvider().GetDeclarations();
         var purpose = Assert.Single(declarations, row => row.CapabilityId == "inventory.stock-count.work-decision");
-        Assert.False(purpose.ImplementationAvailable); Assert.Null(purpose.ParentCapabilityId);
+        Assert.True(purpose.ImplementationAvailable); Assert.Null(purpose.ParentCapabilityId);
         Assert.Equal("/onaylarim/inventory.stock-count.v1/:approvalId", purpose.RoutePath);
         Assert.Equal([InventoryPermissionManifestV1.StockCountApprove], purpose.RequiredPermissions);
         Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, purpose.ContextRequirement);

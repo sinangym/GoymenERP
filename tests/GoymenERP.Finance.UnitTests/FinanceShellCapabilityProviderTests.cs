@@ -22,7 +22,6 @@ public sealed class FinanceShellCapabilityProviderTests
             !declaration.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)
             && !declaration.CapabilityId.StartsWith("finance.official-sales-invoices.", StringComparison.Ordinal)
             && declaration.CapabilityId != FinanceShellCapabilityProvider.PartyBalanceTransferCapabilityId
-            && declaration.CapabilityId != FinanceShellCapabilityProvider.BankAccountWorkDecisionCapabilityId
             && !declaration.CapabilityId.StartsWith("finance.cash-exchange-book-values.", StringComparison.Ordinal), declaration.ImplementationAvailable));
     }
 
@@ -45,7 +44,7 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.21", provider.ContractVersion);
+        Assert.Equal("1.22", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("finance.bank-account.work-decision", "finance-bank-account-work-decision", "/onaylarim/finance.bank-account.v1/:approvalId", "F-BANK-ACCOUNT-WORK-DECISION",
@@ -322,10 +321,9 @@ public sealed class FinanceShellCapabilityProviderTests
         // FIN-UI-1b: src/finance/capabilities.ts read from the repository, so a drift is red here.
         var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(),
             "src/frontend/goymen-erp-web/src/finance/capabilities.ts"));
-        // Bank purpose is deliberately backend-staged; its paired frontend is not published by this slice.
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
-        Assert.False(Assert.Single(declarations, item => item.CapabilityId == FinanceShellCapabilityProvider.BankAccountWorkDecisionCapabilityId).ImplementationAvailable);
-        foreach (var declaration in declarations.Where(item => item.CapabilityId != FinanceShellCapabilityProvider.BankAccountWorkDecisionCapabilityId))
+        Assert.True(Assert.Single(declarations, item => item.CapabilityId == FinanceShellCapabilityProvider.BankAccountWorkDecisionCapabilityId).ImplementationAvailable);
+        foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
             Assert.Contains($"'{declaration.RoutePath}'", source);

@@ -21,7 +21,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         "finance.cash-exchange-book-values.approve", "finance.cash-exchange-book-values.prepare",
         "finance.credits.approve", "finance.credits.propose", "finance.credits.workspace",
         "finance.official-sales-invoices.approve", "finance.official-sales-invoices.record", "finance.official-sales-invoices.withdraw",
-        "finance.party-balance-transfers.record", "finance.bank-account.work-decision",
+        "finance.party-balance-transfers.record",
     ];
 
     [Fact]

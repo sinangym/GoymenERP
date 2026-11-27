@@ -60,7 +60,7 @@ internal sealed partial class FinanceBankAccountWorkInboxSourceV1(
         }
 
         return new WorkInboxItemV1(ModuleName, KindName, row.Id, FinanceWorkInboxFence.ShortReference(row.Id),
-            row.ProposedAtUtc.ToUniversalTime(), ScreenPath, row.ProposedBy,
+            row.ProposedAtUtc.ToUniversalTime(), $"/onaylarim/{KindName}/{row.Id:D}", row.ProposedBy,
             [new WorkApprovalRuleResultV1(ApprovalRequiredRule, null, null, null, null)],
             [
                 FinanceWorkInboxRead.Reference("bank-account", row.Id, FinanceWorkInboxRead.Name(row.DisplayName, row.Id)),

@@ -27,7 +27,7 @@ public sealed class FinanceBankAccountWorkPurposeSourceTests
         var answer=await source.ReadDecisionAsync(new(company.CompanyId,"SENTETIK-checker","SENTETIK",null),row.Id,default);Assert.NotNull(answer);
         Assert.Equal(!terminal,answer.Pending);Assert.Equal(row.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),answer.SourceVersion);
         var proof=Assert.IsType<WorkBankAccountProofV1>(answer.BankAccountProof);Assert.Equal((row.ProposedBy,at),(proof.ProposedBy,proof.ProposedAtUtc));Assert.Equal(terminal,proof.IsActive);Assert.Equal(terminal,proof.IsUsableForReceipt);
-        Assert.Equal("/finans/banka-hesaplari",answer.Item.Link);Assert.All(authority.Asked,p=>Assert.Equal(ErpPermissions.FinanceBankAccountApprove,p.Permission));
+        Assert.Equal($"/onaylarim/{FinanceBankAccountWorkInboxSourceV1.KindName}/{row.Id:D}",answer.Item.Link);Assert.All(authority.Asked,p=>Assert.Equal(ErpPermissions.FinanceBankAccountApprove,p.Permission));
         var wire=JsonSerializer.Serialize(answer,new JsonSerializerOptions(JsonSerializerDefaults.Web));
         foreach(var secret in new[]{"bankAccountProof",row.BankName,row.AccountNumber,row.Iban})Assert.DoesNotContain(secret,wire);
         Assert.Null(await source.ReadDecisionAsync(new(other,"SENTETIK-checker","SENTETIK",null),row.Id,default));
