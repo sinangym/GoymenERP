@@ -3,6 +3,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Work;
 using System.Text.Json;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
@@ -210,7 +211,7 @@ public sealed class ReversalProposalDecisionReadTests
     {
         private readonly string name = "receipt-reversal-read-" + Guid.NewGuid();
         public MutableCompany Company { get; } = new(); public User User { get; } = new(); public Permissions Permissions { get; } = new();
-        public AuditEventCollector Collector { get; } = new(); public ReceiptDraftRow Original { get; private set; } = null!;
+        public RecordingCollector Collector { get; } = new(); public ReceiptDraftRow Original { get; private set; } = null!;
         public ReversalProposalRow Proposal { get; private set; } = null!; public FinanceDbContext Database { get; private set; } = null!;
         public ReversalProposalService Core { get; private set; } = null!;
         public FinanceContext Context => new(ReversalProposalDecisionReadTests.Company, "checker", "SENTETIK-read", null);
@@ -225,10 +226,12 @@ public sealed class ReversalProposalDecisionReadTests
             fixture.Database = fixture.NewDatabase(); fixture.Core = fixture.Service(fixture.Database, fixture.Collector); return fixture;
         }
         public FinanceDbContext NewDatabase() => new(new DbContextOptionsBuilder<FinanceDbContext>().UseInMemoryDatabase(name).Options, Company);
-        public ReversalProposalService Service(FinanceDbContext db, AuditEventCollector collector) => new(db, Company, User, Permissions,
+        public ReversalProposalService Service(FinanceDbContext db, IAuditEventCollector collector) => new(db, Company, User, Permissions,
             new OpenPeriod(), new NoAllocations(), collector, new(new("propose", [], "Web"), new("approve", [], "Web")), TimeProvider.System);
         public ValueTask DisposeAsync() => Database.DisposeAsync();
     }
+    private sealed class RecordingCollector : IAuditEventCollector
+    { public List<AuditEventDraft> Pending { get; } = []; public void Enqueue(AuditEventDraft draft) => Pending.Add(draft); }
     private sealed class MutableCompany : ICompanyContext
     { public bool IsResolved => CompanyId != Guid.Empty; public Guid CompanyId { get; private set; } public void Set(Guid id) => CompanyId = id; }
     private sealed class User : ICurrentUser
