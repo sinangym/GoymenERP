@@ -264,14 +264,14 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
     {
         private readonly IServiceScope auditScope; private readonly AccountingDbContext other;
         public InventoryApprovalCompany Company { get; } = new(); public InventoryApprovalUser User { get; } = new(); public InventoryApprovalAuthority Authority { get; } = new();
-        public AccountingDbContext Db { get; } public IAuditEventCollector Collector { get; } public InventoryApprovalWriter Writer { get; }
+        public AccountingDbContext Db { get; } public AuditEventCollector Collector { get; } public InventoryApprovalWriter Writer { get; }
         public InventoryApprovalPlan Plan { get; } = new(); public InventoryApprovalCurrencies Currencies { get; } = new();
         public AccountingInventoryCostServiceV1 Service { get; } public string CorrelationId { get; } = "SENTETIK-inventory-approval-" + Guid.NewGuid().ToString("N");
         public InventoryApprovalSqlScope(Run run, IAccountingInventoryCostSourceReaderV1 reader, ISettingsPrerequisiteProvider profiles,
             InventoryApprovalSave? save = null, IInterceptor? extra = null, string? entryFault = null)
         {
             auditScope = run.Factory.Services.CreateScope(); auditScope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(AccountingInvoiceLineCogsSqlServerRelationalAcceptanceTests.Company);
-            Collector = auditScope.ServiceProvider.GetRequiredService<IAuditEventCollector>(); Writer = new(auditScope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>());
+            Collector = auditScope.ServiceProvider.GetRequiredService<AuditEventCollector>(); Writer = new(auditScope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>());
             var options = new DbContextOptionsBuilder<AccountingDbContext>().UseSqlServer(run.Factory.DatabaseConnectionString).AddInterceptors(new AuditSaveChangesInterceptor(Collector, Company));
             if (save is not null) options.AddInterceptors(save); if (extra is not null) options.AddInterceptors(extra); if (extra is InventoryApprovalCleanup cleanup) cleanup.Configure(options);
             Db = new(options.Options, Company); other = new(options.Options, Company);
