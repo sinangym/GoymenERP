@@ -41,7 +41,13 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkLogisticsCustomerReturnProofV1? LogisticsCustomerReturnProof = null,
     [property: JsonIgnore] WorkBankAccountIbanChangeProofV1? BankAccountIbanChangeProof = null,
     [property: JsonIgnore] WorkProductPackageStandardProofV1? ProductPackageStandardProof = null,
-    [property: JsonIgnore] WorkProductPriceListProofV1? ProductPriceListProof = null);
+    [property: JsonIgnore] WorkProductPriceListProofV1? ProductPriceListProof = null,
+    [property: JsonIgnore] WorkPartyCreditLimitProofV1? PartyCreditLimitProof = null);
+
+/// <summary>Existing Finance approval-only disclosure, released only by the authorized human purpose GET.</summary>
+public sealed record WorkPartyCreditLimitPreviewV1(Guid PartyId, Guid CompanyAccountId, string Kind,
+    Guid? CurrencyId, string? Amount, string BaseRevision, string CurrentRevision, string ProposedBy, DateTimeOffset ProposedAtUtc);
+public sealed record WorkPartyCreditLimitProofV1(Guid CompanyId, Guid ProposalId, WorkPartyCreditLimitPreviewV1 Proposal);
 
 /// <summary>Price-free owner identity/version/maker binding. Full price facts are released only by authorized human GET.</summary>
 public sealed record WorkProductPriceListProofV1(Guid CompanyId, Guid PriceListId, Guid VersionId, int VersionNo,

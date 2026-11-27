@@ -30,9 +30,10 @@ public sealed partial class FinanceCreditLimitSqlServerRelationalAcceptanceTests
             {
                 var staged = scope.Database.ChangeTracker.Entries<PartyCreditLimitRow>().Any(row => row.Entity.Id == id && row.Entity.Version == 2);
                 if (probe.Saved) savedReads++;
+                // Post-save, receipt pre/post-read and wrapper post-execute fences precede the fifth (precommit) read.
                 var phase = fault == "before-audit" ? staged && scope.Writer.HasPendingDrafts
                     : fault == "after-audit" ? staged && !scope.Writer.HasPendingDrafts
-                    : fault == "precommit" ? savedReads >= 3 : probe.Saved;
+                    : fault == "precommit" ? savedReads >= 5 : probe.Saved;
                 if (!deny || !phase) return PermissionDecision.Allowed;
                 observed = true;
                 if (fault == "actor") { scope.User.Actor = "SENTETIK-changed"; return PermissionDecision.Allowed; }

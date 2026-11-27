@@ -588,7 +588,7 @@ public sealed partial class FinancePartyCreditLimitService(
     }
 
     /// <summary>The canonical content of a command: its name and the exact contract JSON of the request.</summary>
-    internal static string PayloadHash<T>(string command, T request) =>
+    public static string PayloadHash<T>(string command, T request) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(command + "|" + JsonSerializer.Serialize(request, Json))))
             .ToLowerInvariant();
 
@@ -599,7 +599,7 @@ public sealed partial class FinancePartyCreditLimitService(
     /// surrounding space) that fits the column and is exactly a CLR decimal, so the Sales risk port can answer it
     /// without rounding. Leading zeros and trailing fractional zeros are kept as given (the value is exact).
     /// </summary>
-    internal static bool IsExactAmount(string? amount) =>
+    public static bool IsExactAmount(string? amount) =>
         amount is not null
         && amount.Length <= AmountMaximumLength
         && FinanceExactDecimalText.TryParsePositive(amount, out _)

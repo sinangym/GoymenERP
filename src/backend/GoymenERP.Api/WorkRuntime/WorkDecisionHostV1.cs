@@ -69,7 +69,8 @@ public sealed record WorkDecisionPreviewV1(Guid CompanyId, string Kind, Guid Ite
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? ApprovalSupported = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkBankAccountIbanChangePreviewV1? BankAccountIbanChange = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkProductPackageStandardPreviewV1? ProductPackageStandard = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkProductPriceListPreviewV1? ProductPriceList = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkProductPriceListPreviewV1? ProductPriceList = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkPartyCreditLimitPreviewV1? PartyCreditLimit = null);
 public sealed record WorkDecisionResultV1(Guid CompanyId, string Kind, Guid ItemId, string State, bool Replayed, string OriginalCorrelationId);
 public sealed class WorkDecisionException(int status, string? code = null, bool replayed = false, string? original = null) : Exception(code)
 {
@@ -137,7 +138,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
     IErpAuthorityRevalidationService authority, IEnumerable<IWorkInboxSourceV1> sources,
     IWorkDelegationReaderV1 delegations, WorkDecisionExecutionFenceV1 executionFence,
     IFinanceCashAccountMaster cash, IInventoryOpeningCostCommandV1 openingCost,
-    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null, IPurchaseGoodsReceiptBatchServiceV1? goodsReceiptBatches = null, ManufacturingCommandService? manufacturingPlans = null, IInventoryTransferReceiptCommandV1? inventoryTransferReceipts = null, ICounterpartyTaxIdentityService? counterpartyTaxIdentity = null, ICounterpartyLegalNameService? counterpartyLegalName = null, ILogisticsPlanExcessServiceV1? logisticsPlanExcess = null, ILogisticsWeighingDifferenceServiceV1? logisticsWeighingDifferences = null, IPurchaseSupplierReturnServiceV1? supplierReturns = null, IInventoryStockCountCommandV1? stockCounts = null, IFinanceBankAccountMaster? bankAccounts = null, IInventoryStockScrapCommandV1? stockScraps = null, ILogisticsInstructionService? logisticsInstructions = null, ILogisticsCustomerReturnServiceV1? logisticsCustomerReturns = null, IManualBankPaymentService? manualBankPayments = null, GoymenERP.Modules.Organization.Application.Contracts.IOrganizationService? bankAccountCompanies = null, IProductPackageStandardServiceV3? productPackageStandards = null, IProductPriceListServiceV1? productPriceLists = null)
+    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null, IPurchaseGoodsReceiptBatchServiceV1? goodsReceiptBatches = null, ManufacturingCommandService? manufacturingPlans = null, IInventoryTransferReceiptCommandV1? inventoryTransferReceipts = null, ICounterpartyTaxIdentityService? counterpartyTaxIdentity = null, ICounterpartyLegalNameService? counterpartyLegalName = null, ILogisticsPlanExcessServiceV1? logisticsPlanExcess = null, ILogisticsWeighingDifferenceServiceV1? logisticsWeighingDifferences = null, IPurchaseSupplierReturnServiceV1? supplierReturns = null, IInventoryStockCountCommandV1? stockCounts = null, IFinanceBankAccountMaster? bankAccounts = null, IInventoryStockScrapCommandV1? stockScraps = null, ILogisticsInstructionService? logisticsInstructions = null, ILogisticsCustomerReturnServiceV1? logisticsCustomerReturns = null, IManualBankPaymentService? manualBankPayments = null, GoymenERP.Modules.Organization.Application.Contracts.IOrganizationService? bankAccountCompanies = null, IProductPackageStandardServiceV3? productPackageStandards = null, IProductPriceListServiceV1? productPriceLists = null, IFinancePartyCreditLimitMaster? partyCreditLimits = null)
 {
     public const string ManualBankPayment = "finance.manual-bank-payment.v1";
     public const string LogisticsCustomerReturn = "logistics.customer-return.v1";
@@ -145,6 +146,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
     public const string InventoryStockScrap = "inventory.stock-scrap.v1";
     public const string InventoryStockCount = "inventory.stock-count.v1";
     public const string BankAccount = "finance.bank-account.v1";
+    public const string PartyCreditLimit = "finance.party-credit-limit.v1";
     public const string ProductPriceList = "product.price-list-version.v1";
     public const string ProductPackageStandard = "product.package-standard-version.v1";
     public const string BankAccountIbanChange = "finance.bank-account-iban-change.v1";
@@ -166,7 +168,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
     public const string PurchaseInvoiceVariance = "purchasing.incoming-invoice-variance.v1";
     public const string PurchaseServiceOrder = "purchasing.service-order.v1";
     public const string PurchaseOrder = "purchasing.order.v1";
-    public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([ProductPriceList, ProductPackageStandard, BankAccountIbanChange, ManualBankPayment, LogisticsCustomerReturn, LogisticsDispatchNote, InventoryStockScrap, InventoryStockCount, BankAccount, SupplierReturnCostException, LogisticsWeighingDifference, InventoryTransferOverage, LogisticsPlanExcess, CounterpartyTaxIdentity, CounterpartyLegalName, InventoryTransferLoss, OpeningCost, "finance.cash-account.v1",
+    public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([PartyCreditLimit, ProductPriceList, ProductPackageStandard, BankAccountIbanChange, ManualBankPayment, LogisticsCustomerReturn, LogisticsDispatchNote, InventoryStockScrap, InventoryStockCount, BankAccount, SupplierReturnCostException, LogisticsWeighingDifference, InventoryTransferOverage, LogisticsPlanExcess, CounterpartyTaxIdentity, CounterpartyLegalName, InventoryTransferLoss, OpeningCost, "finance.cash-account.v1",
         "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest, PurchaseOrder, PurchaseServiceOrder, PurchaseInvoiceVariance, PurchaseGoodsReceiptBatch, ManufacturingPlan, CreditAccount], StringComparer.Ordinal);
 
     private async Task RequireDecisionAuthorityAsync(string kind,string permission,Guid companyId,string actor,CancellationToken token)
@@ -211,7 +213,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         catch { await Fence(); throw new WorkDecisionException(503); }
         await Fence();
         if (snapshot is null) throw new WorkDecisionException(404);
-        if (kind == ManualBankPayment && (source.Module != "finance" || source.ApproverPermission != FinancePermissionNames.ManualBankPaymentApprove)
+        if (kind == PartyCreditLimit && (source.Module != "finance" || source.ApproverPermission != ErpPermissions.FinanceCreditLimitsApprove)
+            || kind == ManualBankPayment && (source.Module != "finance" || source.ApproverPermission != FinancePermissionNames.ManualBankPaymentApprove)
             || kind == LogisticsCustomerReturn && (source.Module != "logistics" || source.ApproverPermission != LogisticsPermissionManifestV1.CustomerReturnsDecision)
             || kind == LogisticsDispatchNote && (source.Module != "logistics" || source.ApproverPermission != LogisticsPermissionManifestV1.DispatchNotesApprove)
             || kind == InventoryStockScrap && (source.Module != "inventory" || source.ApproverPermission != InventoryPermissionManifestV1.StockScrapApprove)
@@ -243,6 +246,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || !ValidBankAccountProof(kind, snapshot)
             || !ValidBankIbanProof(kind, snapshot)
             || kind == ManualBankPayment && !ValidManualBankPaymentSnapshot(snapshot)
+            || !ValidPartyCreditLimitProof(kind, snapshot)
             || !ValidProductPriceListProof(kind, snapshot)
             || !ValidProductPackageProof(kind, snapshot)
             || !ValidSupplierReturnProof(kind, snapshot)
@@ -317,7 +321,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             kind == LogisticsDispatchNote ? snapshot.LogisticsDispatchNoteProof!.Note : null,
             kind == LogisticsCustomerReturn ? snapshot.LogisticsCustomerReturnProof!.Return : null,
             kind == LogisticsCustomerReturn ? snapshot.LogisticsCustomerReturnProof!.Return.QuantityUnit == "Kilogram" || snapshot.LogisticsCustomerReturnProof.Return.Weighing is not null : null,
-            ibanPreview, kind == ProductPackageStandard ? snapshot.ProductPackageStandardProof!.Table : null, priceListPreview);
+            ibanPreview, kind == ProductPackageStandard ? snapshot.ProductPackageStandardProof!.Table : null, priceListPreview,
+            kind == PartyCreditLimit ? snapshot.PartyCreditLimitProof!.Proposal : null);
     }
 
     public async Task<WorkDecisionResultV1> DecideAsync(string kind, Guid id, WorkDecisionRequestV1 request, string key, CancellationToken token)
@@ -331,7 +336,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         var snapshot = await SnapshotAsync(kind, id, token, request.InventoryTransferLoss?.RequestNumber, request.InventoryTransferOverage?.RequestNumber,
             kind is BankAccountIbanChange or ProductPriceList ? request.ExpectedVersion : null);
         if (user.UserId != actor) throw new WorkDecisionException(403);
-        if (request.ProductPackageStandard is not null && kind != ProductPackageStandard
+        if (kind == PartyCreditLimit && !ValidPartyCreditLimitRequest(request)
+            || request.ProductPackageStandard is not null && kind != ProductPackageStandard
             || kind == ProductPackageStandard && !ValidProductPackageRequest(request)
             || request.LogisticsCustomerReturn is not null && kind != LogisticsCustomerReturn
             || kind == LogisticsCustomerReturn && !ValidLogisticsCustomerReturnRequest(request)
@@ -382,6 +388,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         }
         if (!await Verify(token)) throw new WorkDecisionException(403);
         using var lease = executionFence.Enter(Verify);
+        if (kind == PartyCreditLimit)
+            return await DecidePartyCreditLimitAsync(id, request, key, snapshot, actor!, token);
         if (kind == ProductPriceList)
             return await DecideProductPriceListAsync(id, request, key, snapshot, actor!, token);
         if (kind == ProductPackageStandard)

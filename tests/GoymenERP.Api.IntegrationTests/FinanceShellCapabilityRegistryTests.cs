@@ -21,7 +21,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         "finance.cash-exchange-book-values.approve", "finance.cash-exchange-book-values.prepare",
         "finance.credits.approve", "finance.credits.propose", "finance.credits.workspace",
         "finance.official-sales-invoices.approve", "finance.official-sales-invoices.record", "finance.official-sales-invoices.withdraw",
-        "finance.party-balance-transfers.record",
+        "finance.party-balance-transfers.record", "finance.party-credit-limit.work-decision",
     ];
 
     [Fact]
@@ -36,6 +36,20 @@ public sealed class FinanceShellCapabilityRegistryTests
         Assert.Equal([FinancePartyBalanceTransferPermissionsV1.Record, FinancePermissionNames.PartyLedgerRead,
             FinancePermissionNames.PartyLedgerAmountRead], declaration.RequiredPermissions);
     }
+    [Fact]
+    public void The_staged_credit_limit_purpose_is_single_company_company_wide_approve_without_browse_read()
+    {
+        var provider = new FinanceShellCapabilityProvider();
+        var registry = new ShellCapabilityRegistry([provider],
+            new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision([provider])]));
+        var purpose = Assert.Single(registry.Registrations, row => row.Declaration.CapabilityId == FinanceShellCapabilityProvider.PartyCreditLimitWorkDecisionCapabilityId).Declaration;
+        Assert.False(purpose.ImplementationAvailable); Assert.Null(purpose.ParentCapabilityId);
+        Assert.Equal("/onaylarim/finance.party-credit-limit.v1/:approvalId", purpose.RoutePath);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, purpose.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, purpose.ScopeRequirement);
+        Assert.Equal([GoymenERP.BuildingBlocks.Security.ErpPermissions.FinanceCreditLimitsApprove], purpose.RequiredPermissions);
+    }
+
     [Fact]
     public void The_registry_accepts_the_Finance_provider_with_one_screen_per_route_and_the_approval_as_a_control()
     {
@@ -102,6 +116,7 @@ public sealed class FinanceShellCapabilityRegistryTests
                 ("finance.opening-balances.list", "F-23-OPENING-BALANCES", null),
                 ("finance.opening-balances.propose", "F-23-OPENING-BALANCES", "finance.opening-balances.list"),
                 ("finance.party-balance-transfers.record", "F-32-PARTY-BALANCE-TRANSFER", null),
+                ("finance.party-credit-limit.work-decision", "F-PARTY-CREDIT-LIMIT-WORK-DECISION", null),
                 ("finance.party-ledger.accounting", "M-03", null),
                 ("finance.party-ledger.cari", "C-04", null),
                 ("finance.receipts.detail", "F-02-DETAIL", null),
@@ -133,7 +148,7 @@ public sealed class FinanceShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(providers,
             new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistry.ComputeCandidateRevision(providers)]));
 
-        Assert.Equal(58, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
+        Assert.Equal(59, registry.Registrations.Count(registration => registration.Owner == FinanceShellCapabilityProvider.OwnerId));
     }
 
     [Fact]

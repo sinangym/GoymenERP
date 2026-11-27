@@ -14,7 +14,7 @@ namespace GoymenERP.Finance.UnitTests;
 /// own item). The rule numbers are the stored proposed amount, the stored current approved limit and their difference; the
 /// source refuses without the company-wide approve permission and writes nothing.
 /// </summary>
-public sealed class FinancePartyCreditLimitWorkInboxSourceV1Tests
+public sealed partial class FinancePartyCreditLimitWorkInboxSourceV1Tests
 {
     private static readonly Guid Company = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly Guid OtherCompany = Guid.Parse("22222222-2222-4222-8222-222222222222");

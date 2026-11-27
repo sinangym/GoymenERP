@@ -17,9 +17,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// approval).
 /// </para>
 /// </summary>
-internal sealed class FinancePartyCreditLimitWorkInboxSourceV1(
+internal sealed partial class FinancePartyCreditLimitWorkInboxSourceV1(
     FinanceDbContext dbContext,
-    FinanceWorkInboxFence fence) : IWorkInboxSourceV1
+    FinanceWorkInboxFence fence) : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "finance";
     public const string KindName = "finance.party-credit-limit.v1";

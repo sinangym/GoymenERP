@@ -89,7 +89,15 @@ public sealed record PartyCreditLimitListItem(PartyCreditLimitAccountView Accoun
 public sealed record PartyCreditLimitListPage(Guid CompanyId, IReadOnlyList<PartyCreditLimitListItem> Items);
 
 public sealed record PartyCreditLimitCommandResult(CommandOutcome Outcome, PartyCreditLimitRecordView? Resource,
-    bool IsReplay, string OriginalCorrelationId, IReadOnlyList<ValidationIssue> Issues);
+    bool IsReplay, string OriginalCorrelationId, IReadOnlyList<ValidationIssue> Issues)
+{
+    [JsonIgnore] public PartyCreditLimitDecisionReceiptV1? DecisionReceipt { get; init; }
+}
+
+/// <summary>Owner-internal proof from the immutable native command result; never part of HTTP/AI JSON.</summary>
+public sealed record PartyCreditLimitDecisionReceiptV1(Guid CompanyId, Guid ProposalId, string CommandName,
+    string IdempotencyKeyHash, string PayloadHash, string ActorId, string ExpectedVersion, string ResultVersion,
+    string OriginalCorrelationId, DateTimeOffset RecordedAtUtc);
 
 // Settings' money currency candidates as given: no default, an empty list is "no candidates".
 public sealed record PartyCreditLimitCurrencyCandidate(Guid CurrencyId, string Code, string DisplayLabel);

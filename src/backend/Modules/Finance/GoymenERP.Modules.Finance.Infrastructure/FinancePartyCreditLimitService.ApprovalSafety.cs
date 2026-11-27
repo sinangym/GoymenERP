@@ -42,6 +42,8 @@ public sealed partial class FinancePartyCreditLimitService
                 var result = await execute(token);
                 if (result.Outcome is CommandOutcome.Denied or CommandOutcome.Unavailable)
                     throw new DecisionRefusal(result);
+                if (result.Outcome == CommandOutcome.Succeeded)
+                    result = result with { DecisionReceipt = await ReadDecisionReceiptAsync(context, metadata, proposalId, command, result, token) };
                 await RequireFence();
                 RequireFlushed();
                 if (result.Outcome == CommandOutcome.Succeeded && !result.IsReplay && !state.Saved)
