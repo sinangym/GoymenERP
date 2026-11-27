@@ -1,5 +1,6 @@
 using System.Data;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Application.Contracts;
@@ -63,6 +64,48 @@ public sealed partial class AccountingPostingAccountMappingLifecycleV1Tests
         using var cancellation = new CancellationTokenSource(); cancellation.Cancel(); var calls = 0;
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => store.RunActivationAsync(_ => { calls++; throw new InvalidOperationException(); }, _ => { calls++; return Task.CompletedTask; }, cancellation.Token));
         Assert.Equal(0, calls); Assert.Equal(0, writer.Discards); Assert.False(db.ChangeTracker.HasChanges());
+    }
+
+    [Theory]
+    [InlineData("company")] [InlineData("actor")] [InlineData("member")] [InlineData("permission")] [InlineData("cancel")]
+    public async Task Mapping_activation_captures_context_before_first_authority_await_and_preserves_entry_on_drift(string fault)
+    {
+        var companyId = Guid.NewGuid(); var company = new MappingEntryCompany(companyId); var user = new MappingEntryUser(companyId);
+        await using var db = new AccountingDbContext(new DbContextOptionsBuilder<AccountingDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options, company);
+        var collector = new MappingEntryCollector(); var writer = new MappingEntryWriter(collector);
+        var core = new AccountingStore(db, company, collector, TimeProvider.System, null!, normalApprovalAuditWriter: writer);
+        var store = new AccountingPostingAccountMappingStoreV1(db, new(db, company, collector, TimeProvider.System), company, collector, TimeProvider.System, core);
+        using var cancellation = new CancellationTokenSource(); var calls = 0;
+        var authority = new MappingEntryAuthority(() =>
+        {
+            calls++;
+            if (fault == "company") company.Set(Guid.NewGuid());
+            if (fault == "actor") user.Actor = Checker;
+            if (fault == "member") user.Member = false;
+            if (fault == "cancel") cancellation.Cancel();
+            return fault != "permission";
+        });
+        var service = new AccountingPostingAccountMappingServiceV1(store, core, authority, company, user, new FixedCorrelation("SENTETIK-captured"), TimeProvider.System);
+        if (fault == "cancel") await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.ActivateAsync(1, new(1, 0), "capture", cancellation.Token));
+        else
+        {
+            var result = await service.ActivateAsync(1, new(1, 0), "capture");
+            Assert.Equal(AccountingApiStatus.Denied, result.Status); Assert.Equal(AccountingApiCodes.AuthorityDenied, result.Code); Assert.Null(result.Resource);
+        }
+        Assert.Equal(1, calls); Assert.Equal(0, writer.Writes); Assert.Equal(0, writer.Discards);
+        Assert.False(db.ChangeTracker.HasChanges()); Assert.Null(db.Database.CurrentTransaction);
+    }
+
+    private sealed class MappingEntryCompany(Guid company) : ICompanyContext
+    { public bool IsResolved => CompanyId != Guid.Empty; public Guid CompanyId { get; private set; } = company; public void Set(Guid value) => CompanyId = value; }
+    private sealed class MappingEntryUser(Guid company) : ICurrentUser
+    {
+        public Guid Actor = Preparer; public bool Member = true; public bool IsAuthenticated => true; public string UserId => Actor.ToString("D");
+        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { company }; public bool CanAccessCompany(Guid value) => Member && value == company;
+    }
+    private sealed class MappingEntryAuthority(Func<bool> read) : IErpAuthorityRevalidationService
+    {
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid company, CancellationToken token = default) => Task.FromResult(Scope(read()));
     }
 
     // The existing in-memory Book remains an explicit algorithm/hash/refusal protocol fixture.
