@@ -1334,7 +1334,8 @@ it.each(reversalKinds)('keeps amount, full source references and optional POS sh
  const value=reversalPreview(k,company,id)
  for(const references of [[...value.references.slice(1),value.references[1]],value.references.map((ref,index)=>index===0?{...ref,link:'/onaylarim/foreign'}:ref),value.references.map((ref,index)=>index===2?{...ref,recordId:id}:ref)])expect(decodeWorkDecisionPreview({...value,references},company,k,id)).toBeNull()
  if(k===reversalKinds[1]){
-  const human=value.manualReceiptReversal!
+  if (!('manualReceiptReversal' in value)) throw new Error('Receipt fixture must retain its own human shape')
+  const human=value.manualReceiptReversal
   expect(decodeWorkDecisionPreview({...value,manualReceiptReversal:{...human,originalReceipt:{...human.originalReceipt,posCommissionAmountText:null}}},company,k,id)).toBeNull()
   expect(decodeWorkDecisionPreview({...value,manualReceiptReversal:{...human,originalReceipt:{...human.originalReceipt,posCommissionAmountText:null,posBankNetAmountText:null,posCommissionBearer:null}}},company,k,id)).not.toBeNull()
  }
