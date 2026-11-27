@@ -4,12 +4,12 @@ import { hasExactKeys } from '../finance/wireShape'
 import { transferDispatchUtc } from '../inventory/transferDispatchApi'
 import { catalogVersion, catalogIncrementable } from './workApprovedSourceCatalogDecision'
 
-// Candidate only: the server and shell publish this purpose together after source review.
-export const STAGED_POSTING_MAPPING_PURPOSE = {
+// The paired Work purpose preserves the native mapping activation authority and identity.
+export const POSTING_MAPPING_PURPOSE = {
   kind:'accounting.posting-mapping.v1', capabilityId:'accounting.posting-mapping.work-decision',
   routePath:'/onaylarim/accounting.posting-mapping.v1/:approvalId',
 } as const
-export const POSTING_MAPPING_KIND = STAGED_POSTING_MAPPING_PURPOSE.kind
+export const POSTING_MAPPING_KIND = POSTING_MAPPING_PURPOSE.kind
 export type WorkPostingMapping = Omit<PostingMapping,'mappingVersion'|'version'> & {readonly mappingVersion:string;readonly version:string}
 export interface WorkMappingPlanReference {readonly sourceVersion:string;readonly sourceSha256:string}
 export interface WorkMappingAccount {readonly accountId:string;readonly code:string;readonly name:string}

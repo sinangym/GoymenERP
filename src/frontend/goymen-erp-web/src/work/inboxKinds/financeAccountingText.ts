@@ -7,6 +7,7 @@
 import type { WorkInboxModuleText } from './textTypes'
 
 export const FINANCE_ACCOUNTING_KIND_TEXT: Readonly<Record<string, string>> = {
+  'accounting.posting-mapping.v1': 'Muhasebe hesap eşlemesi',
   'finance.official-sales-invoice.v1': 'Resmî satış faturası onayı',
   'finance.manual-bank-payment-reversal.v1': 'Banka ödemesi ters kaydı',
   'finance.manual-receipt-reversal.v1': 'Tahsilat ters kaydı',
@@ -38,6 +39,7 @@ export const FINANCE_ACCOUNTING_KIND_TEXT: Readonly<Record<string, string>> = {
 }
 
 export const FINANCE_ACCOUNTING_RULE_TEXT: Readonly<Record<string, string>> = {
+  'accounting.posting-mapping-activation-required': 'Muhasebe hesap eşlemesi etkinleştirme onayı bekliyor',
   'accounting.approved-source-catalog-activation-required': 'Muhasebe kaynak paketi etkinleştirme onayı bekliyor',
   'finance.official-sales-invoice-approval-required': 'Resmî satış faturası kaydı, kaydedenden farklı bir kişinin onayını bekliyor',
   'finance.manual-bank-payment-reversal-approval-required': 'Banka ödemesinin ters kaydı, önerenden farklı bir kişinin onayını bekliyor',
@@ -76,6 +78,7 @@ export const FINANCE_ACCOUNTING_RULE_TEXT: Readonly<Record<string, string>> = {
 }
 
 export const FINANCE_ACCOUNTING_ROLE_TEXT: Readonly<Record<string, string>> = {
+  'posting-account-mapping-version': 'Muhasebe hesap eşleme sürümü',
   'approved-source-catalog-package': 'Muhasebe kaynak paketi',
   'cash-account': 'Kasa hesabı',
   'cash-transfer': 'Kasa/banka aktarımı',
@@ -105,6 +108,7 @@ export const FINANCE_ACCOUNTING_ROLE_TEXT: Readonly<Record<string, string>> = {
 }
 
 export const FINANCE_ACCOUNTING_PERMISSION_TEXT: Readonly<Record<string, string>> = {
+  'accounting.posting-mappings.activate': 'Muhasebe hesap eşleme etkinleştirme',
   'accounting.approved-source-catalog.activate': 'Muhasebe kaynak paketi etkinleştirme',
   'finance.official-sales-invoices.approve': 'Resmî satış faturası onayı',
   'finance.manual-bank-payment.reverse.approve': 'Banka ödemesi ters kayıt onayı',

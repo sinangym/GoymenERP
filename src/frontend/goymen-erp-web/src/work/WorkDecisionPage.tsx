@@ -1,4 +1,4 @@
-import { POSTING_MAPPING_KIND, STAGED_POSTING_MAPPING_PURPOSE, mappingIncrementable, mappingVersion } from './workPostingAccountMappingDecision'
+import { POSTING_MAPPING_KIND, POSTING_MAPPING_PURPOSE, mappingIncrementable, mappingVersion } from './workPostingAccountMappingDecision'
 import { WorkPostingAccountMappingFacts } from './WorkPostingAccountMappingFacts'
 import { WORK_MAPPING_TEXT as MAPPING } from './workPostingAccountMappingText'
 import { APPROVED_SOURCE_CATALOG_KIND, APPROVED_SOURCE_CATALOG_PURPOSE, catalogIncrementable } from './workApprovedSourceCatalogDecision'
@@ -101,7 +101,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const officialSales = kind === 'finance.official-sales-invoice.v1'
   const nativeFinance = isNativeFinanceDecisionKind(kind)
   const mapping = kind === POSTING_MAPPING_KIND
-  const mappingAllowed = !mapping || hasCapability(shell,STAGED_POSTING_MAPPING_PURPOSE.capabilityId)
+  const mappingAllowed = !mapping || hasCapability(shell,POSTING_MAPPING_PURPOSE.capabilityId)
   const catalog = kind === APPROVED_SOURCE_CATALOG_KIND
   const catalogAllowed = !catalog || hasCapability(shell,APPROVED_SOURCE_CATALOG_PURPOSE.capabilityId)
   const journalReversal = kind === JOURNAL_REVERSAL_WORK_KIND

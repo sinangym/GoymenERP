@@ -10,18 +10,18 @@ import { COMPANY_A, COMPANY_B, IDENTITY, installFetch, json, problem } from '../
 import { WorkDecisionPage } from './WorkDecisionPage'
 import { WORK_DECISION_TEXT as T } from './workDecisionText'
 import { WORK_MAPPING_TEXT as C } from './workPostingAccountMappingText'
-import { STAGED_POSTING_MAPPING_PURPOSE as staged } from './workPostingAccountMappingDecision'
+import { POSTING_MAPPING_PURPOSE as staged } from './workPostingAccountMappingDecision'
 import { postingMappingFixture as fixture } from './postingAccountMappingDecisionFixture'
 import { workRoutes } from './workRoutes'
 const nativeId='9007199254740993',id=fixture(COMPANY_A,nativeId).itemId,kind=staged.kind,cap=staged.capabilityId,path=`/work/decisions/${kind}/${id}`
 afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks();sessionStorage.clear();Object.assign(IDENTITY,{authenticationSessionBinding:null})})
-// Candidate harness uses the real shell entry gate; public routes remain unchanged until paired publication.
+// The real shell entry gate is retained alongside the exact paired-route assertions.
 function mount(client = new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})) {
   const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[{path:staged.routePath.slice(1),
     element:<CapabilityRoute capability={[cap]}><WorkDecisionPage kind={kind}/></CapabilityRoute>}]}],{initialEntries:[staged.routePath.replace(':approvalId',id)]})
   render(<ShellProvider queryClient={client}><RouterProvider router={router}/></ShellProvider>);return {router,client}
 }
-describe('staged Work posting mapping purpose',()=>{
+describe('paired Work posting mapping purpose',()=>{
   it('shows full historical rows and separate current plan before approve-only action without general reads',async()=>{
     const value=fixture(COMPANY_A,nativeId)
     const calls=installFetch({capabilities:[cap],respond:(url,init)=>url.includes(path)?init?.method==='POST'?
@@ -38,8 +38,8 @@ describe('staged Work posting mapping purpose',()=>{
     fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done)
     expect(calls.filter(c=>c.method==='POST').map(c=>c.body)).toEqual([{expectedVersion:'1',approve:true,reason:null,delegationId:null,postingAccountMappingSelection:{expectedActiveMappingVersion:'0'}}])
     expect(calls.some(c=>c.url.includes('/accounting/'))).toBe(false);expect(screen.queryByRole('region',{name:C.title})).toBeNull()
-    expect(workRoutes.filter(r=>r.path?.startsWith('onaylarim/')&&r.path.endsWith('/:approvalId')&&r.path!=='onaylarim/:kind/:approvalId')).toHaveLength(46)
-    expect(workRoutes.some(r=>r.path===staged.routePath.slice(1))).toBe(false)
+    expect(workRoutes.filter(r=>r.path?.startsWith('onaylarim/')&&r.path.endsWith('/:approvalId')&&r.path!=='onaylarim/:kind/:approvalId')).toHaveLength(47)
+    expect(workRoutes.some(r=>r.path===staged.routePath.slice(1))).toBe(true)
   })
   it('restores only the original two versions/body/key after unknown remount, without current GET or human data in storage',async()=>{
     Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK mapping original session'});let posts=0

@@ -38,7 +38,7 @@ describe('WP5 Finance and Accounting inbox kinds', () => {
       else expect(WORK_INBOX_CAPABILITIES).toContain(entry.capability)
     }
     expect(FINANCE_INBOX_KINDS).toHaveLength(18)
-    expect(ACCOUNTING_INBOX_KINDS).toHaveLength(11)
+    expect(ACCOUNTING_INBOX_KINDS).toHaveLength(12)
     expect(inboxModuleText('accounting')).toBe('Muhasebe')
   })
 

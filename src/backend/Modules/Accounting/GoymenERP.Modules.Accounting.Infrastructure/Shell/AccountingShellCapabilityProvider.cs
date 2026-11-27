@@ -50,8 +50,9 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     /// <para>1.12 (WP8): a standalone normal journal approval-purpose route, without general draft read access.</para>
     /// <para>1.13 (WP8): standalone period opening and reopening purpose routes under their native approval permissions.</para>
     /// <para>1.14 (WP8): the native journal reversal approval gains its paired standalone Work purpose route.</para>
+    /// <para>1.15/1.16 (WP8): standalone catalog and account mapping decisions use their existing activation permissions.</para>
     /// </summary>
-    public const string OwnerContractVersion = "1.15";
+    public const string OwnerContractVersion = "1.16";
 
     public const string InvoicedShipmentPrepareCapabilityId = "accounting.invoiced-shipment-costs.prepare";
     public const string InvoicedShipmentPrepareRoutePath = "/muhasebe/sevk-smm-hazirla";
@@ -134,6 +135,10 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     public const string NormalDraftApproveRouteId = "accounting.normal-journal-drafts.approve";
     public const string NormalDraftApproveRoutePath = "/muhasebe/normal-fis-onay/:draftId";
     public const string NormalDraftWorkDecisionCapabilityId = "accounting.normal-journal-draft.work-decision";
+    public const string PostingMappingWorkDecisionCapabilityId = "accounting.posting-mapping.work-decision";
+    public const string PostingMappingWorkDecisionRouteId = "accounting-posting-mapping-work-decision";
+    public const string PostingMappingWorkDecisionRoutePath = "/onaylarim/accounting.posting-mapping.v1/:approvalId";
+    public const string PostingMappingWorkDecisionScreenId = "M-POSTING-MAPPING-WORK-DECISION";
     public const string ApprovedSourceCatalogWorkDecisionCapabilityId = "accounting.approved-source-catalog.work-decision";
     public const string ApprovedSourceCatalogWorkDecisionRouteId = "accounting-approved-source-catalog-work-decision";
     public const string ApprovedSourceCatalogWorkDecisionRoutePath = "/onaylarim/accounting.approved-source-catalog.v1/:approvalId";
@@ -260,6 +265,9 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
             Declaration(NormalDraftWorkDecisionCapabilityId, NormalDraftWorkDecisionRouteId, NormalDraftWorkDecisionRoutePath,
                 NormalDraftWorkDecisionScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
                 [NormalJournalPermissionNamesV1.DraftApprove], available: true),
+            Declaration(PostingMappingWorkDecisionCapabilityId, PostingMappingWorkDecisionRouteId, PostingMappingWorkDecisionRoutePath,
+                PostingMappingWorkDecisionScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                [AccountingPostingAccountMappingPermissionNamesV1.Activate], available: true),
             Declaration(ApprovedSourceCatalogWorkDecisionCapabilityId, ApprovedSourceCatalogWorkDecisionRouteId, ApprovedSourceCatalogWorkDecisionRoutePath,
                 ApprovedSourceCatalogWorkDecisionScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
                 [ApprovedAccountingSourceCatalogPermissionNamesV1.Activate], available: true),

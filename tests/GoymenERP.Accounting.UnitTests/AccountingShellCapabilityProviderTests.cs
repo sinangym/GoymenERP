@@ -17,12 +17,13 @@ public sealed class AccountingShellCapabilityProviderTests
     {
         var declarations = new AccountingShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(35, declarations.Count);
+        Assert.Equal(36, declarations.Count);
         // ACC-V0c published what acc01 walked; the ACC-V1 reversal slice adds the journal DETAIL and M-06, whose real
         // read routes exist and which acc01 ACC01-09 walks over the synthetic posted-journal fixture.
         Assert.Equal(
             [
                 AccountingShellCapabilityProvider.ApprovedSourceCatalogWorkDecisionCapabilityId,
+                AccountingShellCapabilityProvider.PostingMappingWorkDecisionCapabilityId,
                 AccountingShellCapabilityProvider.JournalReversalWorkDecisionCapabilityId,
                 AccountingShellCapabilityProvider.JournalDetailCapabilityId,
                 AccountingShellCapabilityProvider.JournalListCapabilityId,
@@ -77,7 +78,7 @@ public sealed class AccountingShellCapabilityProviderTests
 
         // 1.3: the reversal slice changed the declaration set (detail and M-06 published, reversal actions declared staged).
         // 1.4: FIN-S16 declares the staged M-05 account plan route.
-        Assert.Equal(("ACCOUNTING", "1.15"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(("ACCOUNTING", "1.16"), (provider.Owner, provider.ContractVersion));
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("accounting.invoiced-shipment-costs.prepare", "accounting.invoiced-shipment-costs.prepare", "/muhasebe/sevk-smm-hazirla",
@@ -136,6 +137,8 @@ public sealed class AccountingShellCapabilityProviderTests
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [NormalJournalPermissionNamesV1.DraftApprove]),
             ("accounting.normal-journal-draft.work-decision", "accounting-normal-journal-draft-work-decision", "/onaylarim/accounting.normal-journal-draft.v1/:approvalId", "M-NORMAL-JOURNAL-DRAFT-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [NormalJournalPermissionNamesV1.DraftApprove]),
+            ("accounting.posting-mapping.work-decision", "accounting-posting-mapping-work-decision", "/onaylarim/accounting.posting-mapping.v1/:approvalId", "M-POSTING-MAPPING-WORK-DECISION",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [AccountingPostingAccountMappingPermissionNamesV1.Activate]),
             ("accounting.approved-source-catalog.work-decision", "accounting-approved-source-catalog-work-decision", "/onaylarim/accounting.approved-source-catalog.v1/:approvalId", "M-APPROVED-SOURCE-CATALOG-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ApprovedAccountingSourceCatalogPermissionNamesV1.Activate]),
             ("accounting.period-opening.work-decision", "accounting-period-opening-work-decision", "/onaylarim/accounting.period-opening.v1/:approvalId", "M-PERIOD-OPENING-WORK-DECISION",
@@ -254,6 +257,7 @@ public sealed class AccountingShellCapabilityProviderTests
     [InlineData("accounting.period-reopening.work-decision", AccountingPermissionManifestV1.PeriodsReopen)]
     [InlineData("accounting.journal-reversal.work-decision", AccountingJournalReversalPermissionNamesV1.Approve)]
     [InlineData("accounting.approved-source-catalog.work-decision", ApprovedAccountingSourceCatalogPermissionNamesV1.Activate)]
+    [InlineData("accounting.posting-mapping.work-decision", AccountingPostingAccountMappingPermissionNamesV1.Activate)]
     public void Work_approval_routes_are_standalone_and_do_not_require_general_period_read(string capability, string permission)
     {
         var route = Assert.Single(new AccountingShellCapabilityProvider().GetDeclarations(), x => x.CapabilityId == capability);
@@ -268,7 +272,7 @@ public sealed class AccountingShellCapabilityProviderTests
     {
         var routes = new AccountingShellCapabilityProvider().GetDeclarations().Where(item => item.ParentCapabilityId is null).ToArray();
 
-        Assert.Equal(["M-01", "M-01-COST-APPROVE", "M-01-COST-PREPARE", "M-04", "M-04-APPROVE", "M-04-DETAIL", "M-04-DRAFT", "M-04-INVOICEDSHIPMENTAPPROVE", "M-04-INVOICEDSHIPMENTPREPARE", "M-04-INVOICEDSHIPMENTREVERSE", "M-04-INVOICEDSHIPMENTREVERSEAPPROVE", "M-04-LINE-COGS-APPROVE", "M-04-LINE-COGS-PREPARE", "M-04-NEW", "M-04-PURCHASECOSTAPPROVE", "M-04-PURCHASECOSTPREPARE", "M-04-REVERSAL-APPROVE", "M-04-SOURCE", "M-05", "M-05-COGS-MAPPING", "M-06", "M-07", "M-07-NEW", "M-APPROVED-SOURCE-CATALOG-WORK-DECISION", "M-JOURNAL-REVERSAL-WORK-DECISION", "M-NORMAL-JOURNAL-DRAFT-WORK-DECISION", "M-PERIOD-OPENING-WORK-DECISION", "M-PERIOD-REOPENING-WORK-DECISION"], routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
+        Assert.Equal(["M-01", "M-01-COST-APPROVE", "M-01-COST-PREPARE", "M-04", "M-04-APPROVE", "M-04-DETAIL", "M-04-DRAFT", "M-04-INVOICEDSHIPMENTAPPROVE", "M-04-INVOICEDSHIPMENTPREPARE", "M-04-INVOICEDSHIPMENTREVERSE", "M-04-INVOICEDSHIPMENTREVERSEAPPROVE", "M-04-LINE-COGS-APPROVE", "M-04-LINE-COGS-PREPARE", "M-04-NEW", "M-04-PURCHASECOSTAPPROVE", "M-04-PURCHASECOSTPREPARE", "M-04-REVERSAL-APPROVE", "M-04-SOURCE", "M-05", "M-05-COGS-MAPPING", "M-06", "M-07", "M-07-NEW", "M-APPROVED-SOURCE-CATALOG-WORK-DECISION", "M-JOURNAL-REVERSAL-WORK-DECISION", "M-NORMAL-JOURNAL-DRAFT-WORK-DECISION", "M-PERIOD-OPENING-WORK-DECISION", "M-PERIOD-REOPENING-WORK-DECISION", "M-POSTING-MAPPING-WORK-DECISION"], routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
 
     [Fact]

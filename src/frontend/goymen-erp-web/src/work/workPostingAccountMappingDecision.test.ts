@@ -19,11 +19,11 @@ describe('staged native posting mapping purpose',()=>{
   const bad=fault==='bad'?id+'\n':fault==='prefix'?'bc52'+id.slice(4):fault==='version'?id.slice(0,14)+'4'+id.slice(15):fault==='variant'?id.slice(0,19)+'9'+id.slice(20):fault==='tail'?id.slice(0,-1)+'1':fault==='zero'?'ac520000-0000-8000-8000-000000000000':'ac528000-0000-8000-8000-000000000000'
   expect(postingMappingNativeId(bad)).toBeNull()
  })
- it('retains all seven details, twelve native headers/eight row fields and the independent current plan without publishing',()=>{
+ it('retains all seven details, twelve native headers/eight row fields and the independent current plan with its paired purpose',()=>{
   const v=fixture(company),id=v.itemId
   expect(decodeWorkDecisionPreview(v,company,kind,id)?.postingAccountMapping).toEqual(v.postingAccountMapping)
   expect(Object.keys(v.postingAccountMapping)).toHaveLength(7);expect(Object.keys(v.postingAccountMapping.mapping)).toHaveLength(12);expect(Object.keys(v.postingAccountMapping.mapping.rows[0]!)).toHaveLength(8)
-  expect(isWorkDecisionKind(kind)).toBe(true);expect(WORK_DECISION_KINDS).toHaveLength(46);expect(WORK_DECISION_KINDS.some(k=>String(k)===kind)).toBe(false)
+  expect(isWorkDecisionKind(kind)).toBe(true);expect(WORK_DECISION_KINDS).toHaveLength(47);expect(WORK_DECISION_KINDS.filter(k=>k===kind)).toEqual([kind])
   expect(decodeWorkDecisionPreview(v,company.toUpperCase(),kind,id.toUpperCase())).not.toBeNull()
   expect(v.postingAccountMapping.currentActiveAccountPlan.accounts[0]!.accountId).not.toBe(v.postingAccountMapping.mapping.rows[0]!.accountId)
  })
