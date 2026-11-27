@@ -159,7 +159,9 @@ describe('shell ↔ Manufacturing lane capability ids', () => {
 
 
 it('mounts the staged Manufacturing purpose independently from native browse routes', () => {
- const capability=MANUFACTURING_CAPABILITY.planWorkDecision
+ const capability='manufacturing.plans.work-decision'
+ // Exact native ManufacturingShellCapabilityProvider.PlanWorkDecisionCapabilityId, independent of kind naming.
+ expect(MANUFACTURING_CAPABILITY.planWorkDecision).toBe(capability)
  expect(CAPABILITY.manufacturingPlanWorkDecision).toBe(capability)
  expect(CAPABILITY_ROUTE[capability]).toBe(MANUFACTURING_ROUTE[capability])
  expect(CAPABILITY_NAV_LABEL[capability]).toBe('')

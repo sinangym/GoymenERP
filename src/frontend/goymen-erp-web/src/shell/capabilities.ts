@@ -195,7 +195,7 @@ export const CAPABILITY = {
    */
   manufacturingOrdersDetail: 'manufacturing.orders.detail',
   /** Create a Draft plan. Route `/uretim/plan/yeni`; reached from the order list under K5. */
-  manufacturingPlanWorkDecision: 'manufacturing.plan.work-decision',
+  manufacturingPlanWorkDecision: 'manufacturing.plans.work-decision',
   manufacturingPlansCreate: 'manufacturing.plans.create',
   /** Reopen one stored plan. Route `/uretim/plan/:planId`; reached after create or by record link. */
   manufacturingPlansDetail: 'manufacturing.plans.detail',

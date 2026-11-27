@@ -35,7 +35,7 @@ const WORK_INBOX_ROUTE_CAPABILITIES: readonly string[] = [...new Set([...WORK_AP
 export const workRoutes: RouteObject[] = [
   { path: WORK_MANAGEMENT_ROUTE.slice(1), element: <CapabilityRoute capability={WORK_MANAGEMENT_CAPABILITIES}><WorkManagementPage /></CapabilityRoute> },
   ...WORK_DECISION_KINDS.map(kind => ({ path: `onaylarim/${kind}/:approvalId`,
-    element: <CapabilityRoute capability={[kind === 'purchasing.incoming-invoice-variance.v1' ? 'purchasing.invoice-variance.work-decision' : kind.replace('.v1', '.work-decision')]}><WorkDecisionPage kind={kind} /></CapabilityRoute> })),
+    element: <CapabilityRoute capability={[kind === 'manufacturing.plan.v1' ? 'manufacturing.plans.work-decision' : kind === 'purchasing.incoming-invoice-variance.v1' ? 'purchasing.invoice-variance.work-decision' : kind.replace('.v1', '.work-decision')]}><WorkDecisionPage kind={kind} /></CapabilityRoute> })),
   // Personal recipient-only inbox; backend refreshes active membership and accepts no recipient override.
   { path: NOTIFICATIONS_ROUTE.slice(1), element: <NotificationsPage /> },
   // W1-C "Bana atanan": own tasks only; the server accepts no assignee override. WP9: behind Work's own `work.tasks.mine`

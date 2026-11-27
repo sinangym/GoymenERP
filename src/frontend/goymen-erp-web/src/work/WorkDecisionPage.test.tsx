@@ -499,7 +499,7 @@ describe('WP8 native goods receipt batch purpose',()=>{
 })
 
 
-const mfgKind='manufacturing.plan.v1', mfgCap='manufacturing.plan.work-decision'
+const mfgKind='manufacturing.plan.v1', mfgCap='manufacturing.plans.work-decision'
 const labels=['aaaaaaaa-0000-4000-8000-000000000071','aaaaaaaa-0000-4000-8000-000000000072']
 const mfgPreview={...preview,kind:mfgKind,documentLabel:'SENTETIK üretim planı',rejectionSupported:false,
  rules:[{ruleCode:'manufacturing.plan-reapproval-after-order-cancel',threshold:null,actual:null,deviation:null,unit:null}],
@@ -559,8 +559,8 @@ it.each(['closed','changed-options','initial-approval'] as const)('replays the o
  expect(Object.hasOwn(sent[0]!.body as object,'manufacturingPlanReapproval')).toBe(scenario!=='initial-approval')
 })
 
-it('does not fetch the Manufacturing owner with only native browse/control capabilities', async () => {
- const calls=installFetch({capabilities:['manufacturing.plans.detail','manufacturing.plans.approve'],respond:url=>url.includes(`/work/decisions/${mfgKind}/`)?json(mfgPreview):undefined})
+it.each([{capabilities:['manufacturing.plans.detail','manufacturing.plans.approve']}, {capabilities:['manufacturing.plan.work-decision']}])('does not fetch the Manufacturing owner with native browse/control or an invented singular capability %j', async ({capabilities}) => {
+ const calls=installFetch({capabilities,respond:url=>url.includes(`/work/decisions/${mfgKind}/`)?json(mfgPreview):undefined})
  mount(`/onaylarim/${mfgKind}/${id}`)
  await waitFor(()=>expect(calls.some(call=>call.url.endsWith('/shell/capabilities'))).toBe(true))
  expect(calls.some(call=>call.url.includes(`/work/decisions/${mfgKind}/`))).toBe(false)

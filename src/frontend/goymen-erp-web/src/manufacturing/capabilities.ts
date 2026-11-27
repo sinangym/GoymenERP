@@ -82,7 +82,7 @@ export const MANUFACTURING_CAPABILITY = {
   /** URT-D32/D77: enabled once the real enlisted Inventory cost-generation participant is connected. */
   orderReopen: 'manufacturing.orders.reopen',
   /** Create a Draft plan from authorized work-center and Inventory candidate reads. */
-  planWorkDecision: 'manufacturing.plan.work-decision',
+  planWorkDecision: 'manufacturing.plans.work-decision',
   planCreate: 'manufacturing.plans.create',
   /** Reopen one stored plan through `manufacturing.plans.read`. */
   planDetail: 'manufacturing.plans.detail',
