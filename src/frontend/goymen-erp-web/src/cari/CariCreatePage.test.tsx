@@ -1025,7 +1025,8 @@ it('keeps an abandoned atomic create frozen and explains the same-key retry with
   await screen.findByText('İşlem sonucu belirsiz');await user.click(screen.getByRole('button',{name:'İşlemi bırak'}))
   await screen.findByText(/Bilgiler ve işlem anahtarı korunur; yeni oluşturma başlatılmaz/)
   expect(screen.queryByText(/önceki işlemi yeniden deneyin ya da bilgileri değiştirin/)).toBeNull()
-  expect((screen.getByLabelText('VKN / TCKN (isteğe bağlı)') as HTMLInputElement).disabled).toBe(true)
+  // Effective disabled state includes the native disabled fieldset ancestor.
+  expect(screen.getByLabelText('VKN / TCKN (isteğe bağlı)').matches(':disabled')).toBe(true)
   expect(submitButton().disabled).toBe(true)
   await user.click(screen.getByRole('button',{name:'Önceki işlemi yeniden dene'}))
   await waitFor(()=>expect(log.creates()).toHaveLength(2))
